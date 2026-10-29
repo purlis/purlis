@@ -1,11 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState, type Ref } from "react";
-import { FolderGit2, TriangleAlert } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Plus, RotateCw } from "lucide-react";
 import {
   commands,
   type InstallReview,
+  type OfferedSkill,
   type OfferedSource,
   type ReviewSkill,
   type ReviewSummary,
@@ -14,357 +15,503 @@ import {
   type SkillSource,
   type SkillUpdateOffer,
   type SkillUpdates,
-  type SourceBrowse,
   type StudioLevel,
   type UpdateFile,
   type UpdateReview,
 } from "./bindings";
 import { counted } from "./dispatches";
-import { Button, ButtonRow } from "./ui/button/Button";
-import { Notice } from "./Notice";
-import { Select } from "./ui/select/Select";
-import { Field, SettingRow } from "./settings/components";
+import { Notice, type NoticeAction } from "./Notice";
+import { Choice, Field, SettingRow } from "./settings/components";
 import { labelOf, picking, sameLevel } from "./skillChanges";
+import { sourceKey, type SourcesAt } from "./skillStudio";
+import { Badge } from "./ui/badge/Badge";
+import { Button, ButtonRow } from "./ui/button/Button";
+import { Card, CardTitle } from "./ui/card/Card";
+import { Fact, Facts } from "./ui/card/Facts";
+import { Dialog } from "./ui/dialog/Dialog";
+import { Disclosure } from "./ui/disclosure/Disclosure";
+import { EmptyState } from "./ui/empty-state/EmptyState";
+import { List, ListRow } from "./ui/list/List";
+import { RowBelow, RowLabel, RowTrail } from "./ui/list/Row";
+import { ViewListHead } from "./ui/panel/ViewFrame";
+import { ReviewPage } from "./ui/review-page/ReviewPage";
+
+/**
+ * **The Sources pages** (#3687; spec #3679, the amendment's S5, `prototype/skill-sources` A):
+ * where skills are installed from (SK-10, #2773; ADR 0100). The person's own sources come first,
+ * then the sources offered to start from, and each opens a page of its own; installing or
+ * updating a skill is a review page with its action fixed at the foot. What is marked, each
+ * commit's short name and what accepting says are the core's own.
+ *
+ * - **Sources**: the updates waiting, then each source the project's record names that this
+ *   machine has not confirmed (purlis asks it nothing until it is), then the person's sources as
+ *   rows, then the offered sources as cards (SK-22, decision 42). Add source… is a short dialog:
+ *   the repository and who can browse it, with its branch, its folder and its sign-in under More.
+ * - **A source's page**: its skills at its newest commit, each marked Installed, Update
+ *   available, or with what its files do ("runs a script", "reaches 1 host"), with Check for
+ *   updates and Remove source…, which keeps every skill installed from it.
+ * - **The install review**: the pinned commit, what each skill adds with the risky items marked,
+ *   each file one click away under its own mark, and where it lands, with Install at the foot.
+ * - **The update review**: what changes in what it adds, the source's diff, the edits made here
+ *   since the install, then Accept update or Not now at the foot.
+ *
+ * Both reviews are consent surfaces: they follow the review page's rules (`ui/review-page`), and
+ * a main action that cannot be pressed says why.
+ */
 
 /** One change's answer, as the core's commands give it. */
 type Answer = { status: "ok"; data: SkillChanged } | { status: "error"; error: string };
 
-/** What the sources section has open. */
-type Open =
-  /** Add source, empty, or filled in with an offered source (SK-22) for the person to confirm. */
-  | { what: "add"; offered?: OfferedSource }
-  | { what: "browse"; source: SkillSource; browse: SourceBrowse }
-  | { what: "install"; source: SkillSource; review: InstallReview }
-  | { what: "update"; offer: SkillUpdateOffer; review: UpdateReview };
+/** A read that may fail: what it answered, or why it could not. */
+type Read<T> = { data: T; refused?: undefined } | { data?: undefined; refused: string };
+
+/** Asks `run`, and answers what it read or why it failed, never throwing. */
+async function reading<T>(
+  run: () => Promise<{ status: "ok"; data: T } | { status: "error"; error: string }>,
+): Promise<Read<T>> {
+  try {
+    const answer = await run();
+    return answer.status === "ok" ? { data: answer.data } : { refused: answer.error };
+  } catch (err) {
+    return { refused: String(err) };
+  }
+}
+
+/** Who can browse a source, as Add source asks and a source's row says. */
+const WHO: Record<SkillSource["kept"], string> = {
+  shared: "The whole project",
+  local: "Only this machine",
+};
+
+/** What the Sources page says it holds, under its name. */
+export const SOURCES_LEAD =
+  "A source is a git repository of skills. An install copies a skill into this project, pinned to the commit you reviewed.";
+
+/** What an action that cannot be pressed says while another change is being made. */
+const BUSY = "Another change is being made.";
+
+/** The update offered for `name` from the source `key`, if there is one. */
+function offerFor(updates: SkillUpdates | undefined, key: string, name: string) {
+  return updates?.offers.find((one) => sourceKey(one.remote) === key && one.name === name);
+}
+
+/** What a source's row and its page say of it under its name. */
+function aboutSource(source: SkillSource): string {
+  return [
+    source.remote.url,
+    source.folder === null ? null : `folder ${source.folder}`,
+    source.remote.branch === null ? null : `branch ${source.remote.branch}`,
+    WHO[source.kept],
+    source.vault === null ? null : `signs in with ${source.vault}`,
+  ]
+    .filter((one) => one !== null)
+    .join(" · ");
+}
+
+/** **What the Sources pages read**: the sources, the offered ones and the updates, read again
+ *  each time something changed or Try again is pressed. */
+function useSourcesRead(plane: string, changed: number) {
+  const [asked, setAsked] = useState(0);
+  const [sources, setSources] = useState<Read<readonly SkillSource[]>>();
+  const [offered, setOffered] = useState<readonly OfferedSource[]>([]);
+  const [updates, setUpdates] = useState<Read<SkillUpdates>>();
+  useEffect(() => {
+    let live = true;
+    void reading(() => commands.skillSources(plane)).then((read) => {
+      if (live) setSources(read);
+    });
+    void reading(() => commands.skillSourcesOffered(plane)).then((read) => {
+      if (live && read.data !== undefined) setOffered(read.data);
+    });
+    void reading(() => commands.skillUpdates(plane)).then((read) => {
+      if (live) setUpdates(read);
+    });
+    return () => {
+      live = false;
+    };
+  }, [plane, changed, asked]);
+  return { sources, offered, updates, again: () => setAsked((n) => n + 1) };
+}
+
+/** **A read in place**: "Reading …" while it is asked, why it failed with Try again, or what it
+ *  read, without hiding the rest of the page. */
+function Held<T>({
+  read,
+  what,
+  again,
+  children,
+}: {
+  read: Read<T> | undefined;
+  /** What is read, as the sentences name it: "this project's skill sources". */
+  what: string;
+  again: () => void;
+  children: (data: T) => ReactNode;
+}) {
+  if (read === undefined)
+    return <EmptyState headline={`Reading ${what}…`} variant="panel" role="status" />;
+  if (read.refused !== undefined)
+    return (
+      <EmptyState
+        headline={`purlis could not read ${what}`}
+        body={read.refused}
+        variant="panel"
+        role="status"
+        testid="skill-sources-unread"
+        action={
+          <Button size="sm" icon={<RotateCw aria-hidden="true" />} onPress={again}>
+            Try again
+          </Button>
+        }
+      />
+    );
+  return <>{children(read.data)}</>;
+}
 
 /**
- * **Skill sources in the studio** (SK-10, #2773; ADR 0100): the project's sources, each one
- * browsed in place, an install reviewed summary first with every file one click away, a source
- * only the team's record names confirmed before it is asked anything, and each newer commit of
- * an installed skill offered as a diff of its summary and files, applied only when the person
- * accepts it. What is marked, what is empty, each commit's short name and what accepting says
- * are the core's own.
- *
- * **The offered sources** (SK-22, #2785; decision 42): the first-party catalogue and the
- * well-known sources the project does not browse yet, each with why it is offered. One click
- * opens Add source filled in with it, which the person confirms; nothing is added or installed
- * before that, and each install is still its own review.
+ * **What the Sources page shows at `at`**: Sources itself, a source's page, or a review. Each is
+ * a step of the tab's history, so back and forward walk them; a change made on one goes on to
+ * where the prototype goes (an install to its source's page, an update and a removal to
+ * Sources).
  */
-export function SkillSources({
+export function SkillSourcesPage({
   plane,
+  at,
+  onGo,
+  onOpenSkill,
   levels,
   start,
   busy,
   change,
   changed,
-  headingRef,
 }: {
   plane: string;
+  /** The page inside Sources, or none for Sources itself. */
+  at: SourcesAt | undefined;
+  /** Goes to a page inside Sources, or to Sources itself: a step of the tab's history. */
+  onGo: (to: SourcesAt | undefined) => void;
+  /** Opens an installed skill in the Library. */
+  onOpenSkill: (name: string) => void;
   levels: readonly StudioLevel[];
   /** The level an install lands at unless the person picks another: where they came from. */
   start: SkillLevel;
   busy: boolean;
   change: (label: string, run: () => Promise<Answer>) => void;
   changed: number;
-  /** The section's heading, which the empty studio's Browse sources moves to. */
-  headingRef?: Ref<HTMLHeadingElement>;
 }) {
-  const [sources, setSources] = useState<readonly SkillSource[]>([]);
-  /** The sources offered with one click, as the core lists them (`skills::first_open`). */
-  const [offered, setOffered] = useState<readonly OfferedSource[]>([]);
-  const [unread, setUnread] = useState<string>();
-  const [updates, setUpdates] = useState<SkillUpdates>();
-  const [open, setOpen] = useState<Open>();
-  const [waiting, setWaiting] = useState<string>();
-  const [refused, setRefused] = useState<string>();
-  useEffect(() => {
-    let live = true;
-    void commands
-      .skillSources(plane)
-      .then((answer) => {
-        if (!live) return;
-        if (answer.status === "ok" && Array.isArray(answer.data)) {
-          setSources(answer.data);
-          setUnread(undefined);
-        } else if (answer.status === "error") setUnread(answer.error);
-      })
-      .catch(() => undefined);
-    void commands
-      .skillSourcesOffered(plane)
-      .then((answer) => {
-        if (live && answer.status === "ok" && Array.isArray(answer.data)) setOffered(answer.data);
-      })
-      .catch(() => undefined);
-    void commands
-      .skillUpdates(plane)
-      .then((answer) => {
-        if (live && answer.status === "ok" && Array.isArray(answer.data?.offers))
-          setUpdates(answer.data);
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [plane, changed]);
+  const read = useSourcesRead(plane, changed);
+  const [adding, setAdding] = useState<{ offered?: OfferedSource }>();
+  /** A change, and where the tab goes once it is made. */
+  const changeThen = (label: string, run: () => Promise<Answer>, to?: SourcesAt) =>
+    change(label, () =>
+      run().then((answer) => {
+        if (answer.status === "ok") onGo(to);
+        return answer;
+      }),
+    );
+  const sources = read.sources?.data ?? [];
+  const updates = read.updates?.data;
+  const sourceAt =
+    at === undefined ? undefined : sources.find((one) => sourceKey(one.remote) === at.source);
+  const toSource = (one: SourcesAt): SourcesAt => ({
+    at: "source",
+    source: one.source,
+    label: one.label,
+  });
 
-  /** Runs a read that may take the network, saying what it waits on and why it failed. */
-  const ask = <T,>(
-    what: string,
-    run: () => Promise<{ status: "ok"; data: T } | { status: "error"; error: string }>,
-    then: (data: T) => void,
-  ) => {
-    setWaiting(what);
-    setRefused(undefined);
-    void run()
-      .then((answer) => {
-        if (answer.status === "ok") then(answer.data);
-        else setRefused(answer.error);
-      })
-      .catch((err: unknown) => setRefused(String(err)))
-      .finally(() => setWaiting(undefined));
-  };
-  const browse = (source: SkillSource) =>
-    ask(
-      `Reading ${source.label}…`,
-      () => commands.skillSourceBrowse(plane, source),
-      (data) => setOpen({ what: "browse", source, browse: data }),
+  let page: ReactNode;
+  if (at === undefined)
+    page = (
+      <SourcesList
+        read={read}
+        busy={busy}
+        onGo={onGo}
+        onAdd={(offered) => setAdding({ offered })}
+        onConfirm={(remote) =>
+          change("The source was not confirmed", () => commands.skillSourceConfirm(plane, remote))
+        }
+      />
     );
-  const review = (source: SkillSource, name: string) =>
-    ask(
-      `Reviewing ${name}…`,
-      () => commands.skillInstallReview(plane, source, [name]),
-      (data) => setOpen({ what: "install", source, review: data }),
+  else if (at.at === "update")
+    page = (
+      <UpdateReviewPage
+        plane={plane}
+        at={at}
+        offer={offerFor(updates, at.source, at.skill)}
+        updatesRead={read.updates !== undefined}
+        busy={busy}
+        onCancel={() => onGo(sourceAt === undefined ? undefined : toSource(at))}
+        onAccept={(offer, review) =>
+          changeThen("The skill was not updated", () =>
+            commands.skillUpdate(plane, offer.level, offer.name, review.accepted),
+          )
+        }
+      />
     );
-  const reviewUpdate = (offer: SkillUpdateOffer) =>
-    ask(
-      `Reviewing the update of ${offer.name}…`,
-      () => commands.skillUpdateReview(plane, offer.level, offer.name),
-      (data) => setOpen({ what: "update", offer, review: data }),
+  else if (sourceAt === undefined)
+    page = (
+      <Held read={read.sources} what="this project's skill sources" again={read.again}>
+        {() => (
+          <EmptyState
+            headline={`${at.label} is not among this project's sources`}
+            body="It was removed, or it is kept on another machine."
+            testid="skill-source-gone"
+            action={<Button onPress={() => onGo(undefined)}>Go to Sources</Button>}
+          />
+        )}
+      </Held>
     );
-  const done = (label: string, run: () => Promise<Answer>) => {
-    setOpen(undefined);
-    change(label, run);
-  };
-
+  else if (at.at === "install")
+    page = (
+      <InstallReviewPage
+        plane={plane}
+        source={sourceAt}
+        name={at.skill}
+        levels={levels}
+        start={start}
+        busy={busy}
+        onCancel={() => onGo(toSource(at))}
+        onInstall={(review, level) =>
+          changeThen(
+            "The skill was not installed",
+            () => commands.skillInstall(plane, sourceAt, level, review.accepted, null),
+            toSource(at),
+          )
+        }
+      />
+    );
+  else
+    page = (
+      <SourcePage
+        plane={plane}
+        source={sourceAt}
+        updates={updates}
+        busy={busy}
+        changed={changed}
+        onGo={onGo}
+        onOpenSkill={onOpenSkill}
+        onChecked={read.again}
+        onConfirm={() =>
+          change("The source was not confirmed", () =>
+            commands.skillSourceConfirm(plane, sourceAt.remote),
+          )
+        }
+        onRemove={() =>
+          changeThen("The source was not removed", () =>
+            commands.skillSourceRemove(plane, sourceAt.remote),
+          )
+        }
+      />
+    );
   return (
-    <section className="skill-sources" aria-label="Skill sources" data-testid="skill-sources">
-      <h3 ref={headingRef} tabIndex={-1}>
-        Skill sources
-      </h3>
-      <p className="honest">
-        A skill source is a git repository of skills. An install copies a skill into this project,
-        pinned to the commit you reviewed; a newer commit is offered here, and changes nothing until
-        you accept it.
-      </p>
-      {updates !== undefined && updates.offers.length > 0 && (
-        <ul className="skill-updates" aria-label="Updates">
-          {updates.offers.map((offer) => (
-            <li key={`${offer.label}\u0000${offer.name}`} data-testid={`update-${offer.name}`}>
-              <code>{offer.name}</code> · {offer.label}: a newer commit, {offer.newer.short}
-              {offer.edited && " (edited here since it was installed)"}{" "}
-              <Button
-                size="sm"
-                isDisabled={busy || waiting !== undefined}
-                onPress={() => reviewUpdate(offer)}
-              >
-                Review update
-              </Button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {updates?.unconfirmed.map((one) => (
-        <p
-          key={`${one.remote.url}\u0000${one.remote.branch ?? ""}`}
-          className="honest"
-          data-testid="skill-source-unconfirmed"
-        >
-          {one.remote.label}, where {one.skills.join(", ")} came from, is not checked on this
-          machine: purlis asks it nothing until you confirm it.{" "}
-          <Button
-            size="sm"
-            isDisabled={busy}
-            aria-label={`Confirm ${one.remote.label}`}
-            onPress={() =>
-              done("The source was not confirmed", () =>
-                commands.skillSourceConfirm(plane, one.remote),
-              )
-            }
-          >
-            Confirm
-          </Button>
-        </p>
-      ))}
-      {updates?.unasked.map((one) => (
-        <p key={`${one.label}\u0000${one.name}\u0000${one.why}`} className="honest">
-          {one.name === "" ? one.why : `${one.name} (${one.label}): ${one.why}`}
-        </p>
-      ))}
-      {unread !== undefined && (
-        <p className="honest" data-testid="skill-sources-unread">
-          {unread}
-        </p>
-      )}
-      {unread === undefined && sources.length === 0 && open === undefined && (
-        <p className="honest" data-testid="skill-sources-empty">
-          This project has no skill sources yet. Add source takes a repository&apos;s https:// URL,
-          or a folder on this machine.
-        </p>
-      )}
-      {offered.length > 0 && open?.what !== "add" && (
-        <section className="skill-offered" aria-label="Offered sources">
-          <h4>Sources to start from</h4>
-          <ul className="skill-source-list">
-            {offered.map((one) => (
-              <li
-                key={`${one.source.remote.url}\u0000${one.source.folder ?? ""}`}
-                data-testid="skill-source-offered"
-              >
-                <FolderGit2 className="node-icon" aria-hidden="true" /> <strong>{one.name}</strong>
-                {one.offering === "catalogue" && " · from purlis"}: {one.why}{" "}
-                <Button
-                  size="sm"
-                  isDisabled={busy}
-                  aria-label={`Add ${one.name}`}
-                  onPress={() => setOpen({ what: "add", offered: one })}
-                >
-                  Add…
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      <ul className="skill-source-list">
-        {sources.map((source) => (
-          <li
-            key={`${source.remote.url}\u0000${source.remote.branch ?? ""}`}
-            data-testid="skill-source"
-          >
-            <FolderGit2 className="node-icon" aria-hidden="true" /> {source.label}
-            {source.kept === "local" && " · on this machine"}
-            {source.vault !== null && ` · signs in with ${source.vault}`}{" "}
-            <Button
-              size="sm"
-              isDisabled={waiting !== undefined}
-              onPress={() => browse(source)}
-              aria-label={`Browse ${source.label}`}
-            >
-              Browse
-            </Button>
-            <Button
-              size="sm"
-              isDisabled={busy}
-              aria-label={`Remove ${source.label}`}
-              onPress={() =>
-                done("The source was not removed", () =>
-                  commands.skillSourceRemove(plane, source.remote),
-                )
-              }
-            >
-              Remove
-            </Button>
-          </li>
-        ))}
-      </ul>
-      {open === undefined && (
-        <Button onPress={() => setOpen({ what: "add" })} isDisabled={busy}>
-          Add source
-        </Button>
-      )}
-      {waiting !== undefined && (
-        <p className="pending" aria-busy="true">
-          {waiting}
-        </p>
-      )}
-      {refused !== undefined && (
-        <Notice
-          cause="skill-source"
-          tone="trouble"
-          label="The skill source could not be read"
-          onDismiss={() => setRefused(undefined)}
-        >
-          <span data-testid="skill-source-refused">{refused}</span>
-        </Notice>
-      )}
-      {open?.what === "add" && (
-        <AddSource
-          offered={open.offered}
+    <>
+      {page}
+      {adding !== undefined && (
+        <AddSourceDialog
+          offered={adding.offered}
           busy={busy}
-          onCancel={() => setOpen(undefined)}
-          onAdd={(source) =>
-            done("The source was not added", () => commands.skillSourceAdd(plane, source))
-          }
+          onCancel={() => setAdding(undefined)}
+          onAdd={(source) => {
+            setAdding(undefined);
+            change("The source was not added", () => commands.skillSourceAdd(plane, source));
+          }}
         />
       )}
-      {open?.what === "browse" && (
-        <section className="skill-change" aria-label={`Skills in ${open.source.label}`}>
-          <h4>
-            {open.source.label} at {open.browse.commit.short}
-          </h4>
-          {open.browse.skills.length === 0 && (
-            <p className="honest">
-              This source holds no skill under its folder: a skill is a folder with its own
-              instructions.
-            </p>
-          )}
-          <ul>
-            {open.browse.skills.map((skill) => (
-              <li key={skill.folder} data-testid={`offered-${skill.name}`}>
-                <code>{skill.name}</code> {skill.description}
-                {skill.installed.length > 0 && ` · installed: ${skill.installed.join(", ")}`}{" "}
-                <Button
-                  size="sm"
-                  isDisabled={waiting !== undefined}
-                  onPress={() => review(open.source, skill.name)}
-                  aria-label={`Review ${skill.name}`}
-                >
-                  Review install
-                </Button>
-              </li>
-            ))}
-          </ul>
-          {open.browse.not_skills.map((one) => (
-            <p key={one.folder} className="honest">
-              {one.folder}: {one.why}
-            </p>
-          ))}
-          <Button onPress={() => setOpen(undefined)}>Close</Button>
-        </section>
-      )}
-      {open?.what === "install" && (
-        <InstallPanel
-          review={open.review}
-          levels={levels}
-          start={start}
-          busy={busy}
-          onCancel={() => setOpen(undefined)}
-          onInstall={(level) =>
-            done("The skill was not installed", () =>
-              commands.skillInstall(plane, open.source, level, open.review.accepted, null),
-            )
-          }
-        />
-      )}
-      {open?.what === "update" && (
-        <UpdatePanel
-          review={open.review}
-          busy={busy}
-          onCancel={() => setOpen(undefined)}
-          onAccept={() =>
-            done("The skill was not updated", () =>
-              commands.skillUpdate(plane, open.offer.level, open.offer.name, open.review.accepted),
-            )
-          }
-        />
-      )}
-    </section>
+    </>
   );
 }
 
-/** Add source: its URL, and optionally its branch, its folder and its vault entry. Filled in
- *  with an offered source, it is the step that asks before that source is added. */
-function AddSource({
+// --- Sources -----------------------------------------------------------------------------------
+
+/** **The Sources page**: the updates and the unconfirmed sources, which need the person, then
+ *  their sources, then the ones offered to start from. */
+function SourcesList({
+  read,
+  busy,
+  onGo,
+  onAdd,
+  onConfirm,
+}: {
+  read: ReturnType<typeof useSourcesRead>;
+  busy: boolean;
+  onGo: (to: SourcesAt) => void;
+  onAdd: (offered?: OfferedSource) => void;
+  onConfirm: (remote: SkillSource["remote"]) => void;
+}) {
+  const updates = read.updates?.data;
+  const offers = updates?.offers ?? [];
+  const review = (offer: SkillUpdateOffer) =>
+    onGo({
+      at: "update",
+      source: sourceKey(offer.remote),
+      label: offer.remote.label,
+      skill: offer.name,
+    });
+  const fixes = offers.map((offer): NoticeAction => ({
+    label: offers.length === 1 ? "Review update" : `Review ${offer.name}`,
+    primary: true,
+    busy,
+    onPress: () => review(offer),
+  }));
+  const [firstFix, ...otherFixes] = fixes;
+  return (
+    <div className="skill-sources" data-testid="skill-sources">
+      <ViewListHead title="Sources" lead={SOURCES_LEAD}>
+        <div className="skill-library-tools">
+          <Button
+            size="sm"
+            variant="primary"
+            icon={<Plus aria-hidden="true" />}
+            isDisabled={busy}
+            tooltip={busy ? BUSY : undefined}
+            onPress={() => onAdd()}
+          >
+            Add source…
+          </Button>
+        </div>
+      </ViewListHead>
+      <div className="skill-studio-page">
+        {firstFix !== undefined && (
+          <Notice
+            cause="skill-updates"
+            tone="attention"
+            label={counted(offers.length, "update waiting", "updates waiting")}
+            fixes={[firstFix, ...otherFixes]}
+          >
+            <span data-testid="skill-updates">
+              {offers.length === 1
+                ? "An installed skill has a newer version: "
+                : "Installed skills have newer versions: "}
+              {offers.map((offer, at) => (
+                <span key={`${sourceKey(offer.remote)}\u0000${offer.name}`}>
+                  {at > 0 && ", "}
+                  <code>{offer.name}</code> from {offer.remote.label}
+                  {offer.edited && " (edited here since it was installed)"}
+                </span>
+              ))}
+              . Nothing changes until you accept it.
+            </span>
+          </Notice>
+        )}
+        {updates?.unconfirmed.map((one) => (
+          <Notice
+            key={sourceKey(one.remote)}
+            cause={`skill-source-unconfirmed:${sourceKey(one.remote)}`}
+            tone="attention"
+            label="A source is not confirmed on this machine"
+            fixes={[
+              {
+                label: "Confirm it",
+                busy,
+                primary: true,
+                onPress: () => onConfirm(one.remote),
+              },
+            ]}
+          >
+            <span data-testid="skill-source-unconfirmed">
+              {one.remote.label}, where {one.skills.join(", ")} came from, came with the project but
+              is not confirmed on this machine, so purlis asks it nothing yet.
+            </span>
+          </Notice>
+        ))}
+        {updates?.unasked.map((one) => (
+          <p key={`${one.label}\u0000${one.name}\u0000${one.why}`} className="honest">
+            {one.name === "" ? one.why : `${one.name} (${one.label}): ${one.why}`}
+          </p>
+        ))}
+        <section aria-labelledby="skill-sources-yours" className="skill-sources-part">
+          <h3 id="skill-sources-yours" className="ui-text-small ui-text-strong">
+            Your sources
+          </h3>
+          <Held read={read.sources} what="this project's skill sources" again={read.again}>
+            {(sources) =>
+              sources.length === 0 ? (
+                <EmptyState
+                  headline="This project has no skill sources yet"
+                  body="A source you add is listed here, with its skills to review and install."
+                  variant="panel"
+                  testid="skill-sources-empty"
+                  action={
+                    <Button size="sm" isDisabled={busy} onPress={() => onAdd()}>
+                      Add source…
+                    </Button>
+                  }
+                />
+              ) : (
+                <List
+                  aria-label="Your sources"
+                  onAction={(key) => {
+                    const source = sources.find((one) => sourceKey(one.remote) === key);
+                    if (source !== undefined)
+                      onGo({ at: "source", source: String(key), label: source.label });
+                  }}
+                >
+                  {sources.map((source) => {
+                    const key = sourceKey(source.remote);
+                    const waiting = offers.filter((one) => sourceKey(one.remote) === key).length;
+                    return (
+                      <ListRow
+                        key={key}
+                        id={key}
+                        textValue={source.label}
+                        data-testid="skill-source"
+                      >
+                        <RowLabel>{source.label}</RowLabel>
+                        {waiting > 0 && (
+                          <RowTrail>
+                            <Badge variant="accent">{counted(waiting, "update", "updates")}</Badge>
+                          </RowTrail>
+                        )}
+                        <RowBelow clamp={1}>{aboutSource(source)}</RowBelow>
+                      </ListRow>
+                    );
+                  })}
+                </List>
+              )
+            }
+          </Held>
+        </section>
+        {read.offered.length > 0 && (
+          <section aria-labelledby="skill-sources-offered" className="skill-sources-part">
+            <h3 id="skill-sources-offered" className="ui-text-small ui-text-strong">
+              Sources to start from
+            </h3>
+            <ul className="skill-offered-cards" aria-labelledby="skill-sources-offered">
+              {read.offered.map((one) => (
+                <Card
+                  as="li"
+                  key={`${sourceKey(one.source.remote)}\u0000${one.source.folder ?? ""}`}
+                  data-testid="skill-source-offered"
+                >
+                  <CardTitle>{one.name}</CardTitle>
+                  <p className="honest">
+                    {one.why}
+                    {one.offering === "catalogue" && " · from purlis"}
+                  </p>
+                  <ButtonRow size="sm">
+                    <Button
+                      size="sm"
+                      isDisabled={busy}
+                      tooltip={busy ? BUSY : undefined}
+                      aria-label={`Add ${one.name}`}
+                      onPress={() => onAdd(one)}
+                    >
+                      Add…
+                    </Button>
+                  </ButtonRow>
+                </Card>
+              ))}
+            </ul>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** **Add source…**: the repository and who can browse it, with its branch, its folder and its
+ *  sign-in under More. Filled in with an offered source, it is the step that asks before that
+ *  source is added. */
+export function AddSourceDialog({
   offered,
   busy,
   onCancel,
@@ -380,30 +527,43 @@ function AddSource({
   const [folder, setFolder] = useState(offered?.source.folder ?? "");
   const [vault, setVault] = useState("");
   const [key, setKey] = useState("");
-  const [local, setLocal] = useState(false);
+  const [kept, setKept] = useState<SkillSource["kept"]>(offered?.source.kept ?? "shared");
   const blank = (text: string) => (text.trim() === "" ? null : text.trim());
+  const missing = url.trim() === "";
+  const why = missing ? "Type the repository first." : busy ? BUSY : undefined;
+  const add = () => {
+    if (why !== undefined) return;
+    onAdd({
+      remote: { url: url.trim(), branch: blank(branch), label: url.trim() },
+      folder: blank(folder),
+      vault: blank(vault),
+      key: blank(key),
+      kept,
+      label: url.trim(),
+    });
+  };
   return (
-    <form
-      className="skill-change"
-      aria-label={offered === undefined ? "Add source" : `Add ${offered.name}`}
-      onSubmit={(event) => {
-        event.preventDefault();
-        onAdd({
-          remote: { url: url.trim(), branch: blank(branch), label: url.trim() },
-          folder: blank(folder),
-          vault: blank(vault),
-          key: blank(key),
-          kept: local ? "local" : "shared",
-          label: url.trim(),
-        });
+    <Dialog
+      title={offered === undefined ? "Add a source" : `Add ${offered.name}`}
+      description={
+        offered === undefined ? (
+          "purlis reads its list of skills when you open it. Nothing is installed until you review a skill from it."
+        ) : (
+          <span data-testid="skill-source-offered-asks">
+            Add {offered.name} to this project&apos;s skill sources? purlis then reads its list of
+            skills when you open it. Nothing is installed until you review a skill from it.
+          </span>
+        )
+      }
+      onClose={onCancel}
+      data-testid="skill-source-add"
+      main={{
+        children: "Add source",
+        isDisabled: why !== undefined,
+        tooltip: why,
+        onPress: add,
       }}
     >
-      {offered !== undefined && (
-        <p className="honest" data-testid="skill-source-offered-asks">
-          Add {offered.name} to this project&apos;s skill sources? purlis then reads its list of
-          skills when you browse it. Nothing is installed until you review a skill from it.
-        </p>
-      )}
       <SettingRow
         label="Repository"
         help="An https:// URL, or a folder on this machine by its full path."
@@ -418,42 +578,267 @@ function AddSource({
         )}
       />
       <SettingRow
-        label="Branch"
-        help="Empty for the repository's own default."
-        control={(ids) => <Field kind="text" ids={ids} value={branch} onChange={setBranch} />}
+        label="Who can browse it"
+        help="The whole project keeps it with the team; only this machine keeps it here."
+        control={(ids) => (
+          <Choice
+            kind="select"
+            ids={ids}
+            value={kept}
+            options={[
+              { value: "shared", label: WHO.shared },
+              { value: "local", label: WHO.local },
+            ]}
+            onValueChange={(to) => setKept(to === "local" ? "local" : "shared")}
+          />
+        )}
       />
-      <SettingRow
-        label="Folder"
-        help="Where its skills are, such as skills. Empty for its top."
-        control={(ids) => <Field kind="text" ids={ids} value={folder} onChange={setFolder} />}
-      />
-      <SettingRow
-        label="Signs in with vault"
-        help="For a private repository: the vault, then the entry that holds its token. The token stays in the vault, and only this machine signs in with it."
-        control={(ids) => <Field kind="text" ids={ids} value={vault} onChange={setVault} />}
-      />
-      <SettingRow
-        label="Entry"
-        help="The entry in that vault."
-        control={(ids) => <Field kind="text" ids={ids} value={key} onChange={setKey} />}
-      />
-      <Select
-        aria-label="Who browses it"
-        value={local ? "local" : "shared"}
-        options={[
-          { value: "shared", label: "The whole project" },
-          { value: "local", label: "Only this machine" },
-        ]}
-        onValueChange={(to) => setLocal(to === "local")}
-      />
-      <ButtonRow>
-        <Button variant="primary" type="submit" isDisabled={busy || url.trim() === ""}>
-          Add it
-        </Button>
-        <Button onPress={onCancel}>Cancel</Button>
-      </ButtonRow>
-    </form>
+      <Disclosure label="More: branch, folder, sign-in">
+        <SettingRow
+          label="Branch"
+          help="Empty for the repository's own default."
+          control={(ids) => <Field kind="text" ids={ids} value={branch} onChange={setBranch} />}
+        />
+        <SettingRow
+          label="Folder"
+          help="Where its skills are, such as skills. Empty for its top."
+          control={(ids) => <Field kind="text" ids={ids} value={folder} onChange={setFolder} />}
+        />
+        <SettingRow
+          label="Signs in with vault"
+          help="For a private repository: the vault, then the entry that holds its token. The token stays in the vault, and only this machine signs in with it."
+          control={(ids) => <Field kind="text" ids={ids} value={vault} onChange={setVault} />}
+        />
+        <SettingRow
+          label="Entry"
+          help="The entry in that vault."
+          control={(ids) => <Field kind="text" ids={ids} value={key} onChange={setKey} />}
+        />
+      </Disclosure>
+    </Dialog>
   );
+}
+
+// --- A source's page ---------------------------------------------------------------------------
+
+/** **A source's page**: its skills at its newest commit, each with its marks and its one way on,
+ *  with Check for updates and Remove source…. */
+function SourcePage({
+  plane,
+  source,
+  updates,
+  busy,
+  changed,
+  onGo,
+  onOpenSkill,
+  onChecked,
+  onConfirm,
+  onRemove,
+}: {
+  plane: string;
+  source: SkillSource;
+  updates: SkillUpdates | undefined;
+  busy: boolean;
+  changed: number;
+  onGo: (to: SourcesAt) => void;
+  onOpenSkill: (name: string) => void;
+  /** Check for updates was pressed: the updates are asked again too. */
+  onChecked: () => void;
+  onConfirm: () => void;
+  onRemove: () => void;
+}) {
+  const key = sourceKey(source.remote);
+  const { read, again } = useRead(`${key}\u0000${changed}`, () =>
+    commands.skillSourceBrowse(plane, source),
+  );
+  const [removing, setRemoving] = useState(false);
+  const unconfirmed = updates?.unconfirmed.some((one) => sourceKey(one.remote) === key) === true;
+  const at = (skill: string) => ({ source: key, label: source.label, skill });
+  const offered = (skill: OfferedSkill) => offerFor(updates, key, skill.name);
+  /** Where a skill's row goes: its update, its page in the Library, or its install. */
+  const onward = (skill: OfferedSkill) => {
+    if (offered(skill) !== undefined) onGo({ at: "update", ...at(skill.name) });
+    else if (skill.installed.length > 0) onOpenSkill(skill.name);
+    else onGo({ at: "install", ...at(skill.name) });
+  };
+  return (
+    <div className="skill-sources" data-testid="skill-source-page">
+      <ViewListHead
+        title={source.label}
+        lead={
+          <>
+            {aboutSource(source)}
+            {read?.data !== undefined && (
+              <>
+                {" "}
+                · at <code>{read.data.commit.short}</code>
+              </>
+            )}
+          </>
+        }
+      >
+        <div className="skill-library-tools">
+          <Button
+            size="sm"
+            icon={<RotateCw aria-hidden="true" />}
+            isDisabled={read === undefined}
+            tooltip={read === undefined ? "It is being read now." : undefined}
+            onPress={() => {
+              again();
+              onChecked();
+            }}
+          >
+            Check for updates
+          </Button>
+          <Button
+            size="sm"
+            isDisabled={busy}
+            tooltip={busy ? BUSY : undefined}
+            onPress={() => setRemoving(true)}
+          >
+            Remove source…
+          </Button>
+        </div>
+      </ViewListHead>
+      <div className="skill-studio-page">
+        {unconfirmed && (
+          <Notice
+            cause={`skill-source-unconfirmed:${key}`}
+            tone="attention"
+            label="Not confirmed on this machine"
+            fixes={[{ label: "Confirm it", busy, primary: true, onPress: onConfirm }]}
+          >
+            purlis asks it nothing until you confirm it.
+          </Notice>
+        )}
+        <Held read={read} what={source.label} again={again}>
+          {(data) =>
+            data.skills.length === 0 ? (
+              <EmptyState
+                headline="This source holds no skill under its folder"
+                body="A skill is a folder with its own instructions, SKILL.md. Check the folder the source was added with."
+                variant="panel"
+                testid="skill-source-no-skills"
+              />
+            ) : (
+              <List
+                aria-label={`Skills in ${source.label}`}
+                onAction={(name) => {
+                  const skill = data.skills.find((one) => one.name === name);
+                  if (skill !== undefined) onward(skill);
+                }}
+              >
+                {data.skills.map((skill) => {
+                  const update = offered(skill);
+                  const installed = skill.installed.length > 0;
+                  return (
+                    <ListRow
+                      key={skill.folder}
+                      id={skill.name}
+                      textValue={skill.name}
+                      data-testid={`offered-${skill.name}`}
+                    >
+                      <RowLabel>
+                        <code>{skill.name}</code>
+                      </RowLabel>
+                      <RowTrail>
+                        {installed && <Badge variant="ok">Installed</Badge>}
+                        {update !== undefined && <Badge variant="accent">Update available</Badge>}
+                        {(skill.marks ?? []).map((mark) => (
+                          <Badge key={mark} variant="waiting">
+                            {mark}
+                          </Badge>
+                        ))}
+                        <Button
+                          size="sm"
+                          variant={update !== undefined ? "primary" : undefined}
+                          aria-label={
+                            update !== undefined
+                              ? `Review the update of ${skill.name}`
+                              : installed
+                                ? `Open ${skill.name} in Library`
+                                : `Review ${skill.name}`
+                          }
+                          onPress={() => onward(skill)}
+                        >
+                          {update !== undefined
+                            ? "Review update"
+                            : installed
+                              ? "Open in Library"
+                              : "Review install"}
+                        </Button>
+                      </RowTrail>
+                      <RowBelow clamp={2}>
+                        {skill.description}
+                        {installed && ` · installed: ${skill.installed.join(", ")}`}
+                        {skill.marks === null && " · its files are read when you review it"}
+                      </RowBelow>
+                    </ListRow>
+                  );
+                })}
+              </List>
+            )
+          }
+        </Held>
+        {read?.data !== undefined && read.data.not_skills.length > 0 && (
+          <p className="honest" data-testid="skill-source-not-skills">
+            Not skills:{" "}
+            {read.data.not_skills.map((one, at) => (
+              <span key={one.folder}>
+                {at > 0 && "; "}
+                <code>{one.folder}</code>, {one.why}
+              </span>
+            ))}
+            .
+          </p>
+        )}
+      </div>
+      {removing && (
+        <Dialog
+          title={`Remove ${source.label}?`}
+          description="Skills you installed from it stay, pinned where they are; they just stop being offered its updates."
+          onClose={() => setRemoving(false)}
+          data-testid="skill-source-remove"
+          main={{
+            children: "Remove source",
+            variant: "danger",
+            onPress: () => {
+              setRemoving(false);
+              onRemove();
+            },
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// --- The reviews -------------------------------------------------------------------------------
+
+/** **A read for a page**: asked each time its `key` is another, or when asked again. */
+function useRead<T>(
+  key: string | undefined,
+  run: () => Promise<{ status: "ok"; data: T } | { status: "error"; error: string }>,
+) {
+  const [asked, setAsked] = useState(0);
+  const [held, setHeld] = useState<{ key: string; read: Read<T> }>();
+  const now = key === undefined ? undefined : `${key}\u0000${asked}`;
+  useEffect(() => {
+    if (now === undefined) return;
+    let live = true;
+    void reading(run).then((read) => {
+      if (live) setHeld({ key: now, read });
+    });
+    return () => {
+      live = false;
+    };
+    // Read again for another key only: `run` is a new function each draw.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [now]);
+  return {
+    read: held !== undefined && held.key === now ? held.read : undefined,
+    again: () => setAsked((n) => n + 1),
+  };
 }
 
 /** A summary, risky items marked, as the core reads and marks it. */
@@ -464,8 +849,7 @@ export function Summary({ summary, testid }: { summary: ReviewSummary; testid?: 
         Instructions only: no scripts, network hosts, ! commands or writes outside the workspace.
       </p>
     );
-  const mark = (risky: boolean) =>
-    risky ? <TriangleAlert className="node-icon risky" aria-label="Risky" /> : null;
+  const mark = (risky: boolean) => (risky ? <Badge variant="waiting">Look closely</Badge> : null);
   return (
     <ul className="skill-summary" data-testid={testid}>
       {summary.scripts.map((one) => (
@@ -505,44 +889,45 @@ export function Summary({ summary, testid }: { summary: ReviewSummary; testid?: 
   );
 }
 
-/** One skill of a review: its summary first, then every file, each one click away. */
+/** One skill of a review: what it adds first, then every file under its mark, each readable. */
 function SkillReviewed({ skill }: { skill: ReviewSkill }) {
-  const [shown, setShown] = useState<string>();
-  const file = skill.files.find((one) => one.path === shown);
   return (
     <section className="skill-review" aria-label={`Review of ${skill.name}`}>
-      <h4>
+      <h3 className="ui-text-strong">
         <code>{skill.name}</code> {skill.description}
-      </h4>
+      </h3>
       {skill.brought_by !== null && (
         <p className="honest">Comes along: {skill.brought_by} refers to it.</p>
       )}
+      <h4 className="ui-text-small ui-text-strong">What it adds</h4>
       <Summary summary={skill.summary} testid={`summary-${skill.name}`} />
       {skill.lint.map((line) => (
         <p key={line} className="honest">
           {line}
         </p>
       ))}
-      <ul className="skill-review-files" aria-label={`Files of ${skill.name}`}>
+      <h4 className="ui-text-small ui-text-strong">Its files</h4>
+      <div className="skill-review-files" role="group" aria-label={`Files of ${skill.name}`}>
         {skill.files.map((one) => (
-          <li key={one.path} data-risky={one.risky}>
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-label={`Show ${one.path}`}
-              onPress={() => setShown(shown === one.path ? undefined : one.path)}
-            >
-              {one.path}
-            </Button>{" "}
-            {one.risky && <TriangleAlert className="node-icon risky" aria-label="Risky" />}
-          </li>
+          <Disclosure
+            key={one.path}
+            size="sm"
+            label={`Show ${one.path}`}
+            data-testid={`file-${one.path}`}
+            trail={
+              one.risky ? (
+                <Badge variant="waiting">Look closely</Badge>
+              ) : (
+                <Badge variant="ok">Plain</Badge>
+              )
+            }
+          >
+            <pre className="skill-review-file" data-testid="skill-review-file">
+              {one.text ?? "This file is not text, so it is not shown."}
+            </pre>
+          </Disclosure>
         ))}
-      </ul>
-      {file !== undefined && (
-        <pre className="skill-review-file" data-testid="skill-review-file">
-          {file.text ?? "This file is not text, so it is not shown."}
-        </pre>
-      )}
+      </div>
       {skill.left_out.length > 0 && (
         <ul className="honest" aria-label={`Not installed from ${skill.name}`}>
           {skill.left_out.map((one) => (
@@ -556,22 +941,30 @@ function SkillReviewed({ skill }: { skill: ReviewSkill }) {
   );
 }
 
-/** The install review: each skill, then where it lands, and Install. */
-function InstallPanel({
-  review,
+/** **The install review**: the pinned commit, each skill with its marks and its files, where it
+ *  lands, and Install fixed at the foot. */
+function InstallReviewPage({
+  plane,
+  source,
+  name,
   levels,
   start,
   busy,
   onCancel,
   onInstall,
 }: {
-  review: InstallReview;
+  plane: string;
+  source: SkillSource;
+  name: string;
   levels: readonly StudioLevel[];
   start: SkillLevel;
   busy: boolean;
   onCancel: () => void;
-  onInstall: (level: SkillLevel) => void;
+  onInstall: (review: InstallReview, level: SkillLevel) => void;
 }) {
+  const { read, again } = useRead(`${sourceKey(source.remote)}\u0000${name}`, () =>
+    commands.skillInstallReview(plane, source, [name]),
+  );
   const [level, setLevel] = useState<SkillLevel>(start);
   const picker = picking(
     levels.map((one) => one.level),
@@ -579,105 +972,230 @@ function InstallPanel({
     sameLevel,
     level,
   );
-  const risky = review.skills.reduce((n, skill) => n + skill.summary.marked, 0);
+  const review = read?.data;
+  const risky = review?.skills.reduce((n, skill) => n + skill.summary.marked, 0) ?? 0;
+  const why =
+    read === undefined
+      ? "The review is being read."
+      : review === undefined
+        ? "The review could not be read."
+        : busy
+          ? BUSY
+          : undefined;
   return (
-    <section className="skill-change" aria-label="Install review" data-testid="install-review">
-      <p className="honest">
-        {counted(review.skills.length, "skill", "skills")} at {review.commit.short}
-        {risky > 0 && `, ${counted(risky, "risky item", "risky items")} marked`}. The review is read
-        from the files: a script can do more when it runs, and the chat&apos;s sandbox bounds that.
-        Installing copies all of them or none.
-      </p>
-      {review.skills.map((skill) => (
-        <SkillReviewed key={skill.name} skill={skill} />
-      ))}
-      <p className="honest" data-testid="install-level">
-        It lands in the {labelOf(levels, level)} skills.{" "}
-        <Select
-          aria-label="Lands in"
-          value={picker.value}
-          options={picker.options}
-          onValueChange={(to) => {
-            const chosen = picker.chosen(to);
-            if (chosen !== undefined) setLevel(chosen);
-          }}
-        />
-      </p>
-      <ButtonRow>
-        <Button variant="primary" isDisabled={busy} onPress={() => onInstall(level)}>
-          Install
-        </Button>
-        <Button onPress={onCancel}>Cancel</Button>
-      </ButtonRow>
-    </section>
+    <ReviewPage
+      label={`Install ${name} from ${source.label}`}
+      data-testid="install-review"
+      summary="Nothing is installed until you press Install."
+      onCancel={onCancel}
+      main={{
+        children: "Install",
+        byReturn: false,
+        isDisabled: why !== undefined,
+        tooltip: why,
+        onPress: () => {
+          if (review !== undefined) onInstall(review, level);
+        },
+      }}
+    >
+      <h2 className="ui-text-strong">
+        Install <code>{name}</code> from {source.label}
+      </h2>
+      <Held read={read} what={`the review of ${name}`} again={again}>
+        {(data) => (
+          <>
+            <p className="honest" data-testid="install-commit">
+              You are reviewing {source.label} at commit <code>{data.commit.short}</code>:{" "}
+              {counted(data.skills.length, "skill", "skills")}
+              {risky > 0 && `, ${counted(risky, "risky item", "risky items")} marked`}. What you
+              install stays pinned to this commit; a newer one is offered later, and changes nothing
+              until you accept it. The review is read from the files: a script can do more when it
+              runs, and the chat&apos;s sandbox bounds that. Installing copies all of them or none.
+            </p>
+            {data.skills.map((skill) => (
+              <SkillReviewed key={skill.name} skill={skill} />
+            ))}
+            <SettingRow
+              label="Lands in"
+              grouped
+              help={`It lands in the ${labelOf(levels, level)} skills.`}
+              control={(ids) => (
+                <Choice
+                  kind="radio"
+                  ids={ids}
+                  options={picker.options}
+                  value={picker.value}
+                  disabled={busy}
+                  onValueChange={(to) => {
+                    const chosen = picker.chosen(to);
+                    if (chosen !== undefined) setLevel(chosen);
+                  }}
+                />
+              )}
+            />
+          </>
+        )}
+      </Held>
+    </ReviewPage>
   );
 }
 
-/** Each file's change, folded. */
-function Changes({ files }: { files: readonly UpdateFile[] }) {
+/** Each file's change, folded, its kind of change after its path. */
+function Changes({ files, open = false }: { files: readonly UpdateFile[]; open?: boolean }) {
   return (
     <>
       {files.map((file) => (
-        <details key={file.path} className="skill-update-file">
-          <summary>
-            <code>{file.path}</code> {file.change}
-          </summary>
-          <pre>{file.diff === "" ? "Not text, so not shown." : file.diff}</pre>
-        </details>
+        <Disclosure
+          key={file.path}
+          size="sm"
+          defaultExpanded={open}
+          label={file.path}
+          trail={<Badge>{file.change}</Badge>}
+        >
+          <pre className="skill-review-file">
+            {file.diff === "" ? "Not text, so not shown." : file.diff}
+          </pre>
+        </Disclosure>
       ))}
     </>
   );
 }
 
-/** An update's review: what the summary gains and loses, each file's diff, the edits made here
- *  and the skills that come along, then Accept. */
-function UpdatePanel({
-  review,
+/** **The update review**: what changes, the source's diff, the edits made here since the
+ *  install, then Accept update or Not now fixed at the foot. */
+function UpdateReviewPage({
+  plane,
+  at,
+  offer,
+  updatesRead,
   busy,
   onCancel,
   onAccept,
 }: {
-  review: UpdateReview;
+  plane: string;
+  at: SourcesAt & { at: "update" };
+  /** The update offered, or none where there is no longer one (it was accepted elsewhere). */
+  offer: SkillUpdateOffer | undefined;
+  /** Whether the updates have been read: until they are, the offer is not known yet. */
+  updatesRead: boolean;
   busy: boolean;
   onCancel: () => void;
-  onAccept: () => void;
+  onAccept: (offer: SkillUpdateOffer, review: UpdateReview) => void;
 }) {
+  const { read, again } = useRead(
+    offer === undefined ? undefined : `${at.source}\u0000${at.skill}\u0000${offer.newer.id}`,
+    () =>
+      offer === undefined
+        ? Promise.resolve({ status: "error" as const, error: "There is no update of it." })
+        : commands.skillUpdateReview(plane, offer.level, offer.name),
+  );
+  const review = read?.data;
+  const why =
+    offer === undefined
+      ? "There is no update of it waiting."
+      : read === undefined
+        ? "The review is being read."
+        : review === undefined
+          ? "The review could not be read."
+          : busy
+            ? BUSY
+            : undefined;
+  let body: ReactNode;
+  if (offer === undefined)
+    body = updatesRead ? (
+      <EmptyState
+        headline={`No update of ${at.skill} is waiting`}
+        body="It was accepted, or its source has nothing newer now."
+        variant="panel"
+        testid="update-none"
+      />
+    ) : (
+      <EmptyState headline="Reading the updates…" variant="panel" role="status" />
+    );
+  else
+    body = (
+      <Held read={read} what={`the update of ${at.skill}`} again={again}>
+        {(data) => (
+          <>
+            <Facts aria-label={`The update of ${data.name}`}>
+              <Fact label="From">{at.label}</Fact>
+              <Fact label="Pinned now">
+                <code>{data.pinned.short}</code>
+              </Fact>
+              <Fact label="Newer">
+                <code>{data.newer.short}</code>
+              </Fact>
+            </Facts>
+            {!data.from_pin && (
+              <p className="honest">
+                The pinned commit is no longer in the source, so this compares with the copy here.
+              </p>
+            )}
+            <section aria-labelledby="update-what" className="skill-review">
+              <h3 id="update-what" className="ui-text-strong">
+                What changes
+              </h3>
+              {data.added.empty && data.removed.empty ? (
+                <p className="honest" data-testid="update-same">
+                  What it adds stays the same: no script, host or command comes or goes.
+                </p>
+              ) : (
+                <>
+                  <h4 className="ui-text-small ui-text-strong">New in what it adds</h4>
+                  <Summary summary={data.added} testid="update-added" />
+                  <h4 className="ui-text-small ui-text-strong">Gone from what it adds</h4>
+                  <Summary summary={data.removed} testid="update-removed" />
+                </>
+              )}
+            </section>
+            <section aria-labelledby="update-source" className="skill-review">
+              <h3 id="update-source" className="ui-text-strong">
+                The source&apos;s change
+              </h3>
+              <Changes files={data.files} open={data.files.length === 1} />
+            </section>
+            {data.edited.length > 0 && (
+              <section aria-labelledby="update-yours" className="skill-review">
+                <h3 id="update-yours" className="ui-text-strong">
+                  Your edits since the install
+                </h3>
+                <p className="honest" data-testid="update-edited">
+                  Accepting replaces these: {data.edited.join(", ")}
+                </p>
+                <Changes files={data.local_edits} />
+              </section>
+            )}
+            <Disclosure label={`All of ${data.name} at ${data.newer.short}`}>
+              <SkillReviewed skill={data.skill} />
+            </Disclosure>
+            {data.brought.map((skill) => (
+              <SkillReviewed key={skill.name} skill={skill} />
+            ))}
+          </>
+        )}
+      </Held>
+    );
   return (
-    <section
-      className="skill-change"
-      aria-label={`Update of ${review.name}`}
+    <ReviewPage
+      label={`Update ${at.skill}`}
       data-testid="update-review"
+      summary="Chats keep the current version until you accept."
+      onCancel={onCancel}
+      cancel={{ children: "Not now" }}
+      main={{
+        children: "Accept update",
+        byReturn: false,
+        isDisabled: why !== undefined,
+        tooltip: why,
+        onPress: () => {
+          if (offer !== undefined && review !== undefined) onAccept(offer, review);
+        },
+      }}
     >
-      <p className="honest">
-        {review.name}: {review.pinned.short} to {review.newer.short}.
-        {!review.from_pin &&
-          " The pinned commit is no longer in the source, so this compares with the copy here."}
-      </p>
-      <h4>New in the summary</h4>
-      <Summary summary={review.added} testid="update-added" />
-      <h4>Gone from the summary</h4>
-      <Summary summary={review.removed} testid="update-removed" />
-      <h4>The source&apos;s change</h4>
-      <Changes files={review.files} />
-      {review.edited.length > 0 && (
-        <>
-          <h4>Your edits since the install</h4>
-          <p className="honest" data-testid="update-edited">
-            Accepting replaces these: {review.edited.join(", ")}
-          </p>
-          <Changes files={review.local_edits} />
-        </>
-      )}
-      <SkillReviewed skill={review.skill} />
-      {review.brought.map((skill) => (
-        <SkillReviewed key={skill.name} skill={skill} />
-      ))}
-      <ButtonRow>
-        <Button variant="primary" isDisabled={busy} onPress={onAccept}>
-          Accept update
-        </Button>
-        <Button onPress={onCancel}>Not now</Button>
-      </ButtonRow>
-    </section>
+      <h2 className="ui-text-strong">
+        Update <code>{at.skill}</code>
+      </h2>
+      {body}
+    </ReviewPage>
   );
 }

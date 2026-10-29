@@ -328,3 +328,38 @@ fn a_joiner_inside_a_script_or_an_emoji_is_not_marked_in_a_review() {
         1
     );
 }
+
+#[test]
+fn a_summary_says_its_marks_in_a_few_words_for_a_list() {
+    let summary = summarize(&[
+        file("SKILL.md", false, SKILL),
+        file("scripts/ship.sh", true, SCRIPT),
+    ]);
+    // A host only linked to or named in a comment is reached by nothing, so it is no mark.
+    assert_eq!(
+        summary.marks(),
+        [
+            "runs a script",
+            "reaches 1 host",
+            "runs a ! command",
+            "writes outside the workspace",
+        ]
+    );
+    let two = summarize(&[
+        file(
+            "a.sh",
+            true,
+            "curl https://one.example.net\ncurl https://two.example.net\n",
+        ),
+        file("b.sh", true, "echo b\n"),
+    ]);
+    assert_eq!(two.marks(), ["runs 2 scripts", "reaches 2 hosts"]);
+    let plain = summarize(&[file(
+        "SKILL.md",
+        false,
+        "---\nname: a\ndescription: b\n---\nRead.\n",
+    )]);
+    assert!(plain.marks().is_empty());
+    let hidden = summarize(&[file("SKILL.md", false, "Read \u{200B}this.\n")]);
+    assert_eq!(hidden.marks(), ["hides text"]);
+}

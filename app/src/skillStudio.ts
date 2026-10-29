@@ -129,12 +129,30 @@ export const STUDIO_PAGE_NAMES: Record<StudioPage, string> = {
 
 /**
  * **A place in the studio**: one step of its tab's history (`ui/panel/viewHistory.ts`). The
- * page, whose chats it covers, and on Library the skill chosen (its row's id, {@link skillRowId}).
+ * page, whose chats it covers, on Library the skill chosen (its row's id, {@link skillRowId}),
+ * and on Sources the page inside it.
  */
 export interface StudioPlace {
   page: StudioPage;
   scope: StudioScope;
   skill?: string;
+  /** On Sources, the page inside it: a source's own, or a review (#3687). */
+  sources?: SourcesAt;
+}
+
+/**
+ * **A page inside Sources** (#3687, the amendment's S5): a source's own page, or the review of
+ * installing or updating one of its skills. A source is named by its repository and branch
+ * ({@link sourceKey}), and `label` is how the path over the page names it.
+ */
+export type SourcesAt =
+  | { at: "source"; source: string; label: string }
+  | { at: "install"; source: string; label: string; skill: string }
+  | { at: "update"; source: string; label: string; skill: string };
+
+/** **A source's key**: its repository and the branch read from it, which no other source shares. */
+export function sourceKey(remote: { url: string; branch: string | null }): string {
+  return `${remote.url}\u0000${remote.branch ?? ""}`;
 }
 
 /** Where a studio tab starts when nothing opened it anywhere: Library, at the project's root. */
@@ -167,7 +185,12 @@ export function skillRowNamed(name: string): string {
 
 /** Two places are one: the same page, scope and skill chosen. */
 export function samePlace(one: StudioPlace, other: StudioPlace): boolean {
-  return one.page === other.page && sameScope(one.scope, other.scope) && one.skill === other.skill;
+  return (
+    one.page === other.page &&
+    sameScope(one.scope, other.scope) &&
+    one.skill === other.skill &&
+    JSON.stringify(one.sources) === JSON.stringify(other.sources)
+  );
 }
 
 /** A target's key starts with this: it names a place to open the studio at, never a tab. */
