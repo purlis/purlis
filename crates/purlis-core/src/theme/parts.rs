@@ -3194,6 +3194,40 @@ pub fn fallen(theme: &ResolvedTheme) -> Vec<Fell> {
     held_once(theme).1.clone()
 }
 
+/// **A side view's card row and the ground it stands on** (#3774), as `theme`'s parts draw them
+/// at rest once their floors are held: the card's fill, the edge it draws, and the side panel's
+/// fill. The check holds the card apart from that ground ([`super::check::CARD_STEP`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct CardOnSide {
+    /// The card row's fill at rest, a token or `transparent`.
+    pub card: &'static str,
+    /// Its edge, where it draws one: a colour token and a width above none.
+    pub edge: Option<&'static str>,
+    /// The side panel's fill, a token or `transparent`.
+    pub side: &'static str,
+}
+
+/// What [`CardOnSide`] says of `theme`.
+pub(super) fn card_on_side(theme: &ResolvedTheme) -> CardOnSide {
+    let held = held_once(theme);
+    let rules = &held.0;
+    let (Some(list), Some(panel)) = (family("list"), family("panel")) else {
+        unreachable!("the list and the panel are families of the manifest");
+    };
+    let card = drawn(rules, list, "card", &[]);
+    // A width a theme sets, or the family's own; a card row draws none by default.
+    let edged = match drawn_at_rest(rules, list, "card", Prop::BorderWidth) {
+        Some(PartValue::Length(Length::Number(width))) => width > 0.0,
+        Some(_) => true,
+        None => list.border_width > 0.0,
+    };
+    CardOnSide {
+        card: card.fill,
+        edge: (edged && card.border != TRANSPARENT).then_some(card.border),
+        side: drawn(rules, panel, "side", &[]).fill,
+    }
+}
+
 /// The rules with the floors held, and what fell.
 type Measured = (Vec<Rule>, Vec<Fell>);
 

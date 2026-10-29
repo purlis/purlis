@@ -279,8 +279,9 @@
 
 /* **A card row** (`ListCardRow`, #3669, the sidebar Skills view's variant C): a small card of a
    side view's list, as tall as its lines whatever the list's size. Its first line (its name, its
-   tag, its actions and its ⋯), its two lines about it and its action line. On the raised ground,
-   which a theme sets (`list.root.card.fill`); under the pointer the pill, chosen the wash ringed
+   tag, its actions and its ⋯), its two lines about it and its action line. On a control's ground,
+   which every theme draws apart from the window and a panel (#3774), and a theme sets
+   (`list.root.card.fill`); under the pointer a control's under the pointer, chosen the wash ringed
    all round, and the keyboard's ring inside it, so no state changes its height. Written after the
    sizes, so a dense list's row padding never reaches it. */
 [data-scope="list"][data-part="root"][data-variant="card"] {
@@ -291,13 +292,13 @@
   padding-block: var(--space-3);
   padding-inline: var(--space-4);
   border-radius: var(--radius-lg);
-  background-color: var(--surface-raised);
+  background-color: var(--control-base);
 }
 
 [data-scope="list"][data-part="root"][data-variant="card"][data-hovered]:not([data-disabled]):not(
     [data-selected]
   ) {
-  background-color: var(--surface-hover);
+  background-color: var(--control-hover);
 }
 
 [data-scope="list"][data-part="root"][data-variant="card"][data-selected]:is(:dir(ltr), :dir(rtl)) {

@@ -718,7 +718,9 @@ for a theme with none), in the theme's order of its options. Its `kind` is `cont
 its `ratio`, and `under` when the back is a wash laid over another token, and `beneath` when
 that token is a wash laid over another in turn), `ansi` (a terminal colour too close to the
 terminal's background: `token`, `ratio`, `floor`) or `selected-not-apart` (the selected row
-drawn exactly as `other`), `selection-text-alone` (a colour for selected text on a selection
+drawn exactly as `other`), `card-not-apart` (a side view's card row whose fill, `card`, steps
+only `ratio` from the side panel's, `ground`, under the `floor` of 1.05, with no edge that
+clears a hairline's 1.2 there: reported only, so no floor redraws a ground for it), `selection-text-alone` (a colour for selected text on a selection
 left to the platform), `line-does-not-fit` (a line of words taller than the box it is drawn in:
 its `density`, the `fit` it breaks, a `size`, a `line_height` and a `height` token, and the
 `line` and the `room` it has, in px at the default text size), or `style-without-a-face` (a

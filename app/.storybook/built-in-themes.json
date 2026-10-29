@@ -650,6 +650,7 @@
         "  :where([data-scope=\"card\"][data-part=\"root\"][data-variant=\"ask\"]) { border-width: 1px; border-style: solid; }",
         "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"][data-hovered]:not([data-disabled])) { background-color: var(--surface-hover); }",
         "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"][data-selected]) { background-color: var(--list-selected); }",
+        "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"][data-disabled]) { background-color: var(--surface-base); }",
         "}"
       ]
     },
@@ -1303,6 +1304,7 @@
         "  :where([data-scope=\"card\"][data-part=\"root\"][data-variant=\"ask\"]) { border-width: 1px; border-style: solid; }",
         "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"][data-hovered]:not([data-disabled])) { background-color: var(--surface-hover); }",
         "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"][data-selected]) { background-color: var(--list-selected); }",
+        "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"][data-disabled]) { background-color: var(--surface-base); }",
         "}"
       ]
     },
@@ -1956,6 +1958,7 @@
         "  :where([data-scope=\"card\"][data-part=\"root\"][data-variant=\"ask\"]) { border-width: 1px; border-style: solid; }",
         "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"][data-hovered]:not([data-disabled])) { background-color: var(--surface-hover); }",
         "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"][data-selected]) { background-color: var(--list-selected); }",
+        "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"][data-disabled]) { background-color: var(--surface-base); }",
         "}"
       ]
     }
