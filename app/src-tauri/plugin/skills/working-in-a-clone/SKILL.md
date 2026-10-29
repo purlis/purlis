@@ -1,6 +1,6 @@
 ---
 name: working-in-a-clone
-description: Do real work inside a repo a workspace owns — build, test, change, commit. Use when asked to work on a named repo from a control plane, to run several branches of one repo at once (branch folders: `purlis worktree`), and to get the boundary right between the plane's session and the repo's own configuration.
+description: Do real work inside a repo a workspace owns — build, test, change, commit. Use when asked to work on a named repo from a control plane, to run several branches of one repo at once (branch folders, `purlis worktree`), and to get the boundary right between the plane's session and the repo's own configuration.
 ---
 
 # Working inside a clone
