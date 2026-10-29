@@ -379,7 +379,7 @@ fn delete_says_who_uses_it_and_a_skill_git_does_not_track_comes_back_on_restore(
         ("deploy", &Level::project())
     );
 
-    did(root, |cx| restore(cx, &listed[0])).unwrap();
+    did(root, |cx| restore(cx, &listed[0], None)).unwrap();
     assert!(gets(root, None).contains(&"deploy".to_owned()));
     assert_eq!(grant_of(&root.join("skills/deploy")), Ok(Grant::All));
     assert!(deleted(root).is_empty());
@@ -390,7 +390,7 @@ fn delete_says_who_uses_it_and_a_skill_git_does_not_track_comes_back_on_restore(
         0,
         "the kept folder is taken away once its skill went back"
     );
-    let again = did(root, |cx| restore(cx, &listed[0]));
+    let again = did(root, |cx| restore(cx, &listed[0], None));
     assert!(again.unwrap_err().contains("cannot be restored"));
 }
 
@@ -478,7 +478,7 @@ fn a_delete_stranded_in_its_kept_folder_says_so_and_is_restored_from_there() {
     let listed = deleted(root);
     assert_eq!(listed.len(), 1, "{listed:?}");
 
-    did(root, |cx| restore(cx, &listed[0])).unwrap();
+    did(root, |cx| restore(cx, &listed[0], None)).unwrap();
 
     assert!(root.join("skills/deploy/SKILL.md").is_file());
     assert!(root.join("skills/deploy.toml").is_symlink());
@@ -507,7 +507,7 @@ fn a_restore_whose_file_beside_the_folder_cannot_move_keeps_the_folder_and_refus
     std::os::unix::fs::symlink(outside.path().join("deploy.toml"), &kept_toml).unwrap();
     let listed = deleted(root);
 
-    let refused = did(root, |cx| restore(cx, &listed[0])).unwrap_err();
+    let refused = did(root, |cx| restore(cx, &listed[0], None)).unwrap_err();
 
     assert!(
         refused.starts_with("deploy was not restored: "),
@@ -649,7 +649,7 @@ fn a_committed_skill_is_deleted_by_git_and_restored_from_the_commit_that_removed
         .unwrap_or_else(|| panic!("{listed:?}"));
     assert_eq!(one.kept(), &kept);
 
-    did(root, |cx| restore(cx, one)).unwrap();
+    did(root, |cx| restore(cx, one, None)).unwrap();
     assert!(root.join("skills/release/SKILL.md").exists());
     let (subject, paths) = last_commit(root);
     assert!(subject.ends_with("skill restore release"), "{subject}");
@@ -677,7 +677,7 @@ fn a_committed_skill_whose_commit_cannot_land_is_kept_on_this_machine() {
         let listed = deleted(root);
         let one = listed.iter().find(|one| one.name == "release").unwrap();
         assert_eq!(one.kept(), &kept);
-        did(root, |cx| restore(cx, one)).unwrap();
+        did(root, |cx| restore(cx, one, None)).unwrap();
         assert!(
             root.join("skills/release/SKILL.md").exists(),
             "staged too: {staged_too}"
@@ -1083,7 +1083,7 @@ fn files_git_ignores_left_in_a_deleted_skills_folder_do_not_hide_it_from_restore
         .iter()
         .find(|one| one.name == "release")
         .unwrap_or_else(|| panic!("hidden by an ignored file: {listed:?}"));
-    did(root, |cx| restore(cx, one)).unwrap();
+    did(root, |cx| restore(cx, one, None)).unwrap();
     assert!(root.join("skills/release/SKILL.md").exists());
 }
 
@@ -1381,7 +1381,7 @@ fn a_personas_skill_says_who_uses_it_and_is_deleted_and_restored_from_git() {
         .unwrap_or_else(|| panic!("{listed:?}"));
     assert_eq!(one.level, Level::persona("reviewer"));
 
-    did(root, |cx| restore(cx, one)).unwrap();
+    did(root, |cx| restore(cx, one, None)).unwrap();
     assert!(gets_as(root, None, "reviewer").contains(&"lint".to_owned()));
     let (subject, paths) = last_commit(root);
     assert!(subject.ends_with("skill restore lint"), "{subject}");
@@ -1411,7 +1411,7 @@ fn a_personas_local_skill_is_kept_on_this_machine_when_deleted_and_shared_into_i
     let listed = deleted(root);
     let one = listed.iter().find(|one| one.name == "scratch").unwrap();
     assert_eq!(one.level, local);
-    did(root, |cx| restore(cx, one)).unwrap();
+    did(root, |cx| restore(cx, one, None)).unwrap();
     assert!(
         root.join("personas/reviewer/skills.local/scratch/SKILL.md")
             .exists()
@@ -1884,13 +1884,91 @@ fn a_deleted_skill_named_as_a_built_in_one_is_not_restored() {
     let listed = deleted(root);
     assert_eq!(listed.len(), 1, "{listed:?}");
 
-    let refused = did(root, |cx| restore(cx, &listed[0]));
+    let refused = did(root, |cx| restore(cx, &listed[0], None));
 
     assert_eq!(
         refused.unwrap_err(),
-        "secrets cannot be restored under its name: it belongs to a built-in skill now"
+        "secrets cannot be restored under its name: it belongs to a built-in skill now, so \
+         restore it under a new name"
     );
     assert!(!root.join("skills/secrets").exists());
+}
+
+/// #3729: a deleted skill whose name a built-in skill took comes back under a name the person
+/// picks, its `name:` and folder renamed, from this machine's kept copy.
+#[test]
+fn a_deleted_skill_named_as_a_built_in_one_is_restored_under_a_new_name() {
+    let tmp = plane();
+    let root = tmp.path();
+    skill(root, "skills/secrets", "secrets", "Mine.");
+    std::fs::write(root.join("skills/secrets/notes.md"), "kept\n").unwrap();
+    did(root, |cx| delete(cx, &Level::project(), "secrets")).unwrap();
+    let listed = deleted(root);
+
+    let landed = did(root, |cx| restore(cx, &listed[0], Some("my-secrets"))).unwrap();
+
+    assert_eq!(landed, root.join("skills/my-secrets"));
+    let text = std::fs::read_to_string(root.join("skills/my-secrets/SKILL.md")).unwrap();
+    assert!(text.contains("name: my-secrets\n"), "{text}");
+    assert!(text.contains("description: Mine.\n"), "{text}");
+    assert_eq!(
+        std::fs::read_to_string(root.join("skills/my-secrets/notes.md")).unwrap(),
+        "kept\n"
+    );
+    assert!(!root.join("skills/secrets").exists());
+    assert!(deleted(root).is_empty(), "{:?}", deleted(root));
+}
+
+/// #3729: from the commit that removed it, as one commit that lands it under its new name.
+#[test]
+fn a_committed_deleted_skill_comes_back_under_a_new_name_in_one_commit() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    skill(root, "skills/secrets", "secrets", "Mine.");
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "secrets"]);
+    did(root, |cx| delete(cx, &Level::project(), "secrets")).unwrap();
+    let listed = deleted(root);
+    let one = listed.iter().find(|one| one.name == "secrets").unwrap();
+    assert!(one.kept().in_git(), "{one:?}");
+
+    did(root, |cx| restore(cx, one, Some("my-secrets"))).unwrap();
+
+    let (subject, paths) = last_commit(root);
+    assert!(
+        subject.ends_with("skill restore secrets as my-secrets"),
+        "{subject}"
+    );
+    assert_eq!(paths, ["skills/my-secrets/SKILL.md"]);
+    let text = std::fs::read_to_string(root.join("skills/my-secrets/SKILL.md")).unwrap();
+    assert!(text.contains("name: my-secrets\n"), "{text}");
+    assert!(!root.join("skills/secrets").exists());
+    let status = run(root, &["status", "--porcelain", "--", "skills"]);
+    assert_eq!(status.out, "");
+}
+
+/// #3729: the new name is checked as a rename's is: a built-in skill's is refused with the
+/// agreed sentence, as are a name the format does not allow and one the level has, and nothing
+/// comes back.
+#[test]
+fn a_deleted_skill_is_not_restored_under_a_name_it_cannot_take() {
+    let tmp = plane();
+    let root = tmp.path();
+    skill(root, "skills/secrets", "secrets", "Mine.");
+    skill(root, "skills/vault", "vault", "Theirs.");
+    did(root, |cx| delete(cx, &Level::project(), "secrets")).unwrap();
+    let listed = deleted(root);
+
+    let reserved = did(root, |cx| restore(cx, &listed[0], Some("browser")));
+    assert_eq!(reserved.unwrap_err(), crate::skills::NAME_RESERVED);
+    let bad = did(root, |cx| restore(cx, &listed[0], Some("My Secrets")));
+    assert!(bad.unwrap_err().contains("cannot be a skill's name"));
+    let taken = did(root, |cx| restore(cx, &listed[0], Some("vault")));
+    assert!(taken.unwrap_err().contains("already have one named vault"));
+
+    assert!(!root.join("skills/secrets").exists());
+    assert!(!root.join("skills/browser").exists());
+    assert_eq!(deleted(root).len(), 1);
 }
 
 #[test]

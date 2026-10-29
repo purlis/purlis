@@ -3786,6 +3786,11 @@ export type DeletedSkill = {
 	 *  after its days, for `purlis skill restore`; else this machine keeps it, and removes it then.
 	 */
 	in_history: boolean,
+	/**
+	 *  Whether its name belongs to a built-in skill now (a newer purlis ships one of that name),
+	 *  so it comes back only under a new name (#3729).
+	 */
+	reserved: boolean,
 };
 
 /**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */

@@ -1713,7 +1713,17 @@ fn taken_again(plane: &Path, level: &Level, name: &str, folder: &str, toml_count
 /// removed it, or from this machine's [`DELETED_DIR`]. Refused where it is no longer one
 /// [`deleted`] lists (restored already, or its folder or its name at that level taken again).
 /// One commit.
-pub fn restore(cx: &mut Ctx<'_>, deleted: &Deleted) -> Result<PathBuf, String> {
+///
+/// **`under` a new name** (#3729), where its own belongs to a built-in skill now (a newer purlis
+/// ships one of that name) or the person wants another: the name is checked as [`rename`]'s is
+/// ([`Ctx::not_built_in`] among them), and the skill comes back with its `SKILL.md`'s `name:`
+/// rewritten and its folder named as it, in the same commit. Nothing that names its old name is
+/// changed: that name means the built-in skill now.
+pub fn restore(
+    cx: &mut Ctx<'_>,
+    deleted: &Deleted,
+    under: Option<&str>,
+) -> Result<PathBuf, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
     if !self::deleted(plane).contains(deleted) {
@@ -1724,10 +1734,38 @@ pub fn restore(cx: &mut Ctx<'_>, deleted: &Deleted) -> Result<PathBuf, String> {
         ));
     }
     let name = &deleted.name;
-    if cx.reserved(name) {
-        return Err(format!(
-            "{name} cannot be restored under its name: it belongs to a built-in skill now"
-        ));
+    let new = under.filter(|new| *new != name.as_str());
+    match new {
+        None if cx.reserved(name) => {
+            return Err(format!(
+                "{name} cannot be restored under its name: it belongs to a built-in skill now, so \
+                 restore it under a new name"
+            ));
+        }
+        None => {}
+        Some(new) => {
+            if let Some(why) = change::name_problem(new) {
+                return Err(format!("{new:?} cannot be a skill's name: {why}"));
+            }
+            cx.not_built_in(new)?;
+            if new == deleted.folder {
+                if deleted.level.named(plane, new).is_some() {
+                    return Err(format!(
+                        "the {} skills already have one named {new}: pick another name",
+                        deleted.level
+                    ));
+                }
+            } else {
+                free_at(plane, &deleted.level, new, new)?;
+            }
+            // Its text has a name to rewrite, or nothing comes back.
+            let text = deleted_text(plane, deleted)?;
+            if change::with_name(&text, new).is_none() {
+                return Err(format!(
+                    "{name}'s instructions have no name: line to change, so it was not restored"
+                ));
+            }
+        }
     }
     let dir = level_is_there(plane, &deleted.level)?;
     let folder = dir.join(&deleted.folder);
@@ -1762,12 +1800,56 @@ pub fn restore(cx: &mut Ctx<'_>, deleted: &Deleted) -> Result<PathBuf, String> {
             store::put_away(&state, DELETED_DIR, kept, KEPT_FROM);
         }
     }
+    let mut touched = vec![folder_rel.clone(), toml_rel];
+    let Some(new) = new else {
+        cx.done(format!(
+            "{name} is restored, a {} skill in {folder_rel}",
+            deleted.level
+        ));
+        cx.commit(&touched, &format!("skill restore {name}"));
+        return Ok(folder);
+    };
+    let landed = renamed_back(plane, &folder, name, new)?;
+    if landed != folder {
+        touched.push(rel(plane, &landed));
+        touched.push(rel(plane, &beside(&landed)));
+    }
     cx.done(format!(
-        "{name} is restored, a {} skill in {folder_rel}",
-        deleted.level
+        "{name} is restored as {new}, a {} skill in {}",
+        deleted.level,
+        rel(plane, &landed)
     ));
-    cx.commit(&[folder_rel, toml_rel], &format!("skill restore {name}"));
-    Ok(folder)
+    cx.commit(&touched, &format!("skill restore {name} as {new}"));
+    Ok(landed)
+}
+
+/// The skill `name` just restored to `folder`, named `new`: its `SKILL.md`'s `name:` rewritten,
+/// then its folder, and the file beside it, moved to `new` beside it where it is named otherwise.
+/// Answers where it is now. Where the folder cannot move, it stays where it was, named `new`.
+fn renamed_back(plane: &Path, folder: &Path, name: &str, new: &str) -> Result<PathBuf, String> {
+    let what = format!("{name}'s instructions");
+    let file = format!("{}/SKILL.md", rel(plane, folder));
+    // The restored skill keeps a built-in skill's name only until this is written: said so.
+    let kept = |why: String| {
+        format!(
+            "{name} was restored under its old name, and could not be named {new} ({why}): \
+             rename it"
+        )
+    };
+    let text = text_in(plane, folder, name).map_err(kept)?;
+    let renamed = change::with_name(&text, new)
+        .ok_or_else(|| kept(format!("{what} has no name: line to change")))?;
+    write(plane, &file, &what, Some(&text), &renamed, usize::MAX).map_err(kept)?;
+    if folder_name(folder) == new {
+        return Ok(folder.to_path_buf());
+    }
+    let to = folder.with_file_name(new);
+    match move_skill(plane, folder, plane, &to, usize::MAX) {
+        Ok(()) => Ok(to),
+        // Named `new` where it was: still the skill asked for, in a folder of another name.
+        Err(Unmoved::Nothing(_)) => Ok(folder.to_path_buf()),
+        Err(Unmoved::Stranded(what)) => Err(format!("{name} was restored only in part: {what}")),
+    }
 }
 
 /// **Grants the project skill `name`** `grant` (#2767), committed (#2770).

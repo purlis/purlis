@@ -190,6 +190,9 @@ pub struct DeletedSkill {
     /// Whether the project's history keeps it (its delete was a commit), so it is still there
     /// after its days, for `purlis skill restore`; else this machine keeps it, and removes it then.
     pub in_history: bool,
+    /// Whether its name belongs to a built-in skill now (a newer purlis ships one of that name),
+    /// so it comes back only under a new name (#3729).
+    pub reserved: bool,
 }
 
 /// A level a skill can be moved to or made at, and its words.
@@ -598,11 +601,13 @@ pub(crate) async fn skills_deleted(
     crate::off_the_window("reading the deleted skills", move || {
         flag_on()?;
         let now = std::time::SystemTime::now();
+        let reserved = purlis_core::skills::Reserved::of(built_in().as_deref());
         verbs::deleted(held.root())
             .into_iter()
             .filter(|one| one.days_left(now) > 0)
             .map(|one| {
                 Ok(DeletedSkill {
+                    reserved: reserved.holds(&one.name),
                     days_left: u32::try_from(one.days_left(now)).unwrap_or(u32::MAX),
                     in_history: one.kept().in_git(),
                     id: serde_json::to_string(&one)
@@ -637,20 +642,24 @@ pub(crate) async fn skill_deleted_text(
 }
 
 /// **Restores** the deleted skill `id` names: the core's record of it, as [`skills_deleted`]
-/// handed it out.
+/// handed it out. `under` a new name where one is given (#3729): one whose own name belongs to
+/// a built-in skill now comes back only so.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_restore(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     id: String,
+    under: Option<String>,
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("restoring the skill", move || {
         flag_on()?;
         let deleted: verbs::Deleted = serde_json::from_str(&id)
             .map_err(|_| "That deleted skill is not one this project lists.".to_owned())?;
-        heard(held.root(), |cx| verbs::restore(cx, &deleted))
+        heard(held.root(), |cx| {
+            verbs::restore(cx, &deleted, under.as_deref())
+        })
     })
     .await
 }
