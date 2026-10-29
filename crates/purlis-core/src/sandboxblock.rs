@@ -1315,11 +1315,13 @@ pub fn way_out(path: &Path, root: &Path) -> Option<&'static str> {
 const NEW_WORKSPACE_WAY: &str = "purlis makes a workspace for a chat: create one with `purlis \
      workspace create <name> --vision \"<text>\"`.";
 
-/// What a Notice says of a refused write in a branch folder's git record (#1476, #1055).
+/// What a Notice says of a refused write in a branch folder's git record (#1476, #1055): a
+/// commit in one, or a raw `git worktree add` making one (#3798).
 const WORKTREE_COMMIT_WAY: &str = "A branch folder keeps its git record in its clone's .git, \
-     which no chat writes, so git add and git commit are refused there. Commit with `purlis \
-     worktree commit -m \"<message>\" --all`, or with paths in place of --all: the commit is made on \
-     the folder's branch, outside the sandbox.";
+     which no chat writes, so git worktree add, git add and git commit are refused there. Cut a \
+     branch folder with `purlis worktree add <repo> <piece>`. Commit with `purlis worktree \
+     commit -m \"<message>\" --all`, or with paths in place of --all: the commit is made on the \
+     folder's branch, outside the sandbox.";
 
 /// Whether `path` is in a linked worktree's own record in its clone's git directory
 /// (`.git/worktrees/<name>/…`), where git keeps a branch folder's index.
