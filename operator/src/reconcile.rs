@@ -24,7 +24,7 @@ use crate::upstream::{
     self, Found, Sandbox, SandboxClaim, SandboxTemplate, SandboxWarmPool, Suspension, made_for,
     made_for_claim, runner_owner, sandbox_claim_for, template_for, warm_pool_for,
 };
-use crate::vouch::{self, MountedKeys, SigningKeys, Vouching};
+use crate::vouch::{self, MountedKeys, Vouching};
 use futures::StreamExt;
 use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
 use k8s_openapi::api::core::v1::{Namespace, Pod, ResourceQuota};
@@ -674,9 +674,7 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
         return Ok(Action::requeue(again));
     }
     let (vouching, pod) = vouch_for(
-        client,
-        &context.keys.now(),
-        &context.cluster,
+        context,
         &claim,
         &pool,
         &applied,
@@ -849,11 +847,9 @@ async fn set_operating_mode(
 
 /// **The operator's word on `claim`'s runner's link key** (#2056): the pod `sandbox`, the one
 /// its upstream claim names, records ([`vouch::pod_name_of`]), read, then [`vouch::vouch`]; and
-/// the pod.
+/// the pod, signed with the keys mounted now for the cluster `context` runs in.
 async fn vouch_for(
-    client: &Client,
-    keys: &SigningKeys,
-    cluster: &str,
+    context: &Context,
     claim: &Claim,
     pool: &Pool,
     upstream: &SandboxClaim,
@@ -864,7 +860,7 @@ async fn vouch_for(
     let namespace = upstream.namespace().unwrap_or_default();
     let pod = match &sandbox {
         Some(sandbox) => {
-            Api::<Pod>::namespaced(client.clone(), &namespace)
+            Api::<Pod>::namespaced(context.client.clone(), &namespace)
                 .get_opt(&vouch::pod_name_of(sandbox))
                 .await?
         }
@@ -879,7 +875,7 @@ async fn vouch_for(
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|since| since.as_secs())
                 .unwrap_or_default(),
-            cluster,
+            cluster: &context.cluster,
             claim,
             upstream,
             template: Some(&template.metadata),
@@ -888,7 +884,7 @@ async fn vouch_for(
             pod: pod.as_ref(),
         },
         &wanted,
-        keys,
+        &context.keys.now(),
     );
     Ok((vouching, pod))
 }
