@@ -50,10 +50,6 @@
   font-weight: var(--font-weight-strong);
 }
 
-[data-scope="notice"][data-part="message"] code {
-  opacity: 0.7;
-}
-
 [data-scope="notice"][data-part="message"] p {
   margin: 0 0 var(--space-2);
 }

@@ -314,7 +314,9 @@
 
    **Solid, never faded** (#3637): the tiers carry the quietness. At an opacity of 0.92, the
    breadcrumb's quiet ways in Purlis light come to 4.35:1 on the pane's fill (5.12:1 solid), under
-   the text floor, while the engine measures their colour solid. */
+   the text floor, while the engine measures their colour solid. The stories' faded-words gate
+   (`.storybook/faded.setup.ts`, #3790) measures words as drawn, opacity included, so a fade
+   brought back here or on any box above them fails it. */
 .pane-head > .pane-chips > :is(.chat-gauge, .pane-from, .pane-work-item, .pane-crumbs) {
   border-color: transparent;
   background-color: transparent;
