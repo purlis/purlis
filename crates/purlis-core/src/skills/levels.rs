@@ -63,6 +63,11 @@ fn owners(root: &Path) -> BTreeSet<String> {
     out
 }
 
+/// Whether the plane at `root` has any workspace or persona folder.
+pub(crate) fn has_owners(root: &Path) -> bool {
+    !owners(root).is_empty()
+}
+
 /// Whether `id` can name a record's file: a ULID, as every chat id is.
 fn an_id(id: &str) -> bool {
     crate::reopen::a_ulid(id).is_some()

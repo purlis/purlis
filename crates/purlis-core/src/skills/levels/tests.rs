@@ -484,3 +484,16 @@ fn a_noted_chat_s_folder_stays_held_through_either_accept() {
     assert!(confirmed(root));
     assert!(made_since(root)(&made).is_some_and(|why| why.contains("chat 7")));
 }
+
+#[test]
+fn a_chat_on_the_record_with_no_older_levels_holds_a_folder_made_after_the_accept() {
+    // Chat C is on the record of open chats; the state folder holds no levels records at all.
+    let tmp = plane(&[CHAT]);
+    let root = tmp.path();
+    assert!(!crate::names::state(root).join(DIR).exists());
+    crate::appstate::move_out_of_the_plane(root);
+    confirm(root, &listed(root)).unwrap();
+    skill(root, "workspaces/x/skills/y", "y");
+    let why = made_since(root)(&root.join("workspaces/x")).expect("held");
+    assert!(why.contains("chat 7"), "{why}");
+}

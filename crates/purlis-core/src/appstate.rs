@@ -334,19 +334,26 @@ pub(crate) fn never_kept(root: &Path) -> bool {
     })
 }
 
-/// **Whether purlis ever kept a record of the project at `root`'s open chats, or of its levels**,
-/// in a state folder (under either spelling, or where `$PURLIS_HOME` puts it): its record of open
-/// chats, which only purlis writes, or a levels records folder. Either is a project chats ran in
-/// before, whose folders are held on its first open after the upgrade.
+/// **Whether purlis was used in the project at `root` before**: a state folder (under either
+/// spelling, or where `$PURLIS_HOME` puts it) beside any workspace or persona folder, or one
+/// holding a record of open chats or levels records. Its folders are held on its first open after
+/// the upgrade, until the person accepts them.
 fn kept_before(root: &Path) -> bool {
-    crate::names::STATE_DIR
+    let mut states = crate::names::STATE_DIR
         .spellings()
         .map(|state| root.join(state))
         .chain(std::iter::once(crate::plane::state_dir(root)))
-        .any(|state| {
-            std::fs::symlink_metadata(state.join(crate::reopen::IN_STATE)).is_ok()
-                || std::fs::symlink_metadata(state.join(crate::skills::levels::DIR)).is_ok()
-        })
+        .filter(|state| std::fs::symlink_metadata(state).is_ok())
+        .peekable();
+    // A state folder beside workspace or persona folders: purlis was used there, and which of
+    // those folders were accepted cannot be told, so one Accept is asked for.
+    if states.peek().is_some() && crate::skills::levels::has_owners(root) {
+        return true;
+    }
+    states.any(|state| {
+        std::fs::symlink_metadata(state.join(crate::reopen::IN_STATE)).is_ok()
+            || std::fs::symlink_metadata(state.join(crate::skills::levels::DIR)).is_ok()
+    })
 }
 
 /// The file in a project's levels records folder this purlis writes when it can vouch for what
@@ -527,9 +534,24 @@ pub fn move_out_of_the_plane(root: &Path) -> Moved {
         return Moved::default();
     };
     let _ = moves_taken_up(root);
+    // Whenever the project's records are not confirmed, every chat on its record of open chats is
+    // noted from the folders there now, whatever its state folder held: no folder made after it
+    // reaches a chat before the person accepts it.
+    let noted = if levels_confirmed(&into, root) {
+        Ok(())
+    } else {
+        crate::skills::levels::noted_again(&into, root)
+            .map_err(|why| format!("the open chats were not noted ({why})"))
+    };
+    if let Err(why) = &noted {
+        tracing::warn!(target: "purlis::appstate", "purlis: {why}");
+    }
     let mark = into.join(MOVED_MARK);
     if std::fs::symlink_metadata(&mark).is_ok() {
-        return Moved::default();
+        return Moved {
+            left: noted.err().into_iter().collect(),
+            ..Moved::default()
+        };
     }
     let picked = crate::names::state(root);
     let named = crate::plane::state_dir(root);
@@ -538,14 +560,16 @@ pub fn move_out_of_the_plane(root: &Path) -> Moved {
         // plane's own folder is moved once purlis reads it. Its levels records are asked about
         // again, once.
         return Moved {
-            left: asked_again_for(root, &into, &named, "purlis-home")
+            left: noted
                 .err()
                 .into_iter()
+                .chain(asked_again_for(root, &into, &named, "purlis-home").err())
                 .collect(),
             ..Moved::default()
         };
     }
     let mut moved = move_from(root, std::slice::from_ref(&picked), &into);
+    moved.left.extend(noted.err());
     // The other spelling is never read, so the levels records it holds are asked about again.
     for other in crate::names::STATE_DIR
         .spellings()
@@ -606,11 +630,8 @@ pub fn move_from(root: &Path, states: &[PathBuf], into: &Path) -> Moved {
                     continue;
                 }
             }
-            // A chat an older purlis noted may still run: each on the record of open chats is
-            // noted again here, from the folders there now, never from what the plane held.
             if carried == Carried::AskedAgain
-                && let Err(why) = crate::skills::levels::noted_again(into, root)
-                    .and_then(|()| crate::skills::levels::ask_again_in(into, root))
+                && let Err(why) = crate::skills::levels::ask_again_in(into, root)
             {
                 out.left
                     .push(format!("{name} was left in the plane ({why})"));

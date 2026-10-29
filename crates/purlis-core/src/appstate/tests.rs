@@ -670,3 +670,18 @@ fn a_project_replaced_at_the_same_path_is_never_answered_from_the_cache() {
     assert!(!bound(&mine, root));
     assert!(!levels_confirmed(&mine, root));
 }
+
+#[test]
+fn a_state_folder_beside_a_workspace_with_no_records_stays_unconfirmed_after_the_move() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    std::fs::create_dir_all(root.join(".purlis/memory")).unwrap();
+    std::fs::create_dir_all(root.join("workspaces/made-by-chat")).unwrap();
+    move_out_of_the_plane(root);
+    assert!(!crate::skills::levels::confirmed(root));
+    assert_eq!(
+        crate::skills::levels::made_since(root)(&root.join("workspaces/made-by-chat")).as_deref(),
+        Some(crate::skills::levels::UNCONFIRMED)
+    );
+}
