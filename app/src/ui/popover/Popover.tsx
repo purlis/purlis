@@ -594,10 +594,12 @@ export function HungPopover({
     // **A scroll that ends with it never in sight** (#3648's round 4): the scroll that should
     // have brought it in was cut short (a wheel back, a step to another chip), so the card is
     // not left following a chip no one can see.
+    // Its own frame: a scroll's last frame of following (`asked`) is never cancelled by it.
+    let ending = 0;
     const ended = (event: Event) => {
       if (!around(event)) return;
-      cancelAnimationFrame(asked);
-      asked = requestAnimationFrame(() => {
+      cancelAnimationFrame(ending);
+      ending = requestAnimationFrame(() => {
         seen = seen || inSight();
         if (!seen) hide.current();
       });
@@ -610,6 +612,7 @@ export function HungPopover({
       window.removeEventListener("scrollend", ended, true);
       window.removeEventListener("resize", follow);
       cancelAnimationFrame(asked);
+      cancelAnimationFrame(ending);
     };
   }, [isOpen, triggerRef, clipRef]);
   return (

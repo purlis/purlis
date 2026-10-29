@@ -229,6 +229,24 @@ describe("a popover hung from what it is about (#3648)", () => {
     expect(screen.queryByRole("region", { name: "Notices for gamma" })).toBeNull();
   });
 
+  it("is placed again on a scroll's last frame, though the scroll ends in the same frame", () => {
+    // A scroll and its end in one frame (a scroll set at once): the end never cancels the frame
+    // that places it again where what it hangs from now is (#3648's round 4).
+    laidOut(() => 100);
+    let next = 0;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => ++next);
+    const cancelled = vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+    render(<Hung />);
+    const before = next;
+    fireEvent.scroll(screen.getByTestId("clip"));
+    const following = Array.from({ length: next - before }, (_, at) => before + 1 + at);
+    expect(following.length).toBeGreaterThan(0);
+    cancelled.mockClear();
+    fireEvent(screen.getByTestId("clip"), new Event("scrollend"));
+    const gone = cancelled.mock.calls.map(([id]) => id);
+    expect(gone.filter((id) => following.includes(id))).toEqual([]);
+  });
+
   it("stays up when a scroll ends with what it hangs from in sight", async () => {
     let chipAt = -80;
     laidOut(() => chipAt);
