@@ -13,6 +13,7 @@ pub mod askoutcome;
 pub mod autosave;
 pub mod awareness;
 pub mod boundedrun;
+pub mod branchgit;
 pub mod briefing;
 pub mod brokered;
 pub mod browsertools;

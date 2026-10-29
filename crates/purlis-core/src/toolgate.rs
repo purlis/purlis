@@ -60,18 +60,37 @@ use std::path::Path;
 use crate::forge::Forge;
 use crate::handoffguard::{self, Caller};
 use crate::{
-    cloneupdate, commitguard, consentspelling, credguard, floorguard, guardcaps, leakguard,
-    planeroot, projectgit, proseguard, pyjson, rootupdate, rulespelling, shellseg, shellwrap,
+    branchgit, cloneupdate, commitguard, consentspelling, credguard, floorguard, guardcaps,
+    leakguard, planeroot, projectgit, proseguard, pyjson, rootupdate, rulespelling, shellseg,
+    shellwrap,
 };
 
 /// What to do when a guard is WRONG about your case (charter#370) — `_OVERRIDE_NOTE`.
 ///
 /// Every denial named a remedy for the workflow the operator was supposed to be doing, and none
-/// named this. Appended to every arm's sentence by [`said`], which is why it is spelled once.
+/// named this. Appended by [`Verdict::said`] to every arm's sentence but those that carry the
+/// shape to retry ([`RETRY_SHAPED`]), which is why it is spelled once.
 pub const OVERRIDE_NOTE: &str = " — Wrong about this case? There is deliberately no config key, environment variable or \
      switch that lifts a purlis denial: one purlis could read is one a committed file could \
      flip. Run it yourself, in your own terminal — these guards bound what an AGENT does with \
      your authority, never what you do. See `docs/hooks.md` → When a guard is wrong.";
+
+/// The arms whose refusal names the exact shape the chat retries with, so the chat fixes its own
+/// call (#3830, the operator's ruling of 2026-10-29: when an agent can fix its own call, refuse
+/// with the shape to retry; never stop on the person). Their sentence carries no
+/// [`OVERRIDE_NOTE`], which would point the chat at the person's own terminal instead: a rider
+/// (run it in a call of its own), a live substitution (a file or a quoted heredoc), a hook skip
+/// (fix what the scan found), a handoff's brief (a quoted heredoc in the same call) and a commit
+/// in a branch folder (`purlis worktree commit`). Every other arm keeps it.
+pub const RETRY_SHAPED: [&str; 7] = [
+    crate::dispatchguard::REASON_RIDER,
+    REASON_FORGE_SUBSTITUTION,
+    REASON_CHARTER_SUBSTITUTION,
+    crate::dispatchguard::REASON_TEXT_SOURCE,
+    REASON_GIT_HOOK_SKIP,
+    handoffguard::REASON_BRIEF_SOURCE,
+    branchgit::REASON,
+];
 
 /// The event word a `PreToolUse` verdict names back to the harness.
 pub const EVENT: &str = "PreToolUse";
@@ -179,9 +198,14 @@ impl Verdict {
         }
     }
 
-    /// What the harness shows the chat — `_deny`'s `f"charter guard: {reason}{_OVERRIDE_NOTE}"`.
+    /// What the harness shows the chat — `_deny`'s `f"charter guard: {reason}{_OVERRIDE_NOTE}"`,
+    /// and without the note where the arm names the shape to retry ([`RETRY_SHAPED`], #3830).
     pub fn said(&self) -> String {
-        said(&self.denial)
+        if RETRY_SHAPED.contains(&self.reason.as_str()) {
+            format!("purlis guard: {}", self.denial)
+        } else {
+            said(&self.denial)
+        }
     }
 
     /// The whole answer a `PreToolUse` hook writes on stdout, as `json.dumps` writes it.
@@ -415,6 +439,16 @@ fn arms(call: &Call<'_>, plane: Option<&Plane<'_>>) -> Option<Verdict> {
         && let Some((sub, why)) = projectgit::refusal(cmd, call.cwd, plane.root, &chat_dir)
     {
         return Some(Verdict::new(projectgit::REASON, Some(sub), why));
+    }
+    // A9b: `git add` or `git commit` in a branch folder, from a chat the app gave a sandbox,
+    // which denies it the folder's record in its clone's `.git` (#3830). Refused before it runs
+    // with `purlis worktree commit`, so the chat fixes its own call and the sandbox raises no
+    // Notice for the person. GATED, as A9 is. purlis's own, so no recorded answer moves.
+    if let Some(plane) = plane
+        && plane.launched.sandboxed
+        && let Some((sub, why)) = branchgit::refusal(cmd, call.cwd)
+    {
+        return Some(Verdict::new(branchgit::REASON, Some(sub), why));
     }
     // A10: a dispatch, a handoff or a commit the app makes, pre-allowed alone, that writes and
     // shares its call with another command (#3785, superseding D-1444-14's `ask`). Refused with
@@ -1112,6 +1146,105 @@ mod tests {
             assert!(verdict_of(cmd, &fix, false).is_some(), "{cmd:?}");
         }
         assert_eq!(verdict_of("a=(cat db.json)", &fix, false), None);
+    }
+
+    /// #3830, the operator's ruling of 2026-10-29: when an agent can fix its own call, it is
+    /// refused with the shape to retry and never sent to the person. A refusal that carries
+    /// that shape drops the note that says to run it yourself, in your own terminal; one with
+    /// no fix the chat can make keeps it.
+    #[test]
+    fn a_refusal_the_chat_can_fix_itself_never_sends_it_to_the_person() {
+        let fix = Fixture::new();
+        for (cmd, reason) in [
+            (
+                "purlis dispatch --name x <<'B'\nlook\nB\ntouch /tmp/zz",
+                crate::dispatchguard::REASON_RIDER,
+            ),
+            (
+                "gh issue create --title t --body \"$(cat notes.md)\"",
+                REASON_FORGE_SUBSTITUTION,
+            ),
+            (
+                "purlis persona remember devops \"$(cat notes.md)\"",
+                REASON_CHARTER_SUBSTITUTION,
+            ),
+            (
+                "purlis dispatch report --outcome done \"$(cat notes.md)\"",
+                crate::dispatchguard::REASON_TEXT_SOURCE,
+            ),
+            ("git commit --no-verify -m x", REASON_GIT_HOOK_SKIP),
+            ("charter handoff beta", handoffguard::REASON_BRIEF_SOURCE),
+        ] {
+            let refused = verdict_of(cmd, &fix, true).unwrap_or_else(|| panic!("{cmd:?}"));
+            assert_eq!(refused.reason, reason, "{cmd:?}");
+            let said = refused.said();
+            assert!(said.starts_with("purlis guard: "), "{said}");
+            assert_eq!(said, format!("purlis guard: {}", refused.denial));
+            assert!(!said.contains("in your own terminal"), "{said}");
+            assert!(
+                !refused.emitted().contains("Wrong about this case"),
+                "{cmd:?}"
+            );
+        }
+        for cmd in [
+            "cat .charter/vaults/db.json",
+            "git clone git@github.com:o/r.git",
+        ] {
+            let said = verdict_of(cmd, &fix, true).expect("refused").said();
+            assert!(said.ends_with(OVERRIDE_NOTE), "{said}");
+        }
+    }
+
+    /// #3830: `git add` or `git commit` in a branch folder, from a chat the app gave a
+    /// sandbox, is refused before it runs with the command that commits there, so no sandbox
+    /// block (and no Notice for the person) is raised for it. A chat with no sandbox may write
+    /// the folder's record, and is not told.
+    #[test]
+    fn git_commit_in_a_branch_folder_is_refused_to_a_sandboxed_chat_with_the_retry_shape() {
+        let fix = Fixture::new();
+        let root = fix.root();
+        let clone = fix.dir.path().join("workspaces/ide/purlis");
+        let record = clone.join(".git/worktrees/guard-port");
+        std::fs::create_dir_all(&record).unwrap();
+        let folder = fix.dir.path().join("workspaces/ide/pieces/guard-port");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join(".git"),
+            format!("gitdir: {}\n", record.display()),
+        )
+        .unwrap();
+        let folder = folder.display().to_string();
+        let forges = forges();
+        let state = fix.state();
+        let ask = |cmd: &str, sandboxed: bool| {
+            let plane = Plane {
+                root: &root,
+                forges: &forges,
+                session_dir: &folder,
+                launched: Launched {
+                    sandboxed,
+                    chat_dir: Some(&folder),
+                },
+            };
+            let call = Call {
+                command: cmd,
+                cwd: &folder,
+                state_dir: &state,
+                caller: attended(),
+            };
+            verdict(&call, Some(&plane))
+        };
+        let refused = ask("git add src/a.rs && git commit -m x", true).expect("refused");
+        assert_eq!(refused.reason, branchgit::REASON);
+        assert_eq!(refused.shape.as_deref(), Some("add"));
+        let said = refused.said();
+        assert!(
+            said.contains("`purlis worktree commit -m \"<message>\""),
+            "{said}"
+        );
+        assert!(!said.contains("in your own terminal"), "{said}");
+        assert_eq!(ask("git commit -m x", false), None);
+        assert_eq!(ask("git status", true), None);
     }
 
     #[test]
