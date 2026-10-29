@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793239178415,
+  "lastUpdate": 1793240513353,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29106,6 +29106,48 @@ window.BENCHMARK_DATA = {
             "value": 102.070655,
             "unit": "ms",
             "extra": "median of 5 runs: 101.721, 101.985, 102.071, 103.031, 103.707 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1671b42f45f37945cec506052dfc1a4d6754a859",
+          "message": "Chats: rolled-up hand out of the tree's children; list holds through useHeldStill (#3658, #3594) (#3758)\n\n* Chats tree: the rolled-up hand is the pointer's alone (#3658)\n\nThe hand stood in the row's `li role=\"none\"`, so the tree owned a button\nthat is neither a treeitem nor a group (axe's aria-required-children).\nIt is now wrapped in an aria-hidden span, as the row's twist already is:\nthe row's aria-description says which chat below needs you, and the\nkeyboard's way there is the title bar's list. The wrapper is needed\nbecause React Aria's Button does not pass aria-hidden on.\n\nThe RolledUpHand story runs axe with no rule turned off again, and a\nwindow test holds the tree to owning no button.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Chats list: hold still through the shared useHeldStill hook (#3594)\n\nChatsSection drops its own copy of the pointer and keyboard hold (over,\ninside, the window's blur, the focus check after each draw) and holds\nthrough useHeldStill, keeping its own parts: off while there are no rows,\nsetSaid on keys and on leaving, and the scope rule (#1655, #1679).\n\nFolded in from the #3595 reviews, in the hook, so the Personas view has\nthem too:\n- A blur to a menu is kept only until the window hears where the focus\n  landed: let go at once if the list did not hear it arrive (a menu\n  that is not one of its rows'), never let go in between.\n- The pointer's hold is let go when the window hears the pointer over\n  anything the list is not held by: a row's menu that went from under\n  the pointer sends no leave.\n- A hold turned off lets go of what it held.\n- The doc comment says the focus check runs on every redraw for a list\n  that passes a new array as `drawn`.\n\nThe Chats list now also holds while the keyboard is in a row's menu,\nas the Personas view did; before, its focus check let go there.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Chats tree: the hand takes no focus on its press (#3658 review)\n\nReact Aria's usePress focuses a button on pointerdown, which left the\nfocus resting a moment on an element hidden from the tree. The hand\npasses preventFocusOnPress, which IconButton hands on to useButton.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Held still: what React hands the list is its own (#3594 review)\n\nThe window pointerover added for #3594 and the list's onPointerMove\nasked heardIn, which took only the list's DOM and any role=\"menu\". So a\nChats row's card (a role=\"tooltip\" portal the pointer is meant to cross\nto, WCAG 1.4.13) let the hold go, and rows could move under it; and a\nmenu elsewhere in the window kept the hold.\n\nNow React decides: any event React hands the held element comes from\nits own tree, portals included, and only the filter drawn into a view's\ntop ([data-top-slot]) does not hold it. The window pointerover lets go\nonly for an event onPointerOverCapture did not see, and a blur to any\nelement outside the list waits for the window's focusin, letting go\nunless the list's onFocus heard the focus arrive.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T01:54:56Z",
+          "tree_id": "2d92c0cb948b976a08b01b35be00df4cb373025a",
+          "url": "https://github.com/purlis/purlis/commit/1671b42f45f37945cec506052dfc1a4d6754a859"
+        },
+        "date": 1793240508286,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.676113,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.663, 0.668, 0.676, 0.691, 0.702 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5167475,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.439, 16.496, 16.517, 16.694, 16.736 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.749605,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.835, 101.645, 101.750, 101.958, 102.967 ms"
           }
         ]
       }
