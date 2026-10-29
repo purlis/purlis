@@ -285,10 +285,15 @@ describe("a skill's page", () => {
     });
     renderStudioAt(at(DEPLOY, AT_THE_ROOT, { tab: "runs" }));
 
+    // The table fills its rows after its first draw: each read waits for them.
     const harness = await screen.findByTestId("skill-totals-by_harness");
-    expect(harness).toHaveTextContent("Claude Code");
-    expect(harness).toHaveTextContent("2 runs");
-    expect(screen.getByTestId("skill-totals-by_workspace")).toHaveTextContent("Project root");
+    await waitFor(() => {
+      expect(harness).toHaveTextContent("Claude Code");
+      expect(harness).toHaveTextContent("2 runs");
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("skill-totals-by_workspace")).toHaveTextContent("Project root"),
+    );
   });
 
   it("opens a grade's scorecard from Grades, in one click", async () => {
