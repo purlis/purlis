@@ -1246,6 +1246,26 @@ fn same_name_open(held: &Held, asker: u32, name: &str) -> Option<String> {
 /// **Waiting on the operator is the board's own word that it asks mid-turn** (a permission
 /// prompt, a question), or a permission ask this app holds open for it. Its asking chat cannot
 /// answer either, and reads this to know the wait is not its own to end.
+/// Why chat `asker`'s dispatch named `name` is refused as a task it already has open (#3788,
+/// [`dispatchdecision::same_name_open`]), from this app's record of its tasks; or `None`.
+fn same_name_open(held: &Held, asker: u32, name: &str) -> Option<String> {
+    let tasks: Vec<(u32, String, dispatchdecision::Standing)> = held
+        .chats()
+        .tasks_of(asker)
+        .into_iter()
+        .filter_map(|(session, from)| {
+            let named = held.chats().shown_name(session)?;
+            Some((session, named, standing_of(held, session, &from)))
+        })
+        .collect();
+    dispatchdecision::same_name_open(
+        name,
+        tasks
+            .iter()
+            .map(|(session, named, standing)| (*session, named.as_str(), *standing)),
+    )
+}
+
 fn standing_of(held: &Held, chat: u32, from: &HandedFrom) -> dispatchdecision::Standing {
     dispatchdecision::standing(from.report, !still_working(held, chat), asks(held, chat))
 }

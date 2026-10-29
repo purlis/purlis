@@ -18,6 +18,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   join `dispatch`, `dispatch_list`, `dispatch_read` and `dispatch_report`, on every harness. A
   Claude Code chat runs each one without its harness asking. Chats are taught the tools first,
   and the command stays for terminals and scripts (#3786).
+- **A chat always knows its open tasks.** While it has any, every turn begins with a short
+  roster: each task's number, name and state. A task it was told had stopped on the person is
+  announced once when it is back at work. A dispatch under the exact name of one of its tasks
+  that is still open is refused, naming that task's number and state and saying to wait on it,
+  tell it more or cancel it (#3788).
 
 - **The event log keeps 30 days and can be followed from a cursor.** The host's event log
   (`<data>/events/<device>/`) is now written in segments: at 16 MiB a segment is sealed as
