@@ -748,7 +748,8 @@ pub enum LinkKeyIs {
 
 /// The merge patch that brings a Claim's `previous` status to `next`, or none when it already
 /// says that ([`settled`]). With [`LinkKeyIs::Said`] a status that names no link key writes
-/// `linkKey: null`, so a statement that no longer holds is taken away (#2056).
+/// `linkKey: null`, so a statement that no longer holds is taken away (#2056), and one with no
+/// next key's signature writes `nextSignature: null`, so a roll's second signature goes (#3305).
 pub fn status_patch(
     previous: Option<&ClaimStatus>,
     next: ClaimStatus,
@@ -762,10 +763,22 @@ pub fn status_patch(
         return None;
     }
     let mut value = serde_json::to_value(&status).unwrap_or_default();
-    if status.link_key.is_none()
-        && let Some(fields) = value.as_object_mut()
-    {
-        fields.insert("linkKey".into(), serde_json::Value::Null);
+    if let Some(fields) = value.as_object_mut() {
+        match fields
+            .get_mut("linkKey")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            // A statement no longer signed by a next key says so, so a roll's second
+            // signature goes with the roll (#3305).
+            Some(link_key) => {
+                link_key
+                    .entry("nextSignature")
+                    .or_insert(serde_json::Value::Null);
+            }
+            None => {
+                fields.insert("linkKey".into(), serde_json::Value::Null);
+            }
+        }
     }
     Some(serde_json::json!({ "status": value }))
 }

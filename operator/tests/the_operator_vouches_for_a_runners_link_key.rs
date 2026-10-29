@@ -1105,6 +1105,25 @@ fn during_a_roll_a_statement_is_signed_by_both_keys() {
     let after = at(&promoted, &claim);
     assert_eq!(after.signature, next_signing().sign(&after.statement));
     assert_eq!(after.next_signature, None);
+    // Written over the claim's statement, its second signature goes: a merge patch keeps a
+    // field it does not name.
+    let patch = status_patch(
+        claim.status.as_ref(),
+        ClaimStatus {
+            conditions: Vec::new(),
+            link_key: Some(after.clone()),
+        },
+        LinkKeyIs::Said,
+    )
+    .expect("a change");
+    assert_eq!(
+        patch["status"]["linkKey"]["nextSignature"],
+        serde_json::Value::Null
+    );
+    assert_eq!(
+        patch["status"]["linkKey"]["signature"],
+        after.signature.as_str()
+    );
 }
 
 fn pem_of(der: &[u8]) -> String {

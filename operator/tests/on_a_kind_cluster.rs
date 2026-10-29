@@ -400,71 +400,78 @@ async fn a_runners_link_key_is_vouched_for_with_the_key_its_pool_names() {
                 .expect("the Secret changed")
         }
     };
-    set(serde_json::json!({ "next.pem": data(&next_pem) })).await;
-    let rolling = eventually(
-        "the pool names the next key and the current key's word for it",
-        Duration::from_secs(300),
-        || async {
-            let status = pools.get("e2e-vouch").await.ok()?.status?;
-            (status.next_signing_key.as_deref() == Some(next.as_str())).then_some(status)
-        },
-    )
-    .await;
-    let word = rolling
-        .next_signing_key_vouch
-        .expect("the current key's word");
-    ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &public)
-        .verify(word.statement.as_bytes(), &unhex(&word.signature))
-        .expect("the word is signed by the current key");
-    let until = purlis_cluster_operator::vouch::until_of(&word.statement).expect("its until");
-    assert_eq!(
-        Some(word.statement.clone()),
-        purlis_cluster_operator::vouch::roll_statement(&cluster, &signing_key, &next, until)
-    );
-    let both = eventually(
-        "the claim's statement is signed by both keys",
-        Duration::from_secs(120),
-        || async {
-            let link_key = claims.get("ada-1").await.ok()?.status?.link_key?;
-            link_key.next_signature.is_some().then_some(link_key)
-        },
-    )
-    .await;
-    ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &next_public)
-        .verify(
-            both.statement.as_bytes(),
-            &unhex(both.next_signature.as_deref().unwrap_or_default()),
+    // Whatever the roll does, the first key goes back and the claim goes after it, so a
+    // failure here does not leave the next tests a key or a claim of this one.
+    let rolled = futures::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(async {
+        set(serde_json::json!({ "next.pem": data(&next_pem) })).await;
+        let rolling = eventually(
+            "the pool names the next key and the current key's word for it",
+            Duration::from_secs(300),
+            || async {
+                let status = pools.get("e2e-vouch").await.ok()?.status?;
+                (status.next_signing_key.as_deref() == Some(next.as_str())).then_some(status)
+            },
         )
-        .expect("signed by the next key too");
+        .await;
+        let word = rolling
+            .next_signing_key_vouch
+            .expect("the current key's word");
+        ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &public)
+            .verify(word.statement.as_bytes(), &unhex(&word.signature))
+            .expect("the word is signed by the current key");
+        let until = purlis_cluster_operator::vouch::until_of(&word.statement).expect("its until");
+        assert_eq!(
+            Some(word.statement.clone()),
+            purlis_cluster_operator::vouch::roll_statement(&cluster, &signing_key, &next, until)
+        );
+        let both = eventually(
+            "the claim's statement is signed by both keys",
+            Duration::from_secs(120),
+            || async {
+                let link_key = claims.get("ada-1").await.ok()?.status?.link_key?;
+                link_key.next_signature.is_some().then_some(link_key)
+            },
+        )
+        .await;
+        ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &next_public)
+            .verify(
+                both.statement.as_bytes(),
+                &unhex(both.next_signature.as_deref().unwrap_or_default()),
+            )
+            .expect("signed by the next key too");
 
-    // The roll over: next.pem moved to key.pem. The pool names the new key alone.
-    set(serde_json::json!({ "key.pem": data(&next_pem), "next.pem": null })).await;
-    eventually(
-        "the pool names the new key alone",
-        Duration::from_secs(300),
-        || async {
-            let status = pools.get("e2e-vouch").await.ok()?.status?;
-            (status.signing_key.as_deref() == Some(next.as_str())
-                && status.next_signing_key.is_none()
-                && status.next_signing_key_vouch.is_none())
-            .then_some(())
-        },
-    )
+        // The roll over: next.pem moved to key.pem. The pool names the new key alone.
+        set(serde_json::json!({ "key.pem": data(&next_pem), "next.pem": null })).await;
+        eventually(
+            "the pool names the new key alone",
+            Duration::from_secs(300),
+            || async {
+                let status = pools.get("e2e-vouch").await.ok()?.status?;
+                (status.signing_key.as_deref() == Some(next.as_str())
+                    && status.next_signing_key.is_none()
+                    && status.next_signing_key_vouch.is_none())
+                .then_some(())
+            },
+        )
+        .await;
+        let after = eventually(
+            "the claim's statement is signed by the new key",
+            Duration::from_secs(120),
+            || async {
+                let link_key = claims.get("ada-1").await.ok()?.status?.link_key?;
+                let new = ring::signature::UnparsedPublicKey::new(
+                    &ring::signature::ED25519,
+                    &next_public,
+                )
+                .verify(link_key.statement.as_bytes(), &unhex(&link_key.signature))
+                .is_ok();
+                (new && link_key.next_signature.is_none()).then_some(link_key)
+            },
+        )
+        .await;
+        assert!(after.statement.contains(&format!("cluster: {cluster}\n")));
+    }))
     .await;
-    let after = eventually(
-        "the claim's statement is signed by the new key",
-        Duration::from_secs(120),
-        || async {
-            let link_key = claims.get("ada-1").await.ok()?.status?.link_key?;
-            let new =
-                ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &next_public)
-                    .verify(link_key.statement.as_bytes(), &unhex(&link_key.signature))
-                    .is_ok();
-            (new && link_key.next_signature.is_none()).then_some(link_key)
-        },
-    )
-    .await;
-    assert!(after.statement.contains(&format!("cluster: {cluster}\n")));
 
     // The first key back, so the tests after this one meet the key the install made.
     let first = {
@@ -481,6 +488,11 @@ async fn a_runners_link_key_is_vouched_for_with_the_key_its_pool_names() {
         },
     )
     .await;
+    if let Err(panic) = rolled {
+        let _ = claims.delete("ada-1", &DeleteParams::foreground()).await;
+        let _ = pools.delete("e2e-vouch", &DeleteParams::default()).await;
+        std::panic::resume_unwind(panic);
+    }
 
     let _ = claims.delete("ada-1", &DeleteParams::foreground()).await;
     let _ = pools.delete("e2e-vouch", &DeleteParams::default()).await;
