@@ -255,14 +255,14 @@ export function SkillSources({
             <Button
               size="sm"
               isDisabled={busy}
-              aria-label={`Remove ${source.label}`}
+              aria-label={`Remove source ${source.label}`}
               onPress={() =>
                 done("The source was not removed", () =>
                   commands.skillSourceRemove(plane, source.remote),
                 )
               }
             >
-              Remove
+              Remove source
             </Button>
           </li>
         ))}

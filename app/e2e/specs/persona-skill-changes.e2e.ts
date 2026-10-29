@@ -105,7 +105,8 @@ describe("changing a persona's own skills", function () {
     await studioSkill(MADE);
     await studioMore(MADE, "Rename");
     await typeInto("New name", RENAMED);
-    await (await $('form[aria-label^="Rename"] button[type="submit"]')).click();
+    // Rename is a dialog that says what changes with it (#3685).
+    await press('[data-testid="skill-rename"]', "Rename");
     const renamed = await $(`[data-testid="skill-${RENAMED}"]`);
     await renamed.waitForExist({ timeout: 20_000 });
     expect(existsSync(join(own(RENAMED), "SKILL.md"))).toBe(true);
@@ -115,10 +116,8 @@ describe("changing a persona's own skills", function () {
     await studioMore(RENAMED, "Delete");
     const users = await $('[data-testid="skill-users"]');
     await users.waitForExist({ timeout: 20_000 });
-    await expect(users).toHaveText(new RegExp(`chats as ${PERSONA}, in every workspace`));
-    await (
-      await $(`section[aria-label="Delete ${RENAMED}"] button[data-variant="danger"]`)
-    ).click();
+    await expect(users).toHaveText(new RegExp(`[Cc]hats as ${PERSONA}, in every workspace`));
+    await press('[data-testid="skill-delete"]', "Delete");
     await renamed.waitForExist({ reverse: true, timeout: 20_000 });
     expect(existsSync(own(RENAMED))).toBe(false);
 
@@ -139,23 +138,16 @@ describe("changing a persona's own skills", function () {
   });
 
   it("moves it into the project's skills after asking its grant, and the persona keeps it", async () => {
-    // Move to's first level is the project's shared skills.
+    // Move is a dialog of the levels, each with who gets it there (#3685); its first is the
+    // project's shared skills.
     await studioSkill(RENAMED);
     await studioMore(RENAMED, "Move to another level");
-    const picker = `[data-scope="select"][data-part="root"][aria-label="Move ${RENAMED} to"]`;
-    await $(picker).waitForExist({ timeout: 20_000 });
+    const prompt = '[data-testid="skill-move"]';
+    const first = `${prompt} input[type="radio"]`;
+    await $(first).waitForExist({ timeout: 20_000 });
     await browser.execute((css: string) => {
       document.querySelector<HTMLElement>(css)?.click();
-    }, picker);
-    await $('[role="listbox"]').waitForExist({ timeout: 10_000 });
-    await browser.execute(() => {
-      document
-        .querySelector<HTMLElement>('[role="listbox"] [role="option"][data-value="0"]')
-        ?.click();
-    });
-
-    const prompt = `section[aria-label="Move ${RENAMED} to the project skills"]`;
-    await $(prompt).waitForExist({ timeout: 20_000 });
+    }, first);
     await untilSays(`${prompt} [data-testid="persona-keeps"]`, `${PERSONA} keeps it`);
     await press(prompt, "Move");
 

@@ -539,10 +539,10 @@ describe("the Skill studio", () => {
       within(await screen.findByTestId("skill-triage")).getByText("persona"),
     ).toBeInTheDocument();
     const triage = await openSkill("skill-triage", user);
-    expect(within(triage).queryByRole("button", { name: /Remove/ })).toBeNull();
+    expect(within(triage).queryByRole("button", { name: /Take .* out of/ })).toBeNull();
     expect(
       within(await openSkill("skill-deploy", user)).getByRole("button", {
-        name: "Remove deploy from ops",
+        name: "Take deploy out of ops",
       }),
     ).toBeInTheDocument();
     expect(
@@ -918,8 +918,8 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
     await openSkill("skill-review");
     await screen.findByTestId("skill-banner-clash");
     screen.getByRole("button", { name: "Rename the project's copy" }).click();
-    const form = await screen.findByRole("form", { name: "Rename review" });
-    expect(within(form).getByLabelText("New name")).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: "Rename review" });
+    expect(within(dialog).getByLabelText("New name")).toBeInTheDocument();
   });
 });
 

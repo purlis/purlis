@@ -754,6 +754,52 @@ fn references_renamed(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> 
     if level.at == Whose::Project {
         changed.extend(turned_off_renamed(cx, old, Some(new)));
     }
+    changed.extend(pins_renamed(cx, old, new));
+    changed
+}
+
+/// Each workspace's and persona's pins of `old` named `new`, in their place in the list (spec
+/// #3679 S4: a rename's pins follow it), and the files it changed. What could not be written is
+/// said, and the rest is still changed.
+fn pins_renamed(cx: &mut Ctx<'_>, old: &str, new: &str) -> Vec<String> {
+    use super::PinnedBy;
+    let plane = cx.plane;
+    let mut changed = Vec::new();
+    for by in super::pinners_of(plane, old) {
+        let pins: Vec<String> = super::pins_written(plane, &by)
+            .into_iter()
+            .map(|one| if one == old { new.to_owned() } else { one })
+            .fold(Vec::new(), |mut kept, one| {
+                if !kept.contains(&one) {
+                    kept.push(one);
+                }
+                kept
+            });
+        let (written, file, whose) = match &by {
+            PinnedBy::Workspace(ws) => (
+                super::set_names_in_settings(
+                    plane,
+                    ws,
+                    crate::settings::workspace::SKILLS_PINNED,
+                    pins,
+                ),
+                crate::settings::workspace::named(ws),
+                format!("workspace {ws}"),
+            ),
+            PinnedBy::Persona(persona) => (
+                super::persona::write_pins(plane, persona, &pins),
+                rel(plane, &crate::personas::def_path(plane, persona)),
+                format!("persona {persona}"),
+            ),
+        };
+        match written {
+            Ok(()) => {
+                cx.done(format!("{whose} pins {new} now"));
+                changed.push(file);
+            }
+            Err(why) => cx.warn(format!("{whose} still pins {old}: {why}")),
+        }
+    }
     changed
 }
 
@@ -942,6 +988,9 @@ pub struct Users {
     pub personas: Vec<String>,
     /// The other skills whose text names it.
     pub skills: Vec<String>,
+    /// Every workspace and persona whose pins name it, the workspaces first: what a rename
+    /// changes with it and a delete leaves pinning nothing.
+    pub pinned_by: Vec<super::PinnedBy>,
 }
 
 /// **Who uses the skill named `name` at `level`**: the chats it reaches, and the personas and
@@ -992,6 +1041,7 @@ pub fn users(plane: &Path, level: &Level, name: &str) -> Result<Users, String> {
             }
         }
     }
+    users.pinned_by = super::pinners_of(plane, name);
     Ok(users)
 }
 

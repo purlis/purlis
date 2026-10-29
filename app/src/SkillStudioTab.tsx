@@ -43,7 +43,8 @@ import { SkillSources } from "./SkillSources";
 import { Select } from "./ui/select/Select";
 import { Choice, Field, SettingRow } from "./settings/components";
 import { labelOf, levelFrom, levelOf, levelsFor, sameLevel } from "./skillChanges";
-import { GrantPicker, LevelPicker } from "./SkillLevelPickers";
+import { LevelPicker } from "./SkillLevelPickers";
+import { DeleteDialog, MoveDialog, RenameDialog } from "./SkillChangeDialogs";
 import {
   SkillPage,
   changed as answered,
@@ -84,23 +85,19 @@ import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
 /** The light editor, its own chunk (`tools/main-chunk-has-no-codemirror.mjs`). */
 const SkillEditor = lazy(() => import("./SkillEditor"));
 
-/** A change in progress: New skill, or one on the skill chosen, drawn in the item pane. */
+/** A change in progress: New skill or the editor, drawn in the item pane; or Rename, Move or
+ *  Delete, each a dialog (S4, #3685), with what the core refused the last time it was asked. */
 type Doing =
   | { what: "new" }
   | { what: "edit"; skill: StudioSkill; level: SkillLevel; was: string }
-  | { what: "rename"; skill: StudioSkill; level: SkillLevel }
-  | { what: "moving"; skill: StudioSkill; from: SkillLevel }
-  | { what: "move"; skill: StudioSkill; from: SkillLevel; to: SkillLevel }
-  | { what: "delete"; skill: StudioSkill; level: SkillLevel; users: SkillUsers };
+  | { what: "rename"; skill: StudioSkill; level: SkillLevel; refused?: string }
+  | { what: "move"; skill: StudioSkill; from: SkillLevel; refused?: string }
+  | { what: "delete"; skill: StudioSkill; level: SkillLevel; refused?: string };
 
-/** What a change in progress is called in the path. */
-const DOING_NAMES: Record<Doing["what"], string> = {
+/** What a change in progress drawn in a pane is called in the path: a dialog is no place. */
+const DOING_NAMES: Partial<Record<Doing["what"], string>> = {
   new: NEW_SKILL,
   edit: "Edit",
-  rename: "Rename",
-  moving: "Move",
-  move: "Move",
-  delete: "Delete",
 };
 
 // --- The Library's list ------------------------------------------------------------------------
@@ -171,6 +168,17 @@ function scopeOfLevel(level: SkillLevel, shown: StudioScope): StudioScope {
   if (level.at === "workspace") return { at: "workspace", name: level.name };
   if (level.at === "persona") return asPersona(level.name);
   return shown;
+}
+
+/** Whether `skill`, a row of the studio showing `scope`, is at `level`. */
+function atLevel(skill: StudioSkill, scope: StudioScope, level: SkillLevel): boolean {
+  const its = levelOf(skill, scope);
+  return its !== null && sameLevel(its, level);
+}
+
+/** A change's result notice (S4): what was done, then what the core noted on it. */
+function resultOf(label: string, text: string, notes: readonly string[]): Said {
+  return { tone: "news", label, text: [text, ...notes].join(" ") };
 }
 
 /** **Rows held while the skills are read** (S11): the layout stays, and after about a second a
@@ -357,28 +365,47 @@ export function SkillStudioTab({
     history.go(place);
   };
 
-  const change: Change = (label, run, then) => {
+  const change: Change = (label, run, then, refusedIn) => {
     setBusy(true);
     void run()
       .then(async (answer) => {
         if (answer.status === "error") {
-          setSaid({ tone: "trouble", label, text: answer.error });
+          if (refusedIn !== undefined) refusedIn(answer.error);
+          else setSaid({ tone: "trouble", label, text: answer.error });
           return;
         }
         setDoing(undefined);
-        const next = then === undefined ? undefined : await then();
         const notes = answer.data.notes;
+        const next = then === undefined ? undefined : await then(notes);
         if (next !== undefined) setSaid(next);
         else if (notes.length > 0)
           setSaid({ tone: "news", label: "Skill changed", text: notes.join(" ") });
         else setSaid(undefined);
       })
-      .catch((err: unknown) => setSaid({ tone: "trouble", label, text: String(err) }))
+      .catch((err: unknown) =>
+        refusedIn !== undefined
+          ? refusedIn(String(err))
+          : setSaid({ tone: "trouble", label, text: String(err) }),
+      )
       .finally(() => {
         setBusy(false);
         setDone((n) => n + 1);
       });
   };
+  /** The dialog in hand told why the core refused it: said in the dialog, which stays open. */
+  const refusedInDialog = (why: string) =>
+    setInHand((was) =>
+      was === undefined || !("skill" in was.doing) || was.doing.what === "edit"
+        ? was
+        : { ...was, doing: { ...was.doing, refused: why } },
+    );
+  /** A field of the dialog in hand changed: the core's last refusal no longer stands. */
+  const editedInDialog = () =>
+    setInHand((was) =>
+      was === undefined || !("refused" in was.doing) || was.doing.refused === undefined
+        ? was
+        : { ...was, doing: { ...was.doing, refused: undefined } },
+    );
   const open = (skill: StudioSkill, level: SkillLevel) => {
     const asked = at;
     void commands.skillText(plane, level, skill.name).then((answer) => {
@@ -392,24 +419,69 @@ export function SkillStudioTab({
       }
     });
   };
-  const askDelete = (skill: StudioSkill, level: SkillLevel) => {
-    void commands.skillUsers(plane, level, skill.name).then((answer) => {
-      if (answer.status === "error")
-        setSaid({ tone: "trouble", label: "The skill was not deleted", text: answer.error });
-      else setDoing({ what: "delete", skill, level, users: answer.data });
-    });
+  /** **Rename** (S4, #3685): done, its place follows the new name, and Undo renames it back. */
+  const rename = (skill: StudioSkill, level: SkillLevel, to: string, users?: SkillUsers) => {
+    const from = skill.name;
+    const back = () =>
+      change(
+        "The rename was not undone",
+        () => commands.skillRename(plane, level, to, from),
+        async (notes) => {
+          history.replace({ ...placeNow.current, skill: skillRowNamed(from) });
+          return resultOf("Rename undone", `${to} is ${from} again.`, notes);
+        },
+      );
+    change(
+      "The skill was not renamed",
+      () => commands.skillRename(plane, level, from, to),
+      async (notes) => {
+        history.replace({ ...placeNow.current, skill: skillRowNamed(to) });
+        const followed =
+          users === undefined
+            ? []
+            : [
+                ...(users.personas.length === 0
+                  ? []
+                  : [counted(users.personas.length, "persona", "personas")]),
+                ...(users.skills.length === 0
+                  ? []
+                  : [counted(users.skills.length, "skill", "skills")]),
+              ];
+        const named =
+          followed.length === 0 ? "" : `, with the ${followed.join(" and ")} that name it`;
+        return { ...resultOf("Skill renamed", `${from} is ${to} now${named}.`, notes), undo: back };
+      },
+      refusedInDialog,
+    );
   };
-  /** Moving `skill` to `to`: at once, or after its grant is asked where it becomes a project
-   *  skill (decision 14). */
-  const moveTo = (skill: StudioSkill, from: SkillLevel, to: SkillLevel) => {
-    if (sameLevel(from, to)) return;
-    void commands.skillMoveNeedsGrant(from, to).then((asks) => {
-      if (asks) setDoing({ what: "move", skill, from, to });
-      else
-        change("The skill was not moved", () =>
-          commands.skillMove(plane, from, skill.name, to, null),
-        );
-    });
+  /** **Move** (S4, #3685): done, and Undo moves it back, with the grant it had where it was a
+   *  project skill. */
+  const move = (skill: StudioSkill, from: SkillLevel, to: SkillLevel, grant: SkillGrant | null) => {
+    const name = skill.name;
+    const back = () =>
+      change(
+        "The move was not undone",
+        async () =>
+          commands.skillMove(
+            plane,
+            to,
+            name,
+            from,
+            (await commands.skillMoveNeedsGrant(to, from))
+              ? (skill.granted ?? { to: "root" })
+              : null,
+          ),
+        async (notes) => resultOf("Move undone", `${name} is a ${labelOf(levels, from)} skill again.`, notes),
+      );
+    change(
+      "The skill was not moved",
+      () => commands.skillMove(plane, from, name, to, grant),
+      async (notes) => ({
+        ...resultOf("Skill moved", `${name} is a ${labelOf(levels, to)} skill now.`, notes),
+        undo: back,
+      }),
+      refusedInDialog,
+    );
   };
   /** Adds `written` to the persona's skills, or takes it out (SK-5, #2768), as a change. */
   const personaSkill = (who: string, written: string, how: "add" | "remove") =>
@@ -422,15 +494,25 @@ export function SkillStudioTab({
   const bringBack = (id: string) =>
     change("The skill was not brought back", () => commands.skillRestore(plane, id));
   /** After a delete: Bring it back on the Notice, for the copy just deleted. */
-  const restoreOffered = async (name: string, level: SkillLevel): Promise<Said | undefined> => {
+  const restoreOffered = async (
+    name: string,
+    level: SkillLevel,
+    notes: readonly string[],
+  ): Promise<Said | undefined> => {
     const answer = await commands.skillsDeleted(plane);
     const one =
       answer.status === "ok"
         ? answer.data.find((d) => d.name === name && sameLevel(d.level, level))
         : undefined;
-    return one === undefined
-      ? undefined
-      : { tone: "news", label: "Skill deleted", text: `${name} is deleted.`, restore: one.id };
+    const days = one === undefined ? 30 : one.days_left;
+    return {
+      ...resultOf(
+        "Skill deleted",
+        `${name} is deleted. It stays in Deleted for ${counted(days, "day", "days")}.`,
+        notes,
+      ),
+      ...(one === undefined ? {} : { restore: one.id }),
+    };
   };
 
   /** **Make my own copy** (#3686): the copy made, said with its built-in still loading, and its
@@ -672,18 +754,23 @@ export function SkillStudioTab({
     ...(chosen !== undefined && at.tab !== undefined && at.tab !== "overview"
       ? [{ id: "tab", label: SKILL_PAGE_TAB_NAMES[at.tab] }]
       : []),
-    ...(doing === undefined ? [] : [{ id: "doing", label: DOING_NAMES[doing.what] }]),
+    ...(doing === undefined || DOING_NAMES[doing.what] === undefined
+      ? []
+      : [{ id: "doing", label: DOING_NAMES[doing.what] ?? "" }]),
   ];
   const restoring = said?.restore;
+  const undoing = said?.undo;
   const notice = said !== undefined && (
     <Notice
       cause="skill-change"
       tone={said.tone}
       label={said.label}
       fixes={
-        restoring === undefined
-          ? undefined
-          : [{ label: "Bring it back", onPress: () => bringBack(restoring) }]
+        restoring !== undefined
+          ? [{ label: "Bring it back", onPress: () => bringBack(restoring) }]
+          : undoing !== undefined
+            ? [{ label: "Undo", onPress: undoing, busy }]
+            : undefined
       }
       onDismiss={() => setSaid(undefined)}
     >
@@ -925,19 +1012,15 @@ export function SkillStudioTab({
       </>
     );
     const panel =
-      doing !== undefined && studio !== undefined ? (
+      (doing?.what === "new" || doing?.what === "edit") && studio !== undefined ? (
         <ChangePanel
           plane={plane}
           scope={scope}
           doing={doing}
           busy={busy}
-          workspaces={studio.workspaces}
           levels={levels}
           onCancel={() => setDoing(undefined)}
           change={change}
-          restoreOffered={restoreOffered}
-          onRenamed={(to) => history.replace({ ...at, skill: skillRowNamed(to) })}
-          onMoveTo={moveTo}
         />
       ) : undefined;
     item =
@@ -959,16 +1042,16 @@ export function SkillStudioTab({
           changed={changed + done}
           change={change}
           doing={
-            doing === undefined || doing.what === "new" || panel === undefined
-              ? undefined
-              : { what: doing.what === "moving" ? "move" : doing.what, drawn: panel }
+            doing?.what === "edit" && panel !== undefined
+              ? { what: "edit", drawn: panel }
+              : undefined
           }
           onTab={(tab) => history.replace({ ...at, tab })}
           onGo={(to, item) => go({ page: to, scope, ...(item === undefined ? {} : { item }) })}
           onEdit={(level) => open(chosen, level)}
           onRename={(level) => setDoing({ what: "rename", skill: chosen, level })}
-          onMove={(level) => setDoing({ what: "moving", skill: chosen, from: level })}
-          onDelete={(level) => askDelete(chosen, level)}
+          onMove={(level) => setDoing({ what: "move", skill: chosen, from: level })}
+          onDelete={(level) => setDoing({ what: "delete", skill: chosen, level })}
           onPersona={personaSkill}
           onCopy={() => setCopying({ from: chosen.name })}
           offerFor={offerFor}
@@ -1187,6 +1270,54 @@ export function SkillStudioTab({
           onCancel={() => setCopying(undefined)}
         />
       )}
+      {doing?.what === "rename" && (
+        <RenameDialog
+          plane={plane}
+          skill={doing.skill}
+          level={doing.level}
+          taken={skills
+            .filter((one) => one !== doing.skill && atLevel(one, scope, doing.level))
+            .map((one) => one.name)}
+          builtIns={builtInNames}
+          busy={busy}
+          refused={doing.refused}
+          onEdit={editedInDialog}
+          onRename={(to, users) => rename(doing.skill, doing.level, to, users)}
+          onClose={() => setDoing(undefined)}
+        />
+      )}
+      {doing?.what === "move" && (
+        <MoveDialog
+          plane={plane}
+          skill={doing.skill}
+          from={doing.from}
+          levels={levels}
+          workspaces={studio?.workspaces ?? []}
+          busy={busy}
+          refused={doing.refused}
+          onEdit={editedInDialog}
+          onMove={(to, grant) => move(doing.skill, doing.from, to, grant)}
+          onClose={() => setDoing(undefined)}
+        />
+      )}
+      {doing?.what === "delete" && (
+        <DeleteDialog
+          plane={plane}
+          skill={doing.skill}
+          level={doing.level}
+          busy={busy}
+          refused={doing.refused}
+          onDelete={() =>
+            change(
+              "The skill was not deleted",
+              () => commands.skillDelete(plane, doing.level, doing.skill.name),
+              (notes) => restoreOffered(doing.skill.name, doing.level, notes),
+              refusedInDialog,
+            )
+          }
+          onClose={() => setDoing(undefined)}
+        />
+      )}
       <ViewFrame
         label="Skill studio pages"
         pages={pages}
@@ -1209,34 +1340,23 @@ export function SkillStudioTab({
   );
 }
 
-/** The panel under the toolbar for the change in progress: New skill, the editor, Rename, the
- *  grant a move into the project asks for, and Delete's who-uses-it. */
+/** The panel for the change in progress drawn in a pane: New skill, or the editor. */
 function ChangePanel({
   plane,
   scope,
   doing,
   busy,
-  workspaces,
   levels,
   onCancel,
   change,
-  restoreOffered,
-  onRenamed,
-  onMoveTo,
 }: {
   plane: string;
   scope: StudioScope;
-  doing: Doing;
+  doing: Extract<Doing, { what: "new" | "edit" }>;
   busy: boolean;
-  workspaces: readonly string[];
   levels: readonly StudioLevel[];
   onCancel: () => void;
   change: Change;
-  restoreOffered: (name: string, level: SkillLevel) => Promise<Said | undefined>;
-  /** The skill was renamed `to`: the place follows it. */
-  onRenamed?: (to: string) => void;
-  /** Moves the skill to the level picked: at once, or after asking its grant. */
-  onMoveTo?: (skill: StudioSkill, from: SkillLevel, to: SkillLevel) => void;
 }) {
   switch (doing.what) {
     case "new":
@@ -1278,111 +1398,7 @@ function ChangePanel({
           />
         </Suspense>
       );
-    case "rename":
-      return (
-        <Rename
-          name={doing.skill.name}
-          busy={busy}
-          onCancel={onCancel}
-          onRename={(to) =>
-            change(
-              "The skill was not renamed",
-              () => commands.skillRename(plane, doing.level, doing.skill.name, to),
-              () => {
-                onRenamed?.(to);
-                return Promise.resolve(undefined);
-              },
-            )
-          }
-        />
-      );
-    case "moving":
-      return (
-        <section className="skill-change" aria-label={`Move ${doing.skill.name}`}>
-          <p>
-            <strong>Move {doing.skill.name} to another level.</strong> Who gets it changes with the
-            level.
-          </p>
-          <ButtonRow>
-            <LevelPicker
-              label={`Move ${doing.skill.name} to`}
-              levels={levels.filter((to) => !sameLevel(to.level, doing.from))}
-              disabled={busy}
-              onPick={(to) => onMoveTo?.(doing.skill, doing.from, to)}
-            />
-            <Button onPress={onCancel}>Cancel</Button>
-          </ButtonRow>
-        </section>
-      );
-    case "move":
-      return (
-        <GrantPrompt
-          name={doing.skill.name}
-          from={doing.from}
-          to={doing.to}
-          workspaces={workspaces}
-          levels={levels}
-          busy={busy}
-          onCancel={onCancel}
-          onMove={(grant) =>
-            change("The skill was not moved", () =>
-              commands.skillMove(plane, doing.from, doing.skill.name, doing.to, grant),
-            )
-          }
-        />
-      );
-    case "delete":
-      return (
-        <section className="skill-change" aria-label={`Delete ${doing.skill.name}`}>
-          <p>
-            <strong>Delete {doing.skill.name}?</strong> It stays in Deleted for 30 days, to be
-            brought back.
-          </p>
-          <UsedBy users={doing.users} />
-          <ButtonRow>
-            <Button
-              variant="danger"
-              isDisabled={busy}
-              onPress={() =>
-                change(
-                  "The skill was not deleted",
-                  () => commands.skillDelete(plane, doing.level, doing.skill.name),
-                  () => restoreOffered(doing.skill.name, doing.level),
-                )
-              }
-            >
-              Delete
-            </Button>
-            <Button onPress={onCancel}>Cancel</Button>
-          </ButtonRow>
-        </section>
-      );
   }
-}
-
-/** Who uses a skill, as Delete asks with it. */
-function UsedBy({ users }: { users: SkillUsers }) {
-  const chats = [
-    ...(users.root ? ["chats at the project's root"] : []),
-    ...users.workspaces.map((ws) => `chats in ${ws}`),
-    ...(users.persona === null ? [] : [`chats as ${users.persona}, in every workspace`]),
-  ];
-  return (
-    <ul className="skill-users" data-testid="skill-users">
-      <li>{chats.length === 0 ? "No chat gets it now." : `Used by ${chats.join(", ")}.`}</li>
-      {users.personas.length > 0 && (
-        <li>
-          Named by {counted(users.personas.length, "persona", "personas")}:{" "}
-          {users.personas.join(", ")}.
-        </li>
-      )}
-      {users.skills.length > 0 && (
-        <li>
-          Named by {counted(users.skills.length, "skill", "skills")}: {users.skills.join(", ")}.
-        </li>
-      )}
-    </ul>
-  );
 }
 
 /** **New skill** (decisions 13 and 37): a name, a description and a template, at the level the
@@ -1476,103 +1492,6 @@ function NewSkill({
         <Button onPress={onCancel}>Cancel</Button>
       </ButtonRow>
     </form>
-  );
-}
-
-/** Rename: the new name, and that every persona and skill naming it follows. */
-function Rename({
-  name,
-  busy,
-  onCancel,
-  onRename,
-}: {
-  name: string;
-  busy: boolean;
-  onCancel: () => void;
-  onRename: (to: string) => void;
-}) {
-  const [to, setTo] = useState(name);
-  return (
-    <form
-      className="skill-change"
-      aria-label={`Rename ${name}`}
-      onSubmit={(event) => {
-        event.preventDefault();
-        onRename(to.trim());
-      }}
-    >
-      <SettingRow
-        label="New name"
-        control={(ids) => <Field kind="text" ids={ids} value={to} onChange={setTo} />}
-      />
-      <p className="honest">Every persona and skill that names it is changed with it.</p>
-      <ButtonRow>
-        <Button
-          variant="primary"
-          type="submit"
-          isDisabled={busy || to.trim() === "" || to.trim() === name}
-        >
-          Rename
-        </Button>
-        <Button onPress={onCancel}>Cancel</Button>
-      </ButtonRow>
-    </form>
-  );
-}
-
-/** **The grant a move into the project's skills asks for** (decision 14): a project skill
- *  reaches only the chats its grant names. It starts at the workspace the skill came from. */
-function GrantPrompt({
-  name,
-  from,
-  to,
-  workspaces,
-  levels,
-  busy,
-  onCancel,
-  onMove,
-}: {
-  name: string;
-  from: SkillLevel;
-  to: SkillLevel;
-  workspaces: readonly string[];
-  levels: readonly StudioLevel[];
-  busy: boolean;
-  onCancel: () => void;
-  onMove: (grant: SkillGrant) => void;
-}) {
-  const [grant, setGrant] = useState<SkillGrant>(
-    from.at === "workspace" ? { to: "only", workspaces: [from.name] } : { to: "root" },
-  );
-  return (
-    <section
-      className="skill-change"
-      aria-label={`Move ${name} to the ${labelOf(levels, to)} skills`}
-    >
-      <p>
-        <strong>
-          Move {name} to the {labelOf(levels, to)} skills.
-        </strong>{" "}
-        A project skill reaches only the chats its grant names. Where does it reach?
-      </p>
-      {from.at === "persona" && (
-        <p className="honest" data-testid="persona-keeps">
-          {from.name} keeps it in every workspace: it is added to {from.name}'s skills.
-        </p>
-      )}
-      <GrantPicker
-        label={`Where ${name} will reach`}
-        workspaces={workspaces}
-        now={grant}
-        onPick={setGrant}
-      />
-      <ButtonRow>
-        <Button variant="primary" isDisabled={busy} onPress={() => onMove(grant)}>
-          Move
-        </Button>
-        <Button onPress={onCancel}>Cancel</Button>
-      </ButtonRow>
-    </section>
   );
 }
 

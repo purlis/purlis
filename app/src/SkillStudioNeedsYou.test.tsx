@@ -125,13 +125,13 @@ describe("Needs you", () => {
 
     await user.click(await screen.findByRole("button", { name: "Rename it…" }));
 
-    expect(await screen.findByTestId("skill-studio-doing")).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: "Rename deploy" });
+    expect(within(dialog).getByLabelText("New name")).toBeInTheDocument();
     const path = within(screen.getByRole("list", { name: "Path" })).getAllByRole("listitem");
     expect(path[0]).toHaveTextContent("Library");
-    // It lands on the skill's own page (#3682), with Rename open under its header.
+    // It lands on the skill's own page (#3682), with the Rename dialog over it (#3685).
     const page = screen.getByTestId("skill-studio-skill");
     expect(within(page).getByRole("tablist", { name: "deploy's sections" })).toBeInTheDocument();
-    expect(within(page).getByRole("form", { name: "Rename deploy" })).toBeInTheDocument();
   });
 
   it("moves the skills only some programs read, and says what the move said", async () => {

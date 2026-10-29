@@ -172,6 +172,9 @@ pub struct SkillUsers {
     pub persona: Option<String>,
     pub personas: Vec<String>,
     pub skills: Vec<String>,
+    /// Every workspace and persona whose pins name it, the workspaces first: what a rename
+    /// changes with it.
+    pub pinned_by: Vec<SkillPinner>,
 }
 
 /// A deleted skill Restore can bring back.
@@ -518,6 +521,7 @@ pub(crate) async fn skill_users(
             persona: users.persona,
             personas: users.personas,
             skills: users.skills,
+            pinned_by: users.pinned_by.into_iter().map(SkillPinner::from).collect(),
         })
     })
     .await
