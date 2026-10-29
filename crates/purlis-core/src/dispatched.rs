@@ -243,6 +243,12 @@ pub struct Row {
     /// app remembers closed tasks by number.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub finished: bool,
+    /// **Whether it is alive** (#3900): its program running, when it last ran a command or
+    /// sent a note, and how it stands across the app's restart, or that it is orphaned by one.
+    /// None for a finished task, whose program has ended and is said to have, and on a row
+    /// from an app older than this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub liveness: Option<crate::dispatchliveness::Liveness>,
 }
 
 // ---- how long a wait may be -------------------------------------------------------------------
@@ -685,6 +691,10 @@ struct Task {
     report_asked: bool,
     /// What it said and ran, for `purlis dispatch read` (#1981).
     heard: Heard,
+    /// When it last ran a command or sent a note (#3900).
+    lately: crate::dispatchliveness::Heard,
+    /// How it stands across the app's last restart (#3900).
+    restart: crate::dispatchliveness::Restart,
 }
 
 /// A report the app delivered, kept so a wait can answer with it.
@@ -1189,14 +1199,47 @@ impl Ledger {
     /// Task `task` was put back by a launch (#1463): it started when its dispatch's record says
     /// (`started`, the record's stamp), which this ledger, kept in memory, did not see. A start
     /// already known is kept, and a stamp that does not read is no start at all.
-    pub fn brought_back(&mut self, task: u32, started: &str) {
-        let Ok(at) = chrono::DateTime::parse_from_rfc3339(started) else {
+    ///
+    /// `restart` is how it came back (#3900): kept running in the session host, or started
+    /// again on its conversation. Kept whether or not the stamp reads.
+    pub fn brought_back(
+        &mut self,
+        task: u32,
+        started: Option<&str>,
+        restart: crate::dispatchliveness::Restart,
+    ) {
+        let entry = self.tasks.entry(task).or_default();
+        entry.restart = restart;
+        let Some(Ok(at)) = started.map(chrono::DateTime::parse_from_rfc3339) else {
             return;
         };
-        let entry = self.tasks.entry(task).or_default();
         if entry.started.is_none() {
             entry.started = Some(SystemTime::from(at));
         }
+    }
+
+    /// Task `task` did `did` at `at` (#3900): it ran a command, or sent its asking chat a note.
+    /// Kept for a task alone, as what it ran is.
+    pub fn heard_doing(&mut self, task: u32, did: crate::dispatchliveness::Did, at: SystemTime) {
+        if let Some(entry) = self.tasks.get_mut(&task) {
+            entry.lately.did(did, at);
+        }
+    }
+
+    /// Task `task`'s liveness at `now` (#3900), where `running` is what the board says of its
+    /// program.
+    pub fn liveness(
+        &self,
+        task: u32,
+        running: bool,
+        now: SystemTime,
+    ) -> crate::dispatchliveness::Liveness {
+        let (lately, restart) = self
+            .tasks
+            .get(&task)
+            .map(|entry| (entry.lately, entry.restart))
+            .unwrap_or_default();
+        lately.liveness(running, restart, now)
     }
 
     /// Chat `chat` has closed. `task_of` is its asking chat and its name, where it was a task:
@@ -1993,12 +2036,19 @@ pub fn list_text(rows: &[Row]) -> String {
         // One that finished before this app was started has no number to be asked after by.
         let chat = match (row.finished, row.chat) {
             (true, 0) => "finished earlier, under a chat number no longer known".to_owned(),
+            // Orphaned by a restart, with no chat here to be its number (#3900).
+            (false, 0) => "under a chat number no longer known".to_owned(),
             (_, chat) => format!("chat {chat}"),
         };
         let age = if row.finished {
             format!("{age} · finished, its program has ended")
         } else {
             age
+        };
+        // Whether it is alive (#3900), where the app said.
+        let age = match &row.liveness {
+            Some(live) => format!("{age} · {}", live.said()),
+            None => age,
         };
         said.push_str(&format!(
             "\n- {chat} · '{}' · {} · {place} · {} · {age}{}",
@@ -2022,6 +2072,8 @@ pub fn list_text(rows: &[Row]) -> String {
 mod tests {
     use super::*;
     use crate::active::Place;
+    use crate::dispatchliveness::Did;
+    use crate::dispatchliveness::Restart::{KeptRunning, StartedAgain, StartedHere};
     use crate::handback::Task as Reported;
 
     const ASKER: u32 = 3;
@@ -2191,6 +2243,7 @@ mod tests {
             branch: None,
             branch_stands: None,
             finished: false,
+            liveness: None,
         };
         let listed = list_text(&[row(8, false), row(9, true)]);
         assert_eq!(
@@ -2867,6 +2920,7 @@ mod tests {
                 branch: None,
                 branch_stands: None,
                 finished: false,
+                liveness: None,
             },
             Row {
                 chat: 12,
@@ -2879,6 +2933,7 @@ mod tests {
                 branch: None,
                 branch_stands: None,
                 finished: false,
+                liveness: None,
             },
         ];
 
@@ -2912,6 +2967,7 @@ mod tests {
             branch: Some("fix-the-queue-b5rc0def".to_owned()),
             branch_stands: Some(crate::dispatchplace::Standing::Kept.said().to_owned()),
             finished: false,
+            liveness: None,
         };
         let listed = list_text(std::slice::from_ref(&on_a_branch));
         assert!(
@@ -2955,17 +3011,68 @@ mod tests {
         // conversation is as old as its dispatch's record says it is.
         let mut ledger = Ledger::default();
         let then = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
-        ledger.brought_back(TASK, "1970-01-01T00:16:40+00:00");
+        ledger.brought_back(TASK, Some("1970-01-01T00:16:40+00:00"), StartedAgain);
         assert_eq!(
             ledger.age(TASK, then + Duration::from_secs(90)),
             Some(Duration::from_secs(90))
         );
         // A start this launch saw is not moved by a record.
-        ledger.brought_back(TASK, "1970-01-01T00:00:00+00:00");
+        ledger.brought_back(TASK, Some("1970-01-01T00:00:00+00:00"), StartedAgain);
         assert_eq!(ledger.age(TASK, then), Some(Duration::ZERO));
         // A stamp that does not read says no age, never a made-up one.
-        ledger.brought_back(12, "yesterday");
+        ledger.brought_back(12, Some("yesterday"), StartedAgain);
         assert_eq!(ledger.age(12, then), None);
+    }
+
+    #[test]
+    fn a_task_says_whether_it_lives_how_it_came_back_and_what_it_did_last() {
+        // #3900: after a restart a coordinator took a live task for a dead one.
+        let mut ledger = Ledger::default();
+        let at = |secs| SystemTime::UNIX_EPOCH + Duration::from_secs(secs);
+        ledger.brought_back(TASK, None, KeptRunning);
+        ledger.heard_doing(TASK, Did::RanACommand, at(100));
+        ledger.heard_doing(TASK, Did::SentANote, at(160));
+        let live = ledger.liveness(TASK, true, at(220));
+        assert_eq!(
+            live.said(),
+            "its program is running, last sent a note 1m ago, it kept running across purlis's \
+             restart"
+        );
+        // A chat that is no task here keeps nothing heard.
+        ledger.heard_doing(12, Did::RanACommand, at(100));
+        assert_eq!(ledger.liveness(12, true, at(220)).heard_secs, None);
+        // And a task this run started says no restart.
+        ledger.started(13, at(0));
+        assert_eq!(ledger.liveness(13, false, at(1)).restart, StartedHere);
+    }
+
+    #[test]
+    fn a_listed_row_says_its_liveness_after_its_age() {
+        let row = Row {
+            chat: 7,
+            name: "forms".to_owned(),
+            persona: Some("builder".to_owned()),
+            place: "alpha".to_owned(),
+            state: State::Running.say(),
+            age_secs: None,
+            by_person: false,
+            branch: None,
+            branch_stands: None,
+            finished: false,
+            liveness: Some(crate::dispatchliveness::Liveness {
+                running: true,
+                heard_secs: Some(120),
+                did: Some(Did::RanACommand),
+                restart: StartedAgain,
+            }),
+        };
+        assert_eq!(
+            list_text(&[row]),
+            "1 task dispatched by this chat:\n- chat 7 · 'forms' · builder · workspace 'alpha' \
+             · running · started before this app did · its program is running, last ran a \
+             command 2m ago, purlis's restart ended it and started it again on its \
+             conversation"
+        );
     }
 
     // ----- cancelling ----------------------------------------------------------------------
@@ -3514,6 +3621,7 @@ mod tests {
             branch: None,
             branch_stands: None,
             finished: true,
+            liveness: None,
         };
         assert_eq!(
             list_text(&[finished(9), finished(0)]),

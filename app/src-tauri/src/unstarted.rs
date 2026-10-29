@@ -419,7 +419,20 @@ pub(crate) fn listed_for(held: &Held, asker: u32) -> Vec<purlis_core::dispatched
             branch: None,
             branch_stands: None,
             finished: false,
+            // A launch could not start it again: no program of it runs, and this app cannot
+            // reach it until the person starts it (#3900).
+            liveness: Some(purlis_core::dispatchliveness::Liveness::orphaned()),
         })
+        .collect()
+}
+
+/// The tasks of chat `asker` a launch could not start again, by number and name (#3900): what
+/// its turn's roster marks as orphaned by the restart.
+pub(crate) fn orphans_of(held: &Held, asker: u32) -> Vec<(u32, String)> {
+    waiting(held)
+        .into_iter()
+        .filter(|task| task.asker == asker)
+        .map(|task| (task.number, task.name))
         .collect()
 }
 

@@ -329,6 +329,43 @@ pub struct OpenTask {
     /// Whether it is stopped on the person: a prompt of its harness's or its sandbox's Notice.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub on_the_person: bool,
+    /// Whether it is alive (#3900): its program, what it last did, and how it stands across
+    /// the app's restart, or that it is orphaned by one. None from an app older than this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub liveness: Option<crate::dispatchliveness::Liveness>,
+}
+
+impl Working {
+    /// Says of each open task in its roster whether it is alive (#3900), as `of` has it for
+    /// the task's number: the app's ledger and board, which this module does not hold.
+    pub fn with_liveness(
+        mut self,
+        of: impl Fn(u32) -> Option<crate::dispatchliveness::Liveness>,
+    ) -> Self {
+        for task in &mut self.open_tasks {
+            task.liveness = of(task.chat);
+        }
+        self
+    }
+
+    /// Adds the chat's own tasks **orphaned by the app's restart** (#3900) to its roster, each
+    /// by its number and name: tasks whose dispatch still runs that this app cannot reach, so
+    /// the chat does not take one for a task at work, nor forget it. Held to [`MOST_ROWS`] with
+    /// the rest. Only a turn's answer carries a roster, so only it is given these.
+    pub fn with_orphans(mut self, orphans: impl IntoIterator<Item = (u32, String)>) -> Self {
+        let mut all: Vec<OpenTask> = std::mem::take(&mut self.open_tasks);
+        all.extend(orphans.into_iter().map(|(chat, name)| OpenTask {
+            chat,
+            name,
+            state: Doing::Open,
+            on_the_person: false,
+            liveness: Some(crate::dispatchliveness::Liveness::orphaned()),
+        }));
+        self.more_tasks += all.len().saturating_sub(MOST_ROWS);
+        all.truncate(MOST_ROWS);
+        self.open_tasks = all;
+        self
+    }
 }
 
 /// Why a chat asks, which decides whether the app counts it as told.
@@ -518,6 +555,7 @@ fn open_tasks(known: &[Known], chat: u32) -> Vec<OpenTask> {
             name: one.name.clone(),
             state: Doing::of(one),
             on_the_person: one.asking.is_some(),
+            liveness: None,
         })
         .collect();
     tasks.sort_by_key(|one| one.chat);
@@ -806,7 +844,19 @@ fn roster_line(working: &Working) -> Option<String> {
             } else {
                 task.state.word()
             };
-            format!("chat {} {} {state}", task.chat, quoted(&task.name))
+            // Whether it is alive (#3900): an orphan says that in place of a state.
+            match &task.liveness {
+                Some(live) if live.is_orphaned() => {
+                    format!("chat {} {} {}", task.chat, quoted(&task.name), live.said())
+                }
+                Some(live) => format!(
+                    "chat {} {} {state} ({})",
+                    task.chat,
+                    quoted(&task.name),
+                    live.said()
+                ),
+                None => format!("chat {} {} {state}", task.chat, quoted(&task.name)),
+            }
         })
         .collect();
     if working.more_tasks > 0 {
