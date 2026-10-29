@@ -502,10 +502,13 @@ fn a_codex_chat_is_handed_each_plugin_and_skill_the_project_turned_off_by_its_ow
 /// `session_record`, the record command's twin (#1332), and the two dispatch tools (V98b),
 /// beside the read-only tools of `chattools::PRE_ALLOWED`. A handoff has a command and no
 /// tool, so it adds none here.
-/// And the browser tools, on the chat's browser Ask (#2245).
-const THE_RECORD_TOOLS_ALLOW: usize =
-    1 + crate::chattools::DISPATCH_TOOLS.len() + crate::browsertools::TOOLS.len()
-        - crate::browsertools::ASKED_EACH_TIME.len();
+/// And the browser tools, on the chat's browser Ask (#2245). And the tools that write only the
+/// chat's own scope, and its question to the person (#3829).
+const THE_RECORD_TOOLS_ALLOW: usize = 1
+    + crate::chattools::DISPATCH_TOOLS.len()
+    + crate::chattools::OWN_SCOPE_TOOLS.len()
+    + crate::browsertools::TOOLS.len()
+    - crate::browsertools::ASKED_EACH_TIME.len();
 
 #[test]
 fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_asking() {
@@ -535,6 +538,8 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "Bash(purlis dispatch --wait *)",
             "Bash(purlis dispatch wait *)",
             "Bash(purlis dispatch list)",
+            // Its arguments too (#3829): a filter is still a read of the chat's own tasks.
+            "Bash(purlis dispatch list *)",
             "Bash(purlis dispatch read *)",
             "Bash(purlis dispatch cancel *)",
             "Bash(purlis dispatch tell *)",
@@ -549,7 +554,33 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "Bash(purlis handoff --vision *)",
             "Bash(purlis handoff report *)",
             "Bash(purlis persona where)",
+            "Bash(purlis persona show *)",
+            "Bash(purlis persona list)",
+            "Bash(purlis persona recall *)",
+            "Bash(purlis recall *)",
+            "Bash(purlis workspace recall *)",
+            "Bash(purlis workspace list)",
+            "Bash(purlis workspace current)",
+            "Bash(purlis docs show *)",
+            "Bash(purlis news)",
+            "Bash(purlis news *)",
+            "Bash(purlis theme check *)",
+            "Bash(purlis theme list)",
+            "Bash(purlis theme list *)",
             "Bash(purlis worktree commit *)",
+            // The chat's own todos, listed, and its branch folder (#3829, ruled 2026-10-29).
+            "Bash(purlis ws todo)",
+            "Bash(purlis ws todo --done)",
+            "Bash(purlis workspace todo)",
+            "Bash(purlis workspace todo --done)",
+            "Bash(purlis worktree update)",
+            "Bash(purlis worktree update *)",
+            "Bash(purlis worktree push)",
+            "Bash(purlis worktree push *)",
+            "Bash(purlis worktree done)",
+            "Bash(purlis worktree abandon *)",
+            "Bash(purlis worktree list)",
+            "Bash(purlis worktree list *)",
             "mcp__purlis__dispatch",
             "mcp__purlis__dispatch_report",
             "mcp__purlis__dispatch_tell",
@@ -573,6 +604,14 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "mcp__purlis__skill_runs",
             "mcp__purlis__skill_find",
             "mcp__purlis__skill_load",
+            // And what writes only the chat's own scope, and its question to the person (#3829).
+            "mcp__purlis__todo_add",
+            "mcp__purlis__todo_done",
+            "mcp__purlis__memory_add",
+            "mcp__purlis__persona_remember",
+            "mcp__purlis__workspace_section",
+            "mcp__purlis__workspace_vision",
+            "mcp__purlis__ask_operator",
             // And the browser tools, on the chat's browser Ask (#2245).
             "mcp__purlis__browser_open",
             "mcp__purlis__browser_navigate",
@@ -626,6 +665,8 @@ fn a_dispatch_is_pre_allowed_by_each_spelling_it_has_and_by_no_wildcard_over_the
             "Bash(purlis dispatch --wait *)",
             "Bash(purlis dispatch wait *)",
             "Bash(purlis dispatch list)",
+            // Its arguments too (#3829): a filter is still a read of the chat's own tasks.
+            "Bash(purlis dispatch list *)",
             "Bash(purlis dispatch read *)",
             "Bash(purlis dispatch cancel *)",
             "Bash(purlis dispatch tell *)",
@@ -832,10 +873,10 @@ fn a_claude_code_chat_runs_its_browser_tools_on_its_browser_ask_not_the_harness_
 }
 
 #[test]
-fn a_claude_code_chat_is_still_asked_before_every_other_charter_tool() {
-    // V79: the writes and `ask_operator` keep Claude Code's prompt. Every tool the server
-    // offers that is not one of the five reads, `persona_where` (V98a) or `dispatch_list`
-    // (#1463) has no allow, whatever it is marked.
+fn every_charter_tool_a_claude_code_chat_runs_without_asking_is_ruled_in_by_name() {
+    // V79: a tool is pre-allowed only once someone rules it in by name, whatever it is
+    // marked. Since #3829 (ruled 2026-10-29) every tool the server offers today is: a tool
+    // added later fails here until it is ruled in, and is asked about meanwhile.
     let empty = tempfile::tempdir().expect("a directory");
     let (args, _) = claude("/bin/charter", empty.path());
     let settings: serde_json::Value = serde_json::from_str(settings_of(&args)).expect("JSON");
@@ -870,21 +911,29 @@ fn a_claude_code_chat_is_still_asked_before_every_other_charter_tool() {
         "dispatch_close",
         "dispatch_note",
         "dispatch_ask",
+        // And what writes only the chat's own scope, and its question to the person, which
+        // the app asks once itself (#3829, ruled 2026-10-29).
+        "todo_add",
+        "todo_done",
+        "memory_add",
+        "persona_remember",
+        "workspace_section",
+        "workspace_vision",
+        "ask_operator",
     ];
     let others: Vec<&str> = crate::chattools::TOOLS
         .iter()
         .map(|tool| tool.name)
         .filter(|name| !reads.contains(name))
         .collect();
-    assert!(others.contains(&"ask_operator"), "{others:?}");
-    assert!(others.contains(&"todo_add"), "{others:?}");
-    for name in others {
+    assert!(others.is_empty(), "not ruled on: {others:?}");
+    for name in reads {
         let rule = format!("mcp__purlis__{name}");
         assert!(
-            !allowed
+            allowed
                 .iter()
                 .any(|allow| allow == &serde_json::json!(rule)),
-            "{rule} is pre-allowed"
+            "{rule} asks"
         );
     }
     // Nor the server as a whole, which would allow every one of its tools.
@@ -1085,77 +1134,15 @@ fn a_sandboxed_claude_code_chat_carries_its_sandbox_in_the_same_settings() {
     let settings: serde_json::Value = serde_json::from_str(settings_of(&args)).expect("JSON");
 
     assert_eq!(settings["sandbox"], compiled.sandbox);
+    // The same allow an unsandboxed chat in the same folder is handed (the snapshot of it is
+    // `a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_asking`'s):
+    // the sandbox adds its denies and takes no allow away.
+    let (unsandboxed, _) = claude("/bin/charter", plane.path());
+    let unsandboxed: serde_json::Value =
+        serde_json::from_str(settings_of(&unsandboxed)).expect("JSON");
     assert_eq!(
         settings["permissions"]["allow"],
-        serde_json::json!([
-            "Bash(purlis session record *)",
-            "mcp__purlis__session_record",
-            "Bash(purlis dispatch --name *)",
-            "Bash(purlis dispatch --to *)",
-            "Bash(purlis dispatch --profile *)",
-            "Bash(purlis dispatch report *)",
-            "Bash(purlis dispatch --wait *)",
-            "Bash(purlis dispatch wait *)",
-            "Bash(purlis dispatch list)",
-            "Bash(purlis dispatch read *)",
-            "Bash(purlis dispatch cancel *)",
-            "Bash(purlis dispatch tell *)",
-            "Bash(purlis dispatch note *)",
-            "Bash(purlis dispatch ask *)",
-            "Bash(purlis dispatch answer *)",
-            "Bash(purlis dispatch close *)",
-            "Bash(purlis handoff --name *)",
-            "Bash(purlis handoff --report *)",
-            "Bash(purlis handoff --persona *)",
-            "Bash(purlis handoff --create *)",
-            "Bash(purlis handoff --vision *)",
-            "Bash(purlis handoff report *)",
-            "Bash(purlis persona where)",
-            "Bash(purlis worktree commit *)",
-            "mcp__purlis__dispatch",
-            "mcp__purlis__dispatch_report",
-            "mcp__purlis__dispatch_tell",
-            "mcp__purlis__dispatch_answer",
-            "mcp__purlis__dispatch_cancel",
-            "mcp__purlis__dispatch_close",
-            "mcp__purlis__dispatch_note",
-            "mcp__purlis__dispatch_ask",
-            "mcp__purlis__todo_list",
-            "mcp__purlis__memory_search",
-            "mcp__purlis__session_record_list",
-            "mcp__purlis__session_record_read",
-            "mcp__purlis__change_status",
-            "mcp__purlis__persona_where",
-            "mcp__purlis__dispatch_list",
-            "mcp__purlis__dispatch_read",
-            "mcp__purlis__dispatch_wait",
-            "mcp__purlis__theme_preview",
-            "mcp__purlis__skill_list",
-            "mcp__purlis__skill_runs",
-            "mcp__purlis__skill_find",
-            "mcp__purlis__skill_load",
-            "mcp__purlis__browser_open",
-            "mcp__purlis__browser_navigate",
-            "mcp__purlis__browser_snapshot",
-            "mcp__purlis__browser_find",
-            "mcp__purlis__browser_click",
-            "mcp__purlis__browser_double_click",
-            "mcp__purlis__browser_hover",
-            "mcp__purlis__browser_type",
-            "mcp__purlis__browser_press",
-            "mcp__purlis__browser_select",
-            "mcp__purlis__browser_drag",
-            "mcp__purlis__browser_scroll",
-            "mcp__purlis__browser_back",
-            "mcp__purlis__browser_wait_for_text",
-            "mcp__purlis__browser_pages",
-            "mcp__purlis__browser_switch_page",
-            "mcp__purlis__browser_screenshot",
-            "mcp__purlis__browser_new",
-            "mcp__purlis__browser_close",
-            "mcp__purlis__browser_login",
-            "mcp__purlis__browser_downloads",
-        ])
+        unsandboxed["permissions"]["allow"]
     );
     assert_eq!(
         settings["permissions"]["deny"],

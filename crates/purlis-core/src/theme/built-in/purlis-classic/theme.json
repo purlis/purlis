@@ -25,6 +25,8 @@
     "status-item.root.accent.text": "text.primary",
     "titlebar.workspace.corner-radius": 5,
     "table.rule.fill": "border.subtle",
+    "list.root.card.fill": "surface.sunken",
+    "list.root.card.disabled.fill": "surface.sunken",
     "panel-separator.root.hover.fill": "accent.base",
     "panel-separator.root.pressed.fill": "accent.base",
     "panel-separator.grip.hover.fill": "transparent",

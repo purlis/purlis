@@ -14,6 +14,7 @@ import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { Badge } from "../badge/Badge";
 import { Button } from "../button/Button";
 import { Menu, MenuItem, MenuWords } from "../menu/Menu";
+import { Panel } from "../panel/Panel";
 import { List } from "./List";
 import { ListCardRow } from "./CardRow";
 
@@ -33,80 +34,78 @@ const menuOf = (name: string, said: (what: string) => void) => () => (
   </Menu>
 );
 
-/** **The sidebar Skills view's cards** (variant C), in a 260 px side view. */
+/**
+ * **The sidebar Skills view's cards** (variant C), in a 260 px side view, on the side panel's own
+ * ground (#3774), so each theme's cards are pictured on what they stand on in the window.
+ */
 function SkillCards() {
   const [said, setSaid] = useState("Nothing run");
   return (
-    <div
-      style={{
-        inlineSize: "260px",
-        display: "grid",
-        gap: "var(--space-3)",
-        background: "var(--surface-base)",
-      }}
-    >
-      <List
-        aria-label="Skills"
-        size="sm"
-        onAction={(key) => setSaid(`Opened the studio at Library › ${String(key)}`)}
-      >
-        <ListCardRow
-          id="grilling"
-          textValue="grilling"
-          name="grilling"
-          mark={<Badge>persona</Badge>}
-          actions={
-            <Button size="sm" onPress={() => setSaid("Typed /grilling")}>
-              Use
-            </Button>
-          }
-          reason={{
-            says: "Changed by a chat on 28 Oct. This chat keeps the version you accepted.",
-            tone: "warning",
-          }}
-          fix={
-            <Button size="sm" onPress={() => setSaid("Reviewing the change")}>
-              Review the change
-            </Button>
-          }
-          menu={menuOf("grilling", setSaid)}
-        />
-        <ListCardRow
-          id="deploy"
-          textValue="deploy"
-          name="deploy"
-          mark={<Badge>project</Badge>}
-          actions={
-            <Button size="sm" onPress={() => setSaid("Typed /deploy")}>
-              Use
-            </Button>
-          }
-          description={LONG}
-          menu={menuOf("deploy", setSaid)}
-        />
-        <ListCardRow
-          id="lint-rs"
-          textValue="lint-rs"
-          name="lint-rs"
-          mark={<Badge>workspace</Badge>}
-          actions={
-            <Button size="sm" isDisabled tooltip="No chat is in front to use it in.">
-              Use
-            </Button>
-          }
-          reason={{ says: "Off in smart-ide", tone: "quiet" }}
-          fix={
-            <Button size="sm" onPress={() => setSaid("Turned lint-rs on")}>
-              Turn on in smart-ide
-            </Button>
-          }
-          menu={menuOf("lint-rs", setSaid)}
-        />
-      </List>
-      <p role="status" style={{ margin: 0 }}>
-        {said}
-      </p>
-    </div>
+    <Panel variant="side">
+      <div style={{ inlineSize: "260px", display: "grid", gap: "var(--space-3)" }}>
+        <List
+          aria-label="Skills"
+          size="sm"
+          onAction={(key) => setSaid(`Opened the studio at Library › ${String(key)}`)}
+        >
+          <ListCardRow
+            id="grilling"
+            textValue="grilling"
+            name="grilling"
+            mark={<Badge>persona</Badge>}
+            actions={
+              <Button size="sm" onPress={() => setSaid("Typed /grilling")}>
+                Use
+              </Button>
+            }
+            reason={{
+              says: "Changed by a chat on 28 Oct. This chat keeps the version you accepted.",
+              tone: "warning",
+            }}
+            fix={
+              <Button size="sm" onPress={() => setSaid("Reviewing the change")}>
+                Review the change
+              </Button>
+            }
+            menu={menuOf("grilling", setSaid)}
+          />
+          <ListCardRow
+            id="deploy"
+            textValue="deploy"
+            name="deploy"
+            mark={<Badge>project</Badge>}
+            actions={
+              <Button size="sm" onPress={() => setSaid("Typed /deploy")}>
+                Use
+              </Button>
+            }
+            description={LONG}
+            menu={menuOf("deploy", setSaid)}
+          />
+          <ListCardRow
+            id="lint-rs"
+            textValue="lint-rs"
+            name="lint-rs"
+            mark={<Badge>workspace</Badge>}
+            actions={
+              <Button size="sm" isDisabled tooltip="No chat is in front to use it in.">
+                Use
+              </Button>
+            }
+            reason={{ says: "Off in smart-ide", tone: "quiet" }}
+            fix={
+              <Button size="sm" onPress={() => setSaid("Turned lint-rs on")}>
+                Turn on in smart-ide
+              </Button>
+            }
+            menu={menuOf("lint-rs", setSaid)}
+          />
+        </List>
+        <p role="status" style={{ margin: 0 }}>
+          {said}
+        </p>
+      </div>
+    </Panel>
   );
 }
 
