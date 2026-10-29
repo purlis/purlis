@@ -41,8 +41,8 @@ export function RunnerKeyChangedNotice({
       onDismiss={dismiss}
     >
       The runner this project&apos;s chats run on answered with another key than the one it was
-      paired with, or its cluster no longer vouches for that key, so purlis sends it nothing.
-      Remove its pool and add it again to run them there.
+      paired with, or its cluster no longer vouches for that key, so purlis sends it nothing. Remove
+      its pool and add it again to run them there.
     </Notice>
   );
 }

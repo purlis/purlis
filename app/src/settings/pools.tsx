@@ -2,13 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState, type ReactNode } from "react";
-import type {
-  ClusterPoolRow,
-  PoolLink,
-  PoolRow,
-  PoolVersion,
-  ProjectNotHeld,
-} from "../bindings";
+import type { ClusterPoolRow, PoolLink, PoolRow, PoolVersion, ProjectNotHeld } from "../bindings";
 import { Notice } from "../Notice";
 import { useProjectsNotHeld } from "../notheld";
 import { askLink, askVersion, removePool, startAddingAPool, usePools } from "../pools";
