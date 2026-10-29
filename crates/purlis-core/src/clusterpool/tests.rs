@@ -989,7 +989,7 @@ fn kubectl_is_found_by_an_absolute_path_and_never_by_a_relative_one() {
 
 #[cfg(unix)]
 #[test]
-fn a_kubectl_run_never_inherits_a_kubeconfig_and_finds_plugins_beside_kubectl() {
+fn a_kubectl_run_never_inherits_a_kubeconfig_and_finds_plugins_beside_it_or_system_wide() {
     let cluster = FakeCluster::new();
     let kubectl = cluster
         .kubectl()
@@ -1001,6 +1001,8 @@ fn a_kubectl_run_never_inherits_a_kubeconfig_and_finds_plugins_beside_kubectl() 
     let bin = cluster.dir.path().join("bin").display().to_string();
     assert_eq!(path.split(':').next(), Some(bin.as_str()));
     assert!(path.split(':').any(|dir| dir == "/usr/bin"), "{path}");
+    // Never a folder of the home, where a program could be put to be run as a plugin.
+    assert!(!path.contains(".local/bin"), "{path}");
     assert!(
         cluster
             .calls()

@@ -680,9 +680,8 @@ impl Kubectl {
     /// Docker's is ([`crate::dockerpool::Docker::on_this_machine`]): the first of the places
     /// installers put it (`KUBECTL_INSTALLED`, then under `home`), else the first on `path`, of
     /// its absolute folders alone. A window started from the Finder has a `PATH` that names
-    /// none. Its runs are given a `PATH` of its own folder, then `path`'s absolute folders and
-    /// the fixed ones ([`crate::programs::search_dirs_from`]), where a kubeconfig's credential
-    /// plugin is found. Refused, saying how to get one, where there is none.
+    /// none. Its runs are given a `PATH` of its own folders and the machine's (above). Refused,
+    /// saying how to get one, where there is none.
     pub fn on_this_machine(
         path: Option<&str>,
         home: Option<&std::path::Path>,
@@ -718,9 +717,22 @@ impl Kubectl {
                         .into(),
                 )
             })?;
-        let mut folders: Vec<PathBuf> = program.parent().map(PathBuf::from).into_iter().collect();
-        for folder in crate::programs::search_dirs_from(path.map(std::ffi::OsStr::new), home) {
-            if !folders.contains(&folder) {
+        // Its own folder, the one its link leads to, then the machine's own: never a folder of
+        // the home or of the window's `PATH`, so nothing put there is run as a credential
+        // plugin by a run of this machine's own.
+        let linked = program
+            .canonicalize()
+            .ok()
+            .and_then(|real| real.parent().map(PathBuf::from));
+        let mut folders: Vec<PathBuf> = Vec::new();
+        for folder in program
+            .parent()
+            .map(PathBuf::from)
+            .into_iter()
+            .chain(linked)
+            .chain(crate::programs::SYSTEM_BIN.iter().map(PathBuf::from))
+        {
+            if folder.is_absolute() && !folders.contains(&folder) {
                 folders.push(folder);
             }
         }
