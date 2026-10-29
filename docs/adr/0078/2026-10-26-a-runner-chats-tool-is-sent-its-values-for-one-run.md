@@ -76,7 +76,8 @@ D-2047-8 in the pull request). §7's table row for secrets stands, read as below
     runner's record of the chat (item 6) keeps a reader of the chat's own confinement on the
     runner, found in that host's hold by its id and the program that started it. Each run is
     held to the sandbox as it was compiled at the start, plus the hosts that confinement's board
-    allows live now. So an Allow on a block's Notice for the chat reaches its tool's next run,
+    allows live as its values come, read again then, so a change while the person was asked
+    holds for that run, and a chat gone meanwhile runs nothing. So an Allow on a block's Notice for the chat reaches its tool's next run,
     and a Forget narrows that run again, as `confines_now` holds a run on the desktop. Only the
     window's answers change the board, so nothing else can widen a run. A confinement that has
     ended, or one held under its id for another program, allows nothing live. *Decided in
@@ -86,5 +87,7 @@ D-2047-8 in the pull request). §7's table row for secrets stands, read as below
     runner lets go of every line it handed on, and the window ends each of that runner's
     commands that wait on it (`link_down`). Their Asks go, no vault is read for them, and
     nothing is sent. Values allowed for a command that went after the answer are never handed
-    on, and nothing is recorded as sent. *Decided in implementation, to be confirmed* (D-3408-1,
-    D-3408-2).
+    on once the window has heard it went, and nothing is recorded as sent. A command that goes
+    in the moments before the window hears so may still be handed its values, which its runner
+    runs nothing on and keeps none of. That is the over-record class of item 7 (D-3406-2).
+    *Decided in implementation, to be confirmed* (D-3408-1, D-3408-2).

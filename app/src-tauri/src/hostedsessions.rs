@@ -1902,7 +1902,7 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                 // command of its that waits here has gone, its Ask with it (#3408).
                 let projects: Vec<Arc<Relayed>> = lock(&shared.hearing).values().cloned().collect();
                 for relayed in projects {
-                    relayed.lost_its_host();
+                    relayed.lost_its_host(lines.link);
                 }
                 lock(&shared.runner_log).link(true);
                 reconnect(&shared, Reconnect::Started);
