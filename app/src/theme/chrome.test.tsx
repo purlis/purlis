@@ -300,6 +300,7 @@ describe.each(Object.keys(BUILT_IN))("the window's chrome in %s", (theme) => {
                     severity: "bad",
                     subject: "save",
                     detail: "the project's save is blocked: a conflict",
+                    workspaces: [],
                     way: { kind: "saving" },
                   },
                 ],
