@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use purlis_core::clusterpool::{
-    self, Claimed, Keeping, Kubectl, OperatorKey, Paired, Refused, Vouched,
+    self, Claimed, Keeping, Kubectl, Paired, PoolPin, Refused, Vouched,
 };
 use purlis_host::CommandConnector;
 use purlis_session_protocol::hostlink::{
@@ -92,7 +92,7 @@ fn claimed(
     }
 }
 
-fn vouched(kubectl: &Kubectl, operator: &OperatorKey, claimed: &Claimed) -> Vouched {
+fn vouched(kubectl: &Kubectl, operator: &PoolPin, claimed: &Claimed) -> Vouched {
     eventually("the operator vouches for the runner's key", || {
         clusterpool::vouched_for(kubectl, operator, claimed).expect("the statement checks")
     })
@@ -100,7 +100,7 @@ fn vouched(kubectl: &Kubectl, operator: &OperatorKey, claimed: &Claimed) -> Vouc
 
 async fn linked(
     kubectl: &Kubectl,
-    operator: &OperatorKey,
+    operator: &PoolPin,
     paired: &Paired,
     ours: Identity,
 ) -> (Client, Acceptor) {
@@ -173,9 +173,9 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
         )
         .expect("the pool");
 
-    // Adding the pool pins the operator's key its status names.
+    // Adding the pool pins the operator's key and the cluster its status names (#3305).
     let operator = eventually("the pool names the operator's key", || {
-        kubectl.operator_key(&pool).ok()
+        kubectl.pool_pin(&pool).ok()
     });
 
     let first = claimed(&kubectl, &namespace, "ada-1", &pool, Keeping::Fresh);
@@ -393,7 +393,7 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
         )
         .expect("the pool");
     let operator = eventually("the pool names the operator's key", || {
-        kubectl.operator_key(&pool).ok()
+        kubectl.pool_pin(&pool).ok()
     });
 
     let kept = claimed(&kubectl, &namespace, "ada-kept", &pool, Keeping::Kept);

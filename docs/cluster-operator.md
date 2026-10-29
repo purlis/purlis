@@ -131,7 +131,7 @@ kubectl create namespace purlis-system
 kubectl label namespace purlis-system pod-security.kubernetes.io/enforce=restricted
 
 # 3. The key the operator signs runners' link keys with, made once, here, and kept as a Secret
-#    the operator's pod mounts. Keep it: a new key makes every desktop ask again.
+#    the operator's pod mounts. Keep it: to change it, roll it (see "Rolling the signing key").
 #    Piped, so the key is never written to a file.
 openssl genpkey -algorithm ed25519 |
   kubectl -n purlis-system create secret generic purlis-cluster-operator-signing-key \
@@ -191,7 +191,7 @@ kubectl apply --server-side -f operator/deploy/policy.yaml
 kubectl apply --server-side -f operator/deploy/crds.yaml
 
 # 3. The `purlis-system` namespace and the key the operator signs runners' link keys with,
-#    kept as a Secret its pod mounts. Keep it: a new key makes every desktop ask again.
+#    kept as a Secret its pod mounts. Keep it: to change it, roll it (see "Rolling the signing key").
 kubectl create namespace purlis-system
 kubectl label namespace purlis-system pod-security.kubernetes.io/enforce=restricted
 #    Piped, so the key is never written to a file.
@@ -336,15 +336,17 @@ claimed. Two witnesses say which key that runner holds, and both must agree:
    to the template it made for the pool in full, every field but the few the cluster itself
    sets or defaults (a kept Claim's pod with its own volume in place of the template's folder,
    as upstream puts it there), and refuses a pool's template that someone else changed. Then
-   it signs a statement of the claim (its namespace, name and uid), the runner namespace and
-   the pod's name there, the key, the requester and until when it holds (ten minutes on) with
-   its own Ed25519 key. The statement and its signature are the Claim's `status.linkKey`, and
-   its `KeyPublished` condition says `Vouched`, or why not yet. Every Pool's
-   `status.signingKey` names the operator's key, which a desktop pins when it adds the pool.
+   it signs a statement of the cluster, the claim (its namespace, name and uid), the runner
+   namespace and the pod's name there, the key, the requester and until when it holds (ten
+   minutes on) with its own Ed25519 key. The statement and its signature are the Claim's
+   `status.linkKey`, and its `KeyPublished` condition says `Vouched`, or why not yet. Every
+   Pool's `status.signingKey` names the operator's key and `status.cluster` its cluster, the uid
+   of the cluster's `kube-system` namespace, which the operator reads once as it starts. A
+   desktop pins both when it adds the pool.
 3. **The desktop pairs over its own `kubectl exec`** into the pod the statement names, in the
    runner namespace it names, as a Docker pool's desktop pairs over `docker exec`, and the
-   runner answers with its device id and key. A statement signed by another key, about another
-   claim or requester, naming a runner namespace other than the requester's own, or a runner
+   runner answers with its device id and key. A statement signed by another key, made in
+   another cluster, about another claim or requester, naming a runner namespace other than the requester's own, or a runner
    answering another key than the one vouched for, is refused, and so is a statement that names
    another runner namespace, pod or key before any later link. The pairing takes the private half out of the
    shared folder, so it is left only in the session host's own. The operator looks at a
@@ -485,6 +487,47 @@ namespace, which its desktop links to. The old runner is outside that namespace 
 person's quota, and anyone with rights in the Claim's namespace can still reach it. Delete such
 Claims and make them again soon after upgrading: the old runner goes with the Claim.
 
+## Rolling the signing key
+
+A team admin rolls the operator's signing key without any desktop being asked again (#3305).
+The key and the next one are two files of the one Secret, `purlis-cluster-operator-signing-key`:
+`key.pem`, the key it signs with, and `next.pem`, there only during a roll. The operator's pod
+mounts the whole Secret, and the kubelet refreshes it when it changes, so a roll needs no
+restart: the operator reads both files again every minute.
+
+1. **Add the next key** as `next.pem`, piped, so it is never written to a file:
+
+   ```sh
+   kubectl -n purlis-system patch secret purlis-cluster-operator-signing-key --type merge \
+     -p "{\"data\":{\"next.pem\":\"$(openssl genpkey -algorithm ed25519 | base64 | tr -d '\n')\"}}"
+   ```
+
+   Within a couple of minutes every Pool's status names it as `status.nextSigningKey`, with
+   `status.nextSigningKeyVouch`: a statement, `purlis cluster operator key roll v1`, of the
+   cluster, the key it rolls from, the key it rolls to and until when it holds, signed by the
+   current key. It holds seven days, and the operator signs it again while `next.pem` is there.
+   Every Claim's statement is signed by both keys: `status.linkKey.signature` by the current
+   key, `status.linkKey.nextSignature` by the next.
+2. **Wait while desktops see it.** A desktop that reads the Pool during the roll checks the
+   current key's word with the key it pinned, and moves its pin to the next key, asking no one.
+   Keep `next.pem` for as long as your desktops may go without looking at the pool: a week is
+   a good default.
+3. **Make the next key the key**: `next.pem` becomes `key.pem`, and `next.pem` goes, in one
+   change, so the kubelet swaps both at once:
+
+   ```sh
+   kubectl -n purlis-system get secret purlis-cluster-operator-signing-key -o json |
+     jq '.data["key.pem"] = .data["next.pem"] | del(.data["next.pem"])' |
+     kubectl replace -f -
+   ```
+
+   Every Pool names the new key alone, and every statement is signed by it alone. A desktop
+   that missed the roll refuses the pool's new key and asks for the pool to be added again, as
+   for any key it did not pin. The old key signs nothing now; delete any copy of it.
+
+**A roll given up** (`next.pem` removed without step 3) leaves desktops that had moved their pin
+pinned to a key the operator no longer uses: they ask again. Roll forward rather than back.
+
 ## What it may do
 
 Its ClusterRole, in [`operator/deploy/operator.yaml`](../operator/deploy/operator.yaml), is all
@@ -497,7 +540,7 @@ it holds:
 | `runners.purlis.dev` | `claims/status` | patch |
 | `runners.purlis.dev` | `pools/status` | patch |
 | core | `pods` | get |
-| core | `namespaces` | create, get |
+| core | `namespaces` | create, get (`kube-system` too, for the cluster's uid) |
 | core | `resourcequotas` | create; get and patch only `purlis-person` |
 | `rbac.authorization.k8s.io` | `rolebindings` | create; get and patch only `purlis-runner-owner` |
 | `rbac.authorization.k8s.io` | `clusterroles`, only `purlis-runner-owner` | bind |
@@ -551,7 +594,8 @@ and memory included. Give cluster-admin and node access accordingly.
   `runner-image/` or the desktop's side of a cluster runner.
 - The statement both sides read is one worked example in
   [`fixtures/runner-link-key/`](../fixtures/runner-link-key/), which the operator's tests sign
-  and the desktop's tests verify, byte for byte.
+  and the desktop's tests verify, byte for byte; so is a key roll's word, and the next key's
+  signature over the statement.
 
 ## Moving the upstream pin
 

@@ -66,8 +66,8 @@ rules:
   - apiGroups: [runners.purlis.dev]
     resources: [claims/status]
     verbs: [patch]
-  # Each pool's status names the key the operator signs runners' link keys with, for a desktop
-  # to pin as it adds the pool.
+  # Each pool's status names the key the operator signs runners' link keys with and its
+  # cluster, for a desktop to pin as it adds the pool, and during a roll the next key (#3305).
   - apiGroups: [runners.purlis.dev]
     resources: [pools/status]
     verbs: [patch]
@@ -96,7 +96,9 @@ rules:
     resources: [sandboxclaims, sandboxtemplates, sandboxwarmpools]
     verbs: [create, delete, get, list, patch, watch]
   # Each person's runner namespace, purlis-runners-<hash> (#2055): made once, and read to
-  # check it is the one the operator made for them. Never changed or deleted.
+  # check it is the one the operator made for them. Never changed or deleted. kube-system is
+  # read too, once as the operator starts, for its uid, which names the cluster on every Pool
+  # and in every statement (#3305).
   - apiGroups: [""]
     resources: [namespaces]
     verbs: [create, get]
@@ -195,16 +197,14 @@ spec:
           type: RuntimeDefault
       # The key the operator signs runners' link keys with (#2056), made once by whoever
       # installs it (docs/cluster-operator.md) and mounted by the kubelet: the operator holds no
-      # right to read a Secret.
+      # right to read a Secret. The whole Secret is mounted, key.pem and, while a team admin
+      # rolls the key, next.pem (#3305), and the kubelet refreshes it, so a roll needs no restart.
       volumes:
         - name: signing-key
           secret:
             secretName: purlis-cluster-operator-signing-key
             # 0440, in decimal: YAML readers disagree on a leading zero.
             defaultMode: 288
-            items:
-              - key: key.pem
-                path: key.pem
       containers:
         - name: operator
           image: ghcr.io/purlis/purlis-cluster-operator@sha256:0000000000000000000000000000000000000000000000000000000000000000

@@ -72,6 +72,30 @@ pub struct PoolStatus {
     /// whose link key it did not sign (#2056).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signing_key: Option<String>,
+    /// The cluster the Pool is in: the uid of its `kube-system` namespace. A desktop pins it with
+    /// the key, and refuses a statement made in any other cluster (#3305).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cluster: Option<String>,
+    /// While a team admin rolls the operator's key, the key it rolls to, spelled as
+    /// `signingKey` (#3305). A desktop pinned to `signingKey` moves its pin here once
+    /// `nextSigningKeyVouch` checks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_signing_key: Option<String>,
+    /// The current key's word for the next one, signed by `signingKey` and holding for seven
+    /// days at most (#3305).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_signing_key_vouch: Option<NextSigningKeyVouch>,
+}
+
+/// The operator's current key's word for its next one (#3305).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NextSigningKeyVouch {
+    /// The statement, exactly as signed (crate::vouch::roll_statement): the cluster, the key it
+    /// rolls from, the key it rolls to, and until when it holds.
+    pub statement: String,
+    /// Its Ed25519 signature, 128 lower-case hex, by the key `signingKey` names.
+    pub signature: String,
 }
 
 /// One person's request for a runner from a pool, and the runner it is given.
@@ -132,6 +156,10 @@ pub struct LinkKey {
     pub statement: String,
     /// Its Ed25519 signature, 128 lower-case hex, by the key the Pool's status names.
     pub signature: String,
+    /// While the operator's key is rolled, the next key's signature over the same statement,
+    /// 128 lower-case hex, for a desktop that has moved its pin to it (#3305).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_signature: Option<String>,
 }
 
 /// The condition that says whether a Claim's runner is running, and if not, why.

@@ -18,13 +18,13 @@
 
 use crate::admission::{POLICY, RUNNER_NAMESPACES_POLICY, admission, in_force_since};
 use crate::person::{self, QUOTA, Quota, RunnerNamespace};
-use crate::resources::{Claim, ClaimStatus, Pool, READY, condition};
+use crate::resources::{Claim, ClaimStatus, Pool, PoolStatus, READY, condition};
 use crate::stage;
 use crate::upstream::{
     self, Found, Sandbox, SandboxClaim, SandboxTemplate, SandboxWarmPool, made_for, made_for_claim,
     runner_owner, sandbox_claim_for, template_for, warm_pool_for,
 };
-use crate::vouch::{self, SigningKey, Vouching};
+use crate::vouch::{self, MountedKeys, SigningKeys, Vouching};
 use futures::StreamExt;
 use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
 use k8s_openapi::api::core::v1::{Namespace, Pod, ResourceQuota};
@@ -177,8 +177,10 @@ pub fn settled(previous: Option<&ClaimStatus>, mut next: ClaimStatus) -> ClaimSt
 
 struct Context {
     client: Client,
-    /// What the operator signs each runner's link key with.
-    signing: Arc<SigningKey>,
+    /// What the operator signs each runner's link key with, as mounted now.
+    keys: Arc<MountedKeys>,
+    /// The cluster it runs in, which every statement names ([`cluster_of`]).
+    cluster: String,
     /// What each person's runners may hold at once, in their runner namespace's quota.
     quota: Quota,
     /// Every Claim, as the operator's own watch holds them: whether a Claim being deleted is the
@@ -526,7 +528,8 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     };
     let (vouching, pod) = vouch_for(
         client,
-        &context.signing,
+        &context.keys.now(),
+        &context.cluster,
         &claim,
         &pool,
         &applied,
@@ -645,7 +648,8 @@ where
 /// claim names and the pod of that sandbox's name, read, then [`vouch::vouch`]; and the pod.
 async fn vouch_for(
     client: &Client,
-    signing: &SigningKey,
+    keys: &SigningKeys,
+    cluster: &str,
     claim: &Claim,
     pool: &Pool,
     upstream: &SandboxClaim,
@@ -679,6 +683,7 @@ async fn vouch_for(
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|since| since.as_secs())
                 .unwrap_or_default(),
+            cluster,
             claim,
             upstream,
             template: Some(&template.metadata),
@@ -687,7 +692,7 @@ async fn vouch_for(
             pod: pod.as_ref(),
         },
         &wanted,
-        signing,
+        keys,
     );
     Ok((vouching, pod))
 }
@@ -743,7 +748,8 @@ pub enum LinkKeyIs {
 
 /// The merge patch that brings a Claim's `previous` status to `next`, or none when it already
 /// says that ([`settled`]). With [`LinkKeyIs::Said`] a status that names no link key writes
-/// `linkKey: null`, so a statement that no longer holds is taken away (#2056).
+/// `linkKey: null`, so a statement that no longer holds is taken away (#2056), and one with no
+/// next key's signature writes `nextSignature: null`, so a roll's second signature goes (#3305).
 pub fn status_patch(
     previous: Option<&ClaimStatus>,
     next: ClaimStatus,
@@ -757,10 +763,22 @@ pub fn status_patch(
         return None;
     }
     let mut value = serde_json::to_value(&status).unwrap_or_default();
-    if status.link_key.is_none()
-        && let Some(fields) = value.as_object_mut()
-    {
-        fields.insert("linkKey".into(), serde_json::Value::Null);
+    if let Some(fields) = value.as_object_mut() {
+        match fields
+            .get_mut("linkKey")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            // A statement no longer signed by a next key says so, so a roll's second
+            // signature goes with the roll (#3305).
+            Some(link_key) => {
+                link_key
+                    .entry("nextSignature")
+                    .or_insert(serde_json::Value::Null);
+            }
+            None => {
+                fields.insert("linkKey".into(), serde_json::Value::Null);
+            }
+        }
     }
     Some(serde_json::json!({ "status": value }))
 }
@@ -894,58 +912,108 @@ pub fn claims_of_upstream(
         .collect()
 }
 
+/// The namespace whose uid names a cluster: every cluster has it, and it is made once, with the
+/// cluster (#3305).
+pub const CLUSTER_NAMESPACE: &str = "kube-system";
+
+/// **The cluster the operator runs in** (#3305): the uid of its `kube-system` namespace, which
+/// every Pool's status and every statement names, so a desktop refuses a statement made in
+/// another cluster.
+pub async fn cluster_of(client: &Client) -> Result<String, String> {
+    let namespace = Api::<Namespace>::all(client.clone())
+        .get(CLUSTER_NAMESPACE)
+        .await
+        .map_err(|error| format!("the namespace {CLUSTER_NAMESPACE} could not be read: {error}"))?;
+    namespace
+        .metadata
+        .uid
+        .filter(|uid| vouch::is_uid(uid))
+        .ok_or_else(|| format!("the namespace {CLUSTER_NAMESPACE} has no uid purlis reads"))
+}
+
 /// Run the operator until the process is asked to stop (SIGTERM or Ctrl-C).
-pub async fn run(client: Client, signing: SigningKey, quota: Quota) {
-    let signing = Arc::new(signing);
+pub async fn run(client: Client, keys: MountedKeys, cluster: String, quota: Quota) {
+    let keys = Arc::new(keys);
     tokio::select! {
-        () = run_claims(client.clone(), signing.clone(), quota) => {}
-        () = publish_signing_key(client, signing) => {}
+        () = run_claims(client.clone(), keys.clone(), cluster.clone(), quota) => {}
+        () = publish_pool_status(client, keys, cluster) => {}
     }
     tracing::info!("stopped; upstream {} is pinned", upstream::VERSION);
 }
 
-/// **Every Pool's status names the operator's signing key** (#2056), for a desktop to pin when
-/// it adds the pool: written whenever a Pool says anything else.
-async fn publish_signing_key(client: Client, signing: Arc<SigningKey>) {
+/// **Every Pool's status names the operator's signing key and its cluster** (#2056, #3305), for a
+/// desktop to pin when it adds the pool, and during a roll the next key with the current key's
+/// word for it: written whenever a Pool says anything else, and looked at again every
+/// [`vouch::RECHECK`], since the kubelet changes the mounted keys without a word to the operator.
+async fn publish_pool_status(client: Client, keys: Arc<MountedKeys>, cluster: String) {
     let pools = Api::<Pool>::all(client);
-    let public = signing.public();
     let mut events = watcher(pools.clone(), watcher::Config::default())
         .default_backoff()
         .applied_objects()
         .boxed();
-    while let Some(event) = events.next().await {
-        let pool = match event {
-            Ok(pool) => pool,
-            Err(error) => {
-                tracing::warn!(%error, "the pools could not be watched; trying again");
-                continue;
-            }
+    let mut every = tokio::time::interval(vouch::RECHECK);
+    every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        let looked_at = tokio::select! {
+            event = events.next() => match event {
+                None => return,
+                Some(Ok(pool)) => vec![pool],
+                Some(Err(error)) => {
+                    tracing::warn!(%error, "the pools could not be watched; trying again");
+                    continue;
+                }
+            },
+            _ = every.tick() => match pools.list(&kube::api::ListParams::default()).await {
+                Ok(all) => all.items,
+                Err(error) => {
+                    tracing::warn!(%error, "the pools could not be listed; trying again");
+                    continue;
+                }
+            },
         };
-        if pool_status_names(&pool, &public) {
-            continue;
-        }
-        let written = pools
-            .patch_status(
-                &pool.name_any(),
-                &PatchParams::default(),
-                &Patch::Merge(serde_json::json!({ "status": { "signingKey": public } })),
-            )
-            .await;
-        if let Err(error) = written {
-            tracing::warn!(pool = %pool.name_any(), %error, "the pool's signing key was not written");
+        let keys = keys.now();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|since| since.as_secs())
+            .unwrap_or_default();
+        for pool in looked_at {
+            let next = vouch::pool_status(&keys, &cluster, pool.status.as_ref(), now);
+            let Some(patch) = pool_status_patch(pool.status.as_ref(), &next) else {
+                continue;
+            };
+            let written = pools
+                .patch_status(
+                    &pool.name_any(),
+                    &PatchParams::default(),
+                    &Patch::Merge(patch),
+                )
+                .await;
+            if let Err(error) = written {
+                tracing::warn!(pool = %pool.name_any(), %error, "the pool's status was not written");
+            }
         }
     }
 }
 
-/// Whether `pool`'s status already names the signing key `public`.
-pub fn pool_status_names(pool: &Pool, public: &str) -> bool {
-    pool.status
-        .as_ref()
-        .and_then(|status| status.signing_key.as_deref())
-        == Some(public)
+/// The merge patch that brings a Pool's `previous` status to `next`, or none when it says that
+/// already. A next key and its vouch no longer held are written `null`, so they go.
+pub fn pool_status_patch(
+    previous: Option<&PoolStatus>,
+    next: &PoolStatus,
+) -> Option<serde_json::Value> {
+    if previous == Some(next) {
+        return None;
+    }
+    let mut status = serde_json::to_value(next).unwrap_or_default();
+    if let Some(fields) = status.as_object_mut() {
+        for field in ["nextSigningKey", "nextSigningKeyVouch"] {
+            fields.entry(field).or_insert(serde_json::Value::Null);
+        }
+    }
+    Some(serde_json::json!({ "status": status }))
 }
 
-async fn run_claims(client: Client, signing: Arc<SigningKey>, quota: Quota) {
+async fn run_claims(client: Client, keys: Arc<MountedKeys>, cluster: String, quota: Quota) {
     let controller = Controller::new(
         Api::<Claim>::all(client.clone()),
         watcher::Config::default(),
@@ -1008,7 +1076,8 @@ async fn run_claims(client: Client, signing: Arc<SigningKey>, quota: Quota) {
             error_policy,
             Arc::new(Context {
                 client,
-                signing,
+                keys,
+                cluster,
                 quota,
                 claims: known_claims,
                 conflicts: Mutex::new(HashMap::new()),
