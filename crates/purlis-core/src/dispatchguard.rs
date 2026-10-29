@@ -133,11 +133,18 @@ pub fn refusal(cmd: &str, caller: Caller<'_>) -> Option<(&'static str, String)> 
 }
 
 /// purlis's chat tools that dispatch, by the names [`crate::chattools`] gives them.
-const OUR_TOOLS: [&str; 4] = [
+const OUR_TOOLS: [&str; 11] = [
     crate::chattools::DISPATCH,
     crate::chattools::DISPATCH_LIST,
     crate::chattools::DISPATCH_READ,
+    crate::chattools::DISPATCH_WAIT,
+    crate::chattools::DISPATCH_TELL,
+    crate::chattools::DISPATCH_ANSWER,
+    crate::chattools::DISPATCH_CANCEL,
+    crate::chattools::DISPATCH_CLOSE,
     crate::chattools::DISPATCH_REPORT,
+    crate::chattools::DISPATCH_NOTE,
+    crate::chattools::DISPATCH_ASK,
 ];
 
 /// A chat tool of purlis's, as a harness names it.
@@ -912,6 +919,7 @@ mod tests {
         for read in [
             crate::chattools::DISPATCH_LIST,
             crate::chattools::DISPATCH_READ,
+            crate::chattools::DISPATCH_WAIT,
         ] {
             let tool = format!("mcp__purlis__{read}");
             assert!(crate::chattools::PRE_ALLOWED.contains(&read), "{read}");
