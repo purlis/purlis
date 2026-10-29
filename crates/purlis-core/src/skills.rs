@@ -49,6 +49,24 @@ pub mod verbs;
 use crate::harness::{Harness, Kit};
 
 pub mod levels;
+
+/// **The Skill studio's records in this machine's state folder**, each written by the app or the
+/// session host alone and read back as its own, so a chat's sandbox denies writing each, with
+/// what is below it (`sandbox::kept_by_purlis`): the records of which levels a running chat could
+/// have made and the folders not accepted yet (SK-9), the drafts and the tries and grades' arms
+/// (SK-9, SK-16), the grades of local copies, the grades under way and their lock, and the chats
+/// grades kept (SK-16, SK-59), and the opt-in to grade after each edit and its lock (SK-58).
+pub(crate) const KEPT_IN_STATE: [&str; 9] = [
+    levels::DIR,
+    verbs::drafts::DRAFTS_DIR,
+    verbs::drafts::TRIES_DIR,
+    grades::LOCAL_DIR,
+    grades::kept::DIR_NAME,
+    grades::underway::DIR,
+    grades::underway::CLAIM,
+    grades::after_edit::FILE,
+    grades::after_edit::LOCK,
+];
 mod on_machine;
 pub mod persona;
 pub mod router;

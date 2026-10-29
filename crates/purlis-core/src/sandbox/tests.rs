@@ -337,6 +337,16 @@ fn a_chat_never_writes_charters_integrity_state() {
             plane.path().join(".purlis/mcp-approved.json"),
             // Every chat's settings file (SK-9).
             plane.path().join(".purlis/chat-settings"),
+            // The Skill studio's records (SK-9, SK-16, SK-58, SK-59).
+            plane.path().join(".purlis/skill-levels"),
+            plane.path().join(".purlis/skill-drafts"),
+            plane.path().join(".purlis/skill-tries"),
+            plane.path().join(".purlis/skill-grades"),
+            plane.path().join(".purlis/skill-grade-chats"),
+            plane.path().join(".purlis/grades-under-way"),
+            plane.path().join(".purlis/grades-under-way.lock"),
+            plane.path().join(".purlis/skill-grade-after-edit.json"),
+            plane.path().join(".purlis/skill-grade-after-edit.lock"),
             plane.path().join(".charter/app"),
             plane.path().join(".charter/theme-drafts"),
             // A skill delete's kept skills and running deletes' notes (SK-7, SK-35).
@@ -349,6 +359,15 @@ fn a_chat_never_writes_charters_integrity_state() {
                 .join(".charter/harness-declarations-approved.json"),
             plane.path().join(".charter/mcp-approved.json"),
             plane.path().join(".charter/chat-settings"),
+            plane.path().join(".charter/skill-levels"),
+            plane.path().join(".charter/skill-drafts"),
+            plane.path().join(".charter/skill-tries"),
+            plane.path().join(".charter/skill-grades"),
+            plane.path().join(".charter/skill-grade-chats"),
+            plane.path().join(".charter/grades-under-way"),
+            plane.path().join(".charter/grades-under-way.lock"),
+            plane.path().join(".charter/skill-grade-after-edit.json"),
+            plane.path().join(".charter/skill-grade-after-edit.lock"),
             // Neither folder is there yet, so neither is the chat's to make (D-RN2a-7).
             plane.path().join(".purlis"),
             plane.path().join(".charter"),
@@ -390,8 +409,11 @@ fn the_persona_mcp_approvals_are_held_where_purlis_home_puts_them() {
         "{:?}",
         denied.paths
     );
-    // And what skill deletes keep there (SK-7, SK-35).
-    for kept in ["skills-deleted", "skills-deleting"] {
+    // And what skill deletes keep there (SK-7, SK-35), and the Skill studio's records.
+    for kept in ["skills-deleted", "skills-deleting"]
+        .into_iter()
+        .chain(SKILL_STUDIO_RECORDS)
+    {
         assert!(
             paths(&denied, Class::Integrity, Access::Write)
                 .contains(&std::path::Path::new("/srv/purlis-state").join(kept)),
@@ -1001,6 +1023,118 @@ fn every_harness_denies_a_chat_writing_the_persons_harness_approvals_or_the_decl
                 )
                 .expect("a profile");
                 for path in &held {
+                    for named in both_firmlink_names(super::real(path)) {
+                        let rule = format!(
+                            "(deny file-write* file-link (subpath \"{}\"))",
+                            named.display()
+                        );
+                        assert!(profile.contains(&rule), "{harness:?}: {rule} missing");
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(compiled_harnesses, 3, "Claude Code, Codex and opencode");
+}
+
+/// The Skill studio's records in the state folder, as written out: each is the app's or the
+/// session host's alone to write (SK-9, SK-16, SK-58, SK-59).
+const SKILL_STUDIO_RECORDS: [&str; 9] = [
+    "skill-levels",
+    "skill-drafts",
+    "skill-tries",
+    "skill-grades",
+    "skill-grade-chats",
+    "grades-under-way",
+    "grades-under-way.lock",
+    "skill-grade-after-edit.json",
+    "skill-grade-after-edit.lock",
+];
+
+/// SK-9, SK-16, SK-58, SK-59: **the Skill studio's records in the state folder are purlis's
+/// alone to write**. The levels records say which workspace and persona folders a running chat
+/// could have made, and hold their skills until the person accepts them; the drafts, the tries
+/// and grades' arms, the grades, the grades under way, the grades' chats and the opt-in to grade
+/// after each edit are each written by the app and read back as its own. Each is held with what
+/// is below it, so neither a record nor the store as an entry is written, removed or moved, in
+/// what every harness is compiled, under both names of the state folder. Read, never written.
+#[test]
+fn every_harness_denies_a_chat_writing_the_skill_studio_s_records() {
+    let plane = tempfile::tempdir().expect("a plane");
+    // A state folder that is there, so the folder itself is not what holds the records.
+    std::fs::create_dir(plane.path().join(".purlis")).expect("a state folder");
+    let records: Vec<std::path::PathBuf> = [".charter", ".purlis"]
+        .iter()
+        .flat_map(|state| SKILL_STUDIO_RECORDS.map(|record| plane.path().join(state).join(record)))
+        .collect();
+
+    let denied = Denied::of(plane.path(), &machine(Os::MacOs));
+    for record in &records {
+        assert!(
+            denied.paths.iter().any(|it| it.path == *record
+                && it.class == Class::Integrity
+                && it.access == Access::Write
+                && it.reach == Reach::AndBelow),
+            "{} not held with what is below it: {:?}",
+            record.display(),
+            denied.paths
+        );
+        assert!(
+            !denied
+                .paths
+                .iter()
+                .any(|it| it.access == Access::ReadWrite && record.starts_with(&it.path)),
+            "{} is denied to reads",
+            record.display()
+        );
+    }
+
+    let mut compiled_harnesses = 0;
+    for harness in Harness::ALL {
+        if compiler(harness).is_none() {
+            continue;
+        }
+        compiled_harnesses += 1;
+        let applied = applied_for(
+            harness,
+            &policy_of(&[], false),
+            &Plane::of(None),
+            plane.path(),
+            &machine(Os::MacOs),
+        )
+        .expect("compiles");
+        match applied.form() {
+            // Claude Code: its own sandbox's write denials, and its file tools'.
+            Form::ClaudeCode(settings) => {
+                let deny_write: Vec<&str> = settings.sandbox["filesystem"]["denyWrite"]
+                    .as_array()
+                    .expect("a list")
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .collect();
+                for path in &records {
+                    let named = super::real(path).display().to_string();
+                    assert!(deny_write.contains(&named.as_str()), "{named}");
+                    assert!(
+                        settings.deny.contains(&format!("Edit(/{named})")),
+                        "{named}: {:?}",
+                        settings.deny
+                    );
+                }
+            }
+            // Codex and opencode: purlis's own wrap, whose profile a chat at the root runs in.
+            // A `subpath` holds the store as an entry and every record below it.
+            Form::Codex(_) | Form::Opencode(_) => {
+                let profile = seatbelt::profile(
+                    applied.form().denied().expect("a wrap"),
+                    &seatbelt::Own::default(),
+                    plane.path(),
+                    std::path::Path::new("/private/tmp/chat"),
+                    &[4040],
+                    None,
+                )
+                .expect("a profile");
+                for path in &records {
                     for named in both_firmlink_names(super::real(path)) {
                         let rule = format!(
                             "(deny file-write* file-link (subpath \"{}\"))",

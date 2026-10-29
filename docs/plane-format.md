@@ -7337,6 +7337,8 @@ rewritten.
 - **Read by:** `drafts::list`, for the Skill studio's Draft skills and the chat's "Draft ready in
   Skill studio". Deleted ⇒ the drafts are lost; nothing in the project changes. Every read, write
   and removal goes through folders held open with `O_NOFOLLOW`.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/skill-grades/<YYYY-MM>.jsonl`
@@ -7347,6 +7349,8 @@ rewritten.
   beside the committed record by `grades::grades_of`, held to the same limits.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Clone state — this machine's own; nothing rebuilds it.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/skill-grades/routers/<YYYY-MM>.jsonl`
@@ -7385,6 +7389,8 @@ rewritten.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Clone state — this machine's own: the person who pays turns it on, on this machine;
   a teammate's push never does. Losing it turns grading after each edit off.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/grades-under-way/<grade>.json`
@@ -7408,6 +7414,8 @@ rewritten.
   sound row is removed unrecorded.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Clone state, transient — it lasts as long as its grade.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/grades-under-way.lock`
@@ -7417,6 +7425,8 @@ rewritten.
   record at once take turns, so a stale grade is recorded once.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Clone state, transient — a lock that holds nothing and is never read; losing it loses nothing.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/skill-grade-chats/<skill>/<grade>/<chat>.screen`
@@ -7432,6 +7442,8 @@ rewritten.
 - **Tier:** Clone state, transient — what this machine's chats showed, kept for the skill's newest
   grades; losing it loses only the read-only view of those chats. A teammate who pulls the eval
   record sees the grade and not its chats, and its scorecard says they are kept where it ran.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `skill-tries/<id>/`
@@ -7460,6 +7472,8 @@ rewritten.
   (`drafts::pins_of_arm`).
 - **Removed by:** with its [throwaway piece](#workspacesthrowawaypurlis-try-id), the same way and
   at the same moments. What is left is the skill run the chat recorded, under the skill's name.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory; the piece is ignored and never staged.
 
 ### `chat-settings/<chat id>.<digest>.json`
@@ -7482,7 +7496,7 @@ rewritten.
 - **Written by:** the session host as it starts a sandboxed chat (`skills::levels::note`); a
   restart keeps the record it has. A workspace or persona the person makes, in the window or from
   their own terminal, is added to every record (`skills::levels::vouch`); one the app makes on a
-  chat's request is not. No chat writes the state folder. `unaccepted.json` beside the records
+  chat's request is not, and a sandboxed chat's own `purlis workspace create` writes no record. `unaccepted.json` beside the records
   (`levels`, folders relative to the plane) keeps every folder a swept record's chat could have
   made, until the person accepts it in the Skill studio (`skills::levels::accept`).
 - **Read by:** every skill set: a workspace's or persona's skills whose folder is not in a record,
@@ -7491,6 +7505,8 @@ rewritten.
 - **Removed by:** the app, each time it writes its record of open chats
   ([`app/reopen.json`](#appreopenjson)), for a chat not on it, two minutes after it was written,
   moving what it could have made to `unaccepted.json` first (`skills::levels::sweep`).
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `save-journal.jsonl`
