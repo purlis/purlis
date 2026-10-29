@@ -53,6 +53,7 @@ export function stories(): TestProjectInlineConfiguration[] {
       provide: { storyCell: cell },
       setupFiles: [
         here("cell.setup.ts"),
+        here("faded.setup.ts"),
         ...(pictures && cell.pictured ? [here("screenshots.setup.ts")] : []),
       ],
       browser: {
