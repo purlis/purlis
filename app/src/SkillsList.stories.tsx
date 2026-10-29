@@ -100,6 +100,8 @@ function Skills({
         onOpenStudio={() => setSaid("Opened Skill studio")}
         onOpen={(row) => setSaid(`Opened ${row.skill.name}`)}
         usable={(row) => {
+          // Use types into the chat in front: with none, no card offers it.
+          if (!chat) return false;
           const mark = markOf(row);
           return mark !== "left-out" && mark !== "off" && mark !== "needs-review";
         }}
