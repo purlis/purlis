@@ -1659,6 +1659,8 @@ const Row = memo(function Row({
             data-mark="needs-you"
             data-leads-to={needs}
             tabIndex={-1}
+            // Nor focused by its press: the focus never rests on what is hidden from the tree.
+            preventFocusOnPress
             aria-label={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}
             onPress={() => onOpen(needs)}
           />
