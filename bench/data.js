@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793265763687,
+  "lastUpdate": 1793267161366,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29274,6 +29274,48 @@ window.BENCHMARK_DATA = {
             "value": 102.7372365,
             "unit": "ms",
             "extra": "median of 5 runs: 102.065, 102.726, 102.737, 103.119, 103.473 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b57854039a0b96e949d0e7ab332431da1c6ed208",
+          "message": "Skills design 10 and 16: Needs you, and the summary lines (#3689, #3695) (#3779)\n\n* Skill studio: Needs you lists what needs a decision, by kind, with one fix each\n\nThe core works out the Needs you items from what the studio already read\n(skillstudio::needs): changes to review (a folder a chat made, Accept), clashes\n(Rename it, or for a built-in's name the other copy's switch in Harness\nskills), problems in a skill (lints of a harness skill its switch can leave\nout), pins no chat reads (remove that pin, or unpin some in the Library), and\ntidy-ups (skills only some programs read, the old plugin keys). Each has a\nstable id, why in sentences, its fix and what the fix does. The navigation's\ncount is the items' count.\n\nThe page follows prototype/studio-secondary-pages A: the list grouped by kind\nwith counts, the item chosen beside it in the attention tone, page-and-back on\na narrow tab. The skills-to-move notice and the pins-refused line move here,\nand so does the old plugin keys' Ask: while the studio is on, the Inbox no\nlonger asks it, and turning the studio on or off tells each project's asks.\n\nCloses #3689\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill studio: persona and workspace summary lines say what needs you\n\nA persona's page and Settings › Workspace › Skills keep one line of counts,\nwhich opens the studio's Library on that scope, and add \"K need you\" while\nNeeds you holds something, which opens Needs you there. The count is the\nstudio's own items for the scope, the old plugin keys among them, with purlis's\nwaiting proposals passed to the persona view so it counts what the page lists.\nA persona's line is two rows of its list, since a panel row runs one catalogue\nrow; the Needs you rows (skills.needs:<scope>) are in no palette or menu. The\npersona row now says \"Open Skill studio\", the one label everywhere.\n\nCloses #3695\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A group name and its count no longer run together\n\nA plain group heading with a count (Needs you's kinds, the Explorer's\nfiles) was not laid out as a row, so the count's push to the end did\nnothing and \"Clashes\" read as \"CLASHES1\". A counted heading is now a\nrow with a gap, as a fold's heading already was.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Needs you's story pictures, with each kind's count at its end\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T09:26:09Z",
+          "tree_id": "0ccd4726c122367e596b93429883f0f086f068a0",
+          "url": "https://github.com/purlis/purlis/commit/b57854039a0b96e949d0e7ab332431da1c6ed208"
+        },
+        "date": 1793267156039,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7018935,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.686, 0.693, 0.702, 0.706, 0.719 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.570743999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.424, 16.568, 16.571, 16.699, 16.707 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2037625,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.792, 102.012, 102.204, 102.231, 102.901 ms"
           }
         ]
       }
