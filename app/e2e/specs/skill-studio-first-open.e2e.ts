@@ -12,7 +12,7 @@ import {
   runFromThePalette,
   tabNames,
 } from "../reach.js";
-import { studioPage } from "../studio.js";
+import { studioPage, untilStudioPage } from "../studio.js";
 import { projectInFront, runningIn } from "../running.js";
 
 /**
@@ -79,13 +79,7 @@ describe("the Skill studio's first open", function () {
 
     // Browse sources goes to the studio's Sources page; Back returns to the Library (#3681).
     await (await empty.$("button=Browse sources")).click();
-    await browser.waitUntil(
-      async () =>
-        (await (
-          await $('nav[aria-label="Skill studio pages"] button*=Sources')
-        ).getAttribute("aria-current")) === "page",
-      { timeout: 10_000, timeoutMsg: "Browse sources did not go to the Sources page" },
-    );
+    await untilStudioPage("Sources");
     await (await $('[data-scope="view-frame"] button[aria-label="Back"]')).click();
     const again = await starts();
 

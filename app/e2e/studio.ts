@@ -34,6 +34,25 @@ export async function studioPage(name: string) {
   );
 }
 
+/** **Waits until the studio's navigation says it is on the page called `name`**, pressing
+ *  nothing: for a press elsewhere that goes there (Browse sources). */
+export async function untilStudioPage(name: string) {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (nav: string, said: string) =>
+          [...document.querySelectorAll<HTMLElement>(`${nav} button`)].some(
+            (one) =>
+              one.querySelector('[data-part="label"]')?.textContent === said &&
+              one.getAttribute("aria-current") === "page",
+          ),
+        NAV,
+        name,
+      ),
+    { timeout: 20_000, interval: 250, timeoutMsg: `the studio never went to ${name}` },
+  );
+}
+
 /** **Chooses the Library's row of `name`** and answers the skill's item beside the list once it
  *  shows that skill. */
 export async function studioSkill(name: string) {
