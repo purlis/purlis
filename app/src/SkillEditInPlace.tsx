@@ -125,13 +125,14 @@ export function useSkillEditInPlace({
     forward: () => leave(walked.forward),
   };
 
-  // A place reached from outside the tab (an entry point) while the editor held unsaved text:
-  // asked about here, and Keep editing goes back to the editor's page.
+  // A place reached from outside the tab (an entry point): an editor with nothing unsaved is
+  // left behind; one with unsaved text is asked about below, and Keep editing goes back to it.
+  const away = edit !== undefined && !samePlace(edit.at, at);
   useEffect(() => {
-    if (edit === undefined || samePlace(edit.at, at)) return;
-    if (!unsaved(edit)) keepSkillEdit(tab, undefined);
-    else setLeaving((was) => was ?? { then: () => undefined, back: edit.at });
-  }, [edit, at, tab]);
+    if (away && !unsaved(edit)) keepSkillEdit(tab, undefined);
+  }, [away, edit, tab]);
+  // The edit whose leave from afar was answered with Save and leave, while it saves.
+  const [savingAway, setSavingAway] = useState<SkillEdit>();
 
   /** Saves the text typed, says so, and goes on with `then`; or says why it was not saved and
    *  keeps the editor as it is. */
@@ -203,7 +204,12 @@ export function useSkillEditInPlace({
 
   // A close of the tab asked while the editor held unsaved text (`askBeforeClosing`).
   const asking: Leaving | undefined =
-    leaving ?? (closeAsked === undefined ? undefined : { then: closeAsked, closing: true });
+    leaving ??
+    (closeAsked !== undefined
+      ? { then: closeAsked, closing: true }
+      : away && edit !== savingAway
+        ? { then: () => undefined, back: edit.at }
+        : undefined);
   const answered = () => {
     setLeaving(undefined);
     if (asking?.closing === true) closeAnswered(tab);
@@ -226,6 +232,7 @@ export function useSkillEditInPlace({
         }}
         onSave={() => {
           answered();
+          if (asking.back !== undefined) setSavingAway(edit);
           save(asking.then);
         }}
       />

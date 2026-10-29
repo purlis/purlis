@@ -7696,6 +7696,8 @@ export const PlaneView = memo(function PlaneView({
    * was refused and nothing has happened yet. The palette reads this answer to say what a row
    * did, and "nothing to say" is the right thing to say about a question still on screen.
    */
+  // The close asked again once the Skill studio's question is answered with a leave (#3683).
+  const askAgain = useRef<(offer: Offer, fromALink: boolean) => Promise<Ran>>(undefined);
   const askToEndNow = useCallback(
     async (offer: Offer, fromALink: boolean): Promise<Ran> => {
       // **A Skill studio whose editor holds unsaved text asks first** (#3683): its tab comes to
@@ -7706,7 +7708,7 @@ export const PlaneView = memo(function PlaneView({
         : undefined;
       if (unsaved !== undefined) {
         if (now.current.inFront !== unsaved.tab) bringToFront(unsaved.tab);
-        askBeforeClosing(unsaved.history, () => void askToEndNow(offer, fromALink));
+        askBeforeClosing(unsaved.history, () => void askAgain.current?.(offer, fromALink));
         return { ok: true };
       }
       if (offer.available && endsAChat(offer.does)) {
@@ -7809,6 +7811,9 @@ export const PlaneView = memo(function PlaneView({
     },
     [askedByNow, bringToFront, carryOut, plane, setEndingChat],
   );
+  useEffect(() => {
+    askAgain.current = askToEndNow;
+  }, [askToEndNow]);
   /**
    * **A close counts as a question up from its first step** (#2761), and the mark is cleared
    * however it settles (#2845): `closeQuestion.ts`.
