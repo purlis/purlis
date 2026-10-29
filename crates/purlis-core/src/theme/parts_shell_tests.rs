@@ -86,7 +86,13 @@ fn the_window_s_families_are_in_the_manifest_at_version_3() {
     assert_eq!(
         of("status-item"),
         (
-            vec!["root".into(), "icon".into(), "label".into(), "count".into()],
+            vec![
+                "root".into(),
+                "icon".into(),
+                "label".into(),
+                "count".into(),
+                "dot".into()
+            ],
             vec![
                 "bar".into(),
                 "pill".into(),
