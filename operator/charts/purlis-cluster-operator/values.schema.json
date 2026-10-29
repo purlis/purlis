@@ -39,9 +39,33 @@
         "requests": { "$ref": "#/definitions/quantities" },
         "limits": { "$ref": "#/definitions/quantities" }
       }
+    },
+    "perPerson": {
+      "description": "What each person's runners may hold at once, in their runner namespace.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "quota": {
+          "description": "The quota purlis-person in each runner namespace. A key left out is not limited.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "claims": { "type": "integer", "minimum": 0 },
+            "cpu": { "$ref": "#/definitions/quantity" },
+            "memory": { "$ref": "#/definitions/quantity" },
+            "storage": { "$ref": "#/definitions/quantity" }
+          }
+        }
+      }
     }
   },
   "definitions": {
+    "quantity": {
+      "description": "A Kubernetes quantity, such as 500m, 4, 8Gi or 1.5.",
+      "type": ["string", "number"],
+      "minimum": 0,
+      "pattern": "^[0-9]+(\\.[0-9]+)?(m|k|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$"
+    },
     "quantities": {
       "type": "object",
       "additionalProperties": false,

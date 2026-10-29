@@ -3467,7 +3467,7 @@ with `", "` (`:907`-`:908`).
 |---|---|---|---|---|---|
 | `mcpServers` | object | required (else no servers) | Map of server name → entry | stable | `charter/persona.py:674` |
 | `mcpServers.<name>` | string key | must match `_MCP_NAME_RE` | Server name; also interpolated into `mcp__<name>__*` | stable | `charter/persona.py:549`, `charter/commands_persona.py:890` |
-| `…command`, `…args`, `…env`, any other key | as `.mcp.json` | passed through | Emitted verbatim into the agent (all unknown keys are kept) | stable | `charter/persona.py:747` |
+| `…command`, `…args`, `…env`, any other key | as `.mcp.json` | passed through | Emitted verbatim into the agent (all unknown keys are kept). In a sandboxed chat an approved credentialed server's run takes its `env` values from the approved entry, never the chat's environment: each value written out in full, at the value its line shows; a `${…}` value, one that is not a string, and a variable that makes a program load code or dump its memory are left out, and `approve-mcp` names them (#3441, `personaverbs::mcp::written_out`) | stable | `charter/persona.py:747` |
 | `…secrets` | `{ENV_VAR: vault-key}` | optional | Vault value injected as an env var | stable | `charter/persona.py:751`, `:782`-`:783` |
 | `…secret_files` | `{ENV_VAR: vault-key}` | optional | Vault value materialised to a 0600 file whose path is the env var | stable | `charter/persona.py:758`, `:784`-`:785` |
 

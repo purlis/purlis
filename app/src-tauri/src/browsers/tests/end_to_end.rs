@@ -186,6 +186,9 @@ impl Site {
     }
 }
 
+/// The name the fixture site's `export` gives the report it sends, which its address does not.
+const EXPORTED_AS: &str = "q3-report.csv";
+
 /// The fixture site's own folder.
 fn fixture_site() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -217,8 +220,17 @@ fn answer(stream: std::net::TcpStream, heard: &Mutex<Vec<String>>) {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .push(name.to_owned());
-    let found = (!name.is_empty() && !name.contains("..") && !name.contains('/'))
-        .then(|| std::fs::read(fixture_site().join(name)).ok())
+    // `export` is the download page's report as a site sends a file to save (#3747): an
+    // attachment, named by its header, as the engine's own fixture site sends it.
+    let (file, extra) = match name {
+        "export" => (
+            "report.csv",
+            format!("Content-Disposition: attachment; filename=\"{EXPORTED_AS}\"\r\n"),
+        ),
+        other => (other, String::new()),
+    };
+    let found = (!file.is_empty() && !file.contains("..") && !file.contains('/'))
+        .then(|| std::fs::read(fixture_site().join(file)).ok())
         .flatten();
     let (status, body) = match found {
         Some(body) => ("200 OK", body),
@@ -228,7 +240,7 @@ fn answer(stream: std::net::TcpStream, heard: &Mutex<Vec<String>>) {
     let _ = write!(
         out,
         "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\n\
-         Cache-Control: no-store\r\nConnection: close\r\n\r\n",
+         {extra}Cache-Control: no-store\r\nConnection: close\r\n\r\n",
         body.len()
     );
     let _ = out.write_all(&body);
@@ -995,6 +1007,195 @@ fn a_chat_whose_browser_the_person_kept_off_is_refused_in_words() {
         next.text
     );
     assert!(site.heard().is_empty(), "no browser opened anything");
+}
+
+// ---- #3747: the download page and the file-input page, end to end ----
+
+/// What the fixture site's `report.csv` holds.
+const REPORT: &[u8] = b"quarter,total\nQ3,1234\n";
+
+/// What the chat's folder gives the file-input page.
+const NOTES: &[u8] = b"hello from purlis\n";
+
+/// What `browser_downloads` says, once it says `words`.
+fn downloads_saying(tools: &mut Tools, words: &str) -> String {
+    let deadline = Instant::now() + PATIENCE;
+    loop {
+        let listed = tools.done("browser_downloads", json!({}));
+        if listed.text.contains(words) {
+            return listed.text;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the downloads never said {words:?}: {}",
+            listed.text
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// Every plain file under `folder`, at any depth.
+fn files_under(folder: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(folder).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(files_under(&path));
+        } else if path.is_file() {
+            found.push(path);
+        }
+    }
+    found.sort();
+    found
+}
+
+/// #2020's downloads and uploads on the fixture site through every hop (#3747): a download sent
+/// as an attachment and one the page makes from a `blob:` are each held in the browser's
+/// holding folder under the engine's own name and told to the chat by the page's name, their
+/// size and their origin, never where they are held; saving one is refused while no yes for its
+/// origin can be given, and nothing lands in the chat's folder; and `browser_upload` puts
+/// purlis's copy of a file of the chat's folder into the page's file input, whose page reads its
+/// bytes, and reads them still once the chat's own file has changed.
+#[test]
+fn a_chats_downloads_and_uploads_go_through_every_hop() {
+    if !a_real_engine_runs_here() {
+        return;
+    }
+    let site = Site::serve();
+    let window = Window::holding(&site, &[&site]);
+    let (chat, mut tools) = window.a_chat();
+    let first = tools.call(
+        "browser_open",
+        json!({ "address": site.at("downloads.html") }),
+    );
+    assert!(first.error, "the first call asks: {first:?}");
+    crate::chatbrowsers::allowed(&window.held, chat, false).expect("the person allows it");
+    window.opens(&mut tools, &site.at("downloads.html"));
+    let program = window.program_of(chat);
+    let held = purlis_core::browsers::browsers_in(&window.host.data)
+        .join(&program)
+        .join(purlis_core::browsers::DOWNLOADS);
+    let origin = format!("http://127.0.0.1:{}", site.port);
+
+    // Sent as an attachment: the header's name, its size, its origin.
+    let export = ref_on(
+        &tools
+            .done("browser_find", json!({ "text": "Export the report" }))
+            .text,
+        "Export the report",
+    );
+    tools.done("browser_click", json!({ "target": export }));
+    downloads_saying(
+        &mut tools,
+        &format!("Download d1: \"{EXPORTED_AS}\", 22 bytes from {origin}, done"),
+    );
+    let files = files_under(&held);
+    assert_eq!(files.len(), 1, "one file held: {files:?}");
+    let engines_name = files[0]
+        .file_name()
+        .expect("a name")
+        .to_string_lossy()
+        .into_owned();
+    assert_ne!(
+        engines_name, EXPORTED_AS,
+        "held under the engine's own name"
+    );
+    assert_eq!(std::fs::read(&files[0]).expect("the held file"), REPORT);
+
+    // Made by the page from a blob: the page's origin.
+    let make = ref_on(
+        &tools
+            .done("browser_find", json!({ "text": "Make a file" }))
+            .text,
+        "Make a file",
+    );
+    tools.done("browser_click", json!({ "target": make }));
+    downloads_saying(
+        &mut tools,
+        &format!("Download d2: \"made.txt\", 17 bytes from {origin}, done"),
+    );
+    let held_names: Vec<String> = files_under(&held)
+        .iter()
+        .map(|file| {
+            file.file_name()
+                .expect("a name")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    assert_eq!(held_names.len(), 2, "both held: {held_names:?}");
+
+    // Saving one waits on a yes nothing can give yet: refused, and the chat's folder unchanged.
+    let saved = tools.call(
+        "browser_save_download",
+        json!({ "download": "d1", "to": "report.csv" }),
+    );
+    assert!(saved.error, "{saved:?}");
+    assert!(
+        saved
+            .text
+            .contains(&crate::browserfiles::save_not_allowed_said(&origin)),
+        "refused for want of the person's yes: {}",
+        saved.text
+    );
+    assert!(
+        !window.root.join("report.csv").exists(),
+        "nothing was saved"
+    );
+
+    // Nothing told the chat where any of it is held.
+    for said in &tools.told {
+        for name in &held_names {
+            assert!(!said.text.contains(name.as_str()), "{}", said.text);
+        }
+        assert!(
+            !said.text.contains(&held.display().to_string()),
+            "{}",
+            said.text
+        );
+    }
+
+    // An upload from the chat's folder: purlis's copy goes into the input, and the page reads it.
+    std::fs::write(window.root.join("notes.txt"), NOTES).expect("the chat's file");
+    tools.done(
+        "browser_navigate",
+        json!({ "address": site.at("upload.html") }),
+    );
+    let input = ref_on(
+        &tools
+            .done("browser_find", json!({ "text": "Attachment" }))
+            .text,
+        "Attachment",
+    );
+    tools.done(
+        "browser_upload",
+        json!({ "target": input, "files": ["notes.txt"] }),
+    );
+    let seen = tools.done(
+        "browser_wait_for_text",
+        json!({ "text": "received notes.txt, 18 bytes: hello from purlis" }),
+    );
+    assert!(seen.text.contains("The text was seen."), "{}", seen.text);
+    let uploads = purlis_core::browsers::browsers_in(&window.host.data)
+        .join(&program)
+        .join(purlis_core::browsers::UPLOADS);
+    let copies = files_under(&uploads);
+    assert_eq!(copies.len(), 1, "one copy: {copies:?}");
+    assert_eq!(std::fs::read(&copies[0]).expect("the copy"), NOTES);
+    // The chat's own file changes: the page's file is purlis's copy, so it still reads.
+    std::fs::write(window.root.join("notes.txt"), b"changed since, and longer").expect("changed");
+    let again = ref_on(
+        &tools
+            .done("browser_find", json!({ "text": "Read again" }))
+            .text,
+        "Read again",
+    );
+    tools.done("browser_click", json!({ "target": again }));
+    let seen = tools.done(
+        "browser_wait_for_text",
+        json!({ "text": "read again notes.txt, 18 bytes: hello from purlis" }),
+    );
+    assert!(seen.text.contains("The text was seen."), "{}", seen.text);
 }
 
 // ---- #2835: where the engine cannot make its sandbox ----
