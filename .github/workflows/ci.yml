@@ -1164,12 +1164,12 @@ jobs:
       - name: A wrapped chat listens nowhere, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: |
-          cargo test --locked -p purlis-core --test it -- a_sandboxed_chat_listens_nowhere_under_seatbelt::
+          tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- a_sandboxed_chat_listens_nowhere_under_seatbelt::
       # A chat allowed to serve on a port, under its own compiled profile for real (#2019): its
       # own socket and no TCP port, reached through purlis's door alone.
       - name: A chat's server behind its door, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
-        run: cargo test --locked -p purlis-core --lib -- sandbox::localport::tests::under_seatbelt
+        run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::localport::tests::under_seatbelt
       # Which of the confined profile's parts the probe needs to start, each tried on its own.
       # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
       - name: What the sandbox refused
@@ -1250,10 +1250,14 @@ jobs:
       # With them, the window's guards (`WINDOW_SOURCE_GUARDS`, #3596): Rust tests that read every
       # file of `app/src/`, which runs no Rust suite of its own. Each is a module of the core's one
       # test binary (#3613), picked by its name.
+      # A name that picks no test passes `cargo test` green, so a renamed file would quietly stop
+      # running: `tools/tests-ran.sh` fails the step on such a name instead (#3752). So do the other
+      # steps that pick tests by name, here and in the scheduled workflows, except the two in
+      # `scenario`, which #3742's lane wraps.
       - name: The whole-tree guards, as Rust is out of scope
         if: needs.changes.outputs.rust == 'false'
         run: >-
-          cargo test --locked -p purlis-core --test it --
+          tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it --
           every_first_party_source_file_carries_its_licence_header::
           no_tracked_file_is_one_a_sandboxed_chat_may_not_write::
           no_old_name_is_spelled_in_the_window_or_its_assets::
@@ -1285,7 +1289,7 @@ jobs:
       - name: The shell reader and the plane-root guards, as recorded
         if: needs.changes.outputs.rust != 'false'
         run: >-
-          cargo test --locked -p purlis-core --test it --
+          tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it --
           the_shell_is_read_the_way_python_reads_it::
           the_leak_guard_answers_what_the_python_answers::
           the_golden_rule_and_the_prose_guards_answer_what_the_python_answers::

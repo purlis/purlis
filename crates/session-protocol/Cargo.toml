@@ -66,5 +66,13 @@ yamux = "0.14"
 tempfile.workspace = true
 tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt-multi-thread", "sync", "test-util", "time"] }
 
+# Every integration test but two as modules of one binary (#3613, #3752): each `tests/*.rs` was a
+# binary of its own that linked the whole graph, 37 of them. `tests/it/main.rs` fails on a `.rs`
+# left straight under `tests/`, and on a file in `tests/it/` it does not name. The two dhat
+# tests stay binaries of their own, found by Cargo as before: their allocator is the process's.
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
 [lints]
 workspace = true
