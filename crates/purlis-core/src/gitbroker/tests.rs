@@ -496,3 +496,86 @@ fn a_branch_folders_own_git_is_run_for_a_chat_in_it_or_above_it_and_no_other() {
     assert!(refused.contains("widget · p2"), "{refused}");
     assert!(at_or_above(&root, None, "widget", "p1").is_err());
 }
+
+#[test]
+fn the_root_is_updated_only_for_the_chat_whose_place_it_is() {
+    // #3831: a chat in a workspace has its own folders updated, never the root.
+    let (_dir, root) = tree();
+    assert_eq!(at_the_root(&root, Some(&root)), Ok(()));
+    for elsewhere in [
+        root.join("workspaces/alpha"),
+        root.join("workspaces/alpha/widget"),
+        root.join("docs"),
+        root.join("gone"),
+    ] {
+        assert!(
+            at_the_root(&root, Some(&elsewhere)).is_err(),
+            "{}",
+            elsewhere.display()
+        );
+    }
+    assert!(at_the_root(&root, None).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_clone_whose_git_folder_is_a_link_is_never_the_one_git_runs_in() {
+    // #3831: where git keeps a clone is a real folder, never a link a chat could point.
+    let (_dir, root) = tree();
+    let elsewhere = root.join("elsewhere.git");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let clone = root.join("workspaces/alpha/widget");
+    std::os::unix::fs::symlink(&elsewhere, clone.join(".git")).unwrap();
+    let Err(refused) = checked_repo(&clone) else {
+        panic!("a clone whose `.git` is a link was checked");
+    };
+    assert!(
+        refused.contains("not a clone with its own `.git`"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn a_clones_own_checkout_is_updated_for_a_chat_in_it_or_above_it_and_no_other() {
+    // #3831: `purlis worktree update` standing in a clone names the clone; the chat must stand
+    // in it, in its workspace's folder or at the project root, never in a branch folder or
+    // beside the clone.
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let ws = root.join("workspaces/alpha");
+    for folder in ["widget/src", "gadget", "notes", ".worktrees/widget/p1"] {
+        std::fs::create_dir_all(ws.join(folder)).unwrap();
+    }
+    for here in [&root, &ws, &ws.join("widget"), &ws.join("widget/src")] {
+        assert_eq!(
+            at_or_above_clone(&root, Some(here), "alpha", "widget"),
+            Ok(()),
+            "{}",
+            here.display()
+        );
+    }
+    let beside = at_or_above_clone(&root, Some(&ws.join("gadget")), "alpha", "widget").unwrap_err();
+    assert!(beside.contains("gadget"), "{beside}");
+    assert!(at_or_above_clone(&root, Some(&ws.join("notes")), "alpha", "widget").is_err());
+    let piece = ws.join(".worktrees/widget/p1");
+    let refused = at_or_above_clone(&root, Some(&piece), "alpha", "widget").unwrap_err();
+    assert!(refused.contains("widget · p1"), "{refused}");
+    assert!(at_or_above_clone(&root, None, "alpha", "widget").is_err());
+    // Fails closed on its own: outside the workspace, in another one, or a folder that is
+    // not there.
+    std::fs::create_dir_all(root.join("workspaces/beta/widget")).unwrap();
+    std::fs::create_dir_all(root.join("docs")).unwrap();
+    for elsewhere in [
+        root.join("workspaces/beta/widget"),
+        root.join("docs"),
+        root.join("gone"),
+        std::env::temp_dir(),
+    ] {
+        assert!(
+            at_or_above_clone(&root, Some(&elsewhere), "alpha", "widget").is_err(),
+            "{}",
+            elsewhere.display()
+        );
+    }
+    assert!(at_or_above_clone(&root, Some(&ws), "nowhere", "widget").is_err());
+}

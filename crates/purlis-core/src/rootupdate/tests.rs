@@ -113,7 +113,7 @@ fn a_command_that_rewrites_the_tree_from_another_commit_is_refused_before_it_sta
         assert!(said.contains("Nothing was run."), "{update}: {said}");
         // What to do instead, and the way back.
         assert!(
-            said.contains("Ask the person to update the project from the window"),
+            said.contains("Run `purlis worktree update` here instead"),
             "{update}: {said}"
         );
         assert!(

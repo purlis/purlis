@@ -113,6 +113,7 @@ fn the_tools_are_the_ones_charter_names_and_each_says_what_it_does() {
             "session_record_list",
             "session_record_read",
             "session_record",
+            "worktree_update",
             "workspace_vision",
             "workspace_section",
             "change_status",
@@ -1086,6 +1087,7 @@ fn the_tools_that_write_only_the_chat_s_own_scope_are_named_and_never_among_the_
             "workspace_section",
             "workspace_vision",
             "ask_operator",
+            "worktree_update",
         ]
     );
     for name in OWN_SCOPE_TOOLS {
@@ -1205,4 +1207,47 @@ fn an_acp_session_s_server_is_handed_each_scope_variable_once_with_the_chat_s_va
             {"name": crate::hookwire::TOKEN_ENV, "value": "the-chat-s-own"},
         ])
     );
+}
+
+#[test]
+fn an_update_is_handed_to_the_app_by_the_server_and_never_run_by_call() {
+    // #3831: the app runs it, after judging it, outside the chat's sandbox.
+    let p = tempfile::tempdir().unwrap();
+    let before = snapshot(p.path());
+    let refused = call(
+        p.path(),
+        &in_ws("alpha"),
+        WORKTREE_UPDATE,
+        &serde_json::Map::new(),
+        at(9, 0),
+    )
+    .unwrap_err();
+    assert!(refused.contains("purlis's MCP server"), "{refused}");
+    assert_eq!(snapshot(p.path()), before, "call wrote something");
+}
+
+#[test]
+fn an_update_s_arguments_are_its_step_and_at_a_start_a_base() {
+    use crate::hookwire::UpdateStep;
+    assert_eq!(
+        worktree_update_args(&args(json!({}))),
+        Ok(UpdateStep::Start { base: None })
+    );
+    assert_eq!(
+        worktree_update_args(&args(json!({"step": "start", "base": "main"}))),
+        Ok(UpdateStep::Start {
+            base: Some("main".to_owned())
+        })
+    );
+    assert_eq!(
+        worktree_update_args(&args(json!({"step": "continue"}))),
+        Ok(UpdateStep::Continue)
+    );
+    assert_eq!(
+        worktree_update_args(&args(json!({"step": "abort"}))),
+        Ok(UpdateStep::Abort)
+    );
+    assert!(worktree_update_args(&args(json!({"step": "abort", "base": "main"}))).is_err());
+    assert!(worktree_update_args(&args(json!({"step": "reset"}))).is_err());
+    assert!(worktree_update_args(&args(json!({"base": 3}))).is_err());
 }
