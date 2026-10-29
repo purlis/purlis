@@ -253,8 +253,9 @@ async function windowIn(theme: string, colour: string | null = null) {
   render(<App />);
   await waitFor(() => expect(inForce()).toBe(BUILT_IN[theme]));
   await screen.findByTestId("pane");
-  // The workspace in front, a chip in the title bar (#2916).
-  await within(screen.getByTestId("title-bar")).findByRole("button", { name: /alpha/ });
+  // The workspace in front, a chip in the title bar (#2916), named by its words alone: the
+  // layout alert on it puts a ▲ dot beside it too (#3650), which is drawn and checked here.
+  await within(screen.getByTestId("title-bar")).findByRole("button", { name: "alpha" });
 }
 
 describe.each(Object.keys(BUILT_IN))("the window's chrome in %s", (theme) => {
