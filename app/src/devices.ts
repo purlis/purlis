@@ -7,6 +7,7 @@ import {
   type BrowserOnADevice,
   type ChatOnADevice,
   type DevicesShown,
+  type DiskHeld,
   type PlaneId,
   type PoolRequests,
   type PricePerHour,
@@ -43,13 +44,19 @@ export function answerOf(asked: Asked | undefined): RunnerAsked | undefined {
   return asked === undefined || asked === "asking" || "failed" in asked ? undefined : asked;
 }
 
+/** The disk each pool's runners hold, as Docker read it, that it is being read, or why purlis
+ *  could not read it (#3493). */
+export type DiskAsked = DiskHeld | "reading" | { failed: string };
+
 export type DevicesHeld = {
   read: Read;
   /** What each runner answered, or that it is being asked, by `<pool>/<runner>`. */
   asked: Readonly<Record<string, Asked>>;
+  /** The disk each pool's runners hold (#3493): read apart, so a slow count holds up nothing. */
+  disk: DiskAsked;
 };
 
-const START: DevicesHeld = { read: { state: "reading" }, asked: {} };
+const START: DevicesHeld = { read: { state: "reading" }, asked: {}, disk: "reading" };
 let held: DevicesHeld = START;
 const listeners = new Set<() => void>();
 /** The newest read out: an answer to an older one is dropped. */
@@ -89,7 +96,30 @@ export function answerWithinForTests(ms: number) {
 /** For a test: forget every ask in flight, so the next view asks each runner anew. */
 export function forgetDevicesForTests() {
   inFlight.clear();
+  diskInFlight = undefined;
   reading += 1;
+}
+
+/** The read of the disk held in flight: a second read waits on it rather than reading again. */
+let diskInFlight: Promise<Said<DiskHeld>> | undefined;
+
+/** Reads the disk each pool's runners hold, or waits on the read in flight; at most
+ *  {@link answerWithinMs}. */
+function readDisk(): Promise<Said<DiskHeld>> {
+  if (diskInFlight !== undefined) return diskInFlight;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<Said<DiskHeld>>((resolve) => {
+    timer = setTimeout(
+      () => resolve({ status: "ok", data: { state: "unanswered" } }),
+      answerWithinMs,
+    );
+  });
+  const disk = Promise.race([caught(commands.devicesDisk()), late]).finally(() => {
+    clearTimeout(timer);
+    if (diskInFlight === disk) diskInFlight = undefined;
+  });
+  diskInFlight = disk;
+  return disk;
 }
 
 /** What a runner not answered in time is said to be: not known. */
@@ -143,9 +173,23 @@ export async function rereadDevices() {
   set(() => ({
     read: { state: "read", shown },
     asked: Object.fromEntries(runners.map((one) => [runnerKey(one), "asking" as const])),
+    disk: "reading",
   }));
-  await Promise.all(
-    runners.map(async (one) => {
+  const disk = (async () => {
+    const said = await readDisk();
+    if (mine !== reading) return;
+    const disk: DiskAsked =
+      said.status === "ok" &&
+      typeof said.data === "object" &&
+      said.data !== null &&
+      (said.data.state !== "read" || Array.isArray(said.data.pools))
+        ? said.data
+        : { failed: said.status === "error" ? said.error : "purlis did not say." };
+    set((was) => ({ ...was, disk }));
+  })();
+  await Promise.all([
+    disk,
+    ...runners.map(async (one) => {
       const answer = await ask(one);
       if (mine !== reading) return;
       const asked: Asked =
@@ -154,7 +198,7 @@ export async function rereadDevices() {
           : { failed: answer.status === "error" ? answer.error : "purlis did not say." };
       set((was) => ({ ...was, asked: { ...was.asked, [runnerKey(one)]: asked } }));
     }),
-  );
+  ]);
 }
 
 function subscribe(listener: () => void) {
@@ -441,4 +485,54 @@ function cpusSaid(millicpus: number): string {
   const whole = Math.floor(millicpus / 1000);
   const part = millicpus % 1000;
   return part === 0 ? `${whole}` : `${whole}.${`${part}`.padStart(3, "0").replace(/0+$/, "")}`;
+}
+
+/**
+ * **`kilobytes` said in Docker's decimal units** (#3493): whole kilobytes below a megabyte, then
+ * to the tenth of the largest unit it is at least one of: `4 kB`, `1.8 GB`.
+ */
+export function sizeSaid(kilobytes: number): string {
+  if (kilobytes === 0) return "0 B";
+  if (kilobytes < 1000) return `${kilobytes} kB`;
+  const units = ["MB", "GB", "TB"];
+  let at = 0;
+  let tenths = Math.round(kilobytes / 100);
+  while (tenths >= 10_000 && at < units.length - 1) {
+    at += 1;
+    tenths = Math.round(kilobytes / (100 * 1000 ** at));
+  }
+  return `${Math.floor(tenths / 10)}.${tenths % 10} ${units[at]}`;
+}
+
+/**
+ * What a use row's Disk held cell says (#3493): the disk `pool`'s runners hold, and those whose
+ * home Docker did not list apart, never as nothing. Where it is not read, it says so: a size is
+ * never guessed.
+ */
+export function diskSaid(disk: DiskAsked, pool: string): string {
+  if (disk === "reading") return "reading…";
+  if ("failed" in disk || disk.state !== "read") return "not read";
+  const one = disk.pools.find((each) => each.pool === pool);
+  if (one === undefined) return "not read";
+  const size = sizeSaid(one.kilobytes);
+  return one.not_listed === 0 ? size : `${size}, ${one.not_listed} not listed`;
+}
+
+/** Why the disk held is not read, Docker's words apart from purlis's own; none where it is. */
+export function diskTrouble(
+  disk: DiskAsked,
+): { line: string; said?: { by: string; text: string } } | undefined {
+  if (disk === "reading") return undefined;
+  if ("failed" in disk)
+    return { line: `purlis could not read the disk the runners hold: ${disk.failed}` };
+  if (disk.state === "not_read")
+    return {
+      line: "purlis could not read the disk the runners hold.",
+      said: { by: "Docker said", text: disk.why },
+    };
+  if (disk.state === "unanswered")
+    return {
+      line: "The disk the runners hold was not read in time. purlis reads it again when you press Refresh.",
+    };
+  return undefined;
 }

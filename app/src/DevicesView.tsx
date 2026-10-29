@@ -17,9 +17,10 @@
  *   facts, isolated (`<bdi>`), as said elsewhere. The core has already put it on one line, capped
  *   and with nothing a reader does not see.
  * - **The table family** for the use: one row per pool and person, with its hours this week (the
- *   ISO week in local time, #3492), and its money this week only where it declares a price per
- *   hour (#3491). With no pool priced there is no money column; a pool that declares none has an
- *   empty money cell. A cost is never guessed.
+ *   ISO week in local time, #3492), the disk its runners' homes hold (read apart, by
+ *   `docker system df`, which wakes no suspended runner, #3493), and its money this week only
+ *   where it declares a price per hour (#3491). With no pool priced there is no money column; a
+ *   pool that declares none has an empty money cell. A cost is never guessed.
  * - **A chat's or browser's project** is named on its row once the window holds more than one
  *   (#3534), so two projects' chats of one name tell apart.
  * - **Refresh** reads every device again, as the view's coming on screen does. A runner still
@@ -36,6 +37,8 @@ import type { DevicesShown, PlaneId } from "./bindings";
 import {
   arranged,
   contactSaid,
+  diskSaid,
+  diskTrouble,
   healthSaid,
   hoursSaid,
   moneySaid,
@@ -211,9 +214,25 @@ function UnkeptSection({
   );
 }
 
+/** Why the disk held is not read, under the use table: Docker's words apart (#3493). */
+function DiskTrouble({ trouble }: { trouble: ReturnType<typeof diskTrouble> }) {
+  if (trouble === undefined) return null;
+  return (
+    <p className="ui-setting-help">
+      {trouble.line}
+      {trouble.said !== undefined && (
+        <Fragment>
+          {` · ${trouble.said.by}: `}
+          <bdi>{trouble.said.text}</bdi>
+        </Fragment>
+      )}
+    </p>
+  );
+}
+
 /** **The view tab**: the devices, then each pool's use. */
 export function DevicesView({ now = new Date() }: { now?: Date }) {
-  const { read, asked } = useDevices();
+  const { read, asked, disk } = useDevices();
   if (read.state === "reading")
     return (
       <div className="devices-view" data-testid="devices-view">
@@ -267,6 +286,7 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
             <TableColumn>Suspended</TableColumn>
             <TableColumn>CPUs requested</TableColumn>
             <TableColumn>Memory requested</TableColumn>
+            <TableColumn>Disk held</TableColumn>
             <TableColumn>Hours this week</TableColumn>
             {priced && <TableColumn>Money this week</TableColumn>}
           </TableHeader>
@@ -279,6 +299,7 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
                 <TableCell>{`${one.suspended}`}</TableCell>
                 <TableCell>{one.cpus}</TableCell>
                 <TableCell>{`${one.memoryMib} MiB`}</TableCell>
+                <TableCell>{diskSaid(disk, one.pool)}</TableCell>
                 <TableCell>{hoursSaid(one)}</TableCell>
                 {priced && <TableCell>{moneySaid(one) ?? ""}</TableCell>}
               </TableRow>
@@ -286,6 +307,7 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
           </TableBody>
         </Table>
       )}
+      {use.length > 0 && <DiskTrouble trouble={diskTrouble(disk)} />}
     </div>
   );
 }

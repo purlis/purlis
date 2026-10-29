@@ -835,6 +835,7 @@ impl FakeDocker {
              'volume inspect') cat '{volume}' ;;\n  \
              'volume ls') cat '{volumes}' 2>/dev/null || true ;;\n  \
              'info '*) cat '{info}' ;;\n  \
+             'system df') cat '{df}' ;;\n  \
              'image inspect') cat '{image}' ;;\n  \
              'exec '*) cat > '{input}'; cat '{paired}' ;;\n  \
              'container ls') case \"$*\" in *--no-trunc*.ID*) cat '{containers}-full' 2>/dev/null || true ;; \
@@ -848,6 +849,7 @@ impl FakeDocker {
             volume = at("volume"),
             volumes = at("volumes"),
             info = at("info"),
+            df = at("df"),
             image = at("image"),
             input = at("input"),
             paired = at("paired"),
@@ -2272,4 +2274,84 @@ fn an_engine_that_does_not_answer_is_not_asked_again_as_a_podman() {
         1,
         "{log}"
     );
+}
+
+/// What `docker system df -v` prints, cut to its sections (Docker 27).
+const DOCKER_DF: &str = "Images space usage:
+
+REPOSITORY                    TAG       IMAGE ID       CREATED       SIZE      SHARED SIZE   UNIQUE SIZE   CONTAINERS
+ghcr.io/purlis/purlis-runner  <none>    0123456789ab   2 days ago    412MB     0B            412MB         2
+
+Containers space usage:
+
+CONTAINER ID   IMAGE          COMMAND                  LOCAL VOLUMES   SIZE      CREATED       STATUS                   NAMES
+0123456789ab   0123456789ab   \"purlis serve\"           1               4.1kB     2 days ago    Exited (0) 3 hours ago   purlis-runner-first
+
+Local Volumes space usage:
+
+VOLUME NAME                 LINKS     SIZE
+purlis-runner-first-home    1         1.234GB
+purlis-runner-second-home   1         0B
+someone-elses               0         512kB
+
+Build cache usage: 0B
+
+CACHE ID   CACHE TYPE   SIZE      CREATED   LAST USED   USAGE     SHARED
+";
+
+/// What `podman system df -v` prints of its volumes (Podman 5).
+const PODMAN_DF: &str = "Images space usage:
+
+REPOSITORY  TAG  IMAGE ID  CREATED  SIZE  SHARED SIZE  UNIQUE SIZE  CONTAINERS
+
+Containers space usage:
+
+CONTAINER ID  IMAGE  COMMAND  LOCAL VOLUMES  SIZE  CREATED  STATUS  NAMES
+
+Local Volumes space usage:
+
+VOLUME NAME               LINKS       SIZE
+purlis-runner-first-home  1           20.48MB
+";
+
+#[test]
+fn the_disk_each_volume_holds_is_read_from_what_docker_system_df_prints() {
+    let held = homes_held(DOCKER_DF);
+    assert_eq!(held.get("purlis-runner-first-home"), Some(&1_234_000_000));
+    assert_eq!(held.get("purlis-runner-second-home"), Some(&0));
+    assert_eq!(held.get("someone-elses"), Some(&512_000));
+    // Nothing of another section is taken for a volume.
+    assert_eq!(held.len(), 3, "{held:?}");
+}
+
+#[test]
+fn the_disk_each_volume_holds_is_read_from_what_podman_system_df_prints() {
+    let held = homes_held(PODMAN_DF);
+    assert_eq!(held.get("purlis-runner-first-home"), Some(&20_480_000));
+    assert_eq!(held.len(), 1, "{held:?}");
+}
+
+#[test]
+fn a_volume_whose_size_is_not_written_as_docker_writes_one_is_left_out() {
+    let held = homes_held(
+        "Local Volumes space usage:\n\nVOLUME NAME LINKS SIZE\na 1 12.3QB\nb 1 N/A\nc 1 -1B\nd 1 7B\n",
+    );
+    assert_eq!(
+        held.into_iter().collect::<Vec<_>>(),
+        vec![("d".to_owned(), 7)]
+    );
+}
+
+#[test]
+fn nothing_is_held_where_docker_printed_no_volumes_section() {
+    assert!(homes_held("Images space usage:\n\nREPOSITORY TAG\n").is_empty());
+}
+
+#[test]
+fn the_disk_volumes_hold_is_read_by_system_df_alone_starting_nothing() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("df", DOCKER_DF);
+    let held = fake.docker().homes_held().unwrap();
+    assert_eq!(held.get("purlis-runner-first-home"), Some(&1_234_000_000));
+    assert_eq!(fake.file("log").trim(), "system df --verbose");
 }
