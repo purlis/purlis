@@ -385,7 +385,11 @@ export const StackedNewestFirst: Story = {
     const card = await waitFor(() => cardOf() as HTMLElement);
     await expect(card).toHaveTextContent("3 notices, newest first");
     const words = card.textContent ?? "";
-    const order = ["Cloning 2 repos…", "web is on spike/search, not main", "Workspace 3rd-try is ready"];
+    const order = [
+      "Cloning 2 repos…",
+      "web is on spike/search, not main",
+      "Workspace 3rd-try is ready",
+    ];
     await expect(order.map((one) => words.indexOf(one))).toEqual(
       [...order.map((one) => words.indexOf(one))].sort((a, b) => a - b),
     );

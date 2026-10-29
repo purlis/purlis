@@ -27,12 +27,20 @@ export type KeptResult = { id: number; said: Said; plane: string | undefined };
  * result; putting one away here is `drop`.
  */
 export function keep(
-  kept: readonly KeptResult[],
+  keptBefore: readonly KeptResult[],
   said: Said | undefined,
   plane: string | undefined,
-  next: number,
+  first: number,
 ): readonly KeptResult[] {
+  let kept = keptBefore;
+  let next = first;
   if (said === undefined || passing(said) || kept.some((one) => one.said === said)) return kept;
+  // The line said just before it, which no render may have drawn, is kept first (#3649).
+  const after = said.after;
+  if (after !== undefined && !passing(after) && !kept.some((one) => one.said === after)) {
+    kept = [{ id: next, said: after, plane }, ...kept];
+    next += 1;
+  }
   // A line on a track takes the place of the one kept before it there, keeping its id and its
   // place in the order: one notice that changes, never a second (#3649).
   const before =
@@ -60,7 +68,8 @@ export function useKeptResults(said: Said | undefined, plane: string | undefined
   let list = kept.list;
   if (said !== kept.last) {
     list = keep(list, said, plane, kept.next);
-    setKept({ list, next: kept.next + 1, last: said });
+    // A line can bring the one said before it (`Said.after`): the next id is past both.
+    setKept({ list, next: Math.max(kept.next, ...list.map((one) => one.id)) + 1, last: said });
   }
   const drop = (id: number) =>
     setKept((was) => ({ ...was, list: was.list.filter((one) => one.id !== id) }));

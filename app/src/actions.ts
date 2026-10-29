@@ -185,6 +185,10 @@ export type Said = {
    *  kept before it on that track, in place, so a clone's progress turns into its result in one
    *  notice. A progress line on a track is kept until then. */
   track?: string;
+  /** **A line said just before it, in the same breath** (#3649): a workspace's ready notice,
+   *  said a moment before its clone's first line. The window draws only the newest line of a
+   *  render, so it keeps this one first, where it has not kept it already. */
+  after?: Said;
   /** **The one workspace it is about**, where it is about a whole workspace (a workspace made):
    *  its notice hangs from that workspace's chip in the title bar (`noticePlace.ts`, #3648). */
   workspace?: string;

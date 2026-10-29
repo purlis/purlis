@@ -78,6 +78,25 @@ describe("the kept results, as the window holds them (#3344's review)", () => {
     expect(keep(kept, cloning, "/q", 5).map((one) => one.id)).toEqual([5, 2, 1, 0]);
   });
 
+  it("keeps the line said just before, in the same breath, first (#3649)", () => {
+    const ready = { from: "workspace.create", refused: false, words: "Ready.", workspace: "g" };
+    const cloning = {
+      from: "workspace.clone",
+      refused: false,
+      words: "Cloning…",
+      progress: true,
+      track: "clone:g",
+      after: ready,
+    };
+    expect(keep([], cloning, "/p", 7)).toEqual([
+      { id: 8, said: cloning, plane: "/p" },
+      { id: 7, said: ready, plane: "/p" },
+    ]);
+    // Never twice, where it was kept already.
+    const once = keep([], ready, "/p", 0);
+    expect(keep(once, cloning, "/p", 1).map((one) => one.id)).toEqual([1, 0]);
+  });
+
   it("keeps no progress line on no track", () => {
     const cloning = { from: "workspace.create", refused: false, words: "Cloning…", progress: true };
     expect(keep([], cloning, "/p", 0)).toEqual([]);

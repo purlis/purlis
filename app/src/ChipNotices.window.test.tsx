@@ -10,6 +10,7 @@ import App from "./App";
 import { OUTSIDE, type Said } from "./actions";
 import { TitleBarSwitch } from "./TitleBarSwitch";
 import { forgetRailMode } from "./railMode";
+import { forgetRepoClones } from "./repoClones";
 
 /**
  * **A workspace's notices hang from its chip** (#3648, the tracer of spec #3647), on the real
@@ -32,6 +33,8 @@ afterEach(() => {
   cleanup();
   clearMocks();
   forgetRailMode();
+  // A clone a test left under way would be skipped by the next test's ask.
+  forgetRepoClones();
   vi.restoreAllMocks();
   Element.prototype.scrollIntoView = SCROLL_INTO_VIEW;
 });
@@ -471,8 +474,7 @@ describe("a notice about the plane root (the dispatcher's ruling on #3648)", () 
 /** A clone the test lets land when it says: `land` with the core's lines, or `refuse`. */
 function heldClone() {
   const held: { land: (lines: string[]) => void; refuse: (why: string) => void }[] = [];
-  const clone = (_repo: string) =>
-    new Promise<string[]>((land, refuse) => held.push({ land, refuse }));
+  const clone = () => new Promise<string[]>((land, refuse) => held.push({ land, refuse }));
   return { clone, held };
 }
 

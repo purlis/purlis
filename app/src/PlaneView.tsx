@@ -4634,10 +4634,10 @@ export const PlaneView = memo(function PlaneView({
    * until it is dismissed.
    */
   const cloneNewRepos = useCallback(
-    (name: string, picked: string[]): Promise<void> => {
-      const run = async (repos: string[]) => {
+    (name: string, picked: string[], after?: Said): Promise<void> => {
+      const run = async (repos: string[], before?: Said) => {
         let done = 0;
-        setReport(reposCloning(name, repos, done));
+        setReport({ ...reposCloning(name, repos, done), after: before });
         const failed = await cloneRepos(plane, name, repos, () => {
           done += 1;
           if (done < repos.length) setReport(reposCloning(name, repos, done));
@@ -4649,7 +4649,7 @@ export const PlaneView = memo(function PlaneView({
         );
         setReplan((asked) => asked + 1);
       };
-      return run(picked);
+      return run(picked, after);
     },
     [plane],
   );
@@ -4682,12 +4682,11 @@ export const PlaneView = memo(function PlaneView({
       // Said in the app's own words, hung from the new workspace's chip (#3648); the core's
       // lines, where it landed and whether it is LOCAL or LIVE, are kept behind Details, less
       // the lines written for an agent (#3344, `actionResult.ts`).
-      setReport(
-        workspaceMade(name, answer.data, {
-          onAddVision: () => setAddingVision({ workspace: name, busy: false }),
-          pinRefused: pinned.ok ? undefined : pinned.refused,
-        }),
-      );
+      const ready = workspaceMade(name, answer.data, {
+        onAddVision: () => setAddingVision({ workspace: name, busy: false }),
+        pinRefused: pinned.ok ? undefined : pinned.refused,
+      });
+      setReport(ready);
       // **Made here, so opened** (#3648): the same focus a press on its chip gives, so the
       // window lands in it even with a chat in front, which the new workspace's empty strip
       // leaves nothing in front of. The plane is read again rather than this window writing
@@ -4697,7 +4696,9 @@ export const PlaneView = memo(function PlaneView({
       if (repos.length === 0) return;
       // The repos land after the workspace, one at a time and each on its own (ADR 0055):
       // the dialog is closed and the operator can start a chat while they clone.
-      await cloneNewRepos(name, repos);
+      // Said in the same breath as the ready notice, which the window would never draw: the
+      // clone's first line brings it, so both are kept (#3649).
+      await cloneNewRepos(name, repos, ready);
     },
     [cloneNewRepos, focusWorkspace, pinWorkspace, plane],
   );
