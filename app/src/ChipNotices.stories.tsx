@@ -342,10 +342,11 @@ export const NeedsYouBesideTheCount: Story = {
     );
     // The arrows of the strip reach it, as they reach every dot: from the chip, back one.
     chip.focus();
+    await waitFor(() => expect(chip).toHaveFocus());
     await userEvent.keyboard("{ArrowLeft}");
-    await expect(hand).toHaveFocus();
+    await waitFor(() => expect(hand).toHaveFocus());
     await userEvent.keyboard("{Enter}");
-    await expect(canvas.getByText("Brought chat 7 forward")).toBeInTheDocument();
+    await waitFor(() => expect(canvas.getByText("Brought chat 7 forward")).toBeInTheDocument());
     await waitFor(() => expect(cardOf()).not.toBeNull());
     await expect(
       canvas.getByRole("button", { name: "Show the chat asking to remove 3rd-try" }),
