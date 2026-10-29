@@ -30,10 +30,11 @@ import {
   SwitcherMark,
   SwitcherRow,
 } from "./ui/titlebar/Switcher";
-import { ChipCard, mostUrgent, type ChipNotices } from "./ChipNotices";
+import { ChipCard, type ChipNotices } from "./ChipNotices";
 import {
   AllWorkspaces,
   ChipSlot,
+  mostUrgentOf,
   NoticeDot,
   PinnedStrip,
   ProjectCrumb,
@@ -344,7 +345,7 @@ export function TitleBarSwitch({
     if (on.length === 0 && !asking) return undefined;
     return {
       count: on.length,
-      kind: mostUrgent(asking ? [...on, { kind: "needs" as const }] : on),
+      kind: mostUrgentOf([...on.map((one) => one.kind), ...(asking ? (["needs"] as const) : [])]),
     };
   };
   /** Shows `workspace`'s card, the keyboard going into it as it comes: a dot's press, or a

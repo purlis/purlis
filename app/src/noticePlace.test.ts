@@ -101,6 +101,18 @@ describe("where a notice is drawn (spec #3647, the one test seam)", () => {
       { at: "pane", pane: 3, needs: "gamma" },
     ],
     [
+      "a chat asking to remove a pinned workspace while the plane root is in front: its chip's dot",
+      ASKS_TO_REMOVE_GAMMA,
+      [ROOT, PINNED],
+      { at: "pane", pane: 3, needs: "gamma" },
+    ],
+    [
+      "a chat asking to remove the plane root, which the core refuses: no dot on the house",
+      { pane: 3, removes: OUTSIDE },
+      [ROOT, PINNED],
+      { at: "pane", pane: 3 },
+    ],
+    [
       "a chat asking to remove a workspace with no chip: its band alone, no dot over the wrong chip",
       ASKS_TO_REMOVE_GAMMA,
       [ROOT, ANOTHER],

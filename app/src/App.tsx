@@ -121,6 +121,7 @@ import { slideTowards } from "./workspaceSlide";
 import { pinsChanged } from "./workspacePins";
 import type { Needing, Quiet } from "./NeedsYou";
 import { useAsks } from "./asks";
+import { giveKeyboardTo } from "./paneKeyboard";
 import { landsOn, useNotificationLanding, type Landing } from "./askNotices";
 import { aQuestionIsUp, useCloseHanded } from "./closeHanded";
 import { useAwayRefusals } from "./dispatchAway";
@@ -1339,6 +1340,9 @@ function App() {
       reason: "",
       does: { verb: "showChat", session },
     });
+    // The asking chat types next even where it was in front already: `showChat` hands the
+    // keyboard over only when its pane changes, and the press was on the ✋ (#3652's review).
+    giveKeyboardTo(plane, session);
   }, []);
   /** The notices hung from those chips: a view onto the kept results, so a dismissal in either
    *  place is one (#3648); and the ✋ of a chat asking to remove a chip's workspace (#3652). */

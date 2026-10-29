@@ -198,11 +198,13 @@ export function useChipNotices({
   const follows = track !== undefined && tracks.has(track) && fresh?.refused !== true;
   if (track !== undefined && !tracks.has(track)) tracks = new Set([...tracks, track]);
   if (said !== up.seen || plane !== up.in) {
-    if (plane === up.in && !follows) {
+    // Nothing said is no new result: the window lets its newest result go as it moves to
+    // another chat (a ✋'s press does, #3652), and the card up then stays up.
+    if (plane === up.in && !follows && said !== undefined) {
       // A new result in the project in front. By what it is about, not by the chips drawn now:
       // a workspace just made is said before the title bar has heard of its chip, and its card
       // comes up as the chip does. A result about no workspace takes the card down.
-      const about = said === undefined ? undefined : aboutOf(said);
+      const about = aboutOf(said);
       open = about !== undefined && "workspace" in about ? about.workspace : undefined;
       openIn = plane;
       chipped = false;

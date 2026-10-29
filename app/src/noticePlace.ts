@@ -57,7 +57,9 @@ export type Place =
 export function placeOf(about: About, chips: readonly Chip[]): Place {
   if ("pane" in about) {
     const needs = about.removes;
-    return needs !== undefined && chips.some((chip) => chip.workspace === needs)
+    // The plane root is never removed (the core refuses it), so its house never shows a ✋.
+    return needs !== undefined &&
+      chips.some((chip) => chip.workspace === needs && chip.look !== "root")
       ? { at: "pane", pane: about.pane, needs }
       : { at: "pane", pane: about.pane };
   }
