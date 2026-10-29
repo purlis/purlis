@@ -261,6 +261,43 @@ fn a_refused_listen_names_the_port_the_server_asked_for() {
     }
 }
 
+/// #3396: a test server on a port the system picks is refused its listen with no port a person
+/// could allow, and is read as such: port 0 on this Mac's loopback or on every interface, in
+/// Seatbelt's, Go's and the supervisor's words, or Node's address with no port after it, which
+/// is how Node says a listen on port 0.
+#[test]
+fn a_refused_listen_on_a_port_the_system_picks_is_read_as_such() {
+    for line in [
+        "listen tcp 127.0.0.1:0: bind: operation not permitted",
+        "listen tcp [::1]:0: bind: operation not permitted",
+        "listen tcp :0: bind: operation not permitted",
+        "Error: listen EPERM: operation not permitted 127.0.0.1",
+        "Error: listen EPERM: operation not permitted ::1",
+        "Error: listen EPERM: operation not permitted 0.0.0.0",
+        "Error: listen EPERM: operation not permitted ::",
+    ] {
+        assert!(picked_port_refused_in(line), "{line}");
+        assert_eq!(listen_refused_in(line), None, "{line}");
+    }
+    for address in ["*:0", "127.0.0.1:0", "[::1]:0", "0.0.0.0:0", "localhost:0"] {
+        assert!(picks_its_port(address), "{address}");
+    }
+    for never in [
+        // A port it named, another machine's address, a port already taken, a connect.
+        "Error: listen EPERM: operation not permitted 127.0.0.1:3000",
+        "listen tcp 192.168.1.5:0: bind: operation not permitted",
+        "Error: listen EPERM: operation not permitted 192.168.1.5",
+        "Error: listen EADDRINUSE: address already in use 127.0.0.1",
+        "dial tcp 127.0.0.1:0: connect: operation not permitted",
+        "Error: listen EPERM: operation not permitted",
+    ] {
+        assert!(!picked_port_refused_in(never), "{never}");
+    }
+    for never in ["127.0.0.1:3000", "192.168.1.5:0", "", "0", "/tmp/x.sock"] {
+        assert!(!picks_its_port(never), "{never}");
+    }
+}
+
 /// #2019: a chat allowed to serve on port N listens on a socket of its own in the folder purlis
 /// made for it, and on no TCP port: that socket alone is made, bound and accepted on.
 #[test]
@@ -545,21 +582,97 @@ while (accept(my $c, $s)) {
         ]);
         let profile =
             seatbelt::profile(&[], &own, cwd.path(), tmp.path(), &[], None).expect("a profile");
-        let out = crate::forklock::output(
+        let mut server = crate::forklock::spawn(
             std::process::Command::new(backend::SANDBOX_EXEC)
                 .args(["-p", &profile, "/usr/bin/perl", "-e", UNIX])
                 .arg(socket.display().to_string())
-                .arg("once")
-                .current_dir(cwd.path()),
+                .arg("serve")
+                .current_dir(cwd.path())
+                .stdout(std::process::Stdio::piped()),
         )
-        .expect("it runs");
-        let got = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-        let _ = writeln!(std::io::stderr(), "PROBE-3316 claude code socket: {got}");
-        assert_eq!(got, "yes", "PROBE-3316");
+        .expect("the server starts");
+        let mut ready = String::new();
+        let _ = std::io::BufRead::read_line(
+            &mut std::io::BufReader::new(server.stdout.take().expect("its output")),
+            &mut ready,
+        );
+        let port = free_port();
+        let carried = if ready.trim() == "yes" {
+            let door = door::Door::open(port, &socket).expect("the door opens");
+            let carried = ask(port, &format!("127.0.0.1:{port}"));
+            drop(door);
+            carried
+        } else {
+            String::new()
+        };
+        let _ = server.kill();
+        let _ = server.wait();
+        let _ = writeln!(
+            std::io::stderr(),
+            "PROBE-3316 claude code socket: {} | through the door: {:?}",
+            ready.trim(),
+            carried.lines().next()
+        );
+        assert_eq!(ready.trim(), "yes", "PROBE-3316");
+        assert!(carried.ends_with("ok"), "PROBE-3316 {carried}");
     }
 
-    /// **A port the system picks** (#3396): a bind of `127.0.0.1:0` allowed by a Seatbelt rule
-    /// on port 0, with listening allowed on every loopback port. What a server gets is printed.
+    /// **Claude Code's rules for a socket, its folder's writes denied after** (#3316): as its
+    /// `denyWrite` writes a denied folder, after every allow; once with the socket's own make and
+    /// remove allowed, once with no write allowed at all. What a bind there gets is printed.
+    #[test]
+    fn claude_codes_rules_for_a_socket_in_a_folder_denied_to_writes() {
+        if !can_apply() {
+            return;
+        }
+        let base = tempfile::tempdir().expect("a folder");
+        let root = base.path().canonicalize().expect("real");
+        let folder = root.join("serve");
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&folder)
+            .expect("the chat's folder");
+        let socket = serve_socket(&folder, 4001);
+        let at = seatbelt::string(&socket.display().to_string()).expect("a string");
+        let denied = seatbelt::string(&root.display().to_string()).expect("a string");
+        let cwd = tempfile::tempdir().expect("a folder");
+        let tmp = tempfile::tempdir().expect("a temp folder");
+        let mut got = Vec::new();
+        for (name, write) in [("with its write", true), ("with no write", false)] {
+            let _ = std::fs::remove_file(&socket);
+            let mut own = seatbelt::Own::default();
+            own.after.extend([
+                "(allow system-socket (socket-domain AF_UNIX))".to_owned(),
+                format!("(allow network-bind (local unix-socket (subpath {at})))"),
+                format!("(allow network-outbound (remote unix-socket (subpath {at})))"),
+            ]);
+            if write {
+                own.after
+                    .push(format!("(allow file-write* (subpath {at}))"));
+            }
+            own.after
+                .push(format!("(deny file-write* (subpath {denied}))"));
+            let profile =
+                seatbelt::profile(&[], &own, cwd.path(), tmp.path(), &[], None).expect("a profile");
+            let out = crate::forklock::output(
+                std::process::Command::new(backend::SANDBOX_EXEC)
+                    .args(["-p", &profile, "/usr/bin/perl", "-e", UNIX])
+                    .arg(socket.display().to_string())
+                    .arg("once")
+                    .current_dir(cwd.path()),
+            )
+            .expect("it runs");
+            got.push(format!(
+                "{name}: {}",
+                String::from_utf8_lossy(&out.stdout).trim()
+            ));
+        }
+        let _ = writeln!(std::io::stderr(), "PROBE-3316-denied {}", got.join(" | "));
+    }
+
+    /// **A port the system picks** (#3396): whether a Seatbelt bind rule on port 0 lets a bind of
+    /// `127.0.0.1:0` alone, with no listen allowed (Seatbelt takes no `localhost:*` there, so a
+    /// listen would need every interface's every port). What a server gets is printed.
     #[test]
     fn a_port_the_system_picks_under_a_rule_for_port_zero() {
         if !can_apply() {
@@ -572,10 +685,8 @@ while (accept(my $c, $s)) {
         let cwd = tempfile::tempdir().expect("a folder");
         let tmp = tempfile::tempdir().expect("a temp folder");
         let mut own = seatbelt::Own::default();
-        own.after.extend([
-            r#"(allow network-bind (local ip "localhost:0"))"#.to_owned(),
-            r#"(allow network-inbound (local ip "localhost:*"))"#.to_owned(),
-        ]);
+        own.after
+            .extend([r#"(allow network-bind (local ip "localhost:0"))"#.to_owned()]);
         let Ok(profile) = seatbelt::profile(&[], &own, cwd.path(), tmp.path(), &[], None) else {
             panic!("PROBE-3396 no profile");
         };
