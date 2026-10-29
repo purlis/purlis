@@ -55,6 +55,20 @@ import {
   type Step,
 } from "./workspaceSwitch";
 
+/**
+ * **The strip's stop**: the chip of the workspace in front, else the plane root's house while the
+ * root is (#3654), else the ⌄. Where the keyboard goes when what it was on has gone: a switcher
+ * closed on nothing it came from, or a card whose chip went with it (#3651's review).
+ */
+function stripStop(strip: HTMLElement | null, house: HTMLElement | null): HTMLElement | null {
+  return (
+    strip?.querySelector<HTMLElement>('[data-part="workspace"][data-selected]') ??
+    (house?.hasAttribute("data-selected") === true ? house : null) ??
+    strip?.querySelector<HTMLElement>("[data-titlebar-all]") ??
+    null
+  );
+}
+
 /** No pins, one value for every render. */
 const NO_PINS: readonly string[] = [];
 
@@ -194,10 +208,7 @@ export function TitleBarSwitch({
         from.focus({ preventScroll: true });
         return;
       }
-      const chosen =
-        strip.current?.querySelector<HTMLElement>('[data-part="workspace"][data-selected]') ??
-        (house.current?.hasAttribute("data-selected") ? house.current : null) ??
-        strip.current?.querySelector<HTMLElement>("[data-titlebar-all]");
+      const chosen = stripStop(strip.current, house.current);
       chosen?.focus({ preventScroll: true });
     });
   }, [open]);
@@ -314,8 +325,14 @@ export function TitleBarSwitch({
   /** A chip with the workspace's own menu around it, where the window gives one. */
   const withMenu = (workspace: string, drawn: ReactNode) =>
     menuOf === undefined ? drawn : menuOf(workspace, drawn);
+  // A workspace in front that has gone is drawn dormant, never dashed (#3651's review).
   const unpinned =
-    focused !== undefined && focused !== OUTSIDE && !pins.includes(focused) ? focused : undefined;
+    focused !== undefined &&
+    focused !== OUTSIDE &&
+    !pins.includes(focused) &&
+    !(workspaces?.dormant ?? NO_PINS).includes(focused)
+      ? focused
+      : undefined;
   /** The strip's one Tab stop: the chip of the workspace in front, else the first pin, else the
    *  ⌄ (charter-app#189). */
   const stop = unpinned ?? (focused !== undefined && pins.includes(focused) ? focused : pins[0]);
@@ -325,8 +342,16 @@ export function TitleBarSwitch({
     if (on === undefined || on.length === 0) return undefined;
     return { count: on.length, kind: mostUrgent(on) };
   };
-  /** A chip in its slot, with the dot of its notices while their card is not up (#3648). */
-  const slotted = (workspace: string, drawn: ReactNode) => {
+  /** Shows `workspace`'s card, the keyboard going into it as it comes: a dot's press, or a
+   *  dormant chip's (#3651), either of which goes or stays behind the card (WCAG 2.4.3). */
+  const showCard = (workspace: string) => {
+    if (notices === undefined) return;
+    setHandTo(workspace);
+    notices.show(workspace);
+  };
+  /** A chip in its slot, with the dot of its notices while their card is not up (#3648). A
+   *  dormant chip has no menu: its workspace's rows are of a workspace the project lacks. */
+  const slotted = (workspace: string, drawn: ReactNode, menued = true) => {
     const shows = noticesOn(workspace);
     return (
       <ChipSlot>
@@ -337,15 +362,12 @@ export function TitleBarSwitch({
             kind={shows.kind}
             // The house is no strip's: its dot is a Tab stop of its own.
             stop={workspace === OUTSIDE}
-            onPress={() => {
-              // A press is the person asking for it: the keyboard goes to the card, since the
-              // dot it was on goes as the card comes (WCAG 2.4.3).
-              setHandTo(workspace);
-              notices.show(workspace);
-            }}
+            // A press is the person asking for it: the keyboard goes to the card, since the
+            // dot it was on goes as the card comes (WCAG 2.4.3).
+            onPress={() => showCard(workspace)}
           />
         )}
-        {withMenu(workspace, drawn)}
+        {menued ? withMenu(workspace, drawn) : drawn}
       </ChipSlot>
     );
   };
@@ -365,6 +387,26 @@ export function TitleBarSwitch({
     );
     return <Fragment key={workspace}>{slotted(workspace, drawn)}</Fragment>;
   };
+  /** **A pin whose workspace is gone** (V91c as amended, #3651): drawn dormant after the live
+   *  pins, never a way into a workspace the project lacks. Its press shows its notice. */
+  const dormant = (workspaces?.dormant ?? NO_PINS).filter((name) => !pins.includes(name));
+  const dormantChip = (workspace: string) => (
+    <Fragment key={`${workspace}~`}>
+      {slotted(
+        workspace,
+        <WorkspaceChip
+          name={workspace}
+          variant="dormant"
+          tabIndex={-1}
+          notices={noticesOn(workspace)}
+          tooltip={`${workspace} is gone, kept dormant`}
+          onClick={() => showCard(workspace)}
+          data-chip-of={workspace}
+        />,
+        false,
+      )}
+    </Fragment>
+  );
   const card = cardOn === undefined ? undefined : notices?.on.get(cardOn);
 
   return (
@@ -399,6 +441,7 @@ export function TitleBarSwitch({
       {workspaces !== undefined && (
         <PinnedStrip name="Pinned workspaces" ref={strip}>
           {pins.map(chip)}
+          {dormant.map(dormantChip)}
           {unpinned !== undefined && (
             <Fragment key={`${unpinned}+`}>
               {slotted(
@@ -441,6 +484,7 @@ export function TitleBarSwitch({
             // The house is in no strip, so nothing clips it.
             clip={cardOn === OUTSIDE ? undefined : strip}
             onKeyboardTaken={() => setHandTo(undefined)}
+            fallback={() => stripStop(strip.current, house.current)}
           />
         )}
       {open === "workspaces" && (
