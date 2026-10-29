@@ -1662,6 +1662,16 @@ pub fn armed_as(asker: &Asker, wanted: &Wanted) -> Result<String, String> {
     if ready.tool.login.is_some() {
         return Err(login_by_the_browser_tool(&ready.tool.name));
     }
+    // The run's own arguments (#3421), judged here so no value is sent for a run its host
+    // would refuse.
+    let args: Vec<String> = wanted
+        .command
+        .iter()
+        .skip_while(|word| *word == "--")
+        .skip(1)
+        .cloned()
+        .collect();
+    crate::sandbox::tools::allows(ready, &args)?;
     Ok(ready.tool.name.clone())
 }
 
