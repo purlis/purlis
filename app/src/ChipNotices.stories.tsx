@@ -402,7 +402,10 @@ export const ADormantChipShowsItsNotice: Story = {
       canvas.getByRole("button", { name: "Show the notice on second-try" }),
     ).toBeInTheDocument();
     await expect(screen.queryByRole("region", { name: "Notices for second-try" })).toBeNull();
-    await userEvent.click(chipOf("second-try"));
+    // Pressed from the keyboard, as the strip's arrows reach it: no pointer is left over the
+    // chip to light it, so the picture is the same on every run.
+    chipOf("second-try").focus();
+    await userEvent.keyboard("{Enter}");
     const card = await waitFor(
       () => screen.queryByRole("region", { name: "Notices for second-try" }) as HTMLElement,
     );
