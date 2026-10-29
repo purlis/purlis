@@ -590,7 +590,7 @@ fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
             "no rebase is stopped in {label}: `purlis worktree update` starts one"
         ));
     };
-    let record = Record::read(&here.git_dir).ok_or_else(|| {
+    let record = Record::of_the_stopped_rebase(&here.git_dir).ok_or_else(|| {
         format!(
             "the rebase stopped in {label} is not one purlis started: finish it from \
              your own terminal"
@@ -690,6 +690,20 @@ impl Record {
             format!("{}\n{}\n", self.branch, self.head),
         )
         .map_err(|why| format!("purlis could not note the update it starts: {why}"))
+    }
+
+    /// The record of the rebase stopped in `git_dir` now, only where that rebase is the one
+    /// purlis started (#3831): git's own note of the commit it started from (`orig-head`) is the
+    /// commit purlis recorded. A record left from an earlier update never vouches for a rebase
+    /// the person started since.
+    fn of_the_stopped_rebase(git_dir: &Path) -> Option<Self> {
+        let record = Self::read(git_dir)?;
+        let started_from = ["rebase-merge", "rebase-apply"].iter().find_map(|dir| {
+            std::fs::read_to_string(git_dir.join(dir).join("orig-head"))
+                .ok()
+                .map(|text| text.trim().to_owned())
+        })?;
+        (started_from == record.head).then_some(record)
     }
 
     fn read(git_dir: &Path) -> Option<Self> {
@@ -810,7 +824,7 @@ fn abort(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
     }
     // Only a rebase purlis started for an update, as `--continue` holds it: one the person
     // started is theirs to finish or abort.
-    if Record::read(&here.git_dir).is_none() {
+    if Record::of_the_stopped_rebase(&here.git_dir).is_none() {
         return Err(format!(
             "the rebase stopped in {label} is not one purlis started: finish or abort it from \
              your own terminal"

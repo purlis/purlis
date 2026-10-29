@@ -94,6 +94,10 @@ pub enum Left {
     /// Files the incoming commits change that the asking chat's sandbox denies it (#3831): a
     /// project manifest, or a file a program run later loads code from. Nothing was started.
     HeldFromChats(Vec<String>),
+    /// What the app will not do for a chat at the project root, in its own sentence (#3831): a
+    /// move the chat's sandbox would not let it make, a move purlis could not judge, or a
+    /// project whose update goes through its pull request. Nothing was started.
+    NotForAChat(String),
     /// A request mode, and commits here that an open request carries: `mine` of them.
     WaitsOnRequest {
         mine: u32,
@@ -137,6 +141,7 @@ impl Left {
             Self::InTheWay(_) => "in-the-way",
             Self::Unwritable(_) => "unwritable",
             Self::HeldFromChats(_) => "held-from-chats",
+            Self::NotForAChat(_) => "not-for-a-chat",
             Self::WaitsOnRequest { .. } => "waits-on-request",
             Self::Conflict(_) => "conflict",
             Self::Unsigned(_) => "unsigned",
@@ -228,6 +233,11 @@ impl Left {
                  code from), so purlis does not update the project for a chat. The person \
                  updates it with Update in the window, or in their own terminal. {AS_IT_WAS}",
                 named(files),
+            ),
+            Self::NotForAChat(why) => format!(
+                "Nothing was updated: {} The person updates the project with Update in the \
+                 window. {AS_IT_WAS}",
+                why.trim_end()
             ),
             Self::WaitsOnRequest { mine, url, why } => {
                 let on = match url {
@@ -363,7 +373,7 @@ fn one_line(said: &str) -> String {
 /// project's [`Claim`], so no save runs beside it. A chat has it run by the app through
 /// [`update_for_a_chat`], judged first.
 pub fn update(root: &Path, say: Sink) -> Updated {
-    update_as(root, false, say)
+    update_as(root, None, say)
 }
 
 /// [`update`], run by the app for a chat at the project root (#3831, the operator's ruling of
@@ -371,12 +381,13 @@ pub fn update(root: &Path, say: Sink) -> Updated {
 /// moves**: where the incoming commits change a file a chat's sandbox denies it (ADR 0067 §5,
 /// [`super::resolve::held_from_chats`]), nothing is started and the person updates instead. The
 /// move then runs onto the commit id that was judged, never onto what the remote-tracking
-/// branch names by the time git runs.
-pub fn update_for_a_chat(root: &Path, say: Sink) -> Updated {
-    update_as(root, true, say)
+/// branch names by the time git runs. `chat_dir` is where the asking chat was started: its
+/// sandbox is the one the move is judged against.
+pub fn update_for_a_chat(root: &Path, chat_dir: &Path, say: Sink) -> Updated {
+    update_as(root, Some(chat_dir), say)
 }
 
-fn update_as(root: &Path, for_a_chat: bool, say: Sink) -> Updated {
+fn update_as(root: &Path, for_a_chat: Option<&Path>, say: Sink) -> Updated {
     let Some(_claim) = Claim::of(root) else {
         return Updated::Left(Left::Busy);
     };
@@ -394,14 +405,19 @@ fn update_as(root: &Path, for_a_chat: bool, say: Sink) -> Updated {
     if let Some(left) = held(root, &here, &branch) {
         return Updated::Left(left);
     }
+    if for_a_chat.is_some()
+        && let Some(left) = request_mode_held(&plane)
+    {
+        return Updated::Left(left);
+    }
     say(Say::Info(
         format!("Fetching `{branch}` from the remote …").into(),
     ));
     if let Err(why) = fetch_branch(root, &branch) {
         return Updated::Left(Left::NotFetched(why.trim_end_matches('.').to_string()));
     }
-    if for_a_chat {
-        return bring_in_for_a_chat(root, &plane, &branch, say);
+    if let Some(chat_dir) = for_a_chat {
+        return bring_in_for_a_chat(root, &plane, &branch, chat_dir, say);
     }
     bring_in(
         root,
@@ -459,27 +475,32 @@ pub(super) fn bring_in(
 ) -> Updated {
     let theirs = format!("refs/remotes/origin/{branch}");
     bring_in_at(
-        root, plane, branch, &theirs, caller, deadline, look_first, say,
+        root, plane, branch, &theirs, None, caller, deadline, look_first, say,
     )
 }
 
 /// [`bring_in`] for a chat (#3831), after the fetch: the remote-tracking branch read once as
 /// a commit id, the move from HEAD to it judged for the files a chat's sandbox denies, and the
 /// move run onto that id.
-fn bring_in_for_a_chat(root: &Path, plane: &Plane, branch: &str, say: Sink) -> Updated {
+fn bring_in_for_a_chat(
+    root: &Path,
+    plane: &Plane,
+    branch: &str,
+    chat_dir: &Path,
+    say: Sink,
+) -> Updated {
+    // Asked again here, whatever called: no request's merge or fetch runs for a chat.
+    if let Some(left) = request_mode_held(plane) {
+        return Updated::Left(left);
+    }
     let theirs = format!("refs/remotes/origin/{branch}");
     let (Some(head), Some(theirs)) = (head_of(root), commit_of(root, &theirs)) else {
         return Updated::Left(Left::Failed(format!(
             "purlis has no copy of the remote's `{branch}`"
         )));
     };
-    let changed: Vec<String> = differing(root, &head, &theirs)
-        .into_iter()
-        .map(|(_, path)| path)
-        .collect();
-    let held = super::resolve::held_from_chats(root, &changed);
-    if !held.is_empty() {
-        return Updated::Left(Left::HeldFromChats(held));
+    if let Some(left) = held_for_a_chat(root, &head, &theirs, chat_dir) {
+        return Updated::Left(left);
     }
     // No person waits on a chat's update: the forge is asked as a trigger would ask it.
     bring_in_at(
@@ -487,6 +508,7 @@ fn bring_in_for_a_chat(root: &Path, plane: &Plane, branch: &str, say: Sink) -> U
         plane,
         branch,
         &theirs,
+        Some(&head),
         &forge::Caller::trigger(),
         WRITE,
         true,
@@ -494,21 +516,73 @@ fn bring_in_for_a_chat(root: &Path, plane: &Plane, branch: &str, say: Sink) -> U
     )
 }
 
+/// Why a chat's update may not move the project at `root` from `head` to `theirs`, both
+/// commit ids, or `None`. **Fails closed**: where git cannot say what the move writes, it is
+/// refused. Judged twice, and refused where either finds a file: against the asking chat's own
+/// sandbox, as the clone guard judges a rebase for the chat started at `chat_dir`
+/// ([`crate::cloneupdate::judged_rebase`]), and against the fixed floor every chat's sandbox
+/// denies ([`super::resolve::held_from_chats`]).
+fn held_for_a_chat(root: &Path, head: &str, theirs: &str, chat_dir: &Path) -> Option<Left> {
+    let Some(changed) = differing_or_none(root, head, theirs) else {
+        return Some(Left::NotForAChat(
+            "git could not say which files the update would write, so purlis did not judge it \
+             for this chat."
+                .into(),
+        ));
+    };
+    let changed: Vec<String> = changed.into_iter().map(|(_, path)| path).collect();
+    let held = super::resolve::held_from_chats(root, &changed);
+    if !held.is_empty() {
+        return Some(Left::HeldFromChats(held));
+    }
+    let top = root.to_string_lossy();
+    let place = crate::cloneupdate::Place {
+        root: &top,
+        chat_dir: Some(chat_dir),
+        alone: true,
+        sparse: true,
+    };
+    crate::cloneupdate::judged_rebase(&top, theirs, head, &place, &crate::cloneupdate::Asked)
+        .map(Left::NotForAChat)
+}
+
+/// Why a chat may not have the project updated in its saving mode, or `None` (#3831): in a
+/// mode that saves through a pull request, an update may merge or publish one, which reaches
+/// the forge, and that is the person's to do from the window.
+fn request_mode_held(plane: &Plane) -> Option<Left> {
+    plane.mode.value.is_some_and(Mode::opens_a_pr).then(|| {
+        Left::NotForAChat(
+            "this project saves through a pull request, and bringing it up to date may merge \
+             or publish one, which purlis does only for the person."
+                .into(),
+        )
+    })
+}
+
 /// [`bring_in`], onto `theirs`: the remote-tracking branch, or the commit id a chat's update
-/// judged.
+/// judged, from `judged_head`, the commit it was judged from, where a chat's update judged one.
 #[allow(clippy::too_many_arguments)]
 fn bring_in_at(
     root: &Path,
     plane: &Plane,
     branch: &str,
     theirs: &str,
+    judged_head: Option<&str>,
     caller: &forge::Caller,
     deadline: Duration,
     look_first: bool,
     say: Sink,
 ) -> Updated {
     let got = move_onto(
-        root, plane, branch, theirs, caller, deadline, look_first, say,
+        root,
+        plane,
+        branch,
+        theirs,
+        judged_head,
+        caller,
+        deadline,
+        look_first,
+        say,
     );
     if matches!(&got, Updated::Moved(moved) if !moved.by_request) {
         super::forget_replayed_push(root);
@@ -523,6 +597,7 @@ fn move_onto(
     plane: &Plane,
     branch: &str,
     theirs: &str,
+    judged_head: Option<&str>,
     caller: &forge::Caller,
     deadline: Duration,
     look_first: bool,
@@ -532,6 +607,19 @@ fn move_onto(
     let Some(before) = head_of(root) else {
         return failed("the project has no commit to update from");
     };
+    // A chat's update moves only from the commit it was judged from, and never through a
+    // request.
+    if let Some(judged) = judged_head {
+        if before != judged {
+            return failed(
+                "the project's commit moved while purlis judged the update, so nothing was \
+                 moved; update again",
+            );
+        }
+        if let Some(left) = request_mode_held(plane) {
+            return Updated::Left(left);
+        }
+    }
     let Some(behind) = count(root, &format!("HEAD..{theirs}")) else {
         return failed(&format!("purlis has no copy of the remote's `{branch}`"));
     };
@@ -644,9 +732,16 @@ fn head_of(root: &Path) -> Option<String> {
         .filter(|head| !head.is_empty())
 }
 
-/// The paths two commits' trees differ in, each with whether `to` adds it (`from` has none).
+/// [`differing_or_none`], read as nothing differing where git cannot answer: for the window,
+/// whose move then fails on its own before a file is written.
 fn differing(root: &Path, from: &str, to: &str) -> Vec<(bool, String)> {
-    let Some(run) = git::run(
+    differing_or_none(root, from, to).unwrap_or_default()
+}
+
+/// The paths two commits' trees differ in, each with whether `to` adds it, or `None` where git
+/// could not answer.
+fn differing_or_none(root: &Path, from: &str, to: &str) -> Option<Vec<(bool, String)>> {
+    let run = git::run(
         root,
         &[
             "diff-tree",
@@ -660,9 +755,7 @@ fn differing(root: &Path, from: &str, to: &str) -> Vec<(bool, String)> {
         git::READ,
     )
     .ok()
-    .filter(git::Run::ok) else {
-        return Vec::new();
-    };
+    .filter(git::Run::ok)?;
     let mut out = Vec::new();
     let mut fields = run.out.split('\0');
     while let (Some(status), Some(path)) = (fields.next(), fields.next()) {
@@ -670,7 +763,7 @@ fn differing(root: &Path, from: &str, to: &str) -> Vec<(bool, String)> {
             out.push((status.starts_with('A'), path.to_string()));
         }
     }
-    out
+    Some(out)
 }
 
 /// What [`look`] found that would stop a move part-way.

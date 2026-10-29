@@ -278,7 +278,7 @@ impl Project {
     /// [`Project::brings_in`], as the app runs it for a chat at the project root (#3831).
     fn brings_in_for_a_chat(&self) -> Updated {
         let plane = Settings::read(&self.root).plane;
-        bring_in_for_a_chat(&self.root, &plane, "main", &mut |_| {})
+        bring_in_for_a_chat(&self.root, &plane, "main", &self.root, &mut |_| {})
     }
 }
 
@@ -332,10 +332,72 @@ fn a_chats_update_of_a_project_with_unsaved_work_is_refused_before_anything_is_f
     std::fs::write(project.root.join("new.md"), "not committed\n").unwrap();
     let before = project.as_it_is();
 
-    let got = update_for_a_chat(&project.root, &mut |_| {});
+    let got = update_for_a_chat(&project.root, &project.root, &mut |_| {});
 
     assert_eq!(got, Updated::Left(Left::Unsaved(1)));
     assert_eq!(project.as_it_is(), before, "nothing moved, nothing stashed");
+}
+
+#[test]
+fn a_chats_update_in_a_mode_that_saves_through_a_request_is_left_to_the_person() {
+    // #3831: an update there may merge or publish a request, which purlis does only for the
+    // person; nothing of the request's own merge or fetch runs for a chat.
+    let project = Project::new();
+    project.remote_commits(|root| std::fs::write(root.join("theirs.md"), "theirs\n").unwrap());
+    let before = project.as_it_is();
+    for mode in [Mode::Pr, Mode::PrMerge] {
+        let mut plane = Settings::read(&project.root).plane;
+        plane.mode.value = Some(mode);
+
+        let got = bring_in_for_a_chat(&project.root, &plane, "main", &project.root, &mut |_| {});
+
+        let Updated::Left(left @ Left::NotForAChat(_)) = &got else {
+            panic!("{mode:?}: {got:?}");
+        };
+        assert!(
+            left.said("pull request").contains("Update in the window"),
+            "{left:?}"
+        );
+        assert_eq!(project.as_it_is(), before, "{mode:?}: nothing moved");
+    }
+}
+
+#[test]
+fn a_chats_update_that_git_cannot_judge_is_refused() {
+    // #3831: fails closed. A commit git cannot compare is never read as "nothing denied".
+    let project = Project::new();
+    let head = project.head();
+    let got = held_for_a_chat(
+        &project.root,
+        &head,
+        "0123456789abcdef0123456789abcdef01234567",
+        &project.root,
+    );
+    assert!(matches!(got, Some(Left::NotForAChat(_))), "{got:?}");
+}
+
+#[test]
+fn a_chats_update_moves_only_from_the_commit_it_was_judged_from() {
+    let project = Project::new();
+    project.remote_commits(|root| std::fs::write(root.join("theirs.md"), "theirs\n").unwrap());
+    let before = project.as_it_is();
+    let plane = Settings::read(&project.root).plane;
+    let theirs = ask(&project.root, &["rev-parse", "refs/remotes/origin/main"]);
+
+    let got = bring_in_at(
+        &project.root,
+        &plane,
+        "main",
+        &theirs,
+        Some("0123456789abcdef0123456789abcdef01234567"),
+        &forge::Caller::trigger(),
+        Duration::from_secs(60),
+        true,
+        &mut |_| {},
+    );
+
+    assert!(matches!(got, Updated::Left(Left::Failed(_))), "{got:?}");
+    assert_eq!(project.as_it_is(), before, "nothing moved");
 }
 
 #[test]
@@ -573,6 +635,7 @@ fn every_reason_says_whether_the_project_is_as_it_was() {
         Left::Unsigned("no key".into()),
         Left::Unwritable(vec!["a.md".into()]),
         Left::HeldFromChats(vec!["a.md".into()]),
+        Left::NotForAChat("a reason.".into()),
     ] {
         assert!(left.as_it_was());
         assert!(

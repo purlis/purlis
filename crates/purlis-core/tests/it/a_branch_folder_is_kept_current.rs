@@ -839,3 +839,46 @@ fn an_abort_is_only_of_a_rebase_purlis_started_never_of_the_persons_own() {
     assert_eq!(code, 0, "{said}");
     assert_eq!(out(&w.clone, &["rev-parse", "HEAD"]), mine);
 }
+
+#[test]
+fn a_record_left_from_an_earlier_update_never_vouches_for_the_persons_own_rebase() {
+    purlis_core::unsteered!();
+    // #3831: purlis's record names the commit its own rebase started from, and git's note of
+    // the rebase stopped now must name the same one.
+    let w = world();
+    write(&w.clone, "shared.txt", "a\nmine\nc\n");
+    git(&w.clone, &["commit", "-q", "-am", "mine"]);
+    w.they_commit("shared.txt", "a\ntheirs\nc\n");
+    // purlis's update stops on the conflict, and the person aborts it in their terminal: the
+    // record stays behind.
+    let (code, _) = update_clone(&w, &start(None), &Reach::default());
+    assert_eq!(code, 1);
+    git(&w.clone, &["rebase", "--abort"]);
+    // A commit of their own, then a rebase of their own, stopped on the same conflict.
+    write(&w.clone, "other.txt", "theirs too\n");
+    git(&w.clone, &["add", "other.txt"]);
+    git(&w.clone, &["commit", "-q", "-m", "the person's"]);
+    let mut person = support::unsigned();
+    person
+        .args(["-c", "user.name=t", "-c", "user.email=t@e.invalid", "-C"])
+        .arg(&w.clone)
+        .args(["rebase", "origin/main"])
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null");
+    let theirs = purlis_core::forklock::output(&mut person).expect("git runs");
+    assert!(
+        !theirs.status.success(),
+        "the person's rebase stops on the conflict"
+    );
+    let git_dir = PathBuf::from(out(&w.clone, &["rev-parse", "--absolute-git-dir"]));
+
+    for step in [UpdateStep::Abort, UpdateStep::Continue] {
+        let (code, said) = update_clone(&w, &step, &Reach::default());
+        assert_eq!(code, 1, "{step:?}: {said}");
+        assert!(said.contains("not one purlis started"), "{step:?}: {said}");
+        assert!(
+            git_dir.join("rebase-merge").is_dir(),
+            "{step:?} touched the person's rebase"
+        );
+    }
+}

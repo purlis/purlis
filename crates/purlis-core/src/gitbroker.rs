@@ -166,7 +166,9 @@ fn isolated_answer(
             }
         }
         GitWork::RootUpdate {} => {
-            let updated = crate::planegit::update_for_a_chat(root, &mut say);
+            // Placed at the root above, so its own folder is the root.
+            let chat_dir = asker.cwd.as_deref().unwrap_or(root);
+            let updated = crate::planegit::update_for_a_chat(root, chat_dir, &mut say);
             let request = crate::forge::request_words_of(root, root).request_noun();
             let said = updated.said(request);
             if matches!(updated, crate::planegit::Updated::Left(_)) {
