@@ -507,7 +507,8 @@ mod tests {
     }
 
     /// #1456, #1463: the text a dispatch subcommand sends, beside a live substitution, is
-    /// refused inside a project (A7e), before the call is refused as a rider. Outside a project nothing is dispatched, and the text written out passes.
+    /// refused inside a project (A7e), before the call is refused as a rider. Outside a project
+    /// nothing is dispatched, and the text written out passes.
     #[test]
     fn a_dispatch_subcommand_s_text_with_a_live_substitution_is_refused_in_a_project() {
         let fix = Fixture::new();

@@ -1258,9 +1258,10 @@ a handoff that stands alone and nothing rides on it, and the chat retries with n
 on a prompt. A function or an alias defined earlier in the call counts as another command, and
 so does a redirection on the handoff's or the dispatch's own line that writes a file. A
 dispatch whose brief is not one quoted heredoc in the call is refused too, as a handoff's is.
-Where purlis cannot read the call, it refuses. A dispatch that only looks (`list`, `read`,
-`wait`, a `--help`) is left to the harness's own rules whatever stands beside it, and a
-handoff in a call of its own is not refused.
+Where purlis cannot read the call, it refuses. A call whose every dispatch only looks
+(`list`, `read`, `wait`, a `--help` in a flag position) is left to the harness's own rules
+whatever stands beside it, unless a redirection on the line writes a file; a handoff in a call
+of its own is not refused.
 
 A handoff's brief is data, not commands, to purlis's secret-leak guard. None of these is
 refused as a read: a brief that names a vault path in prose, a brief that holds an apostrophe,

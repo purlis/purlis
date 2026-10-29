@@ -467,7 +467,11 @@ pub fn answer(known: &[Known], chat: u32, tell: Tell, told: &mut Told) -> Option
     let more_changes = changes.len().saturating_sub(MOST_ROWS);
     changes.truncate(MOST_ROWS);
     let (waiting_on_you, back_at_work) = match tell {
-        Tell::Turn => newly_waiting(known, chat, &mut told.waiting),
+        // Read before what it was told is kept anew: a task leaves `told` as it goes back.
+        Tell::Turn => {
+            let back = back_at_work(known, chat, &told.waiting);
+            (newly_waiting(known, chat, &mut told.waiting), back)
+        }
         Tell::Asked | Tell::Start => (Vec::new(), Vec::new()),
     };
     let mut open_tasks = match tell {
@@ -514,24 +518,11 @@ fn open_tasks(known: &[Known], chat: u32) -> Vec<OpenTask> {
 /// upkeep of which were (`told`). Its own tasks only, by the app's record of who asked whom
 /// and in its lineage ([`parent_of`]): a task's task is its asker's to be told of, and a chat
 /// under a number dealt again is no task of this one.
-///
-/// And the tasks it was told were waiting that are **at work again** (#3788): still its own,
-/// still live, and no longer stopped on the person. Each is said once, as it leaves `told`.
 fn newly_waiting(
     known: &[Known],
     chat: u32,
     told: &mut std::collections::BTreeSet<u32>,
-) -> (Vec<Waiting>, Vec<String>) {
-    let back: Vec<String> = known
-        .iter()
-        .filter(|one| told.contains(&one.chat) && one.asking.is_none())
-        .filter(|one| parent_of(known, one).is_some_and(|parent| parent.chat == chat))
-        .filter(|one| Stage::of(Doing::of(one)) == Stage::Live)
-        .map(|one| (one.chat, one.name.clone()))
-        .collect::<BTreeMap<u32, String>>()
-        .into_values()
-        .take(MOST_ROWS)
-        .collect();
+) -> Vec<Waiting> {
     let mut tasks: Vec<&Known> = known
         .iter()
         .filter(|one| parent_of(known, one).is_some_and(|parent| parent.chat == chat))
@@ -551,7 +542,7 @@ fn newly_waiting(
         .map(|one| one.chat)
         .filter(|chat| told.contains(chat) || fresh.iter().any(|one| one.chat == *chat))
         .collect();
-    let waiting = fresh
+    fresh
         .into_iter()
         .filter_map(|one| {
             Some(Waiting {
@@ -559,8 +550,23 @@ fn newly_waiting(
                 prompt: one.asking?,
             })
         })
-        .collect();
-    (waiting, back)
+        .collect()
+}
+
+/// `chat`'s own tasks it was `told` were waiting on the person that are **at work again**
+/// (#3788): still its own, still live, and no longer stopped on the person. Each is said once:
+/// [`newly_waiting`] then lets it go from `told`.
+fn back_at_work(known: &[Known], chat: u32, told: &std::collections::BTreeSet<u32>) -> Vec<String> {
+    known
+        .iter()
+        .filter(|one| told.contains(&one.chat) && one.asking.is_none())
+        .filter(|one| parent_of(known, one).is_some_and(|parent| parent.chat == chat))
+        .filter(|one| Stage::of(Doing::of(one)) == Stage::Live)
+        .map(|one| (one.chat, one.name.clone()))
+        .collect::<BTreeMap<u32, String>>()
+        .into_values()
+        .take(MOST_ROWS)
+        .collect()
 }
 
 /// What changed between what a chat was told (`before`) and the picture `now`.

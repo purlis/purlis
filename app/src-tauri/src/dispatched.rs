@@ -1205,11 +1205,7 @@ fn cancel(held: &Held, asker: u32, of: u32) -> Result<Answer, String> {
         // The person has typed in it: it is theirs (#3785, ruled 2026-10-29), as a close is
         // refused for it.
         if stepped_in(held, of) || held.tasks().ledger().keyed(of) {
-            return Err(dispatched::the_person_typed_in(
-                &purlis_core::personas::one_line(&name),
-                of,
-                "cancel",
-            ));
+            return Err(dispatched::the_person_typed_in(&name, of, "cancel"));
         }
         let began = held.tasks().ledger().cancel(of, &name, &from)?;
         if began {

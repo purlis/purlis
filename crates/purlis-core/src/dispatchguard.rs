@@ -496,32 +496,45 @@ fn beside(cmd: &str) -> Option<(&'static str, String)> {
     crate::livesub::live_substitution(cmd).map(|_| (own, A_SUBSTITUTION.to_owned()))
 }
 
+/// A segment of ours: which command it runs, its tokens, whether a pipe feeds it, and where
+/// the command line's own words start after `dispatch` or `handoff`.
+type OurSegment = (&'static str, Vec<Tok>, bool, Option<usize>);
+
 /// The first segment of the lines a shell would run in `cmd` that runs a dispatch or a
 /// handoff, as tokens: which of the two, the segment, whether a pipe feeds it, and where the
 /// command line's own words start after `dispatch` or `handoff` (`None` where the reader's
 /// words are not the segment's own tail, so where they start cannot be told).
-fn own_segment(cmd: &str) -> Option<(&'static str, Vec<Tok>, bool, Option<usize>)> {
+fn own_segment(cmd: &str) -> Option<OurSegment> {
+    our_segments(cmd)?.into_iter().next()
+}
+
+/// Every segment of the lines a shell would run in `cmd` that runs a dispatch, a handoff or a
+/// commit, read as [`own_segment`] reads the first; `None` where the lexer cannot read them.
+fn our_segments(cmd: &str) -> Option<Vec<OurSegment>> {
     let runs: Vec<String> = crate::leakguard::lines_a_command_could_run(cmd)
         .into_iter()
         .map(|(row, _)| row)
         .collect();
     let toks = shellseg::split_punctuation(shellseg::lex(&runs.join("\n")).ok()?);
-    crate::heredoc::segments_of(&toks)
-        .into_iter()
-        .find_map(|(seg, before)| {
-            let texts: Vec<String> = seg.iter().map(|t| t.text.clone()).collect();
-            let own = ours(&texts)?;
-            let (prog, _env, argv) = shellwrap::split_env(&texts);
-            let words = charter_words(&prog, &argv).or_else(|| {
-                names_our_binary(&prog).then(|| argv.get(1..).unwrap_or_default().to_vec())
-            })?;
-            let after = texts
-                .len()
-                .checked_sub(words.len())
-                .filter(|at| texts[*at..] == words[..])
-                .map(|at| at + 1);
-            Some((own, seg, before == "|" || before == "|&", after))
-        })
+    Some(
+        crate::heredoc::segments_of(&toks)
+            .into_iter()
+            .filter_map(|(seg, before)| {
+                let texts: Vec<String> = seg.iter().map(|t| t.text.clone()).collect();
+                let own = ours(&texts)?;
+                let (prog, _env, argv) = shellwrap::split_env(&texts);
+                let words = charter_words(&prog, &argv).or_else(|| {
+                    names_our_binary(&prog).then(|| argv.get(1..).unwrap_or_default().to_vec())
+                })?;
+                let after = texts
+                    .len()
+                    .checked_sub(words.len())
+                    .filter(|at| texts[*at..] == words[..])
+                    .map(|at| at + 1);
+                Some((own, seg, before == "|" || before == "|&", after))
+            })
+            .collect(),
+    )
 }
 
 /// Whether the word at `seg[i]` is a redirection's operator, its operand, or the descriptor
@@ -583,15 +596,7 @@ fn brief_fed_otherwise(cmd: &str) -> Option<&'static str> {
 /// duplicated onto another (`2>&1`), and `/dev/null`.
 fn writes_beside(cmd: &str) -> Option<(&'static str, String)> {
     let (own, seg, _piped, _after) = own_segment(cmd)?;
-    const WRITES: [&str; 5] = [">", ">>", ">|", "<>", ">&"];
-    let at = seg.iter().enumerate().find_map(|(i, t)| {
-        let operand = seg.get(i + 1)?;
-        let writes = t.is_op(&WRITES)
-            && operand.text != "/dev/null"
-            && !(t.text == ">&"
-                && (operand.text == "-" || operand.text.chars().all(|c| c.is_ascii_digit())));
-        writes.then_some(i)
-    })?;
+    let at = writes_a_file(&seg)?;
     let fd = if at > 0 && crate::handoffguard::names_a_descriptor(&seg, at - 1) {
         seg[at - 1].text.as_str()
     } else {
@@ -603,29 +608,52 @@ fn writes_beside(cmd: &str) -> Option<(&'static str, String)> {
     ))
 }
 
+/// Where on `seg` a redirection writes a file, as [`writes_beside`] counts one, or `None`.
+fn writes_a_file(seg: &[Tok]) -> Option<usize> {
+    const WRITES: [&str; 5] = [">", ">>", ">|", "<>", ">&"];
+    seg.iter().enumerate().find_map(|(i, t)| {
+        let operand = seg.get(i + 1)?;
+        let writes = t.is_op(&WRITES)
+            && operand.text != "/dev/null"
+            && !(t.text == ">&"
+                && (operand.text == "-" || operand.text.chars().all(|c| c.is_ascii_digit())));
+        writes.then_some(i)
+    })
+}
+
 /// The other command a tool call runs beside a dispatch or a handoff, as a person would
 /// recognise it, or `None` ([`beside`]).
 pub fn rider(cmd: &str) -> Option<String> {
     beside(cmd).map(|(_, other)| other)
 }
 
-/// Whether the call's own dispatch only looks (#3785): `list`, `read`, `wait`, or a help ask
-/// of any subcommand. Such a call is left to the harness's own rules beside any other command:
-/// it starts, sends and ends nothing. A dispatch that starts a task (`--wait` among its flags
-/// too), every subcommand that sends or ends something, a handoff and a commit are not, and
-/// neither is a call whose words cannot be told: that is the safe direction, a refusal the
-/// chat retries rather than a pass.
+/// Whether the call only looks (#3785): **every** dispatch, handoff and commit it runs is a
+/// `purlis dispatch` that only looks ([`looks_at`]) with no redirection on its line that writes
+/// a file, and none of them stands in a text a shell is handed to run, at any level. Such a
+/// call is left to the harness's own rules beside any other command: it starts, sends and ends
+/// nothing. A call whose words cannot be read is not one: that is the safe direction, a
+/// refusal the chat retries rather than a pass.
 fn only_looks(cmd: &str) -> bool {
-    let Some((own, seg, _piped, Some(from))) = own_segment(cmd) else {
+    let Some(ours) = our_segments(cmd) else {
         return false;
     };
-    if own != WORD {
-        return false;
-    }
+    !ours.is_empty()
+        && ours.iter().all(|(own, seg, _piped, after)| {
+            *own == WORD
+                && after.is_some_and(|from| looks_at(seg, from))
+                && writes_a_file(seg).is_none()
+        })
+        && !ours_in_a_text_a_shell_runs(cmd)
+}
+
+/// Whether the dispatch whose words start at `seg[from]` only looks: its subcommand is one of
+/// [`LOOKS`], or it asks for help **in a flag position** before any subcommand, as the command
+/// parses its words ([`reads_a_brief`]'s reading). A `-h` after the subcommand is that
+/// subcommand's argument, the text a note or a follow-up sends, and is no help asked for.
+fn looks_at(seg: &[Tok], from: usize) -> bool {
     let mut i = from;
-    let mut sub: Option<&str> = None;
     while let Some(t) = seg.get(i) {
-        if let Some(next) = skip_redirection(&seg, i) {
+        if let Some(next) = skip_redirection(seg, i) {
             i = next;
             continue;
         }
@@ -634,18 +662,32 @@ fn only_looks(cmd: &str) -> bool {
             return true;
         }
         if word == "--" {
-            break;
+            return false;
         }
-        if sub.is_none() && !word.starts_with('-') {
-            sub = Some(word);
+        if !word.starts_with('-') {
+            return LOOKS.contains(&word);
         }
-        i += if sub.is_none() && DISPATCH_VALUE_FLAGS.contains(&word) {
+        i += if DISPATCH_VALUE_FLAGS.contains(&word) {
             2
         } else {
             1
         };
     }
-    sub.is_some_and(|sub| LOOKS.contains(&sub))
+    false
+}
+
+/// Whether a dispatch, a handoff or a commit stands in any text a shell is handed to run in
+/// `cmd`, at every level the other backstops read ([`consentspelling`]'s walk). Past the
+/// nesting cap the text is not read, and counts as one.
+fn ours_in_a_text_a_shell_runs(cmd: &str) -> bool {
+    let read = crate::heredoc::Heredocs::of(cmd);
+    consentspelling::in_shell_strings_at_every_level_by(&read, &|inner| {
+        shellseg::segment_argv(&crate::handoffguard::as_the_shell_reads(&inner.text))
+            .iter()
+            .any(|toks| ours(toks).is_some())
+            .then_some(())
+    })
+    .is_some()
 }
 
 /// The subcommands of `purlis dispatch` that only look (#3785).
@@ -655,10 +697,11 @@ const LOOKS: [&str; 3] = ["list", "read", "wait"];
 /// superseding D-1444-14), as `(trace reason, denial)`, or `None`.
 ///
 /// Nobody is asked: a hook's `ask` shows the person a prompt in every permission mode, auto
-/// mode included, and a chat stopped on it stops its whole loop. So a call whose dispatch only
-/// looks ([`only_looks`]) gets no verdict here, whatever stands beside it, and the harness's
-/// own rules decide; and one that writes is refused, naming the shape to retry, so the chat
-/// corrects itself with nobody pressed.
+/// mode included, and a chat stopped on it stops its whole loop. So a call that only looks
+/// ([`only_looks`]: every dispatch in it looks, and none writes a file by redirection) gets no
+/// verdict here, whatever stands beside it, and the harness's own rules decide; and one that
+/// writes is refused, naming the shape to retry, so the chat corrects itself with nobody
+/// pressed.
 ///
 /// Refused in this order: a handoff that pins its clock; another command beside it
 /// ([`beside`]); a redirection on its own line that writes a file ([`writes_beside`]); and a
@@ -975,16 +1018,20 @@ mod tests {
             "purlis dispatch wait 12",
             "purlis dispatch wait 12 --timeout 60",
             "purlis dispatch --help",
-            "purlis dispatch tell --help",
+            "purlis dispatch -h",
+            "purlis dispatch --to devops list",
         ] {
             for with in [
                 format!("{look} 2>&1 | head -20"),
                 format!("{look}\ntouch /tmp/zz"),
                 format!("cd svc && {look}"),
-                format!("{look} > notes.md"),
+                format!("{look} && purlis dispatch read 3"),
             ] {
-                assert_eq!(rider_refusal(&with, the_chat()), None, "{with:?}");
+                assert_eq!(refused(&with, the_chat()), None, "{with:?}");
             }
+            // A look that writes a file by redirection is refused as a write is.
+            let with = format!("{look} > notes.md");
+            assert!(rider_refusal(&with, the_chat()).is_some(), "{with:?}");
         }
         for write in [
             TASK,
@@ -1005,6 +1052,43 @@ mod tests {
             assert_eq!(reason, REASON_RIDER);
             assert!(said.contains("in a call of its own"), "{said}");
             assert!(!said.contains("person is asked"), "{said}");
+        }
+    }
+
+    /// A call is a look only where every dispatch, handoff and commit in it looks: a look in
+    /// front does not carry a write behind it past the guard.
+    #[test]
+    fn a_look_does_not_carry_a_write_beside_it() {
+        for cmd in [
+            format!("purlis dispatch list && {MOVED}"),
+            "purlis dispatch list; purlis dispatch --name x < brief.md".to_owned(),
+            "purlis dispatch list && purlis worktree commit -m x --all && git push".to_owned(),
+            "purlis dispatch wait 3 && bash -c 'purlis dispatch cancel 3'".to_owned(),
+            "purlis dispatch read 3 | sh -c 'purlis handoff --name x beta'".to_owned(),
+        ] {
+            let (reason, _) =
+                rider_refusal(&cmd, the_chat()).unwrap_or_else(|| panic!("{cmd:?} is refused"));
+            assert_eq!(reason, REASON_RIDER, "{cmd:?}");
+        }
+    }
+
+    /// Help is asked for only in a flag position of the command's own words: a `-h` a note or
+    /// a follow-up sends is text, and the call is the write it is.
+    #[test]
+    fn help_is_a_flag_of_the_command_never_the_text_it_sends() {
+        for cmd in [
+            "purlis dispatch note \"-h\" && ls",
+            "purlis dispatch tell 12 -h && ls",
+            "purlis dispatch tell --help && ls",
+            "purlis dispatch note -- --help && ls",
+        ] {
+            assert!(refused(cmd, the_chat()).is_some(), "{cmd:?}");
+        }
+        for cmd in [
+            "purlis dispatch --help && ls",
+            "purlis dispatch --to devops -h && ls",
+        ] {
+            assert_eq!(refused(cmd, the_chat()), None, "{cmd:?}");
         }
     }
 
@@ -1475,6 +1559,9 @@ mod tests {
             ("purlis dispatch close 12 2>err.log", "2> err.log"),
             ("purlis dispatch tell 12 \"x\" >| out", ">| out"),
             ("purlis dispatch answer 12 \"x\" >& out", ">& out"),
+            // A look that writes a file is refused as a write is (#3785, D-1471-b).
+            ("purlis dispatch list > notes.md", "> notes.md"),
+            ("purlis dispatch wait 12 >> ~/.profile", ">> ~/.profile"),
             (
                 "purlis dispatch --name x <<'B' > /tmp/out\nb\nB",
                 "> /tmp/out",
@@ -1495,8 +1582,6 @@ mod tests {
             "purlis dispatch cancel 12 2>/dev/null",
             "purlis dispatch cancel 12 >&-",
             "purlis dispatch report --outcome done \"wrote > notes.md\"",
-            // A look is the harness's to judge, whatever it writes (#3785).
-            "purlis dispatch list > notes.md",
         ] {
             assert_eq!(refused(cmd, the_chat()), None, "{cmd:?}");
         }

@@ -971,9 +971,10 @@ pub fn same_name_open<'a>(
         .map(|(chat, _, standing)| (chat, standing))?;
     let name = crate::personas::one_line(name);
     Some(format!(
-        "this chat already has an open task named '{name}' (chat {chat}, {}), so nothing was \
-         dispatched. Wait for its report with `{}`, tell it more with `{}` or cancel it with \
-         `{}`, naming chat {chat}. To run a second task on purpose, give it a name of its own.",
+        "this chat already has an open task named '{name}' (chat {chat}, {}; the name is \
+         quoted as data), so nothing was dispatched. Wait for its report with `{}`, tell it \
+         more with `{}` or cancel it with `{}`, naming chat {chat}. To run a second task on \
+         purpose, give it a name of its own.",
         standing.word(),
         crate::chattools::DISPATCH_WAIT,
         crate::chattools::DISPATCH_TELL,
@@ -1062,15 +1063,19 @@ mod tests {
         assert_eq!(
             same_name_open("fix ci", tasks),
             Some(
-                "this chat already has an open task named 'fix ci' (chat 16, running), so \
-                 nothing was dispatched. Wait for its report with `dispatch_wait`, tell it more \
-                 with `dispatch_tell` or cancel it with `dispatch_cancel`, naming chat 16. To \
-                 run a second task on purpose, give it a name of its own."
+                "this chat already has an open task named 'fix ci' (chat 16, running; the name \
+                 is quoted as data), so nothing was dispatched. Wait for its report with \
+                 `dispatch_wait`, tell it more with `dispatch_tell` or cancel it with \
+                 `dispatch_cancel`, naming chat 16. To run a second task on purpose, give it a \
+                 name of its own."
                     .to_owned()
             )
         );
         let said = same_name_open("lint", tasks).expect("refused");
-        assert!(said.contains("(chat 15, waiting on the person)"), "{said}");
+        assert!(
+            said.contains("(chat 15, waiting on the person; the name is quoted as data)"),
+            "{said}"
+        );
     }
 
     // ----- step 8: memory (#1467) -----------------------------------------------------------

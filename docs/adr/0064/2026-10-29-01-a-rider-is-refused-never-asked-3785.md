@@ -18,8 +18,10 @@ own tasks is its own.**
 | Start something new | `dispatch` (with or without `--wait`), `handoff` | the app's dispatch grant only (unchanged) |
 | Beside another command | any | no `ask`: see below |
 
-- **A call that runs a dispatch that only looks, beside anything, gets no hook verdict.** The
-  harness's own rules decide it, as they decide any command it has a rule for.
+- **A call that only looks, beside anything, gets no hook verdict**, unless a redirection on
+  the line writes a file. A call only looks where every dispatch, handoff and commit in it, at
+  every level a shell runs, is a dispatch that looks (`--help` counted only in a flag
+  position). The harness's own rules decide it, as they decide any command it has a rule for.
 - **A call that runs a dispatch that writes, a handoff or `purlis worktree commit` beside
   another command is refused**, naming the other command and the shape to retry ("run the
   dispatch in a call of its own"), so the chat corrects itself with nobody pressed. The same

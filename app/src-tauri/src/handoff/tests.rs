@@ -11452,7 +11452,7 @@ fn a_dispatch_under_the_name_of_an_open_task_is_refused_and_one_after_its_report
     let (said, _) = dispatch(&held, &id, &Tickets::default(), steward, None, "check prod");
     assert!(
         matches!(&said, Answer::No { why }
-            if why.contains(&format!("an open task named 'check prod' (chat {task}, running)"))),
+            if why.contains(&format!("an open task named 'check prod' (chat {task}, running;"))),
         "{said:?}"
     );
     // Another name is another task.

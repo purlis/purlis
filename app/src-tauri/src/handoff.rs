@@ -1220,12 +1220,6 @@ pub struct PersonaChat {
     pub closes_with_its_asker: bool,
 }
 
-/// Where chat `chat`, a persona chat with lineage record `from`, stands: read from the app's
-/// records of it and nothing it says.
-///
-/// **Waiting on the operator is the board's own word that it asks mid-turn** (a permission
-/// prompt, a question), or a permission ask this app holds open for it. Its asking chat cannot
-/// answer either, and reads this to know the wait is not its own to end.
 /// Why chat `asker`'s dispatch named `name` is refused as a task it already has open (#3788,
 /// [`dispatchdecision::same_name_open`]), from this app's record of its tasks; or `None`.
 fn same_name_open(held: &Held, asker: u32, name: &str) -> Option<String> {
@@ -1246,6 +1240,12 @@ fn same_name_open(held: &Held, asker: u32, name: &str) -> Option<String> {
     )
 }
 
+/// Where chat `chat`, a persona chat with lineage record `from`, stands: read from the app's
+/// records of it and nothing it says.
+///
+/// **Waiting on the operator is the board's own word that it asks mid-turn** (a permission
+/// prompt, a question), or a permission ask this app holds open for it. Its asking chat cannot
+/// answer either, and reads this to know the wait is not its own to end.
 fn standing_of(held: &Held, chat: u32, from: &HandedFrom) -> dispatchdecision::Standing {
     dispatchdecision::standing(from.report, !still_working(held, chat), asks(held, chat))
 }

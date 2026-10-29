@@ -574,8 +574,9 @@ rule while one who reads a bare refusal files an issue.
   the hook denies the call, names the other command and says to run the dispatch in a call of
   its own; where it cannot read the call, it refuses. A function or an alias defined earlier
   in the call is such a command. Alone in its call, a dispatch or a handoff is answered with
-  nothing, and so is a dispatch that only looks (`list`, `read`, `wait`, a `--help`) whatever
-  stands beside it: the harness's own rules decide that call. Refused too: a handoff that
+  nothing, and so is a call whose every dispatch only looks (`list`, `read`, `wait`, a
+  `--help` in a flag position) whatever stands beside it, unless a redirection on the line
+  writes a file: the harness's own rules decide that call. Refused too: a handoff that
   carries the hidden `--now`, which pins the time its records are written at for purlis's own
   tests; a redirection on the dispatch's or the handoff's own line that writes a file
   (`> notes.md`; not `2>&1` and not `/dev/null`); and a dispatch whose brief is fed from
