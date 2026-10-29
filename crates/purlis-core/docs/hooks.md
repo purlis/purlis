@@ -382,14 +382,18 @@ rule while one who reads a bare refusal files an issue.
   through a filter and no
   program a repository's configuration names is started. A path that reads as prose is
   counted in a refusal and never repeated.
-- **`git add` or `git commit` in a branch folder** (#3830). A branch folder keeps its index
-  in its clone's `.git/worktrees/<name>`, which every sandboxed chat's sandbox denies writing,
-  so these stopped on "Operation not permitted" and raised a sandbox Notice for you, though
-  the chat could fix it itself. Asked only of a chat the app sandboxed, and refused before it
-  runs with the command that commits there, `purlis worktree commit -m "<message>" <path>…`
-  (or `--all` in place of the paths), which the app runs outside the sandbox on the folder's
-  branch. A `cd` to a folder named on the line is followed; a move the guard cannot place
-  (`cd $X`, `cd -`, `popd`) is left to the sandbox. Read-only git and `commit --dry-run` run.
+- **`git add` or `git commit` in a branch folder purlis made** (#3830). A branch folder keeps
+  its index in its clone's `.git/worktrees/<name>`, which every sandboxed chat's sandbox
+  denies writing, so these stopped on "Operation not permitted" and raised a sandbox Notice
+  for you, though the chat could fix it itself. Asked only of a chat the app sandboxed, and
+  only in a folder git's own record places at `workspaces/<ws>/.worktrees/<repo>/<piece>`;
+  refused before it runs with the command that commits there, `purlis worktree commit -m
+  "<message>" <path>…` (or `--all` in place of the paths), which the app runs outside the
+  sandbox on the folder's branch. A worktree you made yourself with `git worktree add` is
+  left to the sandbox. A `cd` to a folder named on the line is followed where every command
+  on it runs in one shell in turn (`&&`, `;`); a `cd` in a subshell or a pipeline, or a move
+  the guard cannot place (`cd $X`, `cd -`, `popd`), leaves the line to the sandbox. Read-only
+  git and the dry runs (`add -n`, `add --dry-run`, `commit --dry-run`) run.
 - **One credential.** SSH to a forge, `GIT_SSH_COMMAND`, `-S`/`--gpg-sign`, and the
   `core.sshCommand` family that reaches the same transport by another road (`-c`,
   `--config-env`, `GIT_CONFIG_KEY_n`, and a `git config` write of it). This one *is*

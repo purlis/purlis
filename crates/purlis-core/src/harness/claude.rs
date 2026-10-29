@@ -118,6 +118,7 @@ impl HarnessAdapter for ClaudeCode {
                         &denied_tools(kit),
                         screened.as_ref(),
                         kit.graded,
+                        &own_of(kit, cwd),
                     ),
                 ]),
             ]
@@ -491,6 +492,7 @@ fn settings(
     denied_tools: &[String],
     screened: Option<&project::Screened>,
     graded: bool,
+    own: &(Option<String>, Option<String>),
 ) -> String {
     let mut settings = serde_json::Map::new();
     // What purlis hands this chat first: a Try it's scratch chat's every plugin off. A session
@@ -590,10 +592,12 @@ fn settings(
     allow.extend(READ_ALLOW.iter().map(|rule| (*rule).to_owned()));
     // And a commit the app makes for a sandboxed chat in its branch folder (#1476).
     allow.extend(WORKTREE_COMMIT_ALLOW.iter().map(|rule| (*rule).to_owned()));
-    // And what only the chat's own work touches, by name (#3829, ruled 2026-10-29), except in
-    // a grade's chat, which keeps its prompts (SK-16).
+    // And what only the chat's own work touches, by name, and what it writes in its own
+    // persona's and workspace's name (#3829, ruled 2026-10-29), except in a grade's chat, which
+    // keeps its prompts (SK-16).
     if !graded {
         allow.extend(OWN_SCOPE_ALLOW.iter().map(|rule| (*rule).to_owned()));
+        allow.extend(own_scope_rules(own.0.as_deref(), own.1.as_deref()));
     }
     allow.extend(
         crate::chattools::DISPATCH_TOOLS
@@ -982,39 +986,30 @@ pub const READ_ALLOW: [&str; 14] = [
 ];
 
 /// The permission rules a Claude Code chat the app starts carries for **what only the chat's own
-/// work touches** (#3829, the operator's ruling of 2026-10-29, amending ADR 0064): its persona's
-/// and its workspace's memory, its workspace's todos, and the branch folder it works in. A
-/// looping chat stopped on the harness's prompt for each, in a tab nobody was at. **The person
-/// is asked only when something new reaches someone new**, and none of these does:
+/// work touches** and that names no persona or workspace (#3829, the operator's ruling of
+/// 2026-10-29, amending ADR 0064): its own workspace's todos, listed, and the branch folder it
+/// stands in. A looping chat stopped on the harness's prompt for each, in a tab nobody was at.
+/// **The person is asked only when something new reaches someone new**, and none of these does.
+/// What names its persona or its workspace is written per chat ([`own_scope_rules`]).
 ///
-/// - `persona remember`, `--shared` included (ruled by name), and `workspace remember` and
-///   `note`: a memory the chat's own persona or workspace keeps.
-/// - `ws todo` and `workspace todo`, in the three shapes that add, close and list a todo: the
-///   bare word and `--done` list, `done <slug>` closes, and a quoted text adds. The other
-///   verbs (`forget`, `reopen`, `promote`) still ask, and `promote`, which opens an issue on a
-///   forge, keeps the consent rule `init` writes for it as well.
-/// - `worktree add`, `update` (with `--continue` or `--abort`), `push` (the folder's own
-///   branch, never its base; ruled by name), `done`, `abandon` and `list`. `remove` still asks.
+/// - `ws todo` and `workspace todo`, bare and `--done`, which list: **the whole line**. A todo
+///   is added and closed by the `todo_add` and `todo_done` tools, never by a rule over the
+///   command's arguments: the harness matches the line as written and the shell strips its
+///   quotes, so `ws todo "forget" <slug>` would run `forget` under a rule meant for text (the
+///   dispatcher's decision on #3841).
+/// - `worktree update` (with `--continue` or `--abort`), `push` (the folder's own branch, never
+///   its base; ruled by name), `done`, `abandon` and `list`: each acts on the folder the chat
+///   stands in. `add` names a workspace and is written per chat; `remove` still asks.
 ///
 /// **Each by name, and no bare wildcard**, for [`DISPATCH_ALLOW`]'s reason. A grade's chat is
 /// handed none of these (SK-16: it keeps its prompts). An operator's own `ask` or `deny` still
 /// wins, and `forget`, `archive`, `move-memory`, `edit-memory`, `edit`, `reinit`, `save`,
 /// `clone` and `secret exec` are still asked about, as every word with no rule is.
-pub const OWN_SCOPE_ALLOW: [&str; 22] = [
-    "Bash(purlis persona remember *)",
-    "Bash(purlis workspace remember *)",
-    "Bash(purlis workspace note *)",
+pub const OWN_SCOPE_ALLOW: [&str; 12] = [
     "Bash(purlis ws todo)",
     "Bash(purlis ws todo --done)",
-    "Bash(purlis ws todo \"*)",
-    "Bash(purlis ws todo '*)",
-    "Bash(purlis ws todo done *)",
     "Bash(purlis workspace todo)",
     "Bash(purlis workspace todo --done)",
-    "Bash(purlis workspace todo \"*)",
-    "Bash(purlis workspace todo '*)",
-    "Bash(purlis workspace todo done *)",
-    "Bash(purlis worktree add *)",
     "Bash(purlis worktree update)",
     "Bash(purlis worktree update *)",
     "Bash(purlis worktree push)",
@@ -1024,6 +1019,63 @@ pub const OWN_SCOPE_ALLOW: [&str; 22] = [
     "Bash(purlis worktree list)",
     "Bash(purlis worktree list *)",
 ];
+
+/// The permission rules for **what a chat writes in its own persona's and its own workspace's
+/// name** (#3829, narrowed on review of #3841 by the dispatcher's decision): each names the
+/// persona or the workspace the app started the chat in, so a line that names another is asked
+/// about, as every line with no rule is.
+///
+/// - `persona remember <persona> *`, `--shared` included (ruled by name): a memory written by
+///   the chat's own persona. `remember` takes two words at most, so no other persona can follow.
+/// - `workspace remember -w <workspace> *`, `workspace note -w <workspace> *` and `worktree add
+///   -w <workspace> *`: the workspace named first, by its flag. A second `-w` on the line is
+///   refused by the command itself, which takes the flag once.
+///
+/// **Only a plain name is written into a rule** ([`plain_name`]): one with any other character,
+/// a glob's `*`, `?` or `[` among them, could widen the rule, and gets none. A chat on no
+/// persona, or at the plane root, gets none of that kind.
+pub fn own_scope_rules(persona: Option<&str>, workspace: Option<&str>) -> Vec<String> {
+    let mut rules = Vec::new();
+    if let Some(persona) = persona.filter(|name| plain_name(name)) {
+        rules.push(format!("Bash(purlis persona remember {persona} *)"));
+    }
+    if let Some(workspace) = workspace.filter(|name| plain_name(name)) {
+        for words in ["workspace remember", "workspace note", "worktree add"] {
+            rules.push(format!("Bash(purlis {words} -w {workspace} *)"));
+        }
+    }
+    rules
+}
+
+/// Whether `name` can stand in a permission rule as itself: ASCII letters, digits, `-`, `_` and
+/// `.`, starting with a letter or a digit. Nothing a glob or a shell reads is in it.
+fn plain_name(name: &str) -> bool {
+    name.chars()
+        .next()
+        .is_some_and(|first| first.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
+/// The persona and the workspace a chat the app starts works as and in: the persona it runs as,
+/// and the workspace its folder is in (or the one its skills were laid out for). `None` where
+/// it has none, or the plane cannot be found.
+fn own_of(kit: Kit<'_>, cwd: Option<&std::path::Path>) -> (Option<String>, Option<String>) {
+    let persona = kit.persona.map(|of| of.persona.to_owned());
+    let workspace = kit
+        .skills
+        .and_then(|skills| skills.workspace.map(str::to_owned))
+        .or_else(|| {
+            let cwd = cwd?;
+            let root = kit
+                .persona
+                .map(|of| of.root.to_path_buf())
+                .or_else(|| crate::plane::find_root(cwd).ok())?;
+            crate::active::workspace_of_tree(&root, cwd)
+        });
+    (persona, workspace)
+}
 
 /// The permission rule a Claude Code chat the app starts carries for **a commit the app makes
 /// for it in the branch folder it stands in** (#1476, ADR 0067 as amended for #1055, on the

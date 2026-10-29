@@ -15,9 +15,9 @@ What a Claude Code chat the app starts is handed, each rule by name and never a 
 |---|---|---|
 | Reads | `persona where`, `persona show *`, `persona list`, `persona recall *`, `recall *`, `workspace recall *`, `workspace list`, `workspace current`, `docs show *`, `news` (bare and with arguments), `theme check *`, `theme list` (bare and with arguments) | `READ_ALLOW` |
 | The chat's own tasks | `dispatch list *`, beside the bare `dispatch list` | `DISPATCH_TASK_ALLOW` |
-| Memory | `persona remember *` (`--shared` included, ruled by name), `workspace remember *`, `workspace note *` | `OWN_SCOPE_ALLOW` |
-| Todos | `ws todo` and `workspace todo`: bare and `--done` (list), `done *` (close), and a quoted text (add) | `OWN_SCOPE_ALLOW` |
-| Branch folder | `worktree add *`, `update` (bare and with `--continue`/`--abort`), `push` (bare and with arguments; the folder's own branch, never its base, ruled by name), `done`, `abandon *`, `list` (bare and with arguments) | `OWN_SCOPE_ALLOW` |
+| Own memory | `persona remember <own persona> *` (`--shared` included, ruled by name), `workspace remember -w <own workspace> *`, `workspace note -w <own workspace> *` | `own_scope_rules`, written per chat |
+| Todos | `ws todo` and `workspace todo`, bare and `--done`: the whole line, which lists | `OWN_SCOPE_ALLOW` |
+| Branch folder | `worktree add -w <own workspace> *` (per chat); `update` (bare and with `--continue`/`--abort`), `push` (bare and with arguments; the folder's own branch, never its base, ruled by name), `done`, `abandon *`, `list` (bare and with arguments) | `OWN_SCOPE_ALLOW` |
 | Tools | `todo_add`, `todo_done`, `memory_add`, `persona_remember`, `workspace_section`, `workspace_vision`, `ask_operator` | `chattools::OWN_SCOPE_TOOLS` |
 
 - **Still asked**: `secret exec`; `persona`/`workspace` `forget`, `archive`, `move-memory`,
@@ -28,6 +28,25 @@ What a Claude Code chat the app starts is handed, each rule by name and never a 
 - **A grade's chat is handed none of the writes** (SK-16: it keeps its prompts, and its server
   answers the reads alone). The own-scope tools are a list of their own, apart from
   `chattools::PRE_ALLOWED`, for that reason.
-- **A todo is added by a quoted text only** (`purlis ws todo "<text>"`): `ws todo` tells its
-  verbs from text by the number of words, so a rule over every argument would also allow
-  `forget` and `promote`. An unquoted one-word todo is asked about.
+
+## On review of #3841 (the dispatcher's decisions, 2026-10-29)
+
+- **No rule adds or closes a todo through the command.** Claude Code matches a rule against
+  the line as written, and the shell strips its quotes afterwards, so `purlis ws todo "forget"
+  <slug>` met the rule written for a quoted text and ran `forget`. A chat adds and closes a
+  todo through the `todo_add` and `todo_done` tools, which run unasked; the briefing names
+  `todo_add` first and the command second. The command's add, close and every other verb ask.
+  Only the whole bare line and `--done`, which list, are allowed; no quoted verb reaches them.
+- **Own scope is the chat's OWN persona and workspace.** `persona remember *` also matched
+  `persona remember <another persona> …`, and `workspace remember|note *` matched `-w
+  <another workspace>`. The app writes these rules per chat, naming the persona it runs as and
+  the workspace its folder is in: `persona remember <own> *` (`remember` takes two words at
+  most, so no other persona can follow), and `workspace remember|note -w <own> *` and
+  `worktree add -w <own> *` with the workspace first (the command takes `-w` once, so a second
+  one on the line is refused by the command). A chat on no persona, or at the plane root, gets
+  no rule of that kind; a name with any character but ASCII letters, digits, `-`, `_` and `.`
+  gets none, so no glob character from a name can widen a rule. The unnamed spellings
+  (`persona remember "<text>"`, `workspace remember "<text>"`) ask; `memory_add` and
+  `persona_remember` run unasked.
+- **`worktree add` is written per chat too**, on the same terms: it names a workspace with
+  `-w`, and a folder in another workspace is something new reaching someone new.

@@ -291,10 +291,13 @@ A Claude Code chat runs `todo_add`, `todo_done`, `memory_add`, `persona_remember
 `workspace_vision`, `workspace_section` and `ask_operator` without Claude Code's own permission
 prompt, as it runs the reads (#3829): each writes only the chat's own workspace or persona, and
 `ask_operator`'s form is the question itself, so a prompt in front of it asked you twice. The
-same holds for their commands and for the chat's own branch folder: `purlis persona remember`
-(`--shared` included), `purlis workspace remember` and `note`, `purlis ws todo` to add, close
-or list, and `purlis worktree add`, `update`, `push`, `done`, `abandon` and `list`, each by its
-name. A grade's chat is handed none of these. Your own `ask` or `deny` for any of them still
+same holds for their commands where they name the chat's own persona or workspace, and for
+the chat's own branch folder: `purlis persona remember <its persona>` (`--shared` included),
+`purlis workspace remember` and `note` with `-w <its workspace>` first, `purlis ws todo` to
+list, and `purlis worktree add -w <its workspace>`, `update`, `push`, `done`, `abandon` and
+`list`, each by its name. A line naming another persona or workspace still asks, and so does
+the command's own way to add or close a todo (use the tools). A grade's chat is handed none of
+these. Your own `ask` or `deny` for any of them still
 wins, and everything that reaches past the chat's own work (`secret exec`, `forget`,
 `archive`, `move-memory`, `edit-memory`, `save`, `clone`, `reinit`) is still asked about.
 

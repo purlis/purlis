@@ -82,6 +82,11 @@ pub const OVERRIDE_NOTE: &str = " — Wrong about this case? There is deliberate
 /// (run it in a call of its own), a live substitution (a file or a quoted heredoc), a hook skip
 /// (fix what the scan found), a handoff's brief (a quoted heredoc in the same call) and a commit
 /// in a branch folder (`purlis worktree commit`). Every other arm keeps it.
+///
+/// **Chosen by reason, so a reason here is a promise**: every sentence an arm says under it
+/// names the shape to retry. `every_retry_shaped_refusal_names_the_shape_to_retry` walks every
+/// spelling the arms refuse under these reasons and fails CI on a sentence that names none, so
+/// an arm that reuses one of these reasons without a shape cannot land unnoticed.
 pub const RETRY_SHAPED: [&str; 7] = [
     crate::dispatchguard::REASON_RIDER,
     REASON_FORGE_SUBSTITUTION,
@@ -446,7 +451,7 @@ fn arms(call: &Call<'_>, plane: Option<&Plane<'_>>) -> Option<Verdict> {
     // Notice for the person. GATED, as A9 is. purlis's own, so no recorded answer moves.
     if let Some(plane) = plane
         && plane.launched.sandboxed
-        && let Some((sub, why)) = branchgit::refusal(cmd, call.cwd)
+        && let Some((sub, why)) = branchgit::refusal(cmd, call.cwd, plane.root)
     {
         return Some(Verdict::new(branchgit::REASON, Some(sub), why));
     }
@@ -1203,17 +1208,7 @@ mod tests {
     fn git_commit_in_a_branch_folder_is_refused_to_a_sandboxed_chat_with_the_retry_shape() {
         let fix = Fixture::new();
         let root = fix.root();
-        let clone = fix.dir.path().join("workspaces/ide/purlis");
-        let record = clone.join(".git/worktrees/guard-port");
-        std::fs::create_dir_all(&record).unwrap();
-        let folder = fix.dir.path().join("workspaces/ide/pieces/guard-port");
-        std::fs::create_dir_all(&folder).unwrap();
-        std::fs::write(
-            folder.join(".git"),
-            format!("gitdir: {}\n", record.display()),
-        )
-        .unwrap();
-        let folder = folder.display().to_string();
+        let folder = branch_folder_in(fix.dir.path()).display().to_string();
         let forges = forges();
         let state = fix.state();
         let ask = |cmd: &str, sandboxed: bool| {
@@ -1245,6 +1240,140 @@ mod tests {
         assert!(!said.contains("in your own terminal"), "{said}");
         assert_eq!(ask("git commit -m x", false), None);
         assert_eq!(ask("git status", true), None);
+    }
+
+    /// A branch folder purlis made in the project at `root`
+    /// (`workspaces/ide/.worktrees/purlis/guard-port`), as git records a linked worktree: the
+    /// folder's `.git` names its record in the clone's `.git/worktrees`, and the record's
+    /// `gitdir` names the folder's `.git` back.
+    fn branch_folder_in(root: &Path) -> PathBuf {
+        let root = std::fs::canonicalize(root).unwrap();
+        let record = root.join("workspaces/ide/purlis/.git/worktrees/guard-port");
+        let folder = root.join("workspaces/ide/.worktrees/purlis/guard-port");
+        std::fs::create_dir_all(&record).unwrap();
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join(".git"),
+            format!("gitdir: {}\n", record.display()),
+        )
+        .unwrap();
+        std::fs::write(
+            record.join("gitdir"),
+            format!("{}\n", folder.join(".git").display()),
+        )
+        .unwrap();
+        folder
+    }
+
+    /// What each [`RETRY_SHAPED`] reason's sentence names as the shape to retry: one of these,
+    /// whatever the arm's other words.
+    const RETRY_SHAPES: [(&str, &[&str]); 7] = [
+        (
+            crate::dispatchguard::REASON_RIDER,
+            &["in a call of its own"],
+        ),
+        (
+            REASON_FORGE_SUBSTITUTION,
+            &[
+                "--body-file",
+                "--from-file",
+                "Write the text out in plain words",
+            ],
+        ),
+        (REASON_CHARTER_SUBSTITUTION, &["backslash-escape each one"]),
+        (
+            crate::dispatchguard::REASON_TEXT_SOURCE,
+            &["Write the text out in plain words"],
+        ),
+        (REASON_GIT_HOOK_SKIP, &["Fix what the scan found"]),
+        (handoffguard::REASON_BRIEF_SOURCE, &["QUOTED heredoc"]),
+        (branchgit::REASON, &["`purlis worktree commit -m"]),
+    ];
+
+    /// Every spelling the arms' own tests refuse under a [`RETRY_SHAPED`] reason, gathered.
+    const RETRY_CORPUS: [&str; 28] = [
+        "purlis dispatch --name x <<'B'\nlook\nB\ntouch /tmp/zz",
+        "touch /tmp/zz && purlis handoff --name x beta <<'B'\nlook\nB",
+        "purlis dispatch list && purlis dispatch tell 3 hi",
+        "purlis handoff --now 2026-01-01T00:00:00 --name x beta <<'B'\nb\nB",
+        "purlis dispatch --name x <<'B' > out.txt\nb\nB",
+        "purlis worktree commit -m x --all && ls",
+        "purlis worktree commit -m x --all > log.txt",
+        "cat brief.md | purlis dispatch --name x",
+        "purlis dispatch report --outcome done \"$(cat notes.md)\"",
+        "purlis dispatch tell 12 \"`date`\"",
+        "purlis dispatch note \"$(git log -1)\"",
+        "purlis dispatch ask \"$(cat q.md)\"",
+        "gh issue create --title t --body \"$(cat notes.md)\"",
+        "gh pr comment 1 --body \"`cat x`\"",
+        "gh agent-task create \"$(cat task.md)\"",
+        "glab issue note 1 -m \"$(cat x)\"",
+        "purlis persona remember devops \"$(cat notes.md)\"",
+        "purlis workspace note \"`date`\"",
+        "charter persona remember devops \"$(cat /etc/hosts)\"",
+        "git commit --no-verify -m x",
+        "git commit -n -m x",
+        "git push --no-verify",
+        "git -c core.hooksPath=/dev/null commit -m x",
+        "git send-pack origin main",
+        "charter handoff beta",
+        "purlis handoff --name x beta <<BRIEF\nb\nBRIEF",
+        "purlis handoff --name x beta < brief.md",
+        "git add src/a.rs && git commit -m x",
+    ];
+
+    /// The review of #3841: [`RETRY_SHAPED`] is chosen by reason, so every sentence an arm says
+    /// under one of those reasons must name its retry shape. This walks every spelling the
+    /// arms' tests refuse, in a project and in a sandboxed chat's branch folder, and fails on a
+    /// sentence that drops its note without naming one, and on a reason none of them reaches.
+    #[test]
+    fn every_retry_shaped_refusal_names_the_shape_to_retry() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let folder = branch_folder_in(&root).display().to_string();
+        let root = root.display().to_string();
+        let forges = forges();
+        let state = PathBuf::from(&root).join(".charter");
+        let plane = Plane {
+            root: &root,
+            forges: &forges,
+            session_dir: &folder,
+            launched: Launched {
+                sandboxed: true,
+                chat_dir: Some(&folder),
+            },
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        for cmd in RETRY_CORPUS {
+            let call = Call {
+                command: cmd,
+                cwd: &folder,
+                state_dir: &state,
+                caller: attended(),
+            };
+            let Some(refused) = verdict(&call, Some(&plane)) else {
+                continue;
+            };
+            let Some((reason, shapes)) = RETRY_SHAPES
+                .iter()
+                .find(|(reason, _)| *reason == refused.reason)
+            else {
+                continue;
+            };
+            let said = refused.said();
+            assert!(
+                shapes.iter().any(|shape| said.contains(shape)),
+                "{reason} names no shape to retry for {cmd:?}: {said}"
+            );
+            seen.insert(*reason);
+        }
+        for reason in RETRY_SHAPED {
+            assert!(
+                RETRY_SHAPES.iter().any(|(named, _)| *named == reason),
+                "{reason} has no shape listed"
+            );
+            assert!(seen.contains(reason), "no spelling reaches {reason}");
+        }
     }
 
     #[test]
