@@ -582,16 +582,32 @@ export function HungPopover({
         setNudge((was) => (was === 0 ? 0.01 : 0));
       });
     };
-    const scrolled = (event: Event) => {
+    /** Whether `event` is a scroll of something what it hangs from is in. */
+    const around = (event: Event) => {
       const on = event.target;
       const trigger = triggerRef.current;
-      if (!(on instanceof Node) || trigger === null || !on.contains(trigger)) return;
-      follow();
+      return on instanceof Node && trigger !== null && on.contains(trigger);
+    };
+    const scrolled = (event: Event) => {
+      if (around(event)) follow();
+    };
+    // **A scroll that ends with it never in sight** (#3648's round 4): the scroll that should
+    // have brought it in was cut short (a wheel back, a step to another chip), so the card is
+    // not left following a chip no one can see.
+    const ended = (event: Event) => {
+      if (!around(event)) return;
+      cancelAnimationFrame(asked);
+      asked = requestAnimationFrame(() => {
+        seen = seen || inSight();
+        if (!seen) hide.current();
+      });
     };
     window.addEventListener("scroll", scrolled, true);
+    window.addEventListener("scrollend", ended, true);
     window.addEventListener("resize", follow);
     return () => {
       window.removeEventListener("scroll", scrolled, true);
+      window.removeEventListener("scrollend", ended, true);
       window.removeEventListener("resize", follow);
       cancelAnimationFrame(asked);
     };

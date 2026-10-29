@@ -367,6 +367,10 @@ describe("a dot pressed from the keyboard (#3648's review, WCAG 2.4.3)", () => {
   });
 
   it("gives the keyboard to the chip once the card it went into is dismissed", async () => {
+    // A chip in sight is left where it is: no scroll (#3648's round 4, note 4).
+    laidOut(() => 100);
+    const into = vi.fn();
+    Element.prototype.scrollIntoView = into;
     render(<Bar on="alpha" startOpen={false} />);
     screen.getByRole("button", { name: "Show the notice on alpha" }).focus();
     await userEvent.keyboard("{Enter}");
@@ -378,6 +382,7 @@ describe("a dot pressed from the keyboard (#3648's review, WCAG 2.4.3)", () => {
     );
     // The dot went with its notice: the chip it hung from has the keyboard, never the page.
     await waitFor(() => expect(screen.getByRole("button", { name: "alpha" })).toHaveFocus());
+    expect(into).not.toHaveBeenCalled();
   });
 });
 

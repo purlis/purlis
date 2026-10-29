@@ -212,6 +212,34 @@ describe("a popover hung from what it is about (#3648)", () => {
     expect(screen.queryByRole("region", { name: "Notices for gamma" })).toBeNull();
   });
 
+  it("is hidden once a scroll that should have brought it in ends with it still out of sight", async () => {
+    // The scroll it asked for was cut short (a wheel back, a step to another chip): what it hangs
+    // from never came into sight, so the card is not left over nothing (#3648's round 4).
+    let chipAt = -80;
+    laidOut(() => chipAt);
+    Element.prototype.scrollIntoView = vi.fn();
+    render(<Hung />);
+    await aFrame();
+    chipAt = -60;
+    fireEvent.scroll(screen.getByTestId("clip"));
+    await aFrame();
+    expect(screen.getByRole("region", { name: "Notices for gamma" })).toBeInTheDocument();
+    fireEvent(screen.getByTestId("clip"), new Event("scrollend"));
+    await aFrame();
+    expect(screen.queryByRole("region", { name: "Notices for gamma" })).toBeNull();
+  });
+
+  it("stays up when a scroll ends with what it hangs from in sight", async () => {
+    let chipAt = -80;
+    laidOut(() => chipAt);
+    Element.prototype.scrollIntoView = vi.fn();
+    render(<Hung />);
+    chipAt = 100;
+    fireEvent(screen.getByTestId("clip"), new Event("scrollend"));
+    await aFrame();
+    expect(screen.getByRole("region", { name: "Notices for gamma" })).toBeInTheDocument();
+  });
+
   it("stays up when the keyboard leaves it, by Tab or F6: only a press elsewhere hides it", () => {
     render(<Hung />);
     screen.getByRole("button", { name: "Add a vision" }).focus();
