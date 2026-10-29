@@ -288,7 +288,7 @@ pub fn mint_over(
             );
         }
         [one] => *one,
-        _ => match installed.iter().find(|(_, remote)| in_here(*remote)) {
+        _ => match installed.iter().find(|(_, remote)| in_here(remote)) {
             Some((id, _)) => *id,
             None => {
                 return Err(
