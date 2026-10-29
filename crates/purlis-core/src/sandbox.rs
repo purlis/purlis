@@ -1444,6 +1444,28 @@ impl Denied {
                 any_case: machine.os == Os::MacOs,
             });
         }
+        // …and the programs each cluster pool's kubectl runs (#3292): kubectl itself and each
+        // credential plugin its context names, by their real paths as the pool was added, which
+        // purlis runs outside any sandbox before every link to its runner. Each name, and the
+        // folder it is in, as the folders of Docker's helpers are held (#2752).
+        let config_root = crate::machine::rooted(
+            machine.env.get(crate::machine::HOME_VAR).map(Into::into),
+            machine.env.get("XDG_CONFIG_HOME").map(Into::into),
+            machine.home.clone(),
+        );
+        for path in config_root
+            .iter()
+            .flat_map(|config_root| crate::runners::cluster_holds(config_root.as_path()))
+        {
+            paths.push(Denial {
+                class: Class::LaterCode,
+                path,
+                access: Access::Write,
+                named: None,
+                reach: Reach::Itself,
+                any_case: machine.os == Os::MacOs,
+            });
+        }
         // …and what a protected config points at elsewhere, resolved now (V73d).
         let xdg_config = machine
             .env
@@ -1868,6 +1890,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             deny(
                 Class::HumanPowers,
                 home.join(crate::machine::RUNNER_HOURS_FILE),
+                Access::ReadWrite,
+            );
+            // Each cluster pool's own copy of its kubeconfig's context (#3292): denied as they
+            // are.
+            deny(
+                Class::HumanPowers,
+                home.join(crate::machine::CLUSTER_KUBECONFIGS_DIR),
                 Access::ReadWrite,
             );
             // What the human's forge sign-in fetched: the native transport's ETag store

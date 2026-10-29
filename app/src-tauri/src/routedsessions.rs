@@ -130,7 +130,7 @@ impl RoutedSessions {
         let to_a_pool: ToAPool = {
             let (connection, plane) = (Arc::clone(connection), plane.clone());
             Arc::new(move |pool| {
-                purlis_core::runners::runner_for(&config, pool).map_err(|why| format!("{why}."))?;
+                purlis_core::runners::runner_of(&config, pool).map_err(|why| format!("{why}."))?;
                 Ok(
                     Box::new(crate::hostedsessions::HostedSessions::on_a_pools_runner(
                         connection.to_a_pool(pool),

@@ -63,6 +63,15 @@ impl std::fmt::Display for Down {
     }
 }
 
+/// **A connector's refusal of a far end whose key is no longer the one pinned at its pairing**
+/// (#3292), in words a person reads: a connector's `connect` that fails with this, inside its
+/// [`std::io::Error`], is told as a [`Down`] whose key changed, as a handshake answered with
+/// another key is. A cluster runner's connector refuses so when its operator no longer vouches
+/// for the key it was paired with.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
+pub struct KeyNoLongerHeld(pub String);
+
 /// A kept link's [`Linked`]s. Dropping it lets the link go.
 pub struct Links {
     told: mpsc::Receiver<Linked>,
@@ -111,10 +120,14 @@ pub fn keep_linked<C: Connector>(
     tokio::spawn(async move {
         let mut ups: u64 = 0;
         let dial = || async {
-            let io = connector
-                .connect()
-                .await
-                .map_err(|why| Down::because(format!("the connector did not connect: {why}")))?;
+            let io = connector.connect().await.map_err(|why| Down {
+                // A connector's own check that the far end's key is no longer the one
+                // it was paired with (a cluster runner's, #3292) is a changed key too.
+                key_changed: why
+                    .get_ref()
+                    .is_some_and(|inner| inner.is::<KeyNoLongerHeld>()),
+                why: format!("the connector did not connect: {why}"),
+            })?;
             connect_kept(io, handshake, &ours, &answering, liveness)
                 .await
                 .map_err(|why| Down {

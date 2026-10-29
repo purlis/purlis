@@ -64,6 +64,9 @@ pub struct PoolsShown {
     /// by default (#3297).
     #[specta(optional)]
     pub width: Option<u32>,
+    /// This machine's cluster pools (#3292), each with its runner in a team's cluster.
+    #[specta(optional)]
+    pub clusters: Option<Vec<crate::clusterpools::ClusterPoolRow>>,
 }
 
 /// A pool as the person typed it: each limit left empty takes the default.
@@ -92,6 +95,9 @@ pub enum PoolLink {
     Linked,
     /// It answered with another key: it is refused, and the window offers to remove it.
     KeyChanged,
+    /// Its cluster's Pool names another cluster operator key than the one pinned as the pool was
+    /// added (#3292): its runner is refused, and the window offers to remove the pool.
+    OperatorKeyChanged,
     /// It did not answer, and why.
     Down { why: String },
     /// It suspended itself, a day without a link (#2051): its container is stopped, its home
@@ -280,6 +286,13 @@ pub fn pools_on(config: &std::path::Path) -> Result<PoolsShown, String> {
         yours: Some(crate::poolprofiles::owned().is_ok()),
         frames: Some(LinkFrames::DEFAULT.frames),
         width: Some(u32::from(LinkFrames::DEFAULT.width)),
+        clusters: Some(
+            purlis_core::runners::cluster_pools(config)
+                .map_err(|why| why.to_string())?
+                .iter()
+                .map(crate::clusterpools::row)
+                .collect(),
+        ),
     })
 }
 
@@ -336,7 +349,12 @@ pub async fn remove_docker_pool(name: String) -> Result<Option<String>, String> 
     #[cfg(unix)]
     {
         crate::off_the_window("removing a pool", move || {
-            let machine = Machine::here(&config_root()?)?;
+            let config = config_root()?;
+            // A cluster pool's runner is its claim, deleted through kubectl (#3292).
+            if is_a_cluster_pool(&config, &name)? {
+                return crate::clusterpools::remove_on(&config, &name);
+            }
+            let machine = Machine::here(&config)?;
             remove_on(&machine, &name)
         })
         .await
@@ -372,7 +390,11 @@ pub async fn docker_pool_link(name: String) -> Result<PoolLink, String> {
     #[cfg(unix)]
     {
         crate::off_the_window("asking a pool's runner", move || {
-            let machine = Machine::here(&config_root()?)?;
+            let config = config_root()?;
+            if is_a_cluster_pool(&config, &name)? {
+                return crate::clusterpools::link_on(&config, &name);
+            }
+            let machine = Machine::here(&config)?;
             let kept = purlis_core::runners::runner_for(&machine.config, &name)
                 .map_err(|why| why.to_string())?;
             if matches!(machine.running(&kept), Ok(false)) {
@@ -403,6 +425,16 @@ pub async fn docker_pool_version(name: String) -> Result<PoolVersion, String> {
     {
         Err(NOT_HERE.to_owned())
     }
+}
+
+#[cfg(unix)]
+/// Whether `name` is a cluster pool on `config` (#3292): the pool commands answer for either
+/// kind, as the Pools group lists both.
+fn is_a_cluster_pool(config: &std::path::Path, name: &str) -> Result<bool, String> {
+    Ok(purlis_core::runners::cluster_pools(config)
+        .map_err(|why| why.to_string())?
+        .iter()
+        .any(|pool| pool.name() == name))
 }
 
 #[cfg(unix)]
@@ -477,11 +509,8 @@ pub fn chats_run_on_at(
     plane: &std::path::Path,
     workspace: &str,
 ) -> Result<ChatsRunOn, String> {
-    let pools = purlis_core::runners::pools(config)
-        .map_err(|why| why.to_string())?
-        .iter()
-        .map(|pool| pool.name().to_owned())
-        .collect();
+    // A cluster pool's name too (#3292).
+    let pools = purlis_core::runners::pool_names(config).map_err(|why| why.to_string())?;
     let loaded = purlis_core::machine::read(config);
     Ok(ChatsRunOn {
         pool: loaded
@@ -503,7 +532,7 @@ pub fn set_chats_run_on_at(
     pool: Option<&str>,
 ) -> Result<ChatsRunOn, String> {
     if let Some(pool) = pool {
-        purlis_core::runners::runner_for(config, pool).map_err(|why| format!("{why}."))?;
+        purlis_core::runners::runner_of(config, pool).map_err(|why| format!("{why}."))?;
     }
     let mut set = Ok(false);
     purlis_core::machine::update(config, |store| {
