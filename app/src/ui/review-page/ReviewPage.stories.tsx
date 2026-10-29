@@ -22,7 +22,14 @@ import { ReviewPage } from "./ReviewPage";
 /** The pane a review page is drawn in: a panel of a view tab, `width` by `height`. */
 function Pane({ width, height, children }: { width: number; height: number; children: ReactNode }) {
   return (
-    <div style={{ display: "grid", inlineSize: width, blockSize: height }}>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateRows: "minmax(0, 1fr)",
+        inlineSize: width,
+        blockSize: height,
+      }}
+    >
       <Panel variant="content">{children}</Panel>
     </div>
   );
@@ -279,7 +286,9 @@ export const GradePlanLong: StoryObj<typeof GradePlan> = {
   play: async ({ canvas, canvasElement, userEvent }) => {
     const root = pageIn(canvasElement);
     const { bar } = parts(root);
-    await expect(bar.bottom).toBeLessThanOrEqual(canvasElement.getBoundingClientRect().bottom + 1);
+    // The bar is at the foot of the page's pane, in view, whatever the body holds.
+    await expect(bar.bottom).toBeLessThanOrEqual(root.getBoundingClientRect().bottom + 1);
+    await expect(bar.bottom).toBeLessThanOrEqual(window.innerHeight);
     await userEvent.tab();
     await untilFocused(
       () => canvas.getByRole("textbox", { name: "At most, in dollars" }),

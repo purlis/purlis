@@ -26,7 +26,7 @@ const SAVED = [
   "",
   "Tests pass. Next I'd write the changelog entry…",
   "",
-  "\u001b[2m[ended by the grade: the skill started, which is what this test checks]\u001b[0m",
+  "[ended by the grade: the skill started, which is what this test checks]",
 ].join("\r\n");
 
 /** A saved grade chat, and what a copy put on the clipboard, said under it. */
