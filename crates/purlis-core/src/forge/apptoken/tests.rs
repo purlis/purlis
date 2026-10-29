@@ -11,7 +11,10 @@ use std::path::{Path, PathBuf};
 use base64::Engine as _;
 use ring::signature::KeyPair as _;
 
-use super::{Remote, jwt, kept_for, mint_over, remotes_in};
+use super::{
+    For, MOST_REPOS, Remote, clone_of, held_from_chats, jwt, kept_for, mint_over, remotes_in,
+    remotes_of_workspace, token_for,
+};
 use crate::forge::recorded::Recorded;
 use crate::forge::{Forge, Kind};
 
@@ -301,4 +304,155 @@ fn a_token_is_kept_until_ten_minutes_before_it_expires_and_never_past_its_hour()
     assert_eq!(minutes(kept_for(Some("2026-10-30T14:00:00Z"), now)), 50);
     assert_eq!(minutes(kept_for(None, now)), 50);
     assert_eq!(minutes(kept_for(Some("tomorrow"), now)), 50);
+}
+
+#[test]
+fn more_repos_than_one_token_may_name_mint_nothing_and_ask_github_nothing() {
+    let recorded = recording("installed_nowhere");
+    let many: Vec<Remote> = (0..=MOST_REPOS)
+        .map(|n| remote("acme", &format!("repo-{n}"), "/w/api"))
+        .collect();
+    let said = mint_over(&recorded, &github(), &many, None).unwrap_err();
+    assert!(said.contains("at most 500"), "{said}");
+    // Its one recorded exchange was never asked for.
+    assert_eq!(recorded.unspent().len(), 1);
+}
+
+#[test]
+fn the_run_s_clone_is_the_one_its_folder_is_in_however_it_is_spelled() {
+    let dir = tempfile::tempdir().unwrap();
+    let api = dir.path().join("api");
+    std::fs::create_dir_all(api.join("src/deep")).unwrap();
+    let remotes = [remote("acme", "api", api.to_str().unwrap())];
+    let real = api.canonicalize().unwrap();
+    assert_eq!(
+        clone_of(&remotes, Some(&api.join("src/deep"))),
+        Some(real.clone())
+    );
+    assert_eq!(
+        clone_of(&remotes, Some(&api.join("src/../src"))),
+        Some(real)
+    );
+    assert_eq!(clone_of(&remotes, Some(dir.path())), None);
+    assert_eq!(clone_of(&remotes, None), None);
+}
+
+/// Runs git in `dir`, which must succeed.
+fn git(dir: &Path, args: &[&str]) {
+    let mut c = std::process::Command::new("git");
+    c.arg("-C").arg(dir).args(args);
+    assert!(
+        crate::forklock::output(&mut c).unwrap().status.success(),
+        "git {args:?}"
+    );
+}
+
+/// A plane with workspace `ws` holding a clone `name` whose remote `origin` is `url`.
+fn a_clone(root: &Path, name: &str, url: &str) -> PathBuf {
+    let clone = root.join("workspaces/ws").join(name);
+    std::fs::create_dir_all(&clone).unwrap();
+    git(&clone, &["init", "-q"]);
+    git(&clone, &["remote", "add", "origin", url]);
+    clone
+}
+
+#[test]
+fn only_clones_whose_git_directory_no_chat_writes_name_the_chat_s_repos() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let kept = a_clone(root, "api", "https://github.com/acme/api.git");
+    let granted = a_clone(root, "lib", "https://github.com/acme/lib.git");
+    let repos = vec![
+        crate::repos::Repo {
+            name: "api".into(),
+            path: kept.clone(),
+        },
+        crate::repos::Repo {
+            name: "lib".into(),
+            path: granted.clone(),
+        },
+    ];
+    let kept_only = held_from_chats(repos.clone(), &[granted.clone()]);
+    assert_eq!(
+        kept_only
+            .iter()
+            .map(|repo| repo.name.as_str())
+            .collect::<Vec<_>>(),
+        ["api"]
+    );
+    assert_eq!(held_from_chats(repos, &[]).len(), 2);
+
+    let remotes =
+        remotes_of_workspace(root, Some(&root.join("workspaces/ws")), &[granted]).unwrap();
+    assert_eq!(
+        remotes
+            .iter()
+            .map(|remote| format!("{}/{}", remote.owner, remote.name))
+            .collect::<Vec<_>>(),
+        ["acme/api"]
+    );
+}
+
+#[test]
+fn a_clone_s_remotes_are_read_from_its_own_config_and_never_an_included_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let clone = a_clone(root, "api", "https://github.com/acme/api.git");
+    let included = root.join("more.gitconfig");
+    std::fs::write(
+        &included,
+        "[remote \"more\"]\n\turl = https://github.com/acme/secret.git\n",
+    )
+    .unwrap();
+    git(
+        &clone,
+        &["config", "include.path", included.to_str().unwrap()],
+    );
+    let remotes = remotes_of_workspace(root, Some(&root.join("workspaces/ws")), &[]).unwrap();
+    assert_eq!(
+        remotes
+            .iter()
+            .map(|remote| remote.name.as_str())
+            .collect::<Vec<_>>(),
+        ["api"]
+    );
+}
+
+#[test]
+fn a_run_in_a_clone_on_another_host_is_refused_naming_it_and_nothing_is_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(
+        crate::names::manifest(root),
+        "[[forge]]\nkind = \"github\"\nhost = \"ghe.example.com\"\n",
+    )
+    .unwrap();
+    let clone = a_clone(root, "api", "https://ghe.example.com/acme/api.git");
+    a_clone(root, "web", "https://github.com/acme/web.git");
+    let gh = crate::sandbox::tools::Tool {
+        mint: Some(crate::sandbox::tools::mint::Mint {
+            app: "Iv23liExample".to_owned(),
+        }),
+        ..crate::sandbox::tools::Tool::one(
+            "gh",
+            "forge",
+            "GH_TOKEN",
+            crate::sandbox::tools::Handed::Env,
+            "app-key",
+        )
+    };
+    let said = token_for(
+        &For {
+            root,
+            chat: 9,
+            folder: Some(&root.join("workspaces/ws")),
+            here: Some(&clone),
+            writes: &[],
+            on_a_runner: false,
+        },
+        &gh,
+        &|| panic!("the key is read only to mint"),
+    )
+    .unwrap_err();
+    assert!(said.contains("ghe.example.com is not github.com"), "{said}");
 }

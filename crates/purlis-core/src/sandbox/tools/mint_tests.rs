@@ -174,3 +174,19 @@ tools = { gh = { vault = "forge", mint = "github-app", app = "Iv1.abc", key = "a
     assert_eq!(mint::refused_raw(dir.path(), "forge", "kubeconfig"), None);
     assert_eq!(mint::refused_raw(dir.path(), "other", "app-key"), None);
 }
+
+#[test]
+fn a_project_file_that_does_not_parse_marks_nothing_as_unmarked() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(mint::raw(dir.path(), "forge", "app-key"), mint::Raw::Taken);
+    std::fs::write(crate::names::manifest(dir.path()), "[sandbox\nbroken").unwrap();
+    assert_eq!(
+        mint::raw(dir.path(), "forge", "app-key"),
+        mint::Raw::NotIfAKey
+    );
+    assert!(mint::refused_raw(dir.path(), "forge", "anything").is_some());
+    let armour = ["-----BEGIN ", "PRIVATE KEY-----"].concat();
+    assert!(mint::a_private_key(&format!("{armour}\nMIIE\n")));
+    assert!(!mint::a_private_key("ghp_notakey"));
+    assert!(!mint::a_private_key("-----BEGIN CERTIFICATE-----\nMIIE\n"));
+}

@@ -460,10 +460,16 @@ pub fn run_on_its_runner(
     let authorised = |persona: &str, vault: &str| brokered::authorise(&ctx, Some(persona), vault);
     // A GitHub App's tool is sent the token this desktop mints for the chat, never the key
     // (#2053): its repos are the remotes of the clones in its workspace here.
-    let folder = held
+    let asker = held
         .chats()
         .login_asker(root, session)
-        .and_then(|(asker, _)| asker.folder);
+        .map(|(asker, _)| asker);
+    let folder = asker.as_ref().and_then(|asker| asker.folder.clone());
+    let grants: Vec<PathBuf> = asker
+        .as_ref()
+        .and_then(|asker| asker.confines.as_ref())
+        .map(|confines| confines.writable.clone())
+        .unwrap_or_default();
     let read = |tool: &Tool| match tool.mint {
         Some(_) => minted(
             &ctx,
@@ -472,8 +478,13 @@ pub fn run_on_its_runner(
                 root,
                 chat: session,
                 folder: folder.as_deref(),
+                // A runner's folder is not one of this machine's: the token is minted for the
+                // workspace's clones here, of one installation.
                 here: None,
+                writes: &grants,
+                on_a_runner: true,
             },
+            &purlis_core::forge::apptoken::token_from_vault,
         ),
         None => read(&ctx, tool),
     };
@@ -586,19 +597,30 @@ fn read(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>, Stri
 
 /// **The token a GitHub App mints for a runner chat's tool `tool`, sent as the value of its key**
 /// (#2053, E2): the key itself is read to mint and goes nowhere else.
-fn minted(
+pub(crate) fn minted(
     ctx: &Ctx,
     tool: &Tool,
     chat: &purlis_core::forge::apptoken::For<'_>,
+    mint: Mints,
 ) -> Result<Vec<(String, Zeroizing<String>)>, String> {
     let key = tool
         .values
         .first()
         .map(|value| value.key.clone())
         .ok_or_else(|| format!("{} names no key", tool.name))?;
-    let token = purlis_core::forge::apptoken::token_from_vault(ctx, chat, tool)?;
+    let token = mint(ctx, chat, tool)?;
+    // Masked wherever this desktop keeps a chat's words, as the run's own values are.
+    purlis_core::secrets::seen::remember(&token);
     Ok(vec![(key, token)])
 }
+
+/// What mints a GitHub App's token for a runner chat's tool:
+/// `purlis_core::forge::apptoken::token_from_vault`, or a test's own.
+pub(crate) type Mints<'a> = &'a dyn Fn(
+    &Ctx,
+    &purlis_core::forge::apptoken::For<'_>,
+    &Tool,
+) -> Result<Zeroizing<String>, String>;
 
 /// What a pool tool Ask answered by nothing any more says.
 const WAITS_NO_MORE: &str = "Nothing is asking about that run of a tool on a pool any more.";

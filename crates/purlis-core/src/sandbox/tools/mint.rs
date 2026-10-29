@@ -115,23 +115,63 @@ pub fn marked_in(cfg: &toml::Table) -> Vec<(String, String)> {
 }
 
 /// **Every vault key a `mint` line of the project at `root` names** ([`marked_in`]), read from
-/// its committed file now. None where the file is missing or does not parse.
-pub fn marked(root: &Path) -> Vec<(String, String)> {
-    let Ok(text) = std::fs::read_to_string(crate::names::manifest(root)) else {
-        return Vec::new();
-    };
-    text.parse::<toml::Table>()
-        .map(|cfg| marked_in(&cfg))
-        .unwrap_or_default()
+/// its committed file now: none where there is no file, and `None` where there is one that
+/// cannot be read or does not parse, so nothing is known to be unmarked.
+pub fn marked(root: &Path) -> Option<Vec<(String, String)>> {
+    match std::fs::read_to_string(crate::names::manifest(root)) {
+        Ok(text) => text.parse::<toml::Table>().ok().map(|cfg| marked_in(&cfg)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(Vec::new()),
+        Err(_) => None,
+    }
+}
+
+/// **How a raw read of key `key` of vault `vault` is taken** in the project at `root` (E2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Raw {
+    /// No `mint` line names it.
+    Taken,
+    /// A `mint` line names it: why it is never handed over.
+    Refused(String),
+    /// The project file cannot be read, so no line is known: the value is handed over only if it
+    /// is no private key ([`a_private_key`]).
+    NotIfAKey,
+}
+
+/// [`Raw`] for key `key` of vault `vault` in the project at `root`.
+pub fn raw(root: &Path, vault: &str, key: &str) -> Raw {
+    match marked(root) {
+        None => Raw::NotIfAKey,
+        Some(marks) if marks.iter().any(|(v, k)| v == vault && k == key) => {
+            Raw::Refused(refused_said(vault, key))
+        }
+        Some(_) => Raw::Taken,
+    }
 }
 
 /// **Why key `key` of vault `vault` is never handed over raw** in the project at `root`, if it is
-/// one a `mint` line marks (E2).
+/// one a `mint` line marks (E2), or if the project file cannot be read to say it is not.
 pub fn refused_raw(root: &Path, vault: &str, key: &str) -> Option<String> {
-    marked(root)
-        .iter()
-        .any(|(v, k)| v == vault && k == key)
-        .then(|| refused_said(vault, key))
+    match raw(root, vault, key) {
+        Raw::Taken => None,
+        Raw::Refused(why) => Some(why),
+        Raw::NotIfAKey => Some(unreadable_said()),
+    }
+}
+
+/// Whether `value` holds a PEM private key, of any kind.
+pub fn a_private_key(value: &str) -> bool {
+    value.lines().any(|line| {
+        let line = line.trim();
+        line.starts_with("-----BEGIN ") && line.ends_with("PRIVATE KEY-----")
+    })
+}
+
+/// What a raw read of a private key is refused with while the project file cannot be read.
+pub fn unreadable_said() -> String {
+    "the project's settings file cannot be read, so purlis cannot tell whether this private key \
+     is one a persona's tool mints GitHub App tokens with, and hands it over to nothing until \
+     the file reads again"
+        .to_owned()
 }
 
 /// What a raw read of a marked key is refused with.

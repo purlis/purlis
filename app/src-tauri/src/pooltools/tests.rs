@@ -498,3 +498,66 @@ fn values_too_large_for_the_link_are_never_handed_on() {
     assert!(sent(desktop.path(), approved, hand_on_the_link).is_err());
     assert_eq!(traced(desktop.path()), Vec::<serde_json::Value>::new());
 }
+
+/// A mint that answers a token only for chat 6's `gh` on a runner.
+fn minted_for_chat_6(
+    _: &Ctx,
+    chat: &purlis_core::forge::apptoken::For<'_>,
+    tool: &Tool,
+) -> Result<Zeroizing<String>, String> {
+    if chat.chat == 6 && chat.on_a_runner && tool.name == "gh" {
+        Ok(Zeroizing::new("minted-for-the-runner-7e1f".to_owned()))
+    } else {
+        Err("asked for another chat or tool".to_owned())
+    }
+}
+
+fn refused_mint(
+    _: &Ctx,
+    _: &purlis_core::forge::apptoken::For<'_>,
+    _: &Tool,
+) -> Result<Zeroizing<String>, String> {
+    Err("installed on none of this chat's repos".to_owned())
+}
+
+/// A GitHub App's tool on a runner (#2053): its key is sent the token minted for the chat, as
+/// that key's one value, and the token is remembered as a value so this desktop masks it.
+#[test]
+fn a_github_app_tool_on_a_runner_is_sent_the_token_minted_for_it_as_its_key_s_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = Ctx::new(dir.path(), Env::of(&[]));
+    let gh = Tool {
+        mint: Some(purlis_core::sandbox::tools::mint::Mint {
+            app: "Iv23liExample".into(),
+        }),
+        ..Tool::one("gh", "forge", "GH_TOKEN", As::Env, "app-key")
+    };
+    let chat = purlis_core::forge::apptoken::For {
+        root: dir.path(),
+        chat: 6,
+        folder: None,
+        here: None,
+        writes: &[],
+        on_a_runner: true,
+    };
+    let sent: Vec<(String, String)> = minted(&ctx, &gh, &chat, &minted_for_chat_6)
+        .unwrap()
+        .into_iter()
+        .map(|(key, value)| (key, value.to_string()))
+        .collect();
+    assert_eq!(
+        sent,
+        [(
+            "app-key".to_owned(),
+            "minted-for-the-runner-7e1f".to_owned()
+        )]
+    );
+    assert!(purlis_core::secrets::seen::holds(
+        "it said minted-for-the-runner-7e1f"
+    ));
+    // A refused mint sends nothing.
+    assert_eq!(
+        minted(&ctx, &gh, &chat, &refused_mint).map(|sent| sent.len()),
+        Err("installed on none of this chat's repos".to_owned())
+    );
+}

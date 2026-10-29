@@ -74,10 +74,19 @@ pub fn provider(ctx: &Ctx, name: &str) -> Result<Vault, VaultError> {
 /// `cp`, a tool, a browser login, a profile's credentials, the Vaults tab), and only the mint
 /// reads it ([`read_to_mint`]).
 pub fn get_value(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> {
-    if let Some(why) = crate::sandbox::tools::mint::refused_raw(&ctx.root, &v.name, key) {
-        return Err(VaultError::new(why));
+    use crate::sandbox::tools::mint;
+    match mint::raw(&ctx.root, &v.name, key) {
+        mint::Raw::Taken => provider_read(ctx, v, key),
+        mint::Raw::Refused(why) => Err(VaultError::new(why)),
+        // The project file cannot say which keys are marked: no private key leaves.
+        mint::Raw::NotIfAKey => {
+            let value = zeroize::Zeroizing::new(provider_read(ctx, v, key)?);
+            if mint::a_private_key(&value) {
+                return Err(VaultError::new(mint::unreadable_said()));
+            }
+            Ok(value.to_string())
+        }
     }
-    provider_read(ctx, v, key)
 }
 
 /// **A GitHub App's key, read to mint a token with it and nothing else** (#2053): the one read
@@ -151,7 +160,10 @@ pub fn delete(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
 pub fn rename(ctx: &Ctx, v: &Vault, from: &str, to: &str) -> Result<(), VaultError> {
     // A GitHub App's key moved to a name no `mint` line names would no longer be marked
     // (#2053): its line is changed first.
-    if crate::sandbox::tools::mint::refused_raw(&ctx.root, &v.name, from).is_some() {
+    if matches!(
+        crate::sandbox::tools::mint::raw(&ctx.root, &v.name, from),
+        crate::sandbox::tools::mint::Raw::Refused(_)
+    ) {
         return Err(VaultError::new(format!(
             "'{from}' in vault '{}' is a GitHub App's key a persona's tool mints tokens with, so \
              purlis does not rename it: change the tool's key in the project's settings first",

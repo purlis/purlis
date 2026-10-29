@@ -7,8 +7,10 @@
 //! A persona's tool declared with `mint = "github-app"` ([`crate::sandbox::tools::mint`]) is
 //! handed, at each run, a token minted here, in the app's process:
 //!
-//! 1. **the chat's repos** are the GitHub remotes of the clones in the chat's workspace, read at
-//!    that run ([`remotes_of_workspace`], E3);
+//! 1. **the chat's repos** are the github.com remotes of the clones in the chat's workspace, read
+//!    at that run from each clone's own config alone, and only of clones whose git directory is
+//!    in no folder a chat may be granted ([`remotes_of_workspace`], E3). A GitHub Enterprise
+//!    Server is not minted for yet: a run in a clone of one is refused, naming it;
 //! 2. the App's key, read from its vault by the mint alone, signs a JWT of ten minutes at most
 //!    whose issuer is the App's client id ([`jwt`]), which is dropped once the token is minted;
 //! 3. each repo's installation is asked for (`GET /repos/{owner}/{repo}/installation`), and the
@@ -16,21 +18,29 @@
 //!    repos (`POST /app/installations/{id}/access_tokens` with `repositories`, [`mint_over`]).
 //!    It holds the permissions the organisation gave the App's installation.
 //!
-//! **One token per chat is kept, in memory alone**, until ten minutes before GitHub says it
-//! expires ([`token_for`]): a chat runs `gh` many times an hour, and each run would otherwise cost
-//! three requests. Nothing here is ever written to disk.
+//! **One token per chat and clone is kept, in memory alone**, until ten minutes before GitHub
+//! says it expires ([`token_for`]): a chat runs `gh` many times an hour, and each run would
+//! otherwise cost three requests. Nothing here is ever written to disk. The one native transport
+//! this builds, carrying the App's JWT to github.com alone, is [`jwt_transport`].
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
-use secrecy::SecretString;
 use zeroize::Zeroizing;
 
-use super::http::{ApiRoot, Http, TokenSource};
 use super::transport::{Call, Field, Method, Transport};
-use super::{Forge, ForgeError, Kind};
+use super::{Forge, Kind};
+
+pub mod jwt_transport;
+
+/// The one host a GitHub App's token is minted on (#2053, part 1). A GitHub Enterprise Server's
+/// comes later.
+pub const HOST: &str = "github.com";
+
+/// The most repos one token is limited to: GitHub refuses a longer `repositories` list.
+pub const MOST_REPOS: usize = 500;
 
 /// How long a JWT is good for. GitHub takes at most ten minutes.
 const JWT_LIVES: u64 = 9 * 60;
@@ -100,10 +110,56 @@ pub fn remotes_in(
     out
 }
 
-/// **The chat's repos** (E3): the GitHub remotes of every clone in the workspace that `folder`,
-/// the chat's folder, is in, in the project at `root`, read now. Refused for a chat in no
-/// workspace.
-pub fn remotes_of_workspace(root: &Path, folder: Option<&Path>) -> Result<Vec<Remote>, String> {
+/// **Whether `path` is inside one of `writes`**, as written or as the kernel names either.
+fn inside_any(path: &Path, writes: &[PathBuf]) -> bool {
+    let real = crate::sandbox::real(path);
+    writes.iter().any(|dir| {
+        let dir_real = crate::sandbox::real(dir);
+        [path, real.as_path()]
+            .iter()
+            .any(|p| p.starts_with(dir) || p.starts_with(&dir_real))
+    })
+}
+
+/// **The clones of `repos` whose git directories no chat writes**: each whose `.git`, and for a
+/// worktree the common directory its config is in, is inside none of `writes`, the folders a
+/// chat may be granted. Only such a clone's remotes name the chat's repos.
+pub fn held_from_chats(
+    repos: Vec<crate::repos::Repo>,
+    writes: &[PathBuf],
+) -> Vec<crate::repos::Repo> {
+    repos
+        .into_iter()
+        .filter(|repo| {
+            let dirs = crate::sandbox::planted::git_dirs(&repo.path);
+            !dirs.is_empty() && dirs.iter().all(|dir| !inside_any(dir, writes))
+        })
+        .collect()
+}
+
+/// The folders a chat of the project at `root` may be granted, beside `writes`: Settings' list of
+/// grantable folders and the temporary folders.
+fn grantable_beside(root: &Path, writes: &[PathBuf]) -> Vec<PathBuf> {
+    let mut out = writes.to_vec();
+    out.extend(crate::sandbox::local::grantable_folders(root));
+    out.extend([
+        std::env::temp_dir(),
+        PathBuf::from("/tmp"),
+        PathBuf::from("/var/tmp"),
+        PathBuf::from("/var/folders"),
+    ]);
+    out
+}
+
+/// **The chat's repos** (E3): the GitHub remotes of the clones in the workspace that `folder`,
+/// the chat's folder, is in, in the project at `root`, read now from each clone's own config
+/// (`git config --local --no-includes`), of the clones [`held_from_chats`] keeps against
+/// `writes`, the chat's grants. Refused for a chat in no workspace.
+pub fn remotes_of_workspace(
+    root: &Path,
+    folder: Option<&Path>,
+    writes: &[PathBuf],
+) -> Result<Vec<Remote>, String> {
     let plane = crate::workspaces::Plane::open(root.to_path_buf());
     let Some(workspace) = folder.and_then(|folder| plane.workspace_of(folder)) else {
         return Err(
@@ -116,10 +172,16 @@ pub fn remotes_of_workspace(root: &Path, folder: Option<&Path>) -> Result<Vec<Re
     let known = super::known(root);
     let forge_of = |url: &str| super::resolve_in(url, &known);
     let mut out = Vec::new();
-    for repo in clones.repos {
+    for repo in held_from_chats(clones.repos, &grantable_beside(root, writes)) {
         let Ok(run) = crate::worktree::git::run(
             &repo.path,
-            &["config", "--get-regexp", r"^remote\..*\.url$"],
+            &[
+                "config",
+                "--local",
+                "--no-includes",
+                "--get-regexp",
+                r"^remote\..*\.url$",
+            ],
             crate::worktree::git::READ,
         ) else {
             continue;
@@ -129,6 +191,21 @@ pub fn remotes_of_workspace(root: &Path, folder: Option<&Path>) -> Result<Vec<Re
     out.sort();
     out.dedup();
     Ok(out)
+}
+
+/// **The clone of `remotes` the folder `here` is in**, canonical, where it is in one.
+pub fn clone_of(remotes: &[Remote], here: Option<&Path>) -> Option<PathBuf> {
+    let here = here?;
+    let here = here.canonicalize().unwrap_or_else(|_| here.to_path_buf());
+    remotes
+        .iter()
+        .map(|remote| {
+            remote
+                .clone
+                .canonicalize()
+                .unwrap_or_else(|_| remote.clone.clone())
+        })
+        .find(|clone| here.starts_with(clone))
 }
 
 /// The DER of the private key in `pem`, and whether it is PKCS#8 (`PRIVATE KEY`) rather than
@@ -232,6 +309,20 @@ pub fn mint_over(
     remotes: &[Remote],
     here: Option<&Path>,
 ) -> Result<Minted, String> {
+    let mut distinct: Vec<(&str, &str)> = remotes
+        .iter()
+        .filter(|remote| remote.host == forge.host)
+        .map(|remote| (remote.owner.as_str(), remote.name.as_str()))
+        .collect();
+    distinct.sort_unstable();
+    distinct.dedup();
+    if distinct.len() > MOST_REPOS {
+        return Err(format!(
+            "this chat's workspace has {} GitHub repos, and a GitHub App's token is limited to \
+             at most {MOST_REPOS}, so none was minted",
+            distinct.len()
+        ));
+    }
     let mut installed: Vec<(u64, &Remote)> = Vec::new();
     let mut asked: Vec<(&str, &str)> = Vec::new();
     for remote in remotes.iter().filter(|remote| remote.host == forge.host) {
@@ -269,15 +360,11 @@ pub fn mint_over(
     let mut installations: Vec<u64> = installed.iter().map(|(id, _)| *id).collect();
     installations.sort_unstable();
     installations.dedup();
+    let here_clone = clone_of(remotes, here);
     let in_here = |remote: &Remote| {
-        here.is_some_and(|here| {
-            let at = remote
-                .clone
-                .canonicalize()
-                .unwrap_or_else(|_| remote.clone.clone());
-            let here = here.canonicalize().unwrap_or_else(|_| here.to_path_buf());
-            here.starts_with(at)
-        })
+        here_clone
+            .as_ref()
+            .is_some_and(|clone| remote_is_in(remote, clone))
     };
     let installation = match installations.as_slice() {
         [] => {
@@ -344,33 +431,17 @@ pub fn mint_over(
     })
 }
 
-/// A JWT, handed out as the bearer of each request of one mint.
-struct Bearer(SecretString);
-
-impl TokenSource for Bearer {
-    fn token(&self) -> Result<SecretString, ForgeError> {
-        Ok(self.0.clone())
-    }
-}
-
-/// The native transport to `forge`'s API, its requests sent with `jwt`.
-fn over_https(forge: &Forge, jwt: &str) -> Result<Http, String> {
-    Http::new(
-        Kind::GitHub,
-        ApiRoot::github(&forge.host),
-        Arc::new(Bearer(SecretString::from(jwt))),
-    )
-    .map_err(|e| e.to_string())
-}
-
 /// **The chat a token is minted for**: the project, the app's number for the chat, its folder
-/// (which names its workspace) and the folder the command runs in.
+/// (which names its workspace), the folder the command runs in, the folders the chat may be
+/// granted, and whether it runs on a runner, whose folder is not one of this machine's.
 #[derive(Debug, Clone, Copy)]
 pub struct For<'a> {
     pub root: &'a Path,
     pub chat: u32,
     pub folder: Option<&'a Path>,
     pub here: Option<&'a Path>,
+    pub writes: &'a [PathBuf],
+    pub on_a_runner: bool,
 }
 
 /// What a kept token was minted for: none of it is a secret.
@@ -381,9 +452,10 @@ struct Asked {
     app: String,
     vault: String,
     key: String,
-    host: String,
     remotes: Vec<Remote>,
-    here: Option<PathBuf>,
+    /// The clone the run is in, where it is in one: one token per chat and clone, whatever
+    /// folder of it the run is in.
+    clone: Option<PathBuf>,
 }
 
 /// One token kept for its chat.
@@ -419,43 +491,37 @@ pub fn token_for(
     let (Some(mint), [value]) = (&tool.mint, tool.values.as_slice()) else {
         return Err(format!("{} mints no GitHub App token", tool.name));
     };
-    let remotes = remotes_of_workspace(chat.root, chat.folder)?;
-    let mut hosts: Vec<&str> = remotes.iter().map(|remote| remote.host.as_str()).collect();
-    hosts.sort_unstable();
-    hosts.dedup();
-    let here_host = chat.here.and_then(|here| {
-        remotes
+    let all = remotes_of_workspace(chat.root, chat.folder, chat.writes)?;
+    // github.com alone for now: a run in a clone on another host is refused, naming it.
+    if let Some(clone) = clone_of(&all, chat.here)
+        && let Some(other) = all
             .iter()
-            .find(|remote| here.starts_with(&remote.clone))
-            .map(|remote| remote.host.clone())
-    });
-    let host = match (here_host, hosts.as_slice()) {
-        (Some(host), _) => host,
-        (None, [one]) => (*one).to_owned(),
-        (None, []) => {
-            return Err(
-                "no clone in this chat's workspace has a GitHub remote, so no GitHub App token \
-                 was minted"
-                    .to_owned(),
-            );
-        }
-        (None, _) => {
-            return Err(
-                "this chat's clones are on several GitHub hosts, so run the command in one of \
-                 them"
-                    .to_owned(),
-            );
-        }
-    };
+            .find(|remote| remote.host != HOST && remote_is_in(remote, &clone))
+    {
+        return Err(not_minted_on(&other.host));
+    }
+    let remotes: Vec<Remote> = all
+        .iter()
+        .filter(|remote| remote.host == HOST)
+        .cloned()
+        .collect();
+    if remotes.is_empty() {
+        return Err(match all.first() {
+            Some(other) => not_minted_on(&other.host),
+            None => "no clone in this chat's workspace has a github.com remote, so no GitHub \
+                     App token was minted"
+                .to_owned(),
+        });
+    }
+    let clone = clone_of(&remotes, chat.here);
     let asked = Asked {
         root: chat.root.to_path_buf(),
         chat: chat.chat,
         app: mint.app.clone(),
         vault: tool.vault.clone(),
         key: value.key.clone(),
-        host: host.clone(),
         remotes: remotes.clone(),
-        here: chat.here.map(Path::to_path_buf),
+        clone: clone.clone(),
     };
     {
         let mut kept = KEPT.lock().unwrap_or_else(|e| e.into_inner());
@@ -467,15 +533,16 @@ pub fn token_for(
     }
     let forge = Forge {
         kind: Kind::GitHub,
-        host,
+        host: HOST.to_owned(),
     };
     let key = read_key()?;
     let now = chrono::Utc::now();
     let jwt = jwt(&key, &mint.app, u64::try_from(now.timestamp()).unwrap_or(0))?;
     drop(key);
-    let transport = over_https(&forge, &jwt)?;
+    let transport = jwt_transport::to_github_com(&jwt)?;
     drop(jwt);
-    let minted = mint_over(&transport, &forge, &remotes, chat.here)?;
+    let minted = mint_over(&transport, &forge, &remotes, clone.as_deref())
+        .map_err(|why| on_a_runner_said(why, chat.on_a_runner))?;
     tracing::info!(
         "purlis: chat {} was handed a token of GitHub App {} for {} of installation {}",
         chat.chat,
@@ -497,6 +564,44 @@ pub fn token_for(
     Ok(minted.token)
 }
 
+/// Whether `remote` is a remote of the clone at `clone`, canonical.
+fn remote_is_in(remote: &Remote, clone: &Path) -> bool {
+    remote
+        .clone
+        .canonicalize()
+        .unwrap_or_else(|_| remote.clone.clone())
+        == clone
+}
+
+/// What a run on `host`, a host that is not github.com, is refused with.
+fn not_minted_on(host: &str) -> String {
+    format!(
+        "{host} is not github.com, and purlis mints a GitHub App's token for github.com alone \
+         for now, so none was minted"
+    )
+}
+
+/// `why` a mint was refused, said for a runner chat where it asks for a clone to run in: a
+/// runner's folder is not one of this machine's, so it is told what to change instead.
+fn on_a_runner_said(why: String, on_a_runner: bool) -> String {
+    if on_a_runner && why.contains("several installations") {
+        "this runner chat's repos are on several installations of the GitHub App, and on a \
+         runner purlis mints for one alone: keep its workspace's clones on one installation"
+            .to_owned()
+    } else {
+        why
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test's own mint, in place of GitHub, for the calls on its thread: it is handed the
+    /// App's key as the vault holds it, and answers the token.
+    pub(crate) static MINT_HERE: std::cell::RefCell<
+        Option<Box<dyn Fn(&str) -> Result<Zeroizing<String>, String>>>,
+    > = const { std::cell::RefCell::new(None) };
+}
+
 /// **[`token_for`], its key read from the tool's vault through `ctx`** by the one read a GitHub
 /// App's key is given ([`crate::secrets::cmd::read_to_mint`]): what a chat's run is handed, on
 /// this machine or sent to its runner.
@@ -505,7 +610,7 @@ pub fn token_from_vault(
     chat: &For<'_>,
     tool: &crate::sandbox::tools::Tool,
 ) -> Result<Zeroizing<String>, String> {
-    token_for(chat, tool, &|| {
+    let read_key = || {
         let key = tool
             .values
             .first()
@@ -514,7 +619,16 @@ pub fn token_from_vault(
             .and_then(|vault| crate::secrets::cmd::read_to_mint(ctx, &vault, &key.key))
             .map(Zeroizing::new)
             .map_err(|e| e.message.to_string())
-    })
+    };
+    #[cfg(test)]
+    if let Some(minted) = MINT_HERE.with(|mint| {
+        mint.borrow()
+            .as_ref()
+            .map(|mint| read_key().and_then(|key| mint(&key)))
+    }) {
+        return minted;
+    }
+    token_for(chat, tool, &read_key)
 }
 
 #[cfg(test)]

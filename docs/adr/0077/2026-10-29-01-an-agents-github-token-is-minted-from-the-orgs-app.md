@@ -27,12 +27,22 @@ that mints with it marks it, so purlis never hands it over raw** (E2).
 - **What reaches the chat** is the minted token alone. It is the agent's own identity, limited
   to the chat's repos, and it lasts an hour. As with every tool, the chat's arguments are its
   own, so gh can show the token it holds. That is accepted for a token of this reach.
-- **The chat's repos** (E3) are the GitHub remotes of the clones in the chat's workspace, read
-  when the token is minted. A token is minted for one installation, with `repositories` limited
-  to those remotes. The installation is the one the run's clone is on, or else the only one the
-  remotes are on.
+- **The chat's repos** (E3) are the github.com remotes of the clones in the chat's workspace,
+  read when the token is minted, from each clone's own config with no included file, and only
+  of clones whose git directory is in no folder a chat may be granted. A token is minted for one
+  installation, with `repositories` limited to those remotes, at most 500. The installation is
+  the one the run's clone is on, or else the only one the remotes are on. A token is kept per
+  chat and clone.
+- **github.com alone, for now.** The App's JWT is sent to github.com's API and nowhere else. A
+  run in a clone on another GitHub host is refused with a sentence naming it. **GitHub
+  Enterprise Server: later**: `gh` reads a GHES token from `GH_ENTERPRISE_TOKEN` with `GH_HOST`,
+  which this does not hand yet.
+- **When the project file cannot be read**, no line is known, so no value that is a PEM private
+  key is handed over raw until it reads again.
 - **A runner chat** with its desktop present is sent the token its desktop minted, through the
-  same per-run Ask (ADR 0078 §7, #2047). The desktop never sends the key. Without its desktop a
+  same per-run Ask (ADR 0078 §7, #2047), for the clones of its workspace on the desktop. A
+  runner's folder names no clone there, so where those clones are on several installations the
+  run is refused with a sentence of its own. The desktop never sends the key. Without its desktop a
   runner chat's run waits for it, until a pool opts in (E4, below).
 
 ## §8, amended: no new store

@@ -1232,3 +1232,29 @@ fn a_key_a_mint_line_names_still_resolves_for_verify_and_the_mint_but_is_not_ren
     );
     assert_eq!(keys(&plane.ctx, &v).unwrap(), ["app-key", "other"]);
 }
+
+#[test]
+fn while_the_project_file_does_not_parse_no_private_key_is_handed_over_raw() {
+    let plane = Plane::new(&[]);
+    std::fs::write(
+        crate::names::manifest(plane.root()),
+        "[sandbox.personas.dev\ntools = <<<<<<< a conflict\n",
+    )
+    .unwrap();
+    let armour = ["-----BEGIN RSA ", "PRIVATE KEY-----"].concat();
+    plane.plain(
+        "forge",
+        json!({"app-key": format!("{armour}\nMIIEabc\n"), "token": "plain-token-0a1b"}),
+    );
+    let v = provider(&plane.ctx, "forge").unwrap();
+    let refused = get_value(&plane.ctx, &v, "app-key").unwrap_err();
+    assert!(
+        refused.message.to_string().contains("cannot be read"),
+        "{}",
+        refused.message
+    );
+    assert_eq!(
+        get_value(&plane.ctx, &v, "token").unwrap(),
+        "plain-token-0a1b"
+    );
+}
