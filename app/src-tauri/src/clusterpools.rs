@@ -153,7 +153,7 @@ pub fn key_with(
     let pointed = kubectl.clone().pointed_at(kubeconfig, context);
     let said =
         |why: purlis_core::clusterpool::Refused| crate::devices::shown_safely(&why.to_string());
-    let key = pointed.operator_key(pool.trim()).map_err(said)?;
+    let key = pointed.pool_pin(pool.trim()).map_err(said)?.key;
     let namespace = pointed.namespace().map_err(said)?;
     Ok(ClusterPoolKey {
         key: key.spelled(),
