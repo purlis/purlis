@@ -347,10 +347,11 @@ export async function setSkillStudioOn(on: boolean): Promise<string | undefined>
 
 /**
  * **A start the studio is asked to open on** (#3266): the Skills view's New skill opens the
- * studio's own form, so each start is the studio's one copy. Browse sources is a page
+ * studio's own form, and its Make my own copy the studio's own dialog (#3693), so each start is
+ * the studio's one copy. Browse sources is a page
  * ({@link skillStudioAt}'s `sources`), not a start.
  */
-export type StudioStart = "new";
+export type StudioStart = "new" | "copy";
 
 /** The start asked for, by the studio tab's key, until the tab of that key takes it. */
 let startAsked: { key: string; start: StudioStart } | undefined;

@@ -8,8 +8,9 @@ import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
 
 /**
- * **The Skills view's Only this chat's, kept for the window** (#3308): in the layout file under
- * `skills`, read back field by field, so it survives a restart.
+ * **The Skills view's folded groups, kept for the window** (#3281, #3693): in the layout file
+ * under `skills`, read back field by field, so they survive a restart. The view follows the chat
+ * in front, so an older purlis's Only this chat's is read past and never written again.
  */
 
 beforeEach(() => forgetThisLaunch());
@@ -18,73 +19,29 @@ afterEach(() => {
   clearMocks();
 });
 
-describe("the Skills view's Only this chat's", () => {
-  it("is off until the person presses it, and the file says nothing of it then", () => {
+describe("the Skills view's folded groups", () => {
+  it("start with Left out and the built-in skills folded, and the file says nothing of it", () => {
     expect(loadSkillsView({ version: 2, regions: [] })).toEqual({
       value: DEFAULT_SKILLS_VIEW,
       said: [],
     });
-    expect(SKILLS_VIEW.value().onlyThisChat).toBe(false);
+    expect(SKILLS_VIEW.value().folded).toEqual(["built-in", "left-out"]);
     expect(SKILLS_VIEW.written()).toBeUndefined();
   });
 
-  it("is written to the layout file under skills, and taken out again when it is off", async () => {
+  it("are written under skills once they differ, and taken out once they are as they start", async () => {
     const written: string[] = [];
     mockIPC((cmd, args) => {
       if (cmd === "write_layout") written.push((args as { text: string }).text);
       return null;
     });
-    SKILLS_VIEW.set({ onlyThisChat: true, folded: [] });
+    SKILLS_VIEW.set({ folded: ["built-in"] });
     await expect.poll(() => written.length).toBe(1);
-    expect(JSON.parse(written[0]).skills).toEqual({ onlyThisChat: true });
-    SKILLS_VIEW.set({ onlyThisChat: false, folded: [] });
+    expect(JSON.parse(written[0]).skills).toEqual({ folded: ["built-in"] });
+    SKILLS_VIEW.set({ folded: [] });
     await expect.poll(() => written.length).toBe(2);
-    expect(JSON.parse(written[1]).skills).toBeUndefined();
-  });
-
-  it("comes back from the file the window was handed, as a restart reads it", () => {
-    Reflect.set(globalThis, GLOBAL, {
-      layout: {
-        path: "/c/layout.json",
-        found: true,
-        document: { version: 2, regions: [], skills: { onlyThisChat: true } },
-        trouble: null,
-      },
-    });
-    expect(SKILLS_VIEW.value().onlyThisChat).toBe(true);
-  });
-
-  it("reads a value it does not know as the whole list, and says so", () => {
-    expect(loadSkillsView({ skills: { onlyThisChat: "yes" } })).toEqual({
-      value: DEFAULT_SKILLS_VIEW,
-      said: [expect.stringContaining('"skills"')],
-    });
-    expect(loadSkillsView({ skills: "chat" }).value).toEqual(DEFAULT_SKILLS_VIEW);
-  });
-});
-
-describe("the Skills view's folded groups (#3281)", () => {
-  it("are none until the person folds one, and the file says nothing of them then", () => {
-    expect(SKILLS_VIEW.value().folded).toEqual([]);
-    expect(SKILLS_VIEW.written()).toBeUndefined();
-  });
-
-  it("are written under skills beside Only this chat's, and taken out once none is folded", async () => {
-    const written: string[] = [];
-    mockIPC((cmd, args) => {
-      if (cmd === "write_layout") written.push((args as { text: string }).text);
-      return null;
-    });
-    SKILLS_VIEW.set({ onlyThisChat: false, folded: ["built-in", "program:Claude Code"] });
-    await expect.poll(() => written.length).toBe(1);
-    expect(JSON.parse(written[0]).skills).toEqual({ folded: ["built-in", "program:Claude Code"] });
-    SKILLS_VIEW.set({ onlyThisChat: true, folded: ["built-in", "program:Claude Code"] });
-    await expect.poll(() => written.length).toBe(2);
-    expect(JSON.parse(written[1]).skills).toEqual({
-      onlyThisChat: true,
-      folded: ["built-in", "program:Claude Code"],
-    });
-    SKILLS_VIEW.set({ onlyThisChat: false, folded: [] });
+    expect(JSON.parse(written[1]).skills).toEqual({ folded: [] });
+    SKILLS_VIEW.set(DEFAULT_SKILLS_VIEW);
     await expect.poll(() => written.length).toBe(3);
     expect(JSON.parse(written[2]).skills).toBeUndefined();
   });
@@ -98,23 +55,30 @@ describe("the Skills view's folded groups (#3281)", () => {
         trouble: null,
       },
     });
-    expect(SKILLS_VIEW.value()).toEqual({ onlyThisChat: false, folded: ["needs-you"] });
+    expect(SKILLS_VIEW.value()).toEqual({ folded: ["needs-you"] });
+  });
+
+  it("read an older purlis's Only this chat's past, and say nothing of it", () => {
+    expect(loadSkillsView({ skills: { onlyThisChat: true } })).toEqual({
+      value: DEFAULT_SKILLS_VIEW,
+      said: [],
+    });
+    expect(loadSkillsView({ skills: { onlyThisChat: true, folded: ["in-chat"] } })).toEqual({
+      value: { folded: ["in-chat"] },
+      said: [],
+    });
   });
 
   it("are read as group names and nothing else, and held to a few", () => {
     const { value, said } = loadSkillsView({
-      skills: {
-        onlyThisChat: true,
-        folded: ["project", 7, "no-such-group", "program:", "project", "program:Codex"],
-      },
+      skills: { folded: ["project", 7, "no-such-group", "left-out", "program:Codex", "left-out"] },
     });
-    expect(value).toEqual({ onlyThisChat: true, folded: ["project", "program:Codex"] });
+    expect(value).toEqual({ folded: ["left-out"] });
     expect(said).toEqual([]);
-    const many = Array.from({ length: 40 }, (_, at) => `program:p${at}`);
-    expect(loadSkillsView({ skills: { folded: many } }).value.folded).toHaveLength(16);
     expect(loadSkillsView({ skills: { folded: "project" } })).toEqual({
       value: DEFAULT_SKILLS_VIEW,
       said: [expect.stringContaining('"skills"')],
     });
+    expect(loadSkillsView({ skills: "chat" }).value).toEqual(DEFAULT_SKILLS_VIEW);
   });
 });

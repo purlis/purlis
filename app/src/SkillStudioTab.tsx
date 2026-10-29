@@ -17,7 +17,7 @@ import {
   type StudioRouter,
   type StudioSkill,
 } from "./bindings";
-import { MAKE_MY_OWN_COPY, SkillCopy } from "./SkillCopy";
+import { BUILT_IN_FIXED, MAKE_MY_OWN_COPY, SkillCopy } from "./SkillCopy";
 import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { SkillStudioHarnesses } from "./SkillStudioHarnesses";
@@ -185,9 +185,6 @@ function lineOf(skill: StudioSkill): string {
 const BUILT_IN_RUN = "built-in";
 const BUILT_IN_RUN_ROWS = [`${BUILT_IN_RUN}:fold`, `${BUILT_IN_RUN}:end`];
 
-/** What the folded line's closing says of them (S12). */
-const BUILT_IN_FIXED = "They ship with purlis: they can't be edited, turned off or replaced.";
-
 /**
  * **A built-in skill drawn on its own, outside the fold** (S12): one that needs the person (a
  * lint, a folder to accept, or one no chat gets), one a skill of the project's clashes with (a
@@ -313,7 +310,11 @@ export function SkillStudioTab({
   if (on && !opened) setOpened(true);
   const drafts = useSkillDrafts(plane, changed + done);
   // A start the Skills view asked this studio to open on (#3266): the New skill form.
-  useStudioStart(tab, on, () => setDoing({ what: "new" }));
+  // Make my own copy, asked from the Skills view's folded built-in skills (#3693).
+  useStudioStart(tab, on, (start) => {
+    if (start === "copy") setCopying({});
+    else setDoing({ what: "new" });
+  });
   useEffect(() => {
     let live = true;
     void commands.skillStudio(plane, workspace, persona).then((answer) => {

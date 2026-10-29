@@ -1,58 +1,51 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useId, useState, type ReactNode } from "react";
-import { Plus, Sparkles } from "lucide-react";
-import { Button, ButtonRow, ToggleButton } from "./ui/button/Button";
-import type { RowMenu } from "./ui/list/List";
+import { useId, type ReactNode } from "react";
+import { Plus, Sparkle, Sparkles } from "lucide-react";
+import { Badge } from "./ui/badge/Badge";
+import { Button, ButtonRow } from "./ui/button/Button";
+import { List, type RowMenu } from "./ui/list/List";
+import { ListCardRow } from "./ui/list/CardRow";
+import { ListFoldSection, ListRun } from "./ui/list/Fold";
 import { ListFilter, noMatchSaid, type Noun } from "./ui/list/ListFilter";
-import { RowLabel, RowTrail } from "./ui/list/Row";
-import { Tree, TreeRow, type Key } from "./ui/tree/Tree";
 import { Menu, MenuItem, MenuTrigger, MenuWords } from "./ui/menu/Menu";
 import { SKILL_STARTS, NEW_SKILL_MENU, SkillStarts, type SkillStart } from "./SkillStarts";
+import { BUILT_IN_FIXED, MAKE_MY_OWN_COPY } from "./SkillCopy";
 import type { Offer } from "./actions";
+import { counted } from "./dispatches";
 import type { GroupDrawn } from "./menuModel";
 import { Groups } from "./Menus";
 import { OPEN_SKILL_STUDIO } from "./skillStudio";
 import {
-  MARK_SAID,
-  markOf,
+  cardReasonOf,
   menuRowsOf,
-  tipOf,
+  type GroupId,
   type ListedSkill,
   type MenuAt,
-  type GroupId,
   type SkillAct,
-  type SkillGroup,
+  type SkillFix,
+  type SkillGroups,
 } from "./skillsListing";
 
 /** What the view's filter calls its rows. */
 const SKILLS_NOUN: Noun = { one: "skill", many: "skills" };
 
-/** A group's row's key, apart from every skill's. */
-const groupKey = (id: GroupId): Key => `group:${id}`;
-
-/** How many skills a group holds, to a reader: its count is drawn, and heard after its name. */
-const countSaid = (count: number): string => `${count} ${count === 1 ? "skill" : "skills"}`;
-
-/** The words of the switch that narrows the list to the chat in front (the amendment's (c)). */
-const ONLY_THIS_CHATS = "Only this chat's";
-
 /**
- * **The Skills view, drawn** (SK-55, #3266): its header's way to the Skill studio and its New
- * skill, the switch to the chat in front's own set, the filter, and the skills by level, on the
- * tree family (#2911, #3281). What it lists and does is the caller's (`SkillsView`); this draws
- * it, so a story draws it without a core.
+ * **The Skills view, drawn** (SK-55, #3266; spec #3679 S7, `prototype/skills-sidebar` variant
+ * C): whose skills it shows and how many, its header's way to the Skill studio and its New
+ * skill, the filter, and the skills as small cards in three groups that fold: Needs you (in the
+ * waiting colour), In this chat (its built-in skills folded to one quiet line at its end, S12)
+ * and Left out (folded at first). What it lists and does is the caller's (`SkillsView`); this
+ * draws it, so a story draws it without a core.
  *
- * **Each level is a branch of the tree**, its name and how many skills it holds, which folds and
- * opens with ← and → or its twist, Enter or a click; the folds are the caller's to keep. One Tab
- * stop, ↑ and ↓, and typing finds a skill or a level by its name (the WAI-ARIA tree's keys).
- *
- * **A row is a skill's name and at most one mark**, its description and the mark's reason on
- * hover and while the keyboard is on it (`ui/list/RowTip`). Enter or a click opens its tab; its
- * menu (a right-click, Shift+F10 or the menu key) is the caller's.
+ * **A card** is a skill's name and its skill level, Use while the chat in front can use it, and
+ * its ⋯; two lines of what it does, or why it is as it is in their place; and its one fix. Enter
+ * or a click opens it in the Skill studio; its menu (the ⋯, a right-click, Shift+F10 or the menu
+ * key) is the caller's.
  */
 export function SkillsList({
+  whose,
   groups,
   total,
   query,
@@ -64,12 +57,18 @@ export function SkillsList({
   onOpenStudio,
   onOpen,
   menuOf,
-  chat,
+  usable,
+  onUse,
+  fixOf,
+  onFix,
+  onCopy,
   notice,
   folded,
   onFold,
 }: {
-  groups: readonly SkillGroup[];
+  /** Whose skills these are: the chat in front's name, or "A new chat in ops". */
+  whose: string;
+  groups: SkillGroups;
   /** How many skills the list holds before the filter. */
   total: number;
   query: string;
@@ -82,27 +81,74 @@ export function SkillsList({
   onStart: (start: SkillStart) => void;
   /** Opens the studio; `newTab` where ⌘ (Ctrl off a Mac) was held, for a tab of its own. */
   onOpenStudio: (newTab: boolean) => void;
+  /** Opens the skill in the Skill studio, at Library › it. */
   onOpen: (row: ListedSkill) => void;
   menuOf: (row: ListedSkill) => RowMenu | undefined;
-  /** The switch to the chat in front's own set, drawn while a chat tab is in front. */
-  chat?: { only: boolean; onOnly: (only: boolean) => void };
-  /** What the last change from a row's menu left to say. */
+  /** Whether Use is drawn on a card: a chat is in front, and gets the skill. */
+  usable: (row: ListedSkill) => boolean;
+  onUse: (row: ListedSkill) => void;
+  /** A card's one fix, where it has one. */
+  fixOf: (row: ListedSkill) => SkillFix | undefined;
+  onFix: (row: ListedSkill, fix: SkillFix) => void;
+  /** Make my own copy of a built-in skill, in the Skill studio. */
+  onCopy: () => void;
+  /** What the last change from a card's menu left to say. */
   notice?: ReactNode;
   /** The groups the person folded, kept for the window (`skillsViewPrefs.ts`). */
   folded: readonly GroupId[];
-  /** The groups `shown` were left with `open` open, by the arrows or a twist. */
-  onFold: (shown: readonly GroupId[], open: ReadonlySet<GroupId>) => void;
+  /** Folds (`true`) or unfolds the group `id`. */
+  onFold: (id: GroupId, folded: boolean) => void;
 }) {
   const listId = useId();
   const filtering = query.trim() !== "";
-  // **While a filter is typed every group is open**, so no match is folded out of sight; a group
-  // folded meanwhile is folded for that filter alone, and the kept folds wait for it to clear.
-  const [filterFolds, setFilterFolds] = useState<{ query: string; groups: readonly GroupId[] }>();
-  const shown = groups.map((group) => group.id);
-  const closed = filtering ? (filterFolds?.query === query ? filterFolds.groups : []) : folded;
-  const open = new Set(shown.filter((id) => !closed.includes(id)).map((id): Key => groupKey(id)));
+  const { needs, inChat, builtIns, leftOut } = groups;
+  // Every skill the chat gets: its built-in skills count, folded or not.
+  const count = needs.length + inChat.length + builtIns.length;
+  // **While a filter is typed every group is open**, so no match is folded away.
+  const isFolded = (id: GroupId) => !filtering && folded.includes(id);
+  const card = (row: ListedSkill) => {
+    const reason = cardReasonOf(row);
+    const fix = fixOf(row);
+    return (
+      <ListCardRow
+        key={row.key}
+        id={row.key}
+        textValue={row.skill.name}
+        name={row.skill.name}
+        mark={<Badge>{row.skill.label}</Badge>}
+        actions={
+          usable(row) ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label={`Use ${row.skill.name} in this chat`}
+              onPress={() => onUse(row)}
+            >
+              Use
+            </Button>
+          ) : undefined
+        }
+        description={reason === undefined ? row.skill.description : undefined}
+        reason={reason}
+        fix={
+          fix === undefined ? undefined : (
+            <Button size="sm" isDisabled={busy} onPress={() => onFix(row, fix)}>
+              {fix.label}
+            </Button>
+          )
+        }
+        menu={menuOf(row)}
+        data-testid={`skills-row-${row.key}`}
+      />
+    );
+  };
+  const rows = [...needs, ...inChat, ...builtIns, ...leftOut];
   return (
     <div className="skills-view" data-testid="skills-view">
+      <p className="skills-view-whose" data-testid="skills-view-whose">
+        <strong>{whose}</strong>{" "}
+        <span className="honest">· {counted(count, "skill", "skills")}</span>
+      </p>
       <ButtonRow className="skills-view-head">
         <Button
           variant="ghost"
@@ -130,11 +176,6 @@ export function SkillsList({
           </Menu>
         </MenuTrigger>
       </ButtonRow>
-      {chat !== undefined && (
-        <ToggleButton className="skills-view-only" isSelected={chat.only} onChange={chat.onOnly}>
-          {ONLY_THIS_CHATS}
-        </ToggleButton>
-      )}
       {notice}
       {starts && (
         <SkillStarts
@@ -153,19 +194,15 @@ export function SkillsList({
           controls={listId}
         />
       )}
-      {/* The tree's place in the view: it takes the rest, and scrolls. */}
+      {/* The list's place in the view: it takes the rest, and scrolls. */}
       <div className="skills-view-list">
-        <Tree
+        <List
           id={listId}
           aria-label="Skills"
           size="sm"
-          expandedKeys={open}
-          onExpandedChange={(keys) => {
-            const opened = new Set(
-              groups.filter((group) => keys.has(groupKey(group.id))).map((group) => group.id),
-            );
-            if (filtering) setFilterFolds({ query, groups: shown.filter((id) => !opened.has(id)) });
-            else onFold(shown, opened);
+          onAction={(key) => {
+            const row = rows.find((one) => one.key === String(key));
+            if (row !== undefined) onOpen(row);
           }}
           empty={
             filtering ? (
@@ -175,64 +212,74 @@ export function SkillsList({
             )
           }
         >
-          {groups.map((group) => (
-            <TreeRow
-              key={group.id}
-              id={groupKey(group.id)}
-              textValue={group.title}
-              description={countSaid(group.rows.length)}
-              data-testid={`skills-group-${group.id}`}
-              content={
-                <>
-                  <RowLabel>{group.title}</RowLabel>
-                  <RowTrail>{group.rows.length}</RowTrail>
-                </>
-              }
-            >
-              {group.rows.map((row) => {
-                const mark = markOf(row);
-                const tip = tipOf(row);
-                return (
-                  <TreeRow
-                    key={row.key}
-                    id={row.key}
-                    textValue={row.skill.name}
-                    onAction={() => onOpen(row)}
-                    tip={
-                      tip.length === 0
-                        ? undefined
-                        : tip.map((line, at) => (
-                            <span key={at} className="skills-view-tip">
-                              {line}
-                            </span>
-                          ))
-                    }
-                    menu={menuOf(row)}
-                    data-testid={`skills-row-${row.key}`}
-                    data-mark={mark}
-                    content={
-                      <>
-                        <RowLabel>{row.skill.name}</RowLabel>
-                        {mark !== undefined && (
-                          <RowTrail className="skills-view-mark">{MARK_SAID[mark]}</RowTrail>
-                        )}
-                      </>
-                    }
-                  />
-                );
-              })}
-            </TreeRow>
-          ))}
-        </Tree>
+          {rows.length === 0 ? null : (
+            <>
+              {needs.length > 0 && (
+                <ListFoldSection
+                  id="needs-you"
+                  title="Needs you"
+                  count={needs.length}
+                  tone="waiting"
+                  folded={isFolded("needs-you")}
+                  onFoldedChange={(to) => onFold("needs-you", to)}
+                >
+                  {needs.map(card)}
+                </ListFoldSection>
+              )}
+              {inChat.length + builtIns.length > 0 && (
+                <ListFoldSection
+                  id="in-chat"
+                  title="In this chat"
+                  count={inChat.length + builtIns.length}
+                  folded={isFolded("in-chat")}
+                  onFoldedChange={(to) => onFold("in-chat", to)}
+                >
+                  {inChat.map(card)}
+                  <ListRun
+                    id="built-in"
+                    items={builtIns}
+                    standsOut={() => filtering}
+                    says={(n) => counted(n, "built-in skill", "built-in skills")}
+                    mark={<Sparkle aria-hidden="true" />}
+                    folded={isFolded("built-in")}
+                    onFoldedChange={(to) => onFold("built-in", to)}
+                    closing={{
+                      says: BUILT_IN_FIXED,
+                      children: (
+                        <Button size="sm" variant="ghost" onPress={onCopy}>
+                          {`${MAKE_MY_OWN_COPY}…`}
+                        </Button>
+                      ),
+                    }}
+                  >
+                    {card}
+                  </ListRun>
+                </ListFoldSection>
+              )}
+              {leftOut.length > 0 && (
+                <ListFoldSection
+                  id="left-out"
+                  title="Left out"
+                  count={leftOut.length}
+                  folded={isFolded("left-out")}
+                  onFoldedChange={(to) => onFold("left-out", to)}
+                >
+                  {leftOut.map(card)}
+                </ListFoldSection>
+              )}
+            </>
+          )}
+        </List>
       </div>
     </div>
   );
 }
 
 /**
- * **A row's menu** (the amendment's (b)): Use in this chat, the switch, Pin to this workspace and
- * Show in Explorer, drawn as every menu is (`Menus.Groups`), each that cannot run saying why.
- * While a change is on its way the switch and the pin wait.
+ * **A card's menu** (spec #3679 S7): Use in this chat, the switch, Pin to this workspace, Show
+ * in the Explorer view, Open the file and Open in Skill studio, drawn as every menu is
+ * (`Menus.Groups`), each that cannot run saying why. While a change is on its way the switch and
+ * the pin wait.
  */
 export function SkillMenu({
   row,

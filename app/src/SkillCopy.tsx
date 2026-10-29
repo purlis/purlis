@@ -11,6 +11,11 @@ import { Select } from "./ui/select/Select";
 /** What Make my own copy is called, wherever it is offered (#3686). */
 export const MAKE_MY_OWN_COPY = "Make my own copy";
 
+/** What the folded built-in skills' closing line says of them (S12): the studio's and the
+ *  Skills view's. */
+export const BUILT_IN_FIXED =
+  "They ship with purlis: they can't be edited, turned off or replaced.";
+
 /** What a refused name is told, the core's own sentence (`skills::NAME_RESERVED`), said here
  *  before the copy is asked for. */
 export const NAME_RESERVED = "That name belongs to a built-in skill; pick another, or make a copy.";
