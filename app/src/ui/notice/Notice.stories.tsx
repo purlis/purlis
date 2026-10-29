@@ -222,10 +222,16 @@ export const NeedsADecision: Story = {
       ),
     ].map((one) => one.getAttribute("data-variant"));
     await expect(order).toEqual(["trouble", "attention", "news"]);
+    // The card's × at its top right, then its fix.
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getAllByRole("button", { name: "Dismiss" })[0],
+      "Needs a decision: Tab lands on the card's ×",
+    );
     await userEvent.tab();
     await untilFocused(
       () => canvas.getByRole("button", { name: "Review the change" }),
-      "Needs a decision: Tab lands on the card's fix",
+      "Needs a decision: Tab goes on to the card's fix",
     );
     expectFocusInSight();
   },

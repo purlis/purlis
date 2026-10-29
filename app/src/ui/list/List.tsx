@@ -92,12 +92,15 @@ export const ListFolds = createContext<Map<string, ((open: boolean) => void) | u
   new Map(),
 );
 
-/** **An attribute React Aria does not hand a row, written on its element** (`aria-expanded` on a
- *  row that folds, #3670). */
+/**
+ * **An attribute React Aria does not hand a row, written on its cell** (`aria-expanded` on a row
+ * that folds, #3670): a row of a grid takes no `aria-expanded` (a treegrid's would), and its one
+ * cell may, so a reader hears the fold's state on the cell the row holds.
+ */
 export function useSaidOnRow(name: string, value: string) {
   return useCallback(
     (element: HTMLElement | null) => {
-      element?.setAttribute(name, value);
+      element?.querySelector(':scope > [role="gridcell"]')?.setAttribute(name, value);
     },
     [name, value],
   );
@@ -116,7 +119,7 @@ function useFoldKeys(folds: Map<string, ((open: boolean) => void) | undefined>) 
   const { direction } = useLocale();
   // When a letter was last typed: a Space within React Aria's typing window goes on finding a row
   // by its words, and folds nothing.
-  const typed = useRef(0);
+  const typed = useRef(Number.NEGATIVE_INFINITY);
   return (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (event.key.length === 1 && event.key !== " ") {
@@ -128,7 +131,7 @@ function useFoldKeys(folds: Map<string, ((open: boolean) => void) | undefined>) 
     if (!(row instanceof HTMLElement) || row.getAttribute("role") !== "row") return;
     const toggle = folds.get(row.getAttribute("data-fold") ?? "");
     if (toggle === undefined) return;
-    const open = row.getAttribute("aria-expanded") === "true";
+    const open = row.hasAttribute("data-expanded");
     const into = direction === "rtl" ? "ArrowLeft" : "ArrowRight";
     const out = direction === "rtl" ? "ArrowRight" : "ArrowLeft";
     // Space as well as Enter: React Aria's row runs its action on Enter alone.

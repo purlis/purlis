@@ -63,6 +63,9 @@ const LEFT_OUT: Skill[] = [
 
 const SKILL = { one: "skill", many: "skills" };
 
+/** The cell a fold's row holds, which says whether it is open. */
+const cellOf = (one: HTMLElement) => within(one).getByRole("gridcell");
+
 const matches = (query: string) => (skill: Skill) =>
   query !== "" && skill.name.toLowerCase().includes(query.toLowerCase());
 
@@ -158,9 +161,9 @@ export const SkillsViewGroups: Story = {
     const list = canvas.getByRole("grid", { name: "Skills" });
     const row = (name: string | RegExp) => within(list).getByRole("row", { name });
     const needs = row("Needs you, 1");
-    await expect(needs).toHaveAttribute("aria-expanded", "true");
+    await expect(cellOf(needs)).toHaveAttribute("aria-expanded", "true");
     const leftOut = row("Left out, 2");
-    await expect(leftOut).toHaveAttribute("aria-expanded", "false");
+    await expect(cellOf(leftOut)).toHaveAttribute("aria-expanded", "false");
     await expect(within(list).queryByRole("row", { name: "lint-rs" })).toBeNull();
     // The filter, then the list's one stop: the first group's name.
     await userEvent.tab();
@@ -169,15 +172,15 @@ export const SkillsViewGroups: Story = {
     await userEvent.keyboard("{Enter}");
     await expect(canvas.getByRole("status")).toHaveTextContent("Nothing run");
     // Enter folded it; → unfolds it again.
-    await waitFor(() => expect(needs).toHaveAttribute("aria-expanded", "false"));
+    await waitFor(() => expect(cellOf(needs)).toHaveAttribute("aria-expanded", "false"));
     await userEvent.keyboard("{ArrowRight}");
-    await waitFor(() => expect(needs).toHaveAttribute("aria-expanded", "true"));
+    await waitFor(() => expect(cellOf(needs)).toHaveAttribute("aria-expanded", "true"));
     await untilFocused(() => needs, "Groups: Right unfolds and keeps the keyboard on the name");
     // Down through the rows to the quiet line.
     for (let at = 0; at < 5; at += 1) await userEvent.keyboard("{ArrowDown}");
     const line = row("4 built-in skills");
     await untilFocused(() => line, "Groups: Down reaches the quiet line");
-    await expect(line).toHaveAttribute("aria-expanded", "false");
+    await expect(cellOf(line)).toHaveAttribute("aria-expanded", "false");
     // The rows above it keep their place as it unfolds.
     const above = row("review-pr").getBoundingClientRect().top;
     await userEvent.keyboard("{Enter}");
@@ -213,10 +216,9 @@ export const AFilterFindsABuiltIn: Story = {
     const list = canvas.getByRole("grid", { name: "Skills" });
     await userEvent.type(canvas.getByRole("searchbox", { name: "Filter skills" }), "secr");
     await waitFor(() => expect(within(list).getByRole("row", { name: "secrets" })).toBeVisible());
-    await expect(within(list).getByRole("row", { name: "3 built-in skills" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    await expect(
+      cellOf(within(list).getByRole("row", { name: "3 built-in skills" })),
+    ).toHaveAttribute("aria-expanded", "false");
     await expect(within(list).queryByRole("row", { name: "browser" })).toBeNull();
     await expect(within(list).queryByRole("row", { name: /Needs you/ })).toBeNull();
   },

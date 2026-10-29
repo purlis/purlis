@@ -82,6 +82,9 @@ function Groups({
   );
 }
 
+/** The cell a fold's row holds, which says whether it is open. */
+const cellOf = (one: HTMLElement) => within(one).getByRole("gridcell");
+
 const row = (name: string) => screen.getByRole("row", { name });
 const noRow = (name: string) => screen.queryByRole("row", { name });
 
@@ -91,7 +94,7 @@ describe("a section that folds", () => {
     await userEvent.tab();
     const needs = row("Needs you, 1");
     expect(needs).toHaveFocus();
-    expect(needs).toHaveAttribute("aria-expanded", "true");
+    expect(cellOf(needs)).toHaveAttribute("aria-expanded", "true");
     expect(needs).toHaveAttribute("data-part", "header");
     expect(needs).toHaveAttribute("data-tone", "waiting");
     expect(within(needs).getByText("1")).toHaveAttribute("data-part", "count");
@@ -112,15 +115,15 @@ describe("a section that folds", () => {
     render(<Groups onAction={onAction} />);
     await userEvent.tab();
     await userEvent.keyboard("{Enter}");
-    expect(row("Needs you, 1")).toHaveAttribute("aria-expanded", "false");
+    expect(cellOf(row("Needs you, 1"))).toHaveAttribute("aria-expanded", "false");
     expect(noRow("grilling")).toBeNull();
     await userEvent.keyboard(" ");
     expect(row("grilling")).toBeInTheDocument();
     await userEvent.keyboard("{ArrowLeft}");
-    expect(row("Needs you, 1")).toHaveAttribute("aria-expanded", "false");
+    expect(cellOf(row("Needs you, 1"))).toHaveAttribute("aria-expanded", "false");
     expect(row("Needs you, 1")).toHaveFocus();
     await userEvent.keyboard("{ArrowRight}");
-    expect(row("Needs you, 1")).toHaveAttribute("aria-expanded", "true");
+    expect(cellOf(row("Needs you, 1"))).toHaveAttribute("aria-expanded", "true");
     expect(row("Needs you, 1")).toHaveFocus();
     expect(onAction).not.toHaveBeenCalled();
     // A row of its own still runs the list's action.
@@ -134,7 +137,7 @@ describe("a section that folds", () => {
     await userEvent.keyboard("i");
     expect(row("In this chat, 4")).toHaveFocus();
     await userEvent.keyboard(" ");
-    expect(row("In this chat, 4")).toHaveAttribute("aria-expanded", "true");
+    expect(cellOf(row("In this chat, 4"))).toHaveAttribute("aria-expanded", "true");
   });
 
   it("draws a name that is data as it is written", () => {
@@ -153,7 +156,7 @@ describe("a section that folds", () => {
   it("starts folded, and tells its owner, who holds it", async () => {
     const onFoldedChange = vi.fn();
     render(<Groups onFoldedChange={onFoldedChange} />);
-    expect(row("Left out, 1")).toHaveAttribute("aria-expanded", "false");
+    expect(cellOf(row("Left out, 1"))).toHaveAttribute("aria-expanded", "false");
     expect(noRow("lint-rs")).toBeNull();
     await userEvent.click(row("Left out, 1"));
     expect(onFoldedChange).toHaveBeenCalledWith(false);
@@ -166,7 +169,7 @@ describe("a run folded to one quiet line", () => {
     render(<Groups />);
     const line = row("3 built-in skills");
     expect(line).toHaveAttribute("data-part", "run");
-    expect(line).toHaveAttribute("aria-expanded", "false");
+    expect(cellOf(line)).toHaveAttribute("aria-expanded", "false");
     expect(noRow("browser")).toBeNull();
     await userEvent.click(line);
     const rows = screen.getAllByRole("row").map((one) => one.getAttribute("aria-label"));
@@ -179,7 +182,7 @@ describe("a run folded to one quiet line", () => {
       "They ship with purlis.",
       "Left out, 1",
     ]);
-    expect(row("3 built-in skills")).toHaveAttribute("aria-expanded", "true");
+    expect(cellOf(row("3 built-in skills"))).toHaveAttribute("aria-expanded", "true");
   });
 
   it("reaches its closing line's button with →, which runs only that button", async () => {
@@ -198,7 +201,7 @@ describe("a run folded to one quiet line", () => {
   it("draws a row that must show on its own, outside the fold", () => {
     render(<Groups standsOut={(name) => name === "secrets"} />);
     expect(row("secrets")).toBeInTheDocument();
-    expect(row("2 built-in skills")).toHaveAttribute("aria-expanded", "false");
+    expect(cellOf(row("2 built-in skills"))).toHaveAttribute("aria-expanded", "false");
     expect(noRow("browser")).toBeNull();
   });
 
