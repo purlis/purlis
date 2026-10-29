@@ -452,6 +452,9 @@ pub(crate) fn in_a_docker_pool() -> Option<Target> {
         })
     };
     let connection = Arc::new(Connection::default());
+    // The pool's runners are kept where this target added them, as the window keeps its own
+    // (D-2050-27).
+    connection.runners_in(config.path().to_path_buf());
     let window = link_to(None, None).expect("the window's own link");
     let dial: crate::hostedsessions::Dial = {
         let link_to = link_to.clone();
@@ -472,6 +475,7 @@ pub(crate) fn in_a_docker_pool() -> Option<Target> {
     target.runner = Some(OnTheRunner {
         docker: docker.clone(),
         container: made.container.as_str().to_owned(),
+        pool: name.clone(),
     });
     a_repository(&target.root);
     // Ended in this order once the window's sessions are: the runtime and its links, the
@@ -614,9 +618,27 @@ impl Drop for RemovesThePool {
 pub(crate) struct OnTheRunner {
     docker: purlis_core::dockerpool::Docker,
     container: String,
+    /// The pool it is the runner of.
+    pub pool: String,
 }
 
 impl OnTheRunner {
+    /// What `script` prints in the runner's container, run as its own user.
+    pub(crate) fn prints(&self, script: &str) -> String {
+        let out = purlis_core::forklock::output(
+            std::process::Command::new(self.docker.program()).args([
+                "exec",
+                self.container.as_str(),
+                "sh",
+                "-c",
+                script,
+            ]),
+        )
+        .expect("docker runs");
+        assert!(out.status.success(), "{script}: {out:?}");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
     /// Runs `script` in the runner's container, as its own user or as root, `given` on its
     /// standard input.
     fn runs(&self, as_root: bool, script: &str, given: &[u8]) {
@@ -761,25 +783,44 @@ impl OnTheRunner {
         out.status.success()
     }
 
-    /// The runner has a profile of its own named `name`, of Claude Code, signed in with no
-    /// key, its `claude` the program `program` is on this machine.
-    fn signs_in(&self, name: &str, program: &Path) {
+    /// The runner has a profile of its own named `name`, of `harness` (`claude` or `codex`,
+    /// whose stand-in the parity image runs, `tests/parity/runner.Dockerfile`), signed in with
+    /// no key, its harness the program `program` is on this machine. A Codex profile is one
+    /// for sandboxed chats only, its folder where purlis makes such a profile's (#2037): under
+    /// the runner's data home, in use once its first browser has started.
+    fn signs_in_as(&self, harness: &str, name: &str, program: &Path) {
         use purlis_core::profilestore::{Folders, MachineProfile};
+        let folder = if harness == "codex" {
+            let browsers = self.prints(&format!(
+                "ls -d \"$HOME\"/.local/share/*/{} | head -n 1",
+                purlis_core::datahome::BROWSERS
+            ));
+            let data = Path::new(browsers.trim())
+                .parent()
+                .expect("the runner's data home, where its browsers are")
+                .to_path_buf();
+            data.join(purlis_core::profilestore::DIR)
+                .join(name)
+                .join(purlis_core::profilestore::CONFIG)
+        } else {
+            PathBuf::from(format!("/home/purlis/.{harness}-{name}"))
+        };
         let config = tempfile::tempdir().expect("a config home to write it in");
         purlis_core::profilestore::update(config.path(), |store| {
             store.profiles.push(MachineProfile {
                 name: name.to_owned(),
-                harness: "claude".to_owned(),
+                harness: harness.to_owned(),
                 title: name.to_owned(),
                 folders: Folders {
-                    config: PathBuf::from(format!("/home/purlis/.claude-{name}")),
+                    config: folder.clone(),
                     data: None,
                 },
                 adopted: None,
                 imported: None,
                 sign_in: None,
                 pinned: None,
-                sandbox_only: false,
+                // A sandboxed Codex chat runs only on a profile kept for sandboxed chats alone (#2037).
+                sandbox_only: harness == "codex",
                 kept_for: None,
                 rest: Default::default(),
             });
@@ -794,15 +835,28 @@ impl OnTheRunner {
         self.runs(
             false,
             &format!(
-                "mkdir -p {at} \"$HOME\"/.claude-{name} && umask 077 && cat > {at}/{}",
+                "mkdir -p {at} && mkdir -p -m 0700 '{}' && umask 077 && cat > {at}/{}",
+                folder.display(),
                 purlis_core::profilestore::FILE
             ),
             &store,
         );
-        // The parity image's `claude` runs what is here (`tests/parity/runner.Dockerfile`).
+        if harness == "codex" {
+            self.runs(
+                false,
+                &format!(
+                    "printf '{{\"parity\":true}}' > '{}'/auth.json",
+                    folder.display()
+                ),
+                b"",
+            );
+        }
+        // The parity image's harness runs what is here (`tests/parity/runner.Dockerfile`).
         self.runs(
             false,
-            "mkdir -p \"$HOME\"/.parity && cat > \"$HOME\"/.parity/claude && chmod 0755 \"$HOME\"/.parity/claude",
+            &format!(
+                "mkdir -p \"$HOME\"/.parity && cat > \"$HOME\"/.parity/{harness} && chmod 0755 \"$HOME\"/.parity/{harness}"
+            ),
             &std::fs::read(program).expect("the program reads"),
         );
     }
@@ -1585,6 +1639,11 @@ fn named(first_message: &str, without_sandbox: bool) -> crate::host::Named {
 /// the runner's own, which the window's project settings never reach (they are this machine's
 /// alone, #2046), its `claude` being `program`.
 fn a_profile(target: &Target, name: &str, program: &Path) {
+    a_profile_of(target, "claude", name, program);
+}
+
+/// [`a_profile`], of `harness` (`claude` or `codex`).
+fn a_profile_of(target: &Target, harness: &str, name: &str, program: &Path) {
     let root = &target.root;
     let persona = root.join("personas").join("steward");
     std::fs::create_dir_all(&persona).expect("its persona");
@@ -1592,7 +1651,7 @@ fn a_profile(target: &Target, name: &str, program: &Path) {
     std::fs::write(
         root.join(purlis_core::profiles::LOCAL_FILE),
         format!(
-            "[harness.{name}]\nkind = \"claude\"\ncommand = [{:?}]\n",
+            "[harness.{name}]\nkind = \"{harness}\"\ncommand = [{:?}]\n",
             program.display().to_string()
         ),
     )
@@ -1605,7 +1664,7 @@ fn a_profile(target: &Target, name: &str, program: &Path) {
     )
     .expect("approved");
     if let Some(runner) = &target.runner {
-        runner.signs_in(name, program);
+        runner.signs_in_as(harness, name, program);
     }
 }
 
@@ -3401,3 +3460,258 @@ on_every_target!(
     stop_all_ends_every_chat_and_none_starts_until_the_window_re_arms,
     while_stopped_the_operators_shell_opens;
 );
+
+/// **A sandboxed runner chat reaches neither its runner's browser engine nor its host** (#3338,
+/// spec #2041): on a Docker pool's runner, the chat, the session host and the browser engine
+/// share one container. A Codex chat the runner's own host composes, under purlis's Linux
+/// sandbox as every sandboxed runner chat is, tries what would reach past it from in there, with
+/// a browser of its project running beside it: the engine's data folder (the cookies and
+/// storage of every site it opened), the engine's memory, the pipe the host drives the engine
+/// over, the runner's link key in the host's own folder, the host's socket's folder, and a
+/// namespace of its own, which only the engine may make there (D-2050-25). Each is refused;
+/// reading its project is not.
+///
+/// The paths and process ids it tries are found first, as the runner's own user, outside the
+/// sandbox, and each must be found, so no try passes by naming nothing: the engine is one whose
+/// environment that user reads there, and the pipe one that user opens there, so each refusal
+/// inside is the sandbox's. (The engine's memory is refused outside too where Yama holds
+/// `ptrace` to a process's own descendants, so its environment, which Yama does not hold, is
+/// tried beside it.)
+fn a_sandboxed_runner_chat_reaches_neither_its_browser_engine_nor_its_host(target: &Target) {
+    use crate::chatbrowsers::Driver as _;
+    let Some(runner) = &target.runner else {
+        return;
+    };
+    let browsers = crate::browsers::WindowBrowsers::new(Arc::clone(
+        target.host.as_ref().expect("the window's link to its host"),
+    ));
+    let browser = browsers
+        .start(
+            &target.root,
+            Some(&runner.pool),
+            purlis_session_protocol::browsing::BrowserReach::default(),
+            None,
+        )
+        .unwrap_or_else(|why| panic!("a browser starts on the runner: {why:?}"));
+
+    let found = runner.prints(&format!(
+        r#"set -e
+engine=; host=
+for status in /proc/[0-9]*/status; do
+  pid=${{status#/proc/}}; pid=${{pid%/status}}
+  name=$(sed -n 's/^Name:[[:space:]]*//p' "$status" 2>/dev/null || true)
+  case "$name" in
+    chrome) [ -n "$engine" ] || ! cat /proc/$pid/environ >/dev/null 2>&1 || engine=$pid ;;
+    purlis) tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null | grep -q ' serve' && host=$pid || true ;;
+  esac
+done
+folder=$(ls -d "$HOME"/.local/share/*/{browsers}/*/ 2>/dev/null | head -n 1)
+pipe=
+for fd in $(ls -l /proc/$host/fd | sed -n 's/.* \([0-9][0-9]*\) -> pipe:.*/\1/p'); do
+  [ "$fd" -ge 3 ] && [ -z "$pipe" ] && (exec 3<> /proc/$host/fd/$fd) 2>/dev/null && pipe=$fd || true
+done
+socket=$(ls -d /tmp/purlis-$(id -u) | head -n 1)
+key=$(ls -d "$HOME"/.config/*/{daemon}/{key} "$HOME"/.config/*/{daemon_before}/{key} 2>/dev/null | head -n 1)
+printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "$engine" "$host" "$pipe" "$socket" "$key"
+"#,
+        daemon = purlis_core::names::DAEMON_DIR
+            .spellings()
+            .next()
+            .expect("its name"),
+        daemon_before = purlis_core::names::DAEMON_DIR
+            .spellings()
+            .last()
+            .expect("its name"),
+        key = purlis_core::runnerlink::KEY_FILE,
+        browsers = purlis_core::datahome::BROWSERS,
+    ));
+    let value = |name: &str| {
+        let value = found
+            .lines()
+            .find_map(|line| line.strip_prefix(&format!("{name}=")))
+            .unwrap_or_default()
+            .trim()
+            .to_owned();
+        assert!(!value.is_empty(), "the runner has no {name}: {found}");
+        value
+    };
+    let (folder, engine, host, pipe, socket, key) = (
+        value("folder"),
+        value("engine"),
+        value("host"),
+        value("pipe"),
+        value("socket"),
+        value("key"),
+    );
+
+    // Outside the chat, the runner's user makes a user namespace: what the chat is refused is
+    // the filter's refusal, not the runner's.
+    let outside = runner.prints("unshare --user true 2>&1 && echo yes || echo no");
+    assert_eq!(
+        outside.trim(),
+        "yes",
+        "the runner refuses a user namespace to anyone: {outside}"
+    );
+
+    // The chat: Codex as the runner composes it, its program a stand-in that tries each in a
+    // shell of its own and says what came of it.
+    let bin = tempfile::tempdir().expect("a folder for the harness");
+    let program = stand_in::program(
+        bin.path(),
+        "codex",
+        &format!(
+            "#!/bin/sh\n\
+             [ \"$1\" = login ] && [ \"$2\" = status ] && exit 0\n\
+             for word in \"$@\"; do [ \"$word\" = --version ] && {{ echo 'codex-cli 0.147.0'; exit 0; }}; done\n\
+             try() {{ if ( eval \"$2\" ) >/dev/null 2>&1; then printf '%s yes.\\n' \"$1\"; else printf '%s no.\\n' \"$1\"; fi; }}\n\
+             try PROJECT 'ls .'\n\
+             try ENGINE-FOLDER 'ls {folder}'\n\
+             try ENGINE-MEMORY 'exec 3< /proc/{engine}/mem'\n\
+             try ENGINE-ENVIRONMENT 'cat /proc/{engine}/environ'\n\
+             try HOST-PIPE 'exec 3<> /proc/{host}/fd/{pipe}'\n\
+             try HOST-KEY 'cat {key}'\n\
+             try HOST-SOCKET 'ls {socket}'\n\
+             if said=$(unshare --user true 2>&1); then printf 'NAMESPACE yes.\\n'; else printf 'NAMESPACE no: %s\\n' \"$said\"; fi\n\
+             printf 'TRIED.\\n'\n\
+             read line\n"
+        ),
+    );
+    a_profile_of(target, "codex", "work", &program);
+    let id = target
+        .sessions
+        .open_named(
+            None,
+            &named("try what reaches past you", false),
+            purlis_core::sandbox::plan::Hearing::default(),
+            &|_| {},
+        )
+        .expect("the sandboxed chat starts on the runner")
+        .number;
+    let pane = Pane::on(target, id);
+    pane.shows("TRIED.");
+    for said in [
+        "PROJECT yes.",
+        "ENGINE-FOLDER no.",
+        "ENGINE-MEMORY no.",
+        "ENGINE-ENVIRONMENT no.",
+        "HOST-PIPE no.",
+        "HOST-KEY no.",
+        "HOST-SOCKET no.",
+        // Only the browser engine may make namespaces on a runner (D-2050-25), refused by the
+        // filter, not for want of a program.
+        "NAMESPACE no:",
+        "Operation not permitted",
+    ] {
+        pane.shows(said);
+    }
+    target.sessions.close(id).expect("it closes");
+    browsers.close(&browser).expect("the browser ends");
+}
+
+/// **A chat without the sandbox on a runner makes no namespace, and leaves its runner trusted with
+/// no browser** (#3298, D-2050-25, D-2050-27): it runs under the filter the runner's host starts
+/// every program with, and once it has run, the window starts no browser on that runner until
+/// it is made again, in words that say why.
+fn a_chat_without_the_sandbox_on_a_runner_makes_no_namespace_and_leaves_it_no_browser(
+    target: &Target,
+) {
+    use crate::chatbrowsers::Driver as _;
+    let Some(runner) = &target.runner else {
+        return;
+    };
+    let outside = runner.prints("unshare --user true 2>&1 && echo yes || echo no");
+    assert_eq!(
+        outside.trim(),
+        "yes",
+        "the runner refuses a user namespace to anyone: {outside}"
+    );
+    let id = target
+        .sessions
+        .open(
+            None,
+            &a_shell("unshare --user true; printf 'CODE=%s.' $?; read line"),
+            &|_| {},
+        )
+        .expect("a chat without the sandbox starts on the runner");
+    let pane = Pane::on(target, id);
+    pane.shows("Operation not permitted");
+    pane.shows("CODE=1.");
+    target.sessions.close(id).expect("it closes");
+
+    let browsers = crate::browsers::WindowBrowsers::new(Arc::clone(
+        target.host.as_ref().expect("the window's link to its host"),
+    ));
+    let refused = browsers
+        .start(
+            &target.root,
+            Some(&runner.pool),
+            purlis_session_protocol::browsing::BrowserReach::default(),
+            None,
+        )
+        .expect_err("no browser starts on that runner");
+    let said = format!("{refused:?}");
+    assert!(said.contains("without the sandbox"), "{said}");
+    assert!(said.contains("add it again"), "{said}");
+}
+
+/// **The person's own shell on a runner makes no namespace either** (D-2050-25), and leaves the
+/// runner trusted with browsers: a shell is the person's, not a chat's.
+fn the_persons_shell_on_a_runner_makes_no_namespace(target: &Target) {
+    let Some(runner) = &target.runner else {
+        return;
+    };
+    let outside = runner.prints("unshare --user true 2>&1 && echo yes || echo no");
+    assert_eq!(
+        outside.trim(),
+        "yes",
+        "the runner refuses a user namespace to anyone: {outside}"
+    );
+    let id = target
+        .sessions
+        .open(
+            None,
+            &Opening {
+                operator_shell: true,
+                ..a_shell("unshare --user true; printf 'CODE=%s.' $?; read line")
+            },
+            &|_| {},
+        )
+        .expect("the person's shell starts on the runner");
+    let pane = Pane::on(target, id);
+    pane.shows("Operation not permitted");
+    pane.shows("CODE=1.");
+    target.sessions.close(id).expect("it closes");
+}
+
+mod a_chat_without_the_sandbox_on_a_runner_makes_no_namespace_and_leaves_it_no_browser {
+    /// Run by the parity job, which names a runner image; elsewhere it runs nothing.
+    #[test]
+    fn in_a_docker_pool() {
+        if let Some(target) = super::in_a_docker_pool() {
+            super::a_chat_without_the_sandbox_on_a_runner_makes_no_namespace_and_leaves_it_no_browser(
+                &target,
+            );
+        }
+    }
+}
+
+mod the_persons_shell_on_a_runner_makes_no_namespace {
+    /// Run by the parity job, which names a runner image; elsewhere it runs nothing.
+    #[test]
+    fn in_a_docker_pool() {
+        if let Some(target) = super::in_a_docker_pool() {
+            super::the_persons_shell_on_a_runner_makes_no_namespace(&target);
+        }
+    }
+}
+
+mod a_sandboxed_runner_chat_reaches_neither_its_browser_engine_nor_its_host {
+    /// Run by the parity job, which names a runner image; elsewhere it runs nothing: on this
+    /// machine the chat, the host and the engine are not in one container.
+    #[test]
+    fn in_a_docker_pool() {
+        if let Some(target) = super::in_a_docker_pool() {
+            super::a_sandboxed_runner_chat_reaches_neither_its_browser_engine_nor_its_host(&target);
+        }
+    }
+}
