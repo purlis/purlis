@@ -493,7 +493,8 @@ A team admin rolls the operator's signing key without any desktop being asked ag
 The key and the next one are two files of the one Secret, `purlis-cluster-operator-signing-key`:
 `key.pem`, the key it signs with, and `next.pem`, there only during a roll. The operator's pod
 mounts the whole Secret, and the kubelet refreshes it when it changes, so a roll needs no
-restart: the operator reads both files again every minute.
+restart: the operator reads both files again each time it signs a statement or looks at a Pool,
+both from the one version of the Secret the kubelet holds then.
 
 1. **Add the next key** as `next.pem`, piped, so it is never written to a file:
 
