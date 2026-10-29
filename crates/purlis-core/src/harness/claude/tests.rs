@@ -922,3 +922,79 @@ fn a_family_alias_is_the_model_its_variable_remaps_it_to() {
         "opusplan runs both, so a remap of either is priced at the dearest"
     );
 }
+
+/// #3787: a task whose asker ran in auto, or with its prompts off, starts in auto; one whose
+/// asker asks starts in Claude Code's default, with no word added. Bypass is never a word
+/// purlis adds.
+#[test]
+fn a_task_starts_in_auto_only_at_the_classifier_s_level() {
+    use crate::dispatchmode::Level;
+    let command = |words: &[&str]| -> Vec<String> {
+        std::iter::once("claude")
+            .chain(words.iter().copied())
+            .map(str::to_owned)
+            .collect()
+    };
+    assert_eq!(
+        ADAPTER.task_mode_words(Level::Classifier, &command(&["--model", "opus"])),
+        ["--permission-mode", "auto"]
+    );
+    assert!(
+        ADAPTER
+            .task_mode_words(Level::Asks, &command(&[]))
+            .is_empty()
+    );
+    // The profile's own mode is the person's declaration, in any spelling, and stands.
+    for own in [
+        &["--permission-mode", "plan"][..],
+        &["--permission-mode=acceptEdits"],
+        &["--permission-mode", "default"],
+    ] {
+        assert!(
+            ADAPTER
+                .task_mode_words(Level::Classifier, &command(own))
+                .is_empty(),
+            "{own:?}"
+        );
+    }
+    for level in [Level::Asks, Level::Classifier] {
+        let words = ADAPTER.task_mode_words(level, &command(&[])).join(" ");
+        assert!(
+            !words.contains("bypass") && !words.contains("dangerously"),
+            "{words}"
+        );
+    }
+}
+
+#[test]
+fn claude_code_s_reports_are_read_and_the_other_harnesses_are_not() {
+    use crate::dispatchmode::Reported;
+    use crate::harness::Harness;
+    assert_eq!(
+        ADAPTER.reported_mode(Some("auto")),
+        Some(Reported::Classifier)
+    );
+    assert_eq!(
+        ADAPTER.reported_mode(Some("bypassPermissions")),
+        Some(Reported::PromptsOff)
+    );
+    assert_eq!(ADAPTER.reported_mode(Some("dontAsk")), Some(Reported::Asks));
+    assert_eq!(ADAPTER.reported_mode(None), None);
+    // Codex names bypassPermissions for every chat, and neither it nor opencode documents a
+    // classifier-backed mode: what they report is not read, and their tasks keep the default.
+    for other in [Harness::Codex, Harness::Opencode] {
+        for mode in ["auto", "bypassPermissions", "default"] {
+            assert_eq!(other.adapter().reported_mode(Some(mode)), None, "{other:?}");
+        }
+        assert!(
+            other
+                .adapter()
+                .task_mode_words(
+                    crate::dispatchmode::Level::Classifier,
+                    &["codex".to_owned()]
+                )
+                .is_empty(),
+            "{other:?}"
+        );
+    }
+}

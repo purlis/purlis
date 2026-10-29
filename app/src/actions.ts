@@ -181,6 +181,9 @@ export type Said = {
   /** A line about work still under way ("Cloning 2 repo(s)…"), which the next line replaces:
    *  said, but not kept under Results. */
   progress?: boolean;
+  /** **The one workspace it is about**, where it is about a whole workspace (a workspace made):
+   *  its notice hangs from that workspace's chip in the title bar (`noticePlace.ts`, #3648). */
+  workspace?: string;
 };
 
 /** What the window says of a row's answer: nothing for a quiet success. */

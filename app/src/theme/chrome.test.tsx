@@ -33,6 +33,7 @@ import App from "../App";
 import { AboutCharter } from "../About";
 import { ENDS_IT, OUTSIDE } from "../actions";
 import { TitleBarSwitch, type SwitchDoes, type SwitchProject } from "../TitleBarSwitch";
+import { workspaceMade } from "../actionResult";
 import { InboxAlerts } from "../InboxAlerts";
 import { NoticeList } from "../Notice";
 import { AnswerPanel } from "../AnswerPanel";
@@ -551,6 +552,40 @@ const DIALOGS: Opened[] = [
       );
       await userEvent.click(screen.getByTestId("title-project"));
     },
+  },
+  {
+    name: "a title-bar chip's card of notices (#3648)",
+    file: "ChipNotices.tsx",
+    open: async () =>
+      render(
+        <TitleBarSwitch
+          projects={SWITCHING}
+          inFront="/home/dev/one"
+          railShown
+          does={SWITCHED}
+          notices={{
+            on: new Map([
+              [
+                "alpha",
+                [
+                  {
+                    id: 1,
+                    kind: "info",
+                    said: workspaceMade("alpha", ["✓ Workspace 'alpha' ready (LOCAL)"], {
+                      onAddVision: nothing,
+                    }),
+                  },
+                ],
+              ],
+            ]),
+            open: "alpha",
+            show: nothing,
+            hide: nothing,
+            dismiss: nothing,
+            onSettings: nothing,
+          }}
+        />,
+      ),
   },
   {
     name: "Answer",
