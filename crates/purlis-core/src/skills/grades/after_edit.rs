@@ -187,7 +187,7 @@ fn write(root: &Path, kept: &Kept) -> Result<(), String> {
 /// The lock file beside [`FILE`] whose `flock` each change holds while it reads, changes and
 /// writes the file: two changes at once (a grade after an edit keeping what it graded while the
 /// person turns the opt-in off) take turns, so neither writes back what the other took away.
-const LOCK: &str = "skill-grade-after-edit.lock";
+pub(crate) const LOCK: &str = "skill-grade-after-edit.lock";
 
 /// How long a change waits for another to let go of [`LOCK`].
 const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(2);

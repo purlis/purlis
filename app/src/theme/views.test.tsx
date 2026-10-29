@@ -1164,6 +1164,7 @@ const DEVICES_SHOWN = {
     unkept_browsers: [{ plane: "/plane", session: 7, name: "b2", chat: "orphan", pool: "removed" }],
   },
   owned: false,
+  projects: 1,
   pools: [
     {
       pool: "builds",

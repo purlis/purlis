@@ -6,6 +6,7 @@ import { MessageSquarePlus, Plus, RotateCw, Search, Sparkles } from "lucide-reac
 import {
   commands,
   type DeletedSkill,
+  type NeedsYou,
   type StudioLevel,
   type SkillChanged,
   type SkillGrant,
@@ -30,7 +31,9 @@ import { RowBelow, RowLabel, RowTrail } from "./ui/list/Row";
 import { ViewFrame, ViewListHead, ViewPageHeader, type ViewPage } from "./ui/panel/ViewFrame";
 import { ViewBar, type Crumb } from "./ui/panel/ViewBar";
 import { useViewHistory } from "./ui/panel/viewHistory";
-import { SkillPinSwitch, SkillPinsRefusedLine } from "./SkillPins";
+import { SkillPinSwitch } from "./SkillPins";
+import { NEEDS_YOU_LEAD, NeedsYouItem, NeedsYouList, needShown } from "./SkillStudioNeedsYou";
+import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { RouterGrade } from "./RouterGrade";
 import { Notice } from "./Notice";
 import { SkillCompatBadges } from "./SkillCompatBadges";
@@ -268,7 +271,8 @@ export function SkillStudioTab({
   const [busy, setBusy] = useState(false);
   const [deleted, setDeleted] = useState<readonly DeletedSkill[]>([]);
   const [switched, setSwitched] = useState(0);
-  const [moveLater, setMoveLater] = useState(false);
+  // The item of Needs you chosen, by its id: on a wide tab the first is shown until one is.
+  const [need, setNeed] = useState<string>();
   const [query, setQuery] = useState("");
   const [chips, setChips] = useState<ReadonlySet<Chip>>(new Set());
   const { workspace, persona } = whoseChats(scope);
@@ -347,9 +351,11 @@ export function SkillStudioTab({
       />
     );
 
-  /** Goes to `place`, a step of the tab's history; a change in progress is left. */
+  /** Goes to `place`, a step of the tab's history; a change in progress is left, as is the item
+   *  of Needs you chosen. */
   const go = (place: StudioPlace) => {
     setDoing(undefined);
+    setNeed(undefined);
     history.go(place);
   };
 
@@ -461,13 +467,82 @@ export function SkillStudioTab({
       });
   };
 
+  /** Leaves the old plugin keys as they are: said once, as their Ask's Dismiss was. */
+  const leaveOldKeys = () => {
+    setBusy(true);
+    void commands
+      .dismissOldHarnessPlugins(plane)
+      .then((answer) => {
+        if (answer.status === "error")
+          setSaid({ tone: "trouble", label: "The keys were not left", text: answer.error });
+      })
+      .catch((err: unknown) =>
+        setSaid({ tone: "trouble", label: "The keys were not left", text: String(err) }),
+      )
+      .finally(() => {
+        setBusy(false);
+        setDone((n) => n + 1);
+      });
+  };
+
+  /** **Runs an item's one fix** (#3689): a change, or a way to where it is made. */
+  const fixNeed = (one: NeedsYou) => {
+    const fix = one.fix;
+    switch (fix.kind) {
+      case "accept":
+        change("The change was not accepted", () => commands.skillLevelAccept(plane, fix.folder));
+        return;
+      case "rename": {
+        const skill = (studio?.skills ?? []).find(
+          (row) =>
+            row.name === fix.name &&
+            row.level === fix.level &&
+            row.local === fix.local &&
+            row.owner === null,
+        );
+        if (skill === undefined) return go({ page: "library", scope });
+        go({ page: "library", scope, skill: skillRowId(skill) });
+        const level = levelOf(skill, scope);
+        if (level !== null) setDoing({ what: "rename", skill, level });
+        return;
+      }
+      case "harness":
+        return go({ page: "harness", scope });
+      case "library":
+        return go({ page: "library", scope });
+      case "unpin":
+        change("The pin was not removed", () => commands.skillPin(plane, fix.by, fix.name, false));
+        return;
+      case "move-skills":
+        moveSkills(fix.fix);
+        return;
+      case "leave-old-keys":
+        leaveOldKeys();
+        return;
+      case "remove-old-keys":
+        // Each file's change is held for the person to apply in its own tab; nothing is
+        // written before.
+        setBusy(true);
+        void proposeOldKeysRemoval(plane)
+          .then((answer) => {
+            if (answer.status === "error")
+              setSaid({ tone: "trouble", label: "Nothing was proposed", text: answer.error });
+          })
+          .catch((err: unknown) =>
+            setSaid({ tone: "trouble", label: "Nothing was proposed", text: String(err) }),
+          )
+          .finally(() => {
+            setBusy(false);
+            setDone((n) => n + 1);
+          });
+        return;
+    }
+  };
   // --- What each page holds ----------------------------------------------------------------
 
-  const unmoved = studio?.first.unmoved ?? null;
-  const moving = unmoved !== null && !moveLater;
-  const pinner = pinnerOf(scope);
-  const refusedPins = pinner === null ? null : (studio?.pins_refused ?? null);
-  const needing = (moving ? 1 : 0) + (refusedPins === null ? 0 : 1);
+  // What needs the person, as the core works it out (#3689): the count and the page alike.
+  const needs = studio?.needs ?? [];
+  const needing = needs.length;
   const pages: ViewPage[] = [
     { id: "library", label: STUDIO_PAGE_NAMES.library },
     ...(needing > 0
@@ -820,39 +895,21 @@ export function SkillStudioTab({
         />
       );
   } else if (page === "needs") {
+    const shown = needShown(needs, need);
     list = pageList(
-      "What needs a decision of yours before chats get what they should.",
+      NEEDS_YOU_LEAD,
       held(() => (
-        <>
-          {moving && unmoved !== null && (
-            <Notice
-              cause="skill-move"
-              tone="news"
-              label="Skills to move"
-              fixes={[{ label: "Move them", busy, onPress: () => moveSkills(unmoved.fix) }]}
-              onDismiss={() => setMoveLater(true)}
-            >
-              <span data-testid="skill-studio-unmoved">
-                {`This project keeps ${counted(unmoved.skills, "skill", "skills")} where only some chat programs read them. Moving them gives every chat each one, whichever program it runs on, in one commit that can be undone. The commit reaches everyone who works in the project, and a teammate on an older purlis opens the project read-only until they update.`}
-              </span>
-            </Notice>
-          )}
-          {refusedPins !== null && (
-            <p>
-              <SkillPinsRefusedLine
-                refused={refusedPins}
-                busy={busy}
-                onRemove={(bad) =>
-                  change("The pin was not removed", () =>
-                    commands.skillPin(plane, refusedPins.by, bad, false),
-                  )
-                }
-              />
-            </p>
-          )}
-        </>
+        <NeedsYouList
+          needs={needs}
+          chosen={needs.some((one) => one.id === need) ? need : undefined}
+          onChoose={(id) => setNeed(id)}
+        />
       )),
     );
+    item =
+      shown === undefined ? undefined : (
+        <NeedsYouItem need={shown} busy={busy} onFix={fixNeed} onLeave={leaveOldKeys} />
+      );
   } else if (page === "drafts") {
     /* A chat's drafts (S9, #3690; SK-9, #2772): the list, and the draft chosen beside it. */
     const draftLevel = (draft: SkillDraft) => labelOf(studio?.levels ?? [], draft.level);
@@ -1034,7 +1091,12 @@ export function SkillStudioTab({
         onPage={(id) => go({ page: id as StudioPage, scope })}
         list={list}
         item={item}
-        opened={chosen !== undefined || doing !== undefined || itemChosen}
+        opened={
+          chosen !== undefined ||
+          doing !== undefined ||
+          itemChosen ||
+          (page === "needs" && need !== undefined && needs.some((one) => one.id === need))
+        }
         onBack={() => go({ page, scope })}
         narrow={narrow}
         bar={bar}

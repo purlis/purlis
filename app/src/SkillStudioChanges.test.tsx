@@ -13,6 +13,7 @@ import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { forgetStudio, openSkill, renderStudio } from "./SkillStudioTab.testkit";
+import { need } from "./skillsListing.testkit";
 import { AT_THE_ROOT, asPersona, inWorkspace } from "./skillStudio";
 import { offeredIn, pickIn } from "./ui/select/select.testkit";
 import { levelFrom, PROJECT } from "./skillChanges";
@@ -395,18 +396,26 @@ describe("the Skill studio's changes", () => {
       [{ ...deploy, pinned: false, pinned_by: [{ at: "workspace", name: "ops" }] }],
       "ops",
       {},
-      { pins_refused: refused },
+      {
+        pins_refused: refused,
+        // The core's item of Needs you for it (#3689).
+        needs: [
+          need("pins:workspace ops", {
+            kind: "pins",
+            title: "workspace ops's pins",
+            tag: refused.file,
+            reason: `A chat reads none of workspace ops's pins: ${refused.why}, so a router may hide what they pin.`,
+            fix: { kind: "unpin", by: { at: "workspace", name: "ops" }, name: "Not A Name" },
+            fix_label: "Remove that pin",
+          }),
+        ],
+      },
     );
     const user = userEvent.setup();
-    // On Needs you, which is in the navigation while a pin is refused (#3681).
     renderStudio(inWorkspace("ops"), "needs");
 
-    expect(await screen.findByTestId("skill-pins-refused")).toHaveTextContent(
-      `workspace ops's pins aren't used: "Not A Name" is not a skill's name (it holds a capital).`,
-    );
-    expect(screen.getByRole("button", { name: /^Needs you/ })).toHaveAttribute(
-      "aria-current",
-      "page",
+    expect(await screen.findByTestId("skill-need")).toHaveTextContent(
+      "A chat reads none of workspace ops's pins",
     );
     await user.click(screen.getByRole("button", { name: "Library" }));
     const item = await openSkill("skill-deploy", user);
@@ -415,9 +424,7 @@ describe("the Skill studio's changes", () => {
     expect(within(item).getByText("Pinned, not used")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /^Needs you/ }));
-    await user.click(
-      screen.getByRole("button", { name: 'Remove it, the pin "Not A Name" of workspace ops' }),
-    );
+    await user.click(await screen.findByRole("button", { name: "Remove that pin" }));
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_pin")?.args).toMatchObject({
         by: { at: "workspace", name: "ops" },
@@ -427,25 +434,27 @@ describe("the Skill studio's changes", () => {
     );
   });
 
-  it("points to the file where a persona's pins are too many to be used (SK-15d)", async () => {
+  it("sends a persona whose pins are too many to be used to the Library to unpin some (SK-15d)", async () => {
     core(
       [deploy],
       null,
       {},
       {
-        pins_refused: {
-          by: { at: "persona", name: "reviewer" },
-          why: "the list holds more than 64 pins",
-          bad: null,
-          file: "personas/reviewer/persona.md",
-        },
+        needs: [
+          need("pins:persona reviewer", {
+            kind: "pins",
+            title: "persona reviewer's pins",
+            fix: { kind: "library" },
+            fix_label: "Unpin some in the Library",
+          }),
+        ],
       },
     );
+    const user = userEvent.setup();
     renderStudio(asPersona("reviewer"), "needs");
 
-    expect(await screen.findByTestId("skill-pins-refused")).toHaveTextContent(
-      "persona reviewer's pins aren't used: the list holds more than 64 pins. Unpin some, or edit personas/reviewer/persona.md.",
-    );
+    await user.click(await screen.findByRole("button", { name: "Unpin some in the Library" }));
+    expect(await screen.findByTestId("skill-deploy")).toBeInTheDocument();
   });
 
   it("says which grant would reach a skill the workspace was not granted, and offers no on", async () => {

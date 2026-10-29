@@ -306,6 +306,59 @@ pub struct BrowserReach {
     pub open_web: bool,
 }
 
+/// **How a browser's views over a link between hosts are held** (1.49, #3297): at most `frames`
+/// a second, and no frame wider than `width` pixels, the engine scaling a wider page down. A
+/// pool's own settings, given with the browser's start on its runner; a start that gives none is
+/// held to purlis's defaults ([`LinkFrames::DEFAULT`]). Bounded both ways ([`LinkFrames::new`]):
+/// a host refuses a start whose `link_frames` are out of bounds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkFrames {
+    pub frames: u32,
+    pub width: u16,
+}
+
+impl LinkFrames {
+    /// Spec #2041's defaults: 15 frames a second, 1280 pixels wide.
+    pub const DEFAULT: LinkFrames = LinkFrames {
+        frames: 15,
+        width: 1280,
+    };
+    /// The fewest and the most frames a second a pool may set.
+    pub const FRAMES: std::ops::RangeInclusive<u32> = 1..=60;
+    /// The narrowest and the widest frame a pool may set, in pixels.
+    pub const WIDTH: std::ops::RangeInclusive<u16> = 320..=3840;
+
+    /// `frames` a second and `width` pixels, each within its bounds, or why not.
+    pub fn new(frames: u32, width: u16) -> Result<LinkFrames, String> {
+        LinkFrames { frames, width }.checked()
+    }
+
+    /// These, where each is within its bounds; or why not, in words a person reads.
+    pub fn checked(self) -> Result<LinkFrames, String> {
+        if !Self::FRAMES.contains(&self.frames) {
+            return Err(format!(
+                "a pool's browser frames are {} to {} a second",
+                Self::FRAMES.start(),
+                Self::FRAMES.end()
+            ));
+        }
+        if !Self::WIDTH.contains(&self.width) {
+            return Err(format!(
+                "a pool's widest browser frame is {} to {} pixels",
+                Self::WIDTH.start(),
+                Self::WIDTH.end()
+            ));
+        }
+        Ok(self)
+    }
+}
+
+impl Default for LinkFrames {
+    fn default() -> LinkFrames {
+        LinkFrames::DEFAULT
+    }
+}
+
 /// **A value from a vault, on its way to the browser that fills it** (1.18, #2016): written on
 /// the wire as the text it is, never shown by `Debug`, and wiped from memory when dropped.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]

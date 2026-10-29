@@ -511,7 +511,12 @@ export function ListRowSection<T extends object>({
       data-part="section"
     >
       {title !== undefined && (
-        <AriaGridListHeader data-scope="list" data-part="header" data-named={named || undefined}>
+        <AriaGridListHeader
+          data-scope="list"
+          data-part="header"
+          data-named={named || undefined}
+          data-counted={count === undefined ? undefined : ""}
+        >
           {count === undefined ? (
             title
           ) : (

@@ -3072,6 +3072,27 @@ fn a_jpeg_of(width: u16, height: u16) -> Vec<u8> {
     jpeg
 }
 
+/// #3297: a pool's own limits move the window's hold with them: a wider frame and a quicker
+/// pace where the pool sets them.
+#[test]
+fn the_window_holds_a_runner_browsers_frames_to_its_pools_own_limits() {
+    let mut held = HeldFrames::to(purlis_session_protocol::browsing::LinkFrames {
+        frames: 30,
+        width: 1920,
+    });
+    let start = Instant::now();
+    assert!(held.draws(&a_jpeg_of(1920, 1080), start));
+    assert!(
+        held.draws(&a_jpeg_of(1920, 1080), start + Duration::from_millis(30)),
+        "at 30 a second, 25 ms apart is drawn"
+    );
+    assert!(
+        !held.draws(&a_jpeg_of(1921, 1080), start + Duration::from_millis(200)),
+        "wider than the pool's widest"
+    );
+    assert_eq!(HeldFrames::default().at_least(), Duration::from_millis(50));
+}
+
 #[test]
 fn the_window_draws_a_runner_browsers_frames_only_within_the_links_caps() {
     let mut held = HeldFrames::default();

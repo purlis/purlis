@@ -179,3 +179,4 @@
 {"call":{"id":168,"command":"browse","program":"01J9ZQ8000000000000000000D","call_id":"c-33","act":{"do":"save_download","download":"d1","to":"downloads/report.pdf","into":"/home/op/project/workspaces/app"}}}
 {"call":{"id":170,"command":"relay_to","runner":"builds"}}
 {"reply":{"re":170,"ok":{"relayed_to":{"runner":"builds/builds-01234567"}}}}
+{"call":{"id":171,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"browser","program":"01J9ZQ8000000000000000000D","link_frames":{"frames":30,"width":1920}}}
