@@ -1147,9 +1147,10 @@ export const plantedTall = { minBlockSize: 32 };
       controlClasses(readFileSync(join(SRC, file), "utf8")),
     );
     // Fewer since the field (#2905), the status items and pills (#2913), the menus (#2909) and
-    // the cards, Notices and counts (#2912) became families of their own, and the hand-drawn
-    // buttons moved to the button family (#3208).
-    expect(new Set(controls).size).toBeGreaterThan(60);
+    // the cards, Notices and counts (#2912) became families of their own, the hand-drawn
+    // buttons moved to the button family (#3208), and the welcome's doors and repo cards to the
+    // card family's pressed card (#3655).
+    expect(new Set(controls).size).toBeGreaterThan(50);
     const read = declarations(readFileSync(join(SRC, "App.css"), "utf8")).filter(({ property }) =>
       HEIGHT_PROPERTY.test(property),
     );
