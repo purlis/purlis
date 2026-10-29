@@ -11,7 +11,10 @@ import type { ChatSkill, SkillPinsRefused, StudioSkill } from "./bindings";
 import { skill, studio } from "./skillsListing.testkit";
 import {
   BUILT_IN_STAYS,
+  cardReasonOf,
   explorerPlaceOf,
+  filePlaceOf,
+  fixOf,
   groupsOf,
   listedOf,
   markOf,
@@ -43,6 +46,8 @@ const given = (name: string, level: ChatSkill["level"] = "project"): ChatSkill =
   hint: null,
   hidden: null,
 });
+
+const names = (rows: readonly ListedSkill[]) => rows.map((one) => one.skill.name);
 
 describe("the one mark a row carries", () => {
   it("is what matters most: a folder to accept, then off, then left out, then lint", () => {
@@ -133,53 +138,46 @@ describe("the hidden-by-the-router mark", () => {
   });
 });
 
-describe("the list's groups", () => {
+describe("the view's groups", () => {
   const all = [
     row(skill("secrets", { level: "built-in", folder: "/app/skills/secrets" })),
     row(skill("deploy")),
     row(skill("ops-only", { level: "workspace", folder: "workspaces/ops/skills/ops-only" })),
-    row(skill("mine", { level: "workspace", local: true })),
-    row(skill("review", { level: "persona" }), { persona: "reviewer" }),
-    row(skill("lint-rs", { level: "repo", folder: "" })),
-    row(skill("pdf", { level: "installed", folder: "" }), { program: "Claude Code" }),
-    row(skill("drafted", { accept: "skills" })),
+    row(skill("old", { on: false, turned_off: true, left_out: "ops turned it off." })),
+    row(skill("pdf", { level: "installed", folder: "", lint: ["It pre-approves Bash."] }), {
+      program: "Claude Code",
+    }),
+    row(skill("drafted", { accept: "skills", on: false })),
+    row(skill("out", { on: false, left_out: "Its grant does not reach ops." })),
+    row(skill("hid"), { hiddenInChat: { router: "built-in", why: "over-budget", said: "hidden" } }),
   ];
 
-  it("are Needs you on top, then each level, then each program's own, in that order", () => {
-    const groups = groupsOf(all, { root: false, chat: false });
-    expect(groups.map((one) => [one.title, one.rows.map((r) => r.skill.name)])).toEqual([
-      ["Needs you", ["drafted"]],
-      ["Built-in", ["secrets"]],
-      ["Project", ["deploy"]],
-      ["Workspace", ["ops-only"]],
-      ["Personas", ["review"]],
-      ["Repo", ["lint-rs"]],
-      ["Local", ["mine"]],
-      ["Claude Code", ["pdf"]],
-    ]);
+  it("are Needs you, In this chat with its built-in skills apart, and Left out (S7)", () => {
+    const groups = groupsOf(all);
+    expect(names(groups.needs)).toEqual(["pdf", "drafted"]);
+    expect(names(groups.inChat)).toEqual(["deploy", "ops-only"]);
+    expect(names(groups.builtIns)).toEqual(["secrets"]);
+    expect(names(groups.leftOut)).toEqual(["old", "out", "hid"]);
   });
 
-  it("draw no Needs you while nothing needs the person", () => {
-    const groups = groupsOf(all.slice(0, -1), { root: false, chat: false });
-    expect(groups[0]?.title).toBe("Built-in");
+  it("say why a card is as it is in place of its description, in its tone", () => {
+    expect(cardReasonOf(all[1])).toBeUndefined();
+    expect(cardReasonOf(all[3])).toEqual({ says: "ops turned it off.", tone: "quiet" });
+    expect(cardReasonOf(all[4])).toEqual({ says: "It pre-approves Bash.", tone: "warning" });
+    expect(cardReasonOf(all[5])).toEqual({
+      says: "A change to it waits for your review.",
+      tone: "warning",
+    });
+    expect(cardReasonOf(all[7])).toEqual({ says: "Hidden.", tone: "quiet" });
   });
 
-  it("are the project's and the personas' alone at the project's root", () => {
-    const groups = groupsOf(all, { root: true, chat: false });
-    expect(groups.map((one) => one.title)).toEqual(["Needs you", "Project", "Personas", "Local"]);
-  });
-
-  it("keep, for one chat, what it does not get under one group at the end", () => {
-    const chat = [
-      row(skill("deploy")),
-      row(skill("out", { on: false, left_out: "Its grant does not reach ops." })),
-      row(skill("off", { on: false, turned_off: true })),
-    ];
-    const groups = groupsOf(chat, { root: false, chat: true });
-    expect(groups.map((one) => [one.title, one.rows.map((r) => r.skill.name)])).toEqual([
-      ["Project", ["deploy"]],
-      ["Not in this chat", ["out", "off"]],
-    ]);
+  it("offer one fix where a card has one", () => {
+    expect(fixOf(all[3], "ops")).toEqual({ act: "turn", label: "Turn on in ops" });
+    expect(fixOf(all[3], undefined)).toBeUndefined();
+    expect(fixOf(all[5], "ops")).toEqual({ act: "review", label: "Review the change" });
+    expect(fixOf(all[7], "ops")).toEqual({ act: "routing", label: "Why the router hid it" });
+    expect(fixOf(all[6], "ops")).toBeUndefined();
+    expect(fixOf(all[1], "ops")).toBeUndefined();
   });
 });
 
@@ -271,14 +269,10 @@ describe("the rows narrowed to one chat's real set", () => {
       ["lint-rs", undefined],
       ["review", true],
     ]);
-    const groups = groupsOf(narrowed, { root: false, chat: true });
-    expect(groups.map((one) => [one.title, one.rows.map((r) => r.skill.name)])).toEqual([
-      ["Project", ["deploy"]],
-      ["Personas", ["review"]],
-      ["Repo", ["lint-rs"]],
-      ["Claude Code", ["pdf"]],
-      ["Not in this chat", ["old"]],
-    ]);
+    const groups = groupsOf(narrowed);
+    expect(names(groups.needs)).toEqual(["pdf"]);
+    expect(names(groups.inChat)).toEqual(["deploy", "lint-rs", "review"]);
+    expect(names(groups.leftOut)).toEqual(["old"]);
     // The program's own skill keeps the studio's own mark, and a repo's can be used.
     expect(markOf(narrowed[2])).toBe("lint");
     expect(
@@ -304,16 +298,14 @@ describe("the rows narrowed to one chat's real set", () => {
     ]);
   });
 
-  it("keeps every group at the project's root, for a chat at the root", () => {
+  it("keeps a built-in skill of the set for a chat at the project's root", () => {
     const set = [given("secrets", "built-in")];
     const narrowed = narrowedTo([row(skill("secrets", { level: "built-in" }))], set, {
       persona: null,
       harness: undefined,
       repos: [],
     });
-    expect(groupsOf(narrowed, { root: true, chat: true }).map((one) => one.title)).toEqual([
-      "Built-in",
-    ]);
+    expect(names(groupsOf(narrowed).builtIns)).toEqual(["secrets"]);
   });
 
   it("lists the repo skills of the chat's own clone alone, and none for a chat in no clone (#3462)", () => {
@@ -328,7 +320,7 @@ describe("the rows narrowed to one chat's real set", () => {
 });
 
 describe("a row's menu", () => {
-  it("offers Use in this chat only while a chat is in front", () => {
+  it("offers Use, the switch, the pin, Explorer, the file and the studio, in that order (S7)", () => {
     const chat = menuRowsOf(row(skill("deploy")), {
       workspace: "ops",
       explorer: "ops",
@@ -339,13 +331,39 @@ describe("a row's menu", () => {
       "Turn off in ops",
       "Pin to this workspace",
       "Show in the Explorer view",
+      "Open the file",
+      "Open in Skill studio",
     ]);
     const none = menuRowsOf(row(skill("deploy")), {
       workspace: "ops",
       explorer: "ops",
       chat: false,
     });
-    expect(none.map((one) => one.act)).toEqual(["turn", "pin", "explorer"]);
+    expect(none[0]).toEqual({
+      act: "use",
+      title: "Use in this chat",
+      available: false,
+      reason: "No chat is in front to use it in.",
+    });
+  });
+
+  it("opens a skill's own file, the project's or its clone's, and says why not a built-in's", () => {
+    expect(filePlaceOf(skill("deploy"))).toEqual({
+      workspace: "",
+      repo: "",
+      path: "skills/deploy/SKILL.md",
+    });
+    expect(
+      filePlaceOf(skill("fmt", { level: "repo", folder: "workspaces/ops/web/.claude/skills/fmt" })),
+    ).toEqual({ workspace: "ops", repo: "web", path: ".claude/skills/fmt/SKILL.md" });
+    expect(
+      filePlaceOf(skill("secrets", { level: "built-in", folder: "/app/skills/secrets" })),
+    ).toEqual({
+      reason: "It ships with purlis: Make my own copy in the Skill studio to edit one.",
+    });
+    expect(filePlaceOf(skill("pdf", { level: "installed", folder: "" }))).toEqual({
+      reason: "Its folder is not one of the project's files.",
+    });
   });
 
   it("cannot use in the chat a skill it does not get, and says why", () => {
@@ -384,7 +402,7 @@ describe("a row's menu", () => {
       explorer: "ops",
       chat: false,
     });
-    expect(mine[0]).toMatchObject({
+    expect(mine[1]).toMatchObject({
       act: "turn",
       available: false,
       reason: "Only a project skill is turned on or off for one workspace.",
@@ -400,7 +418,7 @@ describe("a row's menu", () => {
       menuRowsOf(row(skill("deploy")), { workspace: "ops", explorer: "ops", chat: true }).map(
         (r) => r.act,
       ),
-    ).toEqual(["use", "turn", "pin", "explorer"]);
+    ).toEqual(["use", "turn", "pin", "explorer", "file", "studio"]);
     expect(pin(skill("deploy"))).toEqual({
       act: "pin",
       title: "Pin to this workspace",

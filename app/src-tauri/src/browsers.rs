@@ -366,7 +366,15 @@ mod hosted {
             login: purlis_session_protocol::browsing::LogIn,
         ) -> Result<Browsed, crate::chatbrowsers::Refused> {
             use crate::chatbrowsers::Refused;
+            // No login is filled on a runner a chat ran on without the sandbox (D-2050-27).
+            if let Some(why) = self.pool_of(program).and_then(|pool| self.untrusted(&pool)) {
+                return Err(Refused::Said(why));
+            }
             let link = self.link_for(program).map_err(Refused::Said)?;
+            // Again once its link is had, as a browser's start is checked (#3702).
+            if let Some(why) = self.pool_of(program).and_then(|pool| self.untrusted(&pool)) {
+                return Err(Refused::Said(why));
+            }
             let command = Command::LogIn {
                 program: program.to_owned(),
                 login,
@@ -713,6 +721,41 @@ mod hosted {
                 .map(|(at, _)| at.clone())
         }
 
+        /// **Why pool `pool`'s runners are trusted with no browser and no login** (D-2050-27): a
+        /// chat ran, or may have run, on one of them without the sandbox, as this machine keeps
+        /// it or this window holds it. None where none did.
+        fn untrusted(&self, pool: &str) -> Option<String> {
+            let kept = self.connection.runners_config().is_some_and(|config| {
+                purlis_core::runnertaint::pool_ran_unsandboxed(&config, pool)
+            });
+            (kept || self.connection.untrusts(pool))
+                .then(|| purlis_core::runnertaint::refused_on(pool))
+        }
+
+        /// **Ends every browser the window started on pool `pool`** (D-2050-28), once a chat ran,
+        /// or may have run, there without the sandbox: the runner's host clears each one's data
+        /// folder as it ends. Answers how many it ended.
+        pub(crate) fn end_on(&self, pool: &str) -> usize {
+            let programs: Vec<String> = self
+                .projects()
+                .iter()
+                .filter(|(at, _)| at.pool.as_deref() == Some(pool))
+                .flat_map(|(_, held)| held.browsers.clone())
+                .collect();
+            programs
+                .iter()
+                .filter(|program| {
+                    self.close(program)
+                        .inspect_err(|why| {
+                            tracing::warn!(
+                                "purlis: a browser on pool {pool}'s runner was not ended: {why}"
+                            );
+                        })
+                        .is_ok()
+                })
+                .count()
+        }
+
         /// **The pool whose runner `program` runs on** (#2050), where the window started it on
         /// one: what its view's chip names as its device.
         pub(crate) fn pool_of(&self, program: &str) -> Option<String> {
@@ -961,7 +1004,16 @@ mod hosted {
                 pool: pool.map(str::to_owned),
             };
             let kept = kept.filter(|_| at.pool.is_none());
+            // No browser starts on a runner a chat ran on without the sandbox (D-2050-27).
+            if let Some(why) = at.pool.as_deref().and_then(|pool| self.untrusted(pool)) {
+                return Err(NotStarted::Failed(why));
+            }
             let (link, project) = self.held(&at).map_err(NotStarted::Failed)?;
+            // Again once held: the hold takes back what the runner still runs, which may leave
+            // it untrusted (#3702).
+            if let Some(why) = at.pool.as_deref().and_then(|pool| self.untrusted(pool)) {
+                return Err(NotStarted::Failed(why));
+            }
             let _one_at_a_time = self.starting.lock().unwrap_or_else(PoisonError::into_inner);
             let running = match link.call(Command::List).map_err(NotStarted::Failed)? {
                 Answer::Chats(listed) => listed
