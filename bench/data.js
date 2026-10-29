@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793308155668,
+  "lastUpdate": 1793309574679,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30072,6 +30072,48 @@ window.BENCHMARK_DATA = {
             "value": 102.4267885,
             "unit": "ms",
             "extra": "median of 5 runs: 101.460, 101.852, 102.427, 102.723, 102.889 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "47754b580f435bc51dfd941151edb7f80bae90eb",
+          "message": "Runners: stopped suspends a cluster pool's runners, and stale warm runners are replaced (#2058) (#3740)\n\n* Runners: stopped suspends a cluster pool's runners, and stale warm runners are replaced (#2058)\n\nThe first slice of #2058 that needs no new public name:\n\n- `stopped` on Pool and Claim (spec #2041) suspends every runner of the pool, or the\n  claim's, through upstream's Sandbox operatingMode, and never destroys: a kept claim's\n  volume stays and its runner comes back paired as it was. A claim made while stopped gets\n  no runner yet; a stopped pool keeps no runner warm.\n- The pool's warm pool uses upstream's Recreate strategy, so a warm runner made from an\n  earlier template is replaced and never handed to a fresh claim.\n- An adopted runner's pod is read by the name its sandbox records\n  (agents.x-k8s.io/pod-name), still held to being that sandbox's.\n- The operator gains patch on sandboxes, for operatingMode alone (ADR 0089 amendment).\n- Kind tests: scale from zero and back, stopped from kubectl, stale warm runner replaced.\n\nRefs #2058\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runners: stopped reaches every runner, and the cluster narrows the sandbox right (#2058)\n\nReview round 2 of #3740:\n\n- A Claim's stopped now suspends its runner after its Pool is deleted, and when one of the\n  pool's objects is in the way.\n- A second admission policy, purlis-operator-changes-only-a-sandboxs-mode, refuses any update\n  by the operator to a Sandbox but its operatingMode, and any to a Sandbox no SandboxClaim\n  controls. A test holds its field list to the pinned upstream.\n- The mode is applied with the sandbox's uid as a precondition, and the operator runs a runner\n  again only where its own Apply owns the field (best effort, documented).\n- A stopped Claim says its runner is being suspended until upstream says it is.\n- Kind tests: the policy's refusals, the uid precondition, the same key after a kept runner\n  resumes, and a stop after the pool is deleted.\n\nRefs #2058\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runners: a paired kept runner keeps its key through stopped, on the desktop side (#2058)\n\nThe operator-side kind test never pairs its runner, so a resumed kept runner makes a new\nkey there, as a lost pod does. The same-key check moves to the desktop-side kind test, which\npairs: stopped and run again, the runner answers the key it was paired with and keeps its home.\nAn apply of another uid is refused as invalid (422), not as a conflict.\n\nRefs #2058\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runners: a deleted pool never runs its runners again, and a slow suspend is said (#2058)\n\nReview round 3 of #3740:\n\n- With its Pool deleted, a runner is only ever suspended; its Claim says it stays suspended.\n- A runner being suspended is looked at again less and less often, then its Claim says\n  upstream has not ended its pod.\n- The kind test checks the policy in its own words, and tries the pod template, a finalizer\n  and taking a field or the owners away.\n- Docs: the policy holds any SandboxClaim's sandbox, and its field list is the pinned\n  upstream's.\n\nRefs #2058\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* The operator vouches from its context, which holds the keys and the cluster\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T21:05:11Z",
+          "tree_id": "28dbcfdeab0140ea49599752278c5248c6dba537",
+          "url": "https://github.com/purlis/purlis/commit/47754b580f435bc51dfd941151edb7f80bae90eb"
+        },
+        "date": 1793309571950,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5448855,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.528, 0.540, 0.545, 0.556, 0.572 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3374765,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.923, 15.982, 16.337, 16.450, 16.522 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.87977450000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.381, 101.634, 101.880, 102.060, 103.462 ms"
           }
         ]
       }
