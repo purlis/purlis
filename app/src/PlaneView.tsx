@@ -5274,8 +5274,8 @@ export const PlaneView = memo(function PlaneView({
               refused: false,
               words:
                 said.data.kind === "typed"
-                  ? `Typed the request to redo ${wanted.name} into ${nameOf(session)}. Nothing was sent.`
-                  : handedSaid(said.data, nameOf(session)),
+                  ? `Typed the request to redo ${wanted.name} into ${nameOfNow.current(session)}. Nothing was sent.`
+                  : handedSaid(said.data, nameOfNow.current(session)),
             });
           });
         return;
@@ -5308,7 +5308,7 @@ export const PlaneView = memo(function PlaneView({
     };
     window.addEventListener(SKILL_CHAT, asked);
     return () => window.removeEventListener(SKILL_CHAT, asked);
-  }, [bringToFront, change, nameOf, plane]);
+  }, [bringToFront, change, plane]);
 
   /**
    * **"Start a chat here"** on a file or folder row (FM-9): a chat the core starts on the

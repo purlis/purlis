@@ -113,7 +113,7 @@ describe("draft skills in the Skill studio", function () {
 
     const kept = await $(`[data-testid="draft-${ACCEPTED}"]`);
     await kept.waitForExist({ timeout: 20_000 });
-    await expect(kept).toHaveText(/a new skill/);
+    await expect(kept).toHaveText(/A new skill/);
     await expect($(`[data-testid="draft-${REJECTED}"]`)).toExist();
     // A draft is never a skill any chat gets, nor a file in the project.
     await expect($(`[data-testid="skill-${ACCEPTED}"]`)).not.toExist();

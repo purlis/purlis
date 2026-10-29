@@ -71,9 +71,9 @@ pub struct SkillDraft {
     pub level: SkillLevel,
     /// The chat that wrote it last, by its number.
     pub chat: Option<u32>,
-    /// Whether that chat is open now, in the draft's own workspace: "Ask the chat to redo it"
-    /// types into it ([`skill_draft_redo_in`]), where a closed one's opens a chat afresh
-    /// ([`skill_draft_redo`]).
+    /// Whether that chat is open now, for an out-of-date draft (false for any other): "Ask the
+    /// chat to redo it" types into it ([`skill_draft_redo_in`]), where a closed one's opens a
+    /// chat afresh ([`skill_draft_redo`]).
     pub chat_open: bool,
     /// A new skill, rather than a change to one.
     pub new: bool,
@@ -135,11 +135,18 @@ pub(crate) async fn skill_drafts(
         if !purlis_core::skills::studio_on_here() {
             return Ok(Vec::new());
         }
-        let open = held.chats().open_now();
-        Ok(drafts::list(held.root())
+        let listed = drafts::list(held.root());
+        // Whether its chat is open says only what an out-of-date draft's redo does: the chats
+        // are looked at only where one is.
+        let open = if listed.iter().any(drafts::Draft::stale) {
+            held.chats().open_now()
+        } else {
+            Vec::new()
+        };
+        Ok(listed
             .into_iter()
             .map(|draft| {
-                let chat_open = drafting_chat(&open, &draft).is_some();
+                let chat_open = draft.stale() && drafting_chat(&open, &draft).is_some();
                 SkillDraft {
                     chat_open,
                     ..SkillDraft::from(draft)
@@ -150,16 +157,18 @@ pub(crate) async fn skill_drafts(
     .await
 }
 
-/// **The chat that drafted `draft`, where it is still open** among `open`: the chat of its number
-/// in the draft's own workspace (or at the project's root for a project's or a persona's draft),
-/// so a number a later chat took elsewhere is never it.
+/// **The chat that drafted `draft`, where it is still open** among `open`: the chat of its number,
+/// in the draft's own workspace for a workspace's draft (a project's or a persona's is written
+/// from anywhere), so a number a later chat took in another workspace is never it.
 fn drafting_chat<'a>(
     open: &'a [crate::chats::Open],
     draft: &drafts::Draft,
 ) -> Option<&'a crate::chats::Open> {
     let chat = draft.chat?;
-    open.iter()
-        .find(|one| one.session == chat && one.workspace.as_deref() == draft.level.at.workspace())
+    let workspace = draft.level.at.workspace();
+    open.iter().find(|one| {
+        one.session == chat && (workspace.is_none() || one.workspace.as_deref() == workspace)
+    })
 }
 
 /// **Accepts a draft**: one commit of exactly its files.
@@ -345,10 +354,20 @@ pub(crate) fn skill_draft_redo_in(
     crate::references::typed_or_copied(
         &held,
         session,
-        drafts::redoing(&draft.level, &draft.name, true),
+        drafts::redoing(&draft.level, &draft.name, &stale_of(&draft), true),
         REDO_COPIED,
         &|text| clipboard.put_text(text),
     )
+}
+
+/// The files of `draft` the project changed since, below the skill's folder.
+fn stale_of(draft: &drafts::Draft) -> Vec<&str> {
+    draft
+        .files
+        .iter()
+        .filter(|file| file.stale)
+        .map(|file| file.path.as_str())
+        .collect()
 }
 
 /// What [`skill_draft_redo_in`] refuses a chat with that is not the draft's own, open now.
@@ -389,7 +408,7 @@ pub(crate) async fn skill_draft_redo(
                 persona: None,
                 cwd,
                 label: format!("Redo {}", draft.name),
-                prompt: drafts::redoing(&draft.level, &draft.name, false),
+                prompt: drafts::redoing(&draft.level, &draft.name, &stale_of(&draft), false),
                 then_a_space: false,
                 starts_runs: None,
             },

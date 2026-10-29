@@ -25,7 +25,6 @@ const gone = (name: string, over: Record<string, unknown> = {}) => ({
   name,
   level: { at: "project", local: false },
   label: "project",
-  stays: "kept in the project's history",
   days_left: 27,
   in_history: true,
   ...over,

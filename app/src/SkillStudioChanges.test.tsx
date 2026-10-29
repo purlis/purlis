@@ -211,7 +211,6 @@ describe("the Skill studio's changes", () => {
                 name: "deploy",
                 level: { at: "project", local: false },
                 label: "project",
-                stays: "kept on this machine for 30 more days",
                 days_left: 30,
                 in_history: false,
               },

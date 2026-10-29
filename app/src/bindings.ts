@@ -5728,11 +5728,6 @@ export type DeletedSkill = {
 	/**  Its level as a person reads it: `project`, `local workspace ops`. */
 	label: string,
 	/**
-	 *  How long it stays, as a person reads it: `kept on this machine for 12 more days`, `kept
-	 *  in the project's history` (SK-33).
-	 */
-	stays: string,
-	/**
 	 *  How many days are left to bring it back (S9, #3691): at least 1, as one past its 30 days
 	 *  is not listed.
 	 */
@@ -12085,9 +12080,9 @@ export type SkillDraft = {
 	/**  The chat that wrote it last, by its number. */
 	chat: number | null,
 	/**
-	 *  Whether that chat is open now, in the draft's own workspace: "Ask the chat to redo it"
-	 *  types into it ([`skill_draft_redo_in`]), where a closed one's opens a chat afresh
-	 *  ([`skill_draft_redo`]).
+	 *  Whether that chat is open now, for an out-of-date draft (false for any other): "Ask the
+	 *  chat to redo it" types into it ([`skill_draft_redo_in`]), where a closed one's opens a
+	 *  chat afresh ([`skill_draft_redo`]).
 	 */
 	chat_open: boolean,
 	/**  A new skill, rather than a change to one. */

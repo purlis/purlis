@@ -311,13 +311,16 @@ pub fn take(root: &Path, chat: u32, file: &SkillFile, change: &Change) -> Result
     let drafted = read_at(&state, &drafted_rel)?;
     let in_project = read_at(root, &file.rel())?;
     let base_now = proposed::base_of(in_project.as_deref().map(str::as_bytes));
-    // **A file the project changed since the draft first changed it is drafted afresh** (S9, "Ask
-    // the chat to redo it"): the chat's new write is made to the project's copy, as the chat read
-    // it, and its base is the project's now, so the redo can be accepted.
-    let redone = record
-        .bases
-        .get(&file.inner)
-        .is_some_and(|base| *base != base_now);
+    // **A whole file written again over one the project changed since the draft first changed it
+    // is drafted afresh** (S9, "Ask the chat to redo it", whose prompt asks for the whole file):
+    // its base is the project's now, so the redo can be accepted. An edit to such a file is made
+    // to the draft's copy as before, and the file stays out of date: an edit never throws away
+    // what was drafted.
+    let redone = matches!(change, Change::Whole { .. })
+        && record
+            .bases
+            .get(&file.inner)
+            .is_some_and(|base| *base != base_now);
     let after = if redone {
         change.apply(in_project.as_deref())?
     } else {
@@ -1068,22 +1071,30 @@ pub fn asking(level: &Level) -> String {
 }
 
 /// **The prompt "Ask the chat to redo it" types** (S9), unsent, for the draft of the skill in
-/// `folder` at `level` whose files the project changed since: into the chat that drafted it where
-/// it is still open, else into a new chat that starts where `level`'s skills are reached from, as
-/// [`asking`]'s does. One line; a new chat's ends where the person says what the change was.
-pub fn redoing(level: &Level, folder: &str, same_chat: bool) -> String {
-    let file = format!("{}/{folder}/SKILL.md", skills_dir_told(level));
+/// `folder` at `level` whose files `stale` (below the skill's folder) the project changed since:
+/// into the chat that drafted it where it is still open (`same_chat`), else into a new chat that
+/// starts where `level`'s skills are reached from, as [`asking`]'s does. It asks for each whole
+/// file, which [`take`] drafts afresh on the project's copy. One line; a new chat's ends where
+/// the person says what the change was.
+pub fn redoing(level: &Level, folder: &str, stale: &[&str], same_chat: bool) -> String {
+    let dir = skills_dir_told(level);
+    let files = stale
+        .iter()
+        .map(|path| format!("{dir}/{folder}/{path}"))
+        .collect::<Vec<_>>()
+        .join(", ");
     if same_chat {
         format!(
-            "The project's copy of {file} changed since you drafted your change to it, so purlis \
-             cannot accept your draft. Read the project's copy again and write your change once \
-             more on top of it; purlis keeps it as a draft in the Skill studio for me to try."
+            "The project's copy of {files} changed since you drafted your change to it, so purlis \
+             cannot accept your draft. Read it again and write each whole file once more with \
+             your change on top of it; purlis keeps it as a draft in the Skill studio for me to \
+             try."
         )
     } else {
         format!(
-            "The project's copy of {file} changed since a chat drafted a change to it. Read it and \
-             write the change on top of it; purlis keeps it as a draft in the Skill studio for me \
-             to try. The change should "
+            "The project's copy of {files} changed since a chat drafted a change to it. Read it and \
+             write each whole file again with the change on top of it; purlis keeps it as a draft \
+             in the Skill studio for me to try. The change should "
         )
     }
 }

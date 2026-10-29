@@ -56,6 +56,7 @@ import {
 import {
   AT_THE_ROOT,
   SKILL_STUDIO_VIEW,
+  asPersona,
   STUDIO_PAGE_NAMES,
   STUDIO_START,
   inWorkspace,
@@ -82,6 +83,13 @@ import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
 
 /** The light editor, its own chunk (`tools/main-chunk-has-no-codemirror.mjs`). */
 const SkillEditor = lazy(() => import("./SkillEditor"));
+
+/** The scope whose chats get a skill at `level`: its workspace's or its persona's, else `scope`. */
+function scopeOfLevel(level: SkillLevel, scope: StudioScope): StudioScope {
+  if (level.at === "workspace") return inWorkspace(level.name);
+  if (level.at === "persona") return asPersona(level.name);
+  return scope;
+}
 
 /** What the studio says after a change: a refusal, or what the change left to say. */
 type Said = { tone: "news" | "trouble"; label: string; text: string; restore?: string };
@@ -888,9 +896,14 @@ export function SkillStudioTab({
             change(
               "The draft was not accepted",
               () => commands.skillDraftAccept(plane, one.id),
-              // The skill it made, or changed, in the Library: accepted, it is no draft now.
+              // The skill it made, or changed, in the Library of chats that get it: accepted,
+              // it is no draft now. A workspace's or a persona's is not the root's.
               async () => {
-                go({ page: "library", scope, skill: skillRowNamed(one.name) });
+                go({
+                  page: "library",
+                  scope: scopeOfLevel(one.level, scope),
+                  skill: skillRowNamed(one.name),
+                });
                 return undefined;
               },
             )

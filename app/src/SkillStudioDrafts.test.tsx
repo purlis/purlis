@@ -118,6 +118,22 @@ describe("the Drafts page", () => {
     expect(await screen.findByRole("heading", { name: "Library" })).toBeInTheDocument();
   });
 
+  it("lands on the Library of the chats a workspace's accepted draft reaches", async () => {
+    const asked = core([
+      draft("triage", { level: { at: "workspace", name: "ops", local: false } }),
+    ]);
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "drafts");
+
+    const page = await openDraft("triage", user);
+    await user.click(within(page).getByRole("button", { name: "Accept triage" }));
+    await waitFor(() =>
+      expect(asked.some((one) => one.cmd === "skill_studio" && one.args.workspace === "ops")).toBe(
+        true,
+      ),
+    );
+  });
+
   it("discards a draft and stays on Drafts, saying so", async () => {
     const asked = core([draft("triage"), draft("deploy", { new: false })]);
     const user = userEvent.setup();

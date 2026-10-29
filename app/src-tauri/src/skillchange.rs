@@ -184,9 +184,6 @@ pub struct DeletedSkill {
     pub level: SkillLevel,
     /// Its level as a person reads it: `project`, `local workspace ops`.
     pub label: String,
-    /// How long it stays, as a person reads it: `kept on this machine for 12 more days`, `kept
-    /// in the project's history` (SK-33).
-    pub stays: String,
     /// How many days are left to bring it back (S9, #3691): at least 1, as one past its 30 days
     /// is not listed.
     pub days_left: u32,
@@ -583,7 +580,6 @@ pub(crate) async fn skills_deleted(
             .filter(|one| one.days_left(now) > 0)
             .map(|one| {
                 Ok(DeletedSkill {
-                    stays: one.stays(now),
                     days_left: u32::try_from(one.days_left(now)).unwrap_or(u32::MAX),
                     in_history: one.kept().in_git(),
                     id: serde_json::to_string(&one)

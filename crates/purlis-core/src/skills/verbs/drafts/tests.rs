@@ -729,7 +729,7 @@ fn a_drafted_new_skill_with_a_built_in_skills_name_is_not_accepted() {
 }
 
 #[test]
-fn a_chat_writing_again_to_a_file_the_project_changed_redoes_it_on_the_projects_copy() {
+fn a_whole_file_written_again_over_one_the_project_changed_is_redone_on_the_projects_copy() {
     let tmp = plane();
     let root = tmp.path();
     let id = drafted(
@@ -747,9 +747,20 @@ fn a_chat_writing_again_to_a_file_the_project_changed_redoes_it_on_the_projects_
     std::fs::write(root.join(notes), "the project's notes\n").unwrap();
     assert!(one(root, &id).unwrap().stale());
 
-    // The redo: an edit made against the project's copy, as the chat reads it from disk.
-    let edit = edit_of("by hand", "by hand, twice");
-    assert_eq!(drafted(root, "skills/deploy/SKILL.md", &edit), id);
+    // An edit to the out-of-date file is made to the draft's copy, and it stays out of date.
+    drafted(
+        root,
+        "skills/deploy/SKILL.md",
+        &edit_of("twice", "two times"),
+    );
+    let draft = one(root, &id).unwrap();
+    let skill = draft.files.iter().find(|f| f.path == "SKILL.md").unwrap();
+    assert!(skill.stale, "an edit never throws away what was drafted");
+    assert_eq!(skill.after, skill_text("deploy", "Ships it two times."));
+
+    // The redo: the whole file written again, on the project's copy as the chat read it.
+    let redo = whole(&skill_text("deploy", "Ships it by hand, twice."));
+    assert_eq!(drafted(root, "skills/deploy/SKILL.md", &redo), id);
     let draft = one(root, &id).unwrap();
     let skill = draft.files.iter().find(|f| f.path == "SKILL.md").unwrap();
     assert!(
@@ -801,13 +812,24 @@ fn a_draft_not_out_of_date_keeps_adding_to_its_own_copy() {
 
 #[test]
 fn the_redo_prompt_names_the_skills_file_and_asks_a_new_chat_for_the_change() {
-    let same = redoing(&Level::project(), "deploy", true);
-    assert!(same.contains("skills/deploy/SKILL.md"), "{same}");
-    assert!(same.contains("your change"), "{same}");
-    assert!(!same.contains('\n'), "one line: {same}");
-    let new = redoing(&Level::persona("reviewer"), "triage", false);
+    let same = redoing(&Level::project(), "deploy", &["notes.md"], true);
+    assert!(same.contains("skills/deploy/notes.md"), "{same}");
     assert!(
-        new.contains("personas/reviewer/skills/triage/SKILL.md"),
+        !same.contains("SKILL.md"),
+        "only the files out of date: {same}"
+    );
+    assert!(same.contains("each whole file"), "{same}");
+    assert!(!same.contains('\n'), "one line: {same}");
+    let new = redoing(
+        &Level::persona("reviewer"),
+        "triage",
+        &["SKILL.md", "check.sh"],
+        false,
+    );
+    assert!(
+        new.contains(
+            "personas/reviewer/skills/triage/SKILL.md, personas/reviewer/skills/triage/check.sh"
+        ),
         "{new}"
     );
     assert!(new.ends_with("The change should "), "{new}");
