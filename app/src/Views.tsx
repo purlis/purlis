@@ -117,7 +117,6 @@ import { RunnerWriteTab } from "./RunnerWriteTab";
 import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
 import { SKILL_STUDIO_VIEW, isSkillStudio } from "./skillStudio";
 import { SkillStudioTab } from "./SkillStudioTab";
-import { SKILL_VIEW, isSkillTab, skillOfView } from "./skillRuns";
 import {
   GRADE_CHAT_VIEW,
   GRADE_VIEW,
@@ -126,7 +125,6 @@ import {
   gradeChatOfView,
   gradeOfView,
 } from "./GradeScorecard";
-import { SkillTab } from "./SkillTab";
 import {
   SAVING_VIEW,
   LICENCES_VIEW,
@@ -315,7 +313,6 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   /** Every skill a chat in the project gets, and why (#2765), behind its flag. */
   [SKILL_STUDIO_VIEW.view]: Sparkles,
   /** One skill's tab, with its runs (SK-3). */
-  [SKILL_VIEW]: Sparkles,
   /** A grade's scorecard (SK-59). */
   [GRADE_VIEW]: ListChecks,
   /** One of a grade's chats, read-only (SK-59). */
@@ -697,16 +694,6 @@ export function ViewPane({
             key={`${plane}\u0000${view.key}`}
             plane={plane}
             tab={view.key}
-            changed={changed + onDisk}
-            onOpenView={onOpenView}
-          />
-        ) : isSkillTab(view) ? (
-          /* One skill's tab (SK-3): its runs, read again when the project changes on disk, and
-             the run its key names marked. */
-          <SkillTab
-            key={`${plane}\u0000${view.key}`}
-            plane={plane}
-            {...skillOfView(view)}
             changed={changed + onDisk}
             offerFor={offerFor}
             onPress={onPress}

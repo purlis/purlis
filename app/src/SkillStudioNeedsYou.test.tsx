@@ -128,6 +128,10 @@ describe("Needs you", () => {
     expect(await screen.findByTestId("skill-studio-doing")).toBeInTheDocument();
     const path = within(screen.getByRole("list", { name: "Path" })).getAllByRole("listitem");
     expect(path[0]).toHaveTextContent("Library");
+    // It lands on the skill's own page (#3682), with Rename open under its header.
+    const page = screen.getByTestId("skill-studio-skill");
+    expect(within(page).getByRole("tablist", { name: "deploy's sections" })).toBeInTheDocument();
+    expect(within(page).getByRole("form", { name: "Rename deploy" })).toBeInTheDocument();
   });
 
   it("moves the skills only some programs read, and says what the move said", async () => {

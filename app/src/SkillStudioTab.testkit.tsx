@@ -5,7 +5,8 @@
  * **The Skill studio at the window seam** (#3681): drawn as its tab draws it, at a place its
  * history was opened at, the core faked at its command boundary by each test's `mockIPC`.
  */
-import { render, screen, waitFor } from "@testing-library/react";
+import type { ComponentProps, ReactElement } from "react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { SkillStudioTab } from "./SkillStudioTab";
 import {
@@ -13,6 +14,7 @@ import {
   SKILL_STUDIO_VIEW,
   studioHistoryOf,
   type StudioPage,
+  type StudioPlace,
   type StudioScope,
 } from "./skillStudio";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
@@ -45,6 +47,25 @@ export function renderStudio(
   return render(<SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />);
 }
 
+/** **The studio tab, opened at `place`** (a skill's page, one of its tabs), as an entry point
+ *  opens it; `wrap` draws it inside what the window hands its panes. */
+export function renderStudioAt(
+  place: StudioPlace,
+  {
+    narrow,
+    wrap = (tab) => tab,
+    ...more
+  }: {
+    narrow?: boolean;
+    wrap?: (tab: ReactElement) => ReactElement;
+  } & Partial<
+    Pick<ComponentProps<typeof SkillStudioTab>, "onOpenView" | "offerFor" | "onPress">
+  > = {},
+) {
+  openViewAt(STUDIO_HISTORY, place);
+  return render(wrap(<SkillStudioTab plane={PLANE} changed={0} narrow={narrow} {...more} />));
+}
+
 /** Its history goes, as its tab's does when it closes: each test starts the tab afresh. */
 export function forgetStudio(): void {
   forgetViewHistory(STUDIO_HISTORY);
@@ -66,4 +87,16 @@ export async function openSkill(
     if (item.getAttribute("data-row") !== id) throw new Error(`${testid} is not open yet`);
     return item;
   });
+}
+
+/** **Chooses `said` from the "…" menu of the skill `name`'s page** (#3682), as a press on the
+ *  menu and then on its row does. */
+export async function chooseMore(
+  name: string,
+  said: string | RegExp,
+  user: ReturnType<typeof userEvent.setup> = userEvent.setup(),
+): Promise<void> {
+  await user.click(screen.getByRole("button", { name: `More for ${name}` }));
+  const menu = await screen.findByRole("menu", { name: `More for ${name}` });
+  await user.click(within(menu).getByRole("menuitem", { name: said }));
 }

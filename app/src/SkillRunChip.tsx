@@ -11,7 +11,7 @@ import { Button } from "./ui/button/Button";
 /**
  * **The skill run open in a tab's chat** (SK-3, #2766): the skill's name and the tool calls
  * made inside it so far, from the moment the chat uses the skill until its turn ends. Pressed,
- * it opens the skill's tab on that run. The skill is the one the core counts the run of, by its
+ * it opens the Skill studio at that skill's Runs, with the run marked (#3682). The skill is the one the core counts the run of, by its
  * own name (`secrets` for opencode's `purlis-secrets`, #3385): the window reads no name itself.
  *
  * Beside the tab's button, not inside it: the tab is a button, and a button holds no button.
@@ -22,7 +22,9 @@ export const SkillRunChip = memo(function SkillRunChip({
   onOpen,
 }: {
   session: number | undefined;
-  onOpen: (skill: string, run: string) => void;
+  /** Opens the skill's Runs in the studio, with the run marked, for the chats of `session`'s
+   *  place. */
+  onOpen: (skill: string, run: string, session: number) => void;
 }) {
   const on = useSkillStudioOn();
   const run = useOpenRunOf(session);
@@ -39,7 +41,7 @@ export const SkillRunChip = memo(function SkillRunChip({
           data-testid="tab-skill-run"
           tooltip={`Using the skill ${run.name}: ${calls} so far. Open its runs.`}
           aria-label={`Using the skill ${run.name}, ${calls} so far. Open its runs`}
-          onPress={() => onOpen(run.name, run.id)}
+          onPress={() => session !== undefined && onOpen(run.name, run.id, session)}
         >
           <span className="count">
             <Sparkles aria-hidden="true" />
