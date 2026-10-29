@@ -3785,6 +3785,11 @@ export type DevicesShown = {
 	 *  person's.
 	 */
 	owned: boolean,
+	/**
+	 *  How many projects the window holds (#3534): with more than one, each chat and browser
+	 *  row names its project.
+	 */
+	projects: number,
 };
 
 /**  Why a grant the person accepted before waits for a yes again. */
