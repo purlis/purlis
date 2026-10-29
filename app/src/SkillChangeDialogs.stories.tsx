@@ -157,9 +157,7 @@ export const Move: Story = {
         "Chats at the project's root, chats in git-ci-cd stop getting it.",
       ),
     );
-    await waitFor(() =>
-      expect(within(dialog).getByRole("button", { name: "Move" })).toBeEnabled(),
-    );
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Move" })).toBeEnabled());
     expectFocusInSight();
   },
 };

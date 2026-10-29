@@ -111,11 +111,7 @@ function reachAt(
   // Between the project's shared and local skills it keeps its grant: the same chats.
   if (from.at === "project") return now;
   const reached =
-    grant === null || grant.to === "root"
-      ? []
-      : grant.to === "all"
-        ? workspaces
-        : grant.workspaces;
+    grant === null || grant.to === "root" ? [] : grant.to === "all" ? workspaces : grant.workspaces;
   return [
     "root",
     ...reached.map((ws) => `ws:${ws}`),
@@ -144,7 +140,9 @@ export function moveChanges(
   const lost = now.filter((one) => !then.includes(one));
   const gained = then.filter((one) => !now.includes(one));
   return [
-    ...(lost.length === 0 ? [] : [`${upperFirst(lost.map(reachSaid).join(", "))} stop getting it.`]),
+    ...(lost.length === 0
+      ? []
+      : [`${upperFirst(lost.map(reachSaid).join(", "))} stop getting it.`]),
     ...(gained.length === 0
       ? []
       : [`${upperFirst(gained.map(reachSaid).join(", "))} start getting it.`]),
@@ -406,7 +404,9 @@ export function MoveDialog({
       titleId="skill-move"
       description={`Who gets it changes with where it lives. It is a ${fromLabel} skill now. ${whoGets(from)}`}
       summary={
-        to === undefined ? undefined : `${name} becomes a ${labelOf(levels, to)} skill, in one commit.`
+        to === undefined
+          ? undefined
+          : `${name} becomes a ${labelOf(levels, to)} skill, in one commit.`
       }
       main={{
         children: busy ? "Moving…" : "Move",
