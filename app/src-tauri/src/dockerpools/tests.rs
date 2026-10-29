@@ -14,6 +14,8 @@ fn adding(name: &str) -> PoolAdding {
         processes: None,
         tmp_mib: None,
         suspend_after: None,
+        frames: None,
+        width: None,
     }
 }
 
@@ -60,6 +62,23 @@ fn a_pool_takes_the_limits_typed_and_the_defaults_for_the_rest() {
 }
 
 #[test]
+fn a_pool_takes_its_browser_frame_limits_as_typed() {
+    let pool = pool_of(&PoolAdding {
+        frames: Some(30),
+        width: Some(1920),
+        ..adding("builds")
+    })
+    .unwrap();
+    assert_eq!(
+        pool.link_frames(),
+        purlis_session_protocol::browsing::LinkFrames {
+            frames: 30,
+            width: 1920
+        }
+    );
+}
+
+#[test]
 fn a_pool_the_core_would_refuse_is_refused_in_its_words() {
     for (adding, says) in [
         (
@@ -76,6 +95,21 @@ fn a_pool_the_core_would_refuse_is_refused_in_its_words() {
                 ..adding("builds")
             },
             "memory",
+        ),
+        // #3297: a pool's browser frame limits, each within its bounds.
+        (
+            PoolAdding {
+                frames: Some(61),
+                ..adding("builds")
+            },
+            "frames",
+        ),
+        (
+            PoolAdding {
+                width: Some(70_000),
+                ..adding("builds")
+            },
+            "widest browser frame",
         ),
     ] {
         let refused = pool_of(&adding).unwrap_err();

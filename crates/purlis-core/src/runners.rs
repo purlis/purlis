@@ -3,15 +3,16 @@
 
 //! **The pools this desktop added, and the runners it pinned** (ADR 0078 §3 and §8, #2525,
 //! #2679, #2749): `<config>/runners.json`, ruled 2026-10-18 and 2026-10-20, `{"version": 1,
-//! "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp", "suspendAfter"}],
-//! "runners":
+//! "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp", "suspendAfter",
+//! "frames", "width"}], "runners":
 //! [{"name", "pool", "container", "image", "user", "home", "device", "key", "paired", "of"?,
 //! "draining"?}]}`.
 //!
 //! - **A pool is named and defined only here** ([`Pool`]): a Docker pool's name, the runner
 //!   image by digest, and the limits the person set, each left out where purlis's default
 //!   holds ([`crate::dockerpool::Limits`]), and how long its runner is left without a link
-//!   before it suspends itself (`suspendAfter`, #3471, ruled 2026-10-28), left out at a day. A workspace names a pool (`machine.json`), and a name
+//!   before it suspends itself (`suspendAfter`, #3471, ruled 2026-10-28), left out at a day. Its browsers' frame limits over the link
+//!   are among them (#3297). A workspace names a pool (`machine.json`), and a name
 //!   that is not kept here, or whose runner is not, starts no chat ([`runner_for`]).
 //! - **A runner's device id and public link key are kept once** ([`keep`]): a later answer for
 //!   a runner already kept, with another device id or key, is refused and what was kept stays
@@ -32,6 +33,7 @@
 
 use std::path::Path;
 
+use purlis_session_protocol::browsing::LinkFrames;
 use purlis_session_protocol::hostlink::Pinned;
 
 use crate::dockerpool::{ContainerId, Docker, Image, Limits, Made, Runner, User};
@@ -66,6 +68,8 @@ impl std::error::Error for Refused {}
 /// ([`Limits::default`]), its CPUs in thousandths, its memory and its `/tmp` in MiB, and its
 /// processes; and how long its runner is left without a link from this desktop before it
 /// suspends itself (`suspendAfter`, #3471, [`crate::dockerpool::SUSPEND_AFTER`]).
+/// And how its runner's browsers are watched over the link (#3297): the most frames a
+/// second, and the widest frame in pixels ([`LinkFrames::DEFAULT`]).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Set {
     pub millicpus: Option<u32>,
@@ -73,6 +77,8 @@ pub struct Set {
     pub processes: Option<u32>,
     pub tmp_mib: Option<u64>,
     pub suspend_after: Option<std::time::Duration>,
+    pub frames: Option<u32>,
+    pub width: Option<u16>,
 }
 
 /// One Docker pool on this machine, as the person added it (#2679): its name, which its one
@@ -149,6 +155,11 @@ impl Pool {
             set.tmp_mib.unwrap_or(default.tmp_mib()),
         )
         .map_err(|why| Refused::Other(why.0))?;
+        LinkFrames::new(
+            set.frames.unwrap_or(LinkFrames::DEFAULT.frames),
+            set.width.unwrap_or(LinkFrames::DEFAULT.width),
+        )
+        .map_err(Refused::Other)?;
         if let Some(after) = set.suspend_after {
             crate::dockerpool::suspend_after(after).map_err(|why| Refused::Other(why.0))?;
         }
@@ -163,6 +174,15 @@ impl Pool {
             limits,
             price: None,
         })
+    }
+
+    /// **How its runner's browsers are watched over the link** (#3297): what the person set,
+    /// and spec #2041's defaults for the rest. Given with each browser's start on its runner.
+    pub fn link_frames(&self) -> LinkFrames {
+        LinkFrames {
+            frames: self.set.frames.unwrap_or(LinkFrames::DEFAULT.frames),
+            width: self.set.width.unwrap_or(LinkFrames::DEFAULT.width),
+        }
     }
 
     /// This pool, declaring `price` per hour of its runner, or none (#3491).
@@ -831,6 +851,24 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
     })
 }
 
+/// **How pool `name`'s runner's browsers are watched over the link** (#3297), as this machine
+/// keeps the pool: the defaults where it is not kept, or the file cannot be read. A fenced
+/// (test) build reads no store outside its fence: there, the defaults.
+pub fn link_frames_of(name: &str) -> LinkFrames {
+    let Some(config) = crate::machine::config_root_unheld() else {
+        return LinkFrames::DEFAULT;
+    };
+    #[cfg(feature = "fenced")]
+    if !crate::fence::inside(&config, &crate::fence::fence()) {
+        return LinkFrames::DEFAULT;
+    }
+    pools(&config)
+        .ok()
+        .and_then(|pools| pools.into_iter().find(|pool| pool.name() == name))
+        .map(|pool| pool.link_frames())
+        .unwrap_or_default()
+}
+
 fn pool_to_row(pool: &Pool) -> serde_json::Value {
     let mut row = serde_json::json!({
         "name": pool.name(),
@@ -866,13 +904,20 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
             "currency": price.currency(),
         });
     }
+    if let Some(frames) = set.frames {
+        row["frames"] = frames.into();
+    }
+    if let Some(width) = set.width {
+        row["width"] = width.into();
+    }
     row
 }
 
 /// A pool's row: its name, kind `docker` and image, and each limit the person set, as
 /// [`pool_to_row`] writes them: `cpus` a number of CPUs to the thousandth, `memory` and `tmp`
 /// in MiB, `processes` a count, `suspendAfter` a duration in seconds, minutes or hours (`"24h"`,
-/// [`crate::spelledtime`]), and `pricePerHour` where the pool declares one (#3491). Any other
+/// [`crate::spelledtime`]), `frames` a count a second and `width` in pixels (#3297), and
+/// `pricePerHour` where the pool declares one (#3491). Any other
 /// key, or a value of another shape, is refused: with the reason for a price, which the person
 /// writes by hand (#3491), and with none for anything else.
 fn pool_from_row(row: &serde_json::Value) -> Result<Pool, Option<String>> {
@@ -922,6 +967,8 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         "tmp",
         "suspendAfter",
         "pricePerHour",
+        "frames",
+        "width",
     ];
     if fields.keys().any(|key| !known.contains(&key.as_str())) {
         return None;
@@ -965,6 +1012,8 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
                 crate::spelledtime::UP_TO_HOURS,
             )?),
         },
+        frames: count(fields.get("frames"))?,
+        width: count(fields.get("width"))?,
     };
     Pool::new(text("name")?, Image::pinned(text("image")?).ok()?, set).ok()
 }

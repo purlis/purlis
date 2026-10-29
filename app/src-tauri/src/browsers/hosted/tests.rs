@@ -1479,3 +1479,27 @@ fn a_browsers_end_the_window_did_not_ask_for_is_said_crashed_and_one_it_asked_fo
         "a close the window asked for is said by whoever asked it, never as a crash"
     );
 }
+
+/// #3297: the window holds a runner browser to the more of its pool's limits and the defaults,
+/// so it draws what a runner before 1.49 sends (the defaults) and what one since sends (the
+/// pool's), and nothing past both.
+#[test]
+fn the_window_holds_a_runner_browser_to_the_more_of_its_pools_limits_and_the_defaults() {
+    use purlis_session_protocol::browsing::LinkFrames;
+    let held = |frames, width| super::window_holds(LinkFrames { frames, width });
+    assert_eq!(
+        held(30, 1920),
+        LinkFrames {
+            frames: 30,
+            width: 1920
+        }
+    );
+    assert_eq!(held(5, 800), LinkFrames::DEFAULT);
+    assert_eq!(
+        held(10, 2560),
+        LinkFrames {
+            frames: 15,
+            width: 2560
+        }
+    );
+}

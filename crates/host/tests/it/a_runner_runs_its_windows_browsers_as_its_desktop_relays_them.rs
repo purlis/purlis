@@ -23,7 +23,7 @@ use purlis_host::standin::{StandInBrowsers, StandInScreen, StandIns};
 use purlis_host::{ComposesNothing, Dial, Hosting, Relay};
 use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::browsing::{
-    Act, Aim, Driver, Input, KeptLogin, KeyAction, LogIn, Secret,
+    Act, Aim, Driver, Input, KeptLogin, KeyAction, LinkFrames, LogIn, Secret,
 };
 use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
 use purlis_session_protocol::link::{self, Acceptor, Link};
@@ -375,6 +375,58 @@ async fn over_the_link_a_focused_view_is_held_to_fifteen_frames_a_second_1280_pi
         "no more than 15 frames a second"
     );
     assert_eq!(shown.most_width, Some(1280), "no wider than 1280 pixels");
+}
+
+#[tokio::test]
+async fn a_browser_started_with_its_pools_limits_is_held_to_them_over_the_link() {
+    // #3297: the window gives the pool's own frame limits with the browser's start.
+    let runner = a_runner();
+    let dials = Arc::new(AtomicUsize::new(0));
+    let mut window = a_window(&runner, &dials).await;
+    let program = window
+        .client
+        .start_program(StartProgram {
+            link_frames: Some(LinkFrames {
+                frames: 30,
+                width: 1920,
+            }),
+            ..StartProgram::of(PROJECT, ProgramKind::Browser)
+        })
+        .await
+        .expect("a browser starts on the runner");
+    let screen = runner.browsers.started().last().unwrap().clone();
+
+    watched(
+        &window.client,
+        &mut window.views,
+        &program,
+        ViewRole::Focused,
+    )
+    .await;
+
+    let shown = screen.shown();
+    assert_eq!(shown.every, Some(Duration::from_secs(1) / 30));
+    assert_eq!(shown.most_width, Some(1920));
+}
+
+#[tokio::test]
+async fn a_browser_started_with_limits_out_of_bounds_is_refused() {
+    let runner = a_runner();
+    let dials = Arc::new(AtomicUsize::new(0));
+    let window = a_window(&runner, &dials).await;
+    for (frames, width) in [(0, 1280), (61, 1280), (15, 319), (15, 3841)] {
+        let refused = window
+            .client
+            .start_program(StartProgram {
+                link_frames: Some(LinkFrames { frames, width }),
+                ..StartProgram::of(PROJECT, ProgramKind::Browser)
+            })
+            .await
+            .unwrap_err();
+        let refusal = refused.refusal().expect("refused in words");
+        assert_eq!(refusal.code, session::MALFORMED, "{frames} {width}");
+    }
+    assert!(runner.browsers.started().is_empty(), "nothing started");
 }
 
 #[tokio::test]

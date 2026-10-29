@@ -9647,6 +9647,10 @@ export type PoolAdding = {
 	 *  `runners.json` spells it (`12h`); empty is a day (#3471).
 	 */
 	suspend_after: string | null,
+	/**  The most frames a second its runner's browsers are watched at over the link (#3297). */
+	frames: number | null,
+	/**  The widest frame its runner's browsers are watched at over the link, in pixels (#3297). */
+	width: number | null,
 };
 
 /**
@@ -9788,6 +9792,16 @@ export type PoolsShown = {
 	 *  engine is a local socket on this machine. A chat moves only to such a pool (#2048).
 	 */
 	yours?: boolean | null,
+	/**
+	 *  The most frames a second a new pool's runner's browsers are watched at over the link, by
+	 *  default (#3297).
+	 */
+	frames?: number | null,
+	/**
+	 *  The widest frame a new pool's runner's browsers are watched at over the link, in pixels,
+	 *  by default (#3297).
+	 */
+	width?: number | null,
 };
 
 /**

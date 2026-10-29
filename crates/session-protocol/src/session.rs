@@ -316,9 +316,16 @@ use crate::view::{Limits, Views};
 /// answers `relay_to` from a window of 1.48 or later with `relayed_to`, the runner it resolved
 /// the name to as `<pool>/<runner>`, a draining one too. A host before 1.48, or one answering a
 /// window before it, answers `done` and names none.
+///
+/// 1.49 added a pool's own browser frame limits (#3297, spec #2041 story 53): a browser's start
+/// may say how its views over a link between hosts are held (`link_frames`: frames a second and
+/// the widest frame, each within its bounds), which the window gives as it starts a runner
+/// chat's browser on its pool's runner, from the pool's settings. A host before 1.49 ignores the
+/// field and holds every such view to spec #2041's defaults, so the window holds that runner's
+/// views to the defaults too. 47 was passed over.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 48,
+    minor: 49,
 };
 
 /// The version that first answers `relay_to` with the runner the link reached (#3417).
@@ -1152,6 +1159,12 @@ pub struct StartProgram {
     /// A grade's chat is started so (SK-16).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ends_with_its_window: bool,
+    /// For a [`ProgramKind::Browser`], how its views over a link between hosts are held (1.49,
+    /// #3297): its pool's own settings, given by the window as it starts the browser on the
+    /// pool's runner. Absent, they are held to [`crate::browsing::LinkFrames::DEFAULT`]. A start
+    /// whose `link_frames` are out of bounds is refused `malformed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_frames: Option<crate::browsing::LinkFrames>,
 }
 
 impl StartProgram {
@@ -1179,6 +1192,7 @@ impl StartProgram {
             kept: None,
             note: None,
             ends_with_its_window: false,
+            link_frames: None,
         }
     }
 }
