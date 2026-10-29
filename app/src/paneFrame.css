@@ -323,11 +323,14 @@
 
 /* **A chip is words, not a box** (no hairlines; a control never takes a border): quiet on the
    pane's fill. A chip that is pressed (the harness, the skills, Brief, a task's ways) is a button
-   of the family, which draws it (#3129). */
+   of the family, which draws it (#3129).
+
+   **Solid, never faded** (#3637): the tiers carry the quietness. At an opacity of 0.92, the
+   breadcrumb's quiet ways in Purlis light come to 4.35:1 on the pane's fill (5.12:1 solid), under
+   the text floor, while the engine measures their colour solid. */
 .pane-head > .pane-chips > :is(.chat-gauge, .pane-from, .pane-work-item, .pane-crumbs) {
   border-color: transparent;
   background-color: transparent;
-  opacity: 1;
 }
 
 /* **The harness's name keeps the header's tier** (#2914, the operator's ruling of 2026-10-22):
