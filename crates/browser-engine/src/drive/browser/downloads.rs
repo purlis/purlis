@@ -32,6 +32,9 @@ pub(super) struct Downloads {
     untold: Vec<String>,
     /// How many began past the most a browser makes, each cancelled and listed nowhere.
     refused: usize,
+    /// The engine's names of those refused that it has not yet said ended: one it finishes
+    /// before the cancel reaches it has its file removed then.
+    refused_going: std::collections::HashSet<String>,
     /// How many of those were told.
     refused_told: usize,
 }
@@ -54,6 +57,7 @@ impl Downloads {
         }
         if self.all.len() >= limits.most_downloads {
             self.refused = self.refused.saturating_add(1);
+            self.refused_going.insert(guid.to_owned());
             return Some(Discard {
                 guid: guid.to_owned(),
                 going: true,
@@ -78,7 +82,8 @@ impl Downloads {
     /// Download `guid` came to `received` bytes, of `total` where that is not 0, and is now in
     /// the engine's `state`. Answers it to be discarded as it first passes `limits`' most bytes,
     /// for itself or with the browser's others. What purlis discarded stays said so, and is
-    /// answered to be discarded again should the engine still finish it.
+    /// answered to be discarded again should the engine still finish it, as is one refused as it
+    /// began.
     pub(super) fn moved(
         &mut self,
         guid: &str,
@@ -87,6 +92,16 @@ impl Downloads {
         state: &str,
         limits: &Limits,
     ) -> Option<Discard> {
+        if self.refused_going.contains(guid) {
+            if state == "inProgress" {
+                return None;
+            }
+            self.refused_going.remove(guid);
+            return (state == "completed").then(|| Discard {
+                guid: guid.to_owned(),
+                going: false,
+            });
+        }
         let others: u64 = self
             .all
             .iter()
