@@ -11452,7 +11452,7 @@ fn a_task_starts_in_its_asking_chat_s_mode_capped_at_auto() {
         held.chats()
             .recorded_chat(task)
             .expect("the task's record")
-            .mode
+            .task_level
     };
     assert_eq!(task_level("never-said"), Level::Asks);
     for (reported, level, name) in [
@@ -11466,4 +11466,69 @@ fn a_task_starts_in_its_asking_chat_s_mode_capped_at_auto() {
         held.unattended().heard_mode(asking, None);
         assert_eq!(task_level(name), level, "{name}");
     }
+}
+
+/// #3787: the level a task starts at is what the asking chat's own harness said, heard as the
+/// socket's listener hears it (the board takes the report, then `when_reported` hands it to
+/// `heard_mode`). A report the board does not take as the chat's own (a nested harness's, one
+/// naming no conversation, a sub-agent's) leaves the record as it was.
+#[test]
+fn a_task_s_level_is_heard_only_from_its_asking_chat_s_own_harness() {
+    use purlis_core::dispatchmode::{Level, Reported};
+    use purlis_core::hookwire::{Conversation, Report};
+    let plane = a_plane_with_personas();
+    let planes = planes();
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
+    let own = held
+        .board()
+        .conversation(asking)
+        .expect("the board holds the chat's conversation");
+    let hears = |conversation: Conversation, agent: Option<&str>, mode: Reported| {
+        let report = Report {
+            chat: asking,
+            event: purlis_core::state::Event::UserPromptSubmit,
+            conversation,
+            pid: Some(4000 + asking),
+            agent: agent.map(str::to_owned),
+            detail: purlis_core::state::Detail {
+                mode: Some(mode),
+                ..purlis_core::state::Detail::default()
+            },
+        };
+        held.hooks().hear(&report);
+        heard_mode(&held, &report);
+    };
+    let level = || held.unattended().task_level(asking);
+    assert_eq!(level(), Level::Asks);
+
+    hears(
+        Conversation::Named("99999999-2222-4333-8444-555555555555".to_owned()),
+        None,
+        Reported::Classifier,
+    );
+    hears(Conversation::Unknown, None, Reported::Classifier);
+    hears(Conversation::Foreign, None, Reported::Classifier);
+    hears(
+        Conversation::Named(own.clone()),
+        Some("helper"),
+        Reported::Classifier,
+    );
+    assert_eq!(level(), Level::Asks, "no report but the chat's own counts");
+
+    hears(Conversation::Named(own.clone()), None, Reported::PromptsOff);
+    assert_eq!(level(), Level::Classifier);
+    hears(
+        Conversation::Named("99999999-2222-4333-8444-555555555555".to_owned()),
+        None,
+        Reported::Asks,
+    );
+    assert_eq!(
+        level(),
+        Level::Classifier,
+        "and none takes the chat's own back"
+    );
+    hears(Conversation::Named(own), None, Reported::Asks);
+    assert_eq!(level(), Level::Asks);
 }

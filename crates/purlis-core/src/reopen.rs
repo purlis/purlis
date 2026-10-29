@@ -270,7 +270,7 @@ pub struct Chat {
     /// **Never written to the record on disk**, so never read from it: the record is a file a
     /// level could be written into by anyone who can write the plane's state, and a chat
     /// brought back from it starts in its harness's default.
-    pub mode: crate::dispatchmode::Level,
+    pub task_level: crate::dispatchmode::Level,
 }
 
 impl Chat {
@@ -1929,8 +1929,8 @@ impl From<ChatOnDisk> for Chat {
             model: crate::state::Model::new(&chat.model).map(|model| model.as_str().to_owned()),
             plane_skills: chat.plane_skills,
             routing: chat.routing,
-            // Never on disk ([`Chat::mode`]): a chat read back asks.
-            mode: crate::dispatchmode::Level::Asks,
+            // Never on disk ([`Chat::task_level`]): a chat read back asks.
+            task_level: crate::dispatchmode::Level::Asks,
         }
     }
 }

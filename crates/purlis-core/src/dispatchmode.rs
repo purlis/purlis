@@ -18,10 +18,16 @@
 //! # Whose word it is
 //!
 //! **The app's own record of what the asking chat's harness reported** in its hook payloads'
-//! `permission_mode` ([`Reported`], kept as [`Heard`]), never a line the chat sends. Only a
-//! report the board took for the chat counts, as for [`crate::dispatchunattended::Mark`].
-//! Unlike that mark, this goes both ways: the person may switch a chat out of auto, and its
-//! next task then asks.
+//! `permission_mode` ([`Reported`], kept as [`Heard`]), never a line the chat sends: only the
+//! chat's own harness's, not a sub-agent's, about the conversation the board holds for it
+//! ([`of_its_own_harness`]). Unlike [`crate::dispatchunattended::Mark`] this goes both ways:
+//! the person may switch a chat out of auto, and its next task then asks.
+//!
+//! **A profile's own mode wins**, as decision 20 treats profiles: where its command names
+//! `--permission-mode` (`dontAsk` included, which is stricter than the default), nothing is
+//! added. A profile that switches the prompts off is still refused for a task
+//! ([`crate::dispatchunattended::bypass_refusal`]). A grade's chat gets nothing added
+//! ([`task_words`]).
 //!
 //! # One neutral level, one adapter per harness
 //!
@@ -81,6 +87,35 @@ pub fn for_a_task(asker: Option<Reported>) -> Level {
         Some(Reported::Classifier | Reported::PromptsOff) => Level::Classifier,
         Some(Reported::Asks) | None => Level::Asks,
     }
+}
+
+/// **The mode `report` names as its chat's own harness's**, or `None`: only from no sub-agent,
+/// and about `now`, the conversation the board holds for the chat after it took the report. A
+/// harness nested in the chat names another conversation, or one the board refused (ADR 0024),
+/// and names no mode of the chat's.
+pub fn of_its_own_harness(report: &crate::hookwire::Report, now: Option<&str>) -> Option<Reported> {
+    let crate::hookwire::Conversation::Named(said) = &report.conversation else {
+        return None;
+    };
+    if report.agent.is_some() || now != Some(said.as_str()) {
+        return None;
+    }
+    report.detail.mode
+}
+
+/// **The words a chat on `harness` is started with for `level`**, after its profile's own
+/// `command`: its adapter's ([`crate::harness::HarnessAdapter::task_mode_words`]), and none for
+/// a grade's chat (`graded`), whose mode its grade pins and which a flag would outrank.
+pub fn task_words(
+    harness: crate::harness::Harness,
+    level: Level,
+    command: &[String],
+    graded: bool,
+) -> Vec<String> {
+    if graded {
+        return Vec::new();
+    }
+    harness.adapter().task_mode_words(level, command)
 }
 
 /// **The app's record of one chat's mode**: the last mode its harness reported.

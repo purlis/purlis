@@ -114,3 +114,77 @@ fn bypass_never_travels_to_a_task_on_any_harness() {
         .is_err()
     );
 }
+
+fn report(
+    conversation: Option<&str>,
+    agent: Option<&str>,
+    mode: Reported,
+) -> crate::hookwire::Report {
+    use crate::hookwire::Conversation;
+    crate::hookwire::Report {
+        chat: 7,
+        event: crate::state::Event::UserPromptSubmit,
+        conversation: conversation.map_or(Conversation::Unknown, |id| {
+            Conversation::Named(id.to_owned())
+        }),
+        pid: Some(4007),
+        agent: agent.map(str::to_owned),
+        detail: crate::state::Detail {
+            mode: Some(mode),
+            ..crate::state::Detail::default()
+        },
+    }
+}
+
+#[test]
+fn only_the_chat_s_own_harness_names_its_mode() {
+    let now = Some("11111111-2222-4333-8444-555555555555");
+    let own = report(now, None, Reported::Classifier);
+    assert_eq!(of_its_own_harness(&own, now), Some(Reported::Classifier));
+    // A harness nested in the chat names another conversation.
+    let nested = report(
+        Some("99999999-2222-4333-8444-555555555555"),
+        None,
+        Reported::Classifier,
+    );
+    assert_eq!(of_its_own_harness(&nested, now), None);
+    // One that names none, or a chat the board holds no conversation for.
+    assert_eq!(
+        of_its_own_harness(&report(None, None, Reported::Classifier), now),
+        None
+    );
+    assert_eq!(of_its_own_harness(&own, None), None);
+    // A sub-agent's.
+    assert_eq!(
+        of_its_own_harness(&report(now, Some("a1"), Reported::Classifier), now),
+        None
+    );
+}
+
+#[test]
+fn a_grade_s_chat_and_a_profile_s_own_mode_get_no_added_words() {
+    use crate::harness::Harness;
+    let words = |command: &[&str], graded: bool| {
+        let command: Vec<String> = command.iter().map(|w| (*w).to_owned()).collect();
+        task_words(Harness::ClaudeCode, Level::Classifier, &command, graded)
+    };
+    assert_eq!(words(&["claude"], false), ["--permission-mode", "auto"]);
+    // A grade's chat keeps the mode its grade pins, whatever level its record holds.
+    assert!(words(&["claude"], true).is_empty());
+    // `dontAsk` is stricter than the default, and the profile's word stands: no auto added,
+    // and the task still starts on it.
+    let dont_ask = ["claude", "--permission-mode", "dontAsk"];
+    assert!(words(&dont_ask, false).is_empty());
+    let command: Vec<String> = dont_ask.iter().map(|w| (*w).to_owned()).collect();
+    assert!(
+        crate::dispatchunattended::start_of_a_persona_chat(
+            crate::start::Start::default(),
+            "devops",
+            Some(crate::dispatchunattended::Inherited {
+                profile: "strict",
+                command: &command,
+            }),
+        )
+        .is_ok()
+    );
+}
