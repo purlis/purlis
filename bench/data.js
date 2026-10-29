@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793302443558,
+  "lastUpdate": 1793304510345,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29946,6 +29946,48 @@ window.BENCHMARK_DATA = {
             "value": 102.379021,
             "unit": "ms",
             "extra": "median of 5 runs: 102.101, 102.259, 102.379, 102.426, 102.780 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "576f01237cf727a5a6ead4d3a3fa7186260e7125",
+          "message": "Runners: a runner installs its profile's pinned harness, and keeps its settings (#3446, #3448) (#3805)\n\n* Runners: a profile's settings reach the runner that keeps it (#3448)\n\nkeep_profile carries the profile's settings files at session protocol\n1.50: exactly the files a made profile imports (profilestore::ALLOWED),\nread as an import reads them, never a sign-in or a file named like a\ncredential. They are sent at a chat's start or move on an owned pool,\nonly to a runner of 1.50 or later. The runner keeps them in place of the\nones it kept, and refuses all of them if any path is one an import would\nnot write.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runners: a runner installs the harness version its profile pins (#3446)\n\nA chat on a profile a runner keeps for its desktop with a pin runs that\nexact version, installed as the first chat starts on it: from the\nharness's own release (Claude Code's release bucket, Codex's and\nopencode's GitHub releases), checked against the SHA-256 the vendor\npublishes before it is unpacked or kept, into <data>/harnesses/ on the\nrunner's volume, never /tmp. A version that cannot be checked is not\ninstalled and the chat says why. Chats are denied writing the folder.\nThe desktop's adopted folder now carries its pin to the runner.\n\nADR 0095 amendment, plane-format and runner-image rows, and a changes\nfragment, for this and #3448.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runners: clippy and the deny list test for #3446 and #3448\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runners: no sign-in rides inside a profile's settings to a runner (#3448, round 2)\n\nEach harness's settings file goes to a runner with every environment\nblock and every setting that names or runs a credential source removed\n(D-3448-8); a file that does not parse is refused in words, and the\nrunner removes the same again. Settings are read inside keep_profiles,\nonly for a runner of 1.50 or later, so they refuse no chat on an older\none. Each file's path counts against the frame budget, and the files are\ncapped. A runner's pinned Claude Code runs with its updater off. The ADR\namendment says settings are kept on the runner's volume and what\nremoves them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runners: settings sent to a runner, round 3 of the review (#3448)\n\nCodex's exporter headers, opencode's OAuth client secret and its cloud\nSDK credentials are removed too. All opencode settings files are read as\nJSON with comments, and a trailing comma before a comment is accepted.\nCodex's file is written again with no comment. A runner checks the\nsettings it is sent before it keeps anything of the profile.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T19:44:38Z",
+          "tree_id": "67eae34a4057ee9732aecc6d0f228adfb5a3b299",
+          "url": "https://github.com/purlis/purlis/commit/576f01237cf727a5a6ead4d3a3fa7186260e7125"
+        },
+        "date": 1793304506869,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.656316,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.647, 0.652, 0.656, 0.661, 0.680 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6442845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.561, 16.626, 16.644, 16.689, 16.772 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.020325,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.753, 101.421, 102.020, 102.419, 102.758 ms"
           }
         ]
       }
