@@ -9,10 +9,11 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useEffect, useState } from "react";
-import { expect, userEvent, waitFor } from "storybook/test";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import { ChatsSection } from "./ChatsSection";
 import { ChatsHere, fixedChats, moved, nothingKnown } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
+import { expectFocusInSight, untilFocused } from "./stories.testkit";
 import { panelRoot } from "./ui/panel/Panel";
 
 /** A chat as the core lists it, open in a tab. */
@@ -258,5 +259,101 @@ export const HeldAcrossTheGapToTheCard: Story = {
     // Off the card for anywhere else: the list lets go, and the chat that arrived is drawn.
     await pointAt(to.left + 8, to.bottom + 40);
     await waitFor(() => expect(rowsIn(canvasElement)).toBe(3), { timeout: 2000 });
+  },
+};
+
+/** The two rows drawn with what is said under each: chat 1 at its task limit, with a dispatch
+ *  waiting on memory, and chat 2, which has no tab, with a restart it asked for refused. */
+const UNDER = chatsTree([
+  listed(1, {
+    atLimit: {
+      limit: 6,
+      row: "at its task limit (6)",
+      said: "steward 1 is at its task limit: 6 tasks run at once. Change it in Settings › Project › Dispatch.",
+      own: true,
+    },
+    waitingOnMemory: 1,
+  }),
+  listed(2, { tab: false }),
+]);
+
+/** What chat 2's restart says. */
+const RESTART = "Not restarted: steward 2 ended while the restart was asked.";
+
+/** The rows in the side panel, with what is said under them. */
+function SaidUnderInItsPanel() {
+  return (
+    <ChatsHere.Provider value={fixedChats(nothingKnown)}>
+      <div
+        {...panelRoot("side")}
+        aria-label="Navigation"
+        role="region"
+        style={{ display: "flex", flexDirection: "column", inlineSize: 260, blockSize: 200 }}
+      >
+        <ChatsSection rows={UNDER} front={1} onOpen={() => {}} restarts={{ 2: RESTART }} />
+      </div>
+    </ChatsHere.Provider>
+  );
+}
+
+/** The tree's row of `session`. */
+const rowOf = (canvas: HTMLElement, session: number) =>
+  canvas.querySelector<HTMLElement>(`[role="treeitem"][data-session="${session}"]`);
+
+/**
+ * **A row at its task limit, and its dispatch waiting on memory** (#1498, #1617, #3759): the
+ * line under the row says which limit binds, with the link to Dispatch settings, and the next
+ * says what waits on memory. Both are the pointer's and the eye's: the tree owns its rows alone
+ * (axe's `aria-required-children`, with no rule turned off), so the row says the limit's whole
+ * sentence, which names where it is changed, and what waits. Tab goes from the row out of the
+ * list, past them. The picture is the two lines under the first row.
+ */
+export const AtItsTaskLimit: Story = {
+  render: () => <SaidUnderInItsPanel />,
+  play: async ({ canvasElement }) => {
+    const row = rowOf(canvasElement, 1);
+    await expect(row).not.toBeNull();
+    await expect(row).toHaveAttribute(
+      "aria-description",
+      `${UNDER[0].atLimit?.said} 1 dispatch waits on memory.`,
+    );
+    const link = canvasElement.querySelector<HTMLElement>(".at-limit-settings");
+    await expect(link).not.toBeNull();
+    await expect(link).toHaveTextContent("Dispatch settings");
+    await expect(link).toHaveAttribute("tabindex", "-1");
+    await expect((link as HTMLElement).closest('[aria-hidden="true"]')).not.toBeNull();
+
+    // The keyboard's way: past the view's head, the row is the list's one stop, and Tab goes on
+    // past its lines.
+    for (let step = 0; step < 12 && document.activeElement !== row; step += 1) {
+      await userEvent.tab();
+    }
+    await untilFocused(() => rowOf(canvasElement, 1), "the first row");
+    expectFocusInSight();
+    await userEvent.tab();
+    await waitFor(() =>
+      expect(canvasElement.querySelector(".chats-list")?.contains(document.activeElement)).toBe(
+        false,
+      ),
+    );
+  },
+};
+
+/**
+ * **A row with a restart said** (#1462, #3759): a chat with no pane, whose restart was refused,
+ * says why on a line under its row. The tree may own no status, so the words are announced from
+ * beside it, named for the chat, and the row says them too. The picture is the line under the
+ * second row.
+ */
+export const RestartSaid: Story = {
+  render: () => <SaidUnderInItsPanel />,
+  play: async ({ canvasElement }) => {
+    const said = within(canvasElement).getByRole("status", { name: "Restart of steward 2" });
+    await expect(said).toHaveTextContent(RESTART);
+    await expect(said.closest('[role="tree"]')).toBeNull();
+    await expect(rowOf(canvasElement, 2)).toHaveAttribute("aria-description", RESTART);
+    const line = canvasElement.querySelector<HTMLElement>(".restart-said");
+    await expect(line).toHaveTextContent(RESTART);
+    await expect(line).toHaveAttribute("aria-hidden", "true");
   },
 };
