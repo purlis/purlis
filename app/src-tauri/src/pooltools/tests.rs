@@ -484,6 +484,23 @@ fn values_that_could_not_be_sent_are_not_recorded_as_sent() {
     assert_eq!(traced(desktop.path()), Vec::<serde_json::Value>::new());
 }
 
+/// #3408: values the person allowed for a command that has gone since are never handed on, and
+/// not recorded as sent.
+#[test]
+fn values_for_a_command_that_went_after_the_answer_are_never_handed_on() {
+    let desktop = tempfile::tempdir().unwrap();
+    let gone = AtomicBool::new(true);
+
+    let sent = sent(
+        desktop.path(),
+        allowed(),
+        while_its_asker_waits(&gone, |_| panic!("handed on")),
+    );
+
+    assert!(sent.is_err());
+    assert_eq!(traced(desktop.path()), Vec::<serde_json::Value>::new());
+}
+
 #[test]
 fn values_too_large_for_the_link_are_never_handed_on() {
     let ask = kubectl_asked();

@@ -15,9 +15,12 @@ import { counted } from "./dispatches";
 import { listen } from "./here";
 import { ASKS_CHANGED } from "./permissionAsks";
 
+/** No drafts: one value, so a read of none never draws anew. */
+const NONE: readonly SkillDraft[] = [];
+
 /**
  * **Draft skills** (SK-9, #2772; spec #2762 decisions 13, 38, 50 and 52): a chat's write to a
- * skill's files, which the core keeps on this machine for the person to try, accept or reject in
+ * skill's files, which the core keeps on this machine for the person to try, accept or discard in
  * the Skill studio (`skill_drafts`). A draft is never an ask: the Inbox does not list it.
  *
  * The core says a draft came when the project's asks move (`asks-changed`), so the studio and a
@@ -29,7 +32,17 @@ export function useSkillDrafts(
   changed: number,
   asked = true,
 ): readonly SkillDraft[] {
-  const [drafts, setDrafts] = useState<readonly SkillDraft[]>([]);
+  return useSkillDraftsRead(plane, changed, asked) ?? NONE;
+}
+
+/** {@link useSkillDrafts}, with `undefined` until the drafts were first read: the studio's Drafts
+ *  page holds its layout until then, rather than saying there are none (S11). */
+export function useSkillDraftsRead(
+  plane: string,
+  changed: number,
+  asked = true,
+): readonly SkillDraft[] | undefined {
+  const [drafts, setDrafts] = useState<readonly SkillDraft[]>();
   const [moved, setMoved] = useState(0);
   useEffect(() => {
     const listening = listen<Asking>(ASKS_CHANGED, (event) => {
@@ -43,10 +56,13 @@ export function useSkillDrafts(
     void commands
       .skillDrafts(plane)
       .then((answer) => {
-        if (live && answer.status === "ok")
-          setDrafts(Array.isArray(answer.data) ? answer.data : []);
+        // A read that failed lists none, as before: the drafts are read again when the asks move.
+        if (live)
+          setDrafts(answer.status === "ok" && Array.isArray(answer.data) ? answer.data : NONE);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (live) setDrafts(NONE);
+      });
     return () => {
       live = false;
     };
@@ -65,7 +81,10 @@ export const SKILL_CHAT = "purlis-skill-chat";
 export type SkillChatAsk =
   | { plane: string; kind: "draft"; level: SkillLevel }
   /** `profile` null: the project's default. */
-  | { plane: string; kind: "try"; id: string; profile: string | null };
+  | { plane: string; kind: "try"; id: string; profile: string | null }
+  /** "Ask the chat to redo it" (S9): typed into `chat`, the chat that drafted it, where it is
+   *  open; else (`chat` null, or no tab holds it) a chat opened afresh. */
+  | { plane: string; kind: "redo"; id: string; name: string; chat: number | null };
 
 /** Asks the window of the project `ask.plane` to open a draft or a Try it chat. */
 export function askSkillChat(ask: SkillChatAsk): void {
@@ -84,5 +103,5 @@ export function askDraft(plane: string, scope: StudioScope, levels: readonly Stu
 /** What a chat's tab says of the drafts it wrote (decision 38): only that they are ready. */
 export function draftReadySays(names: readonly string[], offScreen: boolean): string {
   const chat = offScreen ? "That chat" : "This chat";
-  return `${chat} drafted ${counted(names.length, "skill", "skills")}: ${names.join(", ")}. Try, accept or reject each in the Skill studio.`;
+  return `${chat} drafted ${counted(names.length, "skill", "skills")}: ${names.join(", ")}. Try, accept or discard each in the Skill studio.`;
 }

@@ -143,7 +143,7 @@ pub fn refusal(cmd: &str, cwd: &str, root: &str, chat_dir: &Path) -> Option<(Str
 }
 
 /// Whether a word names a place only the shell knows: an expansion this arm cannot follow.
-fn unplaceable(word: &str) -> bool {
+pub(crate) fn unplaceable(word: &str) -> bool {
     word.contains(['$', '`', '~'])
 }
 
@@ -155,7 +155,7 @@ fn unplaceable(word: &str) -> bool {
 /// in. A work tree (`--work-tree`, `GIT_WORK_TREE`) moves no lock: the index and the refs are
 /// the git directory's. `None` where a word naming the place is a shell expansion, or the
 /// place does not resolve.
-fn repository(cwd: &Path, pre: &[String], env: &[String]) -> Option<PathBuf> {
+pub(crate) fn repository(cwd: &Path, pre: &[String], env: &[String]) -> Option<PathBuf> {
     let mut git_dir: Option<String> = env
         .iter()
         .rev()

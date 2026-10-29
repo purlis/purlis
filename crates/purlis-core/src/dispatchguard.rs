@@ -1168,6 +1168,7 @@ mod tests {
             "purlis dispatch --wait --name x <<'B'\nlook\nB",
             "purlis dispatch wait 12",
             "purlis dispatch list",
+            "purlis dispatch list --help",
             "purlis dispatch read 12",
             "purlis dispatch cancel 12",
             "purlis dispatch tell 12 \"and the logs too\"",

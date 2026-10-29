@@ -182,6 +182,28 @@ pub const PRE_ALLOWED: [&str; 14] = [
     crate::skilltools::SKILL_LOAD,
 ];
 
+/// The tools a Claude Code chat runs without asking that **write only the chat's own scope**
+/// (#3829, the operator's ruling of 2026-10-29, amending ADR 0064): its workspace's todos and
+/// memory, its persona's memory (`--shared` included, as ruled), and its workspace's
+/// `workspace.md`; and [`ASK_OPERATOR`], whose consent is the person's own answer, so the
+/// harness's prompt in front of it asked the person twice. **The person is asked only when
+/// something new reaches someone new**, and none of these reaches anyone new.
+///
+/// Apart from [`PRE_ALLOWED`] on purpose: a grade's chat is served the reads alone (SK-16), and
+/// is handed none of these. Named one by one, so a tool added later is asked about until it is
+/// ruled in here; an operator's or a project's `ask` or `deny` for any of them still wins.
+pub const OWN_SCOPE_TOOLS: [&str; 8] = [
+    "todo_add",
+    "todo_done",
+    "memory_add",
+    PERSONA_REMEMBER,
+    WORKSPACE_SECTION,
+    WORKSPACE_VISION,
+    ASK_OPERATOR,
+    // The update the app makes for the chat in its own clone, branch folder or root (#3831).
+    WORKTREE_UPDATE,
+];
+
 /// The variables the server reads to find the chat's place, as a `charter` command in the chat
 /// reads them. A harness that hands an MCP server only the variables it is told to (Codex, an
 /// ACP agent) is told these, and [`CONNECTION_ENV`].
