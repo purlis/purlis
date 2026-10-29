@@ -25,11 +25,37 @@ vi.mock("./SessionPane", () => ({
   ),
 }));
 
+/** jsdom's own `scrollIntoView`, if it has one, put back after a test that stood one in. */
+const SCROLL_INTO_VIEW = Element.prototype.scrollIntoView;
+
 afterEach(() => {
   cleanup();
   clearMocks();
   forgetRailMode();
+  vi.restoreAllMocks();
+  Element.prototype.scrollIntoView = SCROLL_INTO_VIEW;
 });
+
+/** A box per element: the strip 0–300 across, `alpha`'s chip wherever `chipAt` says now. */
+function laidOut(chipAt: () => number) {
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    const strip = this.getAttribute("role") === "toolbar";
+    const chip = this.getAttribute("data-part") === "workspace" && this.textContent === "alpha";
+    const left = strip ? 0 : chip ? chipAt() : 0;
+    const width = strip ? 300 : 60;
+    return {
+      x: left,
+      y: 0,
+      left,
+      top: 0,
+      right: left + width,
+      bottom: 28,
+      width,
+      height: 28,
+      toJSON: () => ({}),
+    } as DOMRect;
+  });
+}
 
 const PLANE = "/home/dev/one";
 
@@ -358,25 +384,7 @@ describe("a dot pressed from the keyboard (#3648's review, WCAG 2.4.3)", () => {
 describe("a card whose chip scrolls out of the strip's sight (#3648's review)", () => {
   it("is hidden, and leaves the dot for when the chip comes back", async () => {
     let chipAt = 100;
-    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: Element,
-    ) {
-      const strip = this.getAttribute("role") === "toolbar";
-      const chip = this.getAttribute("data-part") === "workspace" && this.textContent === "alpha";
-      const left = strip ? 0 : chip ? chipAt : 0;
-      const width = strip ? 300 : 60;
-      return {
-        x: left,
-        y: 0,
-        left,
-        top: 0,
-        right: left + width,
-        bottom: 28,
-        width,
-        height: 28,
-        toJSON: () => ({}),
-      } as DOMRect;
-    });
+    laidOut(() => chipAt);
     render(<Bar on="alpha" startOpen />);
     await screen.findByRole("region", { name: "Notices for alpha" });
     chipAt = -120;
@@ -385,7 +393,27 @@ describe("a card whose chip scrolls out of the strip's sight (#3648's review)", 
       expect(screen.queryByRole("region", { name: "Notices for alpha" })).toBeNull(),
     );
     expect(screen.getByRole("button", { name: "Show the notice on alpha" })).toBeInTheDocument();
-    vi.restoreAllMocks();
+  });
+
+  it("hands the keyboard it held to the chip, brought back into sight (WCAG 2.4.11)", async () => {
+    let chipAt = 100;
+    laidOut(() => chipAt);
+    const into = vi.fn();
+    Element.prototype.scrollIntoView = into;
+    render(<Bar on="alpha" startOpen={false} />);
+    screen.getByRole("button", { name: "Show the notice on alpha" }).focus();
+    await userEvent.keyboard("{Enter}");
+    const card = await screen.findByRole("region", { name: "Notices for alpha" });
+    await waitFor(() => expect(card).toHaveFocus());
+    // The strip scrolled under the pointer: the chip leaves sight, and the card goes.
+    chipAt = -120;
+    fireEvent.scroll(screen.getByRole("toolbar", { name: "Pinned workspaces" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Notices for alpha" })).toBeNull(),
+    );
+    const chip = screen.getByRole("button", { name: "alpha" });
+    await waitFor(() => expect(chip).toHaveFocus());
+    expect(into).toHaveBeenCalledWith({ inline: "nearest", block: "nearest" });
   });
 });
 

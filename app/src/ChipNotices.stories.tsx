@@ -284,3 +284,27 @@ export const InAStripTooLongToShow: Story = {
     ).toBeInTheDocument();
   },
 };
+
+/**
+ * **A card that comes up on a chip out of sight** (#3648's round 3): a workspace made at the end
+ * of a strip too long to show whole. The card brings its chip into the strip's sight, smoothly
+ * with the window's own motion, and stays up while it scrolls in, then hangs centred from it.
+ */
+export const ComesUpOnAChipOutOfSight: Story = {
+  args: { pins: MANY, hasNotice: "design-tokens" },
+  play: async ({ canvas }) => {
+    const strip = canvas.getByRole("toolbar", { name: "Pinned workspaces" });
+    const card = await waitFor(
+      () => screen.queryByRole("region", { name: "Notices for design-tokens" }) as HTMLElement,
+    );
+    await waitFor(() => {
+      const chip = chipOf("design-tokens").getBoundingClientRect();
+      const seen = strip.getBoundingClientRect();
+      expect(chip.right).toBeLessThanOrEqual(seen.right + 1);
+      const surface = surfaceOf(card).getBoundingClientRect();
+      expect(Math.abs(centre(surface) - centre(chip))).toBeLessThanOrEqual(1.5);
+    });
+    // Up all the way in: the same card, never taken down by its own scroll.
+    await expect(card.isConnected).toBe(true);
+  },
+};

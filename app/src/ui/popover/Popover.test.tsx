@@ -14,7 +14,38 @@ import { useRef, useState } from "react";
 import { InlineMenu, MenuItem } from "../menu/Menu";
 import { AnchoredPopover, HungPopover, PopoverFilter, PopoverFooter, PopoverList } from "./Popover";
 
-afterEach(cleanup);
+/** jsdom's own `scrollIntoView`, if it has one, put back after a test that stood one in. */
+const SCROLL_INTO_VIEW = Element.prototype.scrollIntoView;
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  Element.prototype.scrollIntoView = SCROLL_INTO_VIEW;
+  document.documentElement.style.removeProperty("--motion-duration-slide");
+});
+
+/** A box per element: the strip 0–300 across, the chip wherever `chipAt` says now. */
+function laidOut(chipAt: () => number) {
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    const strip = this.getAttribute("data-testid") === "clip";
+    const left = strip ? 0 : this.textContent === "gamma" ? chipAt() : 0;
+    const width = strip ? 300 : 60;
+    return {
+      x: left,
+      y: 0,
+      left,
+      top: 0,
+      right: left + width,
+      bottom: 28,
+      width,
+      height: 28,
+      toJSON: () => ({}),
+    } as DOMRect;
+  });
+}
+
+/** One frame, and what React draws in it. */
+const aFrame = () => act(() => new Promise<void>((done) => requestAnimationFrame(() => done())));
 
 function Refusal({ up }: { up: boolean }) {
   const box = useRef<HTMLSpanElement>(null);
@@ -138,38 +169,47 @@ describe("a popover hung from what it is about (#3648)", () => {
   });
 
   it("is hidden once what it hangs from has scrolled out of its strip's sight (#3648's review)", async () => {
-    // A box per element: the strip 0–300 across, the chip where the test puts it.
     let chipAt = 100;
-    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: Element,
-    ) {
-      const strip = this.getAttribute("data-testid") === "clip";
-      const left = strip ? 0 : this.textContent === "gamma" ? chipAt : 0;
-      const width = strip ? 300 : 60;
-      return {
-        x: left,
-        y: 0,
-        left,
-        top: 0,
-        right: left + width,
-        bottom: 28,
-        width,
-        height: 28,
-        toJSON: () => ({}),
-      } as DOMRect;
-    });
+    laidOut(() => chipAt);
     render(<Hung />);
     // Still in sight: it follows, and stays up.
     chipAt = 200;
     fireEvent.scroll(screen.getByTestId("clip"));
-    await act(() => new Promise(requestAnimationFrame));
+    await aFrame();
     expect(screen.getByRole("region", { name: "Notices for gamma" })).toBeInTheDocument();
     // Out of sight past the strip's start: down, and nothing is dismissed (its owner hides it).
     chipAt = -80;
     fireEvent.scroll(screen.getByTestId("clip"));
-    await act(() => new Promise(requestAnimationFrame));
+    await aFrame();
     expect(screen.queryByRole("region", { name: "Notices for gamma" })).toBeNull();
-    vi.restoreAllMocks();
+  });
+
+  it("brings what it hangs from into sight as it comes, and stays up while that scrolls in", async () => {
+    // The window's own motion, not reduced (`workspaceSlide.moves`): a smooth scroll, frame by
+    // frame, with what it hangs from out of sight on the first of them (#3648's round 3).
+    // A slide's duration the motion layer would write (`theme/motion.ts`), so the window moves.
+    document.documentElement.style.setProperty("--motion-duration-slide", `${200}ms`);
+    let chipAt = -80;
+    laidOut(() => chipAt);
+    const into = vi.fn();
+    Element.prototype.scrollIntoView = into;
+    render(<Hung />);
+    await aFrame();
+    expect(into).toHaveBeenCalledWith({ inline: "nearest", block: "nearest", behavior: "smooth" });
+    for (const at of [-80, -40, 20, 100]) {
+      chipAt = at;
+      fireEvent.scroll(screen.getByTestId("clip"));
+      await aFrame();
+      expect(
+        screen.getByRole("region", { name: "Notices for gamma" }),
+        String(at),
+      ).toBeInTheDocument();
+    }
+    // Arrived, then scrolled away: down.
+    chipAt = -80;
+    fireEvent.scroll(screen.getByTestId("clip"));
+    await aFrame();
+    expect(screen.queryByRole("region", { name: "Notices for gamma" })).toBeNull();
   });
 
   it("stays up when the keyboard leaves it, by Tab or F6: only a press elsewhere hides it", () => {

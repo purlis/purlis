@@ -207,18 +207,28 @@ export function ChipCard({
   // that goes (its last notice dismissed) hands it to the chip it hung from, which is still
   // drawn, unless something else took it as it went. The dot it may have come from is gone.
   const chip = useRef<Element | null>(null);
+  const clipped = useRef<Element | null>(null);
   useLayoutEffect(() => {
     chip.current = anchor.current;
+    clipped.current = clip?.current ?? null;
   });
   useLayoutEffect(
     () => () => {
       const had = region.current?.contains(document.activeElement) ?? false;
       const to = chip.current;
+      const by = clipped.current;
       if (!had || !(to instanceof HTMLElement)) return;
       queueMicrotask(() => {
         const at = document.activeElement;
-        if ((at === null || at === document.body) && to.isConnected)
-          to.focus({ preventScroll: true });
+        if ((at !== null && at !== document.body) || !to.isConnected) return;
+        // A chip out of its strip's sight is brought back into it, so the keyboard's focus is
+        // never on what cannot be seen (WCAG 2.4.11); one in sight stays where it is.
+        const box = to.getBoundingClientRect();
+        const seen = by?.getBoundingClientRect();
+        const hidden = seen !== undefined && (box.right <= seen.left || box.left >= seen.right);
+        to.focus({ preventScroll: true });
+        if (hidden && typeof to.scrollIntoView === "function")
+          to.scrollIntoView({ inline: "nearest", block: "nearest" });
       });
     },
     [],

@@ -46,6 +46,7 @@ import {
 // React Aria's own careful focus, which its hand-back uses: it is not in the package's index.
 import { focusSafely } from "react-aria/private/interactions/focusSafely";
 import { useProjectShown } from "../../projectShown";
+import { moves } from "../../workspaceSlide";
 import { pressableTrigger } from "../trigger";
 
 /** How near the window's edge a popover or a menu may come, in px (R59). */
@@ -503,25 +504,39 @@ export function HungPopover({
   useEffect(() => {
     if (!isOpen) return;
     let asked = 0;
-    /** Placed again where what it hangs from is now, or hidden once that is out of sight. */
+    /** Whether what it hangs from meets its clip's sight now; with no clip, it always does. */
+    const inSight = () => {
+      const trigger = triggerRef.current;
+      const clip = clipRef?.current;
+      if (trigger === null || clip === null || clip === undefined) return true;
+      const at = trigger.getBoundingClientRect();
+      const seen = clip.getBoundingClientRect();
+      return (
+        at.right > seen.left && at.left < seen.right && at.bottom > seen.top && at.top < seen.bottom
+      );
+    };
+    // **Hidden only as what it hangs from leaves sight** (#3648's round 3), never while that is
+    // still on its way in: a smooth scroll bringing a new chip into view (R104) finds it out of
+    // sight on its first frames.
+    let seen = inSight();
+    // Out of sight as it comes: brought in, as R104 brings a chip in, and followed as it comes.
+    const trigger = triggerRef.current;
+    if (!seen && trigger instanceof HTMLElement && typeof trigger.scrollIntoView === "function")
+      trigger.scrollIntoView({
+        inline: "nearest",
+        block: "nearest",
+        behavior: moves() ? "smooth" : "auto",
+      });
+    /** Placed again where what it hangs from is now, or hidden once that has left sight. */
     const follow = () => {
       cancelAnimationFrame(asked);
       asked = requestAnimationFrame(() => {
-        const trigger = triggerRef.current;
-        const clip = clipRef?.current;
-        if (trigger !== null && clip !== null && clip !== undefined) {
-          const at = trigger.getBoundingClientRect();
-          const seen = clip.getBoundingClientRect();
-          const inSight =
-            at.right > seen.left &&
-            at.left < seen.right &&
-            at.bottom > seen.top &&
-            at.top < seen.bottom;
-          if (!inSight) {
-            hide.current();
-            return;
-          }
+        const now = inSight();
+        if (seen && !now) {
+          hide.current();
+          return;
         }
+        seen = seen || now;
         setNudge((was) => (was === 0 ? 0.01 : 0));
       });
     };
