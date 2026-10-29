@@ -127,11 +127,17 @@ describe("Needs you", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Rename deploy" });
     expect(within(dialog).getByLabelText("New name")).toBeInTheDocument();
-    const path = within(screen.getByRole("list", { name: "Path" })).getAllByRole("listitem");
+    // It lands on the skill's own page (#3682), with the Rename dialog over it (#3685): the
+    // page is behind the modal, so it is read hidden.
+    const path = within(screen.getByRole("list", { name: "Path", hidden: true })).getAllByRole(
+      "listitem",
+      { hidden: true },
+    );
     expect(path[0]).toHaveTextContent("Library");
-    // It lands on the skill's own page (#3682), with the Rename dialog over it (#3685).
     const page = screen.getByTestId("skill-studio-skill");
-    expect(within(page).getByRole("tablist", { name: "deploy's sections" })).toBeInTheDocument();
+    expect(
+      within(page).getByRole("tablist", { name: "deploy's sections", hidden: true }),
+    ).toBeInTheDocument();
   });
 
   it("moves the skills only some programs read, and says what the move said", async () => {
