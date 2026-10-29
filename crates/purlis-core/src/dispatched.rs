@@ -3223,6 +3223,7 @@ mod tests {
         heard: false,
         running: false,
         waiting: false,
+        own_work: false,
         asking: false,
         measured: false,
         interrupts: false,
