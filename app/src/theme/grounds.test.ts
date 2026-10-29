@@ -310,7 +310,15 @@ class Reader {
   /** One pass over every file, with each component's `children` places from the pass before. */
   read(): void {
     const fresh = new Map<string, Unit[]>();
-    for (const file of this.files) {
+    for (const [source, held] of this.parsed()) this.readFile(source, held, fresh);
+    this.units.clear();
+    fresh.forEach((units, name) => this.units.set(name, units));
+  }
+
+  /** Each file, parsed with its variables once for every pass. */
+  private parsedFiles?: [ts.SourceFile, Held][];
+  private parsed(): [ts.SourceFile, Held][] {
+    this.parsedFiles ??= this.files.map((file) => {
       const source = ts.createSourceFile(
         file.name,
         file.text,
@@ -318,13 +326,12 @@ class Reader {
         true,
         ts.ScriptKind.TSX,
       );
-      this.readFile(source, fresh);
-    }
-    this.units.clear();
-    fresh.forEach((units, name) => this.units.set(name, units));
+      return [source, new Held(source)];
+    });
+    return this.parsedFiles;
   }
 
-  private readFile(source: ts.SourceFile, into: Map<string, Unit[]>): void {
+  private readFile(source: ts.SourceFile, held: Held, into: Map<string, Unit[]>): void {
     // The family's members this file names: imported from the family's module, or its own.
     const own = /(^|\/)ui\/button\/Button\.tsx$/.test(source.fileName);
     for (const statement of source.statements) {
@@ -338,19 +345,6 @@ class Reader {
             this.family.add(`${source.fileName}:${one.name.text}`);
     }
     if (own) for (const name of FAMILY) this.family.add(`${source.fileName}:${name}`);
-    /** Each variable whose value is JSX, by name, read where it is placed; and every other
-     *  variable's value, which a `className` may name. */
-    const held = new Map<string, ts.Node>();
-    const classLists = new Map<string, ts.Node[]>();
-    const visitHeld = (node: ts.Node) => {
-      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
-        const name = node.name.text;
-        if (hasJsx(node.initializer)) held.set(name, node.initializer);
-        else classLists.set(name, [...(classLists.get(name) ?? []), node.initializer]);
-      }
-      ts.forEachChild(node, visitHeld);
-    };
-    visitHeld(source);
     const unitOf = (node: ts.Node): string | undefined => {
       if (ts.isFunctionDeclaration(node) && node.name) return node.name.text;
       if (
@@ -378,19 +372,18 @@ class Reader {
         };
         into.set(name, [...(into.get(name) ?? []), unit]);
         const body = ts.isVariableDeclaration(node) ? node.initializer : node;
-        if (body) this.walk(body, [], unit, source, held, classLists, new Set());
+        if (body) this.walk(body, [], unit, source, held, new Set());
         return;
       }
-      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && held.has(node.name.text))
-        return;
+      if (held.isJsx(node)) return;
       ts.forEachChild(node, top);
     };
     top(source);
   }
 
-  private classesOf(expression: ts.Node, classLists: Map<string, ts.Node[]>): Carried[] {
+  private classesOf(expression: ts.Node, held: Held): Carried[] {
     const carried: Carried[] = [];
-    const seen = new Set<string>();
+    const seen = new Set<ts.Node>();
     const visit = (node: ts.Node, always: boolean) => {
       if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
         for (const name of node.text.split(/\s+/)) if (name !== "") carried.push({ name, always });
@@ -431,9 +424,12 @@ class Reader {
         node.templateSpans.forEach((span) => visit(span.expression, false));
         return;
       }
-      if (ts.isIdentifier(node) && classLists.has(node.text) && !seen.has(node.text)) {
-        seen.add(node.text);
-        for (const one of classLists.get(node.text) ?? []) visit(one, always);
+      const list = ts.isIdentifier(node) ? held.value(node) : undefined;
+      if (list !== undefined && !list.jsx) {
+        if (!seen.has(list.value)) {
+          seen.add(list.value);
+          visit(list.value, always);
+        }
         return;
       }
       ts.forEachChild(node, (child) => visit(child, always && !CONDITIONAL(node)));
@@ -447,12 +443,11 @@ class Reader {
     frames: Frame[],
     unit: Unit,
     source: ts.SourceFile,
-    held: Map<string, ts.Node>,
-    classLists: Map<string, ts.Node[]>,
-    placing: Set<string>,
+    held: Held,
+    placing: Set<ts.Node>,
   ): void {
     const again = (child: ts.Node, inside: Frame[]) =>
-      this.walk(child, inside, unit, source, held, classLists, placing);
+      this.walk(child, inside, unit, source, held, placing);
     if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) {
       const open = ts.isJsxElement(node) ? node.openingElement : node;
       const tag = open.tagName.getText(source);
@@ -466,7 +461,7 @@ class Reader {
       if (style !== undefined && /\bbackground/i.test(style.getText(source)))
         this.inline.add(`${source.fileName}: <${tag}>`);
       const className = attribute("className")?.initializer;
-      const carried = className === undefined ? [] : this.classesOf(className, classLists);
+      const carried = className === undefined ? [] : this.classesOf(className, held);
       const scope = attribute("data-scope")?.initializer;
       const part = attribute("data-part")?.initializer;
       const named = tag.split(".").pop() ?? tag;
@@ -528,11 +523,11 @@ class Reader {
     }
     if (ts.isIdentifier(node)) {
       if (node.text === "children" && placed(node)) unit.childrenAt.push(frames);
-      const value = held.get(node.text);
-      if (value !== undefined && !placing.has(node.text)) {
-        placing.add(node.text);
-        again(value, frames);
-        placing.delete(node.text);
+      const one = held.value(node);
+      if (one?.jsx === true && !placing.has(one.value)) {
+        placing.add(one.value);
+        again(one.value, frames);
+        placing.delete(one.value);
       }
       return;
     }
@@ -542,8 +537,7 @@ class Reader {
     }
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression))
       unit.uses.push({ name: node.expression.text, frames });
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && held.has(node.name.text))
-      return;
+    if (held.isJsx(node)) return;
     ts.forEachChild(node, (child) => again(child, frames));
   }
 
@@ -577,6 +571,126 @@ class Reader {
             under(use.frames).tokens.forEach((token) => add(token, `${where} > ${use.name}`));
       }
     return found;
+  }
+}
+
+/** A variable's value as a name in one file sees it: JSX, read where it is placed, or any
+ *  other value, which a `className` may name. */
+type Value = { jsx: boolean; value: ts.Node };
+
+/** Whether `node` is a scope a `const`, a `let` or a parameter is seen in. */
+function isScope(node: ts.Node): boolean {
+  return (
+    ts.isSourceFile(node) ||
+    ts.isBlock(node) ||
+    ts.isModuleBlock(node) ||
+    ts.isCaseBlock(node) ||
+    ts.isCatchClause(node) ||
+    ts.isForStatement(node) ||
+    ts.isForInStatement(node) ||
+    ts.isForOfStatement(node) ||
+    ts.isFunctionLike(node)
+  );
+}
+
+/** Whether `node` names a property, an attribute or a declared binding rather than a variable
+ *  it reads: `said` in `mark.said`, `<Badge said="…">`, `{ said: 1 }` or `const { said } = …`
+ *  (#3783). */
+function isPropertyName(node: ts.Identifier): boolean {
+  const parent = node.parent;
+  if (ts.isPropertyAccessExpression(parent)) return parent.name === node;
+  if (ts.isQualifiedName(parent)) return parent.right === node;
+  if (ts.isBindingElement(parent) || ts.isImportSpecifier(parent) || ts.isExportSpecifier(parent))
+    return parent.name === node || parent.propertyName === node;
+  if (
+    ts.isPropertyAssignment(parent) ||
+    ts.isJsxAttribute(parent) ||
+    ts.isPropertyDeclaration(parent) ||
+    ts.isPropertySignature(parent) ||
+    ts.isMethodDeclaration(parent) ||
+    ts.isMethodSignature(parent) ||
+    ts.isGetAccessorDeclaration(parent) ||
+    ts.isSetAccessorDeclaration(parent) ||
+    ts.isEnumMember(parent)
+  )
+    return parent.name === node;
+  return (
+    ts.isLabeledStatement(parent) ||
+    ts.isBreakOrContinueStatement(parent) ||
+    ts.isJsxNamespacedName(parent)
+  );
+}
+
+/** The nearest scope around `node`, `node` itself not counted; or with `hoisted`, the nearest
+ *  function or file, where a `var` is seen. */
+function scopeAround(node: ts.Node, hoisted = false): ts.Node {
+  let at = node.parent;
+  while (!(hoisted ? ts.isSourceFile(at) || ts.isFunctionLike(at) : isScope(at))) at = at.parent;
+  return at;
+}
+
+/**
+ * **Each variable of one file, in the scope it is declared in** (#3783): a name is read as the
+ * variable the nearest scope around it declares, so a component's `said` is never another's,
+ * and a parameter, a function, a class or an import of the same name hides what is outside it.
+ */
+class Held {
+  private readonly scopes = new Map<ts.Node, Map<string, Value | null>>();
+  /** Each variable declaration with a value, by its node. */
+  private readonly declared = new Map<ts.Node, Value>();
+
+  constructor(source: ts.SourceFile) {
+    const visit = (node: ts.Node) => {
+      if (ts.isVariableDeclaration(node)) {
+        const list = node.parent;
+        const scope = scopeAround(
+          node,
+          ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.BlockScoped) === 0,
+        );
+        if (ts.isIdentifier(node.name) && node.initializer !== undefined) {
+          const value = { jsx: hasJsx(node.initializer), value: node.initializer };
+          this.declared.set(node, value);
+          this.declare(scope, node.name.text, value);
+        } else this.shadow(scope, node.name);
+      } else if (ts.isParameter(node)) this.shadow(node.parent, node.name);
+      else if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) && node.name)
+        this.declare(scopeAround(node), node.name.text, null);
+      else if ((ts.isFunctionExpression(node) || ts.isClassExpression(node)) && node.name)
+        this.declare(node, node.name.text, null);
+      else if (ts.isImportClause(node) || ts.isNamespaceImport(node) || ts.isImportSpecifier(node))
+        if (node.name !== undefined) this.declare(source, node.name.text, null);
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+
+  /** Whether `node` declares a variable whose value is JSX, which is read where it is placed. */
+  isJsx(node: ts.Node): boolean {
+    return this.declared.get(node)?.jsx === true;
+  }
+
+  /** The value of the variable `name` reads, if it reads one this file gives a value. */
+  value(name: ts.Identifier): Value | undefined {
+    if (isPropertyName(name)) return undefined;
+    for (let at: ts.Node | undefined = name.parent; at !== undefined; at = at.parent) {
+      const seen = isScope(at) ? this.scopes.get(at)?.get(name.text) : undefined;
+      if (seen !== undefined) return seen ?? undefined;
+    }
+    return undefined;
+  }
+
+  private declare(scope: ts.Node, name: string, value: Value | null): void {
+    const names = this.scopes.get(scope) ?? new Map<string, Value | null>();
+    names.set(name, value);
+    this.scopes.set(scope, names);
+  }
+
+  /** Each name a parameter or a destructuring declares, with no value to follow. */
+  private shadow(scope: ts.Node, name: ts.BindingName): void {
+    if (ts.isIdentifier(name)) this.declare(scope, name.text, null);
+    else
+      for (const element of name.elements)
+        if (!ts.isOmittedExpression(element)) this.shadow(scope, element.name);
   }
 }
 
@@ -816,6 +930,133 @@ describe("the grounds a button is drawn on", () => {
       ),
     );
     expect(found).toEqual(["surface.base", "surface.sunken"]);
+  });
+
+  it("never follow a property's name, or an attribute's, as a variable (#3783)", () => {
+    const found = buttonGrounds(
+      [
+        file(
+          "M.tsx",
+          `export function Menu() {
+             const more = <button className="ui-button" />;
+             return <div className="raised">{more}</div>;
+           }
+           export function Tag({ mark }) {
+             return <span className="badge" more="1">{mark.more}</span>;
+           }`,
+        ),
+      ],
+      css(
+        `.raised { background: var(--surface-raised); } .badge { background: var(--accent-surface); }`,
+      ),
+    );
+    expect(found).toEqual(["surface.base", "surface.raised"]);
+  });
+
+  it("look a held value up in its own component, never in another's of the same name (#3783)", () => {
+    const found = buttonGrounds(
+      [
+        file(
+          "S.tsx",
+          `export function Quiet() {
+             const said = <em>quiet</em>;
+             return <span className="badge">{said}</span>;
+           }
+           export function Loud() {
+             const said = <button className="ui-button" />;
+             return <div className="raised">{said}</div>;
+           }`,
+        ),
+      ],
+      css(
+        `.raised { background: var(--surface-raised); } .badge { background: var(--accent-surface); }`,
+      ),
+    );
+    expect(found).toEqual(["surface.base", "surface.raised"]);
+  });
+
+  it("never follow a name a parameter hides (#3783)", () => {
+    const found = buttonGrounds(
+      [
+        file(
+          "P.tsx",
+          `const more = <button className="ui-button" />;
+           export function Menu() { return <div className="raised">{more}</div>; }
+           export function Tag({ more }) { return <span className="badge">{more}</span>; }
+           export function Row(more) { return <span className="badge">{more}</span>; }`,
+        ),
+      ],
+      css(
+        `.raised { background: var(--surface-raised); } .badge { background: var(--accent-surface); }`,
+      ),
+    );
+    expect(found).toEqual(["surface.base", "surface.raised"]);
+  });
+
+  it("never follow a name a function, a property or a getter of the same name hides (#3783)", () => {
+    const found = buttonGrounds(
+      [
+        file(
+          "F.tsx",
+          `const said = <button className="ui-button" />;
+           export function Menu() { return <div className="raised">{said}</div>; }
+           export function Badge() {
+             function said() { return "x"; }
+             return <span className="badge">{said()}</span>;
+           }
+           export function Tag() {
+             return <span className="badge">{f({ said: 1 })}{f({ get said() { return 1; } })}</span>;
+           }`,
+        ),
+      ],
+      css(
+        `.raised { background: var(--surface-raised); } .badge { background: var(--accent-surface); }`,
+      ),
+    );
+    expect(found).toEqual(["surface.base", "surface.raised"]);
+  });
+
+  it("still follow a value read in a default, and a var in its whole function (#3783)", () => {
+    const found = buttonGrounds(
+      [
+        file(
+          "V.tsx",
+          `const more = <button className="ui-button" />;
+           export function Card({ icon = more }) { return <div>{icon}</div>; }
+           export function Page() { return <section className="sunken"><Card /></section>; }
+           export function Menu({ open }) {
+             if (open) { var shown = <button className="ui-button" />; }
+             return <div className="raised">{shown}</div>;
+           }`,
+        ),
+      ],
+      css(
+        `.raised { background: var(--surface-raised); } .sunken { background: var(--surface-sunken); }`,
+      ),
+    );
+    expect(found).toEqual(["surface.base", "surface.raised", "surface.sunken"]);
+  });
+
+  it("look a class list up in its own component too (#3783)", () => {
+    const found = buttonGrounds(
+      [
+        file(
+          "C.tsx",
+          `export function Plain() {
+             const classes = "badge";
+             return <span className={classes}>quiet</span>;
+           }
+           export function Loud() {
+             const classes = "raised";
+             return <div className={classes}><button className="ui-button" /></div>;
+           }`,
+        ),
+      ],
+      css(
+        `.raised { background: var(--surface-raised); } .badge { background: var(--accent-surface); }`,
+      ),
+    );
+    expect(found).toEqual(["surface.base", "surface.raised"]);
   });
 
   /** The window, read once for the tests below. */

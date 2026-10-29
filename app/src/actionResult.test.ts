@@ -14,7 +14,7 @@ const MADE_WITH_VISION = [
   "Vision recorded → workspaces/docs/workspace.md",
 ];
 
-const WAYS = { onOpen: () => undefined, onAddVision: () => undefined };
+const WAYS = { onAddVision: () => undefined };
 
 describe("a workspace made (#3344)", () => {
   it("says it in the app's own words, a title and one plain sentence", () => {
@@ -36,25 +36,25 @@ describe("a workspace made (#3344)", () => {
     expect(said.details).not.toMatch(/ask the developer/);
   });
 
-  it("offers to open the workspace, first and filled, and to add the vision it lacks", () => {
-    let opened = 0;
+  it("offers to add the vision it lacks, filled, and never to open what is open (#3648)", () => {
+    // Making a workspace opens it (#3648): an Open would offer what has already happened.
     let asked = 0;
-    const said = workspaceMade("git-ci-cd", MADE_LIVE, {
-      onOpen: () => (opened += 1),
-      onAddVision: () => (asked += 1),
-    });
+    const said = workspaceMade("git-ci-cd", MADE_LIVE, { onAddVision: () => (asked += 1) });
     expect(said.ways?.map((way) => [way.label, way.primary === true])).toEqual([
-      ["Open git-ci-cd", true],
-      ["Add a vision", false],
+      ["Add a vision", true],
     ]);
     said.ways?.[0].onPress();
-    said.ways?.[1].onPress();
-    expect([opened, asked]).toEqual([1, 1]);
+    expect(asked).toBe(1);
   });
 
-  it("offers no vision to add where one was recorded", () => {
+  it("offers no way on where a vision was recorded: its Details are its one", () => {
     const said = workspaceMade("docs", MADE_WITH_VISION, WAYS);
-    expect(said.ways?.map((way) => way.label)).toEqual(["Open docs"]);
+    expect(said.ways ?? []).toEqual([]);
+    expect(said.details).toBe(MADE_WITH_VISION.join("\n"));
+  });
+
+  it("is about the workspace it made, so it hangs from that workspace's chip (#3648)", () => {
+    expect(workspaceMade("git-ci-cd", MADE_LIVE, WAYS).workspace).toBe("git-ci-cd");
   });
 
   it("adds why the pin was refused to its sentence", () => {

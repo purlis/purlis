@@ -979,6 +979,7 @@ families](#the-select-and-combobox-families)).
 | `PopoverTrigger` with `PopoverDialog` | A popover that asks, opened by a press on its trigger: the keyboard in it, handed back as it closes |
 | `HeldPopover` | The same, held open by its owner beside a roving row |
 | `AnchoredPopover` | A popover that says something beside an element (a card beside a row, a refusal under a field): it takes no keyboard, and its owner says when it is up |
+| `HungPopover` | A card of notices hung from what they are about (a title-bar chip's, #3648): the `notice` surface centred under it with its `point` (a part of its own, never a held popover's `arrow`), shifted only at the window's edge, and following what it hangs from as that scrolls; it takes no keyboard as it comes (F6, a press on it or its dot reaches it), a press anywhere else hides it, and its owner's Esc dismisses what it says. No timer |
 | `PopoverFilter`, `PopoverRule`, `PopoverList`, `PopoverFooter` | A popover laid out as a list (R165, `layout="list"`): the filter row with its rule under it, the list that scrolls while they stay in view, and the footer that says its keys, "↑↓ move · ⏎ go · esc close", each key in a mono cap |
 
 - **Placed under its trigger, lined up with its start or its end** (`align`), and never nearer
