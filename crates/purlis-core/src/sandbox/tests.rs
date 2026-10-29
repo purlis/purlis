@@ -1873,6 +1873,26 @@ fn a_claude_code_chat_is_sandboxed_with_no_way_out_and_no_silent_fallback() {
     assert_eq!(settings.sandbox["failIfUnavailable"], true);
 }
 
+/// On Linux, at the full sandbox and at the floor, a Claude Code chat whose own sandbox cannot
+/// start (on a runner, where only the browser engine may make the namespaces bubblewrap needs,
+/// D-2050-25) is refused, never run without it.
+#[test]
+fn on_linux_a_claude_code_chat_whose_sandbox_cannot_start_is_refused_at_every_level() {
+    for level in [Level::Full, Level::Floor] {
+        let settings = claude::settings(&Compiled {
+            level,
+            ..compiled(Denied::default(), Os::Linux)
+        })
+        .expect("compiles");
+        assert_eq!(settings.sandbox["enabled"], true, "{level:?}");
+        assert_eq!(settings.sandbox["failIfUnavailable"], true, "{level:?}");
+        assert_eq!(
+            settings.sandbox["allowUnsandboxedCommands"], false,
+            "{level:?}"
+        );
+    }
+}
+
 #[test]
 fn a_claude_code_chat_reaches_only_the_presets_hosts_and_is_never_asked_to_widen_them() {
     let settings = claude::settings(&compiled(Denied::default(), Os::MacOs)).expect("compiles");

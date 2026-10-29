@@ -619,6 +619,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_new",
     "skill_save",
     "skill_rename",
+    "skill_copy",
     "skill_move",
     "skill_delete",
     // A skill delete a crash or a quit cut short, finished in one commit or put back as the

@@ -1939,6 +1939,11 @@ export const commands = {
 	skillSave: (plane: PlaneId, level: SkillLevel, name: string, was: string, now: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_save", { plane, level, name, was, now })),
 	/**  **Renames a skill**, and every persona and skill that names it. */
 	skillRename: (plane: PlaneId, level: SkillLevel, name: string, to: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_rename", { plane, level, name, to })),
+	/**
+	 *  **Make my own copy** (#3686): the built-in skill `name` copied to `level` under the new name
+	 *  `to`, which the person can edit. The built-in skill keeps loading.
+	 */
+	skillCopy: (plane: PlaneId, name: string, level: SkillLevel, to: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_copy", { plane, name, level, to })),
 	/**  Whether moving a skill from `from` to `to` asks for a grant: it becomes a project skill. */
 	skillMoveNeedsGrant: (from: SkillLevel, to: SkillLevel) => __TAURI_INVOKE<boolean>("skill_move_needs_grant", { from, to }),
 	/**  **Moves a skill** from `from` to `to`, with `grant` where it becomes a project skill. */

@@ -137,7 +137,8 @@ pub enum DispatchCommand {
     },
     /// Cancel a task this chat dispatched: its turn is ended and it is asked for one short
     /// report of what it did, which arrives with the outcome `cancelled`. Only a task this
-    /// chat dispatched can be cancelled by it.
+    /// chat dispatched can be cancelled by it, and not one the person typed in: that one is
+    /// theirs.
     Cancel {
         /// The task's chat, by its number in `purlis dispatch list`.
         chat: u32,
