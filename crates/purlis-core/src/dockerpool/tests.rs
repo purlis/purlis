@@ -196,6 +196,24 @@ fn a_runner_container_holds_its_home_on_a_volume_of_its_own_and_no_folder_of_thi
     assert!(!args.iter().any(|a| a == "-v" || a == "--volume"));
 }
 
+/// The `purlis` whose holding of namespaces the check asks is the one that serves, whatever the
+/// image's entrypoint, under the runtime's init (#3702).
+#[test]
+fn a_runner_container_serves_the_purlis_the_check_asks_under_the_runtimes_init() {
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
+    assert!(has_pair(&args, "--entrypoint", PURLIS), "{args:?}");
+    assert!(args.iter().any(|a| a == "--init"), "{args:?}");
+    let at = args
+        .iter()
+        .position(|a| a == image().as_str())
+        .expect("the image");
+    assert!(
+        args.iter().position(|a| a == "--entrypoint").unwrap() < at,
+        "a flag of the run, not the program's"
+    );
+    assert_eq!(args[at + 1], "serve");
+}
+
 #[test]
 fn a_runner_container_has_a_read_only_root_and_a_tmp_that_runs_no_program() {
     let args = runner().create_args(std::path::Path::new(SECCOMP_AT));

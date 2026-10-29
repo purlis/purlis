@@ -468,6 +468,12 @@ impl Runner {
         pair("--memory-swap", format!("{}m", self.limits.memory_mib));
         pair("--pids-limit", self.limits.pids.to_string());
         args.push("--read-only".to_owned());
+        // The `purlis` the check asks whether it holds its programs from namespaces is the one
+        // that serves (D-2050-26, #3702): whatever the image's own entrypoint, with the runtime's
+        // init as PID 1 to reap what a chat's programs leave behind, as the image's `tini` did.
+        args.push("--init".to_owned());
+        args.push("--entrypoint".to_owned());
+        args.push(PURLIS.to_owned());
         let mut all = vec!["run".to_owned(), "--detach".to_owned()];
         all.extend(args);
         all.push(self.image.as_str().to_owned());
@@ -2025,7 +2031,9 @@ impl Docker {
                 .is_err()
         {
             return Err(refused(format!(
-                "runner {}'s container lets its browser engine make namespaces, and its purlis                  does not hold its programs from them, so purlis does not link to it; remove                  the runner and add it again",
+                "runner {}'s container lets its browser engine make namespaces, and its purlis \
+                 does not hold its programs from them, so purlis does not link to it; remove \
+                 the runner and add it again",
                 made.runner.name
             )));
         }

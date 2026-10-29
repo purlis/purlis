@@ -173,7 +173,10 @@ pub fn shown_on_runner(pool: &str) -> EngineSandboxShown {
             "Browsers cannot start on the runner of pool {pool}: its browser engine cannot make \
              its sandbox there, and purlis never runs the engine without it. A Docker pool's \
              runner made by an earlier purlis does not let the engine make it: remove the pool \
-             and add it again. If that runner's Linux allows the sandbox only under an AppArmor \
+             and add it again. A pool on a team's own image is made so only once that image \
+             carries a purlis as new as this one, which lets the browser engine alone make \
+             namespaces on the runner: rebuild the image on it, then remove the pool and add it \
+             again. If that runner's Linux allows the sandbox only under an AppArmor \
              profile, as Ubuntu 23.10 and later do, run the command on the runner, not on this \
              machine."
         ),

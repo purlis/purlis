@@ -26,7 +26,12 @@ a cluster's browser pods (*"the runtime default plus what Chrome's sandbox needs
    it does not hold what a chat with no sandbox can change of what the runner later runs, so
    **a runner a chat ran on without the sandbox starts no browser and is filled no login until
    it is made again**, kept so on the desktop, where no runner reaches, and said in words
-   (D-2050-27, the dispatcher's decision of 2026-10-29).
+   (D-2050-27, the dispatcher's decision of 2026-10-29). It fails closed: a start whose answer
+   is lost, or a chat taken back whose sandbox the runner does not say, counts as one with no
+   sandbox; every runner kept for the pool is kept so, the ones still draining after an update
+   too, since the desktop is not told which of them a link reaches; and a record that cannot be
+   read is never written over. **The browsers already open on that runner end, and their data
+   folders with them** (D-2050-28, the dispatcher's decision of 2026-10-29).
 3. **A runner made before this profile stays usable**, on the profile it was made with
    (`Seccomp::RunnersEarlier`): its chats' servers listen, and its browsers are refused for the
    engine's sandbox until the person removes its pool and adds it again; the Notice says so.
@@ -34,7 +39,9 @@ a cluster's browser pods (*"the runtime default plus what Chrome's sandbox needs
    holds what it starts from namespaces** (D-2050-26, the dispatcher's decision of 2026-10-29):
    the image's `purlis` is asked before its container is made, and one that does not answer as
    that `purlis` does is made with the earlier profile, its browsers refused; a runner on this
-   profile whose `purlis` does not hold them is not linked. Each profile is kept under a file
+   profile whose `purlis` does not hold them is not linked. The runner runs that same `purlis`
+   whatever the image's entrypoint (`--entrypoint /usr/local/bin/purlis`, under the runtime's
+   `--init`). Each profile is kept under a file
    name of its own, so a Podman runner, which keeps only the path, is known by it too.
 4. **A runner's `/dev/shm` is a quarter of its memory**, memory-backed and counted against it,
    as a browser pod's shared-memory volume is; the engine keeps using it, as it does on every

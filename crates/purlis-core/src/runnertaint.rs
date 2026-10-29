@@ -91,21 +91,68 @@ pub fn ran_unsandboxed(config_root: &Path, container: &ContainerId) -> bool {
 
 /// **Keeps that a chat ran without the sandbox on the runner whose container is `container`**,
 /// with those kept before of runners this machine still keeps, at most [`MOST`].
+///
+/// Refused, and nothing written, where either record cannot be read: an unreadable record of
+/// runners says nothing of which to let go of, and one of these is never written over, so it
+/// stays one that counts every runner (#3702).
 pub fn mark(config_root: &Path, container: &ContainerId) -> Result<(), String> {
     let _locked = crate::runners::lock(config_root);
-    let still: Vec<String> = crate::runners::read(config_root)
+    let still = kept_runners(config_root)?;
+    keep(config_root, &still, &[container.as_str().to_owned()])
+}
+
+/// **Keeps that a chat ran without the sandbox on pool `pool`'s runner**, as this machine keeps
+/// its runners in `config_root`: every runner kept for the pool, the ones still draining after
+/// an update too, since a link to the pool reaches whichever of them holds its chat and the
+/// window is not told which (#3702). Refused where no runner of the pool is kept, or where
+/// either record cannot be read.
+pub fn mark_pool(config_root: &Path, pool: &str) -> Result<(), String> {
+    let _locked = crate::runners::lock(config_root);
+    let still = kept_runners(config_root)?;
+    let of_pool: Vec<String> = still
+        .iter()
+        .filter(|(of, _)| of == pool)
+        .map(|(_, id)| id.clone())
+        .collect();
+    if of_pool.is_empty() {
+        return Err(format!(
+            "purlis could not keep that a chat ran without the sandbox: pool {pool} has no \
+             runner kept on this machine"
+        ));
+    }
+    keep(config_root, &still, &of_pool)
+}
+
+/// The pool and container of every runner kept in `config_root`, or why they cannot be read.
+fn kept_runners(config_root: &Path) -> Result<Vec<(String, String)>, String> {
+    crate::runners::read(config_root)
         .map(|kept| {
             kept.iter()
-                .map(|runner| runner.made.container.as_str().to_owned())
+                .map(|runner| {
+                    (
+                        runner.pool().to_owned(),
+                        runner.made.container.as_str().to_owned(),
+                    )
+                })
                 .collect()
         })
-        .unwrap_or_default();
-    let mut kept: Vec<String> = read(config_root)
-        .unwrap_or_default()
+        .map_err(|why| format!("purlis could not keep that a chat ran without the sandbox: {why}"))
+}
+
+/// Writes `marked` beside those kept before of the runners in `still`, under the runners' lock.
+fn keep(config_root: &Path, still: &[(String, String)], marked: &[String]) -> Result<(), String> {
+    let Some(before) = read(config_root) else {
+        return Err(format!(
+            "purlis could not keep that a chat ran without the sandbox: {} is not as purlis \
+             writes it, so it is left as it is and counts every runner as one",
+            crate::machine::dir(config_root).join(FILE).display()
+        ));
+    };
+    let mut kept: Vec<String> = before
         .into_iter()
-        .filter(|id| still.contains(id) && id != container.as_str())
+        .filter(|id| still.iter().any(|(_, kept)| kept == id) && !marked.contains(id))
         .collect();
-    kept.push(container.as_str().to_owned());
+    kept.extend(marked.iter().cloned());
     let over = kept.len().saturating_sub(MOST);
     kept.drain(..over);
     let text = serde_json::json!({ "version": 1, "containers": kept });
@@ -114,20 +161,20 @@ pub fn mark(config_root: &Path, container: &ContainerId) -> Result<(), String> {
         .map_err(|why| format!("purlis could not keep that a chat ran without the sandbox: {why}"))
 }
 
-/// **Keeps that a chat ran without the sandbox on pool `pool`'s runner**, as this machine keeps
-/// its runners in `config_root`.
-pub fn mark_pool(config_root: &Path, pool: &str) -> Result<(), String> {
-    let runner = crate::runners::runner_for(config_root, pool).map_err(|why| why.to_string())?;
-    mark(config_root, &runner.made.container)
-}
-
-/// **Whether a chat ran without the sandbox on pool `pool`'s runner**, as this machine keeps its
-/// runners in `config_root`: yes where the record cannot be read. A pool with no runner kept
-/// there has none to start a browser on, so it is said no and its start fails as such a start
-/// does.
+/// **Whether a chat ran without the sandbox on any runner pool `pool` keeps**, the ones still
+/// draining after an update too, as this machine keeps its runners in `config_root`: yes where
+/// either record cannot be read. A pool with no runner kept there has none to start a browser
+/// on, so it is said no and its start fails as such a start does.
 pub fn pool_ran_unsandboxed(config_root: &Path, pool: &str) -> bool {
-    crate::runners::runner_for(config_root, pool)
-        .is_ok_and(|runner| ran_unsandboxed(config_root, &runner.made.container))
+    let Ok(kept) = crate::runners::read(config_root) else {
+        return true;
+    };
+    let Some(marked) = read(config_root) else {
+        return true;
+    };
+    kept.iter()
+        .filter(|runner| runner.pool() == pool)
+        .any(|runner| marked.iter().any(|id| id == runner.made.container.as_str()))
 }
 
 #[cfg(test)]

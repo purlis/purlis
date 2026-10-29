@@ -701,17 +701,43 @@ mod hosted {
                 .map(|(at, _)| at.clone())
         }
 
-        /// **The pool whose runner `program` runs on** (#2050), where the window started it on
-        /// one: what its view's chip names as its device.
-        /// **Why pool `pool`'s runner is trusted with no browser and no login** (D-2050-27): a
-        /// chat ran there without the sandbox, as this machine keeps it. None where it did not,
-        /// or this window keeps no pools.
+        /// **Why pool `pool`'s runners are trusted with no browser and no login** (D-2050-27): a
+        /// chat ran, or may have run, on one of them without the sandbox, as this machine keeps
+        /// it or this window holds it. None where none did.
         fn untrusted(&self, pool: &str) -> Option<String> {
-            let config = self.connection.runners_config()?;
-            purlis_core::runnertaint::pool_ran_unsandboxed(&config, pool)
+            let kept = self.connection.runners_config().is_some_and(|config| {
+                purlis_core::runnertaint::pool_ran_unsandboxed(&config, pool)
+            });
+            (kept || self.connection.untrusts(pool))
                 .then(|| purlis_core::runnertaint::refused_on(pool))
         }
 
+        /// **Ends every browser the window started on pool `pool`** (D-2050-28), once a chat ran,
+        /// or may have run, there without the sandbox: the runner's host clears each one's data
+        /// folder as it ends. Answers how many it ended.
+        pub(crate) fn end_on(&self, pool: &str) -> usize {
+            let programs: Vec<String> = self
+                .projects()
+                .iter()
+                .filter(|(at, _)| at.pool.as_deref() == Some(pool))
+                .flat_map(|(_, held)| held.browsers.clone())
+                .collect();
+            programs
+                .iter()
+                .filter(|program| {
+                    self.close(program)
+                        .inspect_err(|why| {
+                            tracing::warn!(
+                                "purlis: a browser on pool {pool}'s runner was not ended: {why}"
+                            );
+                        })
+                        .is_ok()
+                })
+                .count()
+        }
+
+        /// **The pool whose runner `program` runs on** (#2050), where the window started it on
+        /// one: what its view's chip names as its device.
         pub(crate) fn pool_of(&self, program: &str) -> Option<String> {
             self.at_of(program).and_then(|at| at.pool)
         }
