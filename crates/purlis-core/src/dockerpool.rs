@@ -1893,11 +1893,20 @@ impl Docker {
     /// **Whether `runner`'s image's `purlis` holds what it starts from namespaces** (D-2050-26),
     /// asked of a container of the image made for that alone and removed as it ends: no network,
     /// every capability dropped, no new privileges, its root read-only. Anything but a clean
-    /// answer is a no.
+    /// answer within [`PROBE_WITHIN`] is a no, and its container is removed: an image whose
+    /// `purlis` does not answer holds up no pool.
     fn holds_from_namespaces(&self, runner: &Runner) -> bool {
+        let name = format!("{}-probe", runner.container());
+        let removed = || {
+            let rm = ["rm".to_owned(), "--force".to_owned(), name.clone()];
+            let _ = self.run(&rm, None, MOST_SAID);
+        };
+        removed();
         let mut args: Vec<String> = [
             "run",
             "--rm",
+            "--name",
+            &name,
             "--user",
             &runner.user.spelled(),
             "--cap-drop",
@@ -1915,7 +1924,15 @@ impl Docker {
         .map(|word| (*word).to_owned())
         .collect();
         args.extend(HOLDS_FROM_NAMESPACES.iter().map(|word| (*word).to_owned()));
-        self.run(&args, None, MOST_INSPECTED).is_ok()
+        let held = self
+            .clone()
+            .within(PROBE_WITHIN)
+            .run(&args, None, MOST_INSPECTED)
+            .is_ok();
+        if !held {
+            removed();
+        }
+        held
     }
 
     /// `why`, after removing the container `container` names and the volume `volume`; a
@@ -2365,6 +2382,10 @@ fn read_oci(path: &std::path::Path) -> Result<serde_json::Value, Refused> {
 
 /// The most of what `docker` prints that purlis reads, for an answer that is not a pairing's.
 const MOST_INSPECTED: u64 = 4 * 1024 * 1024;
+
+/// How long an image's `purlis` is given to answer whether it holds what it starts from
+/// namespaces (D-2050-26): its image is already here, and the answer is a start and an exit.
+const PROBE_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// The most of what `docker` says on standard error that purlis keeps to show.
 const MOST_SAID: u64 = 64 * 1024;

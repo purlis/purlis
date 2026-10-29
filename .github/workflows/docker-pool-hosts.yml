@@ -68,13 +68,15 @@ jobs:
       # A stand-in that keeps running whatever its command: nothing in it is run, and the pool
       # names an image by digest alone, so it is pushed to a registry of this job's own. The pool
       # runs `/usr/local/bin/purlis` whatever the image's entrypoint (#3702), so the stand-in's
-      # is a script that sleeps.
+      # is a script that sleeps as `serve` and answers nothing else, as an image with no purlis
+      # did: a check that asks it anything is answered at once.
       - name: A stand-in image, by digest
         run: |
           set -euo pipefail
           docker run --detach --publish 127.0.0.1:5000:5000 --name registry registry:3
           mkdir -p "$RUNNER_TEMP/stand-in"
-          printf '%s\n' '#!/bin/sh' 'exec sleep 2147483647' > "$RUNNER_TEMP/stand-in/purlis"
+          printf '%s\n' '#!/bin/sh' 'case "${1-serve}" in serve) exec sleep 2147483647 ;; esac' \
+            'exit 127' > "$RUNNER_TEMP/stand-in/purlis"
           printf '%s\n' 'FROM busybox:1.37' \
             'COPY --chmod=0755 purlis /usr/local/bin/purlis' \
             'ENTRYPOINT ["/usr/local/bin/purlis"]' > "$RUNNER_TEMP/stand-in/Dockerfile"
