@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793298482713,
+  "lastUpdate": 1793302443558,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29904,6 +29904,48 @@ window.BENCHMARK_DATA = {
             "value": 102.394509,
             "unit": "ms",
             "extra": "median of 5 runs: 101.686, 102.173, 102.395, 102.668, 102.938 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ec640aab46e872c939ca9ca5e2ffe25891893ac8",
+          "message": "Runners: the operator's signing key is rolled, and a statement names its cluster (#3305) (#3874)\n\n* Runners: the operator's signing key is rolled, and a statement names its cluster (#3305)\n\nThe operator's pod mounts the whole signing-key Secret, key.pem and, during a roll,\nnext.pem, and reads both again every minute, so a roll needs no restart. Every Pool\nnames the operator's cluster (the uid of kube-system) and, during a roll, the next key\nwith the current key's seven-day word for it; every Claim's statement is signed by\nboth keys. The statement is v3 and names its cluster first.\n\nThe desktop pins the key and the cluster (PoolPin), refuses a statement, a Pool or a\nroll of another cluster, reads a statement's nextSignature once it moved its pin, and\nmoves its pin in memory when the pinned key vouches for the next (PoolPin::follow).\nStoring the moved pin is #3292's.\n\nADR 0089 amended 2026-10-29 as ruled (E1-E4 on #3305).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Operator: tokio's time feature named, for the pools' re-check (#3305)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Operator: a statement with no next key's signature takes the roll's away (#3305)\n\nA merge patch keeps a field it does not name, so a Claim's nextSignature\noutlived the roll; the patch now writes it null. The kind test's roll restores\nthe install's key and removes its claim whatever happens in it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Operator: the manifest test names the signing-key volume, not its spec (#3305)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T19:09:45Z",
+          "tree_id": "11e44e5c57be62a20c97a6fc9df4126a95b38eba",
+          "url": "https://github.com/purlis/purlis/commit/ec640aab46e872c939ca9ca5e2ffe25891893ac8"
+        },
+        "date": 1793302438506,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6573835,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.631, 0.653, 0.657, 0.664, 0.677 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.562179,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.473, 16.540, 16.562, 16.607, 16.688 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.379021,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.101, 102.259, 102.379, 102.426, 102.780 ms"
           }
         ]
       }
