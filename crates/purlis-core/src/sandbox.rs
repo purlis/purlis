@@ -4323,8 +4323,9 @@ pub trait Board: Send + Sync + std::fmt::Debug {
     /// The person allowed `host` at `by` ([`asks::Asks::allow`]): the hosts held connections
     /// gave up on before it, which the chat is told to retry.
     fn allow(&self, host: &hosts::Host, by: reach::By) -> Vec<String>;
-    /// The person kept `host` blocked ([`asks::Asks::keep_blocked`]).
-    fn keep_blocked(&self, host: &hosts::Host);
+    /// The person kept `host` blocked ([`asks::Asks::keep_blocked`]): whether it ended a live
+    /// Allow of the chat's, so its reach narrowed.
+    fn keep_blocked(&self, host: &hosts::Host) -> bool;
     /// An Allow of `host` at `by` was removed ([`asks::Asks::forget`]).
     fn forget(&self, host: &hosts::Host, by: reach::By);
     /// The hosts allowed live, each with its scope ([`asks::Asks::allowed_live`]).
@@ -4347,8 +4348,8 @@ impl Board for asks::Asks {
         asks::Asks::allow(self, host, by)
     }
 
-    fn keep_blocked(&self, host: &hosts::Host) {
-        asks::Asks::keep_blocked(self, host);
+    fn keep_blocked(&self, host: &hosts::Host) -> bool {
+        asks::Asks::keep_blocked(self, host)
     }
 
     fn forget(&self, host: &hosts::Host, by: reach::By) {

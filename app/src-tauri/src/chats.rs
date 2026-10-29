@@ -2536,42 +2536,79 @@ impl Chats {
     ///
     /// The later answer wins (#3407): an Allow of a host it covers, or one that covers it, kept
     /// for the chat ends too, so the Granted list and the chat's next start agree with its
-    /// proxy. Where the chat's reach narrowed so, its browsers end, as they do when an Allow is
-    /// removed (#2013).
-    pub fn keep_blocked_live(&self, session: u32, host: &purlis_core::sandbox::hosts::Host) {
+    /// proxy. Each one is audited as taken back through `audit` first, as a Revoke is; one whose
+    /// audit could not be written ends all the same, and its audit over-records. Where the
+    /// chat's reach narrowed so, its browsers end, as they do when an Allow is removed (#2013).
+    pub fn keep_blocked_live(
+        &self,
+        session: u32,
+        host: &purlis_core::sandbox::hosts::Host,
+        audit: crate::sandboxing::Audit<'_>,
+    ) {
         let id = lock(&self.open)
             .get(&session)
             .and_then(|running| running.chat.identity.id.clone());
-        let ended = id.is_some_and(|id| self.end_grants_of_host(&id, host));
-        let narrowed = match self.board_of(session) {
-            Some(board) => {
-                let before = board.allowed_live();
-                board.keep_blocked(host);
-                board.allowed_live() != before
-            }
-            None => false,
-        };
+        let ended = id.is_some_and(|id| self.end_grants_of_host(session, &id, host, audit));
+        let narrowed = self
+            .board_of(session)
+            .is_some_and(|board| board.keep_blocked(host));
         if ended || narrowed {
             self.narrowed(&[session]);
         }
     }
 
-    /// Takes back chat `id`'s grants of a host `host` covers, or that covers it: whether any
-    /// was taken back.
-    fn end_grants_of_host(&self, id: &str, host: &purlis_core::sandbox::hosts::Host) -> bool {
+    /// Takes back chat `id`'s grants of a host `host` covers, or that covers it, each audited
+    /// through `audit` first: whether any was taken back.
+    fn end_grants_of_host(
+        &self,
+        session: u32,
+        id: &str,
+        host: &purlis_core::sandbox::hosts::Host,
+        audit: crate::sandboxing::Audit<'_>,
+    ) -> bool {
+        let touches = |what: &purlis_core::sandbox::grant::What| match what {
+            purlis_core::sandbox::grant::What::Host(granted) => {
+                host.covers(granted) || granted.covers(host)
+            }
+            _ => false,
+        };
+        // Audited outside the hold: writing the audit reads the chats.
+        let ending: Vec<ChatGrant> = lock(&self.grants)
+            .get(id)
+            .map(|made| {
+                made.iter()
+                    .filter(|one| touches(&one.what))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        for one in &ending {
+            let target = one.what.target();
+            let audited = purlis_core::sandbox::grant::Audited {
+                granted: false,
+                what: one.what.word(),
+                target: &target,
+                level: if one.once {
+                    purlis_core::sandbox::grant::Level::Once
+                } else {
+                    purlis_core::sandbox::grant::Level::Chat
+                },
+            };
+            if let Err(why) = audit(Some(session), &audited) {
+                tracing::warn!(
+                    "purlis: a chat's Allow ended by Keep blocked was not audited ({why})"
+                );
+            }
+        }
+        // Taken back, and counted so, under one hold, as a Revoke is: a grant reserved before
+        // it cannot be kept after it.
         let mut grants = lock(&self.grants);
         let Some(made) = grants.get_mut(id) else {
             return false;
         };
         let before = made.len();
-        made.retain(|one| match &one.what {
-            purlis_core::sandbox::grant::What::Host(granted) => {
-                !host.covers(granted) && !granted.covers(host)
-            }
-            _ => true,
-        });
+        made.retain(|one| !touches(&one.what));
         let ended = made.len() != before;
-        drop(grants);
         if ended {
             self.took_back(id);
         }

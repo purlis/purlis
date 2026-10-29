@@ -275,10 +275,16 @@ impl Board for HostBoard {
         })
     }
 
-    fn keep_blocked(&self, host: &Host) {
+    /// Whether the board held a live Allow it ends, as the host's board said before the change:
+    /// one read, and none where the host cannot be read, whose proxy is then gone too.
+    fn keep_blocked(&self, host: &Host) -> bool {
+        let ends = self.allowed_live().iter().any(|(entry, _)| {
+            Host::parse(entry).is_ok_and(|allowed| host.covers(&allowed) || allowed.covers(host))
+        });
         self.change(ReachChange::KeepBlocked {
             host: host.to_string(),
         });
+        ends
     }
 
     fn forget(&self, host: &Host, by: By) {

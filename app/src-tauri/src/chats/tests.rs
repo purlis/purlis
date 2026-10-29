@@ -8002,12 +8002,15 @@ impl purlis_core::sandbox::Board for Told {
         Vec::new()
     }
 
-    /// As a chat's board does: an Allow it covers, or that covers it, ends.
-    fn keep_blocked(&self, host: &purlis_core::sandbox::hosts::Host) {
-        lock(&self.allowed).retain(|(entry, _)| {
+    /// As a chat's board does: an Allow it covers, or that covers it, ends, and it says so.
+    fn keep_blocked(&self, host: &purlis_core::sandbox::hosts::Host) -> bool {
+        let mut allowed = lock(&self.allowed);
+        let before = allowed.len();
+        allowed.retain(|(entry, _)| {
             purlis_core::sandbox::hosts::Host::parse(entry)
                 .is_ok_and(|allowed| !host.covers(&allowed) && !allowed.covers(host))
         });
+        allowed.len() != before
     }
 
     fn forget(
@@ -8180,8 +8183,27 @@ fn keep_blocked_ends_the_chats_own_allow_of_the_host_and_its_browsers() {
         Arc::new(move |session| lock(&narrowed).push(session))
     });
 
-    chats.keep_blocked_live(1, &host);
+    let audited = Mutex::new(Vec::new());
+    chats.keep_blocked_live(1, &host, &|chat, audit| {
+        lock(&audited).push((
+            chat,
+            audit.granted,
+            audit.what.to_owned(),
+            audit.target.to_owned(),
+        ));
+        Ok(())
+    });
 
+    assert_eq!(
+        *lock(&audited),
+        [(
+            Some(1),
+            false,
+            "host".to_owned(),
+            "live.example.com".to_owned()
+        )],
+        "taken back as a Revoke is audited"
+    );
     assert!(!chats.holds_for(1, &What::Host(host.clone())), "its own");
     assert!(
         chats.holds_for(2, &What::Host(host.clone())),
@@ -8206,9 +8228,52 @@ fn keep_blocked_of_a_host_never_allowed_ends_no_browser() {
     chats.keep_blocked_live(
         1,
         &purlis_core::sandbox::grant::host("other.example.com").expect("a host"),
+        &|_, _| panic!("nothing to audit"),
     );
 
     assert!(lock(&narrowed).is_empty());
+}
+
+/// #3407: Keep blocked of a host the chat was allowed live alone, with nothing kept for it,
+/// ends its browsers too.
+#[test]
+fn keep_blocked_of_a_host_allowed_live_alone_ends_the_chats_browsers() {
+    use purlis_core::sandbox::grant::Level;
+    let host = purlis_core::sandbox::grant::host("live.example.com").expect("a host");
+    let plane = a_sandboxed_plane();
+    let (chats, [one, _two]) = two_chats_asking_live(plane.path());
+    chats.allow_live(None, &host, Level::Project);
+    let narrowed = Arc::new(Mutex::new(Vec::new()));
+    chats.tell_narrowed_to({
+        let narrowed = Arc::clone(&narrowed);
+        Arc::new(move |session| lock(&narrowed).push(session))
+    });
+
+    chats.keep_blocked_live(1, &host, &|_, _| panic!("nothing kept to audit"));
+
+    assert!(hosts_of(&one.allowed).is_empty());
+    assert_eq!(*lock(&narrowed), [1]);
+}
+
+/// #3407: an Allow for the chat reserved before a Keep blocked that takes the chat's Allow
+/// back is not kept after it, as after a Revoke.
+#[test]
+fn an_allow_reserved_before_keep_blocked_takes_it_back_is_not_kept() {
+    use purlis_core::sandbox::grant::What;
+    let host = purlis_core::sandbox::grant::host("live.example.com").expect("a host");
+    let plane = a_sandboxed_plane();
+    let (chats, _boards) = two_chats_asking_live(plane.path());
+    chats
+        .hold_grant(1, What::Host(host.clone()), 1)
+        .expect("held");
+    let reserved = chats
+        .reserve_grant(1, What::Host(host.clone()), 2, false)
+        .expect("reserved");
+
+    chats.keep_blocked_live(1, &host, &|_, _| Ok(()));
+
+    assert!(chats.commit_grant(reserved).is_err());
+    assert!(!chats.holds_for(1, &What::Host(host.clone())));
 }
 
 /// #2629: **a host is never allowed once**, from a chat's Notice: the Allow is refused before
