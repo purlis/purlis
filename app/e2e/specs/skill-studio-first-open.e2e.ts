@@ -14,6 +14,7 @@ import {
 } from "../reach.js";
 import { studioPage, untilStudioPage } from "../studio.js";
 import { projectInFront, runningIn } from "../running.js";
+import { theDefaultProfileApproved } from "../started.js";
 
 /**
  * **The Skill studio's first open and its empty state** (SK-22, #2785; decision 42), in the built
@@ -58,6 +59,8 @@ describe("the Skill studio's first open", function () {
 
   before(async () => {
     root = await projectRoot();
+    // The studio's chats start without the picker, on a profile someone approved (#3562).
+    await theDefaultProfileApproved();
     await focusWorkspace("alpha");
     wereOpen = await tabNames();
     plane = await projectInFront();

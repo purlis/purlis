@@ -14,6 +14,7 @@ import {
 } from "../reach.js";
 import { studioPage } from "../studio.js";
 import { projectInFront, runningIn } from "../running.js";
+import { theDefaultProfileApproved } from "../started.js";
 
 /**
  * **Draft skills in the Skill studio** (SK-9, #2772), in the built app against the real core, with
@@ -88,6 +89,8 @@ describe("draft skills in the Skill studio", function () {
   before(async () => {
     root = await projectRoot();
     state = stateOf(root);
+    // The studio's chats start without the picker, on a profile someone approved (#3562).
+    await theDefaultProfileApproved();
     await focusWorkspace("alpha");
     wereOpen = await tabNames();
     plane = await projectInFront();
