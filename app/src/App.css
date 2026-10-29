@@ -3644,7 +3644,8 @@ body {
 
 /* The hand rolled up from a chat below: a button of its own beside the row, since a press goes
    to that chat and not to the row's. The button family draws it (#3523); here is its place. */
-.chats-section .rolled-up {
+.chats-section .rolled-up-at {
+  display: inline-flex;
   flex: none;
 }
 
