@@ -371,6 +371,12 @@ impl Block {
         if (self.operation, self.kind) == (Operation::Listen, Kind::LocalService) {
             return "listening on a port of this Mac".to_owned();
         }
+        // A server refused on no port a person could allow (#3396, #3440): one the system
+        // picks, one on another machine's address, or one whose socket the wrap could not take.
+        // Never "a system folder", which no listen is on.
+        if (self.operation, self.kind) == (Operation::Listen, Kind::System) {
+            return "a server this chat started, which did not start".to_owned();
+        }
         // Likewise a connection to an address dialled past the proxy (#2423).
         if (self.operation, self.kind) == (Operation::Connect, Kind::Address) {
             return "a connection to an internet address by a program that does not go through \
@@ -1242,6 +1248,12 @@ fn target_of(block: &Block, named: &str, place: &Place<'_>) -> Option<String> {
                 .ok()
                 .map(|port| port.to_string())
         }
+        // A server on a port the system picks (#3396): that port, so the Notice can say why no
+        // Allow names it. Anything else refused there names nothing.
+        (Operation::Listen, Kind::System) => {
+            use crate::sandbox::localport::{PICKED, picks_its_port};
+            (named == PICKED || picks_its_port(named)).then(|| PICKED.to_owned())
+        }
         // The certificate check is one service, whatever the line said of it.
         (Operation::Lookup, Kind::CertificateCheck) => {
             Some(crate::sandbox::services::TRUSTD.to_owned())
@@ -1348,6 +1360,7 @@ fn names_a_lookup(block: &Block) -> bool {
         (Operation::Lookup, Kind::Host)
             | (Operation::Connect, Kind::LocalSocket)
             | (Operation::Connect | Operation::Listen, Kind::LocalService)
+            | (Operation::Listen, Kind::System)
             | (Operation::Lookup, Kind::CertificateCheck)
     )
 }
@@ -1722,6 +1735,15 @@ fn network_refusal_on(line: &str, docker_words: bool) -> Option<(Operation, Kind
             Some(port.to_string()),
         ));
     }
+    // A test server refused a port the system picks (#3396): no port a person could allow, so
+    // a server that did not start.
+    if crate::sandbox::localport::picked_port_refused_in(line) {
+        return Some((
+            Operation::Listen,
+            Kind::System,
+            Some(crate::sandbox::localport::PICKED.to_owned()),
+        ));
+    }
     // A local socket: Go's dial refused by the sandbox (`EPERM`), on any platform; or Docker's
     // client in its own words where the sandbox says them (#1637). A socket's own file mode
     // (`EACCES`, "connect: permission denied") is never the sandbox's.
@@ -1814,12 +1836,15 @@ fn ends_as_a_refusal(line: &str) -> bool {
         return true;
     }
     // Node's refused listen ends with the address it asked for: `listen EPERM: operation not
-    // permitted 127.0.0.1:3000` (#2019).
+    // permitted 127.0.0.1:3000` (#2019), or the address alone where it asked for a port the
+    // system picks (#3396).
     if lower.contains("listen eperm: ")
-        && crate::sandbox::localport::listen_refused_in(line).is_some()
-        && lower
-            .rsplit_once(' ')
-            .is_some_and(|(_, last)| crate::sandbox::localport::listened_port(last).is_some())
+        && (crate::sandbox::localport::listen_refused_in(line).is_some()
+            || crate::sandbox::localport::picked_port_refused_in(line))
+        && lower.rsplit_once(' ').is_some_and(|(_, last)| {
+            crate::sandbox::localport::listened_port(last).is_some()
+                || crate::sandbox::localport::picks_its_port(last)
+        })
     {
         return true;
     }
