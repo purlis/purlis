@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793280883579,
+  "lastUpdate": 1793285210699,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29694,6 +29694,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5791025,
             "unit": "ms",
             "extra": "median of 5 runs: 100.911, 101.420, 101.579, 101.984, 102.413 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "eb92cce47dd60d974853d8f205d5520add5b6866",
+          "message": "Runners: each person's runners run in a namespace of their own (#2055) (#3828)\n\n* Runners: each person's runners run in a namespace of their own (#2055)\n\nThe person's ruling of 2026-10-29 (option A). For each requester the\ncluster operator makes purlis-runners-<hash>, binds that person alone\nthe new cluster role purlis-runner-owner there, and caps their runners\nwith the quota purlis-person from the chart's new perPerson.quota\n(5 claims, 4 CPUs, 8Gi, 50Gi by default). A runner over it says\nOverQuota. A Claim stays where it is made; its runner and the pool's\nobjects go into the runner namespace, controlled by that namespace,\nand the finalizer runners.purlis.dev/runner removes them. The signed\nstatement (v2) names the runner namespace, and the desktop pairs and\nlinks there, refusing any other than the requester's own.\n\nADR 0089 amended for the operator's new rights.\n\nRefs #2055\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Runners: a role binding's role names its API group as k8s-openapi spells it (#2055)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Runners: runner namespaces and the operator's bindings are held at admission (#2055, #3823)\n\nA second admission policy, purlis-runner-namespaces: only the operator\nmakes a runner namespace or changes who it is for; the operator makes no\nother namespace, binds only purlis-runner-owner, only in a runner\nnamespace, for one subject that is not itself, and makes only the quota\npurlis-person, only there. The operator acts only in a runner namespace\nmade while that policy is in force.\n\nThe quota is applied server-side from the first, so a key left out of\nperPerson.quota leaves every quota; a quota that has not counted yet is\ntried again quietly. The kind test of #3701 is brought to the current\ndefinitions and to the runner namespace.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Runners: a runner namespace waits for its policy, and is bound to its own person (#2055)\n\nWhile the binding of purlis-runner-namespaces settles, as on the\nupgrade that brings it, the operator makes no runner namespace and\nlooks again once it is in force; a namespace it makes is acted in only\nonce it reads as the person's. The policy binds purlis-runner-owner only\nto the person the namespace's requester annotation names, and holds the\nnamespace's status and finalize too. A quota that has not counted for a\nminute says so; a deleted Claim's cleanup waits for every Claim to be\nknown.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Runners: a Role binding the operator asks for is refused by RBAC or the policy (#2055)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T14:01:56Z",
+          "tree_id": "d04d390a16a56b331ea24346e872771707bc532e",
+          "url": "https://github.com/purlis/purlis/commit/eb92cce47dd60d974853d8f205d5520add5b6866"
+        },
+        "date": 1793285206907,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.539322,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.527, 0.539, 0.539, 0.545, 0.547 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3604165,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.238, 16.325, 16.360, 16.389, 16.823 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.04985199999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.925, 101.015, 101.050, 101.485, 101.871 ms"
           }
         ]
       }
