@@ -339,9 +339,7 @@ async function watchForMenu(): Promise<boolean> {
  *  milliseconds, once {@link watchForMenu} has seen both; or why it cannot say. */
 async function restTook(): Promise<number | string> {
   return browser.execute((key: string) => {
-    const watch = (window as unknown as Record<string, { arrived?: number; opened?: number }>)[
-      key
-    ];
+    const watch = (window as unknown as Record<string, { arrived?: number; opened?: number }>)[key];
     if (watch === undefined) return "nothing was watching for the menu";
     if (watch.arrived === undefined) return "the pointer never came onto the chip";
     if (watch.opened === undefined) return "no menu was drawn";
