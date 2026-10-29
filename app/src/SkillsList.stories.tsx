@@ -135,6 +135,23 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 /**
+ * Shift+F10 on the card that has the keyboard, and its menu, named `name`. Pressed again while
+ * no menu has come: about one cell a run drops the first on a card of Left out (#3797).
+ */
+async function menuByTheKeys(
+  userEvent: { keyboard: (keys: string) => Promise<void> },
+  name: string,
+): Promise<HTMLElement> {
+  return waitFor(
+    async () => {
+      if (screen.queryByRole("menu") === null) await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+      return screen.getByRole("menu", { name });
+    },
+    { timeout: 3_000, interval: 500 },
+  );
+}
+
+/**
  * **In this chat**: Tab walks the header (Open Skill studio, New skill…) onto the list's first
  * group, Needs you; ↓ walks its card and the next group's; Enter opens a card in the studio; ↓
  * reaches the built-in skills' quiet line, which Enter unfolds in place, with its closing line
@@ -198,8 +215,7 @@ export const InThisChat: Story = {
     await untilFocused(() => off, "Skills: Down reaches a card turned off");
     await expect(off).toHaveTextContent("ops turned it off.");
     await expect(within(off).getByRole("button", { name: "Turn on in ops" })).toBeVisible();
-    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
-    const menu = await screen.findByRole("menu", { name: "old-deploy" });
+    const menu = await menuByTheKeys(userEvent, "old-deploy");
     expect(within(menu).getByRole("menuitem", { name: /Use in this chat/ })).toHaveAttribute(
       "aria-disabled",
       "true",
@@ -289,14 +305,7 @@ export const APinNoChatReads: Story = {
     await waitFor(() =>
       expect(screen.getByRole("tooltip")).toHaveTextContent(/^Hidden by the built-in router/),
     );
-    // Shift+F10, again while no menu has come: about one cell a run drops the first (#3797).
-    const menu = await waitFor(
-      async () => {
-        if (screen.queryByRole("menu") === null) await userEvent.keyboard("{Shift>}{F10}{/Shift}");
-        return screen.getByRole("menu", { name: "release-notes" });
-      },
-      { timeout: 3_000, interval: 500 },
-    );
+    const menu = await menuByTheKeys(userEvent, "release-notes");
     const unpin = within(menu).getByRole("menuitem", { name: "Unpin from this workspace" });
     expect(unpin).toHaveAccessibleDescription(
       "Pinned, not used: the list holds more than 64 pins.",
