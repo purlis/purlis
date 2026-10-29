@@ -80,6 +80,14 @@ shows who exists.
   devops" is the `dispatch` tool with `to: devops` (`purlis dispatch --to devops`), never
   `purlis handoff --persona devops`.
 
+  **A task that writes to a repo gets a branch of its own**: the `dispatch` tool's `in:
+  worktree` (`--in worktree`). purlis cuts a branch folder for it and claims it for the task,
+  which commits, updates and pushes there with `purlis worktree commit`, `update` and `push`.
+  From a workspace's own folder, whose clones sit in subfolders, `worktree` uses its one
+  clone; where it holds several, name one with `in: worktree:<repo>`
+  (`--in worktree:<repo>`). Two tasks in one folder share every file, so give each writer its
+  own.
+
   **Before you dispatch, check what is already open**: the roster purlis adds to each turn
   while this chat has open tasks, or `dispatch_list`. A task still at work is waited on
   (`dispatch_wait`), told more (`dispatch_tell`) or cancelled (`dispatch_cancel`), never
