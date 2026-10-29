@@ -3,7 +3,18 @@
 
 import { describe, expect, it } from "vitest";
 import { OUTSIDE } from "./actions";
-import { aboutOf, chipsOf, placeOf, type About, type Chip, type Place } from "./noticePlace";
+import { reposCloned, reposCloning, reposNotCloned, workspaceMade } from "./actionResult";
+import type { Said } from "./actions";
+import {
+  aboutOf,
+  chipsOf,
+  kindOf,
+  placeOf,
+  type About,
+  type Chip,
+  type Place,
+} from "./noticePlace";
+import type { NoticeKind } from "./ui/titlebar/TitleBarWorkspaces";
 
 /** The title bar's chips in each state the placement reads (spec #3647). */
 const PINNED: Chip = { workspace: "gamma", look: "pinned" };
@@ -68,6 +79,58 @@ describe("where a notice is drawn (spec #3647, the one test seam)", () => {
 
   it("finds a workspace's chip by its whole name, never a prefix", () => {
     expect(placeOf({ workspace: "gam" }, [PINNED])).toEqual({ at: "centre", open: "gam" });
+  });
+});
+
+describe("where each line of a new workspace's setup is drawn, and its kind (#3649)", () => {
+  const nothing = () => undefined;
+  const lines: [string, Said, readonly Chip[], Place, NoticeKind][] = [
+    [
+      "its ready notice: its chip's card, news",
+      workspaceMade("gamma", [], { onAddVision: nothing }),
+      [ROOT, PINNED],
+      { at: "chip", workspace: "gamma" },
+      "info",
+    ],
+    [
+      "its repos cloning, on its dashed chip: that chip's card, news",
+      reposCloning("gamma", ["api"], 0),
+      [ROOT, DASHED],
+      { at: "chip", workspace: "gamma" },
+      "info",
+    ],
+    [
+      "its repos cloned: its chip's card, news",
+      reposCloned("gamma", ["api"]),
+      [ROOT, PINNED],
+      { at: "chip", workspace: "gamma" },
+      "info",
+    ],
+    [
+      "its repos not cloned: its chip's card, a warning",
+      reposNotCloned("gamma", [{ repo: "api", said: "No access." }], nothing),
+      [ROOT, PINNED],
+      { at: "chip", workspace: "gamma" },
+      "warning",
+    ],
+    [
+      "its repos not cloned, with no chip left: the Notices centre, a warning",
+      reposNotCloned("gamma", [{ repo: "api", said: "No access." }], nothing),
+      [ROOT, ANOTHER],
+      { at: "centre", open: "gamma" },
+      "warning",
+    ],
+    [
+      "a project's refusal: the status bar's card, a warning",
+      { from: "workspace.pin", refused: true, words: "no" },
+      [ROOT, PINNED],
+      { at: "status" },
+      "warning",
+    ],
+  ];
+  it.each(lines)("%s", (_, said, chips, place, kind) => {
+    expect(placeOf(aboutOf(said), chips)).toEqual(place);
+    expect(kindOf(said)).toBe(kind);
   });
 });
 

@@ -3949,6 +3949,14 @@ body {
   margin: 0;
 }
 
+/* How many notices a card holds, above them, while it holds more than one (#3649). */
+.chip-card-count {
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
 .chip-card [data-f6-card] {
   border-radius: var(--radius-lg);
   outline: none;

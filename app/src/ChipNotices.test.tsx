@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { OUTSIDE, type Said } from "./actions";
-import { useChipNotices } from "./ChipNotices";
+import { mostUrgent, useChipNotices } from "./ChipNotices";
+import { reposCloned, reposCloning, reposNotCloned } from "./actionResult";
 import type { KeptResult } from "./keptResults";
 import type { Chip } from "./noticePlace";
 
@@ -99,5 +100,61 @@ describe("a chip's card comes up", () => {
     rerender({ said: docs, kept, plane: A, chips: CHIPS });
     expect(result.current.open).toBeUndefined();
     expect(result.current.on.get("docs")).toHaveLength(1);
+  });
+});
+
+describe("a chip's notices stacked (#3649)", () => {
+  it("are newest first, each of its kind, and the dot takes the most urgent", () => {
+    const docs = made("docs");
+    const failed = reposNotCloned("docs", [{ repo: "api", said: "No access." }], () => undefined);
+    const later = { ...made("docs"), title: "Later" };
+    const kept: KeptResult[] = [
+      { id: 3, said: later, plane: A },
+      { id: 2, said: failed, plane: A },
+      { id: 1, said: docs, plane: A },
+    ];
+    const { result } = hook({ said: later, kept, plane: A });
+    const on = result.current.on.get("docs") ?? [];
+    expect(on.map((one) => [one.id, one.kind])).toEqual([
+      [3, "info"],
+      [2, "warning"],
+      [1, "info"],
+    ]);
+    expect(mostUrgent(on)).toBe("warning");
+    expect(mostUrgent(on.filter((one) => one.kind === "info"))).toBe("info");
+  });
+});
+
+describe("a clone's notice updated in place (#3649)", () => {
+  const cloning = reposCloning("docs", ["api", "web"], 0);
+  const halfway = reposCloning("docs", ["api", "web"], 1);
+  const cloned = reposCloned("docs", ["api", "web"]);
+  const failed = reposNotCloned("docs", [{ repo: "api", said: "No access." }], () => undefined);
+
+  it("leaves a card the person hid behind its dot as it counts and as it lands", () => {
+    const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
+    rerender({ said: cloning, kept: [{ id: 1, said: cloning, plane: A }], plane: A });
+    expect(result.current.open).toBe("docs");
+    act(() => result.current.hide());
+    rerender({ said: halfway, kept: [{ id: 1, said: halfway, plane: A }], plane: A });
+    expect(result.current.open).toBeUndefined();
+    rerender({ said: cloned, kept: [{ id: 1, said: cloned, plane: A }], plane: A });
+    expect(result.current.open).toBeUndefined();
+  });
+
+  it("keeps a card up that is up", () => {
+    const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
+    rerender({ said: cloning, kept: [{ id: 1, said: cloning, plane: A }], plane: A });
+    rerender({ said: cloned, kept: [{ id: 1, said: cloned, plane: A }], plane: A });
+    expect(result.current.open).toBe("docs");
+  });
+
+  it("brings the card back up for a failure, which asks for the person", () => {
+    const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
+    rerender({ said: cloning, kept: [{ id: 1, said: cloning, plane: A }], plane: A });
+    act(() => result.current.hide());
+    rerender({ said: failed, kept: [{ id: 1, said: failed, plane: A }], plane: A });
+    expect(result.current.open).toBe("docs");
+    expect(result.current.on.get("docs")?.map((one) => one.kind)).toEqual(["warning"]);
   });
 });

@@ -80,7 +80,12 @@ const CHAT = {
 
 /** One project with `alpha` pinned and its chat in front; `workspace_create` makes one, as the
  *  core does, with no vision, and the store keeps a pin written. */
-function core() {
+function core({
+  clone,
+}: {
+  /** How `clone_repo` answers each repo: the core's lines, or a refusal it throws. */
+  clone?: (repo: string) => Promise<string[]>;
+} = {}) {
   const pinned: string[] = ["alpha"];
   const made: string[] = [];
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
@@ -118,7 +123,13 @@ function core() {
         '⬢ No vision yet — ask the developer what this workspace is for, then record it: purlis workspace vision "<the goal>"',
       ];
     }
-    if (cmd === "reachable_repos") return { repos: [], trouble: [] };
+    if (cmd === "reachable_repos")
+      return {
+        repos: clone === undefined ? [] : [{ name: "api", path: "acme/api", description: "" }],
+        trouble: [],
+      };
+    if (cmd === "take_repos") return null;
+    if (cmd === "clone_repo" && clone !== undefined) return clone(String(given.repo));
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "running_sessions") return [];
@@ -151,13 +162,15 @@ const opened = () =>
     </StrictMode>,
   );
 
-/** Makes `name` from the ⌄'s last row, as a person does. */
-async function make(name: string) {
+/** Makes `name` from the ⌄'s last row, as a person does, picking `repos` to clone into it. */
+async function make(name: string, repos: string[] = []) {
   await userEvent.click(within(bar()).getByRole("button", { name: "All workspaces" }));
   const list = await screen.findByRole("listbox", { name: /^Workspaces in / });
   await userEvent.click(within(list).getByRole("option", { name: "New workspace…" }));
   const dialog = await screen.findByRole("dialog", { name: /workspace/i });
   await userEvent.type(within(dialog).getByLabelText("Name"), name);
+  for (const repo of repos)
+    await userEvent.click(await within(dialog).findByRole("checkbox", { name: repo }));
   await userEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
 }
 
@@ -452,5 +465,100 @@ describe("a notice about the plane root (the dispatcher's ruling on #3648)", () 
     await userEvent.keyboard("{Enter}");
     const card = await screen.findByRole("region", { name: "Notices for Plane root" });
     await waitFor(() => expect(card).toHaveFocus());
+  });
+});
+
+/** A clone the test lets land when it says: `land` with the core's lines, or `refuse`. */
+function heldClone() {
+  const held: { land: (lines: string[]) => void; refuse: (why: string) => void }[] = [];
+  const clone = (_repo: string) =>
+    new Promise<string[]>((land, refuse) => held.push({ land, refuse }));
+  return { clone, held };
+}
+
+describe("a new workspace's clone, on its chip (#3649)", () => {
+  it("counts on the card, then turns into its result in place, newest first", async () => {
+    const { clone, held } = heldClone();
+    core({ clone });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma", ["api"]);
+
+    const card = await findCard("gamma");
+    await waitFor(() => expect(card).toHaveTextContent("Cloning 1 repo…"));
+    // Stacked over the ready notice, newest first, with a line that says so.
+    expect(card).toHaveTextContent("2 notices, newest first");
+    expect(card.textContent?.indexOf("Cloning 1 repo…")).toBeLessThan(
+      card.textContent?.indexOf("Workspace gamma is ready") ?? -1,
+    );
+    // Nothing of it in the page's flow.
+    expect(document.querySelector(".window-work > .action-result")).toBeNull();
+
+    await waitFor(() => expect(held).toHaveLength(1));
+    held[0].land(["✓ api cloned"]);
+    await waitFor(() => expect(card).toHaveTextContent("Cloned 1 repo"));
+    // In place: still two notices, the clone's still first, and the card never went.
+    expect(card).not.toHaveTextContent("Cloning 1 repo…");
+    expect(card).toHaveTextContent("2 notices, newest first");
+    expect(card.textContent?.indexOf("Cloned 1 repo")).toBeLessThan(
+      card.textContent?.indexOf("Workspace gamma is ready") ?? -1,
+    );
+    expect(queryCard("gamma")).toBe(card);
+  });
+
+  it("says a failure with Retry and the repo settings, and the dot takes ▲", async () => {
+    const { clone, held } = heldClone();
+    core({ clone });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma", ["api"]);
+    const card = await findCard("gamma");
+    await waitFor(() => expect(held).toHaveLength(1));
+    held[0].refuse("api: clone failed — no access.");
+
+    await waitFor(() => expect(card).toHaveTextContent("Could not clone api into gamma"));
+    expect(card).toHaveTextContent("api: clone failed — no access.");
+    expect(within(card).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(
+      within(card).getByRole("button", { name: "Open gamma's repo settings" }),
+    ).toBeInTheDocument();
+
+    // Hidden, its dot is the most urgent kind among the two: a warning, said as one.
+    await userEvent.click(document.body);
+    await waitFor(() => expect(queryCard("gamma")).toBeNull());
+    const dot = within(bar()).getByRole("button", {
+      name: "Show the 2 notices on gamma, most urgent: warning",
+    });
+    expect(dot).toHaveAttribute("data-kind", "warning");
+    expect(dot).toHaveAttribute("data-part", "dot-warning");
+    expect(dot.querySelector("svg.lucide-triangle")).not.toBeNull();
+    expect(within(bar()).getByRole("button", { name: "gamma" })).toHaveAccessibleDescription(
+      "2 notices, most urgent: warning",
+    );
+  });
+
+  it("clones again from Retry, on the same notice, and the ▲ goes once it lands", async () => {
+    const { clone, held } = heldClone();
+    const { asked } = core({ clone });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma", ["api"]);
+    const card = await findCard("gamma");
+    await waitFor(() => expect(held).toHaveLength(1));
+    held[0].refuse("api: clone failed — no access.");
+    await userEvent.click(await within(card).findByRole("button", { name: "Retry" }));
+
+    await waitFor(() => expect(card).toHaveTextContent("Cloning 1 repo…"));
+    await waitFor(() => expect(held).toHaveLength(2));
+    held[1].land(["✓ api cloned"]);
+    await waitFor(() => expect(card).toHaveTextContent("Cloned 1 repo"));
+    expect(card).toHaveTextContent("2 notices, newest first");
+    expect(asked.filter((one) => one.cmd === "clone_repo")).toHaveLength(2);
+
+    await userEvent.click(document.body);
+    await waitFor(() => expect(queryCard("gamma")).toBeNull());
+    expect(
+      within(bar()).getByRole("button", { name: "Show the 2 notices on gamma" }),
+    ).toHaveAttribute("data-kind", "info");
   });
 });

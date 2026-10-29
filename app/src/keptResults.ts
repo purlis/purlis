@@ -8,10 +8,13 @@ import type { Said } from "./actions";
 export const KEPT_RESULTS = 20;
 
 /** **A line about something still under way**, not a result: that the core has not answered a
- *  command yet (`answer.late.*`), which goes when the answer comes, or a `progress` line
- *  ("Cloning 2 repo(s)…") that the result replaces. It is never kept. */
+ *  command yet (`answer.late.*`), which goes when the answer comes, or a `progress` line on no
+ *  track that the result replaces. It is never kept. A progress line on a track is kept, and
+ *  its result takes its place (#3649). */
 function passing(said: Said): boolean {
-  return said.progress === true || said.from.startsWith("answer.late.");
+  return (
+    (said.progress === true && said.track === undefined) || said.from.startsWith("answer.late.")
+  );
 }
 
 /** A result the window keeps (#3344): what was said, where, and its place in the order. */
@@ -30,6 +33,13 @@ export function keep(
   next: number,
 ): readonly KeptResult[] {
   if (said === undefined || passing(said) || kept.some((one) => one.said === said)) return kept;
+  // A line on a track takes the place of the one kept before it there, keeping its id and its
+  // place in the order: one notice that changes, never a second (#3649).
+  const before =
+    said.track === undefined
+      ? -1
+      : kept.findIndex((one) => one.plane === plane && one.said.track === said.track);
+  if (before !== -1) return kept.map((one, at) => (at === before ? { ...one, said } : one));
   return [{ id: next, said, plane }, ...kept].slice(0, KEPT_RESULTS);
 }
 

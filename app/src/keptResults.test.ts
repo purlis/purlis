@@ -52,7 +52,33 @@ describe("the kept results, as the window holds them (#3344's review)", () => {
     expect(result.current.kept).toEqual([]);
   });
 
-  it("keeps no progress line", () => {
+  it("keeps a progress line on a track, and its result takes its place, in place (#3649)", () => {
+    const ready = { from: "workspace.create", refused: false, words: "Ready.", workspace: "g" };
+    const cloning = {
+      from: "workspace.clone",
+      refused: false,
+      words: "Cloning…",
+      progress: true,
+      track: "clone:g",
+    };
+    const halfway = { ...cloning, words: "1 of 2 cloned." };
+    const cloned = { from: "workspace.clone", refused: false, words: "Cloned.", track: "clone:g" };
+    const later = { from: "x", refused: false, words: "Later." };
+    let kept = keep([], ready, "/p", 0);
+    kept = keep(kept, cloning, "/p", 1);
+    kept = keep(kept, later, "/p", 2);
+    kept = keep(kept, halfway, "/p", 3);
+    kept = keep(kept, cloned, "/p", 4);
+    expect(kept).toEqual([
+      { id: 2, said: later, plane: "/p" },
+      { id: 1, said: cloned, plane: "/p" },
+      { id: 0, said: ready, plane: "/p" },
+    ]);
+    // Another project's track of the same name is its own.
+    expect(keep(kept, cloning, "/q", 5).map((one) => one.id)).toEqual([5, 2, 1, 0]);
+  });
+
+  it("keeps no progress line on no track", () => {
     const cloning = { from: "workspace.create", refused: false, words: "Cloning…", progress: true };
     expect(keep([], cloning, "/p", 0)).toEqual([]);
   });

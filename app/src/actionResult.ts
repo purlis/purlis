@@ -88,3 +88,65 @@ export function saidInPlainWords(said: Omit<Said, "from"> & { from?: string }): 
   const { title, says } = resultOf(said);
   return says === undefined ? title : `${title.replace(/[.!?]$/, "")}. ${says}`;
 }
+
+/** **The track a new workspace's clone is on** (#3649): its progress, then its result, are one
+ *  notice on that workspace's chip, which each line updates in place. */
+export const cloneTrack = (workspace: string) => `clone:${workspace}`;
+
+/** "1 repo", "2 repos". */
+const reposCounted = (count: number) => (count === 1 ? "1 repo" : `${count} repos`);
+
+/**
+ * **A new workspace's repos cloning** (#3649, spec #3647): "Cloning 2 repos…", which ones into
+ * where, and how many have landed so far. On its workspace's chip, and on the clone's track, so
+ * each repo that lands updates it in place and its result takes its place.
+ */
+export function reposCloning(workspace: string, repos: readonly string[], done: number): Said {
+  const into = `${repos.join(", ")} into ${workspace}.`;
+  return {
+    from: "workspace.clone",
+    refused: false,
+    title: `Cloning ${reposCounted(repos.length)}…`,
+    words: done === 0 ? into : `${into} ${done} of ${repos.length} done.`,
+    progress: true,
+    workspace,
+    track: cloneTrack(workspace),
+  };
+}
+
+/** **A new workspace's repos, cloned** (#3649): the clone's notice, turned into its result. */
+export function reposCloned(workspace: string, repos: readonly string[]): Said {
+  return {
+    from: "workspace.clone",
+    refused: false,
+    title: `Cloned ${reposCounted(repos.length)}`,
+    words: `${repos.join(", ")} into ${workspace}.`,
+    workspace,
+    track: cloneTrack(workspace),
+  };
+}
+
+/**
+ * **A new workspace's repos that did not clone** (#3649): which, in the core's own words, with
+ * Retry, which clones those again on the same track, and the way to the workspace's Repos
+ * settings (#1201, SE-22). A warning, so the chip's dot is ▲ while it is hidden.
+ */
+export function reposNotCloned(
+  workspace: string,
+  failed: readonly { repo: string; said: string }[],
+  onRetry: () => void,
+): Said {
+  return {
+    from: "workspace.clone",
+    refused: true,
+    title: `Could not clone ${failed.map((one) => one.repo).join(", ")} into ${workspace}`,
+    words: failed.map((one) => one.said).join(" "),
+    ways: [{ label: "Retry", onPress: onRetry, primary: true }],
+    settings: {
+      label: `Open ${workspace}'s repo settings`,
+      link: { group: "workspace.repos", workspace },
+    },
+    workspace,
+    track: cloneTrack(workspace),
+  };
+}

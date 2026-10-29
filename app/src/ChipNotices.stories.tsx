@@ -7,14 +7,16 @@
  * its chip with its point, over the window, pushing nothing; hidden by a press elsewhere, it
  * leaves a ● dot on the chip's corner opposite the amber waiting count, which brings it back; ×
  * and Esc dismiss it. At the window's edge the card shifts inward and its point stays on the
- * chip. Each held to axe, walked by the keyboard and compared with its baseline
+ * chip. Several notices stack in the one card, newest first, and the dot takes the most urgent
+ * kind, ▲ for a warning (#3649). Each held to axe, walked by the keyboard and compared with its baseline
  * (`docs/component-stories.md`). The card draws outside its frame, so the pictures are the page's.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useMemo, useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { OUTSIDE } from "./actions";
-import { workspaceMade } from "./actionResult";
+import { reposCloning, reposNotCloned, workspaceMade } from "./actionResult";
+import type { Said } from "./actions";
 import type { ChipNotice, ChipNotices } from "./ChipNotices";
 import { TitleBarSwitch, type SwitchProject } from "./TitleBarSwitch";
 
@@ -24,21 +26,55 @@ const LINES = [
   '⬢ No vision yet — ask the developer what this workspace is for, then record it: purlis workspace vision "<the goal>"',
 ];
 
+/** A stale clone's warning, as #3650 brings them to a workspace's chip. */
+const OFF_MAIN = (workspace: string): Said => ({
+  from: "story",
+  refused: true,
+  title: "web is on spike/search, not main",
+  words: "New chats here start from spike/search.",
+  workspace,
+});
+
+/** **More than one notice on the chip** (#3649), newest first: `stacked`, the clone counting
+ *  over a warning over the ready notice; `failed`, a clone that did not land over the ready
+ *  notice. */
+type Stack = "ready" | "stacked" | "failed";
+
 function TheWindow({
   pins,
   hasNotice,
   width,
   startOpen = true,
+  stack = "ready",
 }: {
   pins: string[];
   hasNotice: string;
   /** The title bar's width: the window's. */
   width: string;
   startOpen?: boolean;
+  stack?: Stack;
 }) {
   const [said, setSaid] = useState("Nothing pressed");
   const [open, setOpen] = useState<string | undefined>(startOpen ? hasNotice : undefined);
   const [kept, setKept] = useState<readonly ChipNotice[]>(() => [
+    ...(stack === "stacked"
+      ? [
+          { id: 3, kind: "info" as const, said: reposCloning(hasNotice, ["api", "web"], 1) },
+          { id: 2, kind: "warning" as const, said: OFF_MAIN(hasNotice) },
+        ]
+      : stack === "failed"
+        ? [
+            {
+              id: 2,
+              kind: "warning" as const,
+              said: reposNotCloned(
+                hasNotice,
+                [{ repo: "web", said: "web: clone failed — no access to acme/web." }],
+                () => setSaid("Asked to clone web again"),
+              ),
+            },
+          ]
+        : []),
     {
       id: 1,
       kind: "info",
@@ -318,5 +354,59 @@ export const ComesUpOnAChipOutOfSight: Story = {
       expect(still).toBe(true);
     });
     await waitFor(() => expect(surfaceOf(card).hasAttribute("data-entering")).toBe(false));
+  },
+};
+
+/** **The ▲ dot**, while a card holding a warning is hidden: the most urgent of its three
+ *  notices, though the newest is news, beside the amber waiting count. */
+export const WarningDotBesideTheCount: Story = {
+  args: { startOpen: false, stack: "stacked" },
+  play: async ({ canvas }) => {
+    const dot = canvas.getByRole("button", {
+      name: "Show the 3 notices on 3rd-try, most urgent: warning",
+    });
+    await expect(dot).toHaveAttribute("data-kind", "warning");
+    await expect(dot.querySelector("svg.lucide-triangle")).not.toBeNull();
+    const chip = chipOf("3rd-try");
+    const count = chip.querySelector('[data-part="count"]') as HTMLElement;
+    const [d, c, k] = [dot, chip, count].map((one) => one.getBoundingClientRect());
+    await expect(centre(d)).toBeLessThan(c.left + 8);
+    await expect(d.top).toBeLessThan(c.top + 4);
+    await expect(d.right).toBeLessThan(k.left);
+    await expect(chip).toHaveAccessibleDescription("2 waiting, 3 notices, most urgent: warning");
+  },
+};
+
+/** **Stacked, newest first** (#3649): one card for the chip, a line that says how many, the
+ *  clone counting at the top. */
+export const StackedNewestFirst: Story = {
+  args: { stack: "stacked" },
+  play: async () => {
+    const card = await waitFor(() => cardOf() as HTMLElement);
+    await expect(card).toHaveTextContent("3 notices, newest first");
+    const words = card.textContent ?? "";
+    const order = ["Cloning 2 repos…", "web is on spike/search, not main", "Workspace 3rd-try is ready"];
+    await expect(order.map((one) => words.indexOf(one))).toEqual(
+      [...order.map((one) => words.indexOf(one))].sort((a, b) => a - b),
+    );
+    await expect(card).toHaveTextContent("1 of 2 done.");
+    await expect(screen.getAllByRole("region", { name: /^Notices for / })).toHaveLength(1);
+  },
+};
+
+/** **A clone that did not land** (#3649): its notice offers Retry and the way to the
+ *  workspace's repo settings, and Retry asks for the clone again. */
+export const CloneCouldNotLand: Story = {
+  args: { stack: "failed" },
+  play: async ({ canvas, userEvent }) => {
+    const card = await waitFor(() => cardOf() as HTMLElement);
+    await expect(card).toHaveTextContent("Could not clone web into 3rd-try");
+    await expect(card).toHaveTextContent("2 notices, newest first");
+    const retry = within(card).getByRole("button", { name: "Retry" });
+    await expect(
+      within(card).getByRole("button", { name: "Open 3rd-try's repo settings" }),
+    ).toBeInTheDocument();
+    await userEvent.click(retry);
+    await expect(canvas.getByText("Asked to clone web again")).toBeInTheDocument();
   },
 };

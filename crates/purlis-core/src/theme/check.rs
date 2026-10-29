@@ -377,6 +377,9 @@ pub const PAIRS: &[Pair] = &[
     //   own ground it is ringed in, on a chip at rest, under the pointer and chosen alike; its
     //   shape on that fill is held below (`surface.base` on `accent.base`).
     p("accent.base", "surface.deep", 3.0),
+    // - A warning's dot (#3649): the waiting amber, told apart from the same ground; its
+    //   triangle on it is `surface.base` on `state.waiting`, held among the marks above.
+    p("state.waiting", "surface.deep", 3.0),
     // - The update pill's words in the accent's words on the accent's surface (#3177).
     p("accent.text", "accent.surface", TEXT),
     // - What an extension runs as you, said inside its approval dialog on the danger wash.

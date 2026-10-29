@@ -13,11 +13,11 @@ import {
 import type { Said } from "./actions";
 import { ActionResultNotice } from "./ActionResultNotice";
 import type { KeptResult } from "./keptResults";
-import { aboutOf, placeOf, type Chip, type Place } from "./noticePlace";
+import { aboutOf, kindOf, placeOf, type Chip, type Place } from "./noticePlace";
 import { CARD_STOP } from "./regionCycle";
 import type { SettingsLink } from "./settings/links";
 import { HungPopover } from "./ui/popover/Popover";
-import type { NoticeKind } from "./ui/titlebar/TitleBarWorkspaces";
+import { mostUrgentOf, type NoticeKind } from "./ui/titlebar/TitleBarWorkspaces";
 
 /**
  * **A workspace's notices, hung from its chip** (#3648, spec #3647): a view onto the one store of
@@ -80,7 +80,7 @@ export function useChipNotices({
       if (place.at !== "chip") continue;
       by.set(place.workspace, [
         ...(by.get(place.workspace) ?? []),
-        { id: one.id, said: one.said, kind: "info" },
+        { id: one.id, said: one.said, kind: kindOf(one.said) },
       ]);
     }
     return by;
@@ -98,8 +98,16 @@ export function useChipNotices({
   let open = up.open;
   let openIn = up.on;
   let chipped = up.chipped;
+  // **A line that follows the last one on its track** (#3649): a clone's count going on, or its
+  // success, updates its notice in place and leaves the card as the person left it, up or
+  // hidden behind its dot. A failure on it brings the card up, since it asks for the person.
+  const follows =
+    said !== undefined &&
+    said.track !== undefined &&
+    up.seen?.track === said.track &&
+    !said.refused;
   if (said !== up.seen || plane !== up.in) {
-    if (plane === up.in) {
+    if (plane === up.in && !follows) {
       // A new result in the project in front. By what it is about, not by the chips drawn now:
       // a workspace just made is said before the title bar has heard of its chip, and its card
       // comes up as the chip does. A result about no workspace takes the card down.
@@ -141,15 +149,9 @@ export function useChipNotices({
   };
 }
 
-/** How urgent each kind is: the dot shows the most urgent of a chip's notices (spec #3647). */
-const URGENCY: Record<NoticeKind, number> = { info: 1 };
-
-/** The most urgent kind among `notices`: what a chip's dot shows. News is the least urgent. */
+/** The most urgent kind among `notices`: what a chip's dot shows (spec #3647). */
 export const mostUrgent = (notices: readonly ChipNotice[]): NoticeKind =>
-  notices.reduce<NoticeKind>(
-    (top, one) => (URGENCY[one.kind] > URGENCY[top] ? one.kind : top),
-    "info",
-  );
+  mostUrgentOf(notices.map((one) => one.kind));
 
 /**
  * **A chip's card** (#3648): the popover family's notice surface hung from the chip, centred
@@ -250,6 +252,11 @@ export function ChipCard({
         {...{ [CARD_STOP]: "" }}
         onKeyDown={escape}
       >
+        {/* **Stacked, newest first** (#3649): one card per chip, and a line that says so while
+        it holds more than one. */}
+        {notices.length > 1 && (
+          <p className="chip-card-count">{notices.length} notices, newest first</p>
+        )}
         {notices.map((one) => (
           <ActionResultNotice
             key={one.id}
