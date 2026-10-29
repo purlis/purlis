@@ -77,23 +77,23 @@ pub fn get_value(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> 
     if let Some(why) = crate::sandbox::tools::mint::refused_raw(&ctx.root, &v.name, key) {
         return Err(VaultError::new(why));
     }
-    read_value(ctx, v, key)
+    provider_read(ctx, v, key)
 }
 
 /// **A GitHub App's key, read to mint a token with it and nothing else** (#2053): the one read
 /// [`get_value`] refuses it to. What it reads goes to [`crate::forge::apptoken::jwt`] alone.
 pub(crate) fn read_to_mint(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> {
-    read_value(ctx, v, key)
+    provider_read(ctx, v, key)
 }
 
 /// **Whether `key` resolves**, its value read and dropped: what `vault verify` asks of every
 /// key, a GitHub App's key among them, which it never hands anywhere.
 pub fn resolves(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
-    read_value(ctx, v, key).map(drop)
+    provider_read(ctx, v, key).map(drop)
 }
 
 /// The value of `key`, through the vault's own provider, remembered as read.
-fn read_value(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> {
+fn provider_read(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> {
     let value = match v.provider.as_str() {
         "keyring" => keyring::get(ctx, v, key),
         "plain-file" => plain_file::get(ctx, v, key),
@@ -174,7 +174,7 @@ pub fn rename(ctx: &Ctx, v: &Vault, from: &str, to: &str) -> Result<(), VaultErr
     }
     let stored = match v.provider.as_str() {
         "reference" => super::py_str(&reference::reference_for(ctx, v, from)?),
-        _ => read_value(ctx, v, from)?,
+        _ => provider_read(ctx, v, from)?,
     };
     set_value(ctx, v, to, &stored)?;
     delete(ctx, v, from).map_err(|e| {

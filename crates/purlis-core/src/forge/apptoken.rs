@@ -238,14 +238,17 @@ pub fn mint_over(
         if asked.contains(&(remote.owner.as_str(), remote.name.as_str())) {
             continue;
         }
-        asked.push((&remote.owner, &remote.name));
+        asked.push((remote.owner.as_str(), remote.name.as_str()));
         let call = Call::get(
             format!("repos/{}/{}/installation", remote.owner, remote.name),
             super::LIST_TIMEOUT,
         );
-        let reply = transport
-            .send(forge, &call)
-            .map_err(|e| format!("GitHub could not be asked for the App's installation ({e})"))?;
+        let reply = transport.send(forge, &call).map_err(|e| {
+            format!(
+                "GitHub could not be asked for the App's installation ({})",
+                e.said()
+            )
+        })?;
         if reply.code != 0 {
             if not_found(&reply) {
                 continue;
@@ -285,7 +288,7 @@ pub fn mint_over(
             );
         }
         [one] => *one,
-        _ => match installed.iter().find(|(_, remote)| in_here(remote)) {
+        _ => match installed.iter().find(|(_, remote)| in_here(*remote)) {
             Some((id, _)) => *id,
             None => {
                 return Err(
@@ -313,7 +316,7 @@ pub fn mint_over(
     );
     let reply = transport
         .send(forge, &call)
-        .map_err(|e| format!("GitHub could not be asked for a token ({e})"))?;
+        .map_err(|e| format!("GitHub could not be asked for a token ({})", e.said()))?;
     let out = Zeroizing::new(reply.out);
     if reply.code != 0 {
         return Err(format!(
