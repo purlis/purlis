@@ -163,3 +163,42 @@ export const GateSeesAFade: Story = {
     }
   },
 };
+
+/**
+ * **What the gate leaves alone, and what it does not** (#3790): words at 0.3 in a disabled
+ * button, words hidden from assistive technology, words at opacity 0 and words whose opacity is
+ * moving are not measured; words at 0.3 in a box that only turns (an animation of something
+ * else) are, and so are plain words at 0.3. Drawn in a box of their own and taken away before
+ * the story ends, so the gate after it measures nothing of them.
+ */
+export const GateLeavesAlone: Story = {
+  play: async () => {
+    const box = document.createElement("div");
+    box.style.background = "var(--surface-base)";
+    box.style.color = "var(--text-quiet)";
+    const faded = (words: string, tag = "p") => {
+      const one = document.createElement(tag);
+      one.textContent = words;
+      one.style.opacity = "0.3";
+      box.append(one);
+      return one;
+    };
+    (faded("a disabled control", "button") as HTMLButtonElement).disabled = true;
+    faded("hidden from assistive technology").setAttribute("aria-hidden", "true");
+    faded("not drawn").style.opacity = "0";
+    const fading = faded("fading");
+    const turning = faded("turning");
+    faded("plain");
+    document.body.append(box);
+    const fade = fading.animate([{ opacity: 0.3 }, { opacity: 0.2 }], 60_000);
+    const turn = turning.animate([{ rotate: "0deg" }, { rotate: "1deg" }], 60_000);
+    try {
+      const under = fadedWordsUnderFloor(box).map(({ words }) => words);
+      await expect(under).toEqual(["turning", "plain"]);
+    } finally {
+      fade.cancel();
+      turn.cancel();
+      box.remove();
+    }
+  },
+};

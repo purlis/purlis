@@ -19,7 +19,10 @@
  * and the engine; words in a control that is disabled (WCAG 1.4.3 exempts an inactive control),
  * words hidden from assistive technology (a separator drawn as a glyph), words at opacity 0
  * (nothing is drawn) and words whose opacity is moving (an animation or a transition, which has
- * no one value to measure) are not measured.
+ * no one value to measure) are not measured. Hidden from assistive technology includes what a
+ * modal hides behind it (react-aria marks the page under an open dialog `aria-hidden`), so a
+ * story with a dialog open measures the dialog and not the page under its scrim.
+ * `GateLeavesAlone` (`FadedWords.stories.tsx`) holds each of these.
  *
  * `.storybook/faded.setup.ts` runs it after every story, in Chromium.
  */
@@ -120,9 +123,17 @@ function filterOpacity(filter: string): number {
   return out;
 }
 
-/** Whether a box's opacity is moving now: an animation or a transition on it. */
+/** Whether a box's opacity is moving now: a running animation or transition of its opacity.
+ *  One that moves something else (a spinner's turn) leaves its opacity a value to measure. */
 function moving(element: Element): boolean {
-  return element.getAnimations().some((one) => one.playState === "running");
+  return element
+    .getAnimations()
+    .some(
+      (one) =>
+        one.playState === "running" &&
+        one.effect instanceof KeyframeEffect &&
+        one.effect.getKeyframes().some((frame) => "opacity" in frame),
+    );
 }
 
 /** `tag.class` of an element, the way a person finds its rule. */

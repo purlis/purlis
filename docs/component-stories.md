@@ -108,8 +108,8 @@ Story Format 3. `app/src/settings/Choice.stories.tsx` is the first, and the one 
 
 A family's ticket (spec #2897) is done when it ships:
 
-- a story for each variant and state that draws differently, each passing all five gates in both
-  browsers;
+- a story for each variant and state that draws differently, each passing the four gates that
+  run in both browsers, and the faded-words gate, which runs in Chromium;
 - a `play` function on every interactive story: its keyboard path, Esc dismissal where it
   dismisses, and the focus in sight after every move;
 - its baselines, drawn by its `stories` run, taken, and reviewed in the pull request;

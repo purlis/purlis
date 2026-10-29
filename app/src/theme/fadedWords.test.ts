@@ -68,4 +68,8 @@ describe("the floor faded words are held to", () => {
     expect(floorOf(24, 400)).toBe(3);
     expect(floorOf(19, 700)).toBe(3);
   });
+
+  it("is 4.5:1 for 18.66px text that is not bold", () => {
+    expect(floorOf(19, 400)).toBe(4.5);
+  });
 });
