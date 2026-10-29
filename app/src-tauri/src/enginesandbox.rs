@@ -15,7 +15,10 @@
 //!   and, where this machine has its own Google Chrome or Chromium, using it for every browser
 //!   ([`use_this_machines_chrome`], ADR 0042's choice, kept in `machine.json`).
 //!
-//! **A runner's engine is its own machine's** (#2990). Where a pool's runner refuses a browser's
+//! **A runner's engine is its own machine's** (#2990). A Docker pool's runner made before #3298
+//! runs a seccomp profile that refuses the engine's sandbox, so the runner's Notice says to
+//! remove the pool and add it again too: the engine's refusal reads the same whichever wall
+//! stopped it, so the Notice names both ways out. Where a pool's runner refuses a browser's
 //! start for its engine's sandbox and the desktop relays the refusal, the Notice names that
 //! runner and offers the command to run there, which installs the profile the `.deb` installs
 //! ([`sandboxing::install_shipped_command`]): the window does not know the runner's own data
@@ -168,9 +171,14 @@ pub fn shown_on_runner(pool: &str) -> EngineSandboxShown {
     EngineSandboxShown {
         says: format!(
             "Browsers cannot start on the runner of pool {pool}: its browser engine cannot make \
-             its sandbox there, and purlis never runs the engine without it. If that runner's \
-             Linux allows the sandbox only under an AppArmor profile, as Ubuntu 23.10 and later \
-             do, run the command on the runner, not on this machine."
+             its sandbox there, and purlis never runs the engine without it. A Docker pool's \
+             runner made by an earlier purlis does not let the engine make it: remove the pool \
+             and add it again. A pool on a team's own image is made so only once that image \
+             carries a purlis as new as this one, which lets the browser engine alone make \
+             namespaces on the runner: rebuild the image on it, then remove the pool and add it \
+             again. If that runner's Linux allows the sandbox only under an AppArmor \
+             profile, as Ubuntu 23.10 and later do, run the command on the runner, not on this \
+             machine."
         ),
         command: Some(sandboxing::install_shipped_command()),
         chrome: None,

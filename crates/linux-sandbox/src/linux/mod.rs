@@ -80,6 +80,36 @@ pub fn entry(
     }
 }
 
+/// **`purlis _no-namespaces -- <program> <args>…`** (#3298, D-2050-25): starts `program` with
+/// `args`, in this process, unable to make a namespace, and every program it starts with it
+/// ([`filter::namespaces_refused`]). Its environment is its own, as it was started. The status to
+/// exit with where it could not be started.
+pub(crate) fn without_namespaces(program: &std::ffi::OsStr, args: &[OsString]) -> i32 {
+    // A filter a process applies to itself needs no new privileges: a runner's container sets
+    // it, and it is set here too, so the filter never depends on where it runs.
+    let held = nix::sys::prctl::set_no_new_privs()
+        .map_err(|why| format!("no new privileges could not be set: {why}"))
+        .and_then(|()| filter::namespaces_refused())
+        .and_then(|programs| {
+            programs.iter().try_for_each(|program| {
+                seccompiler::apply_filter(program).map_err(|why| {
+                    format!("the filter that leaves it no namespace could not be applied: {why}")
+                })
+            })
+        });
+    match held {
+        Ok(()) => {
+            let why = Command::new(program).args(args).exec();
+            eprintln!(
+                "purlis: {} could not be started: {why}",
+                std::path::Path::new(program).display()
+            );
+            127
+        }
+        Err(why) => refuse(&why),
+    }
+}
+
 fn refuse(why: &str) -> i32 {
     eprintln!("purlis: {why}, so nothing was started.");
     NOT_STARTED

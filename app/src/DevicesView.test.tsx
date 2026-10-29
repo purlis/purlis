@@ -47,6 +47,7 @@ beforeEach(() => {
       unkept_browsers: [],
     },
     owned: true,
+    projects: 1,
     pools: [
       { pool: "builds", limits: LIMITS, millicpus: 2000, removed_ran_this_week: 0, price: null },
       { pool: "qa", limits: LIMITS, millicpus: 2000, removed_ran_this_week: 1800, price: null },
@@ -186,6 +187,40 @@ describe("DevicesView", () => {
     });
     expect(within(unkept).getByText("Chat · on pool removed")).toBeInTheDocument();
     expect(within(unkept).getByText("Of orphan · on pool removed")).toBeInTheDocument();
+  });
+
+  it("names each chat's and browser's project when the window holds more than one", async () => {
+    const OTHER = "/work/site" as typeof PLANE;
+    shown.projects = 2;
+    shown.placement.here.chats.push({ plane: OTHER, session: 1, name: "lint" });
+    shown.placement.unkept = [{ plane: OTHER, session: 7, name: "orphan", pool: "removed" }];
+    shown.placement.unkept_browsers = [
+      { plane: OTHER, session: 7, name: "b2", chat: "orphan", pool: "removed" },
+    ];
+    render(<DevicesView />);
+    await waitFor(() =>
+      expect(screen.getByText("Runner builds of pool builds")).toBeInTheDocument(),
+    );
+    const here = section("This machine");
+    expect(within(here).getByText("Chat in plane")).toBeInTheDocument();
+    expect(within(here).getByText("Chat in site")).toBeInTheDocument();
+    expect(within(here).getByText("Of lint in plane")).toBeInTheDocument();
+    expect(
+      within(section("Runner builds of pool builds")).getByText("Chat in plane"),
+    ).toBeInTheDocument();
+    const unkept = section("On a pool this machine no longer keeps");
+    expect(within(unkept).getByText("Chat in site · on pool removed")).toBeInTheDocument();
+    expect(within(unkept).getByText("Of orphan in site · on pool removed")).toBeInTheDocument();
+  });
+
+  it("names no project when the window holds one", async () => {
+    render(<DevicesView />);
+    await waitFor(() =>
+      expect(screen.getByText("Runner builds of pool builds")).toBeInTheDocument(),
+    );
+    const here = section("This machine");
+    expect(within(here).getByText("Chat")).toBeInTheDocument();
+    expect(within(here).getByText("Of lint")).toBeInTheDocument();
   });
 
   it("draws what Docker said apart from purlis's own words, and says what to do", async () => {

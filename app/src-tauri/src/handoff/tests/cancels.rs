@@ -227,40 +227,30 @@ fn a_prompt_answered_mid_turn_lets_the_cancel_end_that_turn_as_it_would_have() {
 }
 
 #[test]
-fn a_task_the_person_is_typing_in_is_asked_once_its_turn_moves_and_ends_at_the_bound_if_not() {
-    // D-1459-3: purlis types nothing over the person's keys. The cancel waits for its turn to
-    // move, and the bound a stop has ends it if it does not.
+fn a_task_the_person_has_typed_in_is_not_cancelled_by_its_asking_chat() {
+    // #3785, ruled 2026-10-29 (replacing D-1459-3's wait for the person's keys): a task the
+    // person has typed into is theirs, so its asking chat's cancel is refused in one sentence,
+    // as its close is, and nothing is typed or recorded.
     let (_plane, host, _planes, id, held, steward, task) = a_steward_and_its_task();
     rests(&held, task);
     crate::dispatched::person_typed(&held, task, b"wa", None);
 
-    cancels(&held, &id, steward, task);
+    let said = asks(&held, &id, steward, What::Cancel { of: task });
+    assert!(
+        matches!(&said, Answer::No { why }
+        if why == &format!(
+            "the person has typed in 'check prod' (chat {task}), so it is theirs to \
+             cancel, from its tab."
+        )),
+        "{said:?}"
+    );
     assert_eq!(
         host.typed(task),
         Vec::<Vec<u8>>::new(),
         "nothing over their keys"
     );
-
-    // The person sends their prompt: a turn purlis heard begin, which it may end.
-    a_turn_begins(&held, task);
-    assert_eq!(host.typed(task), vec![ESCAPE.to_vec()]);
-
-    // And one where nothing moves is ended at its bound, in a sentence that says why.
-    let (_plane, host, _planes, id, held, steward, task) = a_steward_and_its_task();
-    rests(&held, task);
-    crate::dispatched::person_typed(&held, task, b"wa", None);
-    cancels(&held, &id, steward, task);
-
-    its_clock_runs_out(&held, task, false);
-
-    assert_eq!(host.typed(task), Vec::<Vec<u8>>::new());
-    let report = the_cancelled_report(&held, steward);
-    assert_eq!(
-        report.summary,
-        purlis_core::dispatched::CANCELLED_UNASKED_IN_TIME
-    );
-    settles(&held, task);
-    assert!(!open_chats(&held).contains(&task));
+    assert!(!held.stopping().is_cancelling(task));
+    assert!(open_chats(&held).contains(&task));
 }
 
 #[test]
