@@ -269,25 +269,31 @@ footer[data-scope="status-bar"] {
    The Notices item's notice dot (#3653, spec #3647): the title-bar chip's dot (`titlebar.dot`),
    on the Notices item's leading corner while a project's or the app's result is hidden behind it.
    The same 16px shape, ringed in the bar's own ground, which is the title bar's, so its colour is
-   read on that one ground (`accent.base` on `surface.deep`, D-3648-6). It stands inside the bar's
-   padding, which clips what leaves it.
+   read on that one ground (`accent.base` on `surface.deep`, D-3648-6).
+
+   **A 24px target** (WCAG 2.5.8): unlike a chip's dot, it is a Tab stop of its own, and nothing
+   else on the bar reaches it. Its box is 24px, the 16px dot drawn in its middle: a clear border
+   of 4px around it, which the dot's fill is clipped inside, and its ring drawn inside that fill.
+   It stands inside the bar's padding, which clips what leaves it.
    --------------------------------------------------------------------------------------------- */
 
 [data-part="dot"][data-scope="status-item"] {
   position: absolute;
   z-index: 1;
   inset-block-start: calc(var(--space-2) * -1);
-  inset-inline-start: calc(var(--space-2) * -1);
+  inset-inline-start: calc(var(--space-2) * -2);
   display: grid;
   place-items: center;
   box-sizing: border-box;
-  inline-size: 16px;
-  block-size: 16px;
+  inline-size: 24px;
+  block-size: 24px;
   padding: 0;
-  border: 2px solid var(--surface-deep);
+  border: 4px solid transparent;
   border-radius: var(--radius-full);
   color: var(--surface-base);
   background-color: var(--accent-base);
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 2px var(--surface-deep);
   cursor: default;
   appearance: none;
 }
@@ -300,5 +306,5 @@ footer[data-scope="status-bar"] {
 
 [data-part="dot"][data-scope="status-item"][data-focus-visible] {
   outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-offset);
+  outline-offset: calc(var(--focus-ring-width) * -1);
 }
