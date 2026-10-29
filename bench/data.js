@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793287543296,
+  "lastUpdate": 1793297277280,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29820,6 +29820,48 @@ window.BENCHMARK_DATA = {
             "value": 100.969122,
             "unit": "ms",
             "extra": "median of 5 runs: 100.476, 100.545, 100.969, 101.318, 101.559 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3083f6b3db11f3e3953a9fa12dc651c23270555a",
+          "message": "Own-scope purlis work runs without a prompt; a fixable refusal never sends the agent to the person (#3829, #3830) (#3841)\n\n* A chat's own-scope purlis commands and tools run without a prompt (#3829)\n\nThe operator's ruling of 2026-10-29: the person is asked only when something\nnew reaches someone new, and own-scope work runs without a prompt. A Claude\nCode chat the app starts is now handed, each rule by name:\n\n- purlis's reads: persona show/list/recall, recall, workspace\n  recall/list/current, docs show, news, theme check/list, and dispatch list\n  with arguments;\n- its own memory, todos and branch folder: persona remember (--shared\n  included), workspace remember/note, ws todo and workspace todo to add, close\n  or list, and worktree add/update/push/done/abandon/list;\n- their tools, todo_add, todo_done, memory_add, persona_remember,\n  workspace_section, workspace_vision, and ask_operator, whose form is the\n  question itself.\n\nThe writes are kept off a grade's chat (SK-16), and the tools are a list of\ntheir own beside PRE_ALLOWED, which the grade's server answers alone. Every\nword with no rule (secret exec, forget, archive, move-memory, edit-memory,\nsave, clone, reinit, worktree remove, todo forget/reopen/promote) still asks,\nand an operator's or project's ask or deny still wins. ADR 0064 amended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* A refusal the agent can fix never sends it to the person (#3830)\n\nThe operator's ruling of 2026-10-29: when an agent can fix its own call,\nrefuse with the shape to retry; never stop on the person.\n\n- A9b, a new arm of the Bash guard (branchgit): `git add` or `git commit` in a\n  branch folder, from a chat the app sandboxed, is refused before it runs\n  with `purlis worktree commit -m \"<message>\" <path>...` (or --all). The\n  folder's index lives in its clone's .git/worktrees, which every sandboxed\n  chat's sandbox denies, so the call used to fail on the sandbox and raise a\n  Notice for the person. A literal `cd` on the line is followed; a move the\n  guard cannot place is left to the sandbox.\n- Refusals that already carry the retry shape (a rider, a live substitution\n  in a forge's or purlis's own text, a hook skip, a handoff's brief, and the\n  branch-folder commit) no longer end with OVERRIDE_NOTE, which told the\n  chat to run it in the person's own terminal. Every other refusal keeps it.\n  The six recorded rows of those arms are updated to match.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* Own scope is the chat's own persona and workspace; A9b only in purlis's branch folders (#3829, #3830)\n\nOn review of #3841, the dispatcher's decisions:\n\n- No rule adds or closes a todo through the command. The harness matches\n  the line as written and the shell strips quotes, so `ws todo \"forget\" x`\n  met the quoted-text rule. Todos are added and closed by the todo_add and\n  todo_done tools; only the bare list lines stay, and a test checks no\n  quoted verb in either quote style meets a todo rule. The briefing names\n  todo_add first, the command second (five recorded rows follow).\n- Memory and `worktree add` rules are written per chat, naming its own\n  persona (`persona remember <own> *`) and workspace (`-w <own>` first), so\n  a line naming another still asks. Only a plain name is written into a\n  rule; anything a glob could read gets none.\n- A9b refuses only in a branch folder git's record places at\n  workspaces/<ws>/.worktrees/<repo>/<piece>, follows a `cd` only on a line\n  run in one shell in turn (not a subshell, pipeline or substitution), and\n  lets `git add -n`/`--dry-run` through.\n- RETRY_SHAPED: a test walks every spelling the arms refuse under those\n  reasons and fails on a sentence that names no shape to retry.\n- The sandboxed chat's allow is compared with the unsandboxed one instead\n  of a second snapshot.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T17:40:13Z",
+          "tree_id": "a018ed7448808628f986d41f21feff0a6203a2f7",
+          "url": "https://github.com/purlis/purlis/commit/3083f6b3db11f3e3953a9fa12dc651c23270555a"
+        },
+        "date": 1793297271193,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6589145,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.645, 0.658, 0.659, 0.663, 0.684 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.554985000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.405, 16.464, 16.555, 16.592, 16.629 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.18907300000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.707, 102.164, 102.189, 102.348, 103.395 ms"
           }
         ]
       }
