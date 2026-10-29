@@ -235,10 +235,29 @@ describe("whose skills the Skills view shows", () => {
     );
     expect(asked.filter((one) => one.cmd === "chat_skills")).toHaveLength(1);
   });
+
+  it("heads its middle group as the header says whose set it is (#3778)", async () => {
+    opsCore([given("deploy")]);
+    const hands = {
+      onOpenView: vi.fn(),
+      onUseSkill: vi.fn(),
+      onShowInExplorer: vi.fn(),
+    };
+    const { rerender } = render(<SkillsView plane="p" workspace="ops" {...hands} />);
+    await list();
+    await waitFor(() => expect(foldOf(/^A new chat gets/)).toBeInTheDocument());
+    expect(screen.queryByRole("row", { name: /^In this chat/ })).toBeNull();
+    rerender(<SkillsView plane="p" workspace="ops" chat={STEWARD} {...hands} />);
+    await waitFor(() => expect(foldOf(/^In this chat/)).toBeInTheDocument());
+    expect(screen.queryByRole("row", { name: /^A new chat gets/ })).toBeNull();
+    // Whose set it is, its fold kept the same: the group is one, whatever it is headed.
+    rerender(<SkillsView plane="p" workspace="ops" {...hands} />);
+    await waitFor(() => expect(foldOf(/^A new chat gets/)).toBeInTheDocument());
+  });
 });
 
 describe("the Skills view's cards", () => {
-  it("are grouped Needs you, In this chat with its built-in skills folded, then Left out folded", async () => {
+  it("are grouped Needs you, A new chat gets with its built-in skills folded, then Left out folded", async () => {
     opsCore();
     view();
     await list();
@@ -249,14 +268,15 @@ describe("the Skills view's cards", () => {
     expect(names).toEqual([
       "Needs you",
       "drafted",
-      "In this chat",
+      // No chat is in front: the middle group is what a new chat would get (#3778).
+      "A new chat gets",
       "deploy",
       "ops-runbook",
       "1 built-in skill",
       "Left out",
     ]);
     expect(openOf(foldOf("Needs you, 1"))).toBe("true");
-    expect(openOf(foldOf("In this chat, 3"))).toBe("true");
+    expect(openOf(foldOf("A new chat gets, 3"))).toBe("true");
     expect(openOf(foldOf("Left out, 1"))).toBe("false");
     // Each card says what it does, or why it is as it is, in its two lines.
     expect(rowOf("deploy")).toHaveTextContent("What deploy does.");
@@ -291,7 +311,7 @@ describe("the Skills view's cards", () => {
     core(() => studio(Array.from({ length: 12 }, (_, at) => skill(`s${at}`))));
     view();
     await list();
-    await userEvent.click(await waitFor(() => foldOf(/^In this chat/)));
+    await userEvent.click(await waitFor(() => foldOf(/^A new chat gets/)));
     await waitFor(() => expect(hasRow("s0")).toBe(false));
     expect(SKILLS_VIEW.value().folded).toEqual([...DEFAULT_SKILLS_VIEW.folded, "in-chat"]);
     await userEvent.type(screen.getByRole("searchbox", { name: "Filter skills" }), "s1");
