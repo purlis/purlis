@@ -149,7 +149,7 @@ export const InThisChat: Story = {
     const row = (name: string | RegExp) => within(list).getByRole("row", { name });
     const cell = (one: HTMLElement) => within(one).getByRole("gridcell");
     await expect(canvas.getByText("steward 5")).toBeVisible();
-    await expect(cell(row("Left out, 1"))).toHaveAttribute("aria-expanded", "false");
+    await expect(cell(row("Left out, 2"))).toHaveAttribute("aria-expanded", "false");
     await expect(cell(row("1 built-in skill"))).toHaveAttribute("aria-expanded", "false");
     await userEvent.tab();
     await untilFocused(
@@ -174,7 +174,7 @@ export const InThisChat: Story = {
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Opened deploy"));
     await userEvent.keyboard("{ArrowDown}");
-    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => row(/^ops-runbook/), "Skills: Down reaches the next card");
     await userEvent.keyboard("{ArrowDown}");
     const line = row("1 built-in skill");
     await untilFocused(() => line, "Skills: Down reaches the built-in skills' quiet line");
@@ -267,9 +267,14 @@ export const APinNoChatReads: Story = {
   ),
   play: async ({ canvas, userEvent }) => {
     const list = canvas.getByRole("grid", { name: "Skills" });
-    // The pinned card is hidden by the router: Left out is unfolded to reach it.
+    // The pinned card is hidden by the router: Left out is unfolded (→) to reach it.
     const leftOut = within(list).getByRole("row", { name: /^Left out/ });
-    await userEvent.click(leftOut);
+    leftOut.focus();
+    await untilFocused(() => leftOut, "Skills: Left out has the keyboard");
+    await userEvent.keyboard("{ArrowRight}");
+    await waitFor(() =>
+      expect(within(leftOut).getByRole("gridcell")).toHaveAttribute("aria-expanded", "true"),
+    );
     const pinned = await waitFor(() => within(list).getByRole("row", { name: /release-notes/ }));
     pinned.focus();
     await untilFocused(() => pinned, "Skills: the pinned row has the keyboard");
