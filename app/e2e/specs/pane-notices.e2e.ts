@@ -515,9 +515,22 @@ describe("a Notice in a pane", () => {
     standingResult = await browser.execute(
       () => document.querySelector<HTMLElement>(".window-work > .action-result")?.offsetHeight ?? 0,
     );
+    // A project's result pops from the status bar's Notices item over the window instead
+    // (#3653), where it would stand over a pane: dismissed too, as a person would.
     await browser.execute(() => {
       for (const close of document.querySelectorAll<HTMLElement>(
-        '.window-work > .action-result button[aria-label="Dismiss"]',
+        '.window-work > .action-result button[aria-label="Dismiss"], [data-chip="status/bar/notices"] > .action-result button[aria-label="Dismiss"]',
+      ))
+        close.click();
+    });
+  });
+
+  // A result said since (a chat started) pops from the status bar's Notices item again
+  // (#3653): put away before each case, so no card stands over the pane it measures.
+  beforeEach(async () => {
+    await browser.execute(() => {
+      for (const close of document.querySelectorAll<HTMLElement>(
+        '[data-chip="status/bar/notices"] > .action-result button[aria-label="Dismiss"]',
       ))
         close.click();
     });
