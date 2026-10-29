@@ -77,14 +77,31 @@ fn a_pool_is_the_clusters_and_a_claim_is_a_namespaces() {
     assert_eq!(scope("Claim"), Some(json!("Namespaced")));
 }
 
-fn operator_rules() -> Vec<Value> {
+/// The rules of the role `name` in `operator.yaml`, its one of that name.
+fn rules_of(name: &str) -> Vec<Value> {
     let documents = documents("operator.yaml");
     let roles: Vec<&Value> = documents
         .iter()
         .filter(|d| matches!(d["kind"].as_str(), Some("ClusterRole" | "Role")))
         .collect();
-    assert_eq!(roles.len(), 1, "the operator has one role: {roles:?}");
-    roles[0]["rules"].as_array().expect("rules").clone()
+    let names: Vec<&str> = roles
+        .iter()
+        .filter_map(|role| role["metadata"]["name"].as_str())
+        .collect();
+    assert_eq!(
+        names,
+        ["purlis-cluster-operator", "purlis-runner-owner"],
+        "the operator's role, and the one it binds for a person (#2055)"
+    );
+    let role = roles
+        .iter()
+        .find(|role| role["metadata"]["name"] == name)
+        .unwrap_or_else(|| panic!("the role {name}"));
+    role["rules"].as_array().expect("rules").clone()
+}
+
+fn operator_rules() -> Vec<Value> {
+    rules_of("purlis-cluster-operator")
 }
 
 fn strings(value: &Value) -> Vec<String> {
@@ -119,9 +136,18 @@ fn the_operator_may_not_exec_or_attach_and_reads_no_secret() {
         }
         for verb in &verbs {
             assert!(
-                !matches!(verb.as_str(), "escalate" | "bind" | "impersonate"),
+                !matches!(verb.as_str(), "escalate" | "impersonate"),
                 "{rule}"
             );
+            // It binds one role alone, a person's own runners (#2055).
+            if verb == "bind" {
+                assert_eq!(resources, ["clusterroles"], "{rule}");
+                assert_eq!(
+                    strings(&rule["resourceNames"]),
+                    ["purlis-runner-owner"],
+                    "{rule}"
+                );
+            }
         }
         assert!(rule.get("nonResourceURLs").is_none(), "{rule}");
     }
@@ -129,47 +155,92 @@ fn the_operator_may_not_exec_or_attach_and_reads_no_secret() {
 
 #[test]
 fn the_operator_may_do_exactly_what_it_needs() {
-    let mut rules: Vec<(String, String, String)> = Vec::new();
-    for rule in operator_rules() {
+    assert_eq!(
+        flat(&operator_rules()),
+        [
+            ("", "namespaces", "", "create,get"),
+            ("", "pods", "", "get"),
+            ("", "resourcequotas", "", "create"),
+            ("", "resourcequotas", "purlis-person", "get,patch"),
+            (
+                "admissionregistration.k8s.io",
+                "validatingadmissionpolicybindings",
+                "purlis-claims-use-their-pool",
+                "get,list,watch",
+            ),
+            ("agents.x-k8s.io", "sandboxes", "", "get"),
+            (
+                "extensions.agents.x-k8s.io",
+                "sandboxclaims",
+                "",
+                "create,delete,get,list,patch,watch",
+            ),
+            (
+                "extensions.agents.x-k8s.io",
+                "sandboxtemplates",
+                "",
+                "create,delete,get,list,patch,watch",
+            ),
+            (
+                "extensions.agents.x-k8s.io",
+                "sandboxwarmpools",
+                "",
+                "create,delete,get,list,patch,watch",
+            ),
+            (
+                "rbac.authorization.k8s.io",
+                "clusterroles",
+                "purlis-runner-owner",
+                "bind"
+            ),
+            ("rbac.authorization.k8s.io", "rolebindings", "", "create"),
+            (
+                "rbac.authorization.k8s.io",
+                "rolebindings",
+                "purlis-runner-owner",
+                "get,patch"
+            ),
+            ("runners.purlis.dev", "claims", "", "list,patch,watch"),
+            ("runners.purlis.dev", "claims/status", "", "patch"),
+            ("runners.purlis.dev", "pools", "", "get,list,watch"),
+            ("runners.purlis.dev", "pools/status", "", "patch"),
+        ]
+        .map(|(g, r, n, v)| (g.to_owned(), r.to_owned(), n.to_owned(), v.to_owned()))
+    );
+}
+
+/// `rules` as one (group, resource, names, verbs) line each, sorted.
+fn flat(rules: &[Value]) -> Vec<(String, String, String, String)> {
+    let mut flat = Vec::new();
+    for rule in rules {
         for group in strings(&rule["apiGroups"]) {
             for resource in strings(&rule["resources"]) {
                 let mut verbs = strings(&rule["verbs"]);
                 verbs.sort();
-                rules.push((group.clone(), resource, verbs.join(",")));
+                flat.push((
+                    group.clone(),
+                    resource,
+                    strings(&rule["resourceNames"]).join(","),
+                    verbs.join(","),
+                ));
             }
         }
     }
-    rules.sort();
-    let wanted = [
-        ("", "pods", "get"),
-        (
-            "admissionregistration.k8s.io",
-            "validatingadmissionpolicybindings",
-            "get,list,watch",
-        ),
-        ("agents.x-k8s.io", "sandboxes", "get"),
-        (
-            "extensions.agents.x-k8s.io",
-            "sandboxclaims",
-            "create,get,list,patch,watch",
-        ),
-        (
-            "extensions.agents.x-k8s.io",
-            "sandboxtemplates",
-            "create,get,list,patch,watch",
-        ),
-        (
-            "extensions.agents.x-k8s.io",
-            "sandboxwarmpools",
-            "create,get,list,patch,watch",
-        ),
-        ("runners.purlis.dev", "claims", "list,watch"),
-        ("runners.purlis.dev", "claims/status", "patch"),
-        ("runners.purlis.dev", "pools", "get,list,watch"),
-        ("runners.purlis.dev", "pools/status", "patch"),
-    ]
-    .map(|(g, r, v)| (g.to_owned(), r.to_owned(), v.to_owned()));
-    assert_eq!(rules, wanted);
+    flat.sort();
+    flat
+}
+
+#[test]
+fn a_person_may_see_exec_into_and_read_the_logs_of_their_runners_and_nothing_else() {
+    assert_eq!(
+        flat(&rules_of(purlis_cluster_operator::person::OWNER_ROLE)),
+        [
+            ("", "pods", "", "get,list,watch"),
+            ("", "pods/exec", "", "create,get"),
+            ("", "pods/log", "", "get"),
+        ]
+        .map(|(g, r, n, v)| (g.to_owned(), r.to_owned(), n.to_owned(), v.to_owned()))
+    );
 }
 
 #[test]

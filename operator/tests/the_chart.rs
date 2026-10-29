@@ -130,10 +130,12 @@ const OPERATOR_HEADER: &str = "# Copyright 2026 Purlis
 # Its image is a placeholder digest no registry holds: install it with the image set to the
 # operator's digest (docs/cluster-operator.md).
 #
-# What it may do is the ClusterRole below and nothing else. It holds no right to exec or attach
-# to a pod and none to read a Secret, and it only reads a runner's pod by name, for the link key
-# it vouches for: upstream's controller makes the runners' pods. Its own signing key is a
-# Secret the kubelet mounts in its pod, made before it is installed (docs/cluster-operator.md).
+# What it may do is the ClusterRole purlis-cluster-operator below and nothing else. It holds no
+# right to exec or attach to a pod and none to read a Secret, and it only reads a runner's pod
+# by name, for the link key it vouches for: upstream's controller makes the runners' pods. It
+# makes each person's runner namespace and binds them alone the ClusterRole
+# purlis-runner-owner there (#2055). Its own signing key is a Secret the kubelet mounts in its
+# pod, made before it is installed (docs/cluster-operator.md).
 # operator/tests/the_install_manifests.rs holds every rule.
 ---
 # The namespace the chart is installed in, which Helm leaves to the person: only pods that meet
@@ -308,12 +310,19 @@ fn access(documents: &[Value]) -> Vec<Value> {
 #[test]
 fn no_value_changes_what_the_operator_may_do() {
     let plain = access(&rendered(&with_digest(&[])));
-    assert_eq!(plain.len(), 2, "one ClusterRole and its binding: {plain:?}");
+    assert_eq!(
+        plain.len(),
+        3,
+        "the operator's ClusterRole and its binding, and purlis-runner-owner: {plain:?}"
+    );
     let every_value = rendered(&with_digest(&[
         "image.repository=localhost:5001/operator",
         "imagePullSecrets[0].name=ghcr",
         "resources.requests.cpu=50m",
         "resources.limits.memory=1Gi",
+        "perPerson.quota.claims=50",
+        "perPerson.quota.cpu=64",
+        "perPerson.quota.memory=null",
     ]));
     assert_eq!(access(&every_value), plain);
 }
@@ -347,6 +356,41 @@ fn the_values_set_only_what_they_name() {
     );
     let defaults = pod(&rendered(&with_digest(&[])));
     assert!(defaults.get("imagePullSecrets").is_none(), "{defaults}");
+}
+
+/// The per-person quota the operator's pod is handed.
+fn quota_handed(documents: &[Value]) -> Value {
+    let env = &container(documents)["env"];
+    let value = env
+        .as_array()
+        .and_then(|env| {
+            env.iter()
+                .find(|var| var["name"] == "PURLIS_PER_PERSON_QUOTA")
+        })
+        .and_then(|var| var["value"].as_str())
+        .unwrap_or_else(|| panic!("PURLIS_PER_PERSON_QUOTA in {env}"));
+    serde_json::from_str(value).expect("JSON")
+}
+
+#[test]
+fn the_per_person_quota_reaches_the_operator_as_set() {
+    let defaults = quota_handed(&rendered(&with_digest(&[])));
+    assert_eq!(
+        defaults,
+        json!({ "claims": 5, "cpu": "4", "memory": "8Gi", "storage": "50Gi" })
+    );
+    let quota = purlis_cluster_operator::person::Quota::from_var(Some(&defaults.to_string()))
+        .expect("the operator reads the default");
+    assert_eq!(quota, purlis_cluster_operator::person::Quota::default());
+    let set = quota_handed(&rendered(&with_digest(&[
+        "perPerson.quota.claims=2",
+        "perPerson.quota.cpu=1500m",
+        "perPerson.quota.storage=null",
+    ])));
+    assert_eq!(set, json!({ "claims": 2, "cpu": "1500m", "memory": "8Gi" }));
+    for value in ["perPerson.quota.disks=2", "perPerson.quota.cpu=lots"] {
+        render(&with_digest(&[value])).expect_err(value);
+    }
 }
 
 #[test]
