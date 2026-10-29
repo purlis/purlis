@@ -1909,6 +1909,35 @@ fn rootless_podmans_runtime_config_is_held_to_the_pools_own() {
         ))
         .is_err()
     );
+    // Podman's own init, as `--init` binds it read-only (#3702), and nothing else at its place.
+    let init = |source: &str, options: serde_json::Value| {
+        let (source, options) = (source.to_owned(), options);
+        move |oci: &mut serde_json::Value| {
+            oci["mounts"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "destination": "/run/podman-init",
+                    "type": "bind",
+                    "source": source.clone(),
+                    "options": options.clone(),
+                }));
+        }
+    };
+    let read_only = serde_json::json!(["bind", "ro", "rprivate"]);
+    assert_eq!(
+        changed(&init("/usr/libexec/podman/catatonit", read_only.clone())),
+        Ok(())
+    );
+    assert!(changed(&init("/home/runner/catatonit-not", read_only.clone())).is_err());
+    assert!(changed(&init("catatonit", read_only)).is_err());
+    assert!(
+        changed(&init(
+            "/usr/libexec/podman/catatonit",
+            serde_json::json!(["bind", "rw", "rprivate"])
+        ))
+        .is_err()
+    );
     // A config of another container, of another shape, or with no mounts.
     let elsewhere = store
         .graph_root

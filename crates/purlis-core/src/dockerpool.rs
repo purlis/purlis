@@ -1187,7 +1187,8 @@ pub fn check_oci(
         let own = RUNTIME_MOUNTS.contains(&(to, kind)) && from == kind
             || (to == "/dev/shm" && kind == "tmpfs")
             || (kind == "bind" && own_file)
-            || (kind == "bind" && to == made.runner.home && from_path == home_volume);
+            || (kind == "bind" && to == made.runner.home && from_path == home_volume)
+            || is_podmans_init(mount);
         if !own {
             return Err(not(&format!(
                 "has {to} mounted from {from}, which is not the pool's own"
@@ -1195,6 +1196,19 @@ pub fn check_oci(
         }
     }
     Ok(())
+}
+
+/// **Whether `mount` is Podman's own init, as `--init` binds it** (#3702): its `catatonit`, from
+/// where the machine's Podman keeps it, bound read-only at `/run/podman-init`, the runner's PID 1
+/// that reaps what a chat's programs leave behind. Measured on rootless Podman 2026-10-29.
+fn is_podmans_init(mount: &serde_json::Value) -> bool {
+    let field = |name: &str| mount.get(name).and_then(serde_json::Value::as_str);
+    let from = std::path::Path::new(field("source").unwrap_or_default());
+    field("destination") == Some("/run/podman-init")
+        && field("type") == Some("bind")
+        && from.is_absolute()
+        && from.file_name().is_some_and(|name| name == "catatonit")
+        && mount.get("options") == Some(&serde_json::json!(["bind", "ro", "rprivate"]))
 }
 
 /// Where Podman keeps its default seccomp profile, as `podman info` names it.
