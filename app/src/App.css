@@ -928,7 +928,6 @@ body {
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  opacity: 0.92;
 }
 
 .gauge-label {
@@ -951,7 +950,6 @@ body {
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  opacity: 0.92;
 }
 
 /* The harness a chat runs, at a glance (HP-19): a button, because it opens the harness's card
@@ -1232,7 +1230,6 @@ body {
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  opacity: 0.92;
 }
 
 /* **A pane's breadcrumb, while its tab shows a task** (#1486, `PaneCrumbs.tsx`): `steward 4 ›

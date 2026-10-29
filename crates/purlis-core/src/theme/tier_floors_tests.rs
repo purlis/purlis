@@ -367,3 +367,36 @@ fn the_check_names_the_ground_off_the_window_s_own_surfaces() {
         "{lines:#?}"
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// The pane's header line, as drawn (#3637)
+// ---------------------------------------------------------------------------------------
+
+/// **A pane header's words keep a margin over the text floor** (#3637): the breadcrumb, where a
+/// chat came from, its work item and its gauge are drawn in the secondary, muted and quiet tiers
+/// on the terminal's fill, solid. They were drawn at 0.92 opacity once, which took Purlis
+/// light's quiet words from 5.35:1 to 4.51:1, on the floor itself; the stylesheets' half of
+/// this (`app/src/theme/contrast.test.ts`, "words a stylesheet fades") fails if an opacity
+/// comes back without a faded pair here. This half keeps the solid words clear of the floor by
+/// a twentieth, in every built-in appearance, so the quiet tier carries the quietness.
+#[test]
+fn a_pane_headers_words_keep_a_margin_over_the_text_floor_in_every_built_in() {
+    let floor = PAIRS
+        .iter()
+        .find(|pair| pair.front == "text.quiet" && pair.back == "terminal.background")
+        .expect("the quiet words are held on the terminal's fill")
+        .floor;
+    for theme in every_built_in() {
+        let theme = drawn(theme);
+        for tier in ["text.primary", "text.secondary", "text.muted", "text.quiet"] {
+            let ratio = contrast(theme.value(tier), theme.value("terminal.background"));
+            assert!(
+                ratio >= floor * 1.05,
+                "{} ({}): {tier} on terminal.background is {ratio:.2}:1, within a twentieth of \
+                 {floor}:1",
+                theme.name,
+                theme.id
+            );
+        }
+    }
+}

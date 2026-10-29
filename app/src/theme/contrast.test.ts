@@ -263,4 +263,139 @@ describe("every pair a stylesheet draws", () => {
       .map(([pair, rule]) => `${pair} (${rule})`);
     expect(loose).toEqual([]);
   });
+
+  /**
+   * **Words a stylesheet fades are measured faded** (#3637). The engine measures a pair's colour
+   * solid unless the pair says `.faded(opacity)`, so a rule that draws words at an opacity below
+   * 1 can pass the check while the screen sits under the floor: the pane's breadcrumb was drawn
+   * at 0.92 over quiet words that measured 5.35:1 solid and 4.51:1 as drawn. So a rule that sets
+   * an opacity below 1 and a colour, or sets the opacity over a rule under it that sets one (its
+   * descendants: `.pane-crumbs .crumb-where`), draws each colour faded, and the engine's list
+   * holds it faded at that opacity or fainter, on the rule's own background when it sets one.
+   * Disabled words fade freely: WCAG 1.4.3 exempts an inactive control.
+   */
+  it("holds the words a stylesheet fades at the opacity it fades them to", () => {
+    /** Each pair the engine measures faded, with the opacity it measures it at. */
+    const faded = [
+      ...LIST.matchAll(
+        /\bp\(\s*"([^"]+)",\s*"([^"]+)",[^)]*\)((?:\s*\.(?:over|faded|selected)\([^)]*\))*)/g,
+      ),
+    ].flatMap(([, front, back, calls]) => {
+      const fade = /\.faded\(\s*([\d.]+)\s*\)/.exec(calls ?? "")?.[1];
+      return fade === undefined ? [] : [{ front, back, fade: Number(fade) }];
+    });
+    expect(faded).toContainEqual({ front: "text.primary", back: "surface.overlay", fade: 0.8 });
+    const loose = fadedWords(sheets, byProperty)
+      .filter(
+        ({ front, backs, opacity }) =>
+          !faded.some(
+            (pair) =>
+              pair.front === front &&
+              pair.fade <= opacity &&
+              (backs.length === 0 || backs.includes(pair.back as Token)),
+          ),
+      )
+      .map(({ rule, front, opacity }) => `${front} at ${opacity} (${rule})`);
+    expect(loose).toEqual([]);
+  });
+});
+
+/** A selector list split at its own commas, never at one inside `:is(…)` or `:not(…)`. */
+function selectorsOf(head: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let from = 0;
+  for (let at = 0; at < head.length; at++) {
+    const char = head[at];
+    if (char === "(") depth++;
+    else if (char === ")") depth--;
+    else if (char === "," && depth === 0) {
+      out.push(head.slice(from, at));
+      from = at + 1;
+    }
+  }
+  out.push(head.slice(from));
+  return out.map((one) => one.replace(/\s+/g, " ").trim()).filter(Boolean);
+}
+
+/** A selector for a control that is disabled, whose words WCAG 1.4.3 exempts. */
+const DISABLED = /:disabled|\[aria-disabled(?:="true")?\]|\[data-disabled\]/;
+
+/**
+ * Each colour `sheets` draw faded: a selector that sets an opacity below 1, with each colour it
+ * or a selector under it sets, the backgrounds that selector sets, and the least opacity.
+ */
+function fadedWords(
+  sheets: readonly string[],
+  byProperty: ReadonlyMap<string, Token>,
+): { rule: string; front: Token; backs: Token[]; opacity: number }[] {
+  const by = new Map<string, { fronts: Set<Token>; backs: Set<Token>; opacity: number }>();
+  const tokens = (body: string, pattern: RegExp) =>
+    [...body.matchAll(pattern)]
+      .map((hit) => byProperty.get(hit[1] ?? ""))
+      .filter((token) => token !== undefined);
+  for (const sheet of sheets)
+    for (const [, head, body] of sheet.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const fronts = tokens(body ?? "", /(?<![\w-])color:\s*var\((--[\w-]+)\)/g);
+      const backs = tokens(body ?? "", /(?<![\w-])background(?:-color)?:\s*var\((--[\w-]+)\)/g);
+      const opacities = [...(body ?? "").matchAll(/(?<![\w-])opacity\s*:\s*([\d.]+)/g)].map((hit) =>
+        Number(hit[1]),
+      );
+      for (const selector of selectorsOf(head ?? "")) {
+        const sets = by.get(selector) ?? { fronts: new Set(), backs: new Set(), opacity: 1 };
+        fronts.forEach((token) => sets.fronts.add(token));
+        backs.forEach((token) => sets.backs.add(token));
+        if (!DISABLED.test(selector)) sets.opacity = Math.min(sets.opacity, ...opacities);
+        by.set(selector, sets);
+      }
+    }
+  return [...by].flatMap(([selector, { backs, opacity }]) =>
+    opacity >= 1
+      ? []
+      : [...by]
+          .filter(([under]) => under === selector || under.startsWith(`${selector} `))
+          .filter(([under]) => !DISABLED.test(under))
+          .flatMap(([under, sets]) =>
+            [...sets.fronts].map((front) => ({
+              rule: under === selector ? selector : `${under}, under ${selector}`,
+              front,
+              backs: [...(under === selector ? backs : sets.backs)],
+              opacity,
+            })),
+          ),
+  );
+}
+
+describe("the words a stylesheet fades", () => {
+  const byProperty = new Map(TOKENS.map((token) => [property(token), token]));
+  const words = (css: string) => fadedWords([css], byProperty);
+
+  it("are each colour a faded rule or a rule under it sets, at its least opacity", () => {
+    expect(
+      words(`
+        .crumbs { color: var(--text-secondary); background: var(--surface-raised); opacity: 0.92; }
+        .crumbs .where { color: var(--text-quiet); }
+        .elsewhere { color: var(--text-muted); }
+      `),
+    ).toEqual([
+      {
+        rule: ".crumbs",
+        front: "text.secondary",
+        backs: ["surface.raised"],
+        opacity: 0.92,
+      },
+      { rule: ".crumbs .where, under .crumbs", front: "text.quiet", backs: [], opacity: 0.92 },
+    ]);
+  });
+
+  it("are none for a disabled control, a solid rule or a list's other selector", () => {
+    expect(
+      words(`
+        .chip:disabled, .chip[aria-disabled="true"] { opacity: 0.45; }
+        .chip { color: var(--text-primary); }
+        :is(.a, .b) { color: var(--text-muted); opacity: 1; }
+        .b { opacity: 1; }
+      `),
+    ).toEqual([]);
+  });
 });
