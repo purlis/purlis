@@ -721,7 +721,7 @@ pub fn keyed(
         ));
         return (tools, refused);
     };
-    let mut with_args: Vec<(String, Option<Vec<String>>)> = Vec::new();
+    let mut with_args: Vec<(String, Vec<String>)> = Vec::new();
     for (name, tool) in table {
         let named = format!("{here}.tools.{name} in {file}");
         let mut fault =
@@ -742,8 +742,8 @@ pub fn keyed(
             continue;
         }
         // Its `args` (#3421), set on the tool once it is read whole, below.
-        let patterns = match tool.get(args::KEY) {
-            None => None,
+        match tool.get(args::KEY) {
+            None => {}
             Some(_) if tool.contains_key(login::KEY) => {
                 fault(
                     "a browser login runs no program, so it takes no args — purlis fills its page"
@@ -752,15 +752,12 @@ pub fn keyed(
                 continue;
             }
             Some(value) => match args::of(value) {
-                Ok(patterns) => Some(patterns),
+                Ok(patterns) => with_args.push((name.clone(), patterns)),
                 Err(why) => {
                     fault(why);
                     continue;
                 }
             },
-        };
-        if patterns.is_some() {
-            with_args.push((name.clone(), patterns.clone()));
         }
         let text = |key: &str| {
             tool.get(key)
@@ -864,7 +861,7 @@ pub fn keyed(
     }
     for tool in &mut tools {
         if let Some((_, patterns)) = with_args.iter().find(|(name, _)| *name == tool.name) {
-            tool.args.clone_from(patterns);
+            tool.args = Some(patterns.clone());
         }
     }
     (tools, refused)
