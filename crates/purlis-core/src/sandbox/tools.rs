@@ -78,6 +78,7 @@ use std::path::{Path, PathBuf};
 
 use crate::settings::Refusal;
 
+pub mod args;
 pub mod login;
 
 /// The key in a persona's table that holds its tools.
@@ -87,14 +88,15 @@ pub const KEY: &str = "tools";
 pub const VALUES_KEY: &str = "values";
 
 /// The keys one tool's table holds: `as` and `key`, or `values`, for a program's; `browser` and
-/// `user` for a browser login's ([`login`]).
-const TOOL_KEYS: [&str; 6] = [
+/// `user` for a browser login's ([`login`]); `args` for any program's ([`args`]).
+const TOOL_KEYS: [&str; 7] = [
     "vault",
     "as",
     "key",
     VALUES_KEY,
     login::KEY,
     login::USER_KEY,
+    args::KEY,
 ];
 
 /// The keys one of a tool's `values` holds.
@@ -164,6 +166,9 @@ pub struct Tool {
     /// Where the tool is a browser login ([`login`]): the page and its origin. Its keys are
     /// among [`Self::values`].
     pub login: Option<login::Login>,
+    /// **The arguments its program runs with** ([`args`], #3421): each a pattern for one whole
+    /// argument. None runs it with any; the built-in refusals apply either way.
+    pub args: Option<Vec<String>>,
 }
 
 impl Tool {
@@ -178,6 +183,7 @@ impl Tool {
                 key: key.to_owned(),
             }],
             login: None,
+            args: None,
         }
     }
 
@@ -216,6 +222,16 @@ impl Tool {
     /// same reason (T-1): `aws with "aws-access-key-id" as AWS_ACCESS_KEY_ID env and
     /// "aws-secret-access-key" as AWS_SECRET_ACCESS_KEY env from vault cloud`.
     pub fn whole(&self) -> String {
+        let line = self.declared_line();
+        match &self.args {
+            Some(patterns) => format!("{line}{}", args::spelled(patterns)),
+            None => line,
+        }
+    }
+
+    /// [`Self::whole`] without its `args`: the line a tool without them has always had, so an
+    /// Allow made before `args` was read still stands.
+    fn declared_line(&self) -> String {
         if let Some(login) = &self.login {
             let user = self
                 .key_in(login::USER_VAR)
@@ -705,6 +721,7 @@ pub fn keyed(
         ));
         return (tools, refused);
     };
+    let mut with_args: Vec<(String, Option<Vec<String>>)> = Vec::new();
     for (name, tool) in table {
         let named = format!("{here}.tools.{name} in {file}");
         let mut fault =
@@ -723,6 +740,27 @@ pub fn keyed(
                  values"
             ));
             continue;
+        }
+        // Its `args` (#3421), set on the tool once it is read whole, below.
+        let patterns = match tool.get(args::KEY) {
+            None => None,
+            Some(_) if tool.contains_key(login::KEY) => {
+                fault(
+                    "a browser login runs no program, so it takes no args — purlis fills its page"
+                        .to_owned(),
+                );
+                continue;
+            }
+            Some(value) => match args::of(value) {
+                Ok(patterns) => Some(patterns),
+                Err(why) => {
+                    fault(why);
+                    continue;
+                }
+            },
+        };
+        if patterns.is_some() {
+            with_args.push((name.clone(), patterns.clone()));
         }
         let text = |key: &str| {
             tool.get(key)
@@ -756,6 +794,7 @@ pub fn keyed(
                     vault,
                     values,
                     login: None,
+                    args: None,
                 }),
                 Err(why) => fault(why),
             }
@@ -786,6 +825,7 @@ pub fn keyed(
                         vault,
                         values,
                         login: Some(login),
+                        args: None,
                     });
                 }
                 Err(why) => fault(why),
@@ -821,6 +861,11 @@ pub fn keyed(
             continue;
         }
         tools.push(Tool::one(name, &vault, var, handed, &key));
+    }
+    for tool in &mut tools {
+        if let Some((_, patterns)) = with_args.iter().find(|(name, _)| *name == tool.name) {
+            tool.args.clone_from(patterns);
+        }
     }
     (tools, refused)
 }
@@ -1275,9 +1320,26 @@ pub fn run_words(ready: &Ready, args: &[String]) -> Result<Vec<String>, String> 
             &ready.tool.name,
         ));
     }
+    allows(ready, args)?;
     Ok(std::iter::once(ready.program.display().to_string())
         .chain(args.iter().cloned())
         .collect())
+}
+
+/// **Whether `ready`'s tool runs with `args`** (#3421): never a forge command line's credential
+/// or settings command ([`args::refused_forge`], by the tool's name and its program's as found
+/// and as its links resolve), and, where it declares `args`, only with arguments that match
+/// them ([`args::permits`]). Judged before any value is read for the run.
+pub fn allows(ready: &Ready, args: &[String]) -> Result<(), String> {
+    let real = ready.program.canonicalize().ok();
+    let names: Vec<&Path> = [Path::new(&ready.tool.name), ready.program.as_path()]
+        .into_iter()
+        .chain(real.as_deref())
+        .collect();
+    if let Some(why) = args::refused_forge(&names, args) {
+        return Err(why);
+    }
+    args::permits(&ready.tool.name, ready.tool.args.as_deref(), args)
 }
 
 /// `path`, a `PATH` a brokered tool run starts from, without each folder in the project at
@@ -1678,3 +1740,6 @@ mod tests;
 
 #[cfg(all(test, unix))]
 mod login_tests;
+
+#[cfg(test)]
+mod args_tests;
