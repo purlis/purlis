@@ -112,8 +112,9 @@ Two that have each cost a red `main`:
   get, and it survives whatever draws it. `e2e/opening.ts` holds the picker's selectors so
   there is one copy to change.
 
-Mutation testing runs nightly on `purlis-core` only (`.github/workflows/mutants.yml`) and never
-gates a PR. It is a report, so the only thing that matters about it is that its red is readable:
+Mutation testing runs on `purlis-core` only (`.github/workflows/mutants.yml`) and never gates a
+PR. Its nightly schedule is paused since 2026-10-29 (30 nights, none green); run it by hand, and
+see #3837 for running it on a pull request's own diff. It is a report, so the only thing that matters about it is that its red is readable:
 
 - **`baseline` red** — purlis-core's own tests do not pass. Nothing else in the run is evidence.
 - **`core (N)` red** — shard N did not finish. Its verdict says whether the budget was too small
