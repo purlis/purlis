@@ -316,6 +316,13 @@ fn reports_to(asker: u32, of: u32, from: &HandedFrom) -> bool {
     from.chat == asker && from.mode == Mode::Task && asker != of
 }
 
+/// What a chat is told when it would `act` on (cancel, close) a task the person has typed in
+/// (#1981 D-4 for a close; #3785 for a cancel, ruled 2026-10-29): the task is theirs, and the
+/// chat that asked for it leaves it alone. One sentence, and nothing was done.
+pub fn the_person_typed_in(name: &str, of: u32, act: &str) -> String {
+    format!("the person has typed in '{name}' (chat {of}), so it is theirs to {act}, from its tab.")
+}
+
 /// What a chat is told when it cancels a task the person is already stopping (D-T59-j3): the
 /// stop is the person's and the later word, and it ends in the chat being told all the same.
 pub fn being_stopped(name: &str, of: u32) -> String {

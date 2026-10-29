@@ -11,5 +11,6 @@ a clone, is told to use git, and nothing is committed.
 
 It stands behind the rule for a rider (D-1444-14, `dispatchguard::rider_ask`): a call that runs
 anything beside the commit, writes a file with a redirection on its line, or takes its message
-from a command substitution is asked about as a whole. Every other `purlis worktree` word still
+from a command substitution is asked about as a whole. (Superseded 2026-10-29, #3785: such a
+call is refused with the shape to retry, `dispatchguard::rider_refusal`, and never asked.) Every other `purlis worktree` word still
 asks.

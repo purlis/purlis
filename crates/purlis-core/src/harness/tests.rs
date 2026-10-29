@@ -541,6 +541,7 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "Bash(purlis dispatch note *)",
             "Bash(purlis dispatch ask *)",
             "Bash(purlis dispatch answer *)",
+            "Bash(purlis dispatch close *)",
             "Bash(purlis handoff --name *)",
             "Bash(purlis handoff --report *)",
             "Bash(purlis handoff --persona *)",
@@ -624,6 +625,7 @@ fn a_dispatch_is_pre_allowed_by_each_spelling_it_has_and_by_no_wildcard_over_the
             "Bash(purlis dispatch note *)",
             "Bash(purlis dispatch ask *)",
             "Bash(purlis dispatch answer *)",
+            "Bash(purlis dispatch close *)",
         ]
     );
     assert_eq!(
@@ -653,7 +655,8 @@ fn a_dispatch_is_pre_allowed_by_each_spelling_it_has_and_by_no_wildcard_over_the
         } else {
             assert!(
                 [
-                    "report", "wait", "list", "read", "cancel", "tell", "note", "ask", "answer"
+                    "report", "wait", "list", "read", "cancel", "tell", "note", "ask", "answer",
+                    "close",
                 ]
                 .contains(&first),
                 "{first}"
@@ -1084,6 +1087,7 @@ fn a_sandboxed_claude_code_chat_carries_its_sandbox_in_the_same_settings() {
             "Bash(purlis dispatch note *)",
             "Bash(purlis dispatch ask *)",
             "Bash(purlis dispatch answer *)",
+            "Bash(purlis dispatch close *)",
             "Bash(purlis handoff --name *)",
             "Bash(purlis handoff --report *)",
             "Bash(purlis handoff --persona *)",

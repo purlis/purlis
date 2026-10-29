@@ -1249,15 +1249,18 @@ Every other refusal above stands in front of it.
 An unattended run is no longer refused here. Whether anybody answers a chat's prompts is the
 app's own mark on that chat, weighed where the handoff is decided.
 
-**And one thing it asks you about, where nothing is refused: a rider.** A Claude Code chat
-is handed an `allow` for a handoff and a dispatch. Where a call runs one of them *and any
-other command* (joined with `&&`, `;` or a pipe, on a line before or after the heredoc, or in
-a substitution), the hook answers `ask` for the whole call and names the other command, so
-the allow covers a handoff that stands alone and nothing rides on it. A function or an alias
-defined earlier in the call counts as another command, and so does a redirection on the
-handoff's or the dispatch's own line that writes a file. A dispatch whose brief is not one
-quoted heredoc in the call is asked about too, as a handoff's is refused. Where purlis cannot
-read the call, it asks. A handoff in a call of its own is not asked about.
+**And a rider, which is refused and never asked about** (#3785, superseding D-1444-14). A
+Claude Code chat is handed an `allow` for a handoff and a dispatch. Where a call runs one of
+them that writes *and any other command* (joined with `&&`, `;` or a pipe, on a line before
+or after the heredoc, or in a substitution), the hook refuses the whole call, names the other
+command and says to run the handoff or the dispatch in a call of its own, so the allow covers
+a handoff that stands alone and nothing rides on it, and the chat retries with nobody stopped
+on a prompt. A function or an alias defined earlier in the call counts as another command, and
+so does a redirection on the handoff's or the dispatch's own line that writes a file. A
+dispatch whose brief is not one quoted heredoc in the call is refused too, as a handoff's is.
+Where purlis cannot read the call, it refuses. A dispatch that only looks (`list`, `read`,
+`wait`, a `--help`) is left to the harness's own rules whatever stands beside it, and a
+handoff in a call of its own is not refused.
 
 A handoff's brief is data, not commands, to purlis's secret-leak guard. None of these is
 refused as a read: a brief that names a vault path in prose, a brief that holds an apostrophe,

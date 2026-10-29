@@ -567,20 +567,24 @@ rule while one who reads a bare refusal files an issue.
   handoff now. An operator's own `deny` on the handoff glob is still held under every
   spelling, by the rule backstop below; the `ask` `purlis init` used to write is not.
 
-  **What it asks about and does not refuse: a rider.** A Claude Code chat the app starts is
-  handed an `allow` for `purlis dispatch …` and `purlis handoff …`. Where a call runs one
-  of them and any other command (a compound, a pipe, a line before or after the heredoc,
-  a substitution, a second dispatch), the hook answers `permissionDecision: "ask"` for the
-  call and names the other command; where it cannot read the call, it asks. A function or an
-  alias defined earlier in the call is such a command. Alone in its call, a dispatch or a
-  handoff is answered with nothing. Asked about too: a handoff that carries the hidden
-  `--now`, which pins the time its records are written at for purlis's own tests; a
-  redirection on the dispatch's or the handoff's own line that writes a file (`> notes.md`;
-  not `2>&1` and not `/dev/null`); and a dispatch whose brief is fed from anything but one
-  quoted heredoc on its own line (a pipe, `< file`, `<<<`, an unquoted heredoc, none), the
-  shapes a handoff is refused for above. This is purlis's own wall, built
-  because whether Claude Code asks about the second command of such a call has not been
-  measured. On Codex and opencode no allow is handed, so nothing is asked.
+  **What it refuses and never asks about: a rider** (#3785, superseding D-1444-14). A
+  Claude Code chat the app starts is handed an `allow` for `purlis dispatch …` and
+  `purlis handoff …`. Where a call runs one of them that writes and any other command (a
+  compound, a pipe, a line before or after the heredoc, a substitution, a second dispatch),
+  the hook denies the call, names the other command and says to run the dispatch in a call of
+  its own; where it cannot read the call, it refuses. A function or an alias defined earlier
+  in the call is such a command. Alone in its call, a dispatch or a handoff is answered with
+  nothing, and so is a dispatch that only looks (`list`, `read`, `wait`, a `--help`) whatever
+  stands beside it: the harness's own rules decide that call. Refused too: a handoff that
+  carries the hidden `--now`, which pins the time its records are written at for purlis's own
+  tests; a redirection on the dispatch's or the handoff's own line that writes a file
+  (`> notes.md`; not `2>&1` and not `/dev/null`); and a dispatch whose brief is fed from
+  anything but one quoted heredoc on its own line (a pipe, `< file`, `<<<`, an unquoted
+  heredoc, none), the shapes a handoff is refused for above. purlis never answers `ask`
+  here: a hook's `ask` stops the chat on a prompt in every permission mode, auto mode
+  included, and the person is asked only where something new reaches someone new (the
+  dispatch grant). On Codex and opencode no allow is handed, so nothing is refused for a
+  rider.
 
   **Text that only mentions a handoff is not one.** A heredoc body a reader takes (`cat > f
   <<'EOF'`), a quoted argument (`grep 'purlis handoff' docs`), an `echo`'s words, and the
