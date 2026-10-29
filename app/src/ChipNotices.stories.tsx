@@ -48,7 +48,10 @@ function TheWindow({
   startOpen = true,
   dormant = false,
   stack = "ready",
+  asking,
 }: {
+  /** A workspace chat 7 asks the person to remove (#3652): a ✋ on its chip. */
+  asking?: string;
   pins: string[];
   hasNotice: string;
   /** `hasNotice` is a pin whose workspace is gone, kept dormant (#3651): its notice is the
@@ -154,6 +157,8 @@ function TheWindow({
     hide: () => setOpen(undefined),
     dismiss: (id) => setKept((was) => was.filter((one) => one.id !== id)),
     onSettings: () => undefined,
+    needs: new Map(asking === undefined ? [] : [[asking, 7]]),
+    bring: (session) => setSaid(`Brought chat ${session} forward`),
   };
   return (
     <div style={{ display: "grid", gap: "var(--space-6)", inlineSize: width }}>
@@ -538,5 +543,54 @@ export const CloneCouldNotLand: Story = {
     ).toBeInTheDocument();
     await userEvent.click(retry);
     await expect(canvas.getByText("Asked to clone web again")).toBeInTheDocument();
+  },
+};
+
+/** **The needs-you dot** (#3652): a chat asks to remove 3rd-try, so its chip shows a ✋, the
+ *  most urgent kind, beside the amber count. Its press brings the asking chat forward, where the
+ *  consent is answered on its band, and brings up the workspace's own card beside it without the
+ *  keyboard; the ✋ stays, since the question is not answered yet. */
+export const NeedsYouBesideTheCount: Story = {
+  args: { startOpen: false, asking: "3rd-try" },
+  play: async ({ canvas, userEvent }) => {
+    const hand = canvas.getByRole("button", {
+      name: "Show the chat asking to remove 3rd-try, and its notice",
+    });
+    await expect(hand).toHaveAttribute("data-kind", "needs");
+    await expect(hand).toHaveAttribute("data-part", "dot-needs");
+    await expect(hand.querySelector("svg.lucide-hand")).not.toBeNull();
+    const chip = chipOf("3rd-try");
+    await expect(chip).toHaveAccessibleDescription(
+      "2 waiting, 1 notice, most urgent: a chat asks you to remove it",
+    );
+    // The arrows of the strip reach it, as they reach every dot: from the chip, back one.
+    chip.focus();
+    await untilFocused(() => chip, "the chip of 3rd-try");
+    await userEvent.keyboard("{ArrowLeft}");
+    await untilFocused(() => hand, "the ✋ on 3rd-try");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(canvas.getByText("Brought chat 7 forward")).toBeInTheDocument());
+    const card = await waitFor(() => cardOf() as HTMLElement);
+    // The card comes up beside the chat, never taking the keyboard from it.
+    await expect(card.contains(document.activeElement)).toBe(false);
+    // The ✋ stays while its own chip's card is up: the question is not on the card.
+    await expect(
+      canvas.getByRole("button", { name: /^Show the chat asking to remove 3rd-try/ }),
+    ).toBeInTheDocument();
+  },
+};
+
+/** **The ✋ at rest** (#3652): the hand on its own fill, ringed in the bar's ground, beside the
+ *  amber count, nothing pressed: the picture of the dot as it is first seen. */
+export const NeedsYouAtRest: Story = {
+  args: { startOpen: false, asking: "3rd-try" },
+  play: async ({ canvas }) => {
+    const hand = canvas.getByRole("button", { name: /^Show the chat asking to remove 3rd-try/ });
+    const chip = chipOf("3rd-try");
+    const count = chip.querySelector('[data-part="count"]') as HTMLElement;
+    const [d, c, k] = [hand, chip, count].map((one) => one.getBoundingClientRect());
+    await expect(centre(d)).toBeLessThan(c.left + 8);
+    await expect(d.right).toBeLessThan(k.left);
+    await expect(cardOf()).toBeNull();
   },
 };

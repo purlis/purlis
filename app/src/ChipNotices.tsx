@@ -11,10 +11,11 @@ import {
   type RefObject,
 } from "react";
 import type { Said } from "./actions";
+import type { Shown } from "./bindings";
 import { ActionResultNotice } from "./ActionResultNotice";
 import { trackOf, type KeptResult } from "./keptResults";
 import { Notice, type NoticeAction } from "./Notice";
-import { aboutOf, kindOf, placeOf, type Chip, type Place } from "./noticePlace";
+import { aboutOf, kindOf, needsOn, placeOf, type Chip, type Place } from "./noticePlace";
 import { CARD_STOP } from "./regionCycle";
 import type { SettingsLink } from "./settings/links";
 import { HungPopover } from "./ui/popover/Popover";
@@ -72,6 +73,12 @@ export type ChipNotices = {
   on: ReadonlyMap<string, readonly ChipNotice[]>;
   /** The chip whose card is up, if one is. */
   open: string | undefined;
+  /** **The chips a chat needs the person on** (#3652): each workspace a chat asks to have
+   *  removed, by the asking chat's session. Its ✋ dot stays until the registry no longer lists
+   *  the question, whatever card is up. */
+  needs?: ReadonlyMap<string, number>;
+  /** Brings chat `session` forward, where its question is answered on its band (#3652). */
+  bring?: (session: number) => void;
   /** Shows `workspace`'s card: its dot's press, or a dormant chip's, which brings back a
    *  standing line dismissed before (#3651). */
   show: (workspace: string) => void;
@@ -82,6 +89,9 @@ export type ChipNotices = {
   /** A refusal's way to the setting that puts it right. */
   onSettings: (link: SettingsLink) => void;
 };
+
+/** No asks: one list, so the chips' needs are worked out again only when the asks move. */
+const NO_ASKS: readonly Shown[] = [];
 
 /** Where `said` is drawn, given the title bar's `chips`. */
 export const placeOfSaid = (said: Said, chips: readonly Chip[]): Place =>
@@ -102,12 +112,18 @@ export function useChipNotices({
   onSettings,
   standing = NO_STANDING,
   bringBack,
+  asks = NO_ASKS,
+  bring = () => {},
 }: {
   /** The standing lines about one workspace each (#3651), placed as a result about it is. */
   standing?: readonly StandingNotice[];
   /** Brings back what was dismissed about `workspace` before its card is shown, where a press
    *  asks for it again (a dormant chip's). */
   bringBack?: (workspace: string) => void;
+  /** What waits on the person in the project in front, as the registry lists it (#3652). */
+  asks?: readonly Shown[];
+  /** Brings a chat of the project in front forward. */
+  bring?: (session: number) => void;
   /** The newest result said, which brings its chip's card up when it is placed on one. */
   said: Said | undefined;
   kept: readonly KeptResult[];
@@ -148,6 +164,7 @@ export function useChipNotices({
     }
     return by;
   }, [kept, plane, chips, standing]);
+  const needs = useMemo(() => needsOn(asks, chips), [asks, chips]);
   // **Which card is up, and in which project** (#3648's review): a card is up only in the
   // project whose result brought it up, and a project brought to the front brings none up.
   const [up, setUp] = useState<{
@@ -222,6 +239,8 @@ export function useChipNotices({
     on,
     // A card with nothing left on it is down.
     open: shown !== undefined && on.has(shown) ? shown : undefined,
+    needs,
+    bring,
     show: (workspace) => {
       bringBack?.(workspace);
       setUp((was) => ({ ...was, open: workspace, on: plane, chipped: true }));
