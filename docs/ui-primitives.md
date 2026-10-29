@@ -765,7 +765,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 
 | Family | Wrapper | Parts | Variants |
 | --- | --- | --- | --- |
-| Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`); `CardButton`, a card pressed whole (`CardButton.tsx`, #3655) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value`; `pressable`, `mark`, `more`, `line` | `raised`, `ask`; a pressed card's `door`, `pick` |
+| Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`); `CardButton`, a card pressed whole (`CardButton.tsx`, #3655) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value`; `pressable`, `mark`, `press`, `more`, `line` | `raised`, `ask`; a pressed card's `door`, `pick` |
 | Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, and `under` (what a way out opened) | `news`, `trouble`, `attention` |
 | Badge | `Badge`, `HostStatus` (`ui/badge/Badge.tsx`) | `root` | `neutral`, `accent`, `waiting`, `ok` |
 | Count | `Count`, `CountGroup` (`ui/badge/Badge.tsx`) | `root`, `group` | `neutral`, `accent`, `waiting`, `hot` |

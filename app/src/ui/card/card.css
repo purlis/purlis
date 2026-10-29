@@ -136,14 +136,17 @@
 }
 
 /* ---------------------------------------------------------------------------------------------
-   **A card pressed whole** (`CardButton.tsx`, #3655): a door on the welcome, a repo to get. One
-   button the size of the card, a part of its own (`pressable`), so a theme that sets its cards
-   flat on their panel never takes a pressed card's edge away. It is a thing that is pressed, so
-   it is drawn in the `control.*` shades. Under the pointer and while pressed, its ground and edge
-   change and nothing moves (#2800); its ring is the window's, from the keyboard only, outside it.
+   **A card pressed whole** (`CardButton.tsx`, #3655): a door on the welcome, a repo to get. Its
+   box (`pressable`) is a part of its own, so a theme that sets its cards flat on their panel
+   never takes a pressed card's edge away. It is a thing that is pressed, so it is drawn in the
+   `control.*` shades. The button in it (`press`) holds its title, and the button's `::after`
+   covers the whole box, so a press anywhere on the card presses it and its ring is drawn around
+   the card. Under the pointer and while pressed, the box's ground and edge change and nothing
+   moves (#2800); its ring is the window's, from the keyboard only, outside it.
    --------------------------------------------------------------------------------------------- */
 
 [data-scope="card"][data-part="pressable"] {
+  position: relative;
   display: flex;
   box-sizing: border-box;
   min-inline-size: 0;
@@ -152,13 +155,37 @@
   border-radius: var(--radius-lg);
   color: var(--text-primary);
   background-color: transparent;
-  font: inherit;
   text-align: start;
   overflow-wrap: anywhere;
-  cursor: pointer;
   transition:
     background-color var(--motion-duration-quick) var(--motion-easing-standard),
     border-color var(--motion-duration-quick) var(--motion-easing-standard);
+}
+
+/* The button: no box of its own, its words the card's; its `::after` is the card's whole face. */
+[data-scope="card"][data-part="press"] {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: none;
+  border-radius: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  outline: none;
+}
+
+[data-scope="card"][data-part="press"]::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
 }
 
 /* **A door**: its mark, title and line in a column, on the control's ground. */
@@ -183,6 +210,7 @@
 /* **A pick from a list**: one line on the surface under it, its words in the accent. */
 [data-scope="card"][data-part="pressable"][data-variant="pick"] {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-2);
@@ -200,10 +228,14 @@
 /* Unavailable: its words in the faint tier, on its own ground and edge, so nothing moves. */
 [data-scope="card"][data-part="pressable"][data-disabled] {
   color: var(--text-faint);
+}
+
+[data-scope="card"][data-part="press"][data-disabled] {
   cursor: default;
 }
 
-[data-scope="card"][data-part="pressable"][data-focus-visible] {
+/* The ring, around the whole card. */
+[data-scope="card"][data-part="press"][data-focus-visible]::after {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);
 }
@@ -217,12 +249,12 @@
 }
 
 /* Its title, at the size of the words around it: a card's first line, but pressed whole. */
-[data-scope="card"][data-part="pressable"] > [data-part="title"] {
+[data-scope="card"][data-part="press"] > [data-part="title"] {
   font-size: inherit;
   color: inherit;
 }
 
-/* What follows its title (a badge): laid out as the pressed card's own items. */
+/* What follows its title (a badge): laid out as the button's own items. */
 [data-scope="card"][data-part="more"] {
   display: contents;
 }

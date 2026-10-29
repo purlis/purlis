@@ -95,17 +95,11 @@ const LISTED: RepoListing = {
   reaches: [SIGNED_IN, NO_GITLAB],
 };
 
-/** Each repo's button, by the name a screen reader reads for it: what it shows, its path and
- *  its mark, and never more (WCAG 2.5.3). */
+/** Each repo's button, by its words, which are its name: its path, and its mark (WCAG 2.5.3). */
 function rows(): string[] {
   return within(screen.getByRole("list", { name: "Your repos" }))
     .getAllByRole("button")
-    .map((b) =>
-      (b.getAttribute("aria-labelledby") ?? "")
-        .split(" ")
-        .map((id) => document.getElementById(id)?.textContent ?? "")
-        .join(" "),
-    );
+    .map((b) => b.textContent ?? "");
 }
 
 describe("matches", () => {

@@ -2,24 +2,31 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **A card pressed whole** (#3655, the card family): a door on the welcome, a repo to get. One
- * button the size of the card, on React Aria's `Button` through the press every pressable family
- * shares (`ui/pressable.tsx`), so it is pressed by the pointer, Enter and Space, keeps WebKit's
- * tab sequence (#190) and draws its ring from the keyboard only.
+ * **A card pressed whole** (#3655, the card family): a door on the welcome, a repo to get.
  *
- * - **Named by its title and what follows it, described by its line**: a screen reader reads the
- *   act first and the explanation after it. Its name is only words it shows, so what a person
- *   reads on it and what they say to a voice control agree (WCAG 2.5.3, Label in Name).
- * - **Drawn by its parts.** Its root is `data-scope="card"`, `data-part="pressable"` and its
- *   `data-variant`; its `mark`, `title` and `line` are parts of their own. `card.css` draws them.
- *   It is a part of its own, not the card's `root`, so a theme that sets its cards flat on their
+ * - **One button, the size of the card.** The card is a box (`pressable`); the button in it
+ *   (`press`, React Aria's `Button` through the press every pressable family shares,
+ *   `ui/pressable.tsx`) holds its title and what follows it, and its `::after` covers the whole
+ *   card, so a press anywhere on it presses the button. It is pressed by the pointer, Enter and
+ *   Space, keeps WebKit's tab sequence (#190) and draws its ring around the card, from the
+ *   keyboard only.
+ * - **Named by the words it shows** (WCAG 2.5.3, Label in Name): its title and what follows it
+ *   (a badge), the button's own words. **Its line describes it**, from beside the button, so a
+ *   screen reader reads the act first and the explanation after it, and the name is never more
+ *   than what a person reads on the button.
+ * - **Drawn by its parts.** `data-scope="card"`, its box `data-part="pressable"` with its
+ *   `data-variant`, and `mark`, `press`, `title`, `more` and `line`. `card.css` draws them. Its box
+ *   is a part of its own, not the card's `root`, so a theme that sets its cards flat on their
  *   panel (Purlis) never takes a pressed card's edge away; it is drawn in the `control.*` shades
  *   every theme sets, as a thing that is pressed.
+ * - **Its box says the button's state** (`data-hovered`, `data-pressed`, `data-disabled`), as
+ *   React Aria says it of the button, so the box's own rules draw it and nothing reads what the
+ *   box holds.
  * - **Variants**: `door` (the default), a mark, a title and a line in a column on the control
  *   ground; `pick`, one line on the surface under it, a pick from a list.
- * - **A place, never a look**: `className` gives it a margin, a width or an order.
+ * - **A place, never a look**: `className` gives the box a margin, a width or an order.
  */
-import { Children, useId, type ReactNode, type Ref } from "react";
+import { Children, useId, useState, type ReactNode, type Ref } from "react";
 import { Button as AriaButton, type ButtonProps as AriaButtonProps } from "react-aria-components";
 import { pressable, renderPressed, type Native } from "../pressable";
 
@@ -36,14 +43,15 @@ export interface CardButtonProps
   line?: ReactNode;
   /** A mark before the title, in the accent: the door's icon. */
   mark?: ReactNode;
-  /** What follows its title on its line, and in its name: a badge. */
+  /** What follows its title on the button, and in its name: a badge. */
   children?: ReactNode;
   /** A place for it in its view: margin, width, flex, order. Never a look. */
   className?: string;
+  /** The button's. */
   ref?: Ref<HTMLButtonElement>;
 }
 
-/** **A card pressed whole**: one button, named by its title and described by its line. */
+/** **A card pressed whole**: one button, named by its words and described by its line. */
 export function CardButton({
   variant = "door",
   title,
@@ -54,42 +62,62 @@ export function CardButton({
   ref,
   ...rest
 }: CardButtonProps) {
-  const titleId = useId();
-  const moreId = useId();
   const lineId = useId();
+  const [hovered, hover] = useState(false);
+  const [pressed, press] = useState(false);
+  const { onHoverChange, onPressChange } = rest;
   const { native, aria, own } = pressable(rest);
+  const off = rest.isDisabled === true || String(rest["aria-disabled"]) === "true";
   // What follows the title, where anything does (`{project && <Badge />}` may draw nothing).
   const more = Children.toArray(children).length > 0;
-  const named = rest["aria-label"] !== undefined || rest["aria-labelledby"] !== undefined;
   const describedBy = [own, line !== undefined ? lineId : undefined].filter(Boolean).join(" ");
   return (
-    <AriaButton
-      {...(aria as AriaButtonProps)}
-      ref={ref}
+    <div
       className={className}
-      aria-labelledby={named ? rest["aria-labelledby"] : more ? `${titleId} ${moreId}` : titleId}
-      aria-describedby={describedBy || undefined}
-      render={renderPressed(native, undefined, own)}
-      {...{ "data-scope": "card", "data-part": "pressable", "data-variant": variant }}
+      data-scope="card"
+      data-part="pressable"
+      data-variant={variant}
+      data-hovered={hovered && !off ? "" : undefined}
+      data-pressed={pressed && !off ? "" : undefined}
+      data-disabled={off ? "" : undefined}
     >
       {mark !== undefined && (
         <span data-scope="card" data-part="mark" aria-hidden="true">
           {mark}
         </span>
       )}
-      <span data-scope="card" data-part="title" id={titleId}>
-        {title}
-      </span>
-      {more && (
-        <span data-scope="card" data-part="more" id={moreId}>
-          {children}
+      <AriaButton
+        {...(aria as AriaButtonProps)}
+        ref={ref}
+        onHoverChange={(now) => {
+          hover(now);
+          onHoverChange?.(now);
+        }}
+        onPressChange={(now) => {
+          press(now);
+          onPressChange?.(now);
+        }}
+        aria-describedby={describedBy || undefined}
+        render={renderPressed(native, undefined, own)}
+        {...{ "data-scope": "card", "data-part": "press" }}
+      >
+        <span data-scope="card" data-part="title">
+          {title}
         </span>
-      )}
+        {more && (
+          <>
+            {" "}
+            <span data-scope="card" data-part="more">
+              {children}
+            </span>
+          </>
+        )}
+      </AriaButton>
       {line !== undefined && (
         <span data-scope="card" data-part="line" id={lineId}>
           {line}
         </span>
       )}
-    </AriaButton>
+    </div>
   );
 }
