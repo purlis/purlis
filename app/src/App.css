@@ -7796,9 +7796,9 @@ nav.piece-files-head {
   color: var(--text-muted);
 }
 
-/* The Skills view (#3266): a sidebar view, its header's two ways in, the switch to the chat in
-   front, then the tree, which takes the rest and scrolls. The tree's look is the tree family's
-   (#3281). */
+/* The Skills view (#3266, #3693): a sidebar view, whose skills it shows, its header's two ways
+   in, then its list of cards, which takes the rest and scrolls. The cards' look is the list
+   family's (#3669, #3670). */
 .skills-view {
   display: flex;
   flex-direction: column;
@@ -7814,12 +7814,16 @@ nav.piece-files-head {
   flex-shrink: 0;
 }
 
-.skills-view .skill-starts {
-  grid-template-columns: 1fr;
+/* Whose skills: the chat's name, cut short where the view is narrow, and the count. */
+.skills-view-whose {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.skills-view-only {
-  align-self: flex-start;
+.skills-view .skill-starts {
+  grid-template-columns: 1fr;
 }
 
 /* New skill…'s menu, narrower than the family's widest, so at a sidebar's width it stays over
@@ -7832,17 +7836,6 @@ nav.piece-files-head {
   flex: 1 1 0;
   min-block-size: 0;
   overflow: auto;
-}
-
-/* A row's one mark, in the quiet tier: never a colour alone (WCAG 1.4.1). */
-.skills-view-mark {
-  color: var(--text-quiet);
-  font-size: var(--font-size-sm);
-}
-
-/* A row's tooltip, one line each: what the skill does, then why it has its mark. */
-.skills-view-tip {
-  display: block;
 }
 
 /* Skill sources (SK-10): the install review leads with its summary, risky items marked. */

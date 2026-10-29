@@ -314,6 +314,7 @@ macro_rules! app_commands {
                 skillchange::skill_text,
                 skillchange::skill_save,
                 skillchange::skill_rename,
+                skillchange::skill_copy,
                 skillchange::skill_move_needs_grant,
                 skillchange::skill_move,
                 skillchange::skill_users,

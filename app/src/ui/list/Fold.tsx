@@ -19,7 +19,9 @@
  *   tree's own (`TwistMark`), never a chevron drawn here.
  *
  * Both live in a `List` of rows that act, **with no `selectionMode`**: a fold's row is a row of
- * the grid, and a list that chooses would choose it rather than fold it. Their fold rows run no
+ * the grid, and a list that chooses would choose it rather than fold it. A list that chooses
+ * (the studio's Library, #3686) names its fold rows in `disabledKeys` with
+ * `disabledBehavior="selection"`: never chosen, still reached, and a press still folds. Their fold rows run no
  * `onAction` of the list's: a press on one folds it, and nothing else. A run inside a section
  * starts afresh when the section unfolds, unless its owner holds it (`folded`).
  */
