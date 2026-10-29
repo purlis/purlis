@@ -119,8 +119,11 @@ fn keep_on_as(
     if owned.is_err() {
         return Ok(None);
     }
+    // Its settings, where it carries them, are read only once the pool is shown to be owned,
+    // and sent to no other (#3448).
+    let sent = onrunner::to_send(kept)?;
     let to = to_a_runner(config, pool, waking)?;
-    let Some(said) = crate::runnerlinks::keep_profiles(&to, vec![kept.clone().into()])? else {
+    let Some(said) = crate::runnerlinks::keep_profiles(&to, vec![sent])? else {
         return Ok(None);
     };
     said.into_iter()

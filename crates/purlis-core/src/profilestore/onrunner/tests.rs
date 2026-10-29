@@ -661,3 +661,221 @@ fn a_move_refused_for_its_profile_says_to_ask_for_the_move_again() {
     );
     let_go(None, "builds", "work");
 }
+
+/// The desktop's made profile `work`, signed in, with settings beside its sign-in: Claude Code's
+/// settings file and instructions, an agent, and in its agents folder a file named like a
+/// credential.
+fn a_desktop_profile_with_settings(dir: &Path) -> MachineProfile {
+    let desktop = a_signed_in_desktop_profile(dir);
+    let config = &desktop.folders.config;
+    fs::write(config.join("CLAUDE.md"), "Be brief.").unwrap();
+    fs::create_dir_all(config.join("agents")).unwrap();
+    fs::write(config.join("agents/review.md"), "Review.").unwrap();
+    fs::write(config.join("agents/credentials.json"), "a token").unwrap();
+    fs::write(config.join("history.jsonl"), "a conversation").unwrap();
+    desktop
+}
+
+/// What a runner keeps for the desktop's `profile`, kept as the desktop sends it at a start.
+fn kept_with_its_settings(dir: &Path, profile: &MachineProfile) -> MachineProfile {
+    let runner = homes(dir, "runner");
+    let sent = to_send(&Kept::of(profile).unwrap().with_settings_of(profile)).expect("it is sent");
+    kept_for_the_desktop(
+        &runner,
+        &runner_home(dir),
+        DESKTOP,
+        &sent,
+        &Answers(Some(0)),
+        7,
+    )
+    .expect("kept");
+    list(runner.config_root())
+        .unwrap()
+        .into_iter()
+        .find(|p| p.name == profile.name)
+        .expect("kept there")
+}
+
+/// **A runner chat sees the profile's settings as a chat here does** (#3448): the settings files
+/// a made profile imports reach the runner's folder of it, and no sign-in, no file named like a
+/// credential, and nothing the list does not name.
+#[test]
+fn a_profiles_settings_reach_the_runner_that_keeps_it_and_no_credential_file_does() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+
+    let kept = kept_with_its_settings(dir.path(), &desktop);
+
+    let config = &kept.folders.config;
+    let mut files = files_under(config);
+    files.sort();
+    assert_eq!(
+        files,
+        vec![
+            PathBuf::from("CLAUDE.md"),
+            PathBuf::from("agents/review.md"),
+            PathBuf::from("settings.json"),
+        ]
+    );
+    assert_eq!(
+        fs::read_to_string(config.join("settings.json")).unwrap(),
+        "{\"theme\":\"dark\"}"
+    );
+    assert_eq!(
+        fs::read_to_string(config.join("agents/review.md")).unwrap(),
+        "Review."
+    );
+}
+
+/// Sent again after the desktop's settings changed, the runner keeps them as they are now: a
+/// file gone from the desktop goes from the runner, and its own sign-in there stays.
+#[test]
+fn settings_sent_again_replace_the_ones_the_runner_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let kept = kept_with_its_settings(dir.path(), &desktop);
+    let signed_in_there = kept.folders.config.join(".credentials.json");
+    fs::write(&signed_in_there, "the runner's own sign-in").unwrap();
+
+    fs::remove_file(desktop.folders.config.join("agents/review.md")).unwrap();
+    fs::write(desktop.folders.config.join("CLAUDE.md"), "Be thorough.").unwrap();
+    let kept = kept_with_its_settings(dir.path(), &desktop);
+
+    let config = &kept.folders.config;
+    assert!(!config.join("agents/review.md").exists());
+    assert_eq!(
+        fs::read_to_string(config.join("CLAUDE.md")).unwrap(),
+        "Be thorough."
+    );
+    assert_eq!(
+        fs::read_to_string(&signed_in_there).unwrap(),
+        "the runner's own sign-in"
+    );
+}
+
+/// A keep that carries no settings (a look from Settings, a desktop before 1.50) leaves the
+/// runner's as they are.
+#[test]
+fn a_keep_with_no_settings_leaves_the_runners_as_they_are() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let kept = kept_with_its_settings(dir.path(), &desktop);
+    let runner = homes(dir.path(), "runner");
+
+    let sent: purlis_session_protocol::session::ProfileToKeep = Kept::of(&desktop).unwrap().into();
+    assert_eq!(sent.settings, None);
+    kept_for_the_desktop(
+        &runner,
+        &runner_home(dir.path()),
+        DESKTOP,
+        &sent,
+        &Answers(Some(0)),
+        9,
+    )
+    .unwrap();
+
+    assert!(kept.folders.config.join("CLAUDE.md").is_file());
+}
+
+/// **The desktop's adopted folder's settings reach the runner's own default folder** that keeps
+/// it, and its sign-in does not.
+#[test]
+fn the_adopted_folders_settings_reach_the_runners_default_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let adopted = the_desktops_adopted_folder(dir.path());
+    fs::create_dir_all(&adopted.folders.config).unwrap();
+    fs::write(adopted.folders.config.join("settings.json"), "{}").unwrap();
+    fs::write(
+        adopted.folders.config.join(".credentials.json"),
+        "a sign-in",
+    )
+    .unwrap();
+
+    let kept = kept_with_its_settings(dir.path(), &adopted);
+
+    assert_eq!(kept.folders.config, runner_home(dir.path()).join(".claude"));
+    assert_eq!(
+        files_under(&kept.folders.config),
+        vec![PathBuf::from("settings.json")]
+    );
+}
+
+/// A profile for sandboxed chats only has purlis's settings, so none of the desktop's is sent.
+#[test]
+fn a_sandbox_only_profile_sends_no_settings() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut desktop = a_desktop_profile_with_settings(dir.path());
+    desktop.sandbox_only = true;
+
+    let sent = to_send(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap();
+
+    assert_eq!(sent.settings, None);
+}
+
+/// Settings larger than a link carries are not sent, and the profile is refused in words.
+#[test]
+fn settings_too_large_for_the_link_are_refused_in_words() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    fs::write(
+        desktop.folders.config.join("agents/large.md"),
+        vec![b'a'; MOST_SETTINGS_BYTES + 1],
+    )
+    .unwrap();
+
+    let refused = to_send(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap_err();
+
+    assert!(refused.contains("larger than"), "{refused}");
+}
+
+/// **A runner keeps no settings file it would not import**: one named like a credential, a
+/// hidden one, one the list does not name, and one outside the settings folder are each refused,
+/// and nothing of what was sent is written.
+#[test]
+fn a_runner_refuses_a_settings_file_named_like_a_credential_or_outside_the_list() {
+    use purlis_session_protocol::session::SettingsFile;
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let runner = homes(dir.path(), "runner");
+    for path in [
+        ".credentials.json",
+        "agents/credentials.json",
+        "agents/.hidden.md",
+        "history.jsonl",
+        "../settings.json",
+        "agents/../../x.md",
+        "/etc/passwd",
+        "agents",
+        "settings.json/x",
+        "",
+    ] {
+        let mut sent: purlis_session_protocol::session::ProfileToKeep =
+            Kept::of(&desktop).unwrap().into();
+        sent.settings = Some(vec![
+            SettingsFile {
+                path: "CLAUDE.md".to_owned(),
+                bytes: b"Be brief.".to_vec(),
+            },
+            SettingsFile {
+                path: path.to_owned(),
+                bytes: b"x".to_vec(),
+            },
+        ]);
+
+        let refused = kept_for_the_desktop(
+            &runner,
+            &runner_home(dir.path()),
+            DESKTOP,
+            &sent,
+            &Answers(Some(0)),
+            7,
+        )
+        .unwrap_err();
+
+        assert!(refused.contains("settings"), "{path}: {refused}");
+        assert!(
+            !runner.folder_of("work").join("config/CLAUDE.md").exists(),
+            "{path}: nothing written"
+        );
+    }
+}

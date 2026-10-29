@@ -9,6 +9,7 @@ fn work() -> onrunner::Kept {
         harness: "claude".to_owned(),
         sandbox_only: false,
         pinned: None,
+        settings_in: None,
     }
 }
 

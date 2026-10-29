@@ -409,11 +409,12 @@ pub fn keep_profiles(
     on_one_link(to, async |linked| match linked {
         Ok(client) if !keeps_profiles(client.version()) => Ok(None),
         Ok(client) => {
+            let version = client.version();
             let mut said = Vec::with_capacity(profiles.len());
             for profile in profiles {
                 said.push(
                     client
-                        .keep_profile(profile)
+                        .keep_profile(for_a_runner_of(version, profile))
                         .await
                         .map_err(|why| match why.refusal() {
                             Some(refused) => said_by_the_runner(&refused.why),
@@ -425,6 +426,18 @@ pub fn keep_profiles(
         }
         Err(down) => Err(down.why),
     })
+}
+
+/// `profile`, as a runner speaking `version` is sent it: with its settings only from 1.50
+/// (#3448), since a runner before ignores them; one before keeps the settings it has.
+pub fn for_a_runner_of(
+    version: purlis_session_protocol::version::Version,
+    mut profile: purlis_session_protocol::session::ProfileToKeep,
+) -> purlis_session_protocol::session::ProfileToKeep {
+    if version < purlis_session_protocol::session::KNOWS_PROFILE_SETTINGS {
+        profile.settings = None;
+    }
+    profile
 }
 
 /// Whether a runner speaking `version` keeps a desktop's profiles (`keep_profile`, 1.43).

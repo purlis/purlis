@@ -555,6 +555,43 @@ fn only_a_runner_of_1_43_or_later_keeps_a_desktops_profiles() {
     }));
 }
 
+/// **A profile's settings go only to a runner of 1.50 or later** (#3448): one before it ignores
+/// them, so it is sent the profile alone and keeps the settings it has.
+#[test]
+fn only_a_runner_of_1_50_or_later_is_sent_a_profiles_settings() {
+    use purlis_session_protocol::session::{ProfileToKeep, SettingsFile};
+    use purlis_session_protocol::version::Version;
+    let profile = ProfileToKeep {
+        name: "work".into(),
+        harness: "claude".into(),
+        sandbox_only: false,
+        pinned: None,
+        settings: Some(vec![SettingsFile {
+            path: "CLAUDE.md".into(),
+            bytes: b"Be brief.".to_vec(),
+        }]),
+    };
+
+    let older = for_a_runner_of(
+        Version {
+            major: 1,
+            minor: 49,
+        },
+        profile.clone(),
+    );
+    let newer = for_a_runner_of(
+        Version {
+            major: 1,
+            minor: 50,
+        },
+        profile.clone(),
+    );
+
+    assert_eq!(older.settings, None);
+    assert_eq!(older.name, "work");
+    assert_eq!(newer, profile);
+}
+
 /// **A runner's refusal is said as its own words, cut short** (#2049, L4): a runner cannot fill
 /// the person's screen, or pass its words off as purlis's.
 #[test]

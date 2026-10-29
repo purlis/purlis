@@ -8,9 +8,11 @@
 //! the session protocol's `keep_profile`), and the runner makes it in its own store: a folder of
 //! its own, in its own data home, which on a pool is the runner's home volume.
 //!
-//! **Nothing of the desktop's profile folder goes to the runner.** What is kept is the profile's
-//! name, its harness, whether it is for sandboxed chats only, and the harness version it is
-//! pinned to: no file, no setting, no sign-in, no vault reference. A subscription is signed in
+//! **No sign-in of the desktop's profile folder goes to the runner.** What is kept is the
+//! profile's name, its harness, whether it is for sandboxed chats only, the harness version it is
+//! pinned to, and, at a chat's start or move there, its settings files (#3448): exactly the ones
+//! a made profile imports ([`super::ALLOWED`]), read as an import reads them, never a
+//! sign-in, a file named like a credential or a vault reference. A subscription is signed in
 //! on the runner through its harness's own flow, run there in the runner's folder
 //! ([`super::sign_in`]), once per device, so no sign-in is ever copied between devices and a
 //! single-use refresh token never has two holders (ADR 0095 §3).
@@ -46,7 +48,14 @@ pub struct Kept {
     pub sandbox_only: bool,
     /// The harness version the desktop's profile is pinned to (#2038), where it is pinned.
     pub pinned: Option<String>,
+    /// The desktop's settings folder of it, whose settings files [`to_send`] reads and sends
+    /// (#3448), where they are sent: at a chat's start or move there, never at a look.
+    pub settings_in: Option<PathBuf>,
 }
+
+/// **The most bytes of settings files sent with a profile** (#3448): half of what one frame of
+/// the link carries, since their bytes cross as base64.
+pub const MOST_SETTINGS_BYTES: usize = purlis_session_protocol::link::MOST_CONTROL_FRAME_BYTES / 2;
 
 impl Kept {
     /// **The desktop's profile `record`, as its runners keep it**, or why it is not kept on a
@@ -94,8 +103,38 @@ impl Kept {
                 .as_ref()
                 .filter(|_| record.adopted.is_none())
                 .map(|p| p.version.clone()),
+            settings_in: None,
         })
     }
+
+    /// This profile, its settings sent with it from the desktop's `record` (#3448): the settings
+    /// folder of a made profile or an adopted one. A profile for sandboxed chats only has
+    /// purlis's settings, so none is sent for it.
+    #[must_use]
+    pub fn with_settings_of(mut self, record: &MachineProfile) -> Self {
+        self.settings_in = (!record.sandbox_only).then(|| record.folders.config.clone());
+        self
+    }
+}
+
+/// **What the desktop sends its runner to keep `kept`** (`keep_profile`): its name, harness,
+/// sandbox-only mark and pin, and, where [`Kept::settings_in`] names its settings folder, the
+/// settings files a made profile imports, read as an import reads them (#3448): never a sign-in
+/// or a file named like a credential, and at most [`MOST_SETTINGS_BYTES`], or why not.
+pub fn to_send(kept: &Kept) -> Result<purlis_session_protocol::session::ProfileToKeep, String> {
+    let settings = match &kept.settings_in {
+        Some(folder) => Some(
+            super::made::settings_read(&kept.harness, folder, MOST_SETTINGS_BYTES)?
+                .into_iter()
+                .map(|(path, bytes)| purlis_session_protocol::session::SettingsFile { path, bytes })
+                .collect(),
+        ),
+        None => None,
+    };
+    Ok(purlis_session_protocol::session::ProfileToKeep {
+        settings,
+        ..purlis_session_protocol::session::ProfileToKeep::from(kept.clone())
+    })
 }
 
 /// **Keeps the desktop's profile `kept` for the desktop `desktop` in this runner's store under
@@ -267,6 +306,7 @@ impl From<&purlis_session_protocol::session::ProfileToKeep> for Kept {
             harness: sent.harness.clone(),
             sandbox_only: sent.sandbox_only,
             pinned: sent.pinned.clone(),
+            settings_in: None,
         }
     }
 }
@@ -278,6 +318,7 @@ impl From<Kept> for purlis_session_protocol::session::ProfileToKeep {
             harness: kept.harness,
             sandbox_only: kept.sandbox_only,
             pinned: kept.pinned,
+            settings: None,
         }
     }
 }
@@ -307,7 +348,8 @@ pub fn standing_for_the_wire(
 /// **What a runner's host answers its desktop's `keep_profile` with** (1.43): the profile
 /// `sent` kept for the desktop `desktop` in this runner's store under `homes`, with `home` the
 /// runner's home, at `now`, and whether its harness says, through `look`, that it is signed in
-/// here.
+/// here. The settings `sent` carries (1.50, #3448) are kept in place of the ones kept before;
+/// none sent leaves them as they are.
 pub fn kept_for_the_desktop(
     homes: &Homes,
     home: &Path,
@@ -317,6 +359,13 @@ pub fn kept_for_the_desktop(
     now: u64,
 ) -> Result<purlis_session_protocol::session::ProfileStanding, String> {
     let record = keep(homes, home, &Kept::from(sent), desktop, now)?;
+    if let Some(settings) = &sent.settings {
+        let files: Vec<(String, Vec<u8>)> = settings
+            .iter()
+            .map(|file| (file.path.clone(), file.bytes.clone()))
+            .collect();
+        super::made::settings_kept(homes, &record, &files)?;
+    }
     Ok(standing_for_the_wire(standing(&record, look)))
 }
 
@@ -377,7 +426,10 @@ fn ready_on_for(
         return Ok(());
     };
     let shown = crate::shown::short(name);
-    let kept = Kept::of(&record).map_err(|why| format!("{why}. {nothing}."))?;
+    // A start or a move sends the profile's settings with it, as they are now (#3448).
+    let kept = Kept::of(&record)
+        .map_err(|why| format!("{why}. {nothing}."))?
+        .with_settings_of(&record);
     match keep(&kept).map_err(|why| {
         format!("pool {pool}'s runner did not keep the profile '{shown}': {why}. {nothing}.")
     })? {
