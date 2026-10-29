@@ -27,6 +27,28 @@ fn operator_key() -> OperatorKey {
     OperatorKey::from_spelled(fixture("operator-key.txt").trim()).unwrap()
 }
 
+/// The worked example's cluster: the uid of its `kube-system` namespace (#3305).
+fn cluster() -> String {
+    fixture("cluster.txt").trim().to_owned()
+}
+
+/// A pin on `key` in the worked example's cluster.
+fn pin(key: OperatorKey) -> PoolPin {
+    PoolPin {
+        key,
+        cluster: cluster(),
+    }
+}
+
+/// `text` signed as `signature`, outside a roll.
+fn signed(text: &str, signature: &str) -> Signed {
+    Signed {
+        text: text.to_owned(),
+        signature: signature.to_owned(),
+        next_signature: None,
+    }
+}
+
 /// An operator of the test's own: its key, and a signer.
 struct Operator(Ed25519KeyPair);
 
@@ -62,6 +84,7 @@ fn a_requesters_runner_namespace_is_worked_out_as_the_operator_does() {
 
 fn vouched(key: PublicKey) -> Vouched {
     Vouched {
+        cluster: cluster(),
         namespace: "ada".into(),
         claim: "ada-1".into(),
         claim_uid: claimed().uid,
@@ -85,6 +108,7 @@ fn the_operators_worked_example_is_verified_and_read() {
     let read = operator_key()
         .verified(&fixture("statement.txt"), fixture("signature.txt").trim())
         .expect("the operator's own example verifies");
+    assert_eq!(read.cluster, cluster());
     assert_eq!(read.namespace, "ada");
     assert_eq!(read.claim, "ada-1");
     assert_eq!(read.runner_namespace, RUNNER_NAMESPACE);
@@ -132,7 +156,13 @@ fn a_statement_purlis_does_not_read_is_refused_even_when_signed() {
     let good = vouched(LinkKey::generate().unwrap().public()).text();
     let unread = [
         good.replace(STATEMENT_HEADER, "purlis runner link key v1"),
-        good.replace(STATEMENT_HEADER, "purlis runner link key v3"),
+        good.replace(STATEMENT_HEADER, "purlis runner link key v2"),
+        good.replace(STATEMENT_HEADER, "purlis runner link key v4"),
+        // A v2 statement, which names no cluster, is one purlis no longer reads (#3305).
+        good.replace(STATEMENT_HEADER, "purlis runner link key v2")
+            .replace(&format!("cluster: {}\n", cluster()), ""),
+        good.replace(&format!("cluster: {}\n", cluster()), ""),
+        good.replace(&format!("cluster: {}", cluster()), "cluster: kube-system"),
         // A v1 statement's pod uid line is one purlis no longer reads.
         good.replace(
             "pod: ada-1\n",
@@ -207,11 +237,22 @@ fn a_statement_about_another_claim_or_requester_is_refused() {
     ];
     for other in others {
         let text = other.text();
-        let refused = checked(&operator.key(), &claimed(), &text, &operator.sign(&text));
+        let refused = checked(
+            &pin(operator.key()),
+            &claimed(),
+            &signed(&text, &operator.sign(&text)),
+        );
         assert!(matches!(refused, Err(Refused::NotVouched(_))), "{other:?}");
     }
     let text = vouched(key).text();
-    assert!(checked(&operator.key(), &claimed(), &text, &operator.sign(&text)).is_ok());
+    assert!(
+        checked(
+            &pin(operator.key()),
+            &claimed(),
+            &signed(&text, &operator.sign(&text))
+        )
+        .is_ok()
+    );
 }
 
 #[test]
@@ -426,7 +467,14 @@ fn a_statement_holds_only_until_the_time_it_names_and_never_past_an_hour() {
     let text = vouched(key).text();
     let signature = operator.sign(&text);
     let until = vouched(key).until;
-    let at = |now| checked_at(&operator.key(), &claimed(), &text, &signature, now);
+    let at = |now| {
+        checked_at(
+            &pin(operator.key()),
+            &claimed(),
+            &signed(&text, &signature),
+            now,
+        )
+    };
     assert!(at(until - 1).is_ok());
     for now in [until, until + 1] {
         let refused = at(now).unwrap_err();
@@ -443,10 +491,9 @@ fn a_statement_holds_only_until_the_time_it_names_and_never_past_an_hour() {
     // The operator's worked example, long past.
     let fixture_at = |now| {
         checked_at(
-            &operator_key(),
+            &pin(operator_key()),
             &claimed(),
-            &fixture("statement.txt"),
-            fixture("signature.txt").trim(),
+            &signed(&fixture("statement.txt"), fixture("signature.txt").trim()),
             now,
         )
     };
@@ -468,4 +515,274 @@ fn a_statement_of_another_version_says_both_are_to_be_of_one_release() {
         matches!(&refused, Refused::NotVouched(why) if why.contains("version v1") && why.contains("one release")),
         "{refused:?}"
     );
+}
+
+fn next_operator_key() -> OperatorKey {
+    OperatorKey::from_spelled(fixture("next-operator-key.txt").trim()).unwrap()
+}
+
+/// Now, as a desktop reads the worked example's roll: within its seven days.
+const DURING_THE_ROLL: u64 = 1_798_761_600 - 3 * 24 * 3600;
+
+/// A Pool's status in the worked example's roll (`fixtures/runner-link-key/`).
+fn rolling() -> PoolSeen {
+    PoolSeen {
+        signing_key: Some(fixture("operator-key.txt").trim().to_owned()),
+        cluster: Some(cluster()),
+        next_signing_key: Some(fixture("next-operator-key.txt").trim().to_owned()),
+        next_signing_key_vouch: Some((
+            fixture("key-roll.txt"),
+            fixture("key-roll-signature.txt").trim().to_owned(),
+        )),
+    }
+}
+
+#[test]
+fn a_statement_made_in_another_cluster_than_the_pinned_one_is_refused() {
+    let operator = Operator::new();
+    let key = LinkKey::generate().unwrap().public();
+    let elsewhere = Vouched {
+        cluster: "99999999-9999-4999-8999-999999999999".into(),
+        ..vouched(key)
+    };
+    let text = elsewhere.text();
+    let refused = checked(
+        &pin(operator.key()),
+        &claimed(),
+        &signed(&text, &operator.sign(&text)),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(&refused, Refused::NotVouched(why) if why.contains("another cluster")),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn a_pools_pin_is_its_operators_key_and_its_cluster() {
+    let seen = PoolSeen::from_status(&serde_json::json!({
+        "signingKey": fixture("operator-key.txt").trim(),
+        "cluster": cluster(),
+    }));
+    assert_eq!(
+        PoolPin::first("team", &seen),
+        Ok(pin(operator_key())),
+        "{seen:?}"
+    );
+    // An operator that names no cluster is of an older release.
+    let older = PoolSeen {
+        cluster: None,
+        ..seen.clone()
+    };
+    let refused = PoolPin::first("team", &older).unwrap_err();
+    assert!(
+        matches!(&refused, Refused::NotVouched(why) if why.contains("one release")),
+        "{refused:?}"
+    );
+    assert!(
+        PoolPin::first(
+            "team",
+            &PoolSeen {
+                signing_key: None,
+                ..seen
+            }
+        )
+        .is_err()
+    );
+    assert_eq!(
+        PoolSeen::from_status(&serde_json::json!({
+            "signingKey": "ed25519:00",
+            "cluster": "c",
+            "nextSigningKey": "ed25519:11",
+            "nextSigningKeyVouch": { "statement": "s", "signature": "g" },
+        })),
+        PoolSeen {
+            signing_key: Some("ed25519:00".into()),
+            cluster: Some("c".into()),
+            next_signing_key: Some("ed25519:11".into()),
+            next_signing_key_vouch: Some(("s".into(), "g".into())),
+        }
+    );
+}
+
+#[test]
+fn the_operators_worked_example_of_a_roll_is_read() {
+    let roll = KeyRoll::from_text(&fixture("key-roll.txt")).expect("read");
+    assert_eq!(roll.cluster, cluster());
+    assert_eq!(roll.from, operator_key());
+    assert_eq!(roll.to, next_operator_key());
+    assert_eq!(roll.until, 1_798_761_600);
+    assert_eq!(roll.text(), fixture("key-roll.txt"));
+    let good = fixture("key-roll.txt");
+    for bad in [
+        good.replace(ROLL_HEADER, "purlis cluster operator key roll v2"),
+        good.replace("until: ", "until:"),
+        good.replace("from: ed25519:", "from: "),
+        good.replace(&format!("cluster: {}", cluster()), "cluster: kube-system"),
+        good.trim_end().to_owned(),
+        format!("{good}extra: line\n"),
+    ] {
+        assert!(KeyRoll::from_text(&bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn a_desktop_pinned_to_the_current_key_moves_its_pin_once_that_key_vouches_for_the_next() {
+    let mut pinned = pin(operator_key());
+    assert_eq!(
+        pinned.followed(&rolling(), DURING_THE_ROLL),
+        Ok(Following::Moves(pin(next_operator_key())))
+    );
+    assert_eq!(pinned.follow(&rolling(), DURING_THE_ROLL), Ok(true));
+    assert_eq!(pinned, pin(next_operator_key()));
+    // Moved, it stays through the rest of the roll and after it.
+    assert_eq!(pinned.follow(&rolling(), DURING_THE_ROLL), Ok(false));
+    let promoted = PoolSeen {
+        signing_key: Some(fixture("next-operator-key.txt").trim().to_owned()),
+        next_signing_key: None,
+        next_signing_key_vouch: None,
+        ..rolling()
+    };
+    assert_eq!(
+        pinned.followed(&promoted, DURING_THE_ROLL),
+        Ok(Following::Stays)
+    );
+    // No roll: it stays.
+    let quiet = PoolSeen {
+        next_signing_key: None,
+        next_signing_key_vouch: None,
+        ..rolling()
+    };
+    assert_eq!(
+        pin(operator_key()).followed(&quiet, DURING_THE_ROLL),
+        Ok(Following::Stays)
+    );
+}
+
+#[test]
+fn a_desktop_that_missed_the_roll_asks_again() {
+    let promoted = PoolSeen {
+        signing_key: Some(fixture("next-operator-key.txt").trim().to_owned()),
+        next_signing_key: None,
+        next_signing_key_vouch: None,
+        ..rolling()
+    };
+    let mut pinned = pin(operator_key());
+    let refused = pinned.follow(&promoted, DURING_THE_ROLL).unwrap_err();
+    assert!(
+        matches!(&refused, Refused::NotVouched(why) if why.contains("add the pool again")),
+        "{refused:?}"
+    );
+    assert_eq!(pinned, pin(operator_key()), "a refusal leaves the pin");
+}
+
+#[test]
+fn a_roll_the_pinned_key_does_not_vouch_for_is_not_followed() {
+    let stranger = Operator::new();
+    let pinned = pin(operator_key());
+    let not_followed = |seen: &PoolSeen, now| {
+        let followed = pinned.followed(seen, now);
+        assert!(
+            matches!(followed, Ok(Following::NotFollowed(_))),
+            "{seen:?} at {now}: {followed:?}"
+        );
+    };
+    // Past its until, or holding more than seven days and an hour from now.
+    not_followed(&rolling(), 1_798_761_600);
+    not_followed(&rolling(), 1_798_761_600 - ROLL_MOST_AHEAD - 1);
+    // Signed by another key than the pinned one.
+    let text = fixture("key-roll.txt");
+    not_followed(
+        &PoolSeen {
+            next_signing_key_vouch: Some((text.clone(), stranger.sign(&text))),
+            ..rolling()
+        },
+        DURING_THE_ROLL,
+    );
+    // No word at all.
+    not_followed(
+        &PoolSeen {
+            next_signing_key_vouch: None,
+            ..rolling()
+        },
+        DURING_THE_ROLL,
+    );
+    // A word for another next key than the one the Pool names.
+    not_followed(
+        &PoolSeen {
+            next_signing_key: Some(stranger.key().spelled()),
+            ..rolling()
+        },
+        DURING_THE_ROLL,
+    );
+    // A word the pinned key signed for another cluster or from another key.
+    let operator = Operator::new();
+    for word in [
+        KeyRoll {
+            cluster: "99999999-9999-4999-8999-999999999999".into(),
+            from: operator.key(),
+            to: next_operator_key(),
+            until: 1_798_761_600,
+        },
+        KeyRoll {
+            cluster: cluster(),
+            from: next_operator_key(),
+            to: next_operator_key(),
+            until: 1_798_761_600,
+        },
+    ] {
+        let text = word.text();
+        let seen = PoolSeen {
+            signing_key: Some(operator.key().spelled()),
+            next_signing_key_vouch: Some((text.clone(), operator.sign(&text))),
+            ..rolling()
+        };
+        let followed = pin(operator.key()).followed(&seen, DURING_THE_ROLL);
+        assert!(
+            matches!(followed, Ok(Following::NotFollowed(_))),
+            "{word:?}: {followed:?}"
+        );
+    }
+}
+
+#[test]
+fn a_pool_in_another_cluster_than_the_pinned_one_is_refused() {
+    let elsewhere = PoolSeen {
+        cluster: Some("99999999-9999-4999-8999-999999999999".into()),
+        ..rolling()
+    };
+    let mut pinned = pin(operator_key());
+    let refused = pinned.follow(&elsewhere, DURING_THE_ROLL).unwrap_err();
+    assert!(
+        matches!(&refused, Refused::NotVouched(why) if why.contains("another cluster")),
+        "{refused:?}"
+    );
+    assert_eq!(pinned, pin(operator_key()));
+}
+
+#[test]
+fn during_a_roll_a_moved_pin_reads_the_next_keys_signature() {
+    let during = Signed {
+        text: fixture("statement.txt"),
+        signature: fixture("signature.txt").trim().to_owned(),
+        next_signature: Some(fixture("next-signature.txt").trim().to_owned()),
+    };
+    // Pinned to either key, the statement is read.
+    assert!(pin(operator_key()).verified(&during).is_ok());
+    assert!(pin(next_operator_key()).verified(&during).is_ok());
+    // Moved, a statement the next key did not sign is refused.
+    let unsigned_by_next = Signed {
+        next_signature: None,
+        ..during.clone()
+    };
+    assert!(
+        pin(next_operator_key())
+            .verified(&unsigned_by_next)
+            .is_err()
+    );
+    let wrong_next = Signed {
+        next_signature: Some(fixture("signature.txt").trim().to_owned()),
+        ..during
+    };
+    assert!(pin(next_operator_key()).verified(&wrong_next).is_err());
 }

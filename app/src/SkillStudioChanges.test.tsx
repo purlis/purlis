@@ -4,7 +4,7 @@
 /**
  * The Skill studio's changes (SK-7, #2770): New skill at the level the person came from, Rename,
  * a move into the project that asks for a grant first, Delete that says who uses the skill and
- * offers Restore, the grant control, and a workspace's turn-on refused with the grant that would
+ * offers Bring it back, the grant control, and a workspace's turn-on refused with the grant that would
  * reach it. Each is done from the skill chosen in the Library, beside the list (#3681). The core
  * is mocked; what each command does is the core's seam test.
  */
@@ -213,7 +213,8 @@ describe("the Skill studio's changes", () => {
                 name: "deploy",
                 level: { at: "project", local: false },
                 label: "project",
-                stays: "kept on this machine for 30 more days",
+                days_left: 30,
+                in_history: false,
               },
             ]
           : [],
@@ -233,12 +234,12 @@ describe("the Skill studio's changes", () => {
     );
 
     const notice = await screen.findByRole("status", { name: /Skill deleted/ });
-    // The restore list, on the Deleted page, says how long the deleted skill stays (SK-33).
+    // The Deleted page says how long the deleted skill can be brought back (SK-33, S9).
     await user.click(await screen.findByRole("button", { name: /^Deleted/ }));
     expect(await screen.findByTestId("deleted-deploy")).toHaveTextContent(
-      "kept on this machine for 30 more days",
+      "30 days left to bring it back",
     );
-    await user.click(within(notice).getByRole("button", { name: "Restore" }));
+    await user.click(within(notice).getByRole("button", { name: "Bring it back" }));
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_restore")?.args).toMatchObject({
         id: "abc:skills/deploy",

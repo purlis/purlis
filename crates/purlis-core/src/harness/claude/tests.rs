@@ -438,7 +438,25 @@ fn a_task_chat_runs_the_read_only_purlis_commands_its_brief_runs_without_asking(
         .position(|arg| arg == "--settings")
         .expect("--settings");
     let asker: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
-    assert_eq!(asker["permissions"]["allow"], task["permissions"]["allow"]);
+    // But for the rule that names the task's own persona (#3829, on review of #3841): the
+    // chat that asked here runs as none.
+    let own = own_scope_rules(Some("steward"), None);
+    let task_allow: Vec<&serde_json::Value> = task["permissions"]["allow"]
+        .as_array()
+        .expect("allow")
+        .iter()
+        .filter(|rule| {
+            !rule
+                .as_str()
+                .is_some_and(|rule| own.iter().any(|own| own == rule))
+        })
+        .collect();
+    let asker_allow: Vec<&serde_json::Value> = asker["permissions"]["allow"]
+        .as_array()
+        .expect("allow")
+        .iter()
+        .collect();
+    assert_eq!(asker_allow, task_allow);
 }
 
 #[test]
@@ -480,6 +498,267 @@ fn a_brokered_commit_is_allowed_by_its_two_words_and_no_other_worktree_word_is()
         "purlis commit -m one",
     ] {
         assert!(!bash_allowed(&allow, asks), "{asks:?}");
+    }
+}
+
+/// The `permissions.allow` a Claude Code chat with no persona is handed, graded or not.
+fn allowed_to(graded: bool) -> Vec<serde_json::Value> {
+    let empty = tempfile::tempdir().expect("a directory");
+    let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
+        Kit {
+            skills: None,
+            laid_out: None,
+            binary: std::path::Path::new("/bin/charter"),
+            plugin: Some(std::path::Path::new("/app/plugin")),
+            persona: None,
+            graded,
+        },
+        Some(empty.path()),
+        &crate::harness_plugin::Chosen::new(),
+        None,
+    ) else {
+        panic!("armed per session");
+    };
+    let at = args
+        .iter()
+        .position(|arg| arg == "--settings")
+        .expect("--settings");
+    let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+    settings["permissions"]["allow"]
+        .as_array()
+        .expect("allow")
+        .clone()
+}
+
+/// What only the chat's own work touches, and that a looping chat stopped on (#3829, the
+/// operator's ruling of 2026-10-29: the person is asked only when something new reaches
+/// someone new). `--shared` memory and `worktree push` are named in the ruling. A chat on no
+/// persona and outside any plane: what names its persona or its workspace is tested by
+/// `a_chat_writes_its_own_persona_s_and_workspace_s_memory_unasked_and_no_other_s`.
+const OWN_SCOPE: [&str; 22] = [
+    "purlis persona recall cluster",
+    "purlis recall cluster",
+    "purlis workspace recall build",
+    "purlis ws todo",
+    "purlis ws todo --done",
+    "purlis workspace todo",
+    "purlis workspace todo --done",
+    "purlis worktree update",
+    "purlis worktree update --continue",
+    "purlis worktree update --abort",
+    "purlis worktree push",
+    "purlis worktree push --force-with-lease",
+    "purlis worktree done",
+    "purlis worktree abandon \"superseded by #12\"",
+    "purlis worktree list",
+    "purlis docs show secrets",
+    "purlis news",
+    "purlis news --for 0.3.0",
+    "purlis theme check dusk",
+    "purlis theme list",
+    "purlis persona show steward",
+    "purlis dispatch list --help",
+];
+
+/// What still reaches past the chat's own work, or cannot be taken back (#3829): each is
+/// asked about as before, by the harness or the operator's own rule. A todo is added and
+/// closed by its tools, so no spelling of the command that adds or closes one runs unasked.
+const STILL_ASKED: [&str; 25] = [
+    "purlis secret exec db -- psql",
+    "purlis persona forget cluster",
+    "purlis workspace forget build",
+    "purlis persona archive-memory cluster",
+    "purlis workspace archive build",
+    "purlis persona move-memory cluster --to web",
+    "purlis workspace move-memory build --to web",
+    "purlis persona edit-memory cluster",
+    "purlis workspace edit",
+    "purlis save",
+    "purlis clone purlis",
+    "purlis workspace reinit",
+    "purlis ws todo \"port the guard\"",
+    "purlis ws todo done port-the-guard",
+    "purlis ws todo promote port-the-guard --repo purlis",
+    "purlis ws todo forget port-the-guard",
+    "purlis ws todo reopen port-the-guard",
+    "purlis worktree remove guard-port",
+    "purlis worktree add purlis guard-port",
+    "purlis persona remove steward",
+    "purlis persona remember \"the cluster is eu-west\"",
+    "purlis workspace remember \"the build needs -j 4\"",
+    "purlis workspace create web --vision x",
+    "purlis theme draft dusk",
+    "purlis news; rm -rf ~",
+];
+
+#[test]
+fn a_chat_runs_its_own_scope_s_purlis_commands_without_asking_and_nothing_past_it() {
+    let allow = allowed_to(false);
+    for command in OWN_SCOPE {
+        assert!(bash_allowed(&allow, command), "{command:?} asks");
+    }
+    for command in STILL_ASKED {
+        assert!(!bash_allowed(&allow, command), "{command:?} runs unasked");
+    }
+    // And no rule is a bare wildcard over the command line: each is spelt by name.
+    for rule in allow.iter().filter_map(serde_json::Value::as_str) {
+        assert!(!rule.starts_with("Bash(purlis *"), "{rule}");
+        assert!(!rule.starts_with("Bash(purlis ws *"), "{rule}");
+        assert!(!rule.starts_with("Bash(purlis workspace *"), "{rule}");
+        assert!(!rule.starts_with("Bash(purlis persona *"), "{rule}");
+        assert!(!rule.starts_with("Bash(purlis worktree *"), "{rule}");
+    }
+}
+
+/// The review of #3841: the harness matches the line as written and the shell strips its
+/// quotes, so a quoted verb reaches the verb itself. No todo rule a chat is handed may be met
+/// by one, in either quote style.
+#[test]
+fn no_todo_rule_runs_a_quoted_verb() {
+    let allow = allowed_to(false);
+    let todo: Vec<serde_json::Value> = allow
+        .iter()
+        .filter(|rule| rule.as_str().is_some_and(|rule| rule.contains(" todo")))
+        .cloned()
+        .collect();
+    assert_eq!(todo.len(), 4, "{todo:?}");
+    for word in ["ws", "workspace"] {
+        for verb in ["forget", "reopen", "promote", "done"] {
+            for quoted in [format!("\"{verb}\""), format!("'{verb}'")] {
+                let cmd = format!("purlis {word} todo {quoted} port-the-guard");
+                assert!(!bash_allowed(&todo, &cmd), "{cmd:?} runs unasked");
+            }
+        }
+    }
+}
+
+/// The review of #3841: own scope is the chat's OWN persona and workspace. The rules name
+/// them, so a line naming another is asked about, and a name that could widen a rule gets none.
+#[test]
+fn a_chat_writes_its_own_persona_s_and_workspace_s_memory_unasked_and_no_other_s() {
+    let allow: Vec<serde_json::Value> = own_scope_rules(Some("steward"), Some("ide"))
+        .into_iter()
+        .map(serde_json::Value::String)
+        .collect();
+    for own in [
+        "purlis persona remember steward \"the cluster is eu-west\"",
+        "purlis persona remember steward --shared \"the cluster is eu-west\"",
+        "purlis workspace remember -w ide \"the build needs -j 4\"",
+        "purlis workspace note -w ide \"half way through the port\"",
+        "purlis worktree add -w ide purlis guard-port",
+    ] {
+        assert!(bash_allowed(&allow, own), "{own:?} asks");
+    }
+    for other in [
+        "purlis persona remember web \"x\"",
+        "purlis persona remember steward-two \"x\"",
+        "purlis persona remember --shared steward \"x\"",
+        "purlis persona remember \"x\"",
+        "purlis workspace remember -w web \"x\"",
+        "purlis workspace remember -w ide-two \"x\"",
+        "purlis workspace remember \"-w\" web \"x\"",
+        "purlis workspace remember \"x\" -w ide",
+        "purlis workspace note --workspace web \"x\"",
+        "purlis worktree add purlis guard-port -w web",
+    ] {
+        assert!(!bash_allowed(&allow, other), "{other:?} runs unasked");
+    }
+    // A name a glob or a shell would read past is written into no rule.
+    for name in [
+        "st*", "a?b", "[ab]", "a b", "-w", ".hidden", "", "a\"b", "ü",
+    ] {
+        assert_eq!(
+            own_scope_rules(Some(name), Some(name)),
+            Vec::<String>::new(),
+            "{name:?}"
+        );
+    }
+    assert_eq!(own_scope_rules(None, None), Vec::<String>::new());
+}
+
+#[test]
+fn a_persona_chat_in_a_workspace_is_handed_the_rules_that_name_them() {
+    use crate::personaverbs::tests_plane::Plane;
+    let plane = Plane::fixture("minimal");
+    let folder = plane.root().join("workspaces/ide");
+    std::fs::create_dir_all(&folder).expect("a workspace folder");
+    let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
+        Kit {
+            skills: None,
+            laid_out: None,
+            binary: std::path::Path::new("/bin/charter"),
+            plugin: Some(std::path::Path::new("/app/plugin")),
+            persona: Some(crate::harness::As {
+                root: plane.root(),
+                persona: "steward",
+            }),
+            graded: false,
+        },
+        Some(&folder),
+        &crate::harness_plugin::Chosen::new(),
+        None,
+    ) else {
+        panic!("armed per session");
+    };
+    let at = args
+        .iter()
+        .position(|arg| arg == "--settings")
+        .expect("--settings");
+    let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+    let allow = settings["permissions"]["allow"].as_array().expect("allow");
+    for rule in own_scope_rules(Some("steward"), Some("ide")) {
+        assert!(allow.contains(&serde_json::json!(rule)), "{rule} missing");
+    }
+    // At the plane root it works in no workspace, and is handed no rule naming one.
+    let (_, at_root) = armed_as(&plane, "steward");
+    let at_root = at_root["permissions"]["allow"].as_array().expect("allow");
+    assert!(at_root.contains(&serde_json::json!(
+        "Bash(purlis persona remember steward *)"
+    )));
+    assert!(
+        !at_root
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .any(|rule| rule.contains(" -w ")),
+        "{at_root:?}"
+    );
+}
+
+#[test]
+fn a_chat_runs_its_own_scope_s_purlis_tools_and_asks_the_person_without_its_harness_asking() {
+    // #3829: `ask_operator` was asked twice, the harness's prompt and then the question.
+    let allow = allowed_to(false);
+    for tool in [
+        "todo_add",
+        "todo_done",
+        "memory_add",
+        "persona_remember",
+        "workspace_section",
+        "workspace_vision",
+        "ask_operator",
+    ] {
+        let rule = serde_json::json!(format!("mcp__purlis__{tool}"));
+        assert!(allow.contains(&rule), "{rule} asks");
+    }
+    // A browser upload or save is still asked each time (#2245).
+    for tool in crate::browsertools::ASKED_EACH_TIME {
+        let rule = serde_json::json!(format!("mcp__purlis__{tool}"));
+        assert!(!allow.contains(&rule), "{rule} runs unasked");
+    }
+}
+
+#[test]
+fn a_grades_chat_is_handed_none_of_the_chat_s_own_scope_writes() {
+    // SK-16: a grade's chat keeps its prompts, and its server answers only the reads; so the
+    // own-scope writes (#3829) are not handed to it, and its reads still are.
+    let allow = allowed_to(true);
+    for writes in ["purlis ws todo", "purlis worktree push"] {
+        assert!(!bash_allowed(&allow, writes), "{writes:?} runs unasked");
+    }
+    assert!(bash_allowed(&allow, "purlis docs show secrets"));
+    for tool in crate::chattools::OWN_SCOPE_TOOLS {
+        let rule = serde_json::json!(format!("mcp__purlis__{tool}"));
+        assert!(!allow.contains(&rule), "{rule} runs unasked");
     }
 }
 

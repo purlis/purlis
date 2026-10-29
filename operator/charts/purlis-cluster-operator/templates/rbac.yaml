@@ -23,8 +23,8 @@ rules:
   - apiGroups: [runners.purlis.dev]
     resources: [claims/status]
     verbs: [patch]
-  # Each pool's status names the key the operator signs runners' link keys with, for a desktop
-  # to pin as it adds the pool.
+  # Each pool's status names the key the operator signs runners' link keys with and its
+  # cluster, for a desktop to pin as it adds the pool, and during a roll the next key (#3305).
   - apiGroups: [runners.purlis.dev]
     resources: [pools/status]
     verbs: [patch]
@@ -53,7 +53,9 @@ rules:
     resources: [sandboxclaims, sandboxtemplates, sandboxwarmpools]
     verbs: [create, delete, get, list, patch, watch]
   # Each person's runner namespace, purlis-runners-<hash> (#2055): made once, and read to
-  # check it is the one the operator made for them. Never changed or deleted.
+  # check it is the one the operator made for them. Never changed or deleted. kube-system is
+  # read too, once as the operator starts, for its uid, which names the cluster on every Pool
+  # and in every statement (#3305).
   - apiGroups: [""]
     resources: [namespaces]
     verbs: [create, get]

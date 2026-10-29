@@ -131,7 +131,7 @@ export type Fix =
   | { kind: "turn"; label: string; on: boolean; refused: string }
   | { kind: "accept"; folder: string }
   | { kind: "pin" }
-  | { kind: "go"; label: string; page: StudioPage }
+  | { kind: "go"; label: string; page: StudioPage; item?: string }
   | { kind: "rename" }
   | { kind: "lifecycle"; label: string; to: SkillLifecycle };
 
@@ -184,7 +184,7 @@ export function bannerOf(
       cause: "review",
       tone: "attention",
       text: `A chat changed ${skill.name}. Chats keep the version you accepted until you review this change.`,
-      fix: { kind: "go", label: "Review the change", page: "drafts" },
+      fix: { kind: "go", label: "Review the change", page: "drafts", item: beyond.review.id },
     };
   if (beyond.update !== undefined)
     return {
@@ -417,8 +417,9 @@ export function SkillPage({
   /** The change in progress on this skill, as the studio draws it. */
   doing?: SkillDoing;
   onTab: (tab: SkillPageTab) => void;
-  /** Goes to another page of the studio, on the same chats: a fix's way to it. */
-  onGo: (page: StudioPage) => void;
+  /** Goes to another page of the studio, on the same chats, at `item` in its list (a draft):
+   *  a fix's way to it. */
+  onGo: (page: StudioPage, item?: string) => void;
   onEdit: (level: SkillLevel) => void;
   onRename: (level: SkillLevel) => void;
   onMove: (level: SkillLevel) => void;
@@ -520,7 +521,7 @@ export function SkillPage({
           onPress: () => pin(true),
         };
       case "go":
-        return { label: fix.label, onPress: () => onGo(fix.page) };
+        return { label: fix.label, onPress: () => onGo(fix.page, fix.item) };
       case "rename":
         return {
           label: "Rename the project's copy",
@@ -732,7 +733,7 @@ export function SkillPage({
                   cause={`skill-review:${name}`}
                   tone="attention"
                   label="A change waits for your review"
-                  fixes={[{ label: "Review the change", onPress: () => onGo("drafts") }]}
+                  fixes={[{ label: "Review the change", onPress: () => onGo("drafts", review.id) }]}
                 >
                   <span data-testid="skill-history-review">
                     {review.chat === null

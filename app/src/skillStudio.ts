@@ -145,9 +145,10 @@ export const SKILL_PAGE_TAB_NAMES: Record<SkillPageTab, string> = {
 
 /**
  * **A place in the studio**: one step of its tab's history (`ui/panel/viewHistory.ts`). The
- * page, whose chats it covers, and on Library the skill chosen (its row's id, {@link skillRowId}),
- * the tab of its page shown (`tab`, Overview where none is said), and on Runs the run to mark
- * (`run`, from a run's chip).
+ * page, whose chats it covers, on Library the skill chosen (its row's id, {@link skillRowId}),
+ * the tab of its page shown (`tab`, Overview where none is said) and on Runs the run to mark
+ * (`run`, from a run's chip), and on another page the item chosen in its list (`item`: a draft's
+ * id on Drafts, a deleted skill's on Deleted).
  */
 export interface StudioPlace {
   page: StudioPage;
@@ -155,6 +156,7 @@ export interface StudioPlace {
   skill?: string;
   tab?: SkillPageTab;
   run?: string;
+  item?: string;
 }
 
 /** Where a studio tab starts when nothing opened it anywhere: Library, at the project's root. */
@@ -187,7 +189,12 @@ export function skillRowNamed(name: string): string {
 
 /** Two places are one: the same page, scope and skill chosen, whichever tab of its page shows. */
 export function samePlace(one: StudioPlace, other: StudioPlace): boolean {
-  return one.page === other.page && sameScope(one.scope, other.scope) && one.skill === other.skill;
+  return (
+    one.page === other.page &&
+    sameScope(one.scope, other.scope) &&
+    one.skill === other.skill &&
+    one.item === other.item
+  );
 }
 
 /** A target's key starts with this: it names a place to open the studio at, never a tab. */
@@ -206,13 +213,15 @@ export function skillStudioAt(
     skill,
     tab,
     run,
+    item,
     newTab = false,
-  }: { skill?: string; tab?: SkillPageTab; run?: string; newTab?: boolean } = {},
+  }: { skill?: string; tab?: SkillPageTab; run?: string; item?: string; newTab?: boolean } = {},
 ): ViewRef {
   const place: StudioPlace & { newTab?: true } = { page, scope };
   if (skill !== undefined) place.skill = skill;
   if (tab !== undefined) place.tab = tab;
   if (run !== undefined) place.run = run;
+  if (item !== undefined) place.item = item;
   if (newTab) place.newTab = true;
   return { ...SKILL_STUDIO_VIEW, key: `${TARGET}${JSON.stringify(place)}` };
 }
@@ -245,6 +254,7 @@ function placeOfTarget(key: string): (StudioPlace & { newTab?: boolean }) | unde
       ...(typeof read.skill === "string" ? { skill: read.skill } : {}),
       ...(tab === undefined ? {} : { tab }),
       ...(typeof read.run === "string" ? { run: read.run } : {}),
+      ...(typeof read.item === "string" ? { item: read.item } : {}),
       ...(read.newTab === true ? { newTab: true } : {}),
     };
   } catch {
@@ -273,6 +283,7 @@ export function studioOpening(
           ...(target.skill === undefined ? {} : { skill: target.skill }),
           ...(target.tab === undefined ? {} : { tab: target.tab }),
           ...(target.run === undefined ? {} : { run: target.run }),
+          ...(target.item === undefined ? {} : { item: target.item }),
         };
   let key = "";
   if (target?.newTab === true) for (let n = 2; !free(key); n++) key = `#${n}`;
@@ -507,13 +518,26 @@ export function studioTabsGone(before: Tabs, after: Tabs): ViewRef[] {
 export const SKILL_STUDIO_ASKED = "purlis-skill-studio-asked";
 
 /** What it asks: which project's window, and the place to open its studio at. */
-export type SkillStudioAsk = { plane: string; scope: StudioScope; page: StudioPage };
+export type SkillStudioAsk = {
+  plane: string;
+  scope: StudioScope;
+  page: StudioPage;
+  /** The item chosen on the page: a draft's id on Drafts. */
+  item?: string;
+};
 
-/** **Asks the window of `plane` to open its Skill studio at `page` on `scope`'s chats**: what a
- *  chat's skills notices' "Open Skill studio" does. */
-export function askSkillStudio(plane: string, scope: StudioScope, page: StudioPage): void {
+/** **Asks the window of `plane` to open its Skill studio at `page` on `scope`'s chats**, at
+ *  `item` on it where one is named: what a chat's skills notices' "Open Skill studio" does. */
+export function askSkillStudio(
+  plane: string,
+  scope: StudioScope,
+  page: StudioPage,
+  item?: string,
+): void {
   window.dispatchEvent(
-    new CustomEvent<SkillStudioAsk>(SKILL_STUDIO_ASKED, { detail: { plane, scope, page } }),
+    new CustomEvent<SkillStudioAsk>(SKILL_STUDIO_ASKED, {
+      detail: item === undefined ? { plane, scope, page } : { plane, scope, page, item },
+    }),
   );
 }
 

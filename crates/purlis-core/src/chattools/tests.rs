@@ -1072,6 +1072,32 @@ fn a_dispatch_tool_names_its_task_by_number_and_its_text_whole() {
 }
 
 #[test]
+fn the_tools_that_write_only_the_chat_s_own_scope_are_named_and_never_among_the_reads() {
+    // #3829, ruled 2026-10-29: own-scope work runs without the harness asking, and
+    // `ask_operator` is the person's question, asked once by the app. Kept apart from
+    // PRE_ALLOWED, which a grade's chat is served alone (SK-16).
+    assert_eq!(
+        OWN_SCOPE_TOOLS,
+        [
+            "todo_add",
+            "todo_done",
+            "memory_add",
+            "persona_remember",
+            "workspace_section",
+            "workspace_vision",
+            "ask_operator",
+        ]
+    );
+    for name in OWN_SCOPE_TOOLS {
+        assert!(
+            TOOLS.iter().any(|tool| tool.name == name),
+            "{name} is not a tool"
+        );
+        assert!(!PRE_ALLOWED.contains(&name), "{name}");
+    }
+}
+
+#[test]
 fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
     // V79: the pre-allowed tools are the five reads, and `persona_where` beside them
     // (V98a, #1450) and `dispatch_list` (#1463): each a tool the server offers and marks
