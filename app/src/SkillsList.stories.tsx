@@ -167,6 +167,8 @@ export const InThisChat: Story = {
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(() => row(/^drafted/), "Skills: Down reaches the group's card");
     await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => row(/^pdf/), "Skills: Down reaches the group's next card");
+    await userEvent.keyboard("{ArrowDown}");
     await untilFocused(() => row(/^In this chat/), "Skills: Down reaches the next group");
     await userEvent.keyboard("{ArrowDown}");
     const deploy = row(/^deploy/);
@@ -250,7 +252,7 @@ export const NoSkillsOfItsOwn: Story = {
 
 /**
  * **A pin no chat reads** (#3432): ops's pins are more than 64, so its chats read none of them.
- * The pinned card's menu offers Unpin, and says under it that the pin is not used, and the core's
+ * Left out unfolds (→) and ↓ reaches the pinned card, hidden by the router; its menu offers Unpin, and says under it that the pin is not used, and the core's
  * why. The picture is of that menu, open and settled.
  */
 export const APinNoChatReads: Story = {
@@ -275,8 +277,13 @@ export const APinNoChatReads: Story = {
     await waitFor(() =>
       expect(within(leftOut).getByRole("gridcell")).toHaveAttribute("aria-expanded", "true"),
     );
-    const pinned = await waitFor(() => within(list).getByRole("row", { name: /release-notes/ }));
-    pinned.focus();
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(
+      () => within(list).getByRole("row", { name: /^old-deploy/ }),
+      "Skills: Down reaches Left out's first card",
+    );
+    await userEvent.keyboard("{ArrowDown}");
+    const pinned = within(list).getByRole("row", { name: /^release-notes/ });
     await untilFocused(() => pinned, "Skills: the pinned row has the keyboard");
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
     const menu = await screen.findByRole("menu", { name: "release-notes" });
