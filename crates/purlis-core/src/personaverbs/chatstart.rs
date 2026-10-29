@@ -126,13 +126,16 @@ pub fn approved_lines(root: &Path, state: &Path, persona: &str) -> Vec<Vec<Strin
 pub struct Approved {
     /// Its `secret exec` words ([`approved_lines`]).
     pub words: Vec<String>,
-    /// The names of the variables its approved entry sets (`env`): what its run starts with,
-    /// beside the few every brokered run does (#2047).
-    pub env: Vec<String>,
+    /// The variables its approved entry sets (`env`), each with the value written in it: what
+    /// its run starts with, beside the few every brokered run does (#2047). The values are the
+    /// person's approval, never the chat's environment (#3441): the consent line showed each
+    /// one, so an entry whose values change is no longer approved.
+    /// [`mcp::written_out`] says which values that is.
+    pub env: Vec<(String, String)>,
 }
 
 /// **Each credentialed server of `persona` this machine approved** ([`approved_lines`]), with
-/// the names of the variables its approved entry sets.
+/// the variables its approved entry sets and their values.
 pub fn approved_servers(root: &Path, state: &Path, persona: &str) -> Vec<Approved> {
     let (declared, _) = mcp::declared(root, persona);
     let vault = super::resolve(root, persona).and_then(|r| r.get("vault").map(str::to_owned));
@@ -154,7 +157,7 @@ pub fn approved_servers(root: &Path, state: &Path, persona: &str) -> Vec<Approve
             let env = entry
                 .get("env")
                 .and_then(Value::as_object)
-                .map(|env| env.keys().cloned().collect())
+                .map(mcp::written_out)
                 .unwrap_or_default();
             (words.first().map(String::as_str) == Some("secret")
                 && words.get(1).map(String::as_str) == Some("exec"))

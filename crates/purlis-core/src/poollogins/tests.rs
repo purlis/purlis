@@ -294,3 +294,65 @@ fn a_runner_reached_that_is_not_kept_or_not_the_pools_or_not_yours_is_refused() 
     .unwrap_err();
     assert!(refused.contains("sends no vault value there"), "{refused}");
 }
+
+/// Rewrites the runners file of `config` by `change`.
+fn change_runners(config: &Path, change: impl FnOnce(&mut serde_json::Value)) {
+    let path = crate::machine::dir(config).join(crate::machine::RUNNERS_FILE);
+    let mut text: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    change(&mut text);
+    std::fs::write(&path, text.to_string()).unwrap();
+}
+
+/// A move's pool that is not ready says which way it is not (#3646), and one whose runners are
+/// not shown to be yours says that, apart from the rest.
+#[test]
+fn a_pool_not_ready_for_a_new_chat_says_which_way_it_is_not() {
+    let config = a_pool_with_a_runner_draining();
+    let here = || Ok("/var/run/docker.sock".into());
+
+    let bound = Bound::read_with(here(), config.path(), "first").unwrap();
+    assert_eq!(
+        bound.runner, "01JB0NEW00000000000000000000",
+        "never the draining one"
+    );
+
+    assert_eq!(
+        Bound::read_with(here(), config.path(), "none"),
+        Err(Unbound::NotHere)
+    );
+    assert!(matches!(
+        Bound::read_with(
+            Err("this machine's DOCKER_HOST is tcp://build-box.example:2376".into()),
+            config.path(),
+            "first"
+        ),
+        Err(Unbound::NotYours(why)) if why.contains("tcp://build-box.example:2376")
+    ));
+
+    // Its new runner gone: only the draining one is left.
+    change_runners(config.path(), |text| {
+        text["runners"].as_array_mut().unwrap().remove(1);
+    });
+    assert_eq!(
+        Bound::read_with(here(), config.path(), "first"),
+        Err(Unbound::Draining)
+    );
+
+    // No runner at all of its image.
+    change_runners(config.path(), |text| {
+        text["runners"].as_array_mut().unwrap().clear();
+    });
+    assert_eq!(
+        Bound::read_with(here(), config.path(), "first"),
+        Err(Unbound::NoRunnerOfItsImage)
+    );
+
+    // A file that cannot be read says so, never to remove the pool (#3814).
+    let path = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+    std::fs::write(&path, "not json").unwrap();
+    assert!(matches!(
+        Bound::read_with(here(), config.path(), "first"),
+        Err(Unbound::Unread(_))
+    ));
+}

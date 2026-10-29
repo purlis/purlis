@@ -33,22 +33,39 @@ pub enum Admission {
     MadeBeforePolicy,
 }
 
-/// Whether `binding` puts purlis's policy in force: it binds that policy, and denies.
-fn in_force(binding: &ValidatingAdmissionPolicyBinding) -> bool {
+/// The name of purlis's policy on runner namespaces, and of its binding (#2055): only the
+/// operator makes a runner namespace or changes who it is for, and the operator binds and caps
+/// only there.
+pub const RUNNER_NAMESPACES_POLICY: &str = "purlis-runner-namespaces";
+
+/// Whether `binding` puts the policy `policy` in force: it binds that policy, and denies.
+fn in_force(binding: &ValidatingAdmissionPolicyBinding, policy: &str) -> bool {
     let spec = &binding.spec;
-    spec.policy_name == POLICY && spec.validation_actions.iter().any(|a| a == "Deny")
+    spec.policy_name == policy && spec.validation_actions.iter().any(|a| a == "Deny")
+}
+
+/// **When the policy `policy` is in force from**, given its binding as the cluster holds it:
+/// [`SETTLE`] after the binding was stored. `None` while no binding puts it in force. An object
+/// made no later than this was not admitted under it.
+pub fn in_force_since(
+    binding: Option<&ValidatingAdmissionPolicyBinding>,
+    policy: &str,
+) -> Option<k8s_openapi::jiff::Timestamp> {
+    let binding = binding.filter(|binding| in_force(binding, policy))?;
+    let stored = binding.metadata.creation_timestamp.as_ref()?;
+    // A time past what a timestamp holds: in force from the end of time, so nothing is under it.
+    Some(
+        stored
+            .0
+            .checked_add(SETTLE)
+            .unwrap_or(k8s_openapi::jiff::Timestamp::MAX),
+    )
 }
 
 /// Whether `claim` was admitted under the policy, given its binding as the cluster holds it.
 pub fn admission(claim: &Claim, binding: Option<&ValidatingAdmissionPolicyBinding>) -> Admission {
-    let Some(binding) = binding.filter(|binding| in_force(binding)) else {
+    let Some(since) = in_force_since(binding, POLICY) else {
         return Admission::PolicyNotInForce;
-    };
-    let Some(stored) = &binding.metadata.creation_timestamp else {
-        return Admission::PolicyNotInForce;
-    };
-    let Ok(since) = stored.0.checked_add(SETTLE) else {
-        return Admission::MadeBeforePolicy;
     };
     match &claim.metadata.creation_timestamp {
         Some(made) if made.0 > since => Admission::UnderPolicy,

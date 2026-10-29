@@ -7,7 +7,7 @@
 
 #[cfg(target_os = "linux")]
 fn main() -> std::process::ExitCode {
-    if let Some(code) = purlis_linux_sandbox::serve_if_asked() {
+    if let Some(code) = purlis_linux_sandbox::serve_if_asked_telling(told_to) {
         std::process::exit(code);
     }
     let words: Vec<String> = std::env::args().skip(1).collect();
@@ -17,6 +17,28 @@ fn main() -> std::process::ExitCode {
     };
     println!("{said}");
     std::process::ExitCode::SUCCESS
+}
+
+/// Where a test reads what the wrap told (#3396): each refusal as `<operation> <target>` on a line
+/// of the file `PROBE_TOLD` names in the chat's environment, opened before the wrap holds itself,
+/// so what the supervisor tells is written to a descriptor it already holds. None without one.
+#[cfg(target_os = "linux")]
+fn told_to(
+    env: &[(std::ffi::OsString, std::ffi::OsString)],
+) -> Option<purlis_linux_sandbox::refusal::Tell> {
+    use std::io::Write;
+    let (_, path) = env.iter().rev().find(|(key, _)| key == "PROBE_TOLD")?;
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .ok()?;
+    let file = std::sync::Mutex::new(file);
+    Some(Box::new(move |refusal| {
+        if let Ok(mut file) = file.lock() {
+            let _ = writeln!(file, "{} {}", refusal.operation, refusal.target);
+        }
+    }))
 }
 
 #[cfg(not(target_os = "linux"))]

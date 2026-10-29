@@ -1200,13 +1200,14 @@ pub(crate) fn serve_wrapped(
 /// Where `wanted` running `command` is exactly the `secret exec` line of a credentialed MCP
 /// server of `persona` this machine approved ([`crate::personaverbs::chatstart::approved_servers`]):
 /// its vault, its `--env` and `--file` hand-overs in order, no `--dotenv`, and its command. The
-/// names of the variables its approved entry sets (`env`), which its run starts with.
+/// variables its approved entry sets (`env`) and their approved values, which its run starts
+/// with (#3441).
 fn an_approved_server(
     root: &Path,
     persona: &str,
     wanted: &Wanted,
     command: &[String],
-) -> Option<Vec<String>> {
+) -> Option<Vec<(String, String)>> {
     let state = crate::personaverbs::state_dir(root);
     crate::personaverbs::chatstart::approved_servers(root, &state, persona)
         .into_iter()
@@ -1796,6 +1797,16 @@ impl Handed {
     }
 }
 
+/// **Whether a brokered run may start with `name` set**, from the chat's environment or from an
+/// approved server's entry (#3441): never purlis's own hook channel, a variable that makes a
+/// program load code it names ([`crate::sandbox::tools::loads_code`]), or one that makes it write
+/// out its memory ([`DUMPS_MEMORY`]).
+pub fn may_hand_on(name: &str) -> bool {
+    !not_handed_on(name)
+        && !crate::sandbox::tools::loads_code(name)
+        && !DUMPS_MEMORY.contains(&name)
+}
+
 /// Variables of the chat's that make a program write out its memory as it crashes, or change
 /// how it does: a run starts without them, so its values are never written that way (#2047).
 const DUMPS_MEMORY: &[&str] = &["GOTRACEBACK", "GODEBUG"];
@@ -1981,9 +1992,10 @@ pub(crate) fn serve_recorded(
     let mut declared_as: Option<String> = None;
     // A tool whose token a GitHub App mints (#2053): handed the token, never the key.
     let mut minting: Option<crate::sandbox::tools::Tool> = None;
-    // The variables of the chat's an approved server's run starts with beside
-    // [`crate::sandbox::tools::a_run_starts_from`]'s: those its approved entry sets.
-    let mut its_entry_sets: Vec<String> = Vec::new();
+    // The variables an approved server's run starts with beside
+    // [`crate::sandbox::tools::a_run_starts_from`]'s: those its approved entry sets, with the
+    // values the person approved (#3441).
+    let mut its_entry_sets: Vec<(String, String)> = Vec::new();
     match crate::sandbox::tools::declared(
         &confines.tools,
         &listed,
@@ -2102,22 +2114,23 @@ pub(crate) fn serve_recorded(
     // The asker's environment, less the hook channel and what makes a program load code
     // ([`crate::sandbox::tools::loads_code`]), then the wrap's own (its proxy and its
     // temp directory), then every other vault's identity variables taken out. A run starts
-    // from only the few of the chat's variables it needs, and an approved server's from those
-    // its approved entry sets too, with a home of its own in the run's temp directory (#2047).
+    // from only the few of the chat's variables it needs, with a home of its own in the run's
+    // temp directory (#2047), and an approved server's with those its approved entry sets too,
+    // at the values the person approved, never the chat's (#3441).
     // A name is judged as it reads, with any byte that is not UTF-8 replaced, so one is never
     // let through for not spelling the name it is judged by.
+    // An approved value is held to the same names a chat's is ([`may_hand_on`]).
     let mut base: Vec<(OsString, OsString)> = wanted
         .environment
         .into_iter()
         .filter(|(k, _)| {
             let k = k.to_string_lossy();
-            !not_handed_on(&k)
-                && !crate::sandbox::tools::loads_code(&k)
-                && !DUMPS_MEMORY.contains(&k.as_ref())
-                && (crate::sandbox::tools::a_run_starts_from(&k)
-                    || its_entry_sets.iter().any(|set| *set == k))
+            may_hand_on(&k) && crate::sandbox::tools::a_run_starts_from(&k)
         })
         .collect();
+    for (k, v) in its_entry_sets.into_iter().filter(|(k, _)| may_hand_on(k)) {
+        exec::set_var(&mut base, &k, v);
+    }
     // What the tool runs by a bare name is never from a folder the chat may write
     // (D-PE-ruling-2): the project, the chat's folder, its grants and the temporary folders
     // are taken off the `PATH` it starts from.

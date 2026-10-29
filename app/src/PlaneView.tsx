@@ -484,6 +484,7 @@ import {
   heardMove,
   moveOffers,
   movesDue,
+  movesWith,
   poolsToMoveTo,
   useChatMoves,
   useChatMovesHeard,
@@ -5888,12 +5889,15 @@ export const PlaneView = memo(function PlaneView({
     },
     [chatMoves, poolNames, reopened],
   );
+  /** The other chats of a chat's workspace running where it runs, which move with it (#3453). */
+  const movesWithChat = useCallback((session: number) => movesWith(session, reopened), [reopened]);
   const moveTab = useCallback(
     (tab: number, to: string | null) => {
       const session = chatOf(now.current, tab);
-      if (session !== undefined) void askMove(plane, session, to);
+      const from = reopened.find((one) => one.session === session)?.pool ?? null;
+      if (session !== undefined) void askMove(plane, session, from, to);
     },
-    [plane],
+    [plane, reopened],
   );
   /**
    * **A prepared move switches at its chat's next pause** (#2048), as an owed restart does: the
@@ -5907,26 +5911,36 @@ export const PlaneView = memo(function PlaneView({
       for (const session of movesDue(chatMovesOf(plane), (one) => stateOf(states, one))) {
         if (movingNow.current.has(session)) continue;
         movingNow.current.add(session);
-        const to = chatMovesOf(plane)[session]?.to ?? null;
+        const moving = chatMovesOf(plane)[session];
+        const failed = (why: string) =>
+          heardMove(plane, {
+            session,
+            from: moving?.from ?? null,
+            to: moving?.to ?? null,
+            stage: "failed",
+            why,
+            with: moving?.with ?? [],
+          });
         void commands
           .moveChatNow(plane, session, STARTING_SIZE.columns, STARTING_SIZE.rows)
           .then((done) => {
-            if (done.status === "error")
-              heardMove(plane, { session, to, stage: "failed", why: done.error });
-            else if (done.data.chat !== null) {
-              const chat = done.data.chat;
-              forgetMove(plane, session);
-              chatRestarted(session, chat);
-              // What came back that a tool here runs, said on its tab (the person's ruling of
-              // 2026-10-27). `?? []`, as a start's notices are read.
-              const notes = done.data.notices ?? [];
-              if (notes.length > 0)
-                setStartNotes((was) => ({ ...was, [chat.session]: { notes, agentsMd: [] } }));
-            }
+            if (done.status === "error") failed(done.error);
+            else
+              // Every chat of the move, each in its place (#3453).
+              for (const one of done.data.moved) {
+                forgetMove(plane, one.was);
+                chatRestarted(one.was, one.chat);
+                // What came back that a tool here runs, said on its tab (the person's ruling of
+                // 2026-10-27). `?? []`, as a start's notices are read.
+                const notes = one.notices ?? [];
+                if (notes.length > 0)
+                  setStartNotes((was) => ({
+                    ...was,
+                    [one.chat.session]: { notes, agentsMd: [] },
+                  }));
+              }
           })
-          .catch((err: unknown) =>
-            heardMove(plane, { session, to, stage: "failed", why: String(err) }),
-          )
+          .catch((err: unknown) => failed(String(err)))
           .finally(() => movingNow.current.delete(session));
       }
     };
@@ -7452,6 +7466,7 @@ export const PlaneView = memo(function PlaneView({
             planeUpdated: planeUpdates,
             restartable,
             movesTo,
+            movesWith: movesWithChat,
             ask: askOffer,
             // Not from a shell: it is on no harness profile to start the persona's chat on.
             askable: (session) => !shells.has(session),
@@ -7518,6 +7533,7 @@ export const PlaneView = memo(function PlaneView({
       planeUpdates,
       restartable,
       movesTo,
+      movesWithChat,
       askOffer,
       shells,
       nearBranch,
