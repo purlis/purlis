@@ -1368,12 +1368,38 @@ pub struct Docker {
     /// Where each run's copy of Docker's settings is made: `<data>/docker-settings`, unless
     /// another folder is named (a test's).
     settings_in: Option<std::path::PathBuf>,
-    /// How long each run may take, where a caller holds it to a time ([`Docker::within`]); none
-    /// for a run that takes as long as it takes (a pull, a make).
-    within: Option<std::time::Duration>,
+    /// How long each run that only reads may take (an inspect, a version, a list): [`READS_WITHIN`]
+    /// unless a caller holds it to another time ([`Docker::within`]). A run that changes
+    /// something (a pull, a make, a start, a removal) takes as long as it takes.
+    reads_within: std::time::Duration,
 }
 
+/// **How long each `docker` run that only reads may take** (#3546): an inspect, an `info`, a
+/// list, a runner's version. One still running then is ended and refused, saying it did not
+/// answer, so a wedged engine holds up no pool surface that asks it.
+///
+/// The time stops this machine's `docker`, not what it started: a runner's `purlis --version`
+/// that hangs inside its container keeps running there until the container stops. It is
+/// purlis's own, which prints and ends, and a version once read is not asked again.
+pub const READS_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
+
 pub mod settings;
+
+/// Why a `docker` run gave no answer: it did not answer in its time ([`READS_WITHIN`]), or it
+/// was refused otherwise. Only the first says the engine may be stuck, so nothing that would
+/// follow a refusal (a pull after an inspect, a Podman's `info` after Docker's) is run then.
+enum Failed {
+    Late(Refused),
+    Refused(Refused),
+}
+
+impl From<Failed> for Refused {
+    fn from(failed: Failed) -> Refused {
+        match failed {
+            Failed::Late(why) | Failed::Refused(why) => why,
+        }
+    }
+}
 
 /// Where a `docker` command is looked for first: where Docker's installers put it, Docker
 /// Desktop's own, `/usr/local`'s, Homebrew's and the system's.
@@ -1415,16 +1441,16 @@ impl Docker {
         Docker {
             program: program.into(),
             settings_in: None,
-            within: None,
+            reads_within: READS_WITHIN,
         }
     }
 
-    /// **This `docker`, each of its runs held to `within`** (#2052): a run still going when it is
-    /// up is ended and refused, so a wedged engine holds up nothing that asks it. For what only
-    /// reads (an inspect, a version); a pull or a make takes as long as it takes.
+    /// **This `docker`, each of its runs that only reads held to `within`** rather than
+    /// [`READS_WITHIN`] (#2052, #3546): a read still going when it is up is ended and refused.
+    /// A pull or a make takes as long as it takes.
     #[must_use]
     pub fn within(mut self, within: std::time::Duration) -> Docker {
-        self.within = Some(within);
+        self.reads_within = within;
         self
     }
 
@@ -1594,7 +1620,23 @@ impl Docker {
     fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
         // A checked copy of Docker's settings, the engine pinned, and its helpers found where it
         // is (#2752), whatever the window's environment and Docker's own settings say.
-        self.run_prepared(&self.prepared()?, args, input, most)
+        self.run_prepared(&self.prepared()?, args, input, most, None)
+    }
+
+    /// [`Docker::run`], for a run that **only reads**: held to its time ([`READS_WITHIN`]).
+    fn read(&self, args: &[String], most: u64) -> Result<String, Refused> {
+        self.read_or_late(args, most).map_err(Refused::from)
+    }
+
+    /// [`Docker::read`], saying apart a read that did not answer in its time ([`Failed::Late`]).
+    fn read_or_late(&self, args: &[String], most: u64) -> Result<String, Failed> {
+        self.ran_prepared(
+            &self.prepared().map_err(Failed::Refused)?,
+            args,
+            None,
+            most,
+            Some(self.reads_within),
+        )
     }
 
     /// [`Docker::run`], given its run's folder already prepared, which is kept until the run
@@ -1605,7 +1647,21 @@ impl Docker {
         args: &[String],
         input: Option<&str>,
         most: u64,
+        within: Option<std::time::Duration>,
     ) -> Result<String, Refused> {
+        self.ran_prepared(prepared, args, input, most, within)
+            .map_err(Refused::from)
+    }
+
+    /// [`Docker::run_prepared`], saying apart a run that did not answer in its time.
+    fn ran_prepared(
+        &self,
+        prepared: &settings::Prepared,
+        args: &[String],
+        input: Option<&str>,
+        most: u64,
+        within: Option<std::time::Duration>,
+    ) -> Result<String, Failed> {
         let mut command = std::process::Command::new(&self.program);
         command.envs(prepared.env.iter().map(|(name, value)| (name, value)));
         for name in settings::CLEARED {
@@ -1613,10 +1669,21 @@ impl Docker {
         }
         command.args(args);
         let first = || args.first().map(String::as_str).unwrap_or_default();
-        let ran = crate::boundedrun::run_within(&mut command, input, most, MOST_SAID, self.within)
+        let ran = crate::boundedrun::run_within(&mut command, input, most, MOST_SAID, within)
             .map_err(|why| {
             use crate::boundedrun::Unanswered;
-            refused(match why {
+            if let Unanswered::NotFinished(why) = &why
+                && why.kind() == std::io::ErrorKind::TimedOut
+            {
+                let secs = within.unwrap_or_default().as_secs().max(1);
+                return Failed::Late(refused(format!(
+                    "docker {} did not answer within {}, so purlis ended it: the Docker engine \
+                     may be stuck",
+                    first(),
+                    crate::counts::counted(secs, "second", "seconds")
+                )));
+            }
+            Failed::Refused(refused(match why {
                 Unanswered::NotStarted(why) => {
                     format!("{} could not be run: {why}", self.program.display())
                 }
@@ -1627,24 +1694,31 @@ impl Docker {
                 Unanswered::NotFinished(why) => {
                     format!("{} did not finish: {why}", self.program.display())
                 }
-            })
+            }))
         })?;
         if !ran.status.success() {
             // Docker's own words say why (ADR 0078 §2: a connector's stderr is shown in full).
-            return Err(refused(format!(
+            return Err(Failed::Refused(refused(format!(
                 "docker {} failed: {}",
                 first(),
                 String::from_utf8_lossy(&ran.said).trim()
-            )));
+            ))));
         }
-        String::from_utf8(ran.printed)
-            .map_err(|_| refused("docker answered with something that is not text"))
+        String::from_utf8(ran.printed).map_err(|_| {
+            Failed::Refused(refused("docker answered with something that is not text"))
+        })
     }
 
     fn json(&self, args: &[&str], what: &str) -> Result<serde_json::Value, Refused> {
+        self.json_or_late(args, what).map_err(Refused::from)
+    }
+
+    /// [`Docker::json`], saying apart a read that did not answer in its time ([`Failed::Late`]).
+    fn json_or_late(&self, args: &[&str], what: &str) -> Result<serde_json::Value, Failed> {
         let args: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
-        let out = self.run(&args, None, MOST_INSPECTED)?;
-        serde_json::from_str(&out).map_err(|_| refused(format!("{what} did not answer JSON")))
+        let out = self.read_or_late(&args, MOST_INSPECTED)?;
+        serde_json::from_str(&out)
+            .map_err(|_| Failed::Refused(refused(format!("{what} did not answer JSON"))))
     }
 
     /// The user and home `image` declares, for the runner made from it: its `USER` must be a
@@ -1652,21 +1726,23 @@ impl Docker {
     /// this machine does not hold yet is pulled first, by its digest.
     pub fn declared(&self, image: &Image) -> Result<(User, String), Refused> {
         let inspect = || {
-            self.json(
+            self.json_or_late(
                 &["image", "inspect", image.as_str()],
                 "docker image inspect",
             )
         };
-        // An image this machine does not hold yet is pulled, by its digest, then read.
+        // An image this machine does not hold yet is pulled, by its digest, then read. An engine
+        // that did not answer is said to be so, and nothing is pulled from it.
         let inspected = match inspect() {
             Ok(inspected) => inspected,
-            Err(_) => {
+            Err(Failed::Late(why)) => return Err(why),
+            Err(Failed::Refused(_)) => {
                 self.run(
                     &["pull".into(), "--quiet".into(), image.as_str().into()],
                     None,
                     MOST_INSPECTED,
                 )?;
-                inspect()?
+                inspect().map_err(Refused::from)?
             }
         };
         let config = inspected
@@ -1700,13 +1776,15 @@ impl Docker {
     /// The daemon's security options, held to [`check_daemon`]; or, for a Podman, which has no
     /// such field, its host's security, held to [`check_podman`] (#2680).
     fn check_daemon(&self) -> Result<Engine, Refused> {
-        let docker = self.json(
+        let docker = self.json_or_late(
             &["info", "--format", "{{json .SecurityOptions}}"],
             "docker info",
         );
         match docker {
             Ok(options) => check_daemon(&options).map(|()| Engine::default()),
-            Err(why) => match self.json(
+            // An engine that did not answer is not asked again as a Podman.
+            Err(Failed::Late(why)) => Err(why),
+            Err(Failed::Refused(why)) => match self.json(
                 &["info", "--format", "{{json .Host.Security}}"],
                 "podman info",
             ) {
@@ -1730,7 +1808,7 @@ impl Docker {
     pub fn make_for(&self, runner: &Runner, desktop: Option<&str>) -> Result<Made, Refused> {
         self.check_daemon()?;
         let volume = runner.volume();
-        let listed = self.run(
+        let listed = self.read(
             &[
                 "volume".into(),
                 "ls".into(),
@@ -1738,7 +1816,6 @@ impl Docker {
                 "--filter".into(),
                 format!("name={volume}"),
             ],
-            None,
             MOST_INSPECTED,
         )?;
         if listed.lines().any(|line| line.trim() == volume) {
@@ -1750,7 +1827,7 @@ impl Docker {
         // Nor where a container of its name is: one a run that failed can leave is then
         // this runner's alone, and removed with its volume.
         let container = runner.container();
-        let named = self.run(
+        let named = self.read(
             &[
                 "container".into(),
                 "ls".into(),
@@ -1760,7 +1837,6 @@ impl Docker {
                 "--filter".into(),
                 format!("name={container}"),
             ],
-            None,
             MOST_INSPECTED,
         )?;
         if named.lines().any(|line| line.trim() == container) {
@@ -1785,6 +1861,7 @@ impl Docker {
             &runner.create_args_for(desktop, &seccomp),
             None,
             MOST_INSPECTED,
+            None,
         );
         drop(prepared);
         let out = match made {
@@ -2020,7 +2097,7 @@ impl Docker {
         let container = format!("{PREFIX}{name}");
         let volume = format!("{PREFIX}{name}-home");
         let mut removed = Vec::new();
-        let listed = self.run(
+        let listed = self.read(
             &words(&[
                 "container",
                 "ls",
@@ -2034,7 +2111,6 @@ impl Docker {
                 "--filter",
                 &format!("label={LABEL}={name}"),
             ]),
-            None,
             MOST_INSPECTED,
         )?;
         for line in listed.lines() {
@@ -2056,7 +2132,7 @@ impl Docker {
             removed.push(format!("container {container}"));
         }
         // A home volume goes only once no container of its name is left, whoever made it.
-        let still = self.run(
+        let still = self.read(
             &words(&[
                 "container",
                 "ls",
@@ -2066,13 +2142,12 @@ impl Docker {
                 "--filter",
                 &format!("name={container}"),
             ]),
-            None,
             MOST_INSPECTED,
         )?;
         if still.lines().any(|line| line.trim() == container) {
             return Ok(removed);
         }
-        let volumes = self.run(
+        let volumes = self.read(
             &words(&[
                 "volume",
                 "ls",
@@ -2080,7 +2155,6 @@ impl Docker {
                 "--filter",
                 &format!("name={volume}"),
             ]),
-            None,
             MOST_INSPECTED,
         )?;
         if volumes.lines().any(|line| line.trim() == volume) {
@@ -2098,7 +2172,7 @@ impl Docker {
     /// its container passes the check.
     pub fn version_of(&self, made: &Made) -> Result<String, Refused> {
         self.check(made)?;
-        let out = self.run(&made.version_args(), None, crate::runnerlink::MOST_LINE)?;
+        let out = self.read(&made.version_args(), crate::runnerlink::MOST_LINE)?;
         version_in(&out).map(str::to_owned).ok_or_else(|| {
             refused(format!(
                 "runner {}'s purlis did not say its version as purlis does: {:?}",
@@ -2170,7 +2244,7 @@ impl Docker {
         let Err(why) = self.run(&words(removing), None, MOST_INSPECTED) else {
             return Ok(());
         };
-        match self.run(&words(listing), None, MOST_INSPECTED) {
+        match self.read(&words(listing), MOST_INSPECTED) {
             Ok(list) if !list.lines().any(|line| line.trim() == listed) => Ok(()),
             _ => Err(refused(format!(
                 "{what} could not be removed ({why}); remove it with `{how}`"
