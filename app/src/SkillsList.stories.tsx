@@ -252,8 +252,8 @@ export const NoSkillsOfItsOwn: Story = {
 
 /**
  * **A pin no chat reads** (#3432): ops's pins are more than 64, so its chats read none of them.
- * Left out unfolds (→) and ↓ reaches the pinned card, hidden by the router; its menu offers Unpin, and says under it that the pin is not used, and the core's
- * why. The picture is of that menu, open and settled.
+ * Left out unfolds (→) and ↓ reaches the pinned card, hidden by the router; its menu offers
+ * Unpin, and says under it that the pin is not used, and the core's why. The picture is of that menu, open and settled.
  */
 export const APinNoChatReads: Story = {
   parameters: { screenshot: "page" },
