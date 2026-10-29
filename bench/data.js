@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793315268072,
+  "lastUpdate": 1793316666400,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30282,6 +30282,48 @@ window.BENCHMARK_DATA = {
             "value": 101.75032999999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.967, 101.635, 101.750, 101.857, 102.562 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "efed866b20df0dc71c9a954fc3e62913c48c675d",
+          "message": "Chip notices 4: dormant and dashed chips, and workspaces with no chip (#3651) (#3875)\n\n* probe\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* ui: dormant and dashed chips carry their notices; no chip lists Open X (#3651)\n\nA pin whose workspace is gone is drawn after the live pins as a dormant\nchip: muted, slanted words and a dotted edge, never current, no menu,\nopening nothing. Its \"kept dormant\" line hangs from it with Forget,\nbehind a dot; the chip's press shows it, bringing back a dismissed one.\nThe line is a standing notice, dismissed in the per-project record the\nNotices centre's copy reads, so both are one dismissed state.\n\nA notice about the current unpinned workspace hangs from its dashed\nchip and stays on it once pinned. A result about a workspace with no\nchip is listed in the Notices centre alone, with an Open X link.\nForgot the pin stays in the centre.\n\nchipsOf now produces look \"dormant\"; the placement table covers\npinned, dashed, dormant and no chip. New theme variant\ntitlebar.workspace.dormant, since NEXT.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme: the schema and the themes table regenerated on the dormant chip (#3651)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* e2e: a gone pin is drawn once, as a dormant chip (#3651)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* stories: picture the chip cards once they have arrived (#3651)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* stories: press the dormant chip from the keyboard, so no hover is pictured (#3651)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: let the keyboard-pressed dormant chip's pictures be drawn again (#3651)\n\nIts references were drawn with the chip under the pointer. Pressed from\nthe keyboard, nothing hovers it, so they are removed and drawn afresh.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* stories: leave other stories' baselines as main has them (#3651)\n\nThe baselines bot drew pictures for stories this branch does not carry\n(ChatsSection, SkillStudioDeleted, SkillStudioDrafts, CardRow, Fold), so\nthe branch's own run found them obsolete or stale. They are put back as\nthey were where this branch began; main keeps its own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* ui: review folds for #3651: the keyboard after Forget, Open only where it goes, a gone workspace drawn once\n\n- Forget from a dormant chip's card takes the chip with the card. The\n  keyboard now goes to the strip's stop (the chip in front, else the\n  house, else the ⌄), as a closing switcher hands it back, never to\n  the page (WCAG 2.4.3).\n- Open X is offered in the Notices centre only for a workspace the\n  project still has. A removed or renamed one gets none, not a way that\n  does nothing.\n- A workspace in front that has gone is drawn once, as its dormant\n  chip, never also dashed, whose press would pin it.\n- A result hung from a dormant chip keeps its words and Details but\n  drops its ways (no Add a vision in a workspace that is gone).\n- After #3876: results sort newest first and the standing lines follow,\n  of kind info; a chip's press still brings its line back in the same\n  render as the card.\n- Tests: Forget from the keyboard, no menu on a dormant chip and its\n  press going nowhere, the centre's × taking the chip's dot, no Open\n  for a workspace gone, and the sort, kind, ways and bring-back.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* format: prettier on the merged chip-notice files (#3651)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-29T22:50:51Z",
+          "tree_id": "283a116e08fccd7ea5615e5b9f92b9f0e08cadaa",
+          "url": "https://github.com/purlis/purlis/commit/efed866b20df0dc71c9a954fc3e62913c48c675d"
+        },
+        "date": 1793316662597,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6871685000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.637, 0.681, 0.687, 0.690, 0.701 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.574516,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.524, 16.553, 16.575, 16.622, 16.755 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.67253299999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.207, 101.235, 101.673, 102.999, 103.343 ms"
           }
         ]
       }
