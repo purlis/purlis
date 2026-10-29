@@ -20,7 +20,7 @@ that mints with it marks it, so purlis never hands it over raw** (E2).
   every repo of every installation, so it is held to the same bar by another route: every read of
   a vault value that would hand it to anything but a mint refuses a key a `mint` line names in
   that line's vault. That is `secret exec`, `get` and `cp`, any other tool, a browser login, a
-  profile's credentials, an approved MCP server's line, a `--dotenv` of the vault, and the Vaults
+  profile's credentials, an approved MCP server's line, a `--dotenv` entry naming it, and the Vaults
   tab's reveal and copy. No approval opens it. A line marks its key whether or not the line is
   otherwise taken, so a line with a typo still marks it. The only read is the mint's, in the app's
   process, and the key goes when the JWT is signed.

@@ -68,7 +68,32 @@ pub fn provider(ctx: &Ctx, name: &str) -> Result<Vault, VaultError> {
 
 /// The value of `key`, through the vault's own provider. **Remembered as read**
 /// ([`super::seen`], #1520), so no store of a chat's words keeps it.
+///
+/// **Refused for a GitHub App's key** (#2053, E2): a key a persona's `mint` line names in this
+/// vault is never handed over raw, by this or any read built on it (`secret exec`, `get` and
+/// `cp`, a tool, a browser login, a profile's credentials, the Vaults tab), and only the mint
+/// reads it ([`read_to_mint`]).
 pub fn get_value(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> {
+    if let Some(why) = crate::sandbox::tools::mint::refused_raw(&ctx.root, &v.name, key) {
+        return Err(VaultError::new(why));
+    }
+    read_value(ctx, v, key)
+}
+
+/// **A GitHub App's key, read to mint a token with it and nothing else** (#2053): the one read
+/// [`get_value`] refuses it to. What it reads goes to [`crate::forge::apptoken::jwt`] alone.
+pub(crate) fn read_to_mint(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> {
+    read_value(ctx, v, key)
+}
+
+/// **Whether `key` resolves**, its value read and dropped: what `vault verify` asks of every
+/// key, a GitHub App's key among them, which it never hands anywhere.
+pub fn resolves(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
+    read_value(ctx, v, key).map(drop)
+}
+
+/// The value of `key`, through the vault's own provider, remembered as read.
+fn read_value(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> {
     let value = match v.provider.as_str() {
         "keyring" => keyring::get(ctx, v, key),
         "plain-file" => plain_file::get(ctx, v, key),
@@ -124,6 +149,15 @@ pub fn delete(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
 /// after the write succeeded, both keys hold the value and the error says so: a secret held
 /// twice is recoverable, and one held nowhere is not.
 pub fn rename(ctx: &Ctx, v: &Vault, from: &str, to: &str) -> Result<(), VaultError> {
+    // A GitHub App's key moved to a name no `mint` line names would no longer be marked
+    // (#2053): its line is changed first.
+    if crate::sandbox::tools::mint::refused_raw(&ctx.root, &v.name, from).is_some() {
+        return Err(VaultError::new(format!(
+            "'{from}' in vault '{}' is a GitHub App's key a persona's tool mints tokens with, so \
+             purlis does not rename it: change the tool's key in the project's settings first",
+            v.name
+        )));
+    }
     let held = keys(ctx, v)?;
     if !held.iter().any(|k| k == from) {
         return Err(VaultError::not_found(format!(
@@ -140,7 +174,7 @@ pub fn rename(ctx: &Ctx, v: &Vault, from: &str, to: &str) -> Result<(), VaultErr
     }
     let stored = match v.provider.as_str() {
         "reference" => super::py_str(&reference::reference_for(ctx, v, from)?),
-        _ => get_value(ctx, v, from)?,
+        _ => read_value(ctx, v, from)?,
     };
     set_value(ctx, v, to, &stored)?;
     delete(ctx, v, from).map_err(|e| {

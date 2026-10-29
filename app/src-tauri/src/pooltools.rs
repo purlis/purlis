@@ -458,7 +458,25 @@ pub fn run_on_its_runner(
     let root = held.root();
     let ctx = Ctx::new(root, Env::from_process());
     let authorised = |persona: &str, vault: &str| brokered::authorise(&ctx, Some(persona), vault);
-    let read = |tool: &Tool| read(&ctx, tool);
+    // A GitHub App's tool is sent the token this desktop mints for the chat, never the key
+    // (#2053): its repos are the remotes of the clones in its workspace here.
+    let folder = held
+        .chats()
+        .login_asker(root, session)
+        .and_then(|(asker, _)| asker.folder);
+    let read = |tool: &Tool| match tool.mint {
+        Some(_) => minted(
+            &ctx,
+            tool,
+            &purlis_core::forge::apptoken::For {
+                root,
+                chat: session,
+                folder: folder.as_deref(),
+                here: None,
+            },
+        ),
+        None => read(&ctx, tool),
+    };
     let moved = || held.chats().asks_may_have_moved();
     // The runner this chat's link reached, as the desktop's host said it (#3417).
     let reached = crate::hooks::reached_over_the_link();
@@ -564,6 +582,22 @@ fn read(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>, Stri
         values.push((value.key.clone(), read));
     }
     Ok(values)
+}
+
+/// **The token a GitHub App mints for a runner chat's tool `tool`, sent as the value of its key**
+/// (#2053, E2): the key itself is read to mint and goes nowhere else.
+fn minted(
+    ctx: &Ctx,
+    tool: &Tool,
+    chat: &purlis_core::forge::apptoken::For<'_>,
+) -> Result<Vec<(String, Zeroizing<String>)>, String> {
+    let key = tool
+        .values
+        .first()
+        .map(|value| value.key.clone())
+        .ok_or_else(|| format!("{} names no key", tool.name))?;
+    let token = purlis_core::forge::apptoken::token_from_vault(ctx, chat, tool)?;
+    Ok(vec![(key, token)])
 }
 
 /// What a pool tool Ask answered by nothing any more says.
