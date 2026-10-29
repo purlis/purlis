@@ -3986,6 +3986,33 @@
         "dialog.summary.alert.open.text": {
           "$ref": "#/$defs/part-text"
         },
+        "disclosure.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "disclosure.trigger.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "disclosure.trigger.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "disclosure.twist.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "disclosure.panel.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "disclosure.panel.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "disclosure.panel.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "disclosure.panel.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "disclosure.panel.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
         "editor.toolbar.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -6349,6 +6376,33 @@
         },
         "rail.unsaved.action.focused.fill": {
           "$ref": "#/$defs/part-fill"
+        },
+        "review-page.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "review-page.body.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "review-page.body.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "review-page.bar.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "review-page.bar.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "review-page.bar.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "review-page.summary.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "review-page.summary.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "review-page.answers.gap": {
+          "$ref": "#/$defs/part-gap"
         },
         "segment.root.fill": {
           "$ref": "#/$defs/part-fill"

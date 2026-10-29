@@ -15,7 +15,8 @@ import {
 import { createPortal } from "react-dom";
 import { PersonaMark } from "./PersonaMark";
 import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
-import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { X } from "lucide-react";
+import { Twist } from "./ui/disclosure/Disclosure";
 import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 import {
   NoticeBox,
@@ -268,11 +269,7 @@ export function Notice(props: NoticeProps) {
                         : "secondary"
                 }
                 icon={
-                  fix.disclosure !== true ? undefined : fix.opens?.open === true ? (
-                    <ChevronDown aria-hidden="true" />
-                  ) : (
-                    <ChevronRight aria-hidden="true" />
-                  )
+                  fix.disclosure !== true ? undefined : <Twist open={fix.opens?.open === true} />
                 }
                 data-way={fix.disclosure === true ? "disclosure" : "fix"}
                 aria-expanded={fix.opens?.open}

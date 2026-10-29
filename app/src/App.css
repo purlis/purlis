@@ -863,6 +863,48 @@ body {
   outline-offset: var(--focus-ring-inset);
 }
 
+/* **A read-only terminal** (#3676, `ReadOnlyTerminal.tsx`): the words that say it is read-only,
+   then the screen, one Tab stop with the ring on its edge, and the find bar over its corner. The
+   grid's ground is the terminal's own, so the screen reads as a terminal that is over. */
+.read-only-terminal {
+  display: grid;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.read-only-terminal-note {
+  margin: 0;
+}
+
+.read-only-terminal-said:empty {
+  display: none;
+}
+
+.read-only-terminal-said {
+  margin: 0;
+}
+
+.read-only-terminal-frame {
+  position: relative;
+  min-inline-size: 0;
+}
+
+.read-only-terminal-screen {
+  min-inline-size: 0;
+  overflow: auto;
+  border-radius: var(--radius-md);
+  background-color: var(--terminal-background);
+}
+
+.read-only-terminal-screen:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.read-only-terminal .pane-find {
+  top: var(--space-2);
+}
+
 /* **The gauge takes no row of its own.** For one build (#207) the pane gave the gauge a row of
    its own, and the operator saw the cost at once: *"context usage component position is not
    absolute and its changing harness container sizes"* — a pane with a gauge was a row shorter

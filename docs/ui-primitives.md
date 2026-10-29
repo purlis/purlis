@@ -660,6 +660,7 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 | Panel separator | `Separator` (`ui/panel/Separator.tsx`), every resize handle between two panels | `root`, `grip` | none |
 | View frame | `ViewFrame`, `ViewNav`, `ViewListHead`, `ViewPageHeader` (`ui/panel/ViewFrame.tsx`), a view tab laid out as pages; `ViewBar`, `ViewHistoryButtons`, `ViewCrumbs` (`ui/panel/ViewBar.tsx`), its top bar | `root`, `nav`, `list`, `item`, `head`, `header`, `name`, `lead`, `bar`, `history`, `path`, `crumb`, `crumb-separator` | none |
 | View nav | a page in the view frame's navigation, drawn by `ViewNav` | `item`, `label`, `indicator` | none |
+| Review page     | `ReviewPage` (`ui/review-page/ReviewPage.tsx`), a review too long for a dialog: its body over a fixed action bar                                                                                       | `root`, `body`, `bar`, `summary`, `answers`                                                                           | none                               |
 | Empty state | `EmptyState` (`ui/empty-state/EmptyState.tsx`) | `root`, `icon`, `headline`, `body`, `action` | `page`, `panel` |
 | Status item | `StatusItem` (pressed, runs a command), `StatusCell` (says, runs nothing), `StatusVerdict` (`ui/status/StatusItem.tsx`) | `root`, `icon`, `label`, `count` | `bar`, `pill`, `waiting`, `accent` |
 
@@ -717,6 +718,21 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   an editor's indent, so Ctrl does not take ⌘'s place), and the mouse's own back and forward
   buttons walk it anywhere in a `ViewFrame` handed the `history`; an editor, a menu or a dialog
   keeps the keys.
+- **A review too long for a dialog is a review page** (#3672, the skill sources and skill
+  grading prototypes, `purlis/review-page-family`): the install review and the update review,
+  file by file, and the grade plan, test by test. Its body is the only part that scrolls, and it
+  ends where the bar starts, so the page scrolls under the bar's edge and a focused control is
+  never under it (WCAG 2.4.11); a body that scrolls with nothing in it the keyboard can reach is
+  a Tab stop of its own. The bar, on the panel's fill under the window's hairline, says at its
+  start what pressing the main action does and what it spends (`summary`, which describes the
+  main action), then holds at most three answers in a dialog's places, drawn by the dialog's own
+  answer row: Cancel leads, the main action trails, one other may stand between. The main action
+  may be unavailable with its reason and stays a Tab stop; Return in a field is the main action
+  unless it grants or cannot be taken back. Its words keep their room (`reserve` on the answer,
+  `summaryReserve` on the summary), so "Start grading · 12 chats" turning to "· 9 chats" moves
+  nothing. Under 30rem the summary takes its own line over the answers. In a view frame's item
+  pane it takes the room under the page header. The bar's edge is never a theme's: it is a
+  consent surface where it holds a grant.
 - **The status bar follows its contribution model** (N28, `ui/status/StatusBar.tsx`): every item,
   purlis's own and an extension's, says its `id`, `side` (left or right) and `priority` (highest
   first from the side's left), and the person may hide any item from the bar's menu (a right
@@ -831,6 +847,41 @@ error (Get project's clone progress is still off, until it moves).
   release's manifest version).
 - **Stories hold it** (`Meter.stories.tsx`): the latest grade's three bars, a running grade's
   progress that moves, and one going with no end known.
+
+## The disclosure family
+
+**A button that shows and hides the region under it is the disclosure family**
+(`app/src/ui/disclosure/`, #3675, on React Aria's `Disclosure`, `DisclosureGroup` and
+`DisclosurePanel`, added to spec #2897's closed list by the operator on 2026-10-28): Add
+source's More, a file to read under its risk mark, a deleted skill's last text.
+
+| Wrapper                         | What it is                                                                                                                                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Disclosure` (`Disclosure.tsx`) | **One fold**: its trigger (`label`, a quiet ghost of the button family, leading with the twist) and any mark after it (`trail`), then its panel. A heading of a `level` where it heads a section |
+| `DisclosureGroup`               | **Folds that open one at a time** (an accordion), or together (`allowsMultipleExpanded`); the owner may hold which are open by each fold's `id`                                                  |
+| `Twist`                         | **The chevron alone**, for a fold that is not a disclosure: a tree's group of rows, a table's row, a menu's item. `open` turns it                                                                |
+
+- **The trigger says `aria-expanded`** and controls its panel; the panel follows it in the
+  reading order, named by it (`role="group"`, or `region` for a large panel a reader jumps to).
+  Return and Space on the trigger open and fold it, and the keyboard stays there.
+- **Opening moves only what is under it**: the trigger's row keeps its size, and the twist turns,
+  which is a transform, and never swaps for another chevron. Folded, the panel takes no room.
+- **It starts folded unless told** (`defaultExpanded`), and the owner may hold its state
+  (`isExpanded`, `onExpandedChange`).
+- **A refused field inside a fold opens it** (`ui/reveal.ts`): the field family's form sends
+  `purlis:reveal` at the first field it refused before the keyboard goes there, and every fold
+  around it opens at once, in a dialog's body and on a page alike. The refusal is heard once, by
+  the field's own error line (#3291); the fold says nothing of itself.
+- **Drawn by its parts** (ADR 0103): the `root`, the `trigger` row, the `twist` and the `panel`,
+  in `disclosure.css`; a theme's parts reach the same attributes (`disclosure.*`, the next
+  release's manifest), and the trigger's look is the button family's.
+- `purlis/disclosure-family` (an error) refuses a fold's chevron swapped by hand
+  (`open ? <ChevronDown /> : <ChevronRight />`) and `data-scope="disclosure"` by hand. The folds
+  #1916 named take the twist: the finished tasks under a chat, a dispatch's brief and report,
+  and the tasks menu's Finished.
+- **Stories hold it** (`Disclosure.stories.tsx`): Add source's More in its dialog, folded and
+  open, a refused folder in it opening it, and a review's files under their risk marks, each
+  walked by the keyboard and checked by axe in Chromium and WebKit.
 
 ## The tooltip family
 
@@ -1542,7 +1593,14 @@ are no longer in the window (#2906). What follows records why each was drawn as 
 rules it states hold, kept by the families._
 
 `StartChat`, `QuitWarning`, `ApprovePlane` and `Palette` — every modal surface the window has.
-The terminal panes are xterm.js and are not a candidate.
+The terminal panes are xterm.js and are not a candidate. **A screen that is over is the terminal's read-only mode**
+(`ReadOnlyTerminal.tsx`, #3676): xterm drawn from the theme's terminal tokens and font with no
+cursor and no input, its grid hidden from a screen reader and its text beside it as a list of
+its lines (a wrapped row joined to the row it continues), so a reader walks it line by line. It
+is one Tab stop, a region named for what it is and described by the words that say it is
+read-only, drawn outside the grid; ⌘F (Ctrl+F elsewhere) opens the find bar on it, ⌘A selects
+the whole screen and ⌘C copies the selection. A saved grade chat and the theme specimen's
+terminals are drawn by it, and no `role="img"` stands for a terminal's text.
 
 And the chat strip's **show-more menu** (`@radix-ui/react-dropdown-menu`, ADR 0039),
 which is the first surface built under this rule rather than converted to it. Two decisions it
