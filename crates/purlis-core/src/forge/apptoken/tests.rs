@@ -372,7 +372,7 @@ fn only_clones_whose_git_directory_no_chat_writes_name_the_chat_s_repos() {
             path: granted.clone(),
         },
     ];
-    let kept_only = held_from_chats(repos.clone(), &[granted.clone()]);
+    let kept_only = held_from_chats(repos.clone(), std::slice::from_ref(&granted));
     assert_eq!(
         kept_only
             .iter()

@@ -138,16 +138,10 @@ pub fn held_from_chats(
 }
 
 /// The folders a chat of the project at `root` may be granted, beside `writes`: Settings' list of
-/// grantable folders and the temporary folders.
+/// grantable folders. A chat's temporary folder is its own and holds no clone of a workspace.
 fn grantable_beside(root: &Path, writes: &[PathBuf]) -> Vec<PathBuf> {
     let mut out = writes.to_vec();
     out.extend(crate::sandbox::local::grantable_folders(root));
-    out.extend([
-        std::env::temp_dir(),
-        PathBuf::from("/tmp"),
-        PathBuf::from("/var/tmp"),
-        PathBuf::from("/var/folders"),
-    ]);
     out
 }
 
@@ -593,13 +587,15 @@ fn on_a_runner_said(why: String, on_a_runner: bool) -> String {
     }
 }
 
+/// A test's own mint: handed the App's key as the vault holds it, it answers the token.
+#[cfg(test)]
+pub(crate) type TestMint = Box<dyn Fn(&str) -> Result<Zeroizing<String>, String>>;
+
 #[cfg(test)]
 thread_local! {
-    /// A test's own mint, in place of GitHub, for the calls on its thread: it is handed the
-    /// App's key as the vault holds it, and answers the token.
-    pub(crate) static MINT_HERE: std::cell::RefCell<
-        Option<Box<dyn Fn(&str) -> Result<Zeroizing<String>, String>>>,
-    > = const { std::cell::RefCell::new(None) };
+    /// A test's own mint, in place of GitHub, for the calls on its thread.
+    pub(crate) static MINT_HERE: std::cell::RefCell<Option<TestMint>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// **[`token_for`], its key read from the tool's vault through `ctx`** by the one read a GitHub
