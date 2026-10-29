@@ -5826,18 +5826,33 @@ impl Chats {
             };
             // Out of the ones still to start only now, when it is open or among the ones that
             // would not start: a record written at any moment holds it once.
-            let left = {
+            //
+            // **Unless the quit has begun and it started** (#3114): it is ended below, so it would
+            // be in neither list, and the quit's record, built at any moment from here, would
+            // lose it for good. It stays one still to start, as the record put back had it.
+            // Asked once, under the lock the record reads the ones still to start under: seen not
+            // begun, the chat stays open until the quit's record is written, and is ended with
+            // the rest.
+            let (left, quitting) = {
                 let mut coming = lock(&self.coming);
-                coming.retain(|one| one.number != next.number);
-                coming.len()
+                let quitting = self.ending.load(Ordering::SeqCst);
+                if !quitting || session.is_none() {
+                    coming.retain(|one| one.number != next.number);
+                }
+                (coming.len(), quitting)
             };
             // A quit that began while it started ends it with the rest.
             if let Some(session) = session
-                && self.ending.load(Ordering::SeqCst)
+                && quitting
             {
+                let in_front = self.front() == Some(session);
                 // As any chat is closed, so nothing of it is left held; nothing is written,
                 // since the quit's record is the last.
                 let _ = self.close(session);
+                // And it is still the chat in front, as one still to start.
+                if in_front {
+                    *lock(&self.front) = Some(next.number);
+                }
             }
             crate::restoring::tell(crate::restoring::Moved {
                 root: self.project.clone(),
