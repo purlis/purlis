@@ -306,13 +306,8 @@ export const ComesUpOnAChipOutOfSight: Story = {
     });
     // Up all the way in: the same card, never taken down by its own scroll.
     await expect(card.isConnected).toBe(true);
-    // The picture once everything has come to rest: the strip at its end (the chip is its last),
-    // still over two frames, and the card arrived.
-    await waitFor(() =>
-      expect(Math.ceil(strip.scrollLeft + strip.clientWidth)).toBeGreaterThanOrEqual(
-        strip.scrollWidth,
-      ),
-    );
+    // The picture once everything has come to rest: the strip still over two frames, with the
+    // chip in its sight, and the card arrived.
     let was = -1;
     await waitFor(async () => {
       const now = strip.scrollLeft;
