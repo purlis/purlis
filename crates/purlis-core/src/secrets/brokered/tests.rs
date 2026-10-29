@@ -568,6 +568,29 @@ fn an_approved_servers_environment_values_come_from_the_approval_not_the_chat() 
     assert_eq!(stdout(&frames), "[https://server.example.com][eu][]\n");
 }
 
+/// #3441: an approved value is held to the names a chat's is. One the entry writes out under a
+/// name that makes a program load code it names never reaches the run, whatever the line says.
+#[test]
+fn an_approved_servers_value_that_makes_a_program_load_code_never_reaches_its_run() {
+    let project = project();
+    let root = project.path();
+    let script = r#"echo "[${NODE_OPTIONS:-}][${DYLD_INSERT_LIBRARIES:-}][$REGION]""#;
+    an_approved_server_running(
+        root,
+        script,
+        serde_json::json!({
+            "NODE_OPTIONS": "--require /work/x.js",
+            "DYLD_INSERT_LIBRARIES": "/work/x.dylib",
+            "REGION": "eu",
+        }),
+    );
+    let mut want = wanted(root, "team", sh(script));
+    want.env = vec!["X=TOKEN".into()];
+    let frames = served_as_asked(&asker(root, Some("devops")), want);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "[][][eu]\n");
+}
+
 /// #2047: a brokered tool's process keeps no core dump, which would hold its values. This
 /// covers the run's own limit (`no_core_files`, from #3405). It can go red only where each test
 /// has a process of its own, as under nextest on CI: under plain `cargo test` another test's

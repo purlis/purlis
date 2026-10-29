@@ -486,15 +486,33 @@ fn not_written_out(entry: &Value) -> Vec<String> {
         .collect()
 }
 
+/// The variables `entry`'s `env` writes out that a brokered run is never handed
+/// ([`crate::secrets::brokered::may_hand_on`]): one that makes a program load code or dump its
+/// memory.
+fn never_handed(entry: &Value) -> Vec<String> {
+    entry
+        .get("env")
+        .and_then(Value::as_object)
+        .map(written_out)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(name, _)| !crate::secrets::brokered::may_hand_on(name))
+        .map(|(name, _)| name)
+        .collect()
+}
+
 /// One credentialed server: its name, entry, fingerprint and consent line —
 /// `persona.mcp_credentialed`'s tuple.
 pub struct Credentialed {
     pub server: String,
     pub fingerprint: Option<String>,
     pub line: String,
-    /// The variables its `env` sets that its approved run starts without: those not
-    /// [`written_out`] (#3441).
+    /// The variables its `env` sets that its approved run in a sandboxed chat starts without
+    /// for not being [`written_out`] (#3441).
     pub unset: Vec<String>,
+    /// The variables its `env` writes out that such a run is never handed, whatever the line
+    /// says: one that makes a program load code or dump its memory.
+    pub refused: Vec<String>,
 }
 
 /// `persona.mcp_credentialed`: every server of `name` that would carry a credential, by
@@ -510,6 +528,7 @@ pub fn credentialed(root: &Path, name: &str) -> Vec<Credentialed> {
             fingerprint: fingerprint(vault.as_deref(), entry),
             line: describe(vault.as_deref(), entry),
             unset: not_written_out(entry),
+            refused: never_handed(entry),
         })
         .collect();
     out.sort_by(|a, b| a.server.cmp(&b.server));

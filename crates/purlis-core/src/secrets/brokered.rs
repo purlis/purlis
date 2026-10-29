@@ -1779,6 +1779,16 @@ impl Handed {
     }
 }
 
+/// **Whether a brokered run may start with `name` set**, from the chat's environment or from an
+/// approved server's entry (#3441): never purlis's own hook channel, a variable that makes a
+/// program load code it names ([`crate::sandbox::tools::loads_code`]), or one that makes it write
+/// out its memory ([`DUMPS_MEMORY`]).
+pub fn may_hand_on(name: &str) -> bool {
+    !not_handed_on(name)
+        && !crate::sandbox::tools::loads_code(name)
+        && !DUMPS_MEMORY.contains(&name)
+}
+
 /// Variables of the chat's that make a program write out its memory as it crashes, or change
 /// how it does: a run starts without them, so its values are never written that way (#2047).
 const DUMPS_MEMORY: &[&str] = &["GOTRACEBACK", "GODEBUG"];
@@ -2088,11 +2098,7 @@ pub(crate) fn serve_recorded(
     // at the values the person approved, never the chat's (#3441).
     // A name is judged as it reads, with any byte that is not UTF-8 replaced, so one is never
     // let through for not spelling the name it is judged by.
-    // An approved value is held to the same names a chat's is: one that makes a program load
-    // code or dump its memory is never set.
-    let may_hand_on = |k: &str| {
-        !not_handed_on(k) && !crate::sandbox::tools::loads_code(k) && !DUMPS_MEMORY.contains(&k)
-    };
+    // An approved value is held to the same names a chat's is ([`may_hand_on`]).
     let mut base: Vec<(OsString, OsString)> = wanted
         .environment
         .into_iter()

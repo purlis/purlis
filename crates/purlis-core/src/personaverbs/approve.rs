@@ -80,6 +80,31 @@ fn not_recorded(
     said
 }
 
+/// What `approve-mcp` says under a server's line of the variables its entry sets that its run
+/// in a sandboxed chat starts without (#3441), and what to do instead: one line for those whose
+/// value is not written out, one for those a run is never handed.
+fn starts_without(persona: &str, label: &str, unset: &[String], refused: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    if !unset.is_empty() {
+        out.push(format!(
+            "    in a sandboxed chat, {label} starts without {}: its run takes only the values \
+             this line writes out, and a harness fills a `${{…}}` from the chat's environment. \
+             Write the value out in personas/{persona}/mcp.json, or name a credential under \
+             `secrets` so it comes from the persona's vault, then approve again.",
+            unset.join(", ")
+        ));
+    }
+    if !refused.is_empty() {
+        out.push(format!(
+            "    in a sandboxed chat, {label} starts without {}: a run is never handed a \
+             variable that makes a program load code or write out its memory. Take it out of \
+             personas/{persona}/mcp.json, then approve again.",
+            refused.join(", ")
+        ));
+    }
+    out
+}
+
 /// `purlis persona approve-mcp`, and its exit code: ask about, and record, each credentialed
 /// server whose consent line the operator has read.
 pub fn approve(root: &Path, options: &Options, ask: Option<Ask>, say: Sink) -> u8 {
@@ -141,16 +166,8 @@ fn approve_in(
                 continue;
             };
             say(Say::Info(format!("  {label} → {}", c.line).into()));
-            if !c.unset.is_empty() {
-                say(Say::Warn(
-                    format!(
-                        "    {label} starts without {}: its run takes its variables at the values \
-                         this line writes out, and a harness fills a `${{…}}` from the chat's \
-                         environment",
-                        c.unset.join(", ")
-                    )
-                    .into(),
-                ));
+            for line in starts_without(n, &label, &c.unset, &c.refused) {
+                say(Say::Warn(line.into()));
             }
             if options.dry_run {
                 continue;
@@ -289,17 +306,45 @@ mod tests {
         assert_eq!(rc, 0, "{}", heard.err);
         assert!(
             heard.err.contains(
-                "    ops/grafana starts without REGION: its run takes its variables at the values \
-                 this line writes out, and a harness fills a `${…}` from the chat's environment"
+                "    in a sandboxed chat, ops/grafana starts without REGION: its run takes only \
+                 the values this line writes out, and a harness fills a `${…}` from the chat's \
+                 environment. Write the value out in personas/ops/mcp.json, or name a credential \
+                 under `secrets` so it comes from the persona's vault, then approve again."
             ),
             "{}",
             heard.err
         );
+        assert!(!heard.err.contains("ops/gsc starts"), "{}", heard.err);
+        assert!(!heard.err.contains("is never handed"), "{}", heard.err);
+    }
+
+    /// #3441: a value written out under a name a run is never handed (one that makes a program
+    /// load code) is said to be one the run starts without, and how to take it out.
+    #[test]
+    fn a_variable_a_run_is_never_handed_is_said_to_be_one_it_starts_without() {
+        let plane = Plane::daily_with_ops();
+        let mcp = crate::personaverbs::tests_plane::OPS_MCP.replacen(
+            "\"env\": {\"GRAFANA_URL\"",
+            "\"env\": {\"NODE_OPTIONS\": \"--require /x.js\", \"GRAFANA_URL\"",
+            1,
+        );
+        plane.write("personas/ops/mcp.json", &mcp);
+        let options = Options {
+            dry_run: true,
+            ..Options::default()
+        };
+        let (rc, heard) = run(&plane, &options, None);
+        assert_eq!(rc, 0, "{}", heard.err);
         assert!(
-            !heard.err.contains("ops/gsc starts without"),
+            heard.err.contains(
+                "    in a sandboxed chat, ops/grafana starts without NODE_OPTIONS: a run is never \
+                 handed a variable that makes a program load code or write out its memory. Take \
+                 it out of personas/ops/mcp.json, then approve again."
+            ),
             "{}",
             heard.err
         );
+        assert!(!heard.err.contains("a harness fills"), "{}", heard.err);
     }
 
     #[test]
