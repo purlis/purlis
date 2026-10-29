@@ -142,7 +142,7 @@ pub fn owner_binding(namespace: &str, requester: &str) -> RoleBinding {
             ..ObjectMeta::default()
         },
         role_ref: RoleRef {
-            api_group: "rbac.authorization.k8s.io".to_owned(),
+            api_group: Some("rbac.authorization.k8s.io".to_owned()),
             kind: "ClusterRole".to_owned(),
             name: OWNER_ROLE.to_owned(),
         },
