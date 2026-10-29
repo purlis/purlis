@@ -228,15 +228,16 @@
   background-color: var(--surface-hover);
 }
 
-/* Unavailable: its words in the faint tier, on its own ground and edge, so nothing moves. Its
-   line goes faint with its title, so the description never reads louder than the name, and what
-   follows the title (a badge, which draws its own colours) is dimmed with them. */
+/* Unavailable: its words in the faint tier, on its own ground and edge, so nothing moves, and
+   what follows the title (a badge, which draws its own colours) dimmed with them. Its line steps
+   down to the quiet tier, not faint: it stands beside the button, not in it, so it is words a
+   person reads and keeps the text floor (WCAG 1.4.3), and it no longer reads louder than it did. */
 [data-scope="card"][data-part="pressable"][data-disabled] {
   color: var(--text-faint);
 }
 
 [data-scope="card"][data-part="pressable"][data-disabled] > [data-part="line"] {
-  color: var(--text-faint);
+  color: var(--text-quiet);
 }
 
 [data-scope="card"][data-part="pressable"][data-disabled] [data-part="more"] {
