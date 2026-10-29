@@ -338,3 +338,33 @@ fn every_item_of_a_studio_has_an_id_of_its_own() {
     let ids: std::collections::HashSet<&str> = needs.iter().map(|one| one.id.as_str()).collect();
     assert_eq!(ids.len(), needs.len(), "{needs:?}");
 }
+
+#[test]
+fn a_summary_lines_count_reads_less_and_counts_what_the_page_holds() {
+    // #3781: the persona view's Skills line counts Needs you without the whole studio, and
+    // counts the same items as the page: here a problem in a skill and a tidy-up.
+    let tmp = tempfile::tempdir().unwrap();
+    skill(
+        &tmp.path().join("skills"),
+        "deploy",
+        "---\nname: deploy\ndescription: Deploys.\n---\n",
+    );
+    skill(
+        &tmp.path().join(".claude/skills"),
+        "notify",
+        "---\nname: notify\ndescription: Tells the team what shipped.\n---\n",
+    );
+    let mut page = studio(tmp.path(), None, true, None, None, &no_harness());
+    crate::skillstudio::with_the_projects_needs(&mut page, tmp.path(), &[]);
+
+    let counted = crate::skillstudio::needing(tmp.path(), None, &[], None, None, &no_harness());
+
+    assert_eq!(
+        kinds(&page.needs),
+        [
+            (NeedKind::Problem, "deploy"),
+            (NeedKind::TidyUp, "1 skill only some programs read")
+        ]
+    );
+    assert_eq!(counted, page.needs.len());
+}

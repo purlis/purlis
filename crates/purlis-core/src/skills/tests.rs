@@ -1128,6 +1128,7 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
         &[],
         &env,
         &Known::of(&plane, None),
+        Reading::Whole,
     );
 
     let titles: Vec<&str> = harnesses.iter().map(|h| h.harness.title()).collect();
@@ -1147,7 +1148,7 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
         }]
     );
     let rows: Vec<(String, Option<String>)> =
-        outside_rows(on_codex, &plane, &Known::of(&plane, None))
+        outside_rows(on_codex, &plane, &Known::of(&plane, None), Reading::Whole)
             .into_iter()
             .map(|row| (row.name, row.left_out))
             .collect();
@@ -2652,4 +2653,74 @@ fn the_studio_lints_the_planes_own_skills_a_chat_gets_once_per_list() {
         ]
     );
     assert_eq!(lint_of("review"), Vec::<String>::new());
+}
+
+#[test]
+fn a_list_read_for_needs_you_has_every_row_lint_and_clash_of_the_whole_and_no_badge() {
+    // #3781: the persona view's count reads only what Needs you's items are worked out from.
+    let (tmp, plane, _clone, built_in) = a_clone_with_a_secrets_skill_of_its_own();
+    std::fs::create_dir_all(plane.join("workspaces/alpha/skills/deploy")).unwrap();
+    std::fs::write(
+        plane.join("workspaces/alpha/skills/deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Deploys.\n---\n",
+    )
+    .unwrap();
+    let env = crate::harness_plugin::Env {
+        chat: &[],
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+    type Seen = (
+        String,
+        Origin,
+        bool,
+        Option<String>,
+        Option<String>,
+        Vec<String>,
+    );
+    let seen = |rows: &[StudioRow]| -> Vec<Seen> {
+        rows.iter()
+            .map(|row| {
+                (
+                    row.name.clone(),
+                    row.origin,
+                    row.local,
+                    row.left_out.clone(),
+                    row.accept.clone(),
+                    row.lint.clone(),
+                )
+            })
+            .collect()
+    };
+    let read =
+        |reading| studio_list_for(reading, Some(&built_in), &plane, Some("alpha"), None, &env);
+
+    let whole = read(Reading::Whole);
+    let needs = read(Reading::Needs);
+
+    assert_eq!(seen(&needs.rows), seen(&whole.rows));
+    assert!(
+        whole.rows.iter().any(|row| !row.lint.is_empty()),
+        "deploy's short description is linted: {:?}",
+        seen(&whole.rows)
+    );
+    for (one, other) in needs.harnesses.iter().zip(&whole.harnesses) {
+        assert_eq!(seen(&one.rows), seen(&other.rows), "{:?}", one.harness);
+        assert_eq!(one.set.clashes, other.set.clashes, "{:?}", one.harness);
+    }
+    assert!(
+        whole
+            .harnesses
+            .iter()
+            .any(|one| !one.set.clashes.is_empty()),
+        "the repo's secrets clashes"
+    );
+    assert!(needs.rows.iter().all(|row| row.compat.is_empty()));
+    assert!(
+        needs
+            .harnesses
+            .iter()
+            .flat_map(|one| &one.rows)
+            .all(|row| row.compat.is_empty())
+    );
 }

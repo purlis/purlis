@@ -1961,6 +1961,7 @@ fn harnesses_in_the_studio(
     pins: &[String],
     env: &crate::harness_plugin::Env<'_>,
     known: &Known,
+    reading: Reading,
 ) -> Vec<HarnessInTheStudio> {
     let choices = crate::harness_plugin::Choices::read_in(plane, workspace);
     let clones = workspace
@@ -1990,13 +1991,13 @@ fn harnesses_in_the_studio(
             };
             let mut one = HarnessInTheStudio {
                 harness,
-                repo_left_out: studio_rows(&by_a_repo, plane, names),
+                repo_left_out: rows_of(&by_a_repo, plane, names, reading),
                 // Routed by this harness's own budget, with what it finds itself counted (SK-15).
                 set: set.routed(harness.skill_budget(), pins),
                 outside,
                 rows: Vec::new(),
             };
-            one.rows = outside_rows(&one, plane, known);
+            one.rows = outside_rows(&one, plane, known, reading);
             Some(one)
         })
         .collect()
@@ -2114,7 +2115,12 @@ pub struct OutsideRow {
 /// **The studio's rows of the skills from outside the plane `harness` finds** (SK-6, #2769),
 /// each by the name the harness knows it by, on or left out as its set says, with whose it is
 /// and how it switches. In the order they were found.
-fn outside_rows(harness: &HarnessInTheStudio, plane: &Path, known: &Known) -> Vec<StudioRow> {
+fn outside_rows(
+    harness: &HarnessInTheStudio,
+    plane: &Path,
+    known: &Known,
+    reading: Reading,
+) -> Vec<StudioRow> {
     harness
         .outside
         .iter()
@@ -2129,11 +2135,15 @@ fn outside_rows(harness: &HarnessInTheStudio, plane: &Path, known: &Known) -> Ve
             // One purlis did not read is never linted or badged (SK-44): its description says why.
             let (compat, lint) = if left_out.is_none() && found.unread.is_none() {
                 (
-                    badges(
-                        (&found.root, &found.skill.path),
-                        found.origin,
-                        &[harness.harness],
-                    ),
+                    if reading == Reading::Whole {
+                        badges(
+                            (&found.root, &found.skill.path),
+                            found.origin,
+                            &[harness.harness],
+                        )
+                    } else {
+                        Vec::new()
+                    },
                     outside_lint(known, found, harness.harness),
                 )
             } else {
@@ -2562,6 +2572,29 @@ pub fn studio_list(
     persona: Option<&str>,
     env: &crate::harness_plugin::Env<'_>,
 ) -> StudioList {
+    studio_list_for(Reading::Whole, built_in, plane, workspace, persona, env)
+}
+
+/// **What a studio list is read for** (#3781).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reading {
+    /// Everything the studio draws.
+    Whole,
+    /// Only what Needs you's items are worked out from, for a count of them: every row, with
+    /// what is left out and why, and the lints and clashes the items read; no badge and no
+    /// router's word, which no item reads. Its items are the whole list's.
+    Needs,
+}
+
+/// [`studio_list`], read for `reading`.
+pub fn studio_list_for(
+    reading: Reading,
+    built_in: Option<&Path>,
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    env: &crate::harness_plugin::Env<'_>,
+) -> StudioList {
     let set = in_the_studio(built_in, plane, workspace, persona);
     let names = persona
         .map(|persona| names_of(plane, persona))
@@ -2569,12 +2602,17 @@ pub fn studio_list(
     let known = Known::of(plane, built_in);
     let pins = pins_or_none(plane, workspace, persona);
     let set_on = |route| in_the_studio_on(built_in, plane, workspace, persona, route);
-    let harnesses =
-        harnesses_in_the_studio(&set, &set_on, plane, workspace, &names, &pins, env, &known);
-    let mut rows = studio_rows(&set, plane, &names);
-    with_harness_badges(&mut rows, &harnesses, &known);
+    let harnesses = harnesses_in_the_studio(
+        &set, &set_on, plane, workspace, &names, &pins, env, &known, reading,
+    );
+    let mut rows = rows_of(&set, plane, &names, reading);
+    if reading == Reading::Whole {
+        with_harness_badges(&mut rows, &harnesses, &known);
+    }
     with_plane_lint(&mut rows, &set, &known);
-    with_routing(&mut rows, &harnesses);
+    if reading == Reading::Whole {
+        with_routing(&mut rows, &harnesses);
+    }
     StudioList {
         rows,
         harnesses,
@@ -2701,6 +2739,11 @@ pub const UNCHECKED: &str =
 /// out from the widest level to the narrowest, as the set lists them (#2767). The one list the
 /// window and the command line draw.
 pub(crate) fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<StudioRow> {
+    rows_of(set, plane, names, Reading::Whole)
+}
+
+/// [`studio_rows`], read for `reading`: badged only for the whole list.
+fn rows_of(set: &SkillSet, plane: &Path, names: &[Reference], reading: Reading) -> Vec<StudioRow> {
     let relative = |path: &Path| {
         path.strip_prefix(plane)
             .unwrap_or(path)
@@ -2734,7 +2777,11 @@ pub(crate) fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> 
                 unchecked: false,
                 outside: None,
                 accept: None,
-                compat: badges((&e.root, &e.skill.path), e.origin, &Harness::ALL),
+                compat: if reading == Reading::Whole {
+                    badges((&e.root, &e.skill.path), e.origin, &Harness::ALL)
+                } else {
+                    Vec::new()
+                },
                 lint: Vec::new(),
                 lifecycle: e
                     .deprecated
