@@ -413,7 +413,7 @@ describe("a source's page", () => {
     renderStudio(AT_THE_ROOT, "sources");
     const page = await openSource(user);
     const notify = await within(page).findByTestId("offered-notify");
-    await user.click(within(notify).getByRole("button", { name: "Open notify in Library" }));
+    await user.click(within(notify).getByRole("button", { name: "See notify in Library" }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Library" })).toHaveAttribute(
         "aria-current",

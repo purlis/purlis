@@ -803,7 +803,7 @@ function SourcePage({
                             update !== undefined
                               ? `Review the update of ${skill.name}`
                               : installed
-                                ? `Open ${skill.name} in Library`
+                                ? `See ${skill.name} in Library`
                                 : `Review ${skill.name}`
                           }
                           onPress={() => onward(skill)}
@@ -811,7 +811,7 @@ function SourcePage({
                           {update !== undefined
                             ? "Review update"
                             : installed
-                              ? "Open in Library"
+                              ? "See it in Library"
                               : "Review install"}
                         </Button>
                       </RowTrail>
