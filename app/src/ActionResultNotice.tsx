@@ -1,7 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useId, useState, type KeyboardEvent } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FocusEvent,
+  type KeyboardEvent,
+} from "react";
 import type { Said } from "./actions";
 import { resultOf } from "./actionResult";
 import { Notice, NoticeList, type NoticeAction } from "./Notice";
@@ -22,7 +29,12 @@ export function ActionResultNotice({
   cause,
   kept = false,
   escape = true,
+  refocus,
 }: {
+  /** Where the keyboard goes when the way it was on goes from under it (a Retry whose notice
+   *  turns into its progress, #3649's review): a chip's card hands its region. Else the
+   *  notice's own line takes it. */
+  refocus?: () => HTMLElement | null;
   /** Esc while the keyboard is in it closes it. Off where what it stands in answers Esc for
    *  every notice it holds: a chip's card (#3648). */
   escape?: boolean;
@@ -64,6 +76,48 @@ export function ActionResultNotice({
     settings === undefined
       ? undefined
       : { label: settings.label, onPress: () => onSettings(settings.link) };
+  // **The keyboard never falls to the page** (WCAG 2.4.3, #3649's review): when the way it was
+  // on is drawn no more (Retry, once its notice turns into its progress), it goes to the
+  // notice's line, or where `refocus` says, rather than to `<body>`. A browser may say nothing
+  // as a focused element is removed, so every render looks as well as the blur.
+  const focused = useRef<{ on: HTMLElement; line: HTMLElement | null } | null>(null);
+  const handTo = useRef(refocus);
+  useLayoutEffect(() => {
+    handTo.current = refocus;
+  });
+  const restore = () => {
+    const had = focused.current;
+    if (had === null || had.on.isConnected) return;
+    focused.current = null;
+    const at = document.activeElement;
+    if (at !== null && at !== document.body) return;
+    const to = handTo.current?.() ?? (had.line?.isConnected === true ? had.line : null);
+    if (to === null) return;
+    if (!to.hasAttribute("tabindex")) to.setAttribute("tabindex", "-1");
+    to.focus({ preventScroll: true });
+  };
+  useLayoutEffect(restore);
+  const onFocus = (event: FocusEvent) => {
+    const on = event.target as HTMLElement;
+    focused.current = {
+      on,
+      line: on.closest<HTMLElement>('[data-scope="notice"][data-part="root"]'),
+    };
+  };
+  const onBlur = (event: FocusEvent) => {
+    const on = event.target as HTMLElement;
+    // To somewhere else that takes it: nothing to hand back.
+    if (event.relatedTarget !== null) {
+      focused.current = null;
+      return;
+    }
+    queueMicrotask(() => {
+      if (!on.isConnected) restore();
+      // A press on the page, which takes no keyboard: the way is still there, so it is the
+      // person's own move, and nothing is handed back later.
+      else if (focused.current?.on === on) focused.current = null;
+    });
+  };
   const closeOnEsc = (event: KeyboardEvent) => {
     if (!escape || event.key !== "Escape") return;
     event.stopPropagation();
@@ -74,6 +128,8 @@ export function ActionResultNotice({
       className={kept ? "action-result-kept" : "action-result"}
       data-from={said.from}
       onKeyDown={closeOnEsc}
+      onFocus={onFocus}
+      onBlur={onBlur}
     >
       <Notice
         cause={cause}

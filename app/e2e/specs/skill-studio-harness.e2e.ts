@@ -83,7 +83,7 @@ describe("a repo's own skills in the Skill studio", function () {
     await open.click();
 
     await studioSkill(NAME);
-    const clash = await $(`[data-testid="clash-${NAME}"]`);
+    const clash = await $(`[data-testid="skill-banner-clash"]`);
     await expect(clash).toHaveText(
       new RegExp(`the repo ${REPO} has a skill of this name too, and a chat there gets both`),
     );

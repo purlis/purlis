@@ -34,6 +34,12 @@ pub struct PoolSpec {
     /// its pod is lost. A fresh Claim's runner keeps nothing.
     #[serde(default)]
     pub kept_volume: KeptVolume,
+    /// Whether the pool is stopped (#2058): every runner of its Claims is suspended, never
+    /// destroyed (its pod ends; a kept Claim's volume, its home, stays), no runner is kept warm
+    /// for it, and a Claim made meanwhile gets no runner, until it is false again. False unless
+    /// set.
+    #[serde(default)]
+    pub stopped: bool,
 }
 
 /// The volume of a kept Claim's runner: one PersistentVolumeClaim per kept Claim, named
@@ -132,6 +138,11 @@ pub struct ClaimSpec {
     #[serde(default)]
     #[x_kube(validation = Rule::new("self == oldSelf").message("Whether a claim is kept cannot change. Make a new claim for the other kind."))]
     pub kept: bool,
+    /// Whether the claim is stopped (#2058): its runner is suspended, never destroyed (its pod
+    /// ends; a kept claim's volume, its home, stays), or not made yet, until it is false again.
+    /// Its pool's `stopped` stops it too. False unless set.
+    #[serde(default)]
+    pub stopped: bool,
 }
 
 /// What the operator says about a Claim.

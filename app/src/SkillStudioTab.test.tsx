@@ -122,7 +122,9 @@ describe("the Skill studio", () => {
     expect(within(deploy).getByText("Deploys the site.")).toBeInTheDocument();
     expect(within(deploy).queryByText("Left out")).toBeNull();
     expect(within(screen.getByTestId("skill-review")).getByText("Left out")).toBeInTheDocument();
-    expect(within(await openSkill("skill-deploy")).getByText("On")).toBeInTheDocument();
+    expect(
+      within(await openSkill("skill-deploy")).getByTestId("skill-in-a-chat"),
+    ).toHaveTextContent("On: a chat at the project's root gets it.");
     expect(within(screen.getByTestId("skill-secrets")).getByText("built-in")).toBeInTheDocument();
     expect(
       within(screen.getByTestId("skill-review")).getByText(
@@ -190,14 +192,16 @@ describe("the Skill studio", () => {
     ).toBeInTheDocument();
     expect(within(screen.getByTestId("skill-review")).getByText("Pinned")).toBeInTheDocument();
     const deploy = await openSkill("skill-deploy", user);
+    expect(within(deploy).getByTestId("skill-in-a-chat")).toHaveTextContent(
+      "On, hidden by the built-in router: over this chat's skill budget, so it is in the index skill (on Codex)",
+    );
+    // Its banner says so too, and the chat can still load it.
+    expect(within(deploy).getByTestId("skill-banner-hidden")).toHaveTextContent(
+      "Hidden by the router on Codex",
+    );
     expect(
-      within(deploy).getByText(
-        "On, hidden by the built-in router: over this chat's skill budget, so it is in the index skill (on Codex)",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(await openSkill("skill-review", user)).getByText("On, pinned"),
-    ).toBeInTheDocument();
+      within(await openSkill("skill-review", user)).getByTestId("skill-in-a-chat"),
+    ).toHaveTextContent(/^On, pinned/);
   });
 
   it("shows a workspace's chats, its own copy over the project's, and both copies", async () => {
@@ -731,12 +735,12 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
 
     const user = userEvent.setup();
     await openSkill("skill-review", user);
-    expect(await screen.findByTestId("clash-review")).toHaveTextContent(
+    expect(await screen.findByTestId("skill-banner-clash")).toHaveTextContent(
       "the repo api has a skill of this name too, and a chat there gets both",
     );
     expect(
-      within(await openSkill("skill-secrets", user)).getByText(/cannot be turned off/),
-    ).toBeInTheDocument();
+      within(await openSkill("skill-secrets", user)).getByTestId("skill-built-in"),
+    ).toHaveTextContent(/can't be edited, moved or turned off/);
   });
 
   it("marks no clash on a copy left out, which no chat gets (SK-46)", async () => {
@@ -755,7 +759,7 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
     renderStudio();
 
     await openSkill("skill-review");
-    expect(screen.queryByTestId("clash-review")).toBeNull();
+    expect(screen.queryByTestId("skill-banner-clash")).toBeNull();
   });
 
   it("marks a clash in the core's words, as `purlis skill list` says it (SK-46)", async () => {
@@ -772,7 +776,7 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
     renderStudio();
 
     await openSkill("skill-review");
-    expect(await screen.findByTestId("clash-review")).toHaveTextContent(
+    expect(await screen.findByTestId("skill-banner-clash")).toHaveTextContent(
       "the repo api has a skill of this name too, and opencode chats there get the repo's copy alone",
     );
   });
@@ -791,8 +795,8 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
     renderStudio();
 
     await openSkill("skill-review");
-    const clash = await screen.findByTestId("clash-review");
-    within(clash).getByRole("button", { name: "Rename the project's copy" }).click();
+    await screen.findByTestId("skill-banner-clash");
+    screen.getByRole("button", { name: "Rename the project's copy" }).click();
     const form = await screen.findByRole("form", { name: "Rename review" });
     expect(within(form).getByLabelText("New name")).toBeInTheDocument();
   });

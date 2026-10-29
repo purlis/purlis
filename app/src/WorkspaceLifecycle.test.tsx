@@ -17,7 +17,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetRepoClones } from "./repoClones";
 import { chipName, openAllWorkspaces, workspaceChips, workspaceInFront } from "./test-strips";
-import { findResult } from "./actionResult.testkit";
+import { findOnCard, findResult } from "./actionResult.testkit";
 
 /**
  * Making a workspace and deleting one, from the window.
@@ -662,7 +662,8 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
         ["clone_repo", "web"],
       ]),
     );
-    expect(await findResult("Cloned api, web into gamma.")).toBeInTheDocument();
+    // On the new workspace's chip's card, where its clone counted (#3649).
+    expect(await findOnCard("gamma", "Cloned 2 repos")).toHaveTextContent("api, web into gamma.");
   });
 
   it("says a workspace made in plain words on its chip's card, kept under Results (#3344, #3648)", async () => {
@@ -763,7 +764,7 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
 
     await createWithRepos(["api", "web"]);
 
-    expect(await findResult(/Could not clone api into gamma/)).toHaveTextContent(
+    expect(await findOnCard("gamma", /Could not clone api into gamma/)).toHaveTextContent(
       "api: clone failed — no access.",
     );
     expect(calls("clone_repo").map((one) => one.args.repo)).toEqual(["api", "web"]);
@@ -776,7 +777,7 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
 
     await createWithRepos(["api"]);
 
-    expect(await findResult(/Could not clone api into gamma/)).toHaveTextContent(
+    expect(await findOnCard("gamma", /Could not clone api into gamma/)).toHaveTextContent(
       "api was cloned, but purlis does not see it in gamma. purlis said: ✓ api cloned",
     );
   });

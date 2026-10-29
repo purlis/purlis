@@ -152,6 +152,7 @@ pub mod noterminal;
 pub mod onboarding;
 pub mod opencode;
 pub mod openfiles;
+pub mod ownwork;
 pub mod panel;
 pub mod personacmd;
 pub mod personagate;

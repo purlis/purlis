@@ -241,6 +241,7 @@ fn pool() -> Pool {
         PoolSpec {
             image: IMAGE.into(),
             kept_volume: Default::default(),
+            stopped: false,
         },
     )
 }

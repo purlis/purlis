@@ -3,7 +3,7 @@
 
 /**
  * **A skill's pins in the window** (SK-15d, #3232; ADR 0102 §4): the Pin switch on a Skill studio
- * row filtered to a workspace or a persona, and the list on a skill's own tab of every workspace
+ * row filtered to a workspace or a persona, and the list on a skill's page of every workspace
  * and persona that pins it, each with Unpin. Each change is the core's `skills::verbs::pin`, which
  * `purlis skill pin` calls too, one commit. A chat may write its persona's pins, so a pin is
  * always seen and can always be undone.

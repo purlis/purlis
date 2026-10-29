@@ -42,6 +42,10 @@ pub enum Move {
     Reported { report: Report, waits: Waits },
     /// [`Board::rested`].
     Rested,
+    /// [`Board::own_work_lapsed`].
+    OwnWorkLapsed { now: i64, waits: Waits },
+    /// [`Board::blocked_while_waiting`].
+    BlockedWhileWaiting,
     /// [`Board::task_failed`].
     TaskFailed { failed: FailedTask },
     /// [`Board::failures_seen`].
@@ -157,6 +161,8 @@ impl Board {
                 number == report.chat && self.reported_while(&report, waits)
             }
             Move::Rested => self.rested(number),
+            Move::OwnWorkLapsed { now, waits } => self.own_work_lapsed(number, now, waits),
+            Move::BlockedWhileWaiting => self.blocked_while_waiting(number),
             Move::TaskFailed { failed } => self.task_failed(number, failed),
             Move::FailuresSeen => self.failures_seen(number),
             Move::FailureCleared { id } => self.failure_cleared(number, &id),
@@ -208,9 +214,21 @@ impl Board {
     /// said of what a chat waits on, so the end of a turn is the person's. Whether anything a
     /// reader can see changed.
     pub fn hear(&mut self, heard: &crate::hookwire::relay::Heard) -> bool {
+        self.hear_at(heard, 0)
+    }
+
+    /// [`Board::hear`], with `now`, the hearing process's clock in seconds since 1970: what a
+    /// turn's end on work of its own is stamped at (#3878, [`Waits::now`]).
+    pub fn hear_at(&mut self, heard: &crate::hookwire::relay::Heard, now: i64) -> bool {
         use crate::hookwire::relay::Heard;
         match heard {
-            Heard::Report(report) => self.reported_while(report, Waits::default()),
+            Heard::Report(report) => self.reported_while(
+                report,
+                Waits {
+                    now,
+                    ..Waits::default()
+                },
+            ),
             Heard::Refused(refused) => self.commit_refused(refused.chat, &refused.commit_refused),
             Heard::Tool(call) => {
                 let mut changed = false;

@@ -10,6 +10,7 @@ use super::adapter::{
 use super::{Harness, Kit, StateHooks, words};
 use crate::sandbox::Form;
 
+pub mod ownwork;
 pub mod project;
 
 /// Claude Code's adapter.

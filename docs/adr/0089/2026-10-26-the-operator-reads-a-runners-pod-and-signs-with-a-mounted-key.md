@@ -18,3 +18,5 @@ the amendment of 2026-10-29 (#3305): [the operator's signing key is rolled](2026
    `purlis-cluster-operator-signing-key` in its namespace, which the kubelet mounts in the
    operator's pod, read-only and for its group alone. Without it the operator does not start:
    it vouches for no runner unsigned.
+
+**Item 1 amended 2026-10-28 by #2058:** the operator also holds `patch` on sandboxes, which an admission policy narrows to the operating mode of a sandbox a SandboxClaim controls ([the amendment](2026-10-28-the-operator-suspends-a-stopped-runner.md)).

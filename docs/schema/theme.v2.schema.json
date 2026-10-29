@@ -9602,6 +9602,12 @@
         "titlebar.dot.text": {
           "$ref": "#/$defs/part-text"
         },
+        "titlebar.dot-warning.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.dot-warning.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "tooltip.root.fill": {
           "$ref": "#/$defs/part-fill"
         },

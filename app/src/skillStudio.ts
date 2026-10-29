@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { createContext, useEffect, useRef, useSyncExternalStore } from "react";
 import {
   commands,
   PERSONA_SCOPE_KEY,
@@ -128,15 +128,34 @@ export const STUDIO_PAGE_NAMES: Record<StudioPage, string> = {
 };
 
 /**
+ * **The tabs of a skill's page** (#3682, the amendment's S3): Overview, Text, History, Grades and
+ * Runs. Overview is where a page opens.
+ */
+export const SKILL_PAGE_TABS = ["overview", "text", "history", "grades", "runs"] as const;
+export type SkillPageTab = (typeof SKILL_PAGE_TABS)[number];
+
+/** What each of a skill's tabs is called, on the tab and in the path. */
+export const SKILL_PAGE_TAB_NAMES: Record<SkillPageTab, string> = {
+  overview: "Overview",
+  text: "Text",
+  history: "History",
+  grades: "Grades",
+  runs: "Runs",
+};
+
+/**
  * **A place in the studio**: one step of its tab's history (`ui/panel/viewHistory.ts`). The
  * page, whose chats it covers, on Library the skill chosen (its row's id, {@link skillRowId}),
- * and on another page the item chosen in its list (`item`: a draft's id on Drafts, a deleted
- * skill's on Deleted).
+ * the tab of its page shown (`tab`, Overview where none is said) and on Runs the run to mark
+ * (`run`, from a run's chip), and on another page the item chosen in its list (`item`: a draft's
+ * id on Drafts, a deleted skill's on Deleted).
  */
 export interface StudioPlace {
   page: StudioPage;
   scope: StudioScope;
   skill?: string;
+  tab?: SkillPageTab;
+  run?: string;
   item?: string;
 }
 
@@ -168,7 +187,7 @@ export function skillRowNamed(name: string): string {
   return `#${name}`;
 }
 
-/** Two places are one: the same page, scope and skill chosen. */
+/** Two places are one: the same page, scope and skill chosen, whichever tab of its page shows. */
 export function samePlace(one: StudioPlace, other: StudioPlace): boolean {
   return (
     one.page === other.page &&
@@ -190,10 +209,18 @@ const TARGET = "at:";
 export function skillStudioAt(
   scope: StudioScope,
   page: StudioPage = "library",
-  { skill, item, newTab = false }: { skill?: string; item?: string; newTab?: boolean } = {},
+  {
+    skill,
+    tab,
+    run,
+    item,
+    newTab = false,
+  }: { skill?: string; tab?: SkillPageTab; run?: string; item?: string; newTab?: boolean } = {},
 ): ViewRef {
   const place: StudioPlace & { newTab?: true } = { page, scope };
   if (skill !== undefined) place.skill = skill;
+  if (tab !== undefined) place.tab = tab;
+  if (run !== undefined) place.run = run;
   if (item !== undefined) place.item = item;
   if (newTab) place.newTab = true;
   return { ...SKILL_STUDIO_VIEW, key: `${TARGET}${JSON.stringify(place)}` };
@@ -220,10 +247,13 @@ function placeOfTarget(key: string): (StudioPlace & { newTab?: boolean }) | unde
     const page = STUDIO_PAGES.find((one) => one === read.page);
     const scope = read.scope;
     if (page === undefined || scope === undefined || !(scope.at in SCOPES)) return undefined;
+    const tab = SKILL_PAGE_TABS.find((one) => one === read.tab);
     return {
       page,
       scope: { at: scope.at, name: String(scope.name ?? "") },
       ...(typeof read.skill === "string" ? { skill: read.skill } : {}),
+      ...(tab === undefined ? {} : { tab }),
+      ...(typeof read.run === "string" ? { run: read.run } : {}),
       ...(typeof read.item === "string" ? { item: read.item } : {}),
       ...(read.newTab === true ? { newTab: true } : {}),
     };
@@ -251,11 +281,40 @@ export function studioOpening(
           page: target.page,
           scope: target.scope,
           ...(target.skill === undefined ? {} : { skill: target.skill }),
+          ...(target.tab === undefined ? {} : { tab: target.tab }),
+          ...(target.run === undefined ? {} : { run: target.run }),
           ...(target.item === undefined ? {} : { item: target.item }),
         };
   let key = "";
   if (target?.newTab === true) for (let n = 2; !free(key); n++) key = `#${n}`;
   return { tab: { ...SKILL_STUDIO_VIEW, key }, place };
+}
+
+/** The view name a skill's own tab had (SK-3), retired by its page in the studio (#3682). */
+const SKILL_TAB = "skill";
+
+/**
+ * **A skill's own tab an older launch kept** (SK-3), keyed `deploy` or `deploy@<run>`: it comes
+ * back as the studio at Library › that skill, on its Runs where it was opened on a run, as the
+ * skill's own tab is retired (#3682). Nothing for any other view.
+ */
+export function studioOfSkillTab(view: ViewRef): ViewRef | undefined {
+  if (view.from !== null || view.view !== SKILL_TAB || view.key === "") return undefined;
+  const at = view.key.indexOf("@");
+  const name = at === -1 ? view.key : view.key.slice(0, at);
+  return at === -1
+    ? skillStudioAt(AT_THE_ROOT, "library", { skill: skillRowNamed(name) })
+    : skillRuns(AT_THE_ROOT, name, view.key.slice(at + 1));
+}
+
+/** **The studio at a skill's Runs** (#3682), with `run` marked: where a run's chip goes, on the
+ *  chats of the scope the run's chat is in. */
+export function skillRuns(scope: StudioScope, name: string, run?: string): ViewRef {
+  return skillStudioAt(scope, "library", {
+    skill: skillRowNamed(name),
+    tab: "runs",
+    ...(run === undefined ? {} : { run }),
+  });
 }
 
 /** **The history a studio tab keeps** (`useViewHistory`), by its project and its key: the
@@ -512,3 +571,13 @@ export function harnessOfId(id: string): { harness: string; row: string } | unde
 export function routedChatId(session: number): string {
   return `chat-${session}`;
 }
+
+/**
+ * **The chat a skill's page uses a skill in** (#3682): the chat last in front in this project's
+ * window, by its session and the name its tab shows, which keeps its pane while the studio is
+ * looked at. `undefined` while no chat is open, and Use in this chat then says so.
+ */
+export type ChatToUse = { session: number; name: string };
+
+/** {@link ChatToUse}, handed to every pane of a project's window. */
+export const ChatToUseHere = createContext<ChatToUse | undefined>(undefined);

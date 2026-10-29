@@ -441,7 +441,7 @@ export function ChatStrip({
                           )}
                         </QueueRead>
                         {/* **The skill run open in the tab's chat** (SK-3): pressed, it
-                            opens the skill's tab on that run. Beside the tab's button, as
+                            opens the skill's Runs in the studio on that run. Beside the tab's button, as
                             the tasks' chip is. */}
                         {openSkillRun !== undefined && (
                           <SkillRunChip session={chatOf(tabs, id)} onOpen={openSkillRun} />
@@ -616,6 +616,7 @@ type ChatStripProps = {
   browsersOfTab?: (id: number) => readonly BrowserShown[];
   /** Opens a browser's view, from its thumbnail on a tab. */
   openBrowser?: (shown: BrowserShown) => void;
-  /** Opens a skill's tab on one of its runs, from the chip of the run open in a tab's chat. */
-  openSkillRun?: (skill: string, run: string) => void;
+  /** Opens a skill's Runs in the studio on one of its runs, from the chip of the run open in a
+   *  tab's chat (`session`'s). */
+  openSkillRun?: (skill: string, run: string, session: number) => void;
 };

@@ -116,6 +116,7 @@ export const NOTHING_READ: AwayRead = readOf({
   failedTasks: {},
   children: {},
   asking: {},
+  ownWork: {},
 });
 
 /** Whether two reads hold the same shares: the store keeps a share that did not change. */
