@@ -850,6 +850,8 @@ impl FakeDocker {
         let at = |name: &str| dir.path().join(name).display().to_string();
         let script = format!(
             "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$*\" in *_no-namespaces*) \
+             prev=; for a in \"$@\"; do [ \"$prev\" = --cidfile ] && echo {probe} > \"$a\"; \
+             prev=$a; done; \
              exit \"$(cat '{holds}' 2>/dev/null || echo 0)\" ;; esac\ncase \"$1 $2\" in\n  \
              'run '*) [ -f '{run_fails}' ] && \
              {{ echo 'the runtime refused it' >&2; exit 125; }}; cat '{id}' ;;\n  \
@@ -877,6 +879,7 @@ impl FakeDocker {
             run_fails = at("run-fails"),
             containers = at("containers"),
             holds = at("holds"),
+            probe = PROBE_ID,
         );
         stand_in::program(dir.path(), "docker", &script);
         let fake = FakeDocker { dir };
@@ -1925,15 +1928,21 @@ fn rootless_podmans_runtime_config_is_held_to_the_pools_own() {
         }
     };
     let read_only = serde_json::json!(["bind", "ro", "rprivate"]);
-    assert_eq!(
-        changed(&init("/usr/libexec/podman/catatonit", read_only.clone())),
-        Ok(())
-    );
+    let here = tempfile::tempdir().unwrap();
+    let catatonit = here.path().join("catatonit");
+    std::fs::write(&catatonit, "").unwrap();
+    let catatonit = catatonit.display().to_string();
+    assert_eq!(changed(&init(&catatonit, read_only.clone())), Ok(()));
     assert!(changed(&init("/home/runner/catatonit-not", read_only.clone())).is_err());
-    assert!(changed(&init("catatonit", read_only)).is_err());
+    assert!(changed(&init("catatonit", read_only.clone())).is_err());
+    // A folder of that name is no init.
+    let folder = tempfile::tempdir().unwrap();
+    let named = folder.path().join("catatonit");
+    std::fs::create_dir(&named).unwrap();
+    assert!(changed(&init(&named.display().to_string(), read_only)).is_err());
     assert!(
         changed(&init(
-            "/usr/libexec/podman/catatonit",
+            &catatonit,
             serde_json::json!(["bind", "rw", "rprivate"])
         ))
         .is_err()
@@ -2294,6 +2303,39 @@ fn a_runner_whose_purlis_holds_nothing_from_namespaces_is_made_with_the_earlier_
     let fake = FakeDocker::new(&inspected());
     assert!(fake.docker().make(&runner()).is_ok());
     assert!(fake.file("log").contains(SECCOMP_FILE));
+}
+
+/// The id the fake engine gives a probe's container.
+const PROBE_ID: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+
+/// **The probe of an image's `purlis` names no container, and removes only its own** (#3702): a
+/// runner may be named `<pool>-probe`, and making pool `<pool>`'s runner leaves it be.
+#[test]
+fn a_pool_named_after_another_with_probe_survives_that_pools_runner_being_made() {
+    let mut earlier = inspected();
+    earlier[0]["HostConfig"]["SecurityOpt"] =
+        serde_json::json!(["no-new-privileges", earlier_seccomp()]);
+    let fake = FakeDocker::new(&earlier);
+    fake.set("holds", "1");
+    fake.docker()
+        .make(&runner())
+        .expect("made on the earlier profile");
+
+    let log = fake.file("log");
+    assert!(!log.contains("purlis-runner-first-probe"), "{log}");
+    let probe = log
+        .lines()
+        .find(|line| line.contains("_no-namespaces"))
+        .expect("the probe ran");
+    assert!(!probe.contains("--name"), "{probe}");
+    assert!(probe.contains("--cidfile"), "{probe}");
+    // Its own container, by the id the engine gave it, and nothing else of a probe's.
+    assert!(log.contains(&format!("rm --force {PROBE_ID}\n")), "{log}");
+    assert_eq!(
+        log.lines().filter(|line| line.starts_with("rm ")).count(),
+        1,
+        "{log}"
+    );
 }
 
 /// D-2050-26: a runner on the profile that lets the browser engine make namespaces, whose purlis

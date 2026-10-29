@@ -9,8 +9,8 @@
 //! this desktop keeps that runner's container in `<config>/runners-unsandboxed.json`, which no
 //! runner reaches, and the window starts no browser on it and fills it no login until it is made
 //! again: a runner made again is a new container. Kept as `{"version": 1, "containers":
-//! ["<64 lower-case hex>", …]}`, `0600`, at most [`MOST`] containers, the oldest let go first,
-//! and only those of runners this machine still keeps.
+//! ["<64 lower-case hex>", …]}`, `0600`, only those of runners this machine still keeps: a mark
+//! is let go of only once its runner is (#3702).
 //!
 //! **It fails closed**: a file that cannot be read safely, or is not as this module writes it,
 //! counts every runner as one a chat ran on without the sandbox.
@@ -22,16 +22,15 @@ use crate::dockerpool::ContainerId;
 /// The file, in the machine store's folder.
 pub const FILE: &str = "runners-unsandboxed.json";
 
-/// The most containers it keeps.
-pub const MOST: usize = 256;
-
 /// **What the window says where a runner a chat ran on without the sandbox is asked for a
 /// browser or a login**: the pool by its name.
 pub fn refused_on(pool: &str) -> String {
     format!(
         "no browser starts and no login is filled on pool {pool}'s runner: a chat ran there \
-         without the sandbox, beside what runs a browser, so purlis no longer trusts that runner \
-         with one. Remove the pool and add it again to make a new runner."
+         without the sandbox, beside what runs a browser, or may have (its start was not \
+         answered, or the window could not say how a chat it took back there runs), so purlis \
+         no longer trusts that runner with one. Remove the pool and add it again to make a new \
+         runner."
     )
 }
 
@@ -90,7 +89,7 @@ pub fn ran_unsandboxed(config_root: &Path, container: &ContainerId) -> bool {
 }
 
 /// **Keeps that a chat ran without the sandbox on the runner whose container is `container`**,
-/// with those kept before of runners this machine still keeps, at most [`MOST`].
+/// with those kept before of runners this machine still keeps.
 ///
 /// Refused, and nothing written, where either record cannot be read: an unreadable record of
 /// runners says nothing of which to let go of, and one of these is never written over, so it
@@ -153,8 +152,6 @@ fn keep(config_root: &Path, still: &[(String, String)], marked: &[String]) -> Re
         .filter(|id| still.iter().any(|(_, kept)| kept == id) && !marked.contains(id))
         .collect();
     kept.extend(marked.iter().cloned());
-    let over = kept.len().saturating_sub(MOST);
-    kept.drain(..over);
     let text = serde_json::json!({ "version": 1, "containers": kept });
     purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config_root))
         .and_then(|folder| folder.replace_file(FILE, format!("{text:#}\n").as_bytes()))

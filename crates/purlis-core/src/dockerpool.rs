@@ -1199,7 +1199,7 @@ pub fn check_oci(
 }
 
 /// **Whether `mount` is Podman's own init, as `--init` binds it** (#3702): its `catatonit`, from
-/// where the machine's Podman keeps it, bound read-only at `/run/podman-init`, the runner's PID 1
+/// where the machine's Podman keeps it (a regular file there), bound read-only at `/run/podman-init`, the runner's PID 1
 /// that reaps what a chat's programs leave behind. Measured on rootless Podman 2026-10-29.
 fn is_podmans_init(mount: &serde_json::Value) -> bool {
     let field = |name: &str| mount.get(name).and_then(serde_json::Value::as_str);
@@ -1208,6 +1208,7 @@ fn is_podmans_init(mount: &serde_json::Value) -> bool {
         && field("type") == Some("bind")
         && from.is_absolute()
         && from.file_name().is_some_and(|name| name == "catatonit")
+        && std::fs::metadata(from).is_ok_and(|found| found.is_file())
         && mount.get("options") == Some(&serde_json::json!(["bind", "ro", "rprivate"]))
 }
 
@@ -1910,17 +1911,17 @@ impl Docker {
     /// answer within [`PROBE_WITHIN`] is a no, and its container is removed: an image whose
     /// `purlis` does not answer holds up no pool.
     fn holds_from_namespaces(&self, runner: &Runner) -> bool {
-        let name = format!("{}-probe", runner.container());
-        let removed = || {
-            let rm = ["rm".to_owned(), "--force".to_owned(), name.clone()];
-            let _ = self.run(&rm, None, MOST_SAID);
+        // No name of its own, which a runner's could be: the engine's id for it, written to a
+        // file of this run's, is what removes it, and nothing else (#3702).
+        let Ok(folder) = tempfile::tempdir() else {
+            return false;
         };
-        removed();
+        let cidfile = folder.path().join("probe.cid");
         let mut args: Vec<String> = [
             "run",
             "--rm",
-            "--name",
-            &name,
+            "--cidfile",
+            &cidfile.display().to_string(),
             "--user",
             &runner.user.spelled(),
             "--cap-drop",
@@ -1944,7 +1945,15 @@ impl Docker {
             .run(&args, None, MOST_INSPECTED)
             .is_ok();
         if !held {
-            removed();
+            let id = std::fs::read_to_string(&cidfile).unwrap_or_default();
+            if let Ok(id) = ContainerId::new(id.trim()) {
+                let rm = [
+                    "rm".to_owned(),
+                    "--force".to_owned(),
+                    id.as_str().to_owned(),
+                ];
+                let _ = self.run(&rm, None, MOST_SAID);
+            }
         }
         held
     }

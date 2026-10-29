@@ -371,6 +371,10 @@ mod hosted {
                 return Err(Refused::Said(why));
             }
             let link = self.link_for(program).map_err(Refused::Said)?;
+            // Again once its link is had, as a browser's start is checked (#3702).
+            if let Some(why) = self.pool_of(program).and_then(|pool| self.untrusted(&pool)) {
+                return Err(Refused::Said(why));
+            }
             let command = Command::LogIn {
                 program: program.to_owned(),
                 login,
@@ -989,6 +993,11 @@ mod hosted {
                 return Err(NotStarted::Failed(why));
             }
             let (link, project) = self.held(&at).map_err(NotStarted::Failed)?;
+            // Again once held: the hold takes back what the runner still runs, which may leave
+            // it untrusted (#3702).
+            if let Some(why) = at.pool.as_deref().and_then(|pool| self.untrusted(pool)) {
+                return Err(NotStarted::Failed(why));
+            }
             let _one_at_a_time = self.starting.lock().unwrap_or_else(PoisonError::into_inner);
             let running = match link.call(Command::List).map_err(NotStarted::Failed)? {
                 Answer::Chats(listed) => listed

@@ -2327,18 +2327,26 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
                 // Its browsers, from a host of 1.39 or later (#2025), taken back with their
                 // chats once the put back has settled: those of the first hold alone, so a
                 // re-link never hands back a browser this window started since.
-                let (mut browsers, chats): (Vec<HeldProgram>, Vec<HeldProgram>) = programs
+                let (mut browsers, mut chats): (Vec<HeldProgram>, Vec<HeldProgram>) = programs
                     .into_iter()
                     .partition(|program| program.kind == ProgramKind::Browser);
                 // A chat taken back that runs without the sandbox on a pool's runner leaves it
                 // untrusted (D-2050-27), and the browsers there end, not taken back
                 // (D-2050-28): the host clears a browser's data folder as it ends.
+                let taints = |chat: &HeldProgram| {
+                    purlis_core::runnertaint::taints(chat.kind, chat.sandbox.as_ref())
+                };
                 if connection.pool().is_some()
-                    && chats.iter().any(|chat| {
-                        purlis_core::runnertaint::taints(chat.kind, chat.sandbox.as_ref())
-                    })
+                    && chats.iter().any(taints)
+                    && untrust_taking_back(connection, &link, &mut browsers).is_err()
                 {
-                    untrust_taking_back(connection, &link, &mut browsers);
+                    // Where that cannot be kept, such a chat does not run on, as a start whose
+                    // mark cannot be kept does not (#3702).
+                    for chat in chats.extract_if(.., |chat| taints(chat)) {
+                        link.send(Command::Close {
+                            program: chat.program,
+                        });
+                    }
                 }
                 *lock(left) = chats
                     .into_iter()
@@ -2350,11 +2358,11 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
             // counts as one that does (D-2050-27).
             Ok(other) => {
                 tracing::warn!("purlis: the session host answered its programs with {other:?}");
-                untrust_taking_back(connection, &link, &mut Vec::new());
+                let _ = untrust_taking_back(connection, &link, &mut Vec::new());
             }
             Err(why) => {
                 tracing::warn!("purlis: the session host did not say its programs: {why}");
-                untrust_taking_back(connection, &link, &mut Vec::new());
+                let _ = untrust_taking_back(connection, &link, &mut Vec::new());
             }
         }
     }
@@ -2370,18 +2378,24 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
 /// **A chat the window takes back on a pool's runner ran, or may have run, without the sandbox**
 /// (D-2050-27, D-2050-28): the pool is untrusted, and each browser left there, `browsers`, is
 /// ended over `link` rather than taken back. Nothing for a connection to this machine's host.
-fn untrust_taking_back(connection: &Connection, link: &HostLink, browsers: &mut Vec<HeldProgram>) {
+/// Answers why the pool's runners could not be kept so.
+fn untrust_taking_back(
+    connection: &Connection,
+    link: &HostLink,
+    browsers: &mut Vec<HeldProgram>,
+) -> Result<(), String> {
     if connection.pool().is_none() {
-        return;
+        return Ok(());
     }
-    if let Err(why) = connection.ran_unsandboxed() {
+    let kept = connection.ran_unsandboxed().inspect_err(|why| {
         tracing::warn!("purlis: {why}");
-    }
+    });
     for browser in browsers.drain(..) {
         link.send(Command::Close {
             program: browser.program,
         });
     }
+    kept
 }
 
 /// What the window says of a project its host could not hold, before the host's words (#2645).
@@ -2770,7 +2784,7 @@ impl HostedSessions {
         let kind = start.kind;
         // A start whose answer is lost may have started it: on a pool's runner, a chat of a kind
         // that runs without the sandbox counts as one that did (D-2050-27). A host that refused
-        // it, with its code, started nothing.
+        // it with a code that says so ([`NOTHING_STARTED`]) started nothing.
         let unclear = |why: String| {
             if purlis_core::runnertaint::taints(kind, None)
                 && let Err(kept) = self.connection.ran_unsandboxed()
@@ -2814,8 +2828,11 @@ impl HostedSessions {
                         "the session host answered a start with {other:?}"
                     )));
                 }
-                Err(refused) if refused.code.is_empty() => return Err(unclear(refused.why)),
-                Err(refused) => return Err(refused.why),
+                // Only a refusal whose code says nothing started is taken at its word (#3702).
+                Err(refused) if NOTHING_STARTED.contains(&refused.code.as_str()) => {
+                    return Err(refused.why);
+                }
+                Err(refused) => return Err(unclear(refused.why)),
             };
         let (program, pid, confined, ran) = started;
         // A chat that runs on a pool's runner with nothing holding its files leaves that runner
@@ -2841,6 +2858,19 @@ impl HostedSessions {
         Ok(Begun { id, confined, ran })
     }
 }
+
+/// **The refusals of a start that say nothing started** (#3702): any other, or none, may have
+/// started it, and on a pool's runner a chat that may have run without the sandbox counts as one
+/// that did (D-2050-27).
+const NOTHING_STARTED: &[&str] = &[
+    session::UNKNOWN_COMMAND,
+    session::MALFORMED,
+    session::NO_SUCH_PROJECT,
+    session::NOT_ALLOWED,
+    session::NOT_STARTED,
+    session::STOPPED,
+    session::KEY_CHANGED,
+];
 
 /// What [`HostedSessions::started`] heard of a start: its number, the confinement the host named
 /// to this link where it named one, and how the host applied the sandbox to its run (1.29).
