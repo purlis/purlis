@@ -1417,6 +1417,26 @@ fn a_held_connection_nobody_answers_is_refused_recorded_and_told_to_retry_later(
     assert_eq!(retry, vec!["held.invalid:443".to_owned()]);
 }
 
+/// Keep blocked after an Allow of the same host refuses it again, through both the HTTP and the
+/// SOCKS proxy: the later answer wins.
+#[test]
+fn keep_blocked_after_an_allow_refuses_the_host_through_both_proxies() {
+    let (proxy, asks, _) = asking(Duration::from_millis(300));
+    let held = crate::sandbox::hosts::Host::parse("held.invalid").unwrap();
+    asks.allow(&held, By::Chat);
+    // Carried: the proxy tried the host, which never resolves.
+    assert_eq!(socks_connect(&mut to_socks(&proxy), "held.invalid", 443), 4);
+
+    asks.keep_blocked(&held);
+
+    let said = status(
+        &mut to(&proxy),
+        "CONNECT held.invalid:443 HTTP/1.1\r\nHost: held.invalid:443\r\n\r\n",
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    assert_eq!(socks_connect(&mut to_socks(&proxy), "held.invalid", 443), 2);
+}
+
 #[test]
 fn without_a_board_an_ask_is_refused_at_once_as_before() {
     let heard = Heard::default();

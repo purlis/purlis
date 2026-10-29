@@ -97,6 +97,15 @@ fn not_for_this_run_said(tool: &str) -> String {
     )
 }
 
+/// What the asker of `tool` is told where its chat, as this host composed it, is gone or changed
+/// by the time its values came.
+fn chat_gone_said(tool: &str) -> String {
+    format!(
+        "this chat, as purlis started it here, is gone or was started again while the person \
+         was asked, so {tool} did not run: run it again"
+    )
+}
+
 /// What the asker of `tool` is told where the values could not cross the link.
 fn not_taken_said(tool: &str, why: &str) -> String {
     format!(
@@ -226,6 +235,18 @@ impl Relaying {
                     if input.gone() {
                         return;
                     }
+                    // Held to the chat as this host keeps it now, not as it was when the command
+                    // asked (#3407): the person may have changed its reach while they were asked,
+                    // or its chat may have gone. The tool it runs as is the one asked about.
+                    let Some(now) = self
+                        .at()
+                        .and_then(|root| crate::hostedchats::asker(&root, ask.chat))
+                    else {
+                        return brokered::refused(writer, chat_gone_said(&tool));
+                    };
+                    if brokered::armed_as(&now, &ask.secret_exec).as_deref() != Ok(tool.as_str()) {
+                        return brokered::refused(writer, chat_gone_said(&tool));
+                    }
                     let relaying = Arc::clone(self);
                     let told: brokered::Told = Arc::new(move |run: brokered::RunBlocked| {
                         relaying.tell(&Heard::Blocked(run.block));
@@ -235,14 +256,7 @@ impl Relaying {
                         pending: Vec::new(),
                         at: 0,
                     }));
-                    return (self.runs_handed)(
-                        &asker,
-                        ask.secret_exec,
-                        handed,
-                        reader,
-                        writer,
-                        told,
-                    );
+                    return (self.runs_handed)(&now, ask.secret_exec, handed, reader, writer, told);
                 }
                 // The window's own words: a refusal, said as it said it.
                 Replied::Wrote { text } => {

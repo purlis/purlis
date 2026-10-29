@@ -3,7 +3,12 @@
 
 //! What a host keeps of each chat it composed in a sandbox (#2047).
 
+use std::sync::{Arc, Mutex};
+
+use purlis_session_protocol::session::{Layer, Listed, ReachNow};
+
 use super::*;
+use crate::sandbox::reach::{By, Decision};
 
 fn composed(persona: &str) -> Composed {
     Composed {
@@ -11,7 +16,71 @@ fn composed(persona: &str) -> Composed {
         folder: PathBuf::from("/work/chat"),
         harness: None,
         confines: Confines::default(),
+        live: None,
     }
+}
+
+/// What a chat's confinement here allows live, as a test sets it.
+fn reach_now(hosts: &[(&str, Layer)]) -> ReachNow {
+    ReachNow {
+        asked: Vec::new(),
+        allowed_live: hosts
+            .iter()
+            .map(|(host, layer)| Listed {
+                host: (*host).to_owned(),
+                layer: *layer,
+            })
+            .collect(),
+    }
+}
+
+/// What its sandbox's run decides a connection to `host` on 443 by.
+fn decided(asker: &Asker, host: &str) -> Decision {
+    asker
+        .confines
+        .as_ref()
+        .expect("held to its sandbox")
+        .decides()
+        .decide(host, 443, &[443], &[])
+}
+
+/// #3407: a host the person allowed for the chat since it started, on its confinement here, is
+/// one its next run reaches, at the scope it was allowed at; one taken back again is not.
+#[test]
+fn a_chats_run_here_reaches_the_hosts_its_confinement_allows_live_now() {
+    let root = tempfile::tempdir().unwrap();
+    let now = Arc::new(Mutex::new(reach_now(&[])));
+    let live: Live = {
+        let now = Arc::clone(&now);
+        Arc::new(move || now.lock().unwrap().clone())
+    };
+    record(
+        root.path(),
+        3,
+        Composed {
+            live: Some(Reached(live)),
+            ..composed("devops")
+        },
+    );
+    assert_eq!(
+        decided(&asker(root.path(), 3).unwrap(), "pypi.example.com"),
+        Decision::Ask,
+        "not compiled in"
+    );
+
+    *now.lock().unwrap() = reach_now(&[("pypi.example.com", Layer::Chat)]);
+    assert_eq!(
+        decided(&asker(root.path(), 3).unwrap(), "pypi.example.com"),
+        Decision::Allowed(By::Chat),
+        "allowed live since it started"
+    );
+
+    *now.lock().unwrap() = reach_now(&[]);
+    assert_eq!(
+        decided(&asker(root.path(), 3).unwrap(), "pypi.example.com"),
+        Decision::Ask,
+        "taken back again"
+    );
 }
 
 #[test]

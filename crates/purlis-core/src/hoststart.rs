@@ -412,6 +412,37 @@ where
     }
 }
 
+/// The host's [`Beside`] as two calls, what asks a chat's router extension at its start
+/// (SK-15b), and what reads a confinement it started as it is now (#3407).
+impl<C, R, L> Beside
+    for (
+        C,
+        R,
+        std::sync::Arc<dyn crate::skills::router::AskRouter>,
+        L,
+    )
+where
+    C: Fn(&session::ConfinePlan) -> Result<session::Confined, String>,
+    R: Fn(serde_json::Value) -> Result<(), String>,
+    L: Fn(&str) -> Option<crate::hostedchats::Live>,
+{
+    fn confine(&self, plan: &session::ConfinePlan) -> Result<session::Confined, String> {
+        (self.0)(plan)
+    }
+
+    fn record(&self, entry: serde_json::Value) -> Result<(), String> {
+        (self.1)(entry)
+    }
+
+    fn router(&self) -> Option<std::sync::Arc<dyn crate::skills::router::AskRouter>> {
+        Some(std::sync::Arc::clone(&self.2))
+    }
+
+    fn reach_of(&self, confinement: &str) -> Option<crate::hostedchats::Live> {
+        (self.3)(confinement)
+    }
+}
+
 /// What the host does beside a start it composes: what [`compose`] asks of it.
 pub trait Beside {
     /// The confinement `plan` plans, started by the host as the program's own.
@@ -422,6 +453,14 @@ pub trait Beside {
     /// none, so a chat whose workspace or persona chose one is routed by the built-in router,
     /// and its routing record says why.
     fn router(&self) -> Option<std::sync::Arc<dyn crate::skills::router::AskRouter>> {
+        None
+    }
+    /// What reads confinement `confinement`, which this host started for the chat being
+    /// composed, as it is now (#3407): the hosts allowed live for the chat since it started,
+    /// which a run of its tool here is held to too. `None` where this host reads none, and the
+    /// chat's runs are held to what its sandbox was compiled to.
+    fn reach_of(&self, confinement: &str) -> Option<crate::hostedchats::Live> {
+        let _ = confinement;
         None
     }
 }
@@ -590,9 +629,12 @@ pub fn compose_ready(
     } else {
         hooks
     };
-    let confinement = match sandbox.and_then(crate::sandbox::Applied::plan) {
-        Some(plan) => Some(confined(&plan, beside)?),
-        None => None,
+    let (confinement, live) = match sandbox.and_then(crate::sandbox::Applied::plan) {
+        Some(plan) => {
+            let (confinement, id) = confined(&plan, beside)?;
+            (Some(confinement), beside.reach_of(&id))
+        }
+        None => (None, None),
     };
     let socket = starting
         .reporting
@@ -675,6 +717,7 @@ pub fn compose_ready(
                 folder: cwd.clone(),
                 harness: ready.harness,
                 confines: applied.confines().clone(),
+                live: live.map(crate::hostedchats::Reached),
             },
         ),
     }
@@ -1259,16 +1302,19 @@ pub fn declared_identity_vars(root: &Path) -> Vec<String> {
     names
 }
 
-/// The confinement `plan` plans, started by the host, as the chat is named one.
+/// The confinement `plan` plans, started by the host, as the chat is named one, and the id the
+/// host holds it by.
 fn confined(
     plan: &crate::sandbox::plan::Plan,
     beside: &dyn Beside,
-) -> Result<crate::sandbox::Confinement, String> {
+) -> Result<(crate::sandbox::Confinement, String), String> {
     let confined = beside.confine(&plan.wired())?;
+    let id = confined.confinement.clone();
     crate::sandbox::Confinement::held_elsewhere(
         crate::sandbox::Placed::of_wire(&confined),
         Box::new(HeldByThisHost(confined.confinement)),
     )
+    .map(|confinement| (confinement, id))
     .map_err(|why| why.to_string())
 }
 
