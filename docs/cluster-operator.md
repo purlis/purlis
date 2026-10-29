@@ -412,15 +412,20 @@ and kept when the release is uninstalled, as that one is:
 
 - a namespace named `purlis-runners-*` is made only by the operator's service account, and no
   one else changes its `app.kubernetes.io/managed-by` label or `runners.purlis.dev/requester`
-  annotation;
+  annotation, through the namespace or its `status` and `finalize`;
 - the operator makes no other namespace;
 - the operator makes or changes a role binding only in a runner namespace, only
-  `purlis-runner-owner` of the cluster role `purlis-runner-owner`, and only for one subject: a
-  user whose name does not start `system:`, or a service account other than its own;
+  `purlis-runner-owner` of the cluster role `purlis-runner-owner`, and only for one subject: the
+  person the namespace's `runners.purlis.dev/requester` names, as a user whose name does not
+  start `system:` or as the service account a `system:serviceaccount:<namespace>:<name>`
+  requester names, and never the operator itself;
 - the operator makes or changes a quota only in a runner namespace, and only `purlis-person`.
 
 The operator uses a runner namespace only while that policy's binding is in force, and only one
-made after it was, 30 seconds after the binding was made, as with Claims. While no binding puts
+made after it was, 30 seconds after the binding was made, as with Claims. It makes one only then,
+too: a Claim it meets sooner, as on the upgrade that brings the policy, waits until then with
+nothing made. Its other labels, annotations and owners are a namespace's own, which anyone who
+may change namespaces may change, as with any namespace. While no binding puts
 it in force, a Claim says `PolicyNotInForce`, naming the policy. A runner namespace made before
 says `NamespaceInTheWay`; making the binding again does that to every runner namespace there is,
 so a cluster admin then deletes them, with the runners in them, and their people's Claims are

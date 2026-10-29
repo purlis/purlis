@@ -444,6 +444,8 @@ fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_
         matched,
         [
             ("", "namespaces"),
+            ("", "namespaces/finalize"),
+            ("", "namespaces/status"),
             ("", "resourcequotas"),
             ("rbac.authorization.k8s.io", "rolebindings"),
         ]
@@ -492,6 +494,14 @@ fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_
             "{variables:?}"
         );
     }
+    // The one subject a binding may name is the person its runner namespace is for.
+    assert_eq!(variables[4].0, "requester");
+    assert!(
+        variables[4].1.contains(&format!(
+            "namespaceObject.metadata.annotations['{annotation}']"
+        )),
+        "{variables:?}"
+    );
     let validations: Vec<String> = spec["validations"]
         .as_array()
         .expect("validations")
@@ -516,8 +526,9 @@ fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_
         format!("object.metadata.name=='{owner}'"),
         format!("object.roleRef.kind=='ClusterRole'&&object.roleRef.name=='{owner}'"),
         "has(object.subjects)&&size(object.subjects)==1".to_owned(),
-        "object.subjects[0].kind=='User'&&!object.subjects[0].name.startsWith('system:')".to_owned(),
-        "object.subjects[0].namespace=='purlis-system'&&object.subjects[0].name=='purlis-cluster-operator'".to_owned(),
+        "object.subjects[0].kind=='User'&&!object.subjects[0].name.startsWith('system:')&&object.subjects[0].name==variables.requester".to_owned(),
+        "'system:serviceaccount:'+object.subjects[0].namespace+':'+object.subjects[0].name==variables.requester".to_owned(),
+        format!("variables.requester!='{operator}'"),
     ] {
         assert!(validations[2].contains(&words), "{words}: {}", validations[2]);
     }

@@ -848,6 +848,107 @@ async fn the_cluster_refuses_the_operator_exec_attach_and_secrets() {
     );
 }
 
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_runner_namespace_made_again_as_its_policys_binding_settles_waits_for_it() {
+    use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
+    use purlis_cluster_operator::RUNNER_NAMESPACES_POLICY;
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-settling").await;
+    let pools = Api::<Pool>::all(client.clone());
+    pools
+        .patch(
+            "e2e-settling",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&Pool::new(
+                "e2e-settling",
+                PoolSpec {
+                    image: runner_image(),
+                    kept_volume: Default::default(),
+                },
+            )),
+        )
+        .await
+        .expect("the pool");
+    let claims = claims_in(&client, &scratch.name);
+    claims
+        .create(
+            &PostParams::default(),
+            &claim("ada-settling", "e2e-settling"),
+        )
+        .await
+        .expect("the claim");
+    let ready = || async {
+        eventually("the claim is ready", Duration::from_secs(400), || async {
+            let claim = claims.get("ada-settling").await.ok()?;
+            (ready_of(&claim)?.0 == "True").then_some(())
+        })
+        .await
+    };
+    ready().await;
+
+    // As on an upgrade that brings the policy: its binding is made while the operator already
+    // has a claim to serve, and the claim's runner namespace is not there.
+    let bindings = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone());
+    let installed = bindings
+        .get(RUNNER_NAMESPACES_POLICY)
+        .await
+        .expect("the installed binding");
+    bindings
+        .delete(RUNNER_NAMESPACES_POLICY, &DeleteParams::default())
+        .await
+        .expect("the binding deleted");
+    eventually("the binding is gone", Duration::from_secs(30), || async {
+        bindings
+            .get_opt(RUNNER_NAMESPACES_POLICY)
+            .await
+            .ok()?
+            .is_none()
+            .then_some(())
+    })
+    .await;
+    restore_binding(&bindings, &installed).await;
+    let namespaces = Api::<Namespace>::all(client.clone());
+    let _ = namespaces
+        .delete(&runners(), &DeleteParams::default())
+        .await;
+
+    // The operator makes it again only once the binding is in force, and serves the claim there.
+    let bound = bindings
+        .get(RUNNER_NAMESPACES_POLICY)
+        .await
+        .expect("the binding")
+        .creation_timestamp()
+        .expect("its creation time");
+    let in_force = bound
+        .0
+        .checked_add(purlis_cluster_operator::SETTLE)
+        .expect("a time");
+    eventually(
+        "the runner namespace made again, after the binding is in force",
+        Duration::from_secs(300),
+        || async {
+            let held = namespaces.get_opt(&runners()).await.ok()??;
+            let made = held.creation_timestamp()?;
+            (held.metadata.deletion_timestamp.is_none() && made.0 > in_force).then_some(())
+        },
+    )
+    .await;
+    eventually(
+        "the claim's runner asked for again there",
+        Duration::from_secs(120),
+        || async {
+            upstream_claim_made(&client, "ada-settling")
+                .await
+                .then_some(())
+        },
+    )
+    .await;
+    ready().await;
+    let _ = pools.delete("e2e-settling", &DeleteParams::default()).await;
+    scratch.end().await;
+}
+
 /// Whether `made` was refused at admission, in words that hold `words`.
 fn refused_saying<T: std::fmt::Debug>(made: &Result<T, kube::Error>, words: &str) -> bool {
     matches!(made, Err(kube::Error::Api(status)) if status.code == 403 && status.message.contains(words))
@@ -932,6 +1033,19 @@ async fn a_runner_namespace_and_what_the_operator_binds_are_guarded_at_admission
         )
         .await;
     assert!(labelled.is_ok(), "{labelled:?}");
+    let unmarked = namespaces
+        .patch(
+            &runners(),
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({
+                "metadata": { "labels": { person::MANAGED_BY.0: null } }
+            })),
+        )
+        .await;
+    assert!(
+        refused_saying(&unmarked, "changes who it is for"),
+        "{unmarked:?}"
+    );
 
     // The operator binds purlis-runner-owner in a runner namespace alone, to one person who is
     // not itself, and caps a person there alone: asked as its service account.
@@ -963,6 +1077,35 @@ async fn a_runner_namespace_and_what_the_operator_binds_are_guarded_at_admission
         )
         .await;
     assert!(refused_saying(&to_itself, words), "{to_itself:?}");
+    // Nor to anyone but the person the runner namespace is for, nor a group, nor to a Role of
+    // the role's name: each refused before the cluster looks for the binding already there.
+    let in_runners = Api::<RoleBinding>::namespaced(as_operator.clone(), &runners());
+    let mut role = binding(
+        &runners(),
+        serde_json::json!({ "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": ADMIN }),
+    );
+    role.role_ref.kind = "Role".into();
+    for (what, wrong) in [
+        ("another person", binding(&runners(), someone.clone())),
+        (
+            "a group",
+            binding(
+                &runners(),
+                serde_json::json!({ "apiGroup": "rbac.authorization.k8s.io", "kind": "Group", "name": "system:authenticated" }),
+            ),
+        ),
+        (
+            "a system user",
+            binding(
+                &runners(),
+                serde_json::json!({ "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": "system:kube-scheduler" }),
+            ),
+        ),
+        ("a Role", role),
+    ] {
+        let made = in_runners.create(&PostParams::default(), &wrong).await;
+        assert!(refused_saying(&made, words), "{what}: {made:?}");
+    }
     let quota: ResourceQuota = serde_json::from_value(serde_json::json!({
         "apiVersion": "v1", "kind": "ResourceQuota",
         "metadata": { "name": person::QUOTA, "namespace": scratch.name },

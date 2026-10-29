@@ -113,6 +113,9 @@ pub fn is_theirs(held: &Namespace, requester: &str) -> bool {
 pub enum RunnerNamespace {
     /// Nothing: the operator makes it, while the policy on runner namespaces is in force.
     Missing,
+    /// Nothing, and the policy's binding is still settling: a namespace made now would be made
+    /// before it was in force, so nothing is made until `until`.
+    Settling { until: k8s_openapi::jiff::Timestamp },
     /// The one the operator made for them, under the policy: it acts in it.
     Theirs(Box<Namespace>),
     /// A namespace it did not make for them, or made before the policy was in force: nothing is
@@ -123,21 +126,34 @@ pub enum RunnerNamespace {
     PolicyNotInForce,
 }
 
-/// **Whether `held` is `requester`'s runner namespace to act in** (#2055): [`is_theirs`], and
-/// made after `since`, when the policy on runner namespaces
+/// How long past the time the policy on runner namespaces is in force from the operator waits
+/// before it makes one: the API server's clock and the operator's may differ a little.
+pub const SETTLE_MARGIN: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// **Whether `held` is `requester`'s runner namespace to act in** (#2055), at `now`:
+/// [`is_theirs`], and made after `since`, when the policy on runner namespaces
 /// ([`crate::admission::RUNNER_NAMESPACES_POLICY`]) is in force from (`None` while it is not).
 /// Under that policy only the operator makes a runner namespace or changes who it is for, so
-/// one made since then and marked for them is the operator's.
+/// one made since then and marked for them is the operator's. With none, one is made only once
+/// `since` is past, by [`SETTLE_MARGIN`].
 pub fn runner_namespace_of(
     held: Option<Namespace>,
     requester: &str,
     since: Option<k8s_openapi::jiff::Timestamp>,
+    now: k8s_openapi::jiff::Timestamp,
 ) -> RunnerNamespace {
     let Some(since) = since else {
         return RunnerNamespace::PolicyNotInForce;
     };
     let Some(held) = held else {
-        return RunnerNamespace::Missing;
+        let until = since
+            .checked_add(SETTLE_MARGIN)
+            .unwrap_or(k8s_openapi::jiff::Timestamp::MAX);
+        return if now < until {
+            RunnerNamespace::Settling { until }
+        } else {
+            RunnerNamespace::Missing
+        };
     };
     if !is_theirs(&held, requester) {
         return RunnerNamespace::InTheWay {
@@ -524,6 +540,23 @@ pub fn status_of_runner_namespaces_not_in_force() -> ClaimStatus {
                 "The policy {} is not in force, so no runner namespace is made or used. A \
                  cluster admin can install it again, and this claim goes on.",
                 crate::admission::RUNNER_NAMESPACES_POLICY
+            ),
+        )],
+    }
+}
+
+/// A Claim's status once its requester's quota in `namespace` has not counted for a while
+/// ([`crate::reconcile`]'s `UNCOUNTED_FOR`): its runner is not asked for until it has.
+pub fn status_of_an_uncounted_quota(namespace: &str) -> ClaimStatus {
+    ClaimStatus {
+        link_key: None,
+        conditions: vec![condition(
+            "False",
+            "Starting",
+            format!(
+                "The runner is asked for once the quota {QUOTA} in {namespace} has counted what \
+                 is in use there. If this lasts, a cluster admin can check that the cluster's \
+                 quota controller runs."
             ),
         )],
     }

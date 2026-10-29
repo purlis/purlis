@@ -51,7 +51,7 @@ pub use admission::{
     Admission, POLICY, RUNNER_NAMESPACES_POLICY, SETTLE, admission, in_force_since,
 };
 pub use reconcile::{
-    FIELD_MANAGER, LinkKeyIs, OVER_QUOTA_AGAIN, claims_of_upstream, claims_woken_by,
+    FIELD_MANAGER, LinkKeyIs, OVER_QUOTA_AGAIN, UNCOUNTED_FOR, claims_of_upstream, claims_woken_by,
     pool_objects_go_with, pool_status_names, retry_after_conflict, run, settled, status_of,
     status_of_a_deleted_pool, status_of_a_missing_pool, status_of_an_object_in_the_way,
     status_patch, status_withdrawn,

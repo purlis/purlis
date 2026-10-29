@@ -390,20 +390,21 @@ fn made_at(made: &str) -> k8s_openapi::api::core::v1::Namespace {
 fn a_runner_namespace_is_acted_in_only_when_made_for_its_person_under_the_policy() {
     use person::RunnerNamespace;
     let since = Some(at("2026-10-29T10:00:30Z").0);
+    let now = at("2026-10-29T12:00:00Z").0;
     let ada = "ada@example.com";
     let made = made_at("2026-10-29T11:00:00Z");
     assert_eq!(
-        person::runner_namespace_of(Some(made.clone()), ada, since),
+        person::runner_namespace_of(Some(made.clone()), ada, since, now),
         RunnerNamespace::Theirs(Box::new(made.clone()))
     );
     assert_eq!(
-        person::runner_namespace_of(None, ada, since),
+        person::runner_namespace_of(None, ada, since, now),
         RunnerNamespace::Missing
     );
     // Made before the policy was in force, or within its settling time: whoever made it.
     for before in ["2026-10-29T09:00:00Z", "2026-10-29T10:00:30Z"] {
         assert_eq!(
-            person::runner_namespace_of(Some(made_at(before)), ada, since),
+            person::runner_namespace_of(Some(made_at(before)), ada, since, now),
             RunnerNamespace::InTheWay {
                 made_before_policy: true
             },
@@ -412,18 +413,18 @@ fn a_runner_namespace_is_acted_in_only_when_made_for_its_person_under_the_policy
     }
     // Someone else's, or one not marked as the operator's.
     assert_eq!(
-        person::runner_namespace_of(Some(made.clone()), "bea@example.com", since),
+        person::runner_namespace_of(Some(made.clone()), "bea@example.com", since, now),
         RunnerNamespace::InTheWay {
             made_before_policy: false
         }
     );
     // No binding in force: nothing is made or used, not even their own.
     assert_eq!(
-        person::runner_namespace_of(Some(made), ada, None),
+        person::runner_namespace_of(Some(made), ada, None, now),
         RunnerNamespace::PolicyNotInForce
     );
     assert_eq!(
-        person::runner_namespace_of(None, ada, None),
+        person::runner_namespace_of(None, ada, None, now),
         RunnerNamespace::PolicyNotInForce
     );
 }
@@ -489,5 +490,35 @@ fn a_namespace_in_the_way_says_why() {
         not_ours.conditions[0]
             .message
             .contains(purlis_cluster_operator::RUNNER_NAMESPACES_POLICY)
+    );
+}
+
+#[test]
+fn no_runner_namespace_is_made_while_the_policys_binding_settles() {
+    use person::RunnerNamespace;
+    let since = at("2026-10-29T10:00:30Z").0;
+    let until = at("2026-10-29T10:00:35Z").0;
+    // As on an upgrade, the operator meets a Claim within seconds of the binding being made: it
+    // waits, and makes nothing, until the binding is in force and a little after.
+    for now in [
+        "2026-10-29T10:00:01Z",
+        "2026-10-29T10:00:30Z",
+        "2026-10-29T10:00:34Z",
+    ] {
+        assert_eq!(
+            person::runner_namespace_of(None, "ada@example.com", Some(since), at(now).0),
+            RunnerNamespace::Settling { until },
+            "{now}"
+        );
+    }
+    assert_eq!(
+        person::runner_namespace_of(None, "ada@example.com", Some(since), until),
+        RunnerNamespace::Missing
+    );
+    // One made since, read back, is theirs.
+    let made = made_at("2026-10-29T10:00:36Z");
+    assert_eq!(
+        person::runner_namespace_of(Some(made.clone()), "ada@example.com", Some(since), until),
+        RunnerNamespace::Theirs(Box::new(made))
     );
 }

@@ -177,8 +177,8 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 #
 # The second policy, purlis-runner-namespaces (#2055): only the operator makes a runner
 # namespace (purlis-runners-*) or changes who it is for, and the operator binds
-# purlis-runner-owner, and makes the quota purlis-person, in a runner namespace alone, for one
-# person who is not the operator.
+# purlis-runner-owner, and makes the quota purlis-person, in a runner namespace alone, for the
+# one person that namespace is for, who is not the operator.
 ";
 
 /// The plain manifests the chart's default render makes: `operator.yaml` and `policy.yaml`.

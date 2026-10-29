@@ -12,7 +12,7 @@
 
 ### Security
 
-- **A cluster operator person's runners are theirs alone to reach.** Each person's runner
+- **Each person's runners on a cluster pool are theirs alone to reach.** Each person's runner
   namespace binds only them to `purlis-runner-owner`, and the new admission policy
   `purlis-runner-namespaces` lets only the operator make a runner namespace, and the operator bind
-  only that role, only there (#2055, docs/cluster-operator.md).
+  only that role, only there, only to that person (#2055, docs/cluster-operator.md).

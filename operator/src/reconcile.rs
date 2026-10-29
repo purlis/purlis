@@ -186,7 +186,12 @@ struct Context {
     claims: Store<Claim>,
     /// How many times in a row each Claim met an object changed under it.
     conflicts: Mutex<HashMap<ObjectRef<Claim>, u32>>,
+    /// Since when each Claim has waited for its requester's quota to count.
+    uncounted: Mutex<HashMap<ObjectRef<Claim>, std::time::Instant>>,
 }
+
+/// How long a Claim waits for its requester's quota to count before it says so.
+pub const UNCOUNTED_FOR: Duration = Duration::from_secs(60);
 
 /// One pass over `claim`. Whenever it ends without an error, the Claim's run of conflicts is
 /// over, and the counts of Claims that are gone are dropped.
@@ -232,8 +237,12 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
 }
 
 /// **`requester`'s runner namespace**, as the cluster holds it and as the policy on runner
-/// namespaces lets the operator take it ([`person::runner_namespace_of`]).
-async fn runner_namespace_held(client: &Client, requester: &str) -> Result<RunnerNamespace, Error> {
+/// namespaces lets the operator take it ([`person::runner_namespace_of`]), and when that policy
+/// is in force from.
+async fn runner_namespace_held(
+    client: &Client,
+    requester: &str,
+) -> Result<(RunnerNamespace, Option<k8s_openapi::jiff::Timestamp>), Error> {
     let binding = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone())
         .get_opt(RUNNER_NAMESPACES_POLICY)
         .await?;
@@ -241,7 +250,11 @@ async fn runner_namespace_held(client: &Client, requester: &str) -> Result<Runne
     let held = Api::<Namespace>::all(client.clone())
         .get_opt(&person::runner_namespace(requester))
         .await?;
-    Ok(person::runner_namespace_of(held, requester, since))
+    let now = k8s_openapi::jiff::Timestamp::now();
+    Ok((
+        person::runner_namespace_of(held, requester, since, now),
+        since,
+    ))
 }
 
 /// **`requester`'s runner namespace, made ready** (#2055): made where there is none, with the
@@ -255,11 +268,11 @@ async fn runner_namespace_ready(
     quota: &Quota,
 ) -> Result<Result<(Namespace, ResourceQuota), RunnerNamespace>, Error> {
     let runner = match runner_namespace_held(client, requester).await? {
-        RunnerNamespace::Theirs(runner) => *runner,
+        (RunnerNamespace::Theirs(runner), _) => *runner,
         // Made, not applied: a namespace someone made under the name since is refused, and the
-        // next pass finds it in the way.
-        RunnerNamespace::Missing => {
-            Api::<Namespace>::all(client.clone())
+        // next pass finds it in the way. What was made is acted in only once it reads as theirs.
+        (RunnerNamespace::Missing, since) => {
+            let made = Api::<Namespace>::all(client.clone())
                 .create(
                     &PostParams {
                         field_manager: Some(FIELD_MANAGER.to_owned()),
@@ -267,9 +280,18 @@ async fn runner_namespace_ready(
                     },
                     &person::namespace_for(requester),
                 )
-                .await?
+                .await?;
+            match person::runner_namespace_of(
+                Some(made),
+                requester,
+                since,
+                k8s_openapi::jiff::Timestamp::now(),
+            ) {
+                RunnerNamespace::Theirs(runner) => *runner,
+                refused => return Ok(Err(refused)),
+            }
         }
-        refused => return Ok(Err(refused)),
+        (refused, _) => return Ok(Err(refused)),
     };
     let name = runner.name_any();
     let wanted = person::owner_binding(&name, requester);
@@ -338,7 +360,7 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     let Some(pool) = pool else {
         // The runner it was given, if any, keeps running: the operator changes nothing for it,
         // and says what upstream says of it.
-        let held = match runner_namespace_held(client, requester).await? {
+        let held = match runner_namespace_held(client, requester).await?.0 {
             RunnerNamespace::Theirs(runner) => {
                 let upstream_claims =
                     Api::<SandboxClaim>::namespaced(client.clone(), &runner.name_any());
@@ -360,6 +382,16 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     };
     let (runner, quota) = match runner_namespace_ready(client, requester, &context.quota).await? {
         Ok(ready) => ready,
+        // The policy's binding is settling: nothing is made, and the claim is looked at again
+        // once it is in force.
+        Err(RunnerNamespace::Settling { until }) => {
+            let wait = until
+                .duration_since(k8s_openapi::jiff::Timestamp::now())
+                .unsigned_abs()
+                .min(vouch::RECHECK);
+            tracing::info!(claim = %name, %namespace, ?wait, "waiting for the policy on runner namespaces to be in force");
+            return Ok(Action::requeue(wait.max(Duration::from_secs(1))));
+        }
         Err(refused) => {
             let runner = person::runner_namespace(requester);
             let status = match refused {
@@ -453,9 +485,26 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     }
     .await;
     let (template_now, applied) = match written {
-        Ok(written) => written,
+        Ok(written) => {
+            context
+                .uncounted
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .remove(&ObjectRef::from_obj(&*claim));
+            written
+        }
         // A quota just made has not counted yet: looked at again soon, saying nothing new.
         Err(Error::Kube(error)) if person::is_quota_not_counted_yet(&error) => {
+            let since = *context
+                .uncounted
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .entry(ObjectRef::from_obj(&*claim))
+                .or_insert_with(std::time::Instant::now);
+            if since.elapsed() >= UNCOUNTED_FOR {
+                let status = person::status_of_an_uncounted_quota(&runner_name);
+                write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
+            }
             return Ok(Action::requeue(vouch::KEY_WAIT));
         }
         Err(Error::Kube(error)) if person::is_over_quota(&error) => {
@@ -548,6 +597,8 @@ async fn cleanup(claim: &Claim, context: &Context) -> Result<Action, Error> {
     if let Found::Ours { uid } = made_for_claim(held.as_ref(), &runner, claim) {
         delete_by_uid(&upstream_claims, &claim.name_any(), uid).await?;
     }
+    // Every Claim known first, so one not read yet never lets the pool's objects go under it.
+    let _ = context.claims.wait_until_ready().await;
     if pool_objects_go_with(claim, context.claims.state()) {
         let object = upstream::name_for(&claim.spec.pool);
         let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &runner_name);
@@ -961,6 +1012,7 @@ async fn run_claims(client: Client, signing: Arc<SigningKey>, quota: Quota) {
                 quota,
                 claims: known_claims,
                 conflicts: Mutex::new(HashMap::new()),
+                uncounted: Mutex::new(HashMap::new()),
             }),
         )
         .for_each(|result| async move {

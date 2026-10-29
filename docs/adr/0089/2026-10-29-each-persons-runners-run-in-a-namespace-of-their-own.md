@@ -30,6 +30,7 @@ itself, reads no Secret, and binds only `purlis-runner-owner`, only in runner na
    bound or a namespace made: `purlis-runner-namespaces`, a ValidatingAdmissionPolicy installed
    beside the policy on Claims. Only the operator makes a runner namespace or changes who it is
    for; the operator makes no other namespace, binds only `purlis-runner-owner`, only in a runner
-   namespace, for one subject that is not itself, and makes only the quota `purlis-person`, only
-   in a runner namespace. The operator acts only in a runner namespace made while that policy was
-   in force, as it acts only on Claims made under the policy on Claims.
+   namespace, only to the one person that namespace is for, never itself, and makes only the
+   quota `purlis-person`, only in a runner namespace. The operator makes and acts in a runner
+   namespace only once that policy is in force, as it acts only on Claims made under the policy
+   on Claims.
