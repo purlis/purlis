@@ -62,6 +62,7 @@ import {
 } from "./skillStudio";
 import { budgetSaid, budgetShort } from "./UseSkill";
 import { backSaid } from "./chatState";
+import { listed as namesListed } from "./chatMoves";
 import { handedOff, tasksOf, type ListedChat } from "./chatsTree";
 import { MAIN } from "./here";
 import {
@@ -181,6 +182,9 @@ export type Said = {
   /** A line about work still under way ("Cloning 2 repo(s)…"), which the next line replaces:
    *  said, but not kept under Results. */
   progress?: boolean;
+  /** **The one workspace it is about**, where it is about a whole workspace (a workspace made):
+   *  its notice hangs from that workspace's chip in the title bar (`noticePlace.ts`, #3648). */
+  workspace?: string;
 };
 
 /** What the window says of a row's answer: nothing for a quiet success. */
@@ -872,6 +876,9 @@ export type Now = {
   /** Where a chat can move (#2048): each pool it may move to, or `null` for this machine, for a
    *  chat on a pool's runner. Nothing for a chat that does not move. */
   movesTo?: (session: number) => readonly (string | null)[];
+  /** The other chats of a chat's workspace running where it runs (#3453), by name: they share
+   *  its clones, so they move with it, and its Move rows name them. */
+  movesWith?: (session: number) => readonly string[];
   /** Why each chat's Smart close stopped without its record (SI-8f), for its needs-you rows. */
   stopped?: Readonly<Record<number, string>>;
   /**
@@ -1429,9 +1436,13 @@ function can(id: string, title: string, does: Does, name?: string): Offer {
 export const MOVE_TO_RUNNER_NOTE =
   "Its branch, uncommitted work and conversation go with it at its next pause. Its browsers start fresh there.";
 
-/** What Move here says it does (#2048). */
+/** What Move here says it does (#2048), and of a clone the runner made (#3454). */
 export const MOVE_HERE_NOTE =
-  "Its branch, uncommitted work and conversation come back to this machine at its next pause.";
+  "Its branch, uncommitted work and conversation come back to this machine at its next pause. A repository cloned only on the runner stays there.";
+
+/** What a Move row says of the other chats of the workspace that move with it (#3453). */
+export const MOVE_TOGETHER_NOTE =
+  "They share its workspace's clones, so they move together: each keeps working until it is at a pause, and none starts there before all of their work is there. If one cannot move, none does.";
 
 /** What Restart chat keeps and what it changes. */
 const RESTART_KEEPS =
@@ -2140,15 +2151,21 @@ export function catalogue(now: Now): Offer[] {
     const chat = chatOf(now.tabs, tab);
     if (chat === undefined) continue;
     const name = now.tabs.byId[tab].name;
+    // The other chats of its workspace move with it (#3453), so the row names them.
+    const others = now.movesWith?.(chat) ?? [];
+    const together = others.length === 0 ? "" : ` with ${namesListed(others)}`;
     for (const to of now.movesTo?.(chat) ?? []) {
+      const note = to === null ? MOVE_HERE_NOTE : MOVE_TO_RUNNER_NOTE;
       offers.push({
         ...can(
           `tab.move:${tab}:${to ?? ""}`,
-          to === null ? `Move chat ${name} here` : `Move chat ${name} to pool ${to}`,
+          to === null
+            ? `Move chat ${name}${together} here`
+            : `Move chat ${name}${together} to pool ${to}`,
           { verb: "moveChat", tab, to },
           name,
         ),
-        note: to === null ? MOVE_HERE_NOTE : MOVE_TO_RUNNER_NOTE,
+        note: others.length === 0 ? note : `${note} ${MOVE_TOGETHER_NOTE}`,
       });
     }
   }

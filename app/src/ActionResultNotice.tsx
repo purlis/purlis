@@ -21,7 +21,11 @@ export function ActionResultNotice({
   onSettings,
   cause,
   kept = false,
+  escape = true,
 }: {
+  /** Esc while the keyboard is in it closes it. Off where what it stands in answers Esc for
+   *  every notice it holds: a chip's card (#3648). */
+  escape?: boolean;
   /** Listed under Results, where the Inbox's list draws it: its keyboard handler's element is
    *  then no box of its own, since the notice is drawn in the list's place, and it is no live
    *  region, since the notice at the top said it already. */
@@ -61,7 +65,7 @@ export function ActionResultNotice({
       ? undefined
       : { label: settings.label, onPress: () => onSettings(settings.link) };
   const closeOnEsc = (event: KeyboardEvent) => {
-    if (event.key !== "Escape") return;
+    if (!escape || event.key !== "Escape") return;
     event.stopPropagation();
     onClose();
   };

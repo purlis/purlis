@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { PlaneId } from "./bindings";
-import { moveSaid, putAwayMove, useChatMoves } from "./chatMoves";
+import { forgetMove, moveCancellable, moveSaid, putAwayMove, useChatMoves } from "./chatMoves";
 import { Notice } from "./Notice";
 
 /**
@@ -22,6 +22,19 @@ export function MoveNotice({ plane, session }: { plane: PlaneId; session: number
         tone="trouble"
         label="Move"
         onDismiss={() => putAwayMove(plane, session)}
+      >
+        {said.words}
+      </Notice>
+    );
+  // Being made now, past cancelling (#3814): it says so, and Dismiss only hides the line.
+  if (!moveCancellable(one))
+    return (
+      <Notice
+        cause={`chat-move:${session}`}
+        at="pane"
+        label="Move"
+        onDismiss={() => forgetMove(plane, session)}
+        dismissSays="Hides this line. The move is being made, and goes on."
       >
         {said.words}
       </Notice>

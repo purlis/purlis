@@ -44,12 +44,18 @@
 //!
 //! [`start_of_a_persona_chat`]: the persona chat is a chat like any other, started on a
 //! profile as the project and this machine declare it. Nothing of how the asking chat runs
-//! goes with it: not a grant it holds, not its opt-out, not its conversation, and not its
-//! permission mode. A [`crate::start::Start`] has no field for a mode, so the one way a bypass
-//! could travel is the asking chat's profile, where that profile's own command is what
-//! switches the prompts off ([`bypass_in`]); a persona chat is not started on such a profile
-//! taken from the asking chat. The persona chat asks what it asks in its own tab, and waits
-//! there, shown as needing the person, like any chat that asks.
+//! goes with it: not a grant it holds, not its opt-out, not its conversation, and never its
+//! bypass. A [`crate::start::Start`] has no field for a mode, so the one way a bypass could
+//! travel is the asking chat's profile, where that profile's own command is what switches the
+//! prompts off ([`bypass_in`]); a persona chat is not started on such a profile taken from the
+//! asking chat. The persona chat asks what it asks in its own tab, and waits there, shown as
+//! needing the person, like any chat that asks.
+//!
+//! **Its permission mode travels capped at auto** (#3787, the operator's ruling of 2026-10-29
+//! amending this decision): a task of a chat in auto or with its prompts off starts in auto,
+//! where its harness's classifier still judges every tool call ([`crate::dispatchmode`]). The
+//! level rides the task's record in the app, never the [`crate::start::Start`], and is never a
+//! bypass.
 
 use crate::dispatchgrant::{self, Covers, InForce};
 use crate::sandbox::policy::Locks;

@@ -373,6 +373,10 @@ pub const PAIRS: &[Pair] = &[
     // - The filled primary (#3177): its words on its fill, at rest and under the pointer.
     p("accent.fill-text", "accent.fill", TEXT),
     p("accent.fill-text", "accent.fill-hover", TEXT),
+    // - A title-bar chip's notice dot (#3648): its fill, the accent, told apart from the bar's
+    //   own ground it is ringed in, on a chip at rest, under the pointer and chosen alike; its
+    //   shape on that fill is held below (`surface.base` on `accent.base`).
+    p("accent.base", "surface.deep", 3.0),
     // - The update pill's words in the accent's words on the accent's surface (#3177).
     p("accent.text", "accent.surface", TEXT),
     // - What an extension runs as you, said inside its approval dialog on the danger wash.

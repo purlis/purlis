@@ -1464,8 +1464,8 @@ export const commands = {
 	/**  **This project's chat moves** (#2048), as the window draws them when it is drawn anew. */
 	chatMoves: (plane: PlaneId) => typedError<ChatMove[], string>(__TAURI_INVOKE("chat_moves", { plane })),
 	/**
-	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten, and a failed
-	 *  one's reason is dismissed.
+	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten for every chat
+	 *  of it, and a failed one's reason is dismissed. One being made now is refused (#3814).
 	 */
 	putAwayChatMove: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_chat_move", { plane, session })),
 	/**
@@ -2880,6 +2880,13 @@ export const commands = {
 	 *  one linked to, asked its version and what it holds. Asked once at a time ([`Joined`]).
 	 */
 	deviceRunner: (pool: string, runner: string) => typedError<RunnerAsked, string>(__TAURI_INVOKE("device_runner", { pool, runner })),
+	/**
+	 *  **The disk each pool's runners hold** (#3493): their home volumes, as `docker system df`
+	 *  says, which reads them and starts nothing, so **a suspended runner is never woken by it**.
+	 *  Read apart from [`devices`], so a Docker slow to count every volume holds up no other part
+	 *  of the view, and held to the time each read of Docker is.
+	 */
+	devicesDisk: () => typedError<DiskHeld, string>(__TAURI_INVOKE("devices_disk")),
 	/**
 	 *  **The projects a runner would not hold again after a re-link**, each with the runner's words
 	 *  and the pools its chats run on.
@@ -5349,12 +5356,22 @@ export type ChatHeld = {
  */
 export type ChatMove = {
 	session: number,
+	/**
+	 *  The pool it runs on as it moves, or `null` for this machine (#3646): where it still runs
+	 *  where the move did not happen.
+	 */
+	from: string | null,
 	/**  The pool it moves to, or `null` for this machine. */
 	to: string | null,
-	/**  `preparing`, `ready` or `failed`. */
+	/**
+	 *  `preparing`, `ready`, `switching` (being made now, past cancelling), `failed`, or
+	 *  `over`: it moved or was put away, and the window forgets it (#3814).
+	 */
 	stage: string,
 	/**  Why it failed, in a sentence: where it is `failed`. */
 	why: string | null,
+	/**  The other chats of its workspace that move with it, by name (#3453). */
+	with: string[],
 };
 
 /**  **A chat's Network view** (#1662): what it can reach now and what it was refused. */
@@ -5750,6 +5767,15 @@ export type DevicesShown = {
 	 */
 	projects: number,
 };
+
+/**  **The disk each pool's runners hold**, as the use table says it (#3493). */
+export type DiskHeld = 
+/**  Each pool's, in the order the pools were added. */
+{ state: "read"; pools: PoolDisk[] } | 
+/**  Docker could not say, and why, in its words ([`shown_safely`]). */
+{ state: "not_read"; why: string } | 
+/**  It was not read within the time a second read of it waits ([`WAITS_AT_MOST`]). */
+{ state: "unanswered" };
 
 /**  Why a grant the person accepted before waits for a yes again. */
 export type DispatchAgain = 
@@ -8247,12 +8273,13 @@ export type MouseButton = "none" | "left" | "middle" | "right";
 
 /**  What the window is told of a move it asked for to switch now. */
 export type MoveNow = {
-	/**  The chat moved, as the window draws it in its place; `null` where it did not move now. */
-	chat: OpenChat | null,
+	/**
+	 *  Each chat that moved, as the window draws it in its place (#3453): none where they did
+	 *  not move now.
+	 */
+	moved: MovedChat[],
 	/**  Why it did not move yet, in a sentence: it moves at a later pause. */
 	not_yet: string | null,
-	/**  What its tab says after the move: what came back that the person is to look at. */
-	notices: string[],
 };
 
 /**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */
@@ -8349,6 +8376,15 @@ export type Moved = {
 	 *  or child its harness spawned, drawn under the chat. Empty for nearly every chat.
 	 */
 	children: ChildAgent[],
+};
+
+/**  One chat a move started where it went, in the place of the run it left. */
+export type MovedChat = {
+	/**  The run it left. */
+	was: number,
+	chat: OpenChat,
+	/**  What its tab says after the move: what came back that the person is to look at. */
+	notices: string[],
 };
 
 /**
@@ -8755,6 +8791,11 @@ export type OpenChat = {
 	 *  Move here, and a chat here Move to runner.
 	 */
 	pool?: string | null,
+	/**
+	 *  The workspace it works in, or `null` at the project's root (#3453): its tab's move names
+	 *  the other chats of its workspace, which move with it.
+	 */
+	workspace?: string | null,
 	/**  The persona it adopted. */
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */
@@ -9719,6 +9760,24 @@ export type PoolAdding = {
 	frames: number | null,
 	/**  The widest frame its runner's browsers are watched at over the link, in pixels (#3297). */
 	width: number | null,
+};
+
+/**
+ *  **The disk one pool's runners hold** (#3493, spec #2041 story 55): their home volumes
+ *  together, a draining runner's included.
+ */
+export type PoolDisk = {
+	pool: string,
+	/**
+	 *  In kilobytes of 1000 bytes, as Docker says sizes, to the nearest; `u32` so it is a
+	 *  `number` in TypeScript, and held at its most (some 4 TB) rather than wrapped.
+	 */
+	kilobytes: number,
+	/**
+	 *  How many of its runners' homes Docker did not list: their disk is not known, and is
+	 *  said apart rather than counted as nothing.
+	 */
+	not_listed: number,
 };
 
 /**
