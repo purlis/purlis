@@ -50,6 +50,7 @@ import {
   Table as AriaTable,
   TableBody as AriaTableBody,
   TableHeader as AriaTableHeader,
+  TableStateContext,
   useTableOptions,
   type CellProps as AriaCellProps,
   type ColumnProps as AriaColumnProps,
@@ -67,8 +68,10 @@ import { MenuTrigger } from "../menu/Menu";
 import { askForAMenu } from "../menu/ContextMenu";
 import { useCollectionElement, useRowMenu } from "../list/List";
 import { RowScope } from "../list/Row";
+import { CellWords, choicesOf, columnAttributes, type ColumnChoices } from "./CellWords";
 
 export type { Key, Selection, SortDescriptor };
+export type { ColumnChoices, ColumnLength, ColumnSize } from "./CellWords";
 
 /** What the table hands its header and its rows: whether every row ends in its menu's column. */
 const Drawn = createContext({ menus: false });
@@ -97,6 +100,12 @@ export interface TableProps extends Omit<
   rowMenus?: boolean;
   /** What the table lists, said over it in the quiet tier (a table of a group of many). */
   caption?: ReactNode;
+  /**
+   * **It stacks into a form where its frame is narrow**, as a table of controls does (#3671):
+   * each row's cells under their column's words (`heading` on `TableCell`). Without it a table
+   * of data keeps its columns and its frame scrolls it sideways.
+   */
+  stacks?: boolean;
   /** The keys the table answers to beside the grid's, said to a reader. */
   "aria-keyshortcuts"?: string;
   /** A place for the table's frame in its view: margin, height, flex. Never a look. */
@@ -116,6 +125,7 @@ export function Table({
   children,
   rowMenus = false,
   caption,
+  stacks = false,
   className,
   style,
   "aria-keyshortcuts": keys,
@@ -127,9 +137,21 @@ export function Table({
   return (
     <RowScope.Provider value="table">
       <Drawn.Provider value={drawn}>
-        <div data-scope="table" data-part="frame" className={className} style={style}>
+        <div
+          data-scope="table"
+          data-part="frame"
+          data-stacks={stacks || undefined}
+          className={className}
+          style={style}
+        >
           {caption !== undefined && <p data-part="caption">{caption}</p>}
-          <AriaTable {...rest} ref={own} data-scope="table" data-part="body">
+          <AriaTable
+            {...rest}
+            ref={own}
+            data-scope="table"
+            data-part="body"
+            data-stacks={stacks || undefined}
+          >
             {children}
           </AriaTable>
         </div>
@@ -189,10 +211,13 @@ export function TableHeader({ children }: { children: ReactNode }) {
   );
 }
 
-export interface TableColumnProps extends Omit<
-  AriaColumnProps,
-  "className" | "style" | "children" | "render" | "width"
-> {
+export interface TableColumnProps
+  extends
+    Omit<
+      AriaColumnProps,
+      "className" | "style" | "children" | "render" | "width" | "minWidth" | "maxWidth"
+    >,
+    ColumnChoices {
   /** Its name: one line, in the quiet tier, in capitals (the label role, R161). */
   children: ReactNode;
   /** A number's column: its name and its cells at the end. */
@@ -204,18 +229,31 @@ export interface TableColumnProps extends Omit<
 /**
  * **One column's name.** `isRowHeader` on the column that names each row (a reader hears it
  * with every cell); `allowsSorting` makes the name a button that sorts by it (the table's
- * `sortDescriptor` and `onSortChange`), and its arrow says which way.
+ * `sortDescriptor` and `onSortChange`), and its arrow says which way. A view sizes it and says
+ * whether its cells keep one line (`cut`, `clamp`, `size`, `width`, `minWidth`, `maxWidth`,
+ * `CellWords.tsx`, #3671); one that says none draws as it always has.
  */
 export function TableColumn({
   children,
   align = "start",
   hideName = false,
   allowsSorting,
+  cut,
+  clamp,
+  size,
+  width,
+  minWidth,
+  maxWidth,
   ...rest
 }: TableColumnProps) {
+  // Not React Aria's own widths, which only a column-resizing table reads: the family's, on the
+  // column's name, where its cells read them back.
+  const chosen = columnAttributes({ cut, clamp, size, width, minWidth, maxWidth });
   return (
     <AriaColumn
       {...rest}
+      {...chosen.attributes}
+      style={chosen.style}
       allowsSorting={allowsSorting}
       data-scope="table"
       data-part="head"
@@ -382,24 +420,64 @@ export interface TableCellProps extends Omit<
   children?: ReactNode;
   /** A number's cell: at the end, in figures of one width. */
   align?: CellAlign;
+  /** Its column's whole words, which a table that `stacks` shows over it where it is narrow. */
+  heading?: string;
   /** A place for what it holds: never a look. */
   className?: string;
   /** `data-*` attributes reach the element as they are. */
   [data: `data-${string}`]: string | number | boolean | undefined;
 }
 
+/**
+ * **A cell's words as its column chose them** (#3671): read from the column's node, which React
+ * Aria keeps with the props its `TableColumn` handed it.
+ */
+function ColumnWords({
+  column,
+  keyboardOn,
+  children,
+}: {
+  column: number | null | undefined;
+  keyboardOn: boolean;
+  children?: ReactNode;
+}) {
+  const state = useContext(TableStateContext);
+  const node = column === null || column === undefined ? null : state?.collection.columns[column];
+  const choices = choicesOf(node?.props as Record<string, unknown> | undefined);
+  return (
+    <CellWords choices={choices} keyboardOn={keyboardOn}>
+      {children}
+    </CellWords>
+  );
+}
+
 /** **One cell**: its words, or the button, link or switch it holds. */
-export function TableCell({ children, align = "start", className, ...rest }: TableCellProps) {
+export function TableCell({
+  children,
+  align = "start",
+  heading,
+  className,
+  textValue,
+  ...rest
+}: TableCellProps) {
   return (
     <AriaCell
       {...rest}
+      textValue={textValue ?? (typeof children === "string" ? children : undefined)}
       className={className}
       data-scope="table"
       data-part="cell"
       data-align={align}
+      data-heading={heading}
     >
-      {children}
-      <Rule />
+      {({ columnIndex, isFocusVisible }) => (
+        <>
+          <ColumnWords column={columnIndex} keyboardOn={isFocusVisible}>
+            {children}
+          </ColumnWords>
+          <Rule />
+        </>
+      )}
     </AriaCell>
   );
 }

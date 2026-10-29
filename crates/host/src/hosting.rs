@@ -262,6 +262,12 @@ pub trait Running: Send + Sync + 'static {
     fn view_size(&self) -> Option<(u16, u16)> {
         None
     }
+    /// The size a view of `kind` is drawn at: DevTools' own for theirs (#2028), and
+    /// [`Running::view_size`] for every other.
+    fn view_size_of(&self, kind: ViewKind) -> Option<(u16, u16)> {
+        let _ = kind;
+        self.view_size()
+    }
     /// Ends it and everything it started, keeping its last screen; returns once it is gone.
     fn stop(&self);
     /// Its process, while it runs.
@@ -275,13 +281,15 @@ pub trait Running: Send + Sync + 'static {
     fn readiness(&self) -> Readiness;
     /// Calls `tell` once, as it ends.
     fn when_it_ends(&self, tell: Box<dyn FnOnce(Exit) + Send>);
-    /// Carries out a browser's act (#2013): refused for every program that is not a browser.
+    /// Carries out a browser's act (#2013), the browser being of the project at `project`
+    /// (#2020): refused for every program that is not a browser.
     fn act(
         &self,
         call_id: &str,
         act: purlis_session_protocol::browsing::Act,
+        project: &Path,
     ) -> Result<purlis_session_protocol::browsing::Browsed, crate::browsers::NotActed> {
-        let _ = (call_id, act);
+        let _ = (call_id, act, project);
         Err(crate::browsers::NotActed::Refused(
             "this program is not a browser, so it takes no browser's act".into(),
         ))
@@ -325,6 +333,16 @@ pub trait Running: Send + Sync + 'static {
     /// Who drives it, where it is a browser (#2014).
     fn driver(&self) -> Option<Driver> {
         None
+    }
+    /// The person opens its DevTools (#2028): refused for every program that is not a browser.
+    fn inspect(&self, width: u16, height: u16) -> Result<(), Refusal> {
+        let _ = (width, height);
+        Err(not_a_browser())
+    }
+    /// One event of the person's into its open DevTools (#2028).
+    fn inspector_input(&self, input: &Input) -> Result<(), Refusal> {
+        let _ = input;
+        Err(not_a_browser())
     }
 }
 
@@ -670,10 +688,12 @@ fn browser_acted_on(command: &Command) -> Option<&str> {
         | Command::HandBack { program }
         | Command::BrowserInput { program, .. }
         | Command::SizeBrowser { program, .. }
+        | Command::Inspect { program, .. }
+        | Command::InspectorInput { program, .. }
         | Command::CancelEngineDownload { program } => Some(program),
         Command::AttachView {
             program,
-            kind: ViewKind::Browser,
+            kind: ViewKind::Browser | ViewKind::Inspector,
             ..
         } => Some(program),
         _ => None,
@@ -2208,6 +2228,20 @@ impl Hosting {
         reach: Option<purlis_session_protocol::browsing::BrowserReach>,
     ) -> Result<Answer, Refusal> {
         let running = self.running(program)?;
+        let project = self
+            .state()
+            .programs
+            .get(program)
+            .map(|hosted| hosted.at.path.clone())
+            .ok_or_else(|| no_such_program(program))?;
+        // A folder an act names is one of the browser's own project's (#2020): the window
+        // names a chat's, which is in its project, and nothing outside it is read or written.
+        if let Some(folder) = folder_named(&act) {
+            in_its_project(Path::new(folder), &project).map_err(|why| Refusal {
+                code: session::MALFORMED.into(),
+                why,
+            })?;
+        }
         tokio::task::spawn_blocking(move || {
             // What it reaches is what the window says now, before the act (#2018).
             if let Some(reach) = &reach {
@@ -2215,7 +2249,7 @@ impl Hosting {
                     .reach_now(reach)
                     .map_err(crate::browsers::NotActed::Refused)?;
             }
-            running.act(&call_id, act)
+            running.act(&call_id, act, &project)
         })
         .await
         .map_err(|why| not_started(why.to_string()))?
@@ -2288,7 +2322,7 @@ impl Hosting {
                     code: session::MALFORMED.into(),
                     why: format!("program {program} has no view of that kind"),
                 })?;
-            let size = match hosted.running.view_size() {
+            let size = match hosted.running.view_size_of(kind) {
                 Some((columns, rows)) => Size { columns, rows },
                 None => hosted.size,
             };
@@ -3488,6 +3522,24 @@ impl session::Host for Hosting {
                 })
                 .await
             }
+            // The person's DevTools (#2028): the window's alone, on its own host, as the grants
+            // say; each may wait on the engine, so off the runtime.
+            Command::Inspect {
+                program,
+                width,
+                height,
+            } => {
+                self.driving(&program, move |running| {
+                    running.inspect(width, height).map(|()| Answer::Done)
+                })
+                .await
+            }
+            Command::InspectorInput { program, input } => {
+                self.driving(&program, move |running| {
+                    running.inspector_input(&input).map(|()| Answer::Done)
+                })
+                .await
+            }
             Command::TakeBack { window } => self.take_back(window, peer),
             // The window takes its own chats back with `programs_of`: a host that relays
             // nothing has nothing to do with its name (#2623).
@@ -3770,6 +3822,35 @@ impl Drop for PlaceInTheBudget {
     }
 }
 
+/// The folder of this machine an act of a browser's names (#2020): the chat's folder an upload
+/// reads from, or one a download is brought into.
+fn folder_named(act: &purlis_session_protocol::browsing::Act) -> Option<&str> {
+    use purlis_session_protocol::browsing::Act;
+    match act {
+        Act::Upload { from, .. } => Some(from.as_deref().unwrap_or_default()),
+        Act::SaveDownload { into, .. } => Some(into.as_deref().unwrap_or_default()),
+        _ => None,
+    }
+}
+
+/// **Whether `folder` is inside `project`**, each as the kernel names it (#2020), or why not.
+fn in_its_project(folder: &Path, project: &Path) -> Result<(), String> {
+    let outside = || {
+        "a browser's files are read from and written to its own project's folders alone".to_owned()
+    };
+    if !folder.is_absolute() {
+        return Err(outside());
+    }
+    let (Ok(folder), Ok(project)) = (folder.canonicalize(), project.canonicalize()) else {
+        return Err(outside());
+    };
+    if folder.starts_with(&project) {
+        Ok(())
+    } else {
+        Err(outside())
+    }
+}
+
 /// The refusal of a browser that did not start (#2899): `no_engine_sandbox` where its engine
 /// cannot make its sandbox here, `not_started` for anything else; in the binary's words.
 fn browser_not_started(why: crate::browsers::NotStarted) -> Refusal {
@@ -3976,5 +4057,64 @@ fn stop_together(programs: Vec<Arc<dyn Running>>) {
         while !thread.is_finished() && std::time::Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+}
+
+#[cfg(test)]
+mod a_browsers_folders {
+    use std::path::Path;
+
+    use super::{folder_named, in_its_project};
+    use purlis_session_protocol::browsing::Act;
+
+    /// A project, with a chat's folder in it, and a folder beside it outside it.
+    fn places() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+        let made = tempfile::tempdir().expect("a directory");
+        let project = made.path().join("project");
+        std::fs::create_dir_all(project.join("workspaces/app")).expect("made");
+        std::fs::create_dir_all(made.path().join("elsewhere")).expect("made");
+        (made, project.clone(), project.join("workspaces/app"))
+    }
+
+    #[test]
+    fn a_folder_an_act_names_is_one_of_the_browsers_own_project_or_the_act_is_refused() {
+        let (made, project, chat) = places();
+        assert!(in_its_project(&chat, &project).is_ok());
+        assert!(in_its_project(&project, &project).is_ok());
+        for outside in [
+            made.path().join("elsewhere"),
+            chat.join("../../../elsewhere"),
+            Path::new("workspaces/app").to_path_buf(),
+            made.path().join("not-there"),
+        ] {
+            assert!(in_its_project(&outside, &project).is_err(), "{outside:?}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_reached_through_a_link_out_of_the_project_is_refused() {
+        let (made, project, _chat) = places();
+        std::os::unix::fs::symlink(made.path().join("elsewhere"), project.join("away"))
+            .expect("linked");
+        assert!(in_its_project(&project.join("away"), &project).is_err());
+    }
+
+    #[test]
+    fn only_an_upload_and_a_save_name_a_folder_and_one_that_names_none_names_the_empty_one() {
+        let upload = Act::Upload {
+            target: "e1".into(),
+            files: vec!["a".into()],
+            from: None,
+        };
+        assert_eq!(folder_named(&upload), Some(""));
+        assert!(in_its_project(Path::new(""), Path::new("/")).is_err());
+        let save = Act::SaveDownload {
+            download: "d1".into(),
+            to: "a".into(),
+            into: Some("/p".into()),
+        };
+        assert_eq!(folder_named(&save), Some("/p"));
+        assert_eq!(folder_named(&Act::Pages), None);
     }
 }

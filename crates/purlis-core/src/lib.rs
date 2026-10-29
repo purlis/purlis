@@ -69,6 +69,7 @@ pub mod doctor;
 pub mod doing;
 /// The terminal engine, from the crate that holds it without the rest of the core (#1995).
 pub use purlis_terminal::engine;
+pub mod browserfiles;
 pub mod browserlimits;
 #[cfg(unix)]
 pub mod browserlogins;
@@ -204,6 +205,8 @@ pub mod rootupdate;
 pub mod roster;
 pub mod rulespelling;
 #[cfg(unix)]
+pub mod runnerhours;
+#[cfg(unix)]
 pub mod runnerimage;
 #[cfg(unix)]
 pub mod runnerlink;
@@ -235,6 +238,7 @@ pub mod skills;
 pub mod skillspan;
 pub mod skilltools;
 pub mod skilluse;
+pub mod spelledtime;
 pub mod staleclone;
 pub mod standings;
 pub mod start;

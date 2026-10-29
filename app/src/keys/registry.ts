@@ -42,6 +42,7 @@ import { asksForAMenu } from "../ui/menu/ContextMenu";
 import { asksForTheMenu } from "../terminalRows";
 import { fileKeyOf, fileKeySaid, opensIt } from "./paletteKeys";
 import { opensFind, opensFindInAFile } from "./findKeys";
+import { viewHistoryKeyOf } from "./viewKeys";
 import { focusKeySaid, opensTheShortcuts, shortcutsKeySaid, togglesFocus } from "./ownKeys";
 import {
   aModalIsUp,
@@ -68,6 +69,7 @@ export const SCOPES = [
   "terminal",
   "editor",
   "form",
+  "view",
 ] as const;
 export type Scope = (typeof SCOPES)[number];
 
@@ -288,6 +290,30 @@ export const SHORTCUTS: readonly Shortcut[] = [
     yields: ["dialog", "terminal"],
     rows: ["view.region:previous"],
     matches: (e) => f6Of(e)?.back === true,
+  },
+  {
+    id: "view.back",
+    does: "Back to the last page in this view tab",
+    group: "Go to",
+    where: "view",
+    kind: "key",
+    chords: { mac: [cmd("[")], other: [bare("ArrowLeft", { alt: true })] },
+    said: (mac) => (mac ? "⌘[" : "Alt+←"),
+    // An editor keeps its own ⌘[ (indentLess) and Alt+← (cursorSyntaxLeft); a dialog or a menu
+    // opened from the view keeps the keys it is handed.
+    yields: ["modal", "dialog", "menu", "editor"],
+    matches: (e, mac) => viewHistoryKeyOf(e, mac) === "back",
+  },
+  {
+    id: "view.forward",
+    does: "Forward again, in this view tab",
+    group: "Go to",
+    where: "view",
+    kind: "key",
+    chords: { mac: [cmd("]")], other: [bare("ArrowRight", { alt: true })] },
+    said: (mac) => (mac ? "⌘]" : "Alt+→"),
+    yields: ["modal", "dialog", "menu", "editor"],
+    matches: (e, mac) => viewHistoryKeyOf(e, mac) === "forward",
   },
   // Window
   {
@@ -631,7 +657,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   },
   {
     id: "chat.leave",
-    does: "Out of the chat's terminal (with Shift, back)",
+    does: "Out of the chat's terminal, a browser you drive or DevTools (with Shift, back)",
     group: "Tabs and chats",
     where: "terminal",
     kind: "key",
@@ -1054,6 +1080,13 @@ const INSIDE: ReadonlyArray<readonly [Scope, Scope]> = [
   ["dialog", "menu"],
   ["dialog", "row"],
   ["dialog", "editor"],
+  // A view tab holds lists, page tabs, forms and editors, and opens menus and dialogs.
+  ["view", "row"],
+  ["view", "tab"],
+  ["view", "form"],
+  ["view", "editor"],
+  ["view", "menu"],
+  ["view", "dialog"],
 ];
 
 /** Whether a key in `a` and one in `b` can be pressed in the same place. */

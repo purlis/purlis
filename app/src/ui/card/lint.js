@@ -23,13 +23,11 @@ export const rules = {
 };
 
 /**
- * **This family's controls still drawn as a raw `<button>`** (D-2904-9): A card drawn as a raw button, said by its role
- * or its class, which the button family's rule lets through until this family's lane moves them.
+ * **This family's controls still drawn as a raw `<button>`** (D-2904-9, #3523): a card pressed
+ * whole (the welcome's doors, a repo to get), by the family's one class (`ui-card-control`),
+ * never by a word a view picked (`welcome-door`, `repo-card`): the button family's rule lets it
+ * through until the family has a pressable card for them to move onto (#3655).
  */
 export const rawButtons = {
-  classes: [
-    // The welcome's doors, a recent project, a repo.
-    "welcome-door",
-    "repo-card",
-  ],
+  classes: ["ui-card-control"],
 };

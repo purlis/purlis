@@ -1169,6 +1169,8 @@ const DEVICES_SHOWN = {
       pool: "builds",
       limits: { cpus: "2", memory_mib: 4096, processes: 1024, tmp_mib: 1024 },
       millicpus: 2000,
+      removed_ran_this_week: 0,
+      price: null,
     },
   ],
 };
@@ -1180,6 +1182,7 @@ const DEVICE_ANSWERS = {
   version: "0.8.1",
   contacted: 1_800_000_000,
   holds: { open: [], browsers_open: [], chats: 2, browsers: 1 },
+  ran_this_week: 7200,
 };
 
 /** A runner's answer in each other state a Devices row draws. */
@@ -1319,6 +1322,20 @@ const STATES: State[] = [
     view: { from: null, view: "browser", key: "01J9ZQ8000000000000000000D" },
     answers: { watch_browser: new Error("this session host holds no program 01J9ZQ8") },
     drawn: /holds no program/,
+  },
+  {
+    name: "a browser's DevTools, open",
+    view: { from: null, view: "devtools", key: "01J9ZQ8000000000000000000D" },
+    answers: {
+      watch_inspector: { view: 5, width: 1000, height: 700, person_drives: true, pool: null },
+    },
+    drawn: /DevTools of this browser's page/,
+  },
+  {
+    name: "a browser's DevTools, closed",
+    view: { from: null, view: "devtools", key: "01J9ZQ8000000000000000000D" },
+    answers: { watch_inspector: new Error("no DevTools are open for this browser") },
+    drawn: /DevTools are closed/,
   },
   {
     name: "the Browsers grid, with a browser",

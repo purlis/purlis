@@ -1695,6 +1695,15 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             crate::hookwire::spool::dir_for(&app.join("hooks.sock")),
             Access::ReadWrite,
         );
+        // Every report a chat is handed (#1436): written by the app alone, and read by the
+        // hook of the chat it waits for, which may run inside the sandbox (Codex, opencode), so
+        // read, never written. Claude Code's hooks run outside it, and its chats are kept from
+        // reading it too (`Denied::and_what_waits_for_a_chat`).
+        deny(
+            Class::Integrity,
+            root.join(state).join(crate::handback::DIR_NAME),
+            Access::Write,
+        );
         // Every dispatch's record, neither read nor written (#1452, D-1452-11): a brief or a
         // report written for one persona is not for a chat running as another. A chat gets
         // its own dispatch's report on the delivery path and its own list from the app's
@@ -1728,6 +1737,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 Access::Write,
             );
         }
+        // Every chat's settings file (SK-9): written by purlis as the chat starts, and read by
+        // its harness as the settings it runs with. Read, never written.
+        deny(
+            Class::Integrity,
+            root.join(state).join(crate::hoststart::SETTINGS_DIR),
+            Access::Write,
+        );
     }
     // The MCP approvals are read where `$PURLIS_HOME` puts the state folder, when it does.
     if !crate::names::STATE_DIR
@@ -1749,6 +1765,12 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         for kept in crate::skills::verbs::KEPT_BY_DELETES {
             deny(Class::Integrity, ctx.state.join(kept), Access::Write);
         }
+        // …and every chat's settings file, which a start writes there.
+        deny(
+            Class::Integrity,
+            ctx.state.join(crate::hoststart::SETTINGS_DIR),
+            Access::Write,
+        );
     }
     // …and a state folder the project does not have as a folder is not the chat's to make
     // (D-RN2a-7): which folder holds charter's state is decided by which are there, so making
@@ -1761,6 +1783,22 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             deny(Class::Integrity, folder, Access::Write);
         }
     }
+    // …and the state folder that is there is held whole: the entry itself is never renamed,
+    // moved or removed, so what purlis holds below it stays where purlis holds it. What is below
+    // it is held as the rows above say.
+    let held_whole: Vec<Denial> = crate::names::STATE_DIR
+        .spellings()
+        .map(|state| root.join(state))
+        .filter(|folder| std::fs::symlink_metadata(folder).is_ok_and(|meta| meta.is_dir()))
+        .map(|folder| Denial {
+            class: Class::Integrity,
+            path: folder,
+            access: Access::Write,
+            named: None,
+            reach: Reach::Itself,
+            any_case: true,
+        })
+        .collect();
 
     // 3. Human powers: the approvals a person gave on this machine.
     let config_root = crate::machine::rooted(
@@ -1793,6 +1831,12 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             deny(
                 Class::HumanPowers,
                 home.join(crate::machine::RUNNERS_FILE),
+                Access::ReadWrite,
+            );
+            // When each of those runners ran (#3492): denied as they are.
+            deny(
+                Class::HumanPowers,
+                home.join(crate::machine::RUNNER_HOURS_FILE),
                 Access::ReadWrite,
             );
             // What the human's forge sign-in fetched: the native transport's ETag store
@@ -1902,6 +1946,7 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             unresolved.get_or_insert(why);
         }
     }
+    paths.extend(held_whole);
     // A list that is not whole is never held by the store alone.
     keyring |= unresolved.is_some();
     KeptList {

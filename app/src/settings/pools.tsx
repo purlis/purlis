@@ -15,7 +15,9 @@ import { PoolProfiles } from "./PoolProfiles";
 
 /**
  * **You › This machine › Pools** (#2679, the person's rulings of 2026-10-20): the Docker pools
- * added on this machine, each with its image, its limits and Remove, and Add a Docker pool….
+ * added on this machine, each with its image, its limits, how long its runner is left without a
+ * link before it suspends itself (#3471; as its runner was made, {@link suspendSaid}, #3717) and
+ * Remove, and Add a Docker pool….
  * Offered only while this machine keeps a pool (`SettingsTab`'s You level, and the palette): the
  * first is added from the palette's Add a Docker pool….
  *
@@ -65,6 +67,22 @@ function linkSaid(link: PoolLink | "asking" | undefined): string | undefined {
   if (link.state === "key_changed") return "key changed";
   if (link.state === "suspended") return "suspended";
   return "not linked";
+}
+
+/**
+ * **How long a row says its runner is left without a link before it suspends itself** (#3717):
+ * the pool's time, unless its runner was made otherwise. A runner made before purlis suspended
+ * runners never does, and one made with another time keeps that time.
+ */
+export function suspendSaid(pool: PoolRow, version: PoolVersion | undefined): string {
+  const made = version?.suspends;
+  if (made?.made === "never") {
+    return "Never suspends: its runner was made before purlis suspended runners";
+  }
+  if (made?.made === "after" && made.after !== pool.suspend_after) {
+    return `Suspends after ${made.after} without a link from this machine, as its runner was made (the pool says ${pool.suspend_after})`;
+  }
+  return `Suspends after ${pool.suspend_after} without a link from this machine`;
 }
 
 /** What a row says of its runner's version, where it is not this machine's; nothing where it
@@ -168,6 +186,7 @@ function PoolEntry({
       >
         {removing ? "Removing…" : "Remove"}
       </Button>
+      <p className="ui-setting-help">{suspendSaid(pool, version)}</p>
       {typeof link === "object" && link.state === "key_changed" && (
         <Notice
           cause={`pool-key-changed:${pool.name}`}

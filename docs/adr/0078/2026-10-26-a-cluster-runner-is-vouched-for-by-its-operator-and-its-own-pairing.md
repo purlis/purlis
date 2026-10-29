@@ -39,3 +39,8 @@ request).
    points `kubectl` at another pod, cannot substitute a runner without holding the operator's
    signing key or the runner's own link key. Cluster admins and node owners can read both, as
    they can read everything in the cluster (`docs/cluster-operator.md`).
+
+*Amended 2026-10-28 by #2057, as the person ruled that day: items 2 and 4 now name the claim and
+the pod by name, not the pod's uid (`purlis runner link key v2`), and a kept claim's runner keeps
+its pairing when its pod is made again
+([2026-10-28](2026-10-28-a-kept-claims-runner-keeps-its-pairing-the-pairing-is-the-claims.md)).*

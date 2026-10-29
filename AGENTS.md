@@ -26,7 +26,7 @@ amending the same record do not conflict (`tools/adr-amendments.mjs` holds it).
   (syncable or device-bound) or Keyring, and rebuildable when it is derived. It goes in
   `docs/plane-format.md`, under its own heading or as a row of a table of paths, with a
   `**Tier:**` line, and
-  `crates/purlis-core/tests/every_store_the_plane_format_names_has_a_tier.rs` fails until it
+  `crates/purlis-core/tests/it/every_store_the_plane_format_names_has_a_tier.rs` fails until it
   has one. This is part of every feature's definition of done.
 - **Nothing depends on the Python charter, shipped or not.** No message, doc page or code path in
   the app or the `purlis` binary tells anyone to install or run it, and nothing in CI or the
@@ -66,7 +66,7 @@ amending the same record do not conflict (`tools/adr-amendments.mjs` holds it).
      audited block, for the specimen snapshot.
 
   Each has a `// SAFETY:` comment (clippy's `undocumented_unsafe_blocks` is denied), and
-  `crates/purlis-core/tests/four_unsafe_blocks.rs` names all four and fails if `unsafe` or an
+  `crates/purlis-core/tests/it/four_unsafe_blocks.rs` names all four and fails if `unsafe` or an
   allow of the lint appears anywhere else. A fifth block is a new ruling, not an edit.
 - **UI is built from Radix primitives, never hand-rolled markup**, and never behind a purlis API
   of our own — no `<Modal>`, no `<Field>`. A shadcn/ui component's source **copied into the repo

@@ -19,13 +19,14 @@ fn claim() -> Claim {
         spec: ClaimSpec {
             pool: "team".into(),
             requester: "ada@example.com".into(),
+            kept: false,
         },
         status: None,
     }
 }
 
 fn upstream_saying(status: Option<(&str, &str, &str)>) -> upstream::SandboxClaim {
-    let mut given = upstream::sandbox_claim_for(&claim());
+    let mut given = upstream::sandbox_claim_for(&claim(), &Default::default());
     given.status = status.map(|(status, reason, message)| upstream::SandboxClaimStatus {
         sandbox: None,
         conditions: vec![Condition {

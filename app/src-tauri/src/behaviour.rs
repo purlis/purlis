@@ -94,11 +94,52 @@ pub(crate) struct Target {
     pub kill_the_host: Option<Arc<dyn Fn() + Send + Sync>>,
     /// The runner's container, on a Docker pool's target: the machine its chats run on.
     pub runner: Option<OnTheRunner>,
+    /// The window's own host, where its sessions are another host's: what saves the project as
+    /// the window holds it, which a runner never does (#3312). `None` where the window's
+    /// sessions save it themselves.
+    pub saved_by: Option<Box<dyn SessionHost>>,
     /// What keeps the target running for as long as the test does.
     _keeps: Vec<Box<dyn std::any::Any>>,
 }
 
 impl Target {
+    /// What the window asks to save its project: the window's own host, wherever the project's
+    /// chats run (#3312).
+    fn saver(&self) -> &dyn SessionHost {
+        self.saved_by.as_deref().unwrap_or(self.sessions.as_ref())
+    }
+
+    /// You let every chat of the project reach the service on `port` of the machine its chats
+    /// run on, as that machine's own sandbox for the project gives it (#2445): on a pool's
+    /// runner, in the project as the runner holds it, `<data>/projects/<id>`.
+    fn gives(&self, port: u16) {
+        let Some(runner) = &self.runner else {
+            purlis_core::sandbox::local::grant_port(&self.root, port).expect("you gave it");
+            return;
+        };
+        let project =
+            purlis_core::scaffold::planefile::id_to_hold_by(&self.root).expect("the project's id");
+        let there = runner
+            .path(&format!(
+                "{}/{}/{project}",
+                purlis_core::datahome::IN_A_RUNNER_CONTAINER,
+                purlis_core::datahome::PROJECTS
+            ))
+            .expect("the runner holds the project");
+        // Granted on the runner, by a program of the runner's run as its host is, so the
+        // runner's own sandbox for the project, under its config home, gives it.
+        runner.runs_as_its_host(
+            &self.inherited,
+            &[
+                &fake_harness().display().to_string(),
+                "--grant-port",
+                &port.to_string(),
+                "--in",
+                &there,
+            ],
+        );
+    }
+
     /// Whether the process `pid`, as the window was told it, is alive on the machine the
     /// target's chats run on.
     fn alive(&self, pid: u32) -> bool {
@@ -240,6 +281,7 @@ pub(crate) fn in_the_window() -> Target {
         host: None,
         kill_the_host: None,
         runner: None,
+        saved_by: None,
         _keeps: vec![Box::new(project), Box::new(config), Box::new(data)],
     }
 }
@@ -286,7 +328,32 @@ pub(crate) fn through_a_link() -> Target {
     });
     target._keeps.push(Box::new(folder));
     target._keeps.push(Box::new(data));
+    the_windows_own_host_saves(&mut target);
     target
+}
+
+/// **The window's own host saves the project as the window holds it**, wherever its chats run
+/// (#3312, spec #2041): never a runner, whose link may not ask a host to save (`Power::Save`),
+/// and whose work comes back as branches and proposals. Here the window's chats run on host B
+/// through host A, a relay alone; so the window's own host, which in the app is host A too, is
+/// one of its own on this machine, the window's own link to it a link of its own.
+fn the_windows_own_host_saves(target: &mut Target) {
+    let (folder, data) = (
+        tempfile::tempdir().expect("the window's host's folder"),
+        tempfile::tempdir().expect("its data home"),
+    );
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("a runtime");
+    let host = runtime.block_on(async { a_host(folder.path(), data.path()) });
+    let (connection, window) = crate::hostedsessions::tests::in_memory(host, &runtime);
+    target.saved_by = Some(Box::new(HostedSessions::new(connection, &target.root)));
+    target._keeps.insert(0, Box::new(window));
+    target._keeps.insert(1, Box::new(runtime));
+    target._keeps.push(Box::new(folder));
+    target._keeps.push(Box::new(data));
 }
 
 /// Where the window's chats of a target's project run, as its sessions are told.
@@ -595,6 +662,22 @@ impl OnTheRunner {
             .expect("given");
         let out = child.wait_with_output().expect("it ends");
         assert!(out.status.success(), "{script}: {out:?}");
+    }
+
+    /// Runs `argv` in the runner's container as its host was started: its user, and the
+    /// environment `inherited` it was started with.
+    fn runs_as_its_host(&self, inherited: &[(OsString, OsString)], argv: &[&str]) {
+        let mut command = std::process::Command::new(self.docker.program());
+        command.arg("exec");
+        for (name, value) in inherited {
+            let mut pair = name.clone();
+            pair.push("=");
+            pair.push(value);
+            command.arg("--env").arg(pair);
+        }
+        command.arg(self.container.as_str()).args(argv);
+        let out = purlis_core::forklock::output(&mut command).expect("docker runs");
+        assert!(out.status.success(), "{argv:?}: {out:?}");
     }
 
     /// The one path in the runner's container that `pattern` names, the shell's globs and
@@ -930,6 +1013,7 @@ fn a_window_over(
         host: Some(connection),
         kill_the_host: None,
         runner: None,
+        saved_by: None,
         _keeps: vec![Box::new(project), Box::new(config)],
     }
 }
@@ -1185,6 +1269,39 @@ impl Pane {
         }
     }
 
+    /// Waits until the pane draws `text` followed by a number and the end of its line, and
+    /// answers the number.
+    fn number_after(&self, text: &str) -> u16 {
+        let deadline = Instant::now() + PATIENCE;
+        let after = |seen: &str| -> Option<u16> {
+            let after = drawn(seen).split(text).nth(1)?.to_owned();
+            let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
+            // A number is read only once its line has ended: one still being written, or
+            // written in two pieces, has no line's end after it yet.
+            let ended = after[digits.len()..].starts_with(['\r', '\n']);
+            if digits.is_empty() || !ended {
+                return None;
+            }
+            digits.parse().ok()
+        };
+        loop {
+            let (sent, found) = {
+                let mut seen = self.seen.lock().expect("the pane");
+                let on_screen = String::from_utf8_lossy(&seen.terminal.snapshot()).into_owned();
+                let found = after(&seen.sent).or_else(|| after(&on_screen));
+                (seen.sent.clone(), found)
+            };
+            if let Some(number) = found {
+                return number;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{text:?} and a number were never drawn, only {sent:?}"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     /// Waits until the pane draws `text`, read as the text it draws. A view is sent the screen
     /// as it is first and then the output, so a line the program writes in two pieces can
     /// reach it with the rest of the screen and a cursor move between them (#2375): a
@@ -1285,6 +1402,20 @@ fn the_end_a_pane_is_told_is_shown_as_it_is_drawn() {
     let pane = Pane::sent(&format!("HARNESS-READY\u{1b}[K\r\n{ENDED}"));
 
     pane.shows(ENDED);
+}
+
+/// A number a chat says is read once its line is written, from what the pane was sent or from
+/// the screen it was sent when it opened after the line (#3288).
+#[test]
+fn a_number_a_chat_says_is_read_from_its_pane() {
+    assert_eq!(
+        Pane::sent("serving on port 4242\r\n").number_after("serving on port "),
+        4242
+    );
+    let mut chat = AlacrittyEngine::new(SIZE, 0);
+    chat.advance(b"serving on port 4243\r\n");
+    let screen = String::from_utf8(chat.snapshot()).expect("the screen as text");
+    assert_eq!(Pane::sent(&screen).number_after("serving on port "), 4243);
 }
 
 /// How each chat ended, as the window is told.
@@ -1809,7 +1940,7 @@ const A_SAVE_WITHIN: Duration = Duration::from_secs(60);
 fn a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told(target: &Target) {
     a_plane_saved_after_a_second(&target.root);
     let (told, looks) = told_of_looks();
-    let _saving = target.sessions.keep_saving(&target.root, told);
+    let _saving = target.saver().keep_saving(&target.root, told);
 
     std::fs::write(target.root.join("note.md"), "a note\n").expect("written");
 
@@ -1845,7 +1976,7 @@ fn a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told
 fn exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped(target: &Target) {
     a_plane_saved_after_a_second(&target.root);
     let (told, looks) = told_of_looks();
-    let saving = target.sessions.keep_saving(&target.root, told);
+    let saving = target.saver().keep_saving(&target.root, told);
     std::fs::write(target.root.join("first.md"), "saved\n").expect("written");
 
     let deadline = Instant::now() + A_SAVE_WITHIN;
@@ -2010,77 +2141,29 @@ fn a_permission_ask_is_answered_from_the_window_on_every_harness(target: &Target
     }
 }
 
-/// Where [`a_listener_beside_the_chat`] binds, when this test binary is run as that helper.
-const LISTEN_AT: &str = "PURLIS_BEHAVIOUR_LISTEN_AT";
-
-/// Not a behaviour: this binary, run again as a child of the test, takes the hook socket's
-/// path over with a listener of its own, which is beside every chat and below none, says so,
-/// and waits to be killed.
-#[test]
-#[ignore = "a helper the behaviours start as a child"]
-fn a_listener_beside_the_chat() {
-    let Some(path) = std::env::var_os(LISTEN_AT) else {
-        return;
-    };
-    let _ = std::fs::remove_file(&path);
-    let _listener = std::os::unix::net::UnixListener::bind(&path).expect("bound");
-    println!("up");
-    std::thread::sleep(Duration::from_secs(60));
+/// The program the behaviours run on the machine a chat runs on, as a chat's shell names it: the
+/// repo's fake harness, at the path a pool's runner has it too (`tests/parity/runner.Dockerfile`).
+fn the_fake_harness() -> String {
+    format!("'{}'", fake_harness().display())
 }
 
-/// A listener at `socket` in a process of its own, beside the chats: ended as it is dropped.
-struct Beside(std::process::Child);
-
-impl Beside {
-    fn listening_at(socket: &Path) -> Beside {
-        let mut child = purlis_core::forklock::spawn(
-            std::process::Command::new(std::env::current_exe().expect("this test"))
-                .args([
-                    "--exact",
-                    "behaviour::a_listener_beside_the_chat",
-                    "--ignored",
-                    "--nocapture",
-                ])
-                .env(LISTEN_AT, socket)
-                .stdout(std::process::Stdio::piped()),
-        )
-        .expect("the listener starts");
-        let mut said = std::io::BufReader::new(child.stdout.take().expect("piped"));
-        let mut line = String::new();
-        while !line.contains("up") {
-            line.clear();
-            if std::io::BufRead::read_line(&mut said, &mut line).expect("it speaks") == 0 {
-                break;
-            }
-        }
-        Beside(child)
-    }
-}
-
-impl Drop for Beside {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
+/// The rival listener is started beside the chat on the machine it runs on, by its own shell:
+/// below none of the chat's hooks, on every target, a pool's runner included (#3288).
 fn a_hook_refuses_a_listener_that_is_not_its_chats_ancestor(target: &Target) {
     let payload = HOOKED_HARNESSES[0].payload;
     let id = a_chat_on_the_board(
         target,
         &a_shell(&format!(
-            "read line; printf '%s' '{payload}' | '{}' hook permissionrequest; \
-             printf 'left to its own prompt.'; read line",
+            "{} --listen-at \"${}\" & rival=$!; \
+             read line; printf '%s' '{payload}' | '{}' hook permissionrequest; \
+             printf 'left to its own prompt.'; kill $rival 2>/dev/null; wait; read line",
+            the_fake_harness(),
+            purlis_core::hookwire::SOCKET_ENV,
             purlis()
         )),
     );
     let pane = Pane::on(target, id);
-    let socket = target
-        .hooks
-        .socket()
-        .expect("the project's hook socket")
-        .to_path_buf();
-    let _beside = Beside::listening_at(&socket);
+    pane.shows("listening beside the chat.");
 
     target.sessions.input(id, b"\r").expect("typed");
 
@@ -2184,37 +2267,39 @@ fn a_plan(listed: Vec<(String, By)>, given: Vec<u16>) -> Plan {
     }
 }
 
-/// A service on this machine, which answers nothing: what a chat may be given by its port.
-fn a_service() -> (std::net::TcpListener, u16) {
-    let service = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a service");
-    let port = service.local_addr().expect("its port").port();
-    (service, port)
+/// A service on the machine `target`'s chats run on, which answers nothing, served by a chat of
+/// its own beside them: that chat, and the port it serves on. What a chat may be given by its
+/// port.
+fn a_service(target: &Target) -> (u32, u16) {
+    let id = target
+        .sessions
+        .open(None, &a_harness(&["--serve"]), &|_| {})
+        .expect("it starts");
+    let port = Pane::on(target, id).number_after("serving on port ");
+    (id, port)
 }
 
-/// [`a_service`], which you let every chat of `target`'s project reach on this machine: a host
+/// [`a_service`], which you let every chat of `target`'s project reach on that machine: a host
 /// the window's plan reaches through a link gives a chat only what its own sandbox for the
 /// project gives (#2445).
-fn a_service_you_gave(target: &Target) -> (std::net::TcpListener, u16) {
-    let (service, port) = a_service();
-    purlis_core::sandbox::local::grant_port(&target.root, port).expect("you gave it");
-    (service, port)
+fn a_service_you_gave(target: &Target) -> (u32, u16) {
+    let (id, port) = a_service(target);
+    target.gives(port);
+    (id, port)
 }
 
-/// The status line a chat's proxy, on its HTTP `port`, answers a tunnel to `target` with.
-fn tunnel_through(port: u16, target: &str) -> String {
-    use std::io::{BufRead, Write};
-    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("the proxy");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(30)))
-        .expect("a timeout");
-    stream
-        .write_all(format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n").as_bytes())
-        .expect("sent");
-    let mut line = String::new();
-    std::io::BufReader::new(stream)
-        .read_line(&mut line)
-        .expect("a status line");
-    line.trim_end().to_owned()
+/// What a chat's shell runs to ask its proxy, on its HTTP `port` on the chat's own machine, for
+/// a tunnel to `to`: the chat says the status line it is answered with.
+fn tunnel_through(port: u16, to: &str) -> String {
+    format!(
+        "{} --tunnel '{to}' --through 127.0.0.1:{port}",
+        the_fake_harness()
+    )
+}
+
+/// What the chat says its proxy answered a tunnel to `to` with.
+fn tunnelled(to: &str, status: &str) -> String {
+    format!("tunnel to {to}: {status}")
 }
 
 /// What a chat's proxy told the window, by kind.
@@ -2252,9 +2337,10 @@ fn hearing(heard: &Arc<HeardOfIt>, asks: bool) -> Hearing {
     }
 }
 
-/// A chat that runs in `confinement`, as the window starts one.
-fn in_it(target: &Target, confinement: &Confinement) -> u32 {
-    let mut opening = a_shell("printf 'confined.'; read line");
+/// A chat that runs in `confinement`, as the window starts one, and runs `script` once it says
+/// it is confined: the chat, and its pane.
+fn in_it(target: &Target, confinement: &Confinement, script: &str) -> (u32, Pane) {
+    let mut opening = a_shell(&format!("printf 'confined.'; {script}; read line"));
     opening
         .env
         .push(("HTTPS_PROXY".into(), confinement.proxy_url()));
@@ -2263,12 +2349,14 @@ fn in_it(target: &Target, confinement: &Confinement) -> u32 {
         .sessions
         .open(None, &opening, &|_| {})
         .expect("it starts");
-    Pane::on(target, id).shows("confined.");
-    id
+    let pane = Pane::on(target, id);
+    pane.shows("confined.");
+    (id, pane)
 }
 
+/// The chat itself tunnels through its own proxy, on its own machine (#3288).
 fn a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest(target: &Target) {
-    let (_service, port) = a_service_you_gave(target);
+    let (service, port) = a_service_you_gave(target);
     let heard = Arc::new(HeardOfIt::default());
     let confinement = target
         .sessions
@@ -2277,24 +2365,29 @@ fn a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest(target: &T
             hearing(&heard, false),
         )
         .expect("confined");
-    let id = in_it(target, &confinement);
+    let proxy = confinement.proxy_port();
+    let given = format!("127.0.0.1:{port}");
+    let (id, pane) = in_it(
+        target,
+        &confinement,
+        &format!(
+            "{}; {}",
+            tunnel_through(proxy, &given),
+            tunnel_through(proxy, "refused.invalid:443")
+        ),
+    );
 
-    assert_eq!(
-        tunnel_through(confinement.proxy_port(), &format!("127.0.0.1:{port}")),
-        "HTTP/1.1 200 Connection established"
-    );
-    assert_eq!(
-        tunnel_through(confinement.proxy_port(), "refused.invalid:443"),
-        "HTTP/1.1 403 Forbidden"
-    );
+    pane.shows(&tunnelled(&given, "HTTP/1.1 200 Connection established"));
+    pane.shows(&tunnelled("refused.invalid:443", "HTTP/1.1 403 Forbidden"));
     until("the window hears of the refusal", || {
         *heard.refused.lock().expect("heard") == ["refused.invalid:443"]
     });
     target.sessions.close(id).expect("it closes");
+    target.sessions.close(service).expect("it closes");
 }
 
 fn a_port_withdrawn_while_a_chat_runs_is_carried_no_longer(target: &Target) {
-    let (_service, port) = a_service_you_gave(target);
+    let (service, port) = a_service_you_gave(target);
     let confinement = target
         .sessions
         .confine(
@@ -2302,15 +2395,22 @@ fn a_port_withdrawn_while_a_chat_runs_is_carried_no_longer(target: &Target) {
             Hearing::default(),
         )
         .expect("confined");
-    let id = in_it(target, &confinement);
+    let given = format!("127.0.0.1:{port}");
+    let (id, pane) = in_it(
+        target,
+        &confinement,
+        &format!(
+            "read line; {}",
+            tunnel_through(confinement.proxy_port(), &given)
+        ),
+    );
 
     confinement.withdraw_port(port).expect("withdrawn");
+    target.sessions.input(id, b"\r").expect("typed");
 
-    assert_eq!(
-        tunnel_through(confinement.proxy_port(), &format!("127.0.0.1:{port}")),
-        "HTTP/1.1 403 Forbidden"
-    );
+    pane.shows(&tunnelled(&given, "HTTP/1.1 403 Forbidden"));
     target.sessions.close(id).expect("it closes");
+    target.sessions.close(service).expect("it closes");
 }
 
 fn an_ask_raised_by_a_chats_proxy_is_answered_from_the_window(target: &Target) {
@@ -2319,9 +2419,11 @@ fn an_ask_raised_by_a_chats_proxy_is_answered_from_the_window(target: &Target) {
         .sessions
         .confine(&a_plan(Vec::new(), Vec::new()), hearing(&heard, true))
         .expect("confined");
-    let id = in_it(target, &confinement);
-    let port = confinement.proxy_port();
-    let held = std::thread::spawn(move || tunnel_through(port, "held.invalid:443"));
+    let (id, pane) = in_it(
+        target,
+        &confinement,
+        &tunnel_through(confinement.proxy_port(), "held.invalid:443"),
+    );
     until("the window is asked", || {
         *heard.asked.lock().expect("heard") == ["held.invalid:443"]
     });
@@ -2331,7 +2433,7 @@ fn an_ask_raised_by_a_chats_proxy_is_answered_from_the_window(target: &Target) {
     let retry = board.allow(&Host::parse("held.invalid").expect("a host"), By::Chat);
 
     // Carried: the proxy tried the host, which never resolves.
-    assert_eq!(held.join().expect("answered"), "HTTP/1.1 502 Bad Gateway");
+    pane.shows(&tunnelled("held.invalid:443", "HTTP/1.1 502 Bad Gateway"));
     assert!(retry.is_empty(), "nothing had given up");
     assert_eq!(
         board.allowed_live(),
@@ -3345,20 +3447,18 @@ on_every_target!(
     a_chat_starts_with_the_path_and_variables_the_window_gives_it,
     a_chat_whose_turn_ends_needs_you_on_every_harness,
     a_permission_ask_is_answered_from_the_window_on_every_harness,
-    the_event_log_has_one_writer_and_each_hook_line_is_written_once;
+    the_event_log_has_one_writer_and_each_hook_line_is_written_once,
+    a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told,
+    exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped,
+    a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
+    a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest,
+    a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
+    an_ask_raised_by_a_chats_proxy_is_answered_from_the_window;
     not yet through a link ("an opt-out is asked again on the device a chat moves to, ADR 0078 §4"):
     an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts;
     not yet through a link ("the window's re-arm and its shell while stopped cross a link in #2220"):
     stop_all_ends_every_chat_and_none_starts_until_the_window_re_arms,
     while_stopped_the_operators_shell_opens;
-    not yet through a link ("where a project whose chats run on a runner is saved is not decided, #3312"):
-    a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told,
-    exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped;
-    not yet in a Docker pool ("the behaviour reaches the chat's machine from this one: its proxy, a service or a rival hook listener, which on a pool's runner are in its container, #3288"):
-    a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
-    a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest,
-    a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
-    an_ask_raised_by_a_chats_proxy_is_answered_from_the_window;
 );
 
 /// **A sandboxed runner chat reaches neither its runner's browser engine nor its host** (#3338,

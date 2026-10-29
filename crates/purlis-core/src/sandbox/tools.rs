@@ -579,9 +579,10 @@ fn runs_what_it_is_told(name: &str) -> bool {
 /// Allow says so in one sentence ([`caution`]). A short list, reviewed with each addition, and
 /// not a complete one: a program off it is not thereby one that keeps what it is handed.
 const GENERAL_PURPOSE: &[&str] = &[
-    // fetch and send over the network
+    // fetch and send over the network, the forge command lines (gh, glab) among them, which
+    // make whatever request their arguments name
     "curl", "wget", "wget2", "http", "https", "httpie", "xh", "xhs", "aria2c", "nc", "ncat",
-    "netcat", "socat", "ssh", "scp", "sftp", "rsync",
+    "netcat", "socat", "ssh", "scp", "sftp", "rsync", "gh", "glab",
     // copy, encode or rewrite what they are given
     "cat", "cp", "tee", "dd", "sed", "base64", "xxd", "od", "hexdump", "openssl", "gzip", "tar",
     "zip",

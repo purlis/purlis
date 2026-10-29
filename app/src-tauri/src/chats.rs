@@ -454,6 +454,20 @@ fn plane_skills_at_start(
     }
 }
 
+/// **The routing a chat starting now keeps from its first start** (SK-15f, #3578): a chat
+/// `reattaching` from the session host routes its set as its record says its start did, where
+/// the record says, and its router is not asked again. Only beside the Skill studio flag that
+/// start took (`flag_recorded`, #3466): a routing kept without it would be judged by a flag read
+/// now, which may not be the one it was routed under. Any other start keeps nothing: it is
+/// routed now.
+fn routing_kept_at_start(
+    reattaching: bool,
+    flag_recorded: bool,
+    recorded: Option<&purlis_core::skills::router::Kept>,
+) -> Option<purlis_core::skills::router::Kept> {
+    recorded.filter(|_| reattaching && flag_recorded).cloned()
+}
+
 /// **The personas a chat is named by** (#2691), from one read of the app's record of its run
 /// ([`Chats::persona_of`]), so every path names it from the same place.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3200,6 +3214,7 @@ impl Chats {
             plugin: self.shipped.plugin.clone(),
             git_hooks: self.git_hooks_for(harness),
             skill_sets: purlis_core::hoststart::skill_sets_here(),
+            chat_settings: purlis_core::hoststart::chat_settings_here(),
         }
     }
 
@@ -3525,24 +3540,29 @@ impl Chats {
         // arms it below and what its tab's Notice says are both worked out from this. Read once
         // its arming has checked the start is not refused (#3461).
         // And routed by the router its persona or workspace chose, asked now where it is an
-        // extension's (SK-15b).
+        // extension's (SK-15b); a chat reattached routes as its start did, from its record, and
+        // its router is not asked again (#3578).
         let router = lock(&self.router).clone();
+        let kept_routing = routing_kept_at_start(
+            reattaching,
+            chat.plane_skills.is_some(),
+            chat.routing.as_ref(),
+        );
+        let routing_was_kept = kept_routing.is_some();
         let skills = std::cell::LazyCell::new(|| {
             if on_the_runner {
-                purlis_core::hoststart::ChatSkills::default()
-            } else {
-                purlis_core::hoststart::ChatSkills::read(
-                    plane_skills,
-                    &self.project,
-                    harness,
-                    chat.cwd.as_deref(),
-                    runs_as.as_deref(),
-                )
-                .routed_by(
-                    built_in_skills_here().as_deref(),
-                    harness,
-                    router.as_ref(),
-                )
+                return purlis_core::hoststart::ChatSkills::default();
+            }
+            let read = purlis_core::hoststart::ChatSkills::read(
+                plane_skills,
+                &self.project,
+                harness,
+                chat.cwd.as_deref(),
+                runs_as.as_deref(),
+            );
+            match kept_routing {
+                Some(kept) => read.routed_as(kept, harness),
+                None => read.routed_by(built_in_skills_here().as_deref(), harness, router.as_ref()),
             }
         });
         // A sandboxed Claude Code chat whose project's own settings it does not load says which
@@ -3868,9 +3888,12 @@ impl Chats {
         };
         // Settings too long for one word of a command line go through a file of their own (SK-9).
         let all = match identity.id.as_deref() {
-            Some(id) if !reattaching => {
-                purlis_core::hoststart::settings_in_a_file(&self.project, id, all)?
-            }
+            Some(id) if !reattaching => purlis_core::hoststart::settings_in_a_file(
+                self.kit(harness).chat_settings.as_deref(),
+                &self.project,
+                id,
+                all,
+            )?,
             _ => all,
         };
         let mut env = env;
@@ -4070,6 +4093,10 @@ impl Chats {
             // The Skill studio's flag this start took (#3466): what its record keeps, and what
             // a later reattach of it takes.
             plane_skills: Some(plane_skills),
+            // How this start routed its skills (#3578): what its record keeps, and what a later
+            // reattach of it routes by. A runner's chat is armed by its runner, so none.
+            routing: (!on_the_runner)
+                .then(|| purlis_core::skills::router::Kept::of(skills.routed.as_ref())),
             ..chat.clone()
         };
         // What a start says on its tab was said at the start it reattached to (#2006); what
@@ -4127,10 +4154,12 @@ impl Chats {
                 plane_skills,
             },
         );
-        // Its routing record, after its run began (SK-15b). A chat reattached began no run here,
-        // and its router was asked again as its start was read again (#3578): that answer is
-        // what its skills are routed by from now on, so it is recorded under the run it is in.
+        // Its routing record, after its run began (SK-15b), where its router was asked now. A chat
+        // reattached began no run here: one that kept its start's routing is in its run's record
+        // already (#3578), and one whose record kept none had its router asked again, an answer
+        // recorded under the run it is in.
         if !on_the_runner
+            && !routing_was_kept
             && let Some(routed) = skills.routed.as_ref()
             && let Some(tell) = lock(&self.routed).as_ref()
         {
@@ -5355,8 +5384,9 @@ impl Chats {
             .map(|chat| Chat {
                 pid: None,
                 model: None,
-                // Not started this launch, so no flag of a start of its (#3466).
-                plane_skills: None,
+                // Not started this launch: the flag and the routing its record had are its last
+                // start's, which a program the host still runs was started with (#3466, #3578),
+                // and a start that is not a reattach reads neither.
                 ..chat.clone()
             })
             .collect();
@@ -5392,8 +5422,10 @@ impl Chats {
                     pid: None,
                     model: None,
                     // Its start is under way, and the flag it takes is not known yet (#3466):
-                    // a later reattach reads it again rather than take an earlier run's.
+                    // a later reattach reads it again rather than take an earlier run's. So is
+                    // how it routes its skills (#3578).
                     plane_skills: None,
+                    routing: None,
                     ..one.chat.clone()
                 });
             };

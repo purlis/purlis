@@ -100,7 +100,12 @@ pub fn install(
     let (found, _) = fetched.skills()?;
     let mut copies = Vec::new();
     for skill in &review.skills {
-        cx.not_built_in(&skill.name)?;
+        if cx.reserved(&skill.name) {
+            return Err(format!(
+                "{} cannot be installed: its name belongs to a built-in skill",
+                skill.name
+            ));
+        }
         verbs::free_at(plane, level, &skill.name, &skill.name)?;
         if held
             .lock

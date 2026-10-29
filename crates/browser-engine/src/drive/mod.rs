@@ -52,6 +52,10 @@
 //!   go through, and hands the browser back. What it filled is kept out of every answer about
 //!   every page of the browser for as long as the browser lives, and each field it filled is
 //!   blanked before the value goes in.
+//! - **Inspect is the person's** (#2028). [`Browser::inspect`] opens the engine's own DevTools
+//!   for the page the browser shows, only while the person drives: a front end the driver never
+//!   lists as a page, watched as frames and spoken to through a tapped session over the one
+//!   pipe, reaching that page alone. Handing the browser back closes it.
 
 mod blank;
 mod browser;
@@ -70,7 +74,10 @@ use std::fmt;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
-pub use browser::{Browser, LOGIN_WAIT, LoginEnded, origin_of};
+pub use browser::{
+    Browser, FRONT_END, INSPECTOR_PAGE, InspectEnded, LOGIN_WAIT, LoginEnded, MOST_QUEUED,
+    origin_of,
+};
 pub use screencast::QUALITY;
 
 use crate::WebAddress;
@@ -381,6 +388,15 @@ pub enum Call {
     Screenshot {
         page: Option<PageId>,
     },
+    /// Every download of the browser's, as [`Answer::downloads`] says them (#2020).
+    Downloads,
+    /// Puts `files` into the file input `target` (#2020), as the page's own file chooser would.
+    /// Each is a file purlis made for the browser alone, never one an agent named: the caller
+    /// copies what it may read into the browser's own folder first.
+    Upload {
+        target: Ref,
+        files: Vec<std::path::PathBuf>,
+    },
 }
 
 impl Call {
@@ -393,6 +409,7 @@ impl Call {
                 | Call::WaitForText { .. }
                 | Call::Pages
                 | Call::Screenshot { .. }
+                | Call::Downloads
         )
     }
 }
@@ -444,6 +461,71 @@ pub struct Answer {
     /// The sites the judge asked the person about since the last answer, each once (#2018):
     /// what the browser did not reach or send to, or where it typed nothing, until they say.
     pub asked: Vec<String>,
+    /// The downloads that began or moved on since the last answer (#2020), or for
+    /// [`Call::Downloads`], every one.
+    pub downloads: Vec<DownloadInfo>,
+}
+
+/// **One download of a browser's** (#2020): held in the folder the browser was given
+/// ([`Browser::hold_downloads_in`]), under the name the engine made for it, never the page's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DownloadInfo {
+    /// Its name in the browser (`d1`), in the order they began.
+    pub id: String,
+    /// The name the page suggested, made plain ([`plain_file_name`]): words to show, never a
+    /// path purlis writes.
+    pub name: String,
+    /// The origin it came from (`https://host[:port]`): its own address's, or for one at no web
+    /// address (a `blob:` or `data:` one), the page's that began it. None where neither is one.
+    pub origin: Option<String>,
+    /// The bytes received so far.
+    pub received: u64,
+    /// The bytes it has in all, where the site said.
+    pub total: Option<u64>,
+    pub state: DownloadState,
+    /// The engine's name for its file in the holding folder: what the host opens it by.
+    pub file: String,
+}
+
+/// How far a download has come (#2020).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DownloadState {
+    Going,
+    Done,
+    /// The engine or the page cancelled it.
+    Cancelled,
+    /// purlis cancelled it and removed its file: past [`Limits::most_download_bytes`], or past
+    /// [`Limits::most_held_bytes`] with the browser's others.
+    TooLarge,
+}
+
+/// The longest name [`plain_file_name`] keeps, in characters.
+pub const MOST_FILE_NAME_CHARS: usize = 120;
+
+/// **A name a page suggested for a file, made plain** (#2020): no path, no character a reader
+/// does not see ([`purlis_unicode::invisible`]: controls, format characters such as a direction
+/// mark or a zero-width space, line and paragraph separators), no leading dot, at most [`MOST_FILE_NAME_CHARS`] characters;
+/// `download` where nothing is left.
+pub fn plain_file_name(suggested: &str) -> String {
+    let kept: String = suggested
+        .chars()
+        .map(|c| {
+            if matches!(c, '/' | '\\' | ':') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .filter(|c| !purlis_unicode::invisible(*c))
+        .collect();
+    let trimmed = kept.trim().trim_start_matches('.').trim();
+    let cut: String = trimmed.chars().take(MOST_FILE_NAME_CHARS).collect();
+    let cut = cut.trim();
+    if cut.is_empty() {
+        "download".to_owned()
+    } else {
+        cut.to_owned()
+    }
 }
 
 /// **What a request a page is about to send is**, as the driver tells the browser's judge
@@ -534,6 +616,8 @@ pub enum Refusal {
     StaleRef(Ref),
     #[error("{0} is not shown on the page now (hidden, or gone): take a new snapshot")]
     NotShown(Ref),
+    #[error("{0} is not a file input: find the page's file input and upload into it")]
+    NotAFileInput(Ref),
     #[error("{0} is not a drop-down: click its options instead")]
     NotADropDown(Ref),
     #[error("{target} has no option {missing}; its options are: {options}")]
@@ -583,6 +667,22 @@ pub enum Refusal {
     HandedBack(Ref),
     #[error("the person is not driving this browser: take it over first")]
     NotDriving,
+    /// A page DevTools were open on could not be read as the browser was handed back, so what
+    /// they wrote into it is not yet known to be kept out (#2028): nothing is answered until it
+    /// is.
+    #[error(
+        "purlis could not read a page the person had DevTools open on, to keep what they did \
+         there out of your answers, so this call was not carried out: go back, or go to another \
+         address in that page, or ask the person to take the browser over and hand it back"
+    )]
+    NotKeptOutYet,
+    /// DevTools were open on this browser, and what the person copied there may be what a paste
+    /// gets (#2028): the agent's pastes are withheld from then on.
+    #[error(
+        "pasting is not available in this browser since the person used DevTools in it, so this \
+         call was not carried out: type the text instead"
+    )]
+    PasteWithheld,
     #[error(
         "purlis is logging this browser in, so it takes no call from you until the login answers: wait for it, then take a new snapshot"
     )]
@@ -611,6 +711,15 @@ pub enum Refusal {
 /// The most a read of a page's whole tree holds by default (#3277): two of the engine's largest
 /// answers.
 pub const MOST_TREE_READ_BYTES: usize = 2 * crate::cdp::MAX_MESSAGE_BYTES;
+
+/// The most bytes one download holds by default (#2020): 512 MiB.
+pub const MOST_DOWNLOAD_BYTES: u64 = 512 << 20;
+
+/// The most downloads one browser makes by default (#2020).
+pub const MOST_DOWNLOADS: usize = 64;
+
+/// The most bytes a browser's downloads hold together by default (#2020): 1 GiB.
+pub const MOST_HELD_BYTES: u64 = 1 << 30;
 
 /// How long and how much, all configurable (from Settings, by the session host).
 #[derive(Debug, Clone, PartialEq)]
@@ -654,6 +763,14 @@ pub struct Limits {
     /// holds of the engine's answers, every frame's in all (#3277): past it, the read fails as
     /// too large.
     pub most_tree_read_bytes: usize,
+    /// The most bytes one download may hold (#2020): past it, purlis cancels it.
+    pub most_download_bytes: u64,
+    /// The most downloads one browser makes (#2020): any after it is cancelled as it begins,
+    /// listed nowhere, and only counted in the next answer's note.
+    pub most_downloads: usize,
+    /// The most bytes a browser's downloads hold together (#2020): the one that passes it is
+    /// cancelled.
+    pub most_held_bytes: u64,
 }
 
 impl Default for Limits {
@@ -673,6 +790,9 @@ impl Default for Limits {
             page_reads_within: Duration::from_secs(60),
             page_read_kept_for: Duration::from_secs(60),
             most_tree_read_bytes: MOST_TREE_READ_BYTES,
+            most_download_bytes: MOST_DOWNLOAD_BYTES,
+            most_downloads: MOST_DOWNLOADS,
+            most_held_bytes: MOST_HELD_BYTES,
         }
     }
 }

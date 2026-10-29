@@ -312,10 +312,11 @@ _Avoid_: host (that is `purlisd`, the process), machine (in UI text), node
 **Devices**:
 The window's view tab of every device this machine knows: itself and each runner it keeps, each
 with its chats and browsers, its version, how it is and when it last answered, and each pool's
-use per person (runners running and suspended, the CPUs and memory they request). Money shows
-only where a pool declares a price per hour. It replaces the **Runners** view tab ADR 0089 §12
-named, and is offered only once this machine keeps a pool. It belongs to **Project**, with the
-devices it lists (spec #2041, #2052).
+use per person (runners running and suspended, the CPUs and memory they request, the hours they
+ran this week). Money shows only where a pool declares a price per hour (`pricePerHour`): its
+hours this week times that price, in its own currency. It replaces the **Runners** view tab
+ADR 0089 §12 named, and is offered only once this machine keeps a pool. It belongs to
+**Project**, with the devices it lists (spec #2041, #2052).
 _Avoid_: Runners view, fleet, machines (for the view)
 
 **Harness declaration**:
@@ -526,8 +527,9 @@ setting of it), runner provider (that is the code)
 
 **Claim**:
 One person's request for a runner from a pool, and the runner it is given. A **kept** claim has
-storage of its own and survives its runner; a **fresh** one is given a ready runner and keeps
-nothing.
+storage of its own, its runner's home, and survives the loss of its runner's pod, its pairing
+with it: the pairing is the claim's (ADR 0078, amended 2026-10-28). A **fresh** one is given a
+ready runner and keeps nothing. purlis chooses which, and "Keep this runner's work" overrides it.
 _Avoid_: claimed (of a piece: that is the piece log's word), lease, reservation, sandbox
 
 **Cluster operator**:
@@ -685,6 +687,13 @@ The person's act of becoming a browser's driver: a click or a key in its view. *
 it: Done, or one fixed chord, and nothing else.
 _Avoid_: control, grab, interrupt
 
+**Inspect**:
+The person's act of opening the real DevTools of the page a browser they drive shows, in a view
+tab beside it. They are the engine's own, drawn as frames as the page is, speaking to that page
+alone through the session host; no chat reaches them, and they close as the person hands the
+browser back (#2028).
+_Avoid_: debugger, dev console, inspector (for the act)
+
 **The browser needs you**:
 An **Ask** whose source is a chat's browser: the agent, through `ask_operator` pointed at that
 browser, asks the person to do what a page needs of a human (a CAPTCHA, a second factor, a
@@ -771,6 +780,19 @@ field the agent is about to type into, and says whether it goes or the person is
 goes, an address the agent wrote or anything sent to a site new to the project asks. The reach
 proxy carries a site new to the project only where the judge let a request to it go.
 _Avoid_: filter, firewall, interceptor
+
+**Holding folder** (of a browser):
+Where a browser's downloads land: a folder of the browser's own data, which no chat reads or
+writes, each file under the engine's own name for it. The agent is told a download's name, size
+and origin. A chat has a download only once it **saves** it into its folder, which needs the
+person's yes for its origin, for that chat. It goes with the browser.
+_Avoid_: downloads folder (that is the person's own), cache
+
+**Upload** (from a browser):
+Files of the chat's own folder put into a page's file input: named by the agent relative to that
+folder, read by purlis under the chat's read rules following no link, and handed to the browser
+as purlis's copy, never as the chat's file.
+_Avoid_: attach, file pick (the person's own file dialog is not one)
 
 ### Chats working together
 

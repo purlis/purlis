@@ -32,6 +32,7 @@ mod awayrunners;
 mod blockedsave;
 mod branchwatch;
 mod brokered;
+mod browserfiles;
 mod browserlimits;
 mod browserneedsyou;
 mod browserproof;
@@ -81,6 +82,7 @@ mod host;
 mod inboxupdates;
 mod machineprofiles;
 mod personaskills;
+mod routergrade;
 mod skillchange;
 mod skilldrafts;
 mod skillgrade;
@@ -3026,6 +3028,9 @@ fn commands() -> Builder<tauri::Wry> {
         // What `skill-grade` carries, and the event's name (SK-16, #2779).
         .typ::<skillgrade::SkillGradeStep>()
         .constant("SKILL_GRADE", skillgrade::EVENT)
+        // What `router-grade` carries, and the event's name (SK-15e, #3233).
+        .typ::<routergrade::RouterGradeStep>()
+        .constant("ROUTER_GRADE", routergrade::EVENT)
         // What `skill-grade-after-edit` carries, and its name (SK-58, #3238).
         .typ::<skillgrade::after_edit::SkillGradeAfterEditStep>()
         .constant("SKILL_GRADE_AFTER_EDIT", skillgrade::after_edit::EVENT)

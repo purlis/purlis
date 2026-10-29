@@ -97,14 +97,14 @@ asked for an `Owner`: a GitHub organisation or user, or a GitLab group by its fu
 
 Measured against GitHub's REST API (version `2022-11-28`) and GraphQL schema, and against the
 GitLab 19.4 REST documentation (`gitlab-org/gitlab`, branch `19-4-stable-ee`, `doc/api/`).
-Each row has a contract case on both forges in `tests/forge_contract.rs`, run against the
+Each row has a contract case on both forges in `tests/it/forge_contract.rs`, run against the
 recordings in `tests/forge_contract/<forge>/` six times: through the CLI transport on each
 forge, and through the native transport on github.com, gitlab.com, a GitHub Enterprise Server
 and a self-managed GitLab, the native runs with no `gh` or `glab` on `PATH`. The same suite
 checks that the network log lists every REST call in the recordings by a template that keeps no
 owner, repo, branch, number or commit. The CLI transport's argv for each is pinned by
-`tests/a_forge_cli_is_asked_exactly_what_python_asked.rs` and
-`tests/a_pr_is_opened_or_updated_and_set_to_auto_merge.rs`.
+`tests/it/a_forge_cli_is_asked_exactly_what_python_asked.rs` and
+`tests/it/a_pr_is_opened_or_updated_and_set_to_auto_merge.rs`.
 
 | Area · method | Who calls it | GitHub | GitLab | Discipline | Parity |
 |---|---|---|---|---|---|
@@ -277,7 +277,7 @@ work view, FW-9; the item cache, FW-7) need them (#1202):
 
 ### Gaps the audit found
 
-Fixed in this audit, each with a case in `tests/forge_contract.rs`. The first two move purlis
+Fixed in this audit, each with a case in `tests/it/forge_contract.rs`. The first two move purlis
 away from what the Python charter answered, on purpose (ADR 0046):
 
 - **Two GitLab pipeline statuses were unread.** GitLab 19.4 lists thirteen (`doc/api/pipelines.md`,
@@ -364,7 +364,7 @@ lists it, and its **Sign in with a token** dialog (also the welcome's "Sign in")
   forge: the person deletes it there, and the row says so.
 - **Only the window signs in or out.** Each act takes the host's scope, which a chat's process
   is refused, and the `purlis` binary names none of them
-  (`tests/a_signed_in_forge_token_never_reaches_a_chat.rs`).
+  (`tests/it/a_signed_in_forge_token_never_reaches_a_chat.rs`).
 
 ## Signing in to GitHub through the browser (#729)
 
@@ -545,7 +545,7 @@ GitLab's native transport is the same `Http` as GitHub's, speaking GitLab's dial
 Every call a `route::Resolver` resolves for a caller naming an account is admitted and counted
 by that account's meter (`src/forge/budget.rs`), on the native route and the CLI route alike.
 Nothing sends with a purlis sign-in token without it: only the resolver builds the native
-transport outside tests (`tests/only_the_resolver_builds_the_native_transport.rs`). A call that
+transport outside tests (`tests/it/only_the_resolver_builds_the_native_transport.rs`). A call that
 names no account, or one sent through `Forge::backend()` with no resolver, goes over the CLI with
 the CLI's own login, not a purlis account, and has no budget. A chat's or a `purlis` command's
 call that names an account takes the CLI route (ADR 0070 §4), so it spends the CLI's login too,
@@ -580,7 +580,7 @@ account.
 - **The CLI route has no rate-limit reading.** `gh api` and `glab api` print no headers without
   `--include`, which would change every argv the recorded behaviour pins (ADR 0046), so a CLI
   call is counted but tells the meter nothing of the forge's limit.
-- **Pinned by** `tests/a_fifty_request_workspace_polls_inside_its_budget.rs`: fifty open
+- **Pinned by** `tests/it/a_fifty_request_workspace_polls_inside_its_budget.rs`: fifty open
   requests in two repos, polled for an hour of a virtual clock against a stand-in forge that
   changes, stay under 1,000 requests as each forge counts them.
 

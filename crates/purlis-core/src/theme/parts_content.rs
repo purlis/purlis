@@ -58,6 +58,37 @@ pub(super) const CARD: Family = Family {
             description: "Its first line, where it has one: whose it is, what it asks.",
             properties: WORDS,
         },
+        Part {
+            name: "facts-label",
+            since: super::NEXT,
+            description: "A fact's label, in the column at the start of a list of facts (#3673).",
+            properties: WORDS,
+        },
+        Part {
+            name: "facts-value",
+            since: super::NEXT,
+            description: "A fact's value, beside its label: words, a badge, a link or a fix.",
+            properties: WORDS,
+        },
+        Part {
+            name: "tile",
+            since: super::NEXT,
+            description: "A totals tile, in a row of them: its edge, corners and the room inside \
+                          it. It has no ground of its own: its words stand on the surface under it.",
+            properties: &[
+                Prop::BorderColour,
+                Prop::BorderWidth,
+                Prop::CornerRadius,
+                Prop::Padding,
+                Prop::Gap,
+            ],
+        },
+        Part {
+            name: "tile-value",
+            since: super::NEXT,
+            description: "A tile's value, a size larger than its label, in figures of one width.",
+            properties: WORDS,
+        },
     ],
     variants: &[
         Variant {
@@ -86,9 +117,12 @@ pub(super) const CARD: Family = Family {
     defaults: card_look,
     states: &[],
     focused: "[data-focus-visible]",
-    words: &[],
+    // A fact's label is in the secondary tier (#3673).
+    words: &[("facts-label", "text.secondary")],
     corner_most: None,
-    around: &[],
+    // Facts and totals stand on a page as often as in a card: each is reached by its own
+    // attributes, in no variant and no state (#3673).
+    around: &["facts-label", "facts-value", "tile", "tile-value"],
     fills: &[],
     under: &[],
 };

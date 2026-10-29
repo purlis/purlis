@@ -13,6 +13,7 @@
 
 use crate::admission::{Admission, POLICY, admission};
 use crate::resources::{Claim, ClaimStatus, Pool, READY, condition};
+use crate::stage;
 use crate::upstream::{
     self, Found, Sandbox, SandboxClaim, SandboxTemplate, SandboxWarmPool, made_for, made_for_pool,
     owners_with, sandbox_claim_for, template_for, warm_pool_for,
@@ -230,11 +231,17 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
             let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &namespace);
             let upstream_claims = Api::<SandboxClaim>::namespaced(client.clone(), &namespace);
             // All three are looked at before any is written: one in the way stops them all.
-            let wanted = sandbox_claim_for(&claim);
+            let mut wanted = sandbox_claim_for(&claim, &pool.spec.kept_volume);
             let pool_object = upstream::name_for(&pool.name_any());
             let template_held = templates.get_opt(&pool_object).await?.map(meta);
-            let warm_held = warm_pools.get_opt(&pool_object).await?.map(meta);
-            let claim_held = upstream_claims.get_opt(&name).await?.map(meta);
+            let warm_full = warm_pools.get_opt(&pool_object).await?;
+            let replicas = upstream::replicas_held(warm_full.as_ref());
+            let warm_held = warm_full.map(meta);
+            let claim_full = upstream_claims.get_opt(&name).await?;
+            // The volume an upstream claim was made with stays as it is: upstream never changes
+            // it, and refuses an apply that does (#2057).
+            upstream::keep_volumes_held(&mut wanted, claim_full.as_ref());
+            let claim_held = claim_full.map(meta);
             // Only a Claim it acts on proves an object is the operator's; once it is, every
             // Claim on the pool there that already owns it stays an owner.
             let vouch = claims_that_vouch(context.claims.state(), &claim, binding.as_ref());
@@ -263,6 +270,8 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
             warm.metadata.resource_version = warm_held
                 .as_ref()
                 .and_then(|held| held.resource_version.clone());
+            // The runners it keeps warm stay as many as it holds (#2057, until #2058).
+            warm.spec.replicas = replicas;
             // Who holds an object in the way: Claims the operator made it for and now refuses,
             // or none it knows of.
             let holders = |held: &Option<ObjectMeta>| {
@@ -309,10 +318,36 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
                 write_status(client, &claim, &namespace, status).await?;
                 return Ok(Action::await_change());
             }
-            let template_now = write_ours(&templates, template, template_found).await?;
-            write_ours(&warm_pools, warm, warm_found).await?;
-            let applied = write_ours(&upstream_claims, wanted, claim_found).await?;
-            let vouching = vouch_for(
+            let written: Result<_, Error> = async {
+                let template_now = write_ours(&templates, template, template_found).await?;
+                write_ours(&warm_pools, warm, warm_found).await?;
+                let applied = write_ours(&upstream_claims, wanted, claim_found).await?;
+                Ok((template_now, applied))
+            }
+            .await;
+            let (template_now, applied) = match written {
+                Ok(written) => written,
+                // A statement the operator can no longer look at again goes (#2057): only a
+                // conflict, which is tried again at once, leaves it.
+                Err(error) => {
+                    if !is_conflict(&error) {
+                        let withdrawn = status_withdrawn(claim.status.as_ref(), &error.to_string());
+                        if let Err(unwritten) = write_status_saying(
+                            client,
+                            &claim,
+                            &namespace,
+                            withdrawn,
+                            LinkKeyIs::Said,
+                        )
+                        .await
+                        {
+                            tracing::warn!(claim = %name, %namespace, error = %unwritten, "the statement could not be taken away");
+                        }
+                    }
+                    return Err(error);
+                }
+            };
+            let (vouching, pod) = vouch_for(
                 client,
                 &context.signing,
                 &claim,
@@ -324,7 +359,8 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
             if let Vouching::Refused(why) = &vouching {
                 tracing::warn!(claim = %name, %namespace, %why, "no link key vouched for");
             }
-            let mut status = status_of(Some(&applied));
+            // A runner not ready yet says its stage (#2057).
+            let mut status = stage::staged(status_of(Some(&applied)), pod.as_ref());
             status.conditions.push(vouching.condition());
             status.link_key = vouching.link_key();
             write_status_saying(client, &claim, &namespace, status, LinkKeyIs::Said).await?;
@@ -338,7 +374,7 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
 }
 
 /// **The operator's word on `claim`'s runner's link key** (#2056): the sandbox its upstream
-/// claim names and the pod of that sandbox's name, read, then [`vouch::vouch`].
+/// claim names and the pod of that sandbox's name, read, then [`vouch::vouch`]; and the pod.
 async fn vouch_for(
     client: &Client,
     signing: &SigningKey,
@@ -346,7 +382,7 @@ async fn vouch_for(
     pool: &Pool,
     upstream: &SandboxClaim,
     template: &SandboxTemplate,
-) -> Result<Vouching, Error> {
+) -> Result<(Vouching, Option<Pod>), Error> {
     let namespace = claim.namespace().unwrap_or_default();
     let named = upstream
         .status
@@ -368,8 +404,12 @@ async fn vouch_for(
     let wanted = upstream::template_for(pool, &namespace, Vec::new())
         .spec
         .pod_template;
-    Ok(vouch::vouch(
+    let vouching = vouch::vouch(
         &vouch::Held {
+            now: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_secs())
+                .unwrap_or_default(),
             claim,
             upstream,
             template: Some(&template.metadata),
@@ -379,7 +419,8 @@ async fn vouch_for(
         },
         &wanted,
         signing,
-    ))
+    );
+    Ok((vouching, pod))
 }
 
 /// An object's metadata, which is all [`made_for`] and [`made_for_pool`] read of it.
@@ -528,6 +569,31 @@ const RETRY: Duration = Duration::from_secs(10);
 /// made since it was found missing.
 const CONFLICT: u16 = 409;
 
+/// Whether `error` is a conflict, which is tried again soon ([`retry_after_conflict`]).
+fn is_conflict(error: &Error) -> bool {
+    matches!(error, Error::Kube(kube::Error::Api(status)) if status.code == CONFLICT)
+}
+
+/// A Claim's status once the operator could not apply what it asks for, with `why`: what it
+/// said before, but no statement, and `KeyPublished` saying why. A statement stays only while
+/// the operator can look at it again.
+pub fn status_withdrawn(previous: Option<&ClaimStatus>, why: &str) -> ClaimStatus {
+    let refused = Vouching::Refused(format!(
+        "what its claim asks for could not be applied ({why})"
+    ));
+    let mut conditions: Vec<_> = previous
+        .map(|status| status.conditions.clone())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|condition| condition.type_ != crate::resources::KEY_PUBLISHED)
+        .collect();
+    conditions.push(refused.condition());
+    ClaimStatus {
+        conditions,
+        link_key: None,
+    }
+}
+
 /// How long a claim waits before it is tried again after its `attempts`-th conflict in a row:
 /// one second, doubling each time, and never longer than [`RETRY`]. Claims sharing an object
 /// take turns, and an object changed over and over does not keep them at one try a second.
@@ -539,7 +605,7 @@ pub fn retry_after_conflict(attempts: u32) -> Duration {
 
 fn error_policy(claim: Arc<Claim>, error: &Error, context: Arc<Context>) -> Action {
     let retry = match error {
-        Error::Kube(kube::Error::Api(status)) if status.code == CONFLICT => {
+        error if is_conflict(error) => {
             let mut conflicts = context
                 .conflicts
                 .lock()

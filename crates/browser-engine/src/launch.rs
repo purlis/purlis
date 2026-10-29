@@ -57,6 +57,10 @@ pub const NOT_KEPT: &[&str] = &[
     "SingletonLock",
     "SingletonSocket",
     "SingletonCookie",
+    // A browser's downloads and its uploads' copies (#2020): its own while it runs, never
+    // part of a kept login.
+    "downloads",
+    "uploads",
 ];
 
 /// One engine's start.

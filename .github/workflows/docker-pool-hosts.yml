@@ -7,7 +7,7 @@ name: docker pool hosts
 # an AppArmor host (GitHub's Ubuntu 24.04), and Podman there, rootful and rootless. Each job
 # makes a container the pool's way on that host's engine, records what `inspect` and `info`
 # write of it, and holds `dockerpool::check` to it: the correctly made container passes, and
-# every loosened one is refused (`crates/purlis-core/tests/a_pool_container_is_checked_on_this_host.rs`).
+# every loosened one is refused (`crates/purlis-core/tests/it/a_pool_container_is_checked_on_this_host.rs`).
 # What each host wrote is the job's artifact, and the recorded copies the unit tests read are
 # in `crates/purlis-core/src/dockerpool/hosts/`.
 #
@@ -24,7 +24,7 @@ on:
       - .github/workflows/docker-pool-hosts.yml
       - crates/purlis-core/src/dockerpool.rs
       - crates/purlis-core/src/dockerpool/**
-      - crates/purlis-core/tests/a_pool_container_is_checked_on_this_host.rs
+      - crates/purlis-core/tests/it/a_pool_container_is_checked_on_this_host.rs
   schedule:
     - cron: "41 3 * * *"
   workflow_dispatch:
@@ -95,7 +95,8 @@ jobs:
               echo "DOCKER_POOL_TEST_DOCKER=$(command -v podman)" >> "$GITHUB_ENV" ;;
           esac
       - name: The check, held to what this host writes
-        run: DOCKER_POOL_MEASURE_OUT="$OUT" cargo test --locked -p purlis-core --test a_pool_container_is_checked_on_this_host -- --nocapture
+        run: |
+          DOCKER_POOL_MEASURE_OUT="$OUT" cargo test --locked -p purlis-core --test it -- a_pool_container_is_checked_on_this_host:: --nocapture
       - name: What the host wrote
         if: always()
         run: |

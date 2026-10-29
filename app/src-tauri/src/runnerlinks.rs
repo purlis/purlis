@@ -55,9 +55,26 @@ impl Machine {
         purlis_core::linkkey::kept(&self.config, &*self.keyring)
     }
 
+    /// **Whether the runner `kept`'s container runs**, as Docker says, writing when it ran as
+    /// it is read (#3492, [`purlis_core::runnerhours::seen`]). What could not be written is
+    /// said, and the answer stands.
+    pub fn running(&self, kept: &Kept) -> Result<bool, purlis_core::dockerpool::Refused> {
+        let ran = self.docker.ran(&kept.made)?;
+        hours_seen(&self.config, kept, ran);
+        Ok(ran.running)
+    }
+
     /// This desktop as a pool is added: its key made where it keeps none.
     pub fn desktop_made(&self) -> Result<purlis_core::linkkey::Desktop, String> {
         purlis_core::linkkey::desktop(&self.config, &*self.keyring)
+    }
+}
+
+/// Writes when `kept` ran, as Docker's `ran` says (#3492); what could not be written is said.
+fn hours_seen(config: &Path, kept: &Kept, ran: purlis_core::dockerpool::Ran) {
+    let now = crate::sandboxing::now_secs();
+    if let Err(why) = purlis_core::runnerhours::seen(config, kept.pool(), kept.name(), ran, now) {
+        tracing::warn!("purlis: {why}");
     }
 }
 
@@ -80,7 +97,7 @@ impl ToARunner {
         let desktop = machine.desktop()?;
         Ok(ToARunner::kept(
             kept,
-            machine.docker.clone(),
+            machine,
             desktop.into_identity(),
             false,
         ))
@@ -93,16 +110,18 @@ impl ToARunner {
         let desktop = machine.desktop()?;
         Ok(ToARunner::kept(
             kept,
-            machine.docker.clone(),
+            machine,
             desktop.into_identity(),
             true,
         ))
     }
 
-    fn kept(kept: &Kept, docker: Docker, desktop: Identity, resumes: bool) -> ToARunner {
+    fn kept(kept: &Kept, machine: &Machine, desktop: Identity, resumes: bool) -> ToARunner {
+        let docker = machine.docker.clone();
         let made = kept.made.clone();
         let checking = docker.clone();
         let preparing = docker.clone();
+        let (config, of) = (machine.config.clone(), kept.clone());
         let connector = CommandConnector::new(
             docker.program().to_path_buf(),
             made.connect_args(),
@@ -110,11 +129,18 @@ impl ToARunner {
             // amended 2026-10-17, item 2): anything else refuses the link and runs nothing.
             Arc::new(move || {
                 if resumes {
-                    checking.resumed(&made)
+                    // When it ran, as read before it was started, then its start (#3492).
+                    let resumed = checking.resumed(&made).map_err(|why| why.0)?;
+                    hours_seen(&config, &of, resumed.before);
+                    if resumed.started
+                        && let Ok(ran) = checking.ran(&made)
+                    {
+                        hours_seen(&config, &of, ran);
+                    }
+                    Ok(())
                 } else {
-                    checking.check(&made)
+                    checking.check(&made).map_err(|why| why.0)
                 }
-                .map_err(|why| why.0)
             }),
         )
         // Each run of `docker exec` is given what every run of `docker` is: a checked copy of
@@ -198,7 +224,7 @@ pub fn every_runner(config_root: PathBuf) -> purlis_host::EveryRunner {
                 let name = format!("{}/{}", kept.pool(), kept.name());
                 let keep = match &machine {
                     Err(why) => Err(why.clone()),
-                    Ok(machine) => match machine.docker.running(&kept.made) {
+                    Ok(machine) => match machine.running(kept) {
                         // Suspended: nothing runs there, and it is not woken to be stopped. A
                         // link made to it later carries the stop first while this machine is
                         // stopped.

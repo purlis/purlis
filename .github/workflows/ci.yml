@@ -352,7 +352,7 @@ jobs:
           mkdir -p app/dist
           cargo build --locked -p purlis-cli --bin purlis -p fake-harness --bin fake-harness
           cargo nextest run --locked -p purlis-app --lib --no-run
-          cargo nextest run --locked -p purlis-core --test a_docker_pool_runner_is_linked_through_docker_exec --test code_crosses_to_a_docker_pools_runner_and_back --test a_chat_moves_to_a_docker_pools_runner_and_back --no-run
+          cargo nextest run --locked -p purlis-core --test it --no-run
       - name: The runner image of this build, and the parity suite's around it, by digest
         if: steps.scope.outputs.run == 'true'
         run: |
@@ -421,9 +421,7 @@ jobs:
         run: >-
           tools/no-orphans.sh --reap --
           cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
-          --test a_docker_pool_runner_is_linked_through_docker_exec
-          --test code_crosses_to_a_docker_pools_runner_and_back
-          --test a_chat_moves_to_a_docker_pools_runner_and_back
+          --test it -E 'test(/^(a_docker_pool_runner_is_linked_through_docker_exec|code_crosses_to_a_docker_pools_runner_and_back|a_chat_moves_to_a_docker_pools_runner_and_back)::/)'
       - name: What the runners left, if a test failed
         if: failure() && steps.scope.outputs.run == 'true'
         run: docker ps --all --no-trunc || true
@@ -708,8 +706,9 @@ jobs:
   # Two jobs, not one matrix, because a job's `if:` cannot see `matrix`, and a matrix `exclude`
   # computed per event is undone by `include`, which adds an excluded entry back.
   #
-  # `app builds (ubuntu-24.04)` is a required check, so the job always runs, and skips its steps
-  # when nothing the app is built from has changed (`changes`).
+  # Both legs, `app builds (ubuntu-24.04)` and `app builds (macos-latest)`, are required checks,
+  # so the job always runs, and skips its steps when nothing the app is built from has changed
+  # (`changes`).
   app:
     name: app builds (${{ matrix.os }}${{ matrix.evidence && ', evidence only' || '' }})
     needs: changes
@@ -1142,7 +1141,7 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/tests/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
@@ -1164,7 +1163,8 @@ jobs:
       # A wrapped chat's own compiled profile, applied for real: no port bound, nothing listening.
       - name: A wrapped chat listens nowhere, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
-        run: cargo test --locked -p purlis-core --test a_sandboxed_chat_listens_nowhere_under_seatbelt
+        run: |
+          cargo test --locked -p purlis-core --test it -- a_sandboxed_chat_listens_nowhere_under_seatbelt::
       # A chat allowed to serve on a port, under its own compiled profile for real (#2019): its
       # own socket and no TCP port, reached through purlis's door alone.
       - name: A chat's server behind its door, confined by Seatbelt
@@ -1248,16 +1248,16 @@ jobs:
       # them with the rest of the suite; when it is skipped, they run here, alone.
       #
       # With them, the window's guards (`WINDOW_SOURCE_GUARDS`, #3596): Rust tests that read every
-      # file of `app/src/`, which runs no Rust suite of its own. One `cargo test` links the core
-      # once for all four test binaries (1 m 48 s for the first two on a warm cache, #3514).
+      # file of `app/src/`, which runs no Rust suite of its own. Each is a module of the core's one
+      # test binary (#3613), picked by its name.
       - name: The whole-tree guards, as Rust is out of scope
         if: needs.changes.outputs.rust == 'false'
         run: >-
-          cargo test --locked -p purlis-core
-          --test every_first_party_source_file_carries_its_licence_header
-          --test no_tracked_file_is_one_a_sandboxed_chat_may_not_write
-          --test no_old_name_is_spelled_in_the_window_or_its_assets
-          --test every_deferral_names_its_ticket
+          cargo test --locked -p purlis-core --test it --
+          every_first_party_source_file_carries_its_licence_header::
+          no_tracked_file_is_one_a_sandboxed_chat_may_not_write::
+          no_old_name_is_spelled_in_the_window_or_its_assets::
+          every_deferral_names_its_ticket::
       - name: The plane writes, hooks, status line and doctor, as recorded
         if: needs.changes.outputs.rust != 'false'
         run: cargo test --locked -p purlis-cli --test recorded_behaviour
@@ -1285,49 +1285,65 @@ jobs:
       - name: The shell reader and the plane-root guards, as recorded
         if: needs.changes.outputs.rust != 'false'
         run: >-
-          cargo test --locked -p purlis-core
-          --test the_shell_is_read_the_way_python_reads_it
-          --test the_leak_guard_answers_what_the_python_answers
-          --test the_golden_rule_and_the_prose_guards_answer_what_the_python_answers
-          --test the_handoff_guard_answers_what_the_python_answers
-          --test the_plane_root_guards_answer_what_the_python_answers
+          cargo test --locked -p purlis-core --test it --
+          the_shell_is_read_the_way_python_reads_it::
+          the_leak_guard_answers_what_the_python_answers::
+          the_golden_rule_and_the_prose_guards_answer_what_the_python_answers::
+          the_handoff_guard_answers_what_the_python_answers::
+          the_plane_root_guards_answer_what_the_python_answers::
 
-  # The scenario specs on macOS in two parts on two runners (WebdriverIO's `--shard`): on one
-  # runner the job took 15 minutes, 7 of them building on macOS's slow runner and 6 running the
-  # specs one at a time, longer than any other job but `rust` (2026-10-10). Each part builds for
-  # itself, as `rust`'s do. The seven runs that each need an app of their own (`extras`) are a
-  # third leg that runs no spec (`specs: false`): in a spec part they added about 7 minutes after
-  # its specs, and that part was the run's longest job (31 to 32 minutes on 2026-10-28; 25.9 with
-  # the extras apart). macOS runners vary a lot: the same half of the specs took 622 to 984 s and
-  # the build 179 to 485 s across those runs. The app as it ships is `app`'s macOS leg
-  # (`app builds (macos-latest)`).
+  # The scenario specs on macOS in four parts on four runners: on one runner the job took 15
+  # minutes, 7 of them building on macOS's slow runner and 6 running the specs one at a time,
+  # longer than any other job but `rust` (2026-10-10). Each part builds for itself, as `rust`'s
+  # do. The seven runs that each need an app of their own (`extras`) are a leg that runs no spec
+  # (`specs: false`): in a spec part they added about 7 minutes after its specs, and that part was
+  # the run's longest job (31 to 32 minutes on 2026-10-28; 25.9 with the extras apart). macOS
+  # runners vary a lot: the same half of the specs took 622 to 984 s and the build 179 to 485 s
+  # across those runs. The app as it ships is `app`'s macOS leg (`app builds (macos-latest)`).
+  #
+  # Four parts, not two (#3615): on 14 runs of 2026-10-28 a half took 24 minutes at the median and
+  # up to 31, of which 15.5 running its specs and 8 building, and the build is the runner's speed
+  # (sccache hit 80 to 90% on the fastest build and the slowest alike). A build shared through an
+  # artifact would only move those 8 minutes in front of every part, so the specs are what to cut.
+  # The parts are cut by measured time (`e2e/parts.ts`), not by WebdriverIO's `--shard`, which
+  # counts files: its four parts would have taken 4.6, 10.8, 6.3 and 8.2 minutes of specs, the
+  # cut ones 7.7, 7.7, 6.9 and 7.6. Runners do not queue (Enterprise runners, 2026-10-13), so a
+  # part costs runner minutes, not wait. Every part is a run of neighbours in name order, as
+  # before, and the Skill studio's specs keep the predecessors they pass after (#3562).
+  #
+  # macOS's own sandbox checks are a leg of their own too (`sandbox`): they compile the core's
+  # tests and build no app, 4.2 minutes on average that made the single-app leg the next longest.
   # `scenario-checks` carries the required check's name. Linux has the same steps, in
   # `scenario-linux`.
   #
   # Skipped whole, and no macOS runner held, when nothing the scenarios run has changed
   # (`changes`); `scenario-checks` says so.
   scenario:
-    name: scenario tests (${{ matrix.os }}, ${{ matrix.specs && format('part {0} of {1}', matrix.shard, matrix.shards) || 'the single-app runs' }})
+    name: scenario tests (${{ matrix.os }}, ${{ matrix.specs && format('part {0} of {1}', matrix.shard, matrix.shards) || matrix.sandbox && 'the sandbox runs' || 'the single-app runs' }})
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' }}
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest]
-        shard: [1, 2]
-        shards: [2]
+        shard: [1, 2, 3, 4]
+        shards: [4]
+        extras: [false]
+        specs: [true]
+        sandbox: [false]
         include:
-          - shard: 1
-            extras: false
-            specs: true
-          - shard: 2
-            extras: false
-            specs: true
           - os: macos-latest
             shard: extras
-            shards: 2
+            shards: 4
             extras: true
             specs: false
+            sandbox: false
+          - os: macos-latest
+            shard: sandbox
+            shards: 4
+            extras: false
+            specs: false
+            sandbox: true
     runs-on: ${{ matrix.os }}
     steps: &scenario-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1373,11 +1389,11 @@ jobs:
       # the core and applied whole to the same operations (#2128). After the toolchain and the
       # caches, since the core's test writes those profiles out.
       - name: macOS's sandbox and a name spelled in another case
-        if: runner.os == 'macOS' && matrix.extras
+        if: runner.os == 'macOS' && matrix.sandbox
         env:
           PURLIS_SEATBELT_OUT: ${{ runner.temp }}/seatbelt-emitted
         run: |
-          cargo test --locked -p purlis-core --test the_profiles_a_wrapped_chat_starts_under_are_written_out
+          cargo test --locked -p purlis-core --test it -- the_profiles_a_wrapped_chat_starts_under_are_written_out::
           tools/seatbelt-case.sh "$PURLIS_SEATBELT_OUT"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -1385,6 +1401,7 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci
+        if: ${{ !matrix.sandbox }}
         working-directory: app
       # **Claude Code's own sandbox, on the settings purlis writes** (#2211). Claude Code builds its
       # sandbox itself, so the real one is run: the version purlis supports
@@ -1394,7 +1411,7 @@ jobs:
       # the step above, and a wrong answer fails the step. No model is called, and no credential
       # is used.
       - name: Claude Code's own sandbox on the settings purlis writes
-        if: runner.os == 'macOS' && matrix.extras
+        if: runner.os == 'macOS' && matrix.sandbox
         run: |
           version=$(sed 's/ .*//' tests/fixtures/harness-versions/claude.txt)
           case "$RUNNER_ARCH" in
@@ -1405,7 +1422,7 @@ jobs:
           package="@anthropic-ai/claude-code-darwin-$arch"
           npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/claude-code" "$package@$version"
           PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
-            cargo test --locked -p purlis-core --test claude_codes_own_sandbox_holds_the_settings_purlis_writes -- --nocapture
+            cargo test --locked -p purlis-core --test it -- claude_codes_own_sandbox_holds_the_settings_purlis_writes:: --nocapture
       # The `e2e` feature puts WebdriverIO's embedded WebDriver server inside the app, which is
       # what drives it on macOS as well as Linux. It is in no build anyone is given.
       #
@@ -1414,6 +1431,7 @@ jobs:
       # dependencies resolve other features than the app's, so purlis-core compiled twice
       # (2026-10-12); together, once. They take the app's `purlis-core/fenced` with it.
       - name: Build the app, the harness and the CLI for the scenario tests
+        if: ${{ !matrix.sandbox }}
         run: npx tauri build --debug --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli
         working-directory: app
       # What sccache found, as a notice: whether the experiment pays, without the log.
@@ -1424,13 +1442,18 @@ jobs:
         # and #1829's run showed no notice at all.
         run: |
           said=$(sccache --show-stats 2>&1 | head -30 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
-          echo "::notice title=sccache (macOS, ${{ matrix.specs && format('part {0}', matrix.shard) || 'the single-app runs' }})::${said:-sccache said nothing}"
-      - run: npm run e2e -- --shard ${{ matrix.shard }}/${{ matrix.shards }}
+          echo "::notice title=sccache (macOS, ${{ matrix.specs && format('part {0}', matrix.shard) || matrix.sandbox && 'the sandbox runs' || 'the single-app runs' }})::${said:-sccache said nothing}"
+      # The part's specs, cut by `e2e/parts.ts` (#3615).
+      - run: npm run e2e
         if: runner.os == 'macOS' && matrix.specs
         working-directory: app
-      - run: xvfb-run -a npm run e2e -- --shard ${{ matrix.shard }}/${{ matrix.shards }}
+        env:
+          PURLIS_E2E_PART: ${{ matrix.shard }}/${{ matrix.shards }}
+      - run: xvfb-run -a npm run e2e
         if: runner.os == 'Linux' && matrix.specs
         working-directory: app
+        env:
+          PURLIS_E2E_PART: ${{ matrix.shard }}/${{ matrix.shards }}
       # The slowest spec files and tests of the run above, as notices on the job: what makes the
       # specs slow, readable through the checks API without the log (`tools/e2e-timings.mjs`). A
       # report, so it never turns the job red.
@@ -1595,9 +1618,11 @@ jobs:
           - shard: 1
             extras: false
             specs: true
+            sandbox: false
           - shard: 2
             extras: true
             specs: true
+            sandbox: false
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
 

@@ -28,7 +28,12 @@ vi.mock("../SessionPane", () => ({
 const IMAGE = `ghcr.io/purlis/purlis-runner@sha256:${"0".repeat(64)}`;
 const DEFAULTS = { cpus: "2", memory_mib: 4096, processes: 1024, tmp_mib: 1024 };
 
-const a_pool = (name: string): PoolRow => ({ name, image: IMAGE, limits: { ...DEFAULTS } });
+const a_pool = (name: string, suspend_after = "24h"): PoolRow => ({
+  name,
+  image: IMAGE,
+  limits: { ...DEFAULTS },
+  suspend_after,
+});
 
 let pools: PoolRow[];
 let link: PoolLink;
@@ -77,7 +82,11 @@ beforeEach(() => {
       if (cmd === "this_machine") return { projects: [], dropped: [], forgetful: null };
       if (cmd === "update_channel") return "stable";
       if (cmd === "docker_pools")
-        return { pools: structuredClone(pools), defaults: { ...DEFAULTS } } satisfies PoolsShown;
+        return {
+          pools: structuredClone(pools),
+          defaults: { ...DEFAULTS },
+          suspend_after: "24h",
+        } satisfies PoolsShown;
       if (cmd === "docker_pool_link") return link;
       if (cmd === "docker_pool_version") return version;
       if (cmd === "projects_not_held") return structuredClone(notHeld);
@@ -158,6 +167,7 @@ describe("You › This machine › Pools", () => {
           memory_mib: null,
           processes: null,
           tmp_mib: null,
+          suspend_after: null,
         },
       ]),
     );
@@ -180,6 +190,86 @@ describe("You › This machine › Pools", () => {
     );
     const nav = await yourSettings();
     expect(await within(nav).findByRole("button", { name: "Pools" })).toBeInTheDocument();
+  });
+
+  it("adds a pool with its own time before its runner suspends, and its row says it (#3471)", async () => {
+    render(<App />);
+    await palette("Add a Docker pool…");
+    const dialog = await screen.findByRole("dialog", { name: "Add a Docker pool" });
+    const after = within(dialog).getByRole("textbox", { name: "Suspends after" });
+    expect(after).toHaveAttribute("placeholder", "24h");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Name" }), "nightly");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Image" }), IMAGE);
+    await userEvent.type(after, "12h");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add pool" }));
+    await waitFor(() =>
+      expect(added).toEqual([
+        {
+          name: "nightly",
+          image: IMAGE,
+          cpus: null,
+          memory_mib: null,
+          processes: null,
+          tmp_mib: null,
+          suspend_after: "12h",
+        },
+      ]),
+    );
+    const signIn = await screen.findByRole("dialog", {
+      name: "Sign your profiles in on pool nightly",
+    });
+    await userEvent.click(within(signIn).getByRole("button", { name: "Done" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Sign your profiles in on pool nightly" }),
+      ).toBeNull(),
+    );
+  });
+
+  it("says on each row how long its runner is left without a link before it suspends", async () => {
+    pools = [a_pool("nightly", "12h"), a_pool("builds")];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText("Suspends after 12h without a link from this machine"),
+    ).toBeInTheDocument();
+    expect(
+      within(group).getByText("Suspends after 24h without a link from this machine"),
+    ).toBeInTheDocument();
+  });
+
+  it("says a runner made before purlis suspended runners never suspends (#3717)", async () => {
+    pools = [a_pool("builds")];
+    version = { ...version, suspends: { made: "never" } };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(
+        "Never suspends: its runner was made before purlis suspended runners",
+      ),
+    ).toBeInTheDocument();
+    expect(within(group).queryByText(/^Suspends after/)).toBeNull();
+  });
+
+  it("says the time a runner was made with where it is not the pool's (#3717)", async () => {
+    pools = [a_pool("nightly", "12h")];
+    version = { ...version, suspends: { made: "after", after: "24h" } };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(
+        "Suspends after 24h without a link from this machine, as its runner was made (the pool says 12h)",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(group).queryByText("Suspends after 12h without a link from this machine"),
+    ).toBeNull();
   });
 
   it("says a runner whose key changed in a Notice, whose Remove removes the pool", async () => {

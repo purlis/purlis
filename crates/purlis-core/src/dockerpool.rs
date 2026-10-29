@@ -298,8 +298,35 @@ impl Limits {
     }
 }
 
-/// One runner of the pool, as it is made: its name, its image, its user, its home and its
-/// pool's limits.
+/// **How long a pool's runner is left without a link from its desktop before it suspends
+/// itself, by default** (#2051): a day, as the host's own `UNLINKED_FOR`. A pool sets its own
+/// (`suspendAfter`, #3471) within [`LEAST_SUSPEND_AFTER`] and [`MOST_SUSPEND_AFTER`].
+pub const SUSPEND_AFTER: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// The shortest a pool's runner may be left without a link before it suspends: a minute, so a
+/// link that drops and comes back does not suspend it.
+pub const LEAST_SUSPEND_AFTER: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The longest a pool's runner may be left without a link before it suspends: 30 days.
+pub const MOST_SUSPEND_AFTER: std::time::Duration =
+    std::time::Duration::from_secs(30 * 24 * 60 * 60);
+
+/// `duration`, where it is a time a pool's runner may be left without a link before it
+/// suspends: whole seconds, [`LEAST_SUSPEND_AFTER`] to [`MOST_SUSPEND_AFTER`].
+pub fn suspend_after(duration: std::time::Duration) -> Result<std::time::Duration, Refused> {
+    if duration.subsec_nanos() == 0
+        && (LEAST_SUSPEND_AFTER..=MOST_SUSPEND_AFTER).contains(&duration)
+    {
+        Ok(duration)
+    } else {
+        Err(refused(
+            "a pool's runner suspends after at least a minute and at most 30 days without a link",
+        ))
+    }
+}
+
+/// One runner of the pool, as it is made: its name, its image, its user, its home, its
+/// pool's limits, and how long it is left without a link before it suspends itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Runner {
     name: String,
@@ -307,6 +334,7 @@ pub struct Runner {
     user: User,
     home: String,
     limits: Limits,
+    suspends_after: std::time::Duration,
 }
 
 impl Runner {
@@ -348,6 +376,7 @@ impl Runner {
             user,
             home: home.to_owned(),
             limits: Limits::default(),
+            suspends_after: SUSPEND_AFTER,
         })
     }
 
@@ -358,6 +387,20 @@ impl Runner {
 
     pub fn limits(&self) -> Limits {
         self.limits
+    }
+
+    /// This runner, suspending itself after `after` without a link from its desktop, its
+    /// pool's `suspendAfter` (#3471), in place of [`SUSPEND_AFTER`].
+    pub fn suspending_after(self, after: std::time::Duration) -> Runner {
+        Runner {
+            suspends_after: after,
+            ..self
+        }
+    }
+
+    /// How long it is left without a link from its desktop before it suspends itself.
+    pub fn suspends_after(&self) -> std::time::Duration {
+        self.suspends_after
     }
 
     pub fn name(&self) -> &str {
@@ -428,9 +471,19 @@ impl Runner {
         let mut all = vec!["run".to_owned(), "--detach".to_owned()];
         all.extend(args);
         all.push(self.image.as_str().to_owned());
-        // It suspends itself a day without a link from its desktop, keeping its home (#2051).
+        // It suspends itself after its pool's time without a link from its desktop, keeping its
+        // home (#2051, #3471). The bare flag is the default, a day, so a runner image of a
+        // purlis before #3471 starts as it did for a pool that keeps it.
         all.push("serve".to_owned());
-        all.push("--suspends-unlinked".to_owned());
+        all.push(
+            match crate::spelledtime::spelled(self.suspends_after, crate::spelledtime::UP_TO_HOURS)
+            {
+                Some(after) if self.suspends_after != SUSPEND_AFTER => {
+                    format!("--suspends-unlinked={after}")
+                }
+                _ => "--suspends-unlinked".to_owned(),
+            },
+        );
         all
     }
 }
@@ -562,9 +615,81 @@ pub fn check_on(
     checked_on(inspected, made, engine, true)
 }
 
+/// What [`Docker::resumed`] did: what it read of the container first, and whether it started it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Resumed {
+    pub before: Ran,
+    pub started: bool,
+}
+
 /// Whether `inspected`, what `docker inspect <container>` printed, says the container runs.
 pub fn is_running(inspected: &serde_json::Value) -> bool {
     inspected.pointer("/0/State/Running") == Some(&serde_json::Value::Bool(true))
+}
+
+/// **What Docker says of a container's latest run** (#3492): whether it runs, when it started,
+/// and when its last run ended, each in seconds since the epoch and `None` where Docker gives
+/// no time (a container never started says `0001-01-01T00:00:00Z`). The runner hours record
+/// is written from these ([`crate::runnerhours::seen`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Ran {
+    pub running: bool,
+    pub started: Option<u64>,
+    pub finished: Option<u64>,
+}
+
+/// [`Ran`], from what `docker inspect <container>` printed.
+pub fn ran(inspected: &serde_json::Value) -> Ran {
+    let at = |key: &str| {
+        inspected
+            .pointer(&format!("/0/State/{key}"))
+            .and_then(serde_json::Value::as_str)
+            .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
+            .and_then(|time| u64::try_from(time.timestamp()).ok())
+            .filter(|secs| *secs > 0)
+    };
+    Ran {
+        running: is_running(inspected),
+        started: at("StartedAt"),
+        finished: at("FinishedAt"),
+    }
+}
+
+/// **How a runner's container was made to suspend itself** (#3717), which its pool's
+/// `suspendAfter` does not say for a runner made before it: a runner made before purlis
+/// suspended runners (#2051) never does, and one made before a pool had its own time (#3471)
+/// keeps the time it was made with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MadeSuspending {
+    /// It was made with `serve` alone, and never suspends itself.
+    Never,
+    /// It suspends itself after this long without a link from its desktop.
+    After(std::time::Duration),
+}
+
+/// [`MadeSuspending`], from the command `docker inspect <container>` says it was made with
+/// (`Config.Cmd`, as [`Runner::create_args`] gives it); `None` where that is not a runner's
+/// `serve` as purlis makes one, a time outside [`suspend_after`]'s bounds included.
+pub fn made_suspending(inspected: &serde_json::Value) -> Option<MadeSuspending> {
+    let words: Vec<&str> = inspected
+        .pointer("/0/Config/Cmd")?
+        .as_array()?
+        .iter()
+        .map(serde_json::Value::as_str)
+        .collect::<Option<_>>()?;
+    match words.as_slice() {
+        ["serve"] => Some(MadeSuspending::Never),
+        ["serve", "--suspends-unlinked"] => Some(MadeSuspending::After(SUSPEND_AFTER)),
+        ["serve", flag] => {
+            let after = flag.strip_prefix("--suspends-unlinked=")?;
+            // Held to the bounds `purlis serve` holds it to: a time it refuses is none it
+            // suspends after.
+            crate::spelledtime::read(after, crate::spelledtime::UP_TO_HOURS)
+                .filter(|after| suspend_after(*after).is_ok())
+                .map(MadeSuspending::After)
+        }
+        _ => None,
+    }
 }
 
 /// [`check_on`], the container's running held to it only where `running` says so: a suspended
@@ -1909,38 +2034,66 @@ impl Docker {
 
     /// **Whether `made`'s container runs** (#2051): one a runner suspended stopped itself.
     pub fn running(&self, made: &Made) -> Result<bool, Refused> {
+        self.ran(made).map(|ran| ran.running)
+    }
+
+    /// **[`Ran`] of `made`'s container** (#3492): [`Docker::running`], with when it started and
+    /// last stopped. Read once, as [`Docker::running`] is.
+    pub fn ran(&self, made: &Made) -> Result<Ran, Refused> {
         let inspected = self.json(
             &["container", "inspect", made.container.as_str()],
             "docker container inspect",
         )?;
-        Ok(is_running(&inspected))
+        Ok(ran(&inspected))
+    }
+
+    /// **[`MadeSuspending`] of `made`'s container** (#3717): `None` where its command is not a
+    /// runner's `serve` as purlis makes one.
+    pub fn made_suspending(&self, made: &Made) -> Result<Option<MadeSuspending>, Refused> {
+        let inspected = self.json(
+            &["container", "inspect", made.container.as_str()],
+            "docker container inspect",
+        )?;
+        Ok(made_suspending(&inspected))
     }
 
     /// **[`Docker::check`], a suspended runner started again first** (#2051): a runner left a
     /// day without a link stops its own container, keeping its home volume; the next link to it
     /// starts that container again, once it is checked as it was made, and checks it whole once
     /// it runs. A container that runs is only checked.
-    pub fn resumed(&self, made: &Made) -> Result<(), Refused> {
+    ///
+    /// It answers what it read of the container before anything was started ([`Ran`]), and
+    /// whether it started it, so the runner hours record has both (#3492).
+    pub fn resumed(&self, made: &Made) -> Result<Resumed, Refused> {
         let engine = self.check_daemon()?;
         let inspected = self.json(
             &["container", "inspect", made.container.as_str()],
             "docker container inspect",
         )?;
-        if is_running(&inspected) {
-            return self.check(made);
+        let before = ran(&inspected);
+        if before.running {
+            return self.check(made).map(|()| Resumed {
+                before,
+                started: false,
+            });
         }
         checked_on(&inspected, made, engine, false)?;
         let id = made.container.as_str().to_owned();
         self.run(&["start".to_owned(), id.clone()], None, MOST_INSPECTED)?;
         // Started here and not as it was made once it runs: it is stopped again, and not linked.
-        self.check(made).inspect_err(|_| {
-            if let Err(why) = self.run(&["stop".to_owned(), id], None, MOST_INSPECTED) {
-                tracing::warn!(
-                    "purlis: a runner's container started again and refused its check was not \
+        self.check(made)
+            .map(|()| Resumed {
+                before,
+                started: true,
+            })
+            .inspect_err(|_| {
+                if let Err(why) = self.run(&["stop".to_owned(), id], None, MOST_INSPECTED) {
+                    tracing::warn!(
+                        "purlis: a runner's container started again and refused its check was not \
                      stopped: {why}"
-                );
-            }
-        })
+                    );
+                }
+            })
     }
 
     /// Pair `made`'s runner with `desktop`, once its container passes the check: the runner's

@@ -216,3 +216,19 @@ fn a_jpegs_size_is_read_from_its_header_and_anything_else_has_none() {
         "a bad length"
     );
 }
+
+#[test]
+fn a_closed_frame_says_why_devtools_closed_in_one_of_its_own_words_alone() {
+    // 1.45 (#2028): the last frame of a view of a browser's DevTools.
+    let framed = frames::closed("page_gone");
+    assert_eq!(framed[4], frames::CLOSED);
+    let read = &Frames::default().push(&framed).unwrap()[0];
+    assert_eq!(read.closed(), Some("page_gone"));
+
+    let unknown = &Frames::default()
+        .push(&frames::frame(frames::CLOSED, b"<b>anything</b>"))
+        .unwrap()[0];
+    assert_eq!(unknown.closed(), None, "a word it does not know is none");
+    let plain = &Frames::default().push(&frames::frame(JPEG, b"x")).unwrap()[0];
+    assert_eq!(plain.closed(), None);
+}

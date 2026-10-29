@@ -14,10 +14,10 @@
       "by": ["forgetSandboxBlock"]
     },
     {
-      "at": "behaviour.rs a_service_you_gave",
+      "at": "behaviour.rs gives",
       "writes": "this machine's answers about the project (sandbox-grants)",
       "by": [],
-      "why": "The behaviour suite's own fixture: it gives a test service to a test project on the machine the suite runs on, as a person would in Settings; no window command calls it."
+      "why": "The behaviour suite's own fixture: it gives a test service to a test project on the machine its chats run on, as a person would in Settings; no window command calls it."
     },
     {
       "at": "chatbrowsers.rs allow_chat_browser",

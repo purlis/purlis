@@ -53,7 +53,7 @@ use purlis_session_protocol::browsing::{
     Act, Aim, Browsed, BrowserReach, Driver, Input, KeptLogin, LogIn, origin_of,
 };
 use purlis_session_protocol::session::{self, Exit, Readiness, Refusal, ViewKind, ViewRole};
-use purlis_session_protocol::view::frames::{JPEG, aimed, frame, origin};
+use purlis_session_protocol::view::frames::{JPEG, aimed, closed as closed_frame, frame, origin};
 use purlis_session_protocol::view::{Attachment, Source};
 use tokio::sync::watch;
 
@@ -144,10 +144,12 @@ pub trait Screen: Send + Sync + 'static {
     /// Calls `tell` once, as the engine ends, with how it ended (#2745).
     fn when_it_ends(&self, tell: Box<dyn FnOnce(ScreenEnded) + Send>);
     /// Carries out `act` under its own id `call_id` (#2013), as the agent's under the lease of
-    /// `epoch` (#2014), and answers what the browser answered, or why it did not act: refused
+    /// `epoch` (#2014), in the project at `project`, whose files purlis keeps from chats it
+    /// keeps from the browser too (#2020), and answers what the browser answered, or why it did not act: refused
     /// unless the agent holds that lease, and cut if the person takes the browser over before
     /// it answers. It waits on the engine, so the host calls it off its runtime.
-    fn act(&self, call_id: &str, act: Act, epoch: u64) -> Result<Browsed, NotActed>;
+    fn act(&self, call_id: &str, act: Act, epoch: u64, project: &Path)
+    -> Result<Browsed, NotActed>;
     /// What it may reach from now on (#2018): its chat's reach and its browser sites as the
     /// window says they are now. One it cannot read is refused, and it reaches what it reached
     /// before.
@@ -168,6 +170,80 @@ pub trait Screen: Send + Sync + 'static {
     /// nothing, while the person drives. It waits on the page, so the host calls it off its
     /// runtime.
     fn log_in(&self, login: &LogIn) -> Result<LoginEnded, NotActed>;
+    /// The person opens the DevTools of the page it shows (#2028), their front end `width` by
+    /// `height`, while they drive; `ended` is called once, as they close, with why: one of
+    /// `view::frames::CLOSED_WHY`. Opened already, it
+    /// only sizes them. It waits on the engine, so the host calls it off its runtime.
+    fn inspect(
+        &self,
+        width: u16,
+        height: u16,
+        ended: Box<dyn FnOnce(&'static str) + Send>,
+    ) -> Result<(), NotTaken> {
+        let _ = (width, height, ended);
+        Err(NotTaken::Refused(NO_DEVTOOLS.into()))
+    }
+    /// Start making frames of its open DevTools, each handed to `frames` (#2028).
+    fn show_inspector(&self, frames: FrameSink) {
+        let _ = frames;
+    }
+    /// Make DevTools' frames no more often than `every`.
+    fn pace_inspector(&self, every: Duration) {
+        let _ = every;
+    }
+    /// Stop making DevTools' frames.
+    fn hide_inspector(&self) {}
+    /// One event of the person's into its open DevTools, while they drive (#2028).
+    fn inspector_input(&self, input: &Input) -> Result<(), NotTaken> {
+        let _ = input;
+        Err(NotTaken::Missed)
+    }
+}
+
+/// What `inspect` is refused with by a browser whose engine has no DevTools (#2028).
+pub const NO_DEVTOOLS: &str = "this browser has no DevTools purlis can open";
+
+/// **What makes a hub's frames**: a browser's pages, or its open DevTools (#2028).
+trait Paints: Send + Sync + 'static {
+    fn show(&self, frames: FrameSink);
+    fn pace(&self, every: Duration);
+    fn narrow(&self, most: Option<u16>);
+    fn hide(&self);
+}
+
+/// A browser's pages, as a hub's frames.
+struct Pages(Arc<dyn Screen>);
+
+impl Paints for Pages {
+    fn show(&self, frames: FrameSink) {
+        self.0.show(frames);
+    }
+    fn pace(&self, every: Duration) {
+        self.0.pace(every);
+    }
+    fn narrow(&self, most: Option<u16>) {
+        self.0.narrow(most);
+    }
+    fn hide(&self) {
+        self.0.hide();
+    }
+}
+
+/// A browser's open DevTools, as a hub's frames: never narrowed, since they are only watched
+/// in the person's own window.
+struct DevTools(Arc<dyn Screen>);
+
+impl Paints for DevTools {
+    fn show(&self, frames: FrameSink) {
+        self.0.show_inspector(frames);
+    }
+    fn pace(&self, every: Duration) {
+        self.0.pace_inspector(every);
+    }
+    fn narrow(&self, _most: Option<u16>) {}
+    fn hide(&self) {
+        self.0.hide_inspector();
+    }
 }
 
 /// **How a browser's engine ended** (#2745): its exit, and why, in words for the host's log that
@@ -399,11 +475,13 @@ impl Latest {
 
 /// One browser's frames, and the views that want them.
 struct Hub {
-    screen: Arc<dyn Screen>,
+    screen: Arc<dyn Paints>,
     latest: watch::Sender<Latest>,
     /// Each attached view's least time between frames and widest frame, by its number here.
     viewers: Mutex<Vec<Viewer>>,
     next: AtomicU64,
+    /// Why its frames ended, where it says (#2028): the last frame each view is sent.
+    closed_why: Mutex<Option<&'static str>>,
 }
 
 /// One attached view, as its browser makes frames for it.
@@ -461,7 +539,7 @@ impl Hub {
     /// Ask the engine for frames as often as the view that wants them most often, and as wide
     /// as the view that wants them widest: no narrower than its pages where one view wants
     /// them so.
-    fn repace(screen: &Arc<dyn Screen>, viewers: &[Viewer]) {
+    fn repace(screen: &Arc<dyn Paints>, viewers: &[Viewer]) {
         if let Some(every) = viewers.iter().map(|viewer| viewer.every).min() {
             screen.pace(every);
             let widest = viewers
@@ -517,23 +595,53 @@ impl Source for BrowserSource {
             .borrow_and_update()
             .framed(reads, &mut origin_sent)
             .unwrap_or_default();
+        let hub = Arc::clone(&self.hub);
         let live = futures::stream::unfold(
-            (latest, watching, None::<tokio::time::Instant>, origin_sent),
-            move |(mut latest, watching, sent, mut origin_sent)| async move {
-                loop {
-                    latest.changed().await.ok()?;
-                    if let Some(sent) = sent {
-                        tokio::time::sleep_until(sent + every).await;
+            (
+                latest,
+                watching,
+                None::<tokio::time::Instant>,
+                origin_sent,
+                false,
+            ),
+            move |(mut latest, watching, sent, mut origin_sent, said)| {
+                let hub = Arc::clone(&hub);
+                async move {
+                    if said {
+                        return None;
                     }
-                    let next = latest.borrow_and_update().clone();
-                    match next {
-                        Latest::Frame(..) => {
-                            let framed = next.framed(reads, &mut origin_sent).unwrap_or_default();
-                            let now = tokio::time::Instant::now();
-                            return Some((framed, (latest, watching, Some(now), origin_sent)));
+                    loop {
+                        if !matches!(*latest.borrow(), Latest::Ended) {
+                            latest.changed().await.ok()?;
                         }
-                        Latest::Ended => return None,
-                        Latest::Nothing => {}
+                        if let Some(sent) = sent {
+                            tokio::time::sleep_until(sent + every).await;
+                        }
+                        let next = latest.borrow_and_update().clone();
+                        match next {
+                            Latest::Frame(..) => {
+                                let framed =
+                                    next.framed(reads, &mut origin_sent).unwrap_or_default();
+                                let now = tokio::time::Instant::now();
+                                return Some((
+                                    framed,
+                                    (latest, watching, Some(now), origin_sent, false),
+                                ));
+                            }
+                            // Why its DevTools closed, where they say, is its last frame (#2028).
+                            Latest::Ended => {
+                                let why = *hub
+                                    .closed_why
+                                    .lock()
+                                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                                let why = why?;
+                                return Some((
+                                    closed_frame(why),
+                                    (latest, watching, sent, origin_sent, true),
+                                ));
+                            }
+                            Latest::Nothing => {}
+                        }
                     }
                 }
             },
@@ -565,6 +673,9 @@ pub fn every(role: Option<ViewRole>, rate: Option<u32>) -> Duration {
 /// A browser, as the host runs it beside its terminals.
 pub(crate) struct Browser {
     hub: Arc<Hub>,
+    screen: Arc<dyn Screen>,
+    /// Its open DevTools' frames and their size, while the person has them open (#2028).
+    inspector: Arc<Mutex<Option<OpenDevTools>>>,
     /// Its id in the host, and the host's own act that ends it, for the line its end leaves in
     /// the host's log (#2745).
     program: String,
@@ -580,14 +691,10 @@ impl Browser {
         program: impl Into<String>,
         stopping: Arc<Mutex<Option<Stopped>>>,
     ) -> Browser {
-        let (latest, _) = watch::channel(Latest::Nothing);
         Browser {
-            hub: Arc::new(Hub {
-                screen,
-                latest,
-                viewers: Mutex::new(Vec::new()),
-                next: AtomicU64::new(1),
-            }),
+            hub: Hub::of(Arc::new(Pages(Arc::clone(&screen)))),
+            inspector: Arc::new(Mutex::new(None)),
+            screen,
             lease: Mutex::new((Driver::Agent, 0)),
             program: program.into(),
             stopping,
@@ -599,6 +706,53 @@ impl Browser {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
+
+    fn inspector(&self) -> MutexGuard<'_, Option<OpenDevTools>> {
+        self.inspector
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Its open DevTools' frames end, and the views of them with them.
+    fn devtools_closed(&self) {
+        if let Some((hub, _)) = self.inspector().take() {
+            hub.closed_why
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .get_or_insert("handed_back");
+            hub.ended();
+        }
+    }
+}
+
+impl Hub {
+    fn of(screen: Arc<dyn Paints>) -> Arc<Hub> {
+        let (latest, _) = watch::channel(Latest::Nothing);
+        Arc::new(Hub {
+            screen,
+            latest,
+            viewers: Mutex::new(Vec::new()),
+            next: AtomicU64::new(1),
+            closed_why: Mutex::new(None),
+        })
+    }
+}
+
+/// A browser's open DevTools: their frames, and the size they are drawn at (#2028).
+type OpenDevTools = (Arc<Hub>, (u16, u16));
+
+/// DevTools of `hub` closed: their views end, and `slot` forgets them where it still holds them.
+fn closed(slot: &Mutex<Option<OpenDevTools>>, hub: &Arc<Hub>, why: &'static str) {
+    hub.closed_why
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get_or_insert(why);
+    let mut open = slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if open.as_ref().is_some_and(|(now, _)| Arc::ptr_eq(now, hub)) {
+        *open = None;
+    }
+    drop(open);
+    hub.ended();
 }
 
 /// The refusal the person's input or size is answered with.
@@ -639,31 +793,42 @@ impl Running for Browser {
         rate: Option<u32>,
         reads: Reads,
     ) -> Option<Arc<dyn Source>> {
-        (kind == ViewKind::Browser).then(|| {
-            Arc::new(BrowserSource {
-                hub: Arc::clone(&self.hub),
-                every: every(role, rate),
-                reads,
-            }) as Arc<dyn Source>
-        })
+        let hub = match kind {
+            ViewKind::Browser => Arc::clone(&self.hub),
+            // DevTools are watched only while open (#2028).
+            ViewKind::Inspector => Arc::clone(&self.inspector().as_ref()?.0),
+            ViewKind::Terminal => return None,
+        };
+        Some(Arc::new(BrowserSource {
+            hub,
+            every: every(role, rate),
+            reads,
+        }) as Arc<dyn Source>)
     }
 
     fn view_size(&self) -> Option<(u16, u16)> {
-        Some(self.hub.screen.size())
+        Some(self.screen.size())
+    }
+
+    fn view_size_of(&self, kind: ViewKind) -> Option<(u16, u16)> {
+        match kind {
+            ViewKind::Inspector => self.inspector().as_ref().map(|(_, size)| *size),
+            _ => self.view_size(),
+        }
     }
 
     fn reach_now(&self, reach: &BrowserReach) -> Result<(), String> {
-        self.hub.screen.reach_now(reach)
+        self.screen.reach_now(reach)
     }
 
-    fn act(&self, call_id: &str, act: Act) -> Result<Browsed, NotActed> {
+    fn act(&self, call_id: &str, act: Act, project: &Path) -> Result<Browsed, NotActed> {
         let epoch = match *self.lease() {
             (Driver::Person, _) => {
                 return Err(NotActed::Refused(A_BROWSER_THE_PERSON_DRIVES.into()));
             }
             (Driver::Agent, epoch) => epoch,
         };
-        self.hub.screen.act(call_id, act, epoch)
+        self.screen.act(call_id, act, epoch, project)
     }
 
     fn log_in(&self, login: LogIn) -> Result<Browsed, NotActed> {
@@ -673,7 +838,7 @@ impl Running for Browser {
             }
             (Driver::Agent, epoch) => epoch,
         };
-        let ended = self.hub.screen.log_in(&login)?;
+        let ended = self.screen.log_in(&login)?;
         drop(login);
         // The lease the engine handed back is the agent's from now on, unless the person took
         // the browser over meanwhile: their take-over set the host's lease already.
@@ -687,7 +852,7 @@ impl Running for Browser {
     fn take_over(&self) -> Result<Driver, Refusal> {
         let mut lease = self.lease();
         if lease.0 != Driver::Person {
-            *lease = (Driver::Person, self.hub.screen.take_over());
+            *lease = (Driver::Person, self.screen.take_over());
         }
         Ok(Driver::Person)
     }
@@ -695,23 +860,64 @@ impl Running for Browser {
     fn hand_back(&self) -> Result<Driver, Refusal> {
         let mut lease = self.lease();
         if lease.0 != Driver::Agent {
-            *lease = (Driver::Agent, self.hub.screen.hand_back());
+            *lease = (Driver::Agent, self.screen.hand_back());
         }
+        drop(lease);
+        // DevTools are the person's while they drive (#2028).
+        self.devtools_closed();
         Ok(Driver::Agent)
+    }
+
+    fn inspect(&self, width: u16, height: u16) -> Result<(), Refusal> {
+        if self.lease().0 != Driver::Person {
+            return Err(not_taken(NotTaken::NotDriving));
+        }
+        let mut open = self.inspector();
+        if let Some((hub, size)) = open.as_mut() {
+            let hub = Arc::clone(hub);
+            let slot = Arc::clone(&self.inspector);
+            self.screen
+                .inspect(width, height, Box::new(move |why| closed(&slot, &hub, why)))
+                .map_err(not_taken)?;
+            *size = (width, height);
+            return Ok(());
+        }
+        let hub = Hub::of(Arc::new(DevTools(Arc::clone(&self.screen))));
+        let slot = Arc::clone(&self.inspector);
+        let theirs = Arc::clone(&hub);
+        // Held while the engine opens them, so an end it says at once finds them here.
+        *open = Some((Arc::clone(&hub), (width, height)));
+        drop(open);
+        if let Err(why) = self.screen.inspect(
+            width,
+            height,
+            Box::new(move |why| closed(&slot, &theirs, why)),
+        ) {
+            closed(&self.inspector, &hub, "ended");
+            return Err(not_taken(why));
+        }
+        Ok(())
+    }
+
+    fn inspector_input(&self, input: &Input) -> Result<(), Refusal> {
+        if self.lease().0 != Driver::Person {
+            return Err(not_taken(NotTaken::NotDriving));
+        }
+        self.screen.inspector_input(input).map_err(not_taken)
     }
 
     fn input(&self, input: &Input) -> Result<(), Refusal> {
         if self.lease().0 != Driver::Person {
             return Err(not_taken(NotTaken::NotDriving));
         }
-        self.hub.screen.input(input).map_err(not_taken)
+        self.screen.input(input).map_err(not_taken)
     }
 
     fn size_browser(&self, width: u16, height: u16) -> Result<(), Refusal> {
         if self.lease().0 != Driver::Person {
             return Err(not_taken(NotTaken::NotDriving));
         }
-        self.hub.screen.size_to(width, height).map_err(not_taken)
+        self.screen.size_to(width, height).map_err(not_taken)
     }
 
     fn driver(&self) -> Option<Driver> {
@@ -719,12 +925,20 @@ impl Running for Browser {
     }
 
     fn stop(&self) {
-        self.hub.screen.stop();
+        // Its DevTools' view says the browser was stopped, whatever its engine says as it ends.
+        if let Some((hub, _)) = self.inspector().as_ref() {
+            hub.closed_why
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .get_or_insert("stopped");
+        }
+        self.screen.stop();
         self.hub.ended();
+        self.devtools_closed();
     }
 
     fn process(&self) -> Option<u32> {
-        self.hub.screen.process()
+        self.screen.process()
     }
 
     fn readiness(&self) -> Readiness {
@@ -738,7 +952,7 @@ impl Running for Browser {
         let hub = Arc::clone(&self.hub);
         let program = self.program.clone();
         let stopping = Arc::clone(&self.stopping);
-        self.hub.screen.when_it_ends(Box::new(move |ended| {
+        self.screen.when_it_ends(Box::new(move |ended| {
             hub.ended();
             let stopped = *stopping
                 .lock()

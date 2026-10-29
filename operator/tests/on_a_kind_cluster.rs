@@ -88,6 +88,7 @@ fn claim_by(name: &str, pool: &str, requester: &str) -> Claim {
         ClaimSpec {
             pool: pool.to_owned(),
             requester: requester.to_owned(),
+            kept: false,
         },
     )
 }
@@ -112,6 +113,7 @@ async fn a_pool_and_a_claim_yield_a_running_session_host_that_goes_with_the_clai
         "e2e-runs",
         PoolSpec {
             image: runner_image(),
+            kept_volume: Default::default(),
         },
     );
     pools
@@ -185,6 +187,7 @@ async fn a_runners_link_key_is_vouched_for_with_the_key_its_pool_names() {
         "e2e-vouch",
         PoolSpec {
             image: runner_image(),
+            kept_volume: Default::default(),
         },
     );
     pools
@@ -252,9 +255,10 @@ async fn a_runners_link_key_is_vouched_for_with_the_key_its_pool_names() {
             claim: "ada-1",
             claim_uid: &made.uid().expect("its uid"),
             pod: &pod.name_any(),
-            pod_uid: &pod.uid().expect("its uid"),
             key: &published,
             requester: ADMIN,
+            until: purlis_cluster_operator::vouch::until_of(&link_key.statement)
+                .expect("the statement says until when it holds"),
         })
         .expect("a statement");
     assert_eq!(link_key.statement, expected);
@@ -307,6 +311,7 @@ async fn a_pool_names_its_image_by_digest_and_a_claim_keeps_its_pool() {
         "e2e-tag",
         PoolSpec {
             image: "ghcr.io/purlis/purlis-runner:main".into(),
+            kept_volume: Default::default(),
         },
     );
     let refused = pools.create(&PostParams::default(), &by_tag).await;
@@ -346,6 +351,7 @@ async fn an_upstream_object_the_operator_did_not_make_is_left_as_it_is_until_it_
         "e2e-in-the-way",
         PoolSpec {
             image: runner_image(),
+            kept_volume: Default::default(),
         },
     );
     pools
@@ -450,6 +456,7 @@ async fn a_claims_runner_keeps_running_when_its_pool_is_deleted_and_the_claim_sa
         "e2e-pool-gone",
         PoolSpec {
             image: runner_image(),
+            kept_volume: Default::default(),
         },
     );
     pools
@@ -548,6 +555,7 @@ async fn a_pools_template_and_warm_pool_go_with_its_last_claim_in_a_namespace() 
         "e2e-last-claim",
         PoolSpec {
             image: runner_image(),
+            kept_volume: Default::default(),
         },
     );
     pools
@@ -736,6 +744,7 @@ async fn a_claim_is_refused_to_someone_the_cluster_does_not_let_use_its_pool() {
         "e2e-use",
         PoolSpec {
             image: runner_image(),
+            kept_volume: Default::default(),
         },
     );
     pools
@@ -944,6 +953,7 @@ async fn only_a_claim_made_while_the_policy_is_in_force_is_acted_on() {
             "e2e-policy",
             PoolSpec {
                 image: runner_image(),
+                kept_volume: Default::default(),
             },
         );
         pools
@@ -1037,6 +1047,7 @@ async fn a_refused_claims_running_runner_keeps_its_template_and_network_policy()
             "e2e-refused-runs",
             PoolSpec {
                 image: runner_image(),
+                kept_volume: Default::default(),
             },
         );
         pools
@@ -1224,4 +1235,302 @@ async fn doctor_needs_only_reads_and_says_what_a_reader_may_not_apply() {
             .any(|held| held == "upstream agent-sandbox v1.0.6"),
         "{as_reader}"
     );
+}
+
+/// The claim `name`'s statement's `pod:` line, once the operator vouches for its runner.
+async fn vouched_pod(claims: &Api<Claim>, name: &str) -> (String, String) {
+    eventually(
+        &format!("the operator vouches for {name}'s runner"),
+        Duration::from_secs(300),
+        || async {
+            let statement = claims.get(name).await.ok()?.status?.link_key?.statement;
+            let pod = statement
+                .lines()
+                .find_map(|line| line.strip_prefix("pod: "))?
+                .to_owned();
+            Some((pod, statement))
+        },
+    )
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_fresh_claim_takes_a_warm_runner_and_a_kept_one_starts_cold_saying_its_stages() {
+    use purlis_cluster_operator::upstream::{SandboxWarmPool, name_for};
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-warm").await;
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new(
+        "e2e-warm",
+        PoolSpec {
+            image: runner_image(),
+            kept_volume: purlis_cluster_operator::KeptVolume {
+                size: "1Gi".into(),
+                storage_class_name: None,
+            },
+        },
+    );
+    pools
+        .patch(
+            "e2e-warm",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    let claims = claims_in(&client, &scratch.name);
+    // The pool's warm pool is made with its first claim, keeping no runner warm.
+    claims
+        .create(&PostParams::default(), &claim("ada-first", "e2e-warm"))
+        .await
+        .expect("the first claim");
+    vouched_pod(&claims, "ada-first").await;
+    let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &scratch.name);
+    let name = name_for("e2e-warm");
+    assert_eq!(
+        warm_pools
+            .get(&name)
+            .await
+            .expect("the warm pool")
+            .spec
+            .replicas,
+        0,
+        "no runner kept warm by default"
+    );
+    // A team admin keeps one runner warm; the operator keeps the number it finds.
+    warm_pools
+        .patch(
+            &name,
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({ "spec": { "replicas": 1 } })),
+        )
+        .await
+        .expect("one runner kept warm");
+    let pods = Api::<Pod>::namespaced(client.clone(), &scratch.name);
+    let warm = eventually("a warm runner, ready", Duration::from_secs(300), || async {
+        let list = pods.list(&ListParams::default()).await.ok()?;
+        list.items.into_iter().find_map(|pod| {
+            let warm = pod
+                .labels()
+                .contains_key("agents.x-k8s.io/warm-pool-sandbox");
+            let ready = pod
+                .status
+                .as_ref()?
+                .conditions
+                .as_ref()?
+                .iter()
+                .any(|c| c.type_ == "Ready" && c.status == "True");
+            (warm && ready).then(|| pod.name_any())
+        })
+    })
+    .await;
+
+    // A fresh claim takes it.
+    claims
+        .create(&PostParams::default(), &claim("ada-fresh", "e2e-warm"))
+        .await
+        .expect("a fresh claim");
+    let (pod, _) = vouched_pod(&claims, "ada-fresh").await;
+    assert_eq!(pod, warm, "the fresh claim took the warm runner");
+    assert_eq!(
+        warm_pools
+            .get(&name)
+            .await
+            .expect("the warm pool")
+            .spec
+            .replicas,
+        1,
+        "the operator kept the number the admin set"
+    );
+
+    // A kept claim starts a runner of its own, cold, saying its stages as it goes.
+    let mut kept = claim("ada-kept", "e2e-warm");
+    kept.spec.kept = true;
+    claims
+        .create(&PostParams::default(), &kept)
+        .await
+        .expect("a kept claim");
+    let mut said = Vec::<String>::new();
+    let start = Instant::now();
+    loop {
+        if let Some((status, reason)) = claims
+            .get("ada-kept")
+            .await
+            .ok()
+            .as_ref()
+            .and_then(ready_of)
+        {
+            if status == "True" {
+                break;
+            }
+            if said.last() != Some(&reason) {
+                eprintln!("ada-kept Ready=False {reason}");
+                said.push(reason);
+            }
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(300),
+            "ada-kept is not ready within 300s; it said {said:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    assert!(
+        !said.is_empty(),
+        "a cold claim says its stage while it starts"
+    );
+    for reason in &said {
+        assert!(
+            ["Scheduling", "Pulling", "Starting"].contains(&reason.as_str()),
+            "{said:?}"
+        );
+    }
+    let (pod, _) = vouched_pod(&claims, "ada-kept").await;
+    assert_eq!(pod, "ada-kept", "a kept claim's runner is its own");
+    let volumes = Api::<k8s_openapi::api::core::v1::PersistentVolumeClaim>::namespaced(
+        client.clone(),
+        &scratch.name,
+    );
+    let volume = volumes
+        .get("purlis-kept-ada-kept")
+        .await
+        .expect("the kept claim's own volume");
+    assert_eq!(
+        volume
+            .spec
+            .as_ref()
+            .and_then(|spec| spec.resources.as_ref())
+            .and_then(|resources| resources.requests.as_ref())
+            .and_then(|requests| requests.get("storage"))
+            .map(|size| size.0.as_str()),
+        Some("1Gi")
+    );
+
+    // The pool's keptVolume edited: the kept claim keeps the volume it was made with, and the
+    // operator goes on looking at it (#2057).
+    pools
+        .patch(
+            "e2e-warm",
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({ "spec": { "keptVolume": { "size": "2Gi" } } })),
+        )
+        .await
+        .expect("the pool's kept volume edited");
+    // Its pod lost, it is made again on that volume. (That it keeps its pairing there is the
+    // desktop's side to show: crates/purlis-core/tests/it/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs.)
+    let first = pods.get("ada-kept").await.expect("its pod").uid();
+    pods.delete("ada-kept", &DeleteParams::default())
+        .await
+        .expect("its pod deleted");
+    eventually(
+        "its pod made again and ready",
+        Duration::from_secs(300),
+        || async {
+            let pod = pods.get_opt("ada-kept").await.ok()??;
+            let ready = pod
+                .status
+                .as_ref()?
+                .conditions
+                .as_ref()?
+                .iter()
+                .any(|c| c.type_ == "Ready" && c.status == "True");
+            (pod.uid() != first && ready).then_some(())
+        },
+    )
+    .await;
+    // Never paired, it made a new key: the operator vouches for that one, not the old.
+    let published = eventually(
+        "the new pod's first step published its key",
+        Duration::from_secs(60),
+        || async {
+            let pod = pods.get("ada-kept").await.ok()?;
+            pod.status?
+                .init_container_statuses?
+                .into_iter()
+                .find(|s| s.name == "link-key")?
+                .state?
+                .terminated?
+                .message
+        },
+    )
+    .await;
+    eventually(
+        "the operator vouches for the new pod's key",
+        Duration::from_secs(180),
+        || async {
+            let statement = claims
+                .get("ada-kept")
+                .await
+                .ok()?
+                .status?
+                .link_key?
+                .statement;
+            statement
+                .contains(&format!("key: {published}\n"))
+                .then_some(())
+        },
+    )
+    .await;
+    assert_eq!(
+        volumes
+            .get("purlis-kept-ada-kept")
+            .await
+            .expect("its volume")
+            .uid(),
+        volume.uid(),
+        "on the same volume"
+    );
+    // A kept claim made after the edit has the new size.
+    let mut later = claim("ada-later", "e2e-warm");
+    later.spec.kept = true;
+    claims
+        .create(&PostParams::default(), &later)
+        .await
+        .expect("a kept claim made after the edit");
+    let size = eventually("its volume", Duration::from_secs(120), || async {
+        let volume = volumes.get_opt("purlis-kept-ada-later").await.ok()??;
+        volume
+            .spec?
+            .resources?
+            .requests?
+            .get("storage")
+            .map(|size| size.0.clone())
+    })
+    .await;
+    assert_eq!(size, "2Gi");
+    // A fresh claim cannot be made kept, nor a kept one fresh.
+    let refused = claims
+        .patch(
+            "ada-fresh",
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({ "spec": { "kept": true } })),
+        )
+        .await;
+    assert!(refused.is_err(), "{refused:?}");
+    // And a kept claim stays kept.
+    let refused = claims
+        .patch(
+            "ada-kept",
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({ "spec": { "kept": false } })),
+        )
+        .await;
+    assert!(refused.is_err(), "{refused:?}");
+
+    for name in ["ada-first", "ada-fresh", "ada-kept", "ada-later"] {
+        let _ = claims.delete(name, &DeleteParams::foreground()).await;
+    }
+    // A kept claim's volume, which holds its runner's key, goes with it.
+    eventually(
+        "the kept claims' volumes go with them",
+        Duration::from_secs(180),
+        || async {
+            let kept = volumes.get_opt("purlis-kept-ada-kept").await.ok()?;
+            let later = volumes.get_opt("purlis-kept-ada-later").await.ok()?;
+            (kept.is_none() && later.is_none()).then_some(())
+        },
+    )
+    .await;
+    let _ = pools.delete("e2e-warm", &DeleteParams::default()).await;
+    scratch.end().await;
 }

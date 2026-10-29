@@ -618,7 +618,13 @@ pub struct FrameSinks {
     pub frames: FrameSink,
     pub origins: OriginSink,
     pub held: Option<HeldFrames>,
+    /// Where a view of a browser's DevTools is told why they closed, its last frame (#2028).
+    pub closed: Option<ClosedSink>,
 }
+
+/// Where a view of a browser's DevTools is told why they closed (1.45, #2028): one of
+/// `view::frames::CLOSED_WHY`.
+pub type ClosedSink = Box<dyn FnMut(&'static str) + Send>;
 
 /// **The window's own hold on a runner browser's frames** (#2050): the runner's host is held to
 /// the link's frames, and the window holds it to them too, whatever it sends. A frame larger than
@@ -1282,6 +1288,19 @@ impl HostLink {
             frames: sink,
             origins,
             held: held.then(HeldFrames::default),
+            closed: None,
+        };
+        self.draw_into(view, Draws::Frames(Arc::new(Mutex::new(sinks))));
+    }
+
+    /// Draw view `view` of a browser's DevTools (#2028): its frames to `sink`, and why they
+    /// closed, its last frame, to `closed`.
+    pub(crate) fn draw_devtools_frames(&self, view: u32, sink: FrameSink, closed: ClosedSink) {
+        let sinks = FrameSinks {
+            frames: sink,
+            origins: Box::new(|_| {}),
+            held: None,
+            closed: Some(closed),
         };
         self.draw_into(view, Draws::Frames(Arc::new(Mutex::new(sinks))));
     }
@@ -1627,7 +1646,7 @@ async fn draw_frames_from(mut reader: Reader, shared: &Arc<Shared>, sink: &Arc<M
             reconnect(shared, Reconnect::Drawn(view));
         }
         for frame in whole {
-            use purlis_session_protocol::view::frames::{AIMED_JPEG, JPEG, ORIGIN};
+            use purlis_session_protocol::view::frames::{AIMED_JPEG, CLOSED, JPEG, ORIGIN};
             match frame.format {
                 JPEG if !frame.image.is_empty() => {
                     let mut sinks = lock(sink);
@@ -1650,6 +1669,14 @@ async fn draw_frames_from(mut reader: Reader, shared: &Arc<Shared>, sink: &Arc<M
                 ORIGIN => {
                     if let Some(origin) = frame.origin() {
                         (lock(sink).origins)(an_origin(origin));
+                    }
+                }
+                // Why a browser's DevTools closed, the last frame of their view (#2028).
+                CLOSED => {
+                    if let Some(why) = frame.closed()
+                        && let Some(closed) = lock(sink).closed.as_mut()
+                    {
+                        closed(why);
                     }
                 }
                 _ => {}

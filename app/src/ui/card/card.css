@@ -38,3 +38,99 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-strong);
 }
+
+/* ---------------------------------------------------------------------------------------------
+   **Facts, as label and value** (`Facts.tsx`, #3673): a `dl`, a fact a line, its label column
+   one width for every fact at the start (`facts-label`, the secondary tier) and its value the
+   rest (`facts-value`, the primary tier). Where the facts' own room is narrow, each label stands
+   over its value. 24rem is the one length the sheet writes: a container query's condition cannot
+   read a token.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="card"][data-part="facts"] {
+  container: card-facts / inline-size;
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  min-inline-size: 0;
+}
+
+[data-scope="card"][data-part="fact"] {
+  display: grid;
+  grid-template-columns: calc(var(--space-8) * 5) minmax(0, 1fr);
+  gap: var(--space-1) var(--space-5);
+  align-items: baseline;
+}
+
+[data-scope="card"][data-part="facts-label"] {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+}
+
+[data-scope="card"][data-part="facts-value"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  margin: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+@container card-facts (max-width: 24rem) {
+  [data-scope="card"][data-part="fact"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------------------------------------------------------------------------------------------
+   **A row of totals tiles** (`Totals.tsx`, #3673): tiles that share the row's width, each at
+   least five and a half of the spacing scale's largest step (about 170px), wrapping to more rows
+   and never sideways. A tile is edged as a card is, with no ground of its own: its words stand on
+   the surface under it. Its value is a size larger, in figures of one width, so a count that
+   changes draws where the last one was; a long value wraps, and is never cut.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="card"][data-part="totals"] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--space-8) * 5.5)), 1fr));
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+
+[data-scope="card"][data-part="tile"] {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  padding-block: var(--space-4);
+  padding-inline: var(--space-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+/* Its label: the label role, in capitals. */
+[data-scope="card"][data-part="tile-label"] {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+[data-scope="card"][data-part="tile-value"] {
+  color: var(--text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-strong);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* The line under it: what the value is of, in the quiet tier. */
+[data-scope="card"][data-part="tile-line"] {
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+}

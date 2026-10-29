@@ -695,3 +695,24 @@ fn use_skill_offers_a_try_its_draft_alone_as_its_arming_hands_it() {
         crate::skills::stamp_of(&chat(&at_the_root)),
     );
 }
+
+/// Spec #3679 S12: a chat's new skill under a built-in skill's name is never accepted, at any
+/// level, even where no bundle is found beside this binary.
+#[test]
+fn a_drafted_new_skill_with_a_built_in_skills_name_is_not_accepted() {
+    let tmp = plane();
+    let root = tmp.path();
+    for rel in [
+        "skills/secrets/SKILL.md",
+        "skills.local/browser/SKILL.md",
+        "workspaces/ops/skills/purlis-secrets/SKILL.md",
+    ] {
+        let name = rel.split('/').rev().nth(1).unwrap();
+        let id = drafted(root, rel, &whole(&skill_text(name, "Stands in.")));
+
+        let (refused, _) = accepted(root, &id);
+
+        assert_eq!(refused.unwrap_err(), crate::skills::NAME_RESERVED, "{rel}");
+        assert!(!root.join(rel).exists(), "{rel}");
+    }
+}
