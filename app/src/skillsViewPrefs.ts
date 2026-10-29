@@ -47,6 +47,9 @@ export function loadSkillsView(raw: unknown): { value: SkillsViewPrefs; said: st
   if (!Array.isArray(folded)) return refused;
   // Read as group names and nothing else: a name that is not one is skipped, a second is one.
   const groups = [...new Set(folded.filter(isGroupId))].slice(-MOST_FOLDED);
+  // Folds an older purlis kept of its levels are no group now: the groups fold as they start,
+  // never all open because nothing kept was read.
+  if (groups.length === 0 && folded.length > 0) return { value: DEFAULT_SKILLS_VIEW, said: [] };
   return { value: { folded: groups }, said: [] };
 }
 

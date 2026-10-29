@@ -42,6 +42,7 @@ export function SkillCopy({
   start,
   busy,
   refused,
+  onEdit,
   onCopy,
   onCancel,
 }: {
@@ -57,6 +58,8 @@ export function SkillCopy({
   busy: boolean;
   /** Why the core did not make the last copy asked for: its sentence, unchanged. */
   refused?: string;
+  /** A field changed: a refusal of what was asked before no longer stands beside it. */
+  onEdit: () => void;
   onCopy: (name: string, level: SkillLevel, to: string) => void;
   onCancel: () => void;
 }) {
@@ -110,6 +113,7 @@ export function SkillCopy({
               onValueChange={(next) => {
                 setName(next);
                 if (!toTyped) setTo(copyNameOf(next));
+                onEdit();
               }}
             />
           )}
@@ -126,6 +130,7 @@ export function SkillCopy({
             onChange={(next) => {
               setTo(next);
               setToTyped(true);
+              onEdit();
             }}
           />
         )}
@@ -146,6 +151,7 @@ export function SkillCopy({
             onValueChange={(next) => {
               const picked = levelPicker.chosen(next);
               if (picked !== undefined) setLevel(picked);
+              onEdit();
             }}
           />
         )}

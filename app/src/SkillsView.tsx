@@ -211,12 +211,26 @@ export function SkillsView({
   const nameOf = useCallback((row: ListedSkill) => row.skill.name, []);
   const filter = useListFilter(rows, nameOf);
   const groups = useMemo(() => groupsOf(filter.shown), [filter.shown]);
+  // The header counts the whole set, whatever the filter leaves (S7).
+  const whole = useMemo(() => groupsOf(rows), [rows]);
+  // A built-in skill a skill of the project has the name of stands out of the fold (S12).
+  const clashing = useMemo(
+    () =>
+      new Set(rows.filter((row) => row.skill.level !== "built-in").map((row) => row.skill.name)),
+    [rows],
+  );
 
   // While another chat's set is read, the list stays as it was: it is replaced once it is known.
   if (read === undefined) return <SkillsReading />;
   if ("refused" in read.read)
     return <SkillsNotRead refused={read.read.refused} testid="skills-view-refused" />;
   const shown = read.read;
+  // **What a card acts on is the chat its rows were read for** (the one shown), never a chat
+  // put in front a moment ago whose set is still being read: Use types into that chat, and the
+  // switch and the pin act on its workspace.
+  const acting = read.of;
+  const actsIn = acting === undefined ? workspace : acting.workspace;
+  const actsAs = acting?.persona ?? null;
   // Whose set is shown: the one it was read for, which is the chat in front once it is read.
   const whose =
     read.of !== undefined
@@ -227,17 +241,20 @@ export function SkillsView({
         ? "A new chat at the project's root"
         : `A new chat in ${workspace}`;
 
-  const scope: StudioScope = place === undefined ? AT_THE_ROOT : inWorkspace(place);
+  const scope: StudioScope = actsIn === undefined ? AT_THE_ROOT : inWorkspace(actsIn);
   const studioAt = (page: StudioPage, skill?: string, newTab = false) =>
     onOpenView(skillStudioAt(scope, page, { skill, newTab }), SKILL_STUDIO_TITLE);
   /** The studio on this view's scope, at its Library (#3681); a tab of its own on ⌘-click. */
   const openStudio = (newTab = false) => studioAt("library", undefined, newTab);
-  /** A card in the studio, at Library › it, for the view's scope (S7). */
+  /** A card in the studio, at Library › it, for the view's scope (S7); a program's own or a
+   *  repo's skill, which the Library does not list, on the Harness skills page. */
   const openRow = (row: ListedSkill) =>
     onOpenView(
-      skillStudioAt(scopeOfRow(row, place, persona), "library", {
-        skill: skillRowId(row.skill),
-      }),
+      row.skill.level === "installed" || row.skill.level === "repo"
+        ? skillStudioAt(scope, "harness")
+        : skillStudioAt(scopeOfRow(row, actsIn, actsAs), "library", {
+            skill: skillRowId(row.skill),
+          }),
       SKILL_STUDIO_TITLE,
     );
   /** One of the studio's three starts (SK-22): a chat's draft here, the others in the studio. */
@@ -255,14 +272,15 @@ export function SkillsView({
     askStudioStart("", "new");
   };
   const change = (row: ListedSkill, what: "turn" | "pin") => {
-    const asked = what === "pin" ? pinOf(row, place) : turnOf(row.skill, place);
-    if (!("label" in asked) || place === undefined) return;
+    const asked = what === "pin" ? pinOf(row, actsIn) : turnOf(row.skill, actsIn);
+    const where = actsIn;
+    if (!("label" in asked) || where === undefined) return;
     setBusy(true);
     // The pin is the studio's own command (SK-15d), for this workspace's chats: one commit.
     void (
       what === "pin"
-        ? commands.skillPin(plane, { at: "workspace", name: place }, row.skill.name, asked.on)
-        : commands.skillTurn(plane, place, row.skill.name, asked.on)
+        ? commands.skillPin(plane, { at: "workspace", name: where }, row.skill.name, asked.on)
+        : commands.skillTurn(plane, where, row.skill.name, asked.on)
     )
       .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
       .then((answer) => {
@@ -273,7 +291,7 @@ export function SkillsView({
       .finally(() => setBusy(false));
   };
   const typeIn = (row: ListedSkill) => {
-    if (chat !== undefined) onUseSkill(chat.session, row.skill.name);
+    if (acting !== undefined) onUseSkill(acting.session, row.skill.name);
   };
   const act = (row: ListedSkill, what: SkillAct) => {
     if (what === "use") typeIn(row);
@@ -297,13 +315,15 @@ export function SkillsView({
   };
   const usable = (row: ListedSkill) => {
     const mark = markOf(row);
-    return chat !== undefined && mark !== "left-out" && mark !== "off" && mark !== "needs-review";
+    return acting !== undefined && mark !== "left-out" && mark !== "off" && mark !== "needs-review";
   };
 
   return (
     <SkillsList
       whose={whose}
       groups={groups}
+      count={whole.needs.length + whole.inChat.length + whole.builtIns.length}
+      clashes={(row) => clashing.has(row.skill.name)}
       total={rows.length}
       query={filter.query}
       onQuery={filter.setQuery}
@@ -315,7 +335,7 @@ export function SkillsView({
       onOpen={openRow}
       usable={usable}
       onUse={typeIn}
-      fixOf={(row) => fixOf(row, place)}
+      fixOf={(row) => fixOf(row, actsIn)}
       onFix={fix}
       onCopy={() => {
         openStudio();
@@ -326,8 +346,8 @@ export function SkillsView({
           <SkillMenu
             row={row}
             at={{
-              workspace: place,
-              chat: chat !== undefined,
+              workspace: actsIn,
+              chat: acting !== undefined,
               explorer: workspace,
               pinsRefused: shown.pinsRefused,
             }}

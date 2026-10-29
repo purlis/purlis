@@ -47,6 +47,8 @@ const SKILLS_NOUN: Noun = { one: "skill", many: "skills" };
 export function SkillsList({
   whose,
   groups,
+  count,
+  clashes,
   total,
   query,
   onQuery,
@@ -69,6 +71,11 @@ export function SkillsList({
   /** Whose skills these are: the chat in front's name, or "A new chat in ops". */
   whose: string;
   groups: SkillGroups;
+  /** How many skills the chat gets, whatever the filter leaves: the header's count. */
+  count: number;
+  /** Whether a built-in skill shares its name with a skill of the project's, so it stands out
+   *  of the fold (S12). */
+  clashes: (row: ListedSkill) => boolean;
   /** How many skills the list holds before the filter. */
   total: number;
   query: string;
@@ -102,8 +109,6 @@ export function SkillsList({
   const listId = useId();
   const filtering = query.trim() !== "";
   const { needs, inChat, builtIns, leftOut } = groups;
-  // Every skill the chat gets: its built-in skills count, folded or not.
-  const count = needs.length + inChat.length + builtIns.length;
   // **While a filter is typed every group is open**, so no match is folded away.
   const isFolded = (id: GroupId) => !filtering && folded.includes(id);
   const card = (row: ListedSkill) => {
@@ -238,7 +243,7 @@ export function SkillsList({
                   <ListRun
                     id="built-in"
                     items={builtIns}
-                    standsOut={() => filtering}
+                    standsOut={(row) => filtering || clashes(row)}
                     says={(n) => counted(n, "built-in skill", "built-in skills")}
                     mark={<Sparkle aria-hidden="true" />}
                     folded={isFolded("built-in")}

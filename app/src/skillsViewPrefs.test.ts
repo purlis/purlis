@@ -75,6 +75,11 @@ describe("the Skills view's folded groups", () => {
     });
     expect(value).toEqual({ folded: ["left-out"] });
     expect(said).toEqual([]);
+    // An older purlis's folds of its levels leave the groups folded as they start.
+    expect(loadSkillsView({ skills: { folded: ["project", "program:Claude Code"] } })).toEqual({
+      value: DEFAULT_SKILLS_VIEW,
+      said: [],
+    });
     expect(loadSkillsView({ skills: { folded: "project" } })).toEqual({
       value: DEFAULT_SKILLS_VIEW,
       said: [expect.stringContaining('"skills"')],

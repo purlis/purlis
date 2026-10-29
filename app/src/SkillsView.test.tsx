@@ -363,6 +363,66 @@ describe("the Skills view's cards", () => {
   });
 });
 
+describe("the Skills view's review fixes", () => {
+  it("counts the whole set in its header, whatever the filter leaves", async () => {
+    core(() => studio(Array.from({ length: 12 }, (_, at) => skill(`s${at}`))));
+    view();
+    await list();
+    await waitFor(() =>
+      expect(screen.getByTestId("skills-view-whose")).toHaveTextContent("· 12 skills"),
+    );
+    await userEvent.type(screen.getByRole("searchbox", { name: "Filter skills" }), "s1");
+    await waitFor(() => expect(hasRow("s2")).toBe(false));
+    expect(screen.getByTestId("skills-view-whose")).toHaveTextContent("· 12 skills");
+  });
+
+  it("draws a built-in skill a skill of the project has the name of outside the fold", async () => {
+    core(() =>
+      studio([
+        skill("secrets", { level: "built-in", label: "built-in", folder: "/app/skills/secrets" }),
+        skill("browser", { level: "built-in", label: "built-in", folder: "/app/skills/browser" }),
+        skill("secrets", { on: false, left_out: "a built-in skill has its name" }),
+      ]),
+    );
+    view();
+    await list();
+    await waitFor(() => expect(foldOf("1 built-in skill")).toBeInTheDocument());
+    expect(
+      [...document.querySelectorAll('[data-testid^="skills-row-"] [data-part="label"]')].map(
+        (one) => one.textContent,
+      ),
+    ).toContain("secrets");
+    expect(hasRow("browser")).toBe(false);
+  });
+
+  it("opens a program's own skill on the studio's Harness skills page", async () => {
+    core(
+      () =>
+        studio([skill("deploy")], {
+          harnesses: [
+            {
+              harness: "claude",
+              title: "Claude Code",
+              skills: [skill("pdf", { level: "installed", label: "Claude Code", folder: "" })],
+              repo_left_out: [],
+            },
+          ],
+        }),
+      { chat: [given("deploy")] },
+    );
+    const hands = view({
+      chat: { session: 3, name: "web 1", workspace: "ops", persona: null, harness: "claude" },
+    });
+    await list();
+    await waitFor(() => expect(hasRow("pdf")).toBe(true));
+    await userEvent.click(rowOf("pdf"));
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(
+      skillStudioAt(inWorkspace("ops"), "harness"),
+      SKILL_STUDIO_TITLE,
+    );
+  });
+});
+
 describe("a row's menu", () => {
   const CHAT: FrontChat = {
     session: 7,

@@ -1075,6 +1075,7 @@ export function SkillStudioTab({
           start={start}
           busy={busy}
           refused={copying.refused}
+          onEdit={() => setCopying((was) => (was === undefined ? was : { from: was.from }))}
           onCopy={copy}
           onCancel={() => setCopying(undefined)}
         />

@@ -84,6 +84,8 @@ function Skills({
       <SkillsList
         whose="steward 5"
         groups={groupsOf(filter.shown)}
+        count={rows.length}
+        clashes={() => false}
         total={rows.length}
         query={filter.query}
         onQuery={filter.setQuery}
