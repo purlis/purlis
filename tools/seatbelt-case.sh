@@ -35,7 +35,8 @@
 # purlis writes, so
 # `crates/purlis-core/tests/it/claude_codes_own_sandbox_holds_the_settings_purlis_writes.rs` has the
 # real Claude Code run this line through its Bash tool, at the full sandbox and at the floor. The
-# last line says how many answers were checked and how many were wrong.
+# last line says how many answers were checked and how many were wrong. There, it also probes
+# the sample project's repositories: each git folder held as a whole, and git still at work.
 set -eu
 
 failed=0
@@ -89,12 +90,33 @@ held_in() {
   rm -f "$p/Library/LaunchAgents/x.plist" "$p/library/launchagents/y.plist" "$p/.ZSHRC" 2>/dev/null || :
 }
 
+# The probes of the sample project's repositories at `p`: `repo`, a clone, and `wt`, a linked
+# worktree of it. Each git folder is held as a whole, and the folders above it stay where they
+# are, while git still commits, branches and checks out in the clone.
+git_held_in() {
+  p=$1
+  what=$2
+  try=$3
+  g="git -C '$p/repo' -c user.name=probe -c user.email=probe@example.invalid -c commit.gpgsign=false"
+  expect "$("$try" "echo y > '$p/repo/probe.txt' && $g add probe.txt && $g commit -q -m probe")" yes "$what: git commits in a clone"
+  expect "$("$try" "$g branch probe && $g checkout -q probe")" yes "$what: git branches and checks out in a clone"
+  expect "$("$try" "mv '$p/repo/.git' '$p/repo/g'")" no "$what: a clone's git folder is moved"
+  expect "$("$try" "mv '$p/repo' '$p/repo-moved'")" no "$what: a clone is moved"
+  expect "$("$try" "mv '$p/wt/.git' '$p/wt/g'")" no "$what: a worktree's .git file is moved"
+  expect "$("$try" "rm -f '$p/wt/.git'")" no "$what: a worktree's .git file is removed"
+  # Whatever got through is put back, so the next probe finds the project as laid out.
+  [ -e "$p/repo/g" ] && mv "$p/repo/g" "$p/repo/.git" 2>/dev/null || :
+  [ -e "$p/repo-moved" ] && mv "$p/repo-moved" "$p/repo" 2>/dev/null || :
+  [ -e "$p/wt/g" ] && mv "$p/wt/g" "$p/wt/.git" 2>/dev/null || :
+}
+
 if [ "${1-}" = --here ]; then
   if [ $# -ne 3 ]; then
     echo "usage: tools/seatbelt-case.sh --here <project> <what>" >&2
     exit 2
   fi
   held_in "$2" "$3" here
+  git_held_in "$2" "$3" here
   echo "seatbelt-case: $3: $checks checks, $wrong wrong"
   exit "$failed"
 fi

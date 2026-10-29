@@ -1312,6 +1312,12 @@ pub struct Denied {
     /// paths may be short of a vault's storage, so no sandbox is compiled from them and the
     /// chat is refused ([`NotStarted::KeptUntold`]). `None` when the list is whole.
     pub untold: Option<Untold>,
+    /// One path in or at each repository's git folder found as the chat starts, in the plane
+    /// and in each folder chats may be granted ([`planted::git_folder_pins`]): denied by a
+    /// harness whose sandbox pins every folder above a denied path ([`claude`]), so each git
+    /// folder is held as a whole while git writes what is inside it. A compiler that holds a
+    /// `.git` by itself already (a wrap's [`Reach::Itself`]) does not read it.
+    pub git_folder_pins: Vec<PathBuf>,
 }
 
 impl Denied {
@@ -1515,6 +1521,12 @@ impl Denied {
             Ok(resolved) => (resolved, None),
             Err(unread) => (Vec::new(), Some(unread)),
         };
+        // Each repository's git folder, in the plane and in each folder chats may be granted,
+        // held as a whole ([`Denied::git_folder_pins`]).
+        let searched: Vec<PathBuf> = std::iter::once(root.to_path_buf())
+            .chain(local::grantable_folders(root))
+            .collect();
+        let git_folder_pins = planted::git_folder_pins(&searched);
         for it in resolved {
             paths.push(Denial {
                 class: Class::LaterCode,
@@ -1538,6 +1550,7 @@ impl Denied {
             },
             unread,
             untold,
+            git_folder_pins,
         }
     }
 }
