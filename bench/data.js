@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793242169901,
+  "lastUpdate": 1793243490597,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29190,6 +29190,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5464455,
             "unit": "ms",
             "extra": "median of 5 runs: 101.054, 101.359, 101.546, 101.684, 101.726 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "dd48c770f7f1ee35e9f155316052ede440efb0a7",
+          "message": "Skills design 02: Skill studio frame and Library (#3681, #3751) (#3762)\n\n* List family: a row grows to fit the line under its words\n\nA list of rows that act holds its words in a cell React Aria draws as\ndisplay: contents, so the row never saw its RowBelow line as its own child\nand never wrapped onto it. The row now wraps onto that line in a List as\nin a ListBox, and RowBelow takes a clamp of one line or two, so a row is\nas tall as its lines and never cuts one mid-line. A story draws a skill's\none-line description and a two-line reason in every theme cell.\n\nCloses #3751\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill studio: one tab per project, a frame of pages, and the Library\n\nThe studio is one view tab per project, laid out by the view frame: a scope\npicker for whose chats it covers, Library, Sources, Deleted, Harness skills\nand Routing in a left navigation (Needs you and Drafts only while they hold\nsomething), and its own back, forward and path. Each place is a step of the\ntab's history: every entry point opens it at a target, which the window's\none view opener turns into the tab and openViewAt, and the history is\nforgotten when the tab closes. A second studio tab opens only on cmd-click.\n\nThe Library is a list of rows (name, skill level, one mark, one line of what\nit does) with a search box and filter chips; the skill chosen opens beside\nit, holding what its row of the old table held until its page is built. The\nold one-page table and its stacked sections are gone: each page holds what\nits section held, scrolling on its own. Loading keeps the layout with rows\nheld in place, a read failure is said in place with Try again, and empty\npages say what appears there. Every entry point says \"Open Skill studio\".\nCONTEXT.md gains Library and Skill level.\n\nCloses #3681\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill studio: review fixes for the frame\n\nA change in progress belongs to the place it was started at, so back,\nforward or an entry point never leave an editor or a delete under another\nskill's name. A skill renamed, shared or moved stays chosen by its name. Two\nprograms' own skills of one name get rows of their own. A studio tab put back\nfrom an older launch keeps its pin and takes the one tab's title. Deletes cut\nshort are settled once, not on every scope picked. The scope picker always\nholds the scope shown. No empty list under the starts. A two-line clamp shows\nnothing of a third line.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill studio: the bar fits a narrow tab; the lines-under story measures lines\n\nAsk a chat to draft a skill moves from the bar to the Library's tools and\nthe Drafts page, so the bar keeps to the prototype's (path, scope, New\nskill…) and a narrow tab never scrolls sideways. The list family's story\nmeasures that the reason under a row is two whole lines and the description\none, rather than reading a clamped line's scroll height.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill studio e2e: wait for the Sources page by the navigation's own words\n\nThe first-open spec looked for the page with a CSS selector holding\nWebdriverIO's partial-text form, which WebKit refuses as invalid; it now waits\nthrough the studio helpers, as every other spec does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Story baselines: the Skill studio, a row's lines under its words, and Explorer's rows that now show theirs\n\nTaken from the stories run of the merged head and looked at: the studio wide,\nnarrow, filtered, reading, not read and on Needs you; the list family's lines\nunder a row; Explorer's filtered rows, whose second line now shows (#3751).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill studio story: the reading picture is taken once its line is there\n\nThe Reading story's picture was taken whenever the play ended, sometimes\nbefore and sometimes after the line that comes after a second. It now waits\nfor the line, and its baselines are drawn again by the next stories run.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Story baselines: the Skill studio while its skills are read, with its line\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T02:43:38Z",
+          "tree_id": "ca15742563f567cd9a18dcd6d79f6375867fd519",
+          "url": "https://github.com/purlis/purlis/commit/dd48c770f7f1ee35e9f155316052ede440efb0a7"
+        },
+        "date": 1793243486241,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.658181,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.636, 0.653, 0.658, 0.691, 0.696 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.680556000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.651, 16.668, 16.681, 16.716, 16.738 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.01449249999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.508, 101.721, 102.014, 102.281, 102.474 ms"
           }
         ]
       }
