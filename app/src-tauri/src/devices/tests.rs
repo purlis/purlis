@@ -698,6 +698,106 @@ fn a_user_and_password_joined_to_a_path_by_a_hidden_character_are_hidden() {
     );
 }
 
+#[test]
+fn an_address_parted_by_a_blank_shows_none_of_its_user_or_password() {
+    for (said, shown) in [
+        (
+            "cannot reach tcp://someone:hidden\n@engine.example",
+            "cannot reach tcp://… …@engine.example",
+        ),
+        (
+            "\"tcp://someone:hid den@engine.example\"",
+            "\"tcp://… …@engine.example\"",
+        ),
+        (
+            "tcp://someone:hid den and more@engine.example",
+            "tcp://… …@engine.example",
+        ),
+        (
+            "tcp://someone:1234 @engine.example",
+            "tcp://… …@engine.example",
+        ),
+        ("tcp://someone:hidden", "tcp://…"),
+        (
+            "tcp://someone:1234\r\n@engine.example",
+            "tcp://… …@engine.example",
+        ),
+        (
+            "tcp://someone:12 34 56@engine.example",
+            "tcp://… …@engine.example",
+        ),
+        (
+            "tcp://someone:12 34\n@engine.example",
+            "tcp://… …@engine.example",
+        ),
+        (
+            "https%3A%2F%2Fsomeone%3Ahid den%40engine.example",
+            "https://… …@engine.example",
+        ),
+        (
+            "tcp://someone%3Ahid den%40engine.example",
+            "tcp://… …@engine.example",
+        ),
+    ] {
+        assert_eq!(shown_safely(said), shown, "{said:?}");
+    }
+}
+
+#[test]
+fn a_long_text_cut_part_way_through_a_parted_address_shows_none_of_it() {
+    for address in ["tcp://someone:hid den", "tcp://someone:1234 5678"] {
+        let said = shown_safely(&format!(
+            "{}{address}@engine.example{}",
+            // The cut, at the text's 1600th character, falls right after the password.
+            " ".repeat(MOST_SHOWN * 8 - address.len()),
+            "x".repeat(40)
+        ));
+        assert!(!said.contains("someone"), "{said}");
+        assert!(!said.contains("den") && !said.contains("5678"), "{said}");
+    }
+}
+
+#[test]
+fn a_long_text_cut_keeps_an_address_that_holds_no_user() {
+    for kept in [
+        "docker info failed: Cannot connect to the Docker daemon at unix:///var/run/docker.sock.",
+        "Get https://registry.example/v2/: request canceled",
+    ] {
+        let said = shown_safely(&format!("{kept} {}", "trace ".repeat(400)));
+        assert!(said.starts_with(kept), "{said}");
+    }
+}
+
+#[test]
+fn an_address_written_in_percent_escapes_shows_no_user_or_password() {
+    for (said, shown) in [
+        (
+            "see https%3A%2F%2Fsomeone%3Ahidden%40build.example",
+            "see https://…@build.example",
+        ),
+        (
+            "see https%3a%2f%2fsomeone%3ahidden%40build.example",
+            "see https://…@build.example",
+        ),
+        ("someone%3Ahidden%40build.example", "…@build.example"),
+    ] {
+        assert_eq!(shown_safely(said), shown, "{said:?}");
+    }
+}
+
+#[test]
+fn host_and_port_addresses_and_escaped_paths_still_show_as_they_are() {
+    for kept in [
+        "connect to tcp://127.0.0.1:2375 failed",
+        "tcp://[::1]:2375 is down",
+        "https://example.com:8443/a then docs/guide@main",
+        "see docs%2Fguide%40main",
+        "Get \"http://%2Fvar%2Frun%2Fdocker.sock/v1.24/info\"",
+    ] {
+        assert_eq!(shown_safely(kept), kept);
+    }
+}
+
 /// A pool's hours this week include its runners no longer kept (#3492): a draining runner
 /// removed once its chats ended still ran for its pool. A kept runner's hours are in its own
 /// answer, so they are not counted here twice.

@@ -541,6 +541,7 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "Bash(purlis dispatch note *)",
             "Bash(purlis dispatch ask *)",
             "Bash(purlis dispatch answer *)",
+            "Bash(purlis dispatch close *)",
             "Bash(purlis handoff --name *)",
             "Bash(purlis handoff --report *)",
             "Bash(purlis handoff --persona *)",
@@ -551,6 +552,12 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "Bash(purlis worktree commit *)",
             "mcp__purlis__dispatch",
             "mcp__purlis__dispatch_report",
+            "mcp__purlis__dispatch_tell",
+            "mcp__purlis__dispatch_answer",
+            "mcp__purlis__dispatch_cancel",
+            "mcp__purlis__dispatch_close",
+            "mcp__purlis__dispatch_note",
+            "mcp__purlis__dispatch_ask",
             "mcp__purlis__todo_list",
             "mcp__purlis__memory_search",
             "mcp__purlis__session_record_list",
@@ -559,6 +566,7 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "mcp__purlis__persona_where",
             "mcp__purlis__dispatch_list",
             "mcp__purlis__dispatch_read",
+            "mcp__purlis__dispatch_wait",
             "mcp__purlis__theme_preview",
             // The chat's own skills, read or loaded (SK-13).
             "mcp__purlis__skill_list",
@@ -624,6 +632,7 @@ fn a_dispatch_is_pre_allowed_by_each_spelling_it_has_and_by_no_wildcard_over_the
             "Bash(purlis dispatch note *)",
             "Bash(purlis dispatch ask *)",
             "Bash(purlis dispatch answer *)",
+            "Bash(purlis dispatch close *)",
         ]
     );
     assert_eq!(
@@ -653,7 +662,8 @@ fn a_dispatch_is_pre_allowed_by_each_spelling_it_has_and_by_no_wildcard_over_the
         } else {
             assert!(
                 [
-                    "report", "wait", "list", "read", "cancel", "tell", "note", "ask", "answer"
+                    "report", "wait", "list", "read", "cancel", "tell", "note", "ask", "answer",
+                    "close",
                 ]
                 .contains(&first),
                 "{first}"
@@ -851,6 +861,15 @@ fn a_claude_code_chat_is_still_asked_before_every_other_charter_tool() {
         // And a dispatch (V98b): the app asks the person, so the harness does not.
         "dispatch",
         "dispatch_report",
+        // And every other dispatch subcommand's tool (#3786): what a chat does with its own
+        // tasks, and a task with its asker, is its own.
+        "dispatch_wait",
+        "dispatch_tell",
+        "dispatch_answer",
+        "dispatch_cancel",
+        "dispatch_close",
+        "dispatch_note",
+        "dispatch_ask",
     ];
     let others: Vec<&str> = crate::chattools::TOOLS
         .iter()
@@ -1084,6 +1103,7 @@ fn a_sandboxed_claude_code_chat_carries_its_sandbox_in_the_same_settings() {
             "Bash(purlis dispatch note *)",
             "Bash(purlis dispatch ask *)",
             "Bash(purlis dispatch answer *)",
+            "Bash(purlis dispatch close *)",
             "Bash(purlis handoff --name *)",
             "Bash(purlis handoff --report *)",
             "Bash(purlis handoff --persona *)",
@@ -1094,6 +1114,12 @@ fn a_sandboxed_claude_code_chat_carries_its_sandbox_in_the_same_settings() {
             "Bash(purlis worktree commit *)",
             "mcp__purlis__dispatch",
             "mcp__purlis__dispatch_report",
+            "mcp__purlis__dispatch_tell",
+            "mcp__purlis__dispatch_answer",
+            "mcp__purlis__dispatch_cancel",
+            "mcp__purlis__dispatch_close",
+            "mcp__purlis__dispatch_note",
+            "mcp__purlis__dispatch_ask",
             "mcp__purlis__todo_list",
             "mcp__purlis__memory_search",
             "mcp__purlis__session_record_list",
@@ -1102,6 +1128,7 @@ fn a_sandboxed_claude_code_chat_carries_its_sandbox_in_the_same_settings() {
             "mcp__purlis__persona_where",
             "mcp__purlis__dispatch_list",
             "mcp__purlis__dispatch_read",
+            "mcp__purlis__dispatch_wait",
             "mcp__purlis__theme_preview",
             "mcp__purlis__skill_list",
             "mcp__purlis__skill_runs",

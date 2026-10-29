@@ -213,6 +213,7 @@ pub mod runnerimage;
 pub mod runnerlink;
 #[cfg(unix)]
 pub mod runners;
+pub mod runnertaint;
 pub mod runnerwrite;
 pub mod safesvg;
 pub mod sandbox;

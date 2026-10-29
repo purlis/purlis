@@ -3511,7 +3511,9 @@ fn the_word_that_a_chat_was_stopped_raises_no_item_when_its_asker_then_closes() 
     let asking = a_chat_on_work(&held, &plane.root);
     let tickets = Tickets::default();
     let (child, _) = a_task_of_alpha(&held, &id, &tickets, asking, None).expect("opened");
-    let (other, _) = a_task_of_alpha(&held, &id, &tickets, asking, None).expect("opened");
+    // A name of its own: one open task's name is not dispatched again (#3788).
+    let (other, _) =
+        a_task_of_alpha(&held, &id, &tickets, asking, Some("ship it too")).expect("opened");
     crate::stopping::press_in_a_test(&held, child, false).expect("stopped");
 
     held.close_chat(asking).expect("closed");
@@ -5095,17 +5097,11 @@ fn two_worktree_tasks_from_one_chat_work_in_two_folders_on_two_branches() {
     let asking = a_chat_as(&held, &plane.root, Some("steward"), &clone);
     let tickets = Tickets::default();
 
-    // The same task name, twice.
+    // Two names a branch is drawn the same from. Not the same name: one open task's name is
+    // not dispatched again (#3788), and the match is exact.
     let mut cut = Vec::new();
-    for _ in 0..2 {
-        let (said, _) = dispatch_in(
-            &held,
-            &id,
-            &tickets,
-            asking,
-            (None, "check the queue"),
-            "worktree",
-        );
+    for name in ["check the queue", "Check the queue"] {
+        let (said, _) = dispatch_in(&held, &id, &tickets, asking, (None, name), "worktree");
         let Answer::Dispatched { chat, .. } = said else {
             panic!("dispatched, not {said:?}")
         };
@@ -5479,6 +5475,7 @@ fn a_chat_nobody_is_at_starts_no_chat_in_another_workspace_without_a_standing_gr
         "nothing is held: nobody is there to ask"
     );
     // Into its own workspace, by name or by saying nothing, its own persona needs none.
+    // Each under a name of its own: one open task's name is not dispatched again (#3788).
     for place in [Some("workspace:alpha"), None] {
         let (own, _) = match place {
             Some(place) => dispatch_in(
@@ -5489,7 +5486,14 @@ fn a_chat_nobody_is_at_starts_no_chat_in_another_workspace_without_a_standing_gr
                 (None, "tidy up"),
                 place,
             ),
-            None => dispatch(&held, &id, &Tickets::default(), asking, None, "tidy up"),
+            None => dispatch(
+                &held,
+                &id,
+                &Tickets::default(),
+                asking,
+                None,
+                "tidy up here",
+            ),
         };
         assert!(
             matches!(own, Answer::Dispatched { .. }),
@@ -6453,7 +6457,9 @@ fn a_dispatch_names_only_a_profile_the_project_lists_for_the_persona() {
 
     // A listed profile that asks starts, named or not: the asking chat's own is `work`.
     for profile in [Some("work"), None] {
-        let (said, _) = dispatch_with(&held, &id, asking, Some("devops"), "task", brief, profile);
+        // Each under a name of its own (#3788).
+        let name = format!("task on {}", profile.unwrap_or("its own"));
+        let (said, _) = dispatch_with(&held, &id, asking, Some("devops"), &name, brief, profile);
         let Answer::Dispatched { chat: task, .. } = said else {
             panic!("{profile:?}: dispatched, not {said:?}")
         };
@@ -6656,7 +6662,9 @@ fn the_persona_chat_a_dispatch_opens_takes_nothing_of_the_asking_chat_s_but_its_
     let brief = "# Check the queue\nSay how many are stuck.\n";
 
     for (to, runs_as) in [(None, "steward"), (Some("devops"), "devops")] {
-        let (said, _) = dispatch_with(&held, &id, asking, to, "task", brief, None);
+        // Each under a name of its own (#3788).
+        let name = format!("task as {runs_as}");
+        let (said, _) = dispatch_with(&held, &id, asking, to, &name, brief, None);
         let Answer::Dispatched { chat: task, .. } = said else {
             panic!("{to:?}: dispatched, not {said:?}")
         };
@@ -11429,6 +11437,35 @@ fn a_chat_open_in_a_workspace_with_no_id_is_drawn_specimens_from_the_plane_root_
             id: None,
         })
     );
+}
+
+#[test]
+fn a_dispatch_under_the_name_of_an_open_task_is_refused_and_one_after_its_report_is_not() {
+    // #3788, ruled 2026-10-29: a parent that lost track of a task it unblocked is told the
+    // task's number and state instead of starting the same work twice. Exact name only.
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let task = a_task_of(&held, &id, steward, "check prod");
+
+    let (said, _) = dispatch(&held, &id, &Tickets::default(), steward, None, "check prod");
+    assert!(
+        matches!(&said, Answer::No { why }
+            if why.contains(&format!("an open task named 'check prod' (chat {task}, running;"))),
+        "{said:?}"
+    );
+    // Another name is another task.
+    let other = a_task_of(&held, &id, steward, "check staging");
+    assert_ne!(other, task);
+
+    // Once it has reported, the name is free again.
+    assert!(matches!(
+        reports(&held, &id, task),
+        Answer::Reported { .. } | Answer::Finished { .. }
+    ));
+    let again = a_task_of(&held, &id, steward, "check prod");
+    assert_ne!(again, task);
 }
 
 /// #3787: a task starts in its asking chat's mode, capped at auto, as the app heard that

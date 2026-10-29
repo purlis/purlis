@@ -240,15 +240,8 @@ export function neighbour(
   return rows[(at + step + rows.length) % rows.length].session;
 }
 
-/**
- * How long the pointer rests on a chip before its menu opens by itself (V100-33). A pointer
- * crossing the strip is over a chip for far less, so a pass opens nothing.
- */
-export const REST_MS = 350;
-
-/** How long the pointer may be off both the chip and a menu its rest opened before that menu
- *  closes: the time to cross the gap between them, and to come back from a slip off the edge. */
-export const GRACE_MS = 300;
+/** The rest and its grace, written in `tabRest.ts` so a scenario spec can read them too. */
+export { GRACE_MS, REST_MS } from "./tabRest";
 
 /** How far a resting pointer may drift, in pixels. Further than this is moving, and the rest
  *  starts again from where it is. */
