@@ -215,9 +215,8 @@ fn made_in(data: &Path, root: &Path) -> Result<PathBuf, String> {
     let all = data.join(DIR);
     let mine = in_data(data, root);
     // Asked before anything is made: a fenced build keeps its data home in the state folder.
-    let fresh = plane_id(root).is_none()
-        && std::fs::symlink_metadata(&mine).is_err()
-        && !any_state_folder(root);
+    let fresh =
+        plane_id(root).is_none() && std::fs::symlink_metadata(&mine).is_err() && !kept_before(root);
     held_private(&all).map_err(|why| format!("{}: {why}", all.display()))?;
     let _held = locked(&mine)?;
     made_locked(&mine, root, fresh)
@@ -269,8 +268,8 @@ fn written_once(path: &Path, text: &str) -> Result<String, String> {
     }
 }
 
-/// [`made_in`], with the project's lock held. `fresh`: a project purlis has never kept any state
-/// for (no id of its own, no folder, no state folder at all), asked before anything was made.
+/// [`made_in`], with the project's lock held. `fresh`: a project purlis has never kept chats or
+/// app state for ([`never_kept`]), asked before anything was made.
 /// Only such a one's records start out confirmed; every other folder is held until the person
 /// accepts them again.
 fn made_locked(mine: &Path, root: &Path, fresh: bool) -> Result<PathBuf, String> {
@@ -322,27 +321,32 @@ fn made_locked(mine: &Path, root: &Path, fresh: bool) -> Result<PathBuf, String>
     Ok(mine.to_path_buf())
 }
 
-/// **Whether the project at `root` has never had any state kept for it**, where this machine can
-/// keep app state: no id of its own, no folder, and no state folder at all (under either
-/// spelling, or where `$PURLIS_HOME` puts it), so no record of open chats either. Its first write
-/// confirms its records ([`made`]), so a reader before it holds nothing either. A project with a
-/// state folder is held on its first open, whatever that folder holds.
+/// **Whether the project at `root` has never had chats or app state kept for it**, where this
+/// machine can keep app state: no id of its own, no folder, and no record of open chats or levels
+/// records in any state folder ([`kept_before`]). Its first write confirms its records
+/// ([`made`]), so a reader before it holds nothing either. Any other project is held on its first
+/// open, whatever its levels records hold or no longer hold.
 pub(crate) fn never_kept(root: &Path) -> bool {
     data_home(root).is_some_and(|data| {
         plane_id(root).is_none()
             && std::fs::symlink_metadata(in_data(&data, root)).is_err()
-            && !any_state_folder(root)
+            && !kept_before(root)
     })
 }
 
-/// Whether the project at `root` has a state folder: under either spelling, or where
-/// `$PURLIS_HOME` puts it.
-fn any_state_folder(root: &Path) -> bool {
+/// **Whether purlis ever kept a record of the project at `root`'s open chats, or of its levels**,
+/// in a state folder (under either spelling, or where `$PURLIS_HOME` puts it): its record of open
+/// chats, which only purlis writes, or a levels records folder. Either is a project chats ran in
+/// before, whose folders are held on its first open after the upgrade.
+fn kept_before(root: &Path) -> bool {
     crate::names::STATE_DIR
         .spellings()
         .map(|state| root.join(state))
         .chain(std::iter::once(crate::plane::state_dir(root)))
-        .any(|state| std::fs::symlink_metadata(state).is_ok())
+        .any(|state| {
+            std::fs::symlink_metadata(state.join(crate::reopen::IN_STATE)).is_ok()
+                || std::fs::symlink_metadata(state.join(crate::skills::levels::DIR)).is_ok()
+        })
 }
 
 /// The file in a project's levels records folder this purlis writes when it can vouch for what

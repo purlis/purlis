@@ -637,11 +637,17 @@ fn a_records_folder_that_is_a_link_is_never_confirmed() {
 
 #[test]
 fn a_project_with_a_state_folder_is_held_on_its_first_open_whatever_it_holds() {
-    // A state folder with no levels records in it, as one whose records were taken away is.
+    // A project chats ran in, whose levels records were taken away: its record of open chats is
+    // there, and no levels records.
     let tmp = project();
     let root = tmp.path();
     std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
-    assert!(root.join(".purlis").is_dir());
+    crate::reopen::write(root, &crate::reopen::Record::default()).unwrap();
+    assert!(
+        !crate::names::state(root)
+            .join(crate::skills::levels::DIR)
+            .exists()
+    );
     move_out_of_the_plane(root);
     assert!(!crate::skills::levels::confirmed(root));
     assert_eq!(
