@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793237909182,
+  "lastUpdate": 1793239178415,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29064,6 +29064,48 @@ window.BENCHMARK_DATA = {
             "value": 101.446813,
             "unit": "ms",
             "extra": "median of 5 runs: 100.752, 100.950, 101.447, 102.028, 103.555 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f0cd472671c6b602b40807598fc392a399cfef52",
+          "message": "M66: review page, disclosure family, read-only terminal (#3672, #3675, #3676) (#3760)\n\n* Disclosure family: one fold for More, a file to read and a last text (#3675)\n\nui/disclosure on React Aria's Disclosure, DisclosureGroup and DisclosurePanel:\na quiet-ghost trigger of the button family leading with the shared Twist,\nwhich turns and never swaps, and says aria-expanded; the panel follows it in\nthe reading order, named by it; folded unless told, the owner's to hold.\nA field the form refuses inside a folded panel opens every fold around it\nbefore the keyboard goes there (ui/reveal.ts), in a dialog and on a page,\nand is said once by its own error line (#3291). purlis/disclosure-family\nrefuses a chevron swapped by hand for a fold and the scope by hand; the\nthree swaps #1916 names draw Twist. The disclosure family joins the\nmanifest since NEXT.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Review page: a fixed action bar with a summary and the dialog's answers (#3672)\n\nui/review-page, a member of the panel family: the body scrolls and ends\nwhere the bar starts, so the page scrolls under the bar's edge and a focused\ncontrol is never under it (WCAG 2.4.11). The bar's summary describes the\nmain action; its answers are the dialog's own DialogAnswerRow and Return\nrule (returnFinds, now exported), so the two cannot drift. An unavailable\nmain action keeps the Tab stop and its reason; reserve and summaryReserve\nkeep the bar's height; narrow, the summary takes its own line. The\nreview-page family joins the manifest since NEXT; no part sets the bar's\nedge, a consent surface.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Read-only terminal: a saved chat a screen reader can read (#3676)\n\nReadOnlyTerminal beside the pane's terminal: xterm from the theme's\nterminal tokens and font, no cursor, no input, its grid hidden from a\nreader and its text beside it as a list of lines (wrapped rows joined).\nOne Tab stop, a region named and described by the read-only note drawn\noutside the grid; Cmd+F opens the find bar on it, Cmd+A and Cmd+C copy.\nThe saved grade chat and the theme specimen's terminals move onto it, so\nno role=\"img\" stands for a terminal's text. onAMac moves to mac.ts so the\nspecimen reaches nothing of the window's. Docs for the three: the ADR 0104\namendment, ui-primitives, themes.md and the regenerated schema and table.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Docs: keep main's layout of themes.md and ui-primitives.md, the family table written again\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Review page, disclosure, read-only terminal: fixes from the review and the first CI run\n\nThe read-only screen keeps a space a row wrapped on, copies the terminal's\nselection unless the reader's own is inside the screen, says a copy the\nclipboard refused, and is still (no Tab stop, find or copy) in the theme\nspecimen's picture. The review page measures its body again as what it\nholds comes and goes, and presses a main action that says so by Cmd+Enter,\nas a dialog does. A notice's details draw the twist; the panel's role is\nno live region to the standing-lines guard; the Rust tests' stylesheets are\nin ci-scope; the Chats list's fixture takes the twist; a changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Review page and read-only terminal stories: a pane of a fixed height, and no faint text\n\nThe story's pane gives its row a fixed height, so the review page's body\nscrolls in it; the saved chat's last line is plain words (faint text in a\nterminal is #3762's).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Baselines: the disclosure, the review page, the read-only terminal, and a notice's twist\n\nThe faint text the terminal's story left out is #3768.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T01:17:03Z",
+          "tree_id": "2c59758a9ef815b5258b9976c0ff0f282d9c2f6d",
+          "url": "https://github.com/purlis/purlis/commit/f0cd472671c6b602b40807598fc392a399cfef52"
+        },
+        "date": 1793239174348,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.678341,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.650, 0.651, 0.678, 0.680, 0.685 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.621824,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.382, 16.481, 16.622, 16.648, 16.691 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.070655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.721, 101.985, 102.071, 103.031, 103.707 ms"
           }
         ]
       }
