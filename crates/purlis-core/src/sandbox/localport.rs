@@ -394,42 +394,77 @@ pub fn in_use_said(port: u16) -> String {
 /// not permitted`, on this Mac's loopback or on every interface (`0.0.0.0`, `::`, no address).
 /// None for any other line, another machine's address, or a port of zero.
 pub fn listen_refused_in(line: &str) -> Option<u16> {
+    listened_port(listen_refused_at(line)?)
+}
+
+/// **What a block refused on a port the system picks names** (#3396): that port, 0, as the server
+/// asked for it. Never a port a grant names ([`port`] refuses 0), so no Allow is ever drawn for it.
+pub const PICKED: &str = "0";
+
+/// **Whether a server's own refusal to listen was on a port the system picks** (#3396): what
+/// [`listen_refused_in`] reads, at port 0 ([`picks_its_port`]). No Allow can name such a port.
+pub fn picked_port_refused_in(line: &str) -> bool {
+    listen_refused_at(line).is_some_and(picks_its_port)
+}
+
+/// The address a server's own refusal to listen names, as it says it: Node's after `listen
+/// EPERM: operation not permitted`, Go's between `listen tcp` and `: bind:`.
+fn listen_refused_at(line: &str) -> Option<&str> {
     let lower = line.to_ascii_lowercase();
-    let address = if let Some(at) = lower.find("listen eperm: operation not permitted ") {
+    if let Some(at) = lower.find("listen eperm: operation not permitted ") {
         line[at + "listen eperm: operation not permitted ".len()..]
             .split_whitespace()
-            .next()?
+            .next()
     } else if let Some(at) = lower.find("listen tcp")
         && lower.contains(": bind: operation not permitted")
     {
         // `listen tcp 127.0.0.1:3000: bind: …`, `listen tcp4 :3000: bind: …`.
         let rest = line[at + "listen tcp".len()..].trim_start_matches(['4', '6']);
-        rest.strip_prefix(' ')?.split(": ").next()?
+        rest.strip_prefix(' ')?.split(": ").next()
     } else {
-        return None;
-    };
-    listened_port(address)
+        None
+    }
 }
 
 /// **The port of `address` where it is this Mac's loopback or every interface** (#2019):
 /// `127.0.0.1:N`, `[::1]:N`, `::1:N`, `localhost:N`, and `0.0.0.0:N`, `:::N`, `[::]:N`, `:N` or
 /// Seatbelt's `*:N`. None for another machine's address or a port of zero.
 pub fn listened_port(address: &str) -> Option<u16> {
+    here_at(address).filter(|port| *port != 0)
+}
+
+/// **Whether `address` asks for a port the system picks** on this Mac's loopback or on every
+/// interface (#3396): port 0 as [`listened_port`] reads an address, or one of those addresses
+/// with no port after it, which is how Node says a listen on port 0 (`127.0.0.1`, `::1`, `::`).
+pub fn picks_its_port(address: &str) -> bool {
+    let address = address.trim().trim_end_matches(['.', ',', ';']);
+    here_at(address) == Some(0)
+        || address
+            .parse::<IpAddr>()
+            .is_ok_and(|ip| is_here(&ip.to_string()))
+}
+
+/// The port of `address` where its host is this Mac's loopback or every interface, zero
+/// included.
+fn here_at(address: &str) -> Option<u16> {
     let address = address.trim().trim_end_matches(['.', ',', ';']);
     let (host, port) = address.rsplit_once(':')?;
-    let port = port.parse::<u16>().ok().filter(|port| *port != 0)?;
-    let host = host.trim_start_matches('[').trim_end_matches(']');
-    let here = host.is_empty()
+    let port = port.parse::<u16>().ok()?;
+    is_here(host.trim_start_matches('[').trim_end_matches(']')).then_some(port)
+}
+
+/// Whether `host` is this Mac's loopback or every interface: no host, `*`, `::`, `localhost`,
+/// or exactly the loopback addresses the profile carries, never another of 127/8.
+fn is_here(host: &str) -> bool {
+    host.is_empty()
         || host == "*"
         || host == "::"
         || host.eq_ignore_ascii_case("localhost")
         || host.parse::<IpAddr>().is_ok_and(|ip| {
-            // Exactly the loopback addresses the profile carries, never another of 127/8.
             ip.is_unspecified()
                 || ip == IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
                 || ip == IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
-        });
-    here.then_some(port)
+        })
 }
 
 #[cfg(test)]

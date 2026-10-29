@@ -2,6 +2,7 @@ purlis runner link key v2
 namespace: ada
 claim: ada-1
 claim uid: 6f1c2b8e-0f43-4c2e-9d7a-1b2c3d4e5f60
+runner namespace: purlis-runners-b5fc85e55755f9e0
 pod: ada-1
 key: 2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70819
 requester: ada@example.com

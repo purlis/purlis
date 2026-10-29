@@ -429,6 +429,40 @@ fn a_socket_never_bound_does_not_listen() {
     assert_eq!(p.run(&["listen-unbound", "6"]), "EACCES");
 }
 
+/// A test server asking for a port the system picks is refused, and told (#3396), so its chat
+/// gets a Notice that says what to do: the bind on port 0, as the address it asked for.
+#[test]
+fn a_bind_on_a_port_the_system_picks_is_refused_and_told() {
+    let p = project();
+    let told = p.tmp.join("told");
+    let port = free_port();
+    let words = purlis_linux_sandbox::line(
+        &p.profile_unserved(port),
+        PROBE.to_owned(),
+        vec!["serve-on".into(), "127.0.0.1".into(), "0".into()],
+    );
+    let out = wrap_with(
+        &words,
+        &[
+            ("TMPDIR".into(), p.tmp.clone().into()),
+            ("PROBE_TOLD".into(), told.clone().into()),
+        ],
+    )
+    .current_dir(&p.cwd)
+    .output()
+    .expect("the wrap ran");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "EACCES",
+        "{out:?}"
+    );
+    let said = std::fs::read_to_string(&told).unwrap_or_default();
+    assert!(
+        said.lines().any(|line| line == "network-bind 127.0.0.1:0"),
+        "told: {said:?}"
+    );
+}
+
 /// A thread with a descriptor table of its own is judged by its own socket: its unbound one is
 /// refused, though the process's table holds a bound socket at the same number.
 #[test]

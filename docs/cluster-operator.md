@@ -12,7 +12,9 @@ that project does. Its source is [`operator/`](../operator/).
 
 A Pool and a Claim make a running session host (#2054), the Claim says whether it is ready,
 and the operator vouches for the runner's link key, so a desktop links only to the runner it
-claimed (#2056, [below](#who-the-runner-is)).
+claimed (#2056, [below](#who-the-runner-is)). Each person's runners run in a namespace the
+operator makes for that person alone, within a quota (#2055,
+[below](#each-persons-namespace)).
 
 ## What it needs
 
@@ -151,7 +153,12 @@ Helm never upgrades `crds/`. An upgrade to a chart whose policy asks for a Claim
 without the definitions that hold it refuses every new Claim until they are applied.
 
 `helm uninstall` removes the operator and leaves the definitions, the Claims and Pools in
-them, and the policy on Claims, which Helm keeps (`helm.sh/resource-policy: keep`).
+them, and the policy on Claims, which Helm keeps (`helm.sh/resource-policy: keep`). A Claim
+deleted while no operator runs waits for its finalizer, `runners.purlis.dev/runner`
+([below](#each-persons-namespace)): delete the Claims before you uninstall, or, after, take the
+finalizer off by hand (`kubectl patch claim <name> -n <namespace> --type=json
+-p '[{"op":"remove","path":"/metadata/finalizers"}]'`) and delete the runner namespaces
+(`kubectl delete namespace -l app.kubernetes.io/managed-by=purlis-cluster-operator`).
 
 The chart's values, all in its
 [`values.yaml`](../operator/charts/purlis-cluster-operator/values.yaml), and
@@ -163,6 +170,7 @@ The chart's values, all in its
 | `image.digest` | the image's digest, `sha256:` and 64 hex digits; required | none |
 | `imagePullSecrets` | secrets in the release's namespace that pull the image | none |
 | `resources` | the operator's CPU and memory | requests 10m CPU and 32Mi, limit 256Mi |
+| `perPerson.quota` | what each person's runners may hold at once, in their namespace's quota `purlis-person` ([below](#each-persons-namespace)): `claims` (a count), `cpu` and `memory` (what their runners' pods ask for), `storage` (what their kept runners' volumes ask for); a key left out is not limited | `claims: 5`, `cpu: "4"`, `memory: 8Gi`, `storage: 50Gi` |
 
 No value changes what the operator may do or how its pod is confined.
 
@@ -176,9 +184,9 @@ cluster admin can review and apply them apart from the controllers.
 #    the release's digest.
 kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6
 
-# 2. The policy that admits a Claim only for someone who may use its Pool, then purlis's
-#    definitions, Pool and Claim. The policy goes first, so no Claim is admitted before it
-#    holds.
+# 2. The policies: the one that admits a Claim only for someone who may use its Pool, and the
+#    one on runner namespaces; then purlis's definitions, Pool and Claim. The policies go
+#    first, so no Claim is admitted before they hold.
 kubectl apply --server-side -f operator/deploy/policy.yaml
 kubectl apply --server-side -f operator/deploy/crds.yaml
 
@@ -255,8 +263,9 @@ spec:
   another claim. Its `Ready` condition says whether its runner is running, and if not, why:
   `PoolNotFound` when there is no such pool, `PoolDeleted` when it was deleted after the
   runner was asked for (below), `UpstreamObjectInTheWay` when an upstream object the operator
-  did not make has the name it would use (below), `HeldByClaimsMadeBeforePolicy` when the
-  pool's objects there belong only to Claims made before the policy on Claims was in force
+  did not make has the name it would use (below), `NamespaceInTheWay` when a namespace the
+  operator did not make, or made for someone else, has the name of the requester's runner
+  namespace (below), `OverQuota` when the runner would take the requester over their quota
   (below), and upstream's own reason otherwise. **While its runner starts**, `Ready` is `False`
   with its stage: `Scheduling` until a node takes the pod (with the scheduler's words when it
   cannot), `Pulling` while the node pulls the image (with the kubelet's words when it fails),
@@ -267,7 +276,12 @@ spec:
   (`kubectl auth whoami`): the policy refuses a Claim whose `requester` is anyone else, in words
   that name the right one, and it never changes after. The operator vouches for it with the
   runner's link key. purlis fills it in when it claims a runner.
-- **Deleting a Claim** deletes its runner.
+- **A Claim stays in its namespace; its runner does not.** The runner, and everything the
+  operator makes for it, is in the requester's own namespace, `purlis-runners-<hash>`
+  ([below](#each-persons-namespace)).
+- **Deleting a Claim** deletes its runner: the Claim carries the finalizer
+  `runners.purlis.dev/runner`, and the operator deletes what it made for the Claim before it lets
+  the Claim go.
 - **Deleting a Pool stops nothing that runs.** A Claim whose runner was asked for keeps it,
   running as the pool last defined it, until the Claim is deleted: its `Ready` is still what
   upstream says of the runner, `True` while it runs, with the reason `PoolDeleted`. No new
@@ -322,23 +336,26 @@ claimed. Two witnesses say which key that runner holds, and both must agree:
    to the template it made for the pool in full, every field but the few the cluster itself
    sets or defaults (a kept Claim's pod with its own volume in place of the template's folder,
    as upstream puts it there), and refuses a pool's template that someone else changed. Then
-   it signs a statement of the claim (its name and uid), the pod's name, the key, the
-   requester and until when it holds (ten minutes on) with its own Ed25519 key. The statement and its signature are the Claim's `status.linkKey`, and
+   it signs a statement of the claim (its namespace, name and uid), the runner namespace and
+   the pod's name there, the key, the requester and until when it holds (ten minutes on) with
+   its own Ed25519 key. The statement and its signature are the Claim's `status.linkKey`, and
    its `KeyPublished` condition says `Vouched`, or why not yet. Every Pool's
    `status.signingKey` names the operator's key, which a desktop pins when it adds the pool.
-3. **The desktop pairs over its own `kubectl exec`** into the pod the statement names, as a
-   Docker pool's desktop pairs over `docker exec`, and the runner answers with its device id
-   and key. A statement signed by another key, about another claim or requester, or a runner
+3. **The desktop pairs over its own `kubectl exec`** into the pod the statement names, in the
+   runner namespace it names, as a Docker pool's desktop pairs over `docker exec`, and the
+   runner answers with its device id and key. A statement signed by another key, about another
+   claim or requester, naming a runner namespace other than the requester's own, or a runner
    answering another key than the one vouched for, is refused, and so is a statement that names
-   another pod or key before any later link. The pairing takes the private half out of the
+   another runner namespace, pod or key before any later link. The pairing takes the private half out of the
    shared folder, so it is left only in the session host's own. The operator looks at a
    vouched claim again every minute, and takes its statement away once it no longer holds.
 
-**Vouching is only as strong as the namespace is the requester's own.** Anyone who may exec into
-pods, make pods, or change the pool's objects in a claim's namespace can reach its runner, read
-its key, or pair with it first, whatever the statement says. Until the operator makes a
-namespace per person (#2055), give each person a namespace of their own and no one else rights
-in it. Read access to Secrets in the operator's namespace is the power to vouch for any runner.
+**Vouching is only as strong as the runner namespace is the requester's own.** Anyone who may
+exec into pods, make pods, or change the pool's objects in a runner namespace can reach its
+runners, read their keys, or pair with them first, whatever the statement says. The operator
+gives the requester alone a right there ([below](#each-persons-namespace)); grant no one else
+rights in `purlis-runners-*` namespaces, cluster-wide rights on pods included. Read access to
+Secrets in the operator's namespace is the power to vouch for any runner.
 
 A runner is paired once, and **its pairing is its Claim's, not its pod's** (#2057, ruled
 2026-10-28). The pairing lives in the runner's home: a kept Claim's runner keeps it on its
@@ -348,7 +365,7 @@ same runner without pairing again. A fresh Claim's runner keeps nothing past its
 has a new key, which the desktop refuses as a changed key, and the claim is made again.
 
 **A kept Claim's volume holds its runner's link key.** Anyone who can read the volume, or make a
-pod that mounts it, in the Claim's namespace can take the runner's identity, as anyone who may
+pod that mounts it, in the runner namespace can take the runner's identity, as anyone who may
 exec into its pod can; so can whoever holds the node or the storage behind it, and so does any
 snapshot or backup of the volume (Velero and the like), which holds a working link key for as
 long as the Claim lives. The namespace rule above holds for the volume too. A statement holds
@@ -372,36 +389,101 @@ So wait 30 seconds after installing before making the first Claims.
 
 Making the binding again, by reinstalling the policy or recreating the binding by hand, refuses
 every Claim that already exists: each says `MadeBeforePolicy` and has to be deleted and made
-again. A runner such a Claim already has keeps running, with the template and warm pool it was
-made from, until the Claim is deleted. Only a Claim the operator acts on makes those objects
-count as the operator's, so a Claim made since, on that pool in that namespace, says
-`HeldByClaimsMadeBeforePolicy`, naming the older Claims, and waits until they are deleted.
+again. A runner such a Claim already has keeps running until the Claim is deleted, and its
+finalizer still removes it then.
+
+## Each person's namespace
+
+**A person's runners run in a namespace of their own** (#2055, ruled 2026-10-29), whichever
+namespace their Claims are in. A person, here, is a username as the cluster signs it in: the
+Claim's `requester`. Each username has a runner namespace and a quota of its own, a service
+account's too. For each requester the operator makes, the first time one of their Claims is acted
+on:
+
+| Object | Name | What it holds |
+|---|---|---|
+| `Namespace` | `purlis-runners-<hash>` | the requester's runner namespace. `<hash>` is the first 16 hex digits of the SHA-256 of the requester, exactly as the Claim names them, so a desktop can work out the name itself. Labelled `app.kubernetes.io/managed-by: purlis-cluster-operator` and annotated `runners.purlis.dev/requester` with the requester: the operator uses a namespace of that name only when it carries both, for this requester, and the Claim otherwise says `NamespaceInTheWay` and waits |
+| `RoleBinding` | `purlis-runner-owner` | the cluster role `purlis-runner-owner`, which the chart installs, for the requester alone: a `User`, or the `ServiceAccount` a `system:serviceaccount:<namespace>:<name>` requester names. The role allows `get`, `list` and `watch` on pods, `create` and `get` on `pods/exec`, and `get` on `pods/log`: what a desktop needs to pair with and link to the runner over `kubectl exec`, and to read its log. Nothing else: the requester makes, changes and deletes nothing there |
+| `ResourceQuota` | `purlis-person` | the chart's `perPerson.quota`: `claims` as `count/sandboxclaims.extensions.agents.x-k8s.io`, `cpu` as `requests.cpu`, `memory` as `requests.memory` and `storage` as `requests.storage`. Applied again whenever it differs from the chart's value, so a changed value reaches each person as their Claims are next looked at |
+
+**The policy on runner namespaces holds them at admission.** A second ValidatingAdmissionPolicy,
+`purlis-runner-namespaces`, installed beside the policy on Claims (`operator/deploy/policy.yaml`)
+and kept when the release is uninstalled, as that one is:
+
+- a namespace named `purlis-runners-*` is made only by the operator's service account, and no
+  one else changes its `app.kubernetes.io/managed-by` label or `runners.purlis.dev/requester`
+  annotation, through the namespace or its `status` and `finalize`;
+- the operator makes no other namespace;
+- the operator makes or changes a role binding only in a runner namespace, only
+  `purlis-runner-owner` of the cluster role `purlis-runner-owner`, and only for one subject: the
+  person the namespace's `runners.purlis.dev/requester` names, as a user whose name does not
+  start `system:` or as the service account a `system:serviceaccount:<namespace>:<name>`
+  requester names, and never the operator itself;
+- the operator makes or changes a quota only in a runner namespace, and only `purlis-person`.
+
+The operator uses a runner namespace only while that policy's binding is in force, and only one
+made after it was, 30 seconds after the binding was made, as with Claims. It makes one only then,
+too: a Claim it meets sooner, as on the upgrade that brings the policy, waits until then with
+nothing made. Its other labels, annotations and owners are a namespace's own, which anyone who
+may change namespaces may change, as with any namespace. While no binding puts
+it in force, a Claim says `PolicyNotInForce`, naming the policy. A runner namespace made before
+says `NamespaceInTheWay`; making the binding again does that to every runner namespace there is,
+so a cluster admin then deletes them, with the runners in them, and their people's Claims are
+made again.
+
+**The Claim stays where it is made.** Its runner, and the upstream objects below, are in the
+runner namespace; the Claim's status, its statement included, stays on the Claim. Two Claims of
+one person in two namespaces, of the same name, would make upstream claims of the same name: the
+second says `UpstreamObjectInTheWay` until the first is deleted.
+
+**The quota.** Every runner's pod asks for what its containers need at least, 250m CPU and 512Mi
+for the runner and 50m and 32Mi for its first step, so the quota can count it, and a kept
+Claim's volume asks for its Pool's `keptVolume.size`. Before the operator asks upstream for a
+new runner, it reads the quota's use: when the runner would take any of the four over, the Claim
+says `Ready` `False` with the reason `OverQuota`, naming what is over, and nothing is made for
+it. It is looked at again every 30 seconds, and goes on once one of the person's other Claims is
+deleted or the quota is raised. A request the cluster refuses for the quota says `OverQuota`
+too. Runners a Pool keeps warm in a person's namespace count toward their quota. A runner whose
+pod or volume the cluster refuses later, made at the same moment as another, says upstream's
+reason.
+
+**The finalizer.** Each Claim the operator acts on carries the finalizer
+`runners.purlis.dev/runner`. When the Claim is deleted the operator deletes its upstream claim,
+which takes its runner and a kept runner's volume with it, and, when no other Claim of the
+requester on that pool is left, the pool's template and warm pool in the runner namespace; then
+it takes the finalizer off and the Claim goes. The runner namespace, its role binding and its
+quota stay, empty, for the person's next Claim: the operator holds no right to delete a
+namespace.
 
 ## What it makes
 
-For a Claim in namespace `ns` on Pool `p`, the operator makes, and then applies server-side:
+For a Claim on Pool `p` by a requester whose runner namespace is `r`, the operator makes, and
+then applies server-side:
 
 | Upstream object | Name | What it holds |
 |---|---|---|
-| `SandboxTemplate` | `purlis-pool-p` in `ns` | the runner's pod: its first step, `link-key`, making the runner's home and its link key (above), then one container running the pool's image with its own entrypoint (`purlis serve`), both as a user who is not root, every capability dropped, no privilege escalation, the runtime's default seccomp profile, no Kubernetes credential mounted and no service addresses in their environment. The runner's `HOME` is `/var/lib/purlis/home`, on the volume `purlis-kept` mounted at `/var/lib/purlis`: a folder of the node's in the template, which a kept Claim's own volume takes the place of. The pod's group (`fsGroup` 10001) may write that volume. A claim may add a volume of its own (`volumeClaimTemplatesPolicy: Allowed`) |
-| `SandboxWarmPool` | `purlis-pool-p` in `ns` | no runner kept warm when it is made; after that, as many as it holds, so `kubectl scale sandboxwarmpool purlis-pool-p -n ns --replicas=<n>` keeps `n` runners warm for fresh Claims until pools scale on their own (#2058) |
-| `SandboxClaim` | the Claim's own name in `ns` | the claim on that warm pool; a kept Claim's carries the volume `purlis-kept` its Pool's `keptVolume` asks for, so upstream makes its runner cold and its PersistentVolumeClaim `purlis-kept-<claim>` |
+| `SandboxTemplate` | `purlis-pool-p` in `r` | the runner's pod: its first step, `link-key`, making the runner's home and its link key (above), then one container running the pool's image with its own entrypoint (`purlis serve`), both as a user who is not root, every capability dropped, no privilege escalation, the runtime's default seccomp profile, no Kubernetes credential mounted and no service addresses in their environment, each asking for the CPU and memory above. The runner's `HOME` is `/var/lib/purlis/home`, on the volume `purlis-kept` mounted at `/var/lib/purlis`: a folder of the node's in the template, which a kept Claim's own volume takes the place of. The pod's group (`fsGroup` 10001) may write that volume. A claim may add a volume of its own (`volumeClaimTemplatesPolicy: Allowed`) |
+| `SandboxWarmPool` | `purlis-pool-p` in `r` | no runner kept warm when it is made; after that, as many as it holds, so `kubectl scale sandboxwarmpool purlis-pool-p -n r --replicas=<n>` keeps `n` runners warm for that person's fresh Claims until pools scale on their own (#2058) |
+| `SandboxClaim` | the Claim's own name in `r` | the claim on that warm pool, annotated `runners.purlis.dev/claim-uid` with the Claim's uid; a kept Claim's carries the volume `purlis-kept` its Pool's `keptVolume` asks for, so upstream makes its runner cold and its PersistentVolumeClaim `purlis-kept-<claim>` |
 
-The upstream claim belongs to the Claim, and the template and the warm pool in a namespace to
-the pool's Claims there, each Claim adding itself, so the cluster's garbage collector removes the
-upstream claim with its Claim and the template and warm pool with the last of their Claims, and
-never while a Claim in the namespace still has a runner from them. A Claim made as the last one
-goes is served all the same: if the garbage collector removes the template or warm pool it has
-just joined, the operator makes them again at once. Upstream's controller makes the pod
-from the template and writes the upstream claim's status, which the operator reads.
+Each of the three is controlled by the runner namespace, by its uid: a Kubernetes owner cannot be
+in another namespace than what it owns, so the Claim is named by the annotation instead, and the
+finalizer removes them (above). Upstream's controller makes the pod from the template and writes
+the upstream claim's status, which the operator reads.
 
 **It changes only objects it made.** Before it writes any of the three, it reads what the
-cluster holds under that name. An upstream claim it made names its Claim as its controller, by
-uid, and a template or warm pool it made is owned by one of the pool's Claims in that
-namespace, by name and uid; any other object under that name, one made by hand or by another tool, is left
-exactly as it is. The Claim then says `UpstreamObjectInTheWay`, naming the object's kind and
-name, and nothing is made for it. Remove or rename that object and the Claim goes on at once: the
-operator watches all three kinds.
+cluster holds under that name. An object it made is controlled by the runner namespace it made,
+by uid, and an upstream claim it made also names its Claim's uid; any other object under that
+name, one made by hand or by another tool, is left exactly as it is. The Claim then says
+`UpstreamObjectInTheWay`, naming the object's kind, name and namespace, and nothing is made for
+it. Remove or rename that object and the Claim goes on at once: the operator watches all three
+kinds.
+
+**After an upgrade from a version without runner namespaces**, a Claim made before keeps the
+runner it had in its own namespace, as well as getting a new one in its requester's runner
+namespace, which its desktop links to. The old runner is outside that namespace and outside the
+person's quota, and anyone with rights in the Claim's namespace can still reach it. Delete such
+Claims and make them again soon after upgrading: the old runner goes with the Claim.
 
 ## What it may do
 
@@ -411,16 +493,22 @@ it holds:
 | API group | Resources | Verbs |
 |---|---|---|
 | `runners.purlis.dev` | `pools` | get, list, watch |
-| `runners.purlis.dev` | `claims` | list, watch |
+| `runners.purlis.dev` | `claims` | list, watch, patch (its finalizer) |
 | `runners.purlis.dev` | `claims/status` | patch |
 | `runners.purlis.dev` | `pools/status` | patch |
 | core | `pods` | get |
+| core | `namespaces` | create, get |
+| core | `resourcequotas` | create; get and patch only `purlis-person` |
+| `rbac.authorization.k8s.io` | `rolebindings` | create; get and patch only `purlis-runner-owner` |
+| `rbac.authorization.k8s.io` | `clusterroles`, only `purlis-runner-owner` | bind |
 | `agents.x-k8s.io` | `sandboxes` | get |
-| `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool` | get, list, watch |
-| `extensions.agents.x-k8s.io` | `sandboxclaims`, `sandboxtemplates`, `sandboxwarmpools` | create, get, list, patch, watch |
+| `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool` and `purlis-runner-namespaces` | get, list, watch |
+| `extensions.agents.x-k8s.io` | `sandboxclaims`, `sandboxtemplates`, `sandboxwarmpools` | create, delete, get, list, patch, watch |
 
-It holds no right to `exec`, `attach` or port-forward to a pod and none to read a Secret, and it
-reads a sandbox and a pod only by name: a Claim's, which upstream made, to follow the claim to
+It holds no right to `exec`, `attach` or port-forward to a pod itself, and none to read a Secret.
+It binds one cluster role, `purlis-runner-owner`, only to one person, only in runner namespaces:
+RBAC cannot say where a role may be bound, so the policy on runner namespaces (above) holds it.
+It never deletes a namespace. It reads a sandbox and a pod only by name: a Claim's, which upstream made, to follow the claim to
 its runner and read the key it vouches for. It never lists, makes, changes or deletes a pod. Its own signing key is the
 Secret you made at install, which the kubelet mounts in its pod. Its Kubernetes client is built
 without the websocket support `exec` would need.
