@@ -310,11 +310,24 @@ pub fn take(root: &Path, chat: u32, file: &SkillFile, change: &Change) -> Result
     let drafted_rel = format!("{DRAFTS_DIR}/{id}/{FILES}/{}", file.inner);
     let drafted = read_at(&state, &drafted_rel)?;
     let in_project = read_at(root, &file.rel())?;
-    let after = change.apply(drafted.as_deref().or(in_project.as_deref()))?;
-    record
+    let base_now = proposed::base_of(in_project.as_deref().map(str::as_bytes));
+    // **A file the project changed since the draft first changed it is drafted afresh** (S9, "Ask
+    // the chat to redo it"): the chat's new write is made to the project's copy, as the chat read
+    // it, and its base is the project's now, so the redo can be accepted.
+    let redone = record
         .bases
-        .entry(file.inner.clone())
-        .or_insert_with(|| proposed::base_of(in_project.as_deref().map(str::as_bytes)));
+        .get(&file.inner)
+        .is_some_and(|base| *base != base_now);
+    let after = if redone {
+        change.apply(in_project.as_deref())?
+    } else {
+        change.apply(drafted.as_deref().or(in_project.as_deref()))?
+    };
+    if redone {
+        record.bases.insert(file.inner.clone(), base_now);
+    } else {
+        record.bases.entry(file.inner.clone()).or_insert(base_now);
+    }
     record.chat = Some(chat);
     // The draft's own folders are made below its `files/`.
     write_at(&state, &drafted_rel, drafted.as_deref(), &after, 3)
@@ -1031,22 +1044,48 @@ pub fn alone_on(
     }
 }
 
+/// The folder of `level`'s skills as a draft chat is told it, from where that chat starts: a
+/// persona's in full, as its chat starts at the project's root (SK-32, #3048); else the level's
+/// own, from its workspace's folder or the root.
+fn skills_dir_told(level: &Level) -> String {
+    match level.at.persona() {
+        Some(_) => level.rel().unwrap_or_default(),
+        None if level.local => purlis_skills::LOCAL_DIR.to_owned(),
+        None => purlis_skills::PROJECT_DIR.to_owned(),
+    }
+}
+
 /// **The prompt "Ask a chat to draft a skill" types** (decision 13), unsent, into a chat that
 /// starts where `level`'s skills are reached from (the project's root, or its workspace's
 /// folder): one line, which the person ends with what the skill is for.
 pub fn asking(level: &Level) -> String {
-    let dir = match level.at.persona() {
-        // A persona's draft chat starts at the project's root (SK-32, #3048), so it is told the
-        // persona's folder in full.
-        Some(_) => level.rel().unwrap_or_default(),
-        None if level.local => purlis_skills::LOCAL_DIR.to_owned(),
-        None => purlis_skills::PROJECT_DIR.to_owned(),
-    };
+    let dir = skills_dir_told(level);
     format!(
         "Draft a skill as {dir}/<name>/SKILL.md, with name and description frontmatter (where \
          you cannot write it, write it in your own folder and run purlis propose with --from); \
          purlis keeps it as a draft in the Skill studio for me to try. The skill should "
     )
+}
+
+/// **The prompt "Ask the chat to redo it" types** (S9), unsent, for the draft of the skill in
+/// `folder` at `level` whose files the project changed since: into the chat that drafted it where
+/// it is still open, else into a new chat that starts where `level`'s skills are reached from, as
+/// [`asking`]'s does. One line; a new chat's ends where the person says what the change was.
+pub fn redoing(level: &Level, folder: &str, same_chat: bool) -> String {
+    let file = format!("{}/{folder}/SKILL.md", skills_dir_told(level));
+    if same_chat {
+        format!(
+            "The project's copy of {file} changed since you drafted your change to it, so purlis \
+             cannot accept your draft. Read the project's copy again and write your change once \
+             more on top of it; purlis keeps it as a draft in the Skill studio for me to try."
+        )
+    } else {
+        format!(
+            "The project's copy of {file} changed since a chat drafted a change to it. Read it and \
+             write the change on top of it; purlis keeps it as a draft in the Skill studio for me \
+             to try. The change should "
+        )
+    }
 }
 
 /// **The prompt Try it types** (decision 50), unsent, into its scratch chat: one line.

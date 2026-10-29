@@ -71,6 +71,10 @@ pub struct SkillDraft {
     pub level: SkillLevel,
     /// The chat that wrote it last, by its number.
     pub chat: Option<u32>,
+    /// Whether that chat is open now, in the draft's own workspace: "Ask the chat to redo it"
+    /// types into it ([`skill_draft_redo_in`]), where a closed one's opens a chat afresh
+    /// ([`skill_draft_redo`]).
+    pub chat_open: bool,
     /// A new skill, rather than a change to one.
     pub new: bool,
     /// A file it changes changed in the project since: Accept is refused.
@@ -98,6 +102,7 @@ impl From<drafts::Draft> for SkillDraft {
             id: draft.id,
             name: draft.name,
             chat: draft.chat,
+            chat_open: false,
             new: draft.new,
             files: draft
                 .files
@@ -130,12 +135,31 @@ pub(crate) async fn skill_drafts(
         if !purlis_core::skills::studio_on_here() {
             return Ok(Vec::new());
         }
+        let open = held.chats().open_now();
         Ok(drafts::list(held.root())
             .into_iter()
-            .map(SkillDraft::from)
+            .map(|draft| {
+                let chat_open = drafting_chat(&open, &draft).is_some();
+                SkillDraft {
+                    chat_open,
+                    ..SkillDraft::from(draft)
+                }
+            })
             .collect())
     })
     .await
+}
+
+/// **The chat that drafted `draft`, where it is still open** among `open`: the chat of its number
+/// in the draft's own workspace (or at the project's root for a project's or a persona's draft),
+/// so a number a later chat took elsewhere is never it.
+fn drafting_chat<'a>(
+    open: &'a [crate::chats::Open],
+    draft: &drafts::Draft,
+) -> Option<&'a crate::chats::Open> {
+    let chat = draft.chat?;
+    open.iter()
+        .find(|one| one.session == chat && one.workspace.as_deref() == draft.level.at.workspace())
 }
 
 /// **Accepts a draft**: one commit of exactly its files.
@@ -209,16 +233,7 @@ pub(crate) async fn skill_draft_chat(
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let level: purlis_core::skills::verbs::Level = (&level).into();
-        let cwd = match level.at.workspace() {
-            None => root.clone(),
-            Some(ws) => purlis_core::workspaces::Plane::open(&root)
-                .workspace(ws)
-                .map_err(|_| {
-                    format!("this project has no workspace {ws:?}, so no chat was opened")
-                })?
-                .dir()
-                .to_path_buf(),
-        };
+        let cwd = where_level_is_reached(&root, &level)?;
         let (profile, _) = crate::curation::default_profile(&root, "no chat was opened")?;
         open(
             &held,
@@ -303,6 +318,101 @@ pub(crate) async fn skill_draft_try(
         started
     })
     .await
+}
+
+/// **"Ask the chat to redo it"** (S9), for a draft the project changed a file of since: the
+/// core's redo prompt typed into chat `session`, the chat that drafted it, unsent — or copied,
+/// with why, where it cannot be typed now. Refused where `session` is not that chat, open in the
+/// draft's workspace. A redo the chat then writes is drafted on the project's copy (`drafts::take`).
+// On the window's thread, as every command that types into a chat is (`useskill::use_skill`).
+// Not a doc comment past here, because the generated bindings carry those.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn skill_draft_redo_in(
+    planes: tauri::State<'_, Planes>,
+    clipboard: tauri::State<'_, crate::vaults::SystemClipboard>,
+    plane: PlaneId,
+    id: String,
+    session: u32,
+) -> Result<crate::references::Handed, String> {
+    let held = planes.held(&plane)?;
+    crate::skillchange::flag_on()?;
+    let draft = drafts::one(held.root(), &id)?;
+    let open = held.chats().open_now();
+    if drafting_chat(&open, &draft).map(|one| one.session) != Some(session) {
+        return Err(NOT_ITS_CHAT.to_owned());
+    }
+    crate::references::typed_or_copied(
+        &held,
+        session,
+        drafts::redoing(&draft.level, &draft.name, true),
+        REDO_COPIED,
+        &|text| clipboard.put_text(text),
+    )
+}
+
+/// What [`skill_draft_redo_in`] refuses a chat with that is not the draft's own, open now.
+const NOT_ITS_CHAT: &str =
+    "the chat that drafted it is not open any more, so nothing was typed: ask a chat to redo it";
+
+/// What the clipboard is said to hold where the redo prompt could not be typed, and the rule it
+/// is typed by: at the chat's prompt, as Use skill… types a skill.
+const REDO_COPIED: crate::references::Copied = crate::references::Copied {
+    on: "the request is",
+    it: "it is",
+    may: |_, now| purlis_core::reference::at_its_prompt(now),
+};
+
+/// **"Ask a chat to redo it"** (S9), where the chat that drafted it is closed: a chat where the
+/// draft's level's skills are reached from, as "Ask a chat to draft a skill" opens one, with the
+/// core's redo prompt typed and never sent, which the person ends with what the change was.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_draft_redo(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    id: String,
+    columns: u16,
+    rows: u16,
+) -> Result<Curating, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("starting the chat", move || {
+        crate::skillchange::flag_on()?;
+        let root = held.root().to_path_buf();
+        let draft = drafts::one(&root, &id)?;
+        let cwd = where_level_is_reached(&root, &draft.level)?;
+        let (profile, _) = crate::curation::default_profile(&root, "no chat was opened")?;
+        open(
+            &held,
+            ChatTyped {
+                profile,
+                persona: None,
+                cwd,
+                label: format!("Redo {}", draft.name),
+                prompt: drafts::redoing(&draft.level, &draft.name, false),
+                then_a_space: false,
+                starts_runs: None,
+            },
+            purlis_core::engine::Size { columns, rows },
+        )
+    })
+    .await
+}
+
+/// Where a chat that writes `level`'s skills starts: the project's root, or its workspace's
+/// folder.
+fn where_level_is_reached(
+    root: &std::path::Path,
+    level: &purlis_core::skills::verbs::Level,
+) -> Result<std::path::PathBuf, String> {
+    match level.at.workspace() {
+        None => Ok(root.to_path_buf()),
+        Some(ws) => Ok(purlis_core::workspaces::Plane::open(root)
+            .workspace(ws)
+            .map_err(|_| format!("this project has no workspace {ws:?}, so no chat was opened"))?
+            .dir()
+            .to_path_buf()),
+    }
 }
 
 /// Opens `chat` with its prompt typed once its harness has started, as a curation chat is.

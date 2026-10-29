@@ -7763,6 +7763,20 @@ nav.piece-files-head {
   font-size: var(--font-size-sm);
 }
 
+/* A draft's page (S9, #3690): its files, one fold each, then Try it on beside its picker. */
+.skill-draft-files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skill-draft-try {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 .skill-deleted ul {
   margin: 0;
   padding-left: var(--space-5);

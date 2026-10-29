@@ -2018,6 +2018,19 @@ export const commands = {
 	 */
 	skillDraftTry: (plane: PlaneId, id: string, profile: string | null, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_draft_try", { plane, id, profile, columns, rows })),
 	/**
+	 *  **"Ask a chat to redo it"** (S9), where the chat that drafted it is closed: a chat where the
+	 *  draft's level's skills are reached from, as "Ask a chat to draft a skill" opens one, with the
+	 *  core's redo prompt typed and never sent, which the person ends with what the change was.
+	 */
+	skillDraftRedo: (plane: PlaneId, id: string, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_draft_redo", { plane, id, columns, rows })),
+	/**
+	 *  **"Ask the chat to redo it"** (S9), for a draft the project changed a file of since: the
+	 *  core's redo prompt typed into chat `session`, the chat that drafted it, unsent — or copied,
+	 *  with why, where it cannot be typed now. Refused where `session` is not that chat, open in the
+	 *  draft's workspace. A redo the chat then writes is drafted on the project's copy (`drafts::take`).
+	 */
+	skillDraftRedoIn: (plane: PlaneId, id: string, session: number) => typedError<Handed, string>(__TAURI_INVOKE("skill_draft_redo_in", { plane, id, session })),
+	/**
 	 *  **Accepts a workspace or persona folder a chat could have made** (SK-9): its skills reach
 	 *  chats from now on. The person's press in the studio, on a skill left out for it.
 	 */
@@ -12053,6 +12066,12 @@ export type SkillDraft = {
 	level: SkillLevel,
 	/**  The chat that wrote it last, by its number. */
 	chat: number | null,
+	/**
+	 *  Whether that chat is open now, in the draft's own workspace: "Ask the chat to redo it"
+	 *  types into it ([`skill_draft_redo_in`]), where a closed one's opens a chat afresh
+	 *  ([`skill_draft_redo`]).
+	 */
+	chat_open: boolean,
 	/**  A new skill, rather than a change to one. */
 	new: boolean,
 	/**  A file it changes changed in the project since: Accept is refused. */

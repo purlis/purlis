@@ -13,6 +13,7 @@ import {
   type SkillTemplate,
   type SkillTemplateId,
   type SkillUsers,
+  type SkillDraft,
   type Studio,
   type StudioRouter,
   type StudioSkill,
@@ -33,9 +34,9 @@ import { SkillPinSwitch, SkillPinsRefusedLine } from "./SkillPins";
 import { RouterGrade } from "./RouterGrade";
 import { Notice } from "./Notice";
 import { SkillCompatBadges } from "./SkillCompatBadges";
-import { SkillDrafts } from "./SkillDrafts";
+import { DraftPage, DraftsList } from "./SkillStudioDrafts";
 import { DRAFT_WITH_A_CHAT, NEW_SKILL, SkillStarts, type SkillStart } from "./SkillStarts";
-import { askDraft, useSkillDrafts } from "./skillDraftAsks";
+import { askDraft, useSkillDraftsRead } from "./skillDraftAsks";
 import { SkillSources } from "./SkillSources";
 import { Select } from "./ui/select/Select";
 import { Choice, Field, SettingRow } from "./settings/components";
@@ -270,7 +271,8 @@ export function SkillStudioTab({
   // Read once the studio has said it is on: a scope picked later reads its skills, not these.
   const [opened, setOpened] = useState(false);
   if (on && !opened) setOpened(true);
-  const drafts = useSkillDrafts(plane, changed + done);
+  const draftsRead = useSkillDraftsRead(plane, changed + done);
+  const drafts = draftsRead ?? [];
   // A start the Skills view asked this studio to open on (#3266): the New skill form.
   useStudioStart(tab, on, () => setDoing({ what: "new" }));
   useEffect(() => {
@@ -469,7 +471,9 @@ export function SkillStudioTab({
           },
         ]
       : []),
-    ...(drafts.length > 0
+    // Drafts stays while it is the page shown, so accepting or discarding its last draft never
+    // takes the person to another page (S9).
+    ...(drafts.length > 0 || at.page === "drafts"
       ? [
           {
             id: "drafts",
@@ -613,6 +617,8 @@ export function SkillStudioTab({
 
   let list: ReactNode;
   let item: ReactNode;
+  /** An item other than a skill is chosen on its page (a draft): narrow, it is drawn alone. */
+  let itemChosen = false;
   if (page === "library") {
     const shown = skills.filter((skill) => chipsKeep(skill, chips) && searchKeeps(skill, query));
     const starts =
@@ -838,31 +844,82 @@ export function SkillStudioTab({
       )),
     );
   } else if (page === "drafts") {
+    /* A chat's drafts (S9, #3690; SK-9, #2772): the list, and the draft chosen beside it. */
+    const draftLevel = (draft: SkillDraft) => labelOf(studio?.levels ?? [], draft.level);
+    const draft = drafts.find((one) => one.id === at.item);
+    const none = draftsRead !== undefined && drafts.length === 0;
     list = pageList(
-      "Skills a chat drafted, waiting for you to try, accept or reject.",
-      held(() => (
-        /* A chat's drafts (SK-9, #2772): Accept is one commit, Reject deletes the draft. */
-        <SkillDrafts
+      "Skills a chat drafted for you. Try one, then accept it into the project or discard it.",
+      draftsRead === undefined
+        ? held(() => <Placeholders />)
+        : held(() =>
+            none ? (
+              <EmptyState
+                headline="No drafts"
+                body="Ask a chat to draft a skill, and what it writes waits here for you to try."
+                testid="skill-drafts-none"
+                action={draftAsk}
+              />
+            ) : (
+              <DraftsList
+                drafts={drafts}
+                labelOf={draftLevel}
+                chosen={draft?.id}
+                onChoose={(id) => go({ page: "drafts", scope, item: id })}
+              />
+            ),
+          ),
+      none ? undefined : draftAsk,
+    );
+    itemChosen = draft !== undefined;
+    item =
+      draft !== undefined ? (
+        <DraftPage
+          key={draft.id}
           plane={plane}
-          drafts={drafts}
-          levels={studio?.levels ?? []}
+          draft={draft}
+          label={draftLevel(draft)}
+          local={draft.level.local}
           busy={busy}
-          onAccept={(draft) =>
-            change("The draft was not accepted", () => commands.skillDraftAccept(plane, draft.id))
+          onBack={() => go({ page: "drafts", scope })}
+          onAccept={(one) =>
+            change(
+              "The draft was not accepted",
+              () => commands.skillDraftAccept(plane, one.id),
+              // The skill it made, or changed, in the Library: accepted, it is no draft now.
+              async () => {
+                go({ page: "library", scope, skill: skillRowNamed(one.name) });
+                return undefined;
+              },
+            )
           }
-          onReject={(draft) =>
-            change("The draft was not rejected", () =>
-              commands
-                .skillDraftReject(plane, draft.id)
-                .then((answer): Answer =>
-                  answer.status === "ok" ? { status: "ok", data: { notes: [] } } : answer,
-                ),
+          onDiscard={(one) =>
+            change(
+              "The draft was not discarded",
+              () =>
+                commands
+                  .skillDraftReject(plane, one.id)
+                  .then((answer): Answer =>
+                    answer.status === "ok" ? { status: "ok", data: { notes: [] } } : answer,
+                  ),
+              async () => {
+                go({ page: "drafts", scope });
+                return {
+                  tone: "news",
+                  label: "Draft discarded",
+                  text: `${one.name} is discarded.`,
+                };
+              },
             )
           }
         />
-      )),
-      draftAsk,
-    );
+      ) : none ? undefined : (
+        <EmptyState
+          headline="Pick a draft"
+          body="What it writes, Try it, and Accept or Discard open here."
+          testid="skill-drafts-unpicked"
+        />
+      );
   } else if (page === "sources") {
     list = pageList(
       "Where skills are installed from: a git repository, reviewed before anything lands.",
@@ -953,7 +1010,7 @@ export function SkillStudioTab({
         onPage={(id) => go({ page: id as StudioPage, scope })}
         list={list}
         item={item}
-        opened={chosen !== undefined || doing !== undefined}
+        opened={chosen !== undefined || doing !== undefined || itemChosen}
         onBack={() => go({ page, scope })}
         narrow={narrow}
         bar={bar}

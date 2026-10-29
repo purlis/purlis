@@ -335,6 +335,8 @@ macro_rules! app_commands {
                 skilldrafts::skill_draft_reject,
                 skilldrafts::skill_draft_chat,
                 skilldrafts::skill_draft_try,
+                skilldrafts::skill_draft_redo,
+                skilldrafts::skill_draft_redo_in,
                 skilldrafts::skill_level_accept,
                 skillgrade::skill_grade_plan,
                 skillgrade::skill_grade_start,

@@ -62,6 +62,17 @@ fn drafted(root: &Path, rel: &str, change: &Change) -> String {
     take(root, 7, &file, change).unwrap()
 }
 
+/// One replacement of `old` by `new`, as `Edit` makes it.
+fn edit_of(old: &str, new: &str) -> Change {
+    Change::Edits {
+        edits: vec![crate::proposed::Edit {
+            old: old.to_owned(),
+            new: new.to_owned(),
+            every: false,
+        }],
+    }
+}
+
 fn accepted(root: &Path, id: &str) -> (Result<PathBuf, String>, Vec<Say>) {
     let mut lines = Vec::new();
     let mut say = |line: Say| lines.push(line);
@@ -715,4 +726,89 @@ fn a_drafted_new_skill_with_a_built_in_skills_name_is_not_accepted() {
         assert_eq!(refused.unwrap_err(), crate::skills::NAME_RESERVED, "{rel}");
         assert!(!root.join(rel).exists(), "{rel}");
     }
+}
+
+#[test]
+fn a_chat_writing_again_to_a_file_the_project_changed_redoes_it_on_the_projects_copy() {
+    let tmp = plane();
+    let root = tmp.path();
+    let id = drafted(
+        root,
+        "skills/deploy/SKILL.md",
+        &whole(&skill_text("deploy", "Ships it twice.")),
+    );
+    let notes = "skills/deploy/notes.md";
+    drafted(root, notes, &whole("first notes\n"));
+    std::fs::write(
+        root.join("skills/deploy/SKILL.md"),
+        skill_text("deploy", "Ships it by hand."),
+    )
+    .unwrap();
+    std::fs::write(root.join(notes), "the project's notes\n").unwrap();
+    assert!(one(root, &id).unwrap().stale());
+
+    // The redo: an edit made against the project's copy, as the chat reads it from disk.
+    let edit = edit_of("by hand", "by hand, twice");
+    assert_eq!(drafted(root, "skills/deploy/SKILL.md", &edit), id);
+    let draft = one(root, &id).unwrap();
+    let skill = draft.files.iter().find(|f| f.path == "SKILL.md").unwrap();
+    assert!(
+        !skill.stale,
+        "the file redone is drafted on the project's copy"
+    );
+    assert_eq!(
+        skill.after,
+        skill_text("deploy", "Ships it by hand, twice.")
+    );
+    // A file of the draft not written again is still out of date: Accept stays refused.
+    assert!(
+        draft
+            .files
+            .iter()
+            .find(|f| f.path == "notes.md")
+            .unwrap()
+            .stale
+    );
+    assert!(draft.stale());
+
+    drafted(root, notes, &whole("redone notes\n"));
+    let (answer, _) = accepted(root, &id);
+    answer.unwrap();
+    assert_eq!(
+        std::fs::read_to_string(root.join("skills/deploy/SKILL.md")).unwrap(),
+        skill_text("deploy", "Ships it by hand, twice.")
+    );
+}
+
+#[test]
+fn a_draft_not_out_of_date_keeps_adding_to_its_own_copy() {
+    let tmp = plane();
+    let root = tmp.path();
+    let id = drafted(
+        root,
+        "skills/deploy/SKILL.md",
+        &whole(&skill_text("deploy", "Ships it twice.")),
+    );
+    let edit = edit_of("twice", "three times");
+    drafted(root, "skills/deploy/SKILL.md", &edit);
+    let draft = one(root, &id).unwrap();
+    assert_eq!(
+        draft.files[0].after,
+        skill_text("deploy", "Ships it three times.")
+    );
+    assert!(!draft.stale());
+}
+
+#[test]
+fn the_redo_prompt_names_the_skills_file_and_asks_a_new_chat_for_the_change() {
+    let same = redoing(&Level::project(), "deploy", true);
+    assert!(same.contains("skills/deploy/SKILL.md"), "{same}");
+    assert!(same.contains("your change"), "{same}");
+    assert!(!same.contains('\n'), "one line: {same}");
+    let new = redoing(&Level::persona("reviewer"), "triage", false);
+    assert!(
+        new.contains("personas/reviewer/skills/triage/SKILL.md"),
+        "{new}"
+    );
+    assert!(new.ends_with("The change should "), "{new}");
 }

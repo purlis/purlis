@@ -1028,6 +1028,8 @@ export const commands = {
 	skillDraftReject: __WINDOW_ONLY_RESULT,
 	skillDraftChat: __WINDOW_ONLY_RESULT,
 	skillDraftTry: __WINDOW_ONLY_RESULT,
+	skillDraftRedo: __WINDOW_ONLY_RESULT,
+	skillDraftRedoIn: __WINDOW_ONLY_RESULT,
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
 	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model })),
@@ -10099,6 +10101,12 @@ export type SkillDraft = {
 	level: SkillLevel,
 	/**  The chat that wrote it last, by its number. */
 	chat: number | null,
+	/**
+	 *  Whether that chat is open now, in the draft's own workspace: "Ask the chat to redo it"
+	 *  types into it ([`skill_draft_redo_in`]), where a closed one's opens a chat afresh
+	 *  ([`skill_draft_redo`]).
+	 */
+	chat_open: boolean,
 	/**  A new skill, rather than a change to one. */
 	new: boolean,
 	/**  A file it changes changed in the project since: Accept is refused. */
