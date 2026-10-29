@@ -387,13 +387,32 @@ pub fn kept_for_the_desktop(
     look: &dyn Look,
     now: u64,
 ) -> Result<purlis_session_protocol::session::ProfileStanding, String> {
+    // The settings are checked before anything of the profile is kept, so settings it refuses
+    // leave the runner's record as it was.
+    let checked = match &sent.settings {
+        Some(_) if sent.sandbox_only => {
+            return Err(format!(
+                "the profile '{}' is for sandboxed chats only, and its settings are purlis's, so \
+                 this runner keeps no settings sent for it",
+                crate::shown::short(&sent.name)
+            ));
+        }
+        Some(settings) => {
+            let files: Vec<(String, Vec<u8>)> = settings
+                .iter()
+                .map(|file| (file.path.clone(), file.bytes.clone()))
+                .collect();
+            Some(super::made::settings_checked(
+                &sent.harness,
+                &sent.name,
+                &files,
+            )?)
+        }
+        None => None,
+    };
     let record = keep(homes, home, &Kept::from(sent), desktop, now)?;
-    if let Some(settings) = &sent.settings {
-        let files: Vec<(String, Vec<u8>)> = settings
-            .iter()
-            .map(|file| (file.path.clone(), file.bytes.clone()))
-            .collect();
-        super::made::settings_kept(homes, &record, &files)?;
+    if let Some(files) = &checked {
+        super::made::settings_kept(homes, &record, files)?;
     }
     Ok(standing_for_the_wire(standing(&record, look)))
 }

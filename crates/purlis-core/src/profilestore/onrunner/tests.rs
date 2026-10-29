@@ -933,3 +933,41 @@ fn a_settings_file_that_does_not_parse_is_refused_and_nothing_is_sent() {
     );
     assert!(!refused.contains("of-the-desktop"), "{refused}");
 }
+
+/// Settings a runner refuses leave its record of the profile as it was: nothing of the keep is
+/// written before they are checked.
+#[test]
+fn settings_a_runner_refuses_leave_its_record_as_it_was() {
+    use purlis_session_protocol::session::SettingsFile;
+    let dir = tempfile::tempdir().unwrap();
+    let mut desktop = a_signed_in_desktop_profile(dir.path());
+    let runner = homes(dir.path(), "runner");
+    kept_with_its_settings(dir.path(), &desktop);
+
+    desktop.pinned = Some(crate::profilestore::pin::Pinned {
+        version: "2.1.300".to_owned(),
+        at: 3,
+    });
+    let mut sent: purlis_session_protocol::session::ProfileToKeep =
+        Kept::of(&desktop).unwrap().into();
+    sent.settings = Some(vec![SettingsFile {
+        path: "history.jsonl".to_owned(),
+        bytes: b"x".to_vec(),
+    }]);
+    kept_for_the_desktop(
+        &runner,
+        &runner_home(dir.path()),
+        DESKTOP,
+        &sent,
+        &Answers(Some(0)),
+        9,
+    )
+    .unwrap_err();
+
+    let record = list(runner.config_root())
+        .unwrap()
+        .into_iter()
+        .find(|p| p.name == "work")
+        .unwrap();
+    assert_eq!(record.pinned, None, "the refused keep changed nothing");
+}

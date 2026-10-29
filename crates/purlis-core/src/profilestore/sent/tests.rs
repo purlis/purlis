@@ -159,3 +159,79 @@ fn instructions_and_agents_are_sent_as_they_are() {
         b"env: x"
     );
 }
+
+/// Codex's telemetry exporters' headers, where a vendor's key is set, are removed, and no
+/// comment of the file travels: a commented-out key is a key copied all the same.
+#[test]
+fn codexs_exporter_headers_and_its_comments_are_removed() {
+    let sent = without_credentials(
+        "codex",
+        "config.toml",
+        br#"# experimental_bearer_token = "commented-desktop"
+model = "gpt-5" # the model
+
+[otel]
+exporter = { otlp-http = { endpoint = "https://otel.example.com", headers = { "x-otlp-api-key" = "otel-desktop" } } }
+"#,
+    )
+    .unwrap();
+
+    let sent = String::from_utf8(sent).unwrap();
+    assert!(!sent.contains("desktop"), "{sent}");
+    assert!(!sent.contains('#'), "{sent}");
+    let parsed: toml::Table = toml::from_str(&sent).unwrap();
+    assert_eq!(parsed["model"].as_str(), Some("gpt-5"));
+    assert_eq!(
+        parsed["otel"]["exporter"]["otlp-http"]["endpoint"].as_str(),
+        Some("https://otel.example.com")
+    );
+}
+
+/// opencode's remote server's OAuth secret, and the credentials its providers' SDKs take
+/// (Bedrock's keys and session token, Vertex's credentials), are removed.
+#[test]
+fn opencodes_oauth_secret_and_cloud_sdk_credentials_are_removed() {
+    let sent = without_credentials(
+        "opencode",
+        "opencode.json",
+        br#"{
+  "mcp": {"remote": {"type": "remote", "url": "https://mcp.example.com",
+          "oauth": {"clientId": "id", "clientSecret": "oauth-desktop", "scope": "read"}}},
+  "provider": {
+    "amazon-bedrock": {"options": {"region": "eu-west-1", "accessKeyId": "akid-desktop",
+                                   "secretAccessKey": "secret-desktop", "sessionToken": "session-desktop"}},
+    "google-vertex": {"options": {"project": "p", "googleAuthOptions": {"credentials": {"private_key": "pk-desktop"}}}}
+  }
+}"#,
+    )
+    .unwrap();
+
+    let sent = json(&sent);
+    assert!(!sent.to_string().contains("desktop"), "{sent}");
+    assert_eq!(sent["mcp"]["remote"]["oauth"]["clientId"], "id");
+    assert_eq!(
+        sent["provider"]["amazon-bedrock"]["options"]["region"],
+        "eu-west-1"
+    );
+    assert_eq!(sent["provider"]["google-vertex"]["options"]["project"], "p");
+}
+
+/// **opencode reads every settings file of its as JSON with comments**, so one that works for
+/// it is never refused: `opencode.json` and `tui.json` with comments, and a trailing comma
+/// followed by a comment.
+#[test]
+fn opencodes_settings_with_comments_and_a_trailing_comma_are_sent() {
+    for (path, text) in [
+        (
+            "opencode.json",
+            "{\n  // the model\n  \"model\": \"a/b\",\n}",
+        ),
+        ("tui.json", "{ /* theme */ \"theme\": \"dark\" }"),
+        ("opencode.jsonc", "{\n  \"model\": \"a/b\", // last\n}"),
+        ("opencode.jsonc", "{\n  \"x\": [1, 2, /* end */ ],\n}"),
+    ] {
+        let sent = without_credentials("opencode", path, text.as_bytes())
+            .unwrap_or_else(|why| panic!("{path}: {why}"));
+        assert!(json(&sent).is_object(), "{path}");
+    }
+}

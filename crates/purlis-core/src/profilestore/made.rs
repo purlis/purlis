@@ -982,6 +982,37 @@ fn a_settings_path(allowed: &Allowed, path: &str) -> bool {
             .all(|part| !part.starts_with('.') && !credential_shaped(part))
 }
 
+/// **`files`, sent by a desktop for its `kind` profile `name`, as a runner may keep them**:
+/// every path one an import would write ([`a_settings_path`]), none twice, and each file with no
+/// sign-in in it ([`super::sent::without_credentials`], D-3448-8). One that is not refuses all
+/// of them, in words. What a runner checks before it keeps anything of the profile.
+pub fn settings_checked(
+    kind: &str,
+    name: &str,
+    files: &[(String, Vec<u8>)],
+) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let name = crate::shown::short(name);
+    let (_, allowed) = harness_of(kind)?;
+    let mut seen = std::collections::HashSet::new();
+    if let Some((bad, _)) = files
+        .iter()
+        .find(|(path, _)| !a_settings_path(allowed, path) || !seen.insert(path.as_str()))
+    {
+        return Err(format!(
+            "'{}' is not a settings file of the profile '{name}' this runner keeps, so it kept \
+             none of the settings sent",
+            crate::shown::short(bad)
+        ));
+    }
+    // Whatever sent them, no sign-in is kept in them here (D-3448-8).
+    files
+        .iter()
+        .map(|(path, bytes)| {
+            super::sent::without_credentials(kind, path, bytes).map(|b| (path.clone(), b))
+        })
+        .collect()
+}
+
 /// **Keeps `files`, sent by a desktop, as the settings of `record`, a profile this runner keeps
 /// for it** (#3448), in place of the ones it kept: each listed settings file and folder is
 /// removed, and `files` written, private, through no link. Only a made profile's own folder
@@ -1001,24 +1032,7 @@ pub fn settings_kept(
              this runner keeps no settings sent for it"
         ));
     }
-    let mut seen = std::collections::HashSet::new();
-    if let Some((bad, _)) = files
-        .iter()
-        .find(|(path, _)| !a_settings_path(allowed, path) || !seen.insert(path.as_str()))
-    {
-        return Err(format!(
-            "'{}' is not a settings file of the profile '{name}' this runner keeps, so it kept \
-             none of the settings sent",
-            crate::shown::short(bad)
-        ));
-    }
-    // Whatever sent them, no sign-in is kept in them here (D-3448-8).
-    let checked = files
-        .iter()
-        .map(|(path, bytes)| {
-            super::sent::without_credentials(&record.harness, path, bytes).map(|b| (path, b))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
+    let checked = settings_checked(&record.harness, &record.name, files)?;
     let dest = settings_dest(allowed, &record.folders.config);
     // A made profile is written within its own folder; an adopted one within its settings
     // folder, which is made where it is missing and never a link.

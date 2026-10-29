@@ -34,10 +34,11 @@ fn dropped(kind: &str) -> &'static [&'static str] {
         ],
         // Codex's `config.toml`: a server's `env`, a provider's and a server's bearer tokens, the
         // variables that name one, a provider's `env_key` and its command-run `auth`, and the
-        // headers a request carries. `shell_environment_policy.set` is removed apart
-        // ([`codex_without`]).
+        // headers a request carries, the telemetry exporters' among them.
+        // `shell_environment_policy.set` is removed apart ([`codex_without`]).
         "codex" => &[
             "env",
+            "headers",
             "env_key",
             "auth",
             "bearer_token",
@@ -46,9 +47,21 @@ fn dropped(kind: &str) -> &'static [&'static str] {
             "http_headers",
             "env_http_headers",
         ],
-        // opencode's `opencode.json`: a server's `environment`, a provider's `apiKey`, and the
-        // headers either sends.
-        "opencode" => &["env", "environment", "apiKey", "headers"],
+        // opencode's `opencode.json`: a server's `environment` and its OAuth `clientSecret`, a
+        // provider's `apiKey`, the credentials its SDK takes (Bedrock's `accessKeyId`,
+        // `secretAccessKey` and `sessionToken`, Vertex's `googleAuthOptions.credentials`), and
+        // the headers either sends.
+        "opencode" => &[
+            "env",
+            "environment",
+            "apiKey",
+            "headers",
+            "clientSecret",
+            "accessKeyId",
+            "secretAccessKey",
+            "sessionToken",
+            "credentials",
+        ],
         _ => &[],
     }
 }
@@ -64,11 +77,12 @@ pub fn without_credentials(kind: &str, path: &str, bytes: &[u8]) -> Result<Vec<u
         )
     };
     match (kind, path) {
-        ("claude", "settings.json") | ("opencode", "opencode.json" | "tui.json") => {
+        ("claude", "settings.json") => {
             let text = std::str::from_utf8(bytes).map_err(|_| unreadable())?;
             json_without(kind, text).ok_or_else(unreadable)
         }
-        ("opencode", "opencode.jsonc") => {
+        // opencode reads each of its settings files as JSON with comments.
+        ("opencode", "opencode.json" | "opencode.jsonc" | "tui.json") => {
             let text = std::str::from_utf8(bytes).map_err(|_| unreadable())?;
             json_without(kind, &plain_json(text)).ok_or_else(unreadable)
         }
@@ -151,8 +165,7 @@ fn plain_json(text: &str) -> String {
             }
             ',' => {
                 // A comma whose next mark, past blanks, closes an object or an array is left out.
-                let next = chars.clone().find(|s| !s.is_whitespace());
-                if !matches!(next, Some('}' | ']')) {
+                if !closes_next(chars.clone()) {
                     out.push(c);
                 }
             }
@@ -162,8 +175,41 @@ fn plain_json(text: &str) -> String {
     out
 }
 
+/// Whether the next mark in `rest`, past blanks and comments, closes an object or an array.
+fn closes_next(mut rest: std::iter::Peekable<std::str::Chars<'_>>) -> bool {
+    while let Some(c) = rest.next() {
+        match c {
+            c if c.is_whitespace() => {}
+            '/' if rest.peek() == Some(&'/') => {
+                if !rest.by_ref().any(|s| s == '\n') {
+                    return false;
+                }
+            }
+            '/' if rest.peek() == Some(&'*') => {
+                rest.next();
+                let mut last = ' ';
+                let mut ended = false;
+                for s in rest.by_ref() {
+                    if last == '*' && s == '/' {
+                        ended = true;
+                        break;
+                    }
+                    last = s;
+                }
+                if !ended {
+                    return false;
+                }
+            }
+            '}' | ']' => return true,
+            _ => return false,
+        }
+    }
+    false
+}
+
 /// `text`, a Codex `config.toml`, with every setting [`dropped`] names removed at any depth, and
-/// the variables `[shell_environment_policy]` sets, written again. `None` where it is not TOML.
+/// the variables `[shell_environment_policy]` sets, written again with no comment. `None` where
+/// it is not TOML.
 fn codex_without(text: &str) -> Option<Vec<u8>> {
     let mut doc: toml_edit::DocumentMut = text.parse().ok()?;
     let names = dropped("codex");
@@ -174,7 +220,10 @@ fn codex_without(text: &str) -> Option<Vec<u8>> {
     {
         policy.remove("set");
     }
-    Some(doc.to_string().into_bytes())
+    // Written again through plain values, so no comment travels: a commented-out key is a key
+    // copied all the same.
+    let plain: toml::Table = toml::from_str(&doc.to_string()).ok()?;
+    toml::to_string(&plain).ok().map(String::into_bytes)
 }
 
 fn drop_toml(table: &mut dyn toml_edit::TableLike, names: &[&str]) {
