@@ -590,6 +590,11 @@ pub struct UpdateReview {
     pub local_edits: Vec<UpdateFile>,
     pub skill: ReviewSkill,
     pub brought: Vec<ReviewSkill>,
+    /// Those of `brought` under a built-in skill's name (#3728).
+    pub reserved: Vec<String>,
+    /// Why it cannot be taken as it is, said before Accept update: it brings along a skill under
+    /// a built-in skill's name (#3728).
+    pub refused: Option<String>,
     pub accepted: Reviewed,
 }
 
@@ -875,7 +880,9 @@ pub(crate) async fn skill_update_review(
     let held = planes.held(&plane)?;
     crate::off_the_window("reviewing the update", move || {
         flag_on()?;
-        let update = source::update_review(held.root(), &(&level).into(), &name)?;
+        let built_in = crate::skillchange::built_in();
+        let update =
+            source::update_review(held.root(), built_in.as_deref(), &(&level).into(), &name)?;
         Ok(UpdateReview {
             name: esc(&update.name),
             pinned: (&update.pinned).into(),
@@ -888,6 +895,8 @@ pub(crate) async fn skill_update_review(
             local_edits: files_shown(&update.local_edits),
             skill: (&update.review).into(),
             brought: update.brought.iter().map(Into::into).collect(),
+            reserved: update.reserved.iter().map(|n| esc(n)).collect(),
+            refused: update.refused().map(|why| esc(&why)),
             accepted: (&update.accepted()).into(),
         })
     })

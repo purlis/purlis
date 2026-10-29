@@ -876,7 +876,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             ..
         } => {
             let level = at.level();
-            let update = match source::update_review(root, &level, &name) {
+            let update = match source::update_review(root, built_in.as_deref(), &level, &name) {
                 Ok(update) => update,
                 Err(why) => {
                     voice::err(esc(&why).to_string());
@@ -884,6 +884,12 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
             };
             print!("{}", update_text(&update));
+            // It brings along a skill under a built-in skill's name: said before anything is
+            // asked, since accepting it is refused (#3728).
+            if let Some(why) = update.refused() {
+                voice::err(esc(&why).to_string());
+                return Ok(1);
+            }
             if !yes
                 && !asked(&format!(
                     "Update {} to {}?",
@@ -1763,8 +1769,13 @@ fn update_text(update: &source::UpdateReview) -> String {
         changes(&update.local_edits, &mut out);
     }
     for skill in &update.brought {
+        let reserved = if update.reserved.contains(&skill.name) {
+            ", under a built-in skill's name"
+        } else {
+            ""
+        };
         out.push_str(&format!(
-            "\nComes along: {} ({})\n",
+            "\nComes along: {} ({}){reserved}\n",
             esc(&skill.name),
             esc(&skill.description)
         ));
