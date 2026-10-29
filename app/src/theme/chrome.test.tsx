@@ -77,6 +77,7 @@ import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
 import { RemovePersona } from "../RemovePersona";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
+import { DeprecateDialog, OwnersDialog } from "../SkillPage";
 import { SkillCopy } from "../SkillCopy";
 import { RequestMerge } from "../SavingMerge";
 import { SavingView } from "../SavingView";
@@ -1184,6 +1185,28 @@ const DIALOGS: Opened[] = [
       ),
   },
   {
+    name: "deprecating a skill, from its page's menu (#3682)",
+    file: "SkillPage.tsx",
+    open: async () =>
+      render(
+        <DeprecateDialog name="deploy" busy={false} onClose={nothing} onDeprecate={nothing} />,
+      ),
+  },
+  {
+    name: "naming who looks after a skill, from its page (#3682)",
+    file: "SkillPage.tsx",
+    open: async () =>
+      render(
+        <OwnersDialog
+          name="deploy"
+          owners={["alice"]}
+          busy={false}
+          onClose={nothing}
+          onSave={nothing}
+        />,
+      ),
+  },
+  {
     name: "adding a workspace's vision",
     file: "AddVision.tsx",
     open: async () =>
@@ -1205,6 +1228,7 @@ const DIALOGS: Opened[] = [
       render(
         <SkillCopy
           builtIns={["browser", "secrets"]}
+          descriptionOf={(name) => `What ${name} does.`}
           levels={[{ level: { at: "project", local: false }, label: "project" }]}
           start={{ at: "project", local: false }}
           busy={false}

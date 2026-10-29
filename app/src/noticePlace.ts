@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { OUTSIDE, type Said } from "./actions";
+import type { NoticeKind } from "./ui/titlebar/TitleBarWorkspaces";
 
 /**
  * **Where a notice is drawn** (spec #3647, its one test seam): a notice about a whole workspace
@@ -61,6 +62,12 @@ export function placeOf(about: About, chips: readonly Chip[]): Place {
  *  project it was said in. */
 export function aboutOf(said: Said): About {
   return said.workspace === undefined ? { project: true } : { workspace: said.workspace };
+}
+
+/** **What kind of notice a result is** (#3649), which its chip's dot shows when it is the most
+ *  urgent there: a refusal or a failure is a warning (▲), anything else news (●). */
+export function kindOf(said: Said): NoticeKind {
+  return said.refused ? "warning" : "info";
 }
 
 /**

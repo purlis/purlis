@@ -179,6 +179,9 @@ zeroize = "1"
 # engine already links, and archived with `tar`, already in the tree. Neither adds a crate.
 ring = "0.17"
 tar = { version = "0.4", default-features = false }
+# A runner unpacks the harness its profile pins from its vendor's gzipped release (#3446).
+# Already linked here through `zip`'s deflate backend, so it adds no crate to the tree.
+flate2 = "1"
 # A browser login's host written in another script is compared in its ASCII spelling, as the
 # engine records a page's address (#2016). Already in the tree through `url`.
 idna = "1"

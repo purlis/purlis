@@ -1431,6 +1431,14 @@ impl Held {
         }
     }
 
+    /// A sandbox block's Notice went up for chat `session`: where it waits on its own work, the
+    /// wait ends and the person has the next move at once (#3878).
+    pub(crate) fn blocked_while_waiting(&self, session: u32) {
+        if let Some(moved) = self.board().blocked_while_waiting(session) {
+            (self.tell)(moved);
+        }
+    }
+
     /// Chat `closed` has closed with `orphaned` still waiting for its next turn: each open chat
     /// it started that had sent its report, and whose report is one of those, needs the person.
     ///
@@ -3135,6 +3143,8 @@ impl Planes {
                     if !told.ours && told.quiet.is_none() {
                         let turn = strong.board().glance(told.session).turns;
                         strong.chats().blocks().raised(told.session, turn);
+                        // A block heard while it waits on its own work is an ask (#3878).
+                        strong.blocked_while_waiting(told.session);
                     }
                 }
                 blocks(told);

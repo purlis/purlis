@@ -7,17 +7,19 @@
 //! a test checks each of them against the vendored definitions, so moving the pin is a change a
 //! test reads.
 //!
-//! A Pool becomes, in each namespace one of its Claims is in, a `SandboxTemplate` holding the
-//! runner's pod and a `SandboxWarmPool` of it, both owned by the pool's Claims there; a Claim
-//! becomes a `SandboxClaim` on that warm pool. Upstream's controller adopts a warm runner when
+//! A Pool becomes, in the runner namespace of each person with a Claim on it
+//! ([`crate::person`]), a `SandboxTemplate` holding the runner's pod and a `SandboxWarmPool` of
+//! it; a Claim becomes a `SandboxClaim` on that warm pool there. Each is controlled by the
+//! runner namespace, which the operator made: a Claim in another namespace cannot own them. Upstream's controller adopts a warm runner when
 //! there is one and otherwise makes one from the template.
 
+use crate::person::CLAIM_UID_ANNOTATION;
 use crate::resources::{Claim, KeptVolume, Pool};
 use k8s_openapi::api::core::v1::{
-    Capabilities, Container, EmptyDirVolumeSource, EnvVar, EnvVarSource, ObjectFieldSelector,
-    PersistentVolumeClaimSpec, PersistentVolumeClaimVolumeSource, PodSecurityContext, PodSpec,
-    PodTemplateSpec, SeccompProfile, SecurityContext, Volume, VolumeMount,
-    VolumeResourceRequirements,
+    Capabilities, Container, EmptyDirVolumeSource, EnvVar, EnvVarSource, Namespace,
+    ObjectFieldSelector, PersistentVolumeClaimSpec, PersistentVolumeClaimVolumeSource,
+    PodSecurityContext, PodSpec, PodTemplateSpec, ResourceRequirements, SeccompProfile,
+    SecurityContext, Volume, VolumeMount, VolumeResourceRequirements,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{Condition, ObjectMeta, OwnerReference};
@@ -135,18 +137,146 @@ pub struct SandboxTemplateSpec {
 pub struct SandboxWarmPoolSpec {
     pub replicas: i32,
     pub sandbox_template_ref: Reference,
+    /// How upstream treats the runners it keeps warm once the template changes: always
+    /// [`RECREATE`], so a warm runner made from an earlier template is replaced and never handed
+    /// to a fresh claim, whose runner the operator would not vouch for (#2058).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_strategy: Option<UpdateStrategy>,
 }
 
-/// Upstream's sandbox, which makes and owns one runner's pod: purlis reads only its metadata,
-/// to follow a claim to its pod by uid (#2056).
+/// A warm pool's update strategy.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct UpdateStrategy {
+    #[serde(rename = "type")]
+    pub type_: String,
+}
+
+/// Upstream's update strategy that deletes a warm runner no longer of its template, and has a
+/// claim pass over one not deleted yet (agent-sandbox v1.0.6, `isSandboxStale`).
+pub const RECREATE: &str = "Recreate";
+
+/// Upstream's sandbox, which makes and owns one runner's pod: purlis reads its metadata, to
+/// follow a claim to its pod by uid (#2056), its operating mode, which it writes to suspend a
+/// stopped runner and run it again (#2058), and its `Suspended` condition. Its pod template is
+/// never read.
 #[derive(CustomResource, Serialize, Deserialize, Clone, Debug, Default, PartialEq, JsonSchema)]
 #[kube(
     group = "agents.x-k8s.io",
     version = "v1beta1",
     kind = "Sandbox",
-    namespaced
+    namespaced,
+    status = "SandboxStatus"
 )]
-pub struct SandboxSpec {}
+#[serde(rename_all = "camelCase")]
+pub struct SandboxSpec {
+    /// `Running` (upstream's default where it is not set) or `Suspended`: upstream ends a
+    /// suspended sandbox's pod and keeps its volumes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operating_mode: Option<String>,
+}
+
+/// What upstream says about a sandbox: purlis reads its `Suspended` condition.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, JsonSchema)]
+pub struct SandboxStatus {
+    #[serde(default)]
+    pub conditions: Vec<Condition>,
+}
+
+/// A sandbox's mode that runs its pod.
+pub const RUNNING: &str = "Running";
+
+/// A sandbox's mode that ends its pod and keeps its volumes, and the condition upstream says
+/// whether it has.
+pub const SUSPENDED: &str = "Suspended";
+
+/// Whether `claim` is stopped, by its own `stopped` or by its `pool`'s, where its pool still
+/// exists (#2058): a runner kept after its pool is deleted is stopped by its claim alone.
+pub fn is_stopped(claim: &Claim, pool: Option<&Pool>) -> bool {
+    claim.spec.stopped || pool.is_some_and(|pool| pool.spec.stopped)
+}
+
+/// **The mode the operator puts `claim`'s runner's `sandbox` in**, if it changes it (#2058):
+/// [`SUSPENDED`] while the claim or its pool (if it still exists) is stopped, and [`RUNNING`]
+/// again once neither is (never while its pool is deleted), where the operator's own apply
+/// suspended it, so a runner someone
+/// suspended by hand is left suspended. That record is best effort (D-2058-2): a manager's name
+/// is the client's to give, and a runner suspended by hand after the operator suspended it
+/// changes no field's owner, so it runs again with the rest. `None` leaves the sandbox as it is.
+pub fn operating_mode_for(
+    claim: &Claim,
+    pool: Option<&Pool>,
+    sandbox: &Sandbox,
+) -> Option<&'static str> {
+    let mode = sandbox.spec.operating_mode.as_deref().unwrap_or(RUNNING);
+    if is_stopped(claim, pool) {
+        return (mode != SUSPENDED).then_some(SUSPENDED);
+    }
+    // With its pool deleted, a runner is only ever suspended: one its pool's stopped suspended
+    // stays so, since nothing is left to set the pool running again (#2058).
+    pool?;
+    (mode == SUSPENDED && suspended_by_the_operator(&sandbox.metadata)).then_some(RUNNING)
+}
+
+/// Whether the operator's own server-side apply owns `sandbox`'s operating mode.
+fn suspended_by_the_operator(sandbox: &ObjectMeta) -> bool {
+    sandbox.managed_fields.iter().flatten().any(|entry| {
+        entry.manager.as_deref() == Some(crate::reconcile::FIELD_MANAGER)
+            && entry.operation.as_deref() == Some("Apply")
+            && entry
+                .fields_v1
+                .as_ref()
+                .is_some_and(|fields| fields.0.pointer("/f:spec/f:operatingMode").is_some())
+    })
+}
+
+/// What the operator applies to `held`, a sandbox as it read it, to put it in `mode`: its
+/// operating mode and nothing else, with its uid as a precondition, so a sandbox made again
+/// under the name since it was read is refused.
+pub fn sandbox_in_mode(held: &Sandbox, mode: &str) -> Sandbox {
+    Sandbox {
+        metadata: ObjectMeta {
+            name: held.metadata.name.clone(),
+            namespace: held.metadata.namespace.clone(),
+            uid: held.metadata.uid.clone(),
+            ..ObjectMeta::default()
+        },
+        spec: SandboxSpec {
+            operating_mode: Some(mode.to_owned()),
+        },
+        status: None,
+    }
+}
+
+/// How far a stopped claim's runner is suspended (#2058).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Suspension {
+    /// No runner was asked for: none is made while the claim is stopped.
+    NotMade,
+    /// Asked to suspend, or to be once its sandbox is made, and upstream does not say yet that
+    /// its pod has ended.
+    Suspending,
+    /// Upstream says its pod has ended (its `Suspended` condition is `True`).
+    Suspended,
+    /// Asked to suspend a while ago, and upstream still does not say its pod has ended.
+    NotEnded,
+}
+
+/// How far the runner whose sandbox is `sandbox`, if it has one yet, is suspended.
+pub fn suspension_of(sandbox: Option<&Sandbox>) -> Suspension {
+    let suspended = sandbox
+        .and_then(|sandbox| sandbox.status.as_ref())
+        .is_some_and(|status| {
+            status
+                .conditions
+                .iter()
+                .any(|condition| condition.type_ == SUSPENDED && condition.status == "True")
+        });
+    if suspended {
+        Suspension::Suspended
+    } else {
+        Suspension::Suspending
+    }
+}
 
 /// Upstream's claim of one runner from a warm pool. Upstream's controller writes its status.
 #[derive(CustomResource, Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -245,69 +375,35 @@ where
     }
 }
 
-/// The one owner of a Claim's upstream claim: its controller, which never blocks its own
-/// deletion. Blocking it would need update rights on the owner's finalizers wherever a cluster
-/// enforces owner-reference permissions; the garbage collector removes the object either way.
-fn owners(owner: Option<OwnerReference>) -> Option<Vec<OwnerReference>> {
-    owner.map(|owner| {
-        vec![OwnerReference {
-            block_owner_deletion: None,
-            ..owner
-        }]
-    })
-}
-
-/// Whether `reference` is to a purlis Claim, by its kind and API version.
-pub fn is_purlis_claim(reference: &OwnerReference) -> bool {
-    reference.kind == Claim::kind(&()) && reference.api_version == Claim::api_version(&())
-}
-
-/// Whether `reference` names one of `claims`, the Claims the operator knows: a purlis Claim of
-/// that name and uid in `namespace`, on the pool named `pool`.
-fn names_a_known_claim(
-    reference: &OwnerReference,
-    namespace: Option<&str>,
-    pool: &str,
-    claims: &[&Claim],
-) -> bool {
-    is_purlis_claim(reference)
-        && claims.iter().any(|claim| {
-            claim.metadata.uid.as_deref() == Some(reference.uid.as_str())
-                && claim.metadata.name.as_deref() == Some(reference.name.as_str())
-                && claim.metadata.namespace.as_deref() == namespace
-                && claim.spec.pool == pool
-        })
-}
-
-/// The owners of a pool's template or warm pool in a namespace once `claim` is among them: the
-/// Claims among `claims`, the ones the operator knows, that own `held` (the object as the
-/// cluster holds it), and `claim`, in a stable order. None is its controller: the garbage
-/// collector removes the object once every one of them is gone, and not before, whatever
-/// becomes of the pool, so a runner whose pool is deleted keeps its template and what upstream
-/// makes of the template for its pods. Each Claim adds itself; any other owner is dropped.
-pub fn owners_with(
-    held: Option<&ObjectMeta>,
-    claim: &Claim,
-    claims: &[&Claim],
-) -> Vec<OwnerReference> {
-    let namespace = claim.metadata.namespace.as_deref();
-    let mut owners: Vec<OwnerReference> = held
-        .and_then(|held| held.owner_references.as_ref())
-        .into_iter()
-        .flatten()
-        .filter(|owner| names_a_known_claim(owner, namespace, &claim.spec.pool, claims))
-        .filter(|owner| Some(&owner.uid) != claim.metadata.uid.as_ref())
-        .cloned()
-        .chain(claim.controller_owner_ref(&()))
+/// **Who controls what the operator makes in a runner namespace**: the namespace itself, by its
+/// uid, which the operator made for its person ([`crate::person::is_theirs`]). It never blocks
+/// its own deletion: that would need update rights on the namespace's finalizers wherever a
+/// cluster enforces owner-reference permissions.
+pub fn runner_owner(runner: &Namespace) -> Vec<OwnerReference> {
+    runner
+        .controller_owner_ref(&())
         .map(|owner| OwnerReference {
-            controller: None,
             block_owner_deletion: None,
             ..owner
         })
-        .collect();
-    owners.sort_by(|a, b| (&a.name, &a.uid).cmp(&(&b.name, &b.uid)));
-    owners.dedup_by(|a, b| a.uid == b.uid);
-    owners
+        .into_iter()
+        .collect()
+}
+
+/// Whether `held`, the upstream claim the cluster holds under `claim`'s name in its runner
+/// namespace `runner`, is the one the operator made for `claim`: controlled by `runner`
+/// ([`made_for`]), and naming `claim`'s uid. Another Claim's of the same name, from another
+/// namespace, is in the way.
+pub fn made_for_claim(held: Option<&ObjectMeta>, runner: &Namespace, claim: &Claim) -> Found {
+    let found = made_for(held, runner);
+    let names_it = held
+        .and_then(|held| held.annotations.as_ref())
+        .and_then(|annotations| annotations.get(CLAIM_UID_ANNOTATION))
+        .is_some_and(|uid| Some(uid) == claim.metadata.uid.as_ref());
+    match found {
+        Found::Ours { .. } if !names_it => Found::InTheWay,
+        found => found,
+    }
 }
 
 fn owned_by(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -> ObjectMeta {
@@ -319,53 +415,26 @@ fn owned_by(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -> Object
     }
 }
 
-/// Whether `held`, the object the cluster holds under the name of `pool`'s template or warm pool
-/// in a namespace, is one the operator made: one owned by a Claim among `claims`, the ones the
-/// operator knows, in that namespace on that pool, by name and uid; or one `pool` itself
-/// controls, as the operator made them before its Claims owned them. Anything else is in the
-/// way, whatever it says of its owners.
-pub fn made_for_pool(held: Option<&ObjectMeta>, pool: &Pool, claims: &[&Claim]) -> Found {
-    let Some(held) = held else {
-        return Found::Nothing;
-    };
-    let pool_name = pool.name_any();
-    let namespace = held.namespace.as_deref();
-    let by_a_known_claim = held
-        .owner_references
-        .iter()
-        .flatten()
-        .any(|reference| names_a_known_claim(reference, namespace, &pool_name, claims));
-    match (&held.uid, by_a_known_claim) {
-        (Some(uid), true) => Found::Ours { uid: uid.clone() },
-        _ => made_for(Some(held), pool),
+/// What each container of a runner's pod asks for at least, so a person's quota can count it
+/// (#2055): the runner's CPU and memory, and its first step's.
+pub const RUNNER_REQUESTS: (&str, &str) = ("250m", "512Mi");
+pub const KEY_STEP_REQUESTS: (&str, &str) = ("50m", "32Mi");
+
+fn requests((cpu, memory): (&str, &str)) -> ResourceRequirements {
+    ResourceRequirements {
+        requests: Some(
+            [
+                ("cpu".to_owned(), Quantity(cpu.to_owned())),
+                ("memory".to_owned(), Quantity(memory.to_owned())),
+            ]
+            .into_iter()
+            .collect(),
+        ),
+        ..ResourceRequirements::default()
     }
 }
 
-/// The names of the Claims among `claims`, the ones the operator knows in `held`'s namespace on
-/// `pool`, that own `held`, sorted, when they are all its owners; none when it has any other
-/// owner, or none at all, since deleting those Claims would not free it then. For an object
-/// [`made_for_pool`] finds in the way when given only the Claims the operator acts on, these are
-/// Claims it now refuses: the object was made for them, and goes with them.
-pub fn claims_holding(held: &ObjectMeta, pool: &Pool, claims: &[&Claim]) -> Vec<String> {
-    let pool_name = pool.name_any();
-    let namespace = held.namespace.as_deref();
-    let owners = held.owner_references.as_deref().unwrap_or_default();
-    if !owners
-        .iter()
-        .all(|reference| names_a_known_claim(reference, namespace, &pool_name, claims))
-    {
-        return Vec::new();
-    }
-    let mut names: Vec<String> = owners
-        .iter()
-        .map(|reference| reference.name.clone())
-        .collect();
-    names.sort();
-    names.dedup();
-    names
-}
-
-/// The template of a pool's runners in `namespace`, owned by `owners` ([`owners_with`]): one
+/// The template of a pool's runners in `namespace`, controlled by `owners` ([`runner_owner`]): one
 /// container running the pool's image with its own entrypoint (`purlis serve` under an init,
 /// the runner image contract), as a user who is not root, with no added privilege, no
 /// Kubernetes credential and no service addresses, its home on [`KEPT_VOLUME`]. One template
@@ -397,6 +466,7 @@ pub fn template_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -
             ..EnvVar::default()
         }]),
         volume_mounts: mounts(),
+        resources: Some(requests(RUNNER_REQUESTS)),
         security_context: Some(confined()),
         ..Container::default()
     };
@@ -422,6 +492,7 @@ pub fn template_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -
         volume_mounts: mounts(),
         termination_message_path: Some(TERMINATION_LOG.to_owned()),
         termination_message_policy: Some("File".to_owned()),
+        resources: Some(requests(KEY_STEP_REQUESTS)),
         security_context: Some(confined()),
         ..Container::default()
     };
@@ -542,7 +613,7 @@ fn confined() -> SecurityContext {
     }
 }
 
-/// A pool's warm pool in `namespace`, owned by `owners` ([`owners_with`]). It keeps no runner
+/// A pool's warm pool in `namespace`, controlled by `owners` ([`runner_owner`]). It keeps no runner
 /// started ahead of a claim when the operator makes it; a warm pool it finds keeps the number
 /// it holds ([`replicas_held`]), so a team admin's `kubectl scale` stands until pools scale on
 /// their own (#2058).
@@ -554,6 +625,9 @@ pub fn warm_pool_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) 
             sandbox_template_ref: Reference {
                 name: name_for(&pool.name_any()),
             },
+            update_strategy: Some(UpdateStrategy {
+                type_: RECREATE.to_owned(),
+            }),
         },
     }
 }
@@ -576,16 +650,34 @@ pub fn replicas_held(held: Option<&SandboxWarmPool>) -> i32 {
     held.map(|held| held.spec.replicas.max(0)).unwrap_or(0)
 }
 
-/// The upstream claim a Claim becomes: same name and namespace, on its pool's warm pool, and
-/// owned by the Claim, so deleting the Claim deletes it and its runner. A kept Claim's carries
-/// its volume, as `volume` (its pool's) asks (#2057), so upstream makes it a runner of its own,
-/// cold; a fresh one takes a warm runner where the warm pool holds one.
-pub fn sandbox_claim_for(claim: &Claim, volume: &KeptVolume) -> SandboxClaim {
+/// How many runners `pool`'s warm pool `held` is to keep warm: none while the pool is stopped
+/// (#2058), and otherwise as many as it holds ([`replicas_held`]). A stopped pool's warm pool
+/// keeps none once it runs again, until a team admin scales it again.
+pub fn replicas_kept(pool: &Pool, held: Option<&SandboxWarmPool>) -> i32 {
+    if pool.spec.stopped {
+        0
+    } else {
+        replicas_held(held)
+    }
+}
+
+/// The upstream claim a Claim becomes: of the same name, in its requester's runner namespace
+/// `runner`, on its pool's warm pool there, controlled by `runner` and naming the Claim by its
+/// uid ([`made_for_claim`]); the Claim's finalizer deletes it, and its runner with it
+/// (#2055). A kept Claim's carries its volume, as `volume` (its pool's) asks (#2057), so
+/// upstream makes it a runner of its own, cold; a fresh one takes a warm runner where the warm
+/// pool holds one.
+pub fn sandbox_claim_for(claim: &Claim, volume: &KeptVolume, runner: &Namespace) -> SandboxClaim {
     SandboxClaim {
         metadata: ObjectMeta {
             name: Some(claim.name_any()),
-            namespace: claim.namespace(),
-            owner_references: owners(claim.controller_owner_ref(&())),
+            namespace: runner.metadata.name.clone(),
+            owner_references: Some(runner_owner(runner)),
+            annotations: claim
+                .metadata
+                .uid
+                .clone()
+                .map(|uid| [(CLAIM_UID_ANNOTATION.to_owned(), uid)].into()),
             ..ObjectMeta::default()
         },
         spec: SandboxClaimSpec {

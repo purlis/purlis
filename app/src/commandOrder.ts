@@ -176,6 +176,7 @@ export const OUTSIDE_THE_LANES: Partial<Record<keyof typeof commands, string>> =
     "It tells the chat, in fixed words typed into its pane, not to try again: that lands in the " +
     "order of the person's own typing, which a lane behind a slow read would break. Its line in " +
     "the network record is a look back, read again at the next look.",
+  keepSandboxBlockForTasks: "As keepSandboxBlock, for each task held on the block.",
   addProjectForge:
     "It writes the manifest's forges, which no read of the sandbox's lane draws; Settings reads " +
     "the file again after it. The read it answers with drops the confirmed hosts the file no " +

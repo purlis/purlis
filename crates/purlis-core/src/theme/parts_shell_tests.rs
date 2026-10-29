@@ -666,6 +666,36 @@ fn a_chip_s_notice_dot_is_reached_by_its_own_attributes_not_inside_a_chip() {
 }
 
 #[test]
+fn each_kind_of_notice_dot_is_a_part_of_its_own() {
+    // A warning's dot (#3649) is keyed apart from news's, so a theme colouring one never colours
+    // the other the same, and it too is drawn around the chip, in no variant and no state.
+    let sheet = sheet_of(json!({
+        "titlebar.dot.fill": "accent.base",
+        "titlebar.dot-warning.fill": "state.waiting",
+    }));
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"titlebar\"][data-part=\"dot-warning\"]) { background-color: var(--state-waiting); }"
+        ),
+        "{sheet}"
+    );
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"titlebar\"][data-part=\"dot\"]) { background-color: var(--accent-base); }"
+        ),
+        "{sheet}"
+    );
+    let loaded = load(&with_parts(json!({ "titlebar.dot-warning.pinned.fill": "state.waiting" })));
+    assert!(
+        said(&loaded)
+            .iter()
+            .any(|one| one.contains("parts.titlebar.dot-warning.pinned.fill is not")),
+        "{:?}",
+        said(&loaded)
+    );
+}
+
+#[test]
 fn a_notice_card_s_point_is_its_own_part_and_leaves_every_other_popover_s_arrow_alone() {
     // The point is the notice card's (`HungPopover`); the arrow a held popover draws is an SVG of
     // the surface's own ground, no part a theme keys.

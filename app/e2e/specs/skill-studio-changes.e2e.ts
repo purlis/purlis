@@ -11,7 +11,7 @@ import {
   runFromThePalette,
   tabNames,
 } from "../reach.js";
-import { studioPage, studioSkill } from "../studio.js";
+import { studioPage, studioMore, studioSkill } from "../studio.js";
 
 /**
  * **Making, renaming, deleting and restoring a skill in the Skill studio** (SK-7, #2770), in the
@@ -85,7 +85,7 @@ describe("making and changing a skill in the Skill studio", function () {
     const item = await studioSkill(MADE);
     await expect(item.$('[data-testid="skill-in-a-chat"]')).toHaveText(/^On/);
 
-    await (await $(`aria/Rename ${MADE}`)).click();
+    await studioMore(MADE, "Rename");
     await typeInto("New name", RENAMED);
     await (await $('form[aria-label^="Rename"] button[type="submit"]')).click();
     const renamed = await $(`[data-testid="skill-${RENAMED}"]`);
@@ -94,7 +94,7 @@ describe("making and changing a skill in the Skill studio", function () {
     expect(existsSync(join(root, "skills", MADE))).toBe(false);
 
     await studioSkill(RENAMED);
-    await (await $(`aria/Delete ${RENAMED}`)).click();
+    await studioMore(RENAMED, "Delete");
     const users = await $('[data-testid="skill-users"]');
     await users.waitForExist({ timeout: 20_000 });
     await expect(users).toHaveText(/Used by chats at the project's root/);
@@ -105,7 +105,11 @@ describe("making and changing a skill in the Skill studio", function () {
     expect(existsSync(join(root, "skills", RENAMED))).toBe(false);
 
     await studioPage("Deleted");
-    const restore = await $(`aria/Restore ${RENAMED}`);
+    // A deleted skill's page, beside the list, holds Bring back (S9, #3691).
+    const row = await $(`[data-testid="deleted-${RENAMED}"]`);
+    await row.waitForClickable({ timeout: 20_000 });
+    await row.click();
+    const restore = await $(`aria/Bring back ${RENAMED}`);
     await restore.waitForClickable({ timeout: 20_000 });
     await restore.click();
     await studioPage("Library");

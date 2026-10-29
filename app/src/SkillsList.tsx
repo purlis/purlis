@@ -31,12 +31,18 @@ import {
 /** What the view's filter calls its rows. */
 const SKILLS_NOUN: Noun = { one: "skill", many: "skills" };
 
+/** The middle group's heading while a chat is in front: the skills it gets. */
+export const IN_THIS_CHAT = "In this chat";
+/** The same group while no chat is in front: what a new chat in the workspace would get, as the
+ *  header says ("A new chat in ops"). */
+export const A_NEW_CHAT_GETS = "A new chat gets";
+
 /**
  * **The Skills view, drawn** (SK-55, #3266; spec #3679 S7, `prototype/skills-sidebar` variant
  * C): whose skills it shows and how many, its header's way to the Skill studio and its New
  * skill, the filter, and the skills as small cards in three groups that fold: Needs you (in the
- * waiting colour), In this chat (its built-in skills folded to one quiet line at its end, S12)
- * and Left out (folded at first). What it lists and does is the caller's (`SkillsView`); this
+ * waiting colour), In this chat (its built-in skills folded to one quiet line at its end, S12;
+ * headed A new chat gets while no chat is in front, #3778) and Left out (folded at first). What it lists and does is the caller's (`SkillsView`); this
  * draws it, so a story draws it without a core.
  *
  * **A card** is a skill's name and its skill level, Use while the chat in front can use it, and
@@ -46,6 +52,7 @@ const SKILLS_NOUN: Noun = { one: "skill", many: "skills" };
  */
 export function SkillsList({
   whose,
+  chat,
   groups,
   count,
   clashes,
@@ -70,6 +77,9 @@ export function SkillsList({
 }: {
   /** Whose skills these are: the chat in front's name, or "A new chat in ops". */
   whose: string;
+  /** Whether they are a chat's, one in front: its group is In this chat, and else the set a new
+   *  chat would get is headed A new chat gets (#3778). */
+  chat: boolean;
   groups: SkillGroups;
   /** How many skills the chat gets, whatever the filter leaves: the header's count. */
   count: number;
@@ -234,7 +244,7 @@ export function SkillsList({
               {inChat.length + builtIns.length > 0 && (
                 <ListFoldSection
                   id="in-chat"
-                  title="In this chat"
+                  title={chat ? IN_THIS_CHAT : A_NEW_CHAT_GETS}
                   count={inChat.length + builtIns.length}
                   folded={isFolded("in-chat")}
                   onFoldedChange={(to) => onFold("in-chat", to)}

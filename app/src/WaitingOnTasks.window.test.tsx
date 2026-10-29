@@ -507,11 +507,19 @@ describe("a limit, said where it binds (#1498)", () => {
     const heard = (event: Event) => linked.push((event as CustomEvent).detail);
     window.addEventListener("charter-settings-link", heard);
     try {
-      await userEvent.click(within(line).getByRole("button", { name: "Dispatch settings" }));
+      // The pointer's (#3759): out of the tree, which owns its rows alone.
+      await userEvent.click(
+        within(line).getByRole("button", { name: "Dispatch settings", hidden: true }),
+      );
     } finally {
       window.removeEventListener("charter-settings-link", heard);
     }
     expect(linked).toEqual([{ plane: PLANE, link: { group: "project.dispatch" } }]);
+    // The row says the whole sentence, where a screen reader is (#3759).
+    expect(line.closest("li")?.querySelector('[role="treeitem"]')).toHaveAttribute(
+      "aria-description",
+      SAID,
+    );
     // A task's own row says nothing of its asker's limit.
     expect(screen.queryByTestId("at-limit-2")).toBeNull();
 

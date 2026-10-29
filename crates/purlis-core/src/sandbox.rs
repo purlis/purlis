@@ -1307,13 +1307,17 @@ impl Denied {
     #[must_use]
     pub fn and_what_waits_for_a_chat(mut self, root: &Path) -> Self {
         for state in crate::names::STATE_DIR.spellings() {
+            let path = root.join(state).join(crate::handback::DIR_NAME);
+            // Under every spelling of its name where its write denial is ([`kept_by_purlis`]
+            // holds the state folder so on macOS).
+            let any_case = self.paths.iter().any(|it| it.path == path && it.any_case);
             self.paths.push(Denial {
                 class: Class::Integrity,
-                path: root.join(state).join(crate::handback::DIR_NAME),
+                path,
                 access: Access::ReadWrite,
                 named: None,
                 reach: Reach::AndBelow,
-                any_case: false,
+                any_case,
             });
         }
         self
@@ -1802,8 +1806,7 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     // The Skill studio's records (SK-9, SK-16, SK-58, SK-59): which levels a running chat could
     // have made, the drafts, the tries, the grades and the opt-in to grade after each edit, each
     // written by the app or the session host alone. Read, never written. Under every spelling of
-    // the state folder and where `$PURLIS_HOME` puts it, and, on macOS's case-folding disk, under
-    // every spelling of each record's name: one not there yet is made under the name as typed.
+    // the state folder and where `$PURLIS_HOME` puts it, each in every case on macOS (below).
     let mut states: Vec<PathBuf> = crate::names::STATE_DIR
         .spellings()
         .map(|state| root.join(state))
@@ -1824,7 +1827,7 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             access: Access::Write,
             named: None,
             reach: Reach::AndBelow,
-            any_case: machine.os == Os::MacOs,
+            any_case: false,
         })
         .collect();
 
@@ -1925,6 +1928,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         for folder in engines {
             deny(Class::HumanPowers, folder, Access::Write);
         }
+        // The harness versions a runner installs for its profiles' pins (#3446): a chat writes
+        // nothing there, so none chooses the program the next chat runs.
+        deny(
+            Class::HumanPowers,
+            data.join(crate::profilestore::installs::DIR),
+            Access::Write,
+        );
     }
     // The session host's socket and its lock, in the folder it makes this user's alone under
     // the runtime or temporary directory (#1997, `hostsocket`): a chat neither reads nor
@@ -1976,6 +1986,18 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     }
     paths.extend(held_whole);
     paths.extend(studio_held);
+    // Everything held in the state folder, under each of its spellings and where `$PURLIS_HOME`
+    // puts it, is held under every spelling of its name on macOS's case-folding disk: a store not
+    // there yet is made under the name as typed, and purlis reads it under its own. One pass
+    // here, so a row added above cannot be left out. Linux's disks do not fold case, and each
+    // row there stays as it was written above.
+    if machine.os == Os::MacOs {
+        for denial in &mut paths {
+            if states.iter().any(|state| denial.path.starts_with(state)) {
+                denial.any_case = true;
+            }
+        }
+    }
     // A list that is not whole is never held by the store alone.
     keyring |= unresolved.is_some();
     KeptList {
@@ -4323,8 +4345,9 @@ pub trait Board: Send + Sync + std::fmt::Debug {
     /// The person allowed `host` at `by` ([`asks::Asks::allow`]): the hosts held connections
     /// gave up on before it, which the chat is told to retry.
     fn allow(&self, host: &hosts::Host, by: reach::By) -> Vec<String>;
-    /// The person kept `host` blocked ([`asks::Asks::keep_blocked`]).
-    fn keep_blocked(&self, host: &hosts::Host);
+    /// The person kept `host` blocked ([`asks::Asks::keep_blocked`]): whether it ended a live
+    /// Allow of the chat's, so its reach narrowed.
+    fn keep_blocked(&self, host: &hosts::Host) -> bool;
     /// An Allow of `host` at `by` was removed ([`asks::Asks::forget`]).
     fn forget(&self, host: &hosts::Host, by: reach::By);
     /// The hosts allowed live, each with its scope ([`asks::Asks::allowed_live`]).
@@ -4347,8 +4370,8 @@ impl Board for asks::Asks {
         asks::Asks::allow(self, host, by)
     }
 
-    fn keep_blocked(&self, host: &hosts::Host) {
-        asks::Asks::keep_blocked(self, host);
+    fn keep_blocked(&self, host: &hosts::Host) -> bool {
+        asks::Asks::keep_blocked(self, host)
     }
 
     fn forget(&self, host: &hosts::Host, by: reach::By) {

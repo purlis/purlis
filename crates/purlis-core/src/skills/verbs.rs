@@ -30,6 +30,7 @@
 use std::path::{Path, PathBuf};
 
 use purlis_skills::change::{self, SkillTemplate, TemplateId};
+use purlis_skills::fence;
 
 use super::{Grant, LINKED_PLUGIN, Origin, beside, grant_of, level_dir, set_grant};
 use crate::planegit::literally;
@@ -485,19 +486,23 @@ pub fn create(
 
 /// **Make my own copy** (#3686, spec #3679 S12): the built-in skill `name`, copied to `level`
 /// under the new name `to`, as a skill of the plane the person can edit, committed. Its
-/// `SKILL.md` keeps the built-in's text with its `name:` changed to `to`; a project skill starts
-/// granted to the project's root alone, as a new one does. The built-in skill is not touched and
-/// keeps loading: a chat gets both.
+/// `SKILL.md` keeps the built-in's text with its `name:` changed to `to` and its `description:`
+/// to `description`, the copy's own (#3777): a chat gets both skills, and two that describe
+/// themselves alike could not be told apart by it or by a router. A project skill starts granted
+/// to the project's root alone, as a new one does. The built-in skill is not touched and keeps
+/// loading.
 ///
 /// Refused where `name` is no built-in skill in `cx.built_in`, for a name the open format does
 /// not allow, one that belongs to a built-in skill ([`Ctx::not_built_in`]), or one `level`
-/// already holds. A built-in skill is its `SKILL.md` alone (held by a test of the bundle), so
+/// already holds; and for a description that breaks a rule ([`change::description_problem`]) or
+/// is the built-in's word for word. A built-in skill is its `SKILL.md` alone (held by a test of the bundle), so
 /// that one file is what is copied.
 pub fn copy_built_in(
     cx: &mut Ctx<'_>,
     name: &str,
     level: &Level,
     to: &str,
+    description: &str,
 ) -> Result<PathBuf, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
@@ -512,13 +517,36 @@ pub fn copy_built_in(
         return Err(format!("{to:?} cannot be a skill's name: {why}"));
     }
     cx.not_built_in(to)?;
+    let description = description.trim();
+    if let Some(why) = change::description_problem(description) {
+        return Err(format!("the copy's description: {why}"));
+    }
+    // What the line format cannot hold as one line (a form feed, a separator a reader strips) is
+    // the person's text, said as theirs, not as a fault of the built-in's instructions.
+    if !fence::holds(description) {
+        return Err(
+            "the copy's description holds a character a frontmatter line cannot keep: type it \
+             as plain words on one line"
+                .to_owned(),
+        );
+    }
+    if description == source.description.trim() {
+        return Err(format!(
+            "the copy's description is {name}'s word for word, so a chat could not tell them \
+             apart: say what your copy does differently"
+        ));
+    }
     let is_file = std::fs::symlink_metadata(&source.path).is_ok_and(|meta| meta.is_file());
     let text = is_file
         .then(|| std::fs::read_to_string(&source.path).ok())
         .flatten()
         .ok_or_else(|| format!("{name}'s instructions could not be read, so nothing was copied"))?;
-    let copied = change::with_name(&text, to)
-        .ok_or_else(|| format!("{name}'s instructions have no name: line to change"))?;
+    // Both keys through the line format's one writer, which reads them back as written.
+    let copied = fence::with_keys(
+        &text,
+        &[("name", Some(to)), ("description", Some(description))],
+    )
+    .map_err(|why| format!("{name}'s instructions {why}, so nothing was copied"))?;
     if let Some(problem) = change::check(&copied, to).first() {
         return Err(format!("the copy would not be a whole skill: {problem}"));
     }
@@ -1028,19 +1056,43 @@ impl Deleted {
     pub fn stays(&self, now: std::time::SystemTime) -> String {
         match &self.kept.0 {
             Source::Commit(_) => "kept in the project's history".to_owned(),
-            Source::Here(_) => {
-                let now = u64::try_from(ms_since_epoch(now) / 1000).unwrap_or(u64::MAX);
-                let kept_for = KEPT_HERE_FOR.as_secs();
-                let until = self.at.saturating_add(kept_for);
-                let days = until.saturating_sub(now).min(kept_for).div_ceil(DAY);
-                match days {
-                    0 => "removed from this machine soon".to_owned(),
-                    1 => "kept on this machine for 1 more day".to_owned(),
-                    days => format!("kept on this machine for {days} more days"),
-                }
-            }
+            Source::Here(_) => match self.days_left(now) {
+                0 => "removed from this machine soon".to_owned(),
+                1 => "kept on this machine for 1 more day".to_owned(),
+                days => format!("kept on this machine for {days} more days"),
+            },
         }
     }
+
+    /// **How many days are left to bring it back at `now`** (S9, #3691): the Skill studio's
+    /// Deleted page lists a skill for [`KEPT_HERE_FOR`] after its delete, wherever it is kept,
+    /// and counts the days left, never more than that (a delete stamped by a clock that ran
+    /// ahead). Zero once its time is past: the page lists it no more. One git keeps can still be
+    /// brought back after that by `purlis skill restore`, from the project's history.
+    pub fn days_left(&self, now: std::time::SystemTime) -> u64 {
+        let now = u64::try_from(ms_since_epoch(now) / 1000).unwrap_or(u64::MAX);
+        let kept_for = KEPT_HERE_FOR.as_secs();
+        let until = self.at.saturating_add(kept_for);
+        until.saturating_sub(now).min(kept_for).div_ceil(DAY)
+    }
+}
+
+/// **The text of the deleted skill `deleted`'s `SKILL.md`, as it was when it was deleted** (S9,
+/// #3691): from the commit's parent where git keeps it, else from this machine's
+/// [`DELETED_DIR`], read without following a link, as [`deleted`] reads it to list it. Only a
+/// record the listing itself made is answered: it comes from the window, so its folder and its
+/// commit are never read as it names them.
+pub fn deleted_text(plane: &Path, deleted: &Deleted) -> Result<String, String> {
+    deleted_with_text(plane)
+        .into_iter()
+        .find(|(one, _)| one == deleted)
+        .map(|(_, text)| text)
+        .ok_or_else(|| {
+            format!(
+                "{} is not a deleted skill this project lists any more",
+                deleted.name
+            )
+        })
 }
 
 /// A day, in seconds.
@@ -1520,6 +1572,15 @@ pub(in crate::skills) fn shared_globs() -> Vec<String> {
 /// a link. One whose folder, or whose name at its level, is taken again is left out: it would
 /// come back as a second copy.
 pub fn deleted(plane: &Path) -> Vec<Deleted> {
+    deleted_with_text(plane)
+        .into_iter()
+        .map(|(one, _)| one)
+        .collect()
+}
+
+/// [`deleted`], each with the text of its `SKILL.md` as it was when it was deleted, which the
+/// listing reads anyway to name it.
+fn deleted_with_text(plane: &Path) -> Vec<(Deleted, String)> {
     let mut out = Vec::new();
     let state = crate::plane::state_dir(plane);
     let now_ms = ms_since_epoch(std::time::SystemTime::now());
@@ -1547,13 +1608,16 @@ pub fn deleted(plane: &Path) -> Vec<Deleted> {
             continue;
         }
         let at = u64::try_from(stamp / 1000).unwrap_or(u64::MAX);
-        out.push(Deleted {
-            name,
-            level,
-            folder,
-            kept: Kept(Source::Here(kept)),
-            at,
-        });
+        out.push((
+            Deleted {
+                name,
+                level,
+                folder,
+                kept: Kept(Source::Here(kept)),
+                at,
+            },
+            text,
+        ));
     }
     let globs = shared_globs();
     let mut args = vec![
@@ -1601,20 +1665,23 @@ pub fn deleted(plane: &Path) -> Vec<Deleted> {
             // Kept on this machine as well, where its delete could not be a commit then.
             let here_too = out
                 .iter()
-                .any(|one: &Deleted| one.level == level && one.folder == folder);
+                .any(|(one, _): &(Deleted, String)| one.level == level && one.folder == folder);
             if here_too || taken_again(plane, &level, &name, folder, true) {
                 continue;
             }
-            out.push(Deleted {
-                name,
-                level,
-                folder: folder.to_owned(),
-                kept: Kept(Source::Commit(sha.to_owned())),
-                at: at.trim().parse().unwrap_or(0),
-            });
+            out.push((
+                Deleted {
+                    name,
+                    level,
+                    folder: folder.to_owned(),
+                    kept: Kept(Source::Commit(sha.to_owned())),
+                    at: at.trim().parse().unwrap_or(0),
+                },
+                text,
+            ));
         }
     }
-    out.sort_by(|a, b| b.at.cmp(&a.at).then(a.name.cmp(&b.name)));
+    out.sort_by(|(a, _), (b, _)| b.at.cmp(&a.at).then(a.name.cmp(&b.name)));
     out
 }
 

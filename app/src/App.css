@@ -3435,6 +3435,7 @@ body {
     [data-state="working"],
     [data-state="asking"],
     [data-state="waiting-on-tasks"],
+    [data-state="waiting-on-own-work"],
     [data-state="failed"],
     [data-state="unreported"],
     [data-state="last-message"]
@@ -3947,6 +3948,14 @@ body {
 
 .chip-card .action-result {
   margin: 0;
+}
+
+/* How many notices a card holds, above them, while it holds more than one (#3649). */
+.chip-card-count {
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
 }
 
 .chip-card [data-f6-card] {
@@ -7713,6 +7722,33 @@ nav.piece-files-head {
   padding: var(--space-4) var(--space-6);
 }
 
+/* **A skill's page** (#3682): each tab's panel under the page tabs, and its Text as it is now,
+   read only, wrapping so a long line never scrolls the page sideways. */
+.skill-page-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-block-start: var(--space-4);
+}
+
+.skill-page-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+}
+
+.skill-page-text pre {
+  margin: 0;
+  padding: var(--space-3);
+  overflow: auto;
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Rows held while the skills are read (S11): the list's own height, so nothing jumps when they
    are. */
 .skill-studio-placeholders {
@@ -7784,9 +7820,27 @@ nav.piece-files-head {
   font-size: var(--font-size-sm);
 }
 
-.skill-deleted ul {
+/* A draft's page (S9, #3690): its files, one fold each, then Try it on beside its picker. */
+.skill-draft-files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skill-draft-try {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* A deleted skill's last text (S9, #3691), as it was: its lines kept, wrapped in the pane. */
+.skill-deleted-text {
   margin: 0;
-  padding-left: var(--space-5);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* The empty studio's three starts (SK-22): side by side where they fit, stacked where not. */

@@ -247,6 +247,94 @@ fn a_download_past_the_most_bytes_has_its_file_removed_even_once_it_is_done() {
     assert!(engine.sent("Browser.cancelDownload").is_empty());
 }
 
+/// The engine finishes a download purlis has already cut, its cancel too late to stop it: the
+/// file it then writes goes too.
+#[test]
+fn a_download_cut_while_going_that_the_engine_still_finishes_has_its_file_removed() {
+    let held = tempfile::tempdir().unwrap();
+    let (browser, engine) = browser_with(Limits {
+        most_download_bytes: 1000,
+        ..limits()
+    });
+    browser.hold_downloads_in(held.path()).unwrap();
+    began(&engine, "GUID-13", "https://example.com/big", "big");
+    progress(&engine, "GUID-13", 2000, 0, "inProgress");
+    let start = Instant::now();
+    while engine.sent("Browser.cancelDownload").is_empty()
+        && start.elapsed() < Duration::from_secs(5)
+    {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(engine.sent("Browser.cancelDownload").len(), 1);
+    // The engine had already written the last of it as the cancel came.
+    std::fs::write(held.path().join("GUID-13"), vec![0u8; 3000]).unwrap();
+    progress(&engine, "GUID-13", 3000, 3000, "completed");
+    let start = Instant::now();
+    while held.path().join("GUID-13").exists() && start.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        !held.path().join("GUID-13").exists(),
+        "the file the engine finished went"
+    );
+    let listed = listed_once(&browser, |_| true);
+    assert_eq!(
+        listed[0].state,
+        DownloadState::TooLarge,
+        "still said too large"
+    );
+}
+
+/// A download refused as it begins, past the most a browser makes, that the engine still
+/// finishes: its file goes too, and the one within the most stays.
+#[test]
+fn a_download_refused_as_it_began_that_the_engine_still_finishes_has_its_file_removed() {
+    let held = tempfile::tempdir().unwrap();
+    let (browser, engine) = browser_with(Limits {
+        most_downloads: 1,
+        ..limits()
+    });
+    browser.hold_downloads_in(held.path()).unwrap();
+    began(&engine, "GUID-14", "https://example.com/one", "one");
+    began(&engine, "GUID-15", "https://example.com/two", "two");
+    let start = Instant::now();
+    while engine.sent("Browser.cancelDownload").is_empty()
+        && start.elapsed() < Duration::from_secs(5)
+    {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        engine.sent("Browser.cancelDownload")[0].params["guid"],
+        "GUID-15"
+    );
+    // A moment for the refusal's own removal, of a file not yet there, to pass.
+    std::thread::sleep(Duration::from_millis(50));
+    std::fs::write(held.path().join("GUID-14"), b"one").unwrap();
+    std::fs::write(held.path().join("GUID-15"), b"two").unwrap();
+    progress(&engine, "GUID-14", 3, 3, "completed");
+    progress(&engine, "GUID-15", 3, 3, "completed");
+    let start = Instant::now();
+    while held.path().join("GUID-15").exists() && start.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        !held.path().join("GUID-15").exists(),
+        "the refused file the engine finished went"
+    );
+    assert!(
+        held.path().join("GUID-14").exists(),
+        "the one within the most stays"
+    );
+    let listed = listed_once(&browser, |all| {
+        all.first().is_some_and(|d| d.state == DownloadState::Done)
+    });
+    assert_eq!(
+        listed.len(),
+        1,
+        "the refused one is listed nowhere: {listed:?}"
+    );
+}
+
 #[test]
 fn a_browser_whose_engine_refuses_its_downloads_folder_is_refused_too() {
     let (browser, engine) = browser();

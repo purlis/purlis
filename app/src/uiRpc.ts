@@ -672,8 +672,8 @@ export const commands = {
 	/**  **This project's chat moves** (#2048), as the window draws them when it is drawn anew. */
 	chatMoves: (plane: PlaneId) => typedError<ChatMove[], string>(__TAURI_INVOKE("chat_moves", { plane })),
 	/**
-	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten, and a failed
-	 *  one's reason is dismissed.
+	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten for every chat
+	 *  of it, and a failed one's reason is dismissed. One being made now is refused (#3814).
 	 */
 	putAwayChatMove: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_chat_move", { plane, session })),
 	/**
@@ -1003,8 +1003,16 @@ export const commands = {
 	skillUsers: (plane: PlaneId, level: SkillLevel, name: string) => typedError<SkillUsers, string>(__TAURI_INVOKE("skill_users", { plane, level, name })),
 	skillDelete: __WINDOW_ONLY_RESULT,
 	skillDeletesCutShort: __WINDOW_ONLY_RESULT,
-	/**  The deleted skills Restore can bring back, newest first. */
+	/**
+	 *  **The deleted skills Bring back can bring back**, newest first: those deleted in the last 30
+	 *  days, each with its days left (S9, #3691).
+	 */
 	skillsDeleted: (plane: PlaneId) => typedError<DeletedSkill[], string>(__TAURI_INVOKE("skills_deleted", { plane })),
+	/**
+	 *  **The last text of the deleted skill `id` names**: its `SKILL.md` as it was when it was
+	 *  deleted, for its page on Deleted (S9, #3691). Refused for one the project does not list.
+	 */
+	skillDeletedText: (plane: PlaneId, id: string) => typedError<string, string>(__TAURI_INVOKE("skill_deleted_text", { plane, id })),
 	skillRestore: __WINDOW_ONLY_RESULT,
 	skillGrant: __WINDOW_ONLY_RESULT,
 	skillTurn: __WINDOW_ONLY_RESULT,
@@ -1029,6 +1037,8 @@ export const commands = {
 	skillDraftReject: __WINDOW_ONLY_RESULT,
 	skillDraftChat: __WINDOW_ONLY_RESULT,
 	skillDraftTry: __WINDOW_ONLY_RESULT,
+	skillDraftRedo: __WINDOW_ONLY_RESULT,
+	skillDraftRedoIn: __WINDOW_ONLY_RESULT,
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
 	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model })),
@@ -3392,12 +3402,22 @@ export type ChatHeld = {
  */
 export type ChatMove = {
 	session: number,
+	/**
+	 *  The pool it runs on as it moves, or `null` for this machine (#3646): where it still runs
+	 *  where the move did not happen.
+	 */
+	from: string | null,
 	/**  The pool it moves to, or `null` for this machine. */
 	to: string | null,
-	/**  `preparing`, `ready` or `failed`. */
+	/**
+	 *  `preparing`, `ready`, `switching` (being made now, past cancelling), `failed`, or
+	 *  `over`: it moved or was put away, and the window forgets it (#3814).
+	 */
 	stage: string,
 	/**  Why it failed, in a sentence: where it is `failed`. */
 	why: string | null,
+	/**  The other chats of its workspace that move with it, by name (#3453). */
+	with: string[],
 };
 
 /**  **A chat's Network view** (#1662): what it can reach now and what it was refused. */
@@ -3757,10 +3777,15 @@ export type DeletedSkill = {
 	/**  Its level as a person reads it: `project`, `local workspace ops`. */
 	label: string,
 	/**
-	 *  How long it stays, as a person reads it: `kept on this machine for 12 more days`, `kept
-	 *  in the project's history` (SK-33).
+	 *  How many days are left to bring it back (S9, #3691): at least 1, as one past its 30 days
+	 *  is not listed.
 	 */
-	stays: string,
+	days_left: number,
+	/**
+	 *  Whether the project's history keeps it (its delete was a commit), so it is still there
+	 *  after its days, for `purlis skill restore`; else this machine keeps it, and removes it then.
+	 */
+	in_history: boolean,
 };
 
 /**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */
@@ -6299,12 +6324,13 @@ export type MouseButton = "none" | "left" | "middle" | "right";
 
 /**  What the window is told of a move it asked for to switch now. */
 export type MoveNow = {
-	/**  The chat moved, as the window draws it in its place; `null` where it did not move now. */
-	chat: OpenChat | null,
+	/**
+	 *  Each chat that moved, as the window draws it in its place (#3453): none where they did
+	 *  not move now.
+	 */
+	moved: MovedChat[],
 	/**  Why it did not move yet, in a sentence: it moves at a later pause. */
 	not_yet: string | null,
-	/**  What its tab says after the move: what came back that the person is to look at. */
-	notices: string[],
 };
 
 /**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */
@@ -6385,6 +6411,12 @@ export type Moved = {
 	 */
 	asking?: boolean | null,
 	/**
+	 *  **What this chat waits on of its own** (#3878, `purlis_core::ownwork::OwnWork`): its
+	 *  turn ended while work of its own is in flight, so it is waiting, and not on the person.
+	 *  `null` for every other chat.
+	 */
+	own_work?: OwnWork | null,
+	/**
 	 *  Which snapshot of the board this is — bigger was taken later (charter-app#248).
 	 * 
 	 *  **What lets the window put its events back in order.** Every `Moved` is built under the
@@ -6401,6 +6433,15 @@ export type Moved = {
 	 *  or child its harness spawned, drawn under the chat. Empty for nearly every chat.
 	 */
 	children: ChildAgent[],
+};
+
+/**  One chat a move started where it went, in the place of the run it left. */
+export type MovedChat = {
+	/**  The run it left. */
+	was: number,
+	chat: OpenChat,
+	/**  What its tab says after the move: what came back that the person is to look at. */
+	notices: string[],
 };
 
 /**
@@ -6807,6 +6848,11 @@ export type OpenChat = {
 	 *  Move here, and a chat here Move to runner.
 	 */
 	pool?: string | null,
+	/**
+	 *  The workspace it works in, or `null` at the project's root (#3453): its tab's move names
+	 *  the other chats of its workspace, which move with it.
+	 */
+	workspace?: string | null,
 	/**  The persona it adopted. */
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */
@@ -6932,6 +6978,23 @@ export type OwnBranch = {
 	 *  the folder is there, and where the branch is gone too or could not be read.
 	 */
 	left: LeftBranch | null,
+};
+
+/**
+ *  **What a chat waits on of its own, as the window is sent it** (#3878,
+ *  `purlis_core::ownwork::OwnWork`): how many of each kind of work, and when it next wakes
+ *  on a schedule of its own, in seconds since 1970. Counts of none are `0`.
+ */
+export type OwnWork = {
+	helpers: number,
+	workflows: number,
+	monitors: number,
+	shells: number,
+	/**
+	 *  When it next wakes on a schedule of its own, in seconds since 1970. A `u32`, as
+	 *  `Moved::moved_at` is, since `specta` carries no 64-bit number: it holds until 2106.
+	 */
+	wakes_at?: number | null,
 };
 
 /**  Whose a skill from outside the plane is. */
@@ -10205,6 +10268,12 @@ export type SkillDraft = {
 	level: SkillLevel,
 	/**  The chat that wrote it last, by its number. */
 	chat: number | null,
+	/**
+	 *  Whether that chat is open now, for an out-of-date draft (false for any other): "Ask the
+	 *  chat to redo it" types into it ([`skill_draft_redo_in`]), where a closed one's opens a
+	 *  chat afresh ([`skill_draft_redo`]).
+	 */
+	chat_open: boolean,
 	/**  A new skill, rather than a change to one. */
 	new: boolean,
 	/**  A file it changes changed in the project since: Accept is refused. */

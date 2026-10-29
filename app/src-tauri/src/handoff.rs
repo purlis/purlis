@@ -281,7 +281,10 @@ pub fn answer(
             .working(
                 asks.chat,
                 asks.tell,
-                &|chat| held.board().glance(chat).state,
+                &|chat| {
+                    let glance = held.board().glance(chat);
+                    (glance.state, glance.own_work)
+                },
                 &|chat| task_prompt(held, chat),
             )
             .map_or_else(
@@ -1455,8 +1458,9 @@ fn closes_with(held: &Held, chat: u32, from: &HandedFrom) -> ClosesWith {
     if from.mode != Mode::Task || !(from.report.reported() || from.report == Owed::Failed) {
         return ClosesWith::Stays;
     }
-    let state = held.board().glance(chat).state;
-    if state == State::Running || asks(held, chat) {
+    let glance = held.board().glance(chat);
+    // Waiting on work of its own is at work through it (#3878).
+    if glance.state == State::Running || glance.own_work || asks(held, chat) {
         return ClosesWith::Stays;
     }
     match held.chats().last_record(chat) {
@@ -1470,7 +1474,7 @@ fn closes_with(held: &Held, chat: u32, from: &HandedFrom) -> ClosesWith {
             }
         }
         // Asked for its record, which only a chat whose program still runs can write.
-        None if matches!(state, State::Done | State::Failed) => ClosesWith::Stays,
+        None if matches!(glance.state, State::Done | State::Failed) => ClosesWith::Stays,
         None => ClosesWith::OnceRecorded,
     }
 }

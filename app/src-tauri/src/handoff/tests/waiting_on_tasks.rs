@@ -606,6 +606,8 @@ fn the_session_s_own_stop_racing_the_last_report_is_looked_at_once_it_is_applied
             tasks: 1,
             its_asker: false,
             line_coming: false,
+            on_a_notice: false,
+            now: 0,
         },
     );
     assert!(held.hooks().board().held(steward));

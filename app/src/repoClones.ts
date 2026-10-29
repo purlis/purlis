@@ -77,9 +77,19 @@ export function cloneRepos(
   const key = keyOf(plane, workspace);
   const mine = repos.filter((repo) => !underWay(byWorkspace.get(key)?.get(repo)));
   for (const repo of mine) set(plane, workspace, repo, { state: "waiting" });
-  const run = (chains.get(key) ?? Promise.resolve()).then(() =>
-    cloneInTurn(plane, workspace, mine, onEach),
-  );
+  // A repo another call is already cloning is not asked for again, but it is waited on: this
+  // call joins the chain behind that clone, and answers with how it ended, so a Retry pressed
+  // while the explorer clones the same repo never says it cloned before it has (#3649's review).
+  const theirs = repos.filter((repo) => !mine.includes(repo));
+  const run = (chains.get(key) ?? Promise.resolve())
+    .then(() => cloneInTurn(plane, workspace, mine, onEach))
+    .then((failed) => [
+      ...failed,
+      ...theirs.flatMap((repo) => {
+        const ended = byWorkspace.get(key)?.get(repo);
+        return ended?.state === "failed" ? [{ repo, said: ended.said }] : [];
+      }),
+    ]);
   chains.set(
     key,
     run.catch(() => undefined),

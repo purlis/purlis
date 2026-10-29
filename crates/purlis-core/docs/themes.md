@@ -333,7 +333,7 @@ says what each family, part and variant is):
 | `tabs` (since version 8) | `tab` (`fill`, `text`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`, `max-width`, `flare`, `inset`), `label` (`text`, `font-size`, `font-weight`), `closer` (`fill`, `text`, `corner-radius`), `count` (`fill`, `text`, `corner-radius`), `indicator` (`fill`, `height`, `corner-radius`, `position`), `strip` (`fill`, `border-colour`, `border-width`), `layout` (`attach`, `sizing`, `dividers`, `gap`) | `chat`, `view`, `file`, `background` | `hover`, `selected` |
 | `text-input` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `icon` (`text`) | none | `hover`, `focused`, `disabled`, `invalid` |
 | `textarea` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `font-size`) | none | `hover`, `focused`, `disabled`, `invalid` |
-| `titlebar` (since version 12) | `workspace` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `count` (`fill`, `text`), `crumb` (`fill`, `text`, `corner-radius`), `all` (`fill`, `text`, `corner-radius`), `pin` (`fill`, `text`, `corner-radius`), `row` (`fill`, `text`, `corner-radius`), `dot` (`fill`, `text`) (since the next release) | `pinned`, `unpinned`, `root` (since the next release), `dormant` (since the next release) | `hover`, `selected`, `focused` |
+| `titlebar` (since version 12) | `workspace` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `count` (`fill`, `text`), `crumb` (`fill`, `text`, `corner-radius`), `all` (`fill`, `text`, `corner-radius`), `pin` (`fill`, `text`, `corner-radius`), `row` (`fill`, `text`, `corner-radius`), `dot` (`fill`, `text`) (since the next release), `dot-warning` (`fill`, `text`) (since the next release) | `pinned`, `unpinned`, `root` (since the next release), `dormant` (since the next release) | `hover`, `selected`, `focused` |
 | `tooltip` (since version 5) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`), `detail` (`text`), `shortcut` (`text`, `font-size`) (since the next release) | none | none |
 | `tree` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `gap`, `font-size`, `font-weight`, `height`), `body` (`padding`, `gap`), `twist` (`text`), `lead` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `trail` (`text`, `gap`), `header` (`text`, `font-size`, `font-weight`) | none | `hover`, `focused`, `selected`, `disabled` |
 | `view-frame` (since the next release) | `root` (`fill`), `nav` (`fill`, `border-colour`, `border-width`, `padding`), `list` (`fill`, `border-colour`, `border-width`), `item` (`fill`), `head` (`padding`, `gap`), `header` (`fill`, `border-colour`, `border-width`, `padding`, `gap`), `name` (`text`, `font-size`, `font-weight`), `lead` (`text`, `font-size`), `bar` (`fill`, `border-colour`, `border-width`, `padding`, `gap`), `history` (`gap`), `path` (`text`, `font-size`), `crumb` (`text`, `font-weight`), `crumb-separator` (`text`) | none | none |
@@ -718,8 +718,12 @@ for a theme with none), in the theme's order of its options. Its `kind` is `cont
 its `ratio`, and `under` when the back is a wash laid over another token, and `beneath` when
 that token is a wash laid over another in turn), `ansi` (a terminal colour too close to the
 terminal's background: `token`, `ratio`, `floor`) or `selected-not-apart` (the selected row
-drawn exactly as `other`), `selection-text-alone` (a colour for selected text on a selection
-left to the platform), `line-does-not-fit` (a line of words taller than the box it is drawn in:
+drawn exactly as `other`), `card-not-apart` (a side view's card row whose fill, `card`, steps
+only `ratio` from the side panel's, `ground`, under the `floor` of 1.05, with no edge that
+clears a hairline's 1.2 there, in a theme whose parts, its own or inherited, choose a card
+row's look or a side panel's fill; the check only reports it and redraws nothing),
+`selection-text-alone` (a colour for selected text on a selection left to the platform),
+`line-does-not-fit` (a line of words taller than the box it is drawn in:
 its `density`, the `fit` it breaks, a `size`, a `line_height` and a `height` token, and the
 `line` and the `room` it has, in px at the default text size), or `style-without-a-face` (a
 style the theme draws in a font it brings with no face for it, so the browser makes it from

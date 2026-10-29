@@ -31,6 +31,7 @@ fn a_chat(chat: u32, name: &str, persona: &str, workspace: &str) -> Known {
         persona: Some(persona.to_owned()),
         workspace: Place::Workspace(workspace.to_owned()),
         state: State::Running,
+        own_work: false,
         started: Some(STARTED),
         lineage: None,
         from: None,

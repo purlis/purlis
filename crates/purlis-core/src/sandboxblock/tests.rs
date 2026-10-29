@@ -1646,6 +1646,14 @@ fn a_refused_write_in_a_branch_folders_git_record_names_purlis_worktree_commit()
     );
     let way = way_out(Path::new(lock), Path::new(ROOT)).expect("a way out");
     assert!(way.contains("`purlis worktree commit"), "{way}");
+    // #3831: and its fetch or rebase, the update the app makes for the chat.
+    assert!(way.contains("`purlis worktree update`"), "{way}");
+    // #3798: a raw `git worktree add` is refused on the same record, so the way out names the
+    // command that cuts a branch folder too.
+    assert!(
+        way.contains("`purlis worktree add <repo> <piece>`"),
+        "{way}"
+    );
     // Any protected file other than a branch folder's record keeps its path to itself.
     for other in [
         "/Users/dev/plane/workspaces/alpha/repo/.git/config",

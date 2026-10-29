@@ -5,7 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillRunChip } from "./SkillRunChip";
-import { SkillRunsHere, fixedRuns, skillOfView, skillView, toldRun } from "./skillRuns";
+import { SkillRunsHere, fixedRuns, toldRun } from "./skillRuns";
+import {
+  AT_THE_ROOT,
+  skillRuns,
+  skillStudioAt,
+  skillRowNamed,
+  studioOfSkillTab,
+} from "./skillStudio";
 
 afterEach(() => {
   cleanup();
@@ -42,9 +49,15 @@ describe("the skill run chip on a chat's tab", () => {
     );
     expect(screen.getAllByTestId("tab-skill-run")).toHaveLength(1);
     fireEvent.click(chip);
-    expect(onOpen).toHaveBeenCalledWith("deploy", RUN);
-    expect(skillOfView(skillView("deploy", RUN))).toEqual({ name: "deploy", run: RUN });
-    expect(skillOfView(skillView("deploy"))).toEqual({ name: "deploy" });
+    expect(onOpen).toHaveBeenCalledWith("deploy", RUN, 4);
+    // A skill's own tab an older launch kept comes back as its page in the studio (#3682).
+    expect(studioOfSkillTab({ from: null, view: "skill", key: `deploy@${RUN}` })).toEqual(
+      skillRuns(AT_THE_ROOT, "deploy", RUN),
+    );
+    expect(studioOfSkillTab({ from: null, view: "skill", key: "deploy" })).toEqual(
+      skillStudioAt(AT_THE_ROOT, "library", { skill: skillRowNamed("deploy") }),
+    );
+    expect(studioOfSkillTab({ from: null, view: "vault", key: "deploy" })).toBeUndefined();
   });
 
   it("opens the skill the core counts the run of, never a name of its own reading (#3385)", async () => {
@@ -67,8 +80,8 @@ describe("the skill run chip on a chat's tab", () => {
     const chips = await screen.findAllByTestId("tab-skill-run");
     for (const chip of chips) fireEvent.click(chip);
     expect(onOpen.mock.calls).toEqual([
-      ["secrets", RUN],
-      ["purlis-notes", RUN],
+      ["secrets", RUN, 4],
+      ["purlis-notes", RUN, 5],
     ]);
     expect(chips.map((chip) => chip.querySelector(".skill-run-name")?.textContent)).toEqual([
       "secrets",

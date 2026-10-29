@@ -178,6 +178,7 @@ fn a_harness_lists_charter_s_tools() {
             "session_record_list",
             "session_record_read",
             "session_record",
+            "worktree_update",
             "workspace_vision",
             "workspace_section",
             "change_status",
