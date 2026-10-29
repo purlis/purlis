@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793285210699,
+  "lastUpdate": 1793286191840,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29736,6 +29736,48 @@ window.BENCHMARK_DATA = {
             "value": 101.04985199999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.925, 101.015, 101.050, 101.485, 101.871 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bca5e9115bb063658a12bb81cca917e48aa8f4c1",
+          "message": "Browsers: a server that did not start is said, a port the system picks is told what to do (#3396, #3440, #3316) (#3804)\n\n* Measure, under Seatbelt: Claude Code's socket rules and a port the system picks (#3316, #3396)\n\nTwo measurements for the macOS confinement job: whether a server listens on a\nsocket Claude Code's profile allows by its own rule shape, and whether a rule on\nport 0 lets a server take a port the system picks.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Measure Claude Code's socket rules through the door, and in a folder denied to writes (#3316)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* A server that did not start is said as one, and a port the system picks is told what to do (#3396, #3440)\n\nA listen refused on no port a person could allow was sorted as an operation\non a system folder, and a test server on a port the system picks raised no\nNotice at all. Now:\n\n- such a block is said as a server this chat started, which did not start;\n- a refusal on port 0 (Seatbelt's line, the Linux wrap's, Go's and Node's own\n  words, Node saying the address with no port) names that port, and its Notice\n  says there is no one port to allow, how to start the server on a port of its\n  own, or to start the chat without the sandbox;\n- the Linux wrap tells every refused listen, so the hook leaves these to it.\n\nNo new stored word: the block is still listen on system.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Changelog: a server that did not start, and a port the system picks (#3396, #3440)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Record why a Claude Code chat's server has no socket of its own yet (#3316)\n\nMeasured under Seatbelt on the macOS confinement job: Claude Code's own rules\nfor an allowed socket let a server bind, listen and be reached through the\ndoor, but binding makes the socket's file, and Claude Code's denyWrite always\noutranks its allowWrite. The folder that keeps chats' sockets from each other\nis denied to every chat's writes, so no setting of Claude Code's gives its chat\na socket only it can make. The two measurements stay as tests; the ADR 0067\namendment records the finding and the route left to try.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Linux: a bind on a port the system picks is told, so its Notice comes up (#3396)\n\nThe wrap refused a bind on port 0 untold, and a program refused it says\nEACCES, which no reader of a refusal's words takes, so a wrapped chat's test\nserver got no Notice. It is now told as the address it asked for, which the\nwindow sorts as a server that did not start on a port the system picks. A tell\nonly: the bind is refused as before. The probe can write what the wrap told\nto a file, and a test on the Linux job reads it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Notice words true of every refusal on no port, and Claude Code's own (#3440, #3396)\n\n- The words for a server refused on no port purlis could allow hold for each\n  case that reaches them: another machine's address, and a runner that could not\n  take the server's socket, with what to do for each.\n- A Claude Code chat, which no port of its own would help, is told to start\n  without the sandbox or to run the server in a Codex or opencode chat.\n- Review nits: a skipped test says so, a test named for what it shows, the\n  changelog line scoped to what is read.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T14:05:43Z",
+          "tree_id": "00d1eed29b7ce7a8a5a0e758f3c0d30ef4e035a5",
+          "url": "https://github.com/purlis/purlis/commit/bca5e9115bb063658a12bb81cca917e48aa8f4c1"
+        },
+        "date": 1793286185419,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.525089,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.520, 0.523, 0.525, 0.538, 0.543 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.332072500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.112, 16.134, 16.332, 16.410, 16.458 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.67958250000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.452, 101.193, 101.680, 102.268, 102.808 ms"
           }
         ]
       }
