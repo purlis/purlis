@@ -3440,8 +3440,17 @@ fn head_pointed_at(post: &[String]) -> Option<String> {
     }
 }
 
+/// Where branch work goes, as every branch-guard denial says it (#3798).
+const BRANCH_WORK: &str = "Branch work belongs in a branch folder of the workspace's clone: \
+     `purlis worktree add <repo> <piece>`, then commit and push from it with `purlis worktree \
+     commit` and `purlis worktree push`. A new task gets its own workspace: `purlis workspace \
+     create <task>`, then `purlis clone <repo>`.";
+
 /// What every branch-guard denial ends with: why the root is guarded, where branch work goes,
-/// and the remedy that stays runnable — naming the default branch when there is one.
+/// and the remedy that stays runnable — naming the default branch when there is one. Branch
+/// work on a repo the workspace has already cloned goes to a branch folder purlis cuts, which a
+/// sandboxed chat commits and pushes through purlis too; a new workspace is for a new task
+/// (#3798).
 fn root_tail(default: Option<&str>) -> String {
     let back = match default.filter(|d| !d.is_empty()) {
         Some(d) => format!(
@@ -3453,9 +3462,7 @@ fn root_tail(default: Option<&str>) -> String {
     format!(
         "The plane root is one working tree every session \
          shares — two agents here silently clobber each other's branches, and the \
-         symptom looks like an unrelated bug. Branch work belongs in a workspace \
-         clone: `purlis workspace create <task>`, then `purlis clone <repo>`. \
-         {back}"
+         symptom looks like an unrelated bug. {BRANCH_WORK} {back}"
     )
 }
 
