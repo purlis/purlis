@@ -22,7 +22,8 @@
  * - **A chip's notice dot** (#3648, spec #3647): a hidden notice about the workspace that is not
  *   dismissed leaves a `dot` part on the chip's leading corner, opposite its count, which brings
  *   the notice's card back. Each chip stands in a `slot` the dot is placed in, so the dot coming
- *   and going moves nothing.
+ *   and going moves nothing. Its shape and its part are the most urgent kind's (#3649): `dot`,
+ *   a disc, for news; `dot-warning`, a triangle, for a warning.
  * - **The strip is a toolbar**, one Tab stop whose arrows walk its chips. It is at most 62% of the bar and scrolls sideways with its scrollbar hidden
  *   (R103, R167); the slash before it is a part of its own, in the faint tier (R92, R156).
  */
@@ -34,19 +35,46 @@ import type {
   Ref,
 } from "react";
 import { mergeProps, useFocusRing, useHover, useId } from "react-aria";
-import { ChevronDown, Circle, House, type LucideIcon } from "lucide-react";
+import { ChevronDown, Circle, House, Triangle, type LucideIcon } from "lucide-react";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
 
-/** **What a notice is**, which its dot's shape says (spec #3647): `info`, ●. The warning and
- *  needs-you kinds come with the notices that are them (#3649, #3652). */
-export type NoticeKind = "info";
+/**
+ * **The kinds of notice, least urgent first** (spec #3647): `info` ●, `warning` ▲. A chip's dot
+ * shows the most urgent kind among its notices, so the order is the urgency: a kind's place in
+ * this list is its rank. The needs-you kind (✋, #3652) is one more entry here and in
+ * {@link KINDS}, and one more part in the theme's manifest.
+ */
+export const NOTICE_KINDS = ["info", "warning"] as const;
+export type NoticeKind = (typeof NOTICE_KINDS)[number];
 
-/** Each kind's shape on a dot, a Lucide icon filled: a shape, never a colour alone (WCAG
- *  1.4.1). News is a disc. */
-const SHAPE: Record<NoticeKind, LucideIcon> = { info: Circle };
+/** How urgent `kind` is: its place in {@link NOTICE_KINDS}. */
+export const urgencyOf = (kind: NoticeKind): number => NOTICE_KINDS.indexOf(kind);
 
-/** How many notices a chip's dot shows, as its description says it. */
-const noticesSaid = (count: number) => (count === 1 ? "1 notice" : `${count} notices`);
+/** **The most urgent of `kinds`**: what a dot shows. None is `info`, the least urgent. */
+export const mostUrgentOf = (kinds: Iterable<NoticeKind>): NoticeKind => {
+  let top: NoticeKind = NOTICE_KINDS[0];
+  for (const one of kinds) if (urgencyOf(one) > urgencyOf(top)) top = one;
+  return top;
+};
+
+/**
+ * **What each kind draws and says**: the dot's part, which a theme keys its colours by (one
+ * part per kind, `titlebar.dot` and `titlebar.dot-warning`, so a theme colouring one never
+ * colours another the same); its shape, a Lucide icon filled, never a colour alone (WCAG
+ * 1.4.1); and the words a description gives it after the count, none for news.
+ */
+const KINDS: Record<NoticeKind, { part: string; shape: LucideIcon; said: string | undefined }> = {
+  info: { part: "dot", shape: Circle, said: undefined },
+  warning: { part: "dot-warning", shape: Triangle, said: "warning" },
+};
+
+/** How many notices a chip has and the most urgent kind among them, as its description says it:
+ *  "1 notice", "3 notices, most urgent: warning". */
+export const noticesSaid = (count: number, kind: NoticeKind = "info") => {
+  const counted = count === 1 ? "1 notice" : `${count} notices`;
+  const said = KINDS[kind].said;
+  return said === undefined ? counted : `${counted}, most urgent: ${said}`;
+};
 
 /** The family's variants, in the order the manifest names them. */
 export const TITLEBAR_VARIANTS = ["pinned", "unpinned", "root"] as const;
@@ -146,7 +174,9 @@ export function WorkspaceChip({
   // what it draws.
   const describes = [
     waiting > 0 ? `${waiting} waiting` : undefined,
-    notices !== undefined && notices.count > 0 ? noticesSaid(notices.count) : undefined,
+    notices !== undefined && notices.count > 0
+      ? noticesSaid(notices.count, notices.kind)
+      : undefined,
   ].filter((one) => one !== undefined);
   const description =
     describes.length > 0 ? (
@@ -197,19 +227,20 @@ export function NoticeDot({
   onPress: () => void;
 }) {
   const marked = useMarked({ onClick: onPress }, false);
-  const Shape = SHAPE[kind];
+  const { part, shape: Shape } = KINDS[kind];
+  const shows =
+    count === 1 ? `Show the notice on ${workspace}` : `Show the ${count} notices on ${workspace}`;
+  const said = KINDS[kind].said;
   return (
     <button
       type="button"
       {...marked}
       tabIndex={stop ? 0 : -1}
-      aria-label={
-        count === 1
-          ? `Show the notice on ${workspace}`
-          : `Show the ${count} notices on ${workspace}`
-      }
+      // What a press shows, then the most urgent kind where it is not news: the shape says it
+      // to the eye, this to the ear (WCAG 1.4.1).
+      aria-label={said === undefined ? shows : `${shows}, most urgent: ${said}`}
       data-scope="titlebar"
-      data-part="dot"
+      data-part={part}
       data-kind={kind}
     >
       <Shape aria-hidden="true" fill="currentColor" strokeWidth={0} />
@@ -272,7 +303,7 @@ export function RootChip({
         <House aria-hidden="true" />
         {shows && (
           <span id={said} hidden>
-            {noticesSaid(notices.count)}
+            {noticesSaid(notices.count, notices.kind)}
           </span>
         )}
       </button>

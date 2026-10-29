@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 
 /** The notice of the newest result, at the top of the content (#3344), once it is drawn. */
 export function theResult(): HTMLElement {
@@ -23,4 +23,17 @@ function saying(): HTMLElement {
  *  would find it twice. */
 export function findResult(text: string | RegExp): Promise<HTMLElement> {
   return waitFor(() => within(saying()).getByText(text));
+}
+
+/** **A notice on `workspace`'s chip's card** (#3648, #3649) whose words match `text`, once it is
+ *  drawn: the whole notice, its title, its words and its ways. */
+export function findOnCard(workspace: string, text: string | RegExp): Promise<HTMLElement> {
+  return waitFor(() => {
+    const card = screen.getByRole("region", { name: `Notices for ${workspace}` });
+    const notice = [...card.querySelectorAll<HTMLElement>(".action-result")].find((one) =>
+      typeof text === "string" ? one.textContent?.includes(text) : text.test(one.textContent ?? ""),
+    );
+    if (notice === undefined) throw new Error(`no notice on ${workspace}'s card says ${text}`);
+    return notice;
+  });
 }

@@ -187,7 +187,7 @@ import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, useSandboxBlocks } from "./sandboxBlocks";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
-import { workspaceMade } from "./actionResult";
+import { reposCloned, reposCloning, reposNotCloned, workspaceMade } from "./actionResult";
 import { Inbox, landOnGroupIn, type UpdateRow, type WindowLines } from "./Inbox";
 import { awayRow } from "./AwayRefusals";
 import {
@@ -4628,6 +4628,45 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /**
+   * **A new workspace's repos, cloned on its chip** (#3649, spec #3647): "Cloning N repos…" on
+   * the workspace's chip's card, counting each repo as it lands, then in its place "Cloned …",
+   * or "Could not clone …" with Retry, which clones the ones that failed again on the same
+   * notice, and the way to the workspace's Repos settings. Never closed on a timer: it stays
+   * until it is dismissed.
+   */
+  /** Which clone of a new workspace's repos this is, so each one's track is its own and ends
+   *  with it (#3649's review): a workspace made again under the same name starts afresh. */
+  const cloneRuns = useRef(0);
+  const cloneNewRepos = useCallback(
+    (name: string, picked: string[], after?: Said): Promise<void> => {
+      cloneRuns.current += 1;
+      const track = cloneRuns.current;
+      const run = async (repos: string[], before?: Said) => {
+        let done = 0;
+        setReport({ ...reposCloning(name, repos, done, track), after: before });
+        const failed = await cloneRepos(plane, name, repos, () => {
+          done += 1;
+          if (done < repos.length) setReport(reposCloning(name, repos, done, track));
+        });
+        setReport(
+          failed.length === 0
+            ? reposCloned(name, repos, track)
+            : reposNotCloned(
+                name,
+                failed,
+                // Only the ones that failed, on the same notice.
+                () => void run(failed.map((one) => one.repo)),
+                track,
+              ),
+        );
+        setReplan((asked) => asked + 1);
+      };
+      return run(picked, after);
+    },
+    [plane],
+  );
+
+  /**
    * Makes it, through `charter workspace create`.
    *
    * **The name is not checked here.** `workspace_create` runs `wscmd::create`, which runs
@@ -4655,12 +4694,11 @@ export const PlaneView = memo(function PlaneView({
       // Said in the app's own words, hung from the new workspace's chip (#3648); the core's
       // lines, where it landed and whether it is LOCAL or LIVE, are kept behind Details, less
       // the lines written for an agent (#3344, `actionResult.ts`).
-      setReport(
-        workspaceMade(name, answer.data, {
-          onAddVision: () => setAddingVision({ workspace: name, busy: false }),
-          pinRefused: pinned.ok ? undefined : pinned.refused,
-        }),
-      );
+      const ready = workspaceMade(name, answer.data, {
+        onAddVision: () => setAddingVision({ workspace: name, busy: false }),
+        pinRefused: pinned.ok ? undefined : pinned.refused,
+      });
+      setReport(ready);
       // **Made here, so opened** (#3648): the same focus a press on its chip gives, so the
       // window lands in it even with a chat in front, which the new workspace's empty strip
       // leaves nothing in front of. The plane is read again rather than this window writing
@@ -4670,37 +4708,11 @@ export const PlaneView = memo(function PlaneView({
       if (repos.length === 0) return;
       // The repos land after the workspace, one at a time and each on its own (ADR 0055):
       // the dialog is closed and the operator can start a chat while they clone.
-      setReport({
-        from: "workspace.create",
-        refused: false,
-        words: `Cloning ${repos.length} repo(s) into ${name}…`,
-        // Under way: the clone's result replaces it, and only that is kept (#3344).
-        progress: true,
-      });
-      const failed = await cloneRepos(plane, name, repos);
-      setReport(
-        failed.length === 0
-          ? {
-              from: "workspace.create",
-              refused: false,
-              words: `Cloned ${repos.join(", ")} into ${name}.`,
-            }
-          : {
-              from: "workspace.create",
-              refused: true,
-              words:
-                `Could not clone ${failed.map((f) => f.repo).join(", ")} into ${name} — ` +
-                `${failed[0].said} Retry from the workspace's settings.`,
-              // Where it is retried: that workspace's Repos (#1201, SE-22).
-              settings: {
-                label: `Open ${name}'s repo settings`,
-                link: { group: "workspace.repos", workspace: name },
-              },
-            },
-      );
-      setReplan((asked) => asked + 1);
+      // Said in the same breath as the ready notice, which the window would never draw: the
+      // clone's first line brings it, so both are kept (#3649).
+      await cloneNewRepos(name, repos, ready);
     },
-    [focusWorkspace, pinWorkspace, plane],
+    [cloneNewRepos, focusWorkspace, pinWorkspace, plane],
   );
 
   /**
