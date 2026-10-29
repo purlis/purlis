@@ -15,9 +15,14 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ChatSkill, PersonaSkills, Studio, StudioSkill } from "./bindings";
 import { SkillsView, type FrontChat } from "./SkillsView";
 import { skill, studio } from "./skillsListing.testkit";
-import { SKILL_STUDIO_TITLE, inWorkspace, skillStudioAt, skillStudioView } from "./skillStudio";
+import {
+  SKILL_STUDIO_TITLE,
+  inWorkspace,
+  skillRowNamed,
+  skillStudioAt,
+  skillStudioView,
+} from "./skillStudio";
 import { forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
-import { skillView } from "./skillRuns";
 import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
 import { SKILLS_VIEW } from "./skillsViewPrefs";
 
@@ -210,7 +215,7 @@ describe("what the Skills view lists", () => {
     expect(tip).toHaveTextContent("ops turned it off.");
   });
 
-  it("is walked with the arrows and opens a skill's tab on Enter, or on a click", async () => {
+  it("is walked with the arrows and opens a skill's page in the studio on Enter, or on a click", async () => {
     opsCore();
     const hands = view();
     const grid = await list();
@@ -223,10 +228,12 @@ describe("what the Skills view lists", () => {
     await userEvent.keyboard("{ArrowDown}");
     expect(rowOf("secrets")).toHaveFocus();
     await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}");
-    expect(hands.onOpenView).toHaveBeenLastCalledWith(skillView("deploy"), "deploy");
+    const page = (name: string) =>
+      skillStudioAt(inWorkspace("ops"), "library", { skill: skillRowNamed(name) });
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(page("deploy"), SKILL_STUDIO_TITLE);
 
     await userEvent.click(within(grid).getByText("ops-runbook"));
-    expect(hands.onOpenView).toHaveBeenLastCalledWith(skillView("ops-runbook"), "ops-runbook");
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(page("ops-runbook"), SKILL_STUDIO_TITLE);
   });
 
   it("is a tree whose levels fold and open with the arrows, Enter or a click (#3281)", async () => {

@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { forgetStudio, openSkill, renderStudio } from "./SkillStudioTab.testkit";
+import { chooseMore, forgetStudio, openSkill, renderStudio } from "./SkillStudioTab.testkit";
 import { AT_THE_ROOT, asPersona, inWorkspace } from "./skillStudio";
 import { offeredIn, pickIn } from "./ui/select/select.testkit";
 import { levelFrom, PROJECT } from "./skillChanges";
@@ -140,7 +140,7 @@ describe("the Skill studio's changes", () => {
     renderStudio();
 
     await openSkill("skill-deploy", user);
-    await user.click(screen.getByRole("button", { name: "Rename deploy" }));
+    await chooseMore("deploy", /^Rename/, user);
     const box = screen.getByLabelText("New name");
     await user.clear(box);
     await user.type(box, "ship");
@@ -176,6 +176,7 @@ describe("the Skill studio's changes", () => {
     renderStudio(inWorkspace("ops"));
 
     await openSkill("skill-triage", user);
+    await chooseMore("triage", /^Move to another level/, user);
     await pickIn(await screen.findByLabelText("Move triage to"), /^project$/, user);
     const prompt = await screen.findByRole("region", {
       name: "Move triage to the project skills",
@@ -220,7 +221,7 @@ describe("the Skill studio's changes", () => {
     renderStudio();
 
     await openSkill("skill-deploy", user);
-    await user.click(screen.getByRole("button", { name: "Delete deploy" }));
+    await chooseMore("deploy", /^Delete/, user);
     const users = await screen.findByTestId("skill-users");
     expect(users).toHaveTextContent("Used by chats at the project's root, chats in ops.");
     expect(users).toHaveTextContent("Named by 1 persona: steward.");
@@ -517,11 +518,14 @@ describe("the Skill studio's changes", () => {
     // Its own skill needs no name in its skills.
     expect(within(row).queryByRole("button", { name: "Add lint to reviewer" })).toBeNull();
     // It moves to the project's levels and this persona's, never another persona's.
-    const offered = await offeredIn(within(row).getByLabelText("Move lint to"), user);
+    await chooseMore("lint", /^Move to another level/, user);
+    const offered = await offeredIn(await screen.findByLabelText("Move lint to"), user);
     expect(offered).toContain("project");
     expect(offered.some((one) => one.includes("steward"))).toBe(false);
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
 
-    await user.click(within(row).getByRole("button", { name: "Rename lint" }));
+    await chooseMore("lint", /^Rename/, user);
     const box = screen.getByLabelText("New name");
     await user.clear(box);
     await user.type(box, "check");
@@ -536,6 +540,7 @@ describe("the Skill studio's changes", () => {
 
     // The faked core keeps its old name, which a real rename would not: chosen again.
     await openSkill("skill-lint", user);
+    await chooseMore("lint", /^Move to another level/, user);
     await pickIn(await screen.findByLabelText("Move lint to"), /^project$/, user);
     const prompt = await screen.findByRole("region", { name: "Move lint to the project skills" });
     expect(within(prompt).getByTestId("persona-keeps")).toHaveTextContent(
@@ -552,7 +557,7 @@ describe("the Skill studio's changes", () => {
     );
 
     await openSkill("skill-lint", user);
-    await user.click(screen.getByRole("button", { name: "Delete lint" }));
+    await chooseMore("lint", /^Delete/, user);
     expect(await screen.findByTestId("skill-users")).toHaveTextContent(
       "Used by chats as reviewer, in every workspace.",
     );

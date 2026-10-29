@@ -64,3 +64,30 @@ export async function studioSkill(name: string) {
   await item.waitForExist({ timeout: 20_000, timeoutMsg: `${name} never opened beside the list` });
   return item;
 }
+
+/**
+ * **Chooses `said` from the "…" menu of skill `name`'s page** (#3682): Rename…, Move to another
+ * level…, Delete…, each the start of what it changes.
+ */
+export async function studioMore(name: string, said: string) {
+  const more = await $(`button[aria-label="More for ${name}"]`);
+  await more.waitForClickable({ timeout: 20_000 });
+  await more.click();
+  const menu = `[role="menu"][aria-label="More for ${name}"]`;
+  await $(menu).waitForExist({ timeout: 20_000, timeoutMsg: `${name}'s menu never opened` });
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (css: string, words: string) => {
+          const row = [...document.querySelectorAll<HTMLElement>(`${css} [role="menuitem"]`)].find(
+            (one) => (one.textContent ?? "").startsWith(words),
+          );
+          row?.click();
+          return row !== undefined;
+        },
+        menu,
+        said,
+      ),
+    { timeout: 20_000, interval: 250, timeoutMsg: `${name}'s menu has no ${said}` },
+  );
+}

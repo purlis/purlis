@@ -1,29 +1,65 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useId, useState } from "react";
-import { LoaderCircle } from "lucide-react";
+/**
+ * **What a skill's page reads beyond the studio's answer** (#3682): its totals by what it ran
+ * on, by persona and by workspace (SK-20), and its studio panels (ADR 0101 §6): purlis's Runs
+ * and Grades panels, and each panel an extension adds, answered in panel blocks by the core.
+ */
+import { useEffect, useId, useState } from "react";
 import {
-  commands,
   SKILL_RUNS_PANEL,
-  type SkillLevel,
   type SkillPanel,
   type SkillPanelKey,
   type SkillStats,
   type StatsGroup,
   type StatsRow,
 } from "./bindings";
-import type { ViewRef } from "./tabs";
-import { gradeTitle, gradeView } from "./GradeScorecard";
 import type { Offer } from "./actions";
 import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
-import { SkillDetailsPanel } from "./SkillDetails";
 import { AnsweredBlocks, type RowOpens } from "./Views";
 
-/** The key of purlis's Grades panel on a skill's tab (SK-16): its rows open a grade's scorecard. */
-const SKILL_GRADES_PANEL = "grades";
+/** The key of purlis's Grades panel on a skill's page (SK-16): its rows open a grade's
+ *  scorecard. */
+export const SKILL_GRADES_PANEL = "grades";
+
+/** What a read of the core answered: its data, or why it was refused; nothing while it is read. */
+export type Read<T> = { data?: T; refused?: string };
+
+/**
+ * **One read of the core, again whenever `again` changes** (a skill's page, #3682): what it
+ * answered, kept until the next answer, so a page drawn again never blanks what it showed.
+ */
+export function useRead<T>(
+  read: () => Promise<{ status: "ok"; data: T } | { status: "error"; error: string }>,
+  again: readonly unknown[],
+): Read<T> {
+  const [answer, setAnswer] = useState<Read<T>>({});
+  useEffect(() => {
+    let live = true;
+    void read()
+      .then((said) => {
+        if (!live) return;
+        setAnswer(said.status === "ok" ? { data: said.data } : { refused: said.error });
+      })
+      .catch((err: unknown) => {
+        if (live) setAnswer({ refused: String(err) });
+      });
+    return () => {
+      live = false;
+    };
+    // The read is the caller's, asked again on what it names.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, again);
+  return answer;
+}
+
+/** How many runs a skill's totals count, all told. */
+export function runsOf(stats: SkillStats): number {
+  return stats.by_harness.reduce((all, row) => all + row.runs, 0);
+}
 
 /** A run's time, as a person reads it: `850 ms`, `12 s`, `3 min 4 s`. */
 export function timeSaid(ms: number | null): string {
@@ -63,22 +99,17 @@ const GROUPINGS: readonly {
  * **A skill's totals** (SK-20, #2783): its runs, their signals and their tokens, by what they ran
  * on, by persona and by workspace. Signals only, never a pass or a fail.
  */
-function SkillTotals({ plane, name, changed }: { plane: string; name: string; changed: number }) {
-  const [stats, setStats] = useState<SkillStats>();
-  const [refused, setRefused] = useState<string>();
-  useEffect(() => {
-    let live = true;
-    void commands.skillStats(plane, name).then((answer) => {
-      if (!live) return;
-      if (answer.status === "ok") {
-        setStats(answer.data);
-        setRefused(undefined);
-      } else setRefused(answer.error);
-    });
-    return () => {
-      live = false;
-    };
-  }, [plane, name, changed]);
+export function SkillTotals({
+  name,
+  stats,
+  refused,
+}: {
+  name: string;
+  /** Its totals, once read. */
+  stats: SkillStats | undefined;
+  /** Why they could not be read. */
+  refused: string | undefined;
+}) {
   if (refused !== undefined)
     return (
       <EmptyState
@@ -134,125 +165,14 @@ function SkillTotals({ plane, name, changed }: { plane: string; name: string; ch
   );
 }
 
-/** Whether two levels are one: the same place, shared or this machine's alike. */
-function sameLevel(a: SkillLevel, b: SkillLevel): boolean {
-  return (
-    a.at === b.at &&
-    a.local === b.local &&
-    ("name" in a ? a.name : null) === ("name" in b ? b.name : null)
-  );
-}
-
-/**
- * **One skill's tab** (SK-3, #2766), opened from a skill run's chip or the Skill studio. Its
- * state, owners, history and uses come first (SK-19, #2782, `SkillDetailsPanel`), then its
- * totals by what it ran on, by persona and by workspace (SK-20). Its other panels are studio
- * panels (ADR 0101 §6), each answered in panel blocks by the core and drawn
- * here as any view's answer is: purlis's Runs panel first, which lists every run of the skill,
- * newest first, with what started it and its signals (tool calls, tool errors, refusals, asks,
- * tokens and time, never a pass or a fail), then each panel an extension adds.
- */
-export function SkillTab({
-  plane,
-  name,
-  run: wanted,
-  changed,
-  offerFor,
-  onPress,
-  onOpenView,
-}: {
-  plane: string;
-  name: string;
-  /** The run the tab was opened on, from a run's chip: marked in the Runs panel. */
-  run?: string;
-  changed: number;
-  /** The catalogue, for the ways out purlis's own panels offer. */
-  offerFor?: (id: string) => Offer | undefined;
-  onPress?: (offer: Offer) => void;
-  /** Opens a tab: a grade's scorecard, from its row in the Grades panel (SK-59). */
-  onOpenView?: (view: ViewRef, title: string) => void;
-}) {
-  const [panels, setPanels] = useState<SkillPanel[]>();
-  const [refused, setRefused] = useState<string>();
-  // A grade that ended (SK-16): its scorecard and the history's grade are read again.
-  const [graded, setGraded] = useState(0);
-  const regraded = useCallback(() => setGraded((n) => n + 1), []);
-  // The copy the details show (#3353): the Grades panel is of that copy alone. Until the details
-  // say, the core reads the copy they show first.
-  const [level, setLevel] = useState<SkillLevel | null>(null);
-  const shownCopy = useCallback(
-    (next: SkillLevel) => setLevel((was) => (was !== null && sameLevel(was, next) ? was : next)),
-    [],
-  );
-  useEffect(() => {
-    let live = true;
-    void commands.skillPanels(plane, name, level).then((answer) => {
-      if (!live) return;
-      if (answer.status === "ok") {
-        setPanels(answer.data);
-        setRefused(undefined);
-      } else setRefused(answer.error);
-    });
-    return () => {
-      live = false;
-    };
-  }, [plane, name, changed, graded, level]);
-
-  return (
-    <div className="skill-tab" data-testid="skill-tab">
-      {/* No heading with the skill's name: its tab says it (#3147). */}
-      <SkillDetailsPanel
-        plane={plane}
-        name={name}
-        changed={changed + graded}
-        onGraded={regraded}
-        onCopy={shownCopy}
-      />
-      <SkillTotals plane={plane} name={name} changed={changed} />
-      {refused !== undefined ? (
-        <EmptyState
-          headline={`purlis could not read the panels of ${name}`}
-          body={refused}
-          testid="skill-panels-refused"
-        />
-      ) : panels === undefined ? (
-        <p className="pending" aria-busy="true">
-          <LoaderCircle className="node-icon spinning" />
-          Reading the skill's panels…
-        </p>
-      ) : (
-        panels.map((panel) => (
-          <StudioPanelSection
-            key={keyOf(panel.key)}
-            panel={panel}
-            name={name}
-            current={wanted}
-            offerFor={panel.key.kind === SKILL_RUNS_PANEL ? offerFor : undefined}
-            onPress={panel.key.kind === SKILL_RUNS_PANEL ? onPress : undefined}
-            rowAction={
-              panel.key.kind === SKILL_GRADES_PANEL && onOpenView !== undefined
-                ? {
-                    column: "Scorecard",
-                    label: "Open scorecard",
-                    onOpen: (grade) => onOpenView(gradeView(name, grade), gradeTitle(name)),
-                  }
-                : undefined
-            }
-          />
-        ))
-      )}
-    </div>
-  );
-}
-
 /** What a panel is held by: `runs`, or `<extension>/<panel>` for one an extension adds. */
 export function keyOf(key: SkillPanelKey): string {
   return key.kind === "extension" ? `${key.extension}/${key.panel}` : key.kind;
 }
 
-/** One panel on a skill's tab: its heading, who adds it, and its blocks or why it has none. An
- *  extension's panel is handed no catalogue: its blocks run no verb of purlis's. */
-function StudioPanelSection({
+/** **One panel on a skill's page** (ADR 0101 §6): its heading, who adds it, and its blocks or why
+ *  it has none. An extension's panel is handed no catalogue: its blocks run no verb of purlis's. */
+export function SkillPanelSection({
   panel,
   name,
   current,

@@ -7,7 +7,7 @@ import { $, browser, expect } from "@wdio/globals";
 import { press, projectRoot, stateOf, untilSays } from "../acting.js";
 import { showView } from "../opening.js";
 import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
-import { studioPage, studioSkill } from "../studio.js";
+import { studioPage, studioMore, studioSkill } from "../studio.js";
 
 /**
  * **A persona's own skills, changed in the Skill studio** (SK-32, #3003), in the built app
@@ -103,7 +103,7 @@ describe("changing a persona's own skills", function () {
 
     // Each change is made on the skill chosen in the Library, beside the list (#3681).
     await studioSkill(MADE);
-    await (await $(`aria/Rename ${MADE}`)).click();
+    await studioMore(MADE, "Rename");
     await typeInto("New name", RENAMED);
     await (await $('form[aria-label^="Rename"] button[type="submit"]')).click();
     const renamed = await $(`[data-testid="skill-${RENAMED}"]`);
@@ -112,7 +112,7 @@ describe("changing a persona's own skills", function () {
     expect(existsSync(own(MADE))).toBe(false);
 
     await studioSkill(RENAMED);
-    await (await $(`aria/Delete ${RENAMED}`)).click();
+    await studioMore(RENAMED, "Delete");
     const users = await $('[data-testid="skill-users"]');
     await users.waitForExist({ timeout: 20_000 });
     await expect(users).toHaveText(new RegExp(`chats as ${PERSONA}, in every workspace`));
@@ -137,6 +137,7 @@ describe("changing a persona's own skills", function () {
   it("moves it into the project's skills after asking its grant, and the persona keeps it", async () => {
     // Move to's first level is the project's shared skills.
     await studioSkill(RENAMED);
+    await studioMore(RENAMED, "Move to another level");
     const picker = `[data-scope="select"][data-part="root"][aria-label="Move ${RENAMED} to"]`;
     await $(picker).waitForExist({ timeout: 20_000 });
     await browser.execute((css: string) => {

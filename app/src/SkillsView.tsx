@@ -12,7 +12,6 @@ import {
 } from "./bindings";
 import { Notice } from "./Notice";
 import { skillsIn, useViewChanged } from "./planeChanged";
-import { skillView } from "./skillRuns";
 import { askDraft } from "./skillDraftAsks";
 import { SkillsNotRead, SkillsReading, type SkillStart } from "./SkillStarts";
 import {
@@ -22,6 +21,7 @@ import {
   inWorkspace,
   skillStudioAt,
   type StudioScope,
+  skillRowNamed,
 } from "./skillStudio";
 import { SkillMenu, SkillsList } from "./SkillsList";
 import {
@@ -257,7 +257,13 @@ export function SkillsView({
       busy={busy}
       onStart={startWith}
       onOpenStudio={openStudio}
-      onOpen={(row) => onOpenView(skillView(row.skill.name), row.skill.name)}
+      onOpen={(row) =>
+        // A skill's page is the studio's (#3682), at this list's chats.
+        onOpenView(
+          skillStudioAt(scope, "library", { skill: skillRowNamed(row.skill.name) }),
+          SKILL_STUDIO_TITLE,
+        )
+      }
       menuOf={(row) => ({
         menu: () => (
           <SkillMenu
