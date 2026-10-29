@@ -283,6 +283,17 @@ change, replaced byte for byte: `shellseg-oracle.jsonl` row 500, and generated r
 738, 750, 872, 912, 941, 1112, 1259, 1339, 1628, 1836, 1896, 1930, 2059, 2072, 2082, 2089,
 2197, 2222, 2226, 2266, 2336, 2383 and 2390.
 
+**And branch work goes to a branch folder first (#3798).** Every `bra` refusal ends with where
+branch work belongs, and said "Branch work belongs in a workspace clone: `purlis workspace
+create <task>`, then `purlis clone <repo>`." A chat that followed it made a second workspace
+just to get a second checkout, which the app then refused. It now says "Branch work belongs in
+a branch folder of the workspace's clone: `purlis worktree add <repo> <piece>`, then commit and
+push from it with `purlis worktree commit` and `purlis worktree push`. A new task gets its own
+workspace: `purlis workspace create <task>`, then `purlis clone <repo>`." No verdict moved, and
+only that sentence changed, replaced byte for byte: 107 rows of `planeroot-oracle.jsonl`, 373
+rows of `planeroot-generated.jsonl.gz`, and the `pretooluse-plane-root-branch` scenario of
+`tests/fixtures/recorded/behaviour.jsonl`.
+
 ## The session recording
 
 Re-record with:

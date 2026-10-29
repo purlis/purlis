@@ -119,8 +119,10 @@ fn keep_on_as(
     if owned.is_err() {
         return Ok(None);
     }
+    // Its settings, where it carries them, are read only once the pool is shown to be owned
+    // and its runner is one that keeps them (1.50, #3448), and sent to no other.
     let to = to_a_runner(config, pool, waking)?;
-    let Some(said) = crate::runnerlinks::keep_profiles(&to, vec![kept.clone().into()])? else {
+    let Some(said) = crate::runnerlinks::keep_profiles(&to, vec![kept.clone()])? else {
         return Ok(None);
     };
     said.into_iter()
@@ -165,7 +167,7 @@ pub async fn pool_profiles(pool: String) -> Result<Vec<PoolProfileRow>, String> 
         let kept: Vec<_> = records.iter().map(onrunner::Kept::of).collect();
         let sent: Vec<_> = kept
             .iter()
-            .filter_map(|kept| kept.as_ref().ok().cloned().map(Into::into))
+            .filter_map(|kept| kept.as_ref().ok().cloned())
             .collect();
         let said = crate::runnerlinks::keep_profiles(&to, sent)?;
         let mut said = said.map(Vec::into_iter);

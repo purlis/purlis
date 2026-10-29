@@ -582,12 +582,12 @@ impl SessionHost for RoutedSessions {
         host.move_ahead(pool, workspace)
     }
 
-    fn move_in(&self, pool: &str, chat: &crate::host::Moving) -> Result<(), String> {
-        self.pool(pool)?.move_in(pool, chat)
+    fn move_in(&self, pool: &str, chats: &[crate::host::Moving]) -> Result<(), String> {
+        self.pool(pool)?.move_in(pool, chats)
     }
 
-    fn move_out(&self, pool: &str, chat: &crate::host::Moving) -> Result<Vec<String>, String> {
-        self.pool(pool)?.move_out(pool, chat)
+    fn move_out(&self, pool: &str, chats: &[crate::host::Moving]) -> Result<Vec<String>, String> {
+        self.pool(pool)?.move_out(pool, chats)
     }
 
     fn pool_of(&self, id: u32) -> Option<String> {

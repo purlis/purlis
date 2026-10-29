@@ -12,8 +12,9 @@
 //!   public half where the cluster shows it in the pod's status.
 //! - **The operator signs what it saw** ([`Vouched`]): the claim, the pod, that public key and
 //!   who asked for the claim, signed with the operator's own Ed25519 key, on the Claim's status.
-//!   The desktop pinned that key when the pool was added ([`OperatorKey`]), from the Pool's
-//!   status, so a statement signed by any other key is refused.
+//!   The desktop pinned that key and the pool's cluster when the pool was added ([`PoolPin`]),
+//!   from the Pool's status, so a statement signed by any other key, or made in another
+//!   cluster, is refused.
 //! - **The desktop pairs over its own `kubectl exec`** ([`pair`]): the runner answers with its
 //!   device id and public key, as a Docker pool's does. A key that is not the one the operator
 //!   vouched for is refused ([`Refused::KeyChanged`]), and so is a statement that no longer
@@ -23,6 +24,11 @@
 //! has a volume of its own for its home, so its pod made again keeps its work and its pairing,
 //! which belongs to the claim and not to the pod (ruled 2026-10-28); a fresh claim's comes warm
 //! from the pool and keeps nothing.
+//!
+//! **A team admin rolls the operator's key** (#3305): during a roll the Pool's status names the
+//! next key with the current key's word for it ([`KeyRoll`]), and every statement is signed by
+//! both. A desktop that sees the roll moves its pin to the next key without asking anyone
+//! ([`PoolPin::follow`]); one that missed it asks again, as for any key it did not pin.
 
 use std::path::PathBuf;
 
@@ -61,18 +67,24 @@ impl std::fmt::Display for Refused {
 impl std::error::Error for Refused {}
 
 /// The first line of every statement: what it is, and its version.
-pub const STATEMENT_HEADER: &str = "purlis runner link key v2";
+pub const STATEMENT_HEADER: &str = "purlis runner link key v3";
 
 /// **What the cluster operator vouches for**: one claim's runner, the pod it runs in, by name,
-/// the public link key that runner holds, and who asked for the claim. A kept claim's pod made
+/// in its requester's runner namespace (#2055), the public link key that runner holds, and who
+/// asked for the claim. A kept claim's pod made
 /// again has the same name and key (#2057), so the statement says the same. Signed as its
 /// text ([`Vouched::text`]), one `name: value` line each, in this order, after
 /// [`STATEMENT_HEADER`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Vouched {
+    /// The cluster it was made in: the uid of that cluster's `kube-system` namespace (#3305).
+    pub cluster: String,
+    /// The claim's namespace.
     pub namespace: String,
     pub claim: String,
     pub claim_uid: String,
+    /// The namespace the runner's pod is in: its requester's own ([`runner_namespace`]).
+    pub runner_namespace: String,
     pub pod: String,
     pub key: PublicKey,
     pub requester: String,
@@ -82,10 +94,12 @@ pub struct Vouched {
 }
 
 /// The names of a statement's lines, in their order.
-const LINES: [&str; 7] = [
+const LINES: [&str; 9] = [
+    "cluster",
     "namespace",
     "claim",
     "claim uid",
+    "runner namespace",
     "pod",
     "key",
     "requester",
@@ -105,9 +119,11 @@ impl Vouched {
         let key = hex_of(self.key.as_bytes());
         let until = self.until.to_string();
         let values = [
-            self.namespace.as_str(),
+            self.cluster.as_str(),
+            &self.namespace,
             &self.claim,
             &self.claim_uid,
+            &self.runner_namespace,
             &self.pod,
             &key,
             &self.requester,
@@ -156,9 +172,18 @@ impl Vouched {
                 .ok_or_else(bad)?;
             values.push(value.to_owned());
         }
-        let key = bytes_of(&values[4]).ok_or_else(bad)?;
-        let [namespace, claim, claim_uid, pod, _key, requester, until]: [String; 7] =
-            values.try_into().map_err(|_| bad())?;
+        let key = bytes_of(&values[6]).ok_or_else(bad)?;
+        let [
+            cluster,
+            namespace,
+            claim,
+            claim_uid,
+            runner_namespace,
+            pod,
+            _key,
+            requester,
+            until,
+        ]: [String; 9] = values.try_into().map_err(|_| bad())?;
         let until = Some(until)
             .filter(|digits| digits.len() <= 20 && digits.bytes().all(|b| b.is_ascii_digit()))
             .and_then(|digits| digits.parse::<u64>().ok())
@@ -166,16 +191,20 @@ impl Vouched {
         // Names and uids only as Kubernetes gives them: nothing that could read as a flag or
         // another kind of object where kubectl is handed the pod's name.
         let named = is_label(&namespace)
+            && is_label(&runner_namespace)
             && is_subdomain(&claim)
             && is_subdomain(&pod)
-            && is_uid(&claim_uid);
+            && is_uid(&claim_uid)
+            && is_uid(&cluster);
         if !named {
             return Err(bad());
         }
         Ok(Vouched {
+            cluster,
             namespace,
             claim,
             claim_uid,
+            runner_namespace,
             pod,
             key: PublicKey::from_bytes(key),
             requester,
@@ -184,13 +213,25 @@ impl Vouched {
     }
 
     /// Whether it is about the claim `namespace`/`claim` of uid `claim_uid`, asked for by
-    /// `requester`: the one this desktop made.
+    /// `requester`, with its runner in that requester's own runner namespace: the one this
+    /// desktop made.
     pub fn is_for(&self, namespace: &str, claim: &str, claim_uid: &str, requester: &str) -> bool {
         self.namespace == namespace
             && self.claim == claim
             && self.claim_uid == claim_uid
             && self.requester == requester
+            && self.runner_namespace == runner_namespace(requester)
     }
+}
+
+/// **The runner namespace of `requester`** (#2055): `purlis-runners-` and the first 16 lower-case
+/// hex digits of the SHA-256 of the requester, exactly as the Claim names them. The cluster
+/// operator makes it and runs every runner of that person's claims there; a statement naming any
+/// other is refused.
+pub fn runner_namespace(requester: &str) -> String {
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(requester.as_bytes());
+    format!("purlis-runners-{}", &hex_of(digest.as_slice())[..16])
 }
 
 /// Whether `value` can be a statement's value: not empty, at most [`MOST_VALUE`] bytes, and
@@ -262,6 +303,12 @@ impl OperatorKey {
     /// refused where the signature is not this key's over exactly that text, or the text is
     /// not a statement.
     pub fn verified(&self, text: &str, signature: &str) -> Result<Vouched, Refused> {
+        self.signed(text, signature)?;
+        Vouched::from_text(text)
+    }
+
+    /// Whether `signature` is this key's over exactly `text`.
+    fn signed(&self, text: &str, signature: &str) -> Result<(), Refused> {
         let signed = signature_bytes(signature).ok_or_else(|| {
             Refused::NotVouched("the cluster operator's signature is not one purlis reads".into())
         })?;
@@ -273,8 +320,266 @@ impl OperatorKey {
                      key this desktop pinned when the pool was added, so purlis refused it"
                         .into(),
                 )
+            })
+    }
+}
+
+/// **A statement as a Claim's status carries it** (`status.linkKey`): its text, the current
+/// key's signature, and during a roll the next key's (#3305).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Signed {
+    pub text: String,
+    pub signature: String,
+    pub next_signature: Option<String>,
+}
+
+/// **What a Pool's status says of its operator** (#2056, #3305), as the desktop read it: each
+/// field as written, checked only as the desktop pins or follows it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PoolSeen {
+    /// `status.signingKey`.
+    pub signing_key: Option<String>,
+    /// `status.cluster`: the uid of the cluster's `kube-system` namespace.
+    pub cluster: Option<String>,
+    /// `status.nextSigningKey`, during a roll.
+    pub next_signing_key: Option<String>,
+    /// `status.nextSigningKeyVouch`, its statement and signature, during a roll.
+    pub next_signing_key_vouch: Option<(String, String)>,
+}
+
+impl PoolSeen {
+    /// What `status`, a Pool's status as JSON, says.
+    pub fn from_status(status: &serde_json::Value) -> PoolSeen {
+        let text = |path: &str| {
+            status
+                .pointer(path)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        };
+        PoolSeen {
+            signing_key: text("/signingKey"),
+            cluster: text("/cluster"),
+            next_signing_key: text("/nextSigningKey"),
+            next_signing_key_vouch: text("/nextSigningKeyVouch/statement")
+                .zip(text("/nextSigningKeyVouch/signature")),
+        }
+    }
+}
+
+/// The first line of the current key's word for the next one, and its version (#3305).
+pub const ROLL_HEADER: &str = "purlis cluster operator key roll v1";
+
+/// The longest a key roll's word holds from now: the operator signs one for seven days, and
+/// purlis reads none that claims to hold an hour past that, whatever signed it.
+pub const ROLL_MOST_AHEAD: u64 = 7 * 24 * 3600 + MOST_AHEAD;
+
+/// **The current operator key's word for the next one** (#3305): in the cluster `cluster`, the
+/// key `from` rolls to the key `to`, until `until` (seconds since the epoch). Signed as its text,
+/// one `name: value` line each, in this order, after [`ROLL_HEADER`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyRoll {
+    pub cluster: String,
+    pub from: OperatorKey,
+    pub to: OperatorKey,
+    pub until: u64,
+}
+
+impl KeyRoll {
+    /// Its text, exactly as the operator signs it.
+    pub fn text(&self) -> String {
+        format!(
+            "{ROLL_HEADER}\ncluster: {}\nfrom: {}\nto: {}\nuntil: {}\n",
+            self.cluster,
+            self.from.spelled(),
+            self.to.spelled(),
+            self.until
+        )
+    }
+
+    /// A key roll from its text: exactly [`KeyRoll::text`]'s lines. Anything else is refused.
+    pub fn from_text(text: &str) -> Result<KeyRoll, String> {
+        let bad =
+            || "the cluster operator's word for its next key is not one purlis reads".to_owned();
+        let body = text
+            .strip_prefix(ROLL_HEADER)
+            .and_then(|rest| rest.strip_prefix('\n'))
+            .and_then(|rest| rest.strip_suffix('\n'))
+            .ok_or_else(bad)?;
+        let lines: Vec<&str> = body.split('\n').collect();
+        let names = ["cluster", "from", "to", "until"];
+        if lines.len() != names.len() {
+            return Err(bad());
+        }
+        let mut values = Vec::with_capacity(names.len());
+        for (line, name) in lines.iter().zip(names) {
+            let value = line
+                .strip_prefix(name)
+                .and_then(|rest| rest.strip_prefix(": "))
+                .filter(|value| plain(value))
+                .ok_or_else(bad)?;
+            values.push(value);
+        }
+        let until = Some(values[3])
+            .filter(|digits| digits.len() <= 20 && digits.bytes().all(|b| b.is_ascii_digit()))
+            .and_then(|digits| digits.parse::<u64>().ok())
+            .ok_or_else(bad)?;
+        let roll = KeyRoll {
+            cluster: Some(values[0])
+                .filter(|cluster| is_uid(cluster))
+                .ok_or_else(bad)?
+                .to_owned(),
+            from: OperatorKey::from_spelled(values[1]).map_err(|_| bad())?,
+            to: OperatorKey::from_spelled(values[2]).map_err(|_| bad())?,
+            until,
+        };
+        // Read back byte for byte, so nothing but this text was signed.
+        if roll.text() != text {
+            return Err(bad());
+        }
+        Ok(roll)
+    }
+}
+
+/// **What a desktop pins when it adds a cluster pool** (#2056, #3305): the operator's key and the
+/// cluster the pool is in. A statement signed by another key, or made in another cluster, is
+/// refused; the key moves only as the pinned key vouches for its next one ([`PoolPin::follow`]).
+///
+/// Held in memory here: storing a pool's pin, and storing it again as it moves, is #3292's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PoolPin {
+    pub key: OperatorKey,
+    /// The uid of the pool's cluster's `kube-system` namespace.
+    pub cluster: String,
+}
+
+/// **What a desktop does with a Pool's status it read** ([`PoolPin::followed`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Following {
+    /// Its pin holds as it is: no roll, or one it has followed already.
+    Stays,
+    /// The pinned key vouches for its next one: the pin moves there, and no one is asked.
+    Moves(PoolPin),
+    /// The Pool names a next key the pinned key does not vouch for: the pin holds, and why.
+    NotFollowed(String),
+}
+
+impl PoolPin {
+    /// **The pin of a pool being added**, from its status: its key and cluster, each as purlis
+    /// reads one.
+    pub fn first(pool: &str, seen: &PoolSeen) -> Result<PoolPin, Refused> {
+        let key = seen.signing_key.as_deref().ok_or_else(|| {
+            Refused::NotVouched(format!(
+                "the pool {pool} names no cluster operator's key yet: is purlis's cluster \
+                 operator running there?"
+            ))
+        })?;
+        let cluster = seen
+            .cluster
+            .as_deref()
+            .filter(|cluster| is_uid(cluster))
+            .ok_or_else(|| {
+                Refused::NotVouched(format!(
+                    "the pool {pool} names no cluster purlis reads: update purlis's cluster \
+                     operator there so it and this purlis are of one release"
+                ))
             })?;
-        Vouched::from_text(text)
+        Ok(PoolPin {
+            key: OperatorKey::from_spelled(key)?,
+            cluster: cluster.to_owned(),
+        })
+    }
+
+    /// **A statement signed with this pin's key, made in its cluster**, read: its `signature`
+    /// or, during a roll, its `next_signature`, must be the pinned key's over exactly its text.
+    pub fn verified(&self, signed: &Signed) -> Result<Vouched, Refused> {
+        if let Err(refused) = self.key.signed(&signed.text, &signed.signature) {
+            match signed.next_signature.as_deref() {
+                Some(next) if self.key.signed(&signed.text, next).is_ok() => {}
+                _ => return Err(refused),
+            }
+        }
+        let vouched = Vouched::from_text(&signed.text)?;
+        if vouched.cluster != self.cluster {
+            return Err(Refused::NotVouched(
+                "the cluster operator's statement was made in another cluster than the one this \
+                 desktop pinned when the pool was added, so purlis refused it"
+                    .into(),
+            ));
+        }
+        Ok(vouched)
+    }
+
+    /// **Whether this pin follows a roll the Pool's status, `seen` at `now`, names** (#3305).
+    ///
+    /// - The Pool in another cluster, or naming none: refused.
+    /// - The Pool's key is the pinned one, and it names a next key the pinned key vouches for in
+    ///   this cluster, from this key to that one, holding now and for no more than seven days
+    ///   and an hour: the pin moves.
+    /// - The Pool's next key is the pinned one already: the pin stays.
+    /// - The Pool's key is neither: refused, and the pool is added again, as for any key this
+    ///   desktop did not pin. A desktop that missed a roll asks again this way.
+    pub fn followed(&self, seen: &PoolSeen, now: u64) -> Result<Following, Refused> {
+        if seen.cluster.as_deref() != Some(self.cluster.as_str()) {
+            return Err(Refused::NotVouched(
+                "the pool's cluster operator names another cluster than the one this desktop \
+                 pinned when the pool was added, so purlis refused it"
+                    .into(),
+            ));
+        }
+        let pinned = self.key.spelled();
+        if seen.next_signing_key.as_deref() == Some(pinned.as_str()) {
+            return Ok(Following::Stays);
+        }
+        if seen.signing_key.as_deref() != Some(pinned.as_str()) {
+            return Err(Refused::NotVouched(
+                "the pool's cluster operator signs with another key than the one this desktop \
+                 pinned, and that key did not vouch for it while this desktop looked: add the \
+                 pool again if the team rolled its key"
+                    .into(),
+            ));
+        }
+        let Some(next) = seen.next_signing_key.as_deref() else {
+            return Ok(Following::Stays);
+        };
+        let not = |why: &str| Ok(Following::NotFollowed(why.to_owned()));
+        let Some((text, signature)) = seen.next_signing_key_vouch.as_ref() else {
+            return not("the pool names a next key with no word for it from the pinned key");
+        };
+        if self.key.signed(text, signature).is_err() {
+            return not("the word for the pool's next key is not signed by the pinned key");
+        }
+        let roll = match KeyRoll::from_text(text) {
+            Ok(roll) => roll,
+            Err(why) => return Ok(Following::NotFollowed(why)),
+        };
+        if roll.cluster != self.cluster || roll.from != self.key || roll.to.spelled() != next {
+            return not("the pinned key's word is for another cluster, key or next key");
+        }
+        if roll.until <= now {
+            return not("the pinned key's word for the next key no longer holds");
+        }
+        if roll.until > now.saturating_add(ROLL_MOST_AHEAD) {
+            return not(
+                "the pinned key's word for the next key says it holds for more than seven days; check this machine's clock",
+            );
+        }
+        Ok(Following::Moves(PoolPin {
+            key: roll.to,
+            cluster: self.cluster.clone(),
+        }))
+    }
+
+    /// **Moves this pin as [`PoolPin::followed`] says**, in memory: whether it moved. A refusal
+    /// leaves it as it was. Storing the moved pin is #3292's, at this seam: whoever holds the
+    /// pool's pin writes it back where it keeps it when this answers `true`.
+    pub fn follow(&mut self, seen: &PoolSeen, now: u64) -> Result<bool, Refused> {
+        match self.followed(seen, now)? {
+            Following::Moves(moved) => {
+                *self = moved;
+                Ok(true)
+            }
+            Following::Stays | Following::NotFollowed(_) => Ok(false),
+        }
     }
 }
 
@@ -455,22 +760,21 @@ impl Kubectl {
             .ok_or_else(|| Refused::Other("the cluster did not say who this kubeconfig is".into()))
     }
 
-    /// **The operator's key a pool's status names**, for the desktop to pin as it adds the pool.
-    pub fn operator_key(&self, pool: &str) -> Result<OperatorKey, Refused> {
+    /// **What a pool's status says of its operator**: its key, its cluster and any roll.
+    pub fn pool(&self, pool: &str) -> Result<PoolSeen, Refused> {
         let held = self.json(
             &["get", "pools.runners.purlis.dev", pool, "--output", "json"],
             None,
         )?;
-        let spelled = held
-            .pointer("/status/signingKey")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| {
-                Refused::NotVouched(format!(
-                    "the pool {pool} names no cluster operator's key yet: is purlis's cluster \
-                     operator running there?"
-                ))
-            })?;
-        OperatorKey::from_spelled(spelled)
+        Ok(PoolSeen::from_status(
+            held.get("status").unwrap_or(&serde_json::Value::Null),
+        ))
+    }
+
+    /// **The pin of a pool being added** ([`PoolPin::first`]): the operator's key and the
+    /// cluster its status names.
+    pub fn pool_pin(&self, pool: &str) -> Result<PoolPin, Refused> {
+        PoolPin::first(pool, &self.pool(pool)?)
     }
 
     /// **Claims a runner of `pool` in `namespace`**, as `requester` (who this kubeconfig is,
@@ -496,13 +800,9 @@ impl Kubectl {
             .ok_or_else(|| Refused::Other("the cluster made the claim but gave no uid".into()))
     }
 
-    /// The statement and signature on the Claim `namespace`/`name`'s status, where the operator
-    /// has written one.
-    pub fn statement(
-        &self,
-        namespace: &str,
-        name: &str,
-    ) -> Result<Option<(String, String)>, Refused> {
+    /// The statement and its signatures on the Claim `namespace`/`name`'s status, where the
+    /// operator has written one.
+    pub fn statement(&self, namespace: &str, name: &str) -> Result<Option<Signed>, Refused> {
         let held = self.json(
             &[
                 "get",
@@ -520,7 +820,13 @@ impl Kubectl {
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_owned)
         };
-        Ok(field("statement").zip(field("signature")))
+        Ok(field("statement")
+            .zip(field("signature"))
+            .map(|(text, signature)| Signed {
+                text,
+                signature,
+                next_signature: field("nextSignature"),
+            }))
     }
 
     /// Deletes the Claim `namespace`/`name`, and with it its runner.
@@ -615,43 +921,39 @@ pub struct Paired {
     pub pinned: Pinned,
 }
 
-/// **The statement on `claimed`'s status, checked**: signed by `operator`, and about exactly
-/// that claim and requester. `None` while the operator has written none.
+/// **The statement on `claimed`'s status, checked**: signed by the key of `pin`, made in its
+/// cluster, and about exactly that claim and requester. `None` while the operator has written
+/// none.
 pub fn vouched_for(
     kubectl: &Kubectl,
-    operator: &OperatorKey,
+    pin: &PoolPin,
     claimed: &Claimed,
 ) -> Result<Option<Vouched>, Refused> {
-    let Some((text, signature)) = kubectl.statement(&claimed.namespace, &claimed.name)? else {
+    let Some(signed) = kubectl.statement(&claimed.namespace, &claimed.name)? else {
         return Ok(None);
     };
-    checked(operator, claimed, &text, &signature).map(Some)
+    checked(pin, claimed, &signed).map(Some)
 }
 
-/// `text` signed as `signature`, verified with `operator` and held to `claimed`, now.
-pub fn checked(
-    operator: &OperatorKey,
-    claimed: &Claimed,
-    text: &str,
-    signature: &str,
-) -> Result<Vouched, Refused> {
+/// `signed`, verified with `pin` and held to `claimed`, now.
+pub fn checked(pin: &PoolPin, claimed: &Claimed, signed: &Signed) -> Result<Vouched, Refused> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|since| since.as_secs())
         .unwrap_or_default();
-    checked_at(operator, claimed, text, signature, now)
+    checked_at(pin, claimed, signed, now)
 }
 
 /// [`checked`], at `now` (seconds since the epoch): a statement past its `until`, or one that
-/// claims to hold more than [`MOST_AHEAD`] from now, is refused.
+/// claims to hold more than [`MOST_AHEAD`] from now, or made in another cluster than the pinned
+/// one, is refused.
 pub fn checked_at(
-    operator: &OperatorKey,
+    pin: &PoolPin,
     claimed: &Claimed,
-    text: &str,
-    signature: &str,
+    signed: &Signed,
     now: u64,
 ) -> Result<Vouched, Refused> {
-    let vouched = operator.verified(text, signature)?;
+    let vouched = pin.verified(signed)?;
     if vouched.until <= now {
         return Err(Refused::NotVouched(format!(
             "the cluster operator's statement about the runner of claim {}/{} no longer holds: \
@@ -676,7 +978,8 @@ pub fn checked_at(
     ) {
         return Err(Refused::NotVouched(format!(
             "the cluster operator's statement is about another claim or requester than the claim {}/{} \
-             this desktop made as {}, so purlis refused it",
+             this desktop made as {}, or its runner is not in that requester's own namespace, so \
+             purlis refused it",
             claimed.namespace, claimed.name, claimed.requester
         )));
     }
@@ -705,7 +1008,7 @@ pub fn pair(
 ) -> Result<Paired, Refused> {
     let line = format!("{}\n", crate::runnerlink::to_line(desktop));
     let out = kubectl.run(
-        &kubectl.pair_args(&claimed.namespace, &vouched.pod),
+        &kubectl.pair_args(&vouched.runner_namespace, &vouched.pod),
         Some(&line),
         crate::runnerlink::MOST_LINE,
     )?;
@@ -722,12 +1025,8 @@ pub fn pair(
 /// with. Another pod or key is refused as a changed key; no statement at all is refused too. A
 /// kept claim's pod made again under its name, answering the key it was paired with, is the
 /// same runner (#2057): its pairing is the claim's.
-pub fn still_vouched(
-    kubectl: &Kubectl,
-    operator: &OperatorKey,
-    paired: &Paired,
-) -> Result<(), Refused> {
-    let now = vouched_for(kubectl, operator, &paired.claimed)?.ok_or_else(|| {
+pub fn still_vouched(kubectl: &Kubectl, pin: &PoolPin, paired: &Paired) -> Result<(), Refused> {
+    let now = vouched_for(kubectl, pin, &paired.claimed)?.ok_or_else(|| {
         Refused::NotVouched(format!(
             "the cluster operator no longer vouches for the runner of claim {}/{}",
             paired.claimed.namespace, paired.claimed.name
@@ -738,7 +1037,10 @@ pub fn still_vouched(
 
 /// `now`, what the operator vouches for, held to what `paired` was paired with.
 pub fn held_to(paired: &Paired, now: &Vouched) -> Result<(), Refused> {
-    if now.pod != paired.vouched.pod || now.key != paired.pinned.key {
+    if now.runner_namespace != paired.vouched.runner_namespace
+        || now.pod != paired.vouched.pod
+        || now.key != paired.pinned.key
+    {
         return Err(Refused::KeyChanged {
             claim: format!("{}/{}", paired.claimed.namespace, paired.claimed.name),
         });

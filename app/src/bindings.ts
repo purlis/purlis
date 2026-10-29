@@ -1464,8 +1464,8 @@ export const commands = {
 	/**  **This project's chat moves** (#2048), as the window draws them when it is drawn anew. */
 	chatMoves: (plane: PlaneId) => typedError<ChatMove[], string>(__TAURI_INVOKE("chat_moves", { plane })),
 	/**
-	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten, and a failed
-	 *  one's reason is dismissed.
+	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten for every chat
+	 *  of it, and a failed one's reason is dismissed. One being made now is refused (#3814).
 	 */
 	putAwayChatMove: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_chat_move", { plane, session })),
 	/**
@@ -1963,8 +1963,16 @@ export const commands = {
 	 *  studio opens, and answers one line for each.
 	 */
 	skillDeletesCutShort: (plane: PlaneId) => typedError<DeletesCutShort, string>(__TAURI_INVOKE("skill_deletes_cut_short", { plane })),
-	/**  The deleted skills Restore can bring back, newest first. */
+	/**
+	 *  **The deleted skills Bring back can bring back**, newest first: those deleted in the last 30
+	 *  days, each with its days left (S9, #3691).
+	 */
 	skillsDeleted: (plane: PlaneId) => typedError<DeletedSkill[], string>(__TAURI_INVOKE("skills_deleted", { plane })),
+	/**
+	 *  **The last text of the deleted skill `id` names**: its `SKILL.md` as it was when it was
+	 *  deleted, for its page on Deleted (S9, #3691). Refused for one the project does not list.
+	 */
+	skillDeletedText: (plane: PlaneId, id: string) => typedError<string, string>(__TAURI_INVOKE("skill_deleted_text", { plane, id })),
 	/**
 	 *  **Restores** the deleted skill `id` names: the core's record of it, as [`skills_deleted`]
 	 *  handed it out.
@@ -2022,6 +2030,19 @@ export const commands = {
 	 *  ended first. Nothing is left once the chat closes but the skill runs it recorded.
 	 */
 	skillDraftTry: (plane: PlaneId, id: string, profile: string | null, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_draft_try", { plane, id, profile, columns, rows })),
+	/**
+	 *  **"Ask a chat to redo it"** (S9), where the chat that drafted it is closed: a chat where the
+	 *  draft's level's skills are reached from, as "Ask a chat to draft a skill" opens one, with the
+	 *  core's redo prompt typed and never sent, which the person ends with what the change was.
+	 */
+	skillDraftRedo: (plane: PlaneId, id: string, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_draft_redo", { plane, id, columns, rows })),
+	/**
+	 *  **"Ask the chat to redo it"** (S9), for a draft the project changed a file of since: the
+	 *  core's redo prompt typed into chat `session`, the chat that drafted it, unsent — or copied,
+	 *  with why, where it cannot be typed now. Refused where `session` is not that chat, open in the
+	 *  draft's workspace. A redo the chat then writes is drafted on the project's copy (`drafts::take`).
+	 */
+	skillDraftRedoIn: (plane: PlaneId, id: string, session: number) => typedError<Handed, string>(__TAURI_INVOKE("skill_draft_redo_in", { plane, id, session })),
 	/**
 	 *  **Accepts a workspace or persona folder a chat could have made** (SK-9): its skills reach
 	 *  chats from now on. The person's press in the studio, on a skill left out for it.
@@ -5356,12 +5377,22 @@ export type ChatHeld = {
  */
 export type ChatMove = {
 	session: number,
+	/**
+	 *  The pool it runs on as it moves, or `null` for this machine (#3646): where it still runs
+	 *  where the move did not happen.
+	 */
+	from: string | null,
 	/**  The pool it moves to, or `null` for this machine. */
 	to: string | null,
-	/**  `preparing`, `ready` or `failed`. */
+	/**
+	 *  `preparing`, `ready`, `switching` (being made now, past cancelling), `failed`, or
+	 *  `over`: it moved or was put away, and the window forgets it (#3814).
+	 */
 	stage: string,
 	/**  Why it failed, in a sentence: where it is `failed`. */
 	why: string | null,
+	/**  The other chats of its workspace that move with it, by name (#3453). */
+	with: string[],
 };
 
 /**  **A chat's Network view** (#1662): what it can reach now and what it was refused. */
@@ -5721,10 +5752,15 @@ export type DeletedSkill = {
 	/**  Its level as a person reads it: `project`, `local workspace ops`. */
 	label: string,
 	/**
-	 *  How long it stays, as a person reads it: `kept on this machine for 12 more days`, `kept
-	 *  in the project's history` (SK-33).
+	 *  How many days are left to bring it back (S9, #3691): at least 1, as one past its 30 days
+	 *  is not listed.
 	 */
-	stays: string,
+	days_left: number,
+	/**
+	 *  Whether the project's history keeps it (its delete was a commit), so it is still there
+	 *  after its days, for `purlis skill restore`; else this machine keeps it, and removes it then.
+	 */
+	in_history: boolean,
 };
 
 /**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */
@@ -8263,12 +8299,13 @@ export type MouseButton = "none" | "left" | "middle" | "right";
 
 /**  What the window is told of a move it asked for to switch now. */
 export type MoveNow = {
-	/**  The chat moved, as the window draws it in its place; `null` where it did not move now. */
-	chat: OpenChat | null,
+	/**
+	 *  Each chat that moved, as the window draws it in its place (#3453): none where they did
+	 *  not move now.
+	 */
+	moved: MovedChat[],
 	/**  Why it did not move yet, in a sentence: it moves at a later pause. */
 	not_yet: string | null,
-	/**  What its tab says after the move: what came back that the person is to look at. */
-	notices: string[],
 };
 
 /**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */
@@ -8365,6 +8402,15 @@ export type Moved = {
 	 *  or child its harness spawned, drawn under the chat. Empty for nearly every chat.
 	 */
 	children: ChildAgent[],
+};
+
+/**  One chat a move started where it went, in the place of the run it left. */
+export type MovedChat = {
+	/**  The run it left. */
+	was: number,
+	chat: OpenChat,
+	/**  What its tab says after the move: what came back that the person is to look at. */
+	notices: string[],
 };
 
 /**
@@ -8776,6 +8822,11 @@ export type OpenChat = {
 	 *  Move here, and a chat here Move to runner.
 	 */
 	pool?: string | null,
+	/**
+	 *  The workspace it works in, or `null` at the project's root (#3453): its tab's move names
+	 *  the other chats of its workspace, which move with it.
+	 */
+	workspace?: string | null,
 	/**  The persona it adopted. */
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */
@@ -12174,6 +12225,12 @@ export type SkillDraft = {
 	level: SkillLevel,
 	/**  The chat that wrote it last, by its number. */
 	chat: number | null,
+	/**
+	 *  Whether that chat is open now, for an out-of-date draft (false for any other): "Ask the
+	 *  chat to redo it" types into it ([`skill_draft_redo_in`]), where a closed one's opens a
+	 *  chat afresh ([`skill_draft_redo`]).
+	 */
+	chat_open: boolean,
 	/**  A new skill, rather than a change to one. */
 	new: boolean,
 	/**  A file it changes changed in the project since: Accept is refused. */

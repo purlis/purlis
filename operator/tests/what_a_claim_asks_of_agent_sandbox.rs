@@ -41,6 +41,13 @@ fn claim() -> Claim {
     }
 }
 
+/// Ada's runner namespace, as the cluster holds it once the operator made it (#2055).
+fn runner() -> k8s_openapi::api::core::v1::Namespace {
+    let mut runner = purlis_cluster_operator::person::namespace_for("ada@example.com");
+    runner.metadata.uid = Some("runner-uid".into());
+    runner
+}
+
 fn json_of(value: &impl serde::Serialize) -> Value {
     serde_json::to_value(value).expect("serialises")
 }
@@ -50,7 +57,7 @@ fn a_claims_runner_runs_the_pools_image_and_its_own_command_as_a_user_who_is_not
     let template = json_of(&upstream::template_for(
         &pool(),
         "ada",
-        upstream::owners_with(None, &claim(), &[&claim()]),
+        upstream::runner_owner(&runner()),
     ));
     let pod = &template["spec"]["podTemplate"]["spec"];
     let containers = pod["containers"].as_array().expect("containers");
@@ -72,100 +79,62 @@ fn a_runner_gets_no_kubernetes_credential_and_no_service_addresses() {
     let template = json_of(&upstream::template_for(
         &pool(),
         "ada",
-        upstream::owners_with(None, &claim(), &[&claim()]),
+        upstream::runner_owner(&runner()),
     ));
     let pod = &template["spec"]["podTemplate"]["spec"];
     assert_eq!(pod["automountServiceAccountToken"], false, "{pod}");
     assert_eq!(pod["enableServiceLinks"], false, "{pod}");
 }
 
-fn another_claim() -> Claim {
-    let mut claim = claim();
-    claim.metadata.name = Some("ada-2".into());
-    claim.metadata.uid = Some("another-claim-uid".into());
-    claim
-}
-
 #[test]
-fn a_pools_template_and_warm_pool_live_in_the_claims_namespace_and_belong_to_its_claims_there() {
-    // The second claim joins the first, which owns the object as the cluster holds it.
-    let first = upstream::template_for(
-        &pool(),
-        "ada",
-        upstream::owners_with(None, &claim(), &[&claim()]),
-    );
-    let owners = upstream::owners_with(
-        Some(&first.metadata),
-        &another_claim(),
-        &[&claim(), &another_claim()],
-    );
+fn a_pools_template_and_warm_pool_are_controlled_by_the_runner_namespace_they_are_in() {
+    let namespace = purlis_cluster_operator::person::runner_namespace("ada@example.com");
     for object in [
-        json_of(&upstream::template_for(&pool(), "ada", owners.clone())),
-        json_of(&upstream::warm_pool_for(&pool(), "ada", owners.clone())),
+        json_of(&upstream::template_for(
+            &pool(),
+            &namespace,
+            upstream::runner_owner(&runner()),
+        )),
+        json_of(&upstream::warm_pool_for(
+            &pool(),
+            &namespace,
+            upstream::runner_owner(&runner()),
+        )),
     ] {
-        assert_eq!(object["metadata"]["namespace"], "ada", "{object}");
+        assert_eq!(
+            object["metadata"]["namespace"],
+            namespace.as_str(),
+            "{object}"
+        );
         assert_eq!(object["metadata"]["name"], "purlis-pool-team", "{object}");
-        let owners = object["metadata"]["ownerReferences"]
-            .as_array()
-            .expect("owners");
-        // Each claim on the pool in the namespace, and none of them its controller: the garbage
-        // collector removes the object once every one of them is gone, and not before, whatever
-        // becomes of the pool.
-        assert_eq!(owners.len(), 2, "{object}");
-        for (owner, (name, uid)) in owners
-            .iter()
-            .zip([("ada-1", "claim-uid"), ("ada-2", "another-claim-uid")])
-        {
-            assert_eq!(owner["kind"], "Claim");
-            assert_eq!(owner["apiVersion"], "runners.purlis.dev/v1alpha1");
-            assert_eq!(owner["name"], name);
-            assert_eq!(owner["uid"], uid);
-            assert!(owner.get("controller").is_none(), "{object}");
-        }
+        // Whatever becomes of the pool or of any one Claim: a deleted Claim's finalizer removes
+        // them with the last of the person's Claims on the pool (#2055).
+        assert_eq!(
+            object["metadata"]["ownerReferences"],
+            json!([{
+                "apiVersion": "v1",
+                "kind": "Namespace",
+                "name": namespace,
+                "uid": "runner-uid",
+                "controller": true,
+            }]),
+            "{object}"
+        );
     }
 }
 
 #[test]
-fn a_claim_joins_the_claims_that_own_its_pools_objects_once_and_only_purlis_claims_stay() {
-    use k8s_openapi::apimachinery::pkg::apis::meta::v1::OwnerReference;
-    let reference = |api_version: &str, kind: &str, name: &str, uid: &str| OwnerReference {
-        api_version: api_version.into(),
-        kind: kind.into(),
-        name: name.into(),
-        uid: uid.into(),
-        controller: Some(true),
-        block_owner_deletion: Some(true),
-    };
-    let held = ObjectMeta {
-        owner_references: Some(vec![
-            reference(
-                "runners.purlis.dev/v1alpha1",
-                "Claim",
-                "ada-2",
-                "another-claim-uid",
-            ),
-            // The claim itself already: it is named once.
-            reference("runners.purlis.dev/v1alpha1", "Claim", "ada-1", "claim-uid"),
-            // The pool, as the operator made them before its claims owned them, and anything
-            // else: neither stays.
-            reference("runners.purlis.dev/v1alpha1", "Pool", "team", "pool-uid"),
-            reference("example.com/v1", "Claim", "ada-3", "foreign-uid"),
-        ]),
-        ..ObjectMeta::default()
-    };
-    let owners = upstream::owners_with(Some(&held), &claim(), &[&claim(), &another_claim()]);
-    let named: Vec<(&str, &str)> = owners
-        .iter()
-        .map(|owner| (owner.name.as_str(), owner.uid.as_str()))
-        .collect();
+fn each_container_of_a_runners_pod_asks_for_what_it_needs_so_a_quota_can_count_it() {
+    let template = json_of(&upstream::template_for(&pool(), "ns", Vec::new()));
+    let pod = &template["spec"]["podTemplate"]["spec"];
     assert_eq!(
-        named,
-        [("ada-1", "claim-uid"), ("ada-2", "another-claim-uid")]
+        pod["containers"][0]["resources"],
+        json!({ "requests": { "cpu": "250m", "memory": "512Mi" } })
     );
-    for owner in &owners {
-        assert_eq!(owner.controller, None, "{owner:?}");
-        assert_eq!(owner.block_owner_deletion, None, "{owner:?}");
-    }
+    assert_eq!(
+        pod["initContainers"][0]["resources"],
+        json!({ "requests": { "cpu": "50m", "memory": "32Mi" } })
+    );
 }
 
 #[test]
@@ -173,7 +142,7 @@ fn a_pool_keeps_no_runner_warm() {
     let warm = json_of(&upstream::warm_pool_for(
         &pool(),
         "ada",
-        upstream::owners_with(None, &claim(), &[&claim()]),
+        upstream::runner_owner(&runner()),
     ));
     assert_eq!(warm["spec"]["replicas"], 0, "{warm}");
     assert_eq!(
@@ -184,19 +153,32 @@ fn a_pool_keeps_no_runner_warm() {
 
 #[test]
 fn a_claim_becomes_an_upstream_claim_on_its_pools_warm_pool_that_goes_with_it() {
-    let upstream = json_of(&upstream::sandbox_claim_for(&claim(), &Default::default()));
+    let upstream = json_of(&upstream::sandbox_claim_for(
+        &claim(),
+        &Default::default(),
+        &runner(),
+    ));
     assert_eq!(upstream["apiVersion"], "extensions.agents.x-k8s.io/v1beta1");
     assert_eq!(upstream["kind"], "SandboxClaim");
     assert_eq!(upstream["metadata"]["name"], "ada-1");
-    assert_eq!(upstream["metadata"]["namespace"], "ada");
+    // In its requester's runner namespace, not the Claim's (#2055).
+    assert_eq!(
+        upstream["metadata"]["namespace"],
+        purlis_cluster_operator::person::runner_namespace("ada@example.com").as_str()
+    );
     assert_eq!(upstream["spec"]["warmPoolRef"]["name"], "purlis-pool-team");
     let owners = upstream["metadata"]["ownerReferences"]
         .as_array()
         .expect("owners");
     assert_eq!(owners.len(), 1, "{upstream}");
-    assert_eq!(owners[0]["kind"], "Claim");
-    assert_eq!(owners[0]["uid"], "claim-uid");
+    assert_eq!(owners[0]["kind"], "Namespace");
+    assert_eq!(owners[0]["uid"], "runner-uid");
     assert_eq!(owners[0]["controller"], true);
+    // The Claim is named by its uid: an owner cannot be in another namespace.
+    assert_eq!(
+        upstream["metadata"]["annotations"],
+        json!({ "runners.purlis.dev/claim-uid": "claim-uid" })
+    );
 }
 
 fn ready(status: &str, reason: &str, message: &str) -> Condition {
@@ -212,7 +194,7 @@ fn ready(status: &str, reason: &str, message: &str) -> Condition {
 
 #[test]
 fn a_claim_is_ready_when_its_upstream_claim_is_and_says_why_not_otherwise() {
-    let mut given = upstream::sandbox_claim_for(&claim(), &Default::default());
+    let mut given = upstream::sandbox_claim_for(&claim(), &Default::default(), &runner());
     given.status = Some(upstream::SandboxClaimStatus {
         conditions: vec![ready("True", "SandboxReady", "the sandbox is ready")],
         sandbox: None,
@@ -237,7 +219,7 @@ fn a_claim_is_ready_when_its_upstream_claim_is_and_says_why_not_otherwise() {
 
 #[test]
 fn a_claim_whose_runner_has_not_been_asked_for_yet_is_starting() {
-    let given = upstream::sandbox_claim_for(&claim(), &Default::default());
+    let given = upstream::sandbox_claim_for(&claim(), &Default::default(), &runner());
     let status = purlis_cluster_operator::status_of(Some(&given));
     let condition = &status.conditions[0];
     assert_eq!(condition.status, "False");
@@ -263,7 +245,7 @@ fn a_claims_ready_keeps_the_time_it_last_changed_until_it_changes_again() {
         purlis_cluster_operator::settled(Some(&before), purlis_cluster_operator::status_of(None));
     assert_eq!(again, before, "the same word is not written twice");
 
-    let mut given = upstream::sandbox_claim_for(&claim(), &Default::default());
+    let mut given = upstream::sandbox_claim_for(&claim(), &Default::default(), &runner());
     given.status = Some(upstream::SandboxClaimStatus {
         conditions: vec![ready("True", "SandboxReady", "ready")],
         sandbox: None,
@@ -281,22 +263,26 @@ fn a_claims_ready_keeps_the_time_it_last_changed_until_it_changes_again() {
 #[test]
 fn an_owner_reference_never_blocks_its_owners_deletion() {
     // Blocking would need update rights on the owner's finalizers wherever the cluster enforces
-    // owner-reference permissions; the garbage collector removes the dependents either way.
+    // owner-reference permissions; the claim's finalizer removes them either way.
     for object in [
         json_of(&upstream::template_for(
             &pool(),
             "ada",
-            upstream::owners_with(None, &claim(), &[&claim()]),
+            upstream::runner_owner(&runner()),
         )),
         json_of(&upstream::warm_pool_for(
             &pool(),
             "ada",
-            upstream::owners_with(None, &claim(), &[&claim()]),
+            upstream::runner_owner(&runner()),
         )),
-        json_of(&upstream::sandbox_claim_for(&claim(), &Default::default())),
+        json_of(&upstream::sandbox_claim_for(
+            &claim(),
+            &Default::default(),
+            &runner(),
+        )),
     ] {
         let owner = &object["metadata"]["ownerReferences"][0];
-        assert_eq!(owner["kind"], "Claim", "{object}");
+        assert_eq!(owner["kind"], "Namespace", "{object}");
         assert!(owner.get("blockOwnerDeletion").is_none(), "{object}");
     }
 }
@@ -496,12 +482,16 @@ mod stages {
 fn a_kept_claims_upstream_claim_keeps_the_volume_it_was_made_with_when_its_pool_changes() {
     let mut kept = claim();
     kept.spec.kept = true;
-    let made = upstream::sandbox_claim_for(&kept, &purlis_cluster_operator::KeptVolume::default());
+    let made = upstream::sandbox_claim_for(
+        &kept,
+        &purlis_cluster_operator::KeptVolume::default(),
+        &runner(),
+    );
     let changed = purlis_cluster_operator::KeptVolume {
         size: "50Gi".into(),
         storage_class_name: Some("fast".into()),
     };
-    let mut wanted = upstream::sandbox_claim_for(&kept, &changed);
+    let mut wanted = upstream::sandbox_claim_for(&kept, &changed, &runner());
     assert_ne!(wanted.spec, made.spec);
     upstream::keep_volumes_held(&mut wanted, Some(&made));
     assert_eq!(
@@ -509,7 +499,7 @@ fn a_kept_claims_upstream_claim_keeps_the_volume_it_was_made_with_when_its_pool_
         "upstream refuses a change to them"
     );
     // A claim not made yet takes its pool's as it is now.
-    let mut new = upstream::sandbox_claim_for(&kept, &changed);
+    let mut new = upstream::sandbox_claim_for(&kept, &changed, &runner());
     upstream::keep_volumes_held(&mut new, None);
     assert_eq!(
         json_of(&new)["spec"]["volumeClaimTemplates"][0]["spec"]["resources"]["requests"]["storage"],
@@ -528,6 +518,7 @@ fn a_statement_goes_when_what_its_claim_asks_for_cannot_be_applied() {
     vouched.link_key = Some(LinkKey {
         statement: "a statement".into(),
         signature: "a signature".into(),
+        next_signature: None,
     });
     let withdrawn = status_withdrawn(Some(&vouched), "upstream refused it");
     assert_eq!(withdrawn.link_key, None);

@@ -14,6 +14,7 @@ import {
   type SkillTemplate,
   type SkillTemplateId,
   type SkillUsers,
+  type SkillDraft,
   type Studio,
   type StudioRouter,
   type StudioSkill,
@@ -38,9 +39,10 @@ import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { RouterGrade } from "./RouterGrade";
 import { Notice } from "./Notice";
 import { SkillCompatBadges } from "./SkillCompatBadges";
-import { SkillDrafts } from "./SkillDrafts";
+import { DraftPage, DraftsList } from "./SkillStudioDrafts";
+import { DeletedList, DeletedPage } from "./SkillStudioDeleted";
 import { DRAFT_WITH_A_CHAT, NEW_SKILL, SkillStarts, type SkillStart } from "./SkillStarts";
-import { askDraft, useSkillDrafts } from "./skillDraftAsks";
+import { askDraft, useSkillDraftsRead } from "./skillDraftAsks";
 import { SkillSourcesPage } from "./SkillSources";
 import { Select } from "./ui/select/Select";
 import { Choice, Field, SettingRow } from "./settings/components";
@@ -326,7 +328,8 @@ export function SkillStudioTab({
   // Read once the studio has said it is on: a scope picked later reads its skills, not these.
   const [opened, setOpened] = useState(false);
   if (on && !opened) setOpened(true);
-  const drafts = useSkillDrafts(plane, changed + done);
+  const draftsRead = useSkillDraftsRead(plane, changed + done);
+  const drafts = draftsRead ?? [];
   // A start the Skills view asked this studio to open on (#3266): the New skill form.
   // Make my own copy, asked from the Skills view's folded built-in skills (#3693).
   useStudioStart(tab, on, (start) => {
@@ -467,9 +470,10 @@ export function SkillStudioTab({
         why === undefined ? { status: "ok", data: { notes: [] } } : { status: "error", error: why },
       ),
     );
-  const restore = (id: string) =>
-    change("The skill was not restored", () => commands.skillRestore(plane, id));
-  /** After a delete: Restore on the Notice, for the copy just deleted. */
+  /** Bring back (S2's split of Restore): the deleted skill `id` names, back at its level. */
+  const bringBack = (id: string) =>
+    change("The skill was not brought back", () => commands.skillRestore(plane, id));
+  /** After a delete: Bring it back on the Notice, for the copy just deleted. */
   const restoreOffered = async (name: string, level: SkillLevel): Promise<Said | undefined> => {
     const answer = await commands.skillsDeleted(plane);
     const one =
@@ -631,7 +635,9 @@ export function SkillStudioTab({
           },
         ]
       : []),
-    ...(drafts.length > 0
+    // Drafts stays while it is the page shown, so accepting or discarding its last draft never
+    // takes the person to another page (S9).
+    ...(drafts.length > 0 || at.page === "drafts"
       ? [
           {
             id: "drafts",
@@ -728,7 +734,7 @@ export function SkillStudioTab({
       fixes={
         restoring === undefined
           ? undefined
-          : [{ label: "Restore", onPress: () => restore(restoring) }]
+          : [{ label: "Bring it back", onPress: () => bringBack(restoring) }]
       }
       onDismiss={() => setSaid(undefined)}
     >
@@ -783,6 +789,8 @@ export function SkillStudioTab({
 
   let list: ReactNode;
   let item: ReactNode;
+  /** An item other than a skill is chosen on its page (a draft): narrow, it is drawn alone. */
+  let itemChosen = false;
   if (page === "library") {
     const shown = skills.filter((skill) => chipsKeep(skill, chips) && searchKeeps(skill, query));
     const starts =
@@ -1035,31 +1043,87 @@ export function SkillStudioTab({
         <NeedsYouItem need={shown} busy={busy} onFix={fixNeed} onLeave={leaveOldKeys} />
       );
   } else if (page === "drafts") {
+    /* A chat's drafts (S9, #3690; SK-9, #2772): the list, and the draft chosen beside it. */
+    const draftLevel = (draft: SkillDraft) => labelOf(studio?.levels ?? [], draft.level);
+    const draft = drafts.find((one) => one.id === at.item);
+    const none = draftsRead !== undefined && drafts.length === 0;
     list = pageList(
-      "Skills a chat drafted, waiting for you to try, accept or reject.",
-      held(() => (
-        /* A chat's drafts (SK-9, #2772): Accept is one commit, Reject deletes the draft. */
-        <SkillDrafts
+      "Skills a chat drafted for you. Try one, then accept it into the project or discard it.",
+      draftsRead === undefined
+        ? held(() => <Placeholders />)
+        : held(() =>
+            none ? (
+              <EmptyState
+                headline="No drafts"
+                body="Ask a chat to draft a skill, and what it writes waits here for you to try."
+                testid="skill-drafts-none"
+                action={draftAsk}
+              />
+            ) : (
+              <DraftsList
+                drafts={drafts}
+                labelOf={draftLevel}
+                chosen={draft?.id}
+                onChoose={(id) => go({ page: "drafts", scope, item: id })}
+              />
+            ),
+          ),
+      none ? undefined : draftAsk,
+    );
+    itemChosen = draft !== undefined;
+    item =
+      draft !== undefined ? (
+        <DraftPage
+          key={draft.id}
           plane={plane}
-          drafts={drafts}
-          levels={studio?.levels ?? []}
+          draft={draft}
+          label={draftLevel(draft)}
+          local={draft.level.local}
           busy={busy}
-          onAccept={(draft) =>
-            change("The draft was not accepted", () => commands.skillDraftAccept(plane, draft.id))
+          onBack={() => go({ page: "drafts", scope })}
+          onAccept={(one) =>
+            change(
+              "The draft was not accepted",
+              () => commands.skillDraftAccept(plane, one.id),
+              // The skill it made, or changed, in the Library of chats that get it: accepted,
+              // it is no draft now. A workspace's or a persona's is not the root's.
+              async () => {
+                go({
+                  page: "library",
+                  scope: scopeOfLevel(one.level, scope),
+                  skill: skillRowNamed(one.name),
+                });
+                return undefined;
+              },
+            )
           }
-          onReject={(draft) =>
-            change("The draft was not rejected", () =>
-              commands
-                .skillDraftReject(plane, draft.id)
-                .then((answer): Answer =>
-                  answer.status === "ok" ? { status: "ok", data: { notes: [] } } : answer,
-                ),
+          onDiscard={(one) =>
+            change(
+              "The draft was not discarded",
+              () =>
+                commands
+                  .skillDraftReject(plane, one.id)
+                  .then((answer): Answer =>
+                    answer.status === "ok" ? { status: "ok", data: { notes: [] } } : answer,
+                  ),
+              async () => {
+                go({ page: "drafts", scope });
+                return {
+                  tone: "news",
+                  label: "Draft discarded",
+                  text: `${one.name} is discarded.`,
+                };
+              },
             )
           }
         />
-      )),
-      draftAsk,
-    );
+      ) : none ? undefined : (
+        <EmptyState
+          headline="Pick a draft"
+          body="What it writes, Try it, and Accept or Discard open here."
+          testid="skill-drafts-unpicked"
+        />
+      );
   } else if (page === "sources") {
     // Sources and the pages inside it (#3687): each heads itself, as a source's page and the
     // reviews name what they are about, not the page they are on.
@@ -1077,35 +1141,44 @@ export function SkillStudioTab({
       />
     ));
   } else if (page === "deleted") {
+    /* Deleted (S9, #3691): the skills deleted in the last 30 days, and the one chosen beside. */
+    const one = deleted.find((each) => each.id === at.item);
     list = pageList(
-      "Skills deleted from this project, each of which can be restored.",
+      "Skills deleted in the last 30 days. Bring one back and chats started after that get it again.",
       held(() =>
         deleted.length === 0 ? (
           <EmptyState
-            headline="No skill is deleted"
-            body="A skill you delete waits here, and can be restored from here."
+            headline="Nothing deleted in the last 30 days."
+            body="A skill you delete waits here for 30 days, to be brought back."
             testid="skill-deleted-none"
             action={<Button onPress={() => go({ page: "library", scope })}>Go to Library</Button>}
           />
         ) : (
-          <ul className="skill-deleted" aria-label="Deleted skills">
-            {deleted.map((one) => (
-              <li key={one.id} data-testid={`deleted-${one.name}`}>
-                <code>{one.name}</code> · {one.label} · {one.stays}{" "}
-                <Button
-                  size="sm"
-                  aria-label={`Restore ${one.name}`}
-                  isDisabled={busy}
-                  onPress={() => restore(one.id)}
-                >
-                  Restore
-                </Button>
-              </li>
-            ))}
-          </ul>
+          <DeletedList
+            deleted={deleted}
+            chosen={one?.id}
+            onChoose={(id) => go({ page: "deleted", scope, item: id })}
+          />
         ),
       ),
     );
+    itemChosen = one !== undefined;
+    item =
+      one !== undefined ? (
+        <DeletedPage
+          key={one.id}
+          plane={plane}
+          deleted={one}
+          busy={busy}
+          onBringBack={(it) => bringBack(it.id)}
+        />
+      ) : deleted.length === 0 ? undefined : (
+        <EmptyState
+          headline="Pick a deleted skill"
+          body="How long it can be brought back, Bring back and its last text open here."
+          testid="skill-deleted-unpicked"
+        />
+      );
   } else if (page === "harness") {
     list = pageList(
       "The skills each chat program brings on its own, which purlis lists and never edits.",
@@ -1170,6 +1243,7 @@ export function SkillStudioTab({
         opened={
           chosen !== undefined ||
           doing !== undefined ||
+          itemChosen ||
           (page === "needs" && need !== undefined && needs.some((one) => one.id === need))
         }
         onBack={() => go({ page, scope })}
@@ -1567,7 +1641,8 @@ function ChangePanel({
       return (
         <section className="skill-change" aria-label={`Delete ${doing.skill.name}`}>
           <p>
-            <strong>Delete {doing.skill.name}?</strong> It can be restored afterwards.
+            <strong>Delete {doing.skill.name}?</strong> It stays in Deleted for 30 days, to be
+            brought back.
           </p>
           <UsedBy users={doing.users} />
           <ButtonRow>
