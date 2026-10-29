@@ -664,6 +664,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Accepting a workspace or persona folder a chat could have made (SK-9): its skills then
     // reach chats, so only the person's own press in their window does it.
     "skill_level_accept",
+    "skill_levels_confirm",
     // Skill sources (#2773): each reaches a git repository the person named, a private one with
     // a credential read from a vault, and an install or an update is one commit to the project.
     // The person's own press in their window, never a link's.
