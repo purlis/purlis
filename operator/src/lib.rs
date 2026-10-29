@@ -29,12 +29,13 @@
 //! the desktop checks against its own pairing over `kubectl exec`.
 //!
 //! **What it may do** is `deploy/operator.yaml`'s ClusterRole and nothing else: read Pools and
-//! Claims, write a Pool's and a Claim's status and a Claim's finalizer, read the policy's
-//! binding, read, create, patch and delete the three upstream objects, read a runner's pod by
-//! name, and make each person's runner namespace, its role binding and its quota, binding the
-//! one role `purlis-runner-owner`. It holds no right to
-//! `exec` or `attach` to a pod and none to read a Secret: its signing key is mounted in its pod
-//! by the kubelet. This crate's Kubernetes client is built without the websocket feature `exec`
+//! Claims, write a Pool's and a Claim's status and a Claim's finalizer, read the policies'
+//! bindings, read, create, patch and delete the three upstream objects, read a runner's pod by
+//! name, and make each person's runner namespace, its role binding and its quota. It holds no
+//! `exec` or `attach` right to a pod itself and none to read a Secret: its signing key is mounted
+//! in its pod by the kubelet. It binds one role, `purlis-runner-owner`, only to one person, only
+//! in runner namespaces, as the policy on runner namespaces holds at admission
+//! ([`RUNNER_NAMESPACES_POLICY`]). This crate's Kubernetes client is built without the websocket feature `exec`
 //! and `attach` would need.
 
 mod admission;
@@ -46,7 +47,9 @@ pub mod stage;
 pub mod upstream;
 pub mod vouch;
 
-pub use admission::{Admission, POLICY, SETTLE, admission};
+pub use admission::{
+    Admission, POLICY, RUNNER_NAMESPACES_POLICY, SETTLE, admission, in_force_since,
+};
 pub use reconcile::{
     FIELD_MANAGER, LinkKeyIs, OVER_QUOTA_AGAIN, claims_of_upstream, claims_woken_by,
     pool_objects_go_with, pool_status_names, retry_after_conflict, run, settled, status_of,

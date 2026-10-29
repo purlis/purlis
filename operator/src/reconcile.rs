@@ -16,8 +16,8 @@
 //! [`upstream::made_for_claim`]). Each is read first: one it did not make is left as it is, and
 //! nothing is written for the Claim until that object is gone.
 
-use crate::admission::{POLICY, admission};
-use crate::person::{self, Quota};
+use crate::admission::{POLICY, RUNNER_NAMESPACES_POLICY, admission, in_force_since};
+use crate::person::{self, QUOTA, Quota, RunnerNamespace};
 use crate::resources::{Claim, ClaimStatus, Pool, READY, condition};
 use crate::stage;
 use crate::upstream::{
@@ -231,38 +231,34 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
     .map_err(Error::of_finalizer)
 }
 
-/// **`claim`'s requester's runner namespace**, as the cluster holds it, when it is one the
-/// operator made for them ([`person::is_theirs`]): `Ok(None)` when there is none, and `Err` with
-/// the name when a namespace of that name is someone else's.
-async fn runner_namespace_held(
-    client: &Client,
-    requester: &str,
-) -> Result<Result<Option<Namespace>, String>, Error> {
-    let name = person::runner_namespace(requester);
-    Ok(
-        match Api::<Namespace>::all(client.clone()).get_opt(&name).await? {
-            None => Ok(None),
-            Some(held) if person::is_theirs(&held, requester) => Ok(Some(held)),
-            Some(_) => Err(name),
-        },
-    )
+/// **`requester`'s runner namespace**, as the cluster holds it and as the policy on runner
+/// namespaces lets the operator take it ([`person::runner_namespace_of`]).
+async fn runner_namespace_held(client: &Client, requester: &str) -> Result<RunnerNamespace, Error> {
+    let binding = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone())
+        .get_opt(RUNNER_NAMESPACES_POLICY)
+        .await?;
+    let since = in_force_since(binding.as_ref(), RUNNER_NAMESPACES_POLICY);
+    let held = Api::<Namespace>::all(client.clone())
+        .get_opt(&person::runner_namespace(requester))
+        .await?;
+    Ok(person::runner_namespace_of(held, requester, since))
 }
 
 /// **`requester`'s runner namespace, made ready** (#2055): made where there is none, with the
 /// role binding that gives them alone [`person::OWNER_ROLE`] and the quota `quota` asks for,
 /// each made or brought back to what it should say. The quota as the cluster holds it, with
-/// what it counts, comes back with the namespace.
+/// what it counts, comes back with the namespace; what keeps the operator from acting there
+/// comes back instead when anything does.
 async fn runner_namespace_ready(
     client: &Client,
     requester: &str,
     quota: &Quota,
-) -> Result<Result<(Namespace, ResourceQuota), String>, Error> {
+) -> Result<Result<(Namespace, ResourceQuota), RunnerNamespace>, Error> {
     let runner = match runner_namespace_held(client, requester).await? {
-        Err(in_the_way) => return Ok(Err(in_the_way)),
-        Ok(Some(runner)) => runner,
+        RunnerNamespace::Theirs(runner) => *runner,
         // Made, not applied: a namespace someone made under the name since is refused, and the
         // next pass finds it in the way.
-        Ok(None) => {
+        RunnerNamespace::Missing => {
             Api::<Namespace>::all(client.clone())
                 .create(
                     &PostParams {
@@ -273,6 +269,7 @@ async fn runner_namespace_ready(
                 )
                 .await?
         }
+        refused => return Ok(Err(refused)),
     };
     let name = runner.name_any();
     let wanted = person::owner_binding(&name, requester);
@@ -282,18 +279,27 @@ async fn runner_namespace_ready(
         |held| person::binding_says(held, &wanted),
     )
     .await?;
+    // Applied server-side from the first, so a key later left out of perPerson.quota is taken
+    // out of every quota the operator applied it to.
     let wanted = person::quota_for(&name, quota);
-    let held = made_or_applied(
-        &Api::<ResourceQuota>::namespaced(client.clone(), &name),
-        wanted.clone(),
-        |held| person::quota_says(held, &wanted),
-    )
-    .await?;
+    let api = Api::<ResourceQuota>::namespaced(client.clone(), &name);
+    let held = match api.get_opt(QUOTA).await? {
+        Some(held) if person::quota_says(&held, &wanted) => held,
+        _ => {
+            api.patch(
+                QUOTA,
+                &PatchParams::apply(FIELD_MANAGER).force(),
+                &Patch::Apply(&wanted),
+            )
+            .await?
+        }
+    };
     Ok(Ok((runner, held)))
 }
 
 /// `wanted` as the cluster holds it: made where nothing holds its name, applied server-side
-/// where what is held does not say what it should (`says`), and otherwise left as it is.
+/// where what is held does not say what it should (`says`), and otherwise left as it is. For an
+/// object whose fields are all atomic, as a role binding's are.
 async fn made_or_applied<K>(api: &Api<K>, wanted: K, says: impl Fn(&K) -> bool) -> Result<K, Error>
 where
     K: Resource + Clone + DeserializeOwned + Serialize + Debug,
@@ -333,7 +339,7 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
         // The runner it was given, if any, keeps running: the operator changes nothing for it,
         // and says what upstream says of it.
         let held = match runner_namespace_held(client, requester).await? {
-            Ok(Some(runner)) => {
+            RunnerNamespace::Theirs(runner) => {
                 let upstream_claims =
                     Api::<SandboxClaim>::namespaced(client.clone(), &runner.name_any());
                 upstream_claims.get_opt(&name).await?.filter(|held| {
@@ -354,14 +360,26 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     };
     let (runner, quota) = match runner_namespace_ready(client, requester, &context.quota).await? {
         Ok(ready) => ready,
-        Err(in_the_way) => {
-            tracing::warn!(
-                claim = %name, %namespace, runner_namespace = %in_the_way,
-                "left as it is: a namespace the operator did not make for the requester has the runner namespace's name"
-            );
-            let status = person::status_of_a_namespace_in_the_way(&in_the_way);
+        Err(refused) => {
+            let runner = person::runner_namespace(requester);
+            let status = match refused {
+                RunnerNamespace::InTheWay { made_before_policy } => {
+                    tracing::warn!(
+                        claim = %name, %namespace, runner_namespace = %runner, made_before_policy,
+                        "left as it is: the runner namespace's name is held by a namespace the operator may not use"
+                    );
+                    person::status_of_a_namespace_in_the_way(&runner, made_before_policy)
+                }
+                _ => {
+                    tracing::warn!(
+                        claim = %name, %namespace, policy = RUNNER_NAMESPACES_POLICY,
+                        "not acted on: the policy on runner namespaces is not in force"
+                    );
+                    person::status_of_runner_namespaces_not_in_force()
+                }
+            };
             write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
-            // Namespaces are not watched: looked at again now and then.
+            // Namespaces and that binding are not watched: looked at again now and then.
             return Ok(Action::requeue(vouch::RECHECK));
         }
     };
@@ -436,6 +454,10 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     .await;
     let (template_now, applied) = match written {
         Ok(written) => written,
+        // A quota just made has not counted yet: looked at again soon, saying nothing new.
+        Err(Error::Kube(error)) if person::is_quota_not_counted_yet(&error) => {
+            return Ok(Action::requeue(vouch::KEY_WAIT));
+        }
         Err(Error::Kube(error)) if person::is_over_quota(&error) => {
             return over_quota(client, &claim, namespace, &runner_name, &error.to_string()).await;
         }
@@ -509,7 +531,12 @@ pub fn pool_objects_go_with(claim: &Claim, watched: impl IntoIterator<Item = Arc
 /// stay for the person's next Claim.
 async fn cleanup(claim: &Claim, context: &Context) -> Result<Action, Error> {
     let client = &context.client;
-    let Ok(Some(runner)) = runner_namespace_held(client, &claim.spec.requester).await? else {
+    let held = Api::<Namespace>::all(client.clone())
+        .get_opt(&person::runner_namespace(&claim.spec.requester))
+        .await?;
+    // Only what the operator made, in a namespace marked for this requester, is deleted; with
+    // none there, the Claim goes and nothing else does.
+    let Some(runner) = person::runner_to_clean(held, &claim.spec.requester) else {
         return Ok(Action::await_change());
     };
     let runner_name = runner.name_any();

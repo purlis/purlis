@@ -184,9 +184,9 @@ cluster admin can review and apply them apart from the controllers.
 #    the release's digest.
 kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6
 
-# 2. The policy that admits a Claim only for someone who may use its Pool, then purlis's
-#    definitions, Pool and Claim. The policy goes first, so no Claim is admitted before it
-#    holds.
+# 2. The policies: the one that admits a Claim only for someone who may use its Pool, and the
+#    one on runner namespaces; then purlis's definitions, Pool and Claim. The policies go
+#    first, so no Claim is admitted before they hold.
 kubectl apply --server-side -f operator/deploy/policy.yaml
 kubectl apply --server-side -f operator/deploy/crds.yaml
 
@@ -395,14 +395,36 @@ finalizer still removes it then.
 ## Each person's namespace
 
 **A person's runners run in a namespace of their own** (#2055, ruled 2026-10-29), whichever
-namespace their Claims are in. For each requester the operator makes, the first time one of their
-Claims is acted on:
+namespace their Claims are in. A person, here, is a username as the cluster signs it in: the
+Claim's `requester`. Each username has a runner namespace and a quota of its own, a service
+account's too. For each requester the operator makes, the first time one of their Claims is acted
+on:
 
 | Object | Name | What it holds |
 |---|---|---|
 | `Namespace` | `purlis-runners-<hash>` | the requester's runner namespace. `<hash>` is the first 16 hex digits of the SHA-256 of the requester, exactly as the Claim names them, so a desktop can work out the name itself. Labelled `app.kubernetes.io/managed-by: purlis-cluster-operator` and annotated `runners.purlis.dev/requester` with the requester: the operator uses a namespace of that name only when it carries both, for this requester, and the Claim otherwise says `NamespaceInTheWay` and waits |
 | `RoleBinding` | `purlis-runner-owner` | the cluster role `purlis-runner-owner`, which the chart installs, for the requester alone: a `User`, or the `ServiceAccount` a `system:serviceaccount:<namespace>:<name>` requester names. The role allows `get`, `list` and `watch` on pods, `create` and `get` on `pods/exec`, and `get` on `pods/log`: what a desktop needs to pair with and link to the runner over `kubectl exec`, and to read its log. Nothing else: the requester makes, changes and deletes nothing there |
 | `ResourceQuota` | `purlis-person` | the chart's `perPerson.quota`: `claims` as `count/sandboxclaims.extensions.agents.x-k8s.io`, `cpu` as `requests.cpu`, `memory` as `requests.memory` and `storage` as `requests.storage`. Applied again whenever it differs from the chart's value, so a changed value reaches each person as their Claims are next looked at |
+
+**The policy on runner namespaces holds them at admission.** A second ValidatingAdmissionPolicy,
+`purlis-runner-namespaces`, installed beside the policy on Claims (`operator/deploy/policy.yaml`)
+and kept when the release is uninstalled, as that one is:
+
+- a namespace named `purlis-runners-*` is made only by the operator's service account, and no
+  one else changes its `app.kubernetes.io/managed-by` label or `runners.purlis.dev/requester`
+  annotation;
+- the operator makes no other namespace;
+- the operator makes or changes a role binding only in a runner namespace, only
+  `purlis-runner-owner` of the cluster role `purlis-runner-owner`, and only for one subject: a
+  user whose name does not start `system:`, or a service account other than its own;
+- the operator makes or changes a quota only in a runner namespace, and only `purlis-person`.
+
+The operator uses a runner namespace only while that policy's binding is in force, and only one
+made after it was, 30 seconds after the binding was made, as with Claims. While no binding puts
+it in force, a Claim says `PolicyNotInForce`, naming the policy. A runner namespace made before
+says `NamespaceInTheWay`; making the binding again does that to every runner namespace there is,
+so a cluster admin then deletes them, with the runners in them, and their people's Claims are
+made again.
 
 **The Claim stays where it is made.** Its runner, and the upstream objects below, are in the
 runner namespace; the Claim's status, its statement included, stays on the Claim. Two Claims of
@@ -453,9 +475,10 @@ it. Remove or rename that object and the Claim goes on at once: the operator wat
 kinds.
 
 **After an upgrade from a version without runner namespaces**, a Claim made before keeps the
-runner it has in its own namespace until it is deleted, and is given a new runner in its
-requester's runner namespace, which its desktop links to. Make such Claims again to free the old
-runners.
+runner it had in its own namespace, as well as getting a new one in its requester's runner
+namespace, which its desktop links to. The old runner is outside that namespace and outside the
+person's quota, and anyone with rights in the Claim's namespace can still reach it. Delete such
+Claims and make them again soon after upgrading: the old runner goes with the Claim.
 
 ## What it may do
 
@@ -474,12 +497,13 @@ it holds:
 | `rbac.authorization.k8s.io` | `rolebindings` | create; get and patch only `purlis-runner-owner` |
 | `rbac.authorization.k8s.io` | `clusterroles`, only `purlis-runner-owner` | bind |
 | `agents.x-k8s.io` | `sandboxes` | get |
-| `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool` | get, list, watch |
+| `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool` and `purlis-runner-namespaces` | get, list, watch |
 | `extensions.agents.x-k8s.io` | `sandboxclaims`, `sandboxtemplates`, `sandboxwarmpools` | create, delete, get, list, patch, watch |
 
-It holds no right to `exec`, `attach` or port-forward to a pod and none to read a Secret, and it
-holds `bind` on one cluster role, `purlis-runner-owner`, which it binds in runner namespaces
-alone; it never deletes a namespace. It reads a sandbox and a pod only by name: a Claim's, which upstream made, to follow the claim to
+It holds no right to `exec`, `attach` or port-forward to a pod itself, and none to read a Secret.
+It binds one cluster role, `purlis-runner-owner`, only to one person, only in runner namespaces:
+RBAC cannot say where a role may be bound, so the policy on runner namespaces (above) holds it.
+It never deletes a namespace. It reads a sandbox and a pod only by name: a Claim's, which upstream made, to follow the claim to
 its runner and read the key it vouches for. It never lists, makes, changes or deletes a pod. Its own signing key is the
 Secret you made at install, which the kubelet mounts in its pod. Its Kubernetes client is built
 without the websocket support `exec` would need.

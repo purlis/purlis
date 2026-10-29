@@ -131,11 +131,12 @@ const OPERATOR_HEADER: &str = "# Copyright 2026 Purlis
 # operator's digest (docs/cluster-operator.md).
 #
 # What it may do is the ClusterRole purlis-cluster-operator below and nothing else. It holds no
-# right to exec or attach to a pod and none to read a Secret, and it only reads a runner's pod
-# by name, for the link key it vouches for: upstream's controller makes the runners' pods. It
-# makes each person's runner namespace and binds them alone the ClusterRole
-# purlis-runner-owner there (#2055). Its own signing key is a Secret the kubelet mounts in its
-# pod, made before it is installed (docs/cluster-operator.md).
+# exec or attach right to a pod itself and none to read a Secret, and it only reads a runner's
+# pod by name, for the link key it vouches for: upstream's controller makes the runners' pods.
+# It makes each person's runner namespace and binds purlis-runner-owner, only to that person,
+# only in runner namespaces, as the policy purlis-runner-namespaces (policy.yaml) holds at
+# admission (#2055). Its own signing key is a Secret the kubelet mounts in its pod, made before
+# it is installed (docs/cluster-operator.md).
 # operator/tests/the_install_manifests.rs holds every rule.
 ---
 # The namespace the chart is installed in, which Helm leaves to the person: only pods that meet
@@ -173,6 +174,11 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 #
 # Upstream's claims on a purlis pool's warm pool, and warm pools of its template, are made by
 # the operator alone, so a runner from a pool is had only through a Claim (#2055).
+#
+# The second policy, purlis-runner-namespaces (#2055): only the operator makes a runner
+# namespace (purlis-runners-*) or changes who it is for, and the operator binds
+# purlis-runner-owner, and makes the quota purlis-person, in a runner namespace alone, for one
+# person who is not the operator.
 ";
 
 /// The plain manifests the chart's default render makes: `operator.yaml` and `policy.yaml`.

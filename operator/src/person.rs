@@ -108,6 +108,58 @@ pub fn is_theirs(held: &Namespace, requester: &str) -> bool {
             == Some(requester)
 }
 
+/// What the cluster holds under a requester's runner namespace's name, as the operator reads it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RunnerNamespace {
+    /// Nothing: the operator makes it, while the policy on runner namespaces is in force.
+    Missing,
+    /// The one the operator made for them, under the policy: it acts in it.
+    Theirs(Box<Namespace>),
+    /// A namespace it did not make for them, or made before the policy was in force: nothing is
+    /// made or changed in it.
+    InTheWay { made_before_policy: bool },
+    /// No binding puts the policy on runner namespaces in force: no runner namespace is made or
+    /// used until one does.
+    PolicyNotInForce,
+}
+
+/// **Whether `held` is `requester`'s runner namespace to act in** (#2055): [`is_theirs`], and
+/// made after `since`, when the policy on runner namespaces
+/// ([`crate::admission::RUNNER_NAMESPACES_POLICY`]) is in force from (`None` while it is not).
+/// Under that policy only the operator makes a runner namespace or changes who it is for, so
+/// one made since then and marked for them is the operator's.
+pub fn runner_namespace_of(
+    held: Option<Namespace>,
+    requester: &str,
+    since: Option<k8s_openapi::jiff::Timestamp>,
+) -> RunnerNamespace {
+    let Some(since) = since else {
+        return RunnerNamespace::PolicyNotInForce;
+    };
+    let Some(held) = held else {
+        return RunnerNamespace::Missing;
+    };
+    if !is_theirs(&held, requester) {
+        return RunnerNamespace::InTheWay {
+            made_before_policy: false,
+        };
+    }
+    match &held.metadata.creation_timestamp {
+        Some(made) if made.0 > since => RunnerNamespace::Theirs(Box::new(held)),
+        _ => RunnerNamespace::InTheWay {
+            made_before_policy: true,
+        },
+    }
+}
+
+/// The runner namespace a deleted Claim's finalizer looks in: `held`, when it is marked for
+/// `requester` ([`is_theirs`]), whatever the policy says now, so a Claim refused since still
+/// takes its runner with it. It deletes there only what the operator made for that Claim, by
+/// uid. With none, the Claim goes and nothing is deleted.
+pub fn runner_to_clean(held: Option<Namespace>, requester: &str) -> Option<Namespace> {
+    held.filter(|held| is_theirs(held, requester))
+}
+
 /// Who `requester` is to RBAC: the service account a `system:serviceaccount:<ns>:<name>`
 /// username names, and otherwise the user of that name.
 pub fn subject_of(requester: &str) -> Subject {
@@ -439,18 +491,47 @@ pub fn status_over_quota(namespace: &str, why: &str) -> ClaimStatus {
 }
 
 /// A Claim's status when the name of its requester's runner namespace, `namespace`, is held by
-/// a namespace the operator did not make for them: nothing is made in it.
-pub fn status_of_a_namespace_in_the_way(namespace: &str) -> ClaimStatus {
+/// a namespace the operator did not make for them, or made before the policy on runner
+/// namespaces was in force: nothing is made in it.
+pub fn status_of_a_namespace_in_the_way(namespace: &str, made_before_policy: bool) -> ClaimStatus {
+    let why = if made_before_policy {
+        "was made before the policy on runner namespaces was in force"
+    } else {
+        "was not made by purlis's cluster operator for this claim's requester"
+    };
     ClaimStatus {
         link_key: None,
         conditions: vec![condition(
             "False",
             NAMESPACE_IN_THE_WAY,
             format!(
-                "The namespace {namespace}, where this claim's runner would run, was not made \
-                 by purlis's cluster operator for this claim's requester, so nothing is made in \
-                 it. A cluster admin can remove it, and this claim goes on."
+                "The namespace {namespace}, where this claim's runner would run, {why}, so \
+                 nothing is made in it. A cluster admin can remove it, and this claim goes on."
             ),
         )],
     }
+}
+
+/// A Claim's status while no binding puts the policy on runner namespaces in force: no runner
+/// namespace is made or used.
+pub fn status_of_runner_namespaces_not_in_force() -> ClaimStatus {
+    ClaimStatus {
+        link_key: None,
+        conditions: vec![condition(
+            "False",
+            "PolicyNotInForce",
+            format!(
+                "The policy {} is not in force, so no runner namespace is made or used. A \
+                 cluster admin can install it again, and this claim goes on.",
+                crate::admission::RUNNER_NAMESPACES_POLICY
+            ),
+        )],
+    }
+}
+
+/// Whether `error` is the cluster refusing a request because a quota in the namespace has not
+/// counted yet, as with a quota just made: tried again soon, not an error.
+pub fn is_quota_not_counted_yet(error: &kube::Error) -> bool {
+    matches!(error, kube::Error::Api(status)
+        if status.code == 403 && status.message.contains("status unknown for quota"))
 }

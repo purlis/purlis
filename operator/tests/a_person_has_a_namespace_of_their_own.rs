@@ -344,7 +344,7 @@ fn a_claim_over_its_quota_says_so_and_what_frees_it() {
 
 #[test]
 fn a_claim_whose_runner_namespace_is_someone_elses_says_so() {
-    let status = person::status_of_a_namespace_in_the_way("purlis-runners-b5fc85e55755f9e0");
+    let status = person::status_of_a_namespace_in_the_way("purlis-runners-b5fc85e55755f9e0", false);
     let ready = &status.conditions[0];
     assert_eq!(ready.reason, "NamespaceInTheWay");
     assert!(
@@ -372,4 +372,122 @@ fn only_a_refusal_for_a_quota_reads_as_over_quota() {
         "forbidden: the operator may not"
     )));
     assert!(!person::is_over_quota(&refused(409, "exceeded quota")));
+}
+
+fn at(time: &str) -> k8s_openapi::apimachinery::pkg::apis::meta::v1::Time {
+    k8s_openapi::apimachinery::pkg::apis::meta::v1::Time(time.parse().expect("a timestamp"))
+}
+
+/// Ada's runner namespace as the operator made it, at `made`.
+fn made_at(made: &str) -> k8s_openapi::api::core::v1::Namespace {
+    let mut runner = person::namespace_for("ada@example.com");
+    runner.metadata.uid = Some("runner-uid".into());
+    runner.metadata.creation_timestamp = Some(at(made));
+    runner
+}
+
+#[test]
+fn a_runner_namespace_is_acted_in_only_when_made_for_its_person_under_the_policy() {
+    use person::RunnerNamespace;
+    let since = Some(at("2026-10-29T10:00:30Z").0);
+    let ada = "ada@example.com";
+    let made = made_at("2026-10-29T11:00:00Z");
+    assert_eq!(
+        person::runner_namespace_of(Some(made.clone()), ada, since),
+        RunnerNamespace::Theirs(Box::new(made.clone()))
+    );
+    assert_eq!(
+        person::runner_namespace_of(None, ada, since),
+        RunnerNamespace::Missing
+    );
+    // Made before the policy was in force, or within its settling time: whoever made it.
+    for before in ["2026-10-29T09:00:00Z", "2026-10-29T10:00:30Z"] {
+        assert_eq!(
+            person::runner_namespace_of(Some(made_at(before)), ada, since),
+            RunnerNamespace::InTheWay {
+                made_before_policy: true
+            },
+            "{before}"
+        );
+    }
+    // Someone else's, or one not marked as the operator's.
+    assert_eq!(
+        person::runner_namespace_of(Some(made.clone()), "bea@example.com", since),
+        RunnerNamespace::InTheWay {
+            made_before_policy: false
+        }
+    );
+    // No binding in force: nothing is made or used, not even their own.
+    assert_eq!(
+        person::runner_namespace_of(Some(made), ada, None),
+        RunnerNamespace::PolicyNotInForce
+    );
+    assert_eq!(
+        person::runner_namespace_of(None, ada, None),
+        RunnerNamespace::PolicyNotInForce
+    );
+}
+
+#[test]
+fn a_deleted_claim_cleans_only_in_a_namespace_marked_for_its_person_and_goes_either_way() {
+    let made = made_at("2026-10-29T11:00:00Z");
+    assert_eq!(
+        person::runner_to_clean(Some(made.clone()), "ada@example.com"),
+        Some(made.clone())
+    );
+    // Someone else's namespace under the name, or none: nothing deleted, and the Claim goes.
+    assert_eq!(person::runner_to_clean(Some(made), "bea@example.com"), None);
+    let mut unmarked = made_at("2026-10-29T11:00:00Z");
+    unmarked.metadata.annotations = None;
+    assert_eq!(
+        person::runner_to_clean(Some(unmarked), "ada@example.com"),
+        None
+    );
+    assert_eq!(person::runner_to_clean(None, "ada@example.com"), None);
+}
+
+#[test]
+fn a_key_left_out_of_the_charts_quota_is_a_difference_to_apply() {
+    let wanted = person::quota_for(
+        "ns",
+        &Quota {
+            storage: None,
+            ..Quota::default()
+        },
+    );
+    // What the cluster holds from before, with storage still limited.
+    let held = person::quota_for("ns", &Quota::default());
+    assert!(!person::quota_says(&held, &wanted));
+}
+
+#[test]
+fn a_quota_that_has_not_counted_yet_is_not_an_over_quota() {
+    let refused = kube::Error::Api(
+        kube::core::Status::failure(
+            "sandboxclaims.extensions.agents.x-k8s.io \"ada-1\" is forbidden: status unknown for quota: purlis-person, resources: count/sandboxclaims.extensions.agents.x-k8s.io",
+            "Forbidden",
+        )
+        .with_code(403)
+        .boxed(),
+    );
+    assert!(person::is_quota_not_counted_yet(&refused));
+    assert!(!person::is_over_quota(&refused));
+}
+
+#[test]
+fn a_namespace_in_the_way_says_why() {
+    let made_before = person::status_of_a_namespace_in_the_way("purlis-runners-x", true);
+    assert!(
+        made_before.conditions[0]
+            .message
+            .contains("before the policy on runner namespaces"),
+        "{made_before:?}"
+    );
+    let not_ours = person::status_of_runner_namespaces_not_in_force();
+    assert_eq!(not_ours.conditions[0].reason, "PolicyNotInForce");
+    assert!(
+        not_ours.conditions[0]
+            .message
+            .contains(purlis_cluster_operator::RUNNER_NAMESPACES_POLICY)
+    );
 }

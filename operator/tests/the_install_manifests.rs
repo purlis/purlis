@@ -165,7 +165,7 @@ fn the_operator_may_do_exactly_what_it_needs() {
             (
                 "admissionregistration.k8s.io",
                 "validatingadmissionpolicybindings",
-                "purlis-claims-use-their-pool",
+                "purlis-claims-use-their-pool,purlis-runner-namespaces",
                 "get,list,watch",
             ),
             ("agents.x-k8s.io", "sandboxes", "", "get"),
@@ -256,7 +256,10 @@ fn the_operator_reads_only_its_own_policys_binding() {
     );
     assert_eq!(
         strings(&rules[0]["resourceNames"]),
-        [purlis_cluster_operator::POLICY]
+        [
+            purlis_cluster_operator::POLICY,
+            purlis_cluster_operator::RUNNER_NAMESPACES_POLICY
+        ]
     );
 }
 
@@ -311,10 +314,7 @@ fn the_operators_signing_key_is_mounted_from_its_secret_by_the_kubelet() {
 #[test]
 fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     let documents = documents("policy.yaml");
-    let policy = documents
-        .iter()
-        .find(|d| d["kind"] == "ValidatingAdmissionPolicy")
-        .expect("the policy");
+    let policy = policy_named(&documents, purlis_cluster_operator::POLICY);
     let spec = &policy["spec"];
     assert_eq!(spec["failurePolicy"], "Fail");
     let rules = spec["matchConstraints"]["resourceRules"]
@@ -354,10 +354,7 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
 #[test]
 fn an_upstream_claim_or_warm_pool_on_a_purlis_pools_objects_is_admitted_from_the_operator_alone() {
     let documents = documents("policy.yaml");
-    let policy = documents
-        .iter()
-        .find(|d| d["kind"] == "ValidatingAdmissionPolicy")
-        .expect("the policy");
+    let policy = policy_named(&documents, purlis_cluster_operator::POLICY);
     let spec = &policy["spec"];
     let rules = spec["matchConstraints"]["resourceRules"]
         .as_array()
@@ -401,4 +398,135 @@ fn an_upstream_claim_or_warm_pool_on_a_purlis_pools_objects_is_admitted_from_the
         );
         assert_eq!(validations[at]["reason"], "Forbidden");
     }
+}
+
+/// The ValidatingAdmissionPolicy `name` among `documents`, and its binding, which denies.
+fn policy_named<'a>(documents: &'a [Value], name: &str) -> &'a Value {
+    let named = |kind: &str| {
+        documents
+            .iter()
+            .find(|d| d["kind"] == kind && d["metadata"]["name"] == name)
+            .unwrap_or_else(|| panic!("the {kind} {name}"))
+    };
+    let binding = named("ValidatingAdmissionPolicyBinding");
+    assert_eq!(binding["spec"]["policyName"], name);
+    assert_eq!(binding["spec"]["validationActions"], json!(["Deny"]));
+    named("ValidatingAdmissionPolicy")
+}
+
+#[test]
+fn a_runner_namespace_and_what_the_operator_binds_and_caps_there_are_guarded_at_admission() {
+    let documents = documents("policy.yaml");
+    let policy = policy_named(
+        &documents,
+        purlis_cluster_operator::RUNNER_NAMESPACES_POLICY,
+    );
+    let spec = &policy["spec"];
+    assert_eq!(spec["failurePolicy"], "Fail");
+    assert_eq!(
+        policy["metadata"]["annotations"]["helm.sh/resource-policy"],
+        "keep"
+    );
+    let mut matched: Vec<(String, String)> = Vec::new();
+    for rule in spec["matchConstraints"]["resourceRules"]
+        .as_array()
+        .expect("rules")
+    {
+        assert_eq!(strings(&rule["operations"]), ["CREATE", "UPDATE"], "{rule}");
+        for group in strings(&rule["apiGroups"]) {
+            for resource in strings(&rule["resources"]) {
+                matched.push((group.clone(), resource));
+            }
+        }
+    }
+    matched.sort();
+    assert_eq!(
+        matched,
+        [
+            ("", "namespaces"),
+            ("", "resourcequotas"),
+            ("rbac.authorization.k8s.io", "rolebindings"),
+        ]
+        .map(|(g, r)| (g.to_owned(), r.to_owned()))
+    );
+    let flat = |value: &Value| {
+        value
+            .as_str()
+            .expect("an expression")
+            .split_whitespace()
+            .collect::<String>()
+    };
+    let variables: Vec<(String, String)> = spec["variables"]
+        .as_array()
+        .expect("variables")
+        .iter()
+        .map(|v| {
+            (
+                v["name"].as_str().unwrap().to_owned(),
+                flat(&v["expression"]),
+            )
+        })
+        .collect();
+    let operator = "system:serviceaccount:purlis-system:purlis-cluster-operator";
+    assert_eq!(variables[0].0, "operator");
+    assert_eq!(
+        variables[0].1,
+        format!("request.userInfo.username=='{operator}'")
+    );
+    let prefix = purlis_cluster_operator::person::NAMESPACE_PREFIX;
+    assert_eq!(variables[1].0, "runners");
+    assert!(
+        variables[1].1.contains(&format!("startsWith('{prefix}')")),
+        "{variables:?}"
+    );
+    // The marks the operator trusts a runner namespace by are the ones it puts on it.
+    let (label, _) = purlis_cluster_operator::person::MANAGED_BY;
+    let annotation = purlis_cluster_operator::person::REQUESTER_ANNOTATION;
+    for at in [2, 3] {
+        assert!(
+            variables[at].1.contains(&format!("'{label}'")),
+            "{variables:?}"
+        );
+        assert!(
+            variables[at].1.contains(&format!("'{annotation}'")),
+            "{variables:?}"
+        );
+    }
+    let validations: Vec<String> = spec["validations"]
+        .as_array()
+        .expect("validations")
+        .iter()
+        .map(|v| flat(&v["expression"]))
+        .collect();
+    assert_eq!(validations.len(), 4, "{validations:?}");
+    // Made by the operator alone; who it is for changed by no one else.
+    assert_eq!(
+        validations[0],
+        "request.resource.resource!='namespaces'||variables.operator||!variables.runners||\
+         request.operation=='UPDATE'&&variables.marks==variables.oldMarks"
+    );
+    assert_eq!(
+        validations[1],
+        "request.resource.resource!='namespaces'||!variables.operator||variables.runners"
+    );
+    // One role, one person who is not the operator, in a runner namespace alone.
+    let owner = purlis_cluster_operator::person::OWNER_ROLE;
+    for words in [
+        "request.resource.resource!='rolebindings'||!variables.operator||variables.runners&&".to_owned(),
+        format!("object.metadata.name=='{owner}'"),
+        format!("object.roleRef.kind=='ClusterRole'&&object.roleRef.name=='{owner}'"),
+        "has(object.subjects)&&size(object.subjects)==1".to_owned(),
+        "object.subjects[0].kind=='User'&&!object.subjects[0].name.startsWith('system:')".to_owned(),
+        "object.subjects[0].namespace=='purlis-system'&&object.subjects[0].name=='purlis-cluster-operator'".to_owned(),
+    ] {
+        assert!(validations[2].contains(&words), "{words}: {}", validations[2]);
+    }
+    assert_eq!(
+        validations[3],
+        format!(
+            "request.resource.resource!='resourcequotas'||!variables.operator||\
+             variables.runners&&object.metadata.name=='{}'",
+            purlis_cluster_operator::person::QUOTA
+        )
+    );
 }

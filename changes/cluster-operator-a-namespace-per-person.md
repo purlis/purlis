@@ -9,3 +9,10 @@
   runner namespace, so a desktop and an operator of this release go together. A Claim made
   before the upgrade gets a new runner there; make it again to free its old one (#2055,
   docs/cluster-operator.md).
+
+### Security
+
+- **A cluster operator person's runners are theirs alone to reach.** Each person's runner
+  namespace binds only them to `purlis-runner-owner`, and the new admission policy
+  `purlis-runner-namespaces` lets only the operator make a runner namespace, and the operator bind
+  only that role, only there (#2055, docs/cluster-operator.md).

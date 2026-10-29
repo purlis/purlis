@@ -2,8 +2,8 @@
 
 **Ruled by the person on 2026-10-29** (option A on #2055), built by #2055. It amends item 4 of
 the amendment of 2026-10-14 (*"What the cluster operator may do"*) and keeps everything else in
-it and in the amendment of 2026-10-26: the operator still holds no right to `exec` or `attach` to
-a pod and reads no Secret.
+it and in the amendment of 2026-10-26: the operator holds no `exec` or `attach` right to a pod
+itself, reads no Secret, and binds only `purlis-runner-owner`, only in runner namespaces (item 6).
 
 1. **A namespace per person.** For each requester the cluster operator makes the namespace
    `purlis-runners-<hash>`, the first 16 hex digits of the SHA-256 of the requester, and runs
@@ -26,3 +26,10 @@ a pod and reads no Secret.
    on the three upstream objects it makes. It holds no right to delete a namespace: a runner
    namespace stays, empty, after its person's last Claim. docs/cluster-operator.md lists its
    permissions, and its tests hold them.
+6. **A policy holds runner namespaces at admission**, since RBAC cannot say where a role may be
+   bound or a namespace made: `purlis-runner-namespaces`, a ValidatingAdmissionPolicy installed
+   beside the policy on Claims. Only the operator makes a runner namespace or changes who it is
+   for; the operator makes no other namespace, binds only `purlis-runner-owner`, only in a runner
+   namespace, for one subject that is not itself, and makes only the quota `purlis-person`, only
+   in a runner namespace. The operator acts only in a runner namespace made while that policy was
+   in force, as it acts only on Claims made under the policy on Claims.

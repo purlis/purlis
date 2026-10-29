@@ -848,6 +848,159 @@ async fn the_cluster_refuses_the_operator_exec_attach_and_secrets() {
     );
 }
 
+/// Whether `made` was refused at admission, in words that hold `words`.
+fn refused_saying<T: std::fmt::Debug>(made: &Result<T, kube::Error>, words: &str) -> bool {
+    matches!(made, Err(kube::Error::Api(status)) if status.code == 403 && status.message.contains(words))
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_runner_namespace_and_what_the_operator_binds_are_guarded_at_admission() {
+    use k8s_openapi::api::core::v1::ResourceQuota;
+    use k8s_openapi::api::rbac::v1::RoleBinding;
+    use purlis_cluster_operator::person;
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-guarded").await;
+    let namespaces = Api::<Namespace>::all(client.clone());
+
+    // A runner namespace made by anyone but the operator, the cluster admin included, marked as
+    // the operator's for someone or not: refused.
+    for marked in [true, false] {
+        let mut forged = person::namespace_for("e2e-forged");
+        if !marked {
+            forged.metadata.labels = None;
+            forged.metadata.annotations = None;
+        }
+        let made = namespaces.create(&PostParams::default(), &forged).await;
+        assert!(
+            refused_saying(
+                &made,
+                "Only the purlis cluster operator makes a runner namespace"
+            ),
+            "{made:?}"
+        );
+    }
+
+    // Who a runner namespace the operator made is for is changed by no one else; another label
+    // may be.
+    let pools = Api::<Pool>::all(client.clone());
+    pools
+        .patch(
+            "e2e-guarded",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&Pool::new(
+                "e2e-guarded",
+                PoolSpec {
+                    image: runner_image(),
+                    kept_volume: Default::default(),
+                },
+            )),
+        )
+        .await
+        .expect("the pool");
+    let claims = claims_in(&client, &scratch.name);
+    claims
+        .create(&PostParams::default(), &claim("ada-guarded", "e2e-guarded"))
+        .await
+        .expect("a claim that makes the runner namespace");
+    eventually(
+        "the runner namespace is made",
+        Duration::from_secs(120),
+        || async { namespaces.get_opt(&runners()).await.ok()?.map(|_| ()) },
+    )
+    .await;
+    let retargeted = namespaces
+        .patch(
+            &runners(),
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({
+                "metadata": { "annotations": { person::REQUESTER_ANNOTATION: "e2e-someone-else" } }
+            })),
+        )
+        .await;
+    assert!(
+        refused_saying(&retargeted, "changes who it is for"),
+        "{retargeted:?}"
+    );
+    let labelled = namespaces
+        .patch(
+            &runners(),
+            &PatchParams::default(),
+            &Patch::Merge(
+                serde_json::json!({ "metadata": { "labels": { "e2e/touched": "yes" } } }),
+            ),
+        )
+        .await;
+    assert!(labelled.is_ok(), "{labelled:?}");
+
+    // The operator binds purlis-runner-owner in a runner namespace alone, to one person who is
+    // not itself, and caps a person there alone: asked as its service account.
+    let as_operator = acting_as(SERVICE_ACCOUNT).await;
+    let binding = |namespace: &str, subject: serde_json::Value| -> RoleBinding {
+        serde_json::from_value(serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "RoleBinding",
+            "metadata": { "name": person::OWNER_ROLE, "namespace": namespace },
+            "roleRef": { "apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": person::OWNER_ROLE },
+            "subjects": [subject]
+        }))
+        .expect("a binding")
+    };
+    let someone = serde_json::json!({ "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": "e2e-someone" });
+    let itself = serde_json::json!({ "kind": "ServiceAccount", "name": "purlis-cluster-operator", "namespace": "purlis-system" });
+    let words = "binds purlis-runner-owner alone, in a runner namespace alone";
+    let outside = Api::<RoleBinding>::namespaced(as_operator.clone(), &scratch.name)
+        .create(
+            &PostParams::default(),
+            &binding(&scratch.name, someone.clone()),
+        )
+        .await;
+    assert!(refused_saying(&outside, words), "{outside:?}");
+    let to_itself = Api::<RoleBinding>::namespaced(as_operator.clone(), &runners())
+        .patch(
+            person::OWNER_ROLE,
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&binding(&runners(), itself)),
+        )
+        .await;
+    assert!(refused_saying(&to_itself, words), "{to_itself:?}");
+    let quota: ResourceQuota = serde_json::from_value(serde_json::json!({
+        "apiVersion": "v1", "kind": "ResourceQuota",
+        "metadata": { "name": person::QUOTA, "namespace": scratch.name },
+        "spec": { "hard": { "pods": "0" } }
+    }))
+    .expect("a quota");
+    let capped = Api::<ResourceQuota>::namespaced(as_operator.clone(), &scratch.name)
+        .create(&PostParams::default(), &quota)
+        .await;
+    assert!(
+        refused_saying(&capped, "in a runner namespace alone"),
+        "{capped:?}"
+    );
+    let elsewhere = Namespace {
+        metadata: ObjectMeta {
+            name: Some("e2e-not-a-runner-namespace".into()),
+            ..ObjectMeta::default()
+        },
+        ..Namespace::default()
+    };
+    let made = Api::<Namespace>::all(as_operator)
+        .create(&PostParams::default(), &elsewhere)
+        .await;
+    assert!(
+        refused_saying(&made, "makes runner namespaces (purlis-runners-*) alone"),
+        "{made:?}"
+    );
+
+    // What the operator made itself stands: the claim is served.
+    eventually("the claim is ready", Duration::from_secs(300), || async {
+        let claim = claims.get("ada-guarded").await.ok()?;
+        (ready_of(&claim)?.0 == "True").then_some(())
+    })
+    .await;
+    let _ = pools.delete("e2e-guarded", &DeleteParams::default()).await;
+    scratch.end().await;
+}
+
 #[tokio::test]
 #[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
 async fn a_persons_runners_run_in_their_own_namespace_within_their_quota_and_go_with_their_claims()
@@ -1343,6 +1496,7 @@ async fn an_upstream_claim_on_a_purlis_pool_made_directly_is_refused() {
                 warm_pool_ref: Reference {
                     name: warm_pool.to_owned(),
                 },
+                volume_claim_templates: None,
             },
         )
     };
@@ -1417,6 +1571,7 @@ async fn an_upstream_claim_on_a_purlis_pool_made_directly_is_refused() {
         "e2e-direct",
         PoolSpec {
             image: runner_image(),
+            kept_volume: Default::default(),
         },
     );
     pools
@@ -1431,6 +1586,9 @@ async fn an_upstream_claim_on_a_purlis_pool_made_directly_is_refused() {
         .create(&PostParams::default(), &claim("ada-1", "e2e-direct"))
         .await
         .expect("the claim");
+    // In its requester's runner namespace (#2055).
+    let upstream_claims = Api::<SandboxClaim>::namespaced(client.clone(), &runners());
+    let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &runners());
     eventually(
         "the operator asks upstream for the claim's runner",
         Duration::from_secs(120),
@@ -1469,7 +1627,6 @@ async fn an_upstream_claim_on_a_purlis_pool_made_directly_is_refused() {
     scratch.end().await;
 }
 
-/// Whether the operator has asked upstream for a runner for any claim in `namespace`.
 /// Whether the claim `name`'s upstream claim is made, in the runner namespace (#2055).
 async fn upstream_claim_made(client: &Client, name: &str) -> bool {
     Api::<purlis_cluster_operator::upstream::SandboxClaim>::namespaced(client.clone(), &runners())
@@ -1479,6 +1636,7 @@ async fn upstream_claim_made(client: &Client, name: &str) -> bool {
         .is_some()
 }
 
+/// How many upstream claims there are in `namespace`.
 async fn upstream_claims_in(client: &Client, namespace: &str) -> usize {
     Api::<purlis_cluster_operator::upstream::SandboxClaim>::namespaced(client.clone(), namespace)
         .list(&ListParams::default())

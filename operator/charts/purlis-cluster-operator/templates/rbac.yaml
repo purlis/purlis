@@ -39,10 +39,11 @@ rules:
   - apiGroups: [agents.x-k8s.io]
     resources: [sandboxes]
     verbs: [get]
-  # The policy's binding, by name only: the operator acts only on Claims admitted under it.
+  # The policies' bindings, by name only: the operator acts only on Claims admitted under the
+  # policy on Claims, and in runner namespaces made under the policy on runner namespaces.
   - apiGroups: [admissionregistration.k8s.io]
     resources: [validatingadmissionpolicybindings]
-    resourceNames: [purlis-claims-use-their-pool]
+    resourceNames: [purlis-claims-use-their-pool, purlis-runner-namespaces]
     verbs: [get, list, watch]
   # Upstream's objects a claim becomes, in its requester's runner namespace: watched, so a
   # claim is looked at again when one of them changes or goes; each read by name first, since
