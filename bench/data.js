@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793310996715,
+  "lastUpdate": 1793312404234,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30156,6 +30156,48 @@ window.BENCHMARK_DATA = {
             "value": 101.85146,
             "unit": "ms",
             "extra": "median of 5 runs: 101.442, 101.478, 101.851, 101.876, 102.394 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b68d866d50ce40ac0cdbc1b71f78c73b2be5a3fa",
+          "message": "Card family: a pressable card member for the welcome's doors and repo cards (#3655) (#3834)\n\n* Card family: a pressable card member for the welcome's doors and repo cards (#3655)\n\nCardButton, on React Aria's Button through ui/pressable: named by its\ntitle, described by its line, drawn by the card family's own parts\n(pressable, mark, title, line) in card.css, with hover, pressed and the\nwindow's focus ring. The welcome's doors (variant door) and a repo to get\n(variant pick) move onto it; App.css drops their rules, and ui-card-control\nleaves the card lint's rawButtons, the controls allowance and the\nbuttonEdges exception.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Card family: a pressed card is named by the words it shows (#3655)\n\naxe's label-content-name-mismatch (WCAG 2.5.3) refused a repo card named\n\"Get acme/api from github.com as octocat\" over its visible \"api acme\".\nA CardButton is now named by its title and what follows it (the more\npart, a badge), and a repo card shows its path as its title and its\nforge and login as its line, which describes it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Card family: a pressed card is a box its one button covers (#3655)\n\naxe's label-content-name-mismatch (WCAG 2.5.3) counts all of a button's\nvisible words as its label, so a door named by its title could not hold\nits line. The card is now a box (pressable) with one React Aria button\n(press) holding its title and badge; the button's ::after covers the\nbox, so a press anywhere presses it and its ring circles the card. The\nline stands beside the button and describes it. The box mirrors the\nbutton's hover, pressed and disabled state, so its rules read its own\nattributes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Controls guard: the reader's floor under the window's controls, after the cards moved (#3655)\n\nThe welcome's doors and repo cards left the hand-drawn controls for the\ncard family, which put the count the reader finds at 60 on main, at its\nfloor. The floor only proves the reader finds something; it is now 50.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Card family: a pressed card's button is a target 24px tall at least (#3655)\n\naxe measures the button for WCAG 2.5.8, never the ::after that covers\nthe card, and a pick's button was one line of words tall. It is 24px\ntall at least, as the button family's smallest is; a pick's box keeps\nits height by dropping its own block padding.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Card family: the pressed cards' story baselines (#3655)\n\nDrawn by the stories run 40887048217 on c0745e3be: the doors and the\npicks, in each pictured cell, in Chromium and WebKit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Your repos scenario: a repo is pressed and listed by the words it shows (#3655)\n\nThe repo cards are named by their path and mark now (WCAG 2.5.3), not\n\"Get <path> … from <host> as <login>\": the scenario lists them by their\nwords and presses acme/<name>.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Welcome scenario: a door is named by the words its button shows (#3655)\n\nThe doors' buttons carry no aria-label now: each is named by its title,\nthe words it shows (WCAG 2.5.3). The scenario reads that name.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Card family: a pick's ring sits inside it, and an unavailable card dims as one (#3655)\n\nReview of #3834. A repo pick stands in a list that scrolls, which\nclipped a ring drawn outside it: a pick's ring now sits inside, at the\nfocus-ring inset, as a row's does, and its story stands in a scrolling\nlist and checks the inset. An unavailable pressed card's line goes\nfaint with its title and its badge dims with them. children is words\nand marks only. The repo rows' tests hear each row's forge and login.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Card family: an unavailable card's line steps down to quiet, not faint (#3655)\n\nThe line stands beside the card's button, not in it, so axe holds it to\nthe text floor (color-contrast) as words a person reads: faint failed\nit. It steps down from the secondary tier to quiet instead.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Card family: the picks' baselines, ring inside and an unavailable pick dimmed (#3655)\n\nDrawn by stories run 40946588465 on 52e53b22d: the picks in a list that\nscrolls, the focused one's ring inside it, the unavailable one's badge\ndimmed and its line in the quiet tier.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T21:54:45Z",
+          "tree_id": "cae8141f1b73fe052d487dbfc7d6158b3879e1e7",
+          "url": "https://github.com/purlis/purlis/commit/b68d866d50ce40ac0cdbc1b71f78c73b2be5a3fa"
+        },
+        "date": 1793312400560,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6202705,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.587, 0.618, 0.620, 0.634, 0.652 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.719167499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.546, 16.612, 16.719, 16.796, 16.848 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.431512,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.497, 101.555, 102.432, 102.438, 102.910 ms"
           }
         ]
       }
