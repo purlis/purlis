@@ -94,41 +94,92 @@ pub fn git_dirs(clone: &Path) -> Vec<PathBuf> {
 
 /// **The paths that hold each repository's git folder as a whole** below `folders`, each
 /// searched to [`CLONE_DEPTH`] and bounded as [`directories`] is: one path in or at each git
-/// folder, which a harness that pins every folder above a denied path ([`super::claude`]) denies
-/// writing, so the git folder is pinned so it stays where it is while git writes the rest of it.
+/// folder that is there now, which a harness that pins every folder above a denied path
+/// ([`super::claude`]) denies writing, so the git folder stays where it is while git writes the
+/// rest of it.
 ///
-/// For a `.git` directory, its `config`; for a `.git` file (a linked worktree's or a
-/// submodule's), the file itself, which git does not write in ordinary work. And for each git
-/// directory a clone uses ([`git_dirs`]: its own, and the common one a worktree shares), that
-/// directory's `config` and each submodule's ([`module_git_dirs`]). Git writes none of these in
-/// ordinary work, and each is held by name already ([`super::PLANTED`]). Each path once, as
-/// written with `..` taken off ([`lexical`]), in the order found.
+/// - A `.git` directory: its `config`, and each submodule's in it ([`module_git_dirs`]).
+/// - A `.git` file (a linked worktree's or a submodule's): the file itself, and the `config` of
+///   the git directory it names, or of the common one that directory names (`commondir`), with
+///   each submodule's there. Only a pointer to a git directory, one that holds a `HEAD`, is
+///   followed; a `.git` file that names anything else is no repository, and nothing of it is
+///   held.
+/// - A `.git` that is a link: nothing. Where it leads is not a path in this folder, and a rule
+///   on it could hold what the link names instead.
+///
+/// Git writes none of these in ordinary work, and each `config` is held by name already
+/// ([`super::PLANTED`]). A path that is a directory or a link is never one: a rule on it would
+/// hold what is below it, or what it leads to. Each path once, as written with `..` taken off
+/// ([`lexical`]), in the order found.
 pub fn git_folder_pins(folders: &[PathBuf]) -> Vec<PathBuf> {
-    let mut pins: Vec<PathBuf> = Vec::new();
-    let mut pin = |path: PathBuf| {
-        let path = lexical(&path);
-        if !pins.contains(&path) {
-            pins.push(path);
-        }
-    };
+    git_folders_kept(folders)
+        .into_iter()
+        .map(|(pin, _)| pin)
+        .collect()
+}
+
+/// [`git_folder_pins`], each with the folder searched that it was found in.
+pub fn git_folders_kept(folders: &[PathBuf]) -> Vec<(PathBuf, PathBuf)> {
+    let mut pins: Vec<(PathBuf, PathBuf)> = Vec::new();
     for folder in folders {
+        let mut pin = |path: PathBuf| {
+            let path = lexical(&path);
+            let is_entry = std::fs::symlink_metadata(&path)
+                .is_ok_and(|kind| kind.is_dir() || kind.file_type().is_symlink());
+            if !is_entry && !pins.iter().any(|(pinned, _)| *pinned == path) {
+                pins.push((path, folder.clone()));
+            }
+        };
         for clone in clones(&directories_to(folder, CLONE_DEPTH)) {
             let dot_git = clone.join(".git");
             let Ok(kind) = std::fs::symlink_metadata(&dot_git) else {
                 continue;
             };
-            if !kind.is_dir() {
+            let git_dir = if kind.is_dir() {
+                dot_git
+            } else if kind.is_file() {
+                let Some(named) = pointed_git_dir(&clone) else {
+                    continue;
+                };
+                let common = named.join("commondir");
+                let git_dir = if common.exists() {
+                    let Some(common) = std::fs::read_to_string(&common)
+                        .ok()
+                        .map(|text| lexical(&named.join(text.trim())))
+                        .filter(|dir| is_git_dir(dir))
+                    else {
+                        pin(dot_git);
+                        continue;
+                    };
+                    common
+                } else {
+                    named
+                };
                 pin(dot_git);
-            }
-            for git_dir in git_dirs(&clone) {
-                pin(git_dir.join("config"));
-                for module in module_git_dirs(&git_dir) {
-                    pin(module.join("config"));
-                }
+                git_dir
+            } else {
+                continue;
+            };
+            pin(git_dir.join("config"));
+            for module in module_git_dirs(&git_dir) {
+                pin(module.join("config"));
             }
         }
     }
     pins
+}
+
+/// Whether `dir` is a git directory: a directory, not a link, that holds a `HEAD`.
+fn is_git_dir(dir: &Path) -> bool {
+    std::fs::symlink_metadata(dir).is_ok_and(|kind| kind.is_dir()) && dir.join("HEAD").is_file()
+}
+
+/// The git directory the `.git` file of `clone` names, where it names one ([`is_git_dir`]).
+fn pointed_git_dir(clone: &Path) -> Option<PathBuf> {
+    let text = std::fs::read_to_string(clone.join(".git")).ok()?;
+    let named = text.lines().find_map(|line| line.strip_prefix("gitdir:"))?;
+    let dir = lexical(&clone.join(named.trim()));
+    is_git_dir(&dir).then_some(dir)
 }
 
 /// The submodules' git directories below a clone's `git_dir` (`modules/…`, nested), each one
@@ -2617,6 +2668,7 @@ mod tests {
         // A linked worktree of it, five folders down, as a workspace keeps its branch folders.
         std::fs::create_dir_all(at("ws/repo/.git/worktrees/b")).expect("its worktree record");
         std::fs::write(at("ws/repo/.git/worktrees/b/commondir"), "../..\n").expect("commondir");
+        std::fs::write(at("ws/repo/.git/worktrees/b/HEAD"), "ref: refs/heads/b\n").expect("HEAD");
         std::fs::create_dir_all(at("workspaces/w/.worktrees/repo/b")).expect("a branch folder");
         std::fs::write(
             at("workspaces/w/.worktrees/repo/b/.git"),
@@ -2637,8 +2689,13 @@ mod tests {
         ] {
             assert!(pins.contains(&want), "{want:?} not in {pins:?}");
         }
-        // Never the git folder itself where it is a directory, nor `..` in a path.
+        // Never the git folder itself where it is a directory, nor `..` in a path, nor a linked
+        // worktree's own record, which `.git/worktrees` holds by name.
         assert!(!pins.contains(&at("ws/repo/.git")), "{pins:?}");
+        assert!(
+            !pins.contains(&at("ws/repo/.git/worktrees/b/config")),
+            "{pins:?}"
+        );
         assert!(
             pins.iter().all(|pin| !pin
                 .components()
@@ -2652,6 +2709,58 @@ mod tests {
             1,
             "{pins:?}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_git_link_is_never_followed_to_what_it_names() {
+        let plane = tempfile::tempdir().expect("a plane");
+        let root = plane.path();
+        std::fs::write(root.join("config"), "").expect("a file of the plane's");
+        std::fs::create_dir_all(root.join("ws/repo")).expect("a folder");
+        std::os::unix::fs::symlink(root, root.join("ws/repo/.git")).expect("a .git link");
+        let pins = git_folder_pins(&[root.to_path_buf()]);
+        assert_eq!(pins, Vec::<PathBuf>::new());
+    }
+
+    #[test]
+    fn a_git_file_naming_no_git_directory_holds_nothing() {
+        let plane = tempfile::tempdir().expect("a plane");
+        let at = |rel: &str| plane.path().join(rel);
+        // A folder of the project's own, with a `config` and a `modules` in it, named as a git
+        // directory by a `.git` file elsewhere.
+        std::fs::create_dir_all(at("docs/modules/x")).expect("a project folder");
+        std::fs::write(at("docs/config"), "").expect("a file in it");
+        std::fs::write(at("docs/modules/x/HEAD"), "").expect("a HEAD below it");
+        std::fs::create_dir_all(at("ws/repo")).expect("a folder");
+        std::fs::write(
+            at("ws/repo/.git"),
+            format!("gitdir: {}\n", at("docs").display()),
+        )
+        .expect("a .git file");
+        // And one naming a git directory whose `commondir` names the project's folder.
+        std::fs::create_dir_all(at("ws/real/.git")).expect("a git directory");
+        std::fs::write(at("ws/real/.git/HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+        std::fs::write(
+            at("ws/real/.git/commondir"),
+            at("docs").display().to_string(),
+        )
+        .expect("commondir");
+        std::fs::create_dir_all(at("ws/other")).expect("a folder");
+        std::fs::write(
+            at("ws/other/.git"),
+            format!("gitdir: {}\n", at("ws/real/.git").display()),
+        )
+        .expect("a .git file");
+        let pins = git_folder_pins(&[plane.path().to_path_buf()]);
+        assert!(
+            pins.iter().all(|pin| !pin.starts_with(at("docs"))),
+            "{pins:?}"
+        );
+        assert!(!pins.contains(&at("ws/repo/.git")), "{pins:?}");
+        // The real git directory is held as itself; what its `commondir` names is not.
+        assert!(pins.contains(&at("ws/other/.git")), "{pins:?}");
+        assert!(pins.contains(&at("ws/real/.git/config")), "{pins:?}");
     }
 
     #[test]

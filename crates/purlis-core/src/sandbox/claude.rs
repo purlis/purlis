@@ -37,13 +37,12 @@
 //! `.claude/skills`, `tui.json`, `tui.jsonc` and `.agents`, added later (#1057), are held by
 //! the same `**/<name>` rule. The project's manifests are not (#1336): they are denied by path,
 //! at the project root and in each folder from the chat's up to it ([`Settings::denying`]).
-//! No glob can deny a `.git` itself without denying what git writes below it (#1065), so each
-//! repository's git folder found as the chat starts is held as a whole by path instead
-//! ([`super::Denied::git_folder_pins`]): a `.git` directory's `config`, which pins the
-//! directory and every folder above it (Claude Code pins each folder above a denied path, as
-//! below), and a `.git` file itself. A repository made after the start, or beyond the search's
-//! bound ([`super::planted::CLONE_DEPTH`]), is held by the names alone. On Linux the pin is not
-//! measured.
+//! No glob can deny a `.git` itself without denying what git writes below it (#1065). The
+//! `config` of each git folder was held by name already; now a repository's git folder that is
+//! there when the chat starts is held as a whole too ([`super::Denied::git_folder_pins`]): its
+//! `config` is denied by path as well, and Claude Code pins each folder above a denied path (as
+//! below), so a `.git` directory, and every folder above it, stays where it is; a `.git` file is
+//! denied itself. Measured on macOS (`tools/seatbelt-case.sh`).
 //!
 //! **The hook socket** (ADR 0067 §2, #1328). A `purlis` command a chat runs is part of the chat
 //! and asks the app over the socket in `$PURLIS_HOOK_SOCKET`; Claude Code's sandbox refuses
@@ -211,20 +210,17 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
             deny_write.extend(plain_and_cased(&format!("{}/**/", folder.display()), name));
         }
     }
-    // Each repository's git folder found as the chat started, held as a whole: a path in or at
-    // it is denied ([`super::Denied::git_folder_pins`]), and Claude Code pins every folder above
-    // a denied path (see the caches below), so a `.git` directory is pinned so it stays where it
-    // is while git writes the rest of it, and a `.git` file is held itself. Each by every name a
-    // rule on it is written by, and in either case.
+    // Each repository's git folder that was there as the chat started, held as a whole: a path
+    // in or at it is denied ([`super::Denied::git_folder_pins`]), and Claude Code pins every
+    // folder above a denied path (see the caches below), so a `.git` directory stays where it is
+    // while git writes the rest of it, and a `.git` file is held itself. Each as a plain path, by
+    // every name a rule on it is written by: a glob gets no folder above it pinned.
     for pin in &compiled.denied.git_folder_pins {
         for name in names_for(pin) {
-            let plain = name.display().to_string();
-            let cased = either_case(&plain);
-            for path in [plain, cased] {
-                edit_rules.push(format!("Edit(/{path})"));
-                edit_rules.push(format!("Edit(/{path}/**)"));
-                deny_write.push(path);
-            }
+            let path = name.display().to_string();
+            edit_rules.push(format!("Edit(/{path})"));
+            edit_rules.push(format!("Edit(/{path}/**)"));
+            deny_write.push(path);
         }
     }
     // The project's package caches (D-1337-6), each path as written and as the kernel names it.
