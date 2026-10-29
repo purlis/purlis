@@ -1328,6 +1328,22 @@ fn no_chat_writes_the_browser_engines_purlis_downloads_under_either_name_of_the_
 }
 
 #[test]
+fn no_chat_writes_the_harnesses_a_runner_installs() {
+    // A runner's chat runs the harness version its profile pins, installed in the data home
+    // (#3446): a chat that could write it would choose the program the next chat runs.
+    let linux = machine(Os::Linux);
+    let harnesses = Homes::charter_data(&linux)
+        .expect("a data home")
+        .join(crate::profilestore::installs::DIR);
+    let (_plane, denied) = denied_with(None, Os::Linux);
+    assert!(
+        paths(&denied, Class::HumanPowers, Access::Write).contains(&harnesses),
+        "{:?}",
+        denied.paths
+    );
+}
+
+#[test]
 fn no_chat_reads_or_writes_the_data_folders_of_the_browsers_the_session_host_runs() {
     // A running browser's data folder holds its engine's profile: the cookies and storage of
     // every site the person opens in it (#2012). A chat neither reads nor writes any of them.

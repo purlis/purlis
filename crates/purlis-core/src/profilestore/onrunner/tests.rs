@@ -165,7 +165,8 @@ fn the_desktops_adopted_folder(dir: &Path) -> MachineProfile {
 /// **The desktop's adopted folder is the runner's own default folder there** (#2049): kept as
 /// Claude Code's default folder in the runner's home, adopted in place and marked kept for the
 /// desktop, so a chat on `claude` there runs as the runner's built-in did, in that folder, and
-/// a runner signed in before stays signed in. It carries no pin: it follows its harness.
+/// a runner signed in before stays signed in. It carries the desktop's pin, which the runner
+/// installs (#3446), and follows as an adopted folder's pin does.
 #[test]
 fn the_desktops_adopted_folder_is_the_runners_own_default_folder_there() {
     let dir = tempfile::tempdir().unwrap();
@@ -188,7 +189,10 @@ fn the_desktops_adopted_folder_is_the_runners_own_default_folder_there() {
     );
     assert!(kept.adopted.is_some());
     assert_eq!(kept.kept_for.as_deref(), Some(DESKTOP));
-    assert_eq!(kept.pinned, None);
+    assert_eq!(
+        kept.pinned.as_ref().map(|p| p.version.as_str()),
+        Some("2.1.300")
+    );
     assert!(
         !runner.folder_of("claude").exists(),
         "no folder of purlis's"

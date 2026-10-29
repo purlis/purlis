@@ -25,7 +25,8 @@
 //! harness folder, adopted in place as `claude`, is kept on the runner as that harness's default
 //! folder in the runner's home, adopted in place there: a chat on `claude` runs as the runner's
 //! built-in did, so a runner signed in before stays signed in and its conversations resume.
-//! Such a record carries no pin, and follows its harness, as an adopted folder does.
+//! It carries the desktop's pin, which follows the desktop's harness as an adopted folder's pin
+//! does, so the runner installs the version the desktop runs (#3446).
 //!
 //! **Every record kept for a desktop says so** (`kept_for`, the desktop's device id). Only such
 //! a record of a folder adopted in place is signed in by purlis ([`super::sign_in::profile_of`]);
@@ -97,12 +98,9 @@ impl Kept {
             name: record.name.clone(),
             harness: record.harness.clone(),
             sandbox_only: record.sandbox_only,
-            // An adopted folder follows its harness, here and there, until #3446.
-            pinned: record
-                .pinned
-                .as_ref()
-                .filter(|_| record.adopted.is_none())
-                .map(|p| p.version.clone()),
+            // An adopted folder's pin follows its harness here, and the runner installs the
+            // version it follows to (#3446).
+            pinned: record.pinned.as_ref().map(|p| p.version.clone()),
             settings_in: None,
         })
     }
@@ -164,7 +162,6 @@ pub fn keep(
         ));
     }
     let pinned = match &kept.pinned {
-        Some(_) if builtin => None,
         Some(version) => Some(
             super::pin::Version::parse(version)
                 .map_err(|_| {
@@ -185,7 +182,7 @@ pub fn keep(
     let brought = |record: &mut MachineProfile| {
         record.kept_for = Some(desktop.to_owned());
         record.sandbox_only = kept.sandbox_only && !builtin;
-        if record.pinned.as_ref().map(|p| &p.version) != pinned.as_ref() && !builtin {
+        if record.pinned.as_ref().map(|p| &p.version) != pinned.as_ref() {
             record.pinned = pinned
                 .clone()
                 .map(|version| super::pin::Pinned { version, at: now });
