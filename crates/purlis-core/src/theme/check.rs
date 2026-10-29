@@ -993,8 +993,9 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
 
 /// **Whether a side view's card row stands apart from its panel** (#3774): its fill a step from
 /// the panel's ([`CARD_STEP`]), or an edge a hairline from it ([`CARD_EDGE`]). A see-through
-/// panel is laid on the window's frame, and a see-through card on the panel. Held where the
-/// theme's parts choose a card row's or a panel's look ([`super::parts::card_on_side`]).
+/// panel is laid on the window's frame, a see-through card on the panel and a see-through edge on
+/// the card. Held where the theme's parts, its own or inherited, choose a card row's or a side
+/// panel's look ([`super::parts::card_on_side`]).
 fn card_apart(
     theme: &ResolvedTheme,
     tint: Option<&'static str>,
@@ -1012,16 +1013,18 @@ fn card_apart(
             solid(&onto(value, under))
         }
     };
-    let ground = laid(on.side, &solid(theme.value("surface.deep")));
-    let step = two_places(contrast(&laid(on.card, &ground), &ground));
+    let panel = laid(on.ground, &solid(theme.value("surface.deep")));
+    let card = laid(on.card, &panel);
+    let step = two_places(contrast(&card, &panel));
+    // An edge is drawn over the card's own fill, and told from the panel around it.
     let edged = on
         .edge
-        .is_some_and(|edge| two_places(contrast(&laid(edge, &ground), &ground)) >= CARD_EDGE);
+        .is_some_and(|edge| two_places(contrast(&laid(edge, &card), &panel)) >= CARD_EDGE);
     if step < CARD_STEP && !edged {
         findings.push(Finding::CardNotApart {
             tint,
             card: on.card,
-            ground: on.side,
+            ground: on.ground,
             ratio: step,
             floor: CARD_STEP,
         });

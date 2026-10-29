@@ -3201,39 +3201,42 @@ pub fn fallen(theme: &ResolvedTheme) -> Vec<Fell> {
 pub(super) struct CardOnSide {
     /// The card row's fill at rest, a token or `transparent`.
     pub card: &'static str,
-    /// Its edge, where it draws one: a colour token and a width above none.
+    /// Its edge, where it draws one: a colour token, at a width the stylesheet draws.
     pub edge: Option<&'static str>,
-    /// The side panel's fill, a token or `transparent`.
-    pub side: &'static str,
+    /// The side panel's fill, the ground the card stands on: a token or `transparent`.
+    pub ground: &'static str,
 }
 
-/// What [`CardOnSide`] says of `theme`, where its parts choose a card row's or a panel's look:
-/// as a meter's fill on its track is (#3674), a palette alone is not yet held (#3735), since the
-/// family's own raised ground is what a theme with no parts draws its cards on.
+/// What [`CardOnSide`] says of `theme`, where its parts, its own or inherited, choose a card
+/// row's look or a side panel's fill. As a meter's fill on its track is (#3674), a palette alone
+/// is not yet held (#3735): a theme that chooses neither draws its cards on the family's raised
+/// ground, wherever its palette puts it.
 pub(super) fn card_on_side(theme: &ResolvedTheme) -> Option<CardOnSide> {
     let chosen = theme.parts.keys().any(|key| {
         (key.family == "list" && key.variant == Some("card"))
-            || (key.family == "panel" && key.part == "root")
+            || (key.family == "panel"
+                && key.part == "root"
+                && key.property == Prop::Fill
+                && key.variant.is_none_or(|variant| variant == "side"))
     });
     if !chosen {
         return None;
     }
     let held = held_once(theme);
     let rules = &held.0;
-    let (Some(list), Some(panel)) = (family("list"), family("panel")) else {
-        unreachable!("the list and the panel are families of the manifest");
-    };
+    let list = family("list").expect("the list family");
+    let panel = family("panel").expect("the panel family");
     let card = drawn(rules, list, "card", &[]);
-    // A width a theme sets, or the family's own; a card row draws none by default.
-    let edged = match drawn_at_rest(rules, list, "card", Prop::BorderWidth) {
-        Some(PartValue::Length(Length::Number(width))) => width > 0.0,
-        Some(_) => true,
-        None => list.border_width > 0.0,
+    // A width a rule sets, as the parts check reads one, or else the family's own: none.
+    let edged = if drawn_at_rest(rules, list, "card", Prop::BorderWidth).is_some() {
+        has_border(rules, list, "card")
+    } else {
+        list.border_width > 0.0
     };
     Some(CardOnSide {
         card: card.fill,
         edge: (edged && card.border != TRANSPARENT).then_some(card.border),
-        side: drawn(rules, panel, "side", &[]).fill,
+        ground: drawn(rules, panel, "side", &[]).fill,
     })
 }
 

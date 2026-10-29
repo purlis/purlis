@@ -55,14 +55,14 @@ fn every_built_in_appearance_draws_its_side_view_s_cards_a_step_from_the_panel()
     for theme in every_built_in() {
         assert_eq!(not_apart(theme), [], "{} {}", theme.name, theme.id);
         let on = super::super::parts::card_on_side(theme).expect("both choose their cards");
-        let step = contrast(theme.value(on.card), theme.value(on.side));
+        let step = contrast(theme.value(on.card), theme.value(on.ground));
         assert!(
             step >= CARD_STEP,
             "{} {}: {} on {} steps {step:.3}",
             theme.name,
             theme.id,
             on.card,
-            on.side
+            on.ground
         );
     }
 }
@@ -118,7 +118,12 @@ fn the_card_s_step_is_only_reported_never_a_pair_the_floors_or_a_person_s_colour
     // the person's own colours a theme takes, so a ground the parts choose is never one.
     assert!(
         !PAIRS.iter().any(|pair| {
-            let grounds = ["surface.base", "surface.raised", "control.base"];
+            let grounds = [
+                "surface.base",
+                "surface.raised",
+                "surface.sunken",
+                "control.base",
+            ];
             grounds.contains(&pair.front) && grounds.contains(&pair.back)
         }),
         "a card's ground is not held as a pair"
@@ -127,16 +132,33 @@ fn the_card_s_step_is_only_reported_never_a_pair_the_floors_or_a_person_s_colour
 
 #[test]
 fn a_palette_alone_is_not_yet_held() {
-    // A theme with no parts draws its cards on the family's raised ground, wherever its palette
-    // puts it: like a meter's fill on its track, that waits for a pair the check only reports
-    // (#3735).
+    // A theme that chooses no card row and no side panel draws its cards on the family's raised
+    // ground, wherever its palette puts it: like a meter's fill on its track, that waits for a
+    // pair the check only reports (#3735). Its raised, sunken and window grounds are one colour.
     let loaded = load(&json!({
         "name": "Flat",
         "appearances": [{ "id": "dark", "appearance": "dark", "tokens": {
             "surface.base": "#202020",
             "surface.raised": "#202020",
+            "surface.sunken": "#202020",
         } }],
     }));
     assert!(!loaded.refused, "{:?}", loaded.complaints);
+    assert!(loaded.theme.first().parts.is_empty());
     assert_eq!(not_apart(loaded.theme.first()), []);
+    // The same palette over Purlis Classic inherits Classic's sunken card row, and is held.
+    let over = load(&json!({
+        "name": "Flat Classic",
+        "extends": "purlis-classic",
+        "appearances": [{ "id": "dark", "tokens": {
+            "surface.base": "#202020",
+            "surface.sunken": "#202020",
+        } }],
+    }));
+    assert!(!over.refused, "{:?}", over.complaints);
+    assert!(
+        not_apart(over.theme.first()).contains(&(None, "surface.sunken", "surface.base", 1.0)),
+        "{:?}",
+        not_apart(over.theme.first())
+    );
 }

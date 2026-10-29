@@ -720,9 +720,10 @@ that token is a wash laid over another in turn), `ansi` (a terminal colour too c
 terminal's background: `token`, `ratio`, `floor`) or `selected-not-apart` (the selected row
 drawn exactly as `other`), `card-not-apart` (a side view's card row whose fill, `card`, steps
 only `ratio` from the side panel's, `ground`, under the `floor` of 1.05, with no edge that
-clears a hairline's 1.2 there, in a theme whose parts choose a card row's or a panel's look:
-reported only, so no floor redraws a ground for it), `selection-text-alone` (a colour for selected text on a selection
-left to the platform), `line-does-not-fit` (a line of words taller than the box it is drawn in:
+clears a hairline's 1.2 there, in a theme whose parts, its own or inherited, choose a card
+row's look or a side panel's fill; the check only reports it and redraws nothing),
+`selection-text-alone` (a colour for selected text on a selection left to the platform),
+`line-does-not-fit` (a line of words taller than the box it is drawn in:
 its `density`, the `fit` it breaks, a `size`, a `line_height` and a `height` token, and the
 `line` and the `room` it has, in px at the default text size), or `style-without-a-face` (a
 style the theme draws in a font it brings with no face for it, so the browser makes it from
