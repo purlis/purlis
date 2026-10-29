@@ -18,6 +18,7 @@ import { Reserved } from "./Reserved";
 import { Menu, MenuItem, MenuTrigger, MenuWords, Submenu } from "../menu/Menu";
 import { List, ListRow } from "../list/List";
 import { RowLabel } from "../list/Row";
+import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "../table/Table";
 import { Select } from "../select/Select";
 import { selectNamed } from "../select/select.testkit";
 
@@ -36,7 +37,8 @@ function holdTheDialogsWait() {
     ms?: number,
     ...rest: unknown[]
   ) => {
-    if (ms === 500) {
+    // React Aria's dialog's own, by where it is asked from: a tooltip's close waits 500 ms too.
+    if (ms === 500 && new Error().stack?.includes("useDialog")) {
       held.push(run);
       return 0;
     }
@@ -56,11 +58,13 @@ function holdTheDialogsWait() {
         frames.clear();
         for (const frame of due) frame(performance.now());
       }),
-    /** The half second runs out. Only React Aria's dialog asks for one: if it ever waits
-     *  otherwise, this says so. */
+    /** The dialog's half second runs out. It asks for one wait: if it ever waits otherwise,
+     *  this says so. */
     halfASecond: () => {
       expect(held).toHaveLength(1);
-      for (const run of held.splice(0)) run();
+      act(() => {
+        for (const run of held.splice(0)) run();
+      });
     },
   };
 }
@@ -362,6 +366,8 @@ describe("a dialog", () => {
       await userEvent.keyboard("{Enter}");
       expect(chose).toHaveBeenCalledWith("activity");
       expect(screen.queryByRole("menu")).toBeNull();
+      // At once, before the dialog's half second and before any frame.
+      expect(more).toHaveFocus();
       wait.halfASecond();
       await wait.drawFrame();
       expect(more).toHaveFocus();
@@ -415,6 +421,92 @@ describe("a dialog", () => {
       });
       await wait.drawFrame();
       expect(row).toHaveFocus();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  /** A table in a dialog whose one row has its ⋯ menu, open and holding the keyboard. */
+  async function aRowsMenuOpenInATable(wait: ReturnType<typeof holdTheDialogsWait>) {
+    render(
+      <Dialog onClose={() => {}} title="Workspace">
+        <Table aria-label="Hosts" rowMenus>
+          <TableHeader>
+            <TableColumn id="host" isRowHeader>
+              Host
+            </TableColumn>
+          </TableHeader>
+          <TableBody>
+            <TableRow
+              id="pypi.org"
+              textValue="pypi.org"
+              menu={() => (
+                <Menu aria-label="pypi.org">
+                  <MenuItem id="confirm" textValue="Confirm">
+                    <MenuWords said="Confirm" />
+                  </MenuItem>
+                </Menu>
+              )}
+            >
+              <TableCell>pypi.org</TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </Dialog>,
+    );
+    await wait.drawFrame();
+    const more = screen.getByRole("button", { name: "More for pypi.org" });
+    // Reached as a person reaches it: the row, then along it to its end.
+    act(() => screen.getByRole("row", { name: (said) => said.startsWith("pypi.org") }).focus());
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}");
+    await waitFor(() => expect(more).toHaveFocus());
+    await userEvent.keyboard("{Enter}");
+    await wait.drawFrame();
+    await waitFor(() => expect(screen.getByRole("menuitem", { name: "Confirm" })).toHaveFocus());
+    console.log(
+      "DBG",
+      more.getAttribute("aria-expanded"),
+      more.closest("tr")?.hasAttribute("data-open"),
+    );
+    return more;
+  }
+
+  /** Escape on the menu, and only the microtasks of the commit that takes it away. */
+  async function escapeToTheMomentItGoes() {
+    const key = { key: "Escape", code: "Escape", bubbles: true, cancelable: true };
+    const on = document.activeElement as HTMLElement;
+    on.dispatchEvent(new KeyboardEvent("keydown", key));
+    for (let tick = 0; tick < 10; tick++) await Promise.resolve();
+    expect(screen.queryByRole("menu")).toBeNull();
+    return () => act(async () => void on.dispatchEvent(new KeyboardEvent("keyup", key)));
+  }
+
+  // #3642: the ⋯ is in a cell of the row, and the table stops the restore event for it as it does
+  // for the row; the ⋯ carries no key of its own, and stands in its row's.
+  it("gives the keyboard back to a table row's ⋯ the moment its menu goes, before the table draws again", async () => {
+    const wait = holdTheDialogsWait();
+    try {
+      const more = await aRowsMenuOpenInATable(wait);
+      const release = await escapeToTheMomentItGoes();
+      expect(more).toHaveFocus();
+      wait.halfASecond();
+      await release();
+      await wait.drawFrame();
+      expect(more).toHaveFocus();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  // A collection that draws another item into a row's element while its menu is up (a
+  // virtualized one reuses it) is left to send the keyboard to the item it means.
+  it("leaves the hand-back to the table when the ⋯'s row has since been drawn another item", async () => {
+    const wait = holdTheDialogsWait();
+    try {
+      const more = await aRowsMenuOpenInATable(wait);
+      more.closest("[data-key]")?.setAttribute("data-key", "api.github.com");
+      await escapeToTheMomentItGoes();
+      expect(more).not.toHaveFocus();
     } finally {
       vi.restoreAllMocks();
     }

@@ -175,11 +175,12 @@ const RESTORE_EVENT = "react-aria-focus-scope-restore";
  *   root's surface, not in it) says so to the one around it as they go together, in one commit
  *   (#3642): it goes first, its own opener goes with them, and the keyboard goes back to the
  *   outer one's opener.
- * - **An opener that is a row of a React Aria collection** takes the hand-back itself (the
- *   collection stops the restore event) and would focus the row only on a render of its own, a
- *   task later (#3642). The row is focused here at once, while it still stands for the item it
- *   stood for as the surface opened (its `data-key`), and the collection's render finds it
- *   placed.
+ * - **An opener in a React Aria collection** (its row, or a control in a row, as a table's ⋯)
+ *   leaves the hand-back to the collection, which stops the restore event and would focus it
+ *   only on a render of its own, a task later (#3642). It is focused here at once, while the
+ *   item it stands in (the nearest `data-key` around it) is still the one it stood in as the
+ *   surface opened, and the collection's render finds it placed. An opener in no item, or in
+ *   one its collection has since drawn another item into, is left to the collection.
  */
 function HandsBack({
   surface,
@@ -195,12 +196,12 @@ function HandsBack({
   inner: KeyboardWent;
 }) {
   // What had the keyboard as the surface opened, told as it is first drawn, as React Aria's own
-  // focus scope keeps it, and the item of a collection it stood for then.
+  // focus scope keeps it, and the item of a collection it stood in then.
   const [opener] = useState(() => {
     const had = document.activeElement;
     return had instanceof HTMLElement && had !== had.ownerDocument.body ? had : null;
   });
-  const [item] = useState(() => opener?.getAttribute("data-key") ?? null);
+  const [item] = useState(() => itemOf(opener));
   const latest = useRef(gone);
   useLayoutEffect(() => {
     latest.current = gone;
@@ -235,12 +236,17 @@ function HandsBack({
         if (!opener.isConnected || opener.closest("[inert]")) return;
         const restore = new CustomEvent(RESTORE_EVENT, { bubbles: true, cancelable: true });
         const asked = opener.dispatchEvent(restore);
-        if (asked || opener.getAttribute("data-key") === item) focusSafely(opener);
+        if (asked || (item !== null && itemOf(opener) === item)) focusSafely(opener);
       });
     },
     [opener, item, outer, inner],
   );
   return null;
+}
+
+/** The item of a React Aria collection an element stands in: the nearest `data-key` around it. */
+function itemOf(element: Element | null): string | null {
+  return element?.closest("[data-key]")?.getAttribute("data-key") ?? null;
 }
 
 /** Whether the keyboard was in a surface as it went, told to the surface around it. */
