@@ -119,7 +119,9 @@ export function useChipNotices({
   const on = useMemo(() => {
     const by = new Map<string, ChipNotice[]>();
     /** The workspaces whose chip is dormant: gone, so nothing is offered to do in them. */
-    const dormant = new Set(chips.filter((one) => one.look === "dormant").map((one) => one.workspace));
+    const dormant = new Set(
+      chips.filter((one) => one.look === "dormant").map((one) => one.workspace),
+    );
     for (const one of kept) {
       if (one.plane !== plane) continue;
       const place = placeOfSaid(one.said, chips);

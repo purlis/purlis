@@ -684,7 +684,9 @@ describe("a notice about a workspace with no chip (#3651, D-3648-16)", () => {
     await waitFor(() => expect(chips()).toEqual(["alpha*"]));
     await make("gamma");
     const kept = await results();
-    await waitFor(() => expect(within(kept).getByText("Workspace gamma is ready")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(within(kept).getByText("Workspace gamma is ready")).toBeInTheDocument(),
+    );
     // Wherever the window landed, back to alpha: gamma has no chip, and no listing either.
     if (!chips().includes("alpha*"))
       await userEvent.click(within(bar()).getByRole("button", { name: "alpha" }));

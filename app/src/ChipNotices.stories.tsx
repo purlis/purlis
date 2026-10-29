@@ -81,39 +81,45 @@ function TheWindow({
           },
         ]
       : [
-        ...(stack === "stacked"
-          ? [
-              { id: 3, kind: "info" as const, said: reposCloning(hasNotice, ["api", "web"], 1, 1) },
-              { id: 2, kind: "warning" as const, said: OFF_MAIN(hasNotice) },
-            ]
-          : stack === "failed"
+          ...(stack === "stacked"
             ? [
                 {
-                  id: 2,
-                  kind: "warning" as const,
-                  said: reposNotCloned(
-                    hasNotice,
-                    [{ repo: "web", said: "web: clone failed — no access to acme/web." }],
-                    () => setSaid("Asked to clone web again"),
-                    1,
-                  ),
+                  id: 3,
+                  kind: "info" as const,
+                  said: reposCloning(hasNotice, ["api", "web"], 1, 1),
                 },
+                { id: 2, kind: "warning" as const, said: OFF_MAIN(hasNotice) },
               ]
-            : []),
-        {
-          id: 1,
-          kind: "info" as const,
-          said:
-            hasNotice === OUTSIDE
-              ? {
-                  from: "story",
-                  refused: false,
-                  title: "The root's layout is up to date",
-                  words: "Its layout was read again.",
-                  workspace: OUTSIDE,
-                }
-              : workspaceMade(hasNotice, LINES, { onAddVision: () => setSaid("Asked for a vision") }),
-        },
+            : stack === "failed"
+              ? [
+                  {
+                    id: 2,
+                    kind: "warning" as const,
+                    said: reposNotCloned(
+                      hasNotice,
+                      [{ repo: "web", said: "web: clone failed — no access to acme/web." }],
+                      () => setSaid("Asked to clone web again"),
+                      1,
+                    ),
+                  },
+                ]
+              : []),
+          {
+            id: 1,
+            kind: "info" as const,
+            said:
+              hasNotice === OUTSIDE
+                ? {
+                    from: "story",
+                    refused: false,
+                    title: "The root's layout is up to date",
+                    words: "Its layout was read again.",
+                    workspace: OUTSIDE,
+                  }
+                : workspaceMade(hasNotice, LINES, {
+                    onAddVision: () => setSaid("Asked for a vision"),
+                  }),
+          },
         ]),
   ]);
   const projects = useMemo<SwitchProject[]>(
