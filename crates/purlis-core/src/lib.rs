@@ -57,6 +57,7 @@ pub mod dispatchlimits;
 pub mod dispatchmode;
 pub mod dispatchnever;
 pub mod dispatchplace;
+pub mod dispatchqueue;
 pub mod dispatchprofiles;
 pub mod dispatchrecord;
 pub mod dispatchrestart;

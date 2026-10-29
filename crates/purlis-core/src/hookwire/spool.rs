@@ -1017,6 +1017,33 @@ fn read_keys(dir: &Path) -> io::Result<Keys> {
         }))
 }
 
+/// **Signs `body`, number `seq` of chat `chat`, under the key `token` writes its spool lines
+/// under** (#3902): the key's id and the MAC, as [`checks_as`] checks them. What a dispatch
+/// message queued while the app did not answer carries ([`crate::dispatchqueue`]): the same
+/// key, so the host that checks a spooled line checks a queued message too, and nothing that
+/// does not hold the chat's token can queue one as that chat.
+pub fn sign_as(token: &ChatToken, chat: u32, seq: u64, body: &str) -> (String, String) {
+    let key = SpoolKey::of(token);
+    let id = key.id();
+    let mac = key.sign(chat, seq, &id, body);
+    (id, mac)
+}
+
+/// **Whether `mac` is chat `chat`'s MAC over `body`, number `seq`, under the key `id`** (#3902),
+/// where `keys.json` in `dir` holds that key for that chat: one the host issued to it and keeps
+/// until it ends. A key it does not hold, or a `keys.json` that does not read, checks nothing.
+/// Read under no lock: the file is replaced whole, never written in place.
+pub fn checks_as(dir: &Path, chat: u32, seq: u64, id: &str, body: &str, mac: &str) -> bool {
+    let Ok(keys) = read_keys(dir) else {
+        return false;
+    };
+    keys.keys
+        .iter()
+        .filter(|held| held.chat == chat && held.id == id)
+        .filter_map(|held| key_of(&held.key))
+        .any(|key| key.checks(chat, seq, id, body, mac))
+}
+
 /// The highest number a drain has handed on under the key `id`, for a hook choosing its next
 /// one ([`Folder::take_a_number`]): 0 where the key is not held, and where `keys.json` cannot
 /// be read, which leaves the hook numbering by the folder's names alone. Read under no lock:
