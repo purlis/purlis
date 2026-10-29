@@ -20,7 +20,8 @@
 //! attached by `remote-link`, a runner's browser watched from its desktop, is sent at most
 //! [`LINK_MOST_FRAMES_A_SECOND`] and frames at most [`LINK_MOST_FRAME_WIDTH`] wide, so a remote
 //! browser stays smooth over a link that also carries what the person types. The engine is asked
-//! for frames as wide as the widest view wants them ([`Screen::narrow`]). **Every browser view
+//! for frames no wider than the narrowest view held to a width wants them ([`Screen::narrow`]),
+//! so a view on the runner's own host never widens what crosses the link (#3297). **Every browser view
 //! keeps one frame in flight**: the next frame is sent once the client has drawn the last, and
 //! it is the newest, so the person's input never waits behind a queue of frames
 //! ([`purlis_session_protocol::view::Source::one_frame_in_flight`]).
@@ -50,7 +51,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use futures::StreamExt;
 use purlis_session_protocol::browsing::{
-    Act, Aim, Browsed, BrowserReach, Driver, Input, KeptLogin, LogIn, origin_of,
+    Act, Aim, Browsed, BrowserReach, Driver, Input, KeptLogin, LinkFrames, LogIn, origin_of,
 };
 use purlis_session_protocol::session::{self, Exit, Readiness, Refusal, ViewKind, ViewRole};
 use purlis_session_protocol::view::frames::{JPEG, aimed, closed as closed_frame, frame, origin};
@@ -99,12 +100,13 @@ impl Reads {
     }
 
     /// The least time between frames a view of this link that asks for `every` is sent, and the
-    /// widest frame it is sent: over a link between hosts, the link's (#2050).
-    fn held_to(self, every: Duration) -> (Duration, Option<u16>) {
+    /// widest frame it is sent: over a link between hosts, `link`'s, its browser's (#2050,
+    /// #3297).
+    fn held_to(self, every: Duration, link: LinkFrames) -> (Duration, Option<u16>) {
         if self.between_hosts {
             (
-                every.max(Duration::from_secs(1) / LINK_MOST_FRAMES_A_SECOND),
-                Some(LINK_MOST_FRAME_WIDTH),
+                every.max(Duration::from_secs(1) / link.frames.max(1)),
+                Some(link.width),
             )
         } else {
             (every, None)
@@ -113,12 +115,14 @@ impl Reads {
 }
 
 /// **The most frames a second a view over a link between hosts is sent** (#2050, spec #2041's
-/// default): a runner's browser watched from its desktop.
-pub const LINK_MOST_FRAMES_A_SECOND: u32 = 15;
+/// default): a runner's browser watched from its desktop, where its start gives no
+/// `link_frames` of its pool's own (#3297).
+pub const LINK_MOST_FRAMES_A_SECOND: u32 = LinkFrames::DEFAULT.frames;
 
 /// **The widest frame a view over a link between hosts is sent, in pixels** (#2050, spec
-/// #2041's default): the engine scales a wider page down to it.
-pub const LINK_MOST_FRAME_WIDTH: u16 = 1280;
+/// #2041's default): the engine scales a wider page down to it. A start may give its pool's own
+/// (#3297).
+pub const LINK_MOST_FRAME_WIDTH: u16 = LinkFrames::DEFAULT.width;
 
 /// The least time between two frames sent to a thumbnail: about one a second.
 pub const THUMBNAIL_EVERY: Duration = Duration::from_secs(1);
@@ -476,6 +480,8 @@ impl Latest {
 /// One browser's frames, and the views that want them.
 struct Hub {
     screen: Arc<dyn Paints>,
+    /// How its views over a link between hosts are held: its start's, or the defaults (#3297).
+    link: LinkFrames,
     latest: watch::Sender<Latest>,
     /// Each attached view's least time between frames and widest frame, by its number here.
     viewers: Mutex<Vec<Viewer>>,
@@ -536,17 +542,15 @@ impl Hub {
         }
     }
 
-    /// Ask the engine for frames as often as the view that wants them most often, and as wide
-    /// as the view that wants them widest: no narrower than its pages where one view wants
-    /// them so.
+    /// Ask the engine for frames as often as the view that wants them most often, and no
+    /// wider than the narrowest view held to a width (#3297): one view not held to a width
+    /// never widens the frames a view over a link between hosts is sent, which the window would
+    /// drop as too wide. Only while no attached view is held to a width are they as wide as the
+    /// browser's pages.
     fn repace(screen: &Arc<dyn Paints>, viewers: &[Viewer]) {
         if let Some(every) = viewers.iter().map(|viewer| viewer.every).min() {
             screen.pace(every);
-            let widest = viewers
-                .iter()
-                .map(|viewer| viewer.most_width)
-                .try_fold(0, |widest, most| most.map(|most| most.max(widest)));
-            screen.narrow(widest);
+            screen.narrow(viewers.iter().filter_map(|viewer| viewer.most_width).min());
         }
     }
 
@@ -584,7 +588,7 @@ struct BrowserSource {
 
 impl Source for BrowserSource {
     fn attach(&self) -> Attachment {
-        let (every, most_width) = self.reads.held_to(self.every);
+        let (every, most_width) = self.reads.held_to(self.every, self.hub.link);
         let watching = self.hub.watched(every, most_width);
         let mut latest = self.hub.latest.subscribe();
         let reads = self.reads;
@@ -686,13 +690,25 @@ pub(crate) struct Browser {
 }
 
 impl Browser {
+    /// A browser of `screen`, its views over a link between hosts held to the defaults.
+    #[cfg(test)]
     pub(crate) fn new(
         screen: Arc<dyn Screen>,
         program: impl Into<String>,
         stopping: Arc<Mutex<Option<Stopped>>>,
     ) -> Browser {
+        Browser::held_over_links_to(screen, program, stopping, LinkFrames::DEFAULT)
+    }
+
+    /// A browser of `screen`, its views over a link between hosts held to `link` (#3297).
+    pub(crate) fn held_over_links_to(
+        screen: Arc<dyn Screen>,
+        program: impl Into<String>,
+        stopping: Arc<Mutex<Option<Stopped>>>,
+        link: LinkFrames,
+    ) -> Browser {
         Browser {
-            hub: Hub::of(Arc::new(Pages(Arc::clone(&screen)))),
+            hub: Hub::of(Arc::new(Pages(Arc::clone(&screen))), link),
             inspector: Arc::new(Mutex::new(None)),
             screen,
             lease: Mutex::new((Driver::Agent, 0)),
@@ -726,10 +742,11 @@ impl Browser {
 }
 
 impl Hub {
-    fn of(screen: Arc<dyn Paints>) -> Arc<Hub> {
+    fn of(screen: Arc<dyn Paints>, link: LinkFrames) -> Arc<Hub> {
         let (latest, _) = watch::channel(Latest::Nothing);
         Arc::new(Hub {
             screen,
+            link,
             latest,
             viewers: Mutex::new(Vec::new()),
             next: AtomicU64::new(1),
@@ -882,7 +899,11 @@ impl Running for Browser {
             *size = (width, height);
             return Ok(());
         }
-        let hub = Hub::of(Arc::new(DevTools(Arc::clone(&self.screen))));
+        // DevTools are the window's alone, never relayed, so never held to a link's frames.
+        let hub = Hub::of(
+            Arc::new(DevTools(Arc::clone(&self.screen))),
+            LinkFrames::DEFAULT,
+        );
         let slot = Arc::clone(&self.inspector);
         let theirs = Arc::clone(&hub);
         // Held while the engine opens them, so an end it says at once finds them here.

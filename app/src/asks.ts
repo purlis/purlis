@@ -27,6 +27,7 @@ import { askRemoveWorkspace } from "./removeWorkspaceAsk";
 import { askOpenBrowser, OPEN_VIEW, TAKE_OVER } from "./browserNeedsYou";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { askOpenProposal } from "./proposedChangeOpen";
+import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { askOpenRunnerWrite } from "./runnerWriteOpen";
 import { askProfileSignIn } from "./settings/links";
 
@@ -292,12 +293,10 @@ export async function answerTaken(
         // before. Dismiss says it no more. Either is said once.
         if (option === "dismiss") return commands.dismissOldHarnessPlugins(plane);
         if (option === "remove") {
-          const held = await commands.removeOldHarnessPlugins(plane);
+          const held = await proposeOldKeysRemoval(plane);
           if (held.status === "error") return held;
-          const [first] = held.data;
-          if (first !== undefined) askOpenProposal(plane, first.id, first.file);
           opened = true;
-          return { status: "ok" };
+          return held;
         }
         break;
       }

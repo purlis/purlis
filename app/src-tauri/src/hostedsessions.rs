@@ -613,10 +613,12 @@ pub type ClosedSink = Box<dyn FnMut(&'static str) + Send>;
 /// the link's frames, and the window holds it to them too, whatever it sends. A frame larger than
 /// [`MOST_HELD_FRAME_BYTES`], one whose header says it is wider than the link's widest or
 /// higher than [`MOST_HELD_FRAME_HEIGHT`] (read before anything decodes it), or one that comes
-/// sooner than [`HELD_FRAMES_AT_LEAST`] after the last drawn, is acknowledged and not drawn.
+/// sooner than [`HeldFrames::at_least`] after the last drawn, is acknowledged and not drawn. The
+/// link's frames are its pool's own where its runner was given them (#3297), else the defaults.
 #[derive(Debug, Default)]
 pub struct HeldFrames {
     last: Option<Instant>,
+    link: purlis_session_protocol::browsing::LinkFrames,
 }
 
 /// The largest frame of a runner's browser the window draws.
@@ -624,10 +626,6 @@ pub const MOST_HELD_FRAME_BYTES: usize = 4 << 20;
 
 /// The highest frame of a runner's browser the window draws, in pixels.
 pub const MOST_HELD_FRAME_HEIGHT: u16 = 8192;
-
-/// The least time between two frames of a runner's browser the window draws: a little under
-/// the link's 15 a second, so a frame the link bunched is not lost.
-pub const HELD_FRAMES_AT_LEAST: Duration = Duration::from_millis(50);
 
 impl FrameSinks {
     /// Whether `image` is drawn: every frame, but for a view the window holds (#2050).
@@ -640,6 +638,17 @@ impl FrameSinks {
 }
 
 impl HeldFrames {
+    /// The window's hold on a browser whose views over the link are held to `link` (#3297).
+    pub fn to(link: purlis_session_protocol::browsing::LinkFrames) -> HeldFrames {
+        HeldFrames { last: None, link }
+    }
+
+    /// The least time between two frames drawn: three quarters of the link's own, so a frame
+    /// the link bunched is not lost (50 ms at 15 a second).
+    pub fn at_least(&self) -> Duration {
+        Duration::from_millis(750) / self.link.frames.max(1)
+    }
+
     /// Whether `image`, coming `now`, is drawn.
     pub fn draws(&mut self, image: &[u8], now: Instant) -> bool {
         if image.len() > MOST_HELD_FRAME_BYTES {
@@ -648,12 +657,13 @@ impl HeldFrames {
         let Some((width, height)) = purlis_session_protocol::view::frames::jpeg_size(image) else {
             return false;
         };
-        if width > purlis_host::LINK_MOST_FRAME_WIDTH || height > MOST_HELD_FRAME_HEIGHT {
+        if width > self.link.width || height > MOST_HELD_FRAME_HEIGHT {
             return false;
         }
+        let at_least = self.at_least();
         if self
             .last
-            .is_some_and(|last| now.saturating_duration_since(last) < HELD_FRAMES_AT_LEAST)
+            .is_some_and(|last| now.saturating_duration_since(last) < at_least)
         {
             return false;
         }
@@ -1267,13 +1277,19 @@ impl HostLink {
 
     /// Draw browser view `view`'s frames into `sink`, each whole (#2012), and its page's origin
     /// into `origins` (#2300): its stream may already be here.
-    /// The window holds the view to the link's frames itself where `held` (#2050): a view of a
-    /// browser on a runner.
-    pub(crate) fn draw_frames(&self, view: u32, sink: FrameSink, origins: OriginSink, held: bool) {
+    /// The window holds the view to the link's frames itself where `held` names them (#2050,
+    /// #3297): a view of a browser on a runner.
+    pub(crate) fn draw_frames(
+        &self,
+        view: u32,
+        sink: FrameSink,
+        origins: OriginSink,
+        held: Option<purlis_session_protocol::browsing::LinkFrames>,
+    ) {
         let sinks = FrameSinks {
             frames: sink,
             origins,
-            held: held.then(HeldFrames::default),
+            held: held.map(HeldFrames::to),
             closed: None,
         };
         self.draw_into(view, Draws::Frames(Arc::new(Mutex::new(sinks))));

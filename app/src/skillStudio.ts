@@ -5,6 +5,7 @@ import { createContext, useEffect, useRef, useSyncExternalStore } from "react";
 import {
   commands,
   PERSONA_SCOPE_KEY,
+  SKILL_NEEDS_IN,
   SKILL_STUDIO_IN,
   type SkillPinner,
   type SkillPinsRefused,
@@ -330,6 +331,15 @@ export { SKILL_STUDIO_IN };
  *  row and a chat's missing-skills Notice run. */
 export function skillStudioAs(persona: string): string {
   return `${SKILL_STUDIO_IN}${scopeKey(asPersona(persona))}`;
+}
+
+/** The catalogue row that opens the studio's Needs you on a scope's chats, before the scope's key
+ *  (#3695): a summary line's "need you". The core names it once (`skillstudio::NEEDS_IN`). */
+export { SKILL_NEEDS_IN };
+
+/** The catalogue row that opens Needs you on `persona`'s chats: its page's "need you" row. */
+export function skillNeedsAs(persona: string): string {
+  return `${SKILL_NEEDS_IN}${scopeKey(asPersona(persona))}`;
 }
 
 /** **What opens the studio, in words**: the palette's row and the Skills view's header (#3266). */

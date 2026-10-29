@@ -78,6 +78,14 @@
   letter-spacing: normal;
 }
 
+/* A group's name with its count is laid out as a row, so the count sits at its end, apart from
+   the name, and never runs into it. */
+[data-scope="list"][data-part="header"][data-counted] {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
 /* ---------------------------------------------------------------------------------------------
    What folds (#3670, `Fold.tsx`): a group's name that folds its rows, and a run of rows folded
    to one quiet line. Each is a row the keyboard reaches, with the tree's own twist

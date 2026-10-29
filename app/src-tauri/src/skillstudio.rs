@@ -13,6 +13,8 @@
 use serde::Serialize;
 use specta::Type;
 
+pub(crate) mod needs;
+
 /// The catalogue row that opens the Skill studio on one scope's chats is this, then the scope's
 /// key (`app/src/skillStudio.ts`).
 pub(crate) const STUDIO_IN: &str = "skills.studio:";
@@ -24,6 +26,54 @@ pub(crate) const PERSONA_SCOPE_KEY: &str = "persona/";
 /// The catalogue row that opens the Skill studio on a chat as `persona`.
 pub(crate) fn studio_as(persona: &str) -> String {
     format!("{STUDIO_IN}{PERSONA_SCOPE_KEY}{persona}")
+}
+
+/// The catalogue row that opens the Skill studio's Needs you on one scope's chats is this, then
+/// the scope's key (#3695): a summary line's "need you".
+pub(crate) const NEEDS_IN: &str = "skills.needs:";
+
+/// The catalogue row that opens Needs you on a chat as `persona`.
+pub(crate) fn needs_as(persona: &str) -> String {
+    format!("{NEEDS_IN}{PERSONA_SCOPE_KEY}{persona}")
+}
+
+/// **How many items Needs you holds for a chat in `workspace` as `persona`** (#3695), read as
+/// [`skill_studio`] reads them ([`with_the_projects_needs`]), for a summary line. `waiting` is
+/// the files purlis's own proposed changes wait on.
+pub(crate) fn needing_here(
+    root: &std::path::Path,
+    waiting: &[String],
+    workspace: Option<&str>,
+    persona: Option<&str>,
+) -> usize {
+    let built_in =
+        crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
+    let mut studio = studio(
+        root,
+        built_in.as_deref(),
+        true,
+        workspace,
+        persona,
+        &purlis_core::harness_plugin::Env::of(&[]),
+    );
+    with_the_projects_needs(&mut studio, root, waiting);
+    studio.needs.len()
+}
+
+/// **The project's own items of Needs you, added to `studio`'s** (#3689): the old
+/// `[harness_plugins]` keys, whose Ask Needs you holds while the studio is on. A file whose
+/// removal waits among `waiting`, the files purlis's own proposed changes wait on, is asked
+/// about no more. The one way the studio, its count and the summary lines add them.
+pub(crate) fn with_the_projects_needs(
+    studio: &mut Studio,
+    root: &std::path::Path,
+    waiting: &[String],
+) {
+    if !studio.on {
+        return;
+    }
+    let old = crate::oldplugins::notice_of(root, waiting);
+    studio.needs = needs::with_old_keys(std::mem::take(&mut studio.needs), old.as_ref());
 }
 
 /// The level a skill comes from, as the studio draws it.
@@ -506,6 +556,9 @@ pub struct Studio {
     /// The router its chats are routed by, and how it did at each one's start (SK-15b). Null
     /// while the studio is off.
     pub router: Option<StudioRouter>,
+    /// **What in these skills needs the person** (#3689): the Needs you page's items, by kind,
+    /// each with why and one fix ([`needs`]). Empty while the studio is off.
+    pub needs: Vec<needs::NeedsYou>,
 }
 
 /// **A declared harness skills are not supported on** (SK-30, #2985): the core's
@@ -652,6 +705,7 @@ pub(crate) fn studio(
             pins_refused: None,
             not_supported: Vec::new(),
             router: None,
+            needs: Vec::new(),
         };
     }
     let off = workspace
@@ -688,7 +742,7 @@ pub(crate) fn studio(
         .workspaces()
         .unwrap_or_default();
     let router = router_of(root, workspace.as_deref(), persona.as_deref());
-    Studio {
+    let mut studio = Studio {
         on,
         workspace,
         persona,
@@ -701,7 +755,10 @@ pub(crate) fn studio(
         pins_refused,
         not_supported: not_supported.into_iter().map(Into::into).collect(),
         router: Some(router),
-    }
+        needs: Vec::new(),
+    };
+    studio.needs = needs::of(&studio);
+    studio
 }
 
 /// A row of a skill from outside the plane, for the window: read only, with whose it is and how
@@ -1155,11 +1212,19 @@ pub(crate) async fn skill_studio_on() -> Result<bool, String> {
 /// whether it is on, which `PURLIS_SKILL_STUDIO` still decides where it is set.
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn set_skill_studio_on(on: bool) -> Result<bool, String> {
+pub(crate) async fn set_skill_studio_on(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    on: bool,
+) -> Result<bool, String> {
+    let held = planes.every_held();
     crate::off_the_window("turning the Skill studio preview on or off", move || {
         let root = purlis_core::machine::config_root()
             .ok_or_else(|| "There is no config home on this machine to keep it in.".to_owned())?;
         purlis_core::skills::set_studio_on(&root, on)?;
+        // The old plugin keys' Ask is the Inbox's only while the studio is off (#3689).
+        for one in &held {
+            one.chats().asks_may_have_moved();
+        }
         Ok(purlis_core::skills::studio_on_here())
     })
     .await
@@ -1187,6 +1252,11 @@ pub(crate) async fn skill_studio(
             workspace.as_deref(),
             persona.as_deref(),
             &purlis_core::harness_plugin::Env::of(&[]),
+        );
+        with_the_projects_needs(
+            &mut studio,
+            held.root(),
+            &held.proposals().paths_of(crate::proposals::BY_PURLIS),
         );
         // How the router did at the start of each chat open here in the studio's scope (SK-15b).
         if let Some(router) = studio.router.as_mut() {

@@ -18,6 +18,10 @@ use crate::hosting::Running;
 struct Slow {
     showing: AtomicBool,
     hold_hide: Mutex<Option<Arc<Barrier>>>,
+    /// The widest frame the engine was last asked for: `None` until asked.
+    narrowed: Mutex<Option<Option<u16>>>,
+    /// The least time between frames the engine was last asked for.
+    paced: Mutex<Option<Duration>>,
 }
 
 impl Screen for Slow {
@@ -32,9 +36,13 @@ impl Screen for Slow {
         self.showing.store(true, Ordering::SeqCst);
     }
 
-    fn pace(&self, _every: Duration) {}
+    fn pace(&self, every: Duration) {
+        *self.paced.lock().unwrap() = Some(every);
+    }
 
-    fn narrow(&self, _most: Option<u16>) {}
+    fn narrow(&self, most: Option<u16>) {
+        *self.narrowed.lock().unwrap() = Some(most);
+    }
 
     fn hide(&self) {
         let held = self.hold_hide.lock().unwrap().take();
@@ -134,6 +142,87 @@ fn a_view_attached_while_the_last_one_detaches_is_still_shown_frames() {
         "a view is attached, so its browser makes frames"
     );
     drop(second);
+}
+
+/// A view of `browser`, attached over a link between hosts or not.
+fn a_view(
+    browser: &Browser,
+    between_hosts: bool,
+) -> Arc<dyn purlis_session_protocol::view::Source> {
+    browser
+        .view(
+            ViewKind::Browser,
+            Some(ViewRole::Focused),
+            None,
+            super::Reads {
+                aims: true,
+                origins: true,
+                between_hosts,
+            },
+        )
+        .expect("a browser view")
+}
+
+#[test]
+fn a_view_on_the_runner_itself_does_not_widen_the_frames_a_view_over_the_link_is_sent() {
+    // #3297: the engine's frames are as wide as one view asks for all of them. A view not held
+    // to the link's width, attached beside one that is, must not widen what crosses the link.
+    let screen = Arc::new(Slow::default());
+    let browser = Browser::new(screen.clone(), "b-1", Arc::default());
+    let local = a_view(&browser, false).attach();
+    assert_eq!(
+        *screen.narrowed.lock().unwrap(),
+        Some(None),
+        "as wide as its pages"
+    );
+
+    let linked = a_view(&browser, true).attach();
+    assert_eq!(
+        *screen.narrowed.lock().unwrap(),
+        Some(Some(1280)),
+        "no wider than the link's frames while a view over the link is attached"
+    );
+
+    drop(linked);
+    assert_eq!(
+        *screen.narrowed.lock().unwrap(),
+        Some(None),
+        "as wide as its pages again once the view over the link has gone"
+    );
+    drop(local);
+}
+
+#[test]
+fn a_browser_started_with_its_pools_limits_holds_its_views_over_a_link_to_them() {
+    // #3297: a pool's own frames a second and widest frame, given with the browser's start.
+    let screen = Arc::new(Slow::default());
+    let browser = Browser::held_over_links_to(
+        screen.clone(),
+        "b-1",
+        Arc::default(),
+        purlis_session_protocol::browsing::LinkFrames {
+            frames: 30,
+            width: 1920,
+        },
+    );
+    let linked = a_view(&browser, true).attach();
+    assert_eq!(*screen.narrowed.lock().unwrap(), Some(Some(1920)));
+    assert_eq!(
+        *screen.paced.lock().unwrap(),
+        Some(Duration::from_secs(1) / 30)
+    );
+    drop(linked);
+
+    // One started without them is held to spec #2041's defaults.
+    let screen = Arc::new(Slow::default());
+    let browser = Browser::new(screen.clone(), "b-2", Arc::default());
+    let linked = a_view(&browser, true).attach();
+    assert_eq!(*screen.narrowed.lock().unwrap(), Some(Some(1280)));
+    assert_eq!(
+        *screen.paced.lock().unwrap(),
+        Some(Duration::from_secs(1) / 15)
+    );
+    drop(linked);
 }
 
 #[test]
