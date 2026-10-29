@@ -121,17 +121,13 @@ export function YourRepos({
                 <li key={`${repo.host} ${repo.path}`} data-project={repo.project}>
                   <CardButton
                     variant="pick"
-                    title={repo.name}
+                    title={repo.path}
+                    line={`${repo.host} · ${repo.login}`}
                     isDisabled={busy}
-                    aria-label={`Get ${repo.path}${repo.project ? ", a purlis project," : ""} from ${repo.host} as ${repo.login}`}
                     onPress={() => onPick(repo.url)}
                   >
-                    <span>{repo.owner}</span>
                     {repo.project && <Badge>purlis project</Badge>}
-                  </CardButton>{" "}
-                  <span className="m-0 text-text-secondary">
-                    {repo.host} · {repo.login}
-                  </span>
+                  </CardButton>
                 </li>
               ))}
             </ul>

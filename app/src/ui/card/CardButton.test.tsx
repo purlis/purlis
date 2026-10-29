@@ -67,19 +67,15 @@ describe("CardButton", () => {
     expect(press).toHaveBeenCalledTimes(3);
   });
 
-  it("takes a name of its own over its title, and holds what follows the title", () => {
+  it("is named by its title and what follows it, the words it shows (WCAG 2.5.3)", () => {
     render(
-      <CardButton
-        variant="pick"
-        title="purlis"
-        aria-label="Get purlis/purlis from github.com as aaron"
-      >
-        <span>purlis</span>
+      <CardButton variant="pick" title="acme/api" line="github.com · octocat">
+        <span>purlis project</span>
       </CardButton>,
     );
-    const pick = screen.getByRole("button", { name: "Get purlis/purlis from github.com as aaron" });
+    const pick = screen.getByRole("button", { name: "acme/api purlis project" });
+    expect(pick).toHaveAccessibleDescription("github.com · octocat");
     expect(pick).toHaveAttribute("data-variant", "pick");
-    expect(pick).not.toHaveAttribute("aria-describedby");
     expect(drawnWith(pick, "background-color")).toBe("transparent");
     expect(drawnWith(pick, "background-color", { hover: true })).toBe("var(--surface-hover)");
   });

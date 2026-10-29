@@ -222,6 +222,11 @@
   color: inherit;
 }
 
+/* What follows its title (a badge): laid out as the pressed card's own items. */
+[data-scope="card"][data-part="more"] {
+  display: contents;
+}
+
 /* Its line: what it does, in the secondary tier. */
 [data-scope="card"][data-part="line"] {
   font-size: var(--font-size-sm);

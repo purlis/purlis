@@ -359,12 +359,11 @@ function Picks() {
           <li key={name}>
             <CardButton
               variant="pick"
-              title={name}
+              title={`${owner}/${name}`}
+              line="github.com · aaron"
               isDisabled={got !== undefined && got !== name}
-              aria-label={`Get ${owner}/${name}${project ? ", a purlis project," : ""} from github.com as aaron`}
               onPress={() => setGot(name)}
             >
-              <span>{owner}</span>
               {project && <Badge>purlis project</Badge>}
             </CardButton>
           </li>
@@ -378,19 +377,20 @@ function Picks() {
 }
 
 /**
- * **The picks** (#3655): Tab reaches each repo by its whole name; Enter gets one, and the other
- * is unavailable while it comes, out of the tab sequence.
+ * **The picks** (#3655): Tab reaches each repo by the words it shows, described by its forge;
+ * Enter gets one, and the other is unavailable while it comes, out of the tab sequence.
  */
 export const PressablePicks: Story = {
   render: () => <Picks />,
   play: async ({ canvas, userEvent }) => {
     await userEvent.tab();
-    const first = canvas.getByRole("button", { name: /^Get purlis\/purlis, a purlis project,/ });
+    const first = canvas.getByRole("button", { name: "purlis/purlis purlis project" });
     await untilFocused(() => first, "Picks: Tab lands on the first repo");
+    await expect(first).toHaveAccessibleDescription("github.com · aaron");
     expectFocusInSight();
     await userEvent.tab();
     const second = canvas.getByRole("button", {
-      name: "Get purlis/website from github.com as aaron",
+      name: "purlis/website",
     });
     await untilFocused(() => second, "Picks: Tab lands on the second repo");
     await userEvent.keyboard("{Enter}");
