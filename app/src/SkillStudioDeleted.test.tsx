@@ -121,7 +121,7 @@ describe("the Deleted page", () => {
       "That name belongs to a built-in skill; pick another, or make a copy.",
     );
     const back = within(page).getByRole("button", { name: "Bring back secrets as browser" });
-    expect(back).toHaveAttribute("aria-disabled", "true");
+    expect(back).toBeDisabled();
     await user.click(back);
     expect(asked.some((one) => one.cmd === "skill_restore")).toBe(false);
     await user.clear(box);

@@ -459,6 +459,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 3,
     why: "the Sources pages' reads in place (#3687): the line said after a second while rows are held, a read that failed with Try again, and the updates still being read",
   },
+  "SkillStudioDeleted.tsx": {
+    count: 1,
+    why:
+      "Bring back's refusal of a built-in skill's name for a deleted skill whose own a built-in " +
+      "took (#3729), said as it is typed beside the New name field, in the core's sentence. " +
+      "Bring back is the retry",
+  },
   "SkillStudioTab.tsx": {
     count: 1,
     why: "the Library's reading line (#3681): rows held in place while the skills are read, said after a second",
