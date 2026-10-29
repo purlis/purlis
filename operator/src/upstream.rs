@@ -137,18 +137,146 @@ pub struct SandboxTemplateSpec {
 pub struct SandboxWarmPoolSpec {
     pub replicas: i32,
     pub sandbox_template_ref: Reference,
+    /// How upstream treats the runners it keeps warm once the template changes: always
+    /// [`RECREATE`], so a warm runner made from an earlier template is replaced and never handed
+    /// to a fresh claim, whose runner the operator would not vouch for (#2058).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_strategy: Option<UpdateStrategy>,
 }
 
-/// Upstream's sandbox, which makes and owns one runner's pod: purlis reads only its metadata,
-/// to follow a claim to its pod by uid (#2056).
+/// A warm pool's update strategy.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct UpdateStrategy {
+    #[serde(rename = "type")]
+    pub type_: String,
+}
+
+/// Upstream's update strategy that deletes a warm runner no longer of its template, and has a
+/// claim pass over one not deleted yet (agent-sandbox v1.0.6, `isSandboxStale`).
+pub const RECREATE: &str = "Recreate";
+
+/// Upstream's sandbox, which makes and owns one runner's pod: purlis reads its metadata, to
+/// follow a claim to its pod by uid (#2056), its operating mode, which it writes to suspend a
+/// stopped runner and run it again (#2058), and its `Suspended` condition. Its pod template is
+/// never read.
 #[derive(CustomResource, Serialize, Deserialize, Clone, Debug, Default, PartialEq, JsonSchema)]
 #[kube(
     group = "agents.x-k8s.io",
     version = "v1beta1",
     kind = "Sandbox",
-    namespaced
+    namespaced,
+    status = "SandboxStatus"
 )]
-pub struct SandboxSpec {}
+#[serde(rename_all = "camelCase")]
+pub struct SandboxSpec {
+    /// `Running` (upstream's default where it is not set) or `Suspended`: upstream ends a
+    /// suspended sandbox's pod and keeps its volumes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operating_mode: Option<String>,
+}
+
+/// What upstream says about a sandbox: purlis reads its `Suspended` condition.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, JsonSchema)]
+pub struct SandboxStatus {
+    #[serde(default)]
+    pub conditions: Vec<Condition>,
+}
+
+/// A sandbox's mode that runs its pod.
+pub const RUNNING: &str = "Running";
+
+/// A sandbox's mode that ends its pod and keeps its volumes, and the condition upstream says
+/// whether it has.
+pub const SUSPENDED: &str = "Suspended";
+
+/// Whether `claim` is stopped, by its own `stopped` or by its `pool`'s, where its pool still
+/// exists (#2058): a runner kept after its pool is deleted is stopped by its claim alone.
+pub fn is_stopped(claim: &Claim, pool: Option<&Pool>) -> bool {
+    claim.spec.stopped || pool.is_some_and(|pool| pool.spec.stopped)
+}
+
+/// **The mode the operator puts `claim`'s runner's `sandbox` in**, if it changes it (#2058):
+/// [`SUSPENDED`] while the claim or its pool (if it still exists) is stopped, and [`RUNNING`]
+/// again once neither is (never while its pool is deleted), where the operator's own apply
+/// suspended it, so a runner someone
+/// suspended by hand is left suspended. That record is best effort (D-2058-2): a manager's name
+/// is the client's to give, and a runner suspended by hand after the operator suspended it
+/// changes no field's owner, so it runs again with the rest. `None` leaves the sandbox as it is.
+pub fn operating_mode_for(
+    claim: &Claim,
+    pool: Option<&Pool>,
+    sandbox: &Sandbox,
+) -> Option<&'static str> {
+    let mode = sandbox.spec.operating_mode.as_deref().unwrap_or(RUNNING);
+    if is_stopped(claim, pool) {
+        return (mode != SUSPENDED).then_some(SUSPENDED);
+    }
+    // With its pool deleted, a runner is only ever suspended: one its pool's stopped suspended
+    // stays so, since nothing is left to set the pool running again (#2058).
+    pool?;
+    (mode == SUSPENDED && suspended_by_the_operator(&sandbox.metadata)).then_some(RUNNING)
+}
+
+/// Whether the operator's own server-side apply owns `sandbox`'s operating mode.
+fn suspended_by_the_operator(sandbox: &ObjectMeta) -> bool {
+    sandbox.managed_fields.iter().flatten().any(|entry| {
+        entry.manager.as_deref() == Some(crate::reconcile::FIELD_MANAGER)
+            && entry.operation.as_deref() == Some("Apply")
+            && entry
+                .fields_v1
+                .as_ref()
+                .is_some_and(|fields| fields.0.pointer("/f:spec/f:operatingMode").is_some())
+    })
+}
+
+/// What the operator applies to `held`, a sandbox as it read it, to put it in `mode`: its
+/// operating mode and nothing else, with its uid as a precondition, so a sandbox made again
+/// under the name since it was read is refused.
+pub fn sandbox_in_mode(held: &Sandbox, mode: &str) -> Sandbox {
+    Sandbox {
+        metadata: ObjectMeta {
+            name: held.metadata.name.clone(),
+            namespace: held.metadata.namespace.clone(),
+            uid: held.metadata.uid.clone(),
+            ..ObjectMeta::default()
+        },
+        spec: SandboxSpec {
+            operating_mode: Some(mode.to_owned()),
+        },
+        status: None,
+    }
+}
+
+/// How far a stopped claim's runner is suspended (#2058).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Suspension {
+    /// No runner was asked for: none is made while the claim is stopped.
+    NotMade,
+    /// Asked to suspend, or to be once its sandbox is made, and upstream does not say yet that
+    /// its pod has ended.
+    Suspending,
+    /// Upstream says its pod has ended (its `Suspended` condition is `True`).
+    Suspended,
+    /// Asked to suspend a while ago, and upstream still does not say its pod has ended.
+    NotEnded,
+}
+
+/// How far the runner whose sandbox is `sandbox`, if it has one yet, is suspended.
+pub fn suspension_of(sandbox: Option<&Sandbox>) -> Suspension {
+    let suspended = sandbox
+        .and_then(|sandbox| sandbox.status.as_ref())
+        .is_some_and(|status| {
+            status
+                .conditions
+                .iter()
+                .any(|condition| condition.type_ == SUSPENDED && condition.status == "True")
+        });
+    if suspended {
+        Suspension::Suspended
+    } else {
+        Suspension::Suspending
+    }
+}
 
 /// Upstream's claim of one runner from a warm pool. Upstream's controller writes its status.
 #[derive(CustomResource, Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -497,6 +625,9 @@ pub fn warm_pool_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) 
             sandbox_template_ref: Reference {
                 name: name_for(&pool.name_any()),
             },
+            update_strategy: Some(UpdateStrategy {
+                type_: RECREATE.to_owned(),
+            }),
         },
     }
 }
@@ -517,6 +648,17 @@ pub fn keep_volumes_held(wanted: &mut SandboxClaim, held: Option<&SandboxClaim>)
 /// no warm pool yet.
 pub fn replicas_held(held: Option<&SandboxWarmPool>) -> i32 {
     held.map(|held| held.spec.replicas.max(0)).unwrap_or(0)
+}
+
+/// How many runners `pool`'s warm pool `held` is to keep warm: none while the pool is stopped
+/// (#2058), and otherwise as many as it holds ([`replicas_held`]). A stopped pool's warm pool
+/// keeps none once it runs again, until a team admin scales it again.
+pub fn replicas_kept(pool: &Pool, held: Option<&SandboxWarmPool>) -> i32 {
+    if pool.spec.stopped {
+        0
+    } else {
+        replicas_held(held)
+    }
 }
 
 /// The upstream claim a Claim becomes: of the same name, in its requester's runner namespace

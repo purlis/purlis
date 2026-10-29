@@ -184,8 +184,9 @@ cluster admin can review and apply them apart from the controllers.
 #    the release's digest.
 kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6
 
-# 2. The policies: the one that admits a Claim only for someone who may use its Pool, and the
-#    one on runner namespaces; then purlis's definitions, Pool and Claim. The policies go
+# 2. The policies: the one that admits a Claim only for someone who may use its Pool, the
+#    one on runner namespaces, and the one that narrows what the operator may change of
+#    upstream's sandboxes (below); then purlis's definitions, Pool and Claim. The policies go
 #    first, so no Claim is admitted before they hold.
 kubectl apply --server-side -f operator/deploy/policy.yaml
 kubectl apply --server-side -f operator/deploy/crds.yaml
@@ -221,6 +222,7 @@ spec:
   keptVolume:              # optional; these are the defaults
     size: 10Gi
     # storageClassName: fast   # the cluster's default class unless named
+  stopped: false           # optional; true suspends every runner of the pool
 ---
 apiVersion: runners.purlis.dev/v1alpha1
 kind: Claim
@@ -231,6 +233,7 @@ spec:
   pool: team
   requester: ada@example.com
   kept: true               # optional; false (fresh) unless set
+  stopped: false           # optional; true suspends this claim's runner
 ```
 
 - **A Pool** is cluster-wide, defined once for the team. Its `image` is a runner image named
@@ -239,8 +242,9 @@ spec:
   (`Mi`, `Gi` or `Ti`, 10Gi unless set) and `storageClassName` (the cluster's default class
   unless set). A change to it applies to kept Claims made after it: a kept Claim keeps the
   volume it was made with. A change to it, as to `image`, also changes the pool's template, so
-  a fresh Claim's runner made before it, warm or running, is no longer vouched for; make its
-  Claim again.
+  a fresh Claim's running runner made before it is no longer vouched for; make its Claim again.
+  A runner kept warm from the earlier template is replaced by one of the new (#2058): upstream
+  deletes it, and a fresh Claim never takes it.
 - **A Claim is kept or fresh** (#2057), and its `kept` never changes after it is made: the other
   kind is another Claim.
   - **A kept Claim** (`kept: true`) gets a runner of its own, started cold, whose home is a
@@ -276,6 +280,26 @@ spec:
   (`kubectl auth whoami`): the policy refuses a Claim whose `requester` is anyone else, in words
   that name the right one, and it never changes after. The operator vouches for it with the
   runner's link key. purlis fills it in when it claims a runner.
+- **`stopped` suspends, and never destroys** (#2058). Set on a Pool or a Claim from kubectl
+  (`kubectl patch pool team --type merge -p '{"spec":{"stopped":true}}'`), it suspends every
+  runner of the pool, or the Claim's runner: the operator puts each runner's upstream sandbox in
+  upstream's `Suspended` mode, and upstream ends its pod and keeps its volumes, so a kept
+  Claim's home, its work and its pairing stay. A fresh Claim's runner keeps nothing past its
+  pod, as ever. The Claim's `Ready` is `False` with the reason `Stopped`, saying whether the
+  Claim or its pool is stopped and whether its runner is being suspended or is suspended
+  (upstream's own `Suspended` condition), and no key is vouched for. While its runner is being
+  suspended the Claim is looked at again less and less often; after about four and a half
+  minutes it says upstream has not ended the runner's pod yet. A Claim made while stopped gets
+  no runner yet. A stopped pool keeps no runner warm. A Claim's own `stopped` stops its runner
+  even after its Pool is deleted. With its Pool deleted a runner is never run again: one
+  suspended by its pool's or its own `stopped` stays suspended, a kept Claim's volume kept,
+  until the Claim is deleted, and its `Ready` says `PoolDeleted` and that it stays suspended.
+  Set back to `false` (the default), each runner the operator suspended runs again: a kept Claim's pod is made again on its volume, paired as it
+  was, with the same key. A runner suspended by hand before it was stopped is left suspended,
+  as far as the operator can tell: it goes by who last applied the sandbox's mode, which any
+  client may name itself as, and a runner suspended by hand while it was already stopped runs
+  again with the rest. A stopped pool's warm pool keeps no runner warm after it runs again until
+  a team admin scales it again.
 - **A Claim stays in its namespace; its runner does not.** The runner, and everything the
   operator makes for it, is in the requester's own namespace, `purlis-runners-<hash>`
   ([below](#each-persons-namespace)).
@@ -465,7 +489,7 @@ then applies server-side:
 | Upstream object | Name | What it holds |
 |---|---|---|
 | `SandboxTemplate` | `purlis-pool-p` in `r` | the runner's pod: its first step, `link-key`, making the runner's home and its link key (above), then one container running the pool's image with its own entrypoint (`purlis serve`), both as a user who is not root, every capability dropped, no privilege escalation, the runtime's default seccomp profile, no Kubernetes credential mounted and no service addresses in their environment, each asking for the CPU and memory above. The runner's `HOME` is `/var/lib/purlis/home`, on the volume `purlis-kept` mounted at `/var/lib/purlis`: a folder of the node's in the template, which a kept Claim's own volume takes the place of. The pod's group (`fsGroup` 10001) may write that volume. A claim may add a volume of its own (`volumeClaimTemplatesPolicy: Allowed`) |
-| `SandboxWarmPool` | `purlis-pool-p` in `r` | no runner kept warm when it is made; after that, as many as it holds, so `kubectl scale sandboxwarmpool purlis-pool-p -n r --replicas=<n>` keeps `n` runners warm for that person's fresh Claims until pools scale on their own (#2058) |
+| `SandboxWarmPool` | `purlis-pool-p` in `r` | no runner kept warm when it is made; after that, as many as it holds, so `kubectl scale sandboxwarmpool purlis-pool-p -n r --replicas=<n>` keeps `n` runners warm for that person's fresh Claims, none while the pool is `stopped`. Its update strategy is upstream's `Recreate`, so a warm runner made from an earlier template is deleted and made again, and never handed to a fresh Claim (#2058) |
 | `SandboxClaim` | the Claim's own name in `r` | the claim on that warm pool, annotated `runners.purlis.dev/claim-uid` with the Claim's uid; a kept Claim's carries the volume `purlis-kept` its Pool's `keptVolume` asks for, so upstream makes its runner cold and its PersistentVolumeClaim `purlis-kept-<claim>` |
 
 Each of the three is controlled by the runner namespace, by its uid: a Kubernetes owner cannot be
@@ -545,20 +569,41 @@ it holds:
 | core | `resourcequotas` | create; get and patch only `purlis-person` |
 | `rbac.authorization.k8s.io` | `rolebindings` | create; get and patch only `purlis-runner-owner` |
 | `rbac.authorization.k8s.io` | `clusterroles`, only `purlis-runner-owner` | bind |
-| `agents.x-k8s.io` | `sandboxes` | get |
+| `agents.x-k8s.io` | `sandboxes` | get, patch |
 | `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool` and `purlis-runner-namespaces` | get, list, watch |
 | `extensions.agents.x-k8s.io` | `sandboxclaims`, `sandboxtemplates`, `sandboxwarmpools` | create, delete, get, list, patch, watch |
 
 It holds no right to `exec`, `attach` or port-forward to a pod itself, and none to read a Secret.
 It binds one cluster role, `purlis-runner-owner`, only to one person, only in runner namespaces:
 RBAC cannot say where a role may be bound, so the policy on runner namespaces (above) holds it.
-It never deletes a namespace. It reads a sandbox and a pod only by name: a Claim's, which upstream made, to follow the claim to
-its runner and read the key it vouches for. It never lists, makes, changes or deletes a pod. Its own signing key is the
-Secret you made at install, which the kubelet mounts in its pod. Its Kubernetes client is built
+It never deletes a namespace. It reads a sandbox and a pod only by name: a Claim's, which
+upstream made, to follow the claim to its runner and read the key it vouches for. The pod is the
+one the sandbox records: upstream's `agents.x-k8s.io/pod-name` annotation where it carries one
+(a runner adopted from a warm pool before upstream made warm runners whole sandboxes), the
+sandbox's own name otherwise, and still held to being the pod that sandbox controls. It never
+lists, makes, changes or deletes a pod itself, though suspending a sandbox has upstream end its
+pod. Its own signing key is the Secret you made at install, which the kubelet mounts in its pod.
+Its Kubernetes client is built
 without the websocket support `exec` would need.
 `operator/tests/the_install_manifests.rs` holds these rules, and the kind tests ask the cluster
 itself. It runs as a user who is not root, with a read-only root file system and every
 capability dropped.
+
+**Its `patch` on sandboxes is narrowed by the cluster** (#2058). RBAC cannot limit a right to
+one field or to some owners: as a role, `patch` on `sandboxes` is every field of every Sandbox
+in the cluster, those other users of agent-sandbox made without any SandboxClaim included. The
+operator needs only one: to suspend a stopped Claim's runner and run it again, it applies
+`spec.operatingMode` and nothing else, to the sandbox its Claim's upstream claim controls, with
+that sandbox's uid as a precondition. Another admission policy in `policy.yaml`,
+`purlis-operator-changes-only-a-sandboxs-mode`, makes that the cluster's rule: an update by the
+operator's service account to a Sandbox is refused unless a SandboxClaim controls it (any
+SandboxClaim's, purlis's or not), and unless every field of its spec but `operatingMode`, and
+its labels, annotations, owners and finalizers, are as they were. The operator holds no right
+on admission policies or their bindings but reading the bindings of the policies on Claims and
+on runner namespaces, so it cannot lift it. The spec fields it holds as they were are the
+pinned upstream's (v1.0.6, and a test holds the list to the vendored definitions): a cluster
+that serves another agent-sandbox version may have fields the policy does not hold, one more
+reason to run the version `doctor` checks for.
 
 Upstream's controller holds its own ClusterRoles, in the vendored manifest: it makes and
 removes the runners' pods, services, volume claims and network policies. It holds no Secret

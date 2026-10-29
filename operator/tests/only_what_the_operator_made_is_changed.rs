@@ -21,6 +21,7 @@ fn pool() -> Pool {
         PoolSpec {
             image: IMAGE.into(),
             kept_volume: Default::default(),
+            stopped: false,
         },
     );
     pool.metadata.uid = Some("pool-uid".into());
@@ -39,6 +40,7 @@ fn claim() -> Claim {
             pool: "team".into(),
             requester: "ada@example.com".into(),
             kept: false,
+            stopped: false,
         },
         status: None,
     }

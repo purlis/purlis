@@ -176,6 +176,7 @@ fn pool() -> Pool {
         PoolSpec {
             image: IMAGE.to_owned(),
             kept_volume: Default::default(),
+            stopped: false,
         },
     )
 }
@@ -324,6 +325,7 @@ fn a_pod_differing_from_the_template_in_anything_that_decides_what_runs_is_never
         PoolSpec {
             image: "ghcr.io/purlis/purlis-runner@sha256:3333333333333333333333333333333333333333333333333333333333333333".into(),
             kept_volume: Default::default(),
+            stopped: false,
         },
     );
     assert!(matches!(
@@ -619,6 +621,7 @@ fn claim() -> Claim {
             pool: "team".into(),
             requester: "ada@example.com".into(),
             kept: false,
+            stopped: false,
         },
     );
     claim.metadata.namespace = Some("ada".into());
@@ -1671,4 +1674,65 @@ fn a_statement_holds_ten_minutes_and_is_signed_again_in_its_last_five() {
         at(NOW + 10, &claim).link_key(),
         claim.status.as_ref().unwrap().link_key
     );
+}
+
+/// **An adopted warm runner's pod is found the way upstream records it** (#2058, from #2056):
+/// by the name its sandbox's `agents.x-k8s.io/pod-name` annotation gives, where a sandbox
+/// adopted before upstream's warm pool made whole sandboxes carries one, and by the sandbox's own
+/// name otherwise. The pod must still be the one that sandbox controls, of the pool's template.
+#[test]
+fn an_adopted_runners_pod_is_found_by_the_name_its_sandbox_records() {
+    let upstream = upstream_claim("ada-1");
+    let plain = sandbox(UPSTREAM_UID);
+    assert_eq!(vouch::pod_name_of(&plain), "ada-1");
+    let mut recorded = sandbox(UPSTREAM_UID);
+    recorded.annotations = Some(
+        [(
+            vouch::POD_NAME_ANNOTATION.to_owned(),
+            "warm-7x2k".to_owned(),
+        )]
+        .into_iter()
+        .collect(),
+    );
+    assert_eq!(vouch::POD_NAME_ANNOTATION, "agents.x-k8s.io/pod-name");
+    assert_eq!(vouch::pod_name_of(&recorded), "warm-7x2k");
+    // An empty annotation names no pod: the sandbox's own name holds, as upstream reads it.
+    let mut empty = sandbox(UPSTREAM_UID);
+    empty.annotations = Some(
+        [(vouch::POD_NAME_ANNOTATION.to_owned(), String::new())]
+            .into_iter()
+            .collect(),
+    );
+    assert_eq!(vouch::pod_name_of(&empty), "ada-1");
+
+    let mut adopted = runner_pod(the_sandboxes());
+    adopted.metadata.name = Some("warm-7x2k".into());
+    let Vouching::Vouched(link_key) = vouching(&upstream, Some(&recorded), Some(&adopted), None)
+    else {
+        panic!("the adopted pod is not vouched for");
+    };
+    assert!(link_key.statement.contains("pod: warm-7x2k\n"));
+    // A pod of another name than the one recorded is never vouched for, even the sandbox's own.
+    let named_as_the_sandbox = runner_pod(the_sandboxes());
+    assert!(matches!(
+        vouching(
+            &upstream,
+            Some(&recorded),
+            Some(&named_as_the_sandbox),
+            None
+        ),
+        Vouching::Refused(_)
+    ));
+    // And the recorded pod must be the one the sandbox controls.
+    let mut squatted = runner_pod(owned_by(
+        "Sandbox",
+        "agents.x-k8s.io/v1beta1",
+        "ada-1",
+        POD_UID,
+    ));
+    squatted.metadata.name = Some("warm-7x2k".into());
+    assert!(matches!(
+        vouching(&upstream, Some(&recorded), Some(&squatted), None),
+        Vouching::Refused(_)
+    ));
 }
