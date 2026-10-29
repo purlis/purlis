@@ -330,6 +330,53 @@ fn a_host_allowed_already_since_the_chat_started_goes_on_at_once_and_is_never_as
     assert!(heard.lock().unwrap().is_empty(), "never asked");
 }
 
+/// A board whose chat finds `*.blob.core.windows.net` allowed already, as the hosts lists say.
+fn knowing_blob() -> Asks {
+    let (asks, _) = board(Duration::from_millis(100), Duration::from_millis(10));
+    Arc::try_unwrap(asks)
+        .unwrap()
+        .knowing(Arc::new(|host: &Host| {
+            Host::parse("*.blob.core.windows.net")
+                .unwrap()
+                .covers(host)
+                .then_some(By::You)
+        }))
+}
+
+/// Keep blocked holds for this chat even for a host it finds allowed already: the later answer
+/// wins, and the host is not allowed live for it.
+#[test]
+fn keep_blocked_holds_even_for_a_host_allowed_already() {
+    let asks = knowing_blob();
+
+    asks.keep_blocked(&host("results.blob.core.windows.net"));
+
+    assert_eq!(
+        asks.hold("results.blob.core.windows.net", 443, &[443]),
+        Answer::Refused
+    );
+    assert!(asks.allowed_live().is_empty(), "{:?}", asks.allowed_live());
+    // Another host it allows already still goes on at once.
+    assert_eq!(
+        asks.hold("other.blob.core.windows.net", 443, &[443]),
+        Answer::Allowed(By::You)
+    );
+}
+
+/// And a later Allow wins over that Keep blocked again.
+#[test]
+fn an_allow_after_keep_blocked_of_a_host_allowed_already_lets_it_on() {
+    let asks = knowing_blob();
+    asks.keep_blocked(&host("results.blob.core.windows.net"));
+
+    asks.allow(&host("results.blob.core.windows.net"), By::Chat);
+
+    assert_eq!(
+        asks.hold("results.blob.core.windows.net", 443, &[443]),
+        Answer::Allowed(By::Chat)
+    );
+}
+
 #[test]
 fn after_a_timeout_or_keep_blocked_the_host_is_no_longer_said_to_be_waiting() {
     let (asks, heard) = board(Duration::from_millis(100), Duration::from_millis(10));

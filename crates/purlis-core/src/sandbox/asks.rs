@@ -197,19 +197,25 @@ impl Asks {
         let named = host.strip_suffix('.').unwrap_or(host).to_ascii_lowercase();
         let target = host_and_port(&named, port);
         let parsed = Host::parse(&target).ok();
-        // Allowed already, since the chat started: on at once, and carried from now on.
-        if let (Some(known), Some(host)) = (&self.known, &parsed)
-            && let Some(by) = known(host)
-        {
-            self.allow(host, by);
-            return Answer::Allowed(by);
-        }
+        // Read before the board is held: it reads files.
+        let known = match (&self.known, &parsed) {
+            (Some(known), Some(host)) => known(host),
+            _ => None,
+        };
         let mut state = self.state();
         if let Some(by) = allowed_in(&state, &named, port, defaults) {
             return Answer::Allowed(by);
         }
+        // The person's Keep blocked for this chat holds even for a host allowed already: the
+        // later answer wins.
         if kept_blocked(&state, parsed.as_ref(), &named, port) {
             return Answer::Refused;
+        }
+        // Allowed already, since the chat started: on at once, and carried from now on.
+        if let (Some(by), Some(host)) = (known, &parsed) {
+            drop(state);
+            self.allow(host, by);
+            return Answer::Allowed(by);
         }
         if state.holding >= MOST_HELD {
             return Answer::Busy;
