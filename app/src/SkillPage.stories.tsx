@@ -293,7 +293,12 @@ export const Narrow: Story = {
 /** Edit, then a line typed at the end of the text: the editor in place, as the person types. */
 async function typeALine(canvas: ReturnType<typeof within>): Promise<void> {
   await userEvent.click(await canvas.findByRole("button", { name: "Edit deploy" }));
-  const text = await canvas.findByRole("textbox", { name: "deploy's instructions" });
+  // The editor is a chunk of its own, loaded the first time: given the time a busy cell takes.
+  const text = await canvas.findByRole(
+    "textbox",
+    { name: "deploy's instructions" },
+    { timeout: 10_000 },
+  );
   await userEvent.click(text);
   await userEvent.keyboard("{Control>}{End}{/Control}{Meta>}{ArrowDown}{/Meta}");
   await userEvent.keyboard("5. Tag the release.");
