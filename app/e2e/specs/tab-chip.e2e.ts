@@ -3,6 +3,7 @@
 
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
+import { REST_MS } from "../../src/tabRest.ts";
 import { bringSideBack, putSideAway, sideIsAway, type SideRegion } from "../sides.js";
 import {
   SELECTED_TAB,
@@ -235,10 +236,6 @@ const HEARD = "__purlisTabChipHeard";
  *  chip's counts, and {@link watchForMenu} when a task menu was first drawn after that (#3660). */
 const RESTED = "__purlisTabChipRested";
 
-/** How long a rest on a chip is: `REST_MS` in `src/tabTasks.ts`, which this file cannot import
- *  (it would bring the app's modules into the runner). */
-const REST_MS = 350;
-
 /** How many events the fence and the parked case's counts keep: the last ones, for a failure. */
 const KEPT = 20;
 
@@ -332,6 +329,16 @@ async function watchForMenu(): Promise<boolean> {
     watch.observer.observe(document.body, { childList: true, subtree: true, attributes: true });
     held[key] = watch;
     return open();
+  }, RESTED);
+}
+
+/** The watch {@link watchForMenu} put up stops, whether or not a menu came, and what it
+ *  stamped goes: nothing watches the page for the cases after. */
+async function unwatch(): Promise<void> {
+  await browser.execute((key: string) => {
+    const held = window as unknown as Record<string, { observer?: MutationObserver } | undefined>;
+    held[key]?.observer?.disconnect();
+    held[key] = undefined;
   }, RESTED);
 }
 
@@ -740,19 +747,23 @@ describe("the chip a session's tab wears for its tasks", () => {
     await pretend(asker, ["working", "failed", "done"]);
     await untilChip(mine[0], true);
 
-    expect(await watchForMenu()).toBe(false);
-    expect(await pointer(mine[0], "on")).toBe(true);
-    await browser.waitUntil(async () => (await menus()) === 1, {
-      timeout: 5_000,
-      interval: 50,
-      timeoutMsg: "resting on the chip opened no menu",
-    });
-    // Not at once: the menu was drawn no sooner than a whole rest after the pointer came, on
-    // the page's clock, however long the runner took to look (#3660). A millisecond either
-    // side for the clock's coarsening.
-    const took = await restTook();
-    if (typeof took === "string") throw new Error(`the rest was not timed: ${took}`);
-    check("the menu opened before the pointer had rested, ms", took, "atLeast", REST_MS - 2);
+    try {
+      expect(await watchForMenu()).toBe(false);
+      expect(await pointer(mine[0], "on")).toBe(true);
+      await browser.waitUntil(async () => (await menus()) === 1, {
+        timeout: 5_000,
+        interval: 50,
+        timeoutMsg: "resting on the chip opened no menu",
+      });
+      // Not at once: the menu was drawn no sooner than a whole rest after the pointer came, on
+      // the page's clock, however long the runner took to look (#3660). 2 ms under, for the
+      // clock's coarsening.
+      const took = await restTook();
+      if (typeof took === "string") throw new Error(`the rest was not timed: ${took}`);
+      check("the menu opened before the pointer had rested, ms", took, "atLeast", REST_MS - 2);
+    } finally {
+      await unwatch();
+    }
 
     const seen = await browser.execute(() => {
       const menu = document.querySelector<HTMLElement>('.tasks-menu[data-part="root"]');
