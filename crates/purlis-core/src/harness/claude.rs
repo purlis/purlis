@@ -1130,10 +1130,15 @@ pub const WORKTREE_COMMIT_ALLOW: [&str; 1] = ["Bash(purlis worktree commit *)"];
 /// arguments and its subcommands exclude each other), so these four are the task and the
 /// report and nothing else. An operator's own `ask` or `deny` still wins, as for
 /// [`SMART_CLOSE_ALLOW`].
-pub const DISPATCH_ALLOW: [&str; 4] = [
+///
+/// **A line may open with where the task works** (#3903): `--in worktree:<repo>` is the
+/// spelling a chat whose workspace holds several clones is told to use, and a line that opens
+/// with it is the same task, so it is pre-allowed by that flag too.
+pub const DISPATCH_ALLOW: [&str; 5] = [
     "Bash(purlis dispatch --name *)",
     "Bash(purlis dispatch --to *)",
     "Bash(purlis dispatch --profile *)",
+    "Bash(purlis dispatch --in *)",
     "Bash(purlis dispatch report *)",
 ];
 

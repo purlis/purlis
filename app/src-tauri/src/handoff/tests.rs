@@ -4784,7 +4784,7 @@ fn the_word_a_dispatch_says_about_where_is_never_a_folder_or_a_branch() {
     let before = held.chats().open_now().len();
 
     for place in [
-        "worktree:main",
+        "worktree=main",
         "worktree=../../elsewhere",
         "branch:main",
         "/etc",
@@ -4801,8 +4801,8 @@ fn the_word_a_dispatch_says_about_where_is_never_a_folder_or_a_branch() {
         assert_eq!(
             refused(&said),
             format!(
-                "--in is `worktree` or `workspace:<name>`, not '{place}'. Leave it out and \
-                     the new chat works in this chat's folder."
+                "--in is `worktree`, `worktree:<repo>` or `workspace:<name>`, not '{place}'. \
+                     Leave it out and the new chat works in this chat's folder."
             ),
             "{place}"
         );

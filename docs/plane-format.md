@@ -6509,7 +6509,8 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   are the core's, handed to the tab. The 30-day expiry runs on that one
   read, so a timeline reads the store once; a record older than the 2,000 is expired by the
   daily sweep, or when the project is next opened.
-- **Its own worktree** (#1453): a dispatch asked for with `--in worktree`, or to a persona
+- **Its own worktree** (#1453): a dispatch asked for with `--in worktree` (or
+  `--in worktree:<repo>`, #3903), or to a persona
   whose definition says `dispatch-isolation: worktree`, gives its persona chat a worktree the
   **app** cuts, by the brokered route (ADR 0067 §2), off the clone the asking chat works in.
   `place.workspace` is that clone's workspace, `place.folder` the worktree's folder

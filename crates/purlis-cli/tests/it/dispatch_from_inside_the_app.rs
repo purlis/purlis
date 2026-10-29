@@ -327,13 +327,21 @@ fn a_place_that_is_neither_word_is_refused_before_the_app_is_asked() {
     for (place, said) in [
         (
             "beta",
-            "✗ purlis dispatch: --in is `worktree` or `workspace:<name>`, not 'beta'. Leave it \
-             out and the new chat works in this chat's folder. Nothing was started.\n",
+            "✗ purlis dispatch: --in is `worktree`, `worktree:<repo>` or `workspace:<name>`, \
+             not 'beta'. Leave it out and the new chat works in this chat's folder. Nothing was \
+             started.\n",
         ),
         (
-            "worktree:main",
-            "✗ purlis dispatch: --in is `worktree` or `workspace:<name>`, not 'worktree:main'. \
-             Leave it out and the new chat works in this chat's folder. Nothing was started.\n",
+            "worktree=main",
+            "✗ purlis dispatch: --in is `worktree`, `worktree:<repo>` or `workspace:<name>`, \
+             not 'worktree=main'. Leave it out and the new chat works in this chat's folder. \
+             Nothing was started.\n",
+        ),
+        (
+            "worktree:../api",
+            "✗ purlis dispatch: '../api' cannot name a repo, so nothing is cut. A repo is named \
+             by its clone's folder in the workspace, and by nothing else. Nothing was \
+             started.\n",
         ),
         (
             "workspace:../beta",
