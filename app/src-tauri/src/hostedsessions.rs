@@ -247,6 +247,9 @@ pub struct Connection {
     /// The window's connection to each pool's runner, made the first time it is asked for
     /// ([`Connection::to_a_pool`]): what a pool's chats and their browsers share (#2050).
     pools: Mutex<HashMap<String, Arc<Connection>>>,
+    /// The config home this machine keeps its pools' runners in (`runners.json`): where a runner
+    /// a chat ran on without the sandbox is kept as one (D-2050-27). Set on the window's own.
+    runners_in: Mutex<Option<PathBuf>>,
 }
 
 /// [`Dial`], for a link the window's host relays to the runner of the pool it names (#2046):
@@ -324,6 +327,20 @@ impl Connection {
                 .entry(pool.to_owned())
                 .or_insert_with(|| self.relaying_to(pool)),
         )
+    }
+
+    /// Keep this machine's pools' runners, as `runners.json` is read, in `config` (D-2050-27).
+    pub fn runners_in(&self, config: PathBuf) {
+        *lock(&self.runners_in) = Some(config);
+    }
+
+    /// Where this machine keeps its pools' runners: the window's own connection's, for one to
+    /// a pool. None where the window keeps none, as a test's host does.
+    pub(crate) fn runners_config(&self) -> Option<PathBuf> {
+        match &self.to_a_pool {
+            Some((window, _)) => lock(&window.runners_in).clone(),
+            None => lock(&self.runners_in).clone(),
+        }
     }
 
     /// Name the window on each project root's link by the name it keeps for that root in
@@ -2634,6 +2651,7 @@ impl HostedSessions {
     ) -> Result<Begun, String> {
         // Before the program exists, so its very first hook lands somewhere.
         announce(id);
+        let kind = start.kind;
         let started = match link.call(Command::StartProgram(Box::new(start))) {
             // The host runs it under the number the window announced, or the window would key
             // it under one its hooks do not carry: it is closed, and the start fails.
@@ -2660,6 +2678,20 @@ impl HostedSessions {
             Err(why) => return Err(why),
         };
         let (program, pid, confined, ran) = started;
+        // A chat that runs on a pool's runner with nothing holding its files leaves that runner
+        // trusted with no browser and no login until it is made again (D-2050-27): kept here,
+        // where no runner reaches, before it is kept as running. Where that cannot be kept, it
+        // does not run.
+        if let Some((_, pool)) = &self.connection.to_a_pool
+            && let Some(config) = self.connection.runners_config()
+            && purlis_core::runnertaint::taints(kind, ran.as_ref())
+            && let Err(why) = purlis_core::runnertaint::mark_pool(&config, pool)
+        {
+            link.send(Command::Close { program });
+            return Err(format!(
+                "this chat runs without the sandbox on pool {pool}'s runner, and {why}, so it                  was closed"
+            ));
+        }
         self.runs(link, id, &program, pid);
         lock(&self.lost).remove(&id);
         // A stop that landed while this program was being started is carried out now.

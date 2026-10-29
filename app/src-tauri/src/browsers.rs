@@ -362,6 +362,10 @@ mod hosted {
             login: purlis_session_protocol::browsing::LogIn,
         ) -> Result<Browsed, crate::chatbrowsers::Refused> {
             use crate::chatbrowsers::Refused;
+            // No login is filled on a runner a chat ran on without the sandbox (D-2050-27).
+            if let Some(why) = self.pool_of(program).and_then(|pool| self.untrusted(&pool)) {
+                return Err(Refused::Said(why));
+            }
             let link = self.link_for(program).map_err(Refused::Said)?;
             let command = Command::LogIn {
                 program: program.to_owned(),
@@ -695,6 +699,15 @@ mod hosted {
 
         /// **The pool whose runner `program` runs on** (#2050), where the window started it on
         /// one: what its view's chip names as its device.
+        /// **Why pool `pool`'s runner is trusted with no browser and no login** (D-2050-27): a
+        /// chat ran there without the sandbox, as this machine keeps it. None where it did not,
+        /// or this window keeps no pools.
+        fn untrusted(&self, pool: &str) -> Option<String> {
+            let config = self.connection.runners_config()?;
+            purlis_core::runnertaint::pool_ran_unsandboxed(&config, pool)
+                .then(|| purlis_core::runnertaint::refused_on(pool))
+        }
+
         pub(crate) fn pool_of(&self, program: &str) -> Option<String> {
             self.at_of(program).and_then(|at| at.pool)
         }
@@ -941,6 +954,10 @@ mod hosted {
                 pool: pool.map(str::to_owned),
             };
             let kept = kept.filter(|_| at.pool.is_none());
+            // No browser starts on a runner a chat ran on without the sandbox (D-2050-27).
+            if let Some(why) = at.pool.as_deref().and_then(|pool| self.untrusted(pool)) {
+                return Err(NotStarted::Failed(why));
+            }
             let (link, project) = self.held(&at).map_err(NotStarted::Failed)?;
             let _one_at_a_time = self.starting.lock().unwrap_or_else(PoisonError::into_inner);
             let running = match link.call(Command::List).map_err(NotStarted::Failed)? {

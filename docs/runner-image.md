@@ -171,7 +171,10 @@ engine is not in the image. To start, the engine needs:
   with a profile that allows exactly those calls besides Docker's default
   (`crates/purlis-core/src/dockerpool/seccomp.json`, ruled 2026-10-28). Only the browser engine
   may make namespaces on a runner: the runner's host starts everything else unable to. A
-  runner made by a purlis from before this profile still links; its browsers are
+  pool gives that profile only to an image whose `purlis` does so, asked of the image before
+  its runner is made; an image of an earlier `purlis` gets the earlier profile, and its
+  runners start no browser. A runner a chat ran on without the sandbox starts no browser and
+  is filled no login until it is made again. A runner made by a purlis from before this profile still links; its browsers are
   refused, and the person is told to remove its pool and add it again.
 - **shared memory.** A Docker pool gives each runner a `/dev/shm` a quarter of its memory: the
   engine shares its pages' memory there, and Docker's own 64 MiB is too little for a busy page.

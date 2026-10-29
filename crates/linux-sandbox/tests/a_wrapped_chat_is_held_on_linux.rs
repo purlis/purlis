@@ -445,6 +445,17 @@ fn a_thread_with_its_own_descriptors_is_judged_by_its_own_socket() {
 /// engine may (#3298, D-2050-25). It still runs as it was asked to.
 #[test]
 fn a_program_started_without_namespaces_makes_none() {
+    // The same probe, not held: this machine lets it make one, so what is refused below is the
+    // filter's refusal.
+    let out = Command::new(PROBE)
+        .arg("user-namespace")
+        .output()
+        .expect("the probe ran");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "ok",
+        "this machine refuses a user namespace to anyone: {out:?}"
+    );
     let out = Command::new(PROBE)
         .args(purlis_linux_sandbox::no_namespaces_line(
             PROBE.into(),

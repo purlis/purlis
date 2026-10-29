@@ -742,7 +742,8 @@ impl FakeDocker {
         let dir = tempfile::tempdir().unwrap();
         let at = |name: &str| dir.path().join(name).display().to_string();
         let script = format!(
-            "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$1 $2\" in\n  \
+            "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$*\" in *_no-namespaces*) \
+             exit \"$(cat '{holds}' 2>/dev/null || echo 0)\" ;; esac\ncase \"$1 $2\" in\n  \
              'run '*) [ -f '{run_fails}' ] && \
              {{ echo 'the runtime refused it' >&2; exit 125; }}; cat '{id}' ;;\n  \
              'container inspect') cat '{inspect}' ;;\n  \
@@ -768,6 +769,7 @@ impl FakeDocker {
             rm_fails = at("rm-fails"),
             run_fails = at("run-fails"),
             containers = at("containers"),
+            holds = at("holds"),
         );
         stand_in::program(dir.path(), "docker", &script);
         let fake = FakeDocker { dir };
@@ -1272,12 +1274,16 @@ fn checked_on_its_engine(host: &str, inspected: &serde_json::Value) -> Result<Se
 
 #[test]
 fn a_container_made_the_pools_way_passes_on_docker_with_apparmor_and_on_podman() {
-    // Measured on 2026-10-27, with the runner's earlier profile: Docker keeps the profile it
-    // was given, so it is known as that one (#3298); Podman keeps its path alone.
-    assert_eq!(
-        checked_on_its_engine("docker-apparmor", &recorded("docker-apparmor", "made")),
-        Ok(Seccomp::RunnersEarlier)
-    );
+    // Measured on 2026-10-27, with the runner's earlier profile: Docker keeps the profile it was
+    // given, and Podman the path of its file, each of its own name, so each is known as that one
+    // (#3298).
+    for host in ["docker-apparmor", "podman-rootful", "podman-rootless"] {
+        assert_eq!(
+            checked_on_its_engine(host, &recorded(host, "made")),
+            Ok(Seccomp::RunnersEarlier),
+            "{host}"
+        );
+    }
     let mut now = recorded("docker-apparmor", "made");
     now[0]["HostConfig"]["SecurityOpt"] =
         serde_json::json!(["no-new-privileges", runners_seccomp()]);
@@ -1285,13 +1291,15 @@ fn a_container_made_the_pools_way_passes_on_docker_with_apparmor_and_on_podman()
         checked_on_its_engine("docker-apparmor", &now),
         Ok(Seccomp::Runners)
     );
-    for host in ["podman-rootful", "podman-rootless"] {
-        assert_eq!(
-            checked_on_its_engine(host, &recorded(host, "made")),
-            Ok(Seccomp::Runners),
-            "{host}"
-        );
-    }
+    let mut now = recorded("podman-rootful", "made");
+    now[0]["HostConfig"]["SecurityOpt"] = serde_json::json!([
+        "no-new-privileges",
+        format!("seccomp=/home/runner/work/_temp/measured/{SECCOMP_FILE}")
+    ]);
+    assert_eq!(
+        checked_on_its_engine("podman-rootful", &now),
+        Ok(Seccomp::Runners)
+    );
 }
 
 /// A Podman container with no AppArmor profile is taken only on rootless Podman, which loads
@@ -1344,9 +1352,10 @@ fn a_loosened_container_is_refused_on_every_host_it_was_measured_on() {
             // Podman's own user namespace is the machine's: `--userns host` is the pool's own
             // container, word for word (measured 2026-10-20).
             if case == "host-users" && host.starts_with("podman") {
+                // Measured with the earlier profile's file (#3298).
                 assert_eq!(
                     checked_on_its_engine(host, &recorded(host, case)),
-                    Ok(Seccomp::Runners),
+                    Ok(Seccomp::RunnersEarlier),
                     "{host}"
                 );
                 continue;
@@ -1921,6 +1930,7 @@ fn dockers_runner_is_held_to_the_runners_rules_however_they_are_spaced() {
 fn podmans_runner_profile_is_named_by_an_absolute_path_to_its_file() {
     for (option, taken) in [
         ("seccomp=/run/purlis/run-x/runner-seccomp.json", true),
+        ("seccomp=/run/purlis/run-x/runner-seccomp-engine.json", true),
         ("seccomp=run-x/runner-seccomp.json", false),
         ("seccomp=runner-seccomp.json", false),
         ("seccomp=/run/purlis/run-x/seccomp.json", false),
@@ -2029,10 +2039,11 @@ fn the_runners_profile_is_the_pinned_upstream_default_and_four_rules() {
             "args": no_other_namespace,
             "excludes": {"arches": ["s390", "s390x"]},
         }),
+        // CLONE_NEWTIME too, which `unshare` alone takes (in `clone` it is part of the signal).
         serde_json::json!({
             "names": ["unshare"],
             "action": "SCMP_ACT_ALLOW",
-            "args": no_other_namespace,
+            "args": [{"index": 0, "value": 0x0E02_0080u32, "op": "SCMP_CMP_MASKED_EQ"}],
         }),
         serde_json::json!({"names": ["chroot"], "action": "SCMP_ACT_ALLOW"}),
     ];
@@ -2107,4 +2118,60 @@ fn a_running_runner_is_only_checked() {
     assert_eq!(fake.docker().resumed(&made()), Ok(()));
     assert!(fake.docker().running(&made()).unwrap());
     assert!(!fake.file("log").contains("start "), "{}", fake.file("log"));
+}
+
+/// The earlier profile as `docker inspect` writes it back.
+fn earlier_seccomp() -> String {
+    let profile: serde_json::Value = serde_json::from_str(EARLIER_SECCOMP_PROFILE).expect("JSON");
+    format!("seccomp={profile}")
+}
+
+/// D-2050-26: only an image whose `purlis` holds what it starts from namespaces is made with the
+/// profile that lets the browser engine make its sandbox; any other gets the earlier profile, and
+/// is linked on it.
+#[test]
+fn a_runner_whose_purlis_holds_nothing_from_namespaces_is_made_with_the_earlier_profile() {
+    let mut earlier = inspected();
+    earlier[0]["HostConfig"]["SecurityOpt"] =
+        serde_json::json!(["no-new-privileges", earlier_seccomp()]);
+    let fake = FakeDocker::new(&earlier);
+    fake.set("holds", "1");
+    let made = fake
+        .docker()
+        .make(&runner())
+        .expect("made on the earlier profile");
+    assert_eq!(made.container.as_str(), ID);
+    let log = fake.file("log");
+    assert!(log.contains("--entrypoint /usr/local/bin/purlis"), "{log}");
+    assert!(log.contains(EARLIER_SECCOMP_FILE), "{log}");
+    assert!(!log.contains(SECCOMP_FILE), "{log}");
+
+    // An image whose purlis holds them is made with the runner's own; one made so on the earlier
+    // profile anyway is refused and removed.
+    let fake = FakeDocker::new(&earlier);
+    assert!(fake.docker().make(&runner()).is_err());
+    let fake = FakeDocker::new(&inspected());
+    assert!(fake.docker().make(&runner()).is_ok());
+    assert!(fake.file("log").contains(SECCOMP_FILE));
+}
+
+/// D-2050-26: a runner on the profile that lets the browser engine make namespaces, whose purlis
+/// does not hold its programs from them, is not linked.
+#[test]
+fn a_runner_on_the_engines_profile_whose_purlis_holds_nothing_is_not_linked() {
+    let fake = FakeDocker::new(&inspected());
+    assert_eq!(fake.docker().check(&made()), Ok(()));
+    fake.set("holds", "1");
+    let refused = fake.docker().check(&made()).unwrap_err();
+    assert!(
+        refused.0.contains("does not hold its programs"),
+        "{refused}"
+    );
+    // A runner on the earlier profile is not asked.
+    let mut earlier = inspected();
+    earlier[0]["HostConfig"]["SecurityOpt"] =
+        serde_json::json!(["no-new-privileges", earlier_seccomp()]);
+    let fake = FakeDocker::new(&earlier);
+    fake.set("holds", "1");
+    assert_eq!(fake.docker().check(&made()), Ok(()));
 }

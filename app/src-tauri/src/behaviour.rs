@@ -385,6 +385,9 @@ pub(crate) fn in_a_docker_pool() -> Option<Target> {
         })
     };
     let connection = Arc::new(Connection::default());
+    // The pool's runners are kept where this target added them, as the window keeps its own
+    // (D-2050-27).
+    connection.runners_in(config.path().to_path_buf());
     let window = link_to(None, None).expect("the window's own link");
     let dial: crate::hostedsessions::Dial = {
         let link_to = link_to.clone();
@@ -3441,6 +3444,15 @@ printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "
         value("key"),
     );
 
+    // Outside the chat, the runner's user makes a user namespace: what the chat is refused is
+    // the filter's refusal, not the runner's.
+    let outside = runner.prints("unshare --user true 2>&1 && echo yes || echo no");
+    assert_eq!(
+        outside.trim(),
+        "yes",
+        "the runner refuses a user namespace to anyone: {outside}"
+    );
+
     // The chat: Codex as the runner composes it, its program a stand-in that tries each in a
     // shell of its own and says what came of it.
     let bin = tempfile::tempdir().expect("a folder for the harness");
@@ -3459,7 +3471,7 @@ printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "
              try HOST-PIPE 'exec 3<> /proc/{host}/fd/{pipe}'\n\
              try HOST-KEY 'cat {key}'\n\
              try HOST-SOCKET 'ls {socket}'\n\
-             try NAMESPACE 'unshare --user true'\n\
+             if said=$(unshare --user true 2>&1); then printf 'NAMESPACE yes.\\n'; else printf 'NAMESPACE no: %s\\n' \"$said\"; fi\n\
              printf 'TRIED.\\n'\n\
              read line\n"
         ),
@@ -3485,13 +3497,112 @@ printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "
         "HOST-PIPE no.",
         "HOST-KEY no.",
         "HOST-SOCKET no.",
-        // Only the browser engine may make namespaces on a runner (D-2050-25).
-        "NAMESPACE no.",
+        // Only the browser engine may make namespaces on a runner (D-2050-25), refused by the
+        // filter, not for want of a program.
+        "NAMESPACE no:",
+        "Operation not permitted",
     ] {
         pane.shows(said);
     }
     target.sessions.close(id).expect("it closes");
     browsers.close(&browser).expect("the browser ends");
+}
+
+/// **A chat without the sandbox on a runner makes no namespace, and leaves its runner trusted with
+/// no browser** (#3298, D-2050-25, D-2050-27): it runs under the filter the runner's host starts
+/// every program with, and once it has run, the window starts no browser on that runner until
+/// it is made again, in words that say why.
+fn a_chat_without_the_sandbox_on_a_runner_makes_no_namespace_and_leaves_it_no_browser(
+    target: &Target,
+) {
+    use crate::chatbrowsers::Driver as _;
+    let Some(runner) = &target.runner else {
+        return;
+    };
+    let outside = runner.prints("unshare --user true 2>&1 && echo yes || echo no");
+    assert_eq!(
+        outside.trim(),
+        "yes",
+        "the runner refuses a user namespace to anyone: {outside}"
+    );
+    let id = target
+        .sessions
+        .open(
+            None,
+            &a_shell("unshare --user true; printf 'CODE=%s.' $?; read line"),
+            &|_| {},
+        )
+        .expect("a chat without the sandbox starts on the runner");
+    let pane = Pane::on(target, id);
+    pane.shows("Operation not permitted");
+    pane.shows("CODE=1.");
+    target.sessions.close(id).expect("it closes");
+
+    let browsers = crate::browsers::WindowBrowsers::new(Arc::clone(
+        target.host.as_ref().expect("the window's link to its host"),
+    ));
+    let refused = browsers
+        .start(
+            &target.root,
+            Some(&runner.pool),
+            purlis_session_protocol::browsing::BrowserReach::default(),
+            None,
+        )
+        .expect_err("no browser starts on that runner");
+    let said = format!("{refused:?}");
+    assert!(said.contains("without the sandbox"), "{said}");
+    assert!(said.contains("add it again"), "{said}");
+}
+
+/// **The person's own shell on a runner makes no namespace either** (D-2050-25), and leaves the
+/// runner trusted with browsers: a shell is the person's, not a chat's.
+fn the_persons_shell_on_a_runner_makes_no_namespace(target: &Target) {
+    let Some(runner) = &target.runner else {
+        return;
+    };
+    let outside = runner.prints("unshare --user true 2>&1 && echo yes || echo no");
+    assert_eq!(
+        outside.trim(),
+        "yes",
+        "the runner refuses a user namespace to anyone: {outside}"
+    );
+    let id = target
+        .sessions
+        .open(
+            None,
+            &Opening {
+                operator_shell: true,
+                ..a_shell("unshare --user true; printf 'CODE=%s.' $?; read line")
+            },
+            &|_| {},
+        )
+        .expect("the person's shell starts on the runner");
+    let pane = Pane::on(target, id);
+    pane.shows("Operation not permitted");
+    pane.shows("CODE=1.");
+    target.sessions.close(id).expect("it closes");
+}
+
+mod a_chat_without_the_sandbox_on_a_runner_makes_no_namespace_and_leaves_it_no_browser {
+    /// Run by the parity job, which names a runner image; elsewhere it runs nothing.
+    #[test]
+    fn in_a_docker_pool() {
+        if let Some(target) = super::in_a_docker_pool() {
+            super::a_chat_without_the_sandbox_on_a_runner_makes_no_namespace_and_leaves_it_no_browser(
+                &target,
+            );
+        }
+    }
+}
+
+mod the_persons_shell_on_a_runner_makes_no_namespace {
+    /// Run by the parity job, which names a runner image; elsewhere it runs nothing.
+    #[test]
+    fn in_a_docker_pool() {
+        if let Some(target) = super::in_a_docker_pool() {
+            super::the_persons_shell_on_a_runner_makes_no_namespace(&target);
+        }
+    }
 }
 
 mod a_sandboxed_runner_chat_reaches_neither_its_browser_engine_nor_its_host {

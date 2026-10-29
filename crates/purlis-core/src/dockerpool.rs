@@ -1124,7 +1124,8 @@ fn is_containers_default(profile: &str) -> bool {
 /// - `pidfd_getfd`: the Linux sandbox's supervisor takes a chat's own socket with it to make the
 ///   chat's `listen` (`purlis_linux_sandbox`), so without it no server a chat starts listens;
 /// - `clone` and `unshare` making no namespace but a user, a process and a network one
-///   (`CLONE_NEWNS`, `CLONE_NEWCGROUP`, `CLONE_NEWUTS` and `CLONE_NEWIPC` refused), and `chroot`:
+///   (`CLONE_NEWNS`, `CLONE_NEWCGROUP`, `CLONE_NEWUTS` and `CLONE_NEWIPC` refused, and
+///   `CLONE_NEWTIME` to `unshare`, which alone takes it), and `chroot`:
 ///   the browser engine's own sandbox makes them as it starts, and ends without them (measured
 ///   2026-10-28; ruled that day, ADR 0089). `chroot` reaches nothing outside a user namespace a
 ///   process made itself, since the kernel still asks for `CAP_SYS_CHROOT`. Only the browser engine
@@ -1139,8 +1140,18 @@ pub const SECCOMP_PROFILE: &str = include_str!("dockerpool/seccomp.json");
 /// ([`Seccomp::RunnersEarlier`]).
 pub const EARLIER_SECCOMP_PROFILE: &str = include_str!("dockerpool/seccomp-runner-2026-10-27.json");
 
-/// The file name [`SECCOMP_PROFILE`] is kept under in a run's folder, for `docker` to read.
-pub const SECCOMP_FILE: &str = "runner-seccomp.json";
+/// The file name [`SECCOMP_PROFILE`] is kept under in a run's folder, for `docker` to read: a
+/// name of its own, so Podman, which keeps only the path, says which profile a runner runs.
+pub const SECCOMP_FILE: &str = "runner-seccomp-engine.json";
+
+/// The file name [`EARLIER_SECCOMP_PROFILE`] is kept under, as a purlis from #3410 to #3298
+/// kept the runner's profile.
+pub const EARLIER_SECCOMP_FILE: &str = "runner-seccomp.json";
+
+/// **What a runner image's `purlis` is asked, to tell whether it holds what it starts from
+/// namespaces** (#3298, D-2050-26): `_no-namespaces` starting a shell that ends at once. A
+/// `purlis` from before it does not know the command, and answers otherwise.
+const HOLDS_FROM_NAMESPACES: [&str; 5] = ["_no-namespaces", "--", "/bin/sh", "-c", "exit 0"];
 
 /// A profile kept here, read.
 fn profile_of(text: &str) -> serde_json::Value {
@@ -1151,16 +1162,22 @@ fn profile_of(text: &str) -> serde_json::Value {
 /// `inspect` writes it, is, if either. Docker's client reads the file and sends its contents,
 /// and the engine keeps them as they came: held to the runner's profile, or its earlier one, rule
 /// for rule. Podman reads the file as it makes the container and keeps only its path: held to an
-/// absolute path naming the runner's profile's file, and, where its runtime's config can be read
-/// (rootless), to what it compiled from it ([`check_oci`]), which tells the earlier profile
-/// apart. Rootful Podman's runtime config is root's: there the path is all that is read, and the
-/// runner is taken as running the runner's own (ADR 0078, amended 2026-10-27 and 2026-10-28).
+/// absolute path naming either profile's file, each a name of its own, and, where its runtime's
+/// config can be read (rootless), to what it compiled from it ([`check_oci`]). Rootful Podman's
+/// runtime config is root's: there the path is all that is read (ADR 0078, amended 2026-10-27
+/// and 2026-10-28).
 fn the_runners_seccomp(option: &str, podman: bool) -> Option<Seccomp> {
     let profile = option.strip_prefix("seccomp=")?;
     if podman {
         let path = std::path::Path::new(profile);
-        (path.is_absolute() && path.file_name() == Some(std::ffi::OsStr::new(SECCOMP_FILE)))
-            .then_some(Seccomp::Runners)
+        if !path.is_absolute() {
+            return None;
+        }
+        match path.file_name().and_then(std::ffi::OsStr::to_str) {
+            Some(SECCOMP_FILE) => Some(Seccomp::Runners),
+            Some(EARLIER_SECCOMP_FILE) => Some(Seccomp::RunnersEarlier),
+            _ => None,
+        }
     } else {
         let given = serde_json::from_str::<serde_json::Value>(profile).ok()?;
         if given == profile_of(SECCOMP_PROFILE) {
@@ -1686,14 +1703,21 @@ impl Docker {
         // Docker makes the container and its volume before it starts it, so a run that fails
         // can leave both: they are removed with the refusal.
         // The runner's seccomp profile, in the run's own folder, read by `docker` as it runs.
+        // The profile that lets the browser engine make its sandbox only for an image whose
+        // `purlis` holds everything else it starts from namespaces (D-2050-26); the earlier one,
+        // where its browsers are refused, for any other.
+        let holds = self.holds_from_namespaces(runner);
+        let (file, profile) = if holds {
+            (SECCOMP_FILE, SECCOMP_PROFILE)
+        } else {
+            (EARLIER_SECCOMP_FILE, EARLIER_SECCOMP_PROFILE)
+        };
         let prepared = self.prepared()?;
-        let seccomp = prepared
-            .keep(SECCOMP_FILE, SECCOMP_PROFILE)
-            .map_err(|why| {
-                refused(format!(
-                    "purlis could not keep the runner's seccomp profile for docker: {why}"
-                ))
-            })?;
+        let seccomp = prepared.keep(file, profile).map_err(|why| {
+            refused(format!(
+                "purlis could not keep the runner's seccomp profile for docker: {why}"
+            ))
+        })?;
         let made = self.run_prepared(
             &prepared,
             &runner.create_args_for(desktop, &seccomp),
@@ -1714,11 +1738,16 @@ impl Docker {
                 return Err(self.and_removed(why, &runner.container(), &volume));
             }
         };
-        // A runner made now runs the runner's profile: the runtime's own default is taken only
-        // for one made before it (#3410).
+        // A runner made now runs the profile chosen for it: the runtime's own default is taken
+        // only for one made before #3410.
+        let wanted = if holds {
+            Seccomp::Runners
+        } else {
+            Seccomp::RunnersEarlier
+        };
         match self.checked(&made) {
-            Ok(Seccomp::Runners) => Ok(made),
-            Ok(Seccomp::RuntimeDefault | Seccomp::RunnersEarlier) => {
+            Ok(seccomp) if seccomp == wanted => Ok(made),
+            Ok(_) => {
                 let why = refused(format!(
                     "runner {}'s container was made without the runner's seccomp profile, so \
                      purlis does not link to it",
@@ -1728,6 +1757,34 @@ impl Docker {
             }
             Err(why) => Err(self.and_removed(why, made.container.as_str(), &volume)),
         }
+    }
+
+    /// **Whether `runner`'s image's `purlis` holds what it starts from namespaces** (D-2050-26),
+    /// asked of a container of the image made for that alone and removed as it ends: no network,
+    /// every capability dropped, no new privileges, its root read-only. Anything but a clean
+    /// answer is a no.
+    fn holds_from_namespaces(&self, runner: &Runner) -> bool {
+        let mut args: Vec<String> = [
+            "run",
+            "--rm",
+            "--user",
+            &runner.user.spelled(),
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--network",
+            "none",
+            "--read-only",
+            "--entrypoint",
+            PURLIS,
+            runner.image.as_str(),
+        ]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect();
+        args.extend(HOLDS_FROM_NAMESPACES.iter().map(|word| (*word).to_owned()));
+        self.run(&args, None, MOST_INSPECTED).is_ok()
     }
 
     /// `why`, after removing the container `container` names and the volume `volume`; a
@@ -1819,7 +1876,7 @@ impl Docker {
             &["container", "inspect", made.container.as_str()],
             "docker container inspect",
         )?;
-        let mut seccomp = check_on(&inspected, made, engine)?;
+        let seccomp = check_on(&inspected, made, engine)?;
         // Rootless Podman writes some of what it was asked for only in what it asked its
         // runtime for (#2895), which this user can read.
         if engine.rootless {
@@ -1830,19 +1887,23 @@ impl Docker {
             let store = self.json(&["info", "--format", "{{json .Store}}"], "podman info")?;
             let config = std::path::Path::new(path);
             let (oci, store) = (read_oci(config)?, podman_store(&store)?);
-            // Podman keeps the path alone, so the runner's profile and its earlier one are told
-            // apart by what Podman compiled from it.
-            let earlier = seccomp == Seccomp::Runners
-                && check_oci(&oci, made, config, &store, Seccomp::Runners).is_err()
-                && check_oci(&oci, made, config, &store, Seccomp::RunnersEarlier).is_ok();
-            if earlier {
-                seccomp = Seccomp::RunnersEarlier;
-            }
             check_oci(&oci, made, config, &store, seccomp)?;
         }
         let volume = made.runner.volume();
         let inspected = self.json(&["volume", "inspect", &volume], "docker volume inspect")?;
         check_volume(&inspected, made)?;
+        // A runner whose profile lets the browser engine make namespaces runs a `purlis` that
+        // holds everything else it starts from them (D-2050-26), or it is not linked.
+        if seccomp == Seccomp::Runners
+            && self
+                .run(&made.exec(&HOLDS_FROM_NAMESPACES), None, MOST_INSPECTED)
+                .is_err()
+        {
+            return Err(refused(format!(
+                "runner {}'s container lets its browser engine make namespaces, and its purlis                  does not hold its programs from them, so purlis does not link to it; remove                  the runner and add it again",
+                made.runner.name
+            )));
+        }
         Ok(seccomp)
     }
 
