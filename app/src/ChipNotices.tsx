@@ -12,7 +12,7 @@ import {
 } from "react";
 import type { Said } from "./actions";
 import { ActionResultNotice } from "./ActionResultNotice";
-import type { KeptResult } from "./keptResults";
+import { trackOf, type KeptResult } from "./keptResults";
 import { aboutOf, kindOf, placeOf, type Chip, type Place } from "./noticePlace";
 import { CARD_STOP } from "./regionCycle";
 import type { SettingsLink } from "./settings/links";
@@ -83,6 +83,9 @@ export function useChipNotices({
         { id: one.id, said: one.said, kind: kindOf(one.said) },
       ]);
     }
+    // Newest first, by the order each was first kept, whatever order they are handed in: a line
+    // updated in place keeps its first place (#3649).
+    for (const list of by.values()) list.sort((a, b) => b.id - a.id);
     return by;
   }, [kept, plane, chips]);
   // **Which card is up, and in which project** (#3648's review): a card is up only in the
@@ -94,18 +97,29 @@ export function useChipNotices({
     in: string | undefined;
     /** The card's chip has been drawn since it was wanted. */
     chipped: boolean;
-  }>({ open: undefined, on: plane, seen: said, in: plane, chipped: false });
+    /** Every track a line was said on, by project (`trackOf`). */
+    tracks: ReadonlySet<string>;
+  }>(() => ({
+    open: undefined,
+    on: plane,
+    seen: said,
+    in: plane,
+    chipped: false,
+    tracks: said?.track === undefined ? new Set() : new Set([trackOf(said, plane)]),
+  }));
   let open = up.open;
   let openIn = up.on;
   let chipped = up.chipped;
-  // **A line that follows the last one on its track** (#3649): a clone's count going on, or its
-  // success, updates its notice in place and leaves the card as the person left it, up or
-  // hidden behind its dot. A failure on it brings the card up, since it asks for the person.
-  const follows =
-    said !== undefined &&
-    said.track !== undefined &&
-    up.seen?.track === said.track &&
-    !said.refused;
+  let tracks = up.tracks;
+  // **A line on a track already said on** (#3649's review): a clone's count going on, or its
+  // success, updates its notice in place and leaves the cards as the person left them, up or
+  // hidden behind a dot, whatever was said between its lines, and when its notice was
+  // dismissed. Decided by the track, never by the last thing said. A failure on it brings its
+  // card up, since it asks for the person.
+  const fresh = said !== undefined && said !== up.seen && plane === up.in ? said : undefined;
+  const track = fresh?.track === undefined ? undefined : trackOf(fresh, plane);
+  const follows = track !== undefined && tracks.has(track) && fresh?.refused !== true;
+  if (track !== undefined && !tracks.has(track)) tracks = new Set([...tracks, track]);
   if (said !== up.seen || plane !== up.in) {
     if (plane === up.in && !follows) {
       // A new result in the project in front. By what it is about, not by the chips drawn now:
@@ -120,10 +134,15 @@ export function useChipNotices({
   }
   // **A card wanted on a chip that has gone is no longer wanted** (#3648's review): once its
   // chip was drawn and then is not (unpinned, and another workspace in front), its notice is
-  // behind its dot when the chip comes back, never a card coming up unasked.
+  // behind its dot when the chip comes back, never a card coming up unasked. Nor is a card on a
+  // drawn chip with nothing left on it (#3649's review): its notices dismissed, a later line kept
+  // on it again stays behind its dot.
   const drawn = open !== undefined && chips.some((one) => one.workspace === open);
   if (open !== undefined && openIn === plane) {
-    if (drawn) chipped = true;
+    if (drawn && !on.has(open)) {
+      open = undefined;
+      chipped = false;
+    } else if (drawn) chipped = true;
     else if (chipped) {
       open = undefined;
       chipped = false;
@@ -134,9 +153,10 @@ export function useChipNotices({
     openIn !== up.on ||
     said !== up.seen ||
     plane !== up.in ||
-    chipped !== up.chipped
+    chipped !== up.chipped ||
+    tracks !== up.tracks
   )
-    setUp({ open, on: openIn, seen: said, in: plane, chipped });
+    setUp({ open, on: openIn, seen: said, in: plane, chipped, tracks });
   const shown = openIn === plane ? open : undefined;
   return {
     on,
@@ -265,6 +285,8 @@ export function ChipCard({
             onClose={() => does.dismiss(one.id)}
             onSettings={does.onSettings}
             escape={false}
+            // A way that goes from under the keyboard hands it to the card (#3649's review).
+            refocus={() => region.current}
           />
         ))}
       </div>

@@ -85,9 +85,12 @@ const CHAT = {
  *  core does, with no vision, and the store keeps a pin written. */
 function core({
   clone,
+  repos = ["api"],
 }: {
   /** How `clone_repo` answers each repo: the core's lines, or a refusal it throws. */
   clone?: (repo: string) => Promise<string[]>;
+  /** The repos the new-workspace dialog offers, while `clone` is given. */
+  repos?: string[];
 } = {}) {
   const pinned: string[] = ["alpha"];
   const made: string[] = [];
@@ -128,7 +131,10 @@ function core({
     }
     if (cmd === "reachable_repos")
       return {
-        repos: clone === undefined ? [] : [{ name: "api", path: "acme/api", description: "" }],
+        repos:
+          clone === undefined
+            ? []
+            : repos.map((name) => ({ name, path: `acme/${name}`, description: "" })),
         trouble: [],
       };
     if (cmd === "take_repos") return null;
@@ -473,8 +479,10 @@ describe("a notice about the plane root (the dispatcher's ruling on #3648)", () 
 
 /** A clone the test lets land when it says: `land` with the core's lines, or `refuse`. */
 function heldClone() {
-  const held: { land: (lines: string[]) => void; refuse: (why: string) => void }[] = [];
-  const clone = () => new Promise<string[]>((land, refuse) => held.push({ land, refuse }));
+  const held: { repo: string; land: (lines: string[]) => void; refuse: (why: string) => void }[] =
+    [];
+  const clone = (repo: string) =>
+    new Promise<string[]>((land, refuse) => held.push({ repo, land, refuse }));
   return { clone, held };
 }
 
@@ -562,5 +570,87 @@ describe("a new workspace's clone, on its chip (#3649)", () => {
     expect(
       within(bar()).getByRole("button", { name: "Show the 2 notices on gamma" }),
     ).toHaveAttribute("data-kind", "info");
+  });
+});
+
+describe("a new workspace's clone, counted and retried (#3649's review)", () => {
+  it("counts each repo as it lands, on the same notice, then says them cloned", async () => {
+    const { clone, held } = heldClone();
+    core({ clone, repos: ["api", "web"] });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma", ["api", "web"]);
+    const card = await findCard("gamma");
+    await waitFor(() => expect(card).toHaveTextContent("Cloning 2 repos…"));
+    await waitFor(() => expect(held).toHaveLength(1));
+    held[0].land(["✓ api cloned"]);
+    await waitFor(() => expect(card).toHaveTextContent("1 of 2 done."));
+    expect(card).toHaveTextContent("2 notices, newest first");
+    await waitFor(() => expect(held).toHaveLength(2));
+    held[1].land(["✓ web cloned"]);
+    await waitFor(() => expect(card).toHaveTextContent("Cloned 2 repos"));
+    expect(card).not.toHaveTextContent("1 of 2 done.");
+    expect(card).toHaveTextContent("2 notices, newest first");
+  });
+
+  it("clones again only the repo that failed", async () => {
+    const { clone, held } = heldClone();
+    const { asked } = core({ clone, repos: ["api", "docs", "web"] });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma", ["api", "docs", "web"]);
+    const card = await findCard("gamma");
+    await waitFor(() => expect(held).toHaveLength(1));
+    held[0].land(["✓ api cloned"]);
+    await waitFor(() => expect(held).toHaveLength(2));
+    held[1].refuse("docs: no access.");
+    await waitFor(() => expect(held).toHaveLength(3));
+    held[2].land(["✓ web cloned"]);
+    await userEvent.click(await within(card).findByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(held).toHaveLength(4));
+    expect(held[3].repo).toBe("docs");
+    held[3].land(["✓ docs cloned"]);
+    await waitFor(() => expect(card).toHaveTextContent("Cloned 1 repo"));
+    expect(asked.filter((one) => one.cmd === "clone_repo").map((one) => one.args.repo)).toEqual([
+      "api",
+      "docs",
+      "web",
+      "docs",
+    ]);
+  });
+
+  it("keeps the keyboard in the card when Retry, pressed from it, goes (WCAG 2.4.3)", async () => {
+    const { clone, held } = heldClone();
+    core({ clone });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma", ["api"]);
+    const card = await findCard("gamma");
+    await waitFor(() => expect(held).toHaveLength(1));
+    held[0].refuse("api: clone failed — no access.");
+    const retry = await within(card).findByRole("button", { name: "Retry" });
+    retry.focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(card).toHaveTextContent("Cloning 1 repo…"));
+    expect(document.activeElement).not.toBe(document.body);
+    expect(card.contains(document.activeElement)).toBe(true);
+  });
+
+  it("keeps the keyboard on the line in the Notices centre when Retry, pressed there, goes", async () => {
+    const { clone, held } = heldClone();
+    core({ clone });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma", ["api"]);
+    await findCard("gamma");
+    await waitFor(() => expect(held).toHaveLength(1));
+    held[0].refuse("api: clone failed — no access.");
+    const kept = await results();
+    const retry = await within(kept).findByRole("button", { name: "Retry" });
+    retry.focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(kept).toHaveTextContent("Cloning 1 repo…"));
+    expect(document.activeElement).not.toBe(document.body);
+    expect(kept.contains(document.activeElement)).toBe(true);
   });
 });

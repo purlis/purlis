@@ -8,7 +8,7 @@ import type { FamilyTheme } from "../../theme/families.testkit";
 export default {
   classless: [
     // A warning's notice dot (#3649), its part named by its kind (`KINDS` in
-    // `TitleBarWorkspaces.tsx`): a 16px mark over a chip's corner, which holds no button.
+    // `TitleBarWorkspaces.tsx`): a 16px mark over a chip's corner, which no button stands on.
     '[data-part="dot-warning"][data-scope="titlebar"]',
   ],
   faint: [

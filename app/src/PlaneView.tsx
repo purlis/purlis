@@ -4634,19 +4634,30 @@ export const PlaneView = memo(function PlaneView({
    * notice, and the way to the workspace's Repos settings. Never closed on a timer: it stays
    * until it is dismissed.
    */
+  /** Which clone of a new workspace's repos this is, so each one's track is its own and ends
+   *  with it (#3649's review): a workspace made again under the same name starts afresh. */
+  const cloneRuns = useRef(0);
   const cloneNewRepos = useCallback(
     (name: string, picked: string[], after?: Said): Promise<void> => {
+      cloneRuns.current += 1;
+      const track = cloneRuns.current;
       const run = async (repos: string[], before?: Said) => {
         let done = 0;
-        setReport({ ...reposCloning(name, repos, done), after: before });
+        setReport({ ...reposCloning(name, repos, done, track), after: before });
         const failed = await cloneRepos(plane, name, repos, () => {
           done += 1;
-          if (done < repos.length) setReport(reposCloning(name, repos, done));
+          if (done < repos.length) setReport(reposCloning(name, repos, done, track));
         });
         setReport(
           failed.length === 0
-            ? reposCloned(name, repos)
-            : reposNotCloned(name, failed, () => void run(failed.map((one) => one.repo))),
+            ? reposCloned(name, repos, track)
+            : reposNotCloned(
+                name,
+                failed,
+                // Only the ones that failed, on the same notice.
+                () => void run(failed.map((one) => one.repo)),
+                track,
+              ),
         );
         setReplan((asked) => asked + 1);
       };

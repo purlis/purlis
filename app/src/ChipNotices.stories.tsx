@@ -59,7 +59,7 @@ function TheWindow({
   const [kept, setKept] = useState<readonly ChipNotice[]>(() => [
     ...(stack === "stacked"
       ? [
-          { id: 3, kind: "info" as const, said: reposCloning(hasNotice, ["api", "web"], 1) },
+          { id: 3, kind: "info" as const, said: reposCloning(hasNotice, ["api", "web"], 1, 1) },
           { id: 2, kind: "warning" as const, said: OFF_MAIN(hasNotice) },
         ]
       : stack === "failed"
@@ -71,6 +71,7 @@ function TheWindow({
                 hasNotice,
                 [{ repo: "web", said: "web: clone failed — no access to acme/web." }],
                 () => setSaid("Asked to clone web again"),
+                1,
               ),
             },
           ]

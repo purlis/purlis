@@ -90,8 +90,10 @@ export function saidInPlainWords(said: Omit<Said, "from"> & { from?: string }): 
 }
 
 /** **The track a new workspace's clone is on** (#3649): its progress, then its result, are one
- *  notice on that workspace's chip, which each line updates in place. */
-export const cloneTrack = (workspace: string) => `clone:${workspace}`;
+ *  notice on that workspace's chip, which each line updates in place. `run` is which clone of
+ *  that name it is: a track ends with its run, so a workspace made again under the same name
+ *  starts a notice of its own (#3649's review). A Retry stays on its run's track. */
+export const cloneTrack = (workspace: string, run: number) => `clone:${workspace}:${run}`;
 
 /** "1 repo", "2 repos". */
 const reposCounted = (count: number) => (count === 1 ? "1 repo" : `${count} repos`);
@@ -101,7 +103,12 @@ const reposCounted = (count: number) => (count === 1 ? "1 repo" : `${count} repo
  * where, and how many have landed so far. On its workspace's chip, and on the clone's track, so
  * each repo that lands updates it in place and its result takes its place.
  */
-export function reposCloning(workspace: string, repos: readonly string[], done: number): Said {
+export function reposCloning(
+  workspace: string,
+  repos: readonly string[],
+  done: number,
+  run: number,
+): Said {
   const into = `${repos.join(", ")} into ${workspace}.`;
   return {
     from: "workspace.clone",
@@ -110,19 +117,19 @@ export function reposCloning(workspace: string, repos: readonly string[], done: 
     words: done === 0 ? into : `${into} ${done} of ${repos.length} done.`,
     progress: true,
     workspace,
-    track: cloneTrack(workspace),
+    track: cloneTrack(workspace, run),
   };
 }
 
 /** **A new workspace's repos, cloned** (#3649): the clone's notice, turned into its result. */
-export function reposCloned(workspace: string, repos: readonly string[]): Said {
+export function reposCloned(workspace: string, repos: readonly string[], run: number): Said {
   return {
     from: "workspace.clone",
     refused: false,
     title: `Cloned ${reposCounted(repos.length)}`,
     words: `${repos.join(", ")} into ${workspace}.`,
     workspace,
-    track: cloneTrack(workspace),
+    track: cloneTrack(workspace, run),
   };
 }
 
@@ -135,6 +142,7 @@ export function reposNotCloned(
   workspace: string,
   failed: readonly { repo: string; said: string }[],
   onRetry: () => void,
+  run: number,
 ): Said {
   return {
     from: "workspace.clone",
@@ -147,6 +155,6 @@ export function reposNotCloned(
       link: { group: "workspace.repos", workspace },
     },
     workspace,
-    track: cloneTrack(workspace),
+    track: cloneTrack(workspace, run),
   };
 }

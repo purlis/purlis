@@ -31,10 +31,15 @@ export function keep(
   said: Said | undefined,
   plane: string | undefined,
   first: number,
+  /** The tracks whose line was put away (`trackOf`): their counting is kept no more, though
+   *  the result that ends one is (#3649's review). */
+  dropped: ReadonlySet<string> = NONE,
 ): readonly KeptResult[] {
   let kept = keptBefore;
   let next = first;
   if (said === undefined || passing(said) || kept.some((one) => one.said === said)) return kept;
+  if (said.progress === true && said.track !== undefined && dropped.has(trackOf(said, plane)))
+    return kept;
   // The line said just before it, which no render may have drawn, is kept first (#3649).
   const after = said.after;
   if (after !== undefined && !passing(after) && !kept.some((one) => one.said === after)) {
@@ -47,9 +52,20 @@ export function keep(
     said.track === undefined
       ? -1
       : kept.findIndex((one) => one.plane === plane && one.said.track === said.track);
-  if (before !== -1) return kept.map((one, at) => (at === before ? { ...one, said } : one));
+  if (before !== -1)
+    return kept.map((one, at) => (at === before ? { ...one, said } : one)).slice(0, KEPT_RESULTS);
   return [{ id: next, said, plane }, ...kept].slice(0, KEPT_RESULTS);
 }
+
+const NONE: ReadonlySet<string> = new Set();
+
+/** **A line's track in its project**, as the put-away tracks are named. */
+export const trackOf = (said: Said, plane: string | undefined) =>
+  `${plane ?? ""}\u0000${said.track ?? ""}`;
+
+/** The id after every one `list` holds and `next`: a line can bring the one before it. */
+const nextId = (list: readonly KeptResult[], next: number) =>
+  Math.max(next - 1, ...list.map((one) => one.id)) + 1;
 
 /** The results kept for `plane`'s Inbox: its own and the window's. */
 export function resultsFor(kept: readonly KeptResult[], plane: string | undefined) {
@@ -60,18 +76,39 @@ export function resultsFor(kept: readonly KeptResult[], plane: string | undefine
 export function useKeptResults(said: Said | undefined, plane: string | undefined) {
   // `last` is the answer last kept: each is kept once, when it is first seen, so one put away
   // here is not kept again while it is still the newest thing said (#3344's review).
+  // `dropped` names each track whose line was put away: it counts on unseen, and only the result
+  // that ends it is kept again (#3649's review).
   const [kept, setKept] = useState<{
     list: readonly KeptResult[];
     next: number;
     last: Said | undefined;
-  }>(() => ({ list: keep([], said, plane, 0), next: 1, last: said }));
+    dropped: ReadonlySet<string>;
+  }>(() => {
+    const list = keep([], said, plane, 0);
+    return { list, next: nextId(list, 0), last: said, dropped: NONE };
+  });
   let list = kept.list;
   if (said !== kept.last) {
-    list = keep(list, said, plane, kept.next);
+    list = keep(list, said, plane, kept.next, kept.dropped);
+    // A result ends its track's putting away: a Retry after it counts again.
+    const ends = said !== undefined && said.track !== undefined && said.progress !== true;
+    const dropped = ends
+      ? new Set([...kept.dropped].filter((one) => one !== trackOf(said, plane)))
+      : kept.dropped;
     // A line can bring the one said before it (`Said.after`): the next id is past both.
-    setKept({ list, next: Math.max(kept.next, ...list.map((one) => one.id)) + 1, last: said });
+    setKept({ list, next: nextId(list, kept.next), last: said, dropped });
   }
   const drop = (id: number) =>
-    setKept((was) => ({ ...was, list: was.list.filter((one) => one.id !== id) }));
+    setKept((was) => {
+      const gone = was.list.find((one) => one.id === id);
+      return {
+        ...was,
+        list: was.list.filter((one) => one.id !== id),
+        dropped:
+          gone?.said.track === undefined
+            ? was.dropped
+            : new Set([...was.dropped, trackOf(gone.said, gone.plane)]),
+      };
+    });
   return { kept: list, drop };
 }

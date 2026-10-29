@@ -106,12 +106,18 @@ describe("a chip's card comes up", () => {
 describe("a chip's notices stacked (#3649)", () => {
   it("are newest first, each of its kind, and the dot takes the most urgent", () => {
     const docs = made("docs");
-    const failed = reposNotCloned("docs", [{ repo: "api", said: "No access." }], () => undefined);
+    const failed = reposNotCloned(
+      "docs",
+      [{ repo: "api", said: "No access." }],
+      () => undefined,
+      1,
+    );
     const later = { ...made("docs"), title: "Later" };
+    // Fed out of order: the card's order is the notices' own, newest first.
     const kept: KeptResult[] = [
-      { id: 3, said: later, plane: A },
       { id: 2, said: failed, plane: A },
       { id: 1, said: docs, plane: A },
+      { id: 3, said: later, plane: A },
     ];
     const { result } = hook({ said: later, kept, plane: A });
     const on = result.current.on.get("docs") ?? [];
@@ -126,35 +132,74 @@ describe("a chip's notices stacked (#3649)", () => {
 });
 
 describe("a clone's notice updated in place (#3649)", () => {
-  const cloning = reposCloning("docs", ["api", "web"], 0);
-  const halfway = reposCloning("docs", ["api", "web"], 1);
-  const cloned = reposCloned("docs", ["api", "web"]);
-  const failed = reposNotCloned("docs", [{ repo: "api", said: "No access." }], () => undefined);
+  const cloning = reposCloning("docs", ["api", "web"], 0, 1);
+  const halfway = reposCloning("docs", ["api", "web"], 1, 1);
+  const cloned = reposCloned("docs", ["api", "web"], 1);
+  const failed = reposNotCloned("docs", [{ repo: "api", said: "No access." }], () => undefined, 1);
+  const line = (said: Said, id = 1): KeptResult => ({ id, said, plane: A });
 
   it("leaves a card the person hid behind its dot as it counts and as it lands", () => {
     const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
-    rerender({ said: cloning, kept: [{ id: 1, said: cloning, plane: A }], plane: A });
+    rerender({ said: cloning, kept: [line(cloning)], plane: A });
     expect(result.current.open).toBe("docs");
     act(() => result.current.hide());
-    rerender({ said: halfway, kept: [{ id: 1, said: halfway, plane: A }], plane: A });
+    rerender({ said: halfway, kept: [line(halfway)], plane: A });
     expect(result.current.open).toBeUndefined();
-    rerender({ said: cloned, kept: [{ id: 1, said: cloned, plane: A }], plane: A });
+    rerender({ said: cloned, kept: [line(cloned)], plane: A });
     expect(result.current.open).toBeUndefined();
   });
 
   it("keeps a card up that is up", () => {
     const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
-    rerender({ said: cloning, kept: [{ id: 1, said: cloning, plane: A }], plane: A });
-    rerender({ said: cloned, kept: [{ id: 1, said: cloned, plane: A }], plane: A });
+    rerender({ said: cloning, kept: [line(cloning)], plane: A });
+    rerender({ said: cloned, kept: [line(cloned)], plane: A });
     expect(result.current.open).toBe("docs");
   });
 
   it("brings the card back up for a failure, which asks for the person", () => {
     const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
-    rerender({ said: cloning, kept: [{ id: 1, said: cloning, plane: A }], plane: A });
+    rerender({ said: cloning, kept: [line(cloning)], plane: A });
     act(() => result.current.hide());
-    rerender({ said: failed, kept: [{ id: 1, said: failed, plane: A }], plane: A });
+    rerender({ said: failed, kept: [line(failed)], plane: A });
     expect(result.current.open).toBe("docs");
     expect(result.current.on.get("docs")?.map((one) => one.kind)).toEqual(["warning"]);
+  });
+
+  it("leaves another workspace's card up when a result is said between two of its lines", () => {
+    const chips: Chip[] = [...CHIPS, { workspace: "delta", look: "pinned" }];
+    const delta = made("delta");
+    const { result, rerender } = hook({ said: undefined, kept: [], plane: A, chips });
+    rerender({ said: cloning, kept: [line(cloning)], plane: A, chips });
+    expect(result.current.open).toBe("docs");
+    const both = [line(delta, 2), line(cloning)];
+    rerender({ said: delta, kept: both, plane: A, chips });
+    expect(result.current.open).toBe("delta");
+    rerender({ said: halfway, kept: [line(delta, 2), line(halfway)], plane: A, chips });
+    expect(result.current.open).toBe("delta");
+  });
+
+  it("stays hidden when a refusal is said between two of its lines", () => {
+    const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
+    rerender({ said: cloning, kept: [line(cloning)], plane: A });
+    act(() => result.current.hide());
+    const kept = [line(refused, 2), line(cloning)];
+    rerender({ said: refused, kept, plane: A });
+    rerender({ said: halfway, kept: [line(refused, 2), line(halfway)], plane: A });
+    expect(result.current.open).toBeUndefined();
+  });
+
+  it("stays down once its counting line is dismissed, as it counts on and as it lands", () => {
+    const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
+    rerender({ said: cloning, kept: [line(cloning)], plane: A });
+    expect(result.current.open).toBe("docs");
+    // Dismissed: the kept list no longer holds it, and keeps no more of its counting.
+    rerender({ said: cloning, kept: [], plane: A });
+    expect(result.current.open).toBeUndefined();
+    rerender({ said: halfway, kept: [], plane: A });
+    expect(result.current.open).toBeUndefined();
+    // Its result is kept again, behind the dot.
+    rerender({ said: cloned, kept: [line(cloned, 2)], plane: A });
+    expect(result.current.open).toBeUndefined();
+    expect(result.current.on.get("docs")).toHaveLength(1);
   });
 });
