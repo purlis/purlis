@@ -73,7 +73,9 @@ purlis worktree done                   # finished; or: purlis worktree abandon "
   chat the app runs them outside the sandbox, and it goes by the folder the chat was started
   in, not the one it `cd`'d into. A chat started above the piece names it instead:
   `purlis worktree commit -m "<message>" .worktrees/<repo>/<piece>` commits every change in it,
-  or name paths under it. `commit` only commits: no amend, reset, rebase or
+  or name paths under it, relative to the chat's folder (an absolute path is refused). Run
+  `commit` alone in its call, with no `cd` or other command beside it: purlis refuses it
+  otherwise. Change folder in a call of its own first. `commit` only commits: no amend, reset, rebase or
   push, and the repo's own hooks don't run. A chat outside the sandbox can use plain git.
 - `purlis worktree list` shows the workspace's pieces and what each declared.
 - A new workspace (`purlis workspace create`) is for a new task, not for another checkout of a
