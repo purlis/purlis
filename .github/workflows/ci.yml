@@ -1251,9 +1251,8 @@ jobs:
       # file of `app/src/`, which runs no Rust suite of its own. Each is a module of the core's one
       # test binary (#3613), picked by its name.
       # A name that picks no test passes `cargo test` green, so a renamed file would quietly stop
-      # running: `tools/tests-ran.sh` fails the step on such a name instead (#3752). So do the other
-      # steps that pick tests by name, here and in the scheduled workflows, except the two in
-      # `scenario`, which #3742's lane wraps.
+      # running: `tools/tests-ran.sh` fails the step on such a name instead (#3752). So does every
+      # other step that picks tests by name, here and in the scheduled workflows.
       - name: The whole-tree guards, as Rust is out of scope
         if: needs.changes.outputs.rust == 'false'
         run: >-
@@ -1397,7 +1396,7 @@ jobs:
         env:
           PURLIS_SEATBELT_OUT: ${{ runner.temp }}/seatbelt-emitted
         run: |
-          cargo test --locked -p purlis-core --test it -- the_profiles_a_wrapped_chat_starts_under_are_written_out::
+          tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- the_profiles_a_wrapped_chat_starts_under_are_written_out::
           tools/seatbelt-case.sh "$PURLIS_SEATBELT_OUT"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -1426,7 +1425,7 @@ jobs:
           package="@anthropic-ai/claude-code-darwin-$arch"
           npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/claude-code" "$package@$version"
           PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
-            cargo test --locked -p purlis-core --test it -- claude_codes_own_sandbox_holds_the_settings_purlis_writes:: --nocapture
+            tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- claude_codes_own_sandbox_holds_the_settings_purlis_writes:: --nocapture
       # The `e2e` feature puts WebdriverIO's embedded WebDriver server inside the app, which is
       # what drives it on macOS as well as Linux. It is in no build anyone is given.
       #
