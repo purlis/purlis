@@ -144,7 +144,7 @@ fn approve_in(
             if !c.unset.is_empty() {
                 say(Say::Warn(
                     format!(
-                        "    {label} starts without {}: purlis sets its variables to the values \
+                        "    {label} starts without {}: its run takes its variables at the values \
                          this line writes out, and a harness fills a `${{…}}` from the chat's \
                          environment",
                         c.unset.join(", ")
@@ -289,7 +289,7 @@ mod tests {
         assert_eq!(rc, 0, "{}", heard.err);
         assert!(
             heard.err.contains(
-                "    ops/grafana starts without REGION: purlis sets its variables to the values \
+                "    ops/grafana starts without REGION: its run takes its variables at the values \
                  this line writes out, and a harness fills a `${…}` from the chat's environment"
             ),
             "{}",
