@@ -186,6 +186,8 @@
   --color-danger-surface: var(--danger-surface);
   --color-danger-text: var(--danger-text);
   --color-danger-wash: var(--danger-wash);
+  --color-attention-surface: var(--attention-surface);
+  --color-attention-text: var(--attention-text);
   --color-wash-warning: var(--wash-warning);
   --color-diff-deleted: var(--diff-deleted);
   --color-diff-inserted: var(--diff-inserted);

@@ -714,6 +714,8 @@ const CONTROL_GROUNDS: &[&str] = &[
     "control.aimed",
     "danger.surface",
     "danger.wash",
+    // An attention Notice's ground, under its ways out (#3678).
+    "attention.surface",
     "layer.project",
     "layer.workspace",
     "layer.chat",
@@ -2811,6 +2813,11 @@ pub(super) const HOLDS_NO_CONSENT: &[(&str, &str)] = &[
     (
         "option-card",
         "a choice holds its title, its detail and its check, never an answer",
+    ),
+    (
+        "list",
+        "a card row holds Use and its fix, plain buttons, never an Allow or a danger answer \
+         (#3669)",
     ),
 ];
 

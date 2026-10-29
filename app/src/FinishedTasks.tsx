@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { memo, useContext, useState } from "react";
-import { ChevronDown, ChevronRight, SquareTerminal } from "lucide-react";
+import { SquareTerminal } from "lucide-react";
 import type { FinishedTask } from "./bindings";
 import type { Catalogued, Offer } from "./actions";
 import { Menued } from "./Menus";
@@ -13,6 +13,7 @@ import { StateShown } from "./StateShown";
 import { useTokensOnHover } from "./tasksUsed";
 import { WaitingTaskWaysContext } from "./waitingTasks";
 import { Button } from "./ui/button/Button";
+import { Twist } from "./ui/disclosure/Disclosure";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
@@ -106,7 +107,7 @@ export const FinishedTasks = memo(function FinishedTasks({
               aria-expanded={open}
               onClick={() => setOpen((was) => !was)}
             >
-              {open ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
+              <Twist open={open} />
               Finished ({folded.length})
             </button>
             <Button

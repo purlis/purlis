@@ -63,7 +63,7 @@
 //! comparing each answer SEPARATELY so a divergence was attributed rather than merely seen. Its
 //! answers are recorded — `fixtures/corpora/shellseg-oracle.jsonl` and a coverage-chosen subset of
 //! the generated cases, `shellseg-generated.jsonl.gz` (ADR 0046) — and
-//! `tests/the_shell_is_read_the_way_python_reads_it.rs` replays them with no Python present.
+//! `tests/it/the_shell_is_read_the_way_python_reads_it.rs` replays them with no Python present.
 
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};

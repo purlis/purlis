@@ -7,7 +7,7 @@
 //! run needs are answered with nothing at all.
 //!
 //! The full set of spellings is at the unit seam, in
-//! `crates/purlis-core/tests/an_unattended_run_cannot_merge_a_request_by_any_route.rs`; this
+//! `crates/purlis-core/tests/it/an_unattended_run_cannot_merge_a_request_by_any_route.rs`; this
 //! file proves the hook reaches that answer for every route.
 
 use crate::support;

@@ -5,8 +5,7 @@ import { useContext, useEffect, useState } from "react";
 import { commands, type PlaneId, type SkillsMissing } from "./bindings";
 import { counted } from "./dispatches";
 import { Notice, NoticeOf } from "./Notice";
-import { askSettingsAction } from "./settings/links";
-import { SKILL_STUDIO_SHOW, skillStudioAs } from "./skillStudio";
+import { AT_THE_ROOT, OPEN_SKILL_STUDIO, asPersona, askSkillStudio } from "./skillStudio";
 
 /**
  * **The skills a chat started without, on its tab** (SK-5, #2768; SK-8, #2771; spec decision
@@ -16,8 +15,8 @@ import { SKILL_STUDIO_SHOW, skillStudioAs } from "./skillStudio";
  * works in leaves out, with why (SK-53). And a skill of that repo named like a built-in one,
  * which the chat's program loads beside purlis's (SK-37). It offers
  *
- * - **Open in Skill studio**: the studio on the chat's persona, or on a chat at the project's
- *   root, where the name is taken out, the skill is fixed in its editor, or it is seen for what
+ * - **Open Skill studio**: the studio's Library on the chat's persona, or on a chat at the
+ *   project's root (#3681), where the name is taken out, the skill is fixed in its editor, or it is seen for what
  *   it is;
  * - **Dismiss**: puts it away for this run of the chat.
  */
@@ -51,11 +50,12 @@ export function SkillsMissingNotice({ plane, session }: { plane: PlaneId; sessio
       persona={said.persona}
       fixes={[
         {
-          label: "Open in Skill studio",
+          label: OPEN_SKILL_STUDIO,
           onPress: () =>
-            askSettingsAction(
+            askSkillStudio(
               plane,
-              said.persona === null ? SKILL_STUDIO_SHOW : skillStudioAs(said.persona),
+              said.persona === null ? AT_THE_ROOT : asPersona(said.persona),
+              "library",
             ),
         },
       ]}

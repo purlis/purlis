@@ -383,6 +383,8 @@ pub struct ChatBrowsers {
     on_pools: Mutex<HashMap<String, String>>,
     /// Told what becomes of each browser for the event log (#2842), once the project is held.
     says: std::sync::OnceLock<ChatBrowsersSay>,
+    /// What each browser's downloads are, and what each chat may save of them (#2020).
+    files: crate::browserfiles::Files,
 }
 
 /// **A runner chat's browser login that waits on the person's opt-in** for its persona on its
@@ -495,6 +497,7 @@ impl Default for ChatBrowsers {
             pool_asks: Mutex::default(),
             on_pools: Mutex::default(),
             says: std::sync::OnceLock::new(),
+            files: crate::browserfiles::Files::default(),
         }
     }
 }
@@ -734,6 +737,9 @@ fn called(asked: &Browsing) -> Called {
             Act::Pages => Called::Pages,
             Act::SwitchPage { .. } => Called::SwitchPage,
             Act::Screenshot { .. } => Called::Screenshot,
+            Act::Downloads => Called::Downloads,
+            Act::Upload { .. } => Called::Upload,
+            Act::SaveDownload { .. } => Called::SaveDownload,
         },
     }
 }
@@ -1985,6 +1991,10 @@ impl ChatBrowsers {
             None => Vec::new(),
         };
         let unended = browsers.len() - ended.len();
+        // A browser's downloads went with its folder (#2020).
+        for program in &ended {
+            self.files.ended(program);
+        }
         {
             let mut endings = self.endings();
             endings
@@ -2123,6 +2133,8 @@ impl ChatBrowsers {
     /// Chat `session` has closed: its browsers end, and nothing of it is kept but a browser that
     /// could not be ended yet, which is tried again until it is.
     pub fn forget(&self, driver: Option<&Arc<dyn Driver>>, session: u32, was: &str) {
+        // What it was allowed to save goes with it (#2020).
+        self.files.chat_ended(session);
         // Its pool login Ask goes with it (#2050): nobody answers for a chat that has gone.
         self.pool_asks
             .lock()
@@ -2192,6 +2204,7 @@ impl ChatBrowsers {
         unsandboxed: bool,
         as_persona: &dyn Fn() -> AsPersona,
         logins: &dyn Fn(&str) -> ReadLogin,
+        folder: &dyn Fn() -> Result<crate::browserfiles::ChatFolder, String>,
         now: u64,
     ) -> (Answer, bool) {
         self.lock().entry(browse.chat).or_default().unsandboxed = unsandboxed;
@@ -2215,8 +2228,9 @@ impl ChatBrowsers {
                 address: self.address_of(&program),
                 program,
             });
-        let (mut answer, raised) =
-            self.answer_now(driver, root, pool, browse, reach, persona, read, now);
+        let (mut answer, raised) = self.answer_now(
+            driver, root, pool, browse, reach, persona, read, folder, now,
+        );
         self.say_called(browse, before, &answer);
         // What the browser held back for the person says so first (#2018).
         if let Answer::Browsed { browsed, .. } = &mut answer
@@ -2343,6 +2357,7 @@ impl ChatBrowsers {
         reach: &dyn Fn() -> BrowserReach,
         as_persona: AsPersona,
         read: Option<ReadLogin>,
+        folder: &dyn Fn() -> Result<crate::browserfiles::ChatFolder, String>,
         now: u64,
     ) -> (Answer, bool) {
         let no = |why: &str| Answer::No {
@@ -2563,6 +2578,19 @@ impl ChatBrowsers {
         }
         // The act may wait on its page a while: never under the lock.
         drop(chats);
+        // An act that names the chat's folder is the window's to fill, or to refuse (#2020).
+        let act = match act {
+            Doing::Act(act) if !ended => {
+                match self
+                    .files
+                    .prepared(browse.chat, &program, act, folder, pool.is_some())
+                {
+                    crate::browserfiles::Prepared::Go(act) => Doing::Act(act),
+                    crate::browserfiles::Prepared::No(why) => return (no(&why), false),
+                }
+            }
+            other => other,
+        };
         let reach_now = with_sites(
             reach(),
             open_web,
@@ -2609,6 +2637,8 @@ impl ChatBrowsers {
         };
         match acted {
             Ok(browsed) => {
+                // What it downloaded, for the chat's saves (#2020).
+                self.files.heard(&program, &browsed.downloads);
                 // Where its page is now, for a quit to keep (#2022).
                 if let Some(page) = &browsed.page {
                     self.addresses
@@ -2819,6 +2849,7 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
     // Who the chat is, for its browsers' notes (#2025).
     held.browsers()
         .identify(browse.chat, held.chats().id_of(browse.chat));
+    let folder = || crate::browserfiles::chat_folder(held, browse.chat);
     let (answer, raised) = held.browsers().answer(
         held.browser_driver(),
         held.root(),
@@ -2828,6 +2859,7 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         unsandboxed,
         &as_persona,
         &logins,
+        &folder,
         now,
     );
     held.browsers_listed_since(listing);
@@ -3103,8 +3135,10 @@ fn pool_login_of(
     let config = held.chats().pools_in().ok_or_else(|| {
         format!("purlis keeps no pools on this machine, so no login {name} was filled on {pool}")
     })?;
-    // Only a runner shown to be yours is ever asked about (#2050).
-    let bound = purlis_core::poollogins::Bound::read(&config, pool)
+    // Only a runner shown to be yours is ever asked about (#2050): the one the chat's link
+    // reached, as the desktop's host said it, a draining one too (#3417).
+    let reached = crate::hooks::reached_over_the_link();
+    let bound = purlis_core::poollogins::Bound::over_the_link(&config, pool, reached.as_deref())
         .map_err(|why| format!("no login {name} was filled on pool {pool}: {why}"))?;
     // Its tools are the runner's, never this window's record of a sandbox here: the login is
     // the persona's as declared and allowed here, checked before anyone is asked about it.

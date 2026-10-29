@@ -6,5 +6,14 @@
 import type { FamilyTheme } from "../../theme/families.testkit";
 
 export default {
-  forced: { dangerous: ['[data-scope="notice"][data-part="root"][data-variant="trouble"]'] },
+  forced: {
+    dangerous: ['[data-scope="notice"][data-part="root"][data-variant="trouble"]'],
+    // What needs a decision keeps a shape of its own beside its mark (#3678).
+    drawn: {
+      '[data-scope="notice"][data-part="root"][data-variant="attention"]': {
+        "outline-style": "dotted",
+        "outline-color": "CanvasText",
+      },
+    },
+  },
 } satisfies FamilyTheme;

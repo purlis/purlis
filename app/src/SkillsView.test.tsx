@@ -14,9 +14,9 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ChatSkill, PersonaSkills, Studio, StudioSkill } from "./bindings";
 import { SkillsView, type FrontChat } from "./SkillsView";
-import { SkillStudioTab } from "./SkillStudioTab";
 import { skill, studio } from "./skillsListing.testkit";
-import { inWorkspace, skillStudioView } from "./skillStudio";
+import { SKILL_STUDIO_TITLE, inWorkspace, skillStudioAt, skillStudioView } from "./skillStudio";
+import { forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
 import { skillView } from "./skillRuns";
 import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
 import { SKILLS_VIEW } from "./skillsViewPrefs";
@@ -577,7 +577,16 @@ describe("the view's header", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open Skill studio" }));
     expect(hands.onOpenView).toHaveBeenCalledWith(
       skillStudioView(inWorkspace("ops")),
-      "Skill studio · ops",
+      SKILL_STUDIO_TITLE,
+    );
+    // ⌘-click: a studio tab of its own, on the same Library (#3681).
+    const user = userEvent.setup();
+    await user.keyboard("{Meta>}");
+    await user.click(screen.getByRole("button", { name: "Open Skill studio" }));
+    await user.keyboard("{/Meta}");
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(
+      skillStudioAt(inWorkspace("ops"), "library", { newTab: true }),
+      SKILL_STUDIO_TITLE,
     );
   });
 
@@ -611,11 +620,21 @@ describe("the view's header", () => {
     await userEvent.click(within(again).getByRole("menuitem", { name: /blank template/ }));
     expect(hands.onOpenView).toHaveBeenLastCalledWith(
       skillStudioView(inWorkspace("ops")),
-      "Skill studio · ops",
+      SKILL_STUDIO_TITLE,
     );
-    // The studio it opened opens on its New skill form: one copy of the start.
-    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+    // Browse sources opens the studio's Sources page on the same chats (#3681).
+    await userEvent.click(screen.getByRole("button", { name: "New skill…" }));
+    const third = await screen.findByRole("menu", { name: "Ways to start a skill" });
+    await userEvent.click(within(third).getByRole("menuitem", { name: /Browse sources/ }));
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(
+      skillStudioAt(inWorkspace("ops"), "sources"),
+      SKILL_STUDIO_TITLE,
+    );
+
+    // The studio the blank template opened opens on its New skill form: one copy of the start.
+    renderStudio(inWorkspace("ops"));
     expect(await screen.findByRole("form", { name: "New skill" })).toBeInTheDocument();
+    forgetStudio();
   });
 });
 

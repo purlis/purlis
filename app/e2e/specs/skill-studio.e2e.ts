@@ -11,6 +11,7 @@ import {
   runFromThePalette,
   tabNames,
 } from "../reach.js";
+import { studioSkill } from "../studio.js";
 
 /**
  * **A project skill in the Skill studio** (SK-2, #2765), in the built app against the real
@@ -55,8 +56,10 @@ describe("the Skill studio", function () {
     const row = await $(`[data-testid="skill-${SKILL}"]`);
     await row.waitForExist({ timeout: 20_000 });
     await expect(row).toHaveText(/project/);
-    await expect(row).toHaveText(/On/);
     await expect(row).toHaveText(/Probes the Skill studio\./);
+    // Chosen, it opens beside the Library's list, saying a chat at the root gets it (#3681).
+    const item = await studioSkill(SKILL);
+    await expect(item.$('[data-testid="skill-in-a-chat"]')).toHaveText(/^On/);
     expect(await tabNames()).toContain("Skill studio");
   });
 });

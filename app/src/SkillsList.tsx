@@ -80,7 +80,8 @@ export function SkillsList({
   starts: boolean;
   busy: boolean;
   onStart: (start: SkillStart) => void;
-  onOpenStudio: () => void;
+  /** Opens the studio; `newTab` where ⌘ (Ctrl off a Mac) was held, for a tab of its own. */
+  onOpenStudio: (newTab: boolean) => void;
   onOpen: (row: ListedSkill) => void;
   menuOf: (row: ListedSkill) => RowMenu | undefined;
   /** The switch to the chat in front's own set, drawn while a chat tab is in front. */
@@ -103,7 +104,11 @@ export function SkillsList({
   return (
     <div className="skills-view" data-testid="skills-view">
       <ButtonRow className="skills-view-head">
-        <Button variant="ghost" icon={<Sparkles aria-hidden="true" />} onPress={onOpenStudio}>
+        <Button
+          variant="ghost"
+          icon={<Sparkles aria-hidden="true" />}
+          onPress={(event) => onOpenStudio(event.metaKey || event.ctrlKey)}
+        >
           {OPEN_SKILL_STUDIO}
         </Button>
         <MenuTrigger>

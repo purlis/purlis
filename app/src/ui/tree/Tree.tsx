@@ -335,6 +335,20 @@ function Twist() {
 }
 
 /**
+ * **The twist as a mark** (#3670): the same chevron, drawn by the same part, for a fold that is
+ * not a tree's row (a list's section that folds, a run of rows folded to one line). It points at
+ * the words while closed and down while open, from the `data-expanded` of the row it is in. It
+ * is no button: the row it is in folds and unfolds, and says so with its own `aria-expanded`.
+ */
+export function TwistMark() {
+  return (
+    <span data-scope="tree" data-part="twist" aria-hidden="true">
+      <ChevronRight aria-hidden="true" />
+    </span>
+  );
+}
+
+/**
  * **The tree's Tab stop, on this row** (`stopAt`): while the keyboard is not in the tree, its
  * stop moves to the row, so Tab lands where the owner says; the keyboard's own place wins once
  * it has been in.

@@ -116,6 +116,7 @@ export const READ_BY_RUST = [
   "app/src/ui/card/card.css",
   "app/src/ui/choice/choice.css",
   "app/src/ui/dialog/dialog.css",
+  "app/src/ui/disclosure/disclosure.css",
   "app/src/ui/empty-state/empty-state.css",
   "app/src/ui/field/field.css",
   "app/src/ui/list/list.css",
@@ -125,6 +126,7 @@ export const READ_BY_RUST = [
   "app/src/ui/panel/panel.css",
   "app/src/ui/popover/popover.css",
   "app/src/ui/rail/rail.css",
+  "app/src/ui/review-page/review-page.css",
   "app/src/ui/select/select.css",
   "app/src/ui/separator/separator.css",
   "app/src/ui/status/status.css",
@@ -137,7 +139,9 @@ export const READ_BY_RUST = [
 
 // The Rust tests that read every file of the window's sources (#3596): `ci.yml`'s `recorded`
 // job runs each one when `rust` is out of scope, beside the whole-tree guards, so a change to
-// the window that skips the Rust suite is still held to them. They link only the core.
+// the window that skips the Rust suite is still held to them. They link only the core. Here and
+// in `WHOLE_TREE_GUARDS`, `test` is a module of the crate's one test binary, `it`
+// (`tests/it/<test>.rs`, #3613), which the job picks by name.
 export const WINDOW_SOURCE_GUARDS = [
   { crate: "purlis-core", test: "no_old_name_is_spelled_in_the_window_or_its_assets" },
   { crate: "purlis-core", test: "every_deferral_names_its_ticket" },

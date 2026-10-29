@@ -859,9 +859,11 @@ impl HostLink {
                 .map(|why| why.to_string()),
             None => None,
         };
+        // The runner the link reached, as its host says (1.48, #3417): a draining one too.
+        let mut reached = None;
         if let Some(runner) = relaying {
             let mut relayed = client.relay_to(runner).await;
-            let name_held = |sent: &Result<(), session::CallError>| {
+            let name_held = |sent: &Result<Option<String>, session::CallError>| {
                 sent.as_ref()
                     .err()
                     .and_then(session::CallError::refusal)
@@ -871,7 +873,7 @@ impl HostLink {
                 tokio::time::sleep(NAMED_AGAIN_AFTER).await;
                 relayed = client.relay_to(runner).await;
             }
-            relayed.map_err(|why| {
+            reached = relayed.map_err(|why| {
                 format!("the session host did not relay the link to runner {runner}: {why}")
             })?;
         }
@@ -899,6 +901,7 @@ impl HostLink {
                 link: id,
                 client: Arc::clone(&client),
                 runtime: runtime.clone(),
+                reached,
             },
         );
         let lost = Arc::clone(&shared);
@@ -1446,10 +1449,13 @@ fn everything_ended_with_the_host(shared: &Shared, link: u64) {
 }
 
 /// Where the hook lines the host pushes are heard: each by what hears its project's lines
-/// ([`Relayed::take`]), each reply going back on the link in the order it was made.
+/// ([`Relayed::take_reached`]), each reply going back on the link in the order it was made.
 struct HookLines {
     /// The link they come over.
     link: u64,
+    /// The runner the link reached, as its host said (1.48, #3417): `None` for this machine's
+    /// host's link, and for a host before 1.48.
+    reached: Option<String>,
     client: Arc<Client>,
     runtime: tokio::runtime::Handle,
 }
@@ -1480,7 +1486,7 @@ impl HookLines {
             }
         };
         let reply = self.reply(project, id, pathless);
-        relayed.take(self.link, id, heard, reply);
+        relayed.take_reached(self.link, self.reached.clone(), id, heard, reply);
     }
 
     /// What replies to line `id` of `project`: each reply sent at once, behind the one before,
@@ -1509,13 +1515,18 @@ impl HookLines {
     }
 }
 
+/// **Whether `replied` is no larger than the link carries** ([`within_a_frame`]): what a run's
+/// values are measured by before they are handed on (#3406). What is measured may carry them
+/// (`Replied::Handed`, #2047), so it is wiped once it is (#3420).
+pub(crate) fn fits_a_reply(replied: &Replied) -> bool {
+    serde_json::to_vec(replied)
+        .is_ok_and(|said| purlis_core::secrets::Zeroizing::new(said).len() <= A_REPLY_IS_AT_MOST)
+}
+
 /// `replied`, as JSON no larger than the link carries: an answer too large is refused in a
 /// sentence instead.
 fn within_a_frame(replied: Replied) -> serde_json::Value {
-    let too_large = |replied: &Replied| {
-        serde_json::to_vec(replied).map_or(true, |said| said.len() > A_REPLY_IS_AT_MOST)
-    };
-    let replied = if too_large(&replied) {
+    let replied = if !fits_a_reply(&replied) {
         let why = format!(
             "the answer was larger than the session host's link carries ({A_REPLY_IS_AT_MOST} \
              bytes)"

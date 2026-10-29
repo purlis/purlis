@@ -5652,6 +5652,7 @@ dependencies = [
  "png 0.18.1",
  "psl",
  "purlis-same-user",
+ "purlis-unicode",
  "ring",
  "serde",
  "serde_json",

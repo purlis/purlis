@@ -7,6 +7,7 @@ import { clearMocks } from "@tauri-apps/api/mocks";
 import { catalogue, type Now } from "../actions";
 import { noTabs } from "../tabs";
 import { skillsSummary, workspaceSkillsGroup } from "./skillsSummary";
+import { inWorkspace, skillStudioView } from "../skillStudio";
 
 afterEach(() => {
   cleanup();
@@ -25,7 +26,7 @@ describe("the Workspace level's Skills summary (#2767)", () => {
   it("links to the catalogue row that opens the studio filtered to the workspace", () => {
     const group = workspaceSkillsGroup("p", "alpha");
     expect(group.id).toBe("workspace.skills");
-    expect(group.links).toEqual([{ label: "Open in Skill studio", action: "skills.studio:alpha" }]);
+    expect(group.links).toEqual([{ label: "Open Skill studio", action: "skills.studio:alpha" }]);
 
     const now = (skillStudio: boolean): Now => ({
       tabs: noTabs(),
@@ -39,8 +40,8 @@ describe("the Workspace level's Skills summary (#2767)", () => {
     const row = catalogue(now(true)).find((offer) => offer.id === "skills.studio:alpha");
     expect(row?.does).toEqual({
       verb: "openView",
-      view: { from: null, view: "skill-studio", key: "alpha" },
-      title: "Skill studio · alpha",
+      view: skillStudioView(inWorkspace("alpha")),
+      title: "Skill studio",
     });
     const ids = catalogue(now(false)).map((offer) => offer.id);
     expect(ids).not.toContain("skills.studio:alpha");

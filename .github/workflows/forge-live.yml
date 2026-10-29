@@ -5,7 +5,7 @@ name: forge-live
 
 # The forge contract against a real forge (FG-4, #712; ADR 0070 §7, the live run).
 #
-# Every pull request already runs the contract suite (`crates/purlis-core/tests/forge_contract.rs`)
+# Every pull request already runs the contract suite (`crates/purlis-core/tests/it/forge_contract.rs`)
 # against recorded answers, on both forges, over both transports. Recordings are only as true as
 # the documentation they were taken from. This runs the SAME cases, through the same seam and the
 # native transport, against a fixture the operator provisioned on github.com and on gitlab.com,
@@ -24,7 +24,7 @@ name: forge-live
 # fixture holds. A forge not yet provisioned says so in the run's summary and stops, green:
 # nothing about the forge was tested, nothing claims it, and the nightly's issue is left as is.
 #
-# `crates/release-manifest/tests/the_forge_nightly_runs_live_with_least_privilege.rs` holds this
+# `crates/release-manifest/tests/it/the_forge_nightly_runs_live_with_least_privilege.rs` holds this
 # file to those rules.
 
 on:
@@ -92,7 +92,7 @@ jobs:
       # cache: this job holds a token, and a cache is written by whichever job saved it last.
       - name: Build the contract suite
         if: steps.provisioned.outputs.ready == 'true'
-        run: cargo test -p purlis-core --locked --test forge_contract --no-run
+        run: cargo test -p purlis-core --locked --test it --no-run
       # One thread: the cases share one fixture, and the scene is read once per run.
       - name: Every contract case, against the real forge
         if: steps.provisioned.outputs.ready == 'true'
@@ -112,7 +112,7 @@ jobs:
           upper="$(echo "$FORGE" | tr '[:lower:]' '[:upper:]')"
           export "FORGE_LIVE_${upper}_TOKEN=$TOKEN" "FORGE_LIVE_${upper}_OWNER=$OWNER"
           unset TOKEN
-          cargo test -p purlis-core --locked --test forge_contract -- --ignored --test-threads=1 --nocapture "${FORGE}_live::" 2>&1 | tee live.out
+          cargo test -p purlis-core --locked --test it -- --ignored --test-threads=1 --nocapture "forge_contract::${FORGE}_live::" 2>&1 | tee live.out
           grep -Eq 'test result: ok\. [1-9][0-9]* passed' live.out
           {
             echo "### $FORGE: $(grep -E '^test result:' live.out | tail -1)"

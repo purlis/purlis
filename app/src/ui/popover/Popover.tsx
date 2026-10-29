@@ -171,23 +171,39 @@ const RESTORE_EVENT = "react-aria-focus-scope-restore";
  *
  * It focuses as React Aria's hand-back does (`focusSafely`): at once with a keyboard or a
  * pointer, and with a screen reader's virtual cursor only once the page's transitions are done,
- * if nothing took the keyboard meanwhile. An opener that is a row of a React Aria collection
- * takes the hand-back itself (it stops the restore event) and focuses its row a render later,
- * so there the keyboard is still on nothing across a task (a follow-up of #3603).
+ * if nothing took the keyboard meanwhile.
+ *
+ * - **A surface drawn inside another** (a submenu, drawn into its root menu's wrapper beside the
+ *   root's surface, not in it) says so to the one around it as they go together, in one commit
+ *   (#3642): it goes first, its own opener goes with them, and the keyboard goes back to the
+ *   outer one's opener.
+ * - **An opener in a React Aria collection** (its row, or a control in a row, as a table's ⋯)
+ *   leaves the hand-back to the collection, which stops the restore event and would focus it
+ *   only on a render of its own, a task later (#3642). It is focused here at once, while the
+ *   item it stands in (the nearest `data-key` around it) is still the one it stood in as the
+ *   surface opened, and the collection's render finds it placed. An opener in no item, or in
+ *   one its collection has since drawn another item into, is left to the collection.
  */
 function HandsBack({
   surface,
   gone,
+  outer,
+  inner,
 }: {
   surface: RefObject<Element | null>;
   gone: (() => void) | undefined;
+  /** Told when the keyboard was in this surface as it went: the surface around this one's. */
+  outer: KeyboardWent | null;
+  /** Told by a surface drawn inside this one when the keyboard was in it as it went. */
+  inner: KeyboardWent;
 }) {
   // What had the keyboard as the surface opened, told as it is first drawn, as React Aria's own
-  // focus scope keeps it.
+  // focus scope keeps it, and the item of a collection it stood in then.
   const [opener] = useState(() => {
     const had = document.activeElement;
     return had instanceof HTMLElement && had !== had.ownerDocument.body ? had : null;
   });
+  const [item] = useState(() => itemOf(opener));
   const latest = useRef(gone);
   useLayoutEffect(() => {
     latest.current = gone;
@@ -203,19 +219,43 @@ function HandsBack({
       // Still in the document here: what is in a surface goes before the surface itself.
       const element = drawn.current;
       const doc = element?.ownerDocument;
-      if (!element || !doc || opener === null || !element.contains(doc.activeElement)) return;
+      if (!element || !doc) return;
+      // A surface inside this one goes first, and says whether the keyboard was in it.
+      const had = inner.current || element.contains(doc.activeElement);
+      inner.current = false;
+      if (!had) return;
+      if (outer !== null) {
+        // Read in this same commit by the surface around this one, if it goes too.
+        outer.current = true;
+        queueMicrotask(() => {
+          outer.current = false;
+        });
+      }
+      if (opener === null) return;
       queueMicrotask(() => {
         const now = doc.activeElement;
         if (now !== null && now !== doc.body) return;
         if (!opener.isConnected || opener.closest("[inert]")) return;
         const restore = new CustomEvent(RESTORE_EVENT, { bubbles: true, cancelable: true });
-        if (opener.dispatchEvent(restore)) focusSafely(opener);
+        const asked = opener.dispatchEvent(restore);
+        if (asked || (item !== null && itemOf(opener) === item)) focusSafely(opener);
       });
     },
-    [opener],
+    [opener, item, outer, inner],
   );
   return null;
 }
+
+/** The item of a React Aria collection an element stands in: the nearest `data-key` around it. */
+function itemOf(element: Element | null): string | null {
+  return element?.closest("[data-key]")?.getAttribute("data-key") ?? null;
+}
+
+/** Whether the keyboard was in a surface as it went, told to the surface around it. */
+type KeyboardWent = { current: boolean };
+
+/** The surface being drawn, for a surface drawn inside it to tell as they go (`HandsBack`). */
+const SurfaceAround = createContext<KeyboardWent | null>(null);
 
 /**
  * Calls `closed` once a surface that was open has closed and gone: where the keyboard goes
@@ -268,6 +308,8 @@ export function Surface({
 }) {
   const shown = useProjectShown();
   const gone = useContext(SurfaceGone);
+  const outer = useContext(SurfaceAround);
+  const inner = useRef(false);
   const surface = useRef<HTMLElement>(null);
   if (!shown) return null;
   const placement = placed ? { placement: placementOf(side, align), offset } : {};
@@ -284,8 +326,8 @@ export function Surface({
       data-variant={kind}
       ref={surface}
     >
-      {children}
-      <HandsBack surface={surface} gone={gone} />
+      <SurfaceAround.Provider value={inner}>{children}</SurfaceAround.Provider>
+      <HandsBack surface={surface} gone={gone} outer={outer} inner={inner} />
     </AriaPopover>
   );
 }

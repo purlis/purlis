@@ -136,17 +136,17 @@ code, the `[plane] worktrees` setting and `purlis worktree` (ADR 0072).
 _Avoid_: task, slot, branch (for the directory), worktree (on screen)
 
 **Branch** (of a chat):
-What the window shows for a piece: one row per repo a chat works in, reading *`<branch>` in
-`<repo>`*. A chat working in a repo's shared clone shows the branch the clone has checked out,
-marked *shared*. **New branch** cuts a piece; **Remove folder** removes the worktree and keeps
+What the window shows for a piece: one row per repo a chat works in, reading _`<branch>` in
+`<repo>`_. A chat working in a repo's shared clone shows the branch the clone has checked out,
+marked _shared_. **New branch** cuts a piece; **Remove folder** removes the worktree and keeps
 the branch (ADR 0072).
 _Avoid_: the chat's branch (singular: a chat may work in several repos), piece, worktree (in UI text)
 
 **Writing chat**:
-A chat that starts in a repo's shared clone (`workspaces/<ws>/<repo>`), which is what *New tab
-in <repo>* and *Start new chats in <repo>* point at. By default it starts on a new branch of its
+A chat that starts in a repo's shared clone (`workspaces/<ws>/<repo>`), which is what _New tab
+in <repo>_ and _Start new chats in <repo>_ point at. By default it starts on a new branch of its
 own instead: a piece named after the chat, or `chat-<n>`, cut before it starts and taken back if
-the start is refused. The picker's *start on a new branch* box, ticked by default, is the
+the start is refused. The picker's _start on a new branch_ box, ticked by default, is the
 opt-out. A chat started in the workspace's own directory, at the project root or in an existing
 piece is not a writing chat and is cut nothing (GL-1).
 _Avoid_: guessing from what a chat does (purlis never reads a harness's output to decide)
@@ -446,7 +446,7 @@ lane: list, start a hosted program, attach and detach a view of a kind, write, r
 stop, and subscribe from a cursor.
 It carries the compatibility promise, so a client and a host one version apart always talk.
 It names a project by its stable id (`[project] id` in `charter.toml`), never by a path, and
-every word it says is snake_case (ADR 0068 §4 and *Amended by FD-26*).
+every word it says is snake_case (ADR 0068 §4 and _Amended by FD-26_).
 _Avoid_: API (unqualified), IPC (that is the window's Tauri calls)
 
 **UI RPC**:
@@ -766,8 +766,8 @@ allowed.
 _Avoid_: allowlist (in UI text), network access, browser allowlist
 
 **Browser site**:
-A person's yes to one site, a host and port, for a chat's browser alone, at *this chat*, *this
-project on this machine*, or *everyone in the project*, which is committed and reaches a
+A person's yes to one site, a host and port, for a chat's browser alone, at _this chat_, _this
+project on this machine_, or _everyone in the project_, which is committed and reaches a
 teammate's browsers once they were shown it: the browser may open it, send to it and type on it. The chat's own
 commands never reach a browser site; they still need an **Allowed host** for it. Asked by the
 browser's **judge**, and listed apart from allowed hosts in the Granted list and in the chat's
@@ -780,6 +780,19 @@ field the agent is about to type into, and says whether it goes or the person is
 goes, an address the agent wrote or anything sent to a site new to the project asks. The reach
 proxy carries a site new to the project only where the judge let a request to it go.
 _Avoid_: filter, firewall, interceptor
+
+**Holding folder** (of a browser):
+Where a browser's downloads land: a folder of the browser's own data, which no chat reads or
+writes, each file under the engine's own name for it. The agent is told a download's name, size
+and origin. A chat has a download only once it **saves** it into its folder, which needs the
+person's yes for its origin, for that chat. It goes with the browser.
+_Avoid_: downloads folder (that is the person's own), cache
+
+**Upload** (from a browser):
+Files of the chat's own folder put into a page's file input: named by the agent relative to that
+folder, read by purlis under the chat's read rules following no link, and handed to the browser
+as purlis's copy, never as the chat's file.
+_Avoid_: attach, file pick (the person's own file dialog is not one)
 
 ### Chats working together
 
@@ -1348,7 +1361,7 @@ _Avoid_: sync (that word is `purlis sync`'s), commit (a save may be more than on
 
 **Sync**:
 Fetching every clone in a workspace and fast-forwarding the ones that hold no work:
-`purlis sync`, and *Sync repos* in the window. Nothing else is called Sync: not a save, not
+`purlis sync`, and _Sync repos_ in the window. Nothing else is called Sync: not a save, not
 moving a project to its pinned version, not writing persona sub-agents, and not any state kept
 between devices (ADR 0072).
 _Avoid_: pull, refresh, update (for this)
@@ -1384,8 +1397,8 @@ Prose says "request mode" on every forge; `pr` and `pr-merge` stay the words `ch
 _Avoid_: PR mode, MR mode
 
 **Stage**:
-Where unsaved work sits. It is *changed* (not committed), *committed* (not pushed), *pushed*
-(PR open), or *saved* (on the target branch).
+Where unsaved work sits. It is _changed_ (not committed), _committed_ (not pushed), _pushed_
+(PR open), or _saved_ (on the target branch).
 _Avoid_: status, sync state
 
 **Blocked**:
@@ -1473,15 +1486,15 @@ this machine. The project commits the list with the persona; each machine allows
 _Avoid_: persona grants (in UI text), persona allowlist
 
 **Allowed host**:
-A person's yes to one host and port at one scope: *this chat*, *this project on this machine*,
-or *everyone in the project*, which is committed so teammates follow it. It is shown in full,
+A person's yes to one host and port at one scope: _this chat_, _this project on this machine_,
+or _everyone in the project_, which is committed so teammates follow it. It is shown in full,
 never as a wildcard, and every one can be removed from Settings' Network page.
 _Avoid_: grant (in UI text; that is a runner's **Grant**), exception, allowlist entry
 
 **A service on this Mac**:
 Whatever listens on one port of this machine's loopback interface: a local Kubernetes cluster, a
 database in a container, a dev server. A sandboxed chat reaches none of them until a person
-allows that one port, for *this chat* or for *this project on this machine*; never a range,
+allows that one port, for _this chat_ or for _this project on this machine_; never a range,
 never every port, never one of purlis's own. Allowed from the Notice its refusal raises, or
 added by its port in Settings' Network page, which refuses exactly what the Notice refuses. Kept
 on this machine only, listed in Settings' Network page with Remove. A Claude Code chat reaches it through its proxy by the name
@@ -1490,7 +1503,7 @@ _Avoid_: localhost (in UI text), local port grant, loopback
 
 **A chat's server**:
 A server a sandboxed chat runs on one port, allowed from the Notice its first refused bind raises,
-for *this chat* or for *this project on this machine*; from port 1024, never a port something on
+for _this chat_ or for _this project on this machine_; from port 1024, never a port something on
 this Mac listens on, a range or one of purlis's own. The server listens on a socket of the chat's
 own, never on a TCP port, and purlis's **front door** on the port carries each request to it,
 checking its address and keeping the browser's cookies from the server. A page it serves still runs
@@ -1607,7 +1620,7 @@ _Avoid_: prompt, context injection
 
 **Action** (of an extension):
 A verb an extension declares and offers on the rows of its views: pressing one asks its program
-to *run action `<id>` on `<subject>`*. Never one of purlis's own verbs. purlis asks first when
+to _run action `<id>` on `<subject>`_. Never one of purlis's own verbs. purlis asks first when
 the manifest says so, and always before one that deletes.
 _Avoid_: command (for this), verb (unqualified), button
 
@@ -1658,8 +1671,8 @@ _Avoid_: ACP adapter (on its own), harness adapter (for this), bridge
 **Wrap**:
 To run a chat's unmodified harness inside a sandbox profile or backend purlis generates (ADR
 0067). Never to **stand in** for the harness: putting purlis's own program where the harness's
-is expected and changing what it or its model sees, which purlis never does. X34's *"wraps a
-harness binary"* means standing in (ADR 0073).
+is expected and changing what it or its model sees, which purlis never does. X34's _"wraps a
+harness binary"_ means standing in (ADR 0073).
 _Avoid_: wrap (for a stand-in, a shim or an adapter)
 
 **Harness plugin**:
@@ -1704,10 +1717,24 @@ _Avoid_: loaded skills, available skills
 
 **Skill studio**:
 The one place where every skill a chat can get is listed, made, edited, installed, removed,
-observed and graded: a view tab, with each skill opening as its own. The **Skills** sidebar view
-lists the same skills and opens it. It is built behind the `skill-studio` flag until its
-**finish line** (spec #2762).
+observed and graded: one view tab per project, with a scope picker for whose chats it covers,
+its pages in a left navigation (**Library**, Needs you, Drafts, Sources, Deleted, Harness skills,
+Routing), and its own back, forward and path. Every way into it says "Open Skill studio" and
+lands on its page and scope (#3681). The **Skills** sidebar view lists the same skills and opens
+it. It is built behind the `skill-studio` flag until its **finish line** (spec #2762).
 _Avoid_: skill manager, skills page
+
+**Library** (of the Skill studio):
+Every skill the project holds, at every **skill level**, as the studio's first page lists them
+for the chats its scope covers: a row each, with its name, its skill level, one mark and one line
+of what it does, found by a search box and narrowed by filter chips.
+_Avoid_: skill list, catalogue (that is a source's offer)
+
+**Skill level**:
+Where a skill lives, which decides who gets it: project, workspace, persona, repo, local or
+built-in. It is drawn as a tag on each of the studio's rows. It is not the **Level** of
+settings.
+_Avoid_: level (alone, where settings are near), scope (that is whose chats the studio covers)
 
 **Finish line** (of the Skill studio):
 The set of things that must all work before the Skill studio is shown to anyone. Until then it
