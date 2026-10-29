@@ -796,7 +796,7 @@ fn entry(
         match &mut place.into {
             Sink::Disk { folder } => {
                 std::io::Read::read_to_end(&mut std::fs::File::from(fd), &mut bytes)?;
-                crate::rewrite::replace(*folder, to, &bytes, crate::rewrite::Mode::Private)?;
+                crate::rewrite::replace(folder, to, &bytes, crate::rewrite::Mode::Private)?;
             }
             Sink::Memory {
                 files,

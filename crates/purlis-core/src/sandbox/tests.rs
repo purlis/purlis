@@ -1180,13 +1180,15 @@ fn a_chat_never_writes_the_approvals_a_person_gave() {
         paths(&denied, Class::HumanPowers, Access::Write),
         // Under both names, there or not: whichever is there is the config home (RN-5).
         // The browser engines purlis downloads, in the data home in use and under the default
-        // data folder's other name (#2835).
+        // data folder's other name (#2835). The harnesses a runner installs, in the data home in
+        // use (#3446).
         // …and this machine's policy (#1343), as the kernel names it.
         [
             std::path::PathBuf::from("/home/op/.config/purlis"),
             std::path::PathBuf::from("/home/op/.config/charter"),
             std::path::PathBuf::from("/home/op/.local/share/charter/engines/chrome-for-testing"),
             std::path::PathBuf::from("/home/op/.local/share/purlis/engines/chrome-for-testing"),
+            std::path::PathBuf::from("/home/op/.local/share/charter/harnesses"),
             super::real(&super::policy::machine_folder()),
         ]
     );
