@@ -95,10 +95,11 @@ const LISTED: RepoListing = {
   reaches: [SIGNED_IN, NO_GITLAB],
 };
 
+/** Each repo's button, by its words, which are its name: its path, and its mark (WCAG 2.5.3). */
 function rows(): string[] {
   return within(screen.getByRole("list", { name: "Your repos" }))
     .getAllByRole("button")
-    .map((b) => b.getAttribute("aria-label") ?? "");
+    .map((b) => b.textContent ?? "");
 }
 
 describe("matches", () => {
@@ -120,12 +121,13 @@ describe("your repos (#1818)", () => {
     render(<YourRepos onPick={vi.fn()} busy={false} />);
 
     await screen.findByRole("list", { name: "Your repos" });
-    expect(rows()).toEqual([
-      "Get acme/team-project, a purlis project, from github.com as octocat",
-      "Get acme/api from github.com as octocat",
-      "Get octocat/dots from github.com as octocat",
-    ]);
+    expect(rows()).toEqual(["acme/team-project purlis project", "acme/api", "octocat/dots"]);
     expect(screen.getAllByText("purlis project")).toHaveLength(1);
+    // Each row is described by its own forge and the account it was listed as.
+    for (const path of ["acme/team-project", "acme/api", "octocat/dots"])
+      expect(
+        screen.getByRole("button", { name: new RegExp(`^${path}`) }),
+      ).toHaveAccessibleDescription("github.com · octocat");
   });
 
   it("searches by name and owner, and says what to do when nothing matches", async () => {
@@ -135,11 +137,11 @@ describe("your repos (#1818)", () => {
     await screen.findByRole("list", { name: "Your repos" });
 
     await person.type(screen.getByLabelText("Search your repos"), "octocat");
-    expect(rows()).toEqual(["Get octocat/dots from github.com as octocat"]);
+    expect(rows()).toEqual(["octocat/dots"]);
 
     await person.clear(screen.getByLabelText("Search your repos"));
     await person.type(screen.getByLabelText("Search your repos"), "acme api");
-    expect(rows()).toEqual(["Get acme/api from github.com as octocat"]);
+    expect(rows()).toEqual(["acme/api"]);
 
     await person.type(screen.getByLabelText("Search your repos"), "zzz");
     expect(screen.queryByRole("list", { name: "Your repos" })).toBeNull();
@@ -153,7 +155,7 @@ describe("your repos (#1818)", () => {
     render(<YourRepos onPick={onPick} busy={false} />);
     await screen.findByRole("list", { name: "Your repos" });
 
-    await person.click(screen.getByRole("button", { name: /^Get acme\/team-project/ }));
+    await person.click(screen.getByRole("button", { name: /^acme\/team-project/ }));
 
     expect(onPick).toHaveBeenCalledWith("https://github.com/acme/team-project");
   });
@@ -162,7 +164,7 @@ describe("your repos (#1818)", () => {
     core(LISTED);
     render(<YourRepos onPick={vi.fn()} busy />);
     await screen.findByRole("list", { name: "Your repos" });
-    expect(screen.getByRole("button", { name: /^Get acme\/api/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^acme\/api/ })).toBeDisabled();
   });
 
   it("says, with no account at all, to sign in or paste a URL, and signs in inline", async () => {
@@ -224,7 +226,10 @@ describe("your repos (#1818)", () => {
     expect(forges).toHaveTextContent("refused purlis's sign-in as octocat");
     expect(forges).toHaveTextContent("1 repo on gitlab.com as jdoe.");
     expect(within(forges).getByRole("button", { name: "Sign in again…" })).toBeInTheDocument();
-    expect(rows()).toEqual(["Get grp/api from gitlab.com as jdoe"]);
+    expect(rows()).toEqual(["grp/api"]);
+    expect(screen.getByRole("button", { name: "grp/api" })).toHaveAccessibleDescription(
+      "gitlab.com · jdoe",
+    );
 
     const asked = forge.lists();
     forge.next(LISTED);
@@ -259,7 +264,7 @@ describe("a repo picked on Get a project (#1818 with #1815)", () => {
     const person = userEvent.setup();
     render(<GetProject onBack={vi.fn()} onOpen={onOpen} onOpenFolder={vi.fn()} />);
 
-    await person.click(await screen.findByRole("button", { name: /^Get acme\/team-project/ }));
+    await person.click(await screen.findByRole("button", { name: /^acme\/team-project/ }));
 
     await vi.waitFor(() =>
       expect(onOpen).toHaveBeenCalledWith("/Users/someone/Projects/team-project"),

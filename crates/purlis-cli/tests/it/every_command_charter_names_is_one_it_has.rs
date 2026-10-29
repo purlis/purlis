@@ -418,8 +418,10 @@ const UNREACHED: &[(&str, &str)] = &[
         "plumbing: a runner's connector runs it, never a chat",
     ),
     ("stop", "the person's kill switch, never a chat's"),
-    ("root", "a gap: no skill names it yet"),
-    ("gl-refresh", "a gap: no skill names it yet"),
+    (
+        "gl-refresh",
+        "the window's background refresher, never a chat's: a chat asks its forge itself",
+    ),
 ];
 
 /// #3798: a chat learns a command only from what it reads — a skill, a guard's refusal, a

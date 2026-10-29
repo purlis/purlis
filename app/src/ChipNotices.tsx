@@ -13,6 +13,7 @@ import {
 import type { Said } from "./actions";
 import { ActionResultNotice } from "./ActionResultNotice";
 import { trackOf, type KeptResult } from "./keptResults";
+import { Notice, type NoticeAction } from "./Notice";
 import { aboutOf, kindOf, placeOf, type Chip, type Place } from "./noticePlace";
 import { CARD_STOP } from "./regionCycle";
 import type { SettingsLink } from "./settings/links";
@@ -27,8 +28,43 @@ import { mostUrgentOf, type NoticeKind } from "./ui/titlebar/TitleBarWorkspaces"
  * press elsewhere hides it; a hidden one leaves the chip's dot, whose press shows it again.
  */
 
-/** A notice on a chip: a result the window keeps, by its place in that list. */
-export type ChipNotice = { id: number; said: Said; kind: NoticeKind };
+/**
+ * **A standing line about one workspace** (#3651): a Notice the window draws while something is
+ * true, whose dismissal is the per-project record's (`dismissals.ts`), keyed by its `cause`,
+ * not a result the window keeps. "X is gone, kept dormant" is one. It is listed in the Notices
+ * centre by its own source as it always was, and hung from its workspace's chip here too, with
+ * the same ways: the two read and write one dismissed state.
+ */
+export type StandingNotice = {
+  /** The workspace it is about, whose chip it hangs from. */
+  workspace: string;
+  /** What it is about, stably: its dismissal's key (`pin-dormant:delta`). */
+  cause: string;
+  /** Its one sentence. */
+  says: string;
+  /** Its ways on, as the Notices centre's line offers them. */
+  fixes: readonly NoticeAction[];
+  /** Dismisses it, here and in the Notices centre. */
+  dismiss: () => void;
+};
+
+/** **The line of a pin whose workspace is gone** (V91c as amended, NO-1): its cause, the
+ *  dismissal record's key, and its words, one for the Notices centre and the dormant chip. */
+export const dormantCause = (workspace: string) => `pin-dormant:${workspace}`;
+export const dormantSays = (workspace: string) =>
+  `${workspace} is gone, kept dormant: its pin comes back in its place when the workspace does.`;
+
+/** A notice on a chip: a result the window keeps, by its place in that list, or a standing
+ *  line, by its cause (#3651). */
+export type ChipNotice =
+  | { id: number; said: Said; kind: NoticeKind }
+  | { id: string; standing: StandingNotice; kind: NoticeKind };
+
+/** Dismisses `one`, wherever it is kept: the kept results, or the per-project record. */
+const dismissOne = (one: ChipNotice, does: Pick<ChipNotices, "dismiss">) => {
+  if ("standing" in one) one.standing.dismiss();
+  else does.dismiss(one.id);
+};
 
 /** What the title bar draws of the notices about its chips' workspaces. */
 export type ChipNotices = {
@@ -36,7 +72,8 @@ export type ChipNotices = {
   on: ReadonlyMap<string, readonly ChipNotice[]>;
   /** The chip whose card is up, if one is. */
   open: string | undefined;
-  /** Shows `workspace`'s card: its dot's press. */
+  /** Shows `workspace`'s card: its dot's press, or a dormant chip's, which brings back a
+   *  standing line dismissed before (#3651). */
   show: (workspace: string) => void;
   /** Hides the card up, dismissing nothing: a press anywhere else. */
   hide: () => void;
@@ -63,7 +100,14 @@ export function useChipNotices({
   chips,
   drop,
   onSettings,
+  standing = NO_STANDING,
+  bringBack,
 }: {
+  /** The standing lines about one workspace each (#3651), placed as a result about it is. */
+  standing?: readonly StandingNotice[];
+  /** Brings back what was dismissed about `workspace` before its card is shown, where a press
+   *  asks for it again (a dormant chip's). */
+  bringBack?: (workspace: string) => void;
   /** The newest result said, which brings its chip's card up when it is placed on one. */
   said: Said | undefined;
   kept: readonly KeptResult[];
@@ -74,20 +118,36 @@ export function useChipNotices({
 }): ChipNotices {
   const on = useMemo(() => {
     const by = new Map<string, ChipNotice[]>();
+    /** The workspaces whose chip is dormant: gone, so nothing is offered to do in them. */
+    const dormant = new Set(
+      chips.filter((one) => one.look === "dormant").map((one) => one.workspace),
+    );
     for (const one of kept) {
       if (one.plane !== plane) continue;
       const place = placeOfSaid(one.said, chips);
       if (place.at !== "chip") continue;
       by.set(place.workspace, [
         ...(by.get(place.workspace) ?? []),
-        { id: one.id, said: one.said, kind: kindOf(one.said) },
+        { id: one.id, said: onDormant(one.said, dormant), kind: kindOf(one.said) },
       ]);
     }
     // Newest first, by the order each was first kept, whatever order they are handed in: a line
-    // updated in place keeps its first place (#3649).
-    for (const list of by.values()) list.sort((a, b) => b.id - a.id);
+    // updated in place keeps its first place (#3649). Results alone have such an order.
+    for (const list of by.values())
+      list.sort((a, b) => (typeof a.id === "number" && typeof b.id === "number" ? b.id - a.id : 0));
+    // A standing line is older than any result this run said: after them, once they are sorted
+    // (#3651).
+    for (const line of standing) {
+      const place = placeOf({ workspace: line.workspace }, chips);
+      if (place.at !== "chip") continue;
+      by.set(place.workspace, [
+        ...(by.get(place.workspace) ?? []),
+        // A standing line's kind is said, never worked out: it is no result (#3651).
+        { id: line.cause, standing: line, kind: "info" },
+      ]);
+    }
     return by;
-  }, [kept, plane, chips]);
+  }, [kept, plane, chips, standing]);
   // **Which card is up, and in which project** (#3648's review): a card is up only in the
   // project whose result brought it up, and a project brought to the front brings none up.
   const [up, setUp] = useState<{
@@ -162,12 +222,29 @@ export function useChipNotices({
     on,
     // A card with nothing left on it is down.
     open: shown !== undefined && on.has(shown) ? shown : undefined,
-    show: (workspace) => setUp((was) => ({ ...was, open: workspace, on: plane, chipped: true })),
+    show: (workspace) => {
+      bringBack?.(workspace);
+      setUp((was) => ({ ...was, open: workspace, on: plane, chipped: true }));
+    },
     hide: () => setUp((was) => ({ ...was, open: undefined })),
     dismiss: drop,
     onSettings,
   };
 }
+
+/**
+ * **What a result says on a dormant chip** (#3651's review): its words and its Details, but no
+ * way to act in a workspace the project no longer has (an "Add a vision" on a workspace made and
+ * gone since, ADR 0034's hazard). Elsewhere, as it was said.
+ */
+function onDormant(said: Said, dormant: ReadonlySet<string>): Said {
+  if (said.workspace === undefined || !dormant.has(said.workspace)) return said;
+  if (said.ways === undefined || said.ways.length === 0) return said;
+  return { ...said, ways: [] };
+}
+
+/** No standing lines, one value for every render. */
+const NO_STANDING: readonly StandingNotice[] = [];
 
 /** The most urgent kind among `notices`: what a chip's dot shows (spec #3647). */
 export const mostUrgent = (notices: readonly ChipNotice[]): NoticeKind =>
@@ -188,7 +265,12 @@ export function ChipCard({
   takesKeyboard = false,
   onKeyboardTaken,
   clip,
+  fallback,
 }: {
+  /** **Where the keyboard goes when the chip it hung from has gone with it** (#3651's review):
+   *  a dormant chip's Forget takes the chip and the card at once. The strip's stop then: the
+   *  chosen chip, else the house, else the ⌄, as a switcher closing hands it back. */
+  fallback?: () => HTMLElement | null;
   /** What clips the chip it hangs from (the strip): out of its sight, the card is hidden. */
   clip?: RefObject<Element | null>;
   /** Brought back by a press of its dot: the keyboard goes into it as it comes, which no notice
@@ -230,19 +312,26 @@ export function ChipCard({
   // drawn, unless something else took it as it went. The dot it may have come from is gone.
   const chip = useRef<Element | null>(null);
   const clipped = useRef<Element | null>(null);
+  const instead = useRef(fallback);
   useLayoutEffect(() => {
     chip.current = anchor.current;
     clipped.current = clip?.current ?? null;
+    instead.current = fallback;
   });
   useLayoutEffect(
     () => () => {
       const had = region.current?.contains(document.activeElement) ?? false;
-      const to = chip.current;
+      const was = chip.current;
       const by = clipped.current;
-      if (!had || !(to instanceof HTMLElement)) return;
+      const otherwise = instead.current;
+      if (!had) return;
       queueMicrotask(() => {
         const at = document.activeElement;
-        if ((at !== null && at !== document.body) || !to.isConnected) return;
+        if (at !== null && at !== document.body) return;
+        // The chip, while it is still drawn; else, gone with its card (a dormant pin forgotten),
+        // the strip's stop, never the page (WCAG 2.4.3).
+        const to = was instanceof HTMLElement && was.isConnected ? was : (otherwise?.() ?? null);
+        if (to === null || !to.isConnected) return;
         // A chip out of its strip's sight is brought back into it, so the keyboard's focus is
         // never on what cannot be seen (WCAG 2.4.11); one in sight stays where it is.
         const box = to.getBoundingClientRect();
@@ -259,7 +348,7 @@ export function ChipCard({
     if (event.key !== "Escape") return;
     event.stopPropagation();
     event.preventDefault();
-    for (const one of notices) does.dismiss(one.id);
+    for (const one of notices) dismissOne(one, does);
   };
   return (
     <HungPopover triggerRef={anchor} clipRef={clip} isOpen onHide={does.hide} className="chip-card">
@@ -277,18 +366,33 @@ export function ChipCard({
         {notices.length > 1 && (
           <p className="chip-card-count">{notices.length} notices, newest first</p>
         )}
-        {notices.map((one) => (
-          <ActionResultNotice
-            key={one.id}
-            cause={`result:${one.said.from}:${one.id}`}
-            said={one.said}
-            onClose={() => does.dismiss(one.id)}
-            onSettings={does.onSettings}
-            escape={false}
-            // A way that goes from under the keyboard hands it to the card (#3649's review).
-            refocus={() => region.current}
-          />
-        ))}
+        {notices.map((one) =>
+          "standing" in one ? (
+            <Notice
+              key={one.id}
+              cause={one.standing.cause}
+              fixes={
+                one.standing.fixes.length === 0
+                  ? undefined
+                  : (one.standing.fixes as [NoticeAction, ...NoticeAction[]])
+              }
+              onDismiss={() => dismissOne(one, does)}
+            >
+              {one.standing.says}
+            </Notice>
+          ) : (
+            <ActionResultNotice
+              key={one.id}
+              cause={`result:${one.said.from}:${one.id}`}
+              said={one.said}
+              onClose={() => dismissOne(one, does)}
+              onSettings={does.onSettings}
+              escape={false}
+              // A way that goes from under the keyboard hands it to the card (#3649's review).
+              refocus={() => region.current}
+            />
+          ),
+        )}
       </div>
     </HungPopover>
   );

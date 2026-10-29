@@ -129,7 +129,7 @@ describe("the empty Skill studio", () => {
         "page",
       ),
     );
-    expect(await screen.findByRole("heading", { name: "Skill sources" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Sources" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Back" }));
     const again = await screen.findByTestId("skill-studio-empty");
     await user.click(within(again).getByRole("button", { name: "New skill" }));
@@ -157,17 +157,18 @@ describe("the offered skill sources", () => {
     expect(offered).toHaveTextContent("The collection the open skill format began with.");
     await user.click(within(offered).getByRole("button", { name: "Add Anthropic's skills" }));
 
-    const form = screen.getByRole("form", { name: "Add Anthropic's skills" });
+    const form = await screen.findByRole("dialog", { name: "Add Anthropic's skills" });
     expect(within(form).getByTestId("skill-source-offered-asks")).toHaveTextContent(
       "Nothing is installed until you review a skill from it.",
     );
     expect(within(form).getByLabelText("Repository")).toHaveValue(
       "https://github.com/anthropics/skills",
     );
+    await user.click(within(form).getByRole("button", { name: "More: branch, folder, sign-in" }));
     expect(within(form).getByLabelText("Folder")).toHaveValue("skills");
     expect(asked.some((one) => one.cmd === "skill_source_add")).toBe(false);
 
-    await user.click(within(form).getByRole("button", { name: "Add it" }));
+    await user.click(within(form).getByRole("button", { name: "Add source" }));
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_source_add")?.args).toMatchObject({
         plane: "p",
