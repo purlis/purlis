@@ -179,8 +179,8 @@ pub struct StudioSkill {
     /// for a skill a chat gets from purlis, its own for one from outside the plane, none for a
     /// skill left out.
     pub compat: Vec<SkillCompat>,
-    /// What the built-in lints say of a skill from outside the plane (SK-8): that it widens the
-    /// chat, and what else is worth knowing. Empty for the plane's and the built-in skills.
+    /// What the built-in lints say of a skill a chat gets, the plane's own too (SK-8, #3780): that
+    /// it widens the chat, and what else is worth knowing. Empty for the built-in skills.
     pub lint: Vec<String>,
     /// Each harness whose chats a router hid it from the list of, and why (SK-15), each by its
     /// own budget: the chat still has it, through the index skill. Empty where every one lists it.

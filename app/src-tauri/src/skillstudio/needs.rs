@@ -203,11 +203,7 @@ pub(crate) fn of(studio: &Studio) -> Vec<NeedsYou> {
     // What the lints say of one of the plane's own skills a chat gets (#3780): its text is the
     // person's to change.
     for skill in &studio.skills {
-        let planes = matches!(
-            skill.level,
-            Level::Project | Level::Workspace | Level::Persona
-        );
-        if skill.lint.is_empty() || !planes || !skill.on || skill.owner.is_some() {
+        if skill.lint.is_empty() || !level_origin(skill.level).of_the_plane() || !skill.on {
             continue;
         }
         let lines: Vec<String> = skill.lint.iter().map(|one| sentence(one)).collect();

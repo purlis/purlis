@@ -11213,8 +11213,8 @@ export type StudioSkill = {
 	 */
 	compat: SkillCompat[],
 	/**
-	 *  What the built-in lints say of a skill from outside the plane (SK-8): that it widens the
-	 *  chat, and what else is worth knowing. Empty for the plane's and the built-in skills.
+	 *  What the built-in lints say of a skill a chat gets, the plane's own too (SK-8, #3780): that
+	 *  it widens the chat, and what else is worth knowing. Empty for the built-in skills.
 	 */
 	lint: string[],
 	/**

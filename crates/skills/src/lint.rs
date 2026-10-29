@@ -416,7 +416,7 @@ fn scripts_named(text: &str) -> Vec<String> {
         }
         let rest = &text[at..];
         let end = rest
-            .find(|c: char| !(c.is_ascii_alphanumeric() || "._/-".contains(c)))
+            .find(|c: char| !(c.is_alphanumeric() || "._/-+@=".contains(c)))
             .unwrap_or(rest.len());
         if rest[end..].starts_with(|c: char| "*?{[<$%".contains(c)) {
             continue;

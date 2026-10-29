@@ -364,9 +364,14 @@ fn a_skill_whose_folder_is_not_listed_or_that_names_a_folder_a_glob_or_another_p
     let text = skill(
         "",
         "Run scripts/helpers, scripts/*.sh, scripts/build-${TARGET}.sh, other/scripts/x.sh \
-         and https://example.com/scripts/y.sh. See scripts/.\n",
+         and https://example.com/scripts/y.sh. See scripts/.\n\
+         Then scripts/déploy.sh and scripts/c++-build.sh.\n",
     );
-    let listed = ["scripts/helpers/a.sh".to_owned()];
+    let listed = [
+        "scripts/helpers/a.sh".to_owned(),
+        "scripts/déploy.sh".to_owned(),
+        "scripts/c++-build.sh".to_owned(),
+    ];
     assert_eq!(
         said_with_files(&text, Some(&listed)),
         Vec::<Option<String>>::new()

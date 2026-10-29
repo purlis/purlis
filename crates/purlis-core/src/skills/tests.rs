@@ -2622,10 +2622,15 @@ fn the_studio_lints_the_planes_own_skills_a_chat_gets_once_per_list() {
     std::fs::write(
         plane.join("skills/deploy/SKILL.md"),
         "---\nname: deploy\ndescription: Deploys the app to staging, then to production.\n---\n\n\
-         1. Run scripts/build.sh.\n2. Check it.\n3. Tag it with scripts/tag.sh.\n",
+         1. Run scripts/build.sh.\n2. Check it.\n3. Tag it with scripts/tag.sh.\n4. Then scripts/kept.sh.\n",
     )
     .unwrap();
     std::fs::write(plane.join("skills/deploy/scripts/build.sh"), "#!/bin/sh\n").unwrap();
+    // A link the listing does not follow is there all the same.
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("build.sh", plane.join("skills/deploy/scripts/kept.sh")).unwrap();
+    #[cfg(not(unix))]
+    std::fs::write(plane.join("skills/deploy/scripts/kept.sh"), "").unwrap();
     std::fs::write(
         plane.join("skills/review/SKILL.md"),
         "---\nname: review\ndescription: Reviews a change before it is merged.\n---\n",

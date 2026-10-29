@@ -2324,8 +2324,11 @@ fn linted(
                 .collect()
         })
         .unwrap_or_default();
-    let listed: Option<Vec<String>> =
-        listed.map(|listed| listed.into_iter().map(|(_, said)| said).collect());
+    // Only the plane's own skill is checked for the scripts it names: a chat is handed its folder,
+    // so its `scripts/` is that folder's. A repo's or a harness's skill may mean the repo's own.
+    let listed: Option<Vec<String>> = listed
+        .filter(|_| origin.of_the_plane())
+        .map(|listed| listed.into_iter().map(|(_, said)| said).collect());
     let files = purlis_skills::SkillFiles {
         name,
         text,
@@ -2342,6 +2345,16 @@ fn linted(
         has: &crate::programs::on_path,
     }
     .findings(&files);
+    // The listing stops at a link and at its depth and number of files: a script past them that
+    // is there after all is no finding.
+    if let Some(dir) =
+        skill_md.and_then(|(root, path)| root.join(path).parent().map(Path::to_owned))
+    {
+        findings.retain(|one| match &one.lint {
+            purlis_skills::Lint::NoSuchScript(said) => dir.join(said).symlink_metadata().is_err(),
+            _ => true,
+        });
+    }
     for lint in more {
         findings.extend(lint.findings(&files));
     }
@@ -2581,8 +2594,9 @@ pub enum Reading {
     /// Everything the studio draws.
     Whole,
     /// Only what Needs you's items are worked out from, for a count of them: every row, with
-    /// what is left out and why, and the lints and clashes the items read; no badge and no
-    /// router's word, which no item reads. Its items are the whole list's.
+    /// what is left out and why, and the lints and clashes the items read; no badge, no
+    /// router's word and no lint of a harness skill a persona names, which no item reads. Its
+    /// items are the whole list's.
     Needs,
 }
 
@@ -2606,11 +2620,9 @@ pub fn studio_list_for(
         &set, &set_on, plane, workspace, &names, &pins, env, &known, reading,
     );
     let mut rows = rows_of(&set, plane, &names, reading);
-    if reading == Reading::Whole {
-        with_harness_badges(&mut rows, &harnesses, &known);
-    }
     with_plane_lint(&mut rows, &set, &known);
     if reading == Reading::Whole {
+        with_harness_badges(&mut rows, &harnesses, &known);
         with_routing(&mut rows, &harnesses);
     }
     StudioList {
