@@ -1292,7 +1292,9 @@ function FoundFiles({
   onOpen: (hit: FoundFile) => void;
 }) {
   const refused = found.refused.map((why) => (
-    <p key={why} className="trouble ui-text-secondary" role="alert">
+    // No role of its own (#3917): a role's colour wins over App.css's, and none is red. It takes
+    // the view's size and the failed state's tint (`.explorer .trouble`).
+    <p key={why} className="trouble" role="alert">
       {why}
     </p>
   ));

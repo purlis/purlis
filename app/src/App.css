@@ -627,10 +627,6 @@ body {
   box-shadow: inset 0 -2px 0 var(--state-waiting);
 }
 
-.chat-browser-driver[data-driver="person"] {
-  color: var(--text-primary);
-}
-
 /* **No rule dresses every button on the bar** (#3129): one that did drew a bordered box around
    any button it reached that did not say the whole of what it is, the fresh mark among them. A
    button of the family draws itself; each mark below says all of its own look. */
@@ -3704,8 +3700,7 @@ body {
 /* **A chat's browsers, under its row** (#2024) wear a finished task's name's rules: the shared
    tree row at the level below the chat's, its mark and name in a chat's row's columns. */
 .chats-section .finished-name,
-.chats-section .chat-browser,
-.chats-section .finished-count {
+.chats-section .chat-browser {
   color: inherit;
   font: inherit;
 }
@@ -4173,8 +4168,7 @@ body {
   flex: none;
 }
 /* Its tab's amber underline is the tabs family's (`ui/tabs/tabs.css`). */
-.tabs .tab[data-wrapping-up] .tab-name,
-.chat[data-wrapping-up] .session {
+.tabs .tab[data-wrapping-up] .tab-name {
   color: var(--text-muted);
 }
 

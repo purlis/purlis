@@ -114,16 +114,63 @@ const read = (file: string) => readFileSync(join(SRC, file), "utf8");
  * Rules whose context never holds the element named, each with why. An entry names the rule
  * and the element as written, so a change to either is a new entry to look at again.
  */
-const ALLOWED: Readonly<Record<string, readonly string[]>> = {};
+const ALLOWED: Readonly<Record<string, readonly string[]>> = {
+  // A sentence wears `ui-text-secondary` and a count `ui-text-meta`, on purpose (#1920): the views' and dialogs' muted `.none` and `.pending` are for sentences that wear no role.
+  "Explorer.tsx": [
+    '.view-body .none on "none ui-text-secondary"',
+    '.view-body .none on "none ui-text-secondary"',
+    '[data-scope="dialog"] .pending on "pending ui-text-secondary"',
+    '.view-body .pending on "pending ui-text-secondary"',
+    '.view-body .none on "piece-count none ui-text-meta"',
+    '[data-scope="dialog"] .pending on "piece-count pending ui-text-meta"',
+    '.view-body .pending on "piece-count pending ui-text-meta"',
+  ],
+  // An ask's row is never an `.inbox-update`, and a read update wears no role: only an unread one does (`UpdateItem`).
+  "Inbox.tsx": [
+    '.inbox-update[data-read] .ask-says on "ask-says ask-lines inbox-primary ui-text-body ui-text-strong"',
+    '.inbox-update[data-read] .ask-says on "`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`"',
+    '.inbox-update[data-read] .ask-says on "`ask-says inbox-primary${update.read ? "" : " ui-text-body ui-text-strong"}${answers.some((one) => one.allows) ? "" : " inbox-clamped"}`"',
+  ],
+  // These are asks, never an `.inbox-update`.
+  "InboxElsewhere.tsx": [
+    '.inbox-update[data-read] .ask-says on "ask-says inbox-primary ui-text-body ui-text-strong"',
+    '.inbox-update[data-read] .ask-says on "ask-says inbox-primary ui-text-body ui-text-strong inbox-clamped"',
+    '.inbox-update[data-read] .ask-says on "ask-says inbox-primary ui-text-body ui-text-strong inbox-clamped"',
+  ],
+  // The same: a clone under way says so in `ui-text-secondary` (#1920).
+  "NotCloned.tsx": [
+    '[data-scope="dialog"] .pending on "pending ui-text-secondary"',
+    '.view-body .pending on "pending ui-text-secondary"',
+  ],
+  // The same: an empty filter's sentence wears `ui-text-secondary` (#1920).
+  "PanelList.tsx": ['.view-body .none on "none ui-text-secondary"'],
+  // A pending sentence wears `ui-text-secondary` (#1920); a note block is `trouble` or `note ui-text-secondary`, never both, so no trouble colour meets the role.
+  "Panels.tsx": [
+    '[data-scope="dialog"] .pending on "pending ui-text-secondary"',
+    '.view-body .pending on "pending ui-text-secondary"',
+    '.trouble on "block.tone === "trouble" ? "trouble" : "note ui-text-secondary""',
+    '.explorer .trouble on "block.tone === "trouble" ? "trouble" : "note ui-text-secondary""',
+    '.state-bar .trouble on "block.tone === "trouble" ? "trouble" : "note ui-text-secondary""',
+    '.panels .trouble on "block.tone === "trouble" ? "trouble" : "note ui-text-secondary""',
+  ],
+};
 
 /** How long each file's list may be: it only gets shorter. */
-const CEILING: Readonly<Record<string, number>> = {};
+const CEILING: Readonly<Record<string, number>> = {
+  "Explorer.tsx": 7,
+  "Inbox.tsx": 3,
+  "InboxElsewhere.tsx": 3,
+  "NotCloned.tsx": 2,
+  "PanelList.tsx": 1,
+  "Panels.tsx": 6,
+};
 
 describe("no App.css colour lands on a word that wears a text role (#3917)", () => {
   it("finds none in the window's components", () => {
     expect(
       ratchet(layeredOut(read("App.css"), read), ALLOWED, CEILING, {
-        added: "an App.css colour on a word that wears a role is never drawn: give the word another role, or none and the state's tint",
+        added:
+          "an App.css colour on a word that wears a role is never drawn: give the word another role, or none and the state's tint",
       }),
     ).toEqual([]);
   });
@@ -152,8 +199,7 @@ describe("no App.css colour lands on a word that wears a text role (#3917)", () 
   it("asks for each attribute the rule's element names", () => {
     const files = sourceFiles(isView);
     const css = '.mark[data-driver="person"] { color: var(--text-primary); }';
-    const drawn = (tag: string) =>
-      layeredOut(css, (file) => (file === files[0] ? tag : ""));
+    const drawn = (tag: string) => layeredOut(css, (file) => (file === files[0] ? tag : ""));
     expect(drawn('<span className="mark ui-text-meta">x</span>')).toEqual(new Map());
     expect(drawn('<span className="mark ui-text-meta" data-driver={driver}>x</span>').size).toBe(1);
   });
