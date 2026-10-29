@@ -718,3 +718,155 @@ fn a_notice_card_s_point_is_its_own_part_and_leaves_every_other_popover_s_arrow_
         );
     }
 }
+
+// ---------------------------------------------------------------------------------------
+// The crumb, the ⌄, and a switcher's rows and pins (#3656): parts drawn apart from every chip
+// ---------------------------------------------------------------------------------------
+
+/// The title bar's parts drawn apart from every chip, each with the states its own element is
+/// marked in (`ProjectCrumb`, `AllWorkspaces`, `SwitcherPin` and `SwitcherRow`).
+const APART: &[(&str, &[&str])] = &[
+    ("crumb", &["hover", "selected", "focused"]),
+    ("all", &["hover", "selected", "focused"]),
+    ("pin", &["hover", "selected", "focused"]),
+    ("row", &["hover", "selected"]),
+];
+
+/// The attribute the window marks a state by, on the part's own element.
+fn marked(state: &str) -> &'static str {
+    match state {
+        "hover" => "[data-hovered]:not([data-disabled])",
+        "selected" => "[data-selected]",
+        "focused" => "[data-focus-visible]",
+        _ => unreachable!("{state}"),
+    }
+}
+
+#[test]
+fn the_crumb_the_all_button_a_row_and_a_pin_are_reached_by_their_own_attributes() {
+    // None is drawn inside a workspace chip, so a rule inside one would reach nothing.
+    for (part, _) in APART {
+        let sheet = sheet_of(json!({ format!("titlebar.{part}.fill"): "surface.raised" }));
+        assert!(
+            sheet.contains(&format!(
+                ":where([data-scope=\"titlebar\"][data-part=\"{part}\"]) {{ background-color: var(--surface-raised); }}"
+            )),
+            "{part}: {sheet}"
+        );
+        assert!(
+            !sheet.contains(&format!(
+                "[data-part=\"workspace\"] [data-scope=\"titlebar\"][data-part=\"{part}\"]"
+            )),
+            "{part} is never reached inside a chip: {sheet}"
+        );
+    }
+}
+
+#[test]
+fn the_crumb_s_words_reach_the_crumb() {
+    // The ticket's own case (#3656): `titlebar.crumb.fill` and its words draw the crumb.
+    let sheet = sheet_of(json!({
+        "titlebar.crumb.fill": "surface.raised",
+        "titlebar.crumb.text": "text.primary",
+    }));
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"titlebar\"][data-part=\"crumb\"]) { background-color: var(--surface-raised); color: var(--text-primary); }"
+        ),
+        "{sheet}"
+    );
+}
+
+#[test]
+fn each_apart_part_s_state_reaches_the_part_marked_in_it() {
+    for (part, states) in APART {
+        for state in *states {
+            let sheet = sheet_of(json!({
+                format!("titlebar.{part}.{state}.fill"): "surface.raised",
+            }));
+            assert!(
+                sheet.contains(&format!(
+                    ":where([data-scope=\"titlebar\"][data-part=\"{part}\"]{}) {{ background-color: var(--surface-raised); }}",
+                    marked(state)
+                )),
+                "{part} {state}: {sheet}"
+            );
+        }
+    }
+}
+
+#[test]
+fn an_apart_part_in_a_chip_s_variant_or_a_state_it_is_never_in_is_said_and_left_out() {
+    // Kept in the schema since version 12 (a format only grows), but marked deprecated.
+    let keys = parts::schema()["properties"].clone();
+    for key in [
+        "titlebar.crumb.pinned.fill",
+        "titlebar.all.unpinned.hover.text",
+        "titlebar.pin.root.fill",
+        "titlebar.row.focused.fill",
+    ] {
+        let loaded = load(&with_parts(json!({ key: "surface.raised" })));
+        assert!(!loaded.refused, "{key}: {:?}", said(&loaded));
+        assert!(
+            said(&loaded)
+                .iter()
+                .any(|one| one.contains(&format!("parts.{key} is not")) && one.contains("apart")),
+            "{key}: {:?}",
+            said(&loaded)
+        );
+        assert!(
+            !parts::stylesheet(loaded.theme.first()).contains("var(--surface-raised)"),
+            "{key} draws nothing"
+        );
+        assert_eq!(keys[key]["deprecated"], true, "{key}");
+    }
+    // Its own keys are not deprecated.
+    for key in ["titlebar.crumb.hover.fill", "titlebar.row.selected.text"] {
+        assert!(keys[key].get("deprecated").is_none(), "{key}");
+    }
+}
+
+#[test]
+fn a_chip_s_own_parts_are_still_reached_inside_it() {
+    // The count is drawn in the chip, in its variants and states.
+    let sheet = sheet_of(json!({ "titlebar.count.pinned.hover.fill": "surface.raised" }));
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"titlebar\"][data-part=\"workspace\"][data-variant=\"pinned\"][data-hovered]:not([data-disabled]) [data-scope=\"titlebar\"][data-part=\"count\"])"
+        ),
+        "{sheet}"
+    );
+}
+
+#[test]
+fn the_pairs_the_crumb_the_all_button_a_row_and_a_pin_draw_are_held() {
+    // What `titlebar.css` draws them in, at rest and in each state, on the title bar and on the
+    // switcher's popover: each is a pair the check holds every built-in to
+    // (`check_tests::every_built_in_still_clears_the_check`), words at 4.5:1 and marks at 3:1.
+    let words = 4.5;
+    let mark = 3.0;
+    for (front, back, floor) in [
+        // The crumb: secondary words on the bar, and on the card's fill under the pointer and
+        // while its switcher is open.
+        ("text.secondary", "surface.deep", words),
+        ("text.secondary", "surface.overlay", words),
+        // The ⌄, a mark: quiet on the bar, primary on the card's fill.
+        ("text.quiet", "surface.deep", mark),
+        ("text.primary", "surface.overlay", mark),
+        // A pin, a mark on the popover: faint at rest, primary under the pointer, the accent
+        // while pinned.
+        ("text.faint", "surface.overlay", mark),
+        ("accent.base", "surface.overlay", mark),
+        // A row: secondary on the popover, primary on the selected row's fill, faint while it
+        // cannot run.
+        ("text.primary", "list.selected", words),
+    ] {
+        assert!(
+            check::PAIRS.iter().any(|pair| pair.front == front
+                && pair.back == back
+                && pair.under.is_none()
+                && pair.floor >= floor),
+            "{front} on {back} at {floor}:1 is held"
+        );
+    }
+}

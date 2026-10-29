@@ -1505,8 +1505,10 @@ fn the_schema_completes_every_part_key_and_no_size_inside_a_state() {
     ] {
         assert!(!keys.contains_key(key), "{key}");
     }
-    // Every key it completes is one the engine reads, with a value the engine accepts.
-    for key in keys.keys() {
+    // Every key it completes is one the engine reads, with a value the engine accepts, but a
+    // key kept only because a format only grows, marked deprecated, which is said (#3656).
+    for (key, entry) in keys {
+        let kept = entry["deprecated"] == true;
         let value =
             if key.ends_with("fill") || key.ends_with("border-colour") || key.ends_with(".text") {
                 json!("text.secondary")
@@ -1522,10 +1524,11 @@ fn the_schema_completes_every_part_key_and_no_size_inside_a_state() {
                 json!(2)
             };
         let loaded = load(&with_parts(json!({ key.clone(): value })));
-        assert!(
-            !said(&loaded)
+        assert_eq!(
+            said(&loaded)
                 .iter()
                 .any(|one| one.contains("is not a component part")),
+            kept,
             "{key}"
         );
     }
