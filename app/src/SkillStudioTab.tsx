@@ -536,15 +536,19 @@ export function SkillStudioTab({
       >
         {`${NEW_SKILL}…`}
       </Button>
-      <Button
-        size="sm"
-        icon={<MessageSquarePlus aria-hidden="true" />}
-        isDisabled={studio === undefined}
-        onPress={() => studio !== undefined && askDraft(plane, scope, studio.levels)}
-      >
-        {DRAFT_WITH_A_CHAT}
-      </Button>
     </>
+  );
+  /** A chat's draft, asked for where drafts are listed and where skills are: the Library's tools
+   *  and the Drafts page, not the bar, which keeps to the prototype's and fits a narrow tab. */
+  const draftAsk = (
+    <Button
+      size="sm"
+      icon={<MessageSquarePlus aria-hidden="true" />}
+      isDisabled={studio === undefined}
+      onPress={() => studio !== undefined && askDraft(plane, scope, studio.levels)}
+    >
+      {DRAFT_WITH_A_CHAT}
+    </Button>
   );
   const path: Crumb[] = [
     { id: page, label: STUDIO_PAGE_NAMES[page] },
@@ -584,9 +588,11 @@ export function SkillStudioTab({
   );
 
   /** The list pane of a page that is not Library: its heading, its lead line, what it holds. */
-  const pageList = (lead: string, body: ReactNode) => (
+  const pageList = (lead: string, body: ReactNode, tools?: ReactNode) => (
     <>
-      <ViewListHead title={STUDIO_PAGE_NAMES[page]} lead={lead} />
+      <ViewListHead title={STUDIO_PAGE_NAMES[page]} lead={lead}>
+        {tools !== undefined && <div className="skill-library-tools">{tools}</div>}
+      </ViewListHead>
       <div className="skill-studio-page">{body}</div>
     </>
   );
@@ -661,6 +667,7 @@ export function SkillStudioTab({
                 })
               }
             />
+            {draftAsk}
             {persona !== null && studio !== undefined && (
               /* The persona's own skills list (#2768): every skill choice is the studio's. A name
                  the studio lists has Add on its page; this takes one it does not. */
@@ -854,6 +861,7 @@ export function SkillStudioTab({
           }
         />
       )),
+      draftAsk,
     );
   } else if (page === "sources") {
     list = pageList(

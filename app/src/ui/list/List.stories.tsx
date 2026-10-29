@@ -325,21 +325,24 @@ export const LinesUnderTheWords: Story = {
   render: () => <LinesUnder />,
   play: async ({ canvas, userEvent }) => {
     const list = canvas.getByRole("grid", { name: "Skills" });
+    /** The height of what a line under holds, without its padding. */
+    const wordsOf = (name: string) => {
+      const below = canvas.getByTestId(`below-${name}`);
+      const drawn = getComputedStyle(below);
+      return below.clientHeight - parseFloat(drawn.paddingTop) - parseFloat(drawn.paddingBottom);
+    };
     for (const name of ["deploy", "lint-rs"]) {
       const row = within(list).getByRole("row", { name: new RegExp(`^${name}`) });
-      const below = canvas.getByTestId(`below-${name}`);
-      const rowBox = row.getBoundingClientRect();
-      const belowBox = below.getBoundingClientRect();
+      const belowBox = canvas.getByTestId(`below-${name}`).getBoundingClientRect();
       const label = within(row).getByText(name).getBoundingClientRect();
-      // Under the words, inside the row, and whole: nothing of its lines is past the row's end.
+      // Under the words, inside the row: nothing of its lines is past the row's end.
       await expect(belowBox.top).toBeGreaterThanOrEqual(label.bottom - 1);
-      await expect(belowBox.bottom).toBeLessThanOrEqual(rowBox.bottom + 1);
-      await expect(below.scrollHeight).toBeLessThanOrEqual(below.clientHeight + 1);
+      await expect(belowBox.bottom).toBeLessThanOrEqual(row.getBoundingClientRect().bottom + 1);
     }
-    // One line is one line high; the reason is two.
-    const one = canvas.getByTestId("below-deploy").getBoundingClientRect().height;
-    const two = canvas.getByTestId("below-lint-rs").getBoundingClientRect().height;
-    await expect(two).toBeGreaterThan(one * 1.5);
+    // Cut at its clamp and never mid-line: the description is one whole line (it never wraps),
+    // and the reason exactly two of them.
+    const line = wordsOf("deploy");
+    await expect(Math.abs(wordsOf("lint-rs") / line - 2)).toBeLessThan(0.1);
     await userEvent.tab();
     const deploy = within(list).getByRole("row", { name: /^deploy/ });
     await untilFocused(() => deploy, "Lines under: Tab lands on the chosen row");
