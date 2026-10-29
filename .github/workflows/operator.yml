@@ -27,7 +27,7 @@ on:
       # The desktop's side of a cluster runner, which the kind run checks too (#2056).
       - crates/purlis-core/src/clusterpool*
       - crates/purlis-core/src/runnerlink*
-      - crates/purlis-core/tests/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs
+      - crates/purlis-core/tests/it/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs
       - crates/purlis-cli/src/bridge.rs
       - fixtures/runner-link-key/**
   push:
@@ -44,7 +44,7 @@ on:
       # The desktop's side of a cluster runner, which the kind run checks too (#2056).
       - crates/purlis-core/src/clusterpool*
       - crates/purlis-core/src/runnerlink*
-      - crates/purlis-core/tests/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs
+      - crates/purlis-core/tests/it/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs
       - crates/purlis-cli/src/bridge.rs
       - fixtures/runner-link-key/**
   # Nightly, so a new advisory against the operator's own lock, or a change elsewhere that

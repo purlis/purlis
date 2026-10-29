@@ -207,6 +207,9 @@ fn a_harness_lists_charter_s_tools() {
             "browser_new",
             "browser_close",
             "browser_login",
+            "browser_downloads",
+            "browser_save_download",
+            "browser_upload",
             "theme_preview",
         ]
     );

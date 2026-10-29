@@ -366,18 +366,34 @@ fn a_cluster_runner_is_paired_once_since_its_pairing_takes_the_key() {
 }
 
 #[test]
-fn a_key_made_at_start_is_made_only_where_none_is() {
+fn a_key_an_earlier_start_left_is_made_again_and_never_through_a_link() {
+    // A first step started again, without a home on the pod's volume: the key it left, which
+    // nobody paired with, is made again in its place.
     let (_pod, handoff, public) = pod_made_a_key();
     let published = handoff.with_file_name("termination-log");
-    let refused = make_at_start(&handoff, &published).unwrap_err();
-    assert!(refused.contains("could not be made"), "{refused}");
-    assert_eq!(std::fs::read_to_string(&published).unwrap(), public);
-    // Nor through a link someone put there.
+    make_at_start(&handoff, &published).expect("the step starts again");
+    let again = std::fs::read_to_string(&published).unwrap();
+    assert!(is_lower_hex(&again, 64));
+    assert_ne!(again, public, "a new key");
+    let home = tempfile::tempdir().unwrap();
+    let runner = pair_with_key_made_at_start(home.path(), &desktop(), &handoff).unwrap();
+    assert_eq!(
+        hex_of(runner.key.as_bytes()),
+        again,
+        "the new key is the one paired with"
+    );
+    // A link someone put there goes as a link: nothing is written where it pointed.
     let pod = tempfile::tempdir().unwrap();
     let elsewhere = pod.path().join("elsewhere");
     std::os::unix::fs::symlink(&elsewhere, pod.path().join("link-key")).unwrap();
-    assert!(make_at_start(&pod.path().join("link-key"), &published).is_err());
+    make_at_start(&pod.path().join("link-key"), &published).unwrap();
     assert!(!elsewhere.exists());
+    assert!(
+        !std::fs::symlink_metadata(pod.path().join("link-key"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
 }
 
 #[test]
@@ -603,4 +619,48 @@ fn an_image_home_that_reaches_the_runners_home_through_a_link_or_dots_is_refused
         );
         assert!(!home.exists());
     }
+}
+
+#[test]
+fn a_claims_mark_that_is_not_a_plain_file_is_refused_without_waiting_on_it() {
+    let volume = tempfile::tempdir().unwrap();
+    let marker = volume.path().join(CLAIM_MARKER);
+    let made = crate::forklock::status(std::process::Command::new("mkfifo").arg(&marker)).unwrap();
+    assert!(made.success());
+    // Neither making a home nor taking one waits on a fifo put where the mark belongs.
+    assert!(seed_home(&volume.path().join("home"), None, CLAIM).is_err());
+    std::fs::create_dir(volume.path().join("home")).unwrap();
+    assert!(seed_home(&volume.path().join("home"), None, CLAIM).is_err());
+    // Nor is a folder a mark.
+    let other = tempfile::tempdir().unwrap();
+    std::fs::create_dir(other.path().join(CLAIM_MARKER)).unwrap();
+    std::fs::create_dir(other.path().join("home")).unwrap();
+    assert!(seed_home(&other.path().join("home"), None, CLAIM).is_err());
+}
+
+#[test]
+fn a_key_an_earlier_start_of_the_pod_left_unpaired_is_made_again() {
+    let volume = tempfile::tempdir().unwrap();
+    let (pod, handoff, first) = pod_started_on(volume.path(), None);
+    assert!(handoff.exists());
+    // The runtime makes the pod's sandbox again; its folder in memory kept the key.
+    let published = pod.path().join("termination-log");
+    let home = volume.path().join("home");
+    make_at_start_in(
+        &handoff,
+        &published,
+        &home,
+        None,
+        &home.join(".config"),
+        CLAIM,
+    )
+    .expect("the step starts again");
+    let again = std::fs::read_to_string(&published).unwrap();
+    assert!(is_lower_hex(&again, 64));
+    assert_ne!(
+        again, first,
+        "a new key, handed over in the old one's place"
+    );
+    let runner = pair_with_key_made_at_start(&home.join(".config"), &desktop(), &handoff).unwrap();
+    assert_eq!(hex_of(runner.key.as_bytes()), again);
 }

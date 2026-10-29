@@ -359,6 +359,10 @@ pub(crate) fn sweep(root: &std::path::Path, record: &purlis_core::reopen::Record
         .filter_map(|chat| chat.cwd.clone())
         .collect();
     purlis_core::skills::levels::sweep(root, &ids);
-    purlis_core::hoststart::sweep_settings(root, &ids);
+    purlis_core::hoststart::sweep_settings(
+        purlis_core::hoststart::chat_settings_here().as_deref(),
+        root,
+        &ids,
+    );
     drafts::sweep_tries(root, &cwds);
 }

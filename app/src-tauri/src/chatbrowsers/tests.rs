@@ -286,6 +286,7 @@ fn answered_started(
         unsandboxed,
         &|| as_persona.clone(),
         &logins,
+        &|| Err("no folder here".to_owned()),
         1000,
     )
 }
@@ -625,6 +626,7 @@ fn a_running_browser_ends_when_its_chats_reach_narrows_and_the_next_opens_on_wha
         false,
         &AsPersona::default,
         &logins,
+        &|| Err("no folder here".to_owned()),
         1000,
     );
     let Answer::Browsed { browsed, .. } = answer else {
@@ -691,6 +693,7 @@ fn with_no_session_host_there_is_no_browser_and_the_chat_is_told_so() {
                 false,
                 &AsPersona::default,
                 &logins,
+                &|| Err("no folder here".to_owned()),
                 0,
             )
             .0,
@@ -1539,6 +1542,7 @@ fn answered_at(
             true,
             &AsPersona::default,
             &logins,
+            &|| Err("no folder here".to_owned()),
             now,
         )
         .0
@@ -2754,6 +2758,7 @@ fn a_chat_on_a_pools_runner_has_its_browser_started_on_that_runner() {
             false,
             &AsPersona::default,
             &logins,
+            &|| Err("no folder here".to_owned()),
             1000,
         )
     };
@@ -3199,6 +3204,7 @@ fn a_runners_refusal_for_its_engines_sandbox_names_that_runner_to_the_chat_and_o
             false,
             &AsPersona::default,
             &logins,
+            &|| Err("no folder here".to_owned()),
             1000,
         )
     };
