@@ -51,19 +51,26 @@ fn files_in(folder: &Path) -> Vec<String> {
     names
 }
 
-/// Clicks the link or button named `words` on the download page.
-fn click(browser: &Browser, words: &str) {
+/// Clicks the link or button named `words` on the download page: the downloads its answer
+/// told.
+fn click(browser: &Browser, words: &str) -> Vec<DownloadInfo> {
     let target = ref_on(&find(browser, words), words);
-    call(browser, Call::Click { target });
+    call(browser, Call::Click { target }).downloads
 }
 
 /// The browser's one download once `ready` holds of it, as the agent's acts are told of it:
-/// each answer's downloads are those that began or moved on since the last.
-fn told_until(browser: &Browser, ready: impl Fn(&DownloadInfo) -> bool) -> DownloadInfo {
+/// each answer's downloads are those that began or moved on since the last, the click's that
+/// began it (`clicked`) first.
+fn told_until(
+    browser: &Browser,
+    clicked: Vec<DownloadInfo>,
+    ready: impl Fn(&DownloadInfo) -> bool,
+) -> DownloadInfo {
     let start = Instant::now();
     let mut told: BTreeMap<String, DownloadInfo> = BTreeMap::new();
+    let mut newly = clicked;
     loop {
-        for one in call(browser, Call::Pages).downloads {
+        for one in newly {
             told.insert(one.id.clone(), one);
         }
         if let Some(one) = told.values().find(|one| ready(one)) {
@@ -75,6 +82,7 @@ fn told_until(browser: &Browser, ready: impl Fn(&DownloadInfo) -> bool) -> Downl
             "the download was never told as asked: {told:?}"
         );
         std::thread::sleep(Duration::from_millis(50));
+        newly = call(browser, Call::Pages).downloads;
     }
 }
 
@@ -97,9 +105,9 @@ fn a_download_sent_as_an_attachment_is_held_under_the_engines_name_and_told_by_t
     };
     let held = holding(&browser, data.path());
     open(&browser, "downloads.html");
-    click(&browser, "Export the report");
+    let clicked = click(&browser, "Export the report");
 
-    let done = told_until(&browser, |one| one.state == DownloadState::Done);
+    let done = told_until(&browser, clicked, |one| one.state == DownloadState::Done);
     assert_eq!(done.id, "d1");
     assert_eq!(
         done.name, EXPORTED_AS,
@@ -124,9 +132,9 @@ fn a_download_a_page_makes_from_a_blob_is_held_and_from_the_pages_origin() {
     };
     let held = holding(&browser, data.path());
     open(&browser, "downloads.html");
-    click(&browser, "Make a file");
+    let clicked = click(&browser, "Make a file");
 
-    let done = told_until(&browser, |one| one.state == DownloadState::Done);
+    let done = told_until(&browser, clicked, |one| one.state == DownloadState::Done);
     assert_eq!(done.name, "made.txt");
     assert_eq!(
         done.origin.as_deref(),
@@ -149,10 +157,12 @@ fn past_the_limit_is_cancelled_and_removed(link: &str) {
     };
     let held = holding(&browser, data.path());
     open(&browser, "downloads.html");
-    let clicked = Instant::now();
-    click(&browser, link);
+    let clicked_at = Instant::now();
+    let clicked = click(&browser, link);
 
-    let cut = told_until(&browser, |one| one.state == DownloadState::TooLarge);
+    let cut = told_until(&browser, clicked, |one| {
+        one.state == DownloadState::TooLarge
+    });
     assert!(
         cut.received < BIG as u64,
         "cut before it came whole: {cut:?}"
@@ -164,7 +174,7 @@ fn past_the_limit_is_cancelled_and_removed(link: &str) {
     );
     // The site would have sent it whole by now: nothing of it came back.
     let whole = Duration::from_secs(8);
-    if let Some(left) = whole.checked_sub(clicked.elapsed()) {
+    if let Some(left) = whole.checked_sub(clicked_at.elapsed()) {
         std::thread::sleep(left);
     }
     assert!(files_in(&held).is_empty(), "{:?}", files_in(&held));
