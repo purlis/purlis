@@ -10,11 +10,13 @@
  * seam test (`skills/source/tests.rs`).
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
-import { AT_THE_ROOT } from "./skillStudio";
+import { SkillStudioTab } from "./SkillStudioTab";
+import { PLANE, STUDIO_HISTORY, forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
+import { AT_THE_ROOT, sourceKey } from "./skillStudio";
+import { openViewAt } from "./ui/panel/viewHistory";
 import { PROJECT } from "./skillChanges";
 
 afterEach(() => {
@@ -250,9 +252,9 @@ describe("the Sources page", () => {
     expect(row).toHaveTextContent("example skills");
     expect(row).toHaveTextContent("1 update");
     expect(row).toHaveTextContent("https://example.com/skills · folder skills · The whole project");
+    expect(row).toHaveTextContent("Not confirmed on this machine");
     const offered = await screen.findByTestId("skill-source-offered");
     expect(offered).toHaveTextContent("Anthropic's skills");
-    expect(offered).not.toHaveTextContent("from purlis");
     // The old inline panels are gone: a source is opened on its page, never browsed in place.
     expect(screen.queryByRole("button", { name: /^Browse / })).not.toBeInTheDocument();
   });
@@ -533,5 +535,72 @@ describe("the update review", () => {
     await user.click(screen.getByRole("button", { name: "Back" }));
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByTestId("skill-sources")).toBeInTheDocument();
+  });
+});
+
+describe("the states of each page", () => {
+  it("holds rows while the sources are read, and says what will appear when there are none", async () => {
+    let answer: (sources: unknown) => void = () => undefined;
+    core({
+      answers: {
+        skill_sources: () =>
+          new Promise((resolve) => {
+            answer = resolve;
+          }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    expect(await screen.findByTestId("skill-sources-reading")).toHaveAttribute("aria-busy", "true");
+    answer([]);
+    const empty = await screen.findByTestId("skill-sources-empty");
+    expect(empty).toHaveTextContent("This project has no skill sources yet");
+    await user.click(within(empty).getByRole("button", { name: "Add source…" }));
+    expect(await screen.findByRole("dialog", { name: "Add a source" })).toBeInTheDocument();
+  });
+
+  it("says in place when a source could not be read, and when it holds no skill", async () => {
+    let refused = true;
+    core({
+      answers: {
+        skill_source_browse: () => {
+          if (refused) throw new Error("the network is unreachable");
+          return { commit: commit("a"), skills: [], not_skills: [] };
+        },
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    const unread = await within(page).findByTestId("skill-sources-unread");
+    expect(unread).toHaveTextContent("purlis could not read example skills");
+    expect(unread).toHaveTextContent("the network is unreachable");
+    refused = false;
+    await user.click(within(unread).getByRole("button", { name: "Try again" }));
+    expect(await within(page).findByTestId("skill-source-no-skills")).toBeInTheDocument();
+  });
+
+  it("says when no update is waiting any more, with Accept update unavailable", async () => {
+    // A review whose update was accepted elsewhere, reached by back, forward or a stale path.
+    core();
+    openViewAt(STUDIO_HISTORY, {
+      page: "sources",
+      scope: AT_THE_ROOT,
+      sources: {
+        at: "update",
+        source: sourceKey(SOURCE.remote),
+        label: SOURCE.label,
+        skill: "notify",
+      },
+    });
+    render(<SkillStudioTab plane={PLANE} changed={0} />);
+    const review = await screen.findByTestId("update-review");
+    expect(await within(review).findByTestId("update-none")).toHaveTextContent(
+      "No update of notify is waiting",
+    );
+    expect(within(review).getByRole("button", { name: "Accept update" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 });

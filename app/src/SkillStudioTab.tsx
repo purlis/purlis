@@ -106,7 +106,6 @@ type Doing =
   | { what: "move"; skill: StudioSkill; from: SkillLevel; to: SkillLevel }
   | { what: "delete"; skill: StudioSkill; level: SkillLevel; users: SkillUsers };
 
-/** What a change in progress is called in the path. */
 /** **The path inside Sources** (#3687): the source, then the review, as the prototype names
  *  them. Pressing the source goes to its page; the review is where the person is. */
 function sourcesPath(at: SourcesAt): Crumb[] {
@@ -118,6 +117,7 @@ function sourcesPath(at: SourcesAt): Crumb[] {
   ];
 }
 
+/** What a change in progress is called in the path. */
 const DOING_NAMES: Record<Doing["what"], string> = {
   new: NEW_SKILL,
   edit: "Edit",

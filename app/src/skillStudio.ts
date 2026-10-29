@@ -183,14 +183,21 @@ export function skillRowNamed(name: string): string {
   return `#${name}`;
 }
 
-/** Two places are one: the same page, scope and skill chosen. */
+/** Two places are one: the same page, scope and skill chosen, and the same page inside Sources. */
 export function samePlace(one: StudioPlace, other: StudioPlace): boolean {
   return (
     one.page === other.page &&
     sameScope(one.scope, other.scope) &&
     one.skill === other.skill &&
-    JSON.stringify(one.sources) === JSON.stringify(other.sources)
+    sameSourcesAt(one.sources, other.sources)
   );
+}
+
+/** Two pages inside Sources are one: the same page, of the same source and skill. */
+function sameSourcesAt(one: SourcesAt | undefined, other: SourcesAt | undefined): boolean {
+  if (one === undefined || other === undefined) return one === other;
+  const skill = (at: SourcesAt) => (at.at === "source" ? undefined : at.skill);
+  return one.at === other.at && one.source === other.source && skill(one) === skill(other);
 }
 
 /** A target's key starts with this: it names a place to open the studio at, never a tab. */

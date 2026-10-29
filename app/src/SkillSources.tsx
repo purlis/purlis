@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Plus, RotateCw } from "lucide-react";
 import {
   commands,
@@ -133,7 +133,27 @@ function useSourcesRead(plane: string, changed: number) {
   return { sources, offered, updates, again: () => setAsked((n) => n + 1) };
 }
 
-/** **A read in place**: "Reading …" while it is asked, why it failed with Try again, or what it
+/** **Rows held while a read is asked** (S11): the layout stays, and after about a second a line
+ *  says what is being read. */
+function Reading({ what }: { what: string }) {
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    const after = window.setTimeout(() => setLate(true), 1000);
+    return () => window.clearTimeout(after);
+  }, []);
+  return (
+    <div className="skill-studio-placeholders" aria-busy="true" data-testid="skill-sources-reading">
+      {[0, 1, 2].map((at) => (
+        <div key={at} className="skill-studio-placeholder" aria-hidden="true" />
+      ))}
+      <p role="status" className="honest">
+        {late ? `Reading ${what}…` : ""}
+      </p>
+    </div>
+  );
+}
+
+/** **A read in place**: rows held while it is asked, why it failed with Try again, or what it
  *  read, without hiding the rest of the page. */
 function Held<T>({
   read,
@@ -147,8 +167,7 @@ function Held<T>({
   again: () => void;
   children: (data: T) => ReactNode;
 }) {
-  if (read === undefined)
-    return <EmptyState headline={`Reading ${what}…`} variant="panel" role="status" />;
+  if (read === undefined) return <Reading what={what} />;
   if (read.refused !== undefined)
     return (
       <EmptyState
@@ -200,14 +219,22 @@ export function SkillSourcesPage({
 }) {
   const read = useSourcesRead(plane, changed);
   const [adding, setAdding] = useState<{ offered?: OfferedSource }>();
-  /** A change, and where the tab goes once it is made. */
-  const changeThen = (label: string, run: () => Promise<Answer>, to?: SourcesAt) =>
+  // Where the tab is now, for a change that ends after the person has gone somewhere else.
+  const here = useRef(at);
+  useEffect(() => {
+    here.current = at;
+  }, [at]);
+  /** A change, and where the tab goes once it is made: only from the page it was made on, so a
+   *  person who went on meanwhile is never pulled back. */
+  const changeThen = (label: string, run: () => Promise<Answer>, to?: SourcesAt) => {
+    const from = at;
     change(label, () =>
       run().then((answer) => {
-        if (answer.status === "ok") onGo(to);
+        if (answer.status === "ok" && here.current === from) onGo(to);
         return answer;
       }),
     );
+  };
   const sources = read.sources?.data ?? [];
   const updates = read.updates?.data;
   const sourceAt =
@@ -375,6 +402,7 @@ function SourcesList({
             cause="skill-updates"
             tone="attention"
             label={counted(offers.length, "update waiting", "updates waiting")}
+            // Rebuilt so its type says it holds at least one.
             fixes={[firstFix, ...otherFixes]}
           >
             <span data-testid="skill-updates">
@@ -401,7 +429,7 @@ function SourcesList({
             fixes={[
               {
                 label: "Confirm it",
-                busy,
+                off: busy ? BUSY : undefined,
                 primary: true,
                 onPress: () => onConfirm(one.remote),
               },
@@ -431,7 +459,12 @@ function SourcesList({
                   variant="panel"
                   testid="skill-sources-empty"
                   action={
-                    <Button size="sm" isDisabled={busy} onPress={() => onAdd()}>
+                    <Button
+                      size="sm"
+                      isDisabled={busy}
+                      tooltip={busy ? BUSY : undefined}
+                      onPress={() => onAdd()}
+                    >
                       Add source…
                     </Button>
                   }
@@ -448,6 +481,9 @@ function SourcesList({
                   {sources.map((source) => {
                     const key = sourceKey(source.remote);
                     const waiting = offers.filter((one) => sourceKey(one.remote) === key).length;
+                    const unconfirmed = updates?.unconfirmed.some(
+                      (one) => sourceKey(one.remote) === key,
+                    );
                     return (
                       <ListRow
                         key={key}
@@ -456,9 +492,16 @@ function SourcesList({
                         data-testid="skill-source"
                       >
                         <RowLabel>{source.label}</RowLabel>
-                        {waiting > 0 && (
+                        {(waiting > 0 || unconfirmed === true) && (
                           <RowTrail>
-                            <Badge variant="accent">{counted(waiting, "update", "updates")}</Badge>
+                            {unconfirmed === true && (
+                              <Badge variant="waiting">Not confirmed on this machine</Badge>
+                            )}
+                            {waiting > 0 && (
+                              <Badge variant="accent">
+                                {counted(waiting, "update", "updates")}
+                              </Badge>
+                            )}
                           </RowTrail>
                         )}
                         <RowBelow clamp={1}>{aboutSource(source)}</RowBelow>
@@ -483,10 +526,7 @@ function SourcesList({
                   data-testid="skill-source-offered"
                 >
                   <CardTitle>{one.name}</CardTitle>
-                  <p className="honest">
-                    {one.why}
-                    {one.offering === "catalogue" && " · from purlis"}
-                  </p>
+                  <p className="honest">{one.why}</p>
                   <ButtonRow size="sm">
                     <Button
                       size="sm"
@@ -706,7 +746,14 @@ function SourcePage({
             cause={`skill-source-unconfirmed:${key}`}
             tone="attention"
             label="Not confirmed on this machine"
-            fixes={[{ label: "Confirm it", busy, primary: true, onPress: onConfirm }]}
+            fixes={[
+              {
+                label: "Confirm it",
+                off: busy ? BUSY : undefined,
+                primary: true,
+                onPress: onConfirm,
+              },
+            ]}
           >
             purlis asks it nothing until you confirm it.
           </Notice>
@@ -723,8 +770,8 @@ function SourcePage({
             ) : (
               <List
                 aria-label={`Skills in ${source.label}`}
-                onAction={(name) => {
-                  const skill = data.skills.find((one) => one.name === name);
+                onAction={(folder) => {
+                  const skill = data.skills.find((one) => one.folder === folder);
                   if (skill !== undefined) onward(skill);
                 }}
               >
@@ -734,7 +781,7 @@ function SourcePage({
                   return (
                     <ListRow
                       key={skill.folder}
-                      id={skill.name}
+                      id={skill.folder}
                       textValue={skill.name}
                       data-testid={`offered-${skill.name}`}
                     >
@@ -802,6 +849,8 @@ function SourcePage({
           main={{
             children: "Remove source",
             variant: "danger",
+            isDisabled: busy,
+            tooltip: busy ? BUSY : undefined,
             onPress: () => {
               setRemoving(false);
               onRemove();
@@ -841,6 +890,9 @@ function useRead<T>(
   };
 }
 
+/** The mark of a risky item and of a risky file: in the waiting tone, never a colour alone. */
+const LOOK_CLOSELY = <Badge variant="waiting">Look closely</Badge>;
+
 /** A summary, risky items marked, as the core reads and marks it. */
 export function Summary({ summary, testid }: { summary: ReviewSummary; testid?: string }) {
   if (summary.empty)
@@ -849,7 +901,7 @@ export function Summary({ summary, testid }: { summary: ReviewSummary; testid?: 
         Instructions only: no scripts, network hosts, ! commands or writes outside the workspace.
       </p>
     );
-  const mark = (risky: boolean) => (risky ? <Badge variant="waiting">Look closely</Badge> : null);
+  const mark = (risky: boolean) => (risky ? LOOK_CLOSELY : null);
   return (
     <ul className="skill-summary" data-testid={testid}>
       {summary.scripts.map((one) => (
@@ -914,13 +966,7 @@ function SkillReviewed({ skill }: { skill: ReviewSkill }) {
             size="sm"
             label={`Show ${one.path}`}
             data-testid={`file-${one.path}`}
-            trail={
-              one.risky ? (
-                <Badge variant="waiting">Look closely</Badge>
-              ) : (
-                <Badge variant="ok">Plain</Badge>
-              )
-            }
+            trail={one.risky ? LOOK_CLOSELY : <Badge variant="ok">Plain</Badge>}
           >
             <pre className="skill-review-file" data-testid="skill-review-file">
               {one.text ?? "This file is not text, so it is not shown."}
@@ -1084,6 +1130,7 @@ function UpdateReviewPage({
 }) {
   const { read, again } = useRead(
     offer === undefined ? undefined : `${at.source}\u0000${at.skill}\u0000${offer.newer.id}`,
+    // Never asked without an offer (its key is none then); the guard is for the type alone.
     () =>
       offer === undefined
         ? Promise.resolve({ status: "error" as const, error: "There is no update of it." })
