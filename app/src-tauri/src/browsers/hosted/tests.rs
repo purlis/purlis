@@ -1480,6 +1480,70 @@ fn a_browsers_end_the_window_did_not_ask_for_is_said_crashed_and_one_it_asked_fo
     );
 }
 
+/// **A chat that ran, or may have run, on a pool's runner without the sandbox ends the browsers
+/// the window started there, and no browser starts there after** (D-2050-27, D-2050-28, #3702):
+/// held untrusted by the window even where this machine keeps no record of its runners.
+#[test]
+fn a_chat_with_no_sandbox_on_a_pools_runner_ends_its_browsers_there_and_starts_none_after() {
+    use crate::chatbrowsers::Driver;
+    let with = a_window_with_a_runner();
+    let window = &with.window;
+    let program = window
+        .browsers
+        .start(
+            &window.root,
+            Some("builds"),
+            purlis_session_protocol::browsing::BrowserReach::default(),
+            None,
+        )
+        .expect("it starts on the runner");
+    let told = Arc::new(Mutex::new(Vec::<String>::new()));
+    window.browsers.connection.ending_browsers_with({
+        let told = Arc::clone(&told);
+        Arc::new(move |pool: &str| told.lock().unwrap().push(pool.to_owned()))
+    });
+
+    window
+        .browsers
+        .connection
+        .to_a_pool("builds")
+        .ran_unsandboxed()
+        .expect("nothing to keep on a machine that keeps no runners");
+
+    assert_eq!(*told.lock().unwrap(), ["builds"], "its browsers are ended");
+    assert_eq!(window.browsers.end_on("builds"), 1);
+    assert_eq!(
+        window.browsers.pool_of(&program),
+        None,
+        "ended and forgotten"
+    );
+    let refused = window
+        .browsers
+        .start(
+            &window.root,
+            Some("builds"),
+            purlis_session_protocol::browsing::BrowserReach::default(),
+            None,
+        )
+        .unwrap_err();
+    assert!(
+        format!("{refused:?}").contains("without the sandbox"),
+        "{refused:?}"
+    );
+    // This machine's own browsers are not the runner's.
+    assert!(
+        window
+            .browsers
+            .start(
+                &window.root,
+                None,
+                purlis_session_protocol::browsing::BrowserReach::default(),
+                None,
+            )
+            .is_ok()
+    );
+}
+
 /// #3297: the window holds a runner browser to the more of its pool's limits and the defaults,
 /// so it draws what a runner before 1.49 sends (the defaults) and what one since sends (the
 /// pool's), and nothing past both.

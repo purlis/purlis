@@ -119,7 +119,14 @@ fn the_tools_are_the_ones_charter_names_and_each_says_what_it_does() {
             "dispatch",
             "dispatch_list",
             "dispatch_read",
+            "dispatch_wait",
+            "dispatch_tell",
+            "dispatch_answer",
+            "dispatch_cancel",
+            "dispatch_close",
             "dispatch_report",
+            "dispatch_note",
+            "dispatch_ask",
             "ask_operator",
         ]
     );
@@ -980,6 +987,90 @@ fn dispatch_read_names_the_task_by_its_chat_number_and_nothing_else() {
     assert_eq!((tool.schema)()["required"], json!(["chat"]));
 }
 
+/// #3786, ruled 2026-10-29: every `purlis dispatch` subcommand has a chat tool, so a chat has
+/// nothing to pipe and nothing for a rider to meet; and each runs without its harness asking,
+/// the one that only waits among the reads and the rest among the dispatch tools.
+#[test]
+fn every_dispatch_subcommand_has_a_tool_a_claude_code_chat_runs_without_asking() {
+    for (tool, reads) in [
+        (DISPATCH_LIST, true),
+        (DISPATCH_READ, true),
+        (DISPATCH_WAIT, true),
+        (DISPATCH_TELL, false),
+        (DISPATCH_ANSWER, false),
+        (DISPATCH_CANCEL, false),
+        (DISPATCH_CLOSE, false),
+        (DISPATCH_REPORT, false),
+        (DISPATCH_NOTE, false),
+        (DISPATCH_ASK, false),
+    ] {
+        let spec = TOOLS
+            .iter()
+            .find(|spec| spec.name == tool)
+            .unwrap_or_else(|| panic!("{tool} is a tool"));
+        assert_eq!(spec.read_only, reads, "{tool}");
+        if reads {
+            assert!(PRE_ALLOWED.contains(&tool), "{tool}");
+        } else {
+            assert!(DISPATCH_TOOLS.contains(&tool), "{tool}");
+        }
+        // Handed to the app, never run here.
+        let said = call(
+            std::path::Path::new("/nowhere"),
+            &crate::active::Place::PlaneRoot,
+            tool,
+            &serde_json::Map::new(),
+            chrono::NaiveDate::from_ymd_opt(2026, 10, 29)
+                .and_then(|day| day.and_hms_opt(12, 0, 0))
+                .expect("a time"),
+        )
+        .expect_err("not run here");
+        assert!(said.contains("purlis's MCP server"), "{tool}: {said}");
+    }
+}
+
+#[test]
+fn a_dispatch_tool_names_its_task_by_number_and_its_text_whole() {
+    let args = |value: Value| value.as_object().cloned().unwrap_or_default();
+    assert_eq!(
+        dispatch_task(&args(json!({"chat": 12})), DISPATCH_CANCEL),
+        Ok(12)
+    );
+    let said = dispatch_task(&args(json!({"chat": "12"})), DISPATCH_CLOSE).expect_err("refused");
+    assert_eq!(
+        said,
+        "dispatch_close needs `chat`: the task's chat, by its number in dispatch_list"
+    );
+    assert_eq!(
+        dispatch_text(
+            &args(json!({"text": "and the logs"})),
+            "text",
+            DISPATCH_TELL
+        ),
+        Ok("and the logs".to_owned())
+    );
+    let said = dispatch_text(&args(json!({})), "question", DISPATCH_ASK).expect_err("refused");
+    assert_eq!(said, "dispatch_ask needs `question`, as text");
+    assert_eq!(dispatch_wait_seconds(&args(json!({}))), Ok(None));
+    assert_eq!(
+        dispatch_wait_seconds(&args(json!({"wait_seconds": 60}))),
+        Ok(Some(60))
+    );
+    assert!(dispatch_wait_seconds(&args(json!({"wait_seconds": "60"}))).is_err());
+    for (tool, required) in [
+        (DISPATCH_WAIT, json!(["chat"])),
+        (DISPATCH_TELL, json!(["chat", "text"])),
+        (DISPATCH_ANSWER, json!(["chat", "text"])),
+        (DISPATCH_CANCEL, json!(["chat"])),
+        (DISPATCH_CLOSE, json!(["chat"])),
+        (DISPATCH_NOTE, json!(["text"])),
+        (DISPATCH_ASK, json!(["question"])),
+    ] {
+        let spec = TOOLS.iter().find(|spec| spec.name == tool).expect("a tool");
+        assert_eq!((spec.schema)()["required"], required, "{tool}");
+    }
+}
+
 #[test]
 fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
     // V79: the pre-allowed tools are the five reads, and `persona_where` beside them
@@ -996,6 +1087,8 @@ fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
             "persona_where",
             "dispatch_list",
             "dispatch_read",
+            // A wait on one of the chat's own tasks (#3786).
+            "dispatch_wait",
             // The theme specimen's pictures (#2330, ADR 0064 amended 2026-10-17).
             "theme_preview",
             // The chat's own skills, read or loaded (SK-13, ADR 0063 amended 2026-10-20).

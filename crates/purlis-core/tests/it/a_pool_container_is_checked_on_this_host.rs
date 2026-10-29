@@ -6,12 +6,12 @@
 //! write of it recorded, and the check held to it. A correctly made container passes, and each
 //! loosened one is refused.
 //!
-//! It needs an image named by digest in `DOCKER_POOL_MEASURE_IMAGE` that keeps running whatever
-//! its command (a stand-in will do: nothing in it is run), the command `DOCKER_POOL_TEST_DOCKER`
-//! names (`docker` when unset; a Podman, or a script running one under `sudo`, answers as it
-//! does), and a folder in `DOCKER_POOL_MEASURE_OUT` to write what it read into. Without the
-//! image it runs nothing and passes: `.github/workflows/docker-pool-hosts.yml` runs it on each
-//! host it is measured on.
+//! It needs an image named by digest in `DOCKER_POOL_MEASURE_IMAGE` whose `/usr/local/bin/purlis`
+//! keeps running whatever its arguments (a stand-in will do: nothing else in it is run), the
+//! command `DOCKER_POOL_TEST_DOCKER` names (`docker` when unset; a Podman, or a script running one
+//! under `sudo`, answers as it does), and a folder in `DOCKER_POOL_MEASURE_OUT` to write what it
+//! read into. Without the image it runs nothing and passes:
+//! `.github/workflows/docker-pool-hosts.yml` runs it on each host it is measured on.
 
 #![cfg(unix)]
 
