@@ -25,6 +25,7 @@ use crate::ending::{EndedBy, Ending};
 
 mod aim;
 mod drawn;
+mod files;
 mod inspect;
 mod login;
 mod reach;

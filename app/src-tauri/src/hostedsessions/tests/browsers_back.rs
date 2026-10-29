@@ -77,6 +77,7 @@ impl Browsing2 {
             false,
             &AsPersona::default,
             &|_| Err("no logins here".into()),
+            &|| Err("no folder here".to_owned()),
             1000,
         );
         // As every command of the window's ends: its browsers' notes follow.

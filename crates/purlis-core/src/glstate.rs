@@ -414,7 +414,7 @@ mod tests {
     /// still this module's, and it is held by
     /// `past_the_cooldown_a_refresh_that_is_still_running_suppresses_a_second` and
     /// `a_refresh_whose_process_is_gone_does_not_suppress_the_next_one` in
-    /// `tests/when_the_forge_cache_is_refreshed.rs`, which drive [`When::alive`] directly.
+    /// `tests/it/when_the_forge_cache_is_refreshed.rs`, which drive [`When::alive`] directly.
     /// This is the wire between the two.
     #[test]
     fn the_liveness_a_lock_is_read_against_is_the_cores_one_answer() {

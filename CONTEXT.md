@@ -781,6 +781,19 @@ goes, an address the agent wrote or anything sent to a site new to the project a
 proxy carries a site new to the project only where the judge let a request to it go.
 _Avoid_: filter, firewall, interceptor
 
+**Holding folder** (of a browser):
+Where a browser's downloads land: a folder of the browser's own data, which no chat reads or
+writes, each file under the engine's own name for it. The agent is told a download's name, size
+and origin. A chat has a download only once it **saves** it into its folder, which needs the
+person's yes for its origin, for that chat. It goes with the browser.
+_Avoid_: downloads folder (that is the person's own), cache
+
+**Upload** (from a browser):
+Files of the chat's own folder put into a page's file input: named by the agent relative to that
+folder, read by purlis under the chat's read rules following no link, and handed to the browser
+as purlis's copy, never as the chat's file.
+_Avoid_: attach, file pick (the person's own file dialog is not one)
+
 ### Chats working together
 
 Every agent another agent starts is a chat, so each word here is a part of **Chat** (ADR 0090).

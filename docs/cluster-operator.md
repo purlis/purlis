@@ -445,7 +445,7 @@ and memory included. Give cluster-admin and node access accordingly.
   chart in a namespace that enforces the restricted Pod Security Standard; `kubectl diff`
   showing the plain manifests would change nothing the chart made; then
   `operator/tests/on_a_kind_cluster.rs`, which checks only what the cluster shows; then the
-  desktop's side, `crates/purlis-core/tests/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs`:
+  desktop's side, `crates/purlis-core/tests/it/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs`:
   a Claim, the operator's statement checked against the Pool's key, a pairing over
   `kubectl exec` that must agree with it (and one reaching another runner, refused), then a
   chat on the runner through the link; then `helm uninstall`, which leaves the definitions and

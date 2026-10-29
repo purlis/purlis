@@ -201,7 +201,7 @@ command inside was never asked about, and its docstring listed that as a limit. 
 now reads every substitution a shell runs as a command of its own. Curated row 29 (a vault read
 inside `"$( … )"`) moved from allowed to the read refusal. Generated rows 802 and 2302 moved the
 same way: inside `"$( … )"` each runs a reader moved into the vault folder (`env -C`), which the
-guard refuses there as it refuses the same command unquoted. `lr` is the only key that moved. `tests/a_substitution_is_read_wherever_the_shell_runs_it.rs` checks the new
+guard refuses there as it refuses the same command unquoted. `lr` is the only key that moved. `tests/it/a_substitution_is_read_wherever_the_shell_runs_it.rs` checks the new
 reading against bash and zsh.
 
 **And where a handoff became a dispatch (#1444).** The frozen Python's A7 kept the harness's
