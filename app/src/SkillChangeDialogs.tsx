@@ -158,6 +158,12 @@ export function moveChanges(
 
 // --- Reading who uses it ------------------------------------------------------------------------
 
+/** Whether `data` is who uses a skill, as this window reads it. */
+function usersShaped(data: SkillUsers): boolean {
+  const lists = [data.workspaces, data.personas, data.skills, data.pinned_by] as unknown[];
+  return lists.every(Array.isArray);
+}
+
 /** Who uses the skill `name` at `level`, read as the dialog opens: the answer, or why not. */
 function useUsers(plane: string, level: SkillLevel, name: string) {
   const [asked, setAsked] = useState(0);
@@ -170,7 +176,10 @@ function useUsers(plane: string, level: SkillLevel, name: string) {
       .skillUsers(plane, level, name)
       .then((answer) => {
         if (!live) return;
-        if (answer.status === "ok") setRead({ key, users: answer.data });
+        // Taken only in its own shape: a core that answers another leaves it unread.
+        if (answer.status === "ok" && usersShaped(answer.data))
+          setRead({ key, users: answer.data });
+        else if (answer.status === "ok") setRead({ key, refused: "it answered in another shape" });
         else setRead({ key, refused: answer.error });
       })
       .catch((err: unknown) => {
