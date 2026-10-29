@@ -1274,6 +1274,20 @@ impl Heeding {
         }
     }
 
+    /// **The host these lines come from is lost to the host that relays them** (#3408): the
+    /// relay's link to it went down, and that host let go of every line it had handed on, so
+    /// none of its `secret exec`s waits for this window any more. Each one's input ends here, one
+    /// taken but not yet begun too, so whatever waits on its asker hears that it went: a run on a
+    /// pool's runner lets go of the person's Ask and reads no vault. The link the lines come over
+    /// stays, and what comes over it next is taken as before.
+    pub fn lost_its_host(&self) {
+        let mut inputs = lock(&self.inputs);
+        let execs: Vec<u64> = inputs.by_exec.keys().copied().collect();
+        for exec in execs {
+            inputs.input_ended(exec);
+        }
+    }
+
     /// **Takes line `id`, heard over link `link`, in the order the lines came**, before it is
     /// heard ([`Heeding::hear`]), which for a line that waits is on a thread of its own: a
     /// `secret exec` is tracked from here, so input that comes for it before it begins is kept

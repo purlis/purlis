@@ -616,6 +616,12 @@ impl Relayed {
         self.heeding.unlinked(link);
     }
 
+    /// **The host this link relays to is lost to it** (#3408): that host let go of every line it
+    /// handed on, so each `secret exec` from it ends here, and a pool tool's Ask goes with it.
+    pub fn lost_its_host(&self) {
+        self.heeding.lost_its_host();
+    }
+
     /// The socket the host listens on for this project.
     pub fn socket(&self) -> &Path {
         &self.socket

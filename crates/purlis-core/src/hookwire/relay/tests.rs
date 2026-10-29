@@ -484,6 +484,52 @@ fn when_the_link_ends_no_secret_execs_input_is_kept() {
     );
 }
 
+/// #3408: a host the lines are relayed from that is lost to its relay let go of every line it
+/// handed on, so every `secret exec` from it ends its input here: one that runs, and one taken
+/// but not yet begun, which begins already ended. The link stays, and the next exec on it reads
+/// its own input.
+#[test]
+fn a_host_lost_to_its_relay_ends_every_secret_execs_input_and_the_link_goes_on() {
+    let heeding = a_heeding();
+    assert!(admitted(&heeding, LINK, 5, ECHOES));
+    heeding.hear(LINK, 2, input(5, "typed"), nothing());
+    assert!(admitted(&heeding, LINK, 6, ECHOES));
+    let (replies, replied) = mpsc::channel();
+    std::thread::spawn({
+        let heeding = Arc::clone(&heeding);
+        move || {
+            let reply: Reply = Arc::new(move |r| {
+                let _ = replies.send(r);
+            });
+            heeding.hear(LINK, 6, an_exec(ECHOES), reply);
+        }
+    });
+    heeding.hear(LINK, 3, input(6, "first"), nothing());
+    assert_eq!(
+        replied.recv_timeout(Duration::from_secs(10)),
+        Ok(Replied::Wrote {
+            text: "ran first\n".into()
+        })
+    );
+
+    heeding.lost_its_host();
+
+    assert_eq!(
+        replied.recv_timeout(Duration::from_secs(10)),
+        Ok(Replied::Ended),
+        "the running exec's input did not end"
+    );
+    assert_eq!(
+        an_exec_heard(&heeding, 5, ECHOES),
+        ran(&["typed"]),
+        "the exec not begun begins with its input ended"
+    );
+    assert!(admitted(&heeding, LINK, 9, ECHOES), "the link goes on");
+    heeding.hear(LINK, 10, input(9, "own"), nothing());
+    heeding.hear(LINK, 11, Heard::InputEnded { of: 9 }, nothing());
+    assert_eq!(an_exec_heard(&heeding, 9, ECHOES), ran(&["own"]));
+}
+
 /// A host started again numbers its lines from the start: an exec under a number used before
 /// the window linked to it again reads only its own input, never what came before (#2271).
 #[test]

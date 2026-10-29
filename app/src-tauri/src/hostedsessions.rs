@@ -1825,6 +1825,12 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                 device, resumes_at, ..
             }) => lock(&shared.runner_log).missed(&device, resumes_at),
             Told::Pushed(Pushed::LinkDown { key_changed, .. }) => {
+                // The runner let go of every line it handed on over the link that went: each
+                // command of its that waits here has gone, its Ask with it (#3408).
+                let projects: Vec<Arc<Relayed>> = lock(&shared.hearing).values().cloned().collect();
+                for relayed in projects {
+                    relayed.lost_its_host();
+                }
                 lock(&shared.runner_log).link(true);
                 reconnect(&shared, Reconnect::Started);
                 if key_changed {
