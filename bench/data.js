@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793270158607,
+  "lastUpdate": 1793272136922,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29400,6 +29400,48 @@ window.BENCHMARK_DATA = {
             "value": 101.62744749999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.465, 101.545, 101.627, 103.271, 103.488 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "97cbf68b0ca2a3960e84fb8f5d84309234a58295",
+          "message": "Dispatch never stops chats: riders refused not asked, every subcommand a tool, parents keep track of tasks (#3785, #3786, #3788) (#3789)\n\n* Dispatch: a rider is refused for a retry, never asked; close pre-allowed; cancel refused for a typed-in task (#3785)\n\nSupersedes D-1444-14 (operator ruling 2026-10-29). A dispatch that only\nlooks (list, read, wait, --help) gets no hook verdict beside another\ncommand; a dispatch that writes, a handoff or a worktree commit with a\nrider is denied naming the shape to retry. toolgate::asks is gone: the\nrefusal is the Bash guard's last arm. Bash(purlis dispatch close *) joins\nDISPATCH_TASK_ALLOW, and the app refuses a cancel of a task the person\ntyped in, in close's sentence. ADR 0064 amended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Dispatch: every subcommand is a pre-allowed chat tool, taught first (#3786)\n\ndispatch_wait, dispatch_tell, dispatch_answer, dispatch_cancel,\ndispatch_close, dispatch_note and dispatch_ask run the same functions as\ntheir purlis dispatch subcommands, on every harness. wait joins the\npre-allowed reads; the six that write join DISPATCH_TOOLS. The\npretooluse-dispatch matcher and OUR_TOOLS name all eleven, so a helper is\nstill refused. The persona skill and the start-of-chat note teach the\ntools first and the command second. ADR 0064 amended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Dispatch: a parent keeps its open tasks in view (#3788)\n\nA task the chat was told had stopped on the person is said once to be\nat work again when its prompt or block clears. While the chat has open\ntasks, every turn is shown a roster: number, name and state, quoted as\ndata. A dispatch under the exact name of one of the chat's open tasks is\nrefused, naming its number and state and offering wait, tell or cancel\n(dispatchdecision::same_name_open, called beside the restart refusal).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Dispatch: tests give each open task a name of its own; plugin hooks and read-only tool args follow (#3788, #3786)\n\nThe duplicate-name refusal (#3788) refuses a second open task under one\nname, so app tests that dispatched one name twice now name each task;\nthe worktree test keeps its point with two names a branch is drawn the\nsame from. The bundled plugin's hooks.json is regenerated for the\ndispatch matcher (#3786), and the read-only MCP test calls the new\ndispatch tools.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* Dispatch: review fixes, a call looks only where every dispatch in it looks (#3785, #3786, #3788)\n\n- A call is a look only where every dispatch, handoff and commit in it,\n  at every level a shell runs, is a dispatch that looks; a look that\n  writes a file by redirection is refused as a write is; --help counts\n  only in a flag position of the command's words.\n- Changelog entries move to changes/ fragments; CHANGELOG.md and the\n  2026-10-13 ADR note are back as they were.\n- same_name_open says its name is quoted as data and sits above\n  standing_of's doc; the typed-in sentence draws its name on one line.\n- back-at-work is its own fn beside newly_waiting; long lines wrapped.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T10:22:20Z",
+          "tree_id": "caef073a21ab7e8646d6793d7ffda2cf76149324",
+          "url": "https://github.com/purlis/purlis/commit/97cbf68b0ca2a3960e84fb8f5d84309234a58295"
+        },
+        "date": 1793272133383,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.43738449999999995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.428, 0.435, 0.437, 0.450, 0.455 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.360674500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.234, 16.259, 16.361, 16.411, 16.526 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7027065,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.874, 101.527, 101.703, 102.404, 102.591 ms"
           }
         ]
       }
