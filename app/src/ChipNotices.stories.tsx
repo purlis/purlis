@@ -265,7 +265,12 @@ export const HangsFromItsChip: Story = {
     await expect(again.contains(document.activeElement)).toBe(true);
     await expect(document.activeElement).not.toBe(again);
     // Details opens in place. The picture is the card, its Details open.
-    await userEvent.click(within(again).getByRole("button", { name: "Details" }));
+    const details = within(again).getByRole("button", { name: "Details" });
+    await userEvent.click(details);
+    // WebKit's click focuses no button, so the keyboard is put on Details as Chromium's click
+    // leaves it: one picture in both browsers.
+    details.focus();
+    await untilFocused(() => details, "Details, on the card");
     await expect(again).toHaveTextContent("ready (LOCAL)");
   },
 };
