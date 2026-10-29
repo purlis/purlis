@@ -202,11 +202,15 @@ function ArrivingInItsPanel() {
 /** The rows the list draws. */
 const rowsIn = (canvas: HTMLElement) => canvas.querySelectorAll('[role="treeitem"]').length;
 
+/** One pointer for a whole walk, which says what it leaves as it moves, as a real one does:
+ *  each call of the bare `userEvent` starts a pointer of its own, from nowhere. */
+type Pointer = ReturnType<typeof userEvent.setup>;
+
 /** Moves the pointer to a point of the page, onto whatever the page draws there. */
-async function pointAt(x: number, y: number) {
+async function pointAt(user: Pointer, x: number, y: number) {
   const there = document.elementFromPoint(x, y);
   await expect(there).not.toBeNull();
-  await userEvent.pointer({ target: there as Element, coords: { clientX: x, clientY: y } });
+  await user.pointer({ target: there as Element, coords: { clientX: x, clientY: y } });
 }
 
 /**
@@ -222,9 +226,10 @@ export const HeldAcrossTheGapToTheCard: Story = {
   // What it holds to is what the pointer does, and its rows at rest are `ScrolledUnderItsHead`'s.
   parameters: { screenshot: false },
   play: async ({ canvasElement }) => {
+    const user = userEvent.setup();
     const row = canvasElement.querySelector<HTMLElement>('[role="treeitem"][data-session="1"]');
     await expect(row).not.toBeNull();
-    await userEvent.hover(row as HTMLElement);
+    await user.hover(row as HTMLElement);
     const card = await waitFor(
       () => {
         const up = document.querySelector<HTMLElement>('[data-testid="chat-card-1"]');
@@ -249,15 +254,15 @@ export const HeldAcrossTheGapToTheCard: Story = {
     ).toBe(false);
 
     // Slowly: onto the gap, a moment there, then onto the card.
-    await pointAt(gap, y);
+    await pointAt(user, gap, y);
     await new Promise((done) => setTimeout(done, 30));
-    await pointAt(to.left + 8, to.top + 8);
+    await pointAt(user, to.left + 8, to.top + 8);
     await expect(card).toBeVisible();
     await new Promise((done) => setTimeout(done, 50));
     await expect(rowsIn(canvasElement)).toBe(2);
 
     // Off the card for anywhere else: the list lets go, and the chat that arrived is drawn.
-    await pointAt(to.left + 8, to.bottom + 40);
+    await pointAt(user, to.left + 8, to.bottom + 40);
     await waitFor(() => expect(rowsIn(canvasElement)).toBe(3), { timeout: 2000 });
   },
 };
