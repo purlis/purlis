@@ -13,6 +13,7 @@ repo. This skill crosses that boundary correctly.
 
 ```bash
 purlis workspace current      # the active workspace, by name
+purlis root                   # the plane root this folder sits in, from anywhere under it
 ```
 
 Clones live at `workspaces/<workspace>/<repo>`. Work in the **active** workspace only.
