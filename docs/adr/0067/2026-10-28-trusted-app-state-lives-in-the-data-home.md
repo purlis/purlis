@@ -54,6 +54,10 @@
    aside, a move or copy, records an older purlis kept, a link in their place) holds every folder
    behind that one Accept. The one-time move sets the plane's copies aside rather than removing
    them, so an older purlis still attached finds them gone, never half removed.
-7. **No cost at a chat's open.** The move runs once per project open, and after its mark is written
+7. **What stays open.** A project whose whole state folder the person removes counts as one purlis
+   was never used in again: its folders start accepted at its next open. A project used only from
+   the command line holds its workspace and persona folders until it is opened once in the app and
+   the person presses Accept the folders.
+8. **No cost at a chat's open.** The move runs once per project open, and after its mark is written
    it looks at that one name alone. A chat's start reads the same stores it read before, in their
    new place.

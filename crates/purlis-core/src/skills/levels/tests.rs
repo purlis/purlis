@@ -124,6 +124,7 @@ fn a_workspace_made_while_a_sandboxed_chat_runs_stays_left_out_until_the_person_
 fn a_workspace_the_app_makes_on_a_chats_request_is_never_vouched_for() {
     let tmp = plane(&[CHAT]);
     let root = tmp.path();
+    confirm(root, &listed(root)).unwrap();
     note(root, CHAT, "7").unwrap();
     // The brokered create a sandboxed chat asks the app for: no vouch on that road.
     let code = crate::wscmd::create::create(
@@ -144,18 +145,21 @@ fn a_workspace_the_app_makes_on_a_chats_request_is_never_vouched_for() {
     // Made or not here (it needs git), whatever it made it did not vouch for.
     let _ = code;
     skill(root, "workspaces/asked/skills/planted", "planted");
-    assert!(!set_in(root, "asked").0.contains(&"planted".to_owned()));
+    let why = made_since(root)(&root.join("workspaces/asked")).expect("held");
+    assert!(why.contains("while chat 7 was running"), "{why}");
 }
 
 #[test]
 fn a_restart_keeps_the_levels_its_chat_started_with() {
     let tmp = plane(&[CHAT]);
     let root = tmp.path();
+    confirm(root, &listed(root)).unwrap();
     note(root, CHAT, "7").unwrap();
     skill(root, "workspaces/new/skills/planted", "planted");
     // The same chat started again: what it may have made in its first run stays suspect.
     note(root, CHAT, "7").unwrap();
-    assert!(!set_in(root, "new").0.contains(&"planted".to_owned()));
+    let why = made_since(root)(&root.join("workspaces/new")).expect("held");
+    assert!(why.contains("while chat 7 was running"), "{why}");
 }
 
 #[test]
@@ -303,15 +307,16 @@ fn a_start_that_could_not_be_noted_never_accepts_a_folder_made_since_until_it_is
 fn a_record_a_sweep_cannot_read_holds_every_folder_before_it_goes() {
     let tmp = plane(&[]);
     let root = tmp.path();
+    confirm(root, &listed(root)).unwrap();
     let state = crate::appstate::made(root).unwrap();
-    std::fs::create_dir_all(state.join(DIR)).unwrap();
     let record = state.join(DIR).join(format!("{CHAT}.json"));
     std::fs::write(&record, "not json").unwrap();
     noted_long_ago(root, CHAT);
     sweep(root, &[]);
     assert!(!record.exists());
     for owner in ["workspaces/ops", "personas/steward"] {
-        assert!(made_since(root)(&root.join(owner)).is_some(), "{owner}");
+        let why = made_since(root)(&root.join(owner)).expect("held");
+        assert!(why.contains("made by a chat"), "{owner}: {why}");
     }
 }
 
@@ -319,16 +324,21 @@ fn a_record_a_sweep_cannot_read_holds_every_folder_before_it_goes() {
 fn folders_not_accepted_that_cannot_be_read_hold_every_folder() {
     let tmp = plane(&[]);
     let root = tmp.path();
+    confirm(root, &listed(root)).unwrap();
     let state = crate::appstate::made(root).unwrap();
-    std::fs::create_dir_all(state.join(DIR)).unwrap();
     std::fs::write(state.join(DIR).join(UNACCEPTED), "not json").unwrap();
     for owner in ["workspaces/ops", "personas/steward"] {
-        assert!(made_since(root)(&root.join(owner)).is_some(), "{owner}");
+        assert_eq!(
+            made_since(root)(&root.join(owner)).as_deref(),
+            Some(UNREAD),
+            "{owner}"
+        );
     }
-    // Accepting one leaves the rest held.
+    // Accepting one leaves the rest held, as made by a chat.
     accept(root, "workspaces/ops").unwrap();
     assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
-    assert!(made_since(root)(&root.join("personas/steward")).is_some());
+    let why = made_since(root)(&root.join("personas/steward")).expect("held");
+    assert!(why.contains("made by a chat"), "{why}");
 }
 
 #[test]
@@ -496,4 +506,32 @@ fn a_chat_on_the_record_with_no_older_levels_holds_a_folder_made_after_the_accep
     skill(root, "workspaces/x/skills/y", "y");
     let why = made_since(root)(&root.join("workspaces/x")).expect("held");
     assert!(why.contains("chat 7"), "{why}");
+}
+
+#[test]
+fn a_record_of_open_chats_that_cannot_be_read_holds_a_folder_made_after_the_accept() {
+    let tmp = plane(&[CHAT]);
+    let root = tmp.path();
+    std::fs::write(crate::reopen::path(root), "{ not json").unwrap();
+    crate::appstate::move_out_of_the_plane(root);
+    confirm(root, &listed(root)).unwrap();
+    skill(root, "workspaces/x/skills/y", "y");
+    assert!(made_since(root)(&root.join("workspaces/x")).is_some());
+}
+
+#[test]
+fn folder_names_are_matched_as_the_disk_spells_them() {
+    // A folder the record lists in one case, asked about in another.
+    let tmp = plane(&[CHAT]);
+    let root = tmp.path();
+    confirm(root, &listed(root)).unwrap();
+    note(root, CHAT, "7").unwrap();
+    skill(root, "workspaces/evil/skills/planted", "planted");
+    // The chat closes: what it could have made waits for the person, by its name on the disk.
+    noted_long_ago(root, CHAT);
+    sweep(root, &[]);
+    let why = made_since(root)(&root.join("workspaces/EVIL")).expect("held");
+    assert!(why.contains("made by a chat"), "{why}");
+    // The folder there before the chat is that folder, however it is asked about.
+    assert_eq!(made_since(root)(&root.join("workspaces/OPS")), None);
 }

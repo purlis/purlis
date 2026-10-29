@@ -298,7 +298,8 @@ const UNREAD: &str = "purlis could not read which of this project's folders you 
 /// What every workspace and persona folder is left out with where purlis cannot confirm which of
 /// them the person accepted ([`confirmed`]).
 pub const UNCONFIRMED: &str = "purlis can't confirm which of this project's folders you accepted \
-     before: accept them again in the Skill studio";
+     before: open the project once in the purlis app and press Accept the folders in the Skill \
+     studio's Needs you";
 
 /// [`made_since`], with `state` the project's app state, or `None` where there is none. **Held by
 /// default**: unless `state` holds levels records this purlis confirmed for this project
@@ -328,9 +329,10 @@ fn made_since_in(root: &Path, state: Option<PathBuf>) -> MadeSince {
             accepted = accepted_one_by_one(state);
         }
     }
+    let on_disk = owners(root);
     let root = root.to_path_buf();
     Box::new(move |owner: &Path| {
-        let rel = rel_in(&root, owner)?;
+        let rel = as_the_disk_spells(&on_disk, rel_in(&root, owner)?);
         if unread && an_owner(&rel) {
             return Some(UNREAD.to_owned());
         }
@@ -353,6 +355,21 @@ fn made_since_in(root: &Path, state: Option<PathBuf>) -> MadeSince {
             .contains(&rel)
             .then(|| format!("its folder was made by a chat: {ACCEPT_IT}"))
     })
+}
+
+/// **`rel` as the disk spells it**: the workspace or persona folder of that name among `on_disk`,
+/// where `rel` names one only in another case (a disk that folds case opens both names as one
+/// folder). `rel` itself where it is one of them, or none is.
+fn as_the_disk_spells(on_disk: &BTreeSet<String>, rel: String) -> String {
+    if on_disk.contains(&rel) {
+        return rel;
+    }
+    let lower = rel.to_lowercase();
+    on_disk
+        .iter()
+        .find(|folder| folder.to_lowercase() == lower)
+        .cloned()
+        .unwrap_or(rel)
 }
 
 /// `owner` relative to the plane at `root`, `/` between the parts.
@@ -507,20 +524,28 @@ pub fn sweep(root: &Path, open: &[String]) {
 /// levels the workspace and persona folders there now, where it has no record there yet: what the
 /// move of an older purlis's records out of the plane does, so a chat that started before the
 /// upgrade and runs on holds every folder it makes after it, as a chat noted at its start does.
-/// Nothing of the plane's own records is read. Where the record of open chats cannot be read, one
-/// record no sweep removes holds them all ([`UNNOTED`]).
+/// Nothing of the plane's own records is read. Where the record of open chats is there and cannot
+/// be read, or names a running chat with no id of its own, one record no sweep removes holds them
+/// all ([`UNNOTED`]).
 pub(crate) fn noted_again(state: &Path, root: &Path) -> Result<(), String> {
     let now = owners(root);
-    let chats: Vec<(String, String)> = match crate::reopen::read_or_refusal(root) {
-        Ok(record) => record
+    let unnoted = || (UNNOTED.to_owned(), "a chat".to_owned());
+    let chats: Vec<(String, String)> = match crate::reopen::read_strictly(root) {
+        Ok(None) => Vec::new(),
+        Ok(Some(record)) => record
             .chats
             .iter()
             .filter_map(|chat| {
-                let id = chat.identity.id.clone().filter(|id| an_id(id))?;
-                Some((id, chat.name.clone()))
+                match chat.identity.id.clone().filter(|id| an_id(id)) {
+                    Some(id) => Some((id, chat.name.clone())),
+                    // A running chat with no id of its own is held by one record for all.
+                    None if chat.pid.is_some_and(crate::process::alive) => Some(unnoted()),
+                    None => None,
+                }
             })
             .collect(),
-        Err(_) => vec![(UNNOTED.to_owned(), "a chat".to_owned())],
+        // A record this purlis cannot read could name any chat: one record holds them all.
+        Err(_) => vec![unnoted()],
     };
     for (id, name) in chats {
         if read(state, &id).is_some() {
@@ -631,6 +656,8 @@ pub fn confirm(root: &Path, folders: &[String]) -> Result<(), String> {
         write_unaccepted(&state, &kept)?;
     }
     write_list(&state, ACCEPTED, &Unaccepted::default())?;
+    // Every chat on the record of open chats keeps its own record through the Accept.
+    noted_again(&state, root)?;
     crate::appstate::mark_levels_confirmed(&state, root)
 }
 
