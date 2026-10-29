@@ -20,6 +20,8 @@
  *   ISO week in local time, #3492), and its money this week only where it declares a price per
  *   hour (#3491). With no pool priced there is no money column; a pool that declares none has an
  *   empty money cell. A cost is never guessed.
+ * - **A chat's or browser's project** is named on its row once the window holds more than one
+ *   (#3534), so two projects' chats of one name tell apart.
  * - **Refresh** reads every device again, as the view's coming on screen does. A runner still
  *   being asked is not asked twice: Refresh waits on that ask for it, and asks every other one.
  */
@@ -30,7 +32,7 @@ import { Badge } from "./ui/badge/Badge";
 import { Button } from "./ui/button/Button";
 import { Notice } from "./Notice";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
-import type { DevicesShown } from "./bindings";
+import type { DevicesShown, PlaneId } from "./bindings";
 import {
   arranged,
   contactSaid,
@@ -47,6 +49,18 @@ import {
   type DeviceRow,
 } from "./devices";
 import { DEVICES_TITLE } from "./tabs";
+import { projectName } from "./StatusLine";
+
+/**
+ * **Where a row's chat is, where the window holds more than one project** (#3534): ` in <project>`,
+ * so two projects' chats of one name tell apart; nothing with one project.
+ */
+type InProject = (plane: PlaneId) => string;
+
+const inProjectOf =
+  (projects: number): InProject =>
+  (plane) =>
+    projects > 1 ? ` in ${projectName(plane)}` : "";
 
 /** `count` of `one`, said whole: `1 chat`, `2 chats`. */
 const counted = (count: number, one: string, many: string) =>
@@ -89,11 +103,13 @@ function DeviceSection({
   asked,
   version,
   now,
+  inProject,
 }: {
   row: DeviceRow;
   asked: Asked | undefined;
   version: string;
   now: Date;
+  inProject: InProject;
 }) {
   const runner = row.runner;
   const title =
@@ -128,20 +144,20 @@ function DeviceSection({
         <ListRow
           key={`${chat.plane}:${chat.session}`}
           id={`${row.key}:chat:${chat.plane}:${chat.session}`}
-          textValue={chat.name}
+          textValue={`${chat.name}${inProject(chat.plane)}`}
         >
           <RowLabel>{chat.name}</RowLabel>
-          <RowDescription>Chat</RowDescription>
+          <RowDescription>{`Chat${inProject(chat.plane)}`}</RowDescription>
         </ListRow>
       ))}
       {row.browsers.map((browser) => (
         <ListRow
           key={`${browser.plane}:${browser.program}`}
           id={`${row.key}:browser:${browser.plane}:${browser.program}`}
-          textValue={`Browser ${browser.name} of ${browser.chat}`}
+          textValue={`Browser ${browser.name} of ${browser.chat}${inProject(browser.plane)}`}
         >
           <RowLabel>{`Browser ${browser.name}`}</RowLabel>
-          <RowDescription>{`Of ${browser.chat}`}</RowDescription>
+          <RowDescription>{`Of ${browser.chat}${inProject(browser.plane)}`}</RowDescription>
         </ListRow>
       ))}
       {more !== undefined && (
@@ -159,7 +175,13 @@ function DeviceSection({
 }
 
 /** What runs on a pool this machine no longer keeps, as a section of its own. */
-function UnkeptSection({ placement }: { placement: DevicesShown["placement"] }) {
+function UnkeptSection({
+  placement,
+  inProject,
+}: {
+  placement: DevicesShown["placement"];
+  inProject: InProject;
+}) {
   if (placement.unkept.length === 0 && placement.unkept_browsers.length === 0) return null;
   return (
     <ListRowSection id="unkept" title="On a pool this machine no longer keeps">
@@ -167,20 +189,22 @@ function UnkeptSection({ placement }: { placement: DevicesShown["placement"] }) 
         <ListRow
           key={`${chat.plane}:${chat.session}`}
           id={`unkept:chat:${chat.plane}:${chat.session}`}
-          textValue={chat.name}
+          textValue={`${chat.name}${inProject(chat.plane)}`}
         >
           <RowLabel>{chat.name}</RowLabel>
-          <RowDescription>{`Chat · on pool ${chat.pool}`}</RowDescription>
+          <RowDescription>{`Chat${inProject(chat.plane)} · on pool ${chat.pool}`}</RowDescription>
         </ListRow>
       ))}
       {placement.unkept_browsers.map((browser) => (
         <ListRow
           key={`${browser.plane}:${browser.session}:${browser.name}`}
           id={`unkept:browser:${browser.plane}:${browser.session}:${browser.name}`}
-          textValue={`Browser ${browser.name} of ${browser.chat}`}
+          textValue={`Browser ${browser.name} of ${browser.chat}${inProject(browser.plane)}`}
         >
           <RowLabel>{`Browser ${browser.name}`}</RowLabel>
-          <RowDescription>{`Of ${browser.chat} · on pool ${browser.pool}`}</RowDescription>
+          <RowDescription>
+            {`Of ${browser.chat}${inProject(browser.plane)} · on pool ${browser.pool}`}
+          </RowDescription>
         </ListRow>
       ))}
     </ListRowSection>
@@ -213,6 +237,7 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
   const use = usageOf(shown.pools, shown.placement.runners, asked, shown.owned);
   // Money only where a pool declares a price per hour (#3491): with none, no column for it.
   const priced = use.some((one) => one.price !== null);
+  const inProject = inProjectOf(shown.projects);
   return (
     <div className="devices-view" data-testid="devices-view">
       <div className="devices-bar">
@@ -228,9 +253,10 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
             asked={asked[row.key]}
             version={shown.version}
             now={now}
+            inProject={inProject}
           />
         ))}
-        <UnkeptSection placement={shown.placement} />
+        <UnkeptSection placement={shown.placement} inProject={inProject} />
       </List>
       {use.length > 0 && (
         <Table aria-label="Use per pool and person" className="devices-use">

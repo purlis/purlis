@@ -995,6 +995,7 @@ export const commands = {
 	skillText: (plane: PlaneId, level: SkillLevel, name: string) => typedError<string, string>(__TAURI_INVOKE("skill_text", { plane, level, name })),
 	skillSave: __WINDOW_ONLY_RESULT,
 	skillRename: __WINDOW_ONLY_RESULT,
+	skillCopy: __WINDOW_ONLY_RESULT,
 	/**  Whether moving a skill from `from` to `to` asks for a grant: it becomes a project skill. */
 	skillMoveNeedsGrant: (from: SkillLevel, to: SkillLevel) => __TAURI_INVOKE<boolean>("skill_move_needs_grant", { from, to }),
 	skillMove: __WINDOW_ONLY_RESULT,
@@ -3785,6 +3786,11 @@ export type DevicesShown = {
 	 *  person's.
 	 */
 	owned: boolean,
+	/**
+	 *  How many projects the window holds (#3534): with more than one, each chat and browser
+	 *  row names its project.
+	 */
+	projects: number,
 };
 
 /**  Why a grant the person accepted before waits for a yes again. */

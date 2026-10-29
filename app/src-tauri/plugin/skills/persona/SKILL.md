@@ -63,7 +63,10 @@ shows who exists.
 
 - **Clear match: dispatch** the work to that persona rather than doing it yourself. A dispatch
   starts a chat of its own that runs as that persona, with *its* vault, hosts and tools, and
-  reports back to this chat:
+  reports back to this chat. **Use purlis's tools first**: the `dispatch` tool, with `to`,
+  `name` and `brief`. They need no shell, so there is nothing to pipe, and a Claude Code chat
+  runs them without its harness asking. The command does the same in a terminal or a script,
+  one call at a time and alone in its call:
 
   ```bash
   purlis dispatch --to <persona> --name "<a short name for the task>" <<'BRIEF'
@@ -74,17 +77,27 @@ shows who exists.
   Work this chat needs an answer from, for its own persona or another, is `purlis dispatch`
   (with `--in workspace:<name>` when it must run elsewhere). A handoff is fire-and-forget: the
   person's work moves to a chat they will read themselves. So "dispatch to
-  devops" is `purlis dispatch --to devops`, never `purlis handoff --persona devops`.
-  `purlis dispatch list` shows this chat's tasks, and `wait`, `tell`, `answer` and `cancel`
-  work on one. A `tell` to a task at rest starts its turn at once; one mid-turn reads it when
-  that turn ends. `purlis dispatch read <chat>` shows what one of your tasks said last and the
-  commands it ran, with their exit codes, quoted as data: read it before you ask the person
-  what a task did. Do not poll a task: you are told when one has gone quiet, and when it
-  reports or ends. `purlis dispatch close <chat>` closes a finished task of yours once you have
-  read its report.
+  devops" is the `dispatch` tool with `to: devops` (`purlis dispatch --to devops`), never
+  `purlis handoff --persona devops`.
+
+  **Before you dispatch, check what is already open**: the roster purlis adds to each turn
+  while this chat has open tasks, or `dispatch_list`. A task still at work is waited on
+  (`dispatch_wait`), told more (`dispatch_tell`) or cancelled (`dispatch_cancel`), never
+  dispatched again; a second dispatch under the same name is refused while the first is open.
+  `dispatch_answer` answers a task's question. A `dispatch_tell` to a task at rest starts its
+  turn at once; one mid-turn reads it when that turn ends. `dispatch_read` shows what one of
+  your tasks said last and the commands it ran, with their exit codes, quoted as data: read it
+  before you ask the person what a task did. Do not poll a task: you are told when one has
+  gone quiet, is stopped on the person, is back at work, and when it reports or ends.
+  `dispatch_close` closes a finished task of yours once you have read its report. Each has a
+  `purlis dispatch` subcommand of the same name (`list`, `wait`, `tell`, `answer`, `cancel`,
+  `read`, `close`) for a terminal.
 
 - **When this chat is the task**, it owes the chat that dispatched it one report, and it can
-  talk to that chat while it works:
+  talk to that chat while it works, with `dispatch_note` (a note; nothing waits on it, so
+  carry on), `dispatch_ask` (a question; this chat waits for the answer) and
+  `dispatch_report` (outcome `done`, `blocked` or `failed`, and what you found or did). In a
+  terminal:
 
   ```bash
   purlis dispatch note "<progress>"       # a note; nothing waits on it, so carry on

@@ -31,6 +31,27 @@ pub const HERE_PROFILE: &str = "/etc/apparmor.d/purlis-engine-here";
 /// The setting that says whether AppArmor restricts user namespaces: `1` when it does.
 pub const RESTRICTS: &str = "/proc/sys/kernel/apparmor_restrict_unprivileged_userns";
 
+/// This process's AppArmor label, as the kernel keeps it for AppArmor alone.
+pub const LABEL: &str = "/proc/self/attr/apparmor/current";
+
+/// This process's label where the kernel keeps one security module's alone (before 5.8).
+const LABEL_BEFORE_STACKING: &str = "/proc/self/attr/current";
+
+/// **Whether AppArmor restricts user namespaces for this process**: the setting `restricted`
+/// (`1`) restricts an unconfined process alone, and `label`, this process's, says whether it is
+/// one. A process in a container runs under its runtime's profile (`docker-default`,
+/// `containers-default-…`), which decides for it instead, as a runner's host does on an Ubuntu
+/// machine (#3298): there the engine is started, and where that profile refuses the sandbox
+/// after all, the engine ends at its start and its log says so ([`said_no_usable_sandbox`]).
+/// No label read is taken as unconfined, so nothing is let through on a guess.
+pub fn restricts(restricted: Option<&str>, label: Option<&str>) -> bool {
+    let unconfined = label.is_none_or(|label| {
+        let label = label.trim_end_matches('\0').trim();
+        label.is_empty() || label == "unconfined" || label.starts_with("unconfined ")
+    });
+    restricted.is_some_and(|value| value.trim() == "1") && unconfined
+}
+
 /// What the session host refuses a browser's start with where the pinned engine cannot make its
 /// sandbox and nothing else is chosen: the window tells the person what to do, and the chat that
 /// a browser is not available here.
@@ -43,7 +64,8 @@ const NO_USABLE_SANDBOX: &str = "No usable sandbox";
 /// What decides whether the engine sandboxes on a machine.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Machine {
-    /// AppArmor restricts user namespaces to the programs a profile names.
+    /// AppArmor restricts user namespaces to the programs a profile names, for this process:
+    /// [`restricts`].
     pub restricts: bool,
     /// The text of each purlis profile installed ([`PROFILE`], [`HERE_PROFILE`]).
     pub profiles: Vec<String>,
@@ -59,7 +81,12 @@ impl Machine {
         }
         let read = |path: &str| std::fs::read_to_string(path).ok();
         Machine {
-            restricts: read(RESTRICTS).is_some_and(|value| value.trim() == "1"),
+            restricts: restricts(
+                read(RESTRICTS).as_deref(),
+                read(LABEL)
+                    .or_else(|| read(LABEL_BEFORE_STACKING))
+                    .as_deref(),
+            ),
             profiles: [PROFILE, HERE_PROFILE]
                 .into_iter()
                 .filter_map(read)
