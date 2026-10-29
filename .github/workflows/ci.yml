@@ -1251,8 +1251,9 @@ jobs:
       # file of `app/src/`, which runs no Rust suite of its own. Each is a module of the core's one
       # test binary (#3613), picked by its name.
       # A name that picks no test passes `cargo test` green, so a renamed file would quietly stop
-      # running: `tools/tests-ran.sh` fails the step on such a name instead (#3752). So does every
-      # step that picks tests by name, in this workflow and the scheduled ones.
+      # running: `tools/tests-ran.sh` fails the step on such a name instead (#3752). So do the other
+      # steps that pick tests by name, here and in the scheduled workflows, except the two in
+      # `scenario`, which #3742's lane wraps.
       - name: The whole-tree guards, as Rust is out of scope
         if: needs.changes.outputs.rust == 'false'
         run: >-
