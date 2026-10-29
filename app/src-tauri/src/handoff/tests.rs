@@ -11486,11 +11486,17 @@ fn a_task_s_level_is_heard_only_from_its_asking_chat_s_own_harness() {
         .conversation(asking)
         .expect("the board holds the chat's conversation");
     let hears = |conversation: Conversation, agent: Option<&str>, mode: Reported| {
+        // A nested harness is another process: its own pid, so the board never reads its
+        // report as the chat's `/clear` (ADR 0024, C5 and C6).
+        let pid = match &conversation {
+            Conversation::Named(said) if *said != own => 9000 + asking,
+            _ => 4000 + asking,
+        };
         let report = Report {
             chat: asking,
             event: purlis_core::state::Event::UserPromptSubmit,
             conversation,
-            pid: Some(4000 + asking),
+            pid: Some(pid),
             agent: agent.map(str::to_owned),
             detail: purlis_core::state::Detail {
                 mode: Some(mode),
@@ -11501,6 +11507,9 @@ fn a_task_s_level_is_heard_only_from_its_asking_chat_s_own_harness() {
         heard_mode(&held, &report);
     };
     let level = || held.unattended().task_level(asking);
+    assert_eq!(level(), Level::Asks);
+    // Its own harness speaks first, so the board knows its process.
+    hears(Conversation::Named(own.clone()), None, Reported::Asks);
     assert_eq!(level(), Level::Asks);
 
     hears(
@@ -11529,6 +11538,6 @@ fn a_task_s_level_is_heard_only_from_its_asking_chat_s_own_harness() {
         Level::Classifier,
         "and none takes the chat's own back"
     );
-    hears(Conversation::Named(own), None, Reported::Asks);
+    hears(Conversation::Named(own.clone()), None, Reported::Asks);
     assert_eq!(level(), Level::Asks);
 }
