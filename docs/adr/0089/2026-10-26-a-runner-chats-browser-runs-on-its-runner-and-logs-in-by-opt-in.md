@@ -46,3 +46,22 @@ keeps one label and never receives a vault value; an owned device receives one o
 9. **The values go from the vault, read by the window, to the runner's browser for the one
    login**, read as the persona declares the login and this machine allowed it, at the call. No
    vault value is stored on a runner.
+10. **The engine's frames are no wider than the narrowest view held to a width** (#3297): a view
+    on the runner's own host, which is not held to the link's width, never widens the frames a
+    view over the link is sent while one is attached. Only while no view over a link is attached
+    are they as wide as the browser's pages. *Decided in implementation, to be confirmed
+    (D-2050-13).*
+11. **The bounds on what waits for the desktop stay purlis's own** (#3297): at most 16 lines
+    waiting on a runner, 4 of one chat's, and 8 told to a chat's next browser call, the same on
+    every runner and never a pool's settings. They bound the memory a runner's host keeps for an
+    absent desktop and keep one chat from crowding out another's, for a `secret exec` as for a
+    login. *Decided in implementation, to be confirmed (D-2050-14).*
+12. **A pool's browser frame limits are its own** (#3297, the pool keys `frames` and `width`
+    ruled by the dispatcher 2026-10-28 under the person's delegation of that day): each pool may
+    set the most frames a second (1 to 60) and the widest frame (320 to 3840 pixels) its runner's
+    browsers are watched at over the link; one that sets neither keeps 15 and 1280. The window
+    gives them with each browser's start on the runner (session protocol 1.49), so a change holds
+    for the next browser without the runner being made again, and the runner holds that
+    browser's views over the link to them. The window holds the frames it draws to the more of
+    the pool's and the defaults, since a runner before 1.49 sends the defaults. This replaces
+    item 6's "the same for every pool". *Decided in implementation (D-2050-19 to D-2050-21).*

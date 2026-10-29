@@ -95,6 +95,7 @@ fn the_studio_shows_nothing_while_its_flag_is_off() {
             not_supported: Vec::new(),
             router: None,
             levels_to_confirm: None,
+            needs: Vec::new(),
         }
     );
 }

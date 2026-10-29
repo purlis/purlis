@@ -31,7 +31,17 @@ export function AddDockerPoolHost({ plane }: { plane?: string }) {
   if (!pools.adding) return null;
   const defaults = pools.read.state === "read" ? pools.read.shown.defaults : undefined;
   const suspendAfter = pools.read.state === "read" ? pools.read.shown.suspend_after : undefined;
-  return <AddDockerPool defaults={defaults} suspendAfter={suspendAfter} />;
+  const linkFrames = pools.read.state === "read" ? pools.read.shown : undefined;
+  return (
+    <AddDockerPool
+      defaults={defaults}
+      suspendAfter={suspendAfter}
+      linkFrames={{
+        frames: linkFrames?.frames ?? undefined,
+        width: linkFrames?.width ?? undefined,
+      }}
+    />
+  );
 }
 
 /** What adding pool `pool` ends with: this machine's profiles, to sign in there (#2049). */
@@ -58,10 +68,13 @@ function count(typed: string): number | null | undefined {
 function AddDockerPool({
   defaults,
   suspendAfter,
+  linkFrames,
 }: {
   defaults: PoolLimitsShown | undefined;
   /** How long a new pool's runner is left without a link before it suspends, by default. */
   suspendAfter: string | undefined;
+  /** How a new pool's runner's browsers are watched over the link, by default (#3297). */
+  linkFrames: { frames: number | undefined; width: number | undefined };
 }) {
   const [name, setName] = useState("");
   const [image, setImage] = useState("");
@@ -70,14 +83,23 @@ function AddDockerPool({
   const [processes, setProcesses] = useState("");
   const [tmp, setTmp] = useState("");
   const [after, setAfter] = useState("");
+  const [frames, setFrames] = useState("");
+  const [width, setWidth] = useState("");
   const [trouble, setTrouble] = useState<string | undefined>();
   const [adding, setAdding] = useState(false);
 
   const add = async () => {
     if (adding) return;
     const [memoryMib, processesCount, tmpMib] = [count(memory), count(processes), count(tmp)];
-    if (memoryMib === undefined || processesCount === undefined || tmpMib === undefined) {
-      setTrouble("Nothing was added: memory, processes and /tmp are whole numbers.");
+    const [framesCount, widthPixels] = [count(frames), count(width)];
+    if (
+      memoryMib === undefined ||
+      processesCount === undefined ||
+      tmpMib === undefined ||
+      framesCount === undefined ||
+      widthPixels === undefined
+    ) {
+      setTrouble("Nothing was added: memory, processes, /tmp, frames and width are whole numbers.");
       return;
     }
     const asked: PoolAdding = {
@@ -88,6 +110,8 @@ function AddDockerPool({
       processes: processesCount,
       tmp_mib: tmpMib,
       suspend_after: after.trim() === "" ? null : after.trim(),
+      frames: framesCount,
+      width: widthPixels,
     };
     setTrouble(undefined);
     setAdding(true);
@@ -211,6 +235,20 @@ function AddDockerPool({
           />
         )}
       />
+      {limit(
+        "Browser frames a second",
+        "How many frames a second its runner's browsers are watched at over the link. Empty is the default.",
+        frames,
+        setFrames,
+        linkFrames.frames === undefined ? undefined : String(linkFrames.frames),
+      )}
+      {limit(
+        "Browser width in pixels",
+        "The widest frame its runner's browsers are watched at over the link. Empty is the default.",
+        width,
+        setWidth,
+        linkFrames.width === undefined ? undefined : String(linkFrames.width),
+      )}
 
       {trouble !== undefined && (
         <p className="trouble" role="alert">
