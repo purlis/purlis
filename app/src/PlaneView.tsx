@@ -4677,20 +4677,20 @@ export const PlaneView = memo(function PlaneView({
       // the workspace strip draws what is pinned. A pin the store refused leaves the
       // workspace made and says why, beside what charter said about making it.
       const pinned = await pinWorkspace(name, true);
-      // Said in the app's own words, with Open; the core's lines, where it landed and whether
-      // it is LOCAL or LIVE, are kept behind Details, less the lines written for an agent
-      // (#3344, `actionResult.ts`).
+      // Said in the app's own words, hung from the new workspace's chip (#3648); the core's
+      // lines, where it landed and whether it is LOCAL or LIVE, are kept behind Details, less
+      // the lines written for an agent (#3344, `actionResult.ts`).
       setReport(
         workspaceMade(name, answer.data, {
-          onOpen: () => focusWorkspace(name),
           onAddVision: () => setAddingVision({ workspace: name, busy: false }),
           pinRefused: pinned.ok ? undefined : pinned.refused,
         }),
       );
-      // The plane is read again rather than this window writing the workspace into its own
-      // copy of the sidebar, and the strip lands on what was just made: it holds no chats, so
-      // `picked` is the only thing that can put the window in it.
-      setPicked(name);
+      // **Made here, so opened** (#3648): the same focus a press on its chip gives, so the
+      // window lands in it even with a chat in front, which the new workspace's empty strip
+      // leaves nothing in front of. The plane is read again rather than this window writing
+      // the workspace into its own copy of the sidebar.
+      focusWorkspace(name);
       setReplan((asked) => asked + 1);
       if (repos.length === 0) return;
       // The repos land after the workspace, one at a time and each on its own (ADR 0055):

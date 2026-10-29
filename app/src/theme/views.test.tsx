@@ -1197,6 +1197,15 @@ const DEVICES_SHOWN = {
 };
 
 /** What each runner answers: that it runs, on another version than this machine's. */
+/** The disk each pool's runners hold (#3493): one of qa's homes not listed. */
+const DEVICES_DISK = {
+  state: "read",
+  pools: [
+    { pool: "builds", kilobytes: 1_750_000, not_listed: 0 },
+    { pool: "qa", kilobytes: 2_000, not_listed: 1 },
+  ],
+};
+
 const DEVICE_ANSWERS = {
   standing: { state: "running" },
   link: { state: "linked" },
@@ -1293,7 +1302,7 @@ const STATES: State[] = [
   {
     name: "Devices, runners that answer on another version, and the use per pool",
     view: { from: null, view: "devices", key: "" },
-    answers: { devices: DEVICES_SHOWN, device_runner: DEVICE_ANSWERS },
+    answers: { devices: DEVICES_SHOWN, device_runner: DEVICE_ANSWERS, devices_disk: DEVICES_DISK },
     drawn: /CPUs requested/,
   },
   ...(

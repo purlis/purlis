@@ -600,3 +600,52 @@ fn the_window_s_geometry_is_written_in_px_and_held_to_its_bounds() {
         said(&loaded)
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// A chip's notice dot and a notice card's point (#3648): parts drawn beside their roots
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_chip_s_notice_dot_is_reached_by_its_own_attributes_not_inside_a_chip() {
+    // The dot is the chip's sibling in its slot (`ChipSlot`), so a rule inside a chip would reach
+    // nothing: it is drawn around the chip, in no variant and no state of it.
+    let sheet = sheet_of(json!({ "titlebar.dot.fill": "accent.base" }));
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"titlebar\"][data-part=\"dot\"]) { background-color: var(--accent-base); }"
+        ),
+        "{sheet}"
+    );
+    let loaded = load(&with_parts(json!({ "titlebar.dot.pinned.hover.fill": "accent.base" })));
+    assert!(
+        said(&loaded)
+            .iter()
+            .any(|one| one.contains("parts.titlebar.dot.pinned.hover.fill is not")),
+        "{:?}",
+        said(&loaded)
+    );
+}
+
+#[test]
+fn a_notice_card_s_point_is_its_own_part_and_leaves_every_other_popover_s_arrow_alone() {
+    // The point is the notice card's (`HungPopover`); the arrow a held popover draws is an SVG of
+    // the surface's own ground, no part a theme keys.
+    let sheet = sheet_of(json!({ "popover.point.fill": "surface.raised" }));
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"popover\"][data-part=\"point\"]) { background-color: var(--surface-raised); }"
+        ),
+        "{sheet}"
+    );
+    let loaded = load(&with_parts(json!({
+        "popover.arrow.fill": "surface.raised",
+        "popover.point.popover.fill": "surface.raised",
+    })));
+    let notes = said(&loaded);
+    for key in ["popover.arrow.fill", "popover.point.popover.fill"] {
+        assert!(
+            notes.iter().any(|one| one.contains(&format!("parts.{key} is not"))),
+            "{key}: {notes:?}"
+        );
+    }
+}

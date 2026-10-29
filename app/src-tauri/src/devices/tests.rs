@@ -823,3 +823,93 @@ fn a_pools_removed_runners_hours_this_week_are_counted_and_its_kept_ones_are_not
     );
     assert_eq!(removed_ran(&hours, "other", &kept, week), 0);
 }
+
+fn home(pool: &str, volume: &str) -> HomeOf {
+    HomeOf {
+        pool: pool.to_owned(),
+        volume: volume.to_owned(),
+    }
+}
+
+#[test]
+fn the_disk_a_pool_holds_is_its_kept_runners_homes_together_a_draining_ones_included() {
+    let held = BTreeMap::from([
+        ("purlis-runner-builds-home".to_owned(), 1_500_000_000),
+        ("purlis-runner-builds-0-9-0-home".to_owned(), 250_000_000),
+        ("purlis-runner-docs-home".to_owned(), 4_096),
+        ("someone-elses".to_owned(), 9_000_000_000),
+    ]);
+    let shown = disk_of(
+        &["builds".to_owned(), "docs".to_owned(), "empty".to_owned()],
+        &[
+            home("builds", "purlis-runner-builds-home"),
+            home("builds", "purlis-runner-builds-0-9-0-home"),
+            home("docs", "purlis-runner-docs-home"),
+        ],
+        Ok(held),
+    );
+    assert_eq!(
+        shown,
+        DiskHeld::Read {
+            pools: vec![
+                PoolDisk {
+                    pool: "builds".to_owned(),
+                    kilobytes: 1_750_000,
+                    not_listed: 0,
+                },
+                PoolDisk {
+                    pool: "docs".to_owned(),
+                    kilobytes: 4,
+                    not_listed: 0,
+                },
+                PoolDisk {
+                    pool: "empty".to_owned(),
+                    kilobytes: 0,
+                    not_listed: 0,
+                },
+            ]
+        }
+    );
+}
+
+#[test]
+fn a_runner_whose_home_docker_does_not_list_is_counted_apart_never_as_nothing() {
+    let shown = disk_of(
+        &["builds".to_owned()],
+        &[
+            home("builds", "purlis-runner-builds-home"),
+            home("builds", "purlis-runner-builds-0-9-0-home"),
+        ],
+        Ok(BTreeMap::from([(
+            "purlis-runner-builds-home".to_owned(),
+            2_000,
+        )])),
+    );
+    assert_eq!(
+        shown,
+        DiskHeld::Read {
+            pools: vec![PoolDisk {
+                pool: "builds".to_owned(),
+                kilobytes: 2,
+                not_listed: 1,
+            }]
+        }
+    );
+}
+
+#[test]
+fn disk_docker_could_not_read_says_why_shown_safely() {
+    let shown = disk_of(
+        &["builds".to_owned()],
+        &[home("builds", "purlis-runner-builds-home")],
+        Err("Cannot connect to tcp://me:secret@host:2375\u{202e}".to_owned()),
+    );
+    let why = match shown {
+        DiskHeld::NotRead { why } => why,
+        other => panic!("{other:?}"),
+    };
+    assert!(
+        !why.contains("secret") && !why.contains('\u{202e}'),
+        "{why}"
+    );
+}
