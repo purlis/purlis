@@ -325,8 +325,16 @@ export function TitleBarSwitch({
     if (on === undefined || on.length === 0) return undefined;
     return { count: on.length, kind: mostUrgent(on) };
   };
-  /** A chip in its slot, with the dot of its notices while their card is not up (#3648). */
-  const slotted = (workspace: string, drawn: ReactNode) => {
+  /** Shows `workspace`'s card, the keyboard going into it as it comes: a dot's press, or a
+   *  dormant chip's (#3651), either of which goes or stays behind the card (WCAG 2.4.3). */
+  const showCard = (workspace: string) => {
+    if (notices === undefined) return;
+    setHandTo(workspace);
+    notices.show(workspace);
+  };
+  /** A chip in its slot, with the dot of its notices while their card is not up (#3648). A
+   *  dormant chip has no menu: its workspace's rows are of a workspace the project lacks. */
+  const slotted = (workspace: string, drawn: ReactNode, menued = true) => {
     const shows = noticesOn(workspace);
     return (
       <ChipSlot>
@@ -337,15 +345,12 @@ export function TitleBarSwitch({
             kind={shows.kind}
             // The house is no strip's: its dot is a Tab stop of its own.
             stop={workspace === OUTSIDE}
-            onPress={() => {
-              // A press is the person asking for it: the keyboard goes to the card, since the
-              // dot it was on goes as the card comes (WCAG 2.4.3).
-              setHandTo(workspace);
-              notices.show(workspace);
-            }}
+            // A press is the person asking for it: the keyboard goes to the card, since the
+            // dot it was on goes as the card comes (WCAG 2.4.3).
+            onPress={() => showCard(workspace)}
           />
         )}
-        {withMenu(workspace, drawn)}
+        {menued ? withMenu(workspace, drawn) : drawn}
       </ChipSlot>
     );
   };
@@ -365,6 +370,26 @@ export function TitleBarSwitch({
     );
     return <Fragment key={workspace}>{slotted(workspace, drawn)}</Fragment>;
   };
+  /** **A pin whose workspace is gone** (V91c as amended, #3651): drawn dormant after the live
+   *  pins, never a way into a workspace the project lacks. Its press shows its notice. */
+  const dormant = (workspaces?.dormant ?? NO_PINS).filter((name) => !pins.includes(name));
+  const dormantChip = (workspace: string) => (
+    <Fragment key={`${workspace}~`}>
+      {slotted(
+        workspace,
+        <WorkspaceChip
+          name={workspace}
+          variant="dormant"
+          tabIndex={-1}
+          notices={noticesOn(workspace)}
+          tooltip={`${workspace} is gone, kept dormant`}
+          onClick={() => showCard(workspace)}
+          data-chip-of={workspace}
+        />,
+        false,
+      )}
+    </Fragment>
+  );
   const card = cardOn === undefined ? undefined : notices?.on.get(cardOn);
 
   return (
@@ -399,6 +424,7 @@ export function TitleBarSwitch({
       {workspaces !== undefined && (
         <PinnedStrip name="Pinned workspaces" ref={strip}>
           {pins.map(chip)}
+          {dormant.map(dormantChip)}
           {unpinned !== undefined && (
             <Fragment key={`${unpinned}+`}>
               {slotted(

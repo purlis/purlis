@@ -22,7 +22,12 @@ export function ActionResultNotice({
   cause,
   kept = false,
   escape = true,
+  opens,
 }: {
+  /** **A way to the workspace it is about**, where that workspace has no chip to hang it from
+   *  (#3651, D-3648-16): "Open X", drawn as its link, so it is never a notice about a workspace
+   *  that offers no way there. */
+  opens?: NoticeAction;
   /** Esc while the keyboard is in it closes it. Off where what it stands in answers Esc for
    *  every notice it holds: a chip's card (#3648). */
   escape?: boolean;
@@ -60,10 +65,13 @@ export function ActionResultNotice({
       disclosure: true,
     });
   const settings = said.settings;
-  const link =
+  const toSettings =
     settings === undefined
       ? undefined
       : { label: settings.label, onPress: () => onSettings(settings.link) };
+  // A notice has one link: the setting that puts a refusal right keeps it, and Open is a way on.
+  const link = toSettings ?? opens;
+  if (toSettings !== undefined && opens !== undefined) fixes.unshift(opens);
   const closeOnEsc = (event: KeyboardEvent) => {
     if (!escape || event.key !== "Escape") return;
     event.stopPropagation();
@@ -108,7 +116,10 @@ export function ResultsGroup({
   into,
   onDrop,
   onSettings,
+  openOf,
 }: {
+  /** The way to the workspace a result is about, where it has no chip (#3651). */
+  openOf?: (said: Said) => NoticeAction | undefined;
   kept: readonly { id: number; said: Said }[];
   into: Element;
   onDrop: (id: number) => void;
@@ -124,6 +135,7 @@ export function ResultsGroup({
           said={one.said}
           onClose={() => onDrop(one.id)}
           onSettings={onSettings}
+          opens={openOf?.(one.said)}
         />
       ))}
     </NoticeList>

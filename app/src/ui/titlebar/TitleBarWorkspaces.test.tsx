@@ -49,6 +49,14 @@ describe("a workspace's chip", () => {
     expect(chip).toHaveAttribute("data-variant", "unpinned");
   });
 
+  it("names a dormant pin by its words and says it is gone in its description (#3651)", () => {
+    render(<WorkspaceChip name="delta" variant="dormant" notices={{ count: 1, kind: "info" }} />);
+    const chip = screen.getByRole("button", { name: "delta" });
+    expect(chip).toHaveAttribute("data-variant", "dormant");
+    expect(chip).not.toHaveAttribute("aria-current");
+    expect(chip).toHaveAccessibleDescription("gone, kept dormant, 1 notice");
+  });
+
   it("marks the pointer on it", async () => {
     render(<WorkspaceChip name="alpha" />);
     const chip = screen.getByRole("button", { name: "alpha" });

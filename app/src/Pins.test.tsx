@@ -347,9 +347,10 @@ describe("a pinned workspace", () => {
       (one) => (one.args as Record<string, unknown>).pinned === false,
     );
 
-  it("is kept dormant once its workspace is gone: named, not drawn, never written away", async () => {
+  it("is kept dormant once its workspace is gone: named, drawn dormant, never written away", async () => {
     // V91c as amended: the pin stays in the machine store, in its place. The hazard ADR 0034
-    // names stays answered: a gone workspace is never drawn as one the project has.
+    // names stays answered: a gone workspace is drawn as a dormant chip after the pins (#3651),
+    // never as one the project has.
     const { asked: asks } = core([chat(1, "one", "alpha")], {
       project: false,
       workspaces: ["beta", "gamma"],
@@ -361,7 +362,12 @@ describe("a pinned workspace", () => {
     const notice = await dormant("was-here");
     expect(notice.getAttribute("data-cause")).toBe("pin-dormant:was-here");
     expect(within(notice).getByRole("button", { name: "Forget" })).toBeInTheDocument();
-    await vi.waitFor(() => expect(workspaceNames()).toEqual(["beta", "gamma", "alpha"]));
+    await vi.waitFor(() =>
+      expect(workspaceNames()).toEqual(["beta", "gamma", "was-here", "alpha"]),
+    );
+    const gone = workspaceChips().find((chip) => chipName(chip) === "was-here") as HTMLElement;
+    expect(gone).toHaveAttribute("data-variant", "dormant");
+    expect(gone).not.toHaveAttribute("aria-current");
     await new Promise((settle) => setTimeout(settle, 50));
     expect(unpins(asks)).toEqual([]);
   });
@@ -388,7 +394,7 @@ describe("a pinned workspace", () => {
     render(<App />);
 
     await waitFor(() => expect(workspaceNames()).toEqual(["beta", "delta", "gamma", "alpha"]));
-    expect(screen.queryByText(/kept dormant/)).toBeNull();
+    expect(screen.queryByText(/is gone, kept dormant/)).toBeNull();
   });
 
   it("is forgotten for good by Forget, and Undo puts it back in its place", async () => {
@@ -410,7 +416,7 @@ describe("a pinned workspace", () => {
       ),
     );
     const undo = await forgotten("was-here");
-    await waitFor(() => expect(screen.queryByText(/kept dormant/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/is gone, kept dormant/)).toBeNull());
 
     await userEvent.click(within(undo).getByRole("button", { name: "Undo" }));
 
@@ -497,7 +503,7 @@ describe("a pinned workspace", () => {
       within(await dormant("was-here")).getByRole("button", { name: "Dismiss" }),
     );
 
-    await waitFor(() => expect(screen.queryByText(/kept dormant/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/is gone, kept dormant/)).toBeNull());
     expect(unpins(asks)).toEqual([]);
   });
 });

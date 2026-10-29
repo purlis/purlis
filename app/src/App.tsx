@@ -43,10 +43,23 @@ import { Notice, NoticeList } from "./Notice";
 import { ForgeSignInEnded } from "./ForgeSignInEnded";
 import { AddDockerPoolHost } from "./AddDockerPool";
 import { ActionResultNotice, ResultsGroup } from "./ActionResultNotice";
-import { placeOfSaid, useChipNotices } from "./ChipNotices";
+import {
+  dormantCause,
+  dormantSays,
+  placeOfSaid,
+  useChipNotices,
+  type StandingNotice,
+} from "./ChipNotices";
 import { chipsOf } from "./noticePlace";
 import { dismissGone, GoneProjectNotice, settleGone, useGoneDismissed } from "./GoneProjectNotice";
-import { goneCause, goneKept, keepGoneDismissed, letGoneGo, settleGoneKept } from "./dismissals";
+import {
+  goneCause,
+  goneKept,
+  keepGoneDismissed,
+  letGoneGo,
+  settleGoneKept,
+  useDismissals,
+} from "./dismissals";
 import { askUpdate, tellSaved, useRepoSaving } from "./saving";
 import { OPEN_LICENCES } from "./LicencesView";
 import {
@@ -1281,8 +1294,34 @@ function App() {
     () =>
       workspacesInFront === undefined
         ? []
-        : chipsOf({ pins: workspacesInFront.pins, focused: workspacesInFront.focused }),
+        : chipsOf({
+            pins: workspacesInFront.pins,
+            dormant: workspacesInFront.dormant,
+            focused: workspacesInFront.focused,
+          }),
     [workspacesInFront],
+  );
+  /** **"X is gone, kept dormant", on its dormant chip** (#3651): the same line the Notices
+   *  centre lists, with its Forget, and dismissed in the one per-project record both read. */
+  const {
+    dismissed: dismissedInFront,
+    dismiss: dismissInFront,
+    showAgain: showAgainInFront,
+  } = useDismissals(inFront ?? "");
+  const dormantInFront = workspacesInFront?.dormant;
+  const forgetInFront = workspacesInFront?.forget;
+  const standingInFront = useMemo<StandingNotice[]>(
+    () =>
+      (dormantInFront ?? [])
+        .filter((name) => !dismissedInFront.has(dormantCause(name)))
+        .map((name) => ({
+          workspace: name,
+          cause: dormantCause(name),
+          says: dormantSays(name),
+          fixes: [{ label: "Forget", onPress: () => forgetInFront?.(name) }],
+          dismiss: () => dismissInFront(dormantCause(name)),
+        })),
+    [dormantInFront, dismissedInFront, dismissInFront, forgetInFront],
   );
   /** The notices hung from those chips: a view onto the kept results, so a dismissal in either
    *  place is one (#3648). */
@@ -1293,6 +1332,11 @@ function App() {
     chips: chipsInFront,
     drop: dropResult,
     onSettings: followSaid,
+    standing: standingInFront,
+    // A dormant chip's press asks for its line again, dismissed or not (#3651).
+    bringBack: (workspace) => {
+      if (dormantInFront?.includes(workspace) === true) showAgainInFront(dormantCause(workspace));
+    },
   });
   const windowLines = useMemo(
     () => ({
@@ -2257,6 +2301,16 @@ function App() {
               into={resultsAt}
               onDrop={dropResult}
               onSettings={followSaid}
+              // **No chip, so listed here alone, with a way there** (#3651, D-3648-16): a
+              // result about a workspace the title bar draws no chip for offers "Open X".
+              openOf={(one) => {
+                const place = placeOfSaid(one, chipsInFront);
+                if (place.at !== "centre") return undefined;
+                return {
+                  label: `Open ${place.open}`,
+                  onPress: () => switchDoes.go(inFront, place.open),
+                };
+              }}
             />
           )}
 

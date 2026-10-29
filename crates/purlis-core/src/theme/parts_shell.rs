@@ -535,6 +535,13 @@ pub(super) const TITLEBAR: Family = Family {
                           always there, never unpinned, the accent's wash while the root is in front.",
             consent: None,
         },
+        Variant {
+            name: "dormant",
+            since: super::NEXT,
+            description: "A pin whose workspace is gone, kept dormant, after the live pins: muted \
+                          slanted words and a dotted edge; a press shows its notice.",
+            consent: None,
+        },
     ],
     // On the title bar, which is the window's frame.
     grounds: &["surface.deep"],
@@ -573,11 +580,14 @@ pub(super) const TITLEBAR: Family = Family {
 /// at rest; the card's fill and the primary words under the pointer; the accent's wash and the
 /// primary words while current, and the stronger wash while current under the pointer, so the
 /// chosen chip never looks hovered (#3345). The unpinned chip's words are muted, its edge the
-/// window's subtle line, dashed, and it is lit only under the pointer.
+/// window's subtle line, dashed, and it is lit only under the pointer. A dormant chip (#3651) is
+/// drawn as the unpinned one is, its line dotted and its words slanted.
 fn titlebar_look(variant: &str, states: &[State]) -> Look {
     let hovered = states.contains(&State::Hover);
     // The unpinned chip is always current, and draws no fill for it: only the pointer lights it.
-    let chosen = variant != "unpinned" && states.contains(&State::Selected);
+    // A dormant one is never current (#3651).
+    let edged = variant == "unpinned" || variant == "dormant";
+    let chosen = !edged && states.contains(&State::Selected);
     let lit = hovered || chosen;
     Look {
         fill: match (chosen, hovered) {
@@ -588,12 +598,12 @@ fn titlebar_look(variant: &str, states: &[State]) -> Look {
         },
         text: if lit {
             "text.primary"
-        } else if variant == "unpinned" {
+        } else if edged {
             "text.muted"
         } else {
             "text.quiet"
         },
-        border: if variant == "unpinned" {
+        border: if edged {
             "border.subtle"
         } else {
             TRANSPARENT

@@ -15,7 +15,8 @@ import { useMemo, useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { OUTSIDE } from "./actions";
 import { workspaceMade } from "./actionResult";
-import type { ChipNotice, ChipNotices } from "./ChipNotices";
+import { dormantCause, dormantSays, type ChipNotice, type ChipNotices } from "./ChipNotices";
+import { untilFocused } from "./stories.testkit";
 import { TitleBarSwitch, type SwitchProject } from "./TitleBarSwitch";
 
 /** What `purlis workspace create` says of a workspace made with no vision. */
@@ -29,30 +30,50 @@ function TheWindow({
   hasNotice,
   width,
   startOpen = true,
+  dormant = false,
 }: {
   pins: string[];
   hasNotice: string;
+  /** `hasNotice` is a pin whose workspace is gone, kept dormant (#3651): its notice is the
+   *  standing "kept dormant" line, and the first pin is in front. */
+  dormant?: boolean;
   /** The title bar's width: the window's. */
   width: string;
   startOpen?: boolean;
 }) {
   const [said, setSaid] = useState("Nothing pressed");
   const [open, setOpen] = useState<string | undefined>(startOpen ? hasNotice : undefined);
+  /** The standing line was dismissed: the per-project record's, not the kept list's. */
+  const [putAway, setPutAway] = useState(false);
   const [kept, setKept] = useState<readonly ChipNotice[]>(() => [
-    {
-      id: 1,
-      kind: "info",
-      said:
-        hasNotice === OUTSIDE
-          ? {
-              from: "story",
-              refused: false,
-              title: "The root's layout is up to date",
-              words: "Its layout was read again.",
-              workspace: OUTSIDE,
-            }
-          : workspaceMade(hasNotice, LINES, { onAddVision: () => setSaid("Asked for a vision") }),
-    },
+    dormant
+      ? {
+          id: dormantCause(hasNotice),
+          kind: "info",
+          standing: {
+            workspace: hasNotice,
+            cause: dormantCause(hasNotice),
+            says: dormantSays(hasNotice),
+            fixes: [{ label: "Forget", onPress: () => setSaid(`Forgot the pin to ${hasNotice}`) }],
+            dismiss: () => setPutAway(true),
+          },
+        }
+      : {
+          id: 1,
+          kind: "info",
+          said:
+            hasNotice === OUTSIDE
+              ? {
+                  from: "story",
+                  refused: false,
+                  title: "The root's layout is up to date",
+                  words: "Its layout was read again.",
+                  workspace: OUTSIDE,
+                }
+              : workspaceMade(hasNotice, LINES, {
+                  onAddVision: () => setSaid("Asked for a vision"),
+                }),
+        },
   ]);
   const projects = useMemo<SwitchProject[]>(
     () => [
@@ -60,19 +81,28 @@ function TheWindow({
         plane: "/p/purlis-demo",
         name: "purlis-demo",
         waiting: 2,
-        workspaces: {
-          names: pins,
-          pins,
-          focused: hasNotice,
-          waiting: { [OUTSIDE]: 0, [hasNotice]: 2 },
-        },
+        workspaces: dormant
+          ? {
+              names: pins,
+              pins,
+              dormant: [hasNotice],
+              focused: pins[0],
+              waiting: { [OUTSIDE]: 0, [pins[0]]: 2 },
+            }
+          : {
+              names: pins,
+              pins,
+              focused: hasNotice,
+              waiting: { [OUTSIDE]: 0, [hasNotice]: 2 },
+            },
       },
     ],
-    [pins, hasNotice],
+    [pins, hasNotice, dormant],
   );
+  const standing = putAway ? kept.filter((one) => !("standing" in one)) : kept;
   const notices: ChipNotices = {
-    on: new Map(kept.length === 0 ? [] : [[hasNotice, kept]]),
-    open: kept.length === 0 ? undefined : open,
+    on: new Map(standing.length === 0 ? [] : [[hasNotice, standing]]),
+    open: standing.length === 0 ? undefined : open,
     show: setOpen,
     hide: () => setOpen(undefined),
     dismiss: (id) => setKept((was) => was.filter((one) => one.id !== id)),
@@ -318,5 +348,81 @@ export const ComesUpOnAChipOutOfSight: Story = {
       expect(still).toBe(true);
     });
     await waitFor(() => expect(surfaceOf(card).hasAttribute("data-entering")).toBe(false));
+  },
+};
+
+/**
+ * **A dormant pin's notice, on its dormant chip** (#3651): the pin whose workspace is gone is
+ * drawn after the live pins, its words muted and slanted and its edge dotted, so its shape says
+ * it. "Kept dormant" hangs from it with Forget; the chip says what it is to a screen reader.
+ */
+export const OnADormantChip: Story = {
+  args: {
+    pins: ["skills-studio", "another-workspace", "3rd-try"],
+    hasNotice: "second-try",
+    dormant: true,
+  },
+  play: async ({ canvas, userEvent }) => {
+    const chip = chipOf("second-try");
+    await expect(chip).toHaveAttribute("data-variant", "dormant");
+    await expect(chip).toHaveAccessibleDescription("gone, kept dormant, 1 notice");
+    // After the live pins, not among them.
+    const live = chipOf("3rd-try").getBoundingClientRect();
+    await expect(chip.getBoundingClientRect().left).toBeGreaterThan(live.right);
+    const card = await waitFor(
+      () => screen.queryByRole("region", { name: "Notices for second-try" }) as HTMLElement,
+    );
+    await expect(card).toHaveTextContent("second-try is gone, kept dormant");
+    const surface = surfaceOf(card).getBoundingClientRect();
+    await expect(
+      Math.abs(centre(surface) - centre(chip.getBoundingClientRect())),
+    ).toBeLessThanOrEqual(1.5);
+    // Its Forget, reached by the keyboard as F6 lands it in the card.
+    card.focus();
+    const forget = within(card).getByRole("button", { name: "Forget" });
+    forget.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect(canvas.getByRole("status")).toHaveTextContent("Forgot the pin to second-try");
+  },
+};
+
+/** **A dormant chip whose card is hidden**: the dot on its corner, and a press on the chip
+ *  itself brings the card back, since the chip opens nothing else. */
+export const ADormantChipShowsItsNotice: Story = {
+  args: {
+    pins: ["skills-studio", "another-workspace", "3rd-try"],
+    hasNotice: "second-try",
+    dormant: true,
+    startOpen: false,
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(
+      canvas.getByRole("button", { name: "Show the notice on second-try" }),
+    ).toBeInTheDocument();
+    await expect(screen.queryByRole("region", { name: "Notices for second-try" })).toBeNull();
+    await userEvent.click(chipOf("second-try"));
+    const card = await waitFor(
+      () => screen.queryByRole("region", { name: "Notices for second-try" }) as HTMLElement,
+    );
+    // Asked for, so the keyboard goes into it.
+    await untilFocused(() => card, "the dormant chip's card, brought by its press");
+  },
+};
+
+/**
+ * **A notice about the current, unpinned workspace** (#3651): it hangs from the dashed
+ * `name +` chip, centred under it with its point, as from a pin.
+ */
+export const OnTheDashedChip: Story = {
+  args: { pins: ["skills-studio", "another-workspace"], hasNotice: "3rd-try" },
+  play: async () => {
+    const chip = chipOf("3rd-try");
+    await expect(chip).toHaveAttribute("data-variant", "unpinned");
+    const card = await waitFor(() => cardOf() as HTMLElement);
+    await expect(card).toHaveTextContent("Workspace 3rd-try is ready");
+    const surface = surfaceOf(card).getBoundingClientRect();
+    await expect(
+      Math.abs(centre(surface) - centre(chip.getBoundingClientRect())),
+    ).toBeLessThanOrEqual(1.5);
   },
 };
