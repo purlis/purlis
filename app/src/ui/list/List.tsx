@@ -42,7 +42,10 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
+  useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type Ref,
 } from "react";
@@ -63,7 +66,7 @@ import {
   type ListBoxProps as AriaListBoxProps,
   type Selection,
 } from "react-aria-components";
-import { mergeProps, mergeRefs } from "react-aria";
+import { mergeProps, mergeRefs, useLocale } from "react-aria";
 import {
   askForAMenu,
   asksForAMenu,
@@ -78,7 +81,67 @@ export type { Key, Selection };
 export { Collection };
 
 /** The size every row of a list takes, which the list hands them. */
-const ListSize = createContext<RowSize>("md");
+export const ListSize = createContext<RowSize>("md");
+
+/**
+ * **The rows of a list that fold what is under them** (#3670, `Fold.tsx`), by key: each one's
+ * toggle, which → and ← on it run, or none for a row that runs nothing of the list's (a run's
+ * closing line). The list's own `onAction` never runs for one of them.
+ */
+export const ListFolds = createContext<Map<string, ((open: boolean) => void) | undefined>>(
+  new Map(),
+);
+
+/**
+ * **An attribute React Aria does not hand a row, written on its cell** (`aria-expanded` on a row
+ * that folds, #3670): a row of a grid takes no `aria-expanded` (a treegrid's would), and its one
+ * cell may, so a reader hears the fold's state on the cell the row holds.
+ */
+export function useSaidOnRow(name: string, value: string) {
+  return useCallback(
+    (element: HTMLElement | null) => {
+      element?.querySelector(':scope > [role="gridcell"]')?.setAttribute(name, value);
+    },
+    [name, value],
+  );
+}
+
+/** How long React Aria's typing to find a row lasts after a letter, in ms (`useTypeSelect`). */
+const TYPING_WINDOW = 1000;
+
+/**
+ * **Space, → and ← on a row that folds** (#3670): Space folds or unfolds it, → unfolds it and ←
+ * folds it, where React Aria's grid would walk into the row's controls, of which it has none. Heard before React Aria's own row
+ * hears them (a capture handler on an element around the list runs first). Any other key, and a
+ * key on anything inside a row, is React Aria's.
+ */
+function useFoldKeys(folds: Map<string, ((open: boolean) => void) | undefined>) {
+  const { direction } = useLocale();
+  // When a letter was last typed: a Space within React Aria's typing window goes on finding a row
+  // by its words, and folds nothing.
+  const typed = useRef(Number.NEGATIVE_INFINITY);
+  return (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (event.key.length === 1 && event.key !== " ") {
+      typed.current = event.timeStamp;
+      return;
+    }
+    if (event.key === " " && event.timeStamp - typed.current < TYPING_WINDOW) return;
+    const row = event.target;
+    if (!(row instanceof HTMLElement) || row.getAttribute("role") !== "row") return;
+    const toggle = folds.get(row.getAttribute("data-fold") ?? "");
+    if (toggle === undefined) return;
+    const open = row.hasAttribute("data-expanded");
+    const into = direction === "rtl" ? "ArrowLeft" : "ArrowRight";
+    const out = direction === "rtl" ? "ArrowRight" : "ArrowLeft";
+    // Space as well as Enter: React Aria's row runs its action on Enter alone.
+    if (event.key === " " || (event.key === into && !open) || (event.key === out && open)) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggle(!open);
+    }
+  };
+}
 
 /** What both kinds of list take beside React Aria's own props. */
 interface Drawn {
@@ -267,6 +330,7 @@ export function ListOption<T extends object>({
       className={className}
       data-scope="list"
       data-part="root"
+      data-variant="row"
       data-size={size}
       data-unavailable={unavailable || undefined}
     >
@@ -330,30 +394,54 @@ export function List<T extends object>({
   empty,
   "aria-keyshortcuts": keys,
   ref,
+  onAction,
   ...rest
 }: ListProps<T>) {
   const own = useCollectionElement(keys, ref);
+  const [folds] = useState(() => new Map<string, ((open: boolean) => void) | undefined>());
+  const onKeyDownCapture = useFoldKeys(folds);
   return (
-    <RowScope.Provider value="list">
-      <ListSize.Provider value={size}>
-        <AriaGridList
-          {...rest}
-          ref={own}
-          className={className}
-          data-scope="list"
-          data-part="body"
-          data-size={size}
-          renderEmptyState={empty === undefined ? undefined : () => empty}
-        />
-      </ListSize.Provider>
-    </RowScope.Provider>
+    // An element around the list that draws nothing, so → and ← on a row that folds are heard
+    // before React Aria's row hears them (`useFoldKeys`).
+    <div data-scope="list" data-part="keys" onKeyDownCapture={onKeyDownCapture}>
+      <ListFolds.Provider value={folds}>
+        <RowScope.Provider value="list">
+          <ListSize.Provider value={size}>
+            <AriaGridList
+              {...rest}
+              // A row that folds runs only its fold (`Fold.tsx`).
+              onAction={
+                onAction === undefined
+                  ? undefined
+                  : (key) => {
+                      if (!folds.has(String(key))) onAction(key);
+                    }
+              }
+              ref={own}
+              className={className}
+              data-scope="list"
+              data-part="body"
+              data-size={size}
+              renderEmptyState={empty === undefined ? undefined : () => empty}
+            />
+          </ListSize.Provider>
+        </RowScope.Provider>
+      </ListFolds.Provider>
+    </div>
   );
 }
+
+/** **How a list's row is drawn** (#3669): a row of one line, or a card of a side view's list
+ *  (`ListCardRow`), whose height follows its lines. */
+export const LIST_ROW_VARIANTS = ["row", "card"] as const;
+export type ListRowVariant = (typeof LIST_ROW_VARIANTS)[number];
 
 export interface ListRowProps<T extends object> extends Omit<
   AriaGridListItemProps<T>,
   "className" | "style"
 > {
+  /** A row of one line (the default), or a card (`ListCardRow`, #3669). */
+  variant?: ListRowVariant;
   /** Its context menu: a right-click, Shift+F10 or the menu key opens it. */
   menu?: RowMenu;
   /** What it says that its words do not, beside it: under the pointer, and while the keyboard
@@ -370,6 +458,7 @@ export interface ListRowProps<T extends object> extends Omit<
 /** **One row**: its `textValue` is what typing finds it by and what a reader hears first. */
 export function ListRow<T extends object>({
   className,
+  variant = "row",
   menu,
   tip,
   children,
@@ -384,6 +473,7 @@ export function ListRow<T extends object>({
       className={className}
       data-scope="list"
       data-part="root"
+      data-variant={variant}
       data-size={size}
     >
       {rowHolds(children, own.menu, tipped)}
@@ -427,7 +517,7 @@ export function ListRowSection<T extends object>({
           ) : (
             <>
               <span>{title}</span>
-              <span data-count="" aria-hidden="true">
+              <span data-scope="list" data-part="count" data-count="" aria-hidden="true">
                 {count}
               </span>
             </>
