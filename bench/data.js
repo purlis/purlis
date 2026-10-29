@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793314059200,
+  "lastUpdate": 1793315268072,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30240,6 +30240,48 @@ window.BENCHMARK_DATA = {
             "value": 102.216311,
             "unit": "ms",
             "extra": "median of 5 runs: 100.816, 101.484, 102.216, 102.326, 102.891 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ffd58e7483f6bf3749f06fb13f4928e2d0ea0abc",
+          "message": "Faded words: measured as drawn, drawn in a tier (#3637, #3790) (#3859)\n\n* Pane header: its words are solid, the tiers carry the quietness (#3637)\n\nThe gauge, where a chat came from and its work item each drew at 0.92\nopacity, overridden to 1 in the header by paneFrame.css's chip rule.\nDrop both: in the header nothing changes on screen, and no fade is left\nto take the breadcrumb's quiet ways in Purlis light from 5.12:1 to\n4.35:1 on the pane's fill, under the text floor.\n\nKeep #3775's tier-floor test: every text tier keeps a twentieth over\nthe floor on the terminal's fill in every built-in appearance. The\ntwentieth is chosen headroom, not a measured tolerance, and its doc now\nsays so with today's figures.\n\nTaken from #3775: its CSS and its Rust test, not its selector-prefix\nguard, which cannot see an opacity set in another file or on an\nancestor (#3790 replaces it).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Faded words: measured as drawn in every story, and drawn in a tier instead (#3790)\n\nAbout fifteen rules faded words whose colour they inherit, and nothing\nmeasured any of them: the trust ask's values came to 3.86:1 in Purlis\nlight, an empty list's sentence to 3.4:1.\n\nThe gate (app/src/theme/fadedWords.ts, .storybook/faded.setup.ts) reads\nwhat the browser computed after every story, in Chromium: for each\nelement with words, the opacity and filter: opacity() of every box from\nit to the root, the word and its ground laid through each box's\nbackground and fade, measured against 4.5:1 (3:1 for large text). An\nopacity set in any file, on the words or above them, reaches it.\nFadedWords.stories.tsx puts the real pane header (breadcrumb, gauge,\nwhere it came from, its work item) and the trust ask in front of it,\nand GateSeesAFade holds the gate to seeing a fade on the header-chip\nrule and on .pane-crumbs.\n\nEvery fade on words is now a tier the engine measures solid: about 0.8\nis text.secondary, 0.7 or less text.muted; .came-back code is secondary\n(muted on border.subtle is 4.48:1 in Classic light), a notice's code\nkeeps its tone unfaded, .empty keeps its role. .honest keeps its 0.8,\nwhich the engine measures faded. The reconnecting screen, disabled\ncontrols and keyframes keep theirs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Explorer: a repo not cloned here is drawn in the muted tier (#3790)\n\nThe muted colour put on `.explorer .absent` reached no word: the heading,\nthe repo's name and the pending line each set their own colour, so the\nsection that was drawn at 0.7 read as loud as the cloned tree. The tier\nnow goes on the name itself, `.explorer .absent .repo`, strong as before.\n\nARepoNotClonedHere draws one repo that is not cloned, so the gate and a\npicture hold the section.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Faded words: the gate's exemptions pinned, a turn no longer hides a fade (#3790)\n\nGateLeavesAlone draws words at 0.3 in a disabled button, hidden from\nassistive technology, at opacity 0, fading, turning and plain, and holds\nthe gate to naming exactly the turning and the plain ones. moving() now\nskips only a box whose opacity is animating, so a fixed fade on a box\nthat also turns is measured. floorOf(19, 400) pins the bold condition of\nlarge text. The module doc says a modal's aria-hidden page is not\nmeasured, and the stories doc says the gate runs in Chromium only.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Explorer story: the repo not cloned is drawn in the Repos view (#3790)\n\nThe Explorer part has no Repos section, so ARepoNotClonedHere found no\nsection to hold: it now draws the Repos part, with two cloned repos\nand one that is not.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Faded words: an opacity on its way somewhere is measured where it comes to rest (#3790)\n\nThe trust ask's values, put back at 0.6, passed the after-story gate: a\ndialog's scrim was still fading in when its story ended, drawn at 0, so\nevery word in it was skipped as moving. The gate now finishes every\nanimation or transition of an opacity that ends before it measures, and\nskips only one that runs for ever. GateLeavesAlone holds both: words\nfading in to 0.3 are named, words fading for ever are not.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Explorer: the baselines of a repo not cloned here (#3790)\n\nDrawn by the stories run 40938604651 of #3859 and taken with\ntools/story-baselines-pull.mjs: the repo's name in the muted tier,\nunder the cloned repos, in each pictured cell.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Faded words: the exemptions story moves its words with the window's own keyframes (#3790)\n\nliterals.test.ts refuses a scripted animation outside a theme file, so\nGateLeavesAlone now fades, brings in and turns its words with\ncharter-breathe, charter-appear and charter-spin, timed by\n--motion-duration-enter, instead of Element.animate.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Explorer: a repo not cloned here wears the secondary role, held by its story (#3790)\n\nThe muted colour App.css set on `.explorer .absent .repo` never applied:\nApp.css is in the `charter` layer and `.ui-text-body` in `components`, a\nlater one, so the name stayed in the primary of a cloned repo. The name\nnow wears `ui-text-secondary ui-text-strong` and the App.css rule is\ngone. ARepoNotClonedHere compares the drawn colour of the name that is\nnot cloned with a cloned one's, so the cascade cannot undo it unseen.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Faded words: the gate says it runs after the screenshot gate (#3790)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Explorer: the baselines of a repo not cloned here, retaken (#3790)\n\nDrawn by stories run 40953760257 of #3859: the name that is not cloned\nin the secondary role, strong, smaller and quieter than a cloned repo's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T22:24:53Z",
+          "tree_id": "4813daf262f60b87d166ff05aed9cc5ae415ec0d",
+          "url": "https://github.com/purlis/purlis/commit/ffd58e7483f6bf3749f06fb13f4928e2d0ea0abc"
+        },
+        "date": 1793315265056,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.37668899999999994,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.352, 0.369, 0.377, 0.384, 0.388 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4056675,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.303, 16.396, 16.406, 16.456, 16.466 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.75032999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.967, 101.635, 101.750, 101.857, 102.562 ms"
           }
         ]
       }
