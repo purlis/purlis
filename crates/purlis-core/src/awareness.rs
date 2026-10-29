@@ -293,6 +293,34 @@ pub struct Working {
     /// is said at the first of them. At most [`MOST_ROWS`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub waiting_on_you: Vec<Waiting>,
+    /// The chat's own tasks it was told were waiting on the person that are at work again
+    /// (only for [`Tell::Turn`], #3788): each by its name, once, at the first turn after its
+    /// prompt or block cleared.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub back_at_work: Vec<String>,
+    /// **The chat's own tasks still open** (only for [`Tell::Turn`], #3788): said at every turn
+    /// while there is one, so a chat keeps the picture across a compaction. At most
+    /// [`MOST_ROWS`]; how many more in [`Self::more_tasks`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub open_tasks: Vec<OpenTask>,
+    /// How many more open tasks there were than are listed.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub more_tasks: usize,
+}
+
+/// One of a chat's own open tasks, as its turn's roster says it (#3788): **its number, its
+/// name and its state**. The number is the one `dispatch_list` gives the same chat for it, and
+/// what `dispatch_wait`, `dispatch_tell` and `dispatch_cancel` take.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct OpenTask {
+    /// The app's number for the task's chat.
+    pub chat: u32,
+    /// The task's name as its tab shows it.
+    pub name: String,
+    pub state: Doing,
+    /// Whether it is stopped on the person: a prompt of its harness's or its sandbox's Notice.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_the_person: bool,
 }
 
 /// Why a chat asks, which decides whether the app counts it as told.
@@ -438,16 +466,52 @@ pub fn answer(known: &[Known], chat: u32, tell: Tell, told: &mut Told) -> Option
     }
     let more_changes = changes.len().saturating_sub(MOST_ROWS);
     changes.truncate(MOST_ROWS);
-    let waiting_on_you = match tell {
-        Tell::Turn => newly_waiting(known, chat, &mut told.waiting),
+    let (waiting_on_you, back_at_work) = match tell {
+        // Read before what it was told is kept anew: a task leaves `told` as it goes back.
+        Tell::Turn => {
+            let back = back_at_work(known, chat, &told.waiting);
+            (newly_waiting(known, chat, &mut told.waiting), back)
+        }
+        Tell::Asked | Tell::Start => (Vec::new(), Vec::new()),
+    };
+    let mut open_tasks = match tell {
+        Tell::Turn => open_tasks(known, chat),
         Tell::Asked | Tell::Start => Vec::new(),
     };
+    let more_tasks = open_tasks.len().saturating_sub(MOST_ROWS);
+    open_tasks.truncate(MOST_ROWS);
     Some(Working {
         picture,
         changes,
         more_changes,
         waiting_on_you,
+        back_at_work,
+        open_tasks,
+        more_tasks,
     })
+}
+
+/// `chat`'s own tasks that are still open (#3788): asked for by it as a task, in its lineage
+/// ([`parent_of`]), and neither reported nor ended. By number, as `dispatch_list` lists them.
+fn open_tasks(known: &[Known], chat: u32) -> Vec<OpenTask> {
+    let mut tasks: Vec<OpenTask> = known
+        .iter()
+        .filter(|one| parent_of(known, one).is_some_and(|parent| parent.chat == chat))
+        .filter(|one| {
+            one.from
+                .as_ref()
+                .is_some_and(|from| from.mode == Mode::Task)
+        })
+        .filter(|one| Stage::of(Doing::of(one)) == Stage::Live)
+        .map(|one| OpenTask {
+            chat: one.chat,
+            name: one.name.clone(),
+            state: Doing::of(one),
+            on_the_person: one.asking.is_some(),
+        })
+        .collect();
+    tasks.sort_by_key(|one| one.chat);
+    tasks
 }
 
 /// `chat`'s own tasks that are waiting on the person and were not told as waiting, and the
@@ -486,6 +550,22 @@ fn newly_waiting(
                 prompt: one.asking?,
             })
         })
+        .collect()
+}
+
+/// `chat`'s own tasks it was `told` were waiting on the person that are **at work again**
+/// (#3788): still its own, still live, and no longer stopped on the person. Each is said once:
+/// [`newly_waiting`] then lets it go from `told`.
+fn back_at_work(known: &[Known], chat: u32, told: &std::collections::BTreeSet<u32>) -> Vec<String> {
+    known
+        .iter()
+        .filter(|one| told.contains(&one.chat) && one.asking.is_none())
+        .filter(|one| parent_of(known, one).is_some_and(|parent| parent.chat == chat))
+        .filter(|one| Stage::of(Doing::of(one)) == Stage::Live)
+        .map(|one| (one.chat, one.name.clone()))
+        .collect::<BTreeMap<u32, String>>()
+        .into_values()
+        .take(MOST_ROWS)
         .collect()
 }
 
@@ -667,14 +747,70 @@ pub fn briefing(picture: &Picture, now: chrono::DateTime<chrono::FixedOffset>) -
     Some(lines.join("\n"))
 }
 
-/// What a turn is told: one line when the picture changed, and one when a task of its own
-/// began waiting on the person; `None` when neither did.
+/// What a turn is told: one line when the picture changed, one when a task of its own began
+/// waiting on the person, one when such a task is at work again, and the roster of its open
+/// tasks while it has any (#3788); `None` when there is none of these.
 pub fn update(working: &Working, now: chrono::DateTime<chrono::FixedOffset>) -> Option<String> {
-    let lines: Vec<String> = [changed_line(working, now), waiting_line(working)]
-        .into_iter()
-        .flatten()
-        .collect();
+    let lines: Vec<String> = [
+        changed_line(working, now),
+        waiting_line(working),
+        back_line(working),
+        roster_line(working),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
     (!lines.is_empty()).then(|| lines.join("\n"))
+}
+
+/// The line for a chat's own tasks that are at work again after it was told they waited on the
+/// person (#3788): so it waits for them rather than giving the work out again.
+fn back_line(working: &Working) -> Option<String> {
+    if working.back_at_work.is_empty() {
+        return None;
+    }
+    let said: Vec<String> = working
+        .back_at_work
+        .iter()
+        .map(|name| format!("task {} is at work again", quoted(name)))
+        .collect();
+    Some(format!(
+        "⬢ A task of yours is back at work ({AS_DATA}): {}. Wait for its report, and do not \
+         dispatch it again.",
+        said.join("; ")
+    ))
+}
+
+/// The roster of a chat's own open tasks (#3788), said at every turn while it has one: each
+/// by number, name and state, and what to do with one instead of dispatching it again.
+fn roster_line(working: &Working) -> Option<String> {
+    if working.open_tasks.is_empty() {
+        return None;
+    }
+    let mut said: Vec<String> = working
+        .open_tasks
+        .iter()
+        .map(|task| {
+            let state = if task.on_the_person {
+                "waiting on the person"
+            } else {
+                task.state.word()
+            };
+            format!("chat {} {} {state}", task.chat, quoted(&task.name))
+        })
+        .collect();
+    if working.more_tasks > 0 {
+        said.push(format!("and {} more", working.more_tasks));
+    }
+    Some(format!(
+        "⬢ Your open tasks ({AS_DATA}): {}. Look after one of these with `{}`, `{}` or `{}` \
+         before dispatching the same work again; `{}` shows them all.",
+        said.join("; "),
+        crate::chattools::DISPATCH_WAIT,
+        crate::chattools::DISPATCH_TELL,
+        crate::chattools::DISPATCH_CANCEL,
+        crate::chattools::DISPATCH_LIST,
+    ))
 }
 
 /// The line for a chat's own tasks that began waiting on the person: who, and for what, and

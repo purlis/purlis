@@ -1939,6 +1939,11 @@ export const commands = {
 	skillSave: (plane: PlaneId, level: SkillLevel, name: string, was: string, now: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_save", { plane, level, name, was, now })),
 	/**  **Renames a skill**, and every persona and skill that names it. */
 	skillRename: (plane: PlaneId, level: SkillLevel, name: string, to: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_rename", { plane, level, name, to })),
+	/**
+	 *  **Make my own copy** (#3686): the built-in skill `name` copied to `level` under the new name
+	 *  `to`, which the person can edit. The built-in skill keeps loading.
+	 */
+	skillCopy: (plane: PlaneId, name: string, level: SkillLevel, to: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_copy", { plane, name, level, to })),
 	/**  Whether moving a skill from `from` to `to` asks for a grant: it becomes a project skill. */
 	skillMoveNeedsGrant: (from: SkillLevel, to: SkillLevel) => __TAURI_INVOKE<boolean>("skill_move_needs_grant", { from, to }),
 	/**  **Moves a skill** from `from` to `to`, with `grant` where it becomes a project skill. */
@@ -2875,6 +2880,13 @@ export const commands = {
 	 *  one linked to, asked its version and what it holds. Asked once at a time ([`Joined`]).
 	 */
 	deviceRunner: (pool: string, runner: string) => typedError<RunnerAsked, string>(__TAURI_INVOKE("device_runner", { pool, runner })),
+	/**
+	 *  **The disk each pool's runners hold** (#3493): their home volumes, as `docker system df`
+	 *  says, which reads them and starts nothing, so **a suspended runner is never woken by it**.
+	 *  Read apart from [`devices`], so a Docker slow to count every volume holds up no other part
+	 *  of the view, and held to the time each read of Docker is.
+	 */
+	devicesDisk: () => typedError<DiskHeld, string>(__TAURI_INVOKE("devices_disk")),
 	/**
 	 *  **The projects a runner would not hold again after a re-link**, each with the runner's words
 	 *  and the pools its chats run on.
@@ -5745,6 +5757,15 @@ export type DevicesShown = {
 	 */
 	projects: number,
 };
+
+/**  **The disk each pool's runners hold**, as the use table says it (#3493). */
+export type DiskHeld = 
+/**  Each pool's, in the order the pools were added. */
+{ state: "read"; pools: PoolDisk[] } | 
+/**  Docker could not say, and why, in its words ([`shown_safely`]). */
+{ state: "not_read"; why: string } | 
+/**  It was not read within the time a second read of it waits ([`WAITS_AT_MOST`]). */
+{ state: "unanswered" };
 
 /**  Why a grant the person accepted before waits for a yes again. */
 export type DispatchAgain = 
@@ -9714,6 +9735,24 @@ export type PoolAdding = {
 	frames: number | null,
 	/**  The widest frame its runner's browsers are watched at over the link, in pixels (#3297). */
 	width: number | null,
+};
+
+/**
+ *  **The disk one pool's runners hold** (#3493, spec #2041 story 55): their home volumes
+ *  together, a draining runner's included.
+ */
+export type PoolDisk = {
+	pool: string,
+	/**
+	 *  In kilobytes of 1000 bytes, as Docker says sizes, to the nearest; `u32` so it is a
+	 *  `number` in TypeScript, and held at its most (some 4 TB) rather than wrapped.
+	 */
+	kilobytes: number,
+	/**
+	 *  How many of its runners' homes Docker did not list: their disk is not known, and is
+	 *  said apart rather than counted as nothing.
+	 */
+	not_listed: number,
 };
 
 /**

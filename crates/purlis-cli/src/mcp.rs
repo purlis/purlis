@@ -219,6 +219,13 @@ impl ServerHandler for Server {
         if name == chattools::DISPATCH_REPORT {
             return Ok(done(blocking(move || dispatch_report(&args)).await));
         }
+        // Every other `purlis dispatch` subcommand, as a tool (#3786): the command's own
+        // function, so the tool and the command cannot answer one ask two ways.
+        if let Some(run) = task_tool(name) {
+            return Ok(done(
+                blocking(move || run(&args).map_err(|why| in_the_chat(&why))).await,
+            ));
+        }
         let name = name.to_owned();
         Ok(done(
             blocking(move || {
@@ -512,6 +519,53 @@ fn dispatch_read(args: &serde_json::Map<String, serde_json::Value>) -> Result<St
 fn dispatch_report(args: &serde_json::Map<String, serde_json::Value>) -> Result<String, String> {
     let (outcome, text, changed) = chattools::dispatch_report_args(args)?;
     crate::dispatch::report(&outcome, &text, changed.as_deref()).map_err(|why| in_the_chat(&why))
+}
+
+/// What a tool about the chat's own tasks, or a task's to its asker, runs (#3786): the
+/// function the matching `purlis dispatch` subcommand runs, with the tool's arguments.
+type TaskTool = fn(&serde_json::Map<String, serde_json::Value>) -> Result<String, String>;
+
+/// The [`TaskTool`] named `name`, or `None` for any other tool.
+fn task_tool(name: &str) -> Option<TaskTool> {
+    use crate::dispatch;
+    use chattools::{dispatch_task, dispatch_text, dispatch_wait_seconds};
+    let run: TaskTool = match name {
+        chattools::DISPATCH_WAIT => |args| {
+            dispatch::wait(
+                dispatch_task(args, chattools::DISPATCH_WAIT)?,
+                dispatch_wait_seconds(args)?,
+            )
+        },
+        chattools::DISPATCH_TELL => |args| {
+            dispatch::tell(
+                dispatch_task(args, chattools::DISPATCH_TELL)?,
+                &dispatch_text(args, "text", chattools::DISPATCH_TELL)?,
+            )
+        },
+        chattools::DISPATCH_ANSWER => |args| {
+            dispatch::answer(
+                dispatch_task(args, chattools::DISPATCH_ANSWER)?,
+                &dispatch_text(args, "text", chattools::DISPATCH_ANSWER)?,
+            )
+        },
+        chattools::DISPATCH_CANCEL => {
+            |args| dispatch::cancel(dispatch_task(args, chattools::DISPATCH_CANCEL)?)
+        }
+        chattools::DISPATCH_CLOSE => {
+            |args| dispatch::close(dispatch_task(args, chattools::DISPATCH_CLOSE)?)
+        }
+        chattools::DISPATCH_NOTE => {
+            |args| dispatch::note(&dispatch_text(args, "text", chattools::DISPATCH_NOTE)?)
+        }
+        chattools::DISPATCH_ASK => |args| {
+            dispatch::ask(
+                &dispatch_text(args, "question", chattools::DISPATCH_ASK)?,
+                dispatch_wait_seconds(args)?,
+            )
+        },
+        _ => return None,
+    };
+    Some(run)
 }
 
 /// `why`, with where to go when this server was handed no connection to the app.

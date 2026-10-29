@@ -60,6 +60,24 @@ pub fn landlock_way_on(opt_out: bool) -> String {
 /// The hidden command a wrapped chat's line starts with, after purlis's own program.
 pub const COMMAND: &str = "_sandbox";
 
+/// **The hidden command that starts a program unable to make a namespace** (#3298,
+/// D-2050-25): `purlis _no-namespaces -- <program> <args>…` applies a filter that refuses every
+/// namespace-making `clone` and `unshare`, and `clone3`, then becomes `program`. A runner's host
+/// starts everything it runs in a terminal so ([`no_namespaces_line`]), so on a runner only the
+/// browser engine, which the host starts itself, may make namespaces. Not a public command line.
+pub const NO_NAMESPACES: &str = "_no-namespaces";
+
+/// `program` and `args`, as the words after purlis's own program that start it through
+/// [`NO_NAMESPACES`].
+pub fn no_namespaces_line(
+    program: std::ffi::OsString,
+    args: Vec<std::ffi::OsString>,
+) -> Vec<std::ffi::OsString> {
+    let mut out = vec![NO_NAMESPACES.into(), END.into(), program];
+    out.extend(args);
+    out
+}
+
 /// The words between [`COMMAND`] and the program: each piece of the profile follows one, so
 /// no single argument passes the kernel's limit on one argument's length.
 pub const PROFILE_FLAG: &str = "--profile";
@@ -87,7 +105,11 @@ pub fn serve_if_asked_telling(
     tell: impl FnOnce(&[(std::ffi::OsString, std::ffi::OsString)]) -> Option<refusal::Tell>,
 ) -> Option<i32> {
     let mut words = std::env::args_os().skip(1);
-    if words.next()? != COMMAND {
+    let first = words.next()?;
+    if first == NO_NAMESPACES {
+        return Some(without_namespaces(words.collect()));
+    }
+    if first != COMMAND {
         return None;
     }
     let Ok(words) = words
@@ -106,6 +128,28 @@ pub fn serve_if_asked_telling(
         let _ = (words, tell);
         eprintln!("purlis: this sandbox is purlis's own on Linux, so nothing was started.");
         Some(126)
+    }
+}
+
+/// `purlis _no-namespaces`, given the words after it: [`END`], the program, its arguments.
+fn without_namespaces(words: Vec<std::ffi::OsString>) -> i32 {
+    let Some((end, rest)) = words.split_first() else {
+        eprintln!("purlis: nothing was named to start without namespaces, so nothing was started.");
+        return 126;
+    };
+    let Some((program, args)) = rest.split_first().filter(|_| end == END) else {
+        eprintln!("purlis: nothing was named to start without namespaces, so nothing was started.");
+        return 126;
+    };
+    #[cfg(target_os = "linux")]
+    return linux::without_namespaces(program, args);
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (program, args);
+        eprintln!(
+            "purlis: a program is held from namespaces on Linux alone, so nothing was started."
+        );
+        126
     }
 }
 

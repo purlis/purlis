@@ -90,6 +90,31 @@ pub const DISPATCH_LIST: &str = "dispatch_list";
 /// [`DISPATCH`] is.
 pub const DISPATCH_READ: &str = "dispatch_read";
 
+/// The tool that waits for the report of a task this chat dispatched (#3786): the one
+/// operation `purlis dispatch wait` performs.
+pub const DISPATCH_WAIT: &str = "dispatch_wait";
+
+/// The tool that sends a follow-up to a task this chat dispatched (#3786): `purlis dispatch
+/// tell`.
+pub const DISPATCH_TELL: &str = "dispatch_tell";
+
+/// The tool that answers the question a task this chat dispatched asked it (#3786): `purlis
+/// dispatch answer`.
+pub const DISPATCH_ANSWER: &str = "dispatch_answer";
+
+/// The tool that cancels a task this chat dispatched (#3786): `purlis dispatch cancel`.
+pub const DISPATCH_CANCEL: &str = "dispatch_cancel";
+
+/// The tool that closes a finished task this chat dispatched (#3786): `purlis dispatch close`.
+pub const DISPATCH_CLOSE: &str = "dispatch_close";
+
+/// The tool a task sends its asking chat a progress note with (#3786): `purlis dispatch note`.
+pub const DISPATCH_NOTE: &str = "dispatch_note";
+
+/// The tool a task asks its asking chat a question with, and waits for the answer (#3786):
+/// `purlis dispatch ask`.
+pub const DISPATCH_ASK: &str = "dispatch_ask";
+
 /// The tools a Claude Code chat runs without asking (V79, #1050, amending SI-8e in ADR 0064):
 /// the five that only read, [`PERSONA_WHERE`] (V98a, #1450), which reads the app's own
 /// record and answers names and states a chat is told at its start anyway, and
@@ -102,11 +127,12 @@ pub const DISPATCH_READ: &str = "dispatch_read";
 /// sample content (ADR 0064, amended 2026-10-17); and the four skill tools
 /// ([`crate::skilltools`], SK-13), which read the chat's own skill set and its runs, or load one
 /// of its skills (ADR 0063 as amended 2026-10-20): `skill_load` writes nothing but the start of
-/// the run it opens, in the plane's skill log.
+/// the run it opens, in the plane's skill log; and [`DISPATCH_WAIT`] (#3786), which waits on
+/// one of the chat's own tasks and returns its report, as `purlis dispatch wait` does.
 /// Named one by one, never derived from [`Tool::read_only`]: `ask_operator` is marked
 /// read-only too and still asks, and a tool added later is asked about until someone rules it
 /// in here. Writes are never in this list.
-pub const PRE_ALLOWED: [&str; 13] = [
+pub const PRE_ALLOWED: [&str; 14] = [
     "todo_list",
     "memory_search",
     "session_record_list",
@@ -115,6 +141,7 @@ pub const PRE_ALLOWED: [&str; 13] = [
     PERSONA_WHERE,
     DISPATCH_LIST,
     DISPATCH_READ,
+    DISPATCH_WAIT,
     crate::themepreview::TOOL,
     crate::skilltools::SKILL_LIST,
     crate::skilltools::SKILL_RUNS,
@@ -288,14 +315,43 @@ pub(crate) fn one_string(key: &str, description: &str) -> Value {
     })
 }
 
-/// The two dispatch tools, which a Claude Code chat runs without its harness asking (V98b,
-/// amending ADR 0064): consent to a dispatch is purlis's own dispatch grant, asked of the
-/// person by the app, never the harness's prompt. Named apart from [`PRE_ALLOWED`], which is
-/// the tools that only read: these start a chat and send a report.
-pub const DISPATCH_TOOLS: [&str; 2] = [DISPATCH, DISPATCH_REPORT];
+/// The dispatch tools that write, which a Claude Code chat runs without its harness asking
+/// (V98b, amending ADR 0064): consent to a dispatch is purlis's own dispatch grant, asked of
+/// the person by the app, never the harness's prompt. **And what a chat does with its own
+/// tasks is its own** (#3786, ruled 2026-10-29): a follow-up, an answer, a cancel and a close
+/// of a task it dispatched, and a task's note, question and report to the chat that asked,
+/// each reaching only what the app's record lets its caller reach. Named apart from
+/// [`PRE_ALLOWED`], which is the tools that only read.
+pub const DISPATCH_TOOLS: [&str; 8] = [
+    DISPATCH,
+    DISPATCH_REPORT,
+    DISPATCH_TELL,
+    DISPATCH_ANSWER,
+    DISPATCH_CANCEL,
+    DISPATCH_CLOSE,
+    DISPATCH_NOTE,
+    DISPATCH_ASK,
+];
+
+/// A task's chat, by its number in `dispatch_list`: the one argument a tool about one task
+/// takes.
+fn a_task() -> Value {
+    json!({
+        "type": "integer",
+        "description": "The task's chat, by its number in dispatch_list.",
+    })
+}
+
+/// How long a tool that waits waits: 100 seconds when left out, 540 at most.
+fn wait_seconds() -> Value {
+    json!({
+        "type": "integer",
+        "description": "How long to wait, in seconds: 100 when left out, 540 at most.",
+    })
+}
 
 /// Every tool, in the order a harness lists them.
-pub static TOOLS: [Tool; 18] = [
+pub static TOOLS: [Tool; 25] = [
     Tool {
         name: "todo_list",
         description: "List the open todos of the workspace this chat works in, oldest first, \
@@ -575,6 +631,96 @@ pub static TOOLS: [Tool; 18] = [
         read_only: true,
     },
     Tool {
+        name: DISPATCH_WAIT,
+        description: "Wait for the report of a task this chat dispatched, and answer with it. \
+                      A wait that runs out says the task is still running; its report reaches \
+                      this chat when it lands all the same. A task that asked this chat a \
+                      question answers the wait with the question.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": { "chat": a_task(), "wait_seconds": wait_seconds() },
+                "required": ["chat"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: true,
+    },
+    Tool {
+        name: DISPATCH_TELL,
+        description: "Send a follow-up to a task this chat dispatched that is still working, \
+                      quoted as data from this chat. A task at rest is started on it at once; \
+                      one mid-turn reads it when that turn ends. Refused, with the task's \
+                      state, once the task has finished.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "chat": a_task(),
+                    "text": {
+                        "type": "string",
+                        "description": "What to add or correct, in a few lines.",
+                    },
+                },
+                "required": ["chat", "text"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
+        name: DISPATCH_ANSWER,
+        description: "Answer the question a task this chat dispatched asked it. Only a question \
+                      that task asked this chat can be answered: one it put to the person is \
+                      the person's.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "chat": a_task(),
+                    "text": {
+                        "type": "string",
+                        "description": "The answer, in a few lines.",
+                    },
+                },
+                "required": ["chat", "text"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
+        name: DISPATCH_CANCEL,
+        description: "Cancel a task this chat dispatched: its turn is ended and it is asked for \
+                      one short report of what it did, which arrives with the outcome \
+                      `cancelled`. Refused for a task the person has typed in: that one is \
+                      theirs.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": { "chat": a_task() },
+                "required": ["chat"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
+        name: DISPATCH_CLOSE,
+        description: "Close a finished task this chat dispatched: its finished row goes, and a \
+                      task kept open after its report has its program ended. Refused for a \
+                      task that has not reported, one in a turn, and one the person typed in.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": { "chat": a_task() },
+                "required": ["chat"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
         name: DISPATCH_REPORT,
         description: "Send this task's one report back to the chat that dispatched it: how it \
                       ended, what you did and found, and what changed. Write your session \
@@ -601,6 +747,47 @@ pub static TOOLS: [Tool; 18] = [
                     },
                 },
                 "required": ["outcome", "text"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
+        name: DISPATCH_NOTE,
+        description: "From a dispatched task: send the chat that asked a progress note. It \
+                      reads it on its next turn, and nothing waits on it.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "Where the task has got to, in a few lines.",
+                    },
+                },
+                "required": ["text"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
+        name: DISPATCH_ASK,
+        description: "From a dispatched task: ask the chat that asked a question, and wait for \
+                      its answer. A question only the person can answer is not asked this \
+                      way: ask them in this chat. If the wait runs out, end the turn: the \
+                      answer is handed to the next one.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "The question, in a few lines.",
+                    },
+                    "wait_seconds": wait_seconds(),
+                },
+                "required": ["question"],
                 "additionalProperties": false,
             })
         },
@@ -668,7 +855,14 @@ pub fn call(
         DISPATCH,
         DISPATCH_LIST,
         DISPATCH_READ,
+        DISPATCH_WAIT,
+        DISPATCH_TELL,
+        DISPATCH_ANSWER,
+        DISPATCH_CANCEL,
+        DISPATCH_CLOSE,
         DISPATCH_REPORT,
+        DISPATCH_NOTE,
+        DISPATCH_ASK,
     ]
     .contains(&tool)
     {
@@ -970,12 +1164,39 @@ pub fn dispatch_place(args: &Map<String, Value>) -> Result<Option<String>, Strin
 
 /// The `dispatch_read` tool's argument (#2084): the task's chat, by its number.
 pub fn dispatch_read_args(args: &Map<String, Value>) -> Result<u32, String> {
+    dispatch_task(args, DISPATCH_READ)
+}
+
+/// The task a dispatch tool about one task names (#3786): its chat, by its number.
+pub fn dispatch_task(args: &Map<String, Value>, tool: &str) -> Result<u32, String> {
     args.get("chat")
         .and_then(Value::as_u64)
         .and_then(|chat| u32::try_from(chat).ok())
         .ok_or_else(|| {
-            "dispatch_read needs `chat`: the task's chat, by its number in dispatch_list".to_owned()
+            format!("{tool} needs `chat`: the task's chat, by its number in dispatch_list")
         })
+}
+
+/// The text a dispatch tool sends, under `key`, as it was written (#3786): the app and the
+/// command hold it to their own bounds.
+pub fn dispatch_text(args: &Map<String, Value>, key: &str, tool: &str) -> Result<String, String> {
+    match args.get(key) {
+        Some(Value::String(text)) => Ok(text.clone()),
+        _ => Err(format!("{tool} needs `{key}`, as text")),
+    }
+}
+
+/// How long a dispatch tool that waits is asked to wait, in seconds, where it says (#3786).
+pub fn dispatch_wait_seconds(args: &Map<String, Value>) -> Result<Option<u32>, String> {
+    match args.get("wait_seconds") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Number(n)) => n
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .map(Some)
+            .ok_or_else(|| "`wait_seconds` is a whole number of seconds".to_owned()),
+        Some(_) => Err("`wait_seconds` is a whole number of seconds".to_owned()),
+    }
 }
 
 /// The `dispatch_report` tool's arguments: the outcome, the text, and what changed.

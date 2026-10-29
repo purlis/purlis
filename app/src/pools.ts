@@ -180,11 +180,14 @@ export async function askVersion(name: string) {
   set((was) => ({ ...was, versions: { ...was.versions, [name]: version } }));
 }
 
-/** Removes pool `name`, its runner, its container and its home. */
-export async function removePool(name: string) {
-  if (held.removing !== undefined) return;
+/** Removes pool `name`, its runner, its container and its home; answers what could not be
+ *  removed, or why nothing was, in purlis's or Docker's words already shown safely. */
+export async function removePool(name: string): Promise<string | undefined> {
+  if (held.removing !== undefined)
+    return `purlis is removing pool ${held.removing}: remove ${name} once it is gone.`;
   set((was) => ({ ...was, removing: name, said: undefined }));
   const said = await caught(commands.removeDockerPool(name));
+  const left = said.status === "error" ? said.error : (said.data ?? undefined);
   set((was) => {
     const links = { ...was.links };
     Reflect.deleteProperty(links, name);
@@ -198,8 +201,9 @@ export async function removePool(name: string) {
       links,
       versions,
       profiles,
-      said: said.status === "error" ? said.error : (said.data ?? undefined),
+      said: left,
     };
   });
   await rereadPools();
+  return left;
 }
