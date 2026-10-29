@@ -4,7 +4,16 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMove, PoolsShown } from "./bindings";
 import type { State } from "./chatState";
-import { moveOffers, moveSaid, movesDue, movesWith, poolsToMoveTo } from "./chatMoves";
+import {
+  chatMovesOf,
+  heardMove,
+  moveCancellable,
+  moveOffers,
+  moveSaid,
+  movesDue,
+  movesWith,
+  poolsToMoveTo,
+} from "./chatMoves";
 
 const ready = (session: number, to: string | null = "builds"): ChatMove => ({
   session,
@@ -82,16 +91,44 @@ describe("Move to runner and Move here (#2048)", () => {
 
   it("finds the chats of a chat's workspace running where it runs, and none at the root", () => {
     const open = [
-      { session: 1, workspace: "app", pool: null, label: null, name: "one" },
-      { session: 2, workspace: "app", pool: null, label: "steward 1", name: "two" },
-      { session: 3, workspace: "app", pool: "builds", label: null, name: "three" },
-      { session: 4, workspace: "web", pool: null, label: null, name: "four" },
-      { session: 5, workspace: null, pool: null, label: null, name: "five" },
-      { session: 6, workspace: null, pool: null, label: null, name: "six" },
+      { session: 1, workspace: "app", pool: null, label: null, name: "one", harness: "claude" },
+      {
+        session: 2,
+        workspace: "app",
+        pool: null,
+        label: "steward 1",
+        name: "two",
+        harness: "claude",
+      },
+      { session: 3, workspace: "app", pool: "builds", label: null, name: "three", harness: "x" },
+      { session: 4, workspace: "web", pool: null, label: null, name: "four", harness: "x" },
+      { session: 5, workspace: null, pool: null, label: null, name: "five", harness: "x" },
+      { session: 6, workspace: null, pool: null, label: null, name: "six", harness: "x" },
+      // A shell does not move, so a row never names it (#3814).
+      { session: 7, workspace: "app", pool: null, label: null, name: "zsh", harness: null },
     ];
     expect(movesWith(1, open)).toEqual(["steward 1"]);
     expect(movesWith(3, open)).toEqual([]);
     expect(movesWith(5, open)).toEqual([]);
     expect(movesWith(9, open)).toEqual([]);
+  });
+
+  it("forgets a move on every tab when the core says it is over (#3814)", () => {
+    const plane = "p-over";
+    heardMove(plane, { ...ready(1), with: ["two"] });
+    heardMove(plane, { ...ready(2), with: ["one"] });
+    heardMove(plane, { ...ready(1), stage: "over" });
+    heardMove(plane, { ...ready(2), stage: "over" });
+    expect(chatMovesOf(plane)).toEqual({});
+  });
+
+  it("offers Cancel only while a move is prepared or ready, never while it is made (#3814)", () => {
+    expect(moveCancellable(ready(1))).toBe(true);
+    expect(moveCancellable({ ...ready(1), stage: "preparing" })).toBe(true);
+    expect(moveCancellable({ ...ready(1), stage: "switching" })).toBe(false);
+    expect(moveSaid({ ...ready(1), stage: "switching", with: ["two"] })).toEqual({
+      words: "Moving to pool builds now, with two.",
+      trouble: false,
+    });
   });
 });

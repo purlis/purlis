@@ -78,7 +78,8 @@ pub(crate) struct ChatMove {
     pub(crate) from: Option<String>,
     /// The pool it moves to, or `null` for this machine.
     pub(crate) to: Option<String>,
-    /// `preparing`, `ready` or `failed`.
+    /// `preparing`, `ready`, `switching` (being made now, past cancelling), `failed`, or
+    /// `over`: it moved or was put away, and the window forgets it (#3814).
     pub(crate) stage: String,
     /// Why it failed, in a sentence: where it is `failed`.
     pub(crate) why: Option<String>,
@@ -90,7 +91,8 @@ impl ChatMove {
     fn of(session: u32, one: &Move) -> ChatMove {
         let (stage, why) = match &one.stage {
             Stage::Preparing => ("preparing", None),
-            Stage::Ready | Stage::Switching => ("ready", None),
+            Stage::Ready => ("ready", None),
+            Stage::Switching => ("switching", None),
             Stage::Failed(why) => ("failed", Some(why.clone())),
         };
         ChatMove {
@@ -148,6 +150,37 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// What a Cancel of a move being made now is told (#3814).
+pub(crate) const SWITCHING_NOT_CANCELLED: &str =
+    "Its move is being made now, so it is no longer cancelled.";
+
+/// The chats of `group` not at a pause between turns, by name.
+fn busy_in(group: &[Member], at_a_pause: &impl Fn(u32) -> bool) -> Vec<String> {
+    group
+        .iter()
+        .filter(|one| !at_a_pause(one.session))
+        .map(|one| one.name.clone())
+        .collect()
+}
+
+/// **Whether every chat of `group` is still at a pause** as a move takes their places
+/// (#3814): one that began a turn while the move was made would have it cut off, so none takes
+/// its place, and why, in a sentence.
+pub(crate) fn still_at_a_pause(
+    group: &[Member],
+    at_a_pause: &impl Fn(u32) -> bool,
+) -> Result<(), String> {
+    let busy = busy_in(group, at_a_pause);
+    if busy.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "{} began a turn while the move was made, so none moved and its turn was not cut off: \
+         ask for the move again.",
+        listed(&busy)
+    ))
+}
+
 /// Names in a sentence: `a`, `a and b`, `a, b and c`.
 pub(crate) fn listed(names: &[String]) -> String {
     match names {
@@ -168,6 +201,21 @@ impl Moves {
         if let Some(told) = told {
             for session in one.sessions() {
                 told(ChatMove::of(session, one));
+            }
+        }
+    }
+
+    /// Tells every chat of `one` that its move is over: it moved, or it was put away, so each
+    /// tab of it forgets it, not only the one that asked (#3814).
+    fn tell_over(&self, one: &Move) {
+        let told = lock(&self.told).clone();
+        if let Some(told) = told {
+            for session in one.sessions() {
+                told(ChatMove {
+                    stage: "over".to_owned(),
+                    why: None,
+                    ..ChatMove::of(session, one)
+                });
             }
         }
     }
@@ -286,12 +334,7 @@ impl Moves {
             Stage::Failed(_) => Due::NotMoving,
             Stage::Ready if !at_a_pause(session) => Due::NotYet(NOT_AT_A_PAUSE.to_owned()),
             Stage::Ready => {
-                let busy: Vec<String> = one
-                    .group
-                    .iter()
-                    .filter(|other| !at_a_pause(other.session))
-                    .map(|other| other.name.clone())
-                    .collect();
+                let busy = busy_in(&one.group, &at_a_pause);
                 if !busy.is_empty() {
                     return Due::NotYet(format!(
                         "It moves with {} once each of them is at a pause too.",
@@ -305,19 +348,28 @@ impl Moves {
                 for member in &switching.group {
                     all.insert(member.session, switching.clone());
                 }
+                drop(all);
+                // Every tab of it hears it is being made, so none offers Cancel now.
+                self.tell(&switching);
                 Due::Now(switching)
             }
         }
     }
 
-    /// Chat `session` moved, with every chat of its move: the move is over.
+    /// Chat `session` moved, with every chat of its move: the move is over, and every tab of
+    /// it is told so, a chat that did not take its place among them (#3814).
     pub(crate) fn moved(&self, session: u32) {
-        let mut all = lock(&self.by_chat);
-        if let Some(one) = all.get(&session).cloned() {
+        let one = {
+            let mut all = lock(&self.by_chat);
+            let Some(one) = all.get(&session).cloned() else {
+                return;
+            };
             for member in one.sessions() {
                 all.remove(&member);
             }
-        }
+            one
+        };
+        self.tell_over(&one);
     }
 
     /// Chat `session`'s switch failed, and why: it stays where it was, with every chat of its
@@ -327,24 +379,35 @@ impl Moves {
     }
 
     /// **Puts chat `session`'s move away**: one being prepared or ready is forgotten for every
-    /// chat of it, since they move together (its preparation changes nothing of them); a failed
-    /// one's reason is put away for this chat. One being made is not put away.
-    pub(crate) fn put_away(&self, session: u32) {
-        let mut all = lock(&self.by_chat);
-        let Some(one) = all.get(&session).cloned() else {
-            return;
-        };
-        match one.stage {
-            Stage::Switching => {}
-            Stage::Failed(_) => {
-                all.remove(&session);
-            }
-            Stage::Preparing | Stage::Ready => {
-                for member in one.sessions() {
-                    all.remove(&member);
+    /// chat of it, since they move together (its preparation changes nothing of them), and
+    /// every tab of it is told (#3814); a failed one's reason is put away for this chat. One
+    /// being made is past cancelling, and refused in a sentence.
+    pub(crate) fn put_away(&self, session: u32) -> Result<(), String> {
+        let over = {
+            let mut all = lock(&self.by_chat);
+            let Some(one) = all.get(&session).cloned() else {
+                return Ok(());
+            };
+            match one.stage {
+                Stage::Switching => {
+                    return Err(SWITCHING_NOT_CANCELLED.to_owned());
+                }
+                Stage::Failed(_) => {
+                    all.remove(&session);
+                    None
+                }
+                Stage::Preparing | Stage::Ready => {
+                    for member in one.sessions() {
+                        all.remove(&member);
+                    }
+                    Some(one)
                 }
             }
+        };
+        if let Some(one) = over {
+            self.tell_over(&one);
         }
+        Ok(())
     }
 
     /// Every move, as the window draws them.
@@ -715,7 +778,7 @@ impl crate::planes::Held {
             Due::NotYet(_) => return Ok(None),
             Due::Now(one) => one,
         };
-        match self.switch(session, &one, size) {
+        match self.switch(session, &one, size, &at_a_pause) {
             Ok(moved) => {
                 self.moves().moved(session);
                 Ok(Some(moved))
@@ -732,6 +795,7 @@ impl crate::planes::Held {
         session: u32,
         one: &Move,
         size: purlis_core::engine::Size,
+        at_a_pause: &impl Fn(u32) -> bool,
     ) -> Result<Vec<(u32, u32)>, String> {
         let movers = self.movers(session, &one.to)?;
         if movers.from != one.from {
@@ -798,6 +862,21 @@ impl crate::planes::Held {
                     ));
                 }
             }
+        }
+        // Asked again before any takes its place: a chat that began a turn while the work and
+        // conversations moved would have it cut off (#3814). Every start is let go of, and every
+        // chat runs where it was.
+        if let Err(why) = still_at_a_pause(&one.group, at_a_pause) {
+            for (was, new) in &started {
+                self.chats().let_go_of_start(*was, *new);
+            }
+            return Err(did_not_start_said(
+                &why,
+                runs_on(&one.from),
+                &one.from,
+                &one.to,
+                movers.workspace(),
+            ));
         }
         let said = came_back_said(one.from.as_deref(), &came);
         let mut moved = Vec::new();

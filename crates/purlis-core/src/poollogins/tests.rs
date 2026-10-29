@@ -347,4 +347,12 @@ fn a_pool_not_ready_for_a_new_chat_says_which_way_it_is_not() {
         Bound::read_with(here(), config.path(), "first"),
         Err(Unbound::NoRunnerOfItsImage)
     );
+
+    // A file that cannot be read says so, never to remove the pool (#3814).
+    let path = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+    std::fs::write(&path, "not json").unwrap();
+    assert!(matches!(
+        Bound::read_with(here(), config.path(), "first"),
+        Err(Unbound::Unread(_))
+    ));
 }

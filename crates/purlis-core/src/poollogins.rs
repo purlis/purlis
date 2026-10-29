@@ -86,20 +86,26 @@ impl Bound {
             .ok_or(Unbound::NotHere)?;
         let runner = match crate::runners::runner_for(config_root, pool) {
             Ok(runner) => runner,
-            // A draining runner starts no new chat (#2749): the pool's own is draining, with no
-            // new one of its image yet.
-            Err(crate::runners::Refused::Other(_)) => {
-                let draining = crate::runners::draining(config_root)
+            // Read again for which way (#3814): a file that cannot be read says so, a pool gone
+            // since is not here, and a draining runner starts no new chat (#2749).
+            Err(_) => {
+                let runners = crate::runners::read(config_root)
+                    .map_err(|why| Unbound::Unread(why.to_string()))?;
+                let still = crate::runners::pools(config_root)
                     .map_err(|why| Unbound::Unread(why.to_string()))?
-                    .into_iter()
-                    .any(|kept| kept.pool() == pool);
-                return Err(if draining {
+                    .iter()
+                    .any(|one| one.name() == pool);
+                return Err(if !still {
+                    Unbound::NotHere
+                } else if runners
+                    .iter()
+                    .any(|kept| kept.pool() == pool && kept.draining)
+                {
                     Unbound::Draining
                 } else {
                     Unbound::NoRunnerOfItsImage
                 });
             }
-            Err(why) => return Err(Unbound::Unread(why.to_string())),
         };
         Ok(Bound::of(&kept, &runner, &engine))
     }

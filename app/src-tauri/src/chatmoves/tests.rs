@@ -102,7 +102,7 @@ fn a_failed_preparation_never_switches_and_says_why_until_put_away() {
     );
     assert_eq!(moves.shown(), vec![failed]);
 
-    moves.put_away(5);
+    moves.put_away(5).unwrap();
     assert!(moves.shown().is_empty());
 }
 
@@ -136,7 +136,8 @@ fn a_move_put_away_while_it_was_prepared_is_not_brought_back_by_its_preparation(
         })
         .unwrap();
     let _ = next(&told);
-    moves.put_away(7);
+    moves.put_away(7).unwrap();
+    assert_eq!(next(&told).stage, "over");
     go.send(()).unwrap();
     assert!(told.recv_timeout(Duration::from_millis(300)).is_err());
     assert_eq!(moves.due(7, |_| true), Due::NotMoving);
@@ -437,7 +438,7 @@ fn a_move_that_fails_for_one_chat_fails_for_every_chat_of_it() {
     assert_eq!(moves.due(4, |_| true), Due::NotMoving);
 
     // Dismissing one chat's reason leaves the other's.
-    moves.put_away(3);
+    moves.put_away(3).unwrap();
     assert_eq!(
         moves
             .shown()
@@ -469,7 +470,77 @@ fn a_workspaces_move_is_cancelled_whole_and_asked_once_at_a_time() {
         .unwrap_err();
     assert!(refused.contains("chat 4"), "{refused}");
 
-    moves.put_away(4);
+    moves.put_away(4).unwrap();
     assert!(moves.shown().is_empty());
     assert_eq!(moves.due(3, |_| true), Due::NotMoving);
+}
+
+/// A move put away is told over on every tab of it, so none keeps offering it (#3814), and one
+/// that moved is told over on every tab too, a chat that did not take its place among them.
+#[test]
+fn every_tab_of_a_move_hears_it_is_over_when_it_is_put_away_or_made() {
+    let (moves, told) = heard();
+    moves
+        .begin(
+            vec![member(3), member(4)],
+            None,
+            Some("builds".into()),
+            || Ok(()),
+        )
+        .unwrap();
+    let _ = (next(&told), next(&told), next(&told), next(&told));
+    moves.put_away(3).unwrap();
+    let over = [next(&told), next(&told)];
+    assert_eq!(
+        over.iter()
+            .map(|one| (one.session, one.stage.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(3, "over"), (4, "over")]
+    );
+
+    moves
+        .begin(
+            vec![member(3), member(4)],
+            None,
+            Some("builds".into()),
+            || Ok(()),
+        )
+        .unwrap();
+    let _ = (next(&told), next(&told), next(&told), next(&told));
+    assert!(matches!(moves.due(3, |_| true), Due::Now(_)));
+    let switching = [next(&told), next(&told)];
+    assert!(switching.iter().all(|one| one.stage == "switching"));
+    moves.moved(3);
+    let over = [next(&told), next(&told)];
+    assert!(over.iter().all(|one| one.stage == "over"), "{over:?}");
+}
+
+/// A move being made is past cancelling: a Cancel then is refused in words, and the move goes
+/// on (#3814).
+#[test]
+fn a_move_being_made_is_not_cancelled() {
+    let (moves, told) = heard();
+    moves
+        .begin(
+            vec![member(3), member(4)],
+            None,
+            Some("builds".into()),
+            || Ok(()),
+        )
+        .unwrap();
+    let _ = (next(&told), next(&told), next(&told), next(&told));
+    assert!(matches!(moves.due(4, |_| true), Due::Now(_)));
+    assert_eq!(moves.put_away(3), Err(SWITCHING_NOT_CANCELLED.to_owned()));
+    assert_eq!(moves.shown().len(), 2, "still being made, for both");
+}
+
+/// A chat of the move that began a turn while the move was made stops every chat taking its
+/// place, and says which (#3814).
+#[test]
+fn a_chat_that_began_a_turn_while_its_move_was_made_stops_it() {
+    let group = vec![member(3), member(4)];
+    assert_eq!(still_at_a_pause(&group, &|_| true), Ok(()));
+    let refused = still_at_a_pause(&group, &|one| one != 4).unwrap_err();
+    assert!(refused.starts_with("chat 4 began a turn"), "{refused}");
+    assert!(refused.contains("none moved"), "{refused}");
 }

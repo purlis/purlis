@@ -55,8 +55,15 @@ export function chatMovesOf(plane: PlaneId): Readonly<Record<number, ChatMove>> 
   return held[plane] ?? NONE;
 }
 
-/** `told`, a stage the core said, held for its chat. */
+/**
+ * `told`, a stage the core said, held for its chat. `over` is forgotten: the move was made or
+ * put away, from this tab or another of its workspace (#3814).
+ */
 export function heardMove(plane: PlaneId, told: ChatMove) {
+  if (told.stage === "over") {
+    forgetMove(plane, told.session);
+    return;
+  }
   set(plane, (was) => ({ ...was, [told.session]: told }));
 }
 
@@ -123,10 +130,26 @@ export async function askMove(
     heardMove(plane, { session, from, to, stage: "failed", why: said.error, with: [] });
 }
 
-/** Puts chat `session`'s move away: one still prepared is forgotten, a failed one dismissed. */
+/**
+ * Puts chat `session`'s move away: one still prepared is forgotten, for every chat of it as the
+ * core tells each (`over`), and a failed one dismissed. One the core says is being made already
+ * is read back, so its tab says so again (#3814).
+ */
 export function putAwayMove(plane: PlaneId, session: number) {
   forgetMove(plane, session);
-  void commands.putAwayChatMove(plane, session).catch(() => undefined);
+  void commands
+    .putAwayChatMove(plane, session)
+    .then(async (done) => {
+      if (done.status === "ok") return;
+      const read = await commands.chatMoves(plane);
+      if (read.status === "ok") for (const one of read.data) heardMove(plane, one);
+    })
+    .catch(() => undefined);
+}
+
+/** Whether a move may still be cancelled: while it is prepared or ready, never while it is made. */
+export function moveCancellable(one: ChatMove): boolean {
+  return one.stage === "preparing" || one.stage === "ready";
 }
 
 /** The chats whose move switches now: prepared, and at a pause between turns (`waiting`). */
@@ -174,6 +197,14 @@ export function moveSaid(one: ChatMove): { words: string; trouble: boolean } {
             : `Moves to ${where} with ${listed(others)} once each is at a pause.`,
         trouble: false,
       };
+    case "switching":
+      return {
+        words:
+          others.length === 0
+            ? `Moving to ${where} now.`
+            : `Moving to ${where} now, with ${listed(others)}.`,
+        trouble: false,
+      };
     default:
       return {
         words:
@@ -184,22 +215,26 @@ export function moveSaid(one: ChatMove): { words: string; trouble: boolean } {
 }
 
 /**
- * **The other chats that move with chat `session`** (#3453): every other chat of its
+ * **The other chats that move with chat `session`** (#3453): every other harness chat of its
  * workspace running where it runs, by the name its tab shows, since a workspace's chats share
  * its clones and move together. None for a chat at the project's root.
  */
 export function movesWith(
   session: number,
-  open: readonly Pick<OpenChat, "session" | "workspace" | "pool" | "label" | "name">[],
+  open: readonly Pick<OpenChat, "session" | "workspace" | "pool" | "label" | "name" | "harness">[],
 ): string[] {
   const chat = open.find((one) => one.session === session);
   const workspace = chat?.workspace ?? null;
   if (chat === undefined || workspace === null) return [];
   const on = chat.pool ?? null;
-  return open
-    .filter((one) => one.session !== session)
-    .filter((one) => (one.workspace ?? null) === workspace && (one.pool ?? null) === on)
-    .map((one) => one.label ?? one.name);
+  return (
+    open
+      .filter((one) => one.session !== session)
+      // A shell does not move, and the core says so in its refusal (#3814).
+      .filter((one) => one.harness !== null)
+      .filter((one) => (one.workspace ?? null) === workspace && (one.pool ?? null) === on)
+      .map((one) => one.label ?? one.name)
+  );
 }
 
 /**

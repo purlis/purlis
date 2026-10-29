@@ -2336,8 +2336,8 @@ fn chat_moves(
     Ok(planes.held(&plane)?.moves().shown())
 }
 
-/// **Puts chat `session`'s move away** (#2048): one still prepared is forgotten, and a failed
-/// one's reason is dismissed.
+/// **Puts chat `session`'s move away** (#2048): one still prepared is forgotten for every chat
+/// of it, and a failed one's reason is dismissed. One being made now is refused (#3814).
 #[tauri::command]
 #[specta::specta]
 fn put_away_chat_move(
@@ -2345,8 +2345,7 @@ fn put_away_chat_move(
     plane: PlaneId,
     session: u32,
 ) -> Result<(), String> {
-    planes.held(&plane)?.moves().put_away(session);
-    Ok(())
+    planes.held(&plane)?.moves().put_away(session)
 }
 
 /// **The chats this project has open that run under a sandbox other than the one the
