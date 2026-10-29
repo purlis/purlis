@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { OUTSIDE, type Said } from "./actions";
+import type { Shown } from "./bindings";
 
 /**
  * **Where a notice is drawn** (spec #3647, its one test seam): a notice about a whole workspace
@@ -20,8 +21,9 @@ export type About =
   | { workspace: string }
   /** A project's or the app's action, about no one workspace (a refused pin). */
   | { project: true }
-  /** A chat, said on its pane's band. */
-  | { pane: number };
+  /** A chat, said on its pane's band; `removes`, the workspace a chat asks to have removed
+   *  (qw356), a consent answered on that band that also needs the person on its chip (#3652). */
+  | { pane: number; removes?: string };
 
 /** **A chip of the title bar**, as the placement reads it: the workspace it is, and how it is
  *  drawn. `unpinned` is the dashed `name +` chip of the current workspace while it is not
@@ -35,8 +37,9 @@ export type Place =
   | { at: "chip"; workspace: string }
   /** The card that pops from the status bar's Notices item. */
   | { at: "status" }
-  /** The band of the pane that shows the chat. */
-  | { at: "pane"; pane: number }
+  /** The band of the pane that shows the chat; `needs`, the chip that also shows a needs-you
+   *  dot for it, whose press brings the chat forward (#3652). */
+  | { at: "pane"; pane: number; needs?: string }
   /** The Notices centre alone, with a way to open `open`: no chip to hang from. */
   | { at: "centre"; open: string };
 
@@ -47,10 +50,16 @@ export type Place =
  * - about a workspace with no chip: the Notices centre alone, which offers to open it, so
  *   nothing floats over the wrong chip;
  * - a project's or the app's result: the status bar's card;
- * - a chat's: its pane band, as it always was.
+ * - a chat's: its pane band, as it always was; a chat's question to remove a workspace that has
+ *   a chip also puts a needs-you dot on that chip (#3652), and none where it has no chip.
  */
 export function placeOf(about: About, chips: readonly Chip[]): Place {
-  if ("pane" in about) return { at: "pane", pane: about.pane };
+  if ("pane" in about) {
+    const needs = about.removes;
+    return needs !== undefined && chips.some((chip) => chip.workspace === needs)
+      ? { at: "pane", pane: about.pane, needs }
+      : { at: "pane", pane: about.pane };
+  }
   if ("project" in about) return { at: "status" };
   return chips.some((chip) => chip.workspace === about.workspace)
     ? { at: "chip", workspace: about.workspace }
@@ -61,6 +70,24 @@ export function placeOf(about: About, chips: readonly Chip[]): Place {
  *  project it was said in. */
 export function aboutOf(said: Said): About {
   return said.workspace === undefined ? { project: true } : { workspace: said.workspace };
+}
+
+/**
+ * **The chips a chat's question to remove their workspace puts a needs-you dot on** (#3652):
+ * each workspace asked about that has a chip, with the chat that asked it first in `asks` (the
+ * registry's order), whose pane the dot's press brings forward. The question itself stays on
+ * that chat's band, where the consent is answered; the dot goes when the registry no longer
+ * lists it, wherever it was answered.
+ */
+export function needsOn(asks: readonly Shown[], chips: readonly Chip[]): Map<string, number> {
+  const on = new Map<string, number>();
+  for (const ask of asks) {
+    if (ask.answer.via !== "workspace-removal") continue;
+    const place = placeOf({ pane: ask.session, removes: ask.answer.workspace }, chips);
+    if (place.at === "pane" && place.needs !== undefined && !on.has(place.needs))
+      on.set(place.needs, ask.session);
+  }
+  return on;
 }
 
 /**

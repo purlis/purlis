@@ -34,19 +34,27 @@ import type {
   Ref,
 } from "react";
 import { mergeProps, useFocusRing, useHover, useId } from "react-aria";
-import { ChevronDown, Circle, House, type LucideIcon } from "lucide-react";
+import { ChevronDown, Circle, Hand, House, type LucideIcon } from "lucide-react";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
 
-/** **What a notice is**, which its dot's shape says (spec #3647): `info`, ●. The warning and
- *  needs-you kinds come with the notices that are them (#3649, #3652). */
-export type NoticeKind = "info";
+/** **What a notice is**, which its dot's shape says (spec #3647): `info`, ●; `needs`, ✋, a chat
+ *  waiting on the person's answer about the workspace (#3652). The warning kind comes with the
+ *  notices that are it (#3649). */
+export type NoticeKind = "info" | "needs";
 
-/** Each kind's shape on a dot, a Lucide icon filled: a shape, never a colour alone (WCAG
- *  1.4.1). News is a disc. */
-const SHAPE: Record<NoticeKind, LucideIcon> = { info: Circle };
+/** Each kind's shape on a dot, a Lucide icon: a shape, never a colour alone (WCAG 1.4.1). News
+ *  is a disc, filled; needs-you a raised hand, drawn in its strokes (#3652). */
+const SHAPE: Record<NoticeKind, LucideIcon> = { info: Circle, needs: Hand };
 
-/** How many notices a chip's dot shows, as its description says it. */
-const noticesSaid = (count: number) => (count === 1 ? "1 notice" : `${count} notices`);
+/** What a chip's description says of its dot: how many notices hang from it, and that a chat
+ *  asks the person to remove it, where one does (#3652). */
+const noticesSaid = ({ count, kind }: { count: number; kind: NoticeKind }) =>
+  [
+    count === 0 ? undefined : count === 1 ? "1 notice" : `${count} notices`,
+    kind === "needs" ? "a chat asks you to remove it" : undefined,
+  ]
+    .filter((one) => one !== undefined)
+    .join(", ") || undefined;
 
 /** The family's variants, in the order the manifest names them. */
 export const TITLEBAR_VARIANTS = ["pinned", "unpinned", "root"] as const;
@@ -107,7 +115,9 @@ export function WorkspaceChip({
   const describedBy =
     [
       (handed as { "aria-describedby"?: string })["aria-describedby"],
-      waiting > 0 || (notices?.count ?? 0) > 0 ? said : undefined,
+      waiting > 0 || (notices !== undefined && noticesSaid(notices) !== undefined)
+        ? said
+        : undefined,
     ]
       .filter(Boolean)
       .join(" ") || undefined;
@@ -146,7 +156,7 @@ export function WorkspaceChip({
   // what it draws.
   const describes = [
     waiting > 0 ? `${waiting} waiting` : undefined,
-    notices !== undefined && notices.count > 0 ? noticesSaid(notices.count) : undefined,
+    notices === undefined ? undefined : noticesSaid(notices),
   ].filter((one) => one !== undefined);
   const description =
     describes.length > 0 ? (
@@ -178,7 +188,8 @@ export function ChipSlot({ children }: { children: ReactNode }) {
 /**
  * **A chip's notice dot** (#3648, spec #3647): a hidden notice about the workspace, not yet
  * dismissed, as a shape on the chip's leading corner, opposite its waiting count. A press
- * brings the notice's card back. It is one of the stops the strip's arrows walk, never a Tab
+ * brings the notice's card back; a needs-you dot's press brings forward the chat that asks
+ * (#3652). It is one of the stops the strip's arrows walk, never a Tab
  * stop of its own, as every chip but one is (charter-app#189). Its glyph is the kind's shape
  * (WCAG 1.4.1); its name says what a press shows, and the chip's description says it too.
  */
@@ -198,21 +209,29 @@ export function NoticeDot({
 }) {
   const marked = useMarked({ onClick: onPress }, false);
   const Shape = SHAPE[kind];
+  // The disc is a filled shape; the hand is read by its strokes, as the title bar's own ✋ is.
+  const filled = kind !== "needs";
   return (
     <button
       type="button"
       {...marked}
       tabIndex={stop ? 0 : -1}
       aria-label={
-        count === 1
-          ? `Show the notice on ${workspace}`
-          : `Show the ${count} notices on ${workspace}`
+        kind === "needs"
+          ? `Show the chat asking to remove ${workspace}`
+          : count === 1
+            ? `Show the notice on ${workspace}`
+            : `Show the ${count} notices on ${workspace}`
       }
       data-scope="titlebar"
       data-part="dot"
       data-kind={kind}
     >
-      <Shape aria-hidden="true" fill="currentColor" strokeWidth={0} />
+      {filled ? (
+        <Shape aria-hidden="true" fill="currentColor" strokeWidth={0} />
+      ) : (
+        <Shape aria-hidden="true" strokeWidth={2.5} />
+      )}
     </button>
   );
 }
@@ -246,7 +265,8 @@ export function RootChip({
   // What a context menu around it hands it (`asChild`) reaches the button with the press.
   const marked = useMarked({ ...handed, onClick: onPress }, current);
   const said = useId();
-  const shows = notices !== undefined && notices.count > 0;
+  const shown = notices === undefined ? undefined : noticesSaid(notices);
+  const shows = shown !== undefined;
   return (
     <Tooltip tip={name}>
       <button
@@ -272,7 +292,7 @@ export function RootChip({
         <House aria-hidden="true" />
         {shows && (
           <span id={said} hidden>
-            {noticesSaid(notices.count)}
+            {shown}
           </span>
         )}
       </button>

@@ -29,7 +29,10 @@ function TheWindow({
   hasNotice,
   width,
   startOpen = true,
+  asking,
 }: {
+  /** A workspace chat 7 asks the person to remove (#3652): a ✋ on its chip. */
+  asking?: string;
   pins: string[];
   hasNotice: string;
   /** The title bar's width: the window's. */
@@ -77,6 +80,8 @@ function TheWindow({
     hide: () => setOpen(undefined),
     dismiss: (id) => setKept((was) => was.filter((one) => one.id !== id)),
     onSettings: () => undefined,
+    needs: new Map(asking === undefined ? [] : [[asking, 7]]),
+    bring: (session) => setSaid(`Brought chat ${session} forward`),
   };
   return (
     <div style={{ display: "grid", gap: "var(--space-6)", inlineSize: width }}>
@@ -318,5 +323,32 @@ export const ComesUpOnAChipOutOfSight: Story = {
       expect(still).toBe(true);
     });
     await waitFor(() => expect(surfaceOf(card).hasAttribute("data-entering")).toBe(false));
+  },
+};
+
+/** **The needs-you dot** (#3652): a chat asks to remove 3rd-try, so its chip shows a ✋, the
+ *  most urgent kind, beside the amber count. Its press brings the asking chat forward, where the
+ *  consent is answered on its band, and brings up the workspace's own card beside it; the ✋
+ *  stays, since the question is not answered yet. */
+export const NeedsYouBesideTheCount: Story = {
+  args: { startOpen: false, asking: "3rd-try" },
+  play: async ({ canvas, userEvent }) => {
+    const hand = canvas.getByRole("button", { name: "Show the chat asking to remove 3rd-try" });
+    await expect(hand).toHaveAttribute("data-kind", "needs");
+    await expect(hand.querySelector("svg")).not.toBeNull();
+    const chip = chipOf("3rd-try");
+    await expect(chip).toHaveAccessibleDescription(
+      "2 waiting, 1 notice, a chat asks you to remove it",
+    );
+    // The arrows of the strip reach it, as they reach every dot: from the chip, back one.
+    chip.focus();
+    await userEvent.keyboard("{ArrowLeft}");
+    await expect(hand).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    await expect(canvas.getByText("Brought chat 7 forward")).toBeInTheDocument();
+    await waitFor(() => expect(cardOf()).not.toBeNull());
+    await expect(
+      canvas.getByRole("button", { name: "Show the chat asking to remove 3rd-try" }),
+    ).toBeInTheDocument();
   },
 };

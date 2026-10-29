@@ -225,6 +225,12 @@
   block-size: 6px;
 }
 
+/* Needs-you's raised hand, in its strokes, 10px: at 6px a hand is no longer a hand (#3652). */
+[data-part="dot"][data-scope="titlebar"][data-kind="needs"] svg {
+  inline-size: 10px;
+  block-size: 10px;
+}
+
 [data-part="dot"][data-scope="titlebar"][data-focus-visible] {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);

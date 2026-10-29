@@ -11,9 +11,10 @@ import {
   type RefObject,
 } from "react";
 import type { Said } from "./actions";
+import type { Shown } from "./bindings";
 import { ActionResultNotice } from "./ActionResultNotice";
 import type { KeptResult } from "./keptResults";
-import { aboutOf, placeOf, type Chip, type Place } from "./noticePlace";
+import { aboutOf, needsOn, placeOf, type Chip, type Place } from "./noticePlace";
 import { CARD_STOP } from "./regionCycle";
 import type { SettingsLink } from "./settings/links";
 import { HungPopover } from "./ui/popover/Popover";
@@ -36,6 +37,12 @@ export type ChipNotices = {
   on: ReadonlyMap<string, readonly ChipNotice[]>;
   /** The chip whose card is up, if one is. */
   open: string | undefined;
+  /** **The chips a chat needs the person on** (#3652): each workspace a chat asks to have
+   *  removed, by the asking chat's session. Its ✋ dot stays until the registry no longer lists
+   *  the question, whatever card is up. */
+  needs?: ReadonlyMap<string, number>;
+  /** Brings chat `session` forward, where its question is answered on its band (#3652). */
+  bring?: (session: number) => void;
   /** Shows `workspace`'s card: its dot's press. */
   show: (workspace: string) => void;
   /** Hides the card up, dismissing nothing: a press anywhere else. */
@@ -45,6 +52,9 @@ export type ChipNotices = {
   /** A refusal's way to the setting that puts it right. */
   onSettings: (link: SettingsLink) => void;
 };
+
+/** No asks: one list, so the chips' needs are worked out again only when the asks move. */
+const NO_ASKS: readonly Shown[] = [];
 
 /** Where `said` is drawn, given the title bar's `chips`. */
 export const placeOfSaid = (said: Said, chips: readonly Chip[]): Place =>
@@ -63,7 +73,13 @@ export function useChipNotices({
   chips,
   drop,
   onSettings,
+  asks = NO_ASKS,
+  bring = () => {},
 }: {
+  /** What waits on the person in the project in front, as the registry lists it (#3652). */
+  asks?: readonly Shown[];
+  /** Brings a chat of the project in front forward. */
+  bring?: (session: number) => void;
   /** The newest result said, which brings its chip's card up when it is placed on one. */
   said: Said | undefined;
   kept: readonly KeptResult[];
@@ -85,6 +101,7 @@ export function useChipNotices({
     }
     return by;
   }, [kept, plane, chips]);
+  const needs = useMemo(() => needsOn(asks, chips), [asks, chips]);
   // **Which card is up, and in which project** (#3648's review): a card is up only in the
   // project whose result brought it up, and a project brought to the front brings none up.
   const [up, setUp] = useState<{
@@ -134,6 +151,8 @@ export function useChipNotices({
     on,
     // A card with nothing left on it is down.
     open: shown !== undefined && on.has(shown) ? shown : undefined,
+    needs,
+    bring,
     show: (workspace) => setUp((was) => ({ ...was, open: workspace, on: plane, chipped: true })),
     hide: () => setUp((was) => ({ ...was, open: undefined })),
     dismiss: drop,
@@ -142,10 +161,10 @@ export function useChipNotices({
 }
 
 /** How urgent each kind is: the dot shows the most urgent of a chip's notices (spec #3647). */
-const URGENCY: Record<NoticeKind, number> = { info: 1 };
+const URGENCY: Record<NoticeKind, number> = { info: 1, needs: 3 };
 
 /** The most urgent kind among `notices`: what a chip's dot shows. News is the least urgent. */
-export const mostUrgent = (notices: readonly ChipNotice[]): NoticeKind =>
+export const mostUrgent = (notices: readonly { kind: NoticeKind }[]): NoticeKind =>
   notices.reduce<NoticeKind>(
     (top, one) => (URGENCY[one.kind] > URGENCY[top] ? one.kind : top),
     "info",
