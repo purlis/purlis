@@ -1085,12 +1085,9 @@ fn a_chats_downloads_and_uploads_go_through_every_hop() {
         "Export the report",
     );
     tools.done("browser_click", json!({ "target": export }));
-    let listed = downloads_saying(&mut tools, "Download d1: \"q3-report.csv\", 22 bytes");
-    assert!(
-        listed.contains(&format!(
-            "Download d1: \"{EXPORTED_AS}\", 22 bytes from {origin}, done"
-        )),
-        "{listed}"
+    downloads_saying(
+        &mut tools,
+        &format!("Download d1: \"{EXPORTED_AS}\", 22 bytes from {origin}, done"),
     );
     let files = files_under(&held);
     assert_eq!(files.len(), 1, "one file held: {files:?}");
@@ -1113,14 +1110,20 @@ fn a_chats_downloads_and_uploads_go_through_every_hop() {
         "Make a file",
     );
     tools.done("browser_click", json!({ "target": make }));
-    let listed = downloads_saying(&mut tools, "Download d2: \"made.txt\", 17 bytes");
-    assert!(
-        listed.contains(&format!(
-            "Download d2: \"made.txt\", 17 bytes from {origin}, done"
-        )),
-        "{listed}"
+    downloads_saying(
+        &mut tools,
+        &format!("Download d2: \"made.txt\", 17 bytes from {origin}, done"),
     );
-    assert_eq!(files_under(&held).len(), 2, "both held");
+    let held_names: Vec<String> = files_under(&held)
+        .iter()
+        .map(|file| {
+            file.file_name()
+                .expect("a name")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    assert_eq!(held_names.len(), 2, "both held: {held_names:?}");
 
     // Saving one waits on a yes nothing can give yet: refused, and the chat's folder unchanged.
     let saved = tools.call(
@@ -1129,13 +1132,22 @@ fn a_chats_downloads_and_uploads_go_through_every_hop() {
     );
     assert!(saved.error, "{saved:?}");
     assert!(
+        saved
+            .text
+            .contains(&crate::browserfiles::save_not_allowed_said(&origin)),
+        "refused for want of the person's yes: {}",
+        saved.text
+    );
+    assert!(
         !window.root.join("report.csv").exists(),
         "nothing was saved"
     );
 
     // Nothing told the chat where any of it is held.
     for said in &tools.told {
-        assert!(!said.text.contains(&engines_name), "{}", said.text);
+        for name in &held_names {
+            assert!(!said.text.contains(name.as_str()), "{}", said.text);
+        }
         assert!(
             !said.text.contains(&held.display().to_string()),
             "{}",
