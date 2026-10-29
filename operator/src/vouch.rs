@@ -219,6 +219,10 @@ impl SigningKey {
     }
 }
 
+/// The link a kubelet keeps in a mounted Secret's folder to the folder holding its current
+/// version, swapped in one step when the Secret changes.
+pub const KUBELET_DATA: &str = "..data";
+
 /// **The keys the operator signs with** (#3305): the current one, and while a team admin rolls
 /// it, the next one beside it. Every statement is signed by both during a roll, and the current
 /// key vouches for the next on every Pool ([`roll_statement`]).
@@ -242,7 +246,19 @@ impl SigningKeys {
 
     /// The keys in the folder `dir`, as the kubelet mounts the Secret: `key.pem`, which must be
     /// there, and `next.pem`, there only during a roll.
+    ///
+    /// Both are read from one snapshot of the Secret: the kubelet writes each version of a
+    /// mounted Secret to a folder of its own and swaps the link `..data` to it in one step, so
+    /// both files are read under the folder `..data` names when it is read. Read through `dir`
+    /// itself, a promotion landing between the two reads would show the old key with no next
+    /// key. A folder with no `..data`, not mounted by a kubelet, is read as it is.
     pub fn read(dir: &std::path::Path) -> Result<SigningKeys, String> {
+        let snapshot = match std::fs::canonicalize(dir.join(KUBELET_DATA)) {
+            Ok(snapshot) => snapshot,
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => dir.to_path_buf(),
+            Err(why) => return Err(format!("{KUBELET_DATA}: {why}")),
+        };
+        let dir = snapshot.as_path();
         let current = std::fs::read_to_string(dir.join("key.pem"))
             .map_err(|why| format!("key.pem: {why}"))?;
         let next = match std::fs::read_to_string(dir.join("next.pem")) {
