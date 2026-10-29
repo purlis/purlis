@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Upload</title></head>
+<body>
+  <h1>Upload</h1>
+  <label>Attachment <input type="file" id="file" multiple></label>
+  <p id="got">nothing received</p>
+  <!-- Reads the chosen files again, later: a file changed on disk since it was chosen no longer
+       reads, so this tells a copy made for the page from the file it was made of. -->
+  <button id="again">Read again</button>
+  <p id="read-again">not read again</p>
+  <script>
+    const input = document.getElementById('file');
+    // What the page received: each file's name, size and text, as a site would read them.
+    async function said(files) {
+      const out = [];
+      for (const file of files) {
+        try {
+          out.push(file.name + ', ' + file.size + ' bytes: ' + (await file.text()).trim());
+        } catch (e) {
+          out.push(file.name + ' no longer reads');
+        }
+      }
+      return out.join('; ');
+    }
+    input.addEventListener('change', async () => {
+      document.getElementById('got').textContent = 'received ' + await said(input.files);
+    });
+    document.getElementById('again').addEventListener('click', async () => {
+      document.getElementById('read-again').textContent = 'read again ' + await said(input.files);
+    });
+  </script>
+</body></html>
