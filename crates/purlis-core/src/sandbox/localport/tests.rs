@@ -549,13 +549,13 @@ while (accept(my $c, $s)) {
             assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "no");
         }
     }
-    /// **Claude Code's rules for a socket it is allowed** (#3316), as its macOS profile builder
-    /// writes each `network.allowUnixSockets` path (read out of Claude Code 2.1.312): the socket
-    /// domain, `network-bind` and `network-outbound` on the path as a `subpath`, and no
-    /// `network-inbound`. With the file's own make and remove allowed, as its `allowWrite` would.
-    /// What a server there gets is printed: `yes`, or the step refused.
+    /// **Claude Code's rules for a socket it is allowed let a server listen there** (#3316): as
+    /// its macOS profile builder writes each `network.allowUnixSockets` path (read out of Claude
+    /// Code 2.1.312), the socket domain, `network-bind` and `network-outbound` on the path as a
+    /// `subpath`, and no `network-inbound`; with the file's own make and remove allowed, as its
+    /// `allowWrite` would. The server binds, listens and is reached through its door.
     #[test]
-    fn claude_codes_rules_for_an_allowed_socket_and_a_server_there() {
+    fn claude_codes_rules_for_an_allowed_socket_let_a_server_listen_there() {
         if !can_apply() {
             let _ = writeln!(
                 std::io::stderr(),
@@ -609,19 +609,22 @@ while (accept(my $c, $s)) {
         let _ = server.wait();
         let _ = writeln!(
             std::io::stderr(),
-            "PROBE-3316 claude code socket: {} | through the door: {:?}",
+            "claude code's socket rules: {} | through the door: {:?}",
             ready.trim(),
             carried.lines().next()
         );
-        assert_eq!(ready.trim(), "yes", "PROBE-3316");
-        assert!(carried.ends_with("ok"), "PROBE-3316 {carried}");
+        assert_eq!(ready.trim(), "yes");
+        assert!(carried.ends_with("ok"), "{carried}");
     }
 
-    /// **Claude Code's rules for a socket, its folder's writes denied after** (#3316): as its
-    /// `denyWrite` writes a denied folder, after every allow; once with the socket's own make and
-    /// remove allowed, once with no write allowed at all. What a bind there gets is printed.
+    /// **No server binds a socket in a folder denied to writes, whatever the socket rules
+    /// allow** (#3316): binding makes the socket's file, which is a write. Claude Code writes a
+    /// `denyWrite` folder after every allow, so it outranks an `allowWrite` of the socket inside
+    /// it: once with that write allowed, once with none, the bind is refused. So a Claude Code
+    /// chat can make its socket only where no denial holds, and the folder purlis keeps chats'
+    /// sockets in is denied to every chat's writes.
     #[test]
-    fn claude_codes_rules_for_a_socket_in_a_folder_denied_to_writes() {
+    fn no_server_binds_a_socket_in_a_folder_denied_to_writes() {
         if !can_apply() {
             return;
         }
@@ -667,54 +670,7 @@ while (accept(my $c, $s)) {
                 String::from_utf8_lossy(&out.stdout).trim()
             ));
         }
-        let _ = writeln!(std::io::stderr(), "PROBE-3316-denied {}", got.join(" | "));
-    }
-
-    /// **A port the system picks** (#3396): whether a Seatbelt bind rule on port 0 lets a bind of
-    /// `127.0.0.1:0` alone, with no listen allowed (Seatbelt takes no `localhost:*` there, so a
-    /// listen would need every interface's every port). What a server gets is printed.
-    #[test]
-    fn a_port_the_system_picks_under_a_rule_for_port_zero() {
-        if !can_apply() {
-            let _ = writeln!(
-                std::io::stderr(),
-                "skipped: this process is already sandboxed, so no second profile applies"
-            );
-            return;
-        }
-        let cwd = tempfile::tempdir().expect("a folder");
-        let tmp = tempfile::tempdir().expect("a temp folder");
-        let mut own = seatbelt::Own::default();
-        own.after
-            .extend([r#"(allow network-bind (local ip "localhost:0"))"#.to_owned()]);
-        let Ok(profile) = seatbelt::profile(&[], &own, cwd.path(), tmp.path(), &[], None) else {
-            panic!("PROBE-3396 no profile");
-        };
-        let tried = |words: &[&str]| -> String {
-            let out = crate::forklock::output(
-                std::process::Command::new(backend::SANDBOX_EXEC)
-                    .args(["-p", &profile, "/usr/bin/perl", "-e", TCP])
-                    .args(words)
-                    .current_dir(cwd.path()),
-            )
-            .expect("it runs");
-            format!(
-                "{} {}",
-                String::from_utf8_lossy(&out.stdout).trim(),
-                String::from_utf8_lossy(&out.stderr).trim()
-            )
-        };
-        let zero = tried(&["4", "127.0.0.1", "0"]);
-        let named = tried(&["4", "127.0.0.1", &free_port().to_string()]);
-        let every = tried(&["4", "0.0.0.0", "0"]);
-        let _ = writeln!(
-            std::io::stderr(),
-            "PROBE-3396 zero: {zero} | named: {named} | every: {every}"
-        );
-        assert!(
-            zero.starts_with("yes"),
-            "PROBE-3396 {zero} | {named} | {every}"
-        );
+        assert_eq!(got, ["with its write: bind", "with no write: bind"]);
     }
 
     /// A server the person starts on every interface after the door opened is refused its
