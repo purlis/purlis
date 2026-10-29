@@ -546,6 +546,31 @@ pub struct StudioRouter {
     /// trigger tests pass with it and with the built-in router, and the library's commit it was
     /// graded on. Null where it has none, and for the built-in router.
     pub grade: Option<String>,
+    /// **What the scope's own choice writes** (#3692): the persona's `skill-router:` line, or
+    /// else the workspace's `settings.skills.router`, as written. Null where it writes none,
+    /// and at the project's root, which chooses no router. What Change… starts from.
+    pub written: Option<String>,
+    /// **A chat's skill budget** (SK-12, ADR 0102 §1): past it the router decides what a chat's
+    /// list shows. The same on every harness.
+    pub budget: StudioBudget,
+}
+
+/// **A chat's skill budget**, as the Routing page says it: the most skills its list holds, and
+/// the most characters of their descriptions together.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+pub struct StudioBudget {
+    pub skills: u32,
+    pub chars: u32,
+}
+
+impl Default for StudioBudget {
+    fn default() -> Self {
+        let budget = purlis_core::harness::SKILL_BUDGET;
+        StudioBudget {
+            skills: u32::try_from(budget.skills).unwrap_or(u32::MAX),
+            chars: u32::try_from(budget.chars).unwrap_or(u32::MAX),
+        }
+    }
 }
 
 /// One chat a router extension was asked about at its start.
@@ -553,6 +578,25 @@ pub struct StudioRouter {
 pub struct StudioRouted {
     pub session: u32,
     pub routing: crate::useskill::SkillRouting,
+    /// **Every skill the routing hid at its start, by name** (#3692): the routing record's, so
+    /// the Routing page says what a chat started without on its list.
+    pub hidden: Vec<String>,
+}
+
+impl StudioRouted {
+    /// Chat `session`'s routing at its start, as the Routing page lists it.
+    pub(crate) fn of(session: u32, routed: &purlis_core::skills::router::Routed) -> Self {
+        StudioRouted {
+            session,
+            routing: routed.into(),
+            hidden: routed
+                .record
+                .hidden
+                .iter()
+                .map(|one| one.skill.clone())
+                .collect(),
+        }
+    }
 }
 
 /// The router chats in `workspace` as `persona` of the project at `root` are routed by.
@@ -584,12 +628,17 @@ fn router_of(
             .first()
             .map(purlis_core::skills::grades::routers::RouterGraded::said)
     });
+    let pinner = persona
+        .map(|p| purlis_core::skills::PinnedBy::Persona(p.to_owned()))
+        .or_else(|| workspace.map(|ws| purlis_core::skills::PinnedBy::Workspace(ws.to_owned())));
     StudioRouter {
         said,
         problem,
         extension,
         chats: Vec::new(),
         grade,
+        written: pinner.and_then(|by| purlis_core::skills::router::written(root, &by)),
+        budget: StudioBudget::default(),
     }
 }
 
@@ -1195,10 +1244,7 @@ pub(crate) async fn skill_studio(
                 .routings()
                 .into_iter()
                 .filter(|one| one.workspace == workspace && one.persona == persona)
-                .map(|one| StudioRouted {
-                    session: one.session,
-                    routing: (&one.routed).into(),
-                })
+                .map(|one| StudioRouted::of(one.session, &one.routed))
                 .collect();
         }
         Ok(studio)

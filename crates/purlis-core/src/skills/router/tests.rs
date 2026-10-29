@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use super::*;
 use crate::harness::Harness;
 use crate::hoststart::ChatSkills;
-use crate::skills::{Running, for_use_skill};
+use crate::skills::{PinnedBy, Running, for_use_skill};
 
 /// The most skills a chat lists on every harness (ADR 0102 as amended 2026-10-21).
 const MOST: usize = 30;
@@ -728,4 +728,124 @@ fn the_built_in_router_s_arm_asks_nothing_3233() {
     assert_eq!(baseline.arm_router, None);
     assert_eq!(baseline.routed, None);
     assert!(fake.asked().is_empty());
+}
+
+/// The workspace `smart-ide`'s `workspace.json`, as JSON.
+fn workspace_json(root: &Path) -> serde_json::Value {
+    let text = std::fs::read_to_string(root.join("workspaces/smart-ide/workspace.json"))
+        .unwrap_or_else(|_| "{}".to_owned());
+    serde_json::from_str(&text).unwrap()
+}
+
+#[test]
+fn a_workspace_s_router_is_chosen_and_its_built_in_router_is_the_key_taken_out_3692() {
+    let (tmp, _bundle) = a_plane_of(1);
+    let root = tmp.path();
+    let ws = PinnedBy::Workspace("smart-ide".to_owned());
+    let relevance = Chosen::Extension("relevance".to_owned());
+
+    assert_eq!(choose(root, &ws, Some(&relevance)), Ok(true));
+    assert_eq!(chosen(root, Some("smart-ide"), None), Ok(relevance.clone()));
+    assert_eq!(written(root, &ws).as_deref(), Some("relevance"));
+    assert_eq!(
+        choose(root, &ws, Some(&relevance)),
+        Ok(false),
+        "chosen already, nothing is written"
+    );
+
+    assert_eq!(choose(root, &ws, Some(&Chosen::BuiltIn)), Ok(true));
+    assert_eq!(chosen(root, Some("smart-ide"), None), Ok(Chosen::BuiltIn));
+    assert_eq!(written(root, &ws), None);
+    assert!(
+        workspace_json(root)["settings"]["skills"]
+            .get("router")
+            .is_none(),
+        "{}",
+        workspace_json(root)
+    );
+    assert_eq!(
+        choose(root, &ws, None),
+        Ok(false),
+        "the built-in router already"
+    );
+}
+
+#[test]
+fn a_workspace_s_router_that_is_no_string_is_replaced_by_the_choice_3692() {
+    let (tmp, _bundle) = a_plane_of(1);
+    let root = tmp.path();
+    let ws = PinnedBy::Workspace("smart-ide".to_owned());
+    workspace_skills(root, serde_json::json!({ "router": 7 }));
+
+    assert_eq!(written(root, &ws), None);
+    assert_eq!(choose(root, &ws, Some(&Chosen::BuiltIn)), Ok(true));
+    assert_eq!(chosen(root, Some("smart-ide"), None), Ok(Chosen::BuiltIn));
+}
+
+#[test]
+fn a_persona_s_built_in_router_is_written_and_none_hands_its_chats_to_the_workspace_s_3692() {
+    let (tmp, _bundle) = a_plane_of(1);
+    let root = tmp.path();
+    workspace_skills(root, serde_json::json!({ "router": "relevance" }));
+    let reviewer = PinnedBy::Persona("reviewer".to_owned());
+
+    assert_eq!(choose(root, &reviewer, Some(&Chosen::BuiltIn)), Ok(true));
+    assert_eq!(written(root, &reviewer).as_deref(), Some(BUILT_IN));
+    assert_eq!(
+        chosen(root, Some("smart-ide"), Some("reviewer")),
+        Ok(Chosen::BuiltIn),
+        "the persona's built-in router stands over its workspace's"
+    );
+    let text = std::fs::read_to_string(root.join("personas/reviewer/persona.md")).unwrap();
+    assert!(text.contains("skill-router: built-in\n"), "{text}");
+    assert!(
+        text.contains("role: Reviews.\n"),
+        "the rest of it is kept: {text}"
+    );
+
+    let recent = Chosen::Extension("recent-first".to_owned());
+    assert_eq!(choose(root, &reviewer, Some(&recent)), Ok(true));
+    assert_eq!(chosen(root, None, Some("reviewer")), Ok(recent.clone()));
+    assert_eq!(choose(root, &reviewer, Some(&recent)), Ok(false));
+
+    assert_eq!(choose(root, &reviewer, None), Ok(true));
+    assert_eq!(written(root, &reviewer), None);
+    assert_eq!(
+        chosen(root, Some("smart-ide"), Some("reviewer")),
+        Ok(Chosen::Extension("relevance".to_owned())),
+        "its chats are routed by their workspace's router again"
+    );
+    let text = std::fs::read_to_string(root.join("personas/reviewer/persona.md")).unwrap();
+    assert!(!text.contains("skill-router"), "{text}");
+}
+
+#[test]
+fn choosing_a_router_is_refused_for_what_the_project_does_not_have_or_no_id_3692() {
+    let (tmp, _bundle) = a_plane_of(1);
+    let root = tmp.path();
+    let why = choose(
+        root,
+        &PinnedBy::Workspace("nowhere".to_owned()),
+        Some(&Chosen::BuiltIn),
+    )
+    .expect_err("no such workspace");
+    assert!(why.contains("no workspace \"nowhere\""), "{why}");
+
+    let why = choose(
+        root,
+        &PinnedBy::Workspace("smart-ide".to_owned()),
+        Some(&Chosen::Extension("../escape".to_owned())),
+    )
+    .expect_err("no extension's id");
+    assert!(why.contains("is not an extension's id"), "{why}");
+    assert!(!root.join("workspaces/smart-ide/workspace.json").exists());
+
+    assert!(
+        choose(
+            root,
+            &PinnedBy::Persona("nobody".to_owned()),
+            Some(&Chosen::BuiltIn)
+        )
+        .is_err()
+    );
 }

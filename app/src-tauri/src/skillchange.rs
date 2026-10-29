@@ -765,6 +765,109 @@ pub(crate) async fn skill_pin(
     .await
 }
 
+/// **A router the Skill studio's Change… offers** (SK-15b, #3692): an extension this machine
+/// approved, the project has on, and that declares `skill-router`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillRouterOffer {
+    /// Its id, which a choice writes.
+    pub id: String,
+    /// Its name, as its manifest gives it.
+    pub name: String,
+}
+
+/// **Every router extension the project at `root` can choose** (#3692), in id order: what
+/// [`purlis_core::skills::studio::Studio::declaring`] finds that declares `skill-router`.
+fn routers_in(
+    executor: &purlis_core::executor::Executor,
+    root: &std::path::Path,
+) -> Vec<SkillRouterOffer> {
+    purlis_core::skills::studio::with_studio(executor, root, |studio| {
+        studio
+            .map(|studio| {
+                studio
+                    .declaring(purlis_core::extension::capability::Capability::SkillRouter)
+                    .into_iter()
+                    .map(|asked| SkillRouterOffer {
+                        id: asked.id,
+                        name: asked.name,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+}
+
+/// **The router extensions the Skill studio's Change… offers**, beside the built-in router
+/// (#3692): each approved here, on in the project, and declaring `skill-router`. Read when the
+/// dialog opens, never with the studio, so opening a chat or the studio asks no extension's
+/// manifest.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_routers(
+    views: tauri::State<'_, crate::views::Views>,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+) -> Result<Vec<SkillRouterOffer>, String> {
+    let held = planes.held(&plane)?;
+    let executor = views.executor();
+    crate::off_the_window("reading the router extensions", move || {
+        flag_on()?;
+        Ok(routers_in(&executor, held.root()))
+    })
+    .await
+}
+
+/// **Chooses `router` for `by`'s chats** (#3692): `built-in`, an id among `offered`, or `None`
+/// to take the choice out (a persona's chats then take their workspace's router). An id that is
+/// not offered here is refused, writing nothing: a router not approved or not on would never be
+/// asked, and every chat would fall back. The core's `verbs::route`, one commit.
+pub(crate) fn route(
+    root: &std::path::Path,
+    by: &SkillPinner,
+    router: Option<&str>,
+    offered: &[SkillRouterOffer],
+) -> Result<SkillChanged, String> {
+    use purlis_core::skills::router::{BUILT_IN, Chosen};
+    let chosen = match router {
+        None => None,
+        Some(BUILT_IN) => Some(Chosen::BuiltIn),
+        Some(id) if offered.iter().any(|one| one.id == id) => {
+            Some(Chosen::Extension(id.to_owned()))
+        }
+        Some(id) => {
+            return Err(format!(
+                "No router extension '{}' is approved on this machine and on in this project, so \
+                 nothing was changed.",
+                purlis_core::shown::readable(id, 64)
+            ));
+        }
+    };
+    let by = by.into();
+    heard(root, |cx| verbs::route(cx, &by, chosen.as_ref()))
+}
+
+/// **Chooses the router a workspace's or a persona's chats are routed by**, or takes the choice
+/// out (`router` null), from the Skill studio's Routing page (#3692). One commit; chats started
+/// after it are routed by it.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_router_choose(
+    views: tauri::State<'_, crate::views::Views>,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    by: SkillPinner,
+    router: Option<String>,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    let executor = views.executor();
+    crate::off_the_window("choosing the router", move || {
+        flag_on()?;
+        let offered = routers_in(&executor, held.root());
+        route(held.root(), &by, router.as_deref(), &offered)
+    })
+    .await
+}
+
 /// **Shares** a local skill: commits it to the project at its level (#2767), one commit.
 pub(crate) fn share(root: &std::path::Path, at: &Whose, name: &str) -> Result<(), String> {
     heard(root, |cx| verbs::share(cx, at, name)).map(|_| ())

@@ -1655,6 +1655,33 @@ pub(super) fn set_names_in_settings(
     .map_err(|why| why.join(" "))
 }
 
+/// **Writes the workspace `workspace`'s `settings.skills.<key>`** as the text `text`, or takes
+/// the key out for none, through the Workspace level's own save (#3692).
+pub(super) fn set_text_in_settings(
+    plane: &Path,
+    workspace: &str,
+    key: &str,
+    text: Option<String>,
+) -> Result<(), String> {
+    let read = crate::settings::workspace::read_file(plane, workspace)?;
+    let base = read.exists.then_some(read.text.as_str());
+    let path = vec![
+        crate::settings::Step::Key(crate::settings::workspace::SKILLS.to_owned()),
+        crate::settings::Step::Key(key.to_owned()),
+    ];
+    crate::settings::workspace::save(
+        plane,
+        workspace,
+        base,
+        &[crate::settings::Edit {
+            path,
+            value: text.map(crate::settings::Value::Text),
+        }],
+    )
+    .map(|_| ())
+    .map_err(|why| why.join(" "))
+}
+
 fn no_project_skill(name: &str) -> String {
     format!(
         "no project skill is named {name:?}: a project skill is a folder in skills/ or \

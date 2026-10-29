@@ -90,6 +90,85 @@ fn written_in(plane: &Path, workspace: &str) -> Option<Result<String, String>> {
     }))
 }
 
+/// **What `by` writes as its router** (ADR 0102 §5, #3692): the workspace's
+/// `settings.skills.router` or the persona's own `skill-router:` line, trimmed, as written;
+/// `None` where it writes none, or the workspace's value is no string. What the Skill studio's
+/// Change… dialog starts from.
+pub fn written(plane: &Path, by: &super::PinnedBy) -> Option<String> {
+    match by {
+        super::PinnedBy::Workspace(ws) => written_in(plane, ws)?.ok(),
+        super::PinnedBy::Persona(persona) => crate::personaverbs::skill_router(plane, persona),
+    }
+    .map(|written| written.trim().to_owned())
+}
+
+/// **Chooses `router` for `by`'s chats** (ADR 0102 §5, #3692): writes the workspace's
+/// `settings.skills.router`, through the Workspace level's own save, or the persona's own
+/// `skill-router:` line. `None` takes the choice out: a workspace's chats are then routed by the
+/// built-in router, and a persona's by its workspace's. A workspace's built-in router is the key
+/// taken out, as an absent key is that router; a persona's is written, as it then stands over its
+/// workspace's. `Ok(false)` where it already was so, and nothing is written.
+///
+/// Refused, writing nothing, on a project purlis opens read-only, for a workspace or persona the
+/// project does not have, and for an extension id that is no extension's. Whether the extension
+/// is approved here and declares `skill-router` is the caller's to hold: a chat whose router is
+/// not asked falls back on the built-in router and says why ([`at_start`]).
+pub(crate) fn choose(
+    plane: &Path,
+    by: &super::PinnedBy,
+    router: Option<&Chosen>,
+) -> Result<bool, String> {
+    crate::settings::writable(plane)?;
+    if let Some(Chosen::Extension(id)) = router
+        && !crate::extension::an_id(id)
+    {
+        return Err(format!(
+            "{:?} is not an extension's id, so no router was chosen",
+            crate::shown::readable(id, 64)
+        ));
+    }
+    let wanted = match (by, router) {
+        (super::PinnedBy::Workspace(_), None | Some(Chosen::BuiltIn))
+        | (super::PinnedBy::Persona(_), None) => None,
+        (super::PinnedBy::Persona(_), Some(Chosen::BuiltIn)) => Some(BUILT_IN.to_owned()),
+        (_, Some(Chosen::Extension(id))) => Some(id.clone()),
+    };
+    match by {
+        super::PinnedBy::Workspace(ws) => {
+            let held = crate::workspaces::Plane::open(plane);
+            if !held.workspace(ws).is_ok_and(|one| one.dir().is_dir()) {
+                return Err(format!(
+                    "this project has no workspace {ws:?}: `purlis workspace list` lists them"
+                ));
+            }
+            // A value that is no string is replaced, never taken for the router wanted.
+            let unchanged = match (written_in(plane, ws), &wanted) {
+                (None, None) => true,
+                (Some(Ok(now)), Some(wanted)) => now.trim() == wanted,
+                _ => false,
+            };
+            if unchanged {
+                return Ok(false);
+            }
+            super::set_text_in_settings(
+                plane,
+                ws,
+                crate::settings::workspace::SKILLS_ROUTER,
+                wanted,
+            )?;
+        }
+        super::PinnedBy::Persona(persona) => {
+            if crate::personaverbs::skill_router(plane, persona).map(|one| one.trim().to_owned())
+                == wanted
+            {
+                return Ok(false);
+            }
+            super::persona::write_router(plane, persona, wanted.as_deref())?;
+        }
+    }
+    Ok(true)
+}
+
 /// `written`, `whose` choice, as a router.
 fn parse(written: &str, whose: &str) -> Result<Chosen, String> {
     let written = written.trim();

@@ -178,3 +178,44 @@ fn a_pinner_the_window_sends_is_the_cores_and_back_sk15d() {
         r#"{"at":"workspace","name":"ops"}"#
     );
 }
+
+#[test]
+fn a_router_is_chosen_only_where_it_is_offered_and_taken_out_with_none_3692() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
+    let ops = SkillPinner::Workspace {
+        name: "ops".to_owned(),
+    };
+    let offered = [SkillRouterOffer {
+        id: "relevance".to_owned(),
+        name: "Relevance".to_owned(),
+    }];
+    let manifest = root.join("workspaces/ops/workspace.json");
+
+    let why = route(root, &ops, Some("recent-first"), &offered).expect_err("not offered");
+    assert!(why.contains("'recent-first'"), "{why}");
+    assert!(
+        !manifest.exists(),
+        "nothing is written for a router not offered"
+    );
+
+    route(root, &ops, Some("relevance"), &offered).unwrap();
+    assert_eq!(
+        purlis_core::skills::router::chosen(root, Some("ops"), None),
+        Ok(purlis_core::skills::router::Chosen::Extension(
+            "relevance".to_owned()
+        ))
+    );
+    route(root, &ops, Some("built-in"), &[]).unwrap();
+    assert_eq!(
+        purlis_core::skills::router::chosen(root, Some("ops"), None),
+        Ok(purlis_core::skills::router::Chosen::BuiltIn)
+    );
+    route(root, &ops, None, &[]).unwrap();
+    assert_eq!(
+        purlis_core::skills::router::written(root, &(&ops).into()),
+        None
+    );
+}

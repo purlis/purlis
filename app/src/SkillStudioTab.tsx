@@ -13,13 +13,14 @@ import {
   type SkillTemplate,
   type SkillTemplateId,
   type SkillUsers,
+  type SkillPinner,
   type Studio,
-  type StudioRouter,
   type StudioSkill,
 } from "./bindings";
 import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
-import { SkillStudioHarnesses } from "./SkillStudioHarnesses";
+import { HarnessItem, HarnessList, harnessGroups, harnessRowAt } from "./SkillStudioHarnesses";
+import { RoutedChatItem, RoutedChats, RoutingFacts } from "./SkillStudioRouting";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Badge, type BadgeVariant } from "./ui/badge/Badge";
 import { Fact, Facts } from "./ui/card/Facts";
@@ -30,7 +31,6 @@ import { ViewFrame, ViewListHead, ViewPageHeader, type ViewPage } from "./ui/pan
 import { ViewBar, type Crumb } from "./ui/panel/ViewBar";
 import { useViewHistory } from "./ui/panel/viewHistory";
 import { SkillPinSwitch, SkillPinsRefusedLine } from "./SkillPins";
-import { RouterGrade } from "./RouterGrade";
 import { Notice } from "./Notice";
 import { SkillCompatBadges } from "./SkillCompatBadges";
 import { SkillDrafts } from "./SkillDrafts";
@@ -58,6 +58,7 @@ import {
   STUDIO_START,
   inWorkspace,
   pinnerOf,
+  routedChatId,
   sameScope,
   scopeChat,
   scopeKey,
@@ -550,9 +551,29 @@ export function SkillStudioTab({
       {DRAFT_WITH_A_CHAT}
     </Button>
   );
+  // What is chosen on Harness skills (#3692): a program's own skill, by its place's id.
+  const groups =
+    page === "harness" ? harnessGroups(studio?.harnesses ?? [], studio?.not_supported ?? []) : [];
+  const harnessRow = page === "harness" ? harnessRowAt(groups, at.skill) : undefined;
+  // What is chosen on Routing: a chat's start, by its number.
+  const routedChat =
+    page === "routing"
+      ? studio?.router?.chats.find((one) => routedChatId(one.session) === at.skill)
+      : undefined;
+  const itemName =
+    harnessRow !== undefined
+      ? harnessRow.kind === "not-supported"
+        ? harnessRow.one.title
+        : harnessRow.kind === "none"
+          ? harnessRow.title
+          : harnessRow.skill.name
+      : routedChat === undefined
+        ? undefined
+        : `Chat ${routedChat.session}`;
   const path: Crumb[] = [
     { id: page, label: STUDIO_PAGE_NAMES[page] },
     ...(chosen === undefined ? [] : [{ id: "skill", label: chosen.name }]),
+    ...(itemName === undefined ? [] : [{ id: "item", label: itemName }]),
     ...(doing === undefined ? [] : [{ id: "doing", label: DOING_NAMES[doing.what] }]),
   ];
   const restoring = said?.restore;
@@ -909,39 +930,64 @@ export function SkillStudioTab({
       ),
     );
   } else if (page === "harness") {
+    const row = harnessRow;
     list = pageList(
-      "The skills each chat program brings on its own, which purlis lists and never edits.",
-      held(() =>
-        studio === undefined ? null : (
-          <SkillStudioHarnesses
-            plane={plane}
-            workspace={workspace}
-            harnesses={studio.harnesses}
-            notSupported={studio.not_supported}
-            onSwitched={() => setSwitched((n) => n + 1)}
-          />
-        ),
-      ),
+      "The skills each program finds itself: your own, a repo's and a plugin's. You can switch your own and a repo's for these chats; a plugin's come and go with the plugin, which its program turns on or off.",
+      held(() => (
+        <HarnessList
+          groups={groups}
+          chosen={row}
+          onChoose={(id) => go({ page: "harness", scope, skill: id })}
+        />
+      )),
     );
+    item =
+      studio === undefined ? undefined : (
+        <HarnessItem
+          key={row?.id}
+          plane={plane}
+          workspace={workspace}
+          row={row}
+          onSwitched={() => setSwitched((n) => n + 1)}
+        />
+      );
   } else {
     const router = studio?.router ?? null;
+    const chats = router?.chats ?? [];
+    const chat = routedChat;
+    const by: SkillPinner | null = pinnerOf(scope);
     list = pageList(
-      "Which router picks the skills a chat is shown, and how it did at each chat's start.",
+      "When a chat's list of skills is over its budget, a router decides which it sees. The router is asked once, at a chat's start.",
       held(() =>
-        router === null || (router.extension === null && !router.problem) ? (
-          <EmptyState
-            headline="These chats use purlis's own router"
-            body="An extension's router chosen for a workspace or a persona is shown here, with how it did at each chat's start."
-            testid="skill-routing-built-in"
-          />
-        ) : (
-          <StudioRouterLine
-            router={router}
-            grading={{ plane, workspace, persona, onGraded: () => setDone((was) => was + 1) }}
-          />
+        router === null ? null : (
+          <>
+            <RoutingFacts
+              plane={plane}
+              router={router}
+              by={by}
+              workspace={workspace}
+              persona={persona}
+              busy={busy}
+              onChoose={(whose, chosen, text) =>
+                change(
+                  "The router was not changed",
+                  () => commands.skillRouterChoose(plane, whose, chosen),
+                  () => Promise.resolve({ tone: "news", label: "Router changed", text }),
+                )
+              }
+              onGraded={() => setDone((was) => was + 1)}
+            />
+            <ViewListHead title="How it did at each chat's start" />
+            <RoutedChats
+              chats={chats}
+              chosen={chat}
+              onChoose={(id) => go({ page: "routing", scope, skill: id })}
+            />
+          </>
         ),
       ),
     );
+    item = studio === undefined || chats.length === 0 ? undefined : <RoutedChatItem chat={chat} />;
   }
 
   return (
@@ -953,7 +999,7 @@ export function SkillStudioTab({
         onPage={(id) => go({ page: id as StudioPage, scope })}
         list={list}
         item={item}
-        opened={chosen !== undefined || doing !== undefined}
+        opened={chosen !== undefined || doing !== undefined || itemName !== undefined}
         onBack={() => go({ page, scope })}
         narrow={narrow}
         bar={bar}
@@ -1670,58 +1716,4 @@ function TurnSwitch({
 /** `text` with its first letter lower-cased, to go inside a sentence. */
 function lowerFirst(text: string): string {
   return text.charAt(0).toLowerCase() + text.slice(1);
-}
-
-/**
- * **Which router this studio's chats are routed by** (SK-15b, ADR 0102 §5, §6), where it is an
- * extension's or the choice names none, and how the router did at the start of each such chat
- * open now: its timing, or why it fell back on the built-in router. Nothing for the built-in
- * router, which every chat has unless a workspace or persona chooses another.
- */
-export function StudioRouterLine({
-  router,
-  grading,
-}: {
-  router: StudioRouter;
-  /** Where the studio is, to grade the router chosen there (SK-15e): none offers no Grade. */
-  grading?: {
-    plane: string;
-    workspace: string | null;
-    persona: string | null;
-    onGraded: () => void;
-  };
-}) {
-  if (router.extension === null && !router.problem) return null;
-  return (
-    <div
-      className={router.problem ? "honest use-skill-over" : "honest"}
-      data-testid="skill-studio-router"
-    >
-      <p>{router.said}</p>
-      {router.extension !== null && (
-        <p data-testid="skill-studio-router-grade">
-          {router.grade ??
-            "This router has not been graded on this library yet: a grade runs the library's trigger tests with it and with the built-in router."}
-        </p>
-      )}
-      {router.extension !== null && grading !== undefined && (
-        <RouterGrade
-          plane={grading.plane}
-          router={router.extension}
-          workspace={grading.workspace}
-          persona={grading.persona}
-          onGraded={grading.onGraded}
-        />
-      )}
-      {router.chats.length > 0 && (
-        <ul className="skill-studio-routed">
-          {router.chats.map((one) => (
-            <li key={one.session} data-fell-back={one.routing.fell_back}>
-              {`Chat ${one.session}: ${one.routing.said}`}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
 }
