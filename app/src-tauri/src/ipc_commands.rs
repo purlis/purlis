@@ -320,6 +320,7 @@ macro_rules! app_commands {
                 skillchange::skill_delete,
                 skillchange::skill_deletes_cut_short,
                 skillchange::skills_deleted,
+                skillchange::skill_deleted_text,
                 skillchange::skill_restore,
                 skillchange::skill_grant,
                 skillchange::skill_turn,

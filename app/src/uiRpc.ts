@@ -1002,8 +1002,16 @@ export const commands = {
 	skillUsers: (plane: PlaneId, level: SkillLevel, name: string) => typedError<SkillUsers, string>(__TAURI_INVOKE("skill_users", { plane, level, name })),
 	skillDelete: __WINDOW_ONLY_RESULT,
 	skillDeletesCutShort: __WINDOW_ONLY_RESULT,
-	/**  The deleted skills Restore can bring back, newest first. */
+	/**
+	 *  **The deleted skills Bring back can bring back**, newest first: those deleted in the last 30
+	 *  days, each with its days left (S9, #3691).
+	 */
 	skillsDeleted: (plane: PlaneId) => typedError<DeletedSkill[], string>(__TAURI_INVOKE("skills_deleted", { plane })),
+	/**
+	 *  **The last text of the deleted skill `id` names**: its `SKILL.md` as it was when it was
+	 *  deleted, for its page on Deleted (S9, #3691). Refused for one the project does not list.
+	 */
+	skillDeletedText: (plane: PlaneId, id: string) => typedError<string, string>(__TAURI_INVOKE("skill_deleted_text", { plane, id })),
 	skillRestore: __WINDOW_ONLY_RESULT,
 	skillGrant: __WINDOW_ONLY_RESULT,
 	skillTurn: __WINDOW_ONLY_RESULT,
@@ -3759,6 +3767,16 @@ export type DeletedSkill = {
 	 *  in the project's history` (SK-33).
 	 */
 	stays: string,
+	/**
+	 *  How many days are left to bring it back (S9, #3691): at least 1, as one past its 30 days
+	 *  is not listed.
+	 */
+	days_left: number,
+	/**
+	 *  Whether the project's history keeps it (its delete was a commit), so it is still there
+	 *  after its days, for `purlis skill restore`; else this machine keeps it, and removes it then.
+	 */
+	in_history: boolean,
 };
 
 /**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */

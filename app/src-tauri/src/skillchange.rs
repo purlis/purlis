@@ -187,6 +187,12 @@ pub struct DeletedSkill {
     /// How long it stays, as a person reads it: `kept on this machine for 12 more days`, `kept
     /// in the project's history` (SK-33).
     pub stays: String,
+    /// How many days are left to bring it back (S9, #3691): at least 1, as one past its 30 days
+    /// is not listed.
+    pub days_left: u32,
+    /// Whether the project's history keeps it (its delete was a commit), so it is still there
+    /// after its days, for `purlis skill restore`; else this machine keeps it, and removes it then.
+    pub in_history: bool,
 }
 
 /// A level a skill can be moved to or made at, and its words.
@@ -560,7 +566,8 @@ pub(crate) fn cut_short(root: &std::path::Path) -> DeletesCutShort {
     ended
 }
 
-/// The deleted skills Restore can bring back, newest first.
+/// **The deleted skills Bring back can bring back**, newest first: those deleted in the last 30
+/// days, each with its days left (S9, #3691).
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skills_deleted(
@@ -573,9 +580,12 @@ pub(crate) async fn skills_deleted(
         let now = std::time::SystemTime::now();
         verbs::deleted(held.root())
             .into_iter()
+            .filter(|one| one.days_left(now) > 0)
             .map(|one| {
                 Ok(DeletedSkill {
                     stays: one.stays(now),
+                    days_left: u32::try_from(one.days_left(now)).unwrap_or(u32::MAX),
+                    in_history: one.kept().in_git(),
                     id: serde_json::to_string(&one)
                         .map_err(|_| format!("{} could not be listed to restore", one.name))?,
                     label: one.level.to_string(),
@@ -584,6 +594,25 @@ pub(crate) async fn skills_deleted(
                 })
             })
             .collect()
+    })
+    .await
+}
+
+/// **The last text of the deleted skill `id` names**: its `SKILL.md` as it was when it was
+/// deleted, for its page on Deleted (S9, #3691). Refused for one the project does not list.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_deleted_text(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    id: String,
+) -> Result<String, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading the deleted skill", move || {
+        flag_on()?;
+        let deleted: verbs::Deleted = serde_json::from_str(&id)
+            .map_err(|_| "That deleted skill is not one this project lists.".to_owned())?;
+        verbs::deleted_text(held.root(), &deleted)
     })
     .await
 }

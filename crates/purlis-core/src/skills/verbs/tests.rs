@@ -1930,3 +1930,69 @@ fn a_skill_on_disk_named_as_a_built_in_one_is_a_clash_to_rename_at_every_level()
         .collect();
     assert_eq!(bare, ["secrets"]);
 }
+
+#[test]
+fn a_deleted_skill_counts_the_days_left_to_bring_it_back_wherever_it_is_kept() {
+    let here = |at: u64| Deleted {
+        name: "deploy".to_owned(),
+        level: Level::project(),
+        folder: "deploy".to_owned(),
+        kept: Kept(Source::Here(format!("{}-deploy", at * 1000))),
+        at,
+    };
+    let when = |secs: u64| std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
+    let at = 1_761_000_000;
+    let kept_for = KEPT_HERE_FOR.as_secs();
+    assert_eq!(here(at).days_left(when(at)), 30);
+    assert_eq!(here(at).days_left(when(at + 3 * DAY)), 27);
+    assert_eq!(here(at).days_left(when(at + kept_for - 60)), 1);
+    assert_eq!(here(at).days_left(when(at + kept_for + 1)), 0);
+    assert_eq!(
+        here(at + 365 * DAY).days_left(when(at)),
+        30,
+        "never more than its time, whatever clock stamped it"
+    );
+    let in_git = Deleted {
+        kept: Kept(Source::Commit("abc".to_owned())),
+        ..here(at)
+    };
+    assert_eq!(in_git.days_left(when(at + 18 * DAY)), 12);
+    assert_eq!(in_git.days_left(when(at + 2 * kept_for)), 0);
+}
+
+#[test]
+fn a_skill_kept_deleted_on_this_machine_shows_its_last_text() {
+    let tmp = plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let listed = deleted(root);
+    let text = deleted_text(root, &listed[0]).unwrap();
+    assert!(text.contains("description: Ships it."), "{text}");
+}
+
+#[test]
+fn a_committed_skill_deleted_by_git_shows_its_last_text_from_the_commit() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "release")).unwrap();
+    let listed = deleted(root);
+    let one = listed.iter().find(|one| one.name == "release").unwrap();
+    let text = deleted_text(root, one).unwrap();
+    assert!(text.contains("name: release"), "{text}");
+}
+
+#[test]
+fn the_last_text_of_a_record_the_project_does_not_list_is_refused_unread() {
+    let tmp = plane();
+    let root = tmp.path();
+    std::fs::write(root.join("secret.md"), "not a skill").unwrap();
+    let made_up = Deleted {
+        name: "deploy".to_owned(),
+        level: Level::project(),
+        folder: "../..".to_owned(),
+        kept: Kept(Source::Commit("HEAD".to_owned())),
+        at: 0,
+    };
+    let refused = deleted_text(root, &made_up).unwrap_err();
+    assert!(refused.contains("not a deleted skill"), "{refused}");
+}

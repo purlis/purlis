@@ -985,6 +985,53 @@ impl Deleted {
     }
 }
 
+impl Deleted {
+    /// **How many days are left to bring it back at `now`** (S9, #3691): the Skill studio's
+    /// Deleted page lists a skill for [`KEPT_HERE_FOR`] after its delete, wherever it is kept,
+    /// and counts the days left, never more than that (a delete stamped by a clock that ran
+    /// ahead). Zero once its time is past: the page lists it no more. One git keeps can still be
+    /// brought back after that by `purlis skill restore`, from the project's history.
+    pub fn days_left(&self, now: std::time::SystemTime) -> u64 {
+        let now = u64::try_from(ms_since_epoch(now) / 1000).unwrap_or(u64::MAX);
+        let kept_for = KEPT_HERE_FOR.as_secs();
+        let until = self.at.saturating_add(kept_for);
+        until.saturating_sub(now).min(kept_for).div_ceil(DAY)
+    }
+}
+
+/// **The text of the deleted skill `deleted`'s `SKILL.md`, as it was when it was deleted** (S9,
+/// #3691): from the commit's parent where git keeps it, else from this machine's
+/// [`DELETED_DIR`], read without following a link. Refused, without reading anything, for one
+/// that is not a skill [`deleted`] lists: the record comes from the window, so its folder and its
+/// commit are only what the project itself names.
+pub fn deleted_text(plane: &Path, deleted: &Deleted) -> Result<String, String> {
+    if !self::deleted(plane).contains(deleted) {
+        return Err(format!(
+            "{} is not a deleted skill this project lists any more",
+            deleted.name
+        ));
+    }
+    let unread = || format!("purlis could not read the last text of {}", deleted.name);
+    match &deleted.kept.0 {
+        Source::Commit(sha) => {
+            let dir = deleted.level.rel().ok_or_else(unread)?;
+            git(
+                plane,
+                &["show", &format!("{sha}^:{dir}/{}/SKILL.md", deleted.folder)],
+            )
+            .map_err(|_| unread())
+        }
+        Source::Here(kept) => {
+            let state = crate::plane::state_dir(plane);
+            store::kept(&state, DELETED_DIR, KEPT_FROM)
+                .into_iter()
+                .find(|(name, _, folder, _)| name == kept && *folder == deleted.folder)
+                .map(|(_, _, _, text)| text)
+                .ok_or_else(unread)
+        }
+    }
+}
+
 /// A day, in seconds.
 const DAY: u64 = 24 * 60 * 60;
 

@@ -7777,9 +7777,13 @@ nav.piece-files-head {
   gap: var(--space-3);
 }
 
-.skill-deleted ul {
+/* A deleted skill's last text (S9, #3691), as it was: its lines kept, wrapped in the pane. */
+.skill-deleted-text {
   margin: 0;
-  padding-left: var(--space-5);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* The empty studio's three starts (SK-22): side by side where they fit, stacked where not. */

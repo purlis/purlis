@@ -35,6 +35,7 @@ import { RouterGrade } from "./RouterGrade";
 import { Notice } from "./Notice";
 import { SkillCompatBadges } from "./SkillCompatBadges";
 import { DraftPage, DraftsList } from "./SkillStudioDrafts";
+import { DeletedList, DeletedPage } from "./SkillStudioDeleted";
 import { DRAFT_WITH_A_CHAT, NEW_SKILL, SkillStarts, type SkillStart } from "./SkillStarts";
 import { askDraft, useSkillDraftsRead } from "./skillDraftAsks";
 import { SkillSources } from "./SkillSources";
@@ -407,9 +408,10 @@ export function SkillStudioTab({
         why === undefined ? { status: "ok", data: { notes: [] } } : { status: "error", error: why },
       ),
     );
-  const restore = (id: string) =>
-    change("The skill was not restored", () => commands.skillRestore(plane, id));
-  /** After a delete: Restore on the Notice, for the copy just deleted. */
+  /** Bring back (S2's split of Restore): the deleted skill `id` names, back at its level. */
+  const bringBack = (id: string) =>
+    change("The skill was not brought back", () => commands.skillRestore(plane, id));
+  /** After a delete: Bring it back on the Notice, for the copy just deleted. */
   const restoreOffered = async (name: string, level: SkillLevel): Promise<Said | undefined> => {
     const answer = await commands.skillsDeleted(plane);
     const one =
@@ -568,7 +570,7 @@ export function SkillStudioTab({
       fixes={
         restoring === undefined
           ? undefined
-          : [{ label: "Restore", onPress: () => restore(restoring) }]
+          : [{ label: "Bring it back", onPress: () => bringBack(restoring) }]
       }
       onDismiss={() => setSaid(undefined)}
     >
@@ -936,35 +938,44 @@ export function SkillStudioTab({
       )),
     );
   } else if (page === "deleted") {
+    /* Deleted (S9, #3691): the skills deleted in the last 30 days, and the one chosen beside. */
+    const one = deleted.find((each) => each.id === at.item);
     list = pageList(
-      "Skills deleted from this project, each of which can be restored.",
+      "Skills deleted in the last 30 days. Bring one back and chats started after that get it again.",
       held(() =>
         deleted.length === 0 ? (
           <EmptyState
-            headline="No skill is deleted"
-            body="A skill you delete waits here, and can be restored from here."
+            headline="Nothing deleted in the last 30 days."
+            body="A skill you delete waits here for 30 days, to be brought back."
             testid="skill-deleted-none"
             action={<Button onPress={() => go({ page: "library", scope })}>Go to Library</Button>}
           />
         ) : (
-          <ul className="skill-deleted" aria-label="Deleted skills">
-            {deleted.map((one) => (
-              <li key={one.id} data-testid={`deleted-${one.name}`}>
-                <code>{one.name}</code> · {one.label} · {one.stays}{" "}
-                <Button
-                  size="sm"
-                  aria-label={`Restore ${one.name}`}
-                  isDisabled={busy}
-                  onPress={() => restore(one.id)}
-                >
-                  Restore
-                </Button>
-              </li>
-            ))}
-          </ul>
+          <DeletedList
+            deleted={deleted}
+            chosen={one?.id}
+            onChoose={(id) => go({ page: "deleted", scope, item: id })}
+          />
         ),
       ),
     );
+    itemChosen = one !== undefined;
+    item =
+      one !== undefined ? (
+        <DeletedPage
+          key={one.id}
+          plane={plane}
+          deleted={one}
+          busy={busy}
+          onBringBack={(it) => bringBack(it.id)}
+        />
+      ) : deleted.length === 0 ? undefined : (
+        <EmptyState
+          headline="Pick a deleted skill"
+          body="How long it can be brought back, Bring back and its last text open here."
+          testid="skill-deleted-unpicked"
+        />
+      );
   } else if (page === "harness") {
     list = pageList(
       "The skills each chat program brings on its own, which purlis lists and never edits.",
@@ -1394,7 +1405,8 @@ function ChangePanel({
       return (
         <section className="skill-change" aria-label={`Delete ${doing.skill.name}`}>
           <p>
-            <strong>Delete {doing.skill.name}?</strong> It can be restored afterwards.
+            <strong>Delete {doing.skill.name}?</strong> It stays in Deleted for 30 days, to be
+            brought back.
           </p>
           <UsedBy users={doing.users} />
           <ButtonRow>

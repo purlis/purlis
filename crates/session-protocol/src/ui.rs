@@ -1096,6 +1096,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "session_record",
     "set_dismissed",
     "show_window_holding",
+    // A deleted skill's last text, for its page on Deleted (S9, #3691): read only.
+    "skill_deleted_text",
     "skill_details",
     "skill_diff",
     // What a router's grade runs (SK-15e, #3233): read only.
