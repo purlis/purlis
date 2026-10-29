@@ -926,6 +926,31 @@ impl Kubectl {
         Ok((names, current))
     }
 
+    /// **This kubectl's context, whole, as one kubeconfig** (#3292): `kubectl config view
+    /// --minify --raw --flatten`, the context it is pointed at with its cluster and user and
+    /// what each names inlined, for a cluster pool to keep as its own copy. Never shown.
+    pub fn context_kept(&self) -> Result<String, Refused> {
+        let kept = self.run(
+            &self.args(&[
+                "config",
+                "view",
+                "--minify",
+                "--raw",
+                "--flatten",
+                "--output",
+                "yaml",
+            ]),
+            None,
+            MOST_PRINTED,
+        )?;
+        if kept.trim().is_empty() {
+            return Err(Refused::Other(
+                "kubectl gave nothing of the kubeconfig's context to keep".into(),
+            ));
+        }
+        Ok(kept)
+    }
+
     /// **The namespace this kubectl's context names**, where a cluster pool's claims are made
     /// (#3292): kubectl's own `default` where it names none.
     pub fn namespace(&self) -> Result<String, Refused> {

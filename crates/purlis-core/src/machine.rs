@@ -416,6 +416,10 @@ pub const RUNNERS_LOCK: &str = "runners.json.lock";
 /// When each runner ran, inside [`dir`] (`crate::runnerhours`, #3492), and the lock its one
 /// read-modify-write takes.
 pub const RUNNER_HOURS_FILE: &str = "runner-hours.jsonl";
+
+/// Each cluster pool's own copy of its kubeconfig's context, taken as it was added, inside
+/// [`dir`] (`crate::runners`, #3292): `<pool>.yaml`, `0600`.
+pub const CLUSTER_KUBECONFIGS_DIR: &str = "cluster-kubeconfigs";
 pub const RUNNER_HOURS_LOCK: &str = "runner-hours.jsonl.lock";
 
 /// The session host's folder's old name inside [`dir`] (`names::DAEMON_DIR`).

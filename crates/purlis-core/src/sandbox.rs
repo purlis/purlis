@@ -1870,6 +1870,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 home.join(crate::machine::RUNNER_HOURS_FILE),
                 Access::ReadWrite,
             );
+            // Each cluster pool's own copy of its kubeconfig's context (#3292): denied as they
+            // are.
+            deny(
+                Class::HumanPowers,
+                home.join(crate::machine::CLUSTER_KUBECONFIGS_DIR),
+                Access::ReadWrite,
+            );
             // What the human's forge sign-in fetched: the native transport's ETag store
             // holds raw answers, private repos' among them, so a chat neither reads nor
             // writes it (ADR 0070 §3 and §4).

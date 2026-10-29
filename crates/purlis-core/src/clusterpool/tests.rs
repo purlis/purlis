@@ -798,6 +798,9 @@ pub(crate) struct FakeCluster {
     pub(crate) runner: Pinned,
 }
 
+/// The context the stand-in's kubeconfig gives whole (`config view --minify --raw --flatten`).
+pub(crate) const CONTEXT_KEPT: &str = "apiVersion: v1\nkind: Config\ncurrent-context: team\n";
+
 /// The uid the stand-in gives every claim it makes.
 pub(crate) const CLAIM_UID: &str = "6f1c2b8e-0f43-4c2e-9d7a-1b2c3d4e5f60";
 
@@ -828,6 +831,7 @@ impl FakeCluster {
              *'get claims.runners.purlis.dev'*) cat \"$d/claim.json\";;\n\
              *'exec -i'*) cat \"$d/paired.txt\";;\n\
              *'delete claims'*) echo deleted;;\n\
+             *'--raw'*) cat \"$d/context.yaml\";;\n\
              *'--minify'*) cat \"$d/minify.json\";;\n\
              *'config view'*) cat \"$d/view.json\";;\n\
              *) exit 1;;\nesac\n"
@@ -852,6 +856,7 @@ impl FakeCluster {
             &serde_json::json!({"metadata": {"uid": CLAIM_UID}}).to_string(),
         );
         cluster.write("claim.json", "{}");
+        cluster.write("context.yaml", CONTEXT_KEPT);
         cluster.write("paired.txt", &crate::runnerlink::to_line(&cluster.runner));
         cluster.write(
             "minify.json",

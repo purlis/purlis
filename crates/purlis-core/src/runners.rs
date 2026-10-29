@@ -1245,6 +1245,15 @@ impl ClusterPool {
         })
     }
 
+    /// This pool, its kubectl pointed at the kubeconfig `kubeconfig` from now on: its own copy
+    /// of the context, kept as it is added ([`keep_kubeconfig`]).
+    pub fn kept_at(&self, kubeconfig: &Path) -> ClusterPool {
+        ClusterPool {
+            kubeconfig: kubeconfig.to_path_buf(),
+            ..self.clone()
+        }
+    }
+
     /// This pool, pinning `pin` from now on: its key moved by a roll (#3305).
     fn repinned(&self, pin: &PoolPin) -> ClusterPool {
         ClusterPool {
@@ -1425,6 +1434,48 @@ pub fn forget_cluster_runner_locked(
         write(config_root, &held)?;
     }
     Ok(())
+}
+
+/// **Where the cluster pool `name` keeps its own copy of its kubeconfig's context** (#3292):
+/// `<pool>.yaml` in [`crate::machine::CLUSTER_KUBECONFIGS_DIR`].
+pub fn kubeconfig_kept_at(config_root: &Path, name: &str) -> std::path::PathBuf {
+    crate::machine::dir(config_root)
+        .join(crate::machine::CLUSTER_KUBECONFIGS_DIR)
+        .join(format!("{name}.yaml"))
+}
+
+/// **Keeps `context`, a kubeconfig of one context, as the cluster pool `name`'s own copy**
+/// (#3292), `0600` in a folder of this user's alone, replacing whole any it had: every run of
+/// its kubectl is pointed at it from then on, whatever the kubeconfig it was taken from says
+/// later. Where it is.
+pub fn keep_kubeconfig(
+    config_root: &Path,
+    name: &str,
+    context: &str,
+) -> Result<std::path::PathBuf, Refused> {
+    usable_pool_name(name).map_err(Refused::Other)?;
+    let at = kubeconfig_kept_at(config_root, name);
+    let folder = at.parent().map(Path::to_path_buf).unwrap_or_default();
+    purlis_same_user::PrivateDirectory::open(&folder)
+        .and_then(|folder| folder.replace_file(&format!("{name}.yaml"), context.as_bytes()))
+        .map_err(|why| {
+            Refused::Other(format!(
+                "pool {name}'s copy of its kubeconfig could not be kept: {why}"
+            ))
+        })?;
+    Ok(at)
+}
+
+/// **Removes the cluster pool `name`'s own copy of its kubeconfig** (#3292); nothing where
+/// there is none.
+pub fn forget_kubeconfig(config_root: &Path, name: &str) -> Result<(), Refused> {
+    match std::fs::remove_file(kubeconfig_kept_at(config_root, name)) {
+        Ok(()) => Ok(()),
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(why) => Err(Refused::Other(format!(
+            "pool {name}'s copy of its kubeconfig could not be removed: {why}"
+        ))),
+    }
 }
 
 /// **Keeps the cluster pool `name`'s pin as `pin`** (#3305), as [`PoolPin::follow`] moved it

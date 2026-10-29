@@ -348,9 +348,11 @@ pub const ASKED_EVERY: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// **Adds the cluster pool `pool` on this machine** (#3292), through `kubectl` (found on this
 /// machine, pointed at the pool's kubeconfig and context here): records it with the operator key
-/// the person checked, once the cluster's Pool still names that key; claims a kept runner in its
-/// namespace, waits at most `within` for the operator to vouch for it, pairs it with `desktop`
-/// and keeps what it answered. What fails deletes the claim and forgets the pool, and says so.
+/// the person checked, once the cluster's Pool still names that key, and **its own copy of the
+/// context** ([`runners::keep_kubeconfig`]), which every run of its kubectl is pointed at from
+/// then on, this add's included; claims a kept runner in its namespace, waits at most `within`
+/// for the operator to vouch for it, pairs it with `desktop` and keeps what it answered. What
+/// fails deletes the claim, the copy and the pool, and says so.
 pub fn add_cluster(
     config_root: &Path,
     kubectl: &crate::clusterpool::Kubectl,
@@ -358,10 +360,10 @@ pub fn add_cluster(
     desktop: &Pinned,
     within: std::time::Duration,
 ) -> Result<runners::ClusterKept, Refused> {
-    let kubectl = pool.kubectl(kubectl);
+    let taken_from = pool.kubectl(kubectl);
     let locked = runners::lock(config_root);
     let pin = pool.pin()?;
-    let named = kubectl
+    let named = taken_from
         .pool_pin(pool.pool())
         .map_err(|why| Refused::Other(why.to_string()))?;
     if named != pin {
@@ -371,7 +373,16 @@ pub fn add_cluster(
             pool.pool()
         )));
     }
+    let context = taken_from
+        .context_kept()
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    // Recorded pointing at its own copy, which is kept only once its name is the pool's.
+    let pool = &pool.kept_at(&runners::kubeconfig_kept_at(config_root, pool.name()));
     runners::record_cluster_pool_locked(config_root, pool, &locked)?;
+    if let Err(why) = runners::keep_kubeconfig(config_root, pool.name(), &context) {
+        return Err(forgotten_cluster(config_root, pool.name(), why, &locked));
+    }
+    let kubectl = pool.kubectl(kubectl);
     let name = claim_name(config_root, pool.name());
     let paired = crate::clusterpool::claim_and_pair(
         &kubectl,
@@ -414,7 +425,9 @@ fn forgotten_cluster(
     why: Refused,
     locked: &runners::Locked,
 ) -> Refused {
-    match runners::forget_pool_locked(config_root, name, locked) {
+    let forgotten = runners::forget_pool_locked(config_root, name, locked)
+        .and_then(|()| runners::forget_kubeconfig(config_root, name));
+    match forgotten {
         Ok(()) => why,
         Err(left) => Refused::Other(format!(
             "{why}; and the pool could not be forgotten ({left})"
@@ -507,6 +520,7 @@ pub fn remove_cluster(
         runners::forget_cluster_runner_locked(config_root, name, &locked)?;
     }
     runners::forget_pool_locked(config_root, name, &locked)?;
+    runners::forget_kubeconfig(config_root, name)?;
     crate::machine::update(config_root, |store| {
         for recent in &mut store.recents {
             recent.chats_run_on.retain(|_, pool| pool != name);

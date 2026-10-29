@@ -686,12 +686,13 @@ mod cluster {
             other => panic!("{other:?}"),
         }
         let file = file(config.path());
+        let copy = runners::kubeconfig_kept_at(config.path(), "team");
         assert_eq!(
             file["pools"][0],
             serde_json::json!({
                 "name": "team",
                 "kind": "cluster",
-                "kubeconfig": "/home/ada/.kube/config",
+                "kubeconfig": copy.display().to_string(),
                 "context": "team",
                 "pool": "default",
                 "namespace": "ada",
@@ -705,11 +706,13 @@ mod cluster {
             runners::pool_names(config.path()).unwrap(),
             ["team".to_owned()]
         );
-        // The claim is a kept one, made in the context's namespace on the cluster's pool.
+        // The claim is a kept one, made through the pool's own copy of the context.
         let calls = cluster.calls();
         assert!(
-            calls.lines().any(|call| call
-                .starts_with("--kubeconfig /home/ada/.kube/config --context team create")),
+            calls.lines().any(|call| call.starts_with(&format!(
+                "--kubeconfig {} --context team create",
+                copy.display()
+            ))),
             "{calls}"
         );
     }
@@ -786,6 +789,53 @@ mod cluster {
         );
         assert!(runners::pool_names(config.path()).unwrap().is_empty());
         assert!(runners::cluster_runners(config.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_cluster_pool_runs_on_its_own_copy_of_the_context_and_its_removal_takes_the_copy() {
+        use std::os::unix::fs::PermissionsExt;
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let source = config.path().join("kubeconfig");
+        std::fs::write(&source, "the person's kubeconfig\n").unwrap();
+        let pool =
+            ClusterPool::new("team", &source, "team", "default", "ada", cluster.pin()).unwrap();
+        let claim = claim_name(config.path(), "team");
+        cluster.vouch("ada", &claim, &claim, cluster.runner.key);
+        add_cluster(
+            config.path(),
+            &cluster.kubectl(),
+            &pool,
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+        let copy = runners::kubeconfig_kept_at(config.path(), "team");
+        assert_eq!(
+            std::fs::read_to_string(&copy).unwrap(),
+            crate::clusterpool::tests::CONTEXT_KEPT
+        );
+        assert_eq!(
+            std::fs::metadata(&copy).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        // The kubeconfig it was taken from, changed later, changes nothing it runs.
+        std::fs::write(&source, "changed since\n").unwrap();
+        std::fs::remove_file(cluster.dir.path().join("calls")).unwrap();
+        before_cluster_link(config.path(), &cluster.kubectl(), "team", runners::now()).unwrap();
+        let calls = cluster.calls();
+        assert!(!calls.contains(&source.display().to_string()), "{calls}");
+        assert!(
+            calls
+                .lines()
+                .all(|call| call.starts_with(&format!("--kubeconfig {} ", copy.display()))),
+            "{calls}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&copy).unwrap(),
+            crate::clusterpool::tests::CONTEXT_KEPT
+        );
+        remove_cluster(config.path(), &cluster.kubectl(), "team", None).unwrap();
+        assert!(!copy.exists());
     }
 
     #[test]
