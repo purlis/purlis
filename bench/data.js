@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793278415641,
+  "lastUpdate": 1793279790157,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29610,6 +29610,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6364295,
             "unit": "ms",
             "extra": "median of 5 runs: 100.666, 101.501, 101.636, 102.347, 102.685 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b4101f4a6783575f6bb1f58e0dc704f4aeef47ed",
+          "message": "A task starts in its asking chat's permission mode, capped at auto (#3787) (#3810)\n\n* A task starts in its asking chat's permission mode, capped at auto (#3787)\n\nThe operator's ruling of 2026-10-29, amending decision 20 of #1446: a task of\na chat in auto, or with its prompts off, starts in auto; every other asker's\ntask starts in its harness's default. Bypass never travels.\n\n- purlis-core: `dispatchmode` holds the neutral level (Asks / Classifier),\n  what a harness reported (Asks / Classifier / PromptsOff), the cap, and the\n  app's per-chat record of the last mode heard (`Heard`).\n- The hook reads `permission_mode` through the chat's own harness adapter\n  (`HarnessAdapter::reported_mode`) onto the report's `Detail::mode`. Claude\n  Code reads its 2.1.312 table; Codex and opencode read nothing.\n- The app keeps the last mode beside the unattended mark, from reports the\n  board took only, and a task's record carries the capped level in memory\n  (`reopen::Chat::mode`, never on disk). A handoff's chat starts asking.\n- Claude Code starts a task in auto with `--permission-mode auto`\n  (`HarnessAdapter::task_mode_words`), unless the profile names its own mode.\n- ADR 0090 amendment for decision 20; changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* Review fixes for #3787: own-harness gate, graded chats, profile modes\n\n- The asking chat's mode is kept only from its own harness's report (no\n  sub-agent, the conversation the board holds): `handoff::heard_mode` over\n  `dispatchmode::of_its_own_harness`, called from `when_reported`.\n- A grade's chat gets no added words (`dispatchmode::task_words`).\n- `reopen::Chat::task_level` (was `mode`); the app's per-chat record is a\n  named struct, and `Unattended`'s doc says it holds the level too.\n- Tests: hook report to level in the app, nested/sub-agent reports change\n  nothing, on-disk round trip reads Asks, a `dontAsk` profile gets no auto.\n- ADR amendment records the profile decision; changelog gains a Security\n  entry.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* Test: a nested harness reports from its own process (#3787)\n\nThe app test sent the nested harness's reports under the chat's own pid,\nwhich the board rightly reads as the chat's `/clear` and follows. A nested\nharness is another process; its reports now carry their own pid, and the\nchat's own harness speaks first so the board knows its process.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T12:51:21Z",
+          "tree_id": "bb639acf259cd4bfd91576ac39ca0c71bfebb677",
+          "url": "https://github.com/purlis/purlis/commit/b4101f4a6783575f6bb1f58e0dc704f4aeef47ed"
+        },
+        "date": 1793279785374,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5326489999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.528, 0.530, 0.533, 0.534, 0.537 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4658835,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.365, 16.436, 16.466, 16.505, 16.509 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8754575,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.965, 101.231, 101.875, 102.331, 102.789 ms"
           }
         ]
       }
