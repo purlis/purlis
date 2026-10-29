@@ -730,8 +730,9 @@ fn a_clone_s_own_commits_are_rebased_onto_its_remote_and_a_conflict_goes_on_or_b
     write(&w.clone, "shared.txt", "a\nboth\nc\n");
     let (code, said) = update_clone(&w, &UpdateStep::Continue, &Reach::default());
     assert_eq!(code, 0, "{said}");
+    // Both of the clone's own commits, on top of theirs.
     assert_eq!(
-        out(&w.clone, &["rev-parse", "HEAD~1"]),
+        out(&w.clone, &["rev-parse", "HEAD~2"]),
         out(&w.theirs, &["rev-parse", "HEAD"])
     );
     assert_eq!(out(&w.clone, &["branch", "--show-current"]), "main");
