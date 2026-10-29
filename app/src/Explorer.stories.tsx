@@ -229,14 +229,21 @@ export const FilterAllRepos: Story = {
 
 /**
  * **A repo the workspace names that is not cloned here** (#3790): in the Repos view, under the
- * cloned repos, in its own section, its name quieter than a cloned repo's (the muted tier, never a fade).
+ * cloned repos, in its own section, its name quieter than a cloned repo's (the secondary role, strong, never a fade).
  */
 export const ARepoNotClonedHere: Story = {
   args: { repos: ["purlis", "theme-lab"], absent: ["k8s-operator"], part: "repos" },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, canvasElement }) => {
     const absent = await canvas.findByTestId("absent");
     await expect(absent).toHaveTextContent("Not cloned here");
     await expect(absent).toHaveTextContent("k8s-operator");
+    // Quieter than a cloned repo's name, as drawn: a rule the cascade drops would leave them equal.
+    const name = (repo: string, under: Element) =>
+      [...under.querySelectorAll(".repo")].find((one) => one.textContent === repo);
+    const notCloned = name("k8s-operator", absent);
+    const cloned = name("purlis", canvasElement);
+    if (notCloned === undefined || cloned === undefined) throw new Error("no repo name drawn");
+    await expect(getComputedStyle(notCloned).color).not.toBe(getComputedStyle(cloned).color);
     await settled();
   },
 };
