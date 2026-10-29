@@ -12,6 +12,7 @@ import {
   runFromThePalette,
   tabNames,
 } from "../reach.js";
+import { studioPage, untilStudioPage } from "../studio.js";
 import { projectInFront, runningIn } from "../running.js";
 
 /**
@@ -76,15 +77,13 @@ describe("the Skill studio's first open", function () {
     await expect(empty).toHaveText(/This project has no skills of its own yet/);
     expect(await $$('ul[aria-label="Ways to start a skill"] > li').length).toBe(3);
 
+    // Browse sources goes to the studio's Sources page; Back returns to the Library (#3681).
     await (await empty.$("button=Browse sources")).click();
-    await browser.waitUntil(
-      async () =>
-        (await browser.execute(() => document.activeElement?.textContent?.trim() ?? "")) ===
-        "Skill sources",
-      { timeout: 10_000, timeoutMsg: "Browse sources did not move to the skill sources" },
-    );
+    await untilStudioPage("Sources");
+    await (await $('[data-scope="view-frame"] button[aria-label="Back"]')).click();
+    const again = await starts();
 
-    await (await empty.$("button=New skill")).click();
+    await (await again.$("button=New skill")).click();
     await typeInto("Name", BLANK);
     await typeInto("What it does and when to use it", "Probes starting a skill blank.");
     await (await $("button=Make it")).click();
@@ -114,6 +113,7 @@ describe("the Skill studio's first open", function () {
     await focusWorkspace("alpha");
     await closeTheViewTabsOpenedSince(wereOpen);
     await runFromThePalette("Open Skill studio", "skills.studio");
+    await studioPage("Sources");
     const offered = await $('[data-testid="skill-source-offered"]');
     await offered.waitForExist({ timeout: 20_000 });
     await (await $("aria/Add Anthropic's skills")).click();

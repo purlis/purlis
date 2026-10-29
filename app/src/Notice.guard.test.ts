@@ -447,6 +447,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "a copy the clipboard refused, said beside the read-only screen it was asked of (#3676)",
   },
   "SearchTab.tsx": { count: 1, why: "the search's progress, a live value" },
+  "SkillStudioTab.tsx": {
+    count: 1,
+    why: "the Library's reading line (#3681): rows held in place while the skills are read, said after a second",
+  },
   "SessionPane.tsx": {
     count: 1,
     why:

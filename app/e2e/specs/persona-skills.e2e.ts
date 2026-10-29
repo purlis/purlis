@@ -7,6 +7,7 @@ import { $, browser, expect } from "@wdio/globals";
 import { press, projectRoot, typeInto, untilSays } from "../acting.js";
 import { showView } from "../opening.js";
 import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
+import { studioSkill } from "../studio.js";
 
 /**
  * **A persona's Skills section** (SK-5, #2768), in the built app against the real core, with the
@@ -77,10 +78,13 @@ describe("a persona's skills", function () {
 
     const named = await $(`[data-testid="skill-${NAMED}"]`);
     await named.waitForExist({ timeout: 20_000 });
-    await expect(named).toHaveText(/On/);
+    await expect(named).not.toHaveText(/Left out/);
     const own = await $(`[data-testid="skill-${OWN}"]`);
     await expect(own).toHaveText(/persona/);
-    expect(await tabNames()).toContain(`Skill studio · ${PERSONA}`);
+    // Chosen, the named skill says a chat as the persona gets it (#3681).
+    const item = await studioSkill(NAMED);
+    await expect(item.$('[data-testid="skill-in-a-chat"]')).toHaveText(/^On/);
+    expect(await tabNames()).toContain("Skill studio");
   });
 
   it("adds a skill by name in the studio, and removes it again", async () => {
@@ -97,6 +101,7 @@ describe("a persona's skills", function () {
     });
     expect(readFileSync(file, "utf8")).toMatch(new RegExp(`skills: ${NAMED}, ${ADDED}`));
 
+    await studioSkill(ADDED);
     const remove = await $(`${studio} button[aria-label="Remove ${ADDED} from ${PERSONA}"]`);
     await remove.waitForClickable({ timeout: 20_000 });
     await remove.click();

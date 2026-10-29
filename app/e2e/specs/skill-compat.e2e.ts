@@ -12,6 +12,7 @@ import {
   runFromThePalette,
   tabNames,
 } from "../reach.js";
+import { studioSkill } from "../studio.js";
 import { startAChat } from "../started.js";
 
 /**
@@ -84,6 +85,8 @@ describe("a skill's compatibility and a skill that cannot be loaded", function (
 
   it("draws a badge per harness that says what is left out and what is not applied", async () => {
     await runFromThePalette("Open Skill studio", "skills.studio");
+    // How each program takes a skill is said beside the Library, once it is chosen (#3681).
+    await studioSkill(WIDENS);
 
     const claude = await $(`[data-testid="compat-${WIDENS}-claude"]`);
     await claude.waitForExist({ timeout: 20_000 });
@@ -97,6 +100,7 @@ describe("a skill's compatibility and a skill that cannot be loaded", function (
     await expect(codex).toHaveText(/Ignored: the model it asks for/);
 
     // A widening key spelled another way: purlis hands the skill to no chat, and says so.
+    await studioSkill(REFUSED);
     const refused = await $(`[data-testid="compat-${REFUSED}-claude"]`);
     await expect(refused).toHaveText(/Claude Code: handed to no chat/);
   });
@@ -121,14 +125,14 @@ describe("a skill's compatibility and a skill that cannot be loaded", function (
       new RegExp(`${REFUSED} \\(project\\), purlis hands it to no chat`),
     );
     await expect(notice).toHaveText(/names no `description`/);
-    const open = await notice.$("button=Open in Skill studio");
+    const open = await notice.$("button=Open Skill studio");
     await open.waitForClickable({ timeout: 10_000 });
     await open.click();
     await browser.waitUntil(
       async () => (await tabNames()).some((tab) => tab.startsWith("Skill studio")),
       {
         timeout: 20_000,
-        timeoutMsg: "Open in Skill studio never opened the studio",
+        timeoutMsg: "Open Skill studio never opened the studio",
       },
     );
   });

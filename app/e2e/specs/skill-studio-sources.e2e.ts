@@ -13,6 +13,7 @@ import {
   runFromThePalette,
   tabNames,
 } from "../reach.js";
+import { studioPage } from "../studio.js";
 
 /**
  * **Installing a skill from a skill source in the Skill studio** (SK-10, #2773), in the built app
@@ -111,6 +112,7 @@ describe("installing a skill from a skill source", function () {
 
   it("adds a source, reviews an install summary first, and installs it pinned", async () => {
     await runFromThePalette("Open Skill studio", "skills.studio");
+    await studioPage("Sources");
 
     const add = await $("button=Add source");
     await add.waitForClickable({ timeout: 20_000 });
@@ -156,6 +158,7 @@ describe("installing a skill from a skill source", function () {
       skills: { name: string; commit: string }[];
     };
     expect(lock.skills.map((one) => one.name).sort()).toEqual([NOTIFIER, SHIPPER].sort());
+    await studioPage("Library");
     await $(`[data-testid="skill-${SHIPPER}"]`).waitForExist({ timeout: 20_000 });
   });
 });

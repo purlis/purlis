@@ -443,8 +443,13 @@
 }
 
 /* A line under the row's words, inside the row: the row wraps onto it and keeps its own height
-   above it. */
-:where([data-scope="list"], [data-scope="tree"], [data-scope="table"]):has(> [data-part="below"]) {
+   above it. A list of rows that act (`List`) holds its words in a cell React Aria draws as
+   `display: contents`, so the line is the cell's child there and still the row's to lay out
+   (#3751). */
+:where([data-scope="list"], [data-scope="tree"], [data-scope="table"]):has(
+  > [data-part="below"],
+  > [role="gridcell"] > [data-part="below"]
+) {
   flex-wrap: wrap;
 }
 
@@ -454,6 +459,34 @@
   padding-block-end: var(--space-1);
   color: var(--text-quiet);
   font-size: var(--font-size-sm);
+}
+
+/* **Cut at its clamp** (`RowBelow`'s `clamp`): one line given way to an ellipsis, or two lines
+   and an ellipsis after the second, so a row grows to its lines and never cuts one mid-line. */
+:where(
+    [data-scope="list"],
+    [data-scope="tree"],
+    [data-scope="table"]
+  )[data-part="below"][data-clamp="1"] {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+:where(
+    [data-scope="list"],
+    [data-scope="tree"],
+    [data-scope="table"]
+  )[data-part="below"][data-clamp="2"] {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  /* Overflow clips at the padding box: the room under the lines is a margin, so no part of a
+     third line shows in it. */
+  padding-block-end: 0;
+  margin-block-end: var(--space-1);
 }
 
 /* An icon in a slot is one line's height. */

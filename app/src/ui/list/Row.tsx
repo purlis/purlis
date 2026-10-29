@@ -78,11 +78,17 @@ export const RowDescription = slot("description", "description");
 /** **Its end**: a count, a state, the row's own actions. */
 export const RowTrail = slot("trail");
 
+const RowBelowSlot = slot("below");
+
 /**
  * **A line under the row's words, inside the row**: what a search matched in its body, why it
- * was refused. The row is as tall as its two lines; it is still one row to the keyboard.
+ * was refused, a skill's one-line description. The row grows to fit it and is still one row to
+ * the keyboard (#3751). `clamp` cuts it at one line (an ellipsis at its end) or two; without
+ * one it wraps.
  */
-export const RowBelow = slot("below");
+export function RowBelow({ clamp, ...rest }: Slot & { clamp?: 1 | 2 }) {
+  return <RowBelowSlot {...rest} data-clamp={clamp} />;
+}
 
 /** **What a card row's summary says it in** (#3669): its description in the muted tier, or a
  *  reason in its place, in the waiting colour (it needs the person) or the quiet tier (it is

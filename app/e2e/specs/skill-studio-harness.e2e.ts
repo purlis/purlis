@@ -11,6 +11,7 @@ import {
   runFromThePalette,
   tabNames,
 } from "../reach.js";
+import { studioPage, studioSkill } from "../studio.js";
 
 /**
  * **A repo's own skills, and each program's, in the Skill studio** (SK-6, #2769), in the built
@@ -18,8 +19,9 @@ import {
  *
  * The spec puts a clone in `alpha` as git leaves one (a `.git` folder) holding a committed
  * `.claude/skills/<name>`, and a project skill of the same name granted to `alpha`. It opens
- * `alpha`'s Settings at Skills, and follows Open in Skill studio. There Claude Code's section lists the repo's skill, owned by the repo, and
- * the project's copy says a chat gets both. Turn off leaves the repo's skill out of `alpha`'s
+ * `alpha`'s Settings at Skills, and follows Open Skill studio, which lands on `alpha`'s Library
+ * (#3681). There the project's copy says a chat gets both, and the Harness skills page lists
+ * the repo's skill under Claude Code, owned by the repo. Turn off leaves the repo's skill out of `alpha`'s
  * chats, in `alpha`'s own settings, and Turn on takes that back out again.
  *
  * **It leaves the window and the project as it found them**: `workspace.json` is put back as it
@@ -75,19 +77,22 @@ describe("a repo's own skills in the Skill studio", function () {
     // #3467: Settings has no Plugins group any more; the Skills group is the way in.
     await runFromThePalette("Workspace settings: Skills", "settings.group:workspace.skills:alpha");
 
-    const open = await $("button=Open in Skill studio");
+    const open = await $("button=Open Skill studio");
     await open.waitForClickable({ timeout: 10_000 });
     await open.click();
 
-    const found = await $(`[data-testid="found-claude-${NAME}"]`);
-    await found.waitForExist({ timeout: 20_000 });
-    await expect(found).toHaveText(new RegExp(`Repo ${REPO}`));
-    await expect(found).toHaveText(/On/);
+    await studioSkill(NAME);
     const clash = await $(`[data-testid="clash-${NAME}"]`);
     await expect(clash).toHaveText(
       new RegExp(`the repo ${REPO} has a skill of this name too, and a chat there gets both`),
     );
-    expect(await tabNames()).toContain("Skill studio · alpha");
+    expect(await tabNames()).toContain("Skill studio");
+
+    await studioPage("Harness skills");
+    const found = await $(`[data-testid="found-claude-${NAME}"]`);
+    await found.waitForExist({ timeout: 20_000 });
+    await expect(found).toHaveText(new RegExp(`Repo ${REPO}`));
+    await expect(found).toHaveText(/On/);
   });
 
   it("turns the repo's skill off for the workspace's chats, and back on", async () => {

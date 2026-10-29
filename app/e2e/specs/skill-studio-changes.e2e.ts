@@ -11,6 +11,7 @@ import {
   runFromThePalette,
   tabNames,
 } from "../reach.js";
+import { studioPage, studioSkill } from "../studio.js";
 
 /**
  * **Making, renaming, deleting and restoring a skill in the Skill studio** (SK-7, #2770), in the
@@ -18,7 +19,8 @@ import {
  *
  * The spec makes a skill with New skill at the project's root, where the studio was opened, and
  * finds it as a project skill with its folder on disk. It renames it and finds the folder under
- * its new name, deletes it after Delete has said who uses it, and restores it from the Notice.
+ * its new name, deletes it after Delete has said who uses it, and restores it from the studio's
+ * Deleted page. Each change is made on the skill chosen in the Library, beside the list (#3681).
  * The run's project names no save mode, so each change stays on disk for the next save. That each
  * one is a single commit is the core's seam test (`skills/verbs/tests.rs`).
  *
@@ -66,7 +68,7 @@ describe("making and changing a skill in the Skill studio", function () {
   it("makes a skill at the project's root, renames it, deletes it and restores it", async () => {
     await runFromThePalette("Open Skill studio", "skills.studio");
 
-    const make = await $("button=New skill");
+    const make = await $("button=New skill…");
     await make.waitForClickable({ timeout: 20_000 });
     await make.click();
     await expect($('[data-testid="skill-new-level"]')).toHaveText(
@@ -79,8 +81,9 @@ describe("making and changing a skill in the Skill studio", function () {
     const made = await $(`[data-testid="skill-${MADE}"]`);
     await made.waitForExist({ timeout: 20_000 });
     await expect(made).toHaveText(/project/);
-    await expect(made).toHaveText(/On/);
     expect(existsSync(join(root, "skills", MADE, "SKILL.md"))).toBe(true);
+    const item = await studioSkill(MADE);
+    await expect(item.$('[data-testid="skill-in-a-chat"]')).toHaveText(/^On/);
 
     await (await $(`aria/Rename ${MADE}`)).click();
     await typeInto("New name", RENAMED);
@@ -90,6 +93,7 @@ describe("making and changing a skill in the Skill studio", function () {
     expect(existsSync(join(root, "skills", RENAMED, "SKILL.md"))).toBe(true);
     expect(existsSync(join(root, "skills", MADE))).toBe(false);
 
+    await studioSkill(RENAMED);
     await (await $(`aria/Delete ${RENAMED}`)).click();
     const users = await $('[data-testid="skill-users"]');
     await users.waitForExist({ timeout: 20_000 });
@@ -100,9 +104,11 @@ describe("making and changing a skill in the Skill studio", function () {
     await renamed.waitForExist({ reverse: true, timeout: 20_000 });
     expect(existsSync(join(root, "skills", RENAMED))).toBe(false);
 
+    await studioPage("Deleted");
     const restore = await $(`aria/Restore ${RENAMED}`);
     await restore.waitForClickable({ timeout: 20_000 });
     await restore.click();
+    await studioPage("Library");
     await browser.waitUntil(
       async () => (await $(`[data-testid="skill-${RENAMED}"]`)).isExisting(),
       { timeout: 20_000, timeoutMsg: "the restored skill never came back to the studio" },
