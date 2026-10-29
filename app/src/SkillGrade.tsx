@@ -63,15 +63,17 @@ function endSaid(step: SkillGradeStep): string {
   const spent = step.tokens === null ? "" : `, having spent ${tokensSaid(step.tokens)}`;
   switch (step.ended) {
     case "whole":
-      return `Graded in ${chats}. Its scorecard says how each test went.`;
+      return step.said === null
+        ? `Graded in ${chats}. Its scorecard says how each test went.`
+        : `Graded in ${chats}. ${step.said}`;
     case "stopped":
-      return `Stopped after ${chats}. What ran is scored.`;
+      return `Stopped after ${chats}. ${step.said ?? "What ran is scored."}`;
     case "chats-did-not-start":
       return `The grade stopped: its chats did not start. ${step.said ?? ""}`.trim();
     case "over-cap":
-      return `Stopped at its cap of ${tokensSaid(step.cap ?? 0)} after ${chats}${spent}. What ran is scored.`;
+      return `Stopped at its cap of ${tokensSaid(step.cap ?? 0)} after ${chats}${spent}. ${step.said ?? "What ran is scored."}`;
     case "over-limit":
-      return `Stopped at its dollar limit after ${chats}${spent}. What ran is scored.`;
+      return `Stopped at its dollar limit after ${chats}${spent}. ${step.said ?? "What ran is scored."}`;
     case "spend-not-reported":
       return `Stopped after ${chats}: ${step.said ?? "a chat did not say what it spent, so the grade could not be held to its cap."}`;
     case "failed":
@@ -203,8 +205,8 @@ export function GradePlanPage({
   level: SkillLevel;
   changed: number;
   afterEdit?: boolean;
-  /** A grade started: its id. */
-  onStarted: (grade: string) => void;
+  /** A grade started: its id, and the plan it was started from. */
+  onStarted: (grade: string, plan: SkillGradePlan) => void;
   /** Grading after each edit was turned on: what was accepted. */
   onAfterEdit: (on: SkillGradeAfterEdit) => void;
   /** A grade of this skill runs already: show it. */
@@ -291,7 +293,7 @@ export function GradePlanPage({
     void commands
       .skillGradeStart(plane, level, name, picked, pickedModel, consent)
       .then((answer) => {
-        if (answer.status === "ok") onStarted(answer.data);
+        if (answer.status === "ok") onStarted(answer.data, plan);
         else {
           setSaid(answer.error);
           // The plan is read again after any refusal: one that changed since it was shown is
@@ -581,6 +583,7 @@ export function GradeRunningPage({
   name,
   level,
   grade,
+  started,
   onEnded,
   onBack,
 }: {
@@ -588,6 +591,9 @@ export function GradeRunningPage({
   name: string;
   level: SkillLevel;
   grade: string;
+  /** What the plan it was started from said, where this page opened from Start: the chats and
+   *  the dollar limit until its first step says them (the core's first is told before then). */
+  started?: { chats?: number; limitUsd?: number };
   onEnded: () => void;
   /** Back to the Grades tab: the grade keeps going. */
   onBack: () => void;
@@ -601,31 +607,30 @@ export function GradeRunningPage({
     ended.current = onEnded;
   });
 
-  // The app's word on whether it runs, and what it was planned to run: never this page's memory.
+  const [stopRefused, setStopRefused] = useState<string>();
+  // Listened to first, then the app's word on whether it runs: an end told before the listener
+  // was attached is never missed, as the plan read after it says the grade runs no more.
   useEffect(() => {
     let live = true;
-    void commands
-      .skillGradePlan(plane, level, name, null, null)
-      .then((answer) => {
-        if (live && answer.status === "ok") setPlan(answer.data);
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-    // The level as a value: an equal level reads nothing anew.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plane, levelKey, name]);
-
-  useEffect(() => {
     const listening = listen<SkillGradeStep>(SKILL_GRADE, (event) => {
       const now = event.payload;
       if (now.plane !== plane || now.skill !== name || now.grade !== grade) return;
       setStep(now);
       if (now.ended !== null && now.said === null) ended.current();
     }).catch(() => undefined);
-    return () => void listening.then((stop) => stop?.()).catch(() => undefined);
-  }, [plane, name, grade]);
+    void listening
+      .then(() => commands.skillGradePlan(plane, level, name, null, null))
+      .then((answer) => {
+        if (live && answer.status === "ok") setPlan(answer.data);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+      void listening.then((stop) => stop?.()).catch(() => undefined);
+    };
+    // The level as a value: an equal level reads nothing anew.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plane, levelKey, name, grade]);
 
   if (step === undefined && plan === undefined) return <Reading what={`the grade of ${name}`} />;
   if (step === undefined && plan !== undefined && plan.running !== grade)
@@ -639,9 +644,9 @@ export function GradeRunningPage({
       />
     );
   const ran = step?.ran ?? 0;
-  const of = step?.of ?? plan?.chats ?? 0;
+  const of = step?.of ?? started?.chats ?? plan?.chats ?? 0;
   const cap = step?.cap ?? plan?.token_cap ?? 0;
-  const limit = step?.limit_usd ?? plan?.cost_cap_usd ?? null;
+  const limit = step?.limit_usd ?? started?.limitUsd ?? plan?.cost_cap_usd ?? null;
   const over = step !== undefined && step.ended !== null;
   return (
     <ReviewPage
@@ -657,17 +662,44 @@ export function GradeRunningPage({
         isDisabled: stopping || over,
         onPress: () => {
           setStopping(true);
-          void commands.skillGradeStop(plane, grade);
+          setStopRefused(undefined);
+          void commands
+            .skillGradeStop(plane, grade)
+            .then((answer) => {
+              if (answer.status === "error") {
+                setStopping(false);
+                setStopRefused(answer.error);
+              }
+            })
+            .catch((err: unknown) => {
+              setStopping(false);
+              setStopRefused(String(err));
+            });
         },
       }}
     >
       <ViewPageHeader name={`Grading ${name}`} />
+      {stopRefused !== undefined && (
+        <Notice
+          cause={`skill-grade-stop:${grade}`}
+          tone="trouble"
+          label="Not stopped"
+          onDismiss={() => setStopRefused(undefined)}
+        >
+          {stopRefused}
+        </Notice>
+      )}
       {over && step.said !== null && (
+        // An end with words to say: something went wrong on the way (not recorded, chats that
+        // did not start), so its scorecard may not be there to open.
         <Notice
           cause={`skill-grade-ended:${grade}`}
-          tone={step.ended === "whole" ? "news" : "trouble"}
-          label={step.ended === "whole" ? "Graded" : "Not graded"}
-          fixes={[{ label: "Open its scorecard", onPress: onEnded }]}
+          tone="trouble"
+          label="The grade ended"
+          fixes={[
+            { label: "Open its scorecard", onPress: onEnded },
+            { label: "Back to Grades", onPress: onBack },
+          ]}
         >
           {endedSaid(step)}
         </Notice>

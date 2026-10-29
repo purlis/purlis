@@ -364,6 +364,8 @@ export function SkillStudioTab({
     if (to === undefined) delete next.grading;
     else next.grading = to;
     if (how === "go") go(next);
+    // Back where the way here was a step (a chat's scorecard), so walking never piles up steps.
+    else if (how === "back" && history.canGoBack) history.back();
     else history.replace(next);
   };
 
@@ -720,7 +722,7 @@ export function SkillStudioTab({
             if (at.grading !== undefined) grading(undefined, "go");
           } else if (at.grading !== undefined) {
             const to = gradingCrumbTo(at.grading, crumb.id);
-            if (to !== undefined) grading(to, "go");
+            if (to !== undefined) grading(to, "back");
           }
         }}
       >
@@ -967,7 +969,8 @@ export function SkillStudioTab({
         </div>
       ) : chosen !== undefined && at.grading !== undefined && gradingLevel !== null ? (
         <GradingPage
-          key={`${skillRowId(chosen)}:${JSON.stringify(at.grading)}`}
+          // A page of each kind and grade: walking a grade's chats keeps its scorecard read.
+          key={`${skillRowId(chosen)}:${at.grading.at}:${"grade" in at.grading ? at.grading.grade : ""}`}
           plane={plane}
           name={chosen.name}
           level={gradingLevel}

@@ -158,7 +158,8 @@ describe("Grade, cost first", () => {
       "Nothing runs until you press Start. It spends at most $15.00 of work's account.",
     );
     fireEvent.click(start());
-    await waitFor(() => expect(told.started).toHaveBeenCalledWith("01GRADE"));
+    await waitFor(() => expect(told.started).toHaveBeenCalledTimes(1));
+    expect(told.started.mock.calls[0][0]).toBe("01GRADE");
     expect(asked.find((one) => one.cmd === "skill_grade_start")?.args).toMatchObject({
       plane: "p",
       skill: "deploy",
@@ -601,6 +602,7 @@ describe("a grade running (S6)", () => {
       (cmd, args) => {
         asked.push({ cmd, args });
         if (cmd === "skill_grade_plan") return plan({ running: "01GRADE" });
+        if (cmd === "skill_grade_stop") throw "That grade is not running here.";
         return null;
       },
       { shouldMockEvents: true },
@@ -633,6 +635,11 @@ describe("a grade running (S6)", () => {
       expect(asked.find((one) => one.cmd === "skill_grade_stop")?.args).toMatchObject({
         grade: "01GRADE",
       }),
+    );
+    // A stop the core refused says so, and Stop can be pressed again.
+    await screen.findByText("That grade is not running here.");
+    await waitFor(() =>
+      expect(unavailable(screen.getByRole("button", { name: "Stop" }))).toBe(false),
     );
     await emit("skill-grade", step({ ran: 4, ended: "stopped" }));
     await waitFor(() => expect(onEnded).toHaveBeenCalledTimes(1));

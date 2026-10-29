@@ -47,7 +47,7 @@ import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from 
 /** How a grading page is gone to: a step of the studio's history, or said again in its place
  *  (a grade started from its plan, a scorecard once its grade ended). `undefined` is the skill's
  *  Grades tab. */
-export type GradingGo = (to: GradingAt | undefined, how: "go" | "replace") => void;
+export type GradingGo = (to: GradingAt | undefined, how: "go" | "replace" | "back") => void;
 
 /** **The crumbs a grading page adds after its skill's Grades tab.** */
 export function gradingPath(grading: GradingAt): Crumb[] {
@@ -186,7 +186,7 @@ export function GradesTab({
         <Notice
           cause="skill-grade"
           tone="trouble"
-          label="Not graded"
+          label="Grading"
           onDismiss={() => setSaid(undefined)}
         >
           {said}
@@ -308,18 +308,26 @@ export function GradesTab({
               Turn on…
             </Button>
           ) : (
-            <Button
-              size="sm"
-              variant="ghost"
-              onPress={() =>
-                void commands.skillGradeAfterEditOff(plane, level, name).then((answer) => {
-                  if (answer.status === "ok") setAgain((n) => n + 1);
-                  else setSaid(answer.error);
-                })
-              }
-            >
-              Turn off
-            </Button>
+            <>
+              {/* Waiting for a fresh yes: its new plan is read and accepted on its page. */}
+              {on.waits !== null && (
+                <Button size="sm" onPress={() => onGrading({ at: "plan", afterEdit: true }, "go")}>
+                  Read the new plan…
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                onPress={() =>
+                  void commands.skillGradeAfterEditOff(plane, level, name).then((answer) => {
+                    if (answer.status === "ok") setAgain((n) => n + 1);
+                    else setSaid(answer.error);
+                  })
+                }
+              >
+                Turn off
+              </Button>
+            </>
           )}
         </ButtonRow>
       </section>
@@ -355,7 +363,17 @@ export function GradingPage({
           level={level}
           changed={changed}
           afterEdit={grading.afterEdit === true}
-          onStarted={(grade) => onGrading({ at: "running", grade }, "replace")}
+          onStarted={(grade, plan) =>
+            onGrading(
+              {
+                at: "running",
+                grade,
+                chats: plan.chats,
+                ...(plan.cost_cap_usd === null ? {} : { limitUsd: plan.cost_cap_usd }),
+              },
+              "replace",
+            )
+          }
           onAfterEdit={() => onGrading(undefined, "replace")}
           onRunning={(grade) => onGrading({ at: "running", grade }, "go")}
           onCancel={() => onGrading(undefined, "replace")}
@@ -368,6 +386,7 @@ export function GradingPage({
           name={name}
           level={level}
           grade={grading.grade}
+          started={grading}
           onEnded={() => onGrading({ at: "scorecard", grade: grading.grade }, "replace")}
           onBack={() => onGrading(undefined, "go")}
         />
@@ -390,7 +409,7 @@ export function GradingPage({
           grade={grading.grade}
           chat={grading.chat}
           onChat={(chat) => onGrading({ at: "chat", grade: grading.grade, chat }, "replace")}
-          onScorecard={() => onGrading({ at: "scorecard", grade: grading.grade }, "go")}
+          onScorecard={() => onGrading({ at: "scorecard", grade: grading.grade }, "back")}
         />
       );
   }

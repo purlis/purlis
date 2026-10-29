@@ -191,7 +191,7 @@ describe("a skill's Grades tab (S6)", () => {
         waits,
       }),
     });
-    renderTab();
+    const onGrading = renderTab();
     await screen.findByText(/^Each edit you save grades this skill on work/);
     waits = "A grade of it now runs 18 chats, more than the 12 you accepted.";
     await emit("skill-grade-after-edit", { plane: "p", skill: "deploy", said: waits });
@@ -201,6 +201,9 @@ describe("a skill's Grades tab (S6)", () => {
         `It waits for you: ${waits}`,
       ),
     );
+    // Its new plan is read and accepted on its page.
+    fireEvent.click(screen.getByRole("button", { name: "Read the new plan…" }));
+    expect(onGrading).toHaveBeenCalledWith({ at: "plan", afterEdit: true }, "go");
   });
 
   it("shows a grade running, one press away", async () => {
