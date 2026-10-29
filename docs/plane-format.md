@@ -7344,48 +7344,64 @@ rewritten.
 - **Format:** where an older purlis kept this store, in the plane's state folder, before
   #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-drafts/<id>/`](#dataapp-stateclone-keyskill-draftsid).
 - **Tier:** Clone state, legacy — moved to the app state, its drafts carried, at the project's first open after the upgrade (`appstate::move_out_of_the_plane`); never read after that.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/skill-grades/<YYYY-MM>.jsonl`
 - **Format:** where an older purlis kept this store, in the plane's state folder, before
   #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-grades/<YYYY-MM>.jsonl`](#dataapp-stateclone-keyskill-gradesyyyy-mmjsonl).
 - **Tier:** Clone state, legacy — moved to the app state, its rows carried, at the project's first open after the upgrade (`appstate::move_out_of_the_plane`); never read after that.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/skill-grades/routers/<YYYY-MM>.jsonl`
 - **Format:** where an older purlis kept this store, in the plane's state folder, before
   #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-grades/routers/<YYYY-MM>.jsonl`](#dataapp-stateclone-keyskill-gradesroutersyyyy-mmjsonl).
 - **Tier:** Clone state, legacy — moved to the app state with the rest of `skill-grades/`, its rows carried, at the project's first open after the upgrade (`appstate::move_out_of_the_plane`); never read after that.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/skill-grade-after-edit.json`
 - **Format:** where an older purlis kept this store, in the plane's state folder, before
   #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-grade-after-edit.json`](#dataapp-stateclone-keyskill-grade-after-editjson).
 - **Tier:** Clone state, legacy — removed at the project's first open after the upgrade and not carried: the person turns grading after each edit on again from a plan that shows the cost (`appstate::move_out_of_the_plane`); never read after that.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/grades-under-way/<grade>.json`
 - **Format:** where an older purlis kept this store, in the plane's state folder, before
   #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/grades-under-way/<grade>.json`](#dataapp-stateclone-keygrades-under-waygradejson).
 - **Tier:** Clone state, legacy — removed at the project's first open after the upgrade and not carried (`appstate::move_out_of_the_plane`); never read after that.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/grades-under-way.lock`
 - **Format:** where an older purlis kept this store, in the plane's state folder, before
   #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/grades-under-way.lock`](#dataapp-stateclone-keygrades-under-waylock).
 - **Tier:** Clone state, legacy — removed at the project's first open after the upgrade (`appstate::move_out_of_the_plane`); never read after that.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/skill-grade-chats/<skill>/<grade>/<chat>.screen`
 - **Format:** where an older purlis kept this store, in the plane's state folder, before
   #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-grade-chats/<skill>/<grade>/<chat>.screen`](#dataapp-stateclone-keyskill-grade-chatsskillgradechatscreen).
 - **Tier:** Clone state, legacy — removed at the project's first open after the upgrade and not carried (`appstate::move_out_of_the_plane`); never read after that.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `skill-tries/<id>/`
 - **Format:** where an older purlis kept this store, in the plane's state folder, before
   #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-tries/<id>/`](#dataapp-stateclone-keyskill-triesid).
 - **Tier:** Clone state, legacy — removed at the project's first open after the upgrade and not carried; the sweep then removes each throwaway piece with no try (`appstate::move_out_of_the_plane`); never read after that.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `chat-settings/<chat id>.<digest>.json`
@@ -7403,6 +7419,8 @@ rewritten.
 - **Format:** where an older purlis kept this store, in the plane's state folder, before
   #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-levels/<chat id>.json`](#dataapp-stateclone-keyskill-levelschat-idjson).
 - **Tier:** Clone state, legacy — removed at the project's first open after the upgrade and not carried: every workspace and persona folder of the project then waits for the person's Accept in the Skill studio again (`appstate::move_out_of_the_plane`); never read after that.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `save-journal.jsonl`

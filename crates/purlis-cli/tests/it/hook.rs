@@ -866,11 +866,12 @@ fn the_payload_field_no_command_can_see_is_read_and_the_prompts_mode_is_the_apps
     assert_eq!(out, "", "an unmeasured harness is not read as a sub-agent");
 }
 
-/// D-1444-14: a Claude Code chat is handed an allow for a dispatch and a handoff, and that
-/// allow is for the dispatch alone. Where one shares its call with another command, the hook
-/// answers `ask` for the call and names the other command; alone, it says nothing.
+/// #3785, superseding D-1444-14: a Claude Code chat is handed an allow for a dispatch and a
+/// handoff, and that allow is for the dispatch alone. Where one that writes shares its call
+/// with another command, the hook refuses the call, naming the other command and the shape to
+/// retry, and never asks; a dispatch that only looks, and one alone, get nothing.
 #[test]
-fn a_dispatch_or_a_handoff_with_a_rider_is_asked_about_and_one_alone_is_not() {
+fn a_dispatch_or_a_handoff_with_a_rider_is_refused_and_one_alone_or_a_look_is_not() {
     let plane = a_plane();
     for own in [
         "purlis dispatch --name \"check the queue\" <<'BRIEF'\nlook\nBRIEF",
@@ -885,16 +886,24 @@ fn a_dispatch_or_a_handoff_with_a_rider_is_asked_about_and_one_alone_is_not() {
             let (code, out, _) = guard(plane.path(), &bash(&cmd), &[]);
             assert_eq!(code, 0, "{cmd:?}");
             assert!(
-                out.contains(r#""permissionDecision": "ask""#),
+                !out.contains(r#""permissionDecision": "ask""#),
                 "{cmd:?}: {out}"
             );
-            assert!(out.contains("(`touch /tmp/zz`)"), "{cmd:?}: {out}");
-            assert_eq!(decision(&out), None, "an ask is not a denial: {out}");
+            let said = decision(&out).unwrap_or_else(|| panic!("{cmd:?} is refused: {out}"));
+            assert!(said.contains("(`touch /tmp/zz`)"), "{cmd:?}: {said}");
+            assert!(said.contains("in a call of its own"), "{cmd:?}: {said}");
             // On a harness that is handed no such allow, the hook has nothing to stand behind.
             let (_, out, _) = guard(plane.path(), &bash(&cmd), &[("CHARTER_HARNESS", "codex")]);
             assert_eq!(out, "", "{cmd:?}");
         }
     }
+    // A look is the harness's own rules' to judge, whatever stands beside it.
+    let (code, out, err) = guard(
+        plane.path(),
+        &bash("purlis dispatch list 2>&1 | head -20"),
+        &[],
+    );
+    assert_eq!((code, out.as_str(), err.as_str()), (0, "", ""));
 }
 
 #[test]

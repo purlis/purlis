@@ -86,6 +86,7 @@ const shownWith = (placement: Partial<DevicesShown["placement"]>): DevicesShown 
   },
   pools: [],
   owned: true,
+  projects: 1,
 });
 
 describe("arranged", () => {

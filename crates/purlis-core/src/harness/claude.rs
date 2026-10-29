@@ -957,9 +957,9 @@ pub const READ_ALLOW: [&str; 1] = ["Bash(purlis persona where)"];
 /// The commit asks no approval (ADR 0067's decision 6): it is the chat's own work in its own
 /// folder on its own branch, as `git commit` in a clone is, which no rule asks about either. A
 /// chat that is not sandboxed, or in a clone, is told to use git, and nothing is committed.
-/// **Alone only**: a call that runs anything beside it, or writes a file beside it, is asked
-/// about as a whole ([`crate::dispatchguard::rider_ask`]), and an operator's own `ask` or
-/// `deny` still wins. Every other `worktree` word still asks.
+/// **Alone only**: a call that runs anything beside it, or writes a file beside it, is refused
+/// with the shape to retry ([`crate::dispatchguard::rider_refusal`], #3785), and an operator's
+/// own `ask` or `deny` still wins. Every other `worktree` word still asks.
 pub const WORKTREE_COMMIT_ALLOW: [&str; 1] = ["Bash(purlis worktree commit *)"];
 
 /// The permission rules a Claude Code chat the app starts carries for a dispatch (V98b,
@@ -988,10 +988,13 @@ pub const DISPATCH_ALLOW: [&str; 4] = [
 /// **Each reaches only what the app's own record lets its caller reach**
 /// (`crate::dispatched::owned`, `crate::dispatchtalk::up`): `wait`, `cancel`, `tell` and
 /// `answer` name a task the chat itself dispatched, and are refused for any other chat;
-/// `list` lists those tasks; `read` reads what one of them said and ran (#1981, #2084); `note` and `ask` name nobody, and go to the one chat that
-/// dispatched the caller. None starts a chat. `--wait` is the dispatch itself, waited on: it
-/// is matched only where the flag comes first, and asked about otherwise.
-pub const DISPATCH_TASK_ALLOW: [&str; 9] = [
+/// `list` lists those tasks; `read` reads what one of them said and ran (#1981, #2084);
+/// `close` clears one that has finished, and is refused one the person typed in (#3785, ruled
+/// 2026-10-29: tidying its own tasks is the chat's own); `note` and `ask` name nobody, and go
+/// to the one chat that dispatched the caller. None starts a chat. `--wait` is the dispatch
+/// itself, waited on: it is matched only where the flag comes first, and asked about
+/// otherwise.
+pub const DISPATCH_TASK_ALLOW: [&str; 10] = [
     "Bash(purlis dispatch --wait *)",
     "Bash(purlis dispatch wait *)",
     "Bash(purlis dispatch list)",
@@ -1001,6 +1004,7 @@ pub const DISPATCH_TASK_ALLOW: [&str; 9] = [
     "Bash(purlis dispatch note *)",
     "Bash(purlis dispatch ask *)",
     "Bash(purlis dispatch answer *)",
+    "Bash(purlis dispatch close *)",
 ];
 
 /// The permission rules a Claude Code chat the app starts carries for a handoff (#1444, on
