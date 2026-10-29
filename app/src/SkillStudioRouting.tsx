@@ -55,7 +55,7 @@ function markOf(chat: StudioRouted) {
   return chat.routing.fell_back ? (
     <Badge variant="waiting">Fell back to the built-in router</Badge>
   ) : (
-    <Badge variant="ok">{`${chat.routing.ms} ms`}</Badge>
+    <Badge>{`${chat.routing.ms} ms`}</Badge>
   );
 }
 

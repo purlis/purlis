@@ -104,8 +104,9 @@ describe("a repo's own skills in the Skill studio", function () {
 
   it("turns the repo's skill off for the workspace's chats, and back on", async () => {
     const row = () => $(`[data-testid="found-claude-${NAME}"]`);
-    const toggle = () =>
-      $('[data-testid="harness-skill-item"] [data-scope="switch"][data-part="root"]');
+    // The switch's own input, which a press on its label reaches only where the label is laid
+    // out under the pointer: pressed as the keyboard and a reader press it.
+    const toggle = () => $('[data-testid="harness-skill-item"] input[role="switch"]');
     const named = () => readFileSync(manifest, "utf8").includes(NAME);
     // The item is drawn again after each switch, and again when the plane's change reaches the
     // window, so the switch is found afresh on every try rather than held. It is pressed only
@@ -121,12 +122,11 @@ describe("a repo's own skills in the Skill studio", function () {
             if (named() === keyed) return until(await (await row()).getText());
             if (Date.now() - pressed < 5_000) return false;
             const button = await toggle();
-            if (
-              (await button.isExisting()) &&
-              (await button.getAttribute("data-disabled")) === null
-            ) {
+            if ((await button.isExisting()) && (await button.isEnabled())) {
               pressed = Date.now();
-              await button.click().catch(() => undefined);
+              await browser
+                .execute((input: HTMLElement) => input.click(), button)
+                .catch(() => undefined);
             }
             return false;
           },
