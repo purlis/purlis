@@ -571,6 +571,10 @@ describe("A cluster pool (#3292)", () => {
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Pool" }), "s");
     expect(within(dialog).queryByText(OPERATOR_KEY)).toBeNull();
     expect(within(dialog).getByRole("button", { name: "Check its key" })).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Add a cluster pool" })).toBeNull(),
+    );
   });
 
   it("whose cluster names another operator key has the key-changed Notice with Remove", async () => {

@@ -624,17 +624,20 @@ const PURLIS: &str = crate::dockerpool::PURLIS;
 /// **`kubectl`, held as data**: the program, and the kubeconfig and context it is pointed at,
 /// each passed on every run, so nothing it does reads another cluster than the pool's.
 ///
-/// **Every run is given its own environment's two words** (#3292): `KUBECONFIG` is never handed
-/// on ([`CLEARED`]), so the kubeconfig is only ever the one named with `--kubeconfig`, or
-/// kubectl's own default, and never one a chat's environment pointed at; and, where it was found
-/// on this machine ([`Kubectl::on_this_machine`]), its `PATH` is the folder it is in and the
-/// fixed folders purlis looks for programs in, where a kubeconfig's own credential plugins are
-/// found as the person's terminal finds them.
+/// **The kubectl found on this machine runs in an environment of its own** (#3292,
+/// [`Kubectl::on_this_machine`]): `KUBECONFIG` is never handed on ([`CLEARED`]), so the
+/// kubeconfig is only ever the one named with `--kubeconfig`, or kubectl's own default, and never
+/// one a chat's environment pointed at; and its `PATH` is the folder it is in, the one its link
+/// leads to and the machine's own folders ([`crate::programs::SYSTEM_BIN`]), where a
+/// kubeconfig's credential plugin is found when it is installed beside kubectl or system-wide.
+/// One elsewhere is named in the kubeconfig by its absolute path.
 #[derive(Debug, Clone)]
 pub struct Kubectl {
     program: PathBuf,
     kubeconfig: Option<PathBuf>,
     context: Option<String>,
+    /// The `PATH` its runs are given, and that they are handed no `KUBECONFIG`: set for the
+    /// kubectl found on this machine ([`Kubectl::on_this_machine`]), the one the window runs.
     path: Option<std::ffi::OsString>,
 }
 
@@ -758,12 +761,14 @@ impl Kubectl {
         Vec<(std::ffi::OsString, std::ffi::OsString)>,
         Vec<std::ffi::OsString>,
     ) {
-        let env = self
-            .path
-            .iter()
-            .map(|path| ("PATH".into(), path.clone()))
-            .collect();
-        (env, CLEARED.iter().map(std::ffi::OsString::from).collect())
+        let Some(path) = &self.path else {
+            // A kubectl held by its path alone (a test's, against its own cluster) runs as it is.
+            return (Vec::new(), Vec::new());
+        };
+        (
+            vec![("PATH".into(), path.clone())],
+            CLEARED.iter().map(std::ffi::OsString::from).collect(),
+        )
     }
 
     /// This kubectl, reading the kubeconfig at `path`.

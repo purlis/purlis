@@ -993,7 +993,7 @@ fn a_cluster_pools_row_of_another_shape_refuses_the_file_whole_and_never_replace
     let runner_row = serde_json::json!({
         "name": "team", "pool": "cluster", "namespace": "ada", "claim": "team-1",
         "claimUid": "6f1c2b8e-0f43-4c2e-9d7a-1b2c3d4e5f60", "requester": "ada@example.com",
-        "pod": "team-1", "device": "01JB0RUNNER0000000000000000", "key": "cd".repeat(32),
+        "pod": "team-1", "device": "01JB0RUNNER0000000000000000", "key": "4d".repeat(32),
         "paired": 1_800_000_000_u64,
     });
     let file = |pool: &serde_json::Value, runner: &serde_json::Value| {

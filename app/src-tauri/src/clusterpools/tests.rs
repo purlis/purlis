@@ -13,8 +13,10 @@ const OTHER: &str = "ed25519:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdc
 /// A `runners.json` holding the cluster pool `team` and its runner, under `config`.
 #[cfg(unix)]
 fn a_cluster_pool_kept(config: &Path) {
-    let folder =
-        purlis_same_user::PrivateDirectory::open(&purlis_core::machine::dir(config)).unwrap();
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let folder = purlis_core::machine::dir(config);
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700)).unwrap();
     let file = serde_json::json!({
         "version": 1,
         "pools": [{
@@ -25,16 +27,17 @@ fn a_cluster_pool_kept(config: &Path) {
         "runners": [{
             "name": "team", "pool": "cluster", "namespace": "ada", "claim": "team-1",
             "claimUid": "6f1c2b8e-0f43-4c2e-9d7a-1b2c3d4e5f60", "requester": "ada@example.com",
-            "pod": "team-1", "device": "01JB0RUNNER0000000000000000", "key": "ef".repeat(32),
+            "pod": "team-1", "device": "01JB0RUNNER0000000000000000", "key": "4d".repeat(32),
             "paired": 1_800_000_000_u64,
         }],
     });
-    folder
-        .replace_file(
-            purlis_core::machine::RUNNERS_FILE,
-            file.to_string().as_bytes(),
-        )
+    let mut written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(folder.join(purlis_core::machine::RUNNERS_FILE))
         .unwrap();
+    std::io::Write::write_all(&mut written, file.to_string().as_bytes()).unwrap();
 }
 
 /// A stand-in for kubectl answering every run with `answer`.

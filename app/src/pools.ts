@@ -134,9 +134,9 @@ export function anyPoolKept(): boolean {
   );
 }
 
-/** Opens the Add a Docker pool dialog. */
-export function startAddingAPool() {
-  set((was) => ({ ...was, adding: true }));
+/** Opens the add pool dialog, on a Docker pool unless `kind` says otherwise. */
+export function startAddingAPool(kind: PoolKind = "docker") {
+  set((was) => ({ ...was, adding: true, kind }));
 }
 
 /** Chooses which kind of pool the dialog adds (#3292). */

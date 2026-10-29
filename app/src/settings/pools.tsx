@@ -399,7 +399,7 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
           )}
           {/* A project whose pool this machine cannot name is marked under the list. */}
           {marks(shown.filter((one) => rowOf(one) === undefined))}
-          <Button onPress={startAddingAPool}>Add a pool…</Button>
+          <Button onPress={() => startAddingAPool()}>Add a pool…</Button>
         </div>
       ),
     };

@@ -87,11 +87,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "something true now that has a way out of its own",
   },
   "AddDockerPool.tsx": {
-    count: 1,
+    count: 2,
     why:
       ACTION +
-      ". Add a Docker pool's refusal (#2679), in the core's words, under the form it refused; " +
-      "the form, kept as it was typed, and Add pool are the way on",
+      ". Add a Docker pool's refusal (#2679), and a cluster pool's (#3292), each in the core's " +
+      "words, under the form it refused; the form, kept as it was typed, and Add pool or Check " +
+      "its key are the way on",
   },
   "ui/notice/Notice.tsx": {
     count: 1,
