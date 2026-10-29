@@ -383,6 +383,8 @@ export const OnADormantChip: Story = {
     forget.focus();
     await userEvent.keyboard("{Enter}");
     await expect(canvas.getByRole("status")).toHaveTextContent("Forgot the pin to second-try");
+    // The picture once the card has arrived, never mid-entrance.
+    await waitFor(() => expect(surfaceOf(card).hasAttribute("data-entering")).toBe(false));
   },
 };
 
@@ -406,6 +408,8 @@ export const ADormantChipShowsItsNotice: Story = {
     );
     // Asked for, so the keyboard goes into it.
     await untilFocused(() => card, "the dormant chip's card, brought by its press");
+    // The picture once the card has arrived, never mid-entrance.
+    await waitFor(() => expect(surfaceOf(card).hasAttribute("data-entering")).toBe(false));
   },
 };
 
@@ -424,5 +428,7 @@ export const OnTheDashedChip: Story = {
     await expect(
       Math.abs(centre(surface) - centre(chip.getBoundingClientRect())),
     ).toBeLessThanOrEqual(1.5);
+    // The picture once the card has arrived, never mid-entrance.
+    await waitFor(() => expect(surfaceOf(card).hasAttribute("data-entering")).toBe(false));
   },
 };
