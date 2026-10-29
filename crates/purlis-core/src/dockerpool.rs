@@ -661,6 +661,57 @@ pub fn ran(inspected: &serde_json::Value) -> Ran {
     }
 }
 
+/// **The disk each volume holds, by its name** (#3493), from what `docker system df -v` printed
+/// (`printed`): its `Local Volumes space usage` table, as Docker and Podman both write it, a
+/// volume's name first on its line and its size last. A size is read as both write one (Go's
+/// `units.HumanSize`, decimal: `0B`, `512kB`, `1.234GB`), in bytes; a line whose size is not
+/// written so is left out, so nothing is guessed. Podman will not print this verbose table in
+/// another format, so the table is read rather than `--format`.
+pub fn homes_held(printed: &str) -> std::collections::BTreeMap<String, u64> {
+    let mut held = std::collections::BTreeMap::new();
+    let mut lines = printed
+        .lines()
+        .skip_while(|line| !line.trim_start().starts_with("Local Volumes space usage"))
+        .skip(1)
+        .skip_while(|line| line.trim().is_empty());
+    // Its header.
+    if !lines
+        .next()
+        .is_some_and(|line| line.trim_start().starts_with("VOLUME NAME"))
+    {
+        return held;
+    }
+    for line in lines.take_while(|line| !line.trim().is_empty()) {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        // Its name, its links, its size.
+        let [name, _, .., size] = words.as_slice() else {
+            continue;
+        };
+        if let Some(bytes) = bytes_of(size) {
+            held.insert((*name).to_owned(), bytes);
+        }
+    }
+    held
+}
+
+/// `size` as Go's `units.HumanSize` writes it (`1.234GB`), in bytes; `None` where it is not.
+fn bytes_of(size: &str) -> Option<u64> {
+    const UNITS: [&str; 9] = ["B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
+    let at = size.find(|c: char| !(c.is_ascii_digit() || c == '.'))?;
+    let (number, unit) = size.split_at(at);
+    let power = UNITS
+        .iter()
+        .position(|one| one.eq_ignore_ascii_case(unit))?;
+    let (whole, part) = number.split_once('.').unwrap_or((number, ""));
+    if whole.is_empty() || part.len() > 9 || !part.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let digits: u128 = format!("{whole}{part}").parse().ok()?;
+    let scale = 1000u128.checked_pow(u32::try_from(power).ok()?)?;
+    let bytes = digits.checked_mul(scale)? / 10u128.pow(u32::try_from(part.len()).ok()?);
+    Some(u64::try_from(bytes).unwrap_or(u64::MAX))
+}
+
 /// **How a runner's container was made to suspend itself** (#3717), which its pool's
 /// `suspendAfter` does not say for a runner made before it: a runner made before purlis
 /// suspended runners (#2051) never does, and one made before a pool had its own time (#3471)
@@ -2170,6 +2221,17 @@ impl Docker {
             "docker container inspect",
         )?;
         Ok(ran(&inspected))
+    }
+
+    /// **The disk each volume on this engine holds, by its name** (#3493, [`homes_held`]): read
+    /// by `docker system df -v`, which only reads, so no container is started by it, a
+    /// suspended runner's included; held to its time as every read is ([`READS_WITHIN`]).
+    pub fn homes_held(&self) -> Result<std::collections::BTreeMap<String, u64>, Refused> {
+        let printed = self.read(
+            &["system".into(), "df".into(), "--verbose".into()],
+            MOST_INSPECTED,
+        )?;
+        Ok(homes_held(&printed))
     }
 
     /// **[`MadeSuspending`] of `made`'s container** (#3717): `None` where its command is not a
