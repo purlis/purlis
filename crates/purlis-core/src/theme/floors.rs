@@ -154,7 +154,7 @@ const SELECTED: [(&str, Floor); 3] = [
 /// Whether `token` is a consent surface's or a state mark's: what purlis draws its own value of
 /// first when a floor fails.
 fn is_consent(token: &str) -> bool {
-    ["danger.", "needs-you.", "state."]
+    ["danger.", "needs-you.", "state.", "attention."]
         .iter()
         .any(|prefix| token.starts_with(prefix))
 }

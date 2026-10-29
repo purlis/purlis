@@ -41,7 +41,9 @@ impl HostPart {
     }
 
     /// Runs `test` again in a process of its own, as the host's part `part`, and reads its
-    /// announcement.
+    /// announcement. `test` is the full libtest name, its module first
+    /// (`the_engines_group_is_gone_within_a_second_of_its_host::a_test`): `--exact` matches
+    /// nothing else in the one test binary (#3613).
     pub fn start(test: &str, part: &str) -> Self {
         Self::start_with(test, part, &[])
     }

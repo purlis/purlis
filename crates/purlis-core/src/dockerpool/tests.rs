@@ -2390,3 +2390,118 @@ fn a_containers_latest_run_is_read_in_seconds_and_an_unset_time_is_none() {
         }
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Every run that only reads is held to a time (#3546)
+
+/// A `docker` that never answers what only reads (an inspect, an `info`, a list, an exec) and
+/// pulls in three seconds, in `dir`, its reads held to `within`. A time of seconds, not
+/// milliseconds, where the stand-in must answer in it: a loaded machine starts a shell slowly.
+fn a_wedged_docker(dir: &std::path::Path, within: std::time::Duration) -> Docker {
+    let pulled = dir.join("pulled").display().to_string();
+    stand_in::program(
+        dir,
+        "docker",
+        &format!(
+            "#!/bin/sh\ncase \"$1 $2\" in\n  \
+             'pull '*) sleep 3; touch '{pulled}' ;;\n  \
+             'image inspect') [ -f '{pulled}' ] || exit 1; \
+             echo '[{{\"Config\":{{\"User\":\"10001:10001\",\"Env\":[\"HOME=/home/purlis\"]}}}}]' ;;\n  \
+             *) exec sleep 30 ;;\nesac\n"
+        ),
+    );
+    Docker::at(dir.join("docker"))
+        .with_settings_in(dir.join("settings"))
+        .within(within)
+}
+
+#[test]
+fn every_run_that_only_reads_is_ended_when_its_time_is_up_and_says_it_did_not_answer() {
+    let dir = tempfile::tempdir().unwrap();
+    let docker = a_wedged_docker(dir.path(), std::time::Duration::from_millis(300));
+    let made = made();
+    type Read<'a> = Box<dyn Fn() -> Option<String> + 'a>;
+    let reads: [(&str, Read<'_>); 5] = [
+        ("ran", Box::new(|| docker.ran(&made).err().map(|why| why.0))),
+        (
+            "running",
+            Box::new(|| docker.running(&made).err().map(|why| why.0)),
+        ),
+        (
+            "check",
+            Box::new(|| docker.check(&made).err().map(|why| why.0)),
+        ),
+        (
+            "version_of",
+            Box::new(|| docker.version_of(&made).err().map(|why| why.0)),
+        ),
+        (
+            "made_suspending",
+            Box::new(|| docker.made_suspending(&made).err().map(|why| why.0)),
+        ),
+    ];
+    for (read, asked) in reads {
+        let started = std::time::Instant::now();
+        let why = asked().unwrap_or_else(|| panic!("{read} answered a docker that never does"));
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "{read} waited past its time"
+        );
+        assert!(why.contains("did not answer within"), "{read}: {why}");
+    }
+}
+
+#[test]
+fn a_pull_is_not_held_to_the_time_of_a_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let docker = a_wedged_docker(dir.path(), std::time::Duration::from_secs(2));
+    assert_eq!(
+        docker.declared(&image()).unwrap(),
+        (User::new(10001, 10001).unwrap(), "/home/purlis".to_owned()),
+        "a pull that takes longer than a read may is waited for"
+    );
+}
+
+/// A `docker` whose every run is logged in `dir/log`, that never answers an inspect or an
+/// `info`, and pulls at once.
+fn a_docker_that_never_answers_a_read(dir: &std::path::Path) -> Docker {
+    let log = dir.join("log").display().to_string();
+    stand_in::program(
+        dir,
+        "docker",
+        &format!(
+            "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$1 $2\" in\n  \
+             'pull '*) ;;\n  \
+             *) exec sleep 30 ;;\nesac\n"
+        ),
+    );
+    Docker::at(dir.join("docker"))
+        .with_settings_in(dir.join("settings"))
+        .within(std::time::Duration::from_secs(2))
+}
+
+#[test]
+fn an_image_inspect_that_does_not_answer_pulls_nothing_and_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let why = a_docker_that_never_answers_a_read(dir.path())
+        .declared(&image())
+        .unwrap_err();
+    assert!(why.0.contains("did not answer within"), "{why}");
+    let log = std::fs::read_to_string(dir.path().join("log")).unwrap_or_default();
+    assert!(!log.contains("pull"), "{log}");
+}
+
+#[test]
+fn an_engine_that_does_not_answer_is_not_asked_again_as_a_podman() {
+    let dir = tempfile::tempdir().unwrap();
+    let why = a_docker_that_never_answers_a_read(dir.path())
+        .check(&made())
+        .unwrap_err();
+    assert!(why.0.contains("did not answer within"), "{why}");
+    let log = std::fs::read_to_string(dir.path().join("log")).unwrap_or_default();
+    assert_eq!(
+        log.lines().filter(|line| line.starts_with("info")).count(),
+        1,
+        "{log}"
+    );
+}

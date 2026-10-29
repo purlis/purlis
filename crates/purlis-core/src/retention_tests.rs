@@ -363,6 +363,7 @@ fn every_event_a_secret_hand_out_is_traced_under_is_one_the_sweep_keeps() {
     for file in [
         "crates/purlis-core/src/secrets/cmd.rs",
         "crates/purlis-core/src/secrets/exec.rs",
+        "crates/purlis-core/src/secrets/brokered.rs",
         "crates/purlis-core/src/secrets/identity.rs",
         "app/src-tauri/src/vaults.rs",
     ] {
@@ -382,7 +383,7 @@ fn every_event_a_secret_hand_out_is_traced_under_is_one_the_sweep_keeps() {
             named.push(event[..event.find('"').unwrap_or(event.len())].to_string());
         }
     }
-    assert!(named.len() >= 5, "found only {named:?}");
+    assert!(named.len() >= 6, "found only {named:?}");
     for event in &named {
         assert!(
             crate::secrets::cmd::HANDED_OUT.contains(&event.as_str()),

@@ -6,7 +6,6 @@ import {
   useCallback,
   useEffect,
   useId,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -94,7 +93,7 @@ import { TextField } from "./ui/field/Field";
 import { PanelSection as Section, PanelTitle } from "./ui/panel/Panel";
 import { Count } from "./ui/badge/Badge";
 import { Tooltip } from "./ui/tooltip/Tooltip";
-import { byKeyboard } from "./heldStill";
+import { useHeldStill } from "./heldStill";
 import { property } from "./theme/theme";
 
 /** What a chat's state is drawn from (`ChatShownState`): its row's and its card's alike. */
@@ -499,26 +498,13 @@ export function ChatsSection({
 
   // **Held still while the pointer is over the list or the keyboard is in it** (V100-47): no
   // row moves under a click. Taken as the pointer or the keyboard comes in, let go when both
-  // have left.
-  const list = useRef<HTMLDivElement>(null);
-  const [over, setOver] = useState(false);
-  const [inside, setInside] = useState(false);
-  // The list is not drawn with no chat to list, so nothing would say the pointer left it.
-  if (rows.length === 0 && (over || inside)) {
-    setOver(false);
-    setInside(false);
-  }
-  // And neither hold outlives the window being the one in use: a pointer parked over the
-  // sidebar while the person works elsewhere sends no leave. The next move of the pointer, or
-  // key in the list, takes it again.
-  useEffect(() => {
-    const away = () => {
-      setOver(false);
-      setInside(false);
-    };
-    window.addEventListener("blur", away);
-    return () => window.removeEventListener("blur", away);
-  }, []);
+  // have left, or the window stops being the one in use: the shared hold (`useHeldStill`,
+  // #3594), which looks for the focus after every redraw. Off while there is no chat to list:
+  // the list is not drawn then, so nothing would say the pointer left it.
+  const { holding: resting, held: holdBy } = useHeldStill<HTMLDivElement>(
+    [rows, finished],
+    rows.length > 0,
+  );
   // **What the person used last, the pointer or the keyboard** (#1675): a row's card comes up
   // on the keyboard resting on it, and not on a focus a press left there.
   const pointed = useRef(false);
@@ -537,7 +523,6 @@ export function ChatsSection({
     };
   }, []);
   const pointedLast = useCallback(() => pointed.current, []);
-  const resting = over || inside;
   const [held, setHeld] = useState<Moving | null>(null);
   const moving: Moving = { order, live, asked, listed };
   // **A workspace focused, a tab brought forward or a scope picked is the person's doing**
@@ -629,12 +614,6 @@ export function ChatsSection({
     }
     return of;
   }, [drawn]);
-  // **The keyboard's hold never outlives the keyboard being here.** A focused row that is
-  // taken out of the document (its task stopped, or finished, or was filtered away) sends no
-  // blur, so after every draw the hold is let go when the focus is no longer in the list.
-  useLayoutEffect(() => {
-    if (inside && list.current?.contains(document.activeElement) !== true) setInside(false);
-  }, [inside, drawn, rows, finished]);
   const needsYou = useChatsSelect(chats, (states) => states.needsYou);
   const leads = useMemo(() => needing(rows, needsYou), [rows, needsYou]);
   const byNumber = useMemo(() => new Map(rows.map((row) => [row.session, row])), [rows]);
@@ -838,10 +817,11 @@ export function ChatsSection({
     front === undefined ? undefined : rowId(front),
     drawn.map((row) => rowId(row.session)),
   );
-  const left = (event: FocusEvent<HTMLElement>) => {
+  /** The keyboard left the list: what the last key said is taken down with it. */
+  const left = (event: FocusEvent<HTMLDivElement>) => {
+    holdBy.onBlur(event);
     const to = event.relatedTarget;
     if (to instanceof Node && event.currentTarget.contains(to)) return;
-    setInside(false);
     setSaid(undefined);
   };
   /** The catalogue's new chat, which the view's title line offers (#3342). */
@@ -1061,24 +1041,14 @@ export function ChatsSection({
         </p>
       ) : (
         <div
-          ref={list}
+          {...holdBy}
           className="chats-list"
-          onPointerEnter={() => setOver(true)}
-          // Taken again by the pointer's next move, after the window was left and come back to.
-          onPointerMove={() => {
-            if (!over) setOver(true);
-          }}
-          onPointerLeave={() => setOver(false)}
-          // Only the keyboard's focus holds the list: see `byKeyboard`.
-          onFocus={(event) => {
-            if (byKeyboard(event.target)) setInside(true);
-          }}
           onBlur={left}
           // Before the row's own keys: what the last key left said is taken down by the next,
-          // unless that is Space again, and a key in the list is the keyboard being here.
+          // unless that is Space again; the hold hears the key as the keyboard being here.
           onKeyDownCapture={(event) => {
             if (event.key !== " ") setSaid(undefined);
-            if (!inside) setInside(true);
+            holdBy.onKeyDownCapture(event);
           }}
           onKeyDown={(event) => {
             // Escape in the list takes the filter off, as it does in the filter's own box, and
@@ -1673,19 +1643,28 @@ const Row = memo(function Row({
       {needs !== null && needs !== session && (
         /* **A chat below this one needs you**: the hand, and a press goes to that chat. Its
            own button beside the row, since the row goes to this row's chat. Out of the arrows'
-           way; the keyboard's way to that chat is the title bar's list. */
-        // The family's quiet ghost (#3523), as the tab chip's hand is: its tooltip is its name.
-        <IconButton
-          variant="quiet"
-          size="sm"
-          icon={<Hand aria-hidden="true" style={HAND} />}
-          className="rolled-up"
-          data-mark="needs-you"
-          data-leads-to={needs}
-          tabIndex={-1}
-          aria-label={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}
-          onPress={() => onOpen(needs)}
-        />
+           way; the keyboard's way to that chat is the title bar's list. **The pointer's alone,
+           as the row's twist is** (#3658): out of the accessibility tree, where the tree may
+           own only its rows (axe's `aria-required-children`), and where the row's own
+           description already says which chat below needs you. Hidden by the element around
+           it, since the family's button does not pass `aria-hidden` on. */
+        <span className="rolled-up-at" aria-hidden="true">
+          {/* The family's quiet ghost (#3523), as the tab chip's hand is: its tooltip is its
+              name. */}
+          <IconButton
+            variant="quiet"
+            size="sm"
+            icon={<Hand aria-hidden="true" style={HAND} />}
+            className="rolled-up"
+            data-mark="needs-you"
+            data-leads-to={needs}
+            tabIndex={-1}
+            // Nor focused by its press: the focus never rests on what is hidden from the tree.
+            preventFocusOnPress
+            aria-label={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}
+            onPress={() => onOpen(needs)}
+          />
+        </span>
       )}
     </li>
   );

@@ -3,6 +3,7 @@
 
 import type { KeyboardEvent } from "react";
 import type { Offer } from "./actions";
+import { onAMac } from "./mac";
 
 /**
  * **Delete on a focused tab closes it** (charter-app#239): the optional key of the WAI-ARIA
@@ -127,13 +128,5 @@ export function deleteKeySaid(mac: boolean): string {
   return mac ? "⌫" : "Delete";
 }
 
-/**
- * Whether the keyboard in front of the operator is a Mac's.
- *
- * From the page and not asked of the binary, unlike the title bar's room (`bindings.ts`,
- * `titleBarRoom`): that one decides a layout and has to be exact, and this decides one key,
- * where the platform string WebKit reports on the machine it runs on is the answer.
- */
-export function onAMac(): boolean {
-  return navigator.platform.startsWith("Mac");
-}
+/** Whether the keyboard in front of the operator is a Mac's (`mac.ts`). */
+export { onAMac };

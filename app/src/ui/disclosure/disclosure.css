@@ -1,0 +1,85 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The disclosure family's default** (#3675, ADR 0103, ADR 0104): how a disclosure is drawn
+   when a theme names none of its parts. Its `root` holds the `trigger` row (a button of the button
+   family, the quiet ghost, leading with the `twist`, and any mark after it) and the `panel` under
+   it; each is `data-scope="disclosure"` with its `data-part`, and React Aria marks an open one
+   `data-expanded`.
+
+   **Opening moves only what is under it** (#2800): the trigger's row keeps its size, and the twist
+   turns, which is a transform. No motion: a part animates only as it appears or leaves.
+
+   **In the `components` layer** (`styles.css`), above `App.css`. **Only tokens**, one `var()`
+   per colour. */
+
+/* ---------------------------------------------------------------------------------------------
+   The disclosure: its trigger's row, then its panel, in the reading order.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="disclosure"][data-part="root"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+/* The row the trigger stands in, with a mark after it; a heading when the fold heads a section,
+   which takes the row's look and not a heading's. */
+[data-scope="disclosure"][data-part="trigger"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The twist: one chevron, pointing at its words while folded, mirrored in a right-to-left window,
+   turned down while open. The same mark wherever a fold is drawn (#1916).
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="disclosure"][data-part="twist"] {
+  flex: none;
+  inline-size: var(--font-size-md);
+  block-size: var(--font-size-md);
+  color: var(--text-quiet);
+}
+
+[data-scope="disclosure"][data-part="twist"]:dir(rtl) {
+  transform: scaleX(-1);
+}
+
+[data-scope="disclosure"][data-part="root"][data-expanded]
+  > [data-scope="disclosure"][data-part="trigger"]
+  [data-scope="disclosure"][data-part="twist"],
+[data-scope="disclosure"][data-part="twist"][data-open] {
+  transform: rotate(90deg);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The panel: under the trigger, its words where the trigger's start. Folded, it takes no room, so
+   the row under it stays where it is until it opens.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="disclosure"][data-part="panel"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+
+[data-scope="disclosure"][data-part="panel"][hidden] {
+  display: none;
+}
+
+/* A group of disclosures (an accordion) lays them out one under another. */
+[data-scope="disclosure"][data-part="group"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}

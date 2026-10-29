@@ -686,10 +686,12 @@ pub type ClosedSink = Box<dyn FnMut(&'static str) + Send>;
 /// the link's frames, and the window holds it to them too, whatever it sends. A frame larger than
 /// [`MOST_HELD_FRAME_BYTES`], one whose header says it is wider than the link's widest or
 /// higher than [`MOST_HELD_FRAME_HEIGHT`] (read before anything decodes it), or one that comes
-/// sooner than [`HELD_FRAMES_AT_LEAST`] after the last drawn, is acknowledged and not drawn.
+/// sooner than [`HeldFrames::at_least`] after the last drawn, is acknowledged and not drawn. The
+/// link's frames are its pool's own where its runner was given them (#3297), else the defaults.
 #[derive(Debug, Default)]
 pub struct HeldFrames {
     last: Option<Instant>,
+    link: purlis_session_protocol::browsing::LinkFrames,
 }
 
 /// The largest frame of a runner's browser the window draws.
@@ -697,10 +699,6 @@ pub const MOST_HELD_FRAME_BYTES: usize = 4 << 20;
 
 /// The highest frame of a runner's browser the window draws, in pixels.
 pub const MOST_HELD_FRAME_HEIGHT: u16 = 8192;
-
-/// The least time between two frames of a runner's browser the window draws: a little under
-/// the link's 15 a second, so a frame the link bunched is not lost.
-pub const HELD_FRAMES_AT_LEAST: Duration = Duration::from_millis(50);
 
 impl FrameSinks {
     /// Whether `image` is drawn: every frame, but for a view the window holds (#2050).
@@ -713,6 +711,17 @@ impl FrameSinks {
 }
 
 impl HeldFrames {
+    /// The window's hold on a browser whose views over the link are held to `link` (#3297).
+    pub fn to(link: purlis_session_protocol::browsing::LinkFrames) -> HeldFrames {
+        HeldFrames { last: None, link }
+    }
+
+    /// The least time between two frames drawn: three quarters of the link's own, so a frame
+    /// the link bunched is not lost (50 ms at 15 a second).
+    pub fn at_least(&self) -> Duration {
+        Duration::from_millis(750) / self.link.frames.max(1)
+    }
+
     /// Whether `image`, coming `now`, is drawn.
     pub fn draws(&mut self, image: &[u8], now: Instant) -> bool {
         if image.len() > MOST_HELD_FRAME_BYTES {
@@ -721,12 +730,13 @@ impl HeldFrames {
         let Some((width, height)) = purlis_session_protocol::view::frames::jpeg_size(image) else {
             return false;
         };
-        if width > purlis_host::LINK_MOST_FRAME_WIDTH || height > MOST_HELD_FRAME_HEIGHT {
+        if width > self.link.width || height > MOST_HELD_FRAME_HEIGHT {
             return false;
         }
+        let at_least = self.at_least();
         if self
             .last
-            .is_some_and(|last| now.saturating_duration_since(last) < HELD_FRAMES_AT_LEAST)
+            .is_some_and(|last| now.saturating_duration_since(last) < at_least)
         {
             return false;
         }
@@ -932,9 +942,11 @@ impl HostLink {
                 .map(|why| why.to_string()),
             None => None,
         };
+        // The runner the link reached, as its host says (1.48, #3417): a draining one too.
+        let mut reached = None;
         if let Some(runner) = relaying {
             let mut relayed = client.relay_to(runner).await;
-            let name_held = |sent: &Result<(), session::CallError>| {
+            let name_held = |sent: &Result<Option<String>, session::CallError>| {
                 sent.as_ref()
                     .err()
                     .and_then(session::CallError::refusal)
@@ -944,7 +956,7 @@ impl HostLink {
                 tokio::time::sleep(NAMED_AGAIN_AFTER).await;
                 relayed = client.relay_to(runner).await;
             }
-            relayed.map_err(|why| {
+            reached = relayed.map_err(|why| {
                 format!("the session host did not relay the link to runner {runner}: {why}")
             })?;
         }
@@ -972,6 +984,7 @@ impl HostLink {
                 link: id,
                 client: Arc::clone(&client),
                 runtime: runtime.clone(),
+                reached,
             },
         );
         let lost = Arc::clone(&shared);
@@ -1337,13 +1350,19 @@ impl HostLink {
 
     /// Draw browser view `view`'s frames into `sink`, each whole (#2012), and its page's origin
     /// into `origins` (#2300): its stream may already be here.
-    /// The window holds the view to the link's frames itself where `held` (#2050): a view of a
-    /// browser on a runner.
-    pub(crate) fn draw_frames(&self, view: u32, sink: FrameSink, origins: OriginSink, held: bool) {
+    /// The window holds the view to the link's frames itself where `held` names them (#2050,
+    /// #3297): a view of a browser on a runner.
+    pub(crate) fn draw_frames(
+        &self,
+        view: u32,
+        sink: FrameSink,
+        origins: OriginSink,
+        held: Option<purlis_session_protocol::browsing::LinkFrames>,
+    ) {
         let sinks = FrameSinks {
             frames: sink,
             origins,
-            held: held.then(HeldFrames::default),
+            held: held.map(HeldFrames::to),
             closed: None,
         };
         self.draw_into(view, Draws::Frames(Arc::new(Mutex::new(sinks))));
@@ -1519,10 +1538,13 @@ fn everything_ended_with_the_host(shared: &Shared, link: u64) {
 }
 
 /// Where the hook lines the host pushes are heard: each by what hears its project's lines
-/// ([`Relayed::take`]), each reply going back on the link in the order it was made.
+/// ([`Relayed::take_reached`]), each reply going back on the link in the order it was made.
 struct HookLines {
     /// The link they come over.
     link: u64,
+    /// The runner the link reached, as its host said (1.48, #3417): `None` for this machine's
+    /// host's link, and for a host before 1.48.
+    reached: Option<String>,
     client: Arc<Client>,
     runtime: tokio::runtime::Handle,
 }
@@ -1553,7 +1575,7 @@ impl HookLines {
             }
         };
         let reply = self.reply(project, id, pathless);
-        relayed.take(self.link, id, heard, reply);
+        relayed.take_reached(self.link, self.reached.clone(), id, heard, reply);
     }
 
     /// What replies to line `id` of `project`: each reply sent at once, behind the one before,
@@ -1582,13 +1604,18 @@ impl HookLines {
     }
 }
 
+/// **Whether `replied` is no larger than the link carries** ([`within_a_frame`]): what a run's
+/// values are measured by before they are handed on (#3406). What is measured may carry them
+/// (`Replied::Handed`, #2047), so it is wiped once it is (#3420).
+pub(crate) fn fits_a_reply(replied: &Replied) -> bool {
+    serde_json::to_vec(replied)
+        .is_ok_and(|said| purlis_core::secrets::Zeroizing::new(said).len() <= A_REPLY_IS_AT_MOST)
+}
+
 /// `replied`, as JSON no larger than the link carries: an answer too large is refused in a
 /// sentence instead.
 fn within_a_frame(replied: Replied) -> serde_json::Value {
-    let too_large = |replied: &Replied| {
-        serde_json::to_vec(replied).map_or(true, |said| said.len() > A_REPLY_IS_AT_MOST)
-    };
-    let replied = if too_large(&replied) {
+    let replied = if !fits_a_reply(&replied) {
         let why = format!(
             "the answer was larger than the session host's link carries ({A_REPLY_IS_AT_MOST} \
              bytes)"

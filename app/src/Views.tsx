@@ -115,7 +115,7 @@ import { ProposedChangeTab } from "./ProposedChangeTab";
 import { RUNNER_WRITE_VIEW } from "./runnerWriteOpen";
 import { RunnerWriteTab } from "./RunnerWriteTab";
 import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
-import { SKILL_STUDIO_VIEW, isSkillStudio, scopeOf } from "./skillStudio";
+import { SKILL_STUDIO_VIEW, isSkillStudio } from "./skillStudio";
 import { SkillStudioTab } from "./SkillStudioTab";
 import { SKILL_VIEW, isSkillTab, skillOfView } from "./skillRuns";
 import {
@@ -692,11 +692,11 @@ export function ViewPane({
           />
         ) : isSkillStudio(view) ? (
           /* The Skill studio (#2765): read from the project's skill folders, again when the
-             plane changes on disk; keyed by the workspace whose chats it shows (#2767). */
+             plane changes on disk. One tab per project (#3681), its scope and pages its own. */
           <SkillStudioTab
             key={`${plane}\u0000${view.key}`}
             plane={plane}
-            scope={scopeOf(view)}
+            tab={view.key}
             changed={changed + onDisk}
             onOpenView={onOpenView}
           />

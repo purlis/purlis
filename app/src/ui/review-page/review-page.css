@@ -1,0 +1,112 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The review page's default** (#3672, ADR 0103, ADR 0104): how a review page is drawn when a
+   theme names none of its parts. Its `root` is two rows: the `body`, the only one that scrolls,
+   and the `bar` with its `summary` and its `answers`, each `data-scope="review-page"` with its
+   `data-part`.
+
+   - **The bar never covers what the body holds** (WCAG 2.4.11): the body ends where the bar
+     starts, so what is reviewed scrolls under the bar's edge, and a focused control scrolled into
+     view is in the body's room, clear of the bar.
+   - **It fills the pane it is drawn in**, and in a view frame's item pane it takes what is left
+     under the page header, so the bar stands at the pane's foot.
+   - **Its edge is the window's** (the bar is a consent surface where it holds a grant): no part
+     sets the line over it.
+
+   **In the `components` layer** (`styles.css`), above `App.css`. **Only tokens**, one `var()`
+   per colour. */
+
+[data-scope="review-page"][data-part="root"] {
+  container: review-page / inline-size;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  box-sizing: border-box;
+  block-size: 100%;
+  min-block-size: 0;
+  min-inline-size: 0;
+  margin: 0;
+}
+
+/* In a view frame's item pane, under its page header: the pane lays the two out as a column, and
+   the review page takes the room left, so it is the review page's body that scrolls. */
+[data-scope="view-frame"][data-part="item"]:has(> [data-scope="review-page"][data-part="root"]) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+[data-scope="view-frame"][data-part="item"] > [data-scope="review-page"][data-part="root"] {
+  flex: 1 1 auto;
+  block-size: auto;
+}
+
+[data-scope="review-page"][data-part="body"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  box-sizing: border-box;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow: auto;
+  padding-block: var(--space-6);
+  padding-inline: var(--space-7);
+}
+
+/* A body that is a Tab stop of its own (it scrolls and holds nothing the keyboard reaches) shows
+   the ring inside its edge, where the bar and the pane cannot cut it. */
+[data-scope="review-page"][data-part="body"]:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(-1 * var(--focus-ring-width));
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The bar: the summary at its start, the answers at its end, on the panel's fill under the
+   window's hairline.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="review-page"][data-part="bar"] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  padding-block: var(--space-5);
+  padding-inline: var(--space-7);
+  border-block-start: var(--separator-width) solid;
+  border-block-start-color: var(--border-subtle);
+  background-color: var(--panel-fill);
+}
+
+/* What pressing the main action does and spends: it wraps rather than being cut, and keeps the
+   room of its longest words when it is told them (`summaryReserve`). */
+[data-scope="review-page"][data-part="summary"] {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-md);
+}
+
+[data-scope="review-page"][data-part="summary"]:empty {
+  display: none;
+}
+
+/* The answers at the trailing edge, in the dialog's places, never squeezed by the summary. */
+[data-scope="review-page"][data-part="answers"] {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  margin-inline-start: auto;
+}
+
+/* **Narrow**: the summary takes its own line over the answers. */
+@container review-page (max-width: 30rem) {
+  [data-scope="review-page"][data-part="bar"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  [data-scope="review-page"][data-part="answers"] {
+    margin-inline-start: 0;
+  }
+}

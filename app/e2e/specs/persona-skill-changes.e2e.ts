@@ -7,6 +7,7 @@ import { $, browser, expect } from "@wdio/globals";
 import { press, projectRoot, stateOf, untilSays } from "../acting.js";
 import { showView } from "../opening.js";
 import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
+import { studioPage, studioSkill } from "../studio.js";
 
 /**
  * **A persona's own skills, changed in the Skill studio** (SK-32, #3003), in the built app
@@ -88,7 +89,7 @@ describe("changing a persona's own skills", function () {
     await press(PANE, "Brings", "starting");
     await $(STUDIO).waitForExist({ timeout: 20_000 });
 
-    await press(STUDIO, "New skill");
+    await press(STUDIO, "New skill…");
     await expect($('[data-testid="skill-new-level"]')).toHaveText(
       new RegExp(`It lands in the persona ${PERSONA} skills\\.`),
     );
@@ -100,6 +101,8 @@ describe("changing a persona's own skills", function () {
     await expect(made).toHaveText(/persona/);
     expect(existsSync(join(own(MADE), "SKILL.md"))).toBe(true);
 
+    // Each change is made on the skill chosen in the Library, beside the list (#3681).
+    await studioSkill(MADE);
     await (await $(`aria/Rename ${MADE}`)).click();
     await typeInto("New name", RENAMED);
     await (await $('form[aria-label^="Rename"] button[type="submit"]')).click();
@@ -108,6 +111,7 @@ describe("changing a persona's own skills", function () {
     expect(existsSync(join(own(RENAMED), "SKILL.md"))).toBe(true);
     expect(existsSync(own(MADE))).toBe(false);
 
+    await studioSkill(RENAMED);
     await (await $(`aria/Delete ${RENAMED}`)).click();
     const users = await $('[data-testid="skill-users"]');
     await users.waitForExist({ timeout: 20_000 });
@@ -118,9 +122,11 @@ describe("changing a persona's own skills", function () {
     await renamed.waitForExist({ reverse: true, timeout: 20_000 });
     expect(existsSync(own(RENAMED))).toBe(false);
 
+    await studioPage("Deleted");
     const restore = await $(`aria/Restore ${RENAMED}`);
     await restore.waitForClickable({ timeout: 20_000 });
     await restore.click();
+    await studioPage("Library");
     await browser.waitUntil(
       async () => (await $(`[data-testid="skill-${RENAMED}"]`)).isExisting(),
       { timeout: 20_000, timeoutMsg: "the restored skill never came back to the studio" },
@@ -130,6 +136,7 @@ describe("changing a persona's own skills", function () {
 
   it("moves it into the project's skills after asking its grant, and the persona keeps it", async () => {
     // Move to's first level is the project's shared skills.
+    await studioSkill(RENAMED);
     const picker = `[data-scope="select"][data-part="root"][aria-label="Move ${RENAMED} to"]`;
     await $(picker).waitForExist({ timeout: 20_000 });
     await browser.execute((css: string) => {

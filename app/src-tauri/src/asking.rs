@@ -2103,12 +2103,18 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         asks: derive(&waiting)
             .into_iter()
             .filter(|ask| !chats.kept_from_the_window(ask.session))
+            // The old `[harness_plugins]` keys: Needs you holds their Ask while the Skill studio
+            // is on (#3689), so it is in the Inbox only while the studio is off.
             .chain(
-                crate::oldplugins::notice_of(
-                    root,
-                    &held.proposals().paths_of(crate::proposals::BY_PURLIS),
-                )
-                .map(|old| old_harness_plugins(&old)),
+                (!purlis_core::skills::studio_on_here())
+                    .then(|| {
+                        crate::oldplugins::notice_of(
+                            root,
+                            &held.proposals().paths_of(crate::proposals::BY_PURLIS),
+                        )
+                    })
+                    .flatten()
+                    .map(|old| old_harness_plugins(&old)),
             )
             .collect(),
     }

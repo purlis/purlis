@@ -5,19 +5,22 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import {
   commands,
   PERSONA_SCOPE_KEY,
+  SKILL_NEEDS_IN,
   SKILL_STUDIO_IN,
   type SkillPinner,
   type SkillPinsRefused,
 } from "./bindings";
-import type { ViewRef } from "./tabs";
+import { contentsOf, type Tabs, type ViewRef } from "./tabs";
 
 /**
- * **The Skill studio** (SK-2, #2765; spec #2762): every skill a chat in the project gets, with
- * its level, and every one left out with why, read only for now.
+ * **The Skill studio** (SK-2, #2765; spec #2762, #3679): every skill a chat in the project gets,
+ * with its level, and every one left out with why.
  *
- * It is a view tab, `{ from: null, view: "skill-studio", key: "" }`: one per project, opened
- * from the palette's `skills.studio` row. It is behind the `skill-studio` flag until its finish
- * line (#2786): while the flag is off the palette offers no row for it.
+ * It is a view tab, `{ from: null, view: "skill-studio", key: "" }`: **one per project** (#3681,
+ * the amendment's S2), holding its own pages, scope and back/forward history. A second studio tab
+ * opens only when the person asks for one (⌘-click), keyed `#2`, `#3`…. It is behind the
+ * `skill-studio` flag until its finish line (#2786): while the flag is off the palette offers no
+ * row for it.
  */
 export const SKILL_STUDIO_VIEW: ViewRef = { from: null, view: "skill-studio", key: "" };
 
@@ -90,21 +93,168 @@ export function scopeOfKey(key: string): StudioScope {
   return key.startsWith(persona) ? asPersona(key.slice(persona.length)) : inWorkspace(key);
 }
 
-/** The scope a studio view shows. */
-export function scopeOf(view: ViewRef): StudioScope {
-  return scopeOfKey(view.key);
+/** Two scopes are one. */
+export function sameScope(one: StudioScope, other: StudioScope): boolean {
+  return one.at === other.at && one.name === other.name;
+}
+
+// --- Its pages, and the places an entry point opens it at ------------------------------------
+
+/**
+ * **The studio's pages** (the amendment's S2): Library, Needs you, Drafts, Sources, Deleted, then
+ * Harness skills and Routing. Needs you and Drafts are in the navigation only while they hold
+ * something.
+ */
+export const STUDIO_PAGES = [
+  "library",
+  "needs",
+  "drafts",
+  "sources",
+  "deleted",
+  "harness",
+  "routing",
+] as const;
+export type StudioPage = (typeof STUDIO_PAGES)[number];
+
+/** What each page is called, in the navigation, its path and its heading. */
+export const STUDIO_PAGE_NAMES: Record<StudioPage, string> = {
+  library: "Library",
+  needs: "Needs you",
+  drafts: "Drafts",
+  sources: "Sources",
+  deleted: "Deleted",
+  harness: "Harness skills",
+  routing: "Routing",
+};
+
+/**
+ * **A place in the studio**: one step of its tab's history (`ui/panel/viewHistory.ts`). The
+ * page, whose chats it covers, and on Library the skill chosen (its row's id, {@link skillRowId}).
+ */
+export interface StudioPlace {
+  page: StudioPage;
+  scope: StudioScope;
+  skill?: string;
+}
+
+/** Where a studio tab starts when nothing opened it anywhere: Library, at the project's root. */
+export const STUDIO_START: StudioPlace = { page: "library", scope: AT_THE_ROOT };
+
+/** **One row of the Library**, as a place names it: a skill's level, its folder, whose it is
+ *  and its name, which no other row shares (an installed skill has no folder in the project, and
+ *  two programs' own may share a name). */
+export function skillRowId(skill: {
+  level: string;
+  local: boolean;
+  folder: string;
+  name: string;
+  owner?: { kind: string; name?: string } | null;
+}): string {
+  const whose = skill.owner == null ? "" : `${skill.owner.kind}${skill.owner.name ?? ""}`;
+  return `${skill.level}${skill.local ? "+local" : ""}:${skill.folder}:${whose}#${skill.name}`;
+}
+
+/** The name a row's id ends with. */
+export function skillOfRowId(id: string): string {
+  return id.slice(id.lastIndexOf("#") + 1);
+}
+
+/** **A row named only by its skill's name**: where a change left the skill with a new row
+ *  (renamed, shared, moved), the place goes on to the row of that name. */
+export function skillRowNamed(name: string): string {
+  return `#${name}`;
+}
+
+/** Two places are one: the same page, scope and skill chosen. */
+export function samePlace(one: StudioPlace, other: StudioPlace): boolean {
+  return one.page === other.page && sameScope(one.scope, other.scope) && one.skill === other.skill;
+}
+
+/** A target's key starts with this: it names a place to open the studio at, never a tab. */
+const TARGET = "at:";
+
+/**
+ * **The studio, opened at a place** (#3681): what every entry point hands `openView`, so each
+ * lands on its page and scope. It is a target, not a tab: the window's one way of opening views
+ * ({@link studioOpening}) turns it into the studio's tab, with the place recorded in that tab's
+ * history. `newTab` asks for a studio tab of its own (⌘-click).
+ */
+export function skillStudioAt(
+  scope: StudioScope,
+  page: StudioPage = "library",
+  { skill, newTab = false }: { skill?: string; newTab?: boolean } = {},
+): ViewRef {
+  const place: StudioPlace & { newTab?: true } = { page, scope };
+  if (skill !== undefined) place.skill = skill;
+  if (newTab) place.newTab = true;
+  return { ...SKILL_STUDIO_VIEW, key: `${TARGET}${JSON.stringify(place)}` };
 }
 
 /**
- * **The Skill studio on one scope's chats** (#2767): the same view, keyed by its scope, so a
- * Skills summary row opens it on that workspace or persona and the studio's own picker can show
- * another.
+ * **The Skill studio's Library on one scope's chats** (#2767): a Skills summary row's, a
+ * persona page's and the palette's way in.
  */
 export function skillStudioView(scope: StudioScope): ViewRef {
-  return { ...SKILL_STUDIO_VIEW, key: scopeKey(scope) };
+  return skillStudioAt(scope, "library");
 }
 
-/** What the studio's tab is called while it shows `scope`'s chats. */
+/** Whether `key` is a studio tab's own: the first (`""`) or one asked for beside it (`#2`). */
+function isTabKey(key: string): boolean {
+  return key === "" || /^#[0-9]+$/.test(key);
+}
+
+/** A place read back from a target's key, or nothing for a key that names none. */
+function placeOfTarget(key: string): (StudioPlace & { newTab?: boolean }) | undefined {
+  if (!key.startsWith(TARGET)) return undefined;
+  try {
+    const read = JSON.parse(key.slice(TARGET.length)) as Partial<StudioPlace & { newTab: boolean }>;
+    const page = STUDIO_PAGES.find((one) => one === read.page);
+    const scope = read.scope;
+    if (page === undefined || scope === undefined || !(scope.at in SCOPES)) return undefined;
+    return {
+      page,
+      scope: { at: scope.at, name: String(scope.name ?? "") },
+      ...(typeof read.skill === "string" ? { skill: read.skill } : {}),
+      ...(read.newTab === true ? { newTab: true } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * **What opening `view` opens** (#3681): a studio target becomes the studio's tab and the place
+ * it lands at; a tab put back from an older launch, keyed by its scope, becomes the one tab on
+ * that scope's Library; a studio tab is itself. `free` says which extra tab key is not open yet,
+ * for a target that asks for a tab of its own.
+ */
+export function studioOpening(
+  view: ViewRef,
+  free: (key: string) => boolean,
+): { tab: ViewRef; place?: StudioPlace } {
+  if (isTabKey(view.key)) return { tab: view };
+  const target = placeOfTarget(view.key);
+  const place: StudioPlace =
+    target === undefined
+      ? { page: "library", scope: scopeOfKey(view.key) }
+      : {
+          page: target.page,
+          scope: target.scope,
+          ...(target.skill === undefined ? {} : { skill: target.skill }),
+        };
+  let key = "";
+  if (target?.newTab === true) for (let n = 2; !free(key); n++) key = `#${n}`;
+  return { tab: { ...SKILL_STUDIO_VIEW, key }, place };
+}
+
+/** **The history a studio tab keeps** (`useViewHistory`), by its project and its key: the
+ *  studio's tab of each project is its own. */
+export function studioHistoryOf(plane: string, view: ViewRef): string {
+  return `skill-studio\u0000${plane}\u0000${view.key}`;
+}
+
+/** The studio on `scope`'s chats, as a sentence names it (`Skill studio · ops`). Its tab is
+ *  called {@link SKILL_STUDIO_TITLE} whatever scope it shows, as there is one per project. */
 export function skillStudioTitle(scope: StudioScope): string {
   return SCOPES[scope.at].title(scope.name);
 }
@@ -122,6 +272,15 @@ export { SKILL_STUDIO_IN };
  *  row and a chat's missing-skills Notice run. */
 export function skillStudioAs(persona: string): string {
   return `${SKILL_STUDIO_IN}${scopeKey(asPersona(persona))}`;
+}
+
+/** The catalogue row that opens the studio's Needs you on a scope's chats, before the scope's key
+ *  (#3695): a summary line's "need you". The core names it once (`skillstudio::NEEDS_IN`). */
+export { SKILL_NEEDS_IN };
+
+/** The catalogue row that opens Needs you on `persona`'s chats: its page's "need you" row. */
+export function skillNeedsAs(persona: string): string {
+  return `${SKILL_NEEDS_IN}${scopeKey(asPersona(persona))}`;
 }
 
 /** **What opens the studio, in words**: the palette's row and the Skills view's header (#3266). */
@@ -197,33 +356,34 @@ export async function setSkillStudioOn(on: boolean): Promise<string | undefined>
 }
 
 /**
- * **A start the studio is asked to open on** (#3266): the Skills view's New skill and Browse
- * sources open the studio's own, so each start is the studio's one copy. `new` is the New skill
- * form, `sources` its skill sources.
+ * **A start the studio is asked to open on** (#3266): the Skills view's New skill opens the
+ * studio's own form, so each start is the studio's one copy. Browse sources is a page
+ * ({@link skillStudioAt}'s `sources`), not a start.
  */
-export type StudioStart = "new" | "sources";
+export type StudioStart = "new";
 
-/** The start asked for, by the studio's view key, until a studio of that key takes it. */
+/** The start asked for, by the studio tab's key, until the tab of that key takes it. */
 let startAsked: { key: string; start: StudioStart } | undefined;
 const startListeners = new Set<() => void>();
 
-/** Asks the studio on `scope`'s chats to open on `start`: the one drawn now, or the next. */
-export function askStudioStart(scope: StudioScope, start: StudioStart): void {
-  startAsked = { key: scopeKey(scope), start };
+/** Asks the studio tab keyed `tab` (the first is `""`) to open on `start`: the one drawn now,
+ *  or the next. */
+export function askStudioStart(tab: string, start: StudioStart): void {
+  startAsked = { key: tab, start };
   for (const one of startListeners) one();
 }
 
 /**
- * **Hands the studio on `scope`'s chats each start asked of it** (#3266), once it is `ready`
- * (its skills read): one asked before it was drawn, then each asked while it is. A start is taken
+ * **Hands the studio tab keyed `tab` each start asked of it** (#3266), once it is `ready` (its
+ * skills read): one asked before it was drawn, then each asked while it is. A start is taken
  * once, so drawing the studio again opens nothing.
  */
 export function useStudioStart(
-  scope: StudioScope,
+  tab: string,
   ready: boolean,
   onStart: (start: StudioStart) => void,
 ): void {
-  const key = scopeKey(scope);
+  const key = tab;
   const held = useRef(onStart);
   useEffect(() => {
     held.current = onStart;
@@ -265,4 +425,34 @@ export function pinsRefusedSaid(refused: SkillPinsRefused): string {
 export function pinnerOf(scope: StudioScope): SkillPinner | null {
   if (scope.at === "root") return null;
   return { at: scope.at, name: scope.name };
+}
+
+/** **The studio tabs `before` showed that `after` does not**: each closed, so its history goes
+ *  with it (`forgetViewHistory`, #3681), whichever way it was closed. */
+export function studioTabsGone(before: Tabs, after: Tabs): ViewRef[] {
+  const shown = (tabs: Tabs) => {
+    const keys = new Set<string>();
+    for (const id of tabs.order)
+      for (const { content } of contentsOf(tabs, id))
+        if (content.kind === "view" && isSkillStudio(content.view)) keys.add(content.view.key);
+    return keys;
+  };
+  const now = shown(after);
+  return [...shown(before)]
+    .filter((key) => !now.has(key))
+    .map((key) => ({ ...SKILL_STUDIO_VIEW, key }));
+}
+
+/** **The event a surface without a view opener asks the studio by** (#3681): a chat's notice. */
+export const SKILL_STUDIO_ASKED = "purlis-skill-studio-asked";
+
+/** What it asks: which project's window, and the place to open its studio at. */
+export type SkillStudioAsk = { plane: string; scope: StudioScope; page: StudioPage };
+
+/** **Asks the window of `plane` to open its Skill studio at `page` on `scope`'s chats**: what a
+ *  chat's skills notices' "Open Skill studio" does. */
+export function askSkillStudio(plane: string, scope: StudioScope, page: StudioPage): void {
+  window.dispatchEvent(
+    new CustomEvent<SkillStudioAsk>(SKILL_STUDIO_ASKED, { detail: { plane, scope, page } }),
+  );
 }
