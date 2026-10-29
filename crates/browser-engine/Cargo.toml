@@ -30,7 +30,7 @@ sha2 = "0.11"
 # and RustCrypto's P-256 for the one check `ring` does not offer: an ECDSA signature over a
 # digest, which is how Sigstore checks the signature over a signed file.
 # Pinned exactly: it is before 1.0, so a new release is read before it is taken.
-sigstore-verify = { version = "=0.15.0", default-features = false }
+sigstore-verify = { version = "=0.15.1", default-features = false }
 ring = "0.17"
 p256 = { version = "0.14", default-features = false, features = ["ecdsa", "std"] }
 # Chrome for Testing ships as a zip. Only the deflate reader, on the zlib-rs backend flate2

@@ -115,14 +115,14 @@ objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std"
 [target.'cfg(target_os = "linux")'.dependencies]
 # rfd's GTK backend on Linux, as the dialog plugin enables it.
 rfd = { version = "0.16", default-features = false, features = ["gtk3"] }
-zbus = "5.19"
+zbus = "6.1"
 # Whose charter the instance lock is (`instance.rs`), by user id. The version purlis-core
 # already uses.
 rustix = { version = "1", features = ["process"] }
 # The theme specimen's picture (#2330, `specimen.rs`): WebKitGTK's snapshot of the hidden
 # window's webview, written as a PNG by cairo. The versions wry and GTK already bring in.
 webkit2gtk = "=2.0.2"
-cairo-rs = { version = "0.18", features = ["png"] }
+cairo-rs = { version = "0.22", features = ["png"] }
 
 [lints]
 workspace = true
