@@ -64,6 +64,15 @@ import type {
   WorkspaceSettings,
 } from "../bindings";
 import type { ViewRef } from "../tabs";
+import {
+  AT_THE_ROOT,
+  SKILL_STUDIO_VIEW,
+  skillRowNamed,
+  studioHistoryOf,
+  type SkillPageTab,
+  type StudioPlace,
+} from "../skillStudio";
+import { forgetViewHistory, openViewAt } from "../ui/panel/viewHistory";
 import { complaints } from "./complaints.testkit";
 import { forgetProjectsBrowsers, tellProjectBrowsers } from "../browsersGrid";
 import { BUILT_IN, DEFAULT_THEME, drawIn } from "./theme";
@@ -201,6 +210,17 @@ describe("the token test", () => {
 // ---------------------------------------------------------------------------------------------
 
 const PLANE = "/home/dev/plane";
+
+/** The history of the project's studio tab, which a state opens at a skill's page (#3682). */
+const STUDIO_HISTORY = studioHistoryOf(PLANE, SKILL_STUDIO_VIEW);
+
+/** The studio at deploy's page, on `tab`. */
+const skillPageAt = (tab: SkillPageTab): StudioPlace => ({
+  page: "library",
+  scope: AT_THE_ROOT,
+  skill: skillRowNamed("deploy"),
+  tab,
+});
 const WORKSPACE = "web";
 
 /** A row of a list, with `over` said on top of a plain one. */
@@ -1550,9 +1570,16 @@ const STATES: State[] = [
     drawn: /Deploys the site\./,
   },
   {
-    name: "a skill's tab, with its runs",
-    view: { from: null, view: "skill", key: "deploy" },
+    name: "a skill's page in the studio, on its runs (#3682)",
+    view: SKILL_STUDIO_VIEW,
+    before: () => openViewAt(STUDIO_HISTORY, skillPageAt("runs")),
     drawn: /From before runs were recorded/,
+  },
+  {
+    name: "a skill's page in the studio, on its Overview (#3682)",
+    view: SKILL_STUDIO_VIEW,
+    before: () => openViewAt(STUDIO_HISTORY, skillPageAt("overview")),
+    drawn: /Who gets it/,
   },
   {
     name: "a grade's scorecard, each chat one click away (SK-59)",
@@ -1607,8 +1634,9 @@ const STATES: State[] = [
     drawn: /not kept here/,
   },
   {
-    name: "a skill's tab, with no runs yet",
-    view: { from: null, view: "skill", key: "deploy" },
+    name: "a skill's page in the studio, with no runs yet (#3682)",
+    view: SKILL_STUDIO_VIEW,
+    before: () => openViewAt(STUDIO_HISTORY, skillPageAt("runs")),
     answers: {
       skill_runs: [],
       skill_panels: [
@@ -1918,6 +1946,8 @@ describe.each(Object.keys(BUILT_IN))("every view in %s", (theme) => {
     forgetGroups();
     // An ask of a runner a state left unanswered is not joined by the next state's.
     forgetDevicesForTests();
+    // The studio's tab starts afresh: a state that opened it at a skill's page keeps no place.
+    forgetViewHistory(STUDIO_HISTORY);
   });
 
   it.each(STATES)("draws $name with tokens only", async (state) => {

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { MessageSquarePlus, Plus, RotateCw, Search, Sparkles } from "lucide-react";
 import {
   commands,
@@ -199,6 +199,11 @@ export function SkillStudioTab({
     STUDIO_START,
   );
   const at = history.at;
+  // Where the tab is now, for an answer that comes back after the person may have moved on.
+  const placeNow = useRef(at);
+  useEffect(() => {
+    placeNow.current = at;
+  });
   const scope = at.scope;
   const [read, setRead] = useState<{ key: string; studio?: Studio; refused?: string }>();
   const [asked, setAsked] = useState(0);
@@ -326,13 +331,15 @@ export function SkillStudioTab({
       });
   };
   const open = (skill: StudioSkill, level: SkillLevel) => {
+    const asked = at;
     void commands.skillText(plane, level, skill.name).then((answer) => {
       if (answer.status === "error")
         setSaid({ tone: "trouble", label: "The skill could not be opened", text: answer.error });
-      else {
+      // The person went elsewhere while the text was read: the editor is not opened there.
+      else if (samePlace(placeNow.current, asked)) {
         setDoing({ what: "edit", skill, level, was: answer.data });
         // The editor is the Text tab's, in place (#3682; Skills design 04).
-        history.replace({ ...history.at, tab: "text" });
+        history.replace({ ...placeNow.current, tab: "text" });
       }
     });
   };

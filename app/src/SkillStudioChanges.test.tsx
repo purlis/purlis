@@ -270,7 +270,7 @@ describe("the Skill studio's changes", () => {
     renderStudio(inWorkspace("ops"));
 
     await openSkill("skill-deploy", user);
-    await user.click(screen.getByRole("button", { name: "Turn on in ops" }));
+    await user.click(screen.getAllByRole("button", { name: "Turn on in ops" })[0]);
 
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_turn")?.args).toMatchObject({

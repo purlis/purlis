@@ -76,6 +76,7 @@ import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
 import { RemovePersona } from "../RemovePersona";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
+import { DeprecateDialog, OwnersDialog } from "../SkillPage";
 import { RequestMerge } from "../SavingMerge";
 import { SavingView } from "../SavingView";
 import { StartChat } from "../StartChat";
@@ -1144,6 +1145,28 @@ const DIALOGS: Opened[] = [
           renaming={false}
           onRename={nothing}
           onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "deprecating a skill, from its page's menu (#3682)",
+    file: "SkillPage.tsx",
+    open: async () =>
+      render(
+        <DeprecateDialog name="deploy" busy={false} onClose={nothing} onDeprecate={nothing} />,
+      ),
+  },
+  {
+    name: "naming who looks after a skill, from its page (#3682)",
+    file: "SkillPage.tsx",
+    open: async () =>
+      render(
+        <OwnersDialog
+          name="deploy"
+          owners={["alice"]}
+          busy={false}
+          onClose={nothing}
+          onSave={nothing}
         />,
       ),
   },

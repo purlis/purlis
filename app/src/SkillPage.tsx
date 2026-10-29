@@ -301,6 +301,28 @@ function shaped<T>(read: Read<T>, fits: (data: T) => boolean): Read<T> {
     : { ...read, data: undefined };
 }
 
+/** **Why a skill can't be changed from this page**, where it can't: whose it is, or where it is
+ *  changed instead. */
+export function cannotChangeSaid(skill: StudioSkill): string {
+  switch (skill.level) {
+    case "built-in":
+      return "Built-in skills can't be changed.";
+    case "workspace":
+      return "It is a workspace's skill: open the studio on that workspace's chats to change it.";
+    case "persona":
+      return "It is a persona's skill: open the studio on that persona's chats to change it.";
+    default: {
+      const owner = skill.owner ?? null;
+      if (owner?.kind === "you")
+        return "It is in your own skills folder, which purlis never changes.";
+      const whose = ownerShown(owner);
+      return whose === ""
+        ? "It is not one of the project's skills, so purlis never changes it."
+        : `It belongs to ${whose.charAt(0).toLowerCase()}${whose.slice(1)}, which purlis never changes.`;
+    }
+  }
+}
+
 /** The copy of the skill at `level`, of the copies its details hold. */
 function copyAt(copies: readonly SkillCopy[], level: SkillLevel | null): SkillCopy | undefined {
   return level === null ? undefined : copies.find((one) => sameLevel(one.level, level));
@@ -435,7 +457,8 @@ export function SkillPage({
       installed
         ? commands.skillUpdates(plane)
         : Promise.resolve({ status: "ok" as const, data: null }),
-    [plane, name, given, installed],
+    // Once a page: asking a source is a network call, never made on every change on disk.
+    [plane, name, installed],
   );
   const copy = copyAt(details.data?.copies ?? [], level);
   const review =
@@ -509,7 +532,11 @@ export function SkillPage({
     }
   };
 
-  const mark = markOf(skill);
+  const stateMark = markOf(skill);
+  const stateBadge =
+    stateMark === undefined ? undefined : (
+      <Badge variant={stateMark.variant}>{stateMark.said}</Badge>
+    );
   const chat = useContext(ChatToUseHere);
   const openUseSkill = useOpenUseSkill();
   const useReason = !skill.on
@@ -518,18 +545,12 @@ export function SkillPage({
       ? "No chat is open to use it in."
       : undefined;
   const editing = doing?.what === "edit";
-  // What its state already is: the banner offers the way back from it.
+  // Its state: the menu offers the way back from it, whatever the banner says first.
   const state = copy?.lifecycle.state;
-  const already =
-    state === "archived"
-      ? "It is archived: the banner unarchives it."
-      : state === "deprecated"
-        ? "It is deprecated: the banner undoes it."
-        : undefined;
+  const deprecateSaid = state === "deprecated" ? "Undo deprecation" : "Deprecate…";
+  const archiveSaid = state === "archived" ? "Unarchive" : "Archive…";
   const file = skillFileOf(skill);
-  const cannotChange = builtIn
-    ? "Built-in skills can't be changed."
-    : `${name} is ${ownerShown(skill.owner ?? null).toLowerCase() || "not one of the project's skills"}'s, and purlis never changes it.`;
+  const cannotChange = cannotChangeSaid(skill);
 
   const actions = (
     <>
@@ -557,7 +578,7 @@ export function SkillPage({
       )}
     </>
   );
-  const more = (
+  const moreMenu = (
     <MenuTrigger>
       <IconButton
         variant="ghost"
@@ -570,8 +591,7 @@ export function SkillPage({
         aria-label={`More for ${name}`}
         disabledKeys={[
           ...(level === null ? ["rename", "move", "deprecate", "archive", "delete"] : []),
-          ...(state === "deprecated" ? ["deprecate"] : []),
-          ...(state === "archived" ? ["deprecate", "archive"] : []),
+          ...(state === "archived" ? ["deprecate"] : []),
           ...("reason" in file || onOpenView === undefined ? ["file"] : []),
         ]}
         onAction={(key) => {
@@ -584,8 +604,15 @@ export function SkillPage({
           if (key === "rename") onRename(level);
           else if (key === "move") onMove(level);
           else if (key === "delete") onDelete(level);
-          else if (key === "deprecate") setAsked("deprecate");
-          else if (key === "archive") setAsked("archive");
+          else if (key === "deprecate") {
+            if (state === "deprecated")
+              lifecycle({ state: "active" }, "The skill's state was not changed");
+            else setAsked("deprecate");
+          } else if (key === "archive") {
+            if (state === "archived")
+              lifecycle({ state: "active" }, "The skill's state was not changed");
+            else setAsked("archive");
+          }
         }}
       >
         <MenuItem id="rename" textValue="Rename…">
@@ -597,17 +624,20 @@ export function SkillPage({
             under={level === null ? cannotChange : undefined}
           />
         </MenuItem>
-        <MenuItem id="deprecate" textValue="Deprecate…">
+        <MenuItem id="deprecate" textValue={deprecateSaid}>
           <MenuWords
-            said="Deprecate…"
-            under={level === null ? cannotChange : state === "active" ? undefined : already}
+            said={deprecateSaid}
+            under={
+              level === null
+                ? cannotChange
+                : state === "archived"
+                  ? "It is archived: unarchive it first."
+                  : undefined
+            }
           />
         </MenuItem>
-        <MenuItem id="archive" textValue="Archive…">
-          <MenuWords
-            said="Archive…"
-            under={level === null ? cannotChange : state === "archived" ? already : undefined}
-          />
+        <MenuItem id="archive" textValue={archiveSaid}>
+          <MenuWords said={archiveSaid} under={level === null ? cannotChange : undefined} />
         </MenuItem>
         <MenuItem id="file" textValue="Open the file">
           <MenuWords said="Open the file" under={"reason" in file ? file.reason : undefined} />
@@ -787,10 +817,10 @@ export function SkillPage({
       <ViewPageHeader
         name={name}
         tag={<Badge>{skill.label}</Badge>}
-        mark={mark !== undefined && <Badge variant={mark.variant}>{mark.said}</Badge>}
+        mark={stateBadge}
         description={skill.description === "" ? undefined : skill.description}
         actions={actions}
-        more={more}
+        more={moreMenu}
       />
       {builtIn && (
         <p className="honest" data-testid="skill-built-in">
@@ -873,7 +903,7 @@ function BannerNotice({
   fix: NoticeAction | undefined;
   onDismiss: () => void;
 }) {
-  const said = (
+  const sentence = (
     <>
       <span data-testid={`skill-banner-${banner.cause}`}>{banner.text}</span>
       {banner.more !== undefined && (
@@ -886,11 +916,11 @@ function BannerNotice({
   const cause = `skill-banner:${banner.cause}`;
   return fix === undefined ? (
     <Notice cause={cause} tone={banner.tone} label={banner.text} onDismiss={onDismiss}>
-      {said}
+      {sentence}
     </Notice>
   ) : (
     <Notice cause={cause} tone={banner.tone} label={banner.text} fixes={[fix]}>
-      {said}
+      {sentence}
     </Notice>
   );
 }
@@ -972,7 +1002,7 @@ function Overview({
       <Facts aria-label={`About ${name}`} className="skill-studio-facts">
         <Fact label="Who gets it">
           <span data-testid="skill-in-a-chat">{whoGetsIt(skill, scope)}</span>
-          {turn !== undefined && "label" in turn && !skill.turned_off && (
+          {turn !== undefined && "label" in turn && (
             <>
               {" "}
               <Button
@@ -984,6 +1014,24 @@ function Overview({
                 }}
               >
                 {turn.label}
+              </Button>
+            </>
+          )}
+          {skill.accept !== null && (
+            <>
+              {" "}
+              <Button
+                size="sm"
+                isDisabled={busy}
+                onPress={() => {
+                  const folder = skill.accept;
+                  if (folder !== null)
+                    change("The folder was not accepted", () =>
+                      commands.skillLevelAccept(plane, folder),
+                    );
+                }}
+              >
+                Accept its folder
               </Button>
             </>
           )}
@@ -1084,12 +1132,14 @@ function Overview({
           />
         </Fact>
       </Facts>
-      {copy?.unused_days !== null && copy?.unused_days !== undefined && (
-        <p className="honest" data-testid="skill-unused">
-          No chat has run {name} for {counted(copy.unused_days, "day", "days")}. Deprecate it, so
-          chats are pointed to something else?
-        </p>
-      )}
+      {copy?.unused_days !== null &&
+        copy?.unused_days !== undefined &&
+        copy.lifecycle.state === "active" && (
+          <p className="honest" data-testid="skill-unused">
+            No chat has run {name} for {counted(copy.unused_days, "day", "days")}. Deprecate it, so
+            chats are pointed to something else?
+          </p>
+        )}
       {details.refused !== undefined ? (
         <NotRead what={`what ${name} names`} read={details} onAgain={onAgain} />
       ) : details.data === undefined ? (
@@ -1176,7 +1226,7 @@ function SkillText({
 }
 
 /** **Deprecate** (decision 62): chats still get it, pointed to the skill to use instead. */
-function DeprecateDialog({
+export function DeprecateDialog({
   name,
   busy,
   onClose,
@@ -1212,7 +1262,7 @@ function DeprecateDialog({
 }
 
 /** **Who looks after a skill** (decision 63): logins or emails, for people to know. */
-function OwnersDialog({
+export function OwnersDialog({
   name,
   owners,
   busy,

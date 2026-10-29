@@ -408,7 +408,9 @@ describe("a skill's banner", () => {
     expect(await screen.findByTestId("skill-banner-off")).toHaveTextContent(
       "It is off in ops, so a chat in ops doesn't get it.",
     );
-    await user.click(screen.getByRole("button", { name: "Turn on in ops" }));
+    // The banner's fix, and the same switch on Overview.
+    expect(screen.getAllByRole("button", { name: "Turn on in ops" })).toHaveLength(2);
+    await user.click(screen.getAllByRole("button", { name: "Turn on in ops" })[0]);
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_turn")?.args).toMatchObject({
         workspace: "ops",
@@ -449,7 +451,7 @@ describe("a skill's banner", () => {
     renderStudioAt(at(out));
 
     await screen.findByTestId("skill-banner-left-out");
-    await user.click(screen.getByRole("button", { name: "Accept its folder" }));
+    await user.click(screen.getAllByRole("button", { name: "Accept its folder" })[0]);
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_level_accept")?.args).toMatchObject({
         folder: "skills/scratch",
@@ -623,6 +625,24 @@ describe('a skill\'s "…" menu', () => {
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_lifecycle")?.args).toMatchObject({
         lifecycle: { state: "archived" },
+      }),
+    );
+  });
+
+  it("undoes a deprecation from the menu, whatever the banner says first", async () => {
+    const off = skill("deploy", { on: false, turned_off: true, left_out: "turned off in ops" });
+    const asked = core([off], {
+      skill_details: () => details({ state: "deprecated", replacement: null }),
+    });
+    const user = userEvent.setup();
+    renderStudioAt(at(off, inWorkspace("ops")));
+
+    // Off outranks deprecated on the banner, so the menu holds the way back.
+    await screen.findByTestId("skill-banner-off");
+    await chooseMore("deploy", "Undo deprecation", user);
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_lifecycle")?.args).toMatchObject({
+        lifecycle: { state: "active" },
       }),
     );
   });
