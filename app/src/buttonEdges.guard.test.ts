@@ -25,10 +25,7 @@ import { declarations, SRC, sourceFiles } from "./guards.testkit";
 
 /** The rules that still draw a button's edge, each with its reason; exact, so a rule that is
  *  gone fails until its line is deleted. */
-const EXCEPTIONS: Record<string, string> = {
-  "App.css | .welcome :is(.welcome-door, .repo-card)":
-    "the welcome's door and repo cards: cards pressed whole, the card family's (`eslint.config.js`), not buttons of the button family",
-};
+const EXCEPTIONS: Record<string, string> = {};
 
 /** The stylesheets a view writes: every one under `src` but the families', the base, the control
  *  classes and the theme's geometry. */

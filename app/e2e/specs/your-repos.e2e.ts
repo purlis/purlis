@@ -101,12 +101,13 @@ function holds(dir: string): string {
   return existsSync(dir) ? `[${readdirSync(dir).join(", ")}]` : "nothing (not there)";
 }
 
-/** The repos' buttons in the list, by what a screen reader says of each. */
+/** The repos' buttons in the list, by what a screen reader says of each: the words each shows,
+ *  its path and its mark (WCAG 2.5.3, #3655). */
 async function listed(): Promise<string[]> {
   return browser.execute(
     (css: string) =>
-      [...document.querySelectorAll<HTMLElement>(`${css} button`)].map(
-        (b) => b.getAttribute("aria-label") ?? "",
+      [...document.querySelectorAll<HTMLElement>(`${css} button`)].map((b) =>
+        (b.textContent ?? "").replace(/\s+/g, " ").trim(),
       ),
     REPOS,
   );
@@ -197,11 +198,7 @@ describe("getting a project from your repos", function () {
     await press(DIALOG, "Sign in");
 
     await $(REPOS).waitForExist({ timeout: 30_000, timeoutMsg: "no repo list after signing in" });
-    expect(await listed()).toEqual([
-      `Get acme/${NAME}, a purlis project, from github.com as octocat`,
-      "Get acme/api from github.com as octocat",
-      "Get octocat/dots from github.com as octocat",
-    ]);
+    expect(await listed()).toEqual([`acme/${NAME} purlis project`, "acme/api", "octocat/dots"]);
     await untilSays(REPOS, "purlis project");
     await untilSays(FORGES, "3 repos on github.com as octocat.");
     await untilSays(FORGES, "Not signed in to gitlab.com");
@@ -212,7 +209,7 @@ describe("getting a project from your repos", function () {
     await browser.waitUntil(async () => (await listed()).length === 1, {
       timeoutMsg: "searching a name kept other repos",
     });
-    expect(await listed()).toEqual(["Get octocat/dots from github.com as octocat"]);
+    expect(await listed()).toEqual(["octocat/dots"]);
 
     await typeInto(SEARCH, "acme");
     await browser.waitUntil(async () => (await listed()).length === 2, {
@@ -234,7 +231,7 @@ describe("getting a project from your repos", function () {
     // picked before the page took the pick would go to `~/Projects` instead.
     await untilSays(GOES_INTO, projects);
 
-    await press(REPOS, `Get acme/${NAME}`, "starting");
+    await press(REPOS, `acme/${NAME}`, "starting");
     // The app's own signal that the clone landed (#1858): the window asks the trust question
     // only once the clone has answered, and says a failed clone in its alert. Waited on rather
     // than the folder appearing on disk, which a loaded runner can show late or early. The
