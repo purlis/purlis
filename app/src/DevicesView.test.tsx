@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { DevicesShown, RunnerAsked } from "./bindings";
+import type { DevicesShown, DiskHeld, RunnerAsked } from "./bindings";
 import { DevicesView } from "./DevicesView";
 import { answerWithinForTests, forgetDevicesForTests } from "./devices";
 import { userEvent } from "@testing-library/user-event";
@@ -25,6 +25,11 @@ let runnersAsked: string[];
 let holdAnswers: Promise<void> | undefined;
 /** Set by a test: the core refuses to ask runner `qa/qa`, in these words. */
 let refuse: string | undefined;
+let disk: DiskHeld;
+/** The pools the core was asked to remove, and what it answers. */
+let removed: string[];
+let removeSays: string | null;
+let devicesRead: number;
 
 beforeEach(() => {
   shown = {
@@ -47,6 +52,7 @@ beforeEach(() => {
       unkept_browsers: [],
     },
     owned: true,
+    projects: 1,
     pools: [
       { pool: "builds", limits: LIMITS, millicpus: 2000, removed_ran_this_week: 0, price: null },
       { pool: "qa", limits: LIMITS, millicpus: 2000, removed_ran_this_week: 1800, price: null },
@@ -70,14 +76,32 @@ beforeEach(() => {
       ran_this_week: 3600,
     },
   };
+  disk = {
+    state: "read",
+    pools: [
+      { pool: "builds", kilobytes: 1_750_000, not_listed: 0 },
+      { pool: "qa", kilobytes: 2_000, not_listed: 0 },
+    ],
+  };
+  removed = [];
+  removeSays = null;
+  devicesRead = 0;
   runnersAsked = [];
   holdAnswers = undefined;
   refuse = undefined;
   answerWithinForTests(90_000);
   forgetDevicesForTests();
   mockIPC((cmd, args) => {
-    const a = (args ?? {}) as { pool?: string; runner?: string };
-    if (cmd === "devices") return structuredClone(shown);
+    const a = (args ?? {}) as { pool?: string; runner?: string; name?: string };
+    if (cmd === "devices") {
+      devicesRead += 1;
+      return structuredClone(shown);
+    }
+    if (cmd === "devices_disk") return structuredClone(disk);
+    if (cmd === "remove_docker_pool") {
+      removed.push(a.name ?? "");
+      return removeSays;
+    }
     if (cmd === "device_runner") {
       const key = `${a.pool}/${a.runner}`;
       runnersAsked.push(key);
@@ -141,14 +165,14 @@ describe("DevicesView", () => {
       within(builds)
         .getAllByRole("gridcell")
         .map((cell) => cell.textContent),
-    ).toEqual(["You", "1", "0", "2", "4096 MiB", "2.5"]);
+    ).toEqual(["You", "1", "0", "2", "4096 MiB", "1.8 GB", "2.5"]);
     const qa = within(table).getByRole("row", { name: /qa/ });
     // An hour of its runner, and half an hour of one removed since.
     expect(
       within(qa)
         .getAllByRole("gridcell")
         .map((cell) => cell.textContent),
-    ).toEqual(["You", "0", "1", "0", "0 MiB", "1.5"]);
+    ).toEqual(["You", "0", "1", "0", "0 MiB", "2.0 MB", "1.5"]);
     expect(screen.queryByText(/\$|cost|price/i)).toBeNull();
     expect(within(table).queryByRole("columnheader", { name: "Money this week" })).toBeNull();
   });
@@ -165,14 +189,14 @@ describe("DevicesView", () => {
         within(within(table).getByRole("row", { name: /builds/ }))
           .getAllByRole("gridcell")
           .map((cell) => cell.textContent),
-      ).toEqual(["You", "1", "0", "2", "4096 MiB", "2.5", "1.00 EUR"]),
+      ).toEqual(["You", "1", "0", "2", "4096 MiB", "1.8 GB", "2.5", "1.00 EUR"]),
     );
     // A pool that declares no price shows no money.
     expect(
       within(within(table).getByRole("row", { name: /qa/ }))
         .getAllByRole("gridcell")
         .map((cell) => cell.textContent),
-    ).toEqual(["You", "0", "1", "0", "0 MiB", "1.5", ""]);
+    ).toEqual(["You", "0", "1", "0", "0 MiB", "2.0 MB", "1.5", ""]);
   });
 
   it("lists what runs on a pool this machine no longer keeps, chats and browsers alike", async () => {
@@ -186,6 +210,40 @@ describe("DevicesView", () => {
     });
     expect(within(unkept).getByText("Chat · on pool removed")).toBeInTheDocument();
     expect(within(unkept).getByText("Of orphan · on pool removed")).toBeInTheDocument();
+  });
+
+  it("names each chat's and browser's project when the window holds more than one", async () => {
+    const OTHER = "/work/site" as typeof PLANE;
+    shown.projects = 2;
+    shown.placement.here.chats.push({ plane: OTHER, session: 1, name: "lint" });
+    shown.placement.unkept = [{ plane: OTHER, session: 7, name: "orphan", pool: "removed" }];
+    shown.placement.unkept_browsers = [
+      { plane: OTHER, session: 7, name: "b2", chat: "orphan", pool: "removed" },
+    ];
+    render(<DevicesView />);
+    await waitFor(() =>
+      expect(screen.getByText("Runner builds of pool builds")).toBeInTheDocument(),
+    );
+    const here = section("This machine");
+    expect(within(here).getByText("Chat in plane")).toBeInTheDocument();
+    expect(within(here).getByText("Chat in site")).toBeInTheDocument();
+    expect(within(here).getByText("Of lint in plane")).toBeInTheDocument();
+    expect(
+      within(section("Runner builds of pool builds")).getByText("Chat in plane"),
+    ).toBeInTheDocument();
+    const unkept = section("On a pool this machine no longer keeps");
+    expect(within(unkept).getByText("Chat in site · on pool removed")).toBeInTheDocument();
+    expect(within(unkept).getByText("Of orphan in site · on pool removed")).toBeInTheDocument();
+  });
+
+  it("names no project when the window holds one", async () => {
+    render(<DevicesView />);
+    await waitFor(() =>
+      expect(screen.getByText("Runner builds of pool builds")).toBeInTheDocument(),
+    );
+    const here = section("This machine");
+    expect(within(here).getByText("Chat")).toBeInTheDocument();
+    expect(within(here).getByText("Of lint")).toBeInTheDocument();
   });
 
   it("draws what Docker said apart from purlis's own words, and says what to do", async () => {
@@ -255,5 +313,54 @@ describe("DevicesView", () => {
     await waitFor(() =>
       expect(within(table).getAllByText("Not known to be yours")).toHaveLength(2),
     );
+  });
+
+  it("shows the disk each pool's runners hold, and says why where Docker could not read it", async () => {
+    disk = { state: "not_read", why: "Cannot connect to the Docker daemon" };
+    render(<DevicesView />);
+    const table = await screen.findByRole("grid", { name: "Use per pool and person" });
+    expect(within(table).getByRole("columnheader", { name: "Disk held" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(within(table).getByRole("row", { name: /builds/ })).getByText("not read"),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText(/purlis could not read the disk the runners hold\. · Docker said:/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Cannot connect to the Docker daemon").tagName).toBe("BDI");
+  });
+
+  it("leads a key-changed runner's row to removing its pool, asking first", async () => {
+    asked["builds/builds"] = { ...asked["builds/builds"], link: { state: "key_changed" } };
+    render(<DevicesView />);
+    const builds = await waitFor(() => section("Runner builds of pool builds"));
+    const remove = await within(builds).findByRole("button", { name: "Remove pool builds" });
+    // No other runner's row offers it.
+    expect(
+      within(section("Runner qa of pool qa")).queryByRole("button", { name: /Remove pool/ }),
+    ).toBeNull();
+
+    await userEvent.click(remove);
+    const asking = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    await userEvent.click(within(asking).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(removed).toEqual([]);
+
+    const read = devicesRead;
+    removeSays = "runner builds's home volume could not be removed";
+    await userEvent.click(
+      within(section("Runner builds of pool builds")).getByRole("button", {
+        name: "Remove pool builds",
+      }),
+    );
+    const again = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    await userEvent.click(within(again).getByRole("button", { name: "Remove pool" }));
+    await waitFor(() => expect(removed).toEqual(["builds"]));
+    // What could not be removed is said, and every device is read again.
+    expect(
+      await screen.findByText(/runner builds's home volume could not be removed/),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(devicesRead).toBeGreaterThan(read));
   });
 });

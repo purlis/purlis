@@ -774,6 +774,23 @@ describe("the needs-you mark rolling up the tree (#1448)", () => {
     expect(rolledUp(tree, "drop commons")).toBeNull();
   });
 
+  it("leaves the tree owning only its rows while a row wears the hand (#3658)", async () => {
+    const { move } = core(threeDeep());
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+
+    move(3, "waiting", 10, [3]);
+    expect(rolledUp(tree, "steward 1")).not.toBeNull();
+
+    // axe's `aria-required-children`: a tree owns treeitems and groups. The hand is the
+    // pointer's alone, and the row says which chat below needs you.
+    expect(within(tree).queryAllByRole("button")).toEqual([]);
+    expect(row(tree, "steward 1").getAttribute("aria-description")).toBe(
+      "devops 3 below it needs you",
+    );
+  });
+
   it("still shows on a row folded again over a chat two levels down that needs you", async () => {
     const { move } = core(threeDeep());
     render(<App />);

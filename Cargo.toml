@@ -58,7 +58,7 @@ portable-pty = "0.9"
 # 4. `purlis-app`'s `specimen::photograph::snapshot`, WebKit's snapshot of the theme specimen's
 #    webview on macOS (2026-10-17, #2330: a fourth audited block, for the specimen snapshot).
 # `forbid` cannot be allowed anywhere, even there.
-# `crates/purlis-core/tests/four_unsafe_blocks.rs` fails the build if `unsafe` or an allow of
+# `crates/purlis-core/tests/it/four_unsafe_blocks.rs` fails the build if `unsafe` or an allow of
 # this lint appears anywhere else.
 unsafe_code = "deny"
 

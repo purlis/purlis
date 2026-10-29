@@ -86,6 +86,8 @@ beforeEach(() => {
           pools: structuredClone(pools),
           defaults: { ...DEFAULTS },
           suspend_after: "24h",
+          frames: 15,
+          width: 1280,
         } satisfies PoolsShown;
       if (cmd === "docker_pool_link") return link;
       if (cmd === "docker_pool_version") return version;
@@ -168,6 +170,8 @@ describe("You › This machine › Pools", () => {
           processes: null,
           tmp_mib: null,
           suspend_after: null,
+          frames: null,
+          width: null,
         },
       ]),
     );
@@ -212,6 +216,8 @@ describe("You › This machine › Pools", () => {
           processes: null,
           tmp_mib: null,
           suspend_after: "12h",
+          frames: null,
+          width: null,
         },
       ]),
     );
@@ -222,6 +228,47 @@ describe("You › This machine › Pools", () => {
     await waitFor(() =>
       expect(
         screen.queryByRole("dialog", { name: "Sign your profiles in on pool nightly" }),
+      ).toBeNull(),
+    );
+  });
+
+  it("adds a pool whose runner's browsers are watched at frames and a width of its own", async () => {
+    // #3297: a pool's browser frame limits over the link are its own settings.
+    render(<App />);
+    await palette("Add a Docker pool…");
+    const dialog = await screen.findByRole("dialog", { name: "Add a Docker pool" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Name" }), "fast");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Image" }), IMAGE);
+    const frames = within(dialog).getByRole("textbox", { name: "Browser frames a second" });
+    const width = within(dialog).getByRole("textbox", { name: "Browser width in pixels" });
+    expect(frames).toHaveAttribute("placeholder", "15");
+    expect(width).toHaveAttribute("placeholder", "1280");
+    await userEvent.type(frames, "30");
+    await userEvent.type(width, "1920");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add pool" }));
+
+    await waitFor(() =>
+      expect(added).toEqual([
+        {
+          name: "fast",
+          image: IMAGE,
+          cpus: null,
+          memory_mib: null,
+          processes: null,
+          tmp_mib: null,
+          suspend_after: null,
+          frames: 30,
+          width: 1920,
+        },
+      ]),
+    );
+    const signIn = await screen.findByRole("dialog", {
+      name: "Sign your profiles in on pool fast",
+    });
+    await userEvent.click(within(signIn).getByRole("button", { name: "Done" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Sign your profiles in on pool fast" }),
       ).toBeNull(),
     );
   });
@@ -238,6 +285,38 @@ describe("You › This machine › Pools", () => {
     expect(
       within(group).getByText("Suspends after 24h without a link from this machine"),
     ).toBeInTheDocument();
+  });
+
+  it("says a runner made before purlis suspended runners never suspends (#3717)", async () => {
+    pools = [a_pool("builds")];
+    version = { ...version, suspends: { made: "never" } };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(
+        "Never suspends: its runner was made before purlis suspended runners",
+      ),
+    ).toBeInTheDocument();
+    expect(within(group).queryByText(/^Suspends after/)).toBeNull();
+  });
+
+  it("says the time a runner was made with where it is not the pool's (#3717)", async () => {
+    pools = [a_pool("nightly", "12h")];
+    version = { ...version, suspends: { made: "after", after: "24h" } };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(
+        "Suspends after 24h without a link from this machine, as its runner was made (the pool says 12h)",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(group).queryByText("Suspends after 12h without a link from this machine"),
+    ).toBeNull();
   });
 
   it("says a runner whose key changed in a Notice, whose Remove removes the pool", async () => {

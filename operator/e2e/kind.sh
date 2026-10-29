@@ -210,8 +210,8 @@ step "a chat runs on a cluster runner, through the link"
 # the operator's statement checked against the key the Pool names, a pairing over kubectl exec
 # that must agree with it, then a link through kubectl exec and a chat on it.
 CLUSTER_POOL_TEST_IMAGE=$runner CLUSTER_POOL_TEST_CONTEXT=$context \
-  cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-core \
-  --test a_chat_runs_on_a_cluster_runner_through_kubectl_exec -- --ignored --test-threads=1
+  "$repo/tools/tests-ran.sh" -- cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-core \
+  --test it -- a_chat_runs_on_a_cluster_runner_through_kubectl_exec:: --ignored --test-threads=1
 
 step "uninstalled, the chart leaves the definitions and the policy"
 helm uninstall purlis-cluster-operator --kube-context "$context" --namespace purlis-system --wait

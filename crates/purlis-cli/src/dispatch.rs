@@ -137,7 +137,8 @@ pub enum DispatchCommand {
     },
     /// Cancel a task this chat dispatched: its turn is ended and it is asked for one short
     /// report of what it did, which arrives with the outcome `cancelled`. Only a task this
-    /// chat dispatched can be cancelled by it.
+    /// chat dispatched can be cancelled by it, and not one the person typed in: that one is
+    /// theirs.
     Cancel {
         /// The task's chat, by its number in `purlis dispatch list`.
         chat: u32,
@@ -899,6 +900,75 @@ pub fn from_the_person() -> Option<FromThePerson> {
         chat,
         asking,
     })
+}
+
+/// **The reports waiting for `whose` that this turn is handed**, read and then taken.
+///
+/// **The app takes them.** In a chat the app started, the hook reads the reports and the app
+/// takes them off disk and says which it wrote there (`What::TookHandbacks`): the folder is the
+/// app's alone to write, and a report the app did not write there is handed as a chat's words
+/// alone (`handback::handed`). Where no app answers, they are taken here, as a hook outside any
+/// sandbox may, and only those the plane's key shows the app wrote are handed whole.
+pub fn handbacks(
+    root: &std::path::Path,
+    whose: purlis_core::handback::For<'_>,
+) -> Vec<purlis_core::handback::Handback> {
+    let waiting = purlis_core::handback::waiting(root, whose);
+    let Some(folder) = waiting.first().map(|one| one.folder.clone()) else {
+        return Vec::new();
+    };
+    let names: Vec<String> = waiting.iter().map(|one| one.name.clone()).collect();
+    let by_the_app = the_app().and_then(|(mut asking, chat)| {
+        let asked = Ask::Task(Box::new(Asked {
+            chat,
+            what: What::TookHandbacks {
+                folder: folder.clone(),
+                names: names.clone(),
+            },
+        }));
+        match asking.ask(&asked, A_HOOK_WAITS) {
+            Ok(Answer::Task(answered)) => match *answered {
+                Answered::Took { taken } => Some(taken),
+                _ => None,
+            },
+            _ => None,
+        }
+    });
+    let taken =
+        by_the_app.unwrap_or_else(|| purlis_core::handback::took_waiting(root, &folder, &names));
+    taken.handed(&waiting)
+}
+
+/// **The messages waiting for chat `chat` that this turn is handed**, read and then taken: by the
+/// app where it answers (`What::TookMessages`), as the folder is the app's alone to write, and
+/// here otherwise.
+pub fn messages(root: &std::path::Path, chat: u32) -> Vec<dispatchtalk::Message> {
+    let waiting = dispatchtalk::waiting(root, chat);
+    if waiting.is_empty() {
+        return Vec::new();
+    }
+    let names: Vec<String> = waiting.iter().map(|(name, _)| name.clone()).collect();
+    let by_the_app = the_app().and_then(|(mut asking, asker)| {
+        let asked = Ask::Task(Box::new(Asked {
+            chat: asker,
+            what: What::TookMessages {
+                names: names.clone(),
+            },
+        }));
+        match asking.ask(&asked, A_HOOK_WAITS) {
+            Ok(Answer::Task(answered)) => match *answered {
+                Answered::TookMessages { taken } => Some(taken),
+                _ => None,
+            },
+            _ => None,
+        }
+    });
+    let taken = by_the_app.unwrap_or_else(|| dispatchtalk::took(root, chat, &names));
+    waiting
+        .into_iter()
+        .filter(|(name, _)| taken.contains(name))
+        .map(|(_, message)| message)
+        .collect()
 }
 
 /// How much longer than the wait itself the app has to answer one: it answers when the wait

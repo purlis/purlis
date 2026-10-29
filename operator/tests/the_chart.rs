@@ -169,6 +169,9 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 # this is asked. operator/tests/the_install_manifests.rs holds it, and the kind tests check that
 # the cluster refuses a Claim from someone who may not use its pool.
 #
+# Upstream's claims on a purlis pool's warm pool, and warm pools of its template, are made by
+# the operator alone, so a runner from a pool is had only through a Claim (#2055).
+#
 # The second policy narrows the operator's own `patch` on upstream's sandboxes (#2058), which
 # RBAC cannot scope to a field or an owner: the operator may change only a Sandbox's
 # spec.operatingMode, and only on a Sandbox a SandboxClaim controls.

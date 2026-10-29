@@ -13,6 +13,8 @@
         "accent.text": "#c3baf5",
         "accent.wash": "#a99cf024",
         "accent.wash-hover": "#a99cf03a",
+        "attention.surface": "#2c2924",
+        "attention.text": "#f3dcb4",
         "border.control": "#00000000",
         "border.strong": "#55535f",
         "border.subtle": "#2f2f37",
@@ -644,7 +646,10 @@
         "  :where([data-scope=\"popover\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }",
         "  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
+        "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"]) { background-color: var(--surface-base); }",
         "  :where([data-scope=\"card\"][data-part=\"root\"][data-variant=\"ask\"]) { border-width: 1px; border-style: solid; }",
+        "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"][data-hovered]:not([data-disabled])) { background-color: var(--surface-hover); }",
+        "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"][data-selected]) { background-color: var(--list-selected); }",
         "}"
       ]
     },
@@ -661,6 +666,8 @@
         "accent.text": "#c3baf5",
         "accent.wash": "#a99cf024",
         "accent.wash-hover": "#a99cf03a",
+        "attention.surface": "#2c2924",
+        "attention.text": "#ffe8c2",
         "border.control": "#00000000",
         "border.strong": "#91909d",
         "border.subtle": "#55535f",
@@ -1292,7 +1299,10 @@
         "  :where([data-scope=\"popover\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }",
         "  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
+        "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"]) { background-color: var(--surface-base); }",
         "  :where([data-scope=\"card\"][data-part=\"root\"][data-variant=\"ask\"]) { border-width: 1px; border-style: solid; }",
+        "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"][data-hovered]:not([data-disabled])) { background-color: var(--surface-hover); }",
+        "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"][data-selected]) { background-color: var(--list-selected); }",
         "}"
       ]
     },
@@ -1309,6 +1319,8 @@
         "accent.text": "#403667",
         "accent.wash": "#7507ff24",
         "accent.wash-hover": "#7507ff3a",
+        "attention.surface": "#e2ded7",
+        "attention.text": "#372501",
         "border.control": "#00000000",
         "border.strong": "#a9a7b5",
         "border.subtle": "#d5d5df",
@@ -1940,7 +1952,10 @@
         "  :where([data-scope=\"popover\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }",
         "  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
+        "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"]) { background-color: var(--surface-base); }",
         "  :where([data-scope=\"card\"][data-part=\"root\"][data-variant=\"ask\"]) { border-width: 1px; border-style: solid; }",
+        "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"][data-hovered]:not([data-disabled])) { background-color: var(--surface-hover); }",
+        "  :where([data-scope=\"list\"][data-part=\"root\"][data-variant=\"card\"][data-selected]) { background-color: var(--list-selected); }",
         "}"
       ]
     }
@@ -1959,6 +1974,8 @@
         "accent.text": "#52c4a6",
         "accent.wash": "#17302a",
         "accent.wash-hover": "#1f3530",
+        "attention.surface": "#2a2414",
+        "attention.text": "#e8c170",
         "border.control": "#41403b",
         "border.strong": "#41403b",
         "border.subtle": "#2f2f2b",
@@ -2459,6 +2476,8 @@
         "accent.text": "#086a56",
         "accent.wash": "#dcf1ea",
         "accent.wash-hover": "#c9e8de",
+        "attention.surface": "#fbf1dc",
+        "attention.text": "#6b4700",
         "border.control": "#b8b4a8",
         "border.strong": "#b8b4a8",
         "border.subtle": "#d8d5cc",

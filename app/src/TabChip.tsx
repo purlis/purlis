@@ -16,7 +16,6 @@ import { AnchoredMenu, Menu, MenuItem, MenuSeparator, Submenu } from "./ui/menu/
 import { MenuTip, useRested } from "./ui/menu/MenuTip";
 import {
   Check,
-  ChevronDown,
   ChevronRight,
   Circle,
   FileText,
@@ -64,6 +63,7 @@ import { property } from "./theme/theme";
 import { fitCountsOn } from "./wholeWays";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { Button, IconButton } from "./ui/button/Button";
+import { Twist } from "./ui/disclosure/Disclosure";
 import { tabPart } from "./ui/tabs/Tabs";
 
 /** The chip's hand: in the needs-you colour, at the words' size, drawn on the icon itself
@@ -741,11 +741,7 @@ function Chip({
                   }}
                   onAction={() => setUnfolded(folded)}
                 >
-                  {folded ? (
-                    <ChevronRight aria-hidden="true" />
-                  ) : (
-                    <ChevronDown aria-hidden="true" />
-                  )}
+                  <Twist open={!folded} />
                   <span className="name">Finished ({finished.length})</span>
                 </MenuItem>
               )}

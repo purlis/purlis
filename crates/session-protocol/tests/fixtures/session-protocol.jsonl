@@ -173,3 +173,10 @@
 {"reply":{"re":164,"ok":{"attached":{"view":5,"cols":1000,"rows":600,"kind":"inspector"}}}}
 {"call":{"id":165,"command":"inspector_input","program":"01J9ZQ8000000000000000000D","input":{"kind":"key","aim":{"page":"devtools","document":1},"action":"down","key":"d","physical":"KeyD","key_code":68}}}
 {"reply":{"re":165,"refused":{"code":"input_missed","why":"the page changed before this input reached it, so it was dropped"}}}
+{"call":{"id":166,"command":"browse","program":"01J9ZQ8000000000000000000D","call_id":"c-31","act":{"do":"downloads"}}}
+{"reply":{"re":166,"ok":{"browsed":{"page":{"page":"p1","address":"https://docs.example.com/","title":"Docs","current":true},"settled":true,"downloads":[{"download":"d1","name":"report.pdf","origin":"https://files.example.com","bytes":2048,"total":2048,"state":"done","file":"5f0c2a9e-7b1d-4e3a-9c8f-1a2b3c4d5e6f"},{"download":"d2","name":"big.iso","bytes":1024,"state":"too_large","file":"0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"}]}}}}
+{"call":{"id":167,"command":"browse","program":"01J9ZQ8000000000000000000D","call_id":"c-32","act":{"do":"upload","target":"e14","files":["docs/notes.txt"],"from":"/home/op/project/workspaces/app"}}}
+{"call":{"id":168,"command":"browse","program":"01J9ZQ8000000000000000000D","call_id":"c-33","act":{"do":"save_download","download":"d1","to":"downloads/report.pdf","into":"/home/op/project/workspaces/app"}}}
+{"call":{"id":170,"command":"relay_to","runner":"builds"}}
+{"reply":{"re":170,"ok":{"relayed_to":{"runner":"builds/builds-01234567"}}}}
+{"call":{"id":171,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"browser","program":"01J9ZQ8000000000000000000D","link_frames":{"frames":30,"width":1920}}}

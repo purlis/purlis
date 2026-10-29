@@ -863,6 +863,48 @@ body {
   outline-offset: var(--focus-ring-inset);
 }
 
+/* **A read-only terminal** (#3676, `ReadOnlyTerminal.tsx`): the words that say it is read-only,
+   then the screen, one Tab stop with the ring on its edge, and the find bar over its corner. The
+   grid's ground is the terminal's own, so the screen reads as a terminal that is over. */
+.read-only-terminal {
+  display: grid;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.read-only-terminal-note {
+  margin: 0;
+}
+
+.read-only-terminal-said:empty {
+  display: none;
+}
+
+.read-only-terminal-said {
+  margin: 0;
+}
+
+.read-only-terminal-frame {
+  position: relative;
+  min-inline-size: 0;
+}
+
+.read-only-terminal-screen {
+  min-inline-size: 0;
+  overflow: auto;
+  border-radius: var(--radius-md);
+  background-color: var(--terminal-background);
+}
+
+.read-only-terminal-screen:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.read-only-terminal .pane-find {
+  top: var(--space-2);
+}
+
 /* **The gauge takes no row of its own.** For one build (#207) the pane gave the gauge a row of
    its own, and the operator saw the cost at once: *"context usage component position is not
    absolute and its changing harness container sizes"* — a pane with a gauge was a row shorter
@@ -3602,7 +3644,8 @@ body {
 
 /* The hand rolled up from a chat below: a button of its own beside the row, since a press goes
    to that chat and not to the row's. The button family draws it (#3523); here is its place. */
-.chats-section .rolled-up {
+.chats-section .rolled-up-at {
+  display: inline-flex;
   flex: none;
 }
 
@@ -3893,6 +3936,27 @@ body {
    Inbox's Notices, where the list's row is its box. */
 .action-result {
   margin: var(--space-3) var(--space-5) 0;
+}
+
+/* **A chip's card** (`ChipNotices.tsx`, #3648): the popover family's notice surface, 360px at
+   most, its notices the card Notices of what an action answered, standing in it with no margin
+   of their own. F6 lands on it (`regionCycle.CARD_STOP`): the ring says so. */
+.chip-card {
+  inline-size: min(360px, calc(100vw - 16px));
+}
+
+.chip-card .action-result {
+  margin: 0;
+}
+
+.chip-card [data-f6-card] {
+  border-radius: var(--radius-lg);
+  outline: none;
+}
+
+.chip-card [data-f6-card]:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-width) * -1);
 }
 
 /* A kept result's notice is drawn in the Results list's place; its keyboard handler is no box. */
@@ -7613,8 +7677,59 @@ nav.piece-files-head {
   text-decoration: line-through;
 }
 
-/* The Skill studio's changes (SK-7, #2770): the panel a change opens under the toolbar, the
-   levels a row is dropped on to move it, the editor's lint and the deleted skills. */
+/* **The Skill studio** (#3681): one view tab per project, laid out by the view frame
+   (`ui/panel/ViewFrame.tsx`), which takes the whole tab. Each of its panes scrolls on its own, so
+   nothing scrolls as one long page. */
+.view-body:has(> .skill-studio) {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+
+.skill-studio {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+/* The Library's search box and chips, under its lead line, wrapping where the list is narrow. */
+.skill-library-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-block-start: var(--space-3);
+}
+
+/* What a page other than Library holds, and the skill chosen beside the Library: the frame's
+   pane gives the room, these the padding. */
+.skill-studio-page,
+.skill-studio-item > :not(header) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+}
+
+/* Rows held while the skills are read (S11): the list's own height, so nothing jumps when they
+   are. */
+.skill-studio-placeholders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+
+.skill-studio-placeholder {
+  block-size: calc(var(--size-control) * 1.5);
+  border-radius: var(--radius-control);
+  background-color: var(--surface-hover);
+}
+
+/* The Skill studio's changes (SK-7, #2770): the panel a change opens in the item pane, the
+   editor's lint and the deleted skills. */
 .skill-change,
 .skill-editor {
   display: flex;
@@ -7628,20 +7743,6 @@ nav.piece-files-head {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  font-size: var(--font-size-sm);
-}
-
-.skill-levels {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-3);
-}
-
-.skill-level-target {
-  padding: var(--space-1) var(--space-3);
-  border: 1px dashed var(--border-subtle);
-  border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
 }
 
@@ -7716,9 +7817,9 @@ nav.piece-files-head {
   color: var(--text-muted);
 }
 
-/* The Skills view (#3266): a sidebar view, its header's two ways in, the switch to the chat in
-   front, then the tree, which takes the rest and scrolls. The tree's look is the tree family's
-   (#3281). */
+/* The Skills view (#3266, #3693): a sidebar view, whose skills it shows, its header's two ways
+   in, then its list of cards, which takes the rest and scrolls. The cards' look is the list
+   family's (#3669, #3670). */
 .skills-view {
   display: flex;
   flex-direction: column;
@@ -7734,12 +7835,16 @@ nav.piece-files-head {
   flex-shrink: 0;
 }
 
-.skills-view .skill-starts {
-  grid-template-columns: 1fr;
+/* Whose skills: the chat's name, cut short where the view is narrow, and the count. */
+.skills-view-whose {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.skills-view-only {
-  align-self: flex-start;
+.skills-view .skill-starts {
+  grid-template-columns: 1fr;
 }
 
 /* New skill…'s menu, narrower than the family's widest, so at a sidebar's width it stays over
@@ -7752,17 +7857,6 @@ nav.piece-files-head {
   flex: 1 1 0;
   min-block-size: 0;
   overflow: auto;
-}
-
-/* A row's one mark, in the quiet tier: never a colour alone (WCAG 1.4.1). */
-.skills-view-mark {
-  color: var(--text-quiet);
-  font-size: var(--font-size-sm);
-}
-
-/* A row's tooltip, one line each: what the skill does, then why it has its mark. */
-.skills-view-tip {
-  display: block;
 }
 
 /* Skill sources (SK-10): the install review leads with its summary, risky items marked. */

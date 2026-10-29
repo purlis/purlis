@@ -255,9 +255,9 @@ Not routed, each for its reason:
 - **Reads done in process** (gitoxide: the files view's branch status) start no git at all.
 - **git a chat or you run** is not purlis's call. The sandbox and the guards hold a chat's.
 
-`tests/every_git_call_goes_through_the_runner.rs` fails on a new git started outside the
+`tests/it/every_git_call_goes_through_the_runner.rs` fails on a new git started outside the
 runner in shipped code. A site that may stay goes on its list with the reason, and the list
-may only shrink. `tests/a_planted_repo_config_runs_nothing.rs` plants a hook folder, an
+may only shrink. `tests/it/a_planted_repo_config_runs_nothing.rs` plants a hook folder, an
 fsmonitor, a pager, aliases, every key in the table above (a signer for each signature format,
 and each trailer command spelling), the keys that cannot run and the programs `git-lfs` itself
 starts in a repo's own config, runs every

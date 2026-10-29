@@ -252,12 +252,12 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     let rules = spec["matchConstraints"]["resourceRules"]
         .as_array()
         .expect("rules");
-    assert_eq!(rules.len(), 1, "{spec}");
+    assert_eq!(rules.len(), 2, "{spec}");
     assert_eq!(strings(&rules[0]["apiGroups"]), ["runners.purlis.dev"]);
     assert_eq!(strings(&rules[0]["resources"]), ["claims"]);
     assert_eq!(strings(&rules[0]["operations"]), ["CREATE"]);
     let validations = spec["validations"].as_array().expect("validations");
-    assert_eq!(validations.len(), 2, "{spec}");
+    assert_eq!(validations.len(), 4, "{spec}");
     let expression = |at: usize| {
         validations[at]["expression"]
             .as_str()
@@ -267,12 +267,12 @@ fn a_claim_is_admitted_only_for_someone_the_cluster_lets_use_its_pool() {
     };
     assert_eq!(
         expression(0),
-        "authorizer.group('runners.purlis.dev').resource('pools').name(object.spec.pool).check('use').allowed()"
+        "request.resource.group!='runners.purlis.dev'||authorizer.group('runners.purlis.dev').resource('pools').name(object.spec.pool).check('use').allowed()"
     );
     // Who asked is stamped as the cluster signed them in (#2056).
     assert_eq!(
         expression(1),
-        "object.spec.requester==request.userInfo.username"
+        "request.resource.group!='runners.purlis.dev'||object.spec.requester==request.userInfo.username"
     );
 
     let binding = documents
@@ -384,4 +384,59 @@ fn the_operators_right_on_sandboxes_is_narrowed_to_the_mode_of_a_claims_sandbox(
         })
         .expect("its binding");
     assert_eq!(strings(&binding["spec"]["validationActions"]), ["Deny"]);
+}
+
+#[test]
+fn an_upstream_claim_or_warm_pool_on_a_purlis_pools_objects_is_admitted_from_the_operator_alone() {
+    let documents = documents("policy.yaml");
+    let policy = documents
+        .iter()
+        .find(|d| {
+            d["kind"] == "ValidatingAdmissionPolicy"
+                && d["metadata"]["name"] == "purlis-claims-use-their-pool"
+        })
+        .expect("the policy");
+    let spec = &policy["spec"];
+    let rules = spec["matchConstraints"]["resourceRules"]
+        .as_array()
+        .expect("rules");
+    assert_eq!(
+        strings(&rules[1]["apiGroups"]),
+        ["extensions.agents.x-k8s.io"]
+    );
+    assert_eq!(
+        strings(&rules[1]["resources"]),
+        ["sandboxclaims", "sandboxwarmpools"]
+    );
+    assert_eq!(strings(&rules[1]["operations"]), ["CREATE", "UPDATE"]);
+    let validations = spec["validations"].as_array().expect("validations");
+    let expression = |at: usize| {
+        validations[at]["expression"]
+            .as_str()
+            .expect("expression")
+            .split_whitespace()
+            .collect::<String>()
+    };
+    // The prefix of every name the operator gives a pool's template and warm pool. On an update,
+    // a reference may neither move onto one of them nor off one.
+    let ours = purlis_cluster_operator::upstream::name_for("");
+    let operator = "system:serviceaccount:purlis-system:purlis-cluster-operator";
+    for (at, resource, reference) in [
+        (2, "sandboxclaims", "warmPoolRef"),
+        (3, "sandboxwarmpools", "sandboxTemplateRef"),
+    ] {
+        assert_eq!(
+            expression(at),
+            format!(
+                "request.resource.resource!='{resource}'||\
+                 request.userInfo.username=='{operator}'||\
+                 (request.operation=='UPDATE'?\
+                 oldObject.spec.{reference}.name==object.spec.{reference}.name||\
+                 !oldObject.spec.{reference}.name.startsWith('{ours}')&&\
+                 !object.spec.{reference}.name.startsWith('{ours}'):\
+                 !object.spec.{reference}.name.startsWith('{ours}'))"
+            )
+        );
+        assert_eq!(validations[at]["reason"], "Forbidden");
+    }
 }

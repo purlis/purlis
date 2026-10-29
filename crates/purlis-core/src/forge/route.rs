@@ -16,7 +16,7 @@
 //!
 //! **A sign-in is the host's to hand over.** [`Resolver::signed_in`] takes a [`HostScope`],
 //! which [`HostScope::claim`] refuses inside a chat's process tree. The `charter` binary never
-//! claims one (`tests/a_forge_token_never_reaches_a_chat.rs` checks its source), so the
+//! claims one (`tests/it/a_forge_token_never_reaches_a_chat.rs` checks its source), so the
 //! resolver a command builds holds no token to route to. This is the in-process half of the
 //! rule; the out-of-process half is the chat's sandbox, which denies the keyring item the
 //! token lives in (ADR 0067's first denial class), and `charterd`'s client scopes (FD-27).
@@ -308,7 +308,7 @@ impl Transports for Resolver {
         };
         // Every call this resolves for an account is admitted and counted by its meter,
         // whichever route it took. Only this builds the native transport outside tests
-        // (`tests/only_the_resolver_builds_the_native_transport.rs`), so nothing sends with a
+        // (`tests/it/only_the_resolver_builds_the_native_transport.rs`), so nothing sends with a
         // sign-in token unmetered. A call that names no account is the CLI's own login, not a
         // charter account, and has no budget here.
         Ok(match caller.account() {

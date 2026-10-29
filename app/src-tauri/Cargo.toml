@@ -19,7 +19,12 @@ publish = false
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "purlis_app_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# Only the Rust library the program links. Tauri's template also asks for a `staticlib` and a
+# `cdylib`, which only an iOS or Android build loads, and purlis builds for neither. Every build
+# paid for them: the app's crate, the largest in the workspace, archived and linked whole twice
+# more, and sccache never caches a crate that emits a `cdylib`, so the macOS scenario legs
+# compiled it afresh on every run however the cache stood (#3742).
+crate-type = ["rlib"]
 
 # The app's program keeps its name: the keyring writer (`secrets::keyhold::APP_BINARY`), the
 # e2e runs and the release steps find it by it. Renaming the program is not the crate's rename.

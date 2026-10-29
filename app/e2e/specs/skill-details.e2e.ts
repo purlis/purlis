@@ -11,6 +11,7 @@ import {
   runFromThePalette,
   tabNames,
 } from "../reach.js";
+import { studioSkill } from "../studio.js";
 
 /**
  * **A skill's tab: its state, history and uses** (SK-19, #2782), in the built app against the
@@ -54,7 +55,10 @@ describe("a skill's tab", function () {
 
   it("shows the skill's state, history and broken use, and archives and restores it", async () => {
     await runFromThePalette("Open Skill studio", "skills.studio");
-    const open = await $(`aria/Open ${PROBE}`);
+    // Chosen in the Library, its own tab is one press away until its page is the studio's
+    // (#3681, #3682).
+    const item = await studioSkill(PROBE);
+    const open = await item.$("button=History and runs");
     await open.waitForClickable({ timeout: 20_000 });
     await open.click();
 

@@ -1939,6 +1939,11 @@ export const commands = {
 	skillSave: (plane: PlaneId, level: SkillLevel, name: string, was: string, now: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_save", { plane, level, name, was, now })),
 	/**  **Renames a skill**, and every persona and skill that names it. */
 	skillRename: (plane: PlaneId, level: SkillLevel, name: string, to: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_rename", { plane, level, name, to })),
+	/**
+	 *  **Make my own copy** (#3686): the built-in skill `name` copied to `level` under the new name
+	 *  `to`, which the person can edit. The built-in skill keeps loading.
+	 */
+	skillCopy: (plane: PlaneId, name: string, level: SkillLevel, to: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_copy", { plane, name, level, to })),
 	/**  Whether moving a skill from `from` to `to` asks for a grant: it becomes a project skill. */
 	skillMoveNeedsGrant: (from: SkillLevel, to: SkillLevel) => __TAURI_INVOKE<boolean>("skill_move_needs_grant", { from, to }),
 	/**  **Moves a skill** from `from` to `to`, with `grant` where it becomes a project skill. */
@@ -2875,6 +2880,13 @@ export const commands = {
 	 *  one linked to, asked its version and what it holds. Asked once at a time ([`Joined`]).
 	 */
 	deviceRunner: (pool: string, runner: string) => typedError<RunnerAsked, string>(__TAURI_INVOKE("device_runner", { pool, runner })),
+	/**
+	 *  **The disk each pool's runners hold** (#3493): their home volumes, as `docker system df`
+	 *  says, which reads them and starts nothing, so **a suspended runner is never woken by it**.
+	 *  Read apart from [`devices`], so a Docker slow to count every volume holds up no other part
+	 *  of the view, and held to the time each read of Docker is.
+	 */
+	devicesDisk: () => typedError<DiskHeld, string>(__TAURI_INVOKE("devices_disk")),
 	/**
 	 *  **The projects a runner would not hold again after a re-link**, each with the runner's words
 	 *  and the pools its chats run on.
@@ -4067,6 +4079,8 @@ export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
 export const SKILL_GRADE = "skill-grade" as const;
 
 export const SKILL_GRADE_AFTER_EDIT = "skill-grade-after-edit" as const;
+
+export const SKILL_NEEDS_IN = "skills.needs:" as const;
 
 export const SKILL_RUNS_PANEL = "runs" as const;
 
@@ -5737,7 +5751,21 @@ export type DevicesShown = {
 	 *  person's.
 	 */
 	owned: boolean,
+	/**
+	 *  How many projects the window holds (#3534): with more than one, each chat and browser
+	 *  row names its project.
+	 */
+	projects: number,
 };
+
+/**  **The disk each pool's runners hold**, as the use table says it (#3493). */
+export type DiskHeld = 
+/**  Each pool's, in the order the pools were added. */
+{ state: "read"; pools: PoolDisk[] } | 
+/**  Docker could not say, and why, in its words ([`shown_safely`]). */
+{ state: "not_read"; why: string } | 
+/**  It was not read within the time a second read of it waits ([`WAITS_AT_MOST`]). */
+{ state: "unanswered" };
 
 /**  Why a grant the person accepted before waits for a yes again. */
 export type DispatchAgain = 
@@ -8372,6 +8400,38 @@ export type Need =
  */
 { kind: "task_failed"; id: string; chat?: number | null; task: string; how: HowFailed; why: string };
 
+/**  **The one fix an item offers**, as the window runs it. */
+export type NeedFix = 
+/**  Accept the folder a chat made (`skill_level_accept`). */
+{ kind: "accept"; folder: string } | 
+/**  Rename the plane's copy of a skill: its page in the Library, with Rename open. */
+{ kind: "rename"; name: string; level: Level; local: boolean } | 
+/**  The Harness skills page, where the other copy's switch is. */
+{ kind: "harness" } | 
+/**  Take the pin `name` out of `by`'s pins (`skill_pin`, off). */
+{ kind: "unpin"; by: SkillPinner; name: string } | 
+/**  The Library, where each pinned skill says so and its pin can be taken out. */
+{ kind: "library" } | 
+/**
+ *  Move the project's skills where every program reads them: the doctor's fix, by its id
+ *  (`plane_doctor_fix`).
+ */
+{ kind: "move-skills"; fix: string } | 
+/**
+ *  Propose the files without the old keys, for the person to apply
+ *  (`remove_old_harness_plugins`); or leave them, which says so once
+ *  (`dismiss_old_harness_plugins`).
+ */
+{ kind: "remove-old-keys" } | 
+/**
+ *  Leave the old keys, which no file can be proposed without: said once
+ *  (`dismiss_old_harness_plugins`).
+ */
+{ kind: "leave-old-keys" };
+
+/**  **What kind of decision an item is**, in the order the page groups them. */
+export type NeedKind = "review" | "clash" | "problem" | "pins" | "tidy-up";
+
 /**
  *  **A profile's command waiting on the operator's approval** (ADR 0022), as a waiting chat's
  *  Notice offers it (#1246): which profile, and the exact line the approval is for.
@@ -8392,6 +8452,30 @@ export type NeedsApproval = {
 	approval: string,
 	/**  What it would run, as the picker shows it (`profiletrust::shown`), already contained. */
 	shown: string,
+};
+
+/**  **One item of Needs you**: what it is about, why it needs the person, and its fix. */
+export type NeedsYou = {
+	/**
+	 *  Unique among a studio's items, and the same from one read to the next: what the page
+	 *  keeps chosen.
+	 */
+	id: string,
+	kind: NeedKind,
+	/**  What it is about: a skill's name, or what the tidy-up is. */
+	title: string,
+	/**
+	 *  Where it is: the skill's level as a person reads it, or the file. `None` where nothing
+	 *  more is worth saying.
+	 */
+	tag: string | null,
+	/**  Why it needs the person, in sentences. */
+	reason: string,
+	fix: NeedFix,
+	/**  The fix's words, on its button. */
+	fix_label: string,
+	/**  What pressing it does, in a sentence. */
+	fix_does: string,
 };
 
 /**  A branch the window cut: the piece it is, and what git calls it (ADR 0072 §4). */
@@ -9647,6 +9731,28 @@ export type PoolAdding = {
 	 *  `runners.json` spells it (`12h`); empty is a day (#3471).
 	 */
 	suspend_after: string | null,
+	/**  The most frames a second its runner's browsers are watched at over the link (#3297). */
+	frames: number | null,
+	/**  The widest frame its runner's browsers are watched at over the link, in pixels (#3297). */
+	width: number | null,
+};
+
+/**
+ *  **The disk one pool's runners hold** (#3493, spec #2041 story 55): their home volumes
+ *  together, a draining runner's included.
+ */
+export type PoolDisk = {
+	pool: string,
+	/**
+	 *  In kilobytes of 1000 bytes, as Docker says sizes, to the nearest; `u32` so it is a
+	 *  `number` in TypeScript, and held at its most (some 4 TB) rather than wrapped.
+	 */
+	kilobytes: number,
+	/**
+	 *  How many of its runners' homes Docker did not list: their disk is not known, and is
+	 *  said apart rather than counted as nothing.
+	 */
+	not_listed: number,
 };
 
 /**
@@ -9725,6 +9831,19 @@ export type PoolRow = {
 };
 
 /**
+ *  **How a pool's runner was made to suspend itself** (#3717), which its row says where it is
+ *  not the pool's own time.
+ */
+export type PoolSuspends = 
+/**  It was made before purlis suspended runners (#2051), and never suspends itself. */
+{ made: "never" } | 
+/**
+ *  It suspends itself after this long without a link from this machine, spelled as
+ *  `runners.json` spells it (`24h`, `90m`).
+ */
+{ made: "after"; after: string };
+
+/**
  *  **Which version a pool's runner runs, against this desktop's** (#2749): what its row says
  *  when they differ, and whether purlis moves the pool along with the desktop.
  */
@@ -9753,6 +9872,12 @@ export type PoolVersion = {
 	named: boolean | null,
 	/**  How many chats those older runners still keep, as purlis last found them (#2865). */
 	waiting: number,
+	/**
+	 *  How its runner was made to suspend itself, as its container's command says (#3717): a
+	 *  runner made before its pool's `suspendAfter` keeps what it was made with. None where it
+	 *  could not be read.
+	 */
+	suspends?: PoolSuspends | null,
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */
@@ -9769,6 +9894,16 @@ export type PoolsShown = {
 	 *  engine is a local socket on this machine. A chat moves only to such a pool (#2048).
 	 */
 	yours?: boolean | null,
+	/**
+	 *  The most frames a second a new pool's runner's browsers are watched at over the link, by
+	 *  default (#3297).
+	 */
+	frames?: number | null,
+	/**
+	 *  The widest frame a new pool's runner's browsers are watched at over the link, in pixels,
+	 *  by default (#3297).
+	 */
+	width?: number | null,
 };
 
 /**
@@ -12743,6 +12878,11 @@ export type Studio = {
 	 *  while the studio is off.
 	 */
 	router: StudioRouter | null,
+	/**
+	 *  **What in these skills needs the person** (#3689): the Needs you page's items, by kind,
+	 *  each with why and one fix ([`needs`]). Empty while the studio is off.
+	 */
+	needs: NeedsYou[],
 };
 
 /**

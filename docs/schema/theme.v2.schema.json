@@ -388,7 +388,7 @@
               "layer.divider"
             ]
           },
-          "maxItems": 130
+          "maxItems": 132
         },
         "hues": {
           "description": "A workspace colour's hue in this theme: the hue of this colour. A workspace's own #rrggbb is always its own hue.",
@@ -2783,6 +2783,48 @@
         "card.title.ask.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
+        "card.facts-label.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card.facts-label.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "card.facts-label.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "card.facts-value.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card.facts-value.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "card.facts-value.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "card.tile.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card.tile.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "card.tile.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "card.tile.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "card.tile.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "card.tile-value.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card.tile-value.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "card.tile-value.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
         "checkbox.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -3944,6 +3986,33 @@
         "dialog.summary.alert.open.text": {
           "$ref": "#/$defs/part-text"
         },
+        "disclosure.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "disclosure.trigger.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "disclosure.trigger.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "disclosure.twist.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "disclosure.panel.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "disclosure.panel.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "disclosure.panel.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "disclosure.panel.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "disclosure.panel.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
         "editor.toolbar.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -4169,6 +4238,168 @@
         "list.root.disabled.shadow": {
           "$ref": "#/$defs/part-shadow"
         },
+        "list.root.row.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "list.root.row.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.root.row.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "list.root.row.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "list.root.row.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "list.root.row.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "list.root.row.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "list.root.row.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "list.root.row.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.root.row.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "list.root.row.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "list.root.row.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "list.root.row.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.root.row.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "list.root.row.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "list.root.row.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "list.root.row.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.root.row.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "list.root.row.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "list.root.row.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "list.root.row.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.root.row.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "list.root.row.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "list.root.row.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "list.root.row.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.root.row.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "list.root.row.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "list.root.card.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "list.root.card.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.root.card.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "list.root.card.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "list.root.card.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "list.root.card.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "list.root.card.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "list.root.card.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "list.root.card.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.root.card.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "list.root.card.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "list.root.card.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "list.root.card.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.root.card.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "list.root.card.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "list.root.card.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "list.root.card.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.root.card.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "list.root.card.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "list.root.card.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "list.root.card.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.root.card.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "list.root.card.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "list.root.card.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "list.root.card.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.root.card.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "list.root.card.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
         "list.body.padding": {
           "$ref": "#/$defs/part-padding"
         },
@@ -4193,6 +4424,42 @@
         "list.lead.disabled.text": {
           "$ref": "#/$defs/part-text"
         },
+        "list.lead.row.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.lead.row.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "list.lead.row.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.lead.row.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.lead.row.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.lead.row.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.lead.card.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.lead.card.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "list.lead.card.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.lead.card.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.lead.card.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.lead.card.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "list.label.text": {
           "$ref": "#/$defs/part-text"
         },
@@ -4214,6 +4481,48 @@
         "list.label.disabled.text": {
           "$ref": "#/$defs/part-text"
         },
+        "list.label.row.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.label.row.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.label.row.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "list.label.row.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.label.row.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.label.row.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.label.row.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.label.card.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.label.card.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.label.card.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "list.label.card.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.label.card.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.label.card.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.label.card.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "list.description.text": {
           "$ref": "#/$defs/part-text"
         },
@@ -4232,6 +4541,42 @@
         "list.description.disabled.text": {
           "$ref": "#/$defs/part-text"
         },
+        "list.description.row.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.description.row.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.description.row.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.description.row.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.description.row.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.description.row.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.description.card.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.description.card.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.description.card.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.description.card.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.description.card.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.description.card.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "list.trail.text": {
           "$ref": "#/$defs/part-text"
         },
@@ -4248,6 +4593,42 @@
           "$ref": "#/$defs/part-text"
         },
         "list.trail.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.trail.row.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.trail.row.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "list.trail.row.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.trail.row.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.trail.row.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.trail.row.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.trail.card.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.trail.card.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "list.trail.card.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.trail.card.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.trail.card.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.trail.card.disabled.text": {
           "$ref": "#/$defs/part-text"
         },
         "list.header.text": {
@@ -4276,6 +4657,117 @@
         },
         "list.shortcut.disabled.text": {
           "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.row.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.row.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.shortcut.row.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.row.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.row.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.row.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.card.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.card.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.shortcut.card.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.card.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.card.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.shortcut.card.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.summary.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.summary.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.summary.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.summary.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.summary.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.summary.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.summary.row.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.summary.row.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.summary.row.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.summary.row.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.summary.row.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.summary.row.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.summary.card.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.summary.card.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.summary.card.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.summary.card.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.summary.card.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.summary.card.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.count.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.count.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.run.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.run.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.actions.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "list.actions.row.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "list.actions.card.gap": {
+          "$ref": "#/$defs/part-gap"
         },
         "menu.root.fill": {
           "$ref": "#/$defs/part-fill"
@@ -4808,6 +5300,138 @@
         "menu.indicator.danger.open.text": {
           "$ref": "#/$defs/part-text"
         },
+        "meter.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "meter.root.subject.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.root.subject.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "meter.root.baseline.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.root.baseline.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "meter.root.previous.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.root.previous.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "meter.label.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.label.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "meter.label.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "meter.label.subject.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.label.subject.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "meter.label.subject.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "meter.label.baseline.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.label.baseline.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "meter.label.baseline.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "meter.label.previous.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.label.previous.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "meter.label.previous.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "meter.track.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "meter.track.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "meter.track.subject.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "meter.track.subject.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "meter.track.baseline.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "meter.track.baseline.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "meter.track.previous.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "meter.track.previous.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "meter.fill.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "meter.fill.subject.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "meter.fill.baseline.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "meter.fill.previous.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "meter.value.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.value.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "meter.value.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "meter.value.subject.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.value.subject.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "meter.value.subject.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "meter.value.baseline.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.value.baseline.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "meter.value.baseline.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "meter.value.previous.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.value.previous.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "meter.value.previous.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
         "notice.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -4862,6 +5486,24 @@
         "notice.root.trouble.gap": {
           "$ref": "#/$defs/part-gap"
         },
+        "notice.root.attention.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "notice.root.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.root.attention.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "notice.root.attention.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "notice.root.attention.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "notice.root.attention.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
         "notice.message.text": {
           "$ref": "#/$defs/part-text"
         },
@@ -4880,6 +5522,12 @@
         "notice.message.trouble.font-size": {
           "$ref": "#/$defs/part-font-size"
         },
+        "notice.message.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.message.attention.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
         "notice.whose.text": {
           "$ref": "#/$defs/part-text"
         },
@@ -4896,6 +5544,12 @@
           "$ref": "#/$defs/part-text"
         },
         "notice.whose.trouble.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "notice.whose.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.whose.attention.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
         "option-card.root.fill": {
@@ -5312,6 +5966,84 @@
         "option-card.check.tile.disabled.text": {
           "$ref": "#/$defs/part-text"
         },
+        "page-tabs.tab.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "page-tabs.tab.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "page-tabs.tab.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "page-tabs.tab.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "page-tabs.tab.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "page-tabs.tab.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "page-tabs.tab.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "page-tabs.tab.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "page-tabs.tab.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "page-tabs.label.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "page-tabs.label.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "page-tabs.count.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "page-tabs.count.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "page-tabs.count.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "page-tabs.count.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "page-tabs.count.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "page-tabs.indicator.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "page-tabs.indicator.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "page-tabs.indicator.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "page-tabs.indicator.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "page-tabs.indicator.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "page-tabs.list.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "page-tabs.list.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "page-tabs.list.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "page-tabs.list.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "page-tabs.panel.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
         "panel.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -5540,6 +6272,24 @@
         "popover.root.menu.shadow": {
           "$ref": "#/$defs/part-shadow"
         },
+        "popover.root.notice.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "popover.root.notice.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "popover.root.notice.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "popover.root.notice.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "popover.root.notice.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "popover.root.notice.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
         "popover.filter.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -5558,6 +6308,12 @@
         "popover.filter.menu.padding": {
           "$ref": "#/$defs/part-padding"
         },
+        "popover.filter.notice.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "popover.filter.notice.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
         "popover.rule.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -5565,6 +6321,9 @@
           "$ref": "#/$defs/part-fill"
         },
         "popover.rule.menu.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "popover.rule.notice.fill": {
           "$ref": "#/$defs/part-fill"
         },
         "popover.list.padding": {
@@ -5583,6 +6342,12 @@
           "$ref": "#/$defs/part-padding"
         },
         "popover.list.menu.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "popover.list.notice.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "popover.list.notice.gap": {
           "$ref": "#/$defs/part-gap"
         },
         "popover.header.text": {
@@ -5610,6 +6375,15 @@
           "$ref": "#/$defs/part-font-size"
         },
         "popover.header.menu.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "popover.header.notice.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "popover.header.notice.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "popover.header.notice.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
         "popover.footer.fill": {
@@ -5648,6 +6422,18 @@
         "popover.footer.menu.font-size": {
           "$ref": "#/$defs/part-font-size"
         },
+        "popover.footer.notice.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "popover.footer.notice.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "popover.footer.notice.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "popover.footer.notice.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
         "popover.key.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -5674,6 +6460,21 @@
         },
         "popover.key.menu.corner-radius": {
           "$ref": "#/$defs/part-corner-radius"
+        },
+        "popover.key.notice.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "popover.key.notice.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "popover.key.notice.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "popover.point.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "popover.point.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
         },
         "radio.root.text": {
           "$ref": "#/$defs/part-text"
@@ -6097,6 +6898,33 @@
         },
         "rail.unsaved.action.focused.fill": {
           "$ref": "#/$defs/part-fill"
+        },
+        "review-page.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "review-page.body.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "review-page.body.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "review-page.bar.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "review-page.bar.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "review-page.bar.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "review-page.summary.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "review-page.summary.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "review-page.answers.gap": {
+          "$ref": "#/$defs/part-gap"
         },
         "segment.root.fill": {
           "$ref": "#/$defs/part-fill"
@@ -8768,6 +9596,12 @@
         "titlebar.row.root.focused.text": {
           "$ref": "#/$defs/part-text"
         },
+        "titlebar.dot.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.dot.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "tooltip.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -8977,6 +9811,159 @@
         },
         "tree.header.font-weight": {
           "$ref": "#/$defs/part-font-weight"
+        },
+        "view-frame.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-frame.nav.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-frame.nav.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "view-frame.nav.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "view-frame.nav.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "view-frame.list.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-frame.list.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "view-frame.list.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "view-frame.item.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-frame.head.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "view-frame.head.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "view-frame.header.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-frame.header.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "view-frame.header.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "view-frame.header.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "view-frame.header.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "view-frame.name.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "view-frame.name.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "view-frame.name.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "view-frame.lead.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "view-frame.lead.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "view-frame.bar.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-frame.bar.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "view-frame.bar.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "view-frame.bar.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "view-frame.bar.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "view-frame.history.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "view-frame.path.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "view-frame.path.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "view-frame.crumb.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "view-frame.crumb.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "view-frame.crumb-separator.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "view-nav.item.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-nav.item.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "view-nav.item.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "view-nav.item.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-nav.item.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "view-nav.item.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-nav.item.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "view-nav.item.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-nav.item.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "view-nav.item.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-nav.item.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "view-nav.label.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "view-nav.label.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "view-nav.indicator.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-nav.indicator.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "view-nav.indicator.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-nav.indicator.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-nav.indicator.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "view-nav.indicator.focused.fill": {
+          "$ref": "#/$defs/part-fill"
         }
       }
     }
@@ -9161,6 +10148,12 @@
           "$ref": "#/$defs/colour"
         },
         "danger.wash": {
+          "$ref": "#/$defs/colour"
+        },
+        "attention.surface": {
+          "$ref": "#/$defs/colour"
+        },
+        "attention.text": {
           "$ref": "#/$defs/colour"
         },
         "wash.warning": {
@@ -10231,6 +11224,8 @@
         "danger.surface",
         "danger.text",
         "danger.wash",
+        "attention.surface",
+        "attention.text",
         "wash.warning",
         "diff.deleted",
         "diff.inserted",
@@ -10367,6 +11362,8 @@
         "danger.surface",
         "danger.text",
         "danger.wash",
+        "attention.surface",
+        "attention.text",
         "wash.warning",
         "diff.deleted",
         "diff.inserted",
@@ -10502,6 +11499,8 @@
         "danger.surface",
         "danger.text",
         "danger.wash",
+        "attention.surface",
+        "attention.text",
         "wash.warning",
         "diff.deleted",
         "diff.inserted",

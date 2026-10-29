@@ -2,24 +2,31 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **The Skills view** (SK-55, #3266; decisions amendment 2026-10-26), against a mocked core: what
- * it lists from the Skill studio's own answer, the keyboard and a screen reader's way through
- * it, each act of a row's menu, its header, its switch to the chat in front, its empty state and
- * the workspace it follows. The sandbox draws no window: these check what each surface says and
- * does, in the DOM a reader reads.
+ * **The Skills view** (SK-55, #3266; spec #3679 S7, #3693), against a mocked core: whose skills
+ * it shows (the chat in front's, or a new chat's in the title bar's workspace), its three groups
+ * of cards and the built-in skills folded among them, where a card goes, each act of a card's
+ * menu and its fix, its header, and its empty state. The sandbox draws no window: these check
+ * what each surface says and does, in the DOM a reader reads.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ChatSkill, PersonaSkills, Studio, StudioSkill } from "./bindings";
 import { SkillsView, type FrontChat } from "./SkillsView";
-import { SkillStudioTab } from "./SkillStudioTab";
 import { skill, studio } from "./skillsListing.testkit";
-import { inWorkspace, skillStudioView } from "./skillStudio";
-import { skillView } from "./skillRuns";
+import {
+  SKILL_STUDIO_TITLE,
+  asPersona,
+  inWorkspace,
+  skillRowId,
+  skillStudioAt,
+  skillStudioView,
+} from "./skillStudio";
+import { forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
+import { PLANE_ROOT, pieceFileView } from "./pieceViews";
 import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
-import { SKILLS_VIEW } from "./skillsViewPrefs";
+import { DEFAULT_SKILLS_VIEW, SKILLS_VIEW } from "./skillsViewPrefs";
 
 afterEach(() => {
   cleanup();
@@ -124,245 +131,309 @@ function view(
   return hands;
 }
 
-const list = () => screen.findByRole("treegrid", { name: "Skills" });
-/** The row of skill `name`, by the words it is drawn with. */
+const list = () => screen.findByRole("grid", { name: "Skills" });
+/** The card of skill `name`, by the words it is drawn with. */
 const rowOf = (name: string): HTMLElement => {
   const found = [...document.querySelectorAll<HTMLElement>('[data-testid^="skills-row-"]')].find(
     (one) => one.querySelector('[data-part="label"]')?.textContent === name,
   );
-  if (found === undefined) throw new Error(`no row of ${name}`);
+  if (found === undefined) throw new Error(`no card of ${name}`);
   return found;
 };
-/** The groups the list draws, by their names, in their order: the tree's rows at its top. */
-const groupNames = (grid: HTMLElement) =>
-  [...grid.querySelectorAll('[role="row"][aria-level="1"]')].map(
-    (one) => one.querySelector('[data-part="label"]')?.textContent,
-  );
-/** The row of group `name`, at the tree's top. */
-const groupOf = (name: string): HTMLElement => {
-  const found = [...document.querySelectorAll<HTMLElement>('[data-testid^="skills-group-"]')].find(
-    (one) => one.querySelector('[data-part="label"]')?.textContent === name,
-  );
-  if (found === undefined) throw new Error(`no group ${name}`);
-  return found;
+/** Whether a card of `name` is drawn. */
+const hasRow = (name: string) => {
+  try {
+    rowOf(name);
+    return true;
+  } catch {
+    return false;
+  }
+};
+/** A row of the list that folds (a group's name, the built-in skills' quiet line), by its words. */
+const foldOf = (name: string | RegExp) =>
+  within(screen.getByRole("grid", { name: "Skills" })).getByRole("row", { name });
+/** Whether a row that folds is open, as its cell says it. */
+const openOf = (row: HTMLElement) =>
+  within(row).getByRole("gridcell").getAttribute("aria-expanded");
+
+const STEWARD: FrontChat = {
+  session: 5,
+  name: "steward 5",
+  workspace: "ops",
+  persona: "reviewer",
+  harness: "claude",
 };
 
-describe("what the Skills view lists", () => {
-  it("is this workspace's skills by level, Needs you on top, each persona's own too", async () => {
-    opsCore();
+describe("whose skills the Skills view shows", () => {
+  it("is a new chat's in the title bar's workspace while no chat is in front, said in its header", async () => {
+    const asked = opsCore();
     view();
-    const grid = await list();
-    await waitFor(() => expect(within(grid).getByText("review")).toBeInTheDocument());
-
-    expect(groupNames(grid)).toEqual(["Needs you", "Built-in", "Project", "Workspace", "Personas"]);
-    // One mark at most per row, in words a reader hears.
-    expect(rowOf("drafted")).toHaveTextContent("Needs review");
-    expect(rowOf("old-deploy")).toHaveTextContent("Off");
-    expect(rowOf("deploy")).not.toHaveAttribute("data-mark");
+    await list();
+    await waitFor(() => expect(hasRow("deploy")).toBe(true));
+    expect(screen.getByTestId("skills-view-whose")).toHaveTextContent(
+      "A new chat in ops · 4 skills",
+    );
+    // A new chat runs as no persona: the studio is read for none, and no persona's own is listed.
+    expect(asked.filter((one) => one.cmd === "skill_studio").map((one) => one.args)).toEqual([
+      { plane: "p", workspace: "ops", persona: null },
+    ]);
+    expect(asked.some((one) => one.cmd === "chat_skills")).toBe(false);
+    expect(hasRow("review")).toBe(false);
   });
 
-  it("marks a skill the router hid, with the core's line on hover", async () => {
+  it("is a new chat's at the project's root there", async () => {
+    opsCore();
+    view({ workspace: undefined });
+    await list();
+    await waitFor(() =>
+      expect(screen.getByTestId("skills-view-whose")).toHaveTextContent(
+        "A new chat at the project's root · 1 skill",
+      ),
+    );
+  });
+
+  it("is the chat in front's set, read for its workspace and persona, under its name", async () => {
+    const asked = opsCore([
+      given("secrets", "built-in"),
+      given("deploy"),
+      given("review", "persona"),
+    ]);
+    view({ chat: STEWARD, workspace: undefined });
+    await list();
+    await waitFor(() => expect(hasRow("review")).toBe(true));
+    expect(screen.getByTestId("skills-view-whose")).toHaveTextContent("steward 5 · 4 skills");
+    expect(asked).toContainEqual({
+      cmd: "skill_studio",
+      args: { plane: "p", workspace: "ops", persona: "reviewer" },
+    });
+    expect(asked).toContainEqual({ cmd: "chat_skills", args: { plane: "p", session: 5 } });
+    // What the chat started without is left out, with why, once Left out is unfolded.
+    expect(hasRow("ops-runbook")).toBe(false);
+    await userEvent.click(foldOf(/^Left out/));
+    await waitFor(() => expect(hasRow("ops-runbook")).toBe(true));
+    expect(rowOf("ops-runbook")).toHaveTextContent("The chat in front started without it.");
+  });
+
+  it("follows the chat in front as it changes, and has no Only this chat's", async () => {
+    const asked = opsCore([given("deploy")]);
+    const hands = {
+      onOpenView: vi.fn(),
+      onUseSkill: vi.fn(),
+      onShowInExplorer: vi.fn(),
+    };
+    const { rerender } = render(<SkillsView plane="p" workspace="ops" {...hands} />);
+    await list();
+    expect(screen.queryByRole("button", { name: "Only this chat's" })).toBeNull();
+    expect(screen.queryByRole("switch")).toBeNull();
+    rerender(<SkillsView plane="p" workspace="ops" chat={STEWARD} {...hands} />);
+    await waitFor(() =>
+      expect(screen.getByTestId("skills-view-whose")).toHaveTextContent("steward 5"),
+    );
+    rerender(<SkillsView plane="p" workspace="ops" {...hands} />);
+    await waitFor(() =>
+      expect(screen.getByTestId("skills-view-whose")).toHaveTextContent("A new chat in ops"),
+    );
+    expect(asked.filter((one) => one.cmd === "chat_skills")).toHaveLength(1);
+  });
+});
+
+describe("the Skills view's cards", () => {
+  it("are grouped Needs you, In this chat with its built-in skills folded, then Left out folded", async () => {
+    opsCore();
+    view();
+    await list();
+    await waitFor(() => expect(hasRow("deploy")).toBe(true));
+    const names = within(screen.getByRole("grid", { name: "Skills" }))
+      .getAllByRole("row")
+      .map((one) => one.querySelector('[data-part="label"], [data-part="title"]')?.textContent);
+    expect(names).toEqual([
+      "Needs you",
+      "drafted",
+      "In this chat",
+      "deploy",
+      "ops-runbook",
+      "1 built-in skill",
+      "Left out",
+    ]);
+    expect(openOf(foldOf("Needs you, 1"))).toBe("true");
+    expect(openOf(foldOf("In this chat, 3"))).toBe("true");
+    expect(openOf(foldOf("Left out, 1"))).toBe("false");
+    // Each card says what it does, or why it is as it is, in its two lines.
+    expect(rowOf("deploy")).toHaveTextContent("What deploy does.");
+    expect(rowOf("drafted")).toHaveTextContent("A chat made its folder.");
+    expect(rowOf("deploy")).toHaveTextContent("project");
+  });
+
+  it("unfold the built-in skills in place, with Make my own copy, which opens the studio's own dialog", async () => {
+    opsCore();
+    const hands = view();
+    await list();
+    await userEvent.click(await waitFor(() => foldOf("1 built-in skill")));
+    await waitFor(() => expect(hasRow("secrets")).toBe(true));
+    expect(
+      screen.getByText("They ship with purlis: they can't be edited, turned off or replaced."),
+    ).toBeInTheDocument();
+    expect(SKILLS_VIEW.value().folded).toEqual(["left-out"]);
+    await userEvent.click(screen.getByRole("button", { name: "Make my own copy…" }));
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(
+      skillStudioView(inWorkspace("ops")),
+      SKILL_STUDIO_TITLE,
+    );
+    // The studio it opened opens on its Make my own copy: one copy of the dialog.
+    renderStudio(inWorkspace("ops"));
+    expect(
+      await screen.findByRole("dialog", { name: "Make my own copy of a built-in skill" }),
+    ).toBeInTheDocument();
+    forgetStudio();
+  });
+
+  it("keep the folds as the person leaves them, and open every group while a filter is typed", async () => {
+    core(() => studio(Array.from({ length: 12 }, (_, at) => skill(`s${at}`))));
+    view();
+    await list();
+    await userEvent.click(await waitFor(() => foldOf(/^In this chat/)));
+    await waitFor(() => expect(hasRow("s0")).toBe(false));
+    expect(SKILLS_VIEW.value().folded).toEqual([...DEFAULT_SKILLS_VIEW.folded, "in-chat"]);
+    await userEvent.type(screen.getByRole("searchbox", { name: "Filter skills" }), "s1");
+    await waitFor(() => expect(hasRow("s1")).toBe(true));
+    expect(hasRow("s2")).toBe(false);
+  });
+
+  it("open the skill in the studio at Library › it, for the view's scope, the chat keeping its pane", async () => {
+    opsCore([given("deploy"), given("review", "persona")]);
+    const hands = view({ chat: STEWARD });
+    await list();
+    await waitFor(() => expect(hasRow("review")).toBe(true));
+    await userEvent.click(rowOf("deploy"));
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(
+      skillStudioAt(inWorkspace("ops"), "library", { skill: skillRowId(skill("deploy")) }),
+      SKILL_STUDIO_TITLE,
+    );
+    // A persona's own skill opens on that persona's chats.
+    await userEvent.click(rowOf("review"));
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(
+      skillStudioAt(asPersona("reviewer"), "library", { skill: skillRowId(REVIEW) }),
+      SKILL_STUDIO_TITLE,
+    );
+    expect(hands.onUseSkill).not.toHaveBeenCalled();
+  });
+
+  it("type the skill into the chat in front with Use, not sent", async () => {
+    opsCore([given("deploy")]);
+    const hands = view({ chat: { ...STEWARD, persona: null } });
+    await list();
+    await waitFor(() => expect(hasRow("deploy")).toBe(true));
+    await userEvent.click(
+      within(rowOf("deploy")).getByRole("button", { name: "Use deploy in this chat" }),
+    );
+    expect(hands.onUseSkill).toHaveBeenCalledWith(5, "deploy");
+    expect(hands.onOpenView).not.toHaveBeenCalled();
+  });
+
+  it("offer one fix: a skill the workspace turned off is turned on there", async () => {
+    const asked = opsCore();
+    view();
+    await list();
+    await userEvent.click(await waitFor(() => foldOf(/^Left out/)));
+    await waitFor(() => expect(hasRow("old-deploy")).toBe(true));
+    expect(rowOf("old-deploy")).toHaveTextContent("ops turned it off.");
+    await userEvent.click(
+      within(rowOf("old-deploy")).getByRole("button", { name: "Turn on in ops" }),
+    );
+    await waitFor(() =>
+      expect(asked).toContainEqual({
+        cmd: "skill_turn",
+        args: { plane: "p", workspace: "ops", name: "old-deploy", on: true },
+      }),
+    );
+  });
+
+  it("offer a change waiting for review as a fix that opens it in the studio", async () => {
+    opsCore();
+    const hands = view();
+    await list();
+    await waitFor(() => expect(hasRow("drafted")).toBe(true));
+    await userEvent.click(
+      within(rowOf("drafted")).getByRole("button", { name: "Review the change" }),
+    );
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(
+      skillStudioAt(inWorkspace("ops"), "library", { skill: skillRowId(OPS[4]) }),
+      SKILL_STUDIO_TITLE,
+    );
+  });
+});
+
+describe("the Skills view's review fixes", () => {
+  it("counts the whole set in its header, whatever the filter leaves", async () => {
+    core(() => studio(Array.from({ length: 12 }, (_, at) => skill(`s${at}`))));
+    view();
+    await list();
+    await waitFor(() =>
+      expect(screen.getByTestId("skills-view-whose")).toHaveTextContent("· 12 skills"),
+    );
+    await userEvent.type(screen.getByRole("searchbox", { name: "Filter skills" }), "s1");
+    await waitFor(() => expect(hasRow("s2")).toBe(false));
+    expect(screen.getByTestId("skills-view-whose")).toHaveTextContent("· 12 skills");
+  });
+
+  it("draws a built-in skill a skill of the project has the name of outside the fold", async () => {
     core(() =>
       studio([
-        skill("big", {
-          hidden: [
-            {
-              harness: "claude",
-              title: "Claude Code",
-              hidden: {
-                router: "built-in",
-                why: "over-budget",
-                said: "hidden by the built-in router: over this chat's skill budget, so it is in the index skill",
-              },
-            },
-          ],
-        }),
-        skill("small"),
+        skill("secrets", { level: "built-in", label: "built-in", folder: "/app/skills/secrets" }),
+        skill("browser", { level: "built-in", label: "built-in", folder: "/app/skills/browser" }),
+        skill("secrets", { on: false, left_out: "a built-in skill has its name" }),
       ]),
     );
     view();
     await list();
-    await waitFor(() => expect(rowOf("big")).toBeInTheDocument());
+    await waitFor(() => expect(foldOf("1 built-in skill")).toBeInTheDocument());
+    expect(
+      [...document.querySelectorAll('[data-testid^="skills-row-"] [data-part="label"]')].map(
+        (one) => one.textContent,
+      ),
+    ).toContain("secrets");
+    expect(hasRow("browser")).toBe(false);
+  });
 
-    expect(rowOf("big")).toHaveAttribute("data-mark", "hidden");
-    expect(rowOf("big")).toHaveTextContent("Hidden by the router");
-    act(() => rowOf("small").focus());
-    await userEvent.keyboard("{ArrowUp}");
-
-    const tip = await screen.findByRole("tooltip");
-    expect(tip).toHaveTextContent("What big does.");
-    expect(tip).toHaveTextContent(
-      "Hidden by the built-in router: over this chat's skill budget, so it is in the index skill (on Claude Code).",
+  it("opens a program's own skill on the studio's Harness skills page", async () => {
+    core(
+      () =>
+        studio([skill("deploy")], {
+          harnesses: [
+            {
+              harness: "claude",
+              title: "Claude Code",
+              skills: [skill("pdf", { level: "installed", label: "Claude Code", folder: "" })],
+              repo_left_out: [],
+            },
+          ],
+        }),
+      { chat: [given("deploy")] },
     );
-  });
-
-  it("says a row's description and reason from the keyboard, as its description", async () => {
-    opsCore();
-    view();
-    await list();
-    await waitFor(() => expect(rowOf("old-deploy")).toBeInTheDocument());
-
-    act(() => rowOf("old-deploy").focus());
-    await userEvent.keyboard("{ArrowDown}{ArrowUp}");
-
-    const tip = await screen.findByRole("tooltip");
-    expect(tip).toHaveTextContent("What old-deploy does.");
-    expect(tip).toHaveTextContent("ops turned it off.");
-  });
-
-  it("is walked with the arrows and opens a skill's tab on Enter, or on a click", async () => {
-    opsCore();
-    const hands = view();
-    const grid = await list();
-    await waitFor(() => expect(rowOf("deploy")).toBeInTheDocument());
-
-    // One Tab stop, then the arrows, through each level's row and the skills under it.
-    act(() => rowOf("drafted").focus());
-    await userEvent.keyboard("{ArrowDown}");
-    expect(groupOf("Built-in")).toHaveFocus();
-    await userEvent.keyboard("{ArrowDown}");
-    expect(rowOf("secrets")).toHaveFocus();
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}");
-    expect(hands.onOpenView).toHaveBeenLastCalledWith(skillView("deploy"), "deploy");
-
-    await userEvent.click(within(grid).getByText("ops-runbook"));
-    expect(hands.onOpenView).toHaveBeenLastCalledWith(skillView("ops-runbook"), "ops-runbook");
-  });
-
-  it("is a tree whose levels fold and open with the arrows, Enter or a click (#3281)", async () => {
-    opsCore();
-    view();
-    const grid = await list();
-    await waitFor(() => expect(rowOf("deploy")).toBeInTheDocument());
-    // Each level is a branch, said open, with how many skills it holds.
-    expect(groupOf("Project")).toHaveAttribute("aria-expanded", "true");
-    expect(groupOf("Project")).toHaveAttribute("aria-description", "2 skills");
-    expect(rowOf("deploy")).toHaveAttribute("aria-level", "2");
-
-    // ← on a skill moves to its level; ← again folds it, and its skills go.
-    act(() => rowOf("deploy").focus());
-    await userEvent.keyboard("{ArrowLeft}");
-    expect(groupOf("Project")).toHaveFocus();
-    await userEvent.keyboard("{ArrowLeft}");
-    await waitFor(() => expect(groupOf("Project")).toHaveAttribute("aria-expanded", "false"));
-    expect(within(grid).queryByText("deploy")).toBeNull();
-    // ↓ passes a folded level's skills; → opens it, and → again moves into it.
-    await userEvent.keyboard("{ArrowDown}");
-    expect(groupOf("Workspace")).toHaveFocus();
-    await userEvent.keyboard("{ArrowUp}{ArrowRight}");
-    await waitFor(() => expect(groupOf("Project")).toHaveAttribute("aria-expanded", "true"));
-    await userEvent.keyboard("{ArrowRight}");
-    await waitFor(() => expect(rowOf("deploy")).toHaveFocus());
-    // Enter on a level folds it, as a click on its row does; neither opens a tab.
-    act(() => groupOf("Built-in").focus());
-    await userEvent.keyboard("{Enter}");
-    await waitFor(() => expect(groupOf("Built-in")).toHaveAttribute("aria-expanded", "false"));
-    await userEvent.click(within(groupOf("Workspace")).getByText("Workspace"));
-    await waitFor(() => expect(groupOf("Workspace")).toHaveAttribute("aria-expanded", "false"));
-  });
-
-  it("keeps its folds for the window, and draws them again as it opens", async () => {
-    opsCore();
-    view();
-    await list();
-    await waitFor(() => expect(rowOf("ops-runbook")).toBeInTheDocument());
-    act(() => groupOf("Workspace").focus());
-    await userEvent.keyboard("{ArrowLeft}");
-    await waitFor(() => expect(SKILLS_VIEW.value().folded).toEqual(["workspace"]));
-    expect(SKILLS_VIEW.written()).toEqual({ folded: ["workspace"] });
-
-    cleanup();
-    view();
-    await list();
-    await waitFor(() => expect(groupOf("Workspace")).toHaveAttribute("aria-expanded", "false"));
-    expect(screen.queryByText("ops-runbook")).toBeNull();
-    expect(groupOf("Project")).toHaveAttribute("aria-expanded", "true");
-  });
-
-  it("opens every level while a filter is typed, so a match is never folded away", async () => {
-    const many = Array.from({ length: 9 }, (_, at) => skill(`skill-${at}`));
-    core(() => studio([...many, skill("deploy")]));
-    SKILLS_VIEW.set({ onlyThisChat: false, folded: ["project"] });
-    view();
-    const grid = await list();
-    await waitFor(() => expect(groupOf("Project")).toHaveAttribute("aria-expanded", "false"));
-
-    await userEvent.type(screen.getByRole("searchbox", { name: "Filter skills" }), "dep");
-    await waitFor(() => expect(within(grid).getByText("deploy")).toBeInTheDocument());
-    expect(groupOf("Project")).toHaveAttribute("aria-expanded", "true");
-    // A fold while filtering is the filter's alone: the kept one waits for the box to clear.
-    act(() => groupOf("Project").focus());
-    await userEvent.keyboard("{ArrowLeft}");
-    await waitFor(() => expect(groupOf("Project")).toHaveAttribute("aria-expanded", "false"));
-    act(() => groupOf("Project").focus());
-    await userEvent.keyboard("{ArrowRight}");
-    await waitFor(() => expect(groupOf("Project")).toHaveAttribute("aria-expanded", "true"));
-    expect(SKILLS_VIEW.value().folded).toEqual(["project"]);
-    await userEvent.clear(screen.getByRole("searchbox", { name: "Filter skills" }));
-    await waitFor(() => expect(groupOf("Project")).toHaveAttribute("aria-expanded", "false"));
-  });
-
-  it("finds a skill by typing its name, and filters a long list from its box", async () => {
-    const many = Array.from({ length: 9 }, (_, at) => skill(`skill-${at}`));
-    core(() => studio([...many, skill("deploy")]));
-    view();
-    const grid = await list();
-    await waitFor(() => expect(rowOf("deploy")).toBeInTheDocument());
-
-    act(() => rowOf("skill-0").focus());
-    await userEvent.keyboard("{Escape}d");
-    expect(rowOf("deploy")).toHaveFocus();
-
-    await userEvent.type(screen.getByRole("searchbox", { name: "Filter skills" }), "dep");
-    await waitFor(() => expect(within(grid).getAllByRole("row")).toHaveLength(2));
-    expect(within(grid).getByText("deploy")).toBeInTheDocument();
-  });
-
-  it("re-reads when the title bar's workspace changes, and lists the project's and the personas' at the root", async () => {
-    const asked = opsCore();
-    const { rerender } = render(
-      <SkillsView
-        plane="p"
-        workspace="ops"
-        onOpenView={vi.fn()}
-        onUseSkill={vi.fn()}
-        onShowInExplorer={vi.fn()}
-      />,
-    );
-    await waitFor(() => expect(rowOf("ops-runbook")).toBeInTheDocument());
-
-    rerender(
-      <SkillsView
-        plane="p"
-        workspace={undefined}
-        onOpenView={vi.fn()}
-        onUseSkill={vi.fn()}
-        onShowInExplorer={vi.fn()}
-      />,
-    );
-    const grid = await list();
-    await waitFor(() => expect(within(grid).queryByText("ops-runbook")).toBeNull());
-    await waitFor(() => expect(groupNames(grid)).toEqual(["Project", "Personas"]));
-    expect(asked).toContainEqual({
-      cmd: "skill_studio",
-      args: { plane: "p", workspace: null, persona: null },
+    const hands = view({
+      chat: { session: 3, name: "web 1", workspace: "ops", persona: null, harness: "claude" },
     });
-    // Every persona's own skills in one read, never a studio per persona.
-    expect(asked).toContainEqual({
-      cmd: "skill_persona_skills",
-      args: { plane: "p", workspace: null },
-    });
-    expect(asked.filter((one) => one.cmd === "skill_studio" && one.args.persona !== null)).toEqual(
-      [],
+    await list();
+    await waitFor(() => expect(hasRow("pdf")).toBe(true));
+    await userEvent.click(rowOf("pdf"));
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(
+      skillStudioAt(inWorkspace("ops"), "harness"),
+      SKILL_STUDIO_TITLE,
     );
   });
 });
 
 describe("a row's menu", () => {
-  const CHAT: FrontChat = { session: 7, workspace: "ops", persona: null, harness: "claude" };
+  const CHAT: FrontChat = {
+    session: 7,
+    name: "steward 5",
+    workspace: "ops",
+    persona: null,
+    harness: "claude",
+  };
 
   it("uses the skill in the chat in front, through Use skill…", async () => {
-    opsCore();
+    opsCore([given("deploy"), given("ops-runbook", "workspace")]);
     const hands = view({ chat: CHAT });
     await list();
     await waitFor(() => expect(rowOf("deploy")).toBeInTheDocument());
@@ -370,7 +441,9 @@ describe("a row's menu", () => {
     fireEvent.contextMenu(rowOf("deploy"));
     const menu = await screen.findByRole("menu", { name: "deploy" });
     const items = within(menu).getAllByRole("menuitem");
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(6);
+    expect(items[4]).toHaveTextContent(/^Open the file$/);
+    expect(items[5]).toHaveTextContent(/^Open in Skill studio$/);
     expect(items[0]).toHaveTextContent(/^Use in this chat$/);
     expect(items[1]).toHaveTextContent(/^Turn off in ops$/);
     expect(items[2]).toHaveTextContent(/^Pin to this workspace$/);
@@ -382,15 +455,40 @@ describe("a row's menu", () => {
     expect(hands.onUseSkill).toHaveBeenCalledWith(7, "deploy");
   });
 
-  it("offers no Use in this chat while no chat is in front", async () => {
+  it("says Use in this chat waits for a chat while none is in front, and draws no Use", async () => {
     opsCore();
     view();
     await list();
     await waitFor(() => expect(rowOf("deploy")).toBeInTheDocument());
+    expect(within(rowOf("deploy")).queryByRole("button", { name: /^Use / })).toBeNull();
 
     fireEvent.contextMenu(rowOf("deploy"));
     const menu = await screen.findByRole("menu", { name: "deploy" });
-    expect(within(menu).queryByRole("menuitem", { name: "Use in this chat" })).toBeNull();
+    const use = within(menu).getByRole("menuitem", { name: /Use in this chat/ });
+    expect(use).toHaveAttribute("aria-disabled", "true");
+    expect(use).toHaveTextContent("No chat is in front to use it in.");
+  });
+
+  it("opens a skill's file in a tab, and the skill in the studio", async () => {
+    opsCore();
+    const hands = view({ workspace: undefined });
+    await list();
+    await waitFor(() => expect(rowOf("deploy")).toBeInTheDocument());
+
+    fireEvent.contextMenu(rowOf("deploy"));
+    let menu = await screen.findByRole("menu", { name: "deploy" });
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Open the file" }));
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(
+      pieceFileView(PLANE_ROOT, "skills/deploy/SKILL.md"),
+      "SKILL.md · deploy",
+    );
+    fireEvent.contextMenu(rowOf("deploy"));
+    menu = await screen.findByRole("menu", { name: "deploy" });
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Open in Skill studio" }));
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(
+      skillStudioAt({ at: "root", name: "" }, "library", { skill: skillRowId(skill("deploy")) }),
+      SKILL_STUDIO_TITLE,
+    );
   });
 
   it("turns a project skill off in the workspace with the studio's own switch", async () => {
@@ -509,6 +607,7 @@ describe("a row's menu", () => {
     opsCore();
     view();
     await list();
+    await userEvent.click(await waitFor(() => foldOf("1 built-in skill")));
     await waitFor(() => expect(rowOf("secrets")).toBeInTheDocument());
 
     fireEvent.contextMenu(rowOf("secrets"));
@@ -533,26 +632,30 @@ describe("a row's menu", () => {
     expect(hands.onShowInExplorer).toHaveBeenCalledWith({ repo: "", folder: "skills/deploy" });
   });
 
-  it("shows a repo skill in its clone, in the workspace (#3308)", async () => {
-    core(() =>
-      studio([skill("deploy")], {
-        harnesses: [
-          {
-            harness: "claude",
-            title: "Claude Code",
-            skills: [
-              skill("lint-rs", {
-                level: "repo",
-                folder: "workspaces/ops/svc/.claude/skills/lint-rs",
-                owner: { kind: "repo", name: "svc" },
-              }),
-            ],
-            repo_left_out: [],
-          },
-        ],
-      }),
+  it("shows a repo skill of the chat's clone in its clone, in the workspace (#3308)", async () => {
+    core(
+      () =>
+        studio([skill("deploy")], {
+          harnesses: [
+            {
+              harness: "claude",
+              title: "Claude Code",
+              skills: [
+                skill("lint-rs", {
+                  level: "repo",
+                  folder: "workspaces/ops/svc/.claude/skills/lint-rs",
+                  owner: { kind: "repo", name: "svc" },
+                }),
+              ],
+              repo_left_out: [],
+            },
+          ],
+        }),
+      { chat: [given("deploy")], repos: ["svc"] },
     );
-    const hands = view();
+    const hands = view({
+      chat: { session: 9, name: "web 1", workspace: "ops", persona: null, harness: "claude" },
+    });
     await list();
     await waitFor(() => expect(rowOf("lint-rs")).toBeInTheDocument());
 
@@ -577,7 +680,16 @@ describe("the view's header", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open Skill studio" }));
     expect(hands.onOpenView).toHaveBeenCalledWith(
       skillStudioView(inWorkspace("ops")),
-      "Skill studio · ops",
+      SKILL_STUDIO_TITLE,
+    );
+    // ⌘-click: a studio tab of its own, on the same Library (#3681).
+    const user = userEvent.setup();
+    await user.keyboard("{Meta>}");
+    await user.click(screen.getByRole("button", { name: "Open Skill studio" }));
+    await user.keyboard("{/Meta}");
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(
+      skillStudioAt(inWorkspace("ops"), "library", { newTab: true }),
+      SKILL_STUDIO_TITLE,
     );
   });
 
@@ -611,167 +723,21 @@ describe("the view's header", () => {
     await userEvent.click(within(again).getByRole("menuitem", { name: /blank template/ }));
     expect(hands.onOpenView).toHaveBeenLastCalledWith(
       skillStudioView(inWorkspace("ops")),
-      "Skill studio · ops",
+      SKILL_STUDIO_TITLE,
     );
-    // The studio it opened opens on its New skill form: one copy of the start.
-    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+    // Browse sources opens the studio's Sources page on the same chats (#3681).
+    await userEvent.click(screen.getByRole("button", { name: "New skill…" }));
+    const third = await screen.findByRole("menu", { name: "Ways to start a skill" });
+    await userEvent.click(within(third).getByRole("menuitem", { name: /Browse sources/ }));
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(
+      skillStudioAt(inWorkspace("ops"), "sources"),
+      SKILL_STUDIO_TITLE,
+    );
+
+    // The studio the blank template opened opens on its New skill form: one copy of the start.
+    renderStudio(inWorkspace("ops"));
     expect(await screen.findByRole("form", { name: "New skill" })).toBeInTheDocument();
-  });
-});
-
-describe("Only this chat's", () => {
-  const CHAT: FrontChat = { session: 7, workspace: "ops", persona: "reviewer", harness: "claude" };
-
-  it("is there only while a chat tab is in front", async () => {
-    opsCore();
-    view();
-    await list();
-    expect(screen.queryByRole("button", { name: "Only this chat's" })).toBeNull();
-  });
-
-  it("narrows the list to the chat's own set, marks what it does not get, and is kept", async () => {
-    const asked = opsCore([given("deploy"), given("review", "persona")]);
-    view({ chat: CHAT });
-    const grid = await list();
-    await waitFor(() => expect(within(grid).getByText("ops-runbook")).toBeInTheDocument());
-
-    const only = screen.getByRole("button", { name: "Only this chat's" });
-    expect(only).toHaveAttribute("aria-pressed", "false");
-    await userEvent.click(only);
-
-    // The chat's real set, as Use skill… reads it.
-    expect(asked).toContainEqual({ cmd: "chat_skills", args: { plane: "p", session: 7 } });
-    await waitFor(() =>
-      expect(groupNames(grid)).toEqual(["Needs you", "Project", "Personas", "Not in this chat"]),
-    );
-    expect(rowOf("ops-runbook")).toHaveTextContent("Left out");
-    // Use in this chat waits on a skill the chat does not get, and says why.
-    fireEvent.contextMenu(rowOf("ops-runbook"));
-    const menu = await screen.findByRole("menu", { name: "ops-runbook" });
-    const use = within(menu).getByRole("menuitem", { name: /Use in this chat/ });
-    expect(use).toHaveAttribute("aria-disabled", "true");
-    expect(use).toHaveTextContent("The chat in front does not get it.");
-    await userEvent.keyboard("{Escape}");
-
-    // Kept for the window, in its layout file (#3308): drawn again, the switch is still on.
-    expect(SKILLS_VIEW.written()).toEqual({ onlyThisChat: true });
-    cleanup();
-    view({ chat: CHAT });
-    expect(await screen.findByRole("button", { name: "Only this chat's" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
-  });
-
-  it("keeps the chat's own program's skills and each repo's, which its set does not hold", async () => {
-    const program = (harness: "claude" | "codex", title: string, skills: StudioSkill[]) => ({
-      harness,
-      title,
-      skills,
-      repo_left_out: [],
-    });
-    const repo = skill("lint-rs", {
-      level: "repo",
-      folder: "",
-      owner: { kind: "repo", name: "svc" },
-    });
-    core(
-      () =>
-        studio([skill("deploy")], {
-          harnesses: [
-            program("claude", "Claude Code", [
-              skill("pdf", { level: "installed", folder: "" }),
-              repo,
-            ]),
-            program("codex", "Codex", [skill("plan", { level: "installed", folder: "" }), repo]),
-          ],
-        }),
-      // What the core's chat_skills holds: the plane's and the built-in skills alone.
-      { chat: [given("deploy")], repos: ["svc"] },
-    );
-    view({ chat: { session: 7, workspace: "ops", persona: null, harness: "claude" } });
-    const grid = await list();
-    await waitFor(() => expect(within(grid).getByText("plan")).toBeInTheDocument());
-
-    await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
-
-    await waitFor(() => expect(within(grid).queryByText("plan")).toBeNull());
-    expect(groupNames(grid)).toEqual(["Project", "Repo", "Claude Code"]);
-    expect(rowOf("pdf")).not.toHaveAttribute("data-mark");
-    fireEvent.contextMenu(rowOf("lint-rs"));
-    const menu = await screen.findByRole("menu", { name: "lint-rs" });
-    expect(within(menu).getByRole("menuitem", { name: "Use in this chat" })).not.toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-    await userEvent.keyboard("{Escape}");
-    await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
-  });
-
-  it("reads each program's and repo's skills for the chat's persona, and its clone's alone (#3462)", async () => {
-    const program = (skills: StudioSkill[]) => ({
-      harness: "claude" as const,
-      title: "Claude Code",
-      unsupported: null,
-      only_off: null,
-      trouble: null,
-      plugins: [],
-      skills,
-      repo_left_out: [],
-    });
-    const repo = (name: string, clone: string) =>
-      skill(name, { level: "repo", folder: "", owner: { kind: "repo", name: clone } });
-    const asked = core(
-      (_, persona) =>
-        studio([skill("deploy")], {
-          harnesses: [
-            program([
-              // The studio marks it for the reviewer's chats alone.
-              skill("pdf", {
-                level: "installed",
-                folder: "",
-                lint: persona === "reviewer" ? ["It asks to pre-approve Bash."] : [],
-              }),
-              repo("lint-rs", "svc"),
-              repo("fmt", "web"),
-            ]),
-          ],
-        }),
-      { chat: [given("deploy")], repos: ["svc"] },
-    );
-    view({ chat: CHAT });
-    const grid = await list();
-    await waitFor(() => expect(within(grid).getByText("fmt")).toBeInTheDocument());
-    expect(rowOf("pdf")).not.toHaveAttribute("data-mark");
-
-    await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
-
-    expect(asked).toContainEqual({
-      cmd: "skill_studio",
-      args: { plane: "p", workspace: "ops", persona: "reviewer" },
-    });
-    await waitFor(() => expect(within(grid).queryByText("fmt")).toBeNull());
-    expect(rowOf("lint-rs")).toBeInTheDocument();
-    expect(rowOf("pdf")).toHaveAttribute("data-mark", "lint");
-    await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
-  });
-
-  it("keeps every group for a chat at the project's root", async () => {
-    opsCore([given("secrets", "built-in"), given("deploy")]);
-    view({
-      workspace: undefined,
-      chat: { session: 9, workspace: undefined, persona: null, harness: "claude" },
-    });
-    const grid = await list();
-    await waitFor(() => expect(groupNames(grid)).toEqual(["Project", "Personas"]));
-
-    await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
-
-    // Built-in is what the root chat gets: not hidden by the root's own grouping.
-    await waitFor(() => expect(groupNames(grid)).toEqual(["Built-in", "Project"]));
-    expect(rowOf("secrets")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
+    forgetStudio();
   });
 });
 
@@ -789,8 +755,8 @@ describe("a project with no skill of its own", () => {
     await userEvent.click(screen.getByRole("button", { name: "New skill…" }));
     const starts = await screen.findByRole("menu", { name: "Ways to start a skill" });
     expect(within(starts).getAllByRole("menuitem")).toHaveLength(3);
-    // The skills its chats already get are listed under it.
-    expect(rowOf("secrets")).toBeInTheDocument();
+    // The skills its chats already get are listed under it: its built-in skills, folded.
+    expect(foldOf("1 built-in skill")).toBeInTheDocument();
   });
 
   it("says the core's sentence where its skills cannot be read", async () => {

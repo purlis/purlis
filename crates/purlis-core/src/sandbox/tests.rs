@@ -319,40 +319,45 @@ fn a_chat_never_writes_charters_integrity_state() {
     // Under both names of the state folder (RN-2a): the purlis one is read when it is there, so
     // a chat that could make `.purlis/app` would be writing the records charter reads next.
     let (plane, denied) = denied_with(None, Os::Linux);
-    assert_eq!(
-        paths(&denied, Class::Integrity, Access::Write),
-        [
-            plane.path().join(".purlis/app"),
-            // Every chat's theme drafts (#2332): only the app writes one, for the chat that asks.
-            plane.path().join(".purlis/theme-drafts"),
-            // A skill delete's kept skills and running deletes' notes (SK-7, SK-35).
-            plane.path().join(".purlis/skills-deleted"),
-            plane.path().join(".purlis/skills-deleting"),
-            plane.path().join(".purlis/harness-profiles-launched.json"),
-            plane
-                .path()
-                .join(".purlis/harness-declarations-approved.json"),
-            plane.path().join(".purlis/mcp-approved.json"),
-            // Every chat's settings file (SK-9).
-            plane.path().join(".purlis/chat-settings"),
-            plane.path().join(".charter/app"),
-            plane.path().join(".charter/theme-drafts"),
-            // A skill delete's kept skills and running deletes' notes (SK-7, SK-35).
-            plane.path().join(".charter/skills-deleted"),
-            plane.path().join(".charter/skills-deleting"),
-            plane.path().join(".charter/harness-profiles-launched.json"),
-            plane
-                .path()
-                .join(".charter/harness-declarations-approved.json"),
-            plane.path().join(".charter/mcp-approved.json"),
-            plane.path().join(".charter/chat-settings"),
-            // Neither folder is there yet, so neither is the chat's to make (D-RN2a-7).
-            plane.path().join(".purlis"),
-            plane.path().join(".charter"),
-            // The folder chats' servers listen in (#2019).
-            door::root_in(None),
-        ]
-    );
+    let mut held = vec![
+        plane.path().join(".purlis/app"),
+        // Every chat's theme drafts (#2332): only the app writes one, for the chat that asks.
+        plane.path().join(".purlis/theme-drafts"),
+        // A skill delete's kept skills and running deletes' notes (SK-7, SK-35).
+        plane.path().join(".purlis/skills-deleted"),
+        plane.path().join(".purlis/skills-deleting"),
+        // Every report a chat is handed: the app's alone to write.
+        plane.path().join(".purlis/handbacks"),
+        plane.path().join(".purlis/harness-profiles-launched.json"),
+        plane
+            .path()
+            .join(".purlis/harness-declarations-approved.json"),
+        plane.path().join(".purlis/mcp-approved.json"),
+        // Every chat's settings file (SK-9).
+        plane.path().join(".purlis/chat-settings"),
+        plane.path().join(".charter/app"),
+        plane.path().join(".charter/theme-drafts"),
+        // A skill delete's kept skills and running deletes' notes (SK-7, SK-35).
+        plane.path().join(".charter/skills-deleted"),
+        plane.path().join(".charter/skills-deleting"),
+        plane.path().join(".charter/handbacks"),
+        plane.path().join(".charter/harness-profiles-launched.json"),
+        plane
+            .path()
+            .join(".charter/harness-declarations-approved.json"),
+        plane.path().join(".charter/mcp-approved.json"),
+        plane.path().join(".charter/chat-settings"),
+        // Neither folder is there yet, so neither is the chat's to make (D-RN2a-7).
+        plane.path().join(".purlis"),
+        plane.path().join(".charter"),
+        // The folder chats' servers listen in (#2019).
+        door::root_in(None),
+    ];
+    // The Skill studio's records (SK-9, SK-16, SK-58, SK-59), under both names.
+    for state in [".purlis", ".charter"] {
+        held.extend(SKILL_STUDIO_RECORDS.map(|record| plane.path().join(state).join(record)));
+    }
+    assert_eq!(paths(&denied, Class::Integrity, Access::Write), held);
 }
 
 /// #1458: the persona MCP approvals are read where `$PURLIS_HOME` puts the state folder, so
@@ -387,8 +392,11 @@ fn the_persona_mcp_approvals_are_held_where_purlis_home_puts_them() {
         "{:?}",
         denied.paths
     );
-    // And what skill deletes keep there (SK-7, SK-35).
-    for kept in ["skills-deleted", "skills-deleting"] {
+    // And what skill deletes keep there (SK-7, SK-35), and the Skill studio's records.
+    for kept in ["skills-deleted", "skills-deleting"]
+        .into_iter()
+        .chain(SKILL_STUDIO_RECORDS)
+    {
         assert!(
             paths(&denied, Class::Integrity, Access::Write)
                 .contains(&std::path::Path::new("/srv/purlis-state").join(kept)),
@@ -407,7 +415,17 @@ fn a_chat_cannot_plant_a_purlis_state_folder_beside_charters() {
     let denied = Denied::of(plane.path(), &machine(Os::Linux));
     let write = paths(&denied, Class::Integrity, Access::Write);
     assert!(write.contains(&plane.path().join(".purlis")), "{write:?}");
-    assert!(!write.contains(&plane.path().join(".charter")), "{write:?}");
+    // The one there is held as an entry alone, never with what is below it.
+    let charter = plane.path().join(".charter");
+    assert!(
+        denied
+            .paths
+            .iter()
+            .filter(|it| it.path == charter)
+            .all(|it| it.reach == Reach::Itself),
+        "{:?}",
+        denied.paths
+    );
 }
 
 #[test]
@@ -1002,6 +1020,166 @@ fn every_harness_denies_a_chat_writing_the_persons_harness_approvals_or_the_decl
     assert_eq!(compiled_harnesses, 3, "Claude Code, Codex and opencode");
 }
 
+/// The Skill studio's records in the state folder, as written out: each is the app's or the
+/// session host's alone to write (SK-9, SK-16, SK-58, SK-59).
+const SKILL_STUDIO_RECORDS: [&str; 9] = [
+    "skill-levels",
+    "skill-drafts",
+    "skill-tries",
+    "skill-grades",
+    "skill-grade-chats",
+    "grades-under-way",
+    "grades-under-way.lock",
+    "skill-grade-after-edit.json",
+    "skill-grade-after-edit.lock",
+];
+
+/// SK-9, SK-16, SK-58, SK-59: **the Skill studio's records in the state folder are purlis's
+/// alone to write**. The levels records say which workspace and persona folders a running chat
+/// could have made, and hold their skills until the person accepts them; the drafts, the tries
+/// and grades' arms, the grades, the grades under way, the grades' chats and the opt-in to grade
+/// after each edit are each written by the app and read back as its own. Each is held with what
+/// is below it, so neither a record nor the store as an entry is written, removed or moved, in
+/// what every harness is compiled, under both names of the state folder. Read, never written.
+#[test]
+fn every_harness_denies_a_chat_writing_the_skill_studio_s_records() {
+    let plane = tempfile::tempdir().expect("a plane");
+    // A state folder that is there, so the folder itself is not what holds the records.
+    std::fs::create_dir(plane.path().join(".purlis")).expect("a state folder");
+    let records: Vec<std::path::PathBuf> = [".charter", ".purlis"]
+        .iter()
+        .flat_map(|state| SKILL_STUDIO_RECORDS.map(|record| plane.path().join(state).join(record)))
+        .collect();
+
+    let denied = Denied::of(plane.path(), &machine(Os::MacOs));
+    for record in &records {
+        assert!(
+            denied.paths.iter().any(|it| it.path == *record
+                && it.class == Class::Integrity
+                && it.access == Access::Write
+                && it.reach == Reach::AndBelow),
+            "{} not held with what is below it: {:?}",
+            record.display(),
+            denied.paths
+        );
+        assert!(
+            !denied
+                .paths
+                .iter()
+                .any(|it| it.access == Access::ReadWrite && record.starts_with(&it.path)),
+            "{} is denied to reads",
+            record.display()
+        );
+    }
+
+    let mut compiled_harnesses = 0;
+    for harness in Harness::ALL {
+        if compiler(harness).is_none() {
+            continue;
+        }
+        compiled_harnesses += 1;
+        let applied = applied_for(
+            harness,
+            &policy_of(&[], false),
+            &Plane::of(None),
+            plane.path(),
+            &machine(Os::MacOs),
+        )
+        .expect("compiles");
+        match applied.form() {
+            // Claude Code: its own sandbox's write denials, and its file tools'.
+            Form::ClaudeCode(settings) => {
+                let deny_write: Vec<&str> = settings.sandbox["filesystem"]["denyWrite"]
+                    .as_array()
+                    .expect("a list")
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .collect();
+                for path in &records {
+                    let named = super::real(path).display().to_string();
+                    assert!(deny_write.contains(&named.as_str()), "{named}");
+                    assert!(
+                        settings.deny.contains(&format!("Edit(/{named})")),
+                        "{named}: {:?}",
+                        settings.deny
+                    );
+                }
+            }
+            // Codex and opencode: purlis's own wrap, whose profile a chat at the root runs in,
+            // on macOS and on Linux, whose supervisor judges each call by the same profile.
+            Form::Codex(_) | Form::Opencode(_) => {
+                for os in [Os::MacOs, Os::Linux] {
+                    let applied = applied_for(
+                        harness,
+                        &policy_of(&[], false),
+                        &Plane::of(None),
+                        plane.path(),
+                        &machine(os),
+                    )
+                    .expect("compiles");
+                    let profile = seatbelt::profile(
+                        applied.form().denied().expect("a wrap"),
+                        &seatbelt::Own::default(),
+                        plane.path(),
+                        std::path::Path::new("/private/tmp/chat"),
+                        &[4040],
+                        None,
+                    )
+                    .expect("a profile");
+                    let read = purlis_linux_sandbox::profile::Profile::parse(&profile)
+                        .expect("read whole");
+                    let done = |what, path: &std::path::Path, kind| {
+                        read.allows(&purlis_linux_sandbox::profile::Op::File { what, path, kind })
+                    };
+                    use purlis_linux_sandbox::profile::{FileOp, Kind};
+                    // The chat writes the project as it did.
+                    assert!(done(
+                        FileOp::Create,
+                        &super::real(plane.path()).join("notes.txt"),
+                        Kind::Regular
+                    ));
+                    for path in &records {
+                        let path = super::real(path);
+                        let mut spellings = vec![path.clone()];
+                        // On macOS's case-folding disk, a record not there yet is made under the
+                        // name as typed.
+                        if os == Os::MacOs {
+                            let name = path.file_name().expect("a name").to_string_lossy();
+                            spellings.push(path.with_file_name(name.to_uppercase()));
+                        }
+                        for path in &spellings {
+                            // The store as an entry: neither made, removed nor moved away…
+                            for (what, kind) in [
+                                (FileOp::Create, Kind::Directory),
+                                (FileOp::Create, Kind::Regular),
+                                (FileOp::Unlink, Kind::Directory),
+                                (FileOp::Unlink, Kind::Regular),
+                                (FileOp::WriteData, Kind::Regular),
+                            ] {
+                                assert!(
+                                    !done(what, path, kind),
+                                    "{harness:?} on {os:?}: {what:?} of {}",
+                                    path.display()
+                                );
+                            }
+                            // …and every record below it.
+                            let below = path.join("01JZ0000000000000000000000.json");
+                            for what in [FileOp::Create, FileOp::WriteData, FileOp::Unlink] {
+                                assert!(
+                                    !done(what, &below, Kind::Regular),
+                                    "{harness:?} on {os:?}: {what:?} of {}",
+                                    below.display()
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(compiled_harnesses, 3, "Claude Code, Codex and opencode");
+}
+
 /// D-T59-19: what waits to be told to a chat on its next turn (a task's report, purlis's word
 /// on a held dispatch) is left by the app and taken by purlis's hooks. **Denied for reading
 /// and writing where the harness's hooks run outside its sandbox, and left as it was where
@@ -1014,10 +1192,22 @@ fn what_waits_for_a_chat_s_next_turn_is_denied_only_where_the_hooks_run_outside_
         .iter()
         .map(|state| plane.path().join(state).join("handbacks"))
         .collect();
-    // No harness is given the denial by the classes alone: it is added per harness.
+    // Every harness is denied writing it: the app alone writes what a chat is handed. Reading
+    // it is denied per harness.
     let classes = Denied::of(plane.path(), &machine(Os::MacOs));
     for store in &stores {
-        assert!(!classes.paths.iter().any(|it| it.path == *store));
+        assert!(
+            classes
+                .paths
+                .iter()
+                .any(|it| it.path == *store && it.access == Access::Write)
+        );
+        assert!(
+            !classes
+                .paths
+                .iter()
+                .any(|it| it.path == *store && it.access == Access::ReadWrite)
+        );
     }
     let mut kinds = (0, 0);
     for harness in Harness::ALL {
@@ -1043,7 +1233,16 @@ fn what_waits_for_a_chat_s_next_turn_is_denied_only_where_the_hooks_run_outside_
             for store in &stores {
                 assert!(
                     !denies(store),
-                    "{harness:?} runs its hooks inside its sandbox, and they take from {}",
+                    "{harness:?} runs its hooks inside its sandbox, and they read from {}",
+                    store.display()
+                );
+                // Read, never written: the app takes what they read.
+                assert!(
+                    applied
+                        .denied
+                        .iter()
+                        .any(|it| it.path == *store && it.access == Access::Write),
+                    "{harness:?}: {} is not denied to writes",
                     store.display()
                 );
             }
@@ -1087,11 +1286,16 @@ fn the_messages_between_chats_wait_inside_the_store_that_denial_names() {
         "{} is under none of {held:?}",
         file.display()
     );
-    // And without that rule, as on a harness whose hooks run inside its sandbox, nothing
-    // denies it: the hook that takes the message there can still read and remove it.
+    // And without that rule, as on a harness whose hooks run inside its sandbox, it is denied
+    // to writes alone: the hook that reads the message there can still read it, and the app
+    // takes it.
     let classes = Denied::of(plane.path(), &machine(Os::MacOs));
     assert!(
-        !classes.paths.iter().any(|it| file.starts_with(&it.path)),
+        !classes.paths.iter().any(|it| {
+            it.reach == Reach::AndBelow
+                && it.access == Access::ReadWrite
+                && file.starts_with(&it.path)
+        }),
         "{}",
         file.display()
     );
@@ -1667,6 +1871,26 @@ fn a_claude_code_chat_is_sandboxed_with_no_way_out_and_no_silent_fallback() {
     assert_eq!(settings.sandbox["enabled"], true);
     assert_eq!(settings.sandbox["allowUnsandboxedCommands"], false);
     assert_eq!(settings.sandbox["failIfUnavailable"], true);
+}
+
+/// On Linux, at the full sandbox and at the floor, a Claude Code chat whose own sandbox cannot
+/// start (on a runner, where only the browser engine may make the namespaces bubblewrap needs,
+/// D-2050-25) is refused, never run without it.
+#[test]
+fn on_linux_a_claude_code_chat_whose_sandbox_cannot_start_is_refused_at_every_level() {
+    for level in [Level::Full, Level::Floor] {
+        let settings = claude::settings(&Compiled {
+            level,
+            ..compiled(Denied::default(), Os::Linux)
+        })
+        .expect("compiles");
+        assert_eq!(settings.sandbox["enabled"], true, "{level:?}");
+        assert_eq!(settings.sandbox["failIfUnavailable"], true, "{level:?}");
+        assert_eq!(
+            settings.sandbox["allowUnsandboxedCommands"], false,
+            "{level:?}"
+        );
+    }
 }
 
 #[test]
@@ -6796,4 +7020,69 @@ fn a_port_something_listens_on_is_neither_served_nor_reached_for_a_listen_grant(
     assert!(widened.listens.is_empty());
     assert!(!widened.ports.contains(&port));
     assert!(widened.listen_only.is_empty());
+}
+
+/// The state folder is held whole: its entry is never renamed, moved or removed by a chat in
+/// purlis's own wrap, so what purlis holds below it stays where it is held. Claude Code's own
+/// sandbox holds only what is below a path, so it is not handed the entry.
+#[test]
+fn the_state_folder_is_held_whole_in_purlis_s_wrap() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let state = plane.path().join(".purlis");
+    std::fs::create_dir(&state).expect("a state folder");
+    let denied = Denied::of(plane.path(), &machine(Os::MacOs));
+    let whole: Vec<&Denial> = denied
+        .paths
+        .iter()
+        .filter(|it| it.path == state && it.reach == Reach::Itself)
+        .collect();
+    assert_eq!(whole.len(), 1, "{:?}", denied.paths);
+    assert_eq!(whole[0].class, Class::Integrity);
+    assert_eq!(whole[0].access, Access::Write);
+    // The spelling not there is still not the chat's to make, as before.
+    assert!(
+        paths(&denied, Class::Integrity, Access::Write).contains(&plane.path().join(".charter"))
+    );
+    let rules = seatbelt::denial_rules(whole[0]).expect("rules");
+
+    let mut wrapped_harnesses = 0;
+    for harness in Harness::ALL {
+        if compiler(harness).is_none() {
+            continue;
+        }
+        let applied = applied_for(
+            harness,
+            &policy_of(&[], false),
+            &Plane::of(None),
+            plane.path(),
+            &machine(Os::MacOs),
+        )
+        .expect("compiles");
+        match applied.form() {
+            Form::ClaudeCode(settings) => {
+                let deny_write = settings.sandbox["filesystem"]["denyWrite"].to_string();
+                let named = super::real(&state).display().to_string();
+                assert!(
+                    !deny_write.contains(&format!("\"{named}\"")),
+                    "the whole folder is not denied: {deny_write}"
+                );
+            }
+            Form::Codex(_) | Form::Opencode(_) => {
+                wrapped_harnesses += 1;
+                let profile = seatbelt::profile(
+                    applied.form().denied().expect("a wrap"),
+                    &seatbelt::Own::default(),
+                    plane.path(),
+                    std::path::Path::new("/private/tmp/chat"),
+                    &[4040],
+                    None,
+                )
+                .expect("a profile");
+                for rule in &rules {
+                    assert!(profile.contains(rule), "{harness:?}: {rule} missing");
+                }
+            }
+        }
+    }
+    assert_eq!(wrapped_harnesses, 2);
 }

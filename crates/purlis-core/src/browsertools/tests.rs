@@ -50,6 +50,9 @@ fn every_tool_the_spec_names_is_offered_each_with_a_schema() {
             "browser_new",
             "browser_close",
             "browser_login",
+            "browser_downloads",
+            "browser_save_download",
+            "browser_upload",
         ]
     );
     for tool in TOOLS {
@@ -177,6 +180,8 @@ fn an_act_on_a_page_may_ask_for_what_changed_and_a_read_may_not() {
                 "browser_new",
                 "browser_close",
                 "browser_login",
+                // It writes a file into the chat's folder, and leaves the page as it was.
+                "browser_save_download",
             ]
             .contains(&tool.name);
         assert_eq!(offers, acts_on_a_page, "{}", tool.name);
@@ -313,4 +318,79 @@ fn a_browser_question_needs_words_and_a_browser_by_name() {
     assert!(no_name.unwrap_err().contains("b1"));
     let not_a_name = super::needs_you(&args(json!({ "question": "Solve it", "browser": 1 })));
     assert!(not_a_name.is_err());
+}
+
+#[test]
+fn an_upload_names_files_of_the_chat_s_folder_and_never_the_folder_itself() {
+    assert_eq!(
+        act(
+            "browser_upload",
+            json!({"target":"e4","files":["docs/a.pdf","b.txt"],"from":"/elsewhere"})
+        ),
+        Act::Upload {
+            target: "e4".into(),
+            files: vec!["docs/a.pdf".into(), "b.txt".into()],
+            from: None,
+        },
+        "the folder is the window's to name, never the chat's"
+    );
+    assert!(asked("browser_upload", &args(json!({"target":"e4","files":[]}))).is_err());
+}
+
+#[test]
+fn saving_a_download_names_it_and_a_path_in_the_chat_s_folder() {
+    assert_eq!(
+        act(
+            "browser_save_download",
+            json!({"download":"d2","to":"downloads/r.pdf","into":"/elsewhere"})
+        ),
+        Act::SaveDownload {
+            download: "d2".into(),
+            to: "downloads/r.pdf".into(),
+            into: None,
+        }
+    );
+    assert_eq!(act("browser_downloads", json!({})), Act::Downloads);
+}
+
+#[test]
+fn a_download_is_said_by_its_name_size_and_origin_and_never_where_it_is_held() {
+    use purlis_session_protocol::browsing::{DownloadSaid, DownloadState};
+    let browsed = Browsed {
+        settled: true,
+        downloads: vec![
+            DownloadSaid {
+                download: "d1".into(),
+                name: "report.pdf".into(),
+                origin: Some("https://files.example.com".into()),
+                bytes: 2048,
+                total: Some(2048),
+                state: DownloadState::Done,
+                file: "GUID-1".into(),
+            },
+            DownloadSaid {
+                download: "d2".into(),
+                name: "big.iso".into(),
+                origin: None,
+                bytes: 1024,
+                total: Some(4096),
+                state: DownloadState::Going,
+                file: "GUID-2".into(),
+            },
+        ],
+        ..Browsed::default()
+    };
+    let text = said("b1", &browsed);
+    assert!(
+        text.contains(
+            "Download d1: \"report.pdf\", 2.0 KB from https://files.example.com, done: \
+             browser_save_download brings it into your folder"
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains("Download d2: \"big.iso\", 1.0 KB of 4.0 KB, downloading"),
+        "{text}"
+    );
+    assert!(!text.contains("GUID"), "{text}");
 }

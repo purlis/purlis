@@ -1,9 +1,9 @@
 # Amended 2026-10-28: the operator suspends a stopped runner
 
 **Built by #2058** on spec #2041's *"a stopped field on Pool and Claim suspends and never
-destroys"*. *Decided in implementation, to be confirmed by the person* (D-2058-1 in its pull
-request). Item 1 of the amendment of 2026-10-26 (*"reads a runner's sandbox and pod, by name,
-and nothing more of them"*) is amended; everything else it says holds.
+destroys"*. *Ruled by the person 2026-10-29*, as narrowed by the admission policy below
+(D-2058-1 in its pull request). Item 1 of the amendment of 2026-10-26 (*"reads a runner's
+sandbox and pod, by name, and nothing more of them"*) is amended; everything else it says holds.
 
 1. **The operator gains `patch` on upstream's sandboxes.** Upstream v1.0.6 suspends a runner
    only through its Sandbox's `spec.operatingMode`: `Suspended` has upstream end the pod and

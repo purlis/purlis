@@ -56,3 +56,29 @@ export function f6Of(e: KeyboardEvent): { back: boolean } | undefined {
   if (e.key !== "F6" || e.ctrlKey || e.metaKey || e.altKey) return undefined;
   return { back: e.shiftKey };
 }
+
+/**
+ * **The attribute of a card over the window that F6 stops at** (#3648, spec #3647): a title-bar
+ * chip's card, which takes no keyboard as it comes, so F6 is how the keyboard reaches it.
+ */
+export const CARD_STOP = "data-f6-card";
+
+/**
+ * **Where F6 goes while a card is up** (#3648): the card is the cycle's first stop, as the title
+ * bar it hangs from comes first in reading order. From outside every region, F6 goes to it, and
+ * Shift+F6 to the last region; from the last region F6 comes round to it, and from the first
+ * Shift+F6 goes back to it; from the card F6 goes on to the first region and Shift+F6 to the
+ * last. With no card up, {@link stepped}.
+ */
+export function steppedWithCard(
+  cycle: readonly Stop[],
+  at: Stop | undefined,
+  card: "none" | "in" | "out",
+  back: boolean,
+): Stop | "card" {
+  if (card === "none") return stepped(cycle, at, back);
+  if (card === "in") return back ? cycle[cycle.length - 1] : cycle[0];
+  if (at === undefined) return back ? cycle[cycle.length - 1] : "card";
+  const ends = back ? cycle[0] : cycle[cycle.length - 1];
+  return at === ends ? "card" : stepped(cycle, at, back);
+}

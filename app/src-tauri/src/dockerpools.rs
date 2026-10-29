@@ -9,10 +9,11 @@
 //! alone (`ui::WINDOW_ONLY`): only the person adds or removes a pool, which runs a container on
 //! their machine.
 
-#[cfg(unix)]
 use purlis_core::dockerpool::{Image, Limits};
 #[cfg(unix)]
 use purlis_core::runners::{Pool, Set};
+#[cfg(unix)]
+use purlis_session_protocol::browsing::LinkFrames;
 
 #[cfg(unix)]
 use crate::runnerlinks::{Machine, ToARunner};
@@ -55,6 +56,14 @@ pub struct PoolsShown {
     /// engine is a local socket on this machine. A chat moves only to such a pool (#2048).
     #[specta(optional)]
     pub yours: Option<bool>,
+    /// The most frames a second a new pool's runner's browsers are watched at over the link, by
+    /// default (#3297).
+    #[specta(optional)]
+    pub frames: Option<u32>,
+    /// The widest frame a new pool's runner's browsers are watched at over the link, in pixels,
+    /// by default (#3297).
+    #[specta(optional)]
+    pub width: Option<u32>,
 }
 
 /// A pool as the person typed it: each limit left empty takes the default.
@@ -69,6 +78,10 @@ pub struct PoolAdding {
     /// How long its runner is left without a link before it suspends itself, spelled as
     /// `runners.json` spells it (`12h`); empty is a day (#3471).
     pub suspend_after: Option<String>,
+    /// The most frames a second its runner's browsers are watched at over the link (#3297).
+    pub frames: Option<u32>,
+    /// The widest frame its runner's browsers are watched at over the link, in pixels (#3297).
+    pub width: Option<u32>,
 }
 
 /// Where a pool's runner stands, as one link to it says.
@@ -108,6 +121,34 @@ pub struct PoolVersion {
     pub named: Option<bool>,
     /// How many chats those older runners still keep, as purlis last found them (#2865).
     pub waiting: u32,
+    /// How its runner was made to suspend itself, as its container's command says (#3717): a
+    /// runner made before its pool's `suspendAfter` keeps what it was made with. None where it
+    /// could not be read.
+    #[specta(optional)]
+    pub suspends: Option<PoolSuspends>,
+}
+
+/// **How a pool's runner was made to suspend itself** (#3717), which its row says where it is
+/// not the pool's own time.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(tag = "made", rename_all = "snake_case")]
+pub enum PoolSuspends {
+    /// It was made before purlis suspended runners (#2051), and never suspends itself.
+    Never,
+    /// It suspends itself after this long without a link from this machine, spelled as
+    /// `runners.json` spells it (`24h`, `90m`).
+    After { after: String },
+}
+
+#[cfg(unix)]
+/// `made`, as a row says it.
+pub(crate) fn suspends_shown(made: purlis_core::dockerpool::MadeSuspending) -> PoolSuspends {
+    match made {
+        purlis_core::dockerpool::MadeSuspending::Never => PoolSuspends::Never,
+        purlis_core::dockerpool::MadeSuspending::After(after) => PoolSuspends::After {
+            after: after_shown(after),
+        },
+    }
 }
 
 #[cfg(unix)]
@@ -201,6 +242,20 @@ pub fn pool_of(adding: &PoolAdding) -> Result<Pool, String> {
             .filter(|after| !after.trim().is_empty())
             .map(suspend_after_of)
             .transpose()?,
+        frames: adding.frames,
+        width: adding
+            .width
+            .map(|width| {
+                u16::try_from(width).map_err(|_| {
+                    let widest = purlis_session_protocol::browsing::LinkFrames::WIDTH;
+                    format!(
+                        "a pool's widest browser frame is {} to {} pixels",
+                        widest.start(),
+                        widest.end()
+                    )
+                })
+            })
+            .transpose()?,
     };
     Pool::new(adding.name.trim(), image, set).map_err(|why| why.to_string())
 }
@@ -223,6 +278,8 @@ pub fn pools_on(config: &std::path::Path) -> Result<PoolsShown, String> {
         defaults: shown(Limits::default()),
         suspend_after: after_shown(purlis_core::dockerpool::SUSPEND_AFTER),
         yours: Some(crate::poolprofiles::owned().is_ok()),
+        frames: Some(LinkFrames::DEFAULT.frames),
+        width: Some(u32::from(LinkFrames::DEFAULT.width)),
     })
 }
 
@@ -372,6 +429,12 @@ pub fn version_on(machine: &Machine, name: &str) -> Result<PoolVersion, String> 
         draining: u32::try_from(draining).unwrap_or(u32::MAX),
         named: crate::poolfollow::this_versions_image_named(),
         waiting: crate::poolfollow::waiting_on(&machine.config, name),
+        suspends: machine
+            .docker
+            .made_suspending(&kept.made)
+            .ok()
+            .flatten()
+            .map(suspends_shown),
     })
 }
 

@@ -323,6 +323,35 @@ impl HarnessAdapter for ClaudeCode {
         Ok(())
     }
 
+    /// Claude Code's own `permission_mode` ([`crate::dispatchmode::Reported::of_claude_code`]).
+    fn reported_mode(
+        &self,
+        permission_mode: Option<&str>,
+    ) -> Option<crate::dispatchmode::Reported> {
+        crate::dispatchmode::Reported::of_claude_code(permission_mode)
+    }
+
+    /// `--permission-mode auto` at the classifier's level (#3787): one of 2.1.312's choices for
+    /// the flag. A flag rather than the session's `defaultMode`, which Claude Code does not let
+    /// every settings source grant as `auto`. Nothing where the profile's command names a
+    /// mode of its own: that is the person's declaration, and it stands.
+    fn task_mode_words(
+        &self,
+        level: crate::dispatchmode::Level,
+        command: &[String],
+    ) -> Vec<String> {
+        use crate::sandbox::codex::{is_flag, split};
+        let names_its_own = command
+            .iter()
+            .any(|word| is_flag(word) && split(word).0 == PERMISSION_MODE_FLAG);
+        match level {
+            crate::dispatchmode::Level::Classifier if !names_its_own => {
+                words([PERMISSION_MODE_FLAG, crate::dispatchmode::CLAUDE_CODE_AUTO])
+            }
+            _ => Vec::new(),
+        }
+    }
+
     /// The person's own settings that start every chat with its prompts off, or that purlis
     /// cannot read; a command that turns them off ([`crate::dispatchunattended::bypass_in`]);
     /// and a command that starts the chat in any mode but the two that ask (#3352), as the
@@ -957,9 +986,9 @@ pub const READ_ALLOW: [&str; 1] = ["Bash(purlis persona where)"];
 /// The commit asks no approval (ADR 0067's decision 6): it is the chat's own work in its own
 /// folder on its own branch, as `git commit` in a clone is, which no rule asks about either. A
 /// chat that is not sandboxed, or in a clone, is told to use git, and nothing is committed.
-/// **Alone only**: a call that runs anything beside it, or writes a file beside it, is asked
-/// about as a whole ([`crate::dispatchguard::rider_ask`]), and an operator's own `ask` or
-/// `deny` still wins. Every other `worktree` word still asks.
+/// **Alone only**: a call that runs anything beside it, or writes a file beside it, is refused
+/// with the shape to retry ([`crate::dispatchguard::rider_refusal`], #3785), and an operator's
+/// own `ask` or `deny` still wins. Every other `worktree` word still asks.
 pub const WORKTREE_COMMIT_ALLOW: [&str; 1] = ["Bash(purlis worktree commit *)"];
 
 /// The permission rules a Claude Code chat the app starts carries for a dispatch (V98b,
@@ -988,10 +1017,13 @@ pub const DISPATCH_ALLOW: [&str; 4] = [
 /// **Each reaches only what the app's own record lets its caller reach**
 /// (`crate::dispatched::owned`, `crate::dispatchtalk::up`): `wait`, `cancel`, `tell` and
 /// `answer` name a task the chat itself dispatched, and are refused for any other chat;
-/// `list` lists those tasks; `read` reads what one of them said and ran (#1981, #2084); `note` and `ask` name nobody, and go to the one chat that
-/// dispatched the caller. None starts a chat. `--wait` is the dispatch itself, waited on: it
-/// is matched only where the flag comes first, and asked about otherwise.
-pub const DISPATCH_TASK_ALLOW: [&str; 9] = [
+/// `list` lists those tasks; `read` reads what one of them said and ran (#1981, #2084);
+/// `close` clears one that has finished, and is refused one the person typed in (#3785, ruled
+/// 2026-10-29: tidying its own tasks is the chat's own); `note` and `ask` name nobody, and go
+/// to the one chat that dispatched the caller. None starts a chat. `--wait` is the dispatch
+/// itself, waited on: it is matched only where the flag comes first, and asked about
+/// otherwise.
+pub const DISPATCH_TASK_ALLOW: [&str; 10] = [
     "Bash(purlis dispatch --wait *)",
     "Bash(purlis dispatch wait *)",
     "Bash(purlis dispatch list)",
@@ -1001,6 +1033,7 @@ pub const DISPATCH_TASK_ALLOW: [&str; 9] = [
     "Bash(purlis dispatch note *)",
     "Bash(purlis dispatch ask *)",
     "Bash(purlis dispatch answer *)",
+    "Bash(purlis dispatch close *)",
 ];
 
 /// The permission rules a Claude Code chat the app starts carries for a handoff (#1444, on

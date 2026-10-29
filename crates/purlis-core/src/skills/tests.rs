@@ -325,6 +325,7 @@ fn a_host_on(tmp: &Path) -> (PathBuf, crate::hoststart::Kit) {
         plugin: Some(plugin),
         git_hooks: None,
         skill_sets: Some(root.join("data").join(crate::hoststart::SKILL_SETS)),
+        chat_settings: None,
     };
     (plane, kit)
 }
@@ -2084,6 +2085,7 @@ fn a_chats_tab_says_what_the_repo_skills_it_was_armed_with_leave_out_and_reads_t
         plugin: None,
         git_hooks: None,
         skill_sets: None,
+        chat_settings: None,
     };
     let read =
         crate::hoststart::ChatSkills::read(true, &plane, Some(Harness::Codex), Some(&api), None);
@@ -2518,5 +2520,71 @@ fn a_harness_purlis_ships_or_one_that_takes_mcp_is_never_said_unsupported() {
     assert!(not_supported(&with_goose(true)).is_empty());
     for shipped in crate::harness_declaration::builtins() {
         assert_eq!(not_supported_on(shipped), None, "{}", shipped.name);
+    }
+}
+
+/// Spec #3679 S12: the names compiled in as purlis's own are its bundle's skills, each folder
+/// named as its skill, so a name stays reserved where no bundle is found beside the binary.
+#[test]
+fn the_shipped_names_are_the_bundles_skills() {
+    let bundle = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/plugin/skills");
+    let skills = crate::skills::read(&bundle);
+    let names: Vec<&str> = skills.iter().map(|skill| skill.name.as_str()).collect();
+    assert_eq!(names, crate::skills::SHIPPED);
+    for skill in &skills {
+        assert_eq!(
+            skill.path.parent().and_then(Path::file_name),
+            Some(std::ffi::OsStr::new(&skill.name)),
+            "{skill:?}"
+        );
+    }
+}
+
+/// #3686: Make my own copy copies a built-in skill's `SKILL.md` alone, so every built-in skill
+/// is that one file. One that ships more files makes the copy carry them first.
+#[test]
+fn each_built_in_skill_is_its_skill_md_alone() {
+    let bundle = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/plugin/skills");
+    for skill in crate::skills::read(&bundle) {
+        let folder = skill.path.parent().unwrap();
+        let held: Vec<String> = std::fs::read_dir(folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(held, ["SKILL.md"], "{}", skill.name);
+    }
+}
+
+#[test]
+fn a_built_in_skills_name_is_reserved_with_or_without_a_bundle() {
+    let bundle = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(bundle.path().join("bundled")).unwrap();
+    std::fs::write(
+        bundle.path().join("bundled/SKILL.md"),
+        "---\nname: bundled\ndescription: Comes with purlis.\n---\n",
+    )
+    .unwrap();
+    let with = Some(bundle.path());
+    for name in [
+        "secrets",
+        "browser",
+        "skill-index",
+        "purlis-secrets",
+        "purlis-skill-index",
+    ] {
+        assert!(crate::skills::name_reserved(None, name), "{name}");
+        assert!(crate::skills::name_reserved(with, name), "{name}");
+    }
+    assert!(crate::skills::name_reserved(with, "bundled"));
+    assert!(crate::skills::name_reserved(with, "purlis-bundled"));
+    assert!(!crate::skills::name_reserved(None, "bundled"));
+    for name in [
+        "deploy",
+        "purlis",
+        "purlis-deploy",
+        "my-secrets",
+        "secrets-two",
+    ] {
+        assert!(!crate::skills::name_reserved(with, name), "{name}");
     }
 }

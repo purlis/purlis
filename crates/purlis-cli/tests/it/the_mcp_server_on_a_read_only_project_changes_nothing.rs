@@ -283,6 +283,12 @@ fn arguments(tool: &str, todo: &str) -> Value {
         "change_status" => json!({ "change": "widget-v2" }),
         "dispatch" => json!({ "name": "paint", "brief": "Paint the widget" }),
         "dispatch_report" => json!({ "outcome": "done", "text": "Painted" }),
+        // Every other dispatch subcommand's tool (#3786): the app's to answer.
+        "dispatch_wait" => json!({ "chat": 9, "wait_seconds": 1 }),
+        "dispatch_tell" | "dispatch_answer" => json!({ "chat": 9, "text": "Blue" }),
+        "dispatch_cancel" | "dispatch_close" => json!({ "chat": 9 }),
+        "dispatch_note" => json!({ "text": "Half painted" }),
+        "dispatch_ask" => json!({ "question": "Which blue?", "wait_seconds": 1 }),
         "ask_operator" => json!({ "question": "Ship it?" }),
         // A browser tool (#2013) is the app's to answer, and writes nothing of the project's.
         browser if purlis_core::browsertools::is_one(browser) => json!({}),

@@ -157,7 +157,15 @@ impl Routed {
         if peer.has_ended() {
             session::Host::link_ended(&relay, peer).await;
         }
-        Ok(Answer::Done)
+        // The window is told which runner its link reached (1.48, #3417): a draining one is
+        // kept as the link's own until it ends, apart from the pool's runner now.
+        let reached = lock(&self.runner).clone();
+        Ok(match reached {
+            Some(runner) if peer.version() >= session::KNOWS_RELAYED_TO => {
+                Answer::RelayedTo { runner }
+            }
+            _ => Answer::Done,
+        })
     }
 }
 

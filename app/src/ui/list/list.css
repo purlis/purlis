@@ -20,6 +20,12 @@
    inside the list's own room, so it never touches the panel the list is joined to.
    --------------------------------------------------------------------------------------------- */
 
+/* What holds a list's keys (`useFoldKeys`, #3670) draws nothing: the list is placed as if it
+   were not there. */
+[data-scope="list"][data-part="keys"] {
+  display: contents;
+}
+
 [data-scope="list"][data-part="body"] {
   display: flex;
   flex-direction: column;
@@ -70,6 +76,114 @@
   font-weight: var(--font-weight-regular);
   text-transform: none;
   letter-spacing: normal;
+}
+
+/* A group's name with its count is laid out as a row, so the count sits at its end, apart from
+   the name, and never runs into it. */
+[data-scope="list"][data-part="header"][data-counted] {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   What folds (#3670, `Fold.tsx`): a group's name that folds its rows, and a run of rows folded
+   to one quiet line. Each is a row the keyboard reaches, with the tree's own twist
+   (`TwistMark`), which turns down while it is open. **A state never changes its size**: the
+   pointer's pill and the keyboard's ring inside it.
+   --------------------------------------------------------------------------------------------- */
+
+/* A group's name that folds: the name's look, laid out as a row, its count at its end. */
+[data-scope="list"][data-part="header"][data-fold] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  min-block-size: var(--size-chrome);
+  padding-block: var(--space-1);
+  padding-inline: var(--space-3) var(--space-4);
+  border-radius: var(--radius-control);
+  cursor: default;
+  outline: none;
+}
+
+/* A group of what needs the person (Needs you): its name in the waiting colour. Drawn on its
+   words, so a theme's colour for the name never takes the tone away. */
+[data-scope="list"][data-part="header"][data-tone="waiting"] [data-part="title"] {
+  color: var(--state-waiting);
+}
+
+/* A fold's twist turns with its own row, never with an open row or disclosure around the list.
+   (A row's words are inside its grid cell, so they are reached as its descendants.) */
+[data-fold]:not([data-expanded]) [data-scope="tree"][data-part="twist"] > svg {
+  transform: none;
+}
+
+[data-fold]:not([data-expanded]) [data-scope="tree"][data-part="twist"]:dir(rtl) > svg {
+  transform: scaleX(-1);
+}
+
+[data-fold][data-expanded] [data-scope="tree"][data-part="twist"] > svg {
+  transform: rotate(90deg);
+}
+
+[data-scope="list"][data-part="header"] [data-part="title"] {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A group's count, at the end of its name, in figures of one width. */
+[data-scope="list"][data-part="count"] {
+  flex: none;
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* **A run folded to one quiet line**, and its closing line once it is unfolded: in the quiet
+   tier, its mark leading, its twist after its words. */
+[data-scope="list"][data-part="run"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  min-block-size: var(--size-chrome);
+  padding-block: var(--space-1);
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-control);
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+  cursor: default;
+  outline: none;
+}
+
+[data-scope="list"][data-part="run"] [data-part="label"] {
+  flex: 0 1 auto;
+}
+
+/* The closing line's words wrap: it is a sentence, not a name. */
+[data-scope="list"][data-part="run"][data-end] [data-part="label"] {
+  white-space: normal;
+}
+
+/* Under the pointer, a fold's row takes the pill; a run's closing line, which holds its own
+   button, keeps the list's ground. */
+:is(
+  [data-scope="list"][data-part="header"][data-fold],
+  [data-scope="list"][data-part="run"]:not([data-end])
+)[data-hovered] {
+  background-color: var(--surface-hover);
+}
+
+:is(
+  [data-scope="list"][data-part="header"][data-fold],
+  [data-scope="list"][data-part="run"]
+)[data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -161,6 +275,73 @@
   > [data-scope="list"][data-part="root"][data-selected]:is(:dir(ltr), :dir(rtl)) {
   background-color: var(--list-selected);
   box-shadow: inset 0 0 0 var(--focus-ring-width) var(--list-selected-edge);
+}
+
+/* **A card row** (`ListCardRow`, #3669, the sidebar Skills view's variant C): a small card of a
+   side view's list, as tall as its lines whatever the list's size. Its first line (its name, its
+   tag, its actions and its ⋯), its two lines about it and its action line. On the raised ground,
+   which a theme sets (`list.root.card.fill`); under the pointer the pill, chosen the wash ringed
+   all round, and the keyboard's ring inside it, so no state changes its height. Written after the
+   sizes, so a dense list's row padding never reaches it. */
+[data-scope="list"][data-part="root"][data-variant="card"] {
+  flex-wrap: wrap;
+  row-gap: var(--space-1);
+  column-gap: var(--space-2);
+  min-block-size: 0;
+  padding-block: var(--space-3);
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-lg);
+  background-color: var(--surface-raised);
+}
+
+[data-scope="list"][data-part="root"][data-variant="card"][data-hovered]:not([data-disabled]):not(
+    [data-selected]
+  ) {
+  background-color: var(--surface-hover);
+}
+
+[data-scope="list"][data-part="root"][data-variant="card"][data-selected]:is(:dir(ltr), :dir(rtl)) {
+  background-color: var(--list-selected);
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--list-selected-edge);
+}
+
+/* Its name keeps its tag beside it, and its actions go to the line's end. */
+[data-scope="list"][data-part="root"][data-variant="card"] [data-part="label"] {
+  flex: 0 1 auto;
+}
+
+/* **Its two lines about it** (#3669): its description in the muted tier, cut cleanly after the
+   second line; a reason in its place in the waiting colour or the quiet tier. */
+[data-scope="list"][data-part="summary"] {
+  display: -webkit-box;
+  flex: 1 0 100%;
+  min-inline-size: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
+  overflow-wrap: anywhere;
+}
+
+[data-scope="list"][data-part="summary"][data-tone="warning"] {
+  color: var(--state-waiting);
+}
+
+[data-scope="list"][data-part="summary"][data-tone="quiet"] {
+  color: var(--text-quiet);
+}
+
+/* **Its action line** (#3669): its one fix, under the summary. */
+[data-scope="list"][data-part="actions"] {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  margin-block-start: var(--space-1);
 }
 
 /* **A list a field aims at** (`AimedList.tsx`, the palette's): the pointer's pill under the
@@ -270,8 +451,13 @@
 }
 
 /* A line under the row's words, inside the row: the row wraps onto it and keeps its own height
-   above it. */
-:where([data-scope="list"], [data-scope="tree"], [data-scope="table"]):has(> [data-part="below"]) {
+   above it. A list of rows that act (`List`) holds its words in a cell React Aria draws as
+   `display: contents`, so the line is the cell's child there and still the row's to lay out
+   (#3751). */
+:where([data-scope="list"], [data-scope="tree"], [data-scope="table"]):has(
+  > [data-part="below"],
+  > [role="gridcell"] > [data-part="below"]
+) {
   flex-wrap: wrap;
 }
 
@@ -281,6 +467,34 @@
   padding-block-end: var(--space-1);
   color: var(--text-quiet);
   font-size: var(--font-size-sm);
+}
+
+/* **Cut at its clamp** (`RowBelow`'s `clamp`): one line given way to an ellipsis, or two lines
+   and an ellipsis after the second, so a row grows to its lines and never cuts one mid-line. */
+:where(
+    [data-scope="list"],
+    [data-scope="tree"],
+    [data-scope="table"]
+  )[data-part="below"][data-clamp="1"] {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+:where(
+    [data-scope="list"],
+    [data-scope="tree"],
+    [data-scope="table"]
+  )[data-part="below"][data-clamp="2"] {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  /* Overflow clips at the padding box: the room under the lines is a margin, so no part of a
+     third line shows in it. */
+  padding-block-end: 0;
+  margin-block-end: var(--space-1);
 }
 
 /* An icon in a slot is one line's height. */

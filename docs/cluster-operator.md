@@ -322,6 +322,15 @@ rules:
 
 Who may create a Claim, and in which namespace, is RBAC on `claims` as usual.
 
+**A runner from a pool is had only through a Claim.** The same policy refuses an upstream
+`SandboxClaim` on one of a pool's warm pools, and an upstream `SandboxWarmPool` of one of a
+pool's templates (both named `purlis-pool-<pool>`, below), when it is made there, moved there or
+moved off one by anyone but the operator's service account: such a runner would skip the checks
+above. Upstream's own objects that are not a pool's are left to upstream. This holds as far as
+Kubernetes' usual boundary goes: whoever may act as the operator's service account (impersonate
+it, mint its tokens, or run a pod as it in the operator's namespace), or change the policy and its
+binding, passes it. Rights in the operator's namespace are the operator's rights.
+
 ## Who the runner is
 
 A desktop links to a runner over ADR 0078's encrypted link, and links only to the runner it
@@ -489,7 +498,7 @@ and memory included. Give cluster-admin and node access accordingly.
   chart in a namespace that enforces the restricted Pod Security Standard; `kubectl diff`
   showing the plain manifests would change nothing the chart made; then
   `operator/tests/on_a_kind_cluster.rs`, which checks only what the cluster shows; then the
-  desktop's side, `crates/purlis-core/tests/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs`:
+  desktop's side, `crates/purlis-core/tests/it/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs`:
   a Claim, the operator's statement checked against the Pool's key, a pairing over
   `kubectl exec` that must agree with it (and one reaching another runner, refused), then a
   chat on the runner through the link; then `helm uninstall`, which leaves the definitions and

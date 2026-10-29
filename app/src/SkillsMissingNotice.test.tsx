@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillsMissingNotice, missingSays } from "./SkillsMissingNotice";
-import { SETTINGS_ACTION, type SettingsActionAsk } from "./settings/links";
+import { AT_THE_ROOT, SKILL_STUDIO_ASKED, asPersona, type SkillStudioAsk } from "./skillStudio";
 
 afterEach(() => {
   cleanup();
@@ -32,17 +32,18 @@ describe("a chat's missing skills", () => {
       }
       throw new Error(`unexpected ${cmd}`);
     });
-    const ran: SettingsActionAsk[] = [];
-    const hear = (event: Event) => ran.push((event as CustomEvent<SettingsActionAsk>).detail);
-    window.addEventListener(SETTINGS_ACTION, hear);
+    const ran: SkillStudioAsk[] = [];
+    const hear = (event: Event) => ran.push((event as CustomEvent<SkillStudioAsk>).detail);
+    window.addEventListener(SKILL_STUDIO_ASKED, hear);
     try {
       render(<SkillsMissingNotice plane="p" session={7} />);
 
       expect(await screen.findByText(/superpowers:tdd, langfuse/)).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "Open in Skill studio" }));
-      expect(ran).toEqual([{ plane: "p", action: "skills.studio:persona/ops" }]);
+      fireEvent.click(screen.getByRole("button", { name: "Open Skill studio" }));
+      // The studio's Library on a chat as the chat's persona (#3681).
+      expect(ran).toEqual([{ plane: "p", scope: asPersona("ops"), page: "library" }]);
     } finally {
-      window.removeEventListener(SETTINGS_ACTION, hear);
+      window.removeEventListener(SKILL_STUDIO_ASKED, hear);
     }
   });
 
@@ -158,16 +159,16 @@ describe("a chat's missing skills", () => {
         };
       return null;
     });
-    const ran: SettingsActionAsk[] = [];
-    const hear = (event: Event) => ran.push((event as CustomEvent<SettingsActionAsk>).detail);
-    window.addEventListener(SETTINGS_ACTION, hear);
+    const ran: SkillStudioAsk[] = [];
+    const hear = (event: Event) => ran.push((event as CustomEvent<SkillStudioAsk>).detail);
+    window.addEventListener(SKILL_STUDIO_ASKED, hear);
     try {
       render(<SkillsMissingNotice plane="p" session={7} />);
       expect(await screen.findByText(/could not be loaded: half/)).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "Open in Skill studio" }));
-      expect(ran).toEqual([{ plane: "p", action: "skills.studio" }]);
+      fireEvent.click(screen.getByRole("button", { name: "Open Skill studio" }));
+      expect(ran).toEqual([{ plane: "p", scope: AT_THE_ROOT, page: "library" }]);
     } finally {
-      window.removeEventListener(SETTINGS_ACTION, hear);
+      window.removeEventListener(SKILL_STUDIO_ASKED, hear);
     }
   });
 });

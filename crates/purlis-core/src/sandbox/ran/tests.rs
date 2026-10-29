@@ -104,6 +104,7 @@ fn a_claude_code_line_whose_settings_file_changed_is_read_as_sandboxed() {
     };
     let start = |settings: &str| {
         crate::hoststart::settings_in_a_file(
+            Some(&root.join("data").join(crate::hoststart::CHAT_SETTINGS)),
             root,
             "01J0000000000000000000000A",
             vec!["--settings".to_owned(), settings.to_owned()],

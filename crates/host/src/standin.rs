@@ -798,6 +798,7 @@ impl crate::browsers::Screen for StandInScreen {
         call_id: &str,
         act: purlis_session_protocol::browsing::Act,
         epoch: u64,
+        _project: &std::path::Path,
     ) -> Result<purlis_session_protocol::browsing::Browsed, crate::browsers::NotActed> {
         let mut shown = self.shown();
         if shown.stopped {

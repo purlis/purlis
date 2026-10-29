@@ -47,6 +47,7 @@ import { chatNetworkTitle, chatNetworkView } from "./chatNetwork";
 import { DISPATCHES_TITLE, DISPATCHES_VIEW } from "./dispatches";
 import { BROWSERS_GRID_TITLE, BROWSERS_GRID_VIEW } from "./browsersGrid";
 import {
+  SKILL_NEEDS_IN,
   SKILL_STUDIO_IN,
   SKILL_STUDIO_SHOW,
   SKILL_STUDIO_TITLE,
@@ -54,8 +55,9 @@ import {
   asPersona,
   OPEN_SKILL_STUDIO,
   skillStudioAs,
+  skillNeedsAs,
+  skillStudioAt,
   inWorkspace,
-  skillStudioTitle,
   skillStudioView,
 } from "./skillStudio";
 import { budgetSaid, budgetShort } from "./UseSkill";
@@ -179,6 +181,9 @@ export type Said = {
   /** A line about work still under way ("Cloning 2 repo(s)…"), which the next line replaces:
    *  said, but not kept under Results. */
   progress?: boolean;
+  /** **The one workspace it is about**, where it is about a whole workspace (a workspace made):
+   *  its notice hangs from that workspace's chip in the title bar (`noticePlace.ts`, #3648). */
+  workspace?: string;
 };
 
 /** What the window says of a row's answer: nothing for a quiet success. */
@@ -2277,15 +2282,26 @@ export function catalogue(now: Now): Offer[] {
       offers.push({
         ...can(
           `${SKILL_STUDIO_IN}${workspace}`,
-          "Open in Skill studio",
+          OPEN_SKILL_STUDIO,
           {
             verb: "openView",
             view: skillStudioView(inWorkspace(workspace)),
-            title: skillStudioTitle(inWorkspace(workspace)),
+            title: SKILL_STUDIO_TITLE,
           },
           workspace,
         ),
         note: `${workspace}: every skill its chats get, and why any other is left out.`,
+      });
+    // Its Needs you (#3695): what its Skills summary's "need you" runs. Not a row of the palette
+    // or a menu, which offer the studio itself.
+    if (now.skillStudio)
+      offers.push({
+        ...can(`${SKILL_NEEDS_IN}${workspace}`, `Skills that need you in ${workspace}`, {
+          verb: "openView",
+          view: skillStudioAt(inWorkspace(workspace), "needs"),
+          title: SKILL_STUDIO_TITLE,
+        }),
+        menuOnly: true,
       });
     // Its cross-repo changes (charter#470), for the workspace in front of the operator: a view
     // tab keyed by the workspace and filed on its strip, which asks the forge when it opens and
@@ -2487,15 +2503,25 @@ export function catalogue(now: Now): Offer[] {
       offers.push({
         ...can(
           skillStudioAs(persona),
-          "Open in Skill studio",
+          OPEN_SKILL_STUDIO,
           {
             verb: "openView",
             view: skillStudioView(asPersona(persona)),
-            title: skillStudioTitle(asPersona(persona)),
+            title: SKILL_STUDIO_TITLE,
           },
           persona,
         ),
         note: `${persona}: every skill its chats get in any workspace, and why any other is left out.`,
+      });
+    // Its Needs you (#3695): what its page's "need you" row runs.
+    if (now.skillStudio)
+      offers.push({
+        ...can(skillNeedsAs(persona), `Skills that need you as ${persona}`, {
+          verb: "openView",
+          view: skillStudioAt(asPersona(persona), "needs"),
+          title: SKILL_STUDIO_TITLE,
+        }),
+        menuOnly: true,
       });
   }
 

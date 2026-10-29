@@ -44,5 +44,31 @@ D-2047-8 in the pull request). §7's table row for secrets stands, read as below
    persona, folder, harness and compiled sandbox with the tools armed), until the chat's hook
    channel forgets it or a chat is composed under its number without a sandbox. It holds no
    value, and it is no store on disk.
-7. **The desktop's record of a value it sent, `secret.forwarded` on its chain (§10), follows in
-   #3406.** Until then the runner records each run as any brokered run is recorded.
+7. **The desktop's record of a value it sent, `secret.forwarded` on its chain (§10), is built by
+   #3406.** Once the values, measured to fit the link's frame, are handed to the link, the window
+   writes `secret.forwarded` under the chat, naming the vault, the keys, the device id of the
+   runner the chat's link reached (item 9), its pool, the chat, its persona, the tool and the
+   request it answers, never a value. A reply the session host refuses after that is told only in
+   its log, so the record may over-record. No audit chain is written yet (AU-3, AU-5), so it is
+   recorded where every secret handed out is recorded until AU-5 audits them, the project's
+   trace, and kept by the 30-day sweep as they are (V71); like them, it is not tamper-evident
+   until AU-5. The runner records the run
+   as any brokered run is, saying its values came from its desktop, with the same request. The
+   request is named by a digest of the run's number, never the number itself. *Decided in
+   implementation, to be confirmed* (D-3406-1 to D-3406-3).
+8. **Every copy of a value sent for a run is wiped from memory once it is no longer needed**
+   (#3420), on the runner and on the desktop, its own brokered runs too: as the window reads it,
+   as the run reads it, every copy a run is prepared with, and the window's measure of its reply,
+   on success and on every refusal. The reply is then the session protocol's to carry; its
+   frames follow in #3764. *Decided in implementation, to be confirmed* (D-3420-1).
+9. **A runner chat is judged by the runner its link reached** (#3417, session protocol 1.48). The
+   desktop's host answers a window's `relay_to` with the runner it resolved the name to, as
+   `<pool>/<runner>`, and the window keeps that name with the link, apart from the pool's name it
+   routes chats by. A chat's tool values, the pool read again after Allow, its browser logins'
+   opt-ins and `secret.forwarded`'s device id are bound to that runner as this machine keeps it:
+   for a chat that stayed on a draining runner after its pool moved on (amendment of
+   2026-10-21), the draining runner, never the pool's runner now. A host before 1.48 names no
+   runner: then a chat is judged by the pool's runner only while none of the pool's runners
+   drains, and with one draining it is sent no value. A move and a new chat go by the pool's own
+   name, which reaches no draining runner. *Decided in implementation, to be confirmed*
+   (D-3417-1, D-3417-2).

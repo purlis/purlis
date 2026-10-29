@@ -619,6 +619,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_new",
     "skill_save",
     "skill_rename",
+    "skill_copy",
     "skill_move",
     "skill_delete",
     // A skill delete a crash or a quit cut short, finished in one commit or put back as the
@@ -712,6 +713,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's own window asks it.
     "devices",
     "device_runner",
+    "devices_disk",
     // The projects a runner would not hold again (#2846): what this window was refused.
     "projects_not_held",
     // Where a workspace's chats run on this machine (#2046): a pool's runner gets the

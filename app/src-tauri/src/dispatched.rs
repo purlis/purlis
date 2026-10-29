@@ -436,6 +436,36 @@ pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
             held.tasks().ledger().handed_from_person(asker, numbers);
             task(Answered::Noted)
         }
+        // The reports this chat's turn read, in its own folder or its place's, and no other:
+        // taken off disk here, where the folder is the app's to write (#3718's first slice).
+        What::TookHandbacks { folder, names } => {
+            let place = held
+                .chats()
+                .chat_at(asker)
+                .and_then(|at| at.cwd)
+                .map(
+                    |cwd| match purlis_core::active::workspace_of_tree(held.root(), &cwd) {
+                        Some(ws) => purlis_core::active::Place::Workspace(ws),
+                        None => purlis_core::active::Place::PlaneRoot,
+                    },
+                );
+            let its_own = [
+                purlis_core::handback::folder_of(purlis_core::handback::For::Chat(asker)),
+                place.as_ref().and_then(|place| {
+                    purlis_core::handback::folder_of(purlis_core::handback::For::Place(place))
+                }),
+            ];
+            if !its_own.iter().flatten().any(|own| own == folder) {
+                return no("those reports are not this chat's to take".to_owned());
+            }
+            task(Answered::Took {
+                taken: purlis_core::handback::took_waiting(held.root(), folder, names),
+            })
+        }
+        // The messages waiting for this chat that its turn read, and no other chat's.
+        What::TookMessages { names } => task(Answered::TookMessages {
+            taken: purlis_core::dispatchtalk::took(held.root(), asker, names),
+        }),
     }
 }
 
@@ -1172,6 +1202,11 @@ fn cancel(held: &Held, asker: u32, of: u32) -> Result<Answer, String> {
                 None => dispatched::being_stopped(&name, of),
             });
         }
+        // The person has typed in it: it is theirs (#3785, ruled 2026-10-29), as a close is
+        // refused for it.
+        if stepped_in(held, of) || held.tasks().ledger().keyed(of) {
+            return Err(dispatched::the_person_typed_in(&name, of, "cancel"));
+        }
         let began = held.tasks().ledger().cancel(of, &name, &from)?;
         if began {
             crate::stopping::cancel(held, of, &deciding);
@@ -1681,10 +1716,7 @@ fn close_refused(held: &Held, of: u32, from: &HandedFrom, name: &str) -> Result<
         ));
     }
     if stepped_in(held, of) || held.tasks().ledger().keyed(of) {
-        return Err(format!(
-            "the person has typed in '{name}' (chat {of}), so it is theirs to close, from its \
-             tab."
-        ));
+        return Err(dispatched::the_person_typed_in(name, of, "close"));
     }
     if held.chats().looks_at(of) {
         return Err(format!(

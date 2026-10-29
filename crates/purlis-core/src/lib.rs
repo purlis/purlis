@@ -53,6 +53,7 @@ pub mod dispatched;
 pub mod dispatchgrant;
 pub mod dispatchguard;
 pub mod dispatchlimits;
+pub mod dispatchmode;
 pub mod dispatchnever;
 pub mod dispatchplace;
 pub mod dispatchprofiles;
@@ -69,6 +70,7 @@ pub mod doctor;
 pub mod doing;
 /// The terminal engine, from the crate that holds it without the rest of the core (#1995).
 pub use purlis_terminal::engine;
+pub mod browserfiles;
 pub mod browserlimits;
 #[cfg(unix)]
 pub mod browserlogins;
@@ -211,6 +213,7 @@ pub mod runnerimage;
 pub mod runnerlink;
 #[cfg(unix)]
 pub mod runners;
+pub mod runnertaint;
 pub mod runnerwrite;
 pub mod safesvg;
 pub mod sandbox;

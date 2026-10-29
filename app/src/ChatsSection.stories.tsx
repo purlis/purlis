@@ -150,16 +150,12 @@ function HandInItsPanel() {
 /**
  * **The rolled-up hand** (#3523): beside the row of a chat whose task below needs the person,
  * the button family's quiet icon button, its hand in the needs-you colour, named by where it
- * goes, as its tooltip says. It is out of the arrows' way (`tabIndex` -1). The picture is the two
- * rows at rest.
+ * goes, as its tooltip says. It is out of the arrows' way (`tabIndex` -1), and the pointer's
+ * alone (`aria-hidden`, #3658): the tree owns only its rows, and the row says which chat below
+ * needs you. The picture is the two rows at rest.
  */
 export const RolledUpHand: Story = {
   render: () => <HandInItsPanel />,
-  // The hand stands in the row's `li`, so the tree owns a button that is not a treeitem: a
-  // structure older than the family's button, which this story is the first to draw (#3658).
-  parameters: {
-    a11y: { options: { rules: { "aria-required-children": { enabled: false } } } },
-  },
   play: async ({ canvasElement }) => {
     const hand = canvasElement.querySelector<HTMLElement>("button.rolled-up");
     await expect(hand).not.toBeNull();
@@ -167,6 +163,7 @@ export const RolledUpHand: Story = {
     await expect(button).toHaveAttribute("data-scope", "button");
     await expect(button).toHaveAttribute("data-variant", "quiet");
     await expect(button).toHaveAttribute("tabindex", "-1");
+    await expect(button.closest('[aria-hidden="true"]')).not.toBeNull();
     await expect(button.getAttribute("aria-label")).toMatch(/^Go to live check of staging/);
     // A target of at least 24px, as the family's sm is (WCAG 2.5.8).
     await expect(button.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);

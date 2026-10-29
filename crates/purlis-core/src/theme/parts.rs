@@ -714,6 +714,8 @@ const CONTROL_GROUNDS: &[&str] = &[
     "control.aimed",
     "danger.surface",
     "danger.wash",
+    // An attention Notice's ground, under its ways out (#3678).
+    "attention.surface",
     "layer.project",
     "layer.workspace",
     "layer.chat",
@@ -740,6 +742,31 @@ const MARKED: &[(&str, MarkFills)] = &[("panel-separator", separator::separator_
 
 /// A family's parts' fills by default, by part and the states that hold.
 type MarkFills = fn(usize, &[State]) -> &'static str;
+
+/// **A family whose fill is read on its track** (#3674): a meter's bar. What its fill part draws
+/// is a mark on its track part (WCAG 1.4.11), held at 3:1 there on every ground the family
+/// stands on, in each of its variants; a theme whose fill would be lost on its track draws the
+/// variant's default fill and track back.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Tracked {
+    /// The part the fill is drawn on: the track.
+    pub(super) track: usize,
+    /// The part that draws the value: the fill.
+    pub(super) fill: usize,
+    /// The fill's colour by default, in a variant.
+    pub(super) fill_of: fn(&str) -> &'static str,
+}
+
+/// The families whose fill is read on its track ([`Tracked`]).
+const TRACKED: &[(&str, Tracked)] = &[("meter", meter::TRACKED)];
+
+/// How `family`'s fill stands on its track, when it has one.
+fn tracked(family: &Family) -> Option<Tracked> {
+    TRACKED
+        .iter()
+        .find(|(name, _)| *name == family.name)
+        .map(|(_, tracked)| *tracked)
+}
 
 /// **The attributes a family's root is keyed on in a state, where they are not React Aria's**
 /// (#3143): the panel library marks its handles itself.
@@ -2026,7 +2053,7 @@ fn drawn(rules: &[Rule], family: &Family, variant: &str, states: &[State]) -> Dr
                     .unwrap_or(fill)
             })
             .collect(),
-        marks: marked(family).map_or_else(Vec::new, |by_default| {
+        marks: if let Some(by_default) = marked(family) {
             (0..family.parts.len())
                 .map(|part| {
                     if part == 0 {
@@ -2036,7 +2063,25 @@ fn drawn(rules: &[Rule], family: &Family, variant: &str, states: &[State]) -> Dr
                         .unwrap_or_else(|| by_default(part, states))
                 })
                 .collect()
-        }),
+        } else if let Some(track) = tracked(family) {
+            // A meter's fill and its track, each as the theme sets it or by default (#3674).
+            (0..family.parts.len())
+                .map(|part| {
+                    if part == 0 {
+                        return fill;
+                    }
+                    part_fill(rules, family, part, variant, states).unwrap_or_else(|| {
+                        if part == track.fill {
+                            (track.fill_of)(variant)
+                        } else {
+                            family.own_fill(part).unwrap_or(TRANSPARENT)
+                        }
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
     }
 }
 
@@ -2119,7 +2164,12 @@ fn lowest(theme: &ResolvedTheme, on: &[String], fill: &str, front: &str) -> Opti
 /// **The parts whose words are a mark, not words** (#3099): a tab's ×, and the title bar's ⌄
 /// and pin, each a glyph to be told apart, held at 3:1 (WCAG 1.4.11) in the faint tier
 /// ([`super::check::FAINT`]), as an icon and a select's chevron are.
-const MARK_WORDS: &[(&str, &str)] = &[("tabs", "closer"), ("titlebar", "all"), ("titlebar", "pin")];
+const MARK_WORDS: &[(&str, &str)] = &[
+    ("tabs", "closer"),
+    ("titlebar", "all"),
+    ("titlebar", "pin"),
+    ("titlebar", "dot"),
+];
 
 /// Whether `part` of `family` draws a mark rather than words: an icon, the chevron of a select
 /// or a combobox, or one of [`MARK_WORDS`].
@@ -2188,6 +2238,28 @@ fn faint_mark(
         }
     }
     None
+}
+
+/// **Whether a tracked family's fill is lost on its track** (#3674): the fill, a mark, below 3:1
+/// on the track as it stands on each of the family's grounds (WCAG 1.4.11).
+fn lost_on_track(
+    theme: &ResolvedTheme,
+    on: &[String],
+    family: &Family,
+    track: Tracked,
+    look: &Drawn,
+) -> Option<(String, Option<f64>)> {
+    let floor = theme.least.floor(3.0);
+    let ratio = lowest(theme, on, look.marks[track.track], look.marks[track.fill])?;
+    (ratio < floor).then(|| {
+        (
+            format!(
+                "the {}'s mark contrasts {floor}:1 with its {}",
+                family.parts[track.fill].name, family.parts[track.track].name
+            ),
+            Some(ratio),
+        )
+    })
 }
 
 /// The value `rules` give `property` of `family`'s root in `variant` at rest, if any sets it:
@@ -2742,6 +2814,11 @@ pub(super) const HOLDS_NO_CONSENT: &[(&str, &str)] = &[
         "option-card",
         "a choice holds its title, its detail and its check, never an answer",
     ),
+    (
+        "list",
+        "a card row holds Use and its fix, plain buttons, never an Allow or a danger answer \
+         (#3669)",
+    ),
 ];
 
 /// The families drawn on `surface` whose grounds name its `default` fill but not `set`: what a
@@ -2959,7 +3036,12 @@ impl Held<'_> {
                 faint_mark(theme, self.rules, self.family, variant, states, &look)
             } else {
                 let on = grounds(theme, self.family);
-                unreadable(theme, &on, self.rules, self.family, variant, states, &look)
+                unreadable(theme, &on, self.rules, self.family, variant, states, &look).or_else(
+                    || {
+                        tracked(self.family)
+                            .and_then(|track| lost_on_track(theme, &on, self.family, track, &look))
+                    },
+                )
             };
             if let Some((floor, ratio)) = broken {
                 self.fall(variant, states, floor, ratio);
@@ -3077,8 +3159,15 @@ fn fallback(family: &'static Family, variant: &'static str, state: Option<State>
         });
     }
     for part in 1..family.parts.len() {
-        // A part of a family drawn in marks draws its own fill back, for the state (#3143).
-        let by_state = marked(family).map(|by_default| by_default(part, state.as_slice()));
+        // A part of a family drawn in marks draws its own fill back, for the state (#3143), and a
+        // meter's fill its variant's (#3674).
+        let by_state = marked(family)
+            .map(|by_default| by_default(part, state.as_slice()))
+            .or_else(|| {
+                tracked(family)
+                    .filter(|track| track.fill == part)
+                    .map(|track| (track.fill_of)(variant.unwrap_or("")))
+            });
         if let Some(fill) = family.own_fill(part).or(by_state) {
             rules.push(Rule {
                 family,

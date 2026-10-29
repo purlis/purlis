@@ -13,6 +13,9 @@ import {
   NOT_KNOWN_TO_BE_YOURS,
   arranged,
   contactSaid,
+  diskSaid,
+  diskTrouble,
+  sizeSaid,
   healthSaid,
   hoursSaid,
   moneyOf,
@@ -86,6 +89,7 @@ const shownWith = (placement: Partial<DevicesShown["placement"]>): DevicesShown 
   },
   pools: [],
   owned: true,
+  projects: 1,
 });
 
 describe("arranged", () => {
@@ -375,5 +379,54 @@ describe("moneyOf", () => {
     expect(moneyOf(5400, { amount: "15", currency: "JPY" })).toBe("23 JPY");
     expect(moneyOf(3600, { amount: "1.2345", currency: "KWD" })).toBe("1.235 KWD");
     expect(moneyOf(1800, { amount: "0.01", currency: "GBP" })).toBe("0.01 GBP");
+  });
+});
+
+describe("sizeSaid", () => {
+  it("says a size in Docker's decimal units, to the tenth past a kilobyte", () => {
+    expect(sizeSaid(0)).toBe("0 B");
+    expect(sizeSaid(4)).toBe("4 kB");
+    expect(sizeSaid(999)).toBe("999 kB");
+    expect(sizeSaid(1_000)).toBe("1.0 MB");
+    expect(sizeSaid(1_750_000)).toBe("1.8 GB");
+    expect(sizeSaid(999_960)).toBe("1.0 GB");
+    expect(sizeSaid(4_294_967_295)).toBe("4.3 TB");
+  });
+});
+
+describe("diskSaid", () => {
+  const read = {
+    state: "read" as const,
+    pools: [
+      { pool: "builds", kilobytes: 1_750_000, not_listed: 0 },
+      { pool: "qa", kilobytes: 2_000, not_listed: 1 },
+    ],
+  };
+
+  it("says the disk a pool's runners hold, and those whose home Docker did not list apart", () => {
+    expect(diskSaid(read, "builds")).toBe("1.8 GB");
+    expect(diskSaid(read, "qa")).toBe("2.0 MB, 1 not listed");
+  });
+
+  it("says it is reading until Docker answers, and not read where it could not", () => {
+    expect(diskSaid("reading", "builds")).toBe("reading…");
+    expect(diskSaid({ state: "not_read", why: "no daemon" }, "builds")).toBe("not read");
+    expect(diskSaid({ state: "unanswered" }, "builds")).toBe("not read");
+    expect(diskSaid({ failed: "No config home." }, "builds")).toBe("not read");
+    // A pool added since the disk was read is not guessed at.
+    expect(diskSaid(read, "new")).toBe("not read");
+  });
+
+  it("says why it is not read, Docker's words apart from purlis's", () => {
+    expect(diskTrouble(read)).toBeUndefined();
+    expect(diskTrouble("reading")).toBeUndefined();
+    expect(diskTrouble({ state: "not_read", why: "no daemon" })).toEqual({
+      line: "purlis could not read the disk the runners hold.",
+      said: { by: "Docker said", text: "no daemon" },
+    });
+    expect(diskTrouble({ failed: "No config home." })).toEqual({
+      line: "purlis could not read the disk the runners hold: No config home.",
+    });
+    expect(diskTrouble({ state: "unanswered" })?.line).toMatch(/not read in time/);
   });
 });

@@ -18,10 +18,13 @@
 //! - **that tool is the persona's, declared and allowed on this machine, asked for with exactly
 //!   its vault and hand-over**, and the vault is one the persona may use here, as for a chat of
 //!   this machine;
-//! - **the runner is shown to be the person's own** (`purlis_core::poollogins::Bound::read`, the
-//!   one check browser logins use, D-2050-4): until a pool can be marked owned (#2561), a Docker
-//!   pool whose engine is a local socket on this machine. A runner not shown to be owned is never
-//!   sent a value, and neither is a hosted one.
+//! - **the runner is shown to be the person's own**
+//!   (`purlis_core::poollogins::Bound::over_the_link`, the one check browser logins use,
+//!   D-2050-4): until a pool can be marked owned (#2561), a Docker pool whose engine is a local
+//!   socket on this machine. A runner not shown to be owned is never sent a value, and neither is
+//!   a hosted one. The runner is the one the chat's link reached, as the desktop's host said it
+//!   (1.48, #3417): a draining one for a chat that stayed on it, judged by its pool and that
+//!   runner as they are kept.
 //!
 //! Then **the person is asked about this run** ([`PoolTools`]), as one Ask in the Inbox, and the
 //! command waits for the answer at most [`purlis_core::hookwire::relay::A_HANDED_LINE_WAITS_AT_MOST`].
@@ -42,8 +45,8 @@ use std::time::{Duration, Instant};
 use purlis_core::hookwire::relay::{A_HANDED_LINE_WAITS_AT_MOST, waits_at_most_said};
 use purlis_core::poollogins::Bound;
 use purlis_core::sandbox::tools::{self, Tool};
-use purlis_core::secrets::brokered::{self, Frame, Handed};
-use purlis_core::secrets::{Ctx, Env};
+use purlis_core::secrets::brokered::{self, Forwarded, Frame, Handed, Sent};
+use purlis_core::secrets::{Ctx, Env, Zeroizing};
 
 /// How often a command that waits on the person looks at its asker.
 const LOOKED_AT_EVERY: Duration = Duration::from_millis(200);
@@ -84,8 +87,8 @@ type Asks = HashMap<(u32, u32), (PoolToolWaits, mpsc::Sender<Answered>)>;
 /// The persona's tools as the project declares them, and as this machine allowed them.
 pub type ToolsOf<'a> = &'a dyn Fn(&Path, &str) -> (Vec<Tool>, Vec<Tool>);
 
-/// The value of each of a tool's keys, from its vault here.
-pub type Reads<'a> = &'a dyn Fn(&Tool) -> Result<Vec<(String, String)>, String>;
+/// The value of each of a tool's keys, from its vault here, each wiped as it is dropped (#3420).
+pub type Reads<'a> = &'a dyn Fn(&Tool) -> Result<Vec<(String, Zeroizing<String>)>, String>;
 
 #[derive(Default)]
 pub struct PoolTools {
@@ -217,8 +220,8 @@ pub struct Gate<'a> {
     pub tools: ToolsOf<'a>,
     /// Whether the persona may use the vault here (`brokered::authorise`).
     pub authorised: &'a dyn Fn(&str, &str) -> Result<(), String>,
-    /// The pool as it is now, where its runner is shown to be the person's own
-    /// (`Bound::read`).
+    /// The pool as it is now, with the runner the chat's link reached, where that runner is shown
+    /// to be the person's own (`Bound::over_the_link`).
     pub owned: &'a dyn Fn(&Path, &str) -> Result<Bound, String>,
 }
 
@@ -332,6 +335,14 @@ pub struct Waiting<'a> {
     pub now: u64,
 }
 
+/// **What the person allowed for one run**: its values, and what passed the gate, which this
+/// desktop's record of the values it sent names ([`sent`]).
+#[derive(Debug)]
+pub struct Approved {
+    pub handed: Handed,
+    pub checked: Checked,
+}
+
 /// **Asks the person about one run that passed the gate, and waits for the answer** (module
 /// docs): its values on Allow, read once the pool, as `gate` reads it again, is still as the Ask
 /// showed it; or what the asker is told. The asker is told on `writer` while the person is asked.
@@ -340,7 +351,7 @@ pub fn answered(
     checked: Checked,
     waiting: &Waiting<'_>,
     writer: &mut dyn Write,
-) -> Result<Handed, String> {
+) -> Result<Approved, String> {
     let ask = gate.ask;
     let (answered, run) = waiting.tools.ask(PoolToolWaits {
         session: ask.chat,
@@ -397,12 +408,37 @@ pub fn answered(
         return Err(changed_said(&checked.tool.name, gate.pool));
     }
     let values = (waiting.read)(&checked.tool)?;
-    Ok(Handed::of(
-        ask.chat,
-        &checked.tool.name,
-        &checked.run,
-        values,
-    ))
+    Ok(Approved {
+        handed: Handed::of(ask.chat, &checked.tool.name, &checked.run, values),
+        checked,
+    })
+}
+
+/// **Sends the values the person allowed through `hand`, and records on this desktop, in
+/// project `root`, that they were sent** (#3406, ADR 0078 §10): `secret.forwarded`, naming the
+/// vault, the keys, the runner's device id, the pool, the chat, its persona, the tool and the
+/// request, and never a value. Written once `hand` has handed them to the link, measured to fit
+/// a frame ([`hand_on_the_link`]), so a run whose values were not handed on is never recorded as
+/// sent; a reply the session host refuses after that is told only in its log, so it may
+/// over-record (D-3406-2).
+pub fn sent(
+    root: &Path,
+    approved: Approved,
+    hand: impl FnOnce(Handed) -> Result<(), ()>,
+) -> Result<(), ()> {
+    let Approved { handed, checked } = approved;
+    let forwarded = Forwarded::of(&handed);
+    hand(handed)?;
+    forwarded.record(
+        root,
+        &Sent {
+            persona: &checked.persona,
+            vault: &checked.tool.vault,
+            pool: &checked.bound.pool,
+            runner: &checked.bound.runner,
+        },
+    );
+    Ok(())
 }
 
 /// **Runner chat `ask.chat`'s `secret exec`, heard over pool `pool`'s link, in project `held`**
@@ -424,6 +460,9 @@ pub fn run_on_its_runner(
     let authorised = |persona: &str, vault: &str| brokered::authorise(&ctx, Some(persona), vault);
     let read = |tool: &Tool| read(&ctx, tool);
     let moved = || held.chats().asks_may_have_moved();
+    // The runner this chat's link reached, as the desktop's host said it (#3417).
+    let reached = crate::hooks::reached_over_the_link();
+    let owned = |config: &Path, pool: &str| Bound::over_the_link(config, pool, reached.as_deref());
     let gate = Gate {
         pool,
         ask: &ask,
@@ -435,7 +474,7 @@ pub fn run_on_its_runner(
         pools_in: held.chats().pools_in(),
         tools: &tools::declared_and_allowed_here,
         authorised: &authorised,
-        owned: &Bound::read,
+        owned: &owned,
     };
     let decided = checked(&gate).and_then(|checked| {
         tracing::info!(
@@ -458,15 +497,15 @@ pub fn run_on_its_runner(
         )
     });
     match decided {
-        Ok(handed) => match purlis_core::hookwire::relay::hand_values(handed) {
+        Ok(approved) => match sent(root, approved, hand_on_the_link) {
             Ok(()) => tracing::info!(
                 "purlis: chat {session} on pool {pool} ran {} with its values sent from this \
                  desktop",
                 ask.runs_as.as_deref().unwrap_or_default()
             ),
-            Err(_) => brokered::refused(
+            Err(()) => brokered::refused(
                 writer,
-                "this command did not come from a runner purlis can send a value to, so \
+                "purlis could not send this run its values over the link to the runner, so \
                  nothing ran"
                     .to_owned(),
             ),
@@ -475,6 +514,23 @@ pub fn run_on_its_runner(
             tracing::info!("purlis: chat {session} on pool {pool} was sent no vault value");
             brokered::refused(writer, why);
         }
+    }
+}
+
+/// **Hands `handed` to the link it is replied on** (`purlis_core::hookwire::relay::hand_values`),
+/// once it is measured to fit a frame of it (`hostedsessions::fits_a_reply`): one that does not
+/// is never handed on, where the link would carry a refusal in its place. Whatever is not handed
+/// on is wiped as it goes (#3420).
+fn hand_on_the_link(handed: Handed) -> Result<(), ()> {
+    let replied = purlis_core::hookwire::relay::Replied::Handed(handed);
+    if !crate::hostedsessions::fits_a_reply(&replied) {
+        return Err(());
+    }
+    match replied {
+        purlis_core::hookwire::relay::Replied::Handed(handed) => {
+            purlis_core::hookwire::relay::hand_values(handed).map_err(drop)
+        }
+        _ => Err(()),
     }
 }
 
@@ -492,16 +548,18 @@ fn watch_the_asker(mut reader: Box<dyn std::io::BufRead + Send>, gone: Arc<Atomi
     }
 }
 
-/// The value of each of `tool`'s keys, read from its vault here.
-fn read(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, String)>, String> {
+/// The value of each of `tool`'s keys, read from its vault here: each the one copy, wiped as
+/// it is dropped, a refusal part way through too (#3420).
+fn read(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>, String> {
     let vault =
         purlis_core::secrets::cmd::provider(ctx, &tool.vault).map_err(|e| e.message.to_string())?;
-    let mut values: Vec<(String, String)> = Vec::new();
+    let mut values: Vec<(String, Zeroizing<String>)> = Vec::new();
     for value in &tool.values {
         if values.iter().any(|(key, _)| *key == value.key) {
             continue;
         }
         let read = purlis_core::secrets::cmd::get_value(ctx, &vault, &value.key)
+            .map(Zeroizing::new)
             .map_err(|e| e.message.to_string())?;
         values.push((value.key.clone(), read));
     }

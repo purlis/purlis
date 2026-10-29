@@ -1695,6 +1695,15 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             crate::hookwire::spool::dir_for(&app.join("hooks.sock")),
             Access::ReadWrite,
         );
+        // Every report a chat is handed (#1436): written by the app alone, and read by the
+        // hook of the chat it waits for, which may run inside the sandbox (Codex, opencode), so
+        // read, never written. Claude Code's hooks run outside it, and its chats are kept from
+        // reading it too (`Denied::and_what_waits_for_a_chat`).
+        deny(
+            Class::Integrity,
+            root.join(state).join(crate::handback::DIR_NAME),
+            Access::Write,
+        );
         // Every dispatch's record, neither read nor written (#1452, D-1452-11): a brief or a
         // report written for one persona is not for a chat running as another. A chat gets
         // its own dispatch's report on the delivery path and its own list from the app's
@@ -1774,6 +1783,50 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             deny(Class::Integrity, folder, Access::Write);
         }
     }
+    // …and the state folder that is there is held whole: the entry itself is never renamed,
+    // moved or removed, so what purlis holds below it stays where purlis holds it. What is below
+    // it is held as the rows above say.
+    let held_whole: Vec<Denial> = crate::names::STATE_DIR
+        .spellings()
+        .map(|state| root.join(state))
+        .filter(|folder| std::fs::symlink_metadata(folder).is_ok_and(|meta| meta.is_dir()))
+        .map(|folder| Denial {
+            class: Class::Integrity,
+            path: folder,
+            access: Access::Write,
+            named: None,
+            reach: Reach::Itself,
+            any_case: true,
+        })
+        .collect();
+    // The Skill studio's records (SK-9, SK-16, SK-58, SK-59): which levels a running chat could
+    // have made, the drafts, the tries, the grades and the opt-in to grade after each edit, each
+    // written by the app or the session host alone. Read, never written. Under every spelling of
+    // the state folder and where `$PURLIS_HOME` puts it, and, on macOS's case-folding disk, under
+    // every spelling of each record's name: one not there yet is made under the name as typed.
+    let mut states: Vec<PathBuf> = crate::names::STATE_DIR
+        .spellings()
+        .map(|state| root.join(state))
+        .collect();
+    if !states.contains(&ctx.state) {
+        states.push(ctx.state.clone());
+    }
+    let studio_held: Vec<Denial> = states
+        .iter()
+        .flat_map(|state| {
+            crate::skills::KEPT_IN_STATE
+                .iter()
+                .map(move |kept| state.join(kept))
+        })
+        .map(|path| Denial {
+            class: Class::Integrity,
+            path,
+            access: Access::Write,
+            named: None,
+            reach: Reach::AndBelow,
+            any_case: machine.os == Os::MacOs,
+        })
+        .collect();
 
     // 3. Human powers: the approvals a person gave on this machine.
     let config_root = crate::machine::rooted(
@@ -1921,6 +1974,8 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             unresolved.get_or_insert(why);
         }
     }
+    paths.extend(held_whole);
+    paths.extend(studio_held);
     // A list that is not whole is never held by the store alone.
     keyring |= unresolved.is_some();
     KeptList {

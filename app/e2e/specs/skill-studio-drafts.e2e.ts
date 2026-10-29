@@ -12,6 +12,7 @@ import {
   runFromThePalette,
   tabNames,
 } from "../reach.js";
+import { studioPage } from "../studio.js";
 import { projectInFront, runningIn } from "../running.js";
 
 /**
@@ -107,6 +108,8 @@ describe("draft skills in the Skill studio", function () {
 
   it("lists a chat's drafts, rejects one, tries and accepts the other", async () => {
     await runFromThePalette("Open Skill studio", "skills.studio");
+    // Drafts is in the studio's navigation while a chat's draft waits (#3681).
+    await studioPage("Drafts");
 
     const kept = await $(`[data-testid="draft-${ACCEPTED}"]`);
     await kept.waitForExist({ timeout: 20_000 });
@@ -139,6 +142,7 @@ describe("draft skills in the Skill studio", function () {
     // The scratch chat's tab was in front: the studio is brought back.
     await focusWorkspace("alpha");
     await runFromThePalette("Open Skill studio", "skills.studio");
+    await studioPage("Drafts");
 
     await (await $(`aria/Accept ${ACCEPTED}`)).click();
     await $(`[data-testid="skill-${ACCEPTED}"]`).waitForExist({ timeout: 20_000 });

@@ -587,9 +587,9 @@ type Document = {
   status?: StatusBarPrefs;
   /** The project rail hiding itself (`railMode.ts`, #2915), while it does. */
   rail?: "auto";
-  /** The Skills view narrowed to the chat in front, and its folded groups (`skillsViewPrefs.ts`,
-   *  #3308, #3281), while either is set. */
-  skills?: { onlyThisChat?: true; folded?: GroupId[] };
+  /** The Skills view's folded groups (`skillsViewPrefs.ts`, #3281, #3693), while they are not
+   *  the default. */
+  skills?: { folded?: GroupId[] };
 };
 
 /** One project's entry: its own arrangement, once it has one, and what its views keep

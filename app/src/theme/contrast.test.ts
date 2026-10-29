@@ -103,6 +103,10 @@ const READ_BY_HAND: readonly string[] = [
   ".chats-section .chat-persona > .shown-state .shape | background-color: var(--chat-badge-ground)",
   '[data-scope="panel-section"][data-part="top"] | background-color: var(--panel-fill)',
   '[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="header"] | background-color: var(--panel-fill)',
+  // A view frame's page header (#3666), held over the item's body on the panel's fill.
+  '[data-scope="view-frame"][data-part="header"] | background-color: var(--panel-fill)',
+  // A review page's bar (#3672), held at the foot of the page on the panel's fill.
+  '[data-scope="review-page"][data-part="bar"] | background-color: var(--panel-fill)',
 ];
 
 /** The parts of a selector that say a state, not what is drawn: the pointer on it, the

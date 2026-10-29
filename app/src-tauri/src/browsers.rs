@@ -262,7 +262,7 @@ mod hosted {
     use std::time::Duration;
 
     use purlis_core::eventlog::browsing::{Closer, Driver as Drives, Said, Typist};
-    use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, Driver};
+    use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, Driver, LinkFrames};
     use purlis_session_protocol::session::{
         self, Answer, Command, ProgramKind, StartProgram, ViewKind, ViewRole,
     };
@@ -366,7 +366,15 @@ mod hosted {
             login: purlis_session_protocol::browsing::LogIn,
         ) -> Result<Browsed, crate::chatbrowsers::Refused> {
             use crate::chatbrowsers::Refused;
+            // No login is filled on a runner a chat ran on without the sandbox (D-2050-27).
+            if let Some(why) = self.pool_of(program).and_then(|pool| self.untrusted(&pool)) {
+                return Err(Refused::Said(why));
+            }
             let link = self.link_for(program).map_err(Refused::Said)?;
+            // Again once its link is had, as a browser's start is checked (#3702).
+            if let Some(why) = self.pool_of(program).and_then(|pool| self.untrusted(&pool)) {
+                return Err(Refused::Said(why));
+            }
             let command = Command::LogIn {
                 program: program.to_owned(),
                 login,
@@ -483,6 +491,19 @@ mod hosted {
         /// The origin of each browser's page, as its views were last told it, by program
         /// (#2842): what typing into it is said on.
         origins: Arc<Mutex<HashMap<String, Option<String>>>>,
+        /// What the window holds each runner browser's frames to, by program (#3297).
+        held_to: Arc<Mutex<HashMap<String, LinkFrames>>>,
+    }
+
+    /// **What the window holds a runner browser's frames to**, where its pool's are `frames`
+    /// (#3297): the more of each of those and the defaults. A runner before 1.49 holds its views
+    /// to the defaults, and one since to the pool's, and the window does not know which it
+    /// links to, so it draws either and nothing past both.
+    fn window_holds(frames: LinkFrames) -> LinkFrames {
+        LinkFrames {
+            frames: frames.frames.max(LinkFrames::DEFAULT.frames),
+            width: frames.width.max(LinkFrames::DEFAULT.width),
+        }
     }
 
     /// **Told what the window says of a browser in the event log** (#2293): the project the
@@ -563,6 +584,7 @@ mod hosted {
                 notes: Mutex::new(None),
                 closing: Arc::default(),
                 origins: Arc::default(),
+                held_to: Arc::default(),
             }
         }
 
@@ -645,6 +667,7 @@ mod hosted {
             let logged = Arc::clone(&self.logged);
             let closing = Arc::clone(&self.closing);
             let origins = Arc::clone(&self.origins);
+            let held_to = Arc::clone(&self.held_to);
             let says = Arc::clone(&self.says);
             let started_in = root.to_path_buf();
             let named = program.to_owned();
@@ -653,6 +676,7 @@ mod hosted {
                 Box::new(move |ending| {
                     lock(&logged).remove(&named);
                     lock(&origins).remove(&named);
+                    lock(&held_to).remove(&named);
                     // Who ended it and why is in the session host's own line (#2745).
                     tracing::info!("{}", ended_said(&named, &ending));
                     // An end this window did not ask for is a crash (#2842): said off the
@@ -695,6 +719,41 @@ mod hosted {
                 .iter()
                 .find(|(_, held)| held.browsers.iter().any(|one| one == program))
                 .map(|(at, _)| at.clone())
+        }
+
+        /// **Why pool `pool`'s runners are trusted with no browser and no login** (D-2050-27): a
+        /// chat ran, or may have run, on one of them without the sandbox, as this machine keeps
+        /// it or this window holds it. None where none did.
+        fn untrusted(&self, pool: &str) -> Option<String> {
+            let kept = self.connection.runners_config().is_some_and(|config| {
+                purlis_core::runnertaint::pool_ran_unsandboxed(&config, pool)
+            });
+            (kept || self.connection.untrusts(pool))
+                .then(|| purlis_core::runnertaint::refused_on(pool))
+        }
+
+        /// **Ends every browser the window started on pool `pool`** (D-2050-28), once a chat ran,
+        /// or may have run, there without the sandbox: the runner's host clears each one's data
+        /// folder as it ends. Answers how many it ended.
+        pub(crate) fn end_on(&self, pool: &str) -> usize {
+            let programs: Vec<String> = self
+                .projects()
+                .iter()
+                .filter(|(at, _)| at.pool.as_deref() == Some(pool))
+                .flat_map(|(_, held)| held.browsers.clone())
+                .collect();
+            programs
+                .iter()
+                .filter(|program| {
+                    self.close(program)
+                        .inspect_err(|why| {
+                            tracing::warn!(
+                                "purlis: a browser on pool {pool}'s runner was not ended: {why}"
+                            );
+                        })
+                        .is_ok()
+                })
+                .count()
         }
 
         /// **The pool whose runner `program` runs on** (#2050), where the window started it on
@@ -945,7 +1004,16 @@ mod hosted {
                 pool: pool.map(str::to_owned),
             };
             let kept = kept.filter(|_| at.pool.is_none());
+            // No browser starts on a runner a chat ran on without the sandbox (D-2050-27).
+            if let Some(why) = at.pool.as_deref().and_then(|pool| self.untrusted(pool)) {
+                return Err(NotStarted::Failed(why));
+            }
             let (link, project) = self.held(&at).map_err(NotStarted::Failed)?;
+            // Again once held: the hold takes back what the runner still runs, which may leave
+            // it untrusted (#3702).
+            if let Some(why) = at.pool.as_deref().and_then(|pool| self.untrusted(pool)) {
+                return Err(NotStarted::Failed(why));
+            }
             let _one_at_a_time = self.starting.lock().unwrap_or_else(PoisonError::into_inner);
             let running = match link.call(Command::List).map_err(NotStarted::Failed)? {
                 Answer::Chats(listed) => listed
@@ -967,10 +1035,14 @@ mod hosted {
             let named = purlis_core::browsers::a_browsers_id();
             // Waited on before it is asked for, so no word of its download comes too early.
             crate::enginedownload::here().started(&named);
+            // On a pool's runner, its views over the link are held to the pool's own frames
+            // (#3297).
+            let link_frames = at.pool.as_deref().map(purlis_core::runners::link_frames_of);
             let start = Command::StartProgram(Box::new(StartProgram {
                 program: Some(named.clone()),
                 reach,
                 kept,
+                link_frames,
                 ..StartProgram::of(project, ProgramKind::Browser)
             }));
             // The host's first start downloads the engine inside it: waited for as long as that
@@ -980,6 +1052,9 @@ mod hosted {
             crate::enginedownload::here().finished(&named);
             match answered.map_err(|refused| not_started(refused, budget))? {
                 Answer::ProgramStarted { program, .. } => {
+                    if let Some(frames) = link_frames {
+                        lock(&self.held_to).insert(program.clone(), window_holds(frames));
+                    }
                     self.follow_its_end(&link, root, &program);
                     if let Some(held) = self.projects().get_mut(&at) {
                         held.browsers.push(program.clone());
@@ -1023,8 +1098,15 @@ mod hosted {
             };
             // Followed before it draws, so its first frame finds it.
             self.follow(&link, attached.view, link_said);
-            // A runner's browser is held to the link's frames by the window too (#2050).
-            let held = self.pool_of(program).is_some();
+            // A runner's browser is held to the link's frames by the window too (#2050, #3297).
+            // A browser this window did not start (one taken back, #3380) is held to its pool's
+            // limits as this machine keeps them now.
+            let held = self.pool_of(program).map(|pool| {
+                lock(&self.held_to)
+                    .get(program)
+                    .copied()
+                    .unwrap_or_else(|| window_holds(purlis_core::runners::link_frames_of(&pool)))
+            });
             // Where its page is, kept for what typing into it is said on (#2842).
             let kept = Arc::clone(&self.origins);
             let of = program.to_owned();

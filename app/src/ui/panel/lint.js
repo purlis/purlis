@@ -8,6 +8,9 @@
  * #2913): each family's old classes, and its `data-scope` written by hand, which only its wrapper
  * draws.
  *
+ * `purlis/view-frame-family` (error: a paged view is the family's view frame, #3666):
+ * `data-scope="view-frame"` or `"view-nav"` written by hand, which only `ViewFrame.tsx` draws.
+ *
  * `purlis/panel-separator-family` (error: every resize handle is the family's, #3143):
  * `data-scope="panel-separator"` written by hand, and the panel library's own `Separator`,
  * by name or through `import * as`.
@@ -36,6 +39,14 @@ const separatorScope = moved({
   scopes: ["panel-separator"],
   classes: [],
   message: "a resize handle: draw it as `<Separator>` from `ui/panel/Separator` (#3143).",
+});
+
+const viewFrameFamily = moved({
+  description: "A view tab laid out as pages is the panel family's view frame",
+  scopes: ["view-frame", "view-nav"],
+  classes: [],
+  message:
+    "a view tab laid out as pages: draw it as `<ViewFrame>`, its list's heading as `<ViewListHead>` and its item's header as `<ViewPageHeader>`, from `ui/panel/ViewFrame` (#3666).",
 });
 
 /** The panel library, whose own handle only the family's wrapper draws. */
@@ -75,4 +86,5 @@ export const rules = {
   "panel-family": panelFamily,
   "panel-section-family": panelSectionFamily,
   "panel-separator-family": panelSeparatorFamily,
+  "view-frame-family": viewFrameFamily,
 };

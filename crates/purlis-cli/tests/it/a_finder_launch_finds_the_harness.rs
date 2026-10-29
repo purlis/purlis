@@ -189,7 +189,7 @@ fn a_harness_that_is_nowhere_is_a_refusal_that_says_so_and_carries_its_own_fix()
     // A doctor row is `DISPLAY_LIMIT` — 160 characters, Python's number — and a `$HOME`-shaped
     // directory list passes that on its own. The sentence is ordered so what is lost is the
     // tail of the search rather than the action; the whole of it is in the app's refusal, and
-    // in `purlis-core/tests/a_harness_is_found_the_way_a_shell_finds_it.rs`.
+    // in `purlis-core/tests/it/a_harness_is_found_the_way_a_shell_finds_it.rs`.
     assert!(
         detail.contains("name it by its absolute path in charter.local.toml"),
         "the fix has to survive the row's own clip: {profile}"

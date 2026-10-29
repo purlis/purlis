@@ -388,7 +388,7 @@ pub fn sessionstart(payload: &str, now: Option<&str>) {
             .and_then(|v| v.as_str())
             .is_none_or(|source| source == "startup");
         let kept = if starting {
-            purlis_core::handback::take(hook.root, purlis_core::handback::For::Place(&place))
+            crate::dispatch::handbacks(hook.root, purlis_core::handback::For::Place(&place))
         } else {
             Vec::new()
         };
@@ -437,11 +437,11 @@ pub fn userpromptsubmit(payload: &str, now: Option<&str>) {
         let working = crate::whereworking::update(hook.now);
         if let Some(chat) = chat {
             let reports =
-                purlis_core::handback::take(hook.root, purlis_core::handback::For::Chat(chat));
+                crate::dispatch::handbacks(hook.root, purlis_core::handback::For::Chat(chat));
             parts.extend(purlis_core::handback::context(&reports, false));
             // And what the chat that dispatched this one, or a task it dispatched, sent it
             // (#1442): quoted as data, as a report is.
-            let messages = purlis_core::dispatchtalk::take(hook.root, chat);
+            let messages = crate::dispatch::messages(hook.root, chat);
             parts.extend(purlis_core::dispatchtalk::context(&messages));
         }
         parts.extend(person.as_ref().map(|person| person.told.clone()));

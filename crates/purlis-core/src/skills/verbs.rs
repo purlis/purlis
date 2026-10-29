@@ -288,19 +288,23 @@ impl Ctx<'_> {
         }
     }
 
-    /// Refused where a built-in skill has `name`: a built-in skill's name is never taken (ADR
-    /// 0099 §3), so a skill of that name would never reach a chat.
-    pub(in crate::skills) fn not_built_in(&self, name: &str) -> Result<(), String> {
-        let taken = self
-            .built_in
-            .is_some_and(|dir| super::read(dir).iter().any(|skill| skill.name == name));
-        if taken {
-            return Err(format!(
-                "a built-in skill is named {name}, and a built-in skill's name is never taken: \
-                 pick another name"
-            ));
+    /// **Refused where `name` belongs to a built-in skill** ([`super::name_reserved`], spec
+    /// #3679 S12), with [`super::NAME_RESERVED`]: so no skill of the plane stands in for a
+    /// guarded built-in such as `secrets`. Every change that lands a skill under a name asks it
+    /// first: [`create`], [`rename`], [`move_to`], [`share`] and a draft's accept, and Make my own
+    /// copy of the copy's name (#3686). [`restore`], an install and an update's skills brought
+    /// along ask [`Self::reserved`], and say it in their own words.
+    pub fn not_built_in(&self, name: &str) -> Result<(), String> {
+        if self.reserved(name) {
+            return Err(super::NAME_RESERVED.to_owned());
         }
         Ok(())
+    }
+
+    /// Whether `name` belongs to a built-in skill ([`super::name_reserved`]): what a change that
+    /// cannot offer another name (a restore, an install) asks, and says in its own words.
+    pub fn reserved(&self, name: &str) -> bool {
+        super::name_reserved(self.built_in, name)
     }
 
     /// Says `line` as a warning.
@@ -476,6 +480,64 @@ pub fn create(
         rel(plane, &folder)
     ));
     cx.commit(&[rel(plane, &folder)], &format!("skill new {name}"));
+    Ok(folder)
+}
+
+/// **Make my own copy** (#3686, spec #3679 S12): the built-in skill `name`, copied to `level`
+/// under the new name `to`, as a skill of the plane the person can edit, committed. Its
+/// `SKILL.md` keeps the built-in's text with its `name:` changed to `to`; a project skill starts
+/// granted to the project's root alone, as a new one does. The built-in skill is not touched and
+/// keeps loading: a chat gets both.
+///
+/// Refused where `name` is no built-in skill in `cx.built_in`, for a name the open format does
+/// not allow, one that belongs to a built-in skill ([`Ctx::not_built_in`]), or one `level`
+/// already holds. A built-in skill is its `SKILL.md` alone (held by a test of the bundle), so
+/// that one file is what is copied.
+pub fn copy_built_in(
+    cx: &mut Ctx<'_>,
+    name: &str,
+    level: &Level,
+    to: &str,
+) -> Result<PathBuf, String> {
+    let plane = cx.plane;
+    crate::settings::writable(plane)?;
+    let source = cx
+        .built_in
+        .map(super::read)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|skill| skill.name == name)
+        .ok_or_else(|| format!("{name} is no built-in skill, so there is nothing to copy"))?;
+    if let Some(why) = change::name_problem(to) {
+        return Err(format!("{to:?} cannot be a skill's name: {why}"));
+    }
+    cx.not_built_in(to)?;
+    let is_file = std::fs::symlink_metadata(&source.path).is_ok_and(|meta| meta.is_file());
+    let text = is_file
+        .then(|| std::fs::read_to_string(&source.path).ok())
+        .flatten()
+        .ok_or_else(|| format!("{name}'s instructions could not be read, so nothing was copied"))?;
+    let copied = change::with_name(&text, to)
+        .ok_or_else(|| format!("{name}'s instructions have no name: line to change"))?;
+    if let Some(problem) = change::check(&copied, to).first() {
+        return Err(format!("the copy would not be a whole skill: {problem}"));
+    }
+    let dir = free_at(plane, level, to, to)?;
+    let folder = dir.join(to);
+    write(
+        plane,
+        &format!("{}/SKILL.md", rel(plane, &folder)),
+        &format!("{to}'s instructions"),
+        None,
+        &copied,
+        level.depth(),
+    )?;
+    cx.done(format!(
+        "{to} is made, a {level} skill in {}, copied from the built-in skill {name}, which \
+         chats still get",
+        rel(plane, &folder)
+    ));
+    cx.commit(&[rel(plane, &folder)], &format!("skill copy {name} {to}"));
     Ok(folder)
 }
 
@@ -737,6 +799,7 @@ pub fn move_to(
             }
         }
     }
+    cx.not_built_in(name)?;
     let folder = find(plane, from, name)?;
     let folder_is = folder_name(&folder);
     let dir = free_at(plane, to, name, &folder_is)?;
@@ -1594,6 +1657,11 @@ pub fn restore(cx: &mut Ctx<'_>, deleted: &Deleted) -> Result<PathBuf, String> {
         ));
     }
     let name = &deleted.name;
+    if cx.reserved(name) {
+        return Err(format!(
+            "{name} cannot be restored under its name: it belongs to a built-in skill now"
+        ));
+    }
     let dir = level_is_there(plane, &deleted.level)?;
     let folder = dir.join(&deleted.folder);
     let folder_rel = rel(plane, &folder);
@@ -1688,6 +1756,7 @@ pub fn pin(cx: &mut Ctx<'_>, by: &super::PinnedBy, name: &str, on: bool) -> Resu
 /// persona (`at`) moved into its level's `skills/`, committed (#2770).
 pub fn share(cx: &mut Ctx<'_>, at: &Whose, name: &str) -> Result<PathBuf, String> {
     let plane = cx.plane;
+    cx.not_built_in(name)?;
     // What is committed is what the share moved, never a folder looked up again by path.
     let super::Shared { from, to: folder } = super::share_here(plane, at, name)?;
     cx.done(format!(

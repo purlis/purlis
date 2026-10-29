@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Fragment, useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, LoaderCircle, Send } from "lucide-react";
+import { LoaderCircle, Send } from "lucide-react";
 import { ChatAsk } from "./ChatAsk";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Notice } from "./Notice";
@@ -44,6 +44,7 @@ import {
 } from "./dispatches";
 import { useWhileShown } from "./whileShown";
 import { Button } from "./ui/button/Button";
+import { Twist } from "./ui/disclosure/Disclosure";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 
@@ -330,11 +331,7 @@ export function DispatchesTab({
                         onPress={() => setRead(read === row.id ? undefined : row.id)}
                         className="dispatch-more"
                       >
-                        {read === row.id ? (
-                          <ChevronDown className="node-icon" aria-hidden="true" />
-                        ) : (
-                          <ChevronRight className="node-icon" aria-hidden="true" />
-                        )}
+                        <Twist open={read === row.id} />
                       </Button>
                       <Task row={row} onShowChat={onShowChat} onOpenRecord={onOpenRecord} />
                     </span>

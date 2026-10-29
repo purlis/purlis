@@ -167,6 +167,11 @@ export const TOKENS = [
   "danger.text",
   "danger.wash",
 
+  // What needs a decision, where nothing went wrong (#3678): an attention Notice's ground, and
+  // its words and mark on it. Trouble stays `danger.*`'s, for real failures.
+  "attention.surface",
+  "attention.text",
+
   // What waits on the person, or asks for care: the amber wash a pill or a soft warning stands on
   // (#2804's wash rule, #2913).
   "wash.warning",
