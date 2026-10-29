@@ -305,7 +305,10 @@ fn the_operators_signing_key_is_mounted_from_its_secret_by_the_kubelet() {
     assert_eq!(mounts[0]["readOnly"], true);
     // The whole Secret, so next.pem comes and goes with a roll, refreshed by the kubelet: a
     // subPath mount or `items` naming a key would not be (#3305).
-    assert!(secret.get("items").is_none(), "{secret:?}");
+    assert!(
+        secret.get("items").is_none(),
+        "the signing-key volume names items of the Secret"
+    );
     assert!(mounts[0].get("subPath").is_none());
     assert_eq!(
         mounts[0]["mountPath"],
