@@ -483,6 +483,161 @@ fn a_brokered_commit_is_allowed_by_its_two_words_and_no_other_worktree_word_is()
     }
 }
 
+/// The `permissions.allow` a Claude Code chat with no persona is handed, graded or not.
+fn allowed_to(graded: bool) -> Vec<serde_json::Value> {
+    let empty = tempfile::tempdir().expect("a directory");
+    let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
+        Kit {
+            skills: None,
+            laid_out: None,
+            binary: std::path::Path::new("/bin/charter"),
+            plugin: Some(std::path::Path::new("/app/plugin")),
+            persona: None,
+            graded,
+        },
+        Some(empty.path()),
+        &crate::harness_plugin::Chosen::new(),
+        None,
+    ) else {
+        panic!("armed per session");
+    };
+    let at = args
+        .iter()
+        .position(|arg| arg == "--settings")
+        .expect("--settings");
+    let settings: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+    settings["permissions"]["allow"]
+        .as_array()
+        .expect("allow")
+        .clone()
+}
+
+/// What only the chat's own work touches, and that a looping chat stopped on (#3829, the
+/// operator's ruling of 2026-10-29: the person is asked only when something new reaches
+/// someone new). `--shared` memory and `worktree push` are named in the ruling.
+const OWN_SCOPE: [&str; 33] = [
+    "purlis persona remember \"the cluster is eu-west\"",
+    "purlis persona remember --shared \"the cluster is eu-west\"",
+    "purlis persona recall cluster",
+    "purlis recall cluster",
+    "purlis workspace remember \"the build needs -j 4\"",
+    "purlis workspace note \"half way through the port\"",
+    "purlis workspace recall build",
+    "purlis ws todo \"port the guard\"",
+    "purlis ws todo 'port the guard'",
+    "purlis ws todo",
+    "purlis ws todo --done",
+    "purlis ws todo done port-the-guard",
+    "purlis workspace todo \"port the guard\"",
+    "purlis workspace todo done port-the-guard",
+    "purlis workspace todo",
+    "purlis worktree add purlis guard-port",
+    "purlis worktree update",
+    "purlis worktree update --continue",
+    "purlis worktree update --abort",
+    "purlis worktree push",
+    "purlis worktree push --force-with-lease",
+    "purlis worktree done",
+    "purlis worktree abandon \"superseded by #12\"",
+    "purlis worktree list",
+    "purlis docs show secrets",
+    "purlis news",
+    "purlis news --for 0.3.0",
+    "purlis theme check dusk",
+    "purlis theme list",
+    "purlis persona show steward",
+    "purlis persona list",
+    "purlis workspace list",
+    "purlis dispatch list --help",
+];
+
+/// What still reaches past the chat's own work, or cannot be taken back (#3829): each is
+/// asked about as before, by the harness or the operator's own rule.
+const STILL_ASKED: [&str; 21] = [
+    "purlis secret exec db -- psql",
+    "purlis persona forget cluster",
+    "purlis workspace forget build",
+    "purlis persona archive-memory cluster",
+    "purlis workspace archive build",
+    "purlis persona move-memory cluster --to web",
+    "purlis workspace move-memory build --to web",
+    "purlis persona edit-memory cluster",
+    "purlis workspace edit",
+    "purlis save",
+    "purlis clone purlis",
+    "purlis workspace reinit",
+    "purlis ws todo promote port-the-guard --repo purlis",
+    "purlis ws todo forget port-the-guard",
+    "purlis ws todo reopen port-the-guard",
+    "purlis worktree remove guard-port",
+    "purlis persona remove steward",
+    "purlis workspace create web --vision x",
+    "purlis theme draft dusk",
+    "purlis persona remember",
+    "purlis news; rm -rf ~",
+];
+
+#[test]
+fn a_chat_runs_its_own_scope_s_purlis_commands_without_asking_and_nothing_past_it() {
+    let allow = allowed_to(false);
+    for command in OWN_SCOPE {
+        assert!(bash_allowed(&allow, command), "{command:?} asks");
+    }
+    for command in STILL_ASKED {
+        assert!(!bash_allowed(&allow, command), "{command:?} runs unasked");
+    }
+    // And no rule is a bare wildcard over the command line: each is spelt by name.
+    for rule in allow.iter().filter_map(serde_json::Value::as_str) {
+        assert!(!rule.starts_with("Bash(purlis *"), "{rule}");
+        assert!(!rule.starts_with("Bash(purlis ws *"), "{rule}");
+        assert!(!rule.starts_with("Bash(purlis workspace *"), "{rule}");
+        assert!(!rule.starts_with("Bash(purlis persona *"), "{rule}");
+        assert!(!rule.starts_with("Bash(purlis worktree *"), "{rule}");
+    }
+}
+
+#[test]
+fn a_chat_runs_its_own_scope_s_purlis_tools_and_asks_the_person_without_its_harness_asking() {
+    // #3829: `ask_operator` was asked twice, the harness's prompt and then the question.
+    let allow = allowed_to(false);
+    for tool in [
+        "todo_add",
+        "todo_done",
+        "memory_add",
+        "persona_remember",
+        "workspace_section",
+        "workspace_vision",
+        "ask_operator",
+    ] {
+        let rule = serde_json::json!(format!("mcp__purlis__{tool}"));
+        assert!(allow.contains(&rule), "{rule} asks");
+    }
+    // A browser upload or save is still asked each time (#2245).
+    for tool in crate::browsertools::ASKED_EACH_TIME {
+        let rule = serde_json::json!(format!("mcp__purlis__{tool}"));
+        assert!(!allow.contains(&rule), "{rule} runs unasked");
+    }
+}
+
+#[test]
+fn a_grades_chat_is_handed_none_of_the_chat_s_own_scope_writes() {
+    // SK-16: a grade's chat keeps its prompts, and its server answers only the reads; so the
+    // own-scope writes (#3829) are not handed to it, and its reads still are.
+    let allow = allowed_to(true);
+    for writes in [
+        "purlis persona remember \"x\"",
+        "purlis ws todo \"x\"",
+        "purlis worktree push",
+    ] {
+        assert!(!bash_allowed(&allow, writes), "{writes:?} runs unasked");
+    }
+    assert!(bash_allowed(&allow, "purlis docs show secrets"));
+    for tool in crate::chattools::OWN_SCOPE_TOOLS {
+        let rule = serde_json::json!(format!("mcp__purlis__{tool}"));
+        assert!(!allow.contains(&rule), "{rule} runs unasked");
+    }
+}
+
 /// What a Claude Code chat in a project laid out with `manifest` and, when there is one, a
 /// `.claude/settings.json` holding `project`, starts with: its arguments, and its
 /// `--settings` parsed. Sandboxed as a start decides, at the level the manifest gives.

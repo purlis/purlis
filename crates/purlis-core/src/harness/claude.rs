@@ -565,8 +565,8 @@ fn settings(
     // SI-8e): a chat reading its own todos, memory, records or change status does not stop on
     // a prompt. `persona_where` is allowed with them (V98a, #1450): it reads the app's own
     // record of the open chats and answers what the chat is told at its start. Each by its
-    // full name, never the server as a whole, so the other writes and `ask_operator` still
-    // ask, and an operator's `ask` or `deny` for any of them still wins.
+    // full name, never the server as a whole, so a tool added later still asks until it is
+    // ruled in, and an operator's `ask` or `deny` for any of them still wins.
     //
     // **And a dispatch, by its command and by its two tools** (operator's ruling V98b,
     // D-T59-prealllow, amending ADR 0064): the harness's prompt is not what consents to a
@@ -586,10 +586,15 @@ fn settings(
     // And what a chat asks after a task it dispatched, each by its own name (D-T59-j8).
     allow.extend(DISPATCH_TASK_ALLOW.iter().map(|rule| (*rule).to_owned()));
     allow.extend(HANDOFF_ALLOW.iter().map(|rule| (*rule).to_owned()));
-    // And purlis's read-only commands, by name, beside their tools (reported 2026-10-09).
+    // And purlis's read-only commands, by name (reported 2026-10-09, #3829).
     allow.extend(READ_ALLOW.iter().map(|rule| (*rule).to_owned()));
     // And a commit the app makes for a sandboxed chat in its branch folder (#1476).
     allow.extend(WORKTREE_COMMIT_ALLOW.iter().map(|rule| (*rule).to_owned()));
+    // And what only the chat's own work touches, by name (#3829, ruled 2026-10-29), except in
+    // a grade's chat, which keeps its prompts (SK-16).
+    if !graded {
+        allow.extend(OWN_SCOPE_ALLOW.iter().map(|rule| (*rule).to_owned()));
+    }
     allow.extend(
         crate::chattools::DISPATCH_TOOLS
             .iter()
@@ -600,6 +605,15 @@ fn settings(
             .iter()
             .map(|tool| format!("mcp__{}__{tool}", crate::chattools::SERVER)),
     );
+    // And their twins among the tools, and the chat's question to the person, whose answer is
+    // the consent (#3829); a grade's chat's server answers none of them (SK-16).
+    if !graded {
+        allow.extend(
+            crate::chattools::OWN_SCOPE_TOOLS
+                .iter()
+                .map(|tool| format!("mcp__{}__{tool}", crate::chattools::SERVER)),
+        );
+    }
     // **And a chat's browser tools, each by name** (#2245, ruled 2026-10-16, amending ADR
     // 0064): the person's answer to the chat's browser Ask is the consent, which the app asks
     // at the first call and holds in front of every one, as the dispatch grant is for a
@@ -940,15 +954,76 @@ fn permission_hook(binary: &std::path::Path) -> serde_json::Value {
 pub const SMART_CLOSE_ALLOW: &str = "Bash(purlis session record *)";
 
 /// The permission rules a Claude Code chat the app starts carries for **purlis's read-only
-/// commands that only answer from the app's own record of the chat** (reported 2026-10-09,
-/// on the terms of V98a and ADR 0064): a task whose brief ran `purlis persona where` stopped
-/// on the harness's prompt in a tab nobody was at, and waited there on the person.
+/// commands** (reported 2026-10-09, on the terms of V98a and ADR 0064; widened by #3829, the
+/// operator's ruling of 2026-10-29): a task whose brief ran `purlis persona where` stopped on
+/// the harness's prompt in a tab nobody was at, and waited there on the person.
 ///
-/// Each is the command twin of a tool already in [`crate::chattools::PRE_ALLOWED`]: one
-/// operation, two entrances, allowed the same way (as `session_record` and its command are).
-/// **The whole line, with no wildcard**: the command takes no argument a chat would pass, so a
-/// line with anything more after it is asked about, and so is every other `persona` word.
-pub const READ_ALLOW: [&str; 1] = ["Bash(purlis persona where)"];
+/// Each reads and writes nothing: the chat's own memory (`recall`), purlis's own pages and
+/// news, the themes, and the plane's personas and workspaces. **Each by name, and no bare
+/// wildcard**: a word with no argument a chat would pass is the whole line (`persona where`,
+/// `persona list`, `workspace list`, `workspace current`), and anything more after it is asked
+/// about; a word that takes one ends ` *`. Every other `persona`, `workspace`, `docs` or
+/// `theme` word still asks, and an operator's own `ask` or `deny` still wins.
+pub const READ_ALLOW: [&str; 14] = [
+    "Bash(purlis persona where)",
+    "Bash(purlis persona show *)",
+    "Bash(purlis persona list)",
+    "Bash(purlis persona recall *)",
+    "Bash(purlis recall *)",
+    "Bash(purlis workspace recall *)",
+    "Bash(purlis workspace list)",
+    "Bash(purlis workspace current)",
+    "Bash(purlis docs show *)",
+    "Bash(purlis news)",
+    "Bash(purlis news *)",
+    "Bash(purlis theme check *)",
+    "Bash(purlis theme list)",
+    "Bash(purlis theme list *)",
+];
+
+/// The permission rules a Claude Code chat the app starts carries for **what only the chat's own
+/// work touches** (#3829, the operator's ruling of 2026-10-29, amending ADR 0064): its persona's
+/// and its workspace's memory, its workspace's todos, and the branch folder it works in. A
+/// looping chat stopped on the harness's prompt for each, in a tab nobody was at. **The person
+/// is asked only when something new reaches someone new**, and none of these does:
+///
+/// - `persona remember`, `--shared` included (ruled by name), and `workspace remember` and
+///   `note`: a memory the chat's own persona or workspace keeps.
+/// - `ws todo` and `workspace todo`, in the three shapes that add, close and list a todo: the
+///   bare word and `--done` list, `done <slug>` closes, and a quoted text adds. The other
+///   verbs (`forget`, `reopen`, `promote`) still ask, and `promote`, which opens an issue on a
+///   forge, keeps the consent rule `init` writes for it as well.
+/// - `worktree add`, `update` (with `--continue` or `--abort`), `push` (the folder's own
+///   branch, never its base; ruled by name), `done`, `abandon` and `list`. `remove` still asks.
+///
+/// **Each by name, and no bare wildcard**, for [`DISPATCH_ALLOW`]'s reason. A grade's chat is
+/// handed none of these (SK-16: it keeps its prompts). An operator's own `ask` or `deny` still
+/// wins, and `forget`, `archive`, `move-memory`, `edit-memory`, `edit`, `reinit`, `save`,
+/// `clone` and `secret exec` are still asked about, as every word with no rule is.
+pub const OWN_SCOPE_ALLOW: [&str; 22] = [
+    "Bash(purlis persona remember *)",
+    "Bash(purlis workspace remember *)",
+    "Bash(purlis workspace note *)",
+    "Bash(purlis ws todo)",
+    "Bash(purlis ws todo --done)",
+    "Bash(purlis ws todo \"*)",
+    "Bash(purlis ws todo '*)",
+    "Bash(purlis ws todo done *)",
+    "Bash(purlis workspace todo)",
+    "Bash(purlis workspace todo --done)",
+    "Bash(purlis workspace todo \"*)",
+    "Bash(purlis workspace todo '*)",
+    "Bash(purlis workspace todo done *)",
+    "Bash(purlis worktree add *)",
+    "Bash(purlis worktree update)",
+    "Bash(purlis worktree update *)",
+    "Bash(purlis worktree push)",
+    "Bash(purlis worktree push *)",
+    "Bash(purlis worktree done)",
+    "Bash(purlis worktree abandon *)",
+    "Bash(purlis worktree list)",
+    "Bash(purlis worktree list *)",
+];
 
 /// The permission rule a Claude Code chat the app starts carries for **a commit the app makes
 /// for it in the branch folder it stands in** (#1476, ADR 0067 as amended for #1055, on the
@@ -988,16 +1063,17 @@ pub const DISPATCH_ALLOW: [&str; 4] = [
 /// **Each reaches only what the app's own record lets its caller reach**
 /// (`crate::dispatched::owned`, `crate::dispatchtalk::up`): `wait`, `cancel`, `tell` and
 /// `answer` name a task the chat itself dispatched, and are refused for any other chat;
-/// `list` lists those tasks; `read` reads what one of them said and ran (#1981, #2084);
+/// `list` lists those tasks, with or without its arguments (#3829); `read` reads what one of them said and ran (#1981, #2084);
 /// `close` clears one that has finished, and is refused one the person typed in (#3785, ruled
 /// 2026-10-29: tidying its own tasks is the chat's own); `note` and `ask` name nobody, and go
 /// to the one chat that dispatched the caller. None starts a chat. `--wait` is the dispatch
 /// itself, waited on: it is matched only where the flag comes first, and asked about
 /// otherwise.
-pub const DISPATCH_TASK_ALLOW: [&str; 10] = [
+pub const DISPATCH_TASK_ALLOW: [&str; 11] = [
     "Bash(purlis dispatch --wait *)",
     "Bash(purlis dispatch wait *)",
     "Bash(purlis dispatch list)",
+    "Bash(purlis dispatch list *)",
     "Bash(purlis dispatch read *)",
     "Bash(purlis dispatch cancel *)",
     "Bash(purlis dispatch tell *)",
