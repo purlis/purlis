@@ -88,14 +88,14 @@ impl std::ops::Deref for Marker {
 }
 
 /// The folder of this machine's state the grades under way are held in.
-const DIR: &str = "grades-under-way";
+pub(crate) const DIR: &str = "grades-under-way";
 
 /// The most bytes of one grade under way read back.
 const MOST_FILE_BYTES: u64 = 64 * 1024;
 
 /// The file beside that folder a start holds the lock of while it records what it finds there:
 /// two purlis processes starting one project at once never both record one grade (#3443).
-const CLAIM: &str = "grades-under-way.lock";
+pub(crate) const CLAIM: &str = "grades-under-way.lock";
 
 /// One grade under way, as its file holds it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

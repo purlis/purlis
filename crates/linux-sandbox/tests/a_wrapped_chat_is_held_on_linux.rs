@@ -440,6 +440,56 @@ fn a_thread_with_its_own_descriptors_is_judged_by_its_own_socket() {
     );
 }
 
+/// A program a runner's host starts through `_no-namespaces` makes no namespace, whatever its
+/// machine lets a program make, and neither does what it starts: on a runner only the browser
+/// engine may (#3298, D-2050-25). It still runs as it was asked to.
+#[test]
+fn a_program_started_without_namespaces_makes_none() {
+    // The same probe, not held: this machine lets it make one, so what is refused below is the
+    // filter's refusal.
+    let out = Command::new(PROBE)
+        .arg("user-namespace")
+        .output()
+        .expect("the probe ran");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "ok",
+        "this machine refuses a user namespace to anyone: {out:?}"
+    );
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::no_namespaces_line(
+            PROBE.into(),
+            vec!["user-namespace".into()],
+        ))
+        .output()
+        .expect("the probe ran");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "EPERM",
+        "{out:?}"
+    );
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::no_namespaces_line(
+            "/bin/sh".into(),
+            vec!["-c".into(), format!("{PROBE} user-namespace").into()],
+        ))
+        .output()
+        .expect("the shell ran");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "EPERM",
+        "{out:?}"
+    );
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::no_namespaces_line(
+            PROBE.into(),
+            vec!["read".into(), "/etc/passwd".into()],
+        ))
+        .output()
+        .expect("the probe ran");
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok", "{out:?}");
+}
+
 /// A port free on this machine now.
 fn free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
