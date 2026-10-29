@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
   type RefObject,
 } from "react";
 import type { Said } from "./actions";
@@ -40,12 +41,22 @@ export type StandingNotice = {
   workspace: string;
   /** What it is about, stably: its dismissal's key (`pin-dormant:delta`). */
   cause: string;
-  /** Its one sentence. */
-  says: string;
+  /** What it says, as the Notices centre's line says it: a sentence, or one with code in it
+   *  (a stale repo's branch and addresses, #3650). */
+  says: ReactNode;
   /** Its ways on, as the Notices centre's line offers them. */
   fixes: readonly NoticeAction[];
-  /** Dismisses it, here and in the Notices centre. */
-  dismiss: () => void;
+  /** **How urgent it is**, which the chip's dot shows (#3650): a stale repo and a layout
+   *  behind are warnings (▲). News (●) where it is not said. */
+  kind?: NoticeKind;
+  /** Its look, as the centre's line has it: trouble once a press was refused. */
+  tone?: "news" | "trouble";
+  /** Its accessible name, where the sentence alone would not make a good one. */
+  label?: string;
+  /** Dismisses it, here and in the Notices centre. **None** for a line that goes only when it is
+   *  mended (a layout behind, #3650, which the centre lists with no Dismiss either): it then has
+   *  at least one fix. */
+  dismiss?: () => void;
 };
 
 /** **The line of a pin whose workspace is gone** (V91c as amended, NO-1): its cause, the
@@ -62,7 +73,7 @@ export type ChipNotice =
 
 /** Dismisses `one`, wherever it is kept: the kept results, or the per-project record. */
 const dismissOne = (one: ChipNotice, does: Pick<ChipNotices, "dismiss">) => {
-  if ("standing" in one) one.standing.dismiss();
+  if ("standing" in one) one.standing.dismiss?.();
   else does.dismiss(one.id);
 };
 
@@ -143,7 +154,7 @@ export function useChipNotices({
       by.set(place.workspace, [
         ...(by.get(place.workspace) ?? []),
         // A standing line's kind is said, never worked out: it is no result (#3651).
-        { id: line.cause, standing: line, kind: "info" },
+        { id: line.cause, standing: line, kind: line.kind ?? "info" },
       ]);
     }
     return by;
@@ -368,18 +379,33 @@ export function ChipCard({
         )}
         {notices.map((one) =>
           "standing" in one ? (
-            <Notice
-              key={one.id}
-              cause={one.standing.cause}
-              fixes={
-                one.standing.fixes.length === 0
-                  ? undefined
-                  : (one.standing.fixes as [NoticeAction, ...NoticeAction[]])
-              }
-              onDismiss={() => dismissOne(one, does)}
-            >
-              {one.standing.says}
-            </Notice>
+            one.standing.dismiss === undefined ? (
+              // Goes only when it is mended: its fixes are its ways out (#3650).
+              <Notice
+                key={one.id}
+                cause={one.standing.cause}
+                tone={one.standing.tone}
+                label={one.standing.label}
+                fixes={one.standing.fixes as [NoticeAction, ...NoticeAction[]]}
+              >
+                {one.standing.says}
+              </Notice>
+            ) : (
+              <Notice
+                key={one.id}
+                cause={one.standing.cause}
+                tone={one.standing.tone}
+                label={one.standing.label}
+                fixes={
+                  one.standing.fixes.length === 0
+                    ? undefined
+                    : (one.standing.fixes as [NoticeAction, ...NoticeAction[]])
+                }
+                onDismiss={() => dismissOne(one, does)}
+              >
+                {one.standing.says}
+              </Notice>
+            )
           ) : (
             <ActionResultNotice
               key={one.id}

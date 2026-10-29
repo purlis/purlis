@@ -287,3 +287,31 @@ describe("standing lines and dormant chips on a card (#3651)", () => {
     expect(result.current.open).toBe("gone");
   });
 });
+
+describe("a workspace's findings on its chip (#3650)", () => {
+  it("say their own kind, so a stale repo's ▲ is the dot over a result's ●", () => {
+    const { result } = renderHook(() =>
+      useChipNotices({
+        said: undefined,
+        kept: [{ id: 1, said: made("docs"), plane: A }],
+        plane: A,
+        chips: CHIPS,
+        drop: () => undefined,
+        onSettings: () => undefined,
+        standing: [
+          {
+            workspace: "docs",
+            cause: "stale-clone:docs/web|branch:chat-3",
+            says: "web in docs is on chat-3, not main.",
+            fixes: [{ label: "Switch to main", onPress: () => undefined }],
+            kind: "warning",
+            dismiss: () => undefined,
+          },
+        ],
+      }),
+    );
+    const on = result.current.on.get("docs") ?? [];
+    expect(on.map((one) => one.kind)).toEqual(["info", "warning"]);
+    expect(mostUrgent(on)).toBe("warning");
+  });
+});

@@ -31,6 +31,10 @@ pub(crate) struct AlertRow {
     subject: String,
     /// What is wrong.
     detail: String,
+    /// **The workspaces it is about, by name**, where it is about some (#3650): the `reinit`
+    /// alert's, every workspace behind the current layout, so the title bar hangs it from each
+    /// one's chip. Empty for an alert about the project as a whole.
+    workspaces: Vec<String>,
     /// **What fixes it, in the window** (NO-6, #1238): the Inbox draws it as the Notice's button,
     /// in place of the command the terminal status line names.
     way: AlertWay,
@@ -95,6 +99,14 @@ fn way_out(alert: &alerts::Alert) -> AlertWay {
             path: outer.display().to_string(),
         },
         alerts::Alert::PlaneRoot { .. } => AlertWay::Saving,
+    }
+}
+
+/// **The workspaces an alert is about** (#3650): the stale ones of `reinit`, none for the rest.
+fn about(alert: &alerts::Alert) -> Vec<String> {
+    match alert {
+        alerts::Alert::Reinit { stale } => stale.clone(),
+        _ => Vec::new(),
     }
 }
 
@@ -188,6 +200,7 @@ fn save_blocked(root: &Path, now: f64) -> Option<AlertRow> {
         severity: "bad".to_owned(),
         subject: "save".to_owned(),
         detail: format!("the plane's save is blocked: {why}"),
+        workspaces: Vec::new(),
         way: AlertWay::Saving,
     })
 }
@@ -222,6 +235,7 @@ fn request_red(
             "the {numbered} of {name} is red, so purlis did not merge it: {}",
             merge.why
         ),
+        workspaces: Vec::new(),
         way: AlertWay::SaveRequest {
             workspace: workspace.map(str::to_owned),
             repo: repo.map(str::to_owned),
@@ -310,6 +324,7 @@ fn rows(root: &Path) -> (Vec<AlertRow>, Option<String>) {
                     .to_owned(),
                     subject: shown.subject,
                     detail: shown.detail,
+                    workspaces: about(&alert),
                     way: way_out(&alert),
                 }
             })
@@ -500,6 +515,23 @@ mod tests {
                 memory: None,
             }),
             AlertWay::Saving
+        );
+    }
+
+    #[test]
+    fn a_layout_alert_names_the_workspaces_behind_it_and_no_other_alert_names_any() {
+        // Each one's chip hangs the notice (#3650): by name, in the core's order.
+        assert_eq!(
+            about(&alerts::Alert::Reinit {
+                stale: vec!["docs".into(), "ide".into()]
+            }),
+            vec!["docs".to_owned(), "ide".to_owned()]
+        );
+        assert!(
+            about(&alerts::Alert::FrontDoor {
+                declared: "ghost".into()
+            })
+            .is_empty()
         );
     }
 

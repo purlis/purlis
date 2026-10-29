@@ -79,7 +79,13 @@ import { useScreenReaderMode } from "./screenReader";
 import { useLatestSaid } from "./latestSaid";
 import { resultsFor, useKeptResults } from "./keptResults";
 import { useAlerts } from "./alerts";
-import type { InboxAlertsDo, WindowAlerts } from "./InboxAlerts";
+import {
+  LAYOUT_FIX,
+  LAYOUT_FIX_LABEL,
+  useAlertFix,
+  type InboxAlertsDo,
+  type WindowAlerts,
+} from "./InboxAlerts";
 import { waitingAsk, type Elsewhere } from "./InboxElsewhere";
 import { ApprovePlane } from "./ApprovePlane";
 import { drawThemeFor, Extensions } from "./Extensions";
@@ -1310,9 +1316,29 @@ function App() {
   } = useDismissals(inFront ?? "");
   const dormantInFront = workspacesInFront?.dormant;
   const forgetInFront = workspacesInFront?.forget;
+  /** **The workspaces behind the current layout** (#3650): the project's `reinit` alert, by the
+   *  names the core gave it, so each one's chip hangs it. */
+  const behindInFront = useMemo(() => {
+    if (inFront === undefined || alertsRead.at !== "read") return [];
+    const read = alertsRead.planes.find((one) => one.plane === inFront);
+    return (read?.alerts ?? [])
+      .filter((one) => one.way.kind === "fix" && one.way.id === LAYOUT_FIX)
+      .flatMap((one) => (Array.isArray(one.workspaces) ? one.workspaces : []));
+  }, [alertsRead, inFront]);
+  /** Its Update, pressed from a chip's card: the Inbox row's own fix, then every project's
+   *  alerts read again, so the line goes from both once the layout is mended. */
+  const layoutFix = useAlertFix(inFront ?? "", LAYOUT_FIX_LABEL, rereadAlerts);
+  const layoutSaid = layoutFix.said;
+  const layoutBusy = layoutFix.busy;
+  /** The press, through a ref, so the lines are not drawn again for each new closure. */
+  const applyLayout = useRef(layoutFix.apply);
+  useLayoutEffect(() => {
+    applyLayout.current = layoutFix.apply;
+  });
+  const staleInFront = workspacesInFront?.standing;
   const standingInFront = useMemo<StandingNotice[]>(
-    () =>
-      (dormantInFront ?? [])
+    () => [
+      ...(dormantInFront ?? [])
         .filter((name) => !dismissedInFront.has(dormantCause(name)))
         .map((name) => ({
           workspace: name,
@@ -1321,7 +1347,35 @@ function App() {
           fixes: [{ label: "Forget", onPress: () => forgetInFront?.(name) }],
           dismiss: () => dismissInFront(dormantCause(name)),
         })),
-    [dormantInFront, dismissedInFront, dismissInFront, forgetInFront],
+      // **A stale repo** (#1985, #3650): read and dismissed by the project, the Inbox's line.
+      ...(staleInFront ?? []),
+      // **A layout behind** (#3650): goes when it is mended, as the Inbox's alert does, so it has
+      // no Dismiss there or here. Its Update mends every workspace behind, as it does there.
+      ...behindInFront.map((name): StandingNotice => ({
+        workspace: name,
+        cause: `alert:reinit:${name}`,
+        says: `${name} is behind the current layout. ${LAYOUT_FIX_LABEL} brings every workspace behind it up to date.${layoutSaid === undefined ? "" : ` ${layoutSaid}`}`,
+        fixes: [
+          {
+            label: LAYOUT_FIX_LABEL,
+            busy: layoutBusy,
+            onPress: () => applyLayout.current(LAYOUT_FIX),
+          },
+        ],
+        kind: "warning",
+        tone: layoutSaid === undefined ? "news" : "trouble",
+      })),
+    ],
+    [
+      dormantInFront,
+      dismissedInFront,
+      dismissInFront,
+      forgetInFront,
+      staleInFront,
+      behindInFront,
+      layoutSaid,
+      layoutBusy,
+    ],
   );
   /** The notices hung from those chips: a view onto the kept results, so a dismissal in either
    *  place is one (#3648). */

@@ -38,8 +38,9 @@ const OFF_MAIN = (workspace: string): Said => ({
 
 /** **More than one notice on the chip** (#3649), newest first: `stacked`, the clone counting
  *  over a warning over the ready notice; `failed`, a clone that did not land over the ready
- *  notice. */
-type Stack = "ready" | "stacked" | "failed";
+ *  notice; `findings`, the ready notice over the project's findings about the workspace, a repo
+ *  off its default branch and a layout behind (#3650). */
+type Stack = "ready" | "stacked" | "failed" | "findings";
 
 function TheWindow({
   pins,
@@ -120,6 +121,48 @@ function TheWindow({
                     onAddVision: () => setSaid("Asked for a vision"),
                   }),
           },
+          // A standing line follows the results, as the window appends them (#3650).
+          ...(stack === "findings"
+            ? [
+                {
+                  id: `stale-clone:${hasNotice}/web|branch:spike/search`,
+                  kind: "warning" as const,
+                  standing: {
+                    workspace: hasNotice,
+                    cause: `stale-clone:${hasNotice}/web|branch:spike/search`,
+                    says: (
+                      <p>
+                        <code>web</code> in {hasNotice} is on <code>spike/search</code>, not{" "}
+                        <code>main</code>. A chat that starts in this repo works on{" "}
+                        <code>spike/search</code>.
+                      </p>
+                    ),
+                    fixes: [
+                      { label: "Switch to main", onPress: () => setSaid("Asked to switch web") },
+                    ],
+                    kind: "warning" as const,
+                    label: `web in ${hasNotice}`,
+                    dismiss: () => setPutAway(true),
+                  },
+                },
+                {
+                  id: `alert:reinit:${hasNotice}`,
+                  kind: "warning" as const,
+                  standing: {
+                    workspace: hasNotice,
+                    cause: `alert:reinit:${hasNotice}`,
+                    says: `${hasNotice} is behind the current layout. Update workspace layout brings every workspace behind it up to date.`,
+                    fixes: [
+                      {
+                        label: "Update workspace layout",
+                        onPress: () => setSaid("Asked to update the layout"),
+                      },
+                    ],
+                    kind: "warning" as const,
+                  },
+                },
+              ]
+            : []),
         ]),
   ]);
   const projects = useMemo<SwitchProject[]>(
@@ -538,5 +581,34 @@ export const CloneCouldNotLand: Story = {
     ).toBeInTheDocument();
     await userEvent.click(retry);
     await expect(canvas.getByText("Asked to clone web again")).toBeInTheDocument();
+  },
+};
+
+/**
+ * **The project's findings about a workspace, on its chip** (#3650): a repo off its default branch
+ * with its Switch, and the workspace's layout behind with its Update, under the ready notice. The
+ * dot is ▲, the most urgent; the layout line has no × of its own, since it goes once it is mended.
+ */
+export const FindingsOnTheChip: Story = {
+  args: { stack: "findings", startOpen: false },
+  play: async ({ canvas, userEvent }) => {
+    const dot = canvas.getByRole("button", {
+      name: "Show the 3 notices on 3rd-try, most urgent: warning",
+    });
+    await expect(dot).toHaveAttribute("data-kind", "warning");
+    dot.focus();
+    await userEvent.keyboard("{Enter}");
+    const card = await waitFor(() => cardOf() as HTMLElement);
+    await untilFocused(() => card, "the card the ▲ dot brought");
+    await expect(card).toHaveTextContent("web in 3rd-try is on spike/search, not main.");
+    await expect(card).toHaveTextContent("3rd-try is behind the current layout.");
+    const layout = card.querySelector<HTMLElement>('[data-cause="alert:reinit:3rd-try"]');
+    await expect(layout).not.toBeNull();
+    await expect(
+      within(layout as HTMLElement).queryByRole("button", { name: "Dismiss" }),
+    ).toBeNull();
+    await userEvent.click(within(card).getByRole("button", { name: "Switch to main" }));
+    await expect(canvas.getByText("Asked to switch web")).toBeInTheDocument();
+    await waitFor(() => expect(surfaceOf(card).hasAttribute("data-entering")).toBe(false));
   },
 };

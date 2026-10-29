@@ -52,42 +52,49 @@ const FRONT_DOOR: AlertRow = {
   severity: "warn",
   subject: "front door",
   detail: "ghost — no such persona",
+  workspaces: [],
   way: { kind: "settings", group: "project.general", setting: "project.general.persona.default" },
 };
 const PIN: AlertRow = {
   severity: "warn",
   subject: "charter",
   detail: "this charter is 2.0.0, and the plane pins 1.0.0",
+  workspaces: [],
   way: { kind: "settings", group: "project.general", setting: "project.general.charter.version" },
 };
 const REINIT: AlertRow = {
   severity: "warn",
   subject: "reinit",
   detail: "1 workspace is behind the current layout: ide",
+  workspaces: ["ide"],
   way: { kind: "fix", id: "workspace-reinit" },
 };
 const IDENTITY: AlertRow = {
   severity: "warn",
   subject: "git identity",
   detail: "not set: user.email",
+  workspaces: [],
   way: { kind: "fix", id: "git-identity" },
 };
 const NESTED: AlertRow = {
   severity: "bad",
   subject: "nested plane",
   detail: "memory and vault go to ~/outer/workspaces/plane, not ~/outer",
+  workspaces: [],
   way: { kind: "open-project", path: OUTER },
 };
 const ROOT: AlertRow = {
   severity: "warn",
   subject: "plane root",
   detail: "plane · detached HEAD",
+  workspaces: [],
   way: { kind: "saving" },
 };
 const SAVE: AlertRow = {
   severity: "bad",
   subject: "save",
   detail: "the plane's save is blocked: a conflict",
+  workspaces: [],
   way: { kind: "saving" },
 };
 
@@ -753,6 +760,7 @@ describe("a save's red request (`save-request-red`)", () => {
     subject: "save-request-red",
     detail:
       "the pull request #12 of this project is red, so purlis did not merge it: 1 check failed: lint",
+    workspaces: [],
     way: {
       kind: "save-request",
       workspace: null,

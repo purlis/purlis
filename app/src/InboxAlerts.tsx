@@ -239,6 +239,51 @@ function Words({
   );
 }
 
+/**
+ * **An alert's fix, applied from where it is pressed** (#1301, #3650): the doctor's registry by its
+ * id, one at a time; what it came to, said where it was pressed when it did not cure the alert;
+ * then every project's alerts read again, since a fix that half-ran changed something too. The
+ * Inbox's row and a workspace chip's card each press it this way.
+ */
+export function useAlertFix(plane: PlaneId, label: string, reread: () => void) {
+  /** What the last fix answered, when it did not cure the alert: its refusal, or what it said. */
+  const [said, setSaid] = useState<string>();
+  const fixing = useRef(false);
+  const [busy, setBusy] = useState(false);
+  /** The act, as the sentence says it: its verb in lower case, and no ellipsis. */
+  const act = label.charAt(0).toLowerCase() + label.slice(1).replace(/…$/, "");
+  const landed = (fixed: DoctorFixed) => {
+    if (fixed.refused !== null) setSaid(`purlis could not ${act}: ${fixed.refused}`);
+    else if (!fixed.complete) setSaid(fixed.said.join(" "));
+    reread();
+  };
+  const apply = (id: string) => {
+    if (fixing.current) return;
+    fixing.current = true;
+    setBusy(true);
+    setSaid(undefined);
+    void commands
+      .planeDoctorFix(plane, id)
+      .then((answer) =>
+        landed(
+          answer.status === "ok"
+            ? answer.data
+            : { fix: id, refused: answer.error, said: [], complete: false },
+        ),
+      )
+      .catch((err: unknown) => landed({ fix: id, refused: String(err), said: [], complete: false }))
+      .finally(() => {
+        fixing.current = false;
+        setBusy(false);
+      });
+  };
+  return { said, setSaid, busy, setBusy, landed, apply };
+}
+
+/** The words on the layout fix's button (`workspace-reinit`), as the Inbox's row says them. */
+export const LAYOUT_FIX = "workspace-reinit";
+export const LAYOUT_FIX_LABEL = FIX_LABELS[LAYOUT_FIX] ?? ANY_FIX;
+
 /** A row's Notice look: trouble for what loses work if it is left. */
 const toneOf = (severity: string) => (severity === "bad" ? "trouble" : "news");
 
@@ -253,48 +298,14 @@ function ProjectRow({
   alert: Omit<AlertRow, "way"> & { way: Exclude<AlertWay, { kind: "save-request" }> };
   does: InboxAlertsDo;
 }) {
-  /** What the last fix answered, when it did not cure the row: its refusal, or what it said. */
-  const [said, setSaid] = useState<string>();
-  const fixing = useRef(false);
-  const [busy, setBusy] = useState(false);
   const way = alert.way;
   const label = way.kind === "fix" ? (FIX_LABELS[way.id] ?? ANY_FIX) : "";
-  /** The act, as the sentence says it: its verb in lower case, and no ellipsis. */
-  const act = label.charAt(0).toLowerCase() + label.slice(1).replace(/…$/, "");
-  const could = (why: string) => `purlis could not ${act}: ${why}`;
-  /** What a fix came to, said on the row when it did not cure it; then every project is read
-   *  again, because a fix that half-ran changed something too. */
-  const landed = (fixed: DoctorFixed) => {
-    if (fixed.refused !== null) setSaid(could(fixed.refused));
-    else if (!fixed.complete) setSaid(fixed.said.join(" "));
-    does.reread();
-  };
+  const { said, setSaid, busy, setBusy, landed, apply } = useAlertFix(plane, label, does.reread);
   // **A fix that takes input opens its form here too** (#1301): the row's fix goes through the
   // doctor's own `useFixForm`, so a fix in `FIXES_WITH_A_FORM` is never applied bare (and
   // refused for the input it lacks). Every row asks for it, as hooks must; only a fix row uses it.
   const fixer: Fixer = {
-    apply: (id) => {
-      if (fixing.current) return;
-      fixing.current = true;
-      setBusy(true);
-      setSaid(undefined);
-      void commands
-        .planeDoctorFix(plane, id)
-        .then((answer) =>
-          landed(
-            answer.status === "ok"
-              ? answer.data
-              : { fix: id, refused: answer.error, said: [], complete: false },
-          ),
-        )
-        .catch((err: unknown) =>
-          landed({ fix: id, refused: String(err), said: [], complete: false }),
-        )
-        .finally(() => {
-          fixing.current = false;
-          setBusy(false);
-        });
-    },
+    apply,
     busy,
     identity: async (name, email) => {
       setSaid(undefined);

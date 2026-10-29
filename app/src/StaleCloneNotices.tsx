@@ -1,8 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { commands, type PlaneId, type StaleClone, type StaleFix } from "./bindings";
+import type { StandingNotice } from "./ChipNotices";
 import { Notice, type NoticeAction } from "./Notice";
 import { GIT, usePlaneChanged } from "./planeChanged";
 import { useWindowFocused } from "./windowFocused";
@@ -45,8 +46,12 @@ export const staleCloneCause = (stale: StaleClone) =>
  * A Fix that would lose work does nothing and says what blocks it, on the Notice. The list is
  * read again when the window comes back into focus and when the project's git standing moves,
  * so a Notice goes when its repo is fixed, from here or by hand.
+ *
+ * **Read once, drawn twice** (#3650): each line also hangs from its workspace's chip in the title
+ * bar (`ChipNotices.tsx`), with the same fixes, the same busy and refused state, and the one
+ * dismissal record (`dismissals.ts`), kept until the finding changes.
  */
-export function StaleCloneNotices({
+export function useStaleClones({
   plane,
   dismissed,
   dismiss,
@@ -57,7 +62,7 @@ export function StaleCloneNotices({
   dismissed: ReadonlySet<string>;
   dismiss: (cause: string) => void;
   settle: (family: string, present: readonly string[]) => void;
-}) {
+}): StaleClones {
   const [stale, setStale] = useState<readonly StaleClone[]>([]);
   const [unread, setUnread] = useState<readonly string[]>([]);
   /** What the last press said, by the Notice it was pressed on. */
@@ -111,16 +116,11 @@ export function StaleCloneNotices({
     [plane, busy],
   );
 
-  return (
-    <>
-      {unread.length > 0 && !dismissed.has(UNREAD) && (
-        <Notice cause={UNREAD} tone="trouble" onDismiss={() => dismiss(UNREAD)}>
-          <p>purlis could not check some repos for a stale branch or address: {unread.join(" ")}</p>
-        </Notice>
-      )}
-      {stale
+  const lines = useMemo(
+    () =>
+      stale
         .filter((one) => !dismissed.has(staleCloneCause(one)))
-        .map((one) => {
+        .flatMap((one): StandingNotice[] => {
           const cause = staleCloneCause(one);
           const repo = repoOf(one);
           const fixes: NoticeAction[] = [];
@@ -136,41 +136,93 @@ export function StaleCloneNotices({
               busy: busy === repo,
               onPress: () => press(one, "remote"),
             });
-          const [first, ...rest] = fixes;
-          if (first === undefined) return null;
+          if (fixes.length === 0) return [];
           const blocked = said[repo];
-          return (
-            <Notice
-              key={cause}
-              cause={cause}
-              tone={blocked === undefined ? "news" : "trouble"}
-              label={`${one.repo} in ${one.workspace}`}
-              fixes={[first, ...rest]}
-              onDismiss={() => dismiss(cause)}
-            >
-              <p>
-                {one.branch !== null && (
-                  <>
-                    <code>{one.repo}</code> in {one.workspace} is on{" "}
-                    <code>{one.branch.branch}</code>, not <code>{one.branch.default}</code>. A chat
-                    that starts in this repo works on <code>{one.branch.branch}</code>.{" "}
-                  </>
-                )}
-                {one.remote !== null && (
-                  <>
-                    <code>{one.repo}</code> in {one.workspace} fetches from{" "}
-                    <code>{one.remote.origin}</code>, and the forge says it moved to{" "}
-                    <code>{one.remote.now}</code>. Its fetches and pushes reach it only while the
-                    forge redirects the old address.
-                    {one.remote.pushes_follow && " Pushes move to the new address too."}
-                    <KeptPushes places={one.remote.pushes_kept} />
-                  </>
-                )}
-                {blocked !== undefined && ` ${blocked}`}
-              </p>
-            </Notice>
-          );
-        })}
+          return [
+            {
+              workspace: one.workspace,
+              cause,
+              says: <StaleSays one={one} blocked={blocked} />,
+              fixes,
+              // A repo another chat would work on by mistake: a warning (▲), not news (#3650).
+              kind: "warning",
+              tone: blocked === undefined ? "news" : "trouble",
+              label: `${one.repo} in ${one.workspace}`,
+              dismiss: () => dismiss(cause),
+            },
+          ];
+        }),
+    [stale, dismissed, busy, said, press, dismiss],
+  );
+  return { lines, unread, unreadShown: unread.length > 0 && !dismissed.has(UNREAD), dismiss };
+}
+
+/** **What the project's stale repos are**, read once and drawn in two places (#3650): the Inbox's
+ *  Notices, and each workspace's chip in the title bar, with the same ways and one dismissal. */
+export type StaleClones = {
+  /** One line per stale repo not dismissed, with its fixes. */
+  lines: readonly StandingNotice[];
+  /** What could not be read, said in the Inbox alone. */
+  unread: readonly string[];
+  unreadShown: boolean;
+  dismiss: (cause: string) => void;
+};
+
+/**
+ * **A stale repo's words**: off its default branch, on a moved remote, or both, with what the last
+ * press answered where it was refused.
+ */
+function StaleSays({ one, blocked }: { one: StaleClone; blocked: string | undefined }) {
+  return (
+    <p>
+      {one.branch !== null && (
+        <>
+          <code>{one.repo}</code> in {one.workspace} is on <code>{one.branch.branch}</code>, not{" "}
+          <code>{one.branch.default}</code>. A chat that starts in this repo works on{" "}
+          <code>{one.branch.branch}</code>.{" "}
+        </>
+      )}
+      {one.remote !== null && (
+        <>
+          <code>{one.repo}</code> in {one.workspace} fetches from <code>{one.remote.origin}</code>,
+          and the forge says it moved to <code>{one.remote.now}</code>. Its fetches and pushes reach
+          it only while the forge redirects the old address.
+          {one.remote.pushes_follow && " Pushes move to the new address too."}
+          <KeptPushes places={one.remote.pushes_kept} />
+        </>
+      )}
+      {blocked !== undefined && ` ${blocked}`}
+    </p>
+  );
+}
+
+/**
+ * **The project's stale repos in the Inbox** (#1985): what {@link useStaleClones} read, one
+ * Notice per repo, and a line for what could not be read.
+ */
+export function StaleCloneNotices({ clones }: { clones: StaleClones }) {
+  return (
+    <>
+      {clones.unreadShown && (
+        <Notice cause={UNREAD} tone="trouble" onDismiss={() => clones.dismiss(UNREAD)}>
+          <p>
+            purlis could not check some repos for a stale branch or address:{" "}
+            {clones.unread.join(" ")}
+          </p>
+        </Notice>
+      )}
+      {clones.lines.map((line) => (
+        <Notice
+          key={line.cause}
+          cause={line.cause}
+          tone={line.tone}
+          label={line.label}
+          fixes={line.fixes as [NoticeAction, ...NoticeAction[]]}
+          onDismiss={() => line.dismiss?.()}
+        >
+          {line.says}
+        </Notice>
+      ))}
     </>
   );
 }
