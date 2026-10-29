@@ -133,7 +133,9 @@ impl Bound {
                     .any(|kept| kept.pool() == pool);
                 if draining {
                     return Err(format!(
-                        "pool {pool} moved to a new runner, and purlis's session host did not say                          which of its runners this chat's link reached: restart purlis to update                          it"
+                        "pool {pool} moved to a new runner, and purlis's session host did not say \
+                         which of its runners this chat's link reached: restart purlis to \
+                         update it"
                     ));
                 }
                 crate::runners::runner_for(config_root, pool).map_err(|why| why.to_string())?

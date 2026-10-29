@@ -18,12 +18,13 @@
 //! - **that tool is the persona's, declared and allowed on this machine, asked for with exactly
 //!   its vault and hand-over**, and the vault is one the persona may use here, as for a chat of
 //!   this machine;
-//! - **the runner is shown to be the person's own** (`purlis_core::poollogins::Bound::over_the_link`,
-//!   the one check browser logins use, D-2050-4): until a pool can be marked owned (#2561), a
-//!   Docker pool whose engine is a local socket on this machine. A runner not shown to be owned is
-//!   never sent a value, and neither is a hosted one. The runner is the one the chat's link
-//!   reached, as the desktop's host said it (1.48, #3417): a draining one for a chat that stayed
-//!   on it, judged by its pool and that runner as they are kept.
+//! - **the runner is shown to be the person's own**
+//!   (`purlis_core::poollogins::Bound::over_the_link`, the one check browser logins use,
+//!   D-2050-4): until a pool can be marked owned (#2561), a Docker pool whose engine is a local
+//!   socket on this machine. A runner not shown to be owned is never sent a value, and neither is
+//!   a hosted one. The runner is the one the chat's link reached, as the desktop's host said it
+//!   (1.48, #3417): a draining one for a chat that stayed on it, judged by its pool and that
+//!   runner as they are kept.
 //!
 //! Then **the person is asked about this run** ([`PoolTools`]), as one Ask in the Inbox, and the
 //! command waits for the answer at most [`purlis_core::hookwire::relay::A_HANDED_LINE_WAITS_AT_MOST`].
