@@ -262,6 +262,15 @@ pub struct Chat {
     /// before this field: a reattach then asks its router again, as before. Not a
     /// format change, for [`Self::pinned`]'s reason.
     pub routing: Option<crate::skills::router::Kept>,
+    /// **The level a task starts at** (#3787): its asking chat's permission mode as the app
+    /// heard it from that chat's harness, capped at auto ([`crate::dispatchmode`]), and what
+    /// the task's harness is started in ([`crate::harness::HarnessAdapter::task_mode_words`]).
+    /// [`crate::dispatchmode::Level::Asks`] for every other chat.
+    ///
+    /// **Never written to the record on disk**, so never read from it: the record is a file a
+    /// level could be written into by anyone who can write the plane's state, and a chat
+    /// brought back from it starts in its harness's default.
+    pub mode: crate::dispatchmode::Level,
 }
 
 impl Chat {
@@ -1920,6 +1929,8 @@ impl From<ChatOnDisk> for Chat {
             model: crate::state::Model::new(&chat.model).map(|model| model.as_str().to_owned()),
             plane_skills: chat.plane_skills,
             routing: chat.routing,
+            // Never on disk ([`Chat::mode`]): a chat read back asks.
+            mode: crate::dispatchmode::Level::Asks,
         }
     }
 }

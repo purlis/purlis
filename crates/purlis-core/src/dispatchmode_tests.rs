@@ -1,0 +1,116 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! A task starts in its asking chat's permission mode, capped at auto (#3787). Every expected
+//! answer is written out from the operator's table.
+
+use super::*;
+
+#[test]
+fn claude_code_s_modes_read_as_the_operator_s_table_says() {
+    // Claude Code 2.1.312's own names for its modes, as its hook payloads carry them.
+    for (mode, reported) in [
+        ("default", Reported::Asks),
+        ("manual", Reported::Asks),
+        ("acceptEdits", Reported::Asks),
+        ("plan", Reported::Asks),
+        // Not classifier-backed: it refuses what is not allowed, unasked. Never travels.
+        ("dontAsk", Reported::Asks),
+        ("auto", Reported::Classifier),
+        ("bypassPermissions", Reported::PromptsOff),
+        // A word this purlis does not know asks.
+        ("autonomous", Reported::Asks),
+        ("Auto", Reported::Asks),
+        ("", Reported::Asks),
+    ] {
+        assert_eq!(
+            Reported::of_claude_code(Some(mode)),
+            Some(reported),
+            "{mode:?}"
+        );
+    }
+    // A payload with no mode says nothing, and takes nothing back.
+    assert_eq!(Reported::of_claude_code(None), None);
+}
+
+#[test]
+fn a_task_starts_at_its_asker_s_mode_capped_at_auto() {
+    assert_eq!(for_a_task(Some(Reported::Asks)), Level::Asks);
+    assert_eq!(for_a_task(Some(Reported::Classifier)), Level::Classifier);
+    // Bypass never travels: the task gets auto.
+    assert_eq!(for_a_task(Some(Reported::PromptsOff)), Level::Classifier);
+    // An asker whose harness never said asks.
+    assert_eq!(for_a_task(None), Level::Asks);
+}
+
+#[test]
+fn the_last_report_that_says_a_mode_is_the_one_kept() {
+    let mut heard = Heard::default();
+    assert_eq!(heard.for_a_task(), Level::Asks);
+    heard.heard(Some(Reported::Classifier));
+    assert_eq!(heard.for_a_task(), Level::Classifier);
+    // A report that names no mode leaves it as it was.
+    heard.heard(None);
+    assert_eq!(heard.for_a_task(), Level::Classifier);
+    // The person switched the chat back to asking: its next task asks too.
+    heard.heard(Some(Reported::Asks));
+    assert_eq!(heard.for_a_task(), Level::Asks);
+    heard.heard(Some(Reported::PromptsOff));
+    assert_eq!(heard.for_a_task(), Level::Classifier);
+}
+
+#[test]
+fn a_reported_mode_is_one_word_on_the_hook_s_line() {
+    for (reported, word) in [
+        (Reported::Asks, "\"asks\""),
+        (Reported::Classifier, "\"classifier\""),
+        (Reported::PromptsOff, "\"prompts_off\""),
+    ] {
+        assert_eq!(serde_json::to_string(&reported).expect("json"), word);
+        assert_eq!(
+            serde_json::from_str::<Reported>(word).expect("reads"),
+            reported
+        );
+    }
+}
+
+#[test]
+fn bypass_never_travels_to_a_task_on_any_harness() {
+    use crate::dispatchunattended::{Inherited, bypass_in, start_of_a_persona_chat};
+    use crate::harness::Harness;
+    // Whatever the asker reported, on every harness, the words a task starts with switch no
+    // prompt off: the command a task runs is one `bypass_in` finds nothing in.
+    for harness in [Harness::ClaudeCode, Harness::Codex, Harness::Opencode] {
+        for asker in [
+            None,
+            Some(Reported::Asks),
+            Some(Reported::Classifier),
+            Some(Reported::PromptsOff),
+        ] {
+            let command = vec!["harness".to_owned()];
+            let mut line = command.clone();
+            line.extend(
+                harness
+                    .adapter()
+                    .task_mode_words(for_a_task(asker), &command),
+            );
+            assert_eq!(bypass_in(&line), None, "{harness:?} {asker:?}: {line:?}");
+        }
+    }
+    // And a profile that switches them off is still refused for a task, at any level.
+    let profile = [
+        "claude".to_owned(),
+        "--dangerously-skip-permissions".to_owned(),
+    ];
+    assert!(
+        start_of_a_persona_chat(
+            crate::start::Start::default(),
+            "devops",
+            Some(Inherited {
+                profile: "yolo",
+                command: &profile,
+            }),
+        )
+        .is_err()
+    );
+}

@@ -2999,6 +2999,10 @@ impl Planes {
                     // harness nested in the chat never marks the chat.
                     held.unattended()
                         .heard(report.chat, report.detail.unattended);
+                    // And the mode it runs in, which a task it dispatches starts from
+                    // (#3787): the same report, and never a line the chat sends.
+                    held.unattended()
+                        .heard_mode(report.chat, report.detail.mode);
                     // The model its own harness says the chat runs on, for a commit's
                     // `Assisted-by` (#1021): judged against the conversation the board holds
                     // for the chat now, so a nested harness's report names none.

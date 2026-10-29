@@ -11430,3 +11430,40 @@ fn a_chat_open_in_a_workspace_with_no_id_is_drawn_specimens_from_the_plane_root_
         })
     );
 }
+
+/// #3787: a task starts in its asking chat's mode, capped at auto, as the app heard that
+/// chat's own harness say it: default stays default, auto travels, and bypass arrives as auto.
+/// A chat whose harness never said starts its tasks asking, and a switch back to asking is
+/// followed.
+#[test]
+fn a_task_starts_in_its_asking_chat_s_mode_capped_at_auto() {
+    use purlis_core::dispatchmode::{Level, Reported};
+    let plane = a_plane_with_personas();
+    let planes = planes();
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
+    let task_level = |name: &str| {
+        let brief = format!("# Look at {name}\nSay what is there.\n");
+        let (said, _) = dispatch_with(&held, &id, asking, None, name, &brief, None);
+        let Answer::Dispatched { chat: task, .. } = said else {
+            panic!("{name}: dispatched, not {said:?}")
+        };
+        held.chats()
+            .recorded_chat(task)
+            .expect("the task's record")
+            .mode
+    };
+    assert_eq!(task_level("never-said"), Level::Asks);
+    for (reported, level, name) in [
+        (Reported::Asks, Level::Asks, "asks"),
+        (Reported::Classifier, Level::Classifier, "auto"),
+        (Reported::PromptsOff, Level::Classifier, "bypass"),
+        (Reported::Asks, Level::Asks, "back-to-asking"),
+    ] {
+        held.unattended().heard_mode(asking, Some(reported));
+        // A report that names no mode takes nothing back.
+        held.unattended().heard_mode(asking, None);
+        assert_eq!(task_level(name), level, "{name}");
+    }
+}
