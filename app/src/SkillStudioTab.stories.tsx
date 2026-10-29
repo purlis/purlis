@@ -227,6 +227,8 @@ export const Reading: Story = {
       "aria-busy",
       "true",
     );
+    // After about a second a line says what is happening; the picture is taken with it there.
+    await canvas.findByText("Reading the project's skills…", undefined, { timeout: 3_000 });
     await tabInto(() => canvas.getByRole("navigation", { name: "Skill studio pages" }));
     expectFocusInSight();
   },
