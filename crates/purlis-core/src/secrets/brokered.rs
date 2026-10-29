@@ -1871,6 +1871,8 @@ impl Forwarded {
         let ctx = Ctx::new(root, Env::of(&[(crate::active::SESSION_ID_ENV, &chat)]));
         cmd::trace_secret_use(
             &ctx,
+            // [`FORWARDED`], written as a literal: the sweep's test finds every hand-out's
+            // event by the literal each call names.
             "secret.forwarded",
             &[],
             &[

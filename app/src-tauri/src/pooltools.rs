@@ -18,11 +18,12 @@
 //! - **that tool is the persona's, declared and allowed on this machine, asked for with exactly
 //!   its vault and hand-over**, and the vault is one the persona may use here, as for a chat of
 //!   this machine;
-//! - **the runner is shown to be the person's own** (`purlis_core::poollogins::Bound::reached`,
+//! - **the runner is shown to be the person's own** (`purlis_core::poollogins::Bound::over_the_link`,
 //!   the one check browser logins use, D-2050-4): until a pool can be marked owned (#2561), a
 //!   Docker pool whose engine is a local socket on this machine. A runner not shown to be owned is
-//!   never sent a value, and neither is a hosted one. A chat that stays on a draining runner,
-//!   reached as `<pool>/<runner>`, is judged by its pool and that runner as they are kept (#3417).
+//!   never sent a value, and neither is a hosted one. The runner is the one the chat's link
+//!   reached, as the desktop's host said it (1.48, #3417): a draining one for a chat that stayed
+//!   on it, judged by its pool and that runner as they are kept.
 //!
 //! Then **the person is asked about this run** ([`PoolTools`]), as one Ask in the Inbox, and the
 //! command waits for the answer at most [`purlis_core::hookwire::relay::A_HANDED_LINE_WAITS_AT_MOST`].
@@ -218,8 +219,8 @@ pub struct Gate<'a> {
     pub tools: ToolsOf<'a>,
     /// Whether the persona may use the vault here (`brokered::authorise`).
     pub authorised: &'a dyn Fn(&str, &str) -> Result<(), String>,
-    /// The pool as it is now, with the runner the chat's link reaches, where that runner is shown
-    /// to be the person's own (`Bound::reached`).
+    /// The pool as it is now, with the runner the chat's link reached, where that runner is shown
+    /// to be the person's own (`Bound::over_the_link`).
     pub owned: &'a dyn Fn(&Path, &str) -> Result<Bound, String>,
 }
 
@@ -415,17 +416,18 @@ pub fn answered(
 /// **Sends the values the person allowed through `hand`, and records on this desktop, in
 /// project `root`, that they were sent** (#3406, ADR 0078 §10): `secret.forwarded`, naming the
 /// vault, the keys, the runner's device id, the pool, the chat, its persona, the tool and the
-/// request, and never a value. Written once `hand` has sent them, so a run sent nothing is never
-/// recorded as sent. The values given back by a `hand` that sent nothing, where it gives any,
-/// are wiped as they go.
+/// request, and never a value. Written once `hand` has handed them to the link, measured to fit
+/// a frame ([`hand_on_the_link`]), so a run whose values were not handed on is never recorded as
+/// sent; a reply the session host refuses after that is told only in its log, so it may
+/// over-record (D-3406-2).
 pub fn sent(
     root: &Path,
     approved: Approved,
-    hand: impl FnOnce(Handed) -> Result<(), Handed>,
+    hand: impl FnOnce(Handed) -> Result<(), ()>,
 ) -> Result<(), ()> {
     let Approved { handed, checked } = approved;
     let forwarded = Forwarded::of(&handed);
-    hand(handed).map_err(drop)?;
+    hand(handed)?;
     forwarded.record(
         root,
         &Sent {
@@ -457,6 +459,9 @@ pub fn run_on_its_runner(
     let authorised = |persona: &str, vault: &str| brokered::authorise(&ctx, Some(persona), vault);
     let read = |tool: &Tool| read(&ctx, tool);
     let moved = || held.chats().asks_may_have_moved();
+    // The runner this chat's link reached, as the desktop's host said it (#3417).
+    let reached = crate::hooks::reached_over_the_link();
+    let owned = |config: &Path, pool: &str| Bound::over_the_link(config, pool, reached.as_deref());
     let gate = Gate {
         pool,
         ask: &ask,
@@ -468,7 +473,7 @@ pub fn run_on_its_runner(
         pools_in: held.chats().pools_in(),
         tools: &tools::declared_and_allowed_here,
         authorised: &authorised,
-        owned: &Bound::reached,
+        owned: &owned,
     };
     let decided = checked(&gate).and_then(|checked| {
         tracing::info!(
@@ -491,15 +496,15 @@ pub fn run_on_its_runner(
         )
     });
     match decided {
-        Ok(approved) => match sent(root, approved, purlis_core::hookwire::relay::hand_values) {
+        Ok(approved) => match sent(root, approved, hand_on_the_link) {
             Ok(()) => tracing::info!(
                 "purlis: chat {session} on pool {pool} ran {} with its values sent from this \
                  desktop",
                 ask.runs_as.as_deref().unwrap_or_default()
             ),
-            Err(_) => brokered::refused(
+            Err(()) => brokered::refused(
                 writer,
-                "this command did not come from a runner purlis can send a value to, so \
+                "purlis could not send this run its values over the link to the runner, so \
                  nothing ran"
                     .to_owned(),
             ),
@@ -508,6 +513,23 @@ pub fn run_on_its_runner(
             tracing::info!("purlis: chat {session} on pool {pool} was sent no vault value");
             brokered::refused(writer, why);
         }
+    }
+}
+
+/// **Hands `handed` to the link it is replied on** (`purlis_core::hookwire::relay::hand_values`),
+/// once it is measured to fit a frame of it (`hostedsessions::fits_a_reply`): one that does not
+/// is never handed on, where the link would carry a refusal in its place. Whatever is not handed
+/// on is wiped as it goes (#3420).
+fn hand_on_the_link(handed: Handed) -> Result<(), ()> {
+    let replied = purlis_core::hookwire::relay::Replied::Handed(handed);
+    if !crate::hostedsessions::fits_a_reply(&replied) {
+        return Err(());
+    }
+    match replied {
+        purlis_core::hookwire::relay::Replied::Handed(handed) => {
+            purlis_core::hookwire::relay::hand_values(handed).map_err(drop)
+        }
+        _ => Err(()),
     }
 }
 

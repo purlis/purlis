@@ -208,15 +208,19 @@ fn a_pool_with_a_runner_draining() -> tempfile::TempDir {
     config
 }
 
-/// A chat that stays on a draining runner is reached by `<pool>/<runner>` (#3417): it is
-/// judged by its pool and that runner as they are kept, by the same check as any runner chat.
+/// A chat that stays on a draining runner is reached over a link its host says reached
+/// `<pool>/<runner>` (#3417): it is judged by its pool and that runner as they are kept, by the
+/// same check as any runner chat, never by the pool's runner now.
 #[test]
-fn a_draining_runners_chat_is_judged_by_its_pool_and_that_runner_as_they_are_kept() {
+fn a_chat_on_a_link_relayed_before_its_pool_moved_on_is_judged_by_the_runner_it_reached() {
     let config = a_pool_with_a_runner_draining();
     let here = || Ok("/var/run/docker.sock".into());
 
-    let draining = Bound::reached_with(here(), config.path(), "first/first").unwrap();
-    let new = Bound::reached_with(here(), config.path(), "first").unwrap();
+    let draining =
+        Bound::over_the_link_with(here(), config.path(), "first", Some("first/first")).unwrap();
+    let new =
+        Bound::over_the_link_with(here(), config.path(), "first", Some("first/first-01234567"))
+            .unwrap();
 
     assert_eq!(draining.pool, "first", "its pool, by its own name");
     assert_eq!(draining.runner, "01JB0DRAINING000000000000000");
@@ -225,18 +229,67 @@ fn a_draining_runners_chat_is_judged_by_its_pool_and_that_runner_as_they_are_kep
 }
 
 #[test]
-fn a_name_that_reaches_no_runner_kept_draining_or_one_not_shown_to_be_yours_is_refused() {
+fn a_link_whose_host_named_no_runner_is_refused_while_its_pool_has_one_draining() {
     let config = a_pool_with_a_runner_draining();
-    for name in ["first/first-01234567", "first/none", "other/first", "none"] {
+    let refused = Bound::over_the_link_with(
+        Ok("/var/run/docker.sock".into()),
+        config.path(),
+        "first",
+        None,
+    )
+    .unwrap_err();
+    assert!(refused.contains("did not say which"), "{refused}");
+}
+
+#[test]
+fn a_link_whose_host_named_no_runner_is_the_pools_runner_while_none_drains() {
+    let config = a_pool_with_a_runner_draining();
+    let path = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+    let mut text: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    text["runners"].as_array_mut().unwrap().remove(0);
+    std::fs::write(&path, text.to_string()).unwrap();
+
+    let bound = Bound::over_the_link_with(
+        Ok("/var/run/docker.sock".into()),
+        config.path(),
+        "first",
+        None,
+    )
+    .unwrap();
+    assert_eq!(bound.runner, "01JB0NEW00000000000000000000");
+}
+
+#[test]
+fn a_runner_reached_that_is_not_kept_or_not_the_pools_or_not_yours_is_refused() {
+    let config = a_pool_with_a_runner_draining();
+    for reached in ["first/none", "other/first", "first", "other"] {
         assert!(
-            Bound::reached_with(Ok("/var/run/docker.sock".into()), config.path(), name).is_err(),
-            "{name}"
+            Bound::over_the_link_with(
+                Ok("/var/run/docker.sock".into()),
+                config.path(),
+                "first",
+                Some(reached)
+            )
+            .is_err(),
+            "{reached}"
         );
     }
-    let refused = Bound::reached_with(
+    assert!(
+        Bound::over_the_link_with(
+            Ok("/var/run/docker.sock".into()),
+            config.path(),
+            "none",
+            Some("none/first")
+        )
+        .is_err(),
+        "a pool not kept"
+    );
+    let refused = Bound::over_the_link_with(
         Err("this machine's DOCKER_HOST is tcp://build-box.example:2376".into()),
         config.path(),
-        "first/first",
+        "first",
+        Some("first/first"),
     )
     .unwrap_err();
     assert!(refused.contains("sends no vault value there"), "{refused}");

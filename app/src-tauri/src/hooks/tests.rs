@@ -3119,3 +3119,23 @@ fn a_line_is_heard_only_from_the_host_its_chat_runs_on() {
     assert_eq!(exec_through(&builds, 2, 20, 99), vec![Replied::Ended]);
     assert_eq!(exec_through(&here, 1, 10, 7), vec![Replied::Ended]);
 }
+
+/// An ask heard on a link its host said reached a runner is heard knowing which (#3417), and
+/// the next one on that thread knows nothing of it.
+#[test]
+fn an_ask_heard_over_a_link_knows_the_runner_its_host_said_it_reached() {
+    let heard = heard_reaching(
+        Some("builds".to_owned()),
+        Some("builds/old".to_owned()),
+        || (heard_from_a_pool(), reached_over_the_link()),
+    );
+    assert_eq!(
+        heard,
+        (Some("builds".to_owned()), Some("builds/old".to_owned()))
+    );
+    assert_eq!(
+        heard_from(Some("builds".to_owned()), reached_over_the_link),
+        None
+    );
+    assert_eq!(reached_over_the_link(), None);
+}

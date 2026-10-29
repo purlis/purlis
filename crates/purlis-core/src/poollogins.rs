@@ -76,35 +76,69 @@ impl Bound {
         Ok(Bound::of(&kept, &runner, &engine))
     }
 
-    /// **The pool and runner a chat's link named `name` reaches, as this machine keeps them now**
-    /// (#3417), where purlis can show that runner is the person's own ([`owned`]): a pool's own
-    /// name reaches its runner as [`Bound::read`] does, and `<pool>/<runner>` that pool's runner
-    /// of that name only while it is kept draining (`crate::runners::reachable`, ADR 0078 amended
-    /// 2026-10-21). What the window judges a chat already on a runner by; a new chat or a move
-    /// goes by [`Bound::read`], which reaches no draining runner.
-    pub fn reached(config_root: &Path, name: &str) -> Result<Bound, String> {
-        Self::reached_with(
+    /// **The pool and runner a runner chat's link reached, as this machine keeps them now**
+    /// (#3417), where purlis can show that runner is the person's own ([`owned`]): what the
+    /// window judges a chat already on a runner by. `reached` is the runner the desktop's host
+    /// said the link reached (`relay_to`'s answer, 1.48), as `<pool>/<runner>`: the pool's own
+    /// runner, or one of its runners kept draining (ADR 0078 amended 2026-10-21). A host before
+    /// 1.48 names none: then the pool's own runner is the one only while none of the pool's
+    /// runners drains, since a link relayed before the pool moved on reaches the runner before,
+    /// and with one draining it is refused, never judged by the pool's runner now. A new chat or
+    /// a move goes by [`Bound::read`], which reaches no draining runner.
+    pub fn over_the_link(
+        config_root: &Path,
+        pool: &str,
+        reached: Option<&str>,
+    ) -> Result<Bound, String> {
+        Self::over_the_link_with(
             crate::dockerpool::Docker::engine_on_this_machine(),
             config_root,
-            name,
+            pool,
+            reached,
         )
     }
 
-    /// [`Bound::reached`] on `engine`, the engine this machine's Docker pools run on.
-    pub fn reached_with(
+    /// [`Bound::over_the_link`] on `engine`, the engine this machine's Docker pools run on.
+    pub fn over_the_link_with(
         engine: Result<std::path::PathBuf, String>,
         config_root: &Path,
-        name: &str,
+        pool: &str,
+        reached: Option<&str>,
     ) -> Result<Bound, String> {
         let engine = owned(engine)?;
-        let (runner, _) =
-            crate::runners::reachable(config_root, name).map_err(|why| why.to_string())?;
-        let pool = name.split_once('/').map_or(name, |(pool, _)| pool);
         let kept = crate::runners::pools(config_root)
             .map_err(|why| why.to_string())?
             .into_iter()
             .find(|one| one.name() == pool)
             .ok_or_else(|| format!("no pool named {pool} is on this machine"))?;
+        let runner = match reached {
+            Some(reached) => {
+                let Some((of, name)) = reached.split_once('/').filter(|(of, _)| *of == pool) else {
+                    return Err(format!(
+                        "this chat's link reached {reached}, which is no runner of pool {pool}"
+                    ));
+                };
+                crate::runners::read(config_root)
+                    .map_err(|why| why.to_string())?
+                    .into_iter()
+                    .find(|kept| kept.pool() == of && kept.name() == name)
+                    .ok_or_else(|| {
+                        format!("runner {name} of pool {pool} is no longer on this machine")
+                    })?
+            }
+            None => {
+                let draining = crate::runners::draining(config_root)
+                    .map_err(|why| why.to_string())?
+                    .into_iter()
+                    .any(|kept| kept.pool() == pool);
+                if draining {
+                    return Err(format!(
+                        "pool {pool} moved to a new runner, and purlis's session host did not say                          which of its runners this chat's link reached: restart purlis to update                          it"
+                    ));
+                }
+                crate::runners::runner_for(config_root, pool).map_err(|why| why.to_string())?
+            }
+        };
         Ok(Bound::of(&kept, &runner, &engine))
     }
 }

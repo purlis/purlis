@@ -478,8 +478,23 @@ fn values_sent_to_a_runner_are_recorded_on_this_desktop_as_forwarded() {
 fn values_that_could_not_be_sent_are_not_recorded_as_sent() {
     let desktop = tempfile::tempdir().unwrap();
 
-    let sent = sent(desktop.path(), allowed(), Err);
+    let sent = sent(desktop.path(), allowed(), |_| Err(()));
 
     assert!(sent.is_err());
+    assert_eq!(traced(desktop.path()), Vec::<serde_json::Value>::new());
+}
+
+#[test]
+fn values_too_large_for_the_link_are_never_handed_on() {
+    let ask = kubectl_asked();
+    let huge = "v".repeat(purlis_session_protocol::link::MOST_CONTROL_FRAME_BYTES);
+    let handed = Handed::of(6, "kubectl", "r1", [("kubeconfig".to_owned(), huge)]);
+    let approved = Approved {
+        handed,
+        checked: checked(&a_gate(&ask)).expect("passes the gate"),
+    };
+    let desktop = tempfile::tempdir().unwrap();
+
+    assert!(sent(desktop.path(), approved, hand_on_the_link).is_err());
     assert_eq!(traced(desktop.path()), Vec::<serde_json::Value>::new());
 }
