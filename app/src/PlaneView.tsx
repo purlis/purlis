@@ -578,6 +578,15 @@ type Typed =
     };
 
 /**
+ * **Which clone of a new workspace's repos this is**, for its track (`cloneTrack`, #3649): each
+ * run's track is its own and ends with it, so a workspace made again under the same name starts
+ * afresh. Counted for the window, not for one project's view (#3898): the view is drawn anew
+ * when its project is closed and opened, while the kept results and the tracks put away live on
+ * in the window, so a count started again would say an old run's track once more.
+ */
+let cloneRuns = 0;
+
+/**
  * One project, with everything that belongs to it.
  *
  * **This is the extraction ADR 0033 costed and #121 named as what it was leaving behind.** The
@@ -4634,13 +4643,10 @@ export const PlaneView = memo(function PlaneView({
    * notice, and the way to the workspace's Repos settings. Never closed on a timer: it stays
    * until it is dismissed.
    */
-  /** Which clone of a new workspace's repos this is, so each one's track is its own and ends
-   *  with it (#3649's review): a workspace made again under the same name starts afresh. */
-  const cloneRuns = useRef(0);
   const cloneNewRepos = useCallback(
     (name: string, picked: string[], after?: Said): Promise<void> => {
-      cloneRuns.current += 1;
-      const track = cloneRuns.current;
+      cloneRuns += 1;
+      const track = cloneRuns;
       const run = async (repos: string[], before?: Said) => {
         let done = 0;
         setReport({ ...reposCloning(name, repos, done, track), after: before });
