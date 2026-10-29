@@ -782,6 +782,10 @@ struct OpenChat {
     /// Move here, and a chat here Move to runner.
     #[specta(optional)]
     pool: Option<String>,
+    /// The workspace it works in, or `null` at the project's root (#3453): its tab's move names
+    /// the other chats of its workspace, which move with it.
+    #[specta(optional)]
+    workspace: Option<String>,
     /// The persona it adopted.
     persona: Option<String>,
     /// What its harness cannot tell charter, said on the chat — none where it tells all.
@@ -2299,15 +2303,22 @@ async fn move_chat_now(
     let held = planes.held(&plane)?;
     tauri::async_runtime::spawn_blocking(move || {
         match held.move_chat_now(session, Size { columns, rows })? {
-            Some(started) => Ok(chatmoves::MoveNow {
-                chat: Some(drawn(&held, started)?),
+            Some(moved) => Ok(chatmoves::MoveNow {
+                moved: moved
+                    .into_iter()
+                    .map(|(was, started)| {
+                        Ok(chatmoves::MovedChat {
+                            was,
+                            chat: drawn(&held, started)?,
+                            notices: held.chats().start_notes(started),
+                        })
+                    })
+                    .collect::<Result<_, String>>()?,
                 not_yet: None,
-                notices: held.chats().start_notes(started),
             }),
             None => Ok(chatmoves::MoveNow {
-                chat: None,
+                moved: Vec::new(),
                 not_yet: Some(chatmoves::NOT_AT_A_PAUSE.to_owned()),
-                notices: Vec::new(),
             }),
         }
     })
@@ -2737,6 +2748,7 @@ impl From<chats::Open> for OpenChat {
                 .map(|card| HarnessGlance::from(&card)),
             profile: open.profile,
             pool: None,
+            workspace: open.workspace,
             persona: open.persona,
             in_front: open.in_front,
             shows: open.shows,

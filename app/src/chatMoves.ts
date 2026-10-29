@@ -106,14 +106,21 @@ export function useChatMovesHeard(plane: PlaneId) {
 }
 
 /**
- * **Asks for chat `session` to move to pool `to`, or here for `null`**: the core checks it now
- * and prepares it. Its refusal is held as a failed move, which the pane says.
+ * **Asks for chat `session`, running on pool `from` or here for `null`, to move to pool `to`, or
+ * here for `null`**, with every chat of its workspace running where it runs (#3453): the core
+ * checks it now and prepares it. Its refusal is held as a failed move, which the pane says.
  */
-export async function askMove(plane: PlaneId, session: number, to: string | null) {
+export async function askMove(
+  plane: PlaneId,
+  session: number,
+  from: string | null,
+  to: string | null,
+) {
   const said = await commands
     .moveChat(plane, session, to)
     .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-  if (said.status === "error") heardMove(plane, { session, to, stage: "failed", why: said.error });
+  if (said.status === "error")
+    heardMove(plane, { session, from, to, stage: "failed", why: said.error, with: [] });
 }
 
 /** Puts chat `session`'s move away: one still prepared is forgotten, a failed one dismissed. */
@@ -135,23 +142,64 @@ export function movesDue(
 /** Where a move goes, in words. */
 export const placeSaid = (to: string | null) => (to === null ? "this machine" : `pool ${to}`);
 
-/** What chat `session`'s pane says of its move, and whether it is trouble. */
+/** Names in a sentence: `a`, `a and b`, `a, b and c`. */
+export function listed(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * What chat `session`'s pane says of its move, and whether it is trouble. A chat that moves with
+ * others of its workspace names them (#3453); one that did not move names where it still runs,
+ * once (#3646).
+ */
 export function moveSaid(one: ChatMove): { words: string; trouble: boolean } {
   const where = placeSaid(one.to);
+  const others = one.with ?? [];
+  const meanwhile = one.to === null ? "its work comes back" : "the runner is readied";
   switch (one.stage) {
     case "preparing":
       return {
-        words: `Moving to ${where}. It keeps working here while ${one.to === null ? "its work comes back" : "the runner is readied"}, and moves at its next pause.`,
+        words:
+          others.length === 0
+            ? `Moving to ${where}. It keeps working here while ${meanwhile}, and moves at its next pause.`
+            : `Moving to ${where} with ${listed(others)}, which share its workspace's clones. Each keeps working here while ${meanwhile}, and they move together once each is at a pause.`,
         trouble: false,
       };
     case "ready":
-      return { words: `Moves to ${where} at its next pause.`, trouble: false };
+      return {
+        words:
+          others.length === 0
+            ? `Moves to ${where} at its next pause.`
+            : `Moves to ${where} with ${listed(others)} once each is at a pause.`,
+        trouble: false,
+      };
     default:
       return {
-        words: `Did not move to ${where}, so it runs where it was. ${one.why ?? ""}`.trim(),
+        words:
+          `Did not move to ${where}, so it still runs on ${placeSaid(one.from ?? null)}. ${one.why ?? ""}`.trim(),
         trouble: true,
       };
   }
+}
+
+/**
+ * **The other chats that move with chat `session`** (#3453): every other chat of its
+ * workspace running where it runs, by the name its tab shows, since a workspace's chats share
+ * its clones and move together. None for a chat at the project's root.
+ */
+export function movesWith(
+  session: number,
+  open: readonly Pick<OpenChat, "session" | "workspace" | "pool" | "label" | "name">[],
+): string[] {
+  const chat = open.find((one) => one.session === session);
+  const workspace = chat?.workspace ?? null;
+  if (chat === undefined || workspace === null) return [];
+  const on = chat.pool ?? null;
+  return open
+    .filter((one) => one.session !== session)
+    .filter((one) => (one.workspace ?? null) === workspace && (one.pool ?? null) === on)
+    .map((one) => one.label ?? one.name);
 }
 
 /**
