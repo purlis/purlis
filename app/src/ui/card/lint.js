@@ -21,13 +21,3 @@ const cardFamily = moved({
 export const rules = {
   "card-family": cardFamily,
 };
-
-/**
- * **This family's controls still drawn as a raw `<button>`** (D-2904-9, #3523): a card pressed
- * whole (the welcome's doors, a repo to get), by the family's one class (`ui-card-control`),
- * never by a word a view picked (`welcome-door`, `repo-card`): the button family's rule lets it
- * through until the family has a pressable card for them to move onto (#3655).
- */
-export const rawButtons = {
-  classes: ["ui-card-control"],
-};

@@ -147,8 +147,8 @@ export const SKILL_PAGE_TAB_NAMES: Record<SkillPageTab, string> = {
  * **A place in the studio**: one step of its tab's history (`ui/panel/viewHistory.ts`). The
  * page, whose chats it covers, on Library the skill chosen (its row's id, {@link skillRowId}),
  * the tab of its page shown (`tab`, Overview where none is said) and on Runs the run to mark
- * (`run`, from a run's chip), and on another page the item chosen in its list (`item`: a draft's
- * id on Drafts, a deleted skill's on Deleted).
+ * (`run`, from a run's chip), on another page the item chosen in its list (`item`: a draft's
+ * id on Drafts, a deleted skill's on Deleted), and on Sources the page inside it (`sources`).
  */
 export interface StudioPlace {
   page: StudioPage;
@@ -157,6 +157,23 @@ export interface StudioPlace {
   tab?: SkillPageTab;
   run?: string;
   item?: string;
+  /** On Sources, the page inside it: a source's own, or a review (#3687). */
+  sources?: SourcesAt;
+}
+
+/**
+ * **A page inside Sources** (#3687, the amendment's S5): a source's own page, or the review of
+ * installing or updating one of its skills. A source is named by its repository and branch
+ * ({@link sourceKey}), and `label` is how the path over the page names it.
+ */
+export type SourcesAt =
+  | { at: "source"; source: string; label: string }
+  | { at: "install"; source: string; label: string; skill: string }
+  | { at: "update"; source: string; label: string; skill: string };
+
+/** **A source's key**: its repository and the branch read from it, which no other source shares. */
+export function sourceKey(remote: { url: string; branch: string | null }): string {
+  return `${remote.url}\u0000${remote.branch ?? ""}`;
 }
 
 /** Where a studio tab starts when nothing opened it anywhere: Library, at the project's root. */
@@ -187,14 +204,23 @@ export function skillRowNamed(name: string): string {
   return `#${name}`;
 }
 
-/** Two places are one: the same page, scope and skill chosen, whichever tab of its page shows. */
+/** Two places are one: the same page, scope, skill and item chosen, whichever tab of its page
+ *  shows, and the same page inside Sources. */
 export function samePlace(one: StudioPlace, other: StudioPlace): boolean {
   return (
     one.page === other.page &&
     sameScope(one.scope, other.scope) &&
     one.skill === other.skill &&
-    one.item === other.item
+    one.item === other.item &&
+    sameSourcesAt(one.sources, other.sources)
   );
+}
+
+/** Two pages inside Sources are one: the same page, of the same source and skill. */
+function sameSourcesAt(one: SourcesAt | undefined, other: SourcesAt | undefined): boolean {
+  if (one === undefined || other === undefined) return one === other;
+  const skill = (at: SourcesAt) => (at.at === "source" ? undefined : at.skill);
+  return one.at === other.at && one.source === other.source && skill(one) === skill(other);
 }
 
 /** A target's key starts with this: it names a place to open the studio at, never a tab. */

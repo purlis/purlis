@@ -114,7 +114,9 @@ function AbsentRow({
       <Menued on={{ on: "absent", repo }} offers={offers} onPress={onPress}>
         <div className="absent-row">
           <FolderX className="node-icon" />
-          <span className="repo ui-text-body ui-text-strong">{repo}</span>
+          {/* Quieter than a cloned repo's name (#3790): the secondary role, strong. A colour set in
+              App.css would lose to a role's, which sits in a later layer. */}
+          <span className="repo ui-text-secondary ui-text-strong">{repo}</span>
           {busy ? (
             <span className="pending ui-text-secondary" aria-busy="true">
               <LoaderCircle className="node-icon spinning" />

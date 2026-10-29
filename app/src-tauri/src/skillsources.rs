@@ -150,6 +150,9 @@ pub struct OfferedSkill {
     pub folder: String,
     /// The levels it is installed at from this source, as a person reads them.
     pub installed: Vec<String>,
+    /// What its files do beyond its instructions, a few words each, as the core marks them;
+    /// `None` where they were not read to browse, and its review reads them.
+    pub marks: Option<Vec<String>>,
 }
 
 /// A folder of a source that is not a skill purlis offers.
@@ -744,6 +747,7 @@ pub(crate) async fn skill_source_browse(
                     description: esc(&one.skill.description),
                     folder: esc(&one.skill.folder),
                     installed: one.installed.iter().map(ToString::to_string).collect(),
+                    marks: one.marks,
                 })
                 .collect(),
             not_skills: browse

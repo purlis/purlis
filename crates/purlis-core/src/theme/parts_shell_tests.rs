@@ -510,6 +510,45 @@ fn the_plane_root_s_chip_is_the_workspace_chip_s_root_variant_since_next() {
     );
 }
 
+#[test]
+fn a_dormant_pin_s_chip_is_the_workspace_chip_s_dormant_variant_since_next() {
+    // A theme keys it as a chip (`titlebar.workspace.dormant.*`, #3651), new in the next release.
+    let manifest = parts::manifest_json();
+    let titlebar = manifest["families"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|one| one["name"] == "titlebar")
+        .unwrap();
+    let dormant = titlebar["variants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|one| one["name"] == "dormant")
+        .expect("a dormant pin's chip is a variant of the title bar's chip");
+    assert_eq!(dormant["since"], parts::NEXT);
+    assert_eq!(dormant["consent"], false);
+    // Drawn as titlebar.css draws it: muted words and the subtle line at rest, never the chosen
+    // wash (it is never current), the card's fill and the primary words under the pointer.
+    let css = css_of(include_str!("../../../../app/src/ui/titlebar/titlebar.css"));
+    let chip = "[data-part=\"workspace\"][data-scope=\"titlebar\"]";
+    let own = rule(&css, &format!("{chip}[data-variant=\"dormant\"]"));
+    let [fill, text, border] = parts::look_of("titlebar", "dormant", &[]);
+    assert_eq!(fill, "transparent");
+    assert_eq!(text, token(declared(own, "color").unwrap()));
+    assert_eq!(border, token(declared(own, "border-color").unwrap()));
+    assert_eq!(declared(own, "border-style"), Some("dotted"));
+    assert_eq!(
+        parts::look_of("titlebar", "dormant", &[parts::State::Selected]),
+        parts::look_of("titlebar", "dormant", &[]),
+        "never current, so never the chosen wash"
+    );
+    let lit = rule(&css, &format!("{chip}[data-variant=\"dormant\"][data-hovered]"));
+    let [fill, text, _] = parts::look_of("titlebar", "dormant", &[parts::State::Hover]);
+    assert_eq!(fill, token(declared(lit, "background-color").unwrap()));
+    assert_eq!(text, token(declared(lit, "color").unwrap()));
+}
+
 // ---------------------------------------------------------------------------------------
 // The window's geometry (#2805)
 // ---------------------------------------------------------------------------------------
