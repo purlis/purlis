@@ -152,6 +152,8 @@ fn the_move_carries_drafts_and_local_grades_and_discards_the_rest() {
         std::fs::read_to_string(into.join("skill-grades/2026-10.jsonl")).unwrap(),
         "{\"row\":\"new\"}\n{\"row\":\"old\"}\n"
     );
+    // The kept grade chats are carried, as a move carries them.
+    assert!(into.join("skill-grade-chats/deploy/g1/c1.screen").is_file());
     // The rest: discarded, never carried forward.
     for gone in [
         "skill-tries",
@@ -159,7 +161,6 @@ fn the_move_carries_drafts_and_local_grades_and_discards_the_rest() {
         "grades-under-way.lock",
         "skill-grade-after-edit.json",
         "skill-grade-after-edit.lock",
-        "skill-grade-chats",
     ] {
         assert!(
             std::fs::symlink_metadata(into.join(gone)).is_err(),
@@ -594,4 +595,44 @@ fn a_move_from_a_root_that_is_only_out_of_reach_carries_and_keeps_the_old_folder
         "never removed"
     );
     assert!(here.join(format!("{MOVED}{}", was.key)).is_file());
+}
+
+#[test]
+fn another_data_home_holds_every_folder_until_they_are_accepted_again() {
+    // The project's state is kept under a data home it was not kept in before.
+    let tmp = project();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
+    let first = tempfile::tempdir().unwrap();
+    made_in(first.path(), root).unwrap();
+    let other = tempfile::tempdir().unwrap();
+    let here = made_in(other.path(), root).unwrap();
+    assert!(!levels_confirmed(&here, root));
+    assert_eq!(
+        crate::skills::levels::made_since_in_for(root, &here)(&root.join("workspaces/ops"))
+            .as_deref(),
+        Some(crate::skills::levels::UNCONFIRMED)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_records_folder_that_is_a_link_is_never_confirmed() {
+    let tmp = project();
+    let root = tmp.path();
+    let here = made(root).unwrap();
+    assert!(
+        levels_confirmed(&here, root),
+        "a project new to purlis starts confirmed"
+    );
+    let elsewhere = tempfile::tempdir().unwrap();
+    std::fs::copy(
+        here.join(crate::skills::levels::DIR).join(CONFIRMED),
+        elsewhere.path().join(CONFIRMED),
+    )
+    .unwrap();
+    std::fs::remove_dir_all(here.join(crate::skills::levels::DIR)).unwrap();
+    forgotten(&here);
+    std::os::unix::fs::symlink(elsewhere.path(), here.join(crate::skills::levels::DIR)).unwrap();
+    assert!(!levels_confirmed(&here, root));
 }

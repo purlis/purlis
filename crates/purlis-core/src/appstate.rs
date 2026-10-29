@@ -226,6 +226,12 @@ fn written_once(path: &Path, text: &str) -> Result<String, String> {
 /// [`made_in`], with the project's lock held.
 fn made_locked(mine: &Path, root: &Path) -> Result<PathBuf, String> {
     let plane_id = record_text(&plane_id_file(root));
+    // A project purlis has never kept app state for, anywhere: no id of its own yet, no folder,
+    // and no levels records an older purlis kept in its state folder. Only such a one's records
+    // start out confirmed; every other folder is held until the person accepts them again.
+    let fresh = plane_id.is_none()
+        && std::fs::symlink_metadata(mine).is_err()
+        && !older_levels_records(root);
     let mut held_levels = false;
     if std::fs::symlink_metadata(mine).is_ok() {
         let owner = record_text(&mine.join(OWNER));
@@ -261,10 +267,96 @@ fn made_locked(mine: &Path, root: &Path) -> Result<PathBuf, String> {
     if held_levels {
         crate::skills::levels::ask_again_in(mine, root)?;
     }
+    if fresh {
+        mark_levels_confirmed(mine, root)?;
+    }
     if let Ok(mut found) = found_bound().lock() {
         found.insert(mine.to_path_buf());
     }
     Ok(mine.to_path_buf())
+}
+
+/// **Whether the project at `root` has never had app state kept for it**, where this machine can
+/// keep it: no id of its own, no folder, and no levels records an older purlis kept. Its first
+/// write confirms its records ([`made`]), so a reader before it holds nothing either.
+pub(crate) fn never_kept(root: &Path) -> bool {
+    data_home(root).is_some_and(|data| {
+        plane_id(root).is_none()
+            && std::fs::symlink_metadata(in_data(&data, root)).is_err()
+            && !older_levels_records(root)
+    })
+}
+
+/// Whether a state folder of the project at `root` holds levels records an older purlis kept
+/// there: under either spelling, or where `$PURLIS_HOME` puts it.
+fn older_levels_records(root: &Path) -> bool {
+    crate::names::STATE_DIR
+        .spellings()
+        .map(|state| root.join(state))
+        .chain(std::iter::once(crate::plane::state_dir(root)))
+        .any(|state| std::fs::symlink_metadata(state.join(crate::skills::levels::DIR)).is_ok())
+}
+
+/// The file in a project's levels records folder this purlis writes when it can vouch for what
+/// that folder says: the project's [`PLANE_ID`]. Without it, or with another id in it, every
+/// workspace and persona folder is held until the person accepts them again.
+pub const CONFIRMED: &str = "confirmed";
+
+/// The levels records folders found confirmed in this process ([`levels_confirmed`]).
+fn found_confirmed() -> &'static std::sync::Mutex<std::collections::HashSet<PathBuf>> {
+    static FOUND: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<PathBuf>>> =
+        std::sync::OnceLock::new();
+    FOUND.get_or_init(Default::default)
+}
+
+/// The project at `root`'s [`PLANE_ID`], where it has one.
+pub(crate) fn plane_id(root: &Path) -> Option<String> {
+    record_text(&plane_id_file(root))
+}
+
+/// **Whether the levels records of the app state `state` are this purlis's own for the project
+/// at `root`**: a records folder of its own (no link) holding [`CONFIRMED`] with the project's
+/// id. Remembered for the process once it is.
+pub(crate) fn levels_confirmed(state: &Path, root: &Path) -> bool {
+    if found_confirmed()
+        .lock()
+        .is_ok_and(|found| found.contains(state))
+    {
+        return true;
+    }
+    let records = state.join(crate::skills::levels::DIR);
+    let ok = std::fs::symlink_metadata(&records).is_ok_and(|meta| meta.is_dir())
+        && plane_id(root).is_some_and(|id| {
+            record_text(&records.join(CONFIRMED)).as_deref() == Some(id.as_str())
+        });
+    if ok && let Ok(mut found) = found_confirmed().lock() {
+        found.insert(state.to_path_buf());
+    }
+    ok
+}
+
+/// [`CONFIRMED`] written in the app state `state` of the project at `root`, its records folder
+/// made where it is not.
+pub(crate) fn mark_levels_confirmed(state: &Path, root: &Path) -> Result<(), String> {
+    let id = plane_id(root).ok_or_else(|| "the project has no id".to_owned())?;
+    let records = state.join(crate::skills::levels::DIR);
+    held_private(&records).map_err(|why| format!("{}: {why}", records.display()))?;
+    crate::plane::write_private(state, &records.join(CONFIRMED), id.as_bytes())
+        .map_err(|why| why.to_string())?;
+    if let Ok(mut found) = found_confirmed().lock() {
+        found.insert(state.to_path_buf());
+    }
+    Ok(())
+}
+
+/// Forgets what this process found of the folder `mine`.
+fn forgotten(mine: &Path) {
+    if let Ok(mut found) = found_bound().lock() {
+        found.remove(mine);
+    }
+    if let Ok(mut found) = found_confirmed().lock() {
+        found.remove(mine);
+    }
 }
 
 /// **The project at `root` is given an id of its own**, and its app state with it: what a copy of
@@ -275,6 +367,7 @@ fn reminted(data: &Path, root: &Path) -> Result<(), String> {
     let id = random_id()?;
     crate::plane::write_private(root, &plane_id_file(root), id.as_bytes())
         .map_err(|why| why.to_string())?;
+    forgotten(&mine);
     crate::plane::write_private(&mine, &mine.join(OWNER), id.as_bytes())
         .map_err(|why| why.to_string())
 }
@@ -282,9 +375,7 @@ fn reminted(data: &Path, root: &Path) -> Result<(), String> {
 /// The folder `mine`, another project's, renamed beside itself as `<key>.foreign-<n>`, and where it
 /// went.
 fn set_aside(mine: &Path) -> Result<PathBuf, String> {
-    if let Ok(mut found) = found_bound().lock() {
-        found.remove(mine);
-    }
+    forgotten(mine);
     let name = mine
         .file_name()
         .ok_or("no name")?
@@ -343,7 +434,8 @@ pub enum Carried {
     Moved,
     /// Moved, each file added to the one of its name that is there already: a record of rows.
     Appended,
-    /// Removed: transient, or a record of the person's word that they give again.
+    /// Set aside in the plane, unread: transient, or a record of the person's word that they give
+    /// again.
     Discarded,
     /// Removed, and every workspace and persona folder of the project is held until the person
     /// accepts it again in the Skill studio (`skills::levels`).
@@ -360,7 +452,7 @@ pub const STORES: [(&str, Carried); 9] = [
     (crate::skills::grades::underway::CLAIM, Carried::Discarded),
     (crate::skills::grades::after_edit::FILE, Carried::Discarded),
     (crate::skills::grades::after_edit::LOCK, Carried::Discarded),
-    (crate::skills::grades::kept::DIR_NAME, Carried::Discarded),
+    (crate::skills::grades::kept::DIR_NAME, Carried::Moved),
     (crate::skills::levels::DIR, Carried::AskedAgain),
 ];
 
@@ -475,9 +567,9 @@ pub fn move_from(root: &Path, states: &[PathBuf], into: &Path) -> Moved {
                     .push(format!("{name} was left in the plane ({why})"));
                 continue;
             }
-            if let Err(why) = removed(&old) {
+            if let Err(why) = renamed_aside(&old) {
                 out.left
-                    .push(format!("{name} was not removed from the plane ({why})"));
+                    .push(format!("{name} was not set aside in the plane ({why})"));
                 continue;
             }
             out.done.push((name.to_owned(), carried));
@@ -685,6 +777,24 @@ fn carried_from(data: &Path, root: &Path, key: &str, old_root: &Path) -> Moved {
         tracing::warn!(target: "purlis::appstate", "purlis: {line}");
     }
     out
+}
+
+/// `path`, a store an older purlis kept in the plane's state folder, renamed beside itself as
+/// `<store>.moved-<n>`, where no store's name reads it: an older purlis still attached to the
+/// project finds it gone, never half removed under it.
+fn renamed_aside(path: &Path) -> std::io::Result<()> {
+    let name = path
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("no name"))?
+        .to_string_lossy()
+        .into_owned();
+    for n in 1..1000 {
+        let aside = path.with_file_name(format!("{name}.moved-{n}"));
+        if std::fs::symlink_metadata(&aside).is_err() {
+            return std::fs::rename(path, aside);
+        }
+    }
+    Err(std::io::Error::other("no name to set it aside under"))
 }
 
 /// `path` removed, a folder with all it holds, never through a link: a link is removed itself.

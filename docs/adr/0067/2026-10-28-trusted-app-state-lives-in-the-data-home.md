@@ -46,6 +46,14 @@
    sweep removes, and records that cannot be read hold every folder. The move out of the plane
    reads only the state folder purlis was reading; a state folder `$PURLIS_HOME` names may be
    shared by clones, so its copies are left in place, read no more, and nothing is marked.
-6. **No cost at a chat's open.** The move runs once per project open, and after its mark is written
+6. **Held by default.** A project whose records purlis cannot confirm are its own holds every
+   workspace and persona folder until accepted. The levels records are read only where a file
+   purlis writes in them names the project's id: written when purlis first keeps state for a
+   project it never kept state for, and at the person's one Accept for the project, which vouches
+   for every folder there now. Every other case (no data home, another data home, a folder set
+   aside, a move or copy, records an older purlis kept, a link in their place) holds every folder
+   behind that one Accept. The one-time move sets the plane's copies aside rather than removing
+   them, so an older purlis still attached finds them gone, never half removed.
+7. **No cost at a chat's open.** The move runs once per project open, and after its mark is written
    it looks at that one name alone. A chat's start reads the same stores it read before, in their
    new place.

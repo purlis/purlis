@@ -506,6 +506,10 @@ pub struct Studio {
     /// The router its chats are routed by, and how it did at each one's start (SK-15b). Null
     /// while the studio is off.
     pub router: Option<StudioRouter>,
+    /// Where purlis cannot confirm which of the project's workspace and persona folders the
+    /// person accepted (#3718): the one sentence the studio shows once for the project, whose
+    /// Accept accepts every folder there now (`skill_levels_confirm`). Null otherwise.
+    pub levels_to_confirm: Option<String>,
 }
 
 /// **A declared harness skills are not supported on** (SK-30, #2985): the core's
@@ -652,6 +656,7 @@ pub(crate) fn studio(
             pins_refused: None,
             not_supported: Vec::new(),
             router: None,
+            levels_to_confirm: None,
         };
     }
     let off = workspace
@@ -701,6 +706,7 @@ pub(crate) fn studio(
         pins_refused,
         not_supported: not_supported.into_iter().map(Into::into).collect(),
         router: Some(router),
+        levels_to_confirm: purlis_core::skills::levels::to_confirm(root).map(str::to_owned),
     }
 }
 

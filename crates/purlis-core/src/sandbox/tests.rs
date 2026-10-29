@@ -319,7 +319,6 @@ fn a_chat_never_writes_charters_integrity_state() {
     // Under both names of the state folder (RN-2a): the purlis one is read when it is there, so
     // a chat that could make `.purlis/app` would be writing the records charter reads next.
     let (plane, denied) = denied_with(None, Os::Linux);
-    let data = Homes::charter_data(&machine(Os::Linux)).expect("a data home");
     assert_eq!(
         paths(&denied, Class::Integrity, Access::Write),
         [
@@ -355,11 +354,21 @@ fn a_chat_never_writes_charters_integrity_state() {
             plane.path().join(".charter"),
             // The folder chats' servers listen in (#2019).
             door::root_in(None),
-            // The app's own state of every project (#3718), and the folders that hold it.
-            data.join(crate::appstate::DIR),
-            data.join(crate::appstate::DIR),
-            data,
         ]
+        .into_iter()
+        .chain(
+            // The app's own state of every project (#3718), and the folders that hold it.
+            Homes::data_homes(&machine(Os::Linux))
+                .into_iter()
+                .flat_map(|data| {
+                    [
+                        data.join(crate::appstate::DIR),
+                        data.join(crate::appstate::DIR),
+                        data,
+                    ]
+                })
+        )
+        .collect::<Vec<_>>()
     );
 }
 
@@ -7023,4 +7032,30 @@ fn every_harness_denies_a_chat_writing_the_app_state_and_lets_it_read_it() {
         }
     }
     assert_eq!(compiled_harnesses, 3, "Claude Code, Codex and opencode");
+}
+
+#[test]
+fn every_spelling_of_the_data_home_is_held() {
+    // #3718: each folder the data home could be, there or not, under either name.
+    let on = machine(Os::Linux);
+    let share = on.home.as_ref().expect("a home").join(".local/share");
+    let denied = Denied::of(tempfile::tempdir().expect("a plane").path(), &on);
+    for name in ["purlis", "charter"] {
+        let data = share.join(name);
+        assert!(!data.exists());
+        for (path, reach) in [
+            (data.join(crate::appstate::DIR), Reach::AndBelow),
+            (data.join(crate::appstate::DIR), Reach::Itself),
+            (data.clone(), Reach::Itself),
+        ] {
+            assert!(
+                denied.paths.iter().any(|it| it.path == path
+                    && it.reach == reach
+                    && it.access == Access::Write
+                    && it.class == Class::Integrity),
+                "{path:?} {reach:?}: {:?}",
+                denied.paths
+            );
+        }
+    }
 }

@@ -31,6 +31,39 @@ function answering(studio: unknown) {
 }
 
 describe("the Skill studio", () => {
+  it("asks once for the project where it cannot confirm which folders were accepted", async () => {
+    const said =
+      "purlis can't confirm which of this project's folders you accepted before: accept them again in the Skill studio";
+    const asked: string[] = [];
+    mockIPC((cmd) => {
+      if (cmd === "skill_studio")
+        return {
+          on: true,
+          workspace: null,
+          first: { starts: false, unmoved: null },
+          workspaces: [],
+          levels: [],
+          harnesses: [],
+          clashes: [],
+          skills: [],
+          pins_refused: null,
+          not_supported: [],
+          levels_to_confirm: said,
+        };
+      if (cmd === "skills_deleted") return [];
+      if (cmd === "skill_levels_confirm") {
+        asked.push(cmd);
+        return {};
+      }
+      return null;
+    });
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    const item = await screen.findByTestId("skill-studio-levels-to-confirm");
+    expect(item).toHaveTextContent(said);
+    within(item).getByRole("button", { name: "Accept the folders" }).click();
+    await waitFor(() => expect(asked).toEqual(["skill_levels_confirm"]));
+  });
+
   it("says in one line why a declared harness's chats get no skills (SK-30)", async () => {
     const said =
       "Skills are not supported on Goose: it has no skill format purlis can hand skills by, and its declaration does not say it takes MCP servers, so its chats get no skills.";

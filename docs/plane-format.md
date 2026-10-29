@@ -7810,9 +7810,9 @@ refuses a `<data>` under a project or inside any git work tree.
   state folder `$PURLIS_HOME` names may be shared by several clones, so its copies are left where
   they are, read no more, and nothing is marked. Where a folder that is not moved holds levels
   records, every workspace and persona folder waits for the person's Accept again, once
-  (`asked-again-<which>`), before anything is marked. Drafts and local grades are carried, the rest removed, and nothing
-  reads the plane's copies again. Each store is removed from the plane only once all of it is
-  carried; a file is written beside its place and renamed in, and a line a grade file already
+  (`asked-again-<which>`), before anything is marked. Drafts, local grades and kept grade chats are
+  carried, and each store in the plane is then renamed beside itself as `<store>.moved-<n>`, read no
+  more. A store is set aside only once all of it is carried; a file is written beside its place and renamed in, and a line a grade file already
   holds is never added again. A project that moved, as its [record of open chats](#appreopenjson)
   says (V43), keeps its drafts, local grades and kept grade chats under its new clone key, where
   the old key's `root` names the root the record names and its `owner` is the project's own, and
@@ -7995,7 +7995,13 @@ refuses a `<data>` under a project or inside any git work tree.
   made, until the person accepts it in the Skill studio (`skills::levels::accept`).
 - **Read by:** every skill set: a workspace's or persona's skills whose folder is not in a record,
   or is in `unaccepted.json`, reach no chat, with "accept it in the Skill studio", until the person
-  does.
+  does. **Held by default:** the records are read only where `confirmed`, a file of this folder,
+  holds the project's [`app/app-state-id`](#appapp-state-id); purlis writes it when it makes the app
+  state of a project it has never kept state for, and at the person's one Accept for the project.
+  Without it (another data home, a folder set aside, a move or copy, records an older purlis kept,
+  a link in its place), every workspace and persona folder is held until accepted, behind one item
+  in the Skill studio for the project (`skills::levels::confirm`), whose Accept vouches for every
+  folder there now.
 - **Removed by:** the app, each time it writes its record of open chats
   ([`app/reopen.json`](#appreopenjson)), for a chat not on it, two minutes after it was written,
   moving what it could have made to `unaccepted.json` first (`skills::levels::sweep`).

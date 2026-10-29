@@ -329,8 +329,14 @@ fn with_no_app_state_the_folders_an_older_purlis_held_stay_held() {
     std::fs::create_dir_all(&old).unwrap();
     std::fs::write(old.join(UNACCEPTED), r#"{"levels":["workspaces/ops"]}"#).unwrap();
     let held = made_since_in(root, None);
-    assert!(held(&root.join("workspaces/ops")).is_some());
-    assert_eq!(held(&root.join("personas/steward")), None);
+    // Records an older purlis kept: every folder is held until accepted again.
+    for owner in ["workspaces/ops", "personas/steward"] {
+        assert_eq!(
+            held(&root.join(owner)).as_deref(),
+            Some(UNCONFIRMED),
+            "{owner}"
+        );
+    }
 }
 
 #[test]
@@ -350,4 +356,63 @@ fn a_record_that_cannot_be_read_is_replaced_and_accept_then_lets_each_folder_go(
     accept(root, "workspaces/ops").unwrap();
     assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
     assert!(made_since(root)(&root.join("personas/steward")).is_some());
+}
+
+#[test]
+fn a_chat_reattached_across_the_upgrade_leaves_every_folder_held_behind_one_accept() {
+    // An older purlis noted a chat that runs across the upgrade, in the plane's state folder.
+    let tmp = plane(&[CHAT]);
+    let root = tmp.path();
+    let old = crate::names::state(root).join(DIR);
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::write(
+        old.join(format!("{CHAT}.json")),
+        r#"{"name":"7","levels":[]}"#,
+    )
+    .unwrap();
+    crate::appstate::move_out_of_the_plane(root);
+    assert!(!confirmed(root));
+    assert_eq!(to_confirm(root), Some(UNCONFIRMED));
+    for owner in ["workspaces/ops", "personas/steward"] {
+        assert_eq!(
+            made_since(root)(&root.join(owner)).as_deref(),
+            Some(UNCONFIRMED),
+            "{owner}"
+        );
+    }
+    // The one Accept: every folder there now, and the records are this purlis's from then on.
+    confirm(root).unwrap();
+    assert!(confirmed(root));
+    assert_eq!(to_confirm(root), None);
+    for owner in ["workspaces/ops", "personas/steward"] {
+        assert_eq!(made_since(root)(&root.join(owner)), None, "{owner}");
+    }
+}
+
+#[test]
+fn a_folder_s_accept_while_nothing_is_confirmed_is_the_one_accept() {
+    let tmp = plane(&[]);
+    let root = tmp.path();
+    let old = crate::names::state(root).join(DIR);
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::write(old.join(UNACCEPTED), r#"{"levels":[]}"#).unwrap();
+    crate::appstate::move_out_of_the_plane(root);
+    assert!(made_since(root)(&root.join("personas/steward")).is_some());
+    accept(root, "workspaces/ops").unwrap();
+    assert!(confirmed(root));
+    assert_eq!(made_since(root)(&root.join("personas/steward")), None);
+}
+
+#[test]
+fn a_project_new_to_purlis_starts_with_nothing_held() {
+    let tmp = plane(&[]);
+    let root = tmp.path();
+    assert_eq!(
+        made_since(root)(&root.join("workspaces/ops")),
+        None,
+        "before its first write"
+    );
+    crate::appstate::made(root).unwrap();
+    assert!(confirmed(root));
+    assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
 }

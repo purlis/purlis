@@ -557,6 +557,20 @@ export function SkillStudioTab({
       {panel}
       {drafted}
       {starts}
+      {typeof studio.levels_to_confirm === "string" && (
+        <p className="honest" data-testid="skill-studio-levels-to-confirm">
+          {studio.levels_to_confirm}{" "}
+          <Button
+            size="sm"
+            isDisabled={busy}
+            onPress={() =>
+              change("The folders were not accepted", () => commands.skillLevelsConfirm(plane))
+            }
+          >
+            Accept the folders
+          </Button>
+        </p>
+      )}
       {refusedPins !== null && (
         <p>
           <SkillPinsRefusedLine

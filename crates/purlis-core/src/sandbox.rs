@@ -1946,7 +1946,7 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     }
     // The app's own state of every project (#3718): what purlis reads back to decide, kept in
     // the data home where only purlis writes it.
-    if let Some(data) = Homes::charter_data(machine) {
+    for data in Homes::data_homes(machine) {
         paths.extend(app_state_held(&data));
     }
     // A vault's file is kept under the other names purlis finds for it in the project.
@@ -3219,6 +3219,38 @@ impl Homes {
         // names the same folder for both, and the folder rename-local moved it to, once it has
         // (RN-5).
         crate::datahome::root_with(&|name: &str| machine.env.get(name), system)
+    }
+
+    /// **Every folder the data home's ladder can name on `machine`**, there or not: the one in use
+    /// ([`Self::charter_data`]) first, then what the variable names, and each spelling of its
+    /// folder under `$XDG_DATA_HOME` and under the system's data directory.
+    pub(crate) fn data_homes(machine: &Machine) -> Vec<PathBuf> {
+        let named = |name: &str| {
+            machine
+                .env
+                .get(name)
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+                .filter(|path| path.is_absolute())
+        };
+        let system = machine.home.as_ref().map(|home| match machine.os {
+            Os::MacOs => home.join("Library/Application Support"),
+            Os::Linux | Os::Windows | Os::Other => home.join(".local/share"),
+        });
+        let mut out: Vec<PathBuf> = Self::charter_data(machine).into_iter().collect();
+        out.extend(named(crate::datahome::HOME_VAR));
+        for base in [named("XDG_DATA_HOME"), system].into_iter().flatten() {
+            for spelling in crate::names::DATA_HOME.spellings() {
+                out.push(base.join(spelling));
+            }
+        }
+        let mut seen: Vec<PathBuf> = Vec::new();
+        out.retain(|path| {
+            let new = !seen.contains(path);
+            seen.push(path.clone());
+            new
+        });
+        out
     }
 
     /// The Codex home of the project at `root`'s sandboxed chats on `machine` (D-88q): a folder

@@ -1029,6 +1029,12 @@ export const commands = {
 	skillDraftChat: __WINDOW_ONLY_RESULT,
 	skillDraftTry: __WINDOW_ONLY_RESULT,
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **Accepts every workspace and persona folder of the project there now** (#3718): the person's one
+	 *  press where purlis cannot confirm which of them they accepted before
+	 *  (`levels::to_confirm`).
+	 */
+	skillLevelsConfirm: (plane: PlaneId) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_levels_confirm", { plane })),
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
 	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model })),
 	skillGradeStart: __WINDOW_ONLY_RESULT,
@@ -10808,6 +10814,12 @@ export type Studio = {
 	 *  while the studio is off.
 	 */
 	router: StudioRouter | null,
+	/**
+	 *  Where purlis cannot confirm which of the project's workspace and persona folders the
+	 *  person accepted (#3718): the one sentence the studio shows once for the project, whose
+	 *  Accept accepts every folder there now (`skill_levels_confirm`). Null otherwise.
+	 */
+	levels_to_confirm: string | null,
 };
 
 /**
