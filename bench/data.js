@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793316666400,
+  "lastUpdate": 1793318311048,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30324,6 +30324,48 @@ window.BENCHMARK_DATA = {
             "value": 101.67253299999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.207, 101.235, 101.673, 102.999, 103.343 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "098598ba7c9b51a4c06f43656645ab5e96f85b8f",
+          "message": "Runners: add a cluster pool from the window and run a workspace's chats on it (#3292) (#3815)\n\n* Runners: add a cluster pool from the window and run a workspace's chats on it (#3292)\n\nThe add pool dialog gains a Kind: Cluster takes a kubeconfig, its context\nand the cluster's Pool, shows the cluster operator key that Pool names for\nthe person to check, then pins it, claims a kept runner as the\nkubeconfig's user, waits for the operator to vouch for it, pairs it over\nkubectl exec and keeps it in runners.json (new cluster rows, recorded in\ndocs/plane-format.md). A workspace set to run on it runs its chats there\nthrough the desktop's host, whose connector checks before every link that\nthe Pool still names the pinned key and the operator still vouches for the\npaired pod and key (clusterpool::before_link, still_vouched); either\nchanged is told to the link as a changed key and asked about with the\nkey-changed Notice. kubectl is found by an absolute path and never handed\na KUBECONFIG.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Runners: a cluster pool's kubectl finds plugins beside it or system-wide alone (#3292)\n\nIts runs' PATH is kubectl's own folder, the one its link leads to, and the\nmachine's own folders: never a home folder or the window's PATH.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Runners: the cluster pool's window code as prettier writes it (#3292)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Runners: cluster pool fixes from the first CI round (#3292)\n\nThe settings gate counts a cluster pool; the add dialog opens on a Docker\npool unless told otherwise; the machine's own kubectl alone runs without a\nKUBECONFIG, so a test's kubectl against its own cluster runs as it is; test\nkeys in their one spelling; the guard's count for the dialog's two alerts.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Runners: a cluster pool keeps its pin with its cluster and follows a roll (#3292, #3305)\n\nA cluster pool's row pins the operator's key and the pool's cluster\n(PoolPin); a row with the key alone reaches no runner and says to add the\npool again. Before every link the pin follows a roll its key vouches for\n(PoolPin::follow) and a moved pin is kept in runners.json; a Claim not yet\nsigned by the new key refuses that link as not vouched, which is tried\nagain, never unpaired. The connector runs on the runner namespace of the\nclaim's requester (#2055).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Runners: a cluster pool keeps its own copy of its kubeconfig's context (#3292)\n\nAdding a cluster pool keeps the context as kubectl config view --minify\n--raw --flatten gives it, 0600 in cluster-kubeconfigs/<pool>.yaml in the\nmachine's config folder, denied to chats as runners.json is, and every\nrun of the pool's kubectl from then on (its add, before every link, its\nremoval) is pointed at that copy. Removing the pool, or an add that fails,\nremoves it. The new store is recorded in docs/plane-format.md.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Runners: the cluster pool's changes entry says it keeps its own copy of the context (#3292)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Runners: the cluster pool test expects the pool kept at its own copy (#3292)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Runners: cluster pool review round 3 (#3292)\n\n- Remove unpairs before it locks runners.json, so a link's check that keeps\n  a moved pin finishes; the pool is forgotten here whatever the cluster\n  answers, and what may be left there is said with how to delete it.\n- A claim is named and marked by this desktop's device id, and deleted only\n  where its uid is the one kept, or it is marked as this desktop's and asked\n  for by who the kubeconfig is; delete_claim ignores one already gone.\n- The programs a pool's kubectl runs (kubectl and each credential plugin its\n  context names, by real path) are kept with the pool and held for no chat\n  to write; an add is refused where one cannot be held. kubectl keeps its\n  caches in a folder of purlis's.\n- The context and Pool are checked before kubectl runs; runners.json is\n  locked only for writes during an add; a failed add removes the copy even\n  where the record could not be forgotten.\n- Window: the list's help covers cluster rows, a cluster row shows its key,\n  the Pool box is required, what is typed is kept across a change of Kind,\n  the contexts follow the Kubeconfig box, and a missing kubeconfig is said\n  under its box.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T23:17:10Z",
+          "tree_id": "7a6e0809a9fb54dbbc1d2639f43f1895a6a17248",
+          "url": "https://github.com/purlis/purlis/commit/098598ba7c9b51a4c06f43656645ab5e96f85b8f"
+        },
+        "date": 1793318307261,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.517981,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.511, 0.513, 0.518, 0.533, 0.534 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.396781499999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.103, 16.168, 16.397, 16.539, 16.725 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.367311,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.347, 102.152, 102.367, 103.241, 103.703 ms"
           }
         ]
       }
