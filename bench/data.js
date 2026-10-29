@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793276987101,
+  "lastUpdate": 1793278415641,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29568,6 +29568,48 @@ window.BENCHMARK_DATA = {
             "value": 101.67502099999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.436, 101.403, 101.675, 102.146, 103.364 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d539b094a9e19aaf749cae5e6aaa2408244edc9f",
+          "message": "Operator kind test: the direct-claim test names a claim's volume templates and a pool's kept volume (#3852)\n\n#3701's kind test was written before #2057 added SandboxClaimSpec.volume_claim_templates\nand PoolSpec.kept_volume, so main's operator clippy (all targets) and kind run fail to\ncompile it. Both take their default, as every other test here does.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T12:31:24Z",
+          "tree_id": "1053b14d9bf3b645da497dcc6c42c7248b68037f",
+          "url": "https://github.com/purlis/purlis/commit/d539b094a9e19aaf749cae5e6aaa2408244edc9f"
+        },
+        "date": 1793278411148,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5360914999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.530, 0.534, 0.536, 0.541, 0.545 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.394939,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.278, 16.385, 16.395, 16.420, 16.473 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6364295,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.666, 101.501, 101.636, 102.347, 102.685 ms"
           }
         ]
       }
