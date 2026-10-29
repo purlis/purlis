@@ -247,12 +247,16 @@ describe("whose skills the Skills view shows", () => {
     await list();
     await waitFor(() => expect(foldOf(/^A new chat gets/)).toBeInTheDocument());
     expect(screen.queryByRole("row", { name: /^In this chat/ })).toBeNull();
+    // Folded under one heading, the group stays folded under the other: it is one group.
+    await userEvent.click(foldOf(/^A new chat gets/));
+    await waitFor(() => expect(openOf(foldOf(/^A new chat gets/))).toBe("false"));
     rerender(<SkillsView plane="p" workspace="ops" chat={STEWARD} {...hands} />);
     await waitFor(() => expect(foldOf(/^In this chat/)).toBeInTheDocument());
+    expect(openOf(foldOf(/^In this chat/))).toBe("false");
     expect(screen.queryByRole("row", { name: /^A new chat gets/ })).toBeNull();
-    // Whose set it is, its fold kept the same: the group is one, whatever it is headed.
     rerender(<SkillsView plane="p" workspace="ops" {...hands} />);
     await waitFor(() => expect(foldOf(/^A new chat gets/)).toBeInTheDocument());
+    expect(openOf(foldOf(/^A new chat gets/))).toBe("false");
   });
 });
 
