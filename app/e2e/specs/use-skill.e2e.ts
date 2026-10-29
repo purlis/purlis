@@ -124,10 +124,13 @@ async function typeTheSkill(typed: string): Promise<void> {
   let lines: string[] = [];
   await browser.waitUntil(
     async () => {
+      // Said on the status bar's card (#3653), or on the opener's page with no project.
       lines = await browser.execute(() =>
-        [...document.querySelectorAll('.window-work > .action-result [role="status"]')].map(
-          (one) => one.textContent ?? "",
-        ),
+        [
+          ...document.querySelectorAll(
+            '[data-chip="status/bar/notices"] > .action-result [role="status"], .window-work > .action-result [role="status"]',
+          ),
+        ].map((one) => one.textContent ?? ""),
       );
       return lines.some((line) => line.includes(typed));
     },
