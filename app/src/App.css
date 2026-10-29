@@ -4443,28 +4443,6 @@ body {
   color: var(--text-secondary);
 }
 
-/* **The welcome's cards**: a door and a repo to get, each a card pressed whole, not a button of
-   the family (the card family's, `eslint.config.js`). Every other button on the welcome and the
-   guided steps is the family's and draws itself (#3129); no rule here reaches one. */
-.welcome :is(.welcome-door, .repo-card) {
-  padding: var(--space-2) var(--space-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.welcome :is(.welcome-door, .repo-card):hover:not(:disabled, [aria-disabled="true"]) {
-  background: var(--surface-hover);
-}
-
-.welcome :is(.welcome-door, .repo-card):is(:disabled, [aria-disabled="true"]) {
-  opacity: 0.45;
-  cursor: default;
-}
-
 /* **The guided steps** (#1817, `Onboarding.tsx`): the welcome and the pages after it, with
    "Step N of M" and the list of steps above them, at the welcome's own width. The steps scroll
    as one page, so the welcome inside does not scroll on its own. */
@@ -4527,10 +4505,8 @@ body {
   padding: var(--space-7) 0 0;
 }
 
-/* **The three doors**: one row of equal cards, as many to a row as the width holds, each a
-   single button whose title is its name and whose line is its description. A card is a thing
-   that is pressed, so it is drawn in the `control.*` shades. The mark is the accent, the only
-   colour on the page, so the eye finds the doors before the prose. */
+/* **The three doors**: one row of equal cards, as many to a row as the width holds, each a card
+   pressed whole (`ui/card/CardButton`), which draws itself. */
 .welcome-doors {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12.5rem, 1fr));
@@ -4542,47 +4518,6 @@ body {
 
 .welcome-doors li {
   display: flex;
-}
-
-.welcome .welcome-door {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-5) var(--space-5) var(--space-6);
-  border-radius: var(--radius-xl);
-  background: var(--control-base);
-  text-align: left;
-  transition:
-    background-color var(--motion-duration-quick) var(--motion-easing-standard),
-    border-color var(--motion-duration-quick) var(--motion-easing-standard);
-}
-
-.welcome .welcome-door:hover:not(:disabled, [aria-disabled="true"]) {
-  border-color: var(--border-strong);
-  background: var(--control-hover);
-}
-
-/* A card's ring sits outside it: inside, it would run over the mark's corner. */
-.welcome .welcome-door:focus-visible {
-  outline-offset: var(--focus-ring-offset);
-}
-
-.welcome-door-mark {
-  margin-bottom: var(--space-2);
-  font-size: var(--font-size-xl);
-  color: var(--accent-base);
-}
-
-.welcome-door-title {
-  font-weight: var(--font-weight-strong);
-}
-
-.welcome-door-says {
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height-body);
-  color: var(--text-secondary);
 }
 
 /* A quiet act inside the page's prose: Sign in under the doors, Back above a door's page, and
