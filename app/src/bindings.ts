@@ -2886,6 +2886,19 @@ export const commands = {
 	dockerPoolLink: (name: string) => typedError<PoolLink, string>(__TAURI_INVOKE("docker_pool_link", { name })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
+	/**  **The contexts of the kubeconfig `kubeconfig` names** (#3292), as kubectl lists them. */
+	clusterContexts: (kubeconfig: string | null) => typedError<ClusterContexts, string>(__TAURI_INVOKE("cluster_contexts", { kubeconfig })),
+	/**
+	 *  **Check its key**: the cluster operator key the cluster's Pool `pool` names, through
+	 *  `context` of `kubeconfig`, for the person to check before the pool is added (#3292).
+	 */
+	clusterPoolKey: (kubeconfig: string | null, context: string, pool: string) => typedError<ClusterPoolKey, string>(__TAURI_INVOKE("cluster_pool_key", { kubeconfig, context, pool })),
+	/**
+	 *  **Adds a cluster pool on this machine** (#3292): pins the key the person checked, claims a
+	 *  runner of the cluster's Pool, waits for its operator to vouch for it, pairs it and keeps it.
+	 *  What fails is taken back.
+	 */
+	addClusterPool: (adding: ClusterPoolAdding) => typedError<ClusterPoolRow, string>(__TAURI_INVOKE("add_cluster_pool", { adding })),
 	/**
 	 *  **Every profile of this machine's, kept on pool `pool`'s runner**, as the runner stands with
 	 *  each (#2049): what adding a pool ends with, and what Settings › Pools shows. Refused, with
@@ -5648,6 +5661,48 @@ export type ClosingChat = {
 	 *  any, the close asks once: keep them running, or stop them.
 	 */
 	running: string[],
+};
+
+/**  The contexts of a kubeconfig, as the Add a pool dialog offers them. */
+export type ClusterContexts = {
+	/**  The kubeconfig read, by its absolute path. */
+	kubeconfig: string,
+	contexts: string[],
+	/**  The context it is on, where it names one. */
+	current: string | null,
+};
+
+/**  A cluster pool as the person typed it, with the key they checked. */
+export type ClusterPoolAdding = {
+	name: string,
+	/**  The kubeconfig, by its path; empty or none is kubectl's own default, `~/.kube/config`. */
+	kubeconfig: string | null,
+	context: string,
+	/**  The cluster's Pool. */
+	pool: string,
+	/**  The cluster operator key Check its key showed, spelled as it showed it. */
+	key: string,
+};
+
+/**  What Check its key read of a cluster's Pool. */
+export type ClusterPoolKey = {
+	/**  The cluster operator key the Pool's status names, spelled as it gives it. */
+	key: string,
+	/**  The namespace the context names, where the pool's claim would be made. */
+	namespace: string,
+};
+
+/**  One cluster pool, as its row draws it. */
+export type ClusterPoolRow = {
+	name: string,
+	/**  The kubeconfig's context its kubectl is pointed at. */
+	context: string,
+	/**  The cluster's Pool its runner is claimed from. */
+	pool: string,
+	/**  The namespace its claim is made in. */
+	namespace: string,
+	/**  The cluster operator key pinned as it was added, spelled `ed25519:<64 hex>`. */
+	operator_key: string,
 };
 
 /**  What a palette command does. */
@@ -8658,6 +8713,11 @@ export type OfferedSkill = {
 	folder: string,
 	/**  The levels it is installed at from this source, as a person reads them. */
 	installed: string[],
+	/**
+	 *  What its files do beyond its instructions, a few words each, as the core marks them;
+	 *  `None` where they were not read to browse, and its review reads them.
+	 */
+	marks: string[] | null,
 };
 
 /**
@@ -9847,6 +9907,11 @@ export type PoolLink =
 { state: "linked" } | 
 /**  It answered with another key: it is refused, and the window offers to remove it. */
 { state: "key_changed" } | 
+/**
+ *  Its cluster's Pool names another cluster operator key than the one pinned as the pool was
+ *  added (#3292): its runner is refused, and the window offers to remove the pool.
+ */
+{ state: "operator_key_changed" } | 
 /**  It did not answer, and why. */
 { state: "down"; why: string } | 
 /**
@@ -9979,6 +10044,8 @@ export type PoolsShown = {
 	 *  by default (#3297).
 	 */
 	width?: number | null,
+	/**  This machine's cluster pools (#3292), each with its runner in a team's cluster. */
+	clusters?: ClusterPoolRow[] | null,
 };
 
 /**

@@ -67,6 +67,7 @@ import { NewPersona } from "../NewPersona";
 import { NewProject } from "../NewProject";
 import { PublishProject } from "../PublishProject";
 import { NewVault } from "../NewVault";
+import { AddSourceDialog } from "../SkillSources";
 import { NewWorkspace } from "../NewWorkspace";
 import { Palette } from "../Palette";
 import { PanelList } from "../PanelList";
@@ -1029,6 +1030,13 @@ const DIALOGS: Opened[] = [
     file: "PublishProject.tsx",
     open: async () =>
       render(<PublishProject plane={PLANE} suggested="notebook" onClose={nothing} />),
+  },
+  {
+    name: "add a skill source",
+    file: "SkillSources.tsx",
+    open: async () => {
+      render(<AddSourceDialog busy={false} onCancel={nothing} onAdd={nothing} />);
+    },
   },
   {
     name: "a new vault",

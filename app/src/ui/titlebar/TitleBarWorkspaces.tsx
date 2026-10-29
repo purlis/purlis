@@ -9,8 +9,8 @@
  * its own (`purlis/titlebar-family` in `eslint.config.js`).
  *
  * - **Drawn by its parts.** A chip carries `data-scope="titlebar"`, `data-part="workspace"` and
- *   its `data-variant`: `pinned`, `unpinned`, or `root` for the plane root's house, which
- *   stands outside the strip. Its waiting count is the `count` part.
+ *   its `data-variant`: `pinned`, `unpinned`, `dormant` for a pin whose workspace is gone
+ *   (#3651), or `root` for the plane root's house, which stands outside the strip. Its waiting count is the `count` part.
  *   `titlebar.css` draws the defaults (the Purlis look: 28px, corners of 8, quiet words) and a
  *   theme's parts reach the same attributes (`titlebar.workspace.corner-radius`, ADR 0103).
  * - **States a theme can key** are the ones this wrapper marks: `data-hovered` under the pointer,
@@ -77,7 +77,7 @@ export const noticesSaid = (count: number, kind: NoticeKind = "info") => {
 };
 
 /** The family's variants, in the order the manifest names them. */
-export const TITLEBAR_VARIANTS = ["pinned", "unpinned", "root"] as const;
+export const TITLEBAR_VARIANTS = ["pinned", "unpinned", "root", "dormant"] as const;
 export type TitleBarVariant = (typeof TITLEBAR_VARIANTS)[number];
 
 type Native = Omit<
@@ -88,8 +88,9 @@ type Native = Omit<
 export interface WorkspaceChipProps extends Native {
   /** The workspace's name: what the chip says, and its name. */
   name: string;
-  /** A pin, or the current workspace while it is not pinned, whose press pins it (R105). The
-   *  `root` variant is `RootChip`'s alone (#3654). */
+  /** A pin, or the current workspace while it is not pinned, whose press pins it (R105), or a
+   *  pin whose workspace is gone, kept dormant, whose press shows its notice (#3651). The `root`
+   *  variant is `RootChip`'s alone (#3654). */
   variant?: Exclude<TitleBarVariant, "root">;
   /** It is the workspace in front (R101). */
   current?: boolean;
@@ -135,7 +136,7 @@ export function WorkspaceChip({
   const describedBy =
     [
       (handed as { "aria-describedby"?: string })["aria-describedby"],
-      waiting > 0 || (notices?.count ?? 0) > 0 ? said : undefined,
+      waiting > 0 || (notices?.count ?? 0) > 0 || variant === "dormant" ? said : undefined,
     ]
       .filter(Boolean)
       .join(" ") || undefined;
@@ -173,6 +174,8 @@ export function WorkspaceChip({
   // What waits in it and what its dot shows, beside it and not in it, so its words are only
   // what it draws.
   const describes = [
+    // A dormant chip says what it is, as its dotted edge and slanted words draw it (#3651).
+    variant === "dormant" ? "gone, kept dormant" : undefined,
     waiting > 0 ? `${waiting} waiting` : undefined,
     notices !== undefined && notices.count > 0
       ? noticesSaid(notices.count, notices.kind)

@@ -82,17 +82,26 @@ const CHAT = {
 };
 
 /** One project with `alpha` pinned and its chat in front; `workspace_create` makes one, as the
- *  core does, with no vision, and the store keeps a pin written. */
+ *  core does, with no vision, and the store keeps a pin written. `missing` are pins whose
+ *  workspace is gone (#3651); while `refusing` holds, the store refuses a pin. */
 function core({
   clone,
   repos = ["api"],
+  missing = [],
+  refusing,
+  unlisted = false,
 }: {
   /** How `clone_repo` answers each repo: the core's lines, or a refusal it throws. */
   clone?: (repo: string) => Promise<string[]>;
   /** The repos the new-workspace dialog offers, while `clone` is given. */
   repos?: string[];
+  missing?: string[];
+  refusing?: { pin: boolean };
+  /** A workspace made is not in the plane's listing: removed or renamed since (#3651). */
+  unlisted?: boolean;
 } = {}) {
   const pinned: string[] = ["alpha"];
+  const gone = [...missing];
   const made: string[] = [];
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   mockIPC((cmd, args) => {
@@ -102,7 +111,7 @@ function core({
     if (cmd === "plane_sidebar")
       return {
         root: PLANE,
-        workspaces: ["alpha", ...made].map((name) => ({
+        workspaces: ["alpha", ...(unlisted ? [] : made)].map((name) => ({
           name,
           path: `${PLANE}/workspaces/${name}`,
           vision: "",
@@ -115,10 +124,18 @@ function core({
       };
     if (cmd === "opened_chats") return [CHAT];
     if (cmd === "plane_pins")
-      return { project: false, workspaces: pinned, missing: [], order: pinned, certain: true };
+      return {
+        project: false,
+        workspaces: pinned,
+        missing: gone,
+        order: [...pinned, ...gone],
+        certain: true,
+      };
     if (cmd === "pin_workspace") {
       const name = String(given.workspace);
+      if (refusing?.pin === true) throw new Error("the store is read-only");
       if (given.pinned === true && !pinned.includes(name)) pinned.push(name);
+      if (given.pinned === false && gone.includes(name)) gone.splice(gone.indexOf(name), 1);
       return null;
     }
     if (cmd === "workspace_create") {
@@ -146,7 +163,7 @@ function core({
     if (cmd === "extensions_on") return [];
     return null;
   });
-  return { asked, pinned };
+  return { asked, pinned, gone };
 }
 
 const bar = () => screen.getByTestId("title-bar");
@@ -161,7 +178,7 @@ const chips = () =>
     (one) =>
       `${one.querySelector('[data-part="name"]')?.textContent}${
         one.getAttribute("aria-current") === "true" ? "*" : ""
-      }${one.dataset.variant === "unpinned" ? "+" : ""}`,
+      }${one.dataset.variant === "unpinned" ? "+" : ""}${one.dataset.variant === "dormant" ? "~" : ""}`,
   );
 
 const opened = () =>
@@ -474,6 +491,216 @@ describe("a notice about the plane root (the dispatcher's ruling on #3648)", () 
     await userEvent.keyboard("{Enter}");
     const card = await screen.findByRole("region", { name: "Notices for Plane root" });
     await waitFor(() => expect(card).toHaveFocus());
+  });
+});
+
+/** Every line on screen that says `words`, wherever it is drawn. */
+const linesSaying = (words: RegExp) =>
+  [...document.querySelectorAll<HTMLElement>("[data-cause]")].filter((one) =>
+    words.test(one.textContent ?? ""),
+  );
+
+describe("a dormant pin's notice hangs from its dormant chip (#3651)", () => {
+  it("draws the gone pin as a dormant chip after the live pins, its notice behind its dot", async () => {
+    core({ missing: ["delta"] });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "delta~"]));
+    const chip = within(bar()).getByRole("button", { name: "delta" });
+    expect(chip).toHaveAccessibleDescription(/gone, kept dormant/);
+    // Found at launch, not caused by a press: no card comes up by itself.
+    expect(queryCard("delta")).toBeNull();
+    const dot = await waitFor(() => {
+      const found = queryDot("delta");
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+
+    await userEvent.click(dot);
+    const card = await findCard("delta");
+    expect(card).toHaveTextContent("delta is gone, kept dormant");
+    expect(within(card).getByRole("button", { name: "Forget" })).toBeInTheDocument();
+    // The same line is listed in the Notices centre too, outside the card.
+    expect(linesSaying(/delta is gone, kept dormant/).some((one) => !card.contains(one))).toBe(
+      true,
+    );
+  });
+
+  it("is dismissed by its ×, in the Notices centre too; the chip's press brings it back", async () => {
+    core({ missing: ["delta"] });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "delta~"]));
+    const chip = within(bar()).getByRole("button", { name: "delta" });
+    await userEvent.click(chip);
+    const card = await findCard("delta");
+
+    await userEvent.click(within(card).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(queryCard("delta")).toBeNull());
+    expect(queryDot("delta")).toBeNull();
+    await waitFor(() => expect(linesSaying(/delta is gone, kept dormant/)).toHaveLength(0));
+    // The chip stays: the pin is still dormant, only its line was put away.
+    expect(chips()).toEqual(["alpha*", "delta~"]);
+
+    await userEvent.click(within(bar()).getByRole("button", { name: "delta" }));
+    expect(await findCard("delta")).toHaveTextContent("delta is gone, kept dormant");
+  });
+
+  it("forgets the pin from the card, and 'Forgot the pin' stays in the Notices centre", async () => {
+    const { asked } = core({ missing: ["delta"] });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "delta~"]));
+    await userEvent.click(within(bar()).getByRole("button", { name: "delta" }));
+    const card = await findCard("delta");
+
+    await userEvent.click(within(card).getByRole("button", { name: "Forget" }));
+    await waitFor(() =>
+      expect(
+        asked.some(
+          (one) =>
+            one.cmd === "pin_workspace" &&
+            one.args.workspace === "delta" &&
+            one.args.pinned === false,
+        ),
+      ).toBe(true),
+    );
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    const forgot = await waitFor(() => {
+      const found = linesSaying(/Forgot the pin to delta/);
+      expect(found).toHaveLength(1);
+      return found[0];
+    });
+    // Its chip is gone, so it hangs from none: it is in no card.
+    expect(forgot.closest("[data-chip]")).toBeNull();
+    expect(within(forgot).getByRole("button", { name: "Undo" })).toBeInTheDocument();
+  });
+});
+
+describe("a dormant chip and the keyboard (#3651's review)", () => {
+  it("gives the keyboard to the chip in front when Forget takes the dormant chip with its card", async () => {
+    core({ missing: ["delta"] });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "delta~"]));
+    // From the keyboard alone: the strip's arrows reach the dormant chip, Enter opens its card.
+    within(bar()).getByRole("button", { name: "delta" }).focus();
+    await userEvent.keyboard("{Enter}");
+    const card = await findCard("delta");
+    await waitFor(() => expect(card.contains(document.activeElement)).toBe(true));
+    within(card).getByRole("button", { name: "Forget" }).focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    expect(queryCard("delta")).toBeNull();
+    // Never the page: the strip's stop, the chip of the workspace in front.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(bar()).getByRole("button", { name: "alpha" })),
+    );
+  });
+
+  it("opens no menu and goes nowhere: a press shows its notice, and alpha stays in front", async () => {
+    core({ missing: ["delta"] });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "delta~"]));
+    // The control: a live pin's chip has its workspace's menu.
+    fireEvent.contextMenu(within(bar()).getByRole("button", { name: "alpha" }));
+    expect(await screen.findByRole("menu")).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+
+    const gone = within(bar()).getByRole("button", { name: "delta" });
+    fireEvent.contextMenu(gone);
+    await new Promise((settle) => setTimeout(settle, 50));
+    expect(screen.queryByRole("menu")).toBeNull();
+    await userEvent.click(gone);
+    expect(await findCard("delta")).toHaveTextContent("delta is gone, kept dormant");
+    expect(chips()).toEqual(["alpha*", "delta~"]);
+  });
+
+  it("loses its dot when the Notices centre dismisses its line", async () => {
+    core({ missing: ["delta"] });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "delta~"]));
+    await waitFor(() => expect(queryDot("delta")).not.toBeNull());
+    const listed = await waitFor(() => {
+      const found = linesSaying(/delta is gone, kept dormant/);
+      expect(found).toHaveLength(1);
+      return found[0];
+    });
+    await userEvent.click(within(listed).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(queryDot("delta")).toBeNull());
+    expect(chips()).toEqual(["alpha*", "delta~"]);
+  });
+});
+
+describe("a notice about the current, unpinned workspace (#3651)", () => {
+  it("hangs from its dashed chip, and stays on it once it is pinned", async () => {
+    const refusing = { pin: true };
+    core({ refusing });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma");
+
+    // The store refused the pin: the workspace is made, in front, on its dashed chip.
+    await waitFor(() => expect(chips()).toEqual(["alpha", "gamma*+"]));
+    const card = await findCard("gamma");
+    expect(card).toHaveTextContent("Workspace gamma is ready");
+    expect(card).toHaveAttribute("data-chip", "gamma");
+
+    refusing.pin = false;
+    await userEvent.click(within(bar()).getByRole("button", { name: /^gamma/ }));
+    await waitFor(() => expect(chips()).toEqual(["alpha", "gamma*"]));
+    // Pinned, the notice is still attached to gamma's chip: its card, or its dot.
+    await waitFor(() => expect(queryCard("gamma") ?? queryDot("gamma")).not.toBeNull());
+  });
+});
+
+describe("a notice about a workspace with no chip (#3651, D-3648-16)", () => {
+  it("is listed in the Notices centre alone, with Open, which goes there", async () => {
+    core({ refusing: { pin: true } });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma");
+    await waitFor(() => expect(chips()).toEqual(["alpha", "gamma*+"]));
+    await findCard("gamma");
+
+    // Back to alpha: gamma, never pinned, has no chip now.
+    await userEvent.click(within(bar()).getByRole("button", { name: "alpha" }));
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    expect(queryCard("gamma")).toBeNull();
+    expect(queryDot("gamma")).toBeNull();
+    const kept = await results();
+    expect(within(kept).getByText("Workspace gamma is ready")).toBeInTheDocument();
+    // Nothing anywhere else says it: it floats over no chip.
+    expect(document.querySelector('[data-chip="gamma"]')).toBeNull();
+
+    await userEvent.click(within(kept).getByRole("button", { name: "Open gamma" }));
+    await waitFor(() => expect(chips()).toEqual(["alpha", "gamma*+"]));
+    // Its chip is back: the notice hangs from it again, so Open is no longer offered.
+    await waitFor(() =>
+      expect(within(kept).queryByRole("button", { name: "Open gamma" })).toBeNull(),
+    );
+  });
+
+  it("offers no Open for a workspace the project no longer has", async () => {
+    core({ refusing: { pin: true }, unlisted: true });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma");
+    const kept = await results();
+    await waitFor(() =>
+      expect(within(kept).getByText("Workspace gamma is ready")).toBeInTheDocument(),
+    );
+    // Wherever the window landed, back to alpha: gamma has no chip, and no listing either.
+    if (!chips().includes("alpha*"))
+      await userEvent.click(within(bar()).getByRole("button", { name: "alpha" }));
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    expect(within(kept).queryByRole("button", { name: "Open gamma" })).toBeNull();
+  });
+
+  it("offers no Open while the workspace has a chip", async () => {
+    core();
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma");
+    await findCard("gamma");
+    expect(within(await results()).queryByRole("button", { name: "Open gamma" })).toBeNull();
   });
 });
 

@@ -624,12 +624,17 @@ const MACHINES: Record<string, unknown> = {
   },
 };
 
-/** The doors drawn now, in order, by name. */
+/** The doors drawn now, in order, by the name a screen reader reads for each. */
 function doorsDrawn(): string[] {
   const list = screen.getByRole("list", { name: "Ways to start" });
   return within(list)
     .getAllByRole("button")
-    .map((one) => one.getAttribute("aria-label") ?? one.textContent ?? "");
+    .map(
+      (one) =>
+        DOORS.find((name) => within(list).queryByRole("button", { name }) === one) ??
+        one.textContent ??
+        "",
+    );
 }
 
 describe("the welcome's doors (#1812)", () => {
