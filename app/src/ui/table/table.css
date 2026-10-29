@@ -262,6 +262,64 @@ tbody:first-of-type
 }
 
 /* ---------------------------------------------------------------------------------------------
+   **What a view chooses for a column** (#3671, `CellWords.tsx`): a column of short facts keeps
+   one line where a long column beside it takes the room, so no row grows tall word by word. A
+   column that chooses nothing draws as above. The choices are on its name (`head`) and its cells'
+   words (`words`, inside each `cell`), and only a view's lengths are written on the element.
+   --------------------------------------------------------------------------------------------- */
+
+/* **As narrow as its widest cell** (`size="fit"`): its name and its cells keep one line. */
+[data-scope="table"][data-part="head"][data-size="fit"] {
+  inline-size: 1%;
+}
+
+/* A table of controls whose view sizes its columns (`fixed`) takes their widths as written: a
+   share of the table is no "fit" or "fill" there. */
+[data-scope="table"][data-part="body"][data-fixed] [data-part="head"][data-size] {
+  inline-size: auto;
+}
+
+/* **The room the other columns leave** (`size="fill"`): its words take none of the table's least
+   width of their own, so it is the column that gives way where the frame is narrow. */
+[data-scope="table"][data-part="head"][data-size="fill"] {
+  inline-size: 100%;
+}
+
+[data-scope="table"][data-part="words"] {
+  display: block;
+}
+
+[data-scope="table"][data-part="words"]:is([data-size="fit"], [data-cut]) {
+  white-space: nowrap;
+}
+
+[data-scope="table"][data-part="words"][data-size="fill"] {
+  inline-size: 0;
+  min-inline-size: 100%;
+}
+
+/* **One line, cut where the column is narrower** (`cut`): an ellipsis, and the whole words in the
+   cell's tooltip. */
+[data-scope="table"][data-part="words"][data-cut] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* **At most so many lines, cut after them** (`clamp`): the description column's two. */
+[data-scope="table"][data-part="words"][data-clamp] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: break-word;
+}
+
+/* Words cut short in a table of controls are a Tab stop of their own: the window's ring. */
+[data-scope="table"][data-part="words"]:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ---------------------------------------------------------------------------------------------
    The check that chooses a row: a box a line tall; chosen, it is drawn as the primary answer is
    (the accent's edge on its surface), its tick in the primary tier.
    --------------------------------------------------------------------------------------------- */
@@ -366,6 +424,18 @@ tbody:first-of-type
     display: none;
   }
 
+  /* A table of data that stacks (#3671) needs no least width: it scrolls nothing sideways. */
+  [data-scope="table"][data-part="body"][data-stacks]:not([data-controls]) {
+    min-inline-size: 0;
+  }
+
+  /* Its cell that names the row takes the row's first line, as a row's heading does. */
+  [data-scope="table"][data-part="body"][data-stacks]:not([data-controls])
+    [data-part="cell"][role="rowheader"] {
+    grid-column: 1 / -1;
+    font-weight: var(--font-weight-strong);
+  }
+
   [data-scope="table"][data-part="body"][data-stacks] [data-part="root"] {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(calc(var(--size-control) * 5), 1fr));
@@ -390,6 +460,18 @@ tbody:first-of-type
     padding: 0;
     white-space: normal;
     overflow-wrap: anywhere;
+  }
+
+  /* Stacked, nothing is cut: a column's one line or its few wrap as the form's words do. */
+  [data-scope="table"][data-part="body"][data-stacks] [data-part="words"] {
+    display: block;
+    inline-size: auto;
+    /* Over the view's own lengths, which are written on the words: a form cuts nothing and
+       scrolls nothing sideways. */
+    min-inline-size: 0 !important;
+    max-inline-size: none !important;
+    white-space: normal;
+    overflow: visible;
   }
 
   [data-scope="table"][data-part="body"][data-stacks]

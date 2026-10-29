@@ -3214,6 +3214,7 @@ impl Chats {
             plugin: self.shipped.plugin.clone(),
             git_hooks: self.git_hooks_for(harness),
             skill_sets: purlis_core::hoststart::skill_sets_here(),
+            chat_settings: purlis_core::hoststart::chat_settings_here(),
         }
     }
 
@@ -3887,9 +3888,12 @@ impl Chats {
         };
         // Settings too long for one word of a command line go through a file of their own (SK-9).
         let all = match identity.id.as_deref() {
-            Some(id) if !reattaching => {
-                purlis_core::hoststart::settings_in_a_file(&self.project, id, all)?
-            }
+            Some(id) if !reattaching => purlis_core::hoststart::settings_in_a_file(
+                self.kit(harness).chat_settings.as_deref(),
+                &self.project,
+                id,
+                all,
+            )?,
             _ => all,
         };
         let mut env = env;

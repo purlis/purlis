@@ -12,11 +12,18 @@
 //! - **A run counts once it has a start** ([`ran_since`]): a stop with no start before it counts
 //!   nothing, and a start with no stop after it counts up to now only while Docker says the
 //!   container runs.
+//! - **Where Docker does not say when the kept run ended, the gap counts nothing**
+//!   ([`after_seen`], #3720): a run kept open that has ended, with no last finish Docker gives
+//!   for it (two runs between two reads, both started outside purlis), is closed at its start,
+//!   never at the next run's. A run Docker's last finish ends is trusted to that finish.
 //! - **This week** is the ISO week in this machine's local time, from Monday 00:00
 //!   ([`week_began`]).
-//! - **Bounded** ([`pruned`]): each write drops the lines older than [`KEPT_FOR`], keeping each
-//!   runner's last line, then the oldest lines until the file is at most [`MOST_BYTES`], within
-//!   what a private file may be read at.
+//! - **Bounded** ([`pruned`]): each write drops the runs older than [`KEPT_FOR`], keeping each
+//!   runner's last line, then whole runs by when they ended, earliest first, until the file is
+//!   at most [`MOST_BYTES`], within what a private file may be read at. So a run that ended
+//!   before this week began, which counts nothing toward it, goes before any run that counts,
+//!   and a run still open goes last. A run is never split: its start and the stop that ends it
+//!   are kept or dropped together.
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
@@ -141,21 +148,27 @@ pub fn after_seen(lines: &[Line], pool: &str, runner: &str, ran: Ran, now: u64) 
     match (ran.running, open) {
         (true, false) => added.push(line(ran.started.unwrap_or(now), Event::Start)),
         (true, true) => {
-            // Started again since the start kept: the run that start began has ended, at the
-            // latest when this one started.
+            // Started again since the start kept: the run that start began has ended, when
+            // Docker says it last finished. Where Docker does not say, the record never saw it
+            // end, and it is closed at its start: a gap the record cannot see counts nothing
+            // (#3720). Docker keeps only the last finish, so where a further run started and
+            // stopped outside purlis between two reads, the kept run is closed at that run's
+            // finish; no read can tell that apart.
             if let Some(started) = ran.started.filter(|started| *started > floor) {
                 let ended = ran
                     .finished
                     .filter(|ended| (floor..=started).contains(ended))
-                    .unwrap_or(started);
+                    .unwrap_or(floor);
                 added.push(line(ended, Event::Stop));
                 added.push(line(started, Event::Start));
             }
         }
         (false, true) => match ran.started.filter(|started| *started > floor) {
-            // It ran again, and stopped, since the start kept.
+            // It ran again, and stopped, since the start kept. Docker says only the newer run's
+            // times, so when the kept run ended is not seen: it is closed at its start, and the
+            // gap up to the newer start counts nothing (#3720).
             Some(started) => {
-                added.push(line(started, Event::Stop));
+                added.push(line(floor, Event::Stop));
                 added.push(line(started, Event::Start));
                 added.push(line(ran.finished.unwrap_or(started), Event::Stop));
             }
@@ -237,7 +250,8 @@ pub fn this_week_began() -> u64 {
 }
 
 /// **`lines`, bounded** (#3492): those older than [`KEPT_FOR`] at `now` dropped, each runner's
-/// last line kept, then the oldest dropped until they are written in at most [`MOST_BYTES`].
+/// last line kept, then whole runs by when they ended, earliest first and a run still open last,
+/// until they are written in at most [`MOST_BYTES`] (#3723).
 ///
 /// **A run is never split**: a start and the stop that ends it are kept or dropped together, so a
 /// run longer than [`KEPT_FOR`] that has just stopped keeps its start, and its hours this week.
@@ -276,20 +290,29 @@ pub fn pruned(lines: Vec<Line>, now: u64) -> Vec<Line> {
         .filter(|(at, _)| kept_groups.contains(&group[*at]))
         .map(|(at, line)| (group[at], line))
         .collect();
-    // Then the oldest groups, whole, until the rest fit.
+    // Then whole groups, by when they ended, until the rest fit (#3723): a group's end is its
+    // stop's time, or the time of a line alone that is no start. A start alone is a run still
+    // open, and goes last. So a run that ended before this week began, which counts nothing
+    // toward it, goes before any that counts.
     let mut sizes: HashMap<usize, usize> = HashMap::new();
+    let mut ends: HashMap<usize, Option<u64>> = HashMap::new();
     for (of, line) in &kept {
         *sizes.entry(*of).or_default() += line.text().len() + 1;
+        let end = ends.entry(*of).or_insert(None);
+        if line.event == Event::Stop {
+            *end = Some(line.at);
+        }
     }
     let mut bytes: usize = sizes.values().sum();
+    let mut order: Vec<usize> = sizes.keys().copied().collect();
+    order.sort_by_key(|of| (ends[of].is_none(), ends[of], *of));
     let mut dropped = BTreeSet::new();
-    for (of, _) in &kept {
+    for of in order {
         if bytes <= MOST_BYTES {
             break;
         }
-        if dropped.insert(*of) {
-            bytes -= sizes[of];
-        }
+        dropped.insert(of);
+        bytes -= sizes[&of];
     }
     kept.into_iter()
         .filter(|(of, _)| !dropped.contains(of))

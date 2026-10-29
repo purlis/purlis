@@ -137,6 +137,7 @@ impl Composes {
             plugin: shipped.plugin,
             git_hooks: shipped.git_hooks,
             skill_sets: None,
+            chat_settings: None,
         })
     }
 }

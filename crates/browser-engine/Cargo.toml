@@ -18,6 +18,9 @@ tracing = "0.1"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
+# purlis's one rule for a character a reader does not see (#2020): a download's name is made
+# plain by it. A crate of the workspace's own, so the tree gains none.
+purlis-unicode.workspace = true
 # The archive's digest, checked against the pin before a byte of it is unpacked.
 sha2 = "0.11"
 # An engine manifest that did not ship inside this build is taken only with a Sigstore bundle

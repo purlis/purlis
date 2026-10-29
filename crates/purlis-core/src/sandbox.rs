@@ -1808,6 +1808,22 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             deny(Class::Integrity, folder, Access::Write);
         }
     }
+    // …and the state folder that is there is held whole: the entry itself is never renamed,
+    // moved or removed, so what purlis holds below it stays where purlis holds it. What is below
+    // it is held as the rows above say.
+    let held_whole: Vec<Denial> = crate::names::STATE_DIR
+        .spellings()
+        .map(|state| root.join(state))
+        .filter(|folder| std::fs::symlink_metadata(folder).is_ok_and(|meta| meta.is_dir()))
+        .map(|folder| Denial {
+            class: Class::Integrity,
+            path: folder,
+            access: Access::Write,
+            named: None,
+            reach: Reach::Itself,
+            any_case: true,
+        })
+        .collect();
 
     // 3. Human powers: the approvals a person gave on this machine.
     let config_root = crate::machine::rooted(
@@ -1960,6 +1976,7 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             unresolved.get_or_insert(why);
         }
     }
+    paths.extend(held_whole);
     // A list that is not whole is never held by the store alone.
     keyring |= unresolved.is_some();
     KeptList {
