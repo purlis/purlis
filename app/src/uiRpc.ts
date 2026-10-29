@@ -1467,6 +1467,7 @@ export const commands = {
 	poolProfiles: __WINDOW_ONLY_RESULT,
 	devices: __WINDOW_ONLY_RESULT,
 	deviceRunner: __WINDOW_ONLY_RESULT,
+	devicesDisk: __WINDOW_ONLY_RESULT,
 	projectsNotHeld: __WINDOW_ONLY_RESULT,
 	chatsRunOn: __WINDOW_ONLY_RESULT,
 	applyRunnerWrite: __WINDOW_ONLY_RESULT,
@@ -3807,6 +3808,15 @@ export type DevicesShown = {
 	 */
 	projects: number,
 };
+
+/**  **The disk each pool's runners hold**, as the use table says it (#3493). */
+export type DiskHeld = 
+/**  Each pool's, in the order the pools were added. */
+{ state: "read"; pools: PoolDisk[] } | 
+/**  Docker could not say, and why, in its words ([`shown_safely`]). */
+{ state: "not_read"; why: string } | 
+/**  It was not read within the time a second read of it waits ([`WAITS_AT_MOST`]). */
+{ state: "unanswered" };
 
 /**  Why a grant the person accepted before waits for a yes again. */
 export type DispatchAgain = 
@@ -7776,6 +7786,24 @@ export type PoolAdding = {
 	frames: number | null,
 	/**  The widest frame its runner's browsers are watched at over the link, in pixels (#3297). */
 	width: number | null,
+};
+
+/**
+ *  **The disk one pool's runners hold** (#3493, spec #2041 story 55): their home volumes
+ *  together, a draining runner's included.
+ */
+export type PoolDisk = {
+	pool: string,
+	/**
+	 *  In kilobytes of 1000 bytes, as Docker says sizes, to the nearest; `u32` so it is a
+	 *  `number` in TypeScript, and held at its most (some 4 TB) rather than wrapped.
+	 */
+	kilobytes: number,
+	/**
+	 *  How many of its runners' homes Docker did not list: their disk is not known, and is
+	 *  said apart rather than counted as nothing.
+	 */
+	not_listed: number,
 };
 
 /**

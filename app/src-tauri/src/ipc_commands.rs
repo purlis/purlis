@@ -461,6 +461,7 @@ macro_rules! app_commands {
                 poolprofiles::pool_profiles,
                 devices::devices,
                 devices::device_runner,
+                devices::devices_disk,
                 notheld::projects_not_held,
                 dockerpools::chats_run_on,
                 runnerwrites::apply_runner_write,

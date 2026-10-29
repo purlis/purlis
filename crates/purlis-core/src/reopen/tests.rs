@@ -2867,3 +2867,30 @@ fn a_routing_that_does_not_read_whole_reads_as_not_known_3578() {
         assert_eq!(back.chats[0].routing, None, "{spoiled}");
     }
 }
+
+#[test]
+fn a_task_s_level_is_never_written_and_a_chat_read_back_asks_3787() {
+    // The level rides the task's record in the app's memory alone: the record on disk holds
+    // no word of it, and a chat brought back from it starts in its harness's default.
+    let plane = tempfile::tempdir().unwrap();
+    let task = Chat {
+        task_level: crate::dispatchmode::Level::Classifier,
+        ..claude("ide.7", Some(ID))
+    };
+    write(
+        plane.path(),
+        &Record {
+            chats: vec![task],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let text = fs::read_to_string(path(plane.path())).unwrap();
+    assert!(
+        !text.contains("task_level") && !text.contains("classifier"),
+        "{text}"
+    );
+    let back = read(plane.path()).chats;
+    assert_eq!(back.len(), 1);
+    assert_eq!(back[0].task_level, crate::dispatchmode::Level::Asks);
+}

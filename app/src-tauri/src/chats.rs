@@ -3859,6 +3859,19 @@ impl Chats {
         // opens, and flags it rides on go last among the flags. A harness charter wraps runs as
         // the wrap's program, with its whole line after it (ADR 0067).
         let socket = self.sessions.reports_to();
+        // **A task starts in its asking chat's mode, capped at auto** (#3787): the words its
+        // harness's adapter adds for the level its record holds, among purlis's own. None at
+        // the default, none where the profile's command names a mode of its own, none for a
+        // grade's chat, and none on the runner, which arms its chats itself.
+        let mut hooks = hooks;
+        if let Some(harness) = harness.filter(|_| !on_the_runner) {
+            hooks.extend(purlis_core::dispatchmode::task_words(
+                harness,
+                chat.task_level,
+                &command,
+                chat.graded,
+            ));
+        }
         // A chat reattached starts nothing: no line is built for it, so none refuses it (#2006).
         let (program, all, wrapped) = match sandbox.filter(|_| !reattaching) {
             Some(applied) => {

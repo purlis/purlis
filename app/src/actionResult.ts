@@ -55,18 +55,16 @@ const NO_VISION = /no vision yet/i;
 
 /**
  * **A workspace made** (`purlis workspace create`, `wscmd/create.rs`): "Workspace git-ci-cd is
- * ready", and whether it has a vision yet, with Open and, while it has none, Add a vision; the
- * core's own lines in its details. A pin
- * the store refused is said after the sentence: the workspace is made all the same.
+ * ready", and whether it has a vision yet, with Add a vision while it has none; the core's own
+ * lines in its details. It is about the workspace it made, so it hangs from that workspace's chip
+ * (`noticePlace.ts`). Making a workspace opens it (#3648), so it offers no Open: that has
+ * already happened. A pin the store refused is said after the sentence: the workspace is made
+ * all the same.
  */
 export function workspaceMade(
   name: string,
   lines: readonly string[],
-  {
-    onOpen,
-    onAddVision,
-    pinRefused,
-  }: { onOpen: () => void; onAddVision: () => void; pinRefused?: string },
+  { onAddVision, pinRefused }: { onAddVision: () => void; pinRefused?: string },
 ): Said {
   const none = lines.some((line) => NO_VISION.test(line));
   const vision = none
@@ -79,10 +77,8 @@ export function workspaceMade(
     title: `Workspace ${name} is ready`,
     words: pinRefused === undefined ? vision : `${vision} ${pinRefused}`,
     details: kept.length === 0 ? undefined : kept.join("\n"),
-    ways: [
-      { label: `Open ${name}`, onPress: onOpen, primary: true },
-      ...(none ? [{ label: "Add a vision", onPress: onAddVision }] : []),
-    ],
+    ways: none ? [{ label: "Add a vision", onPress: onAddVision, primary: true }] : [],
+    workspace: name,
   };
 }
 
