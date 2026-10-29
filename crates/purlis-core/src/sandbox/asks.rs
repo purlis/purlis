@@ -340,7 +340,7 @@ impl Asks {
 
     /// **The person kept `host` blocked**, from the window: what is held on it is refused now,
     /// and so is every later connection to it, until an Allow. The later answer wins: an
-    /// earlier live Allow of a host it covers, or that covers it, ends with it, at every scope,
+    /// earlier live Allow on this board of a host it covers, or that covers it, ends with it,
     /// as [`Self::allow`] ends a Keep blocked it covers.
     pub fn keep_blocked(&self, host: &Host) {
         let mut state = self.state();
