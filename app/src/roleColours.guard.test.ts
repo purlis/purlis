@@ -196,6 +196,30 @@ describe("no App.css colour lands on a word that wears a text role (#3917)", () 
     expect(found).toEqual(new Map());
   });
 
+  it("reads a component's tag as a DOM one: a slot hands its className to its element", () => {
+    const files = sourceFiles(isView);
+    const css = ".row.is-checked .row-text { color: var(--text-quiet); }";
+    const found = layeredOut(css, (file) =>
+      file === files[0] ? '<RowLabel className="row-text ui-text-body">x</RowLabel>' : "",
+    );
+    expect(found).toEqual(
+      new Map([[files[0], ['.row.is-checked .row-text on "row-text ui-text-body"']]]),
+    );
+  });
+
+  it("reads every class a conditional className can hand, and each selector of a list", () => {
+    const files = sourceFiles(isView);
+    const css = ".a, .b { color: var(--text-muted); }";
+    const found = layeredOut(css, (file) =>
+      file === files[0]
+        ? '<p className={on ? "a ui-text-body" : "c"}>x</p><p className="b ui-text-meta">y</p>'
+        : "",
+    );
+    expect(found).toEqual(
+      new Map([[files[0], ['.a on "on ? "a ui-text-body" : "c""', '.b on "b ui-text-meta"']]]),
+    );
+  });
+
   it("asks for each attribute the rule's element names", () => {
     const files = sourceFiles(isView);
     const css = '.mark[data-driver="person"] { color: var(--text-primary); }';

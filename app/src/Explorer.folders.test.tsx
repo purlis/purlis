@@ -245,7 +245,7 @@ describe("Explorer, repos as folders (#3343)", () => {
     );
   });
 
-  it("says a branch it could not look in, in the failed colour (#3917)", async () => {
+  it("says a branch it could not look in, in the danger colour (#3917)", async () => {
     const why = "web in workspace 'alpha' has no branch folder called 'gone'";
     core([why]);
     draw(["svc", "web"]);
@@ -253,8 +253,9 @@ describe("Explorer, repos as folders (#3343)", () => {
     const said = await screen.findByText(why);
     expect(said).toHaveAttribute("role", "alert");
     // No role of its own: a role's colour is in a later layer than App.css's and would draw it
-    // secondary. It takes the view's size and the failed state's tint.
-    expect(inherited(said, "color")).toBe("var(--state-failed)");
+    // secondary. It takes the view's size, and the words that say something is wrong are
+    // `danger.text` (`docs/ui-primitives.md`), held on the trouble band's `danger.surface`.
+    expect(inherited(said, "color")).toBe("var(--danger-text)");
   });
 
   it("opens Search on the filter's scope: Branch for the selected repo, Workspace for all", async () => {
