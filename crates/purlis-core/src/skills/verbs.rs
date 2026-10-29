@@ -30,6 +30,7 @@
 use std::path::{Path, PathBuf};
 
 use purlis_skills::change::{self, SkillTemplate, TemplateId};
+use purlis_skills::fence;
 
 use super::{Grant, LINKED_PLUGIN, Origin, beside, grant_of, level_dir, set_grant};
 use crate::planegit::literally;
@@ -520,6 +521,15 @@ pub fn copy_built_in(
     if let Some(why) = change::description_problem(description) {
         return Err(format!("the copy's description: {why}"));
     }
+    // What the line format cannot hold as one line (a form feed, a separator a reader strips) is
+    // the person's text, said as theirs, not as a fault of the built-in's instructions.
+    if !fence::holds(description) {
+        return Err(
+            "the copy's description holds a character a frontmatter line cannot keep: type it \
+             as plain words on one line"
+                .to_owned(),
+        );
+    }
     if description == source.description.trim() {
         return Err(format!(
             "the copy's description is {name}'s word for word, so a chat could not tell them \
@@ -531,10 +541,12 @@ pub fn copy_built_in(
         .then(|| std::fs::read_to_string(&source.path).ok())
         .flatten()
         .ok_or_else(|| format!("{name}'s instructions could not be read, so nothing was copied"))?;
-    let copied = change::with_name(&text, to)
-        .ok_or_else(|| format!("{name}'s instructions have no name: line to change"))?;
-    let copied = purlis_skills::fence::with_keys(&copied, &[("description", Some(description))])
-        .map_err(|why| format!("{name}'s instructions {why}, so nothing was copied"))?;
+    // Both keys through the line format's one writer, which reads them back as written.
+    let copied = fence::with_keys(
+        &text,
+        &[("name", Some(to)), ("description", Some(description))],
+    )
+    .map_err(|why| format!("{name}'s instructions {why}, so nothing was copied"))?;
     if let Some(problem) = change::check(&copied, to).first() {
         return Err(format!("the copy would not be a whole skill: {problem}"));
     }

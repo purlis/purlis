@@ -1940,8 +1940,8 @@ fn gets_with(root: &Path, built_in: &Path, workspace: Option<&str>) -> Vec<Strin
         .collect()
 }
 
-/// A copy's own description, as Make my own copy proposes one (#3777).
-const MINE: &str = "Comes with purlis (your copy of bundled).";
+/// A copy's own description, as Make my own copy proposes one (#3777, `copyDescriptionOf`).
+const MINE: &str = "Comes with purlis. (your copy of bundled)";
 
 #[test]
 fn my_own_copy_of_a_built_in_skill_lands_at_the_level_picked_under_its_new_name() {
@@ -2116,6 +2116,18 @@ fn my_own_copy_is_refused_the_built_ins_description_word_for_word_or_one_that_br
         refused.unwrap_err().contains("\": \""),
         "a rule of the line format"
     );
+    // A character the line format cannot hold is said as the description's, not the built-in's.
+    for odd in ["Mine.\u{c}more", "Mine.\u{1f}"] {
+        let (refused, _) = on(root, Some(built_in.path()), |cx| {
+            copy_built_in(cx, "bundled", &Level::project(), "my-bundled", odd)
+        });
+        assert!(
+            refused
+                .unwrap_err()
+                .starts_with("the copy's description holds a character"),
+            "{odd:?}"
+        );
+    }
     assert!(!root.join("skills/my-bundled").exists());
 
     // One made trims its description, and the built-in keeps its own.
