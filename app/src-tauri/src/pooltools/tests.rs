@@ -505,7 +505,11 @@ fn minted_for_chat_6(
     chat: &purlis_core::forge::apptoken::For<'_>,
     tool: &Tool,
 ) -> Result<Zeroizing<String>, String> {
-    if chat.chat == 6 && chat.on_a_runner && tool.name == "gh" {
+    if chat.chat == 6
+        && chat.on_a_runner
+        && tool.name == "gh"
+        && chat.started.is_some_and(|started| started.len() == 1)
+    {
         Ok(Zeroizing::new("minted-for-the-runner-7e1f".to_owned()))
     } else {
         Err("asked for another chat or tool".to_owned())
@@ -526,6 +530,10 @@ fn refused_mint(
 fn a_github_app_tool_on_a_runner_is_sent_the_token_minted_for_it_as_its_key_s_value() {
     let dir = tempfile::tempdir().unwrap();
     let ctx = Ctx::new(dir.path(), Env::of(&[]));
+    let started = [purlis_core::forge::apptoken::Started {
+        clone: dir.path().join("workspaces/ws/api"),
+        git: Some((1, 2)),
+    }];
     let gh = Tool {
         mint: Some(purlis_core::sandbox::tools::mint::Mint {
             app: "Iv23liExample".into(),
@@ -538,7 +546,7 @@ fn a_github_app_tool_on_a_runner_is_sent_the_token_minted_for_it_as_its_key_s_va
         folder: None,
         here: None,
         writes: &[],
-        started: None,
+        started: Some(&started),
         on_a_runner: true,
     };
     let sent: Vec<(String, String)> = minted(&ctx, &gh, &chat, &minted_for_chat_6)
@@ -561,4 +569,39 @@ fn a_github_app_tool_on_a_runner_is_sent_the_token_minted_for_it_as_its_key_s_va
         minted(&ctx, &gh, &chat, &refused_mint).map(|sent| sent.len()),
         Err("installed on none of this chat's repos".to_owned())
     );
+}
+
+/// A runner chat whose session start this window did not see (#2053): no record of its
+/// workspace clones then, so nothing is minted, and the mint is never asked.
+#[test]
+fn a_runner_chat_with_no_recorded_start_is_minted_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = Ctx::new(dir.path(), Env::of(&[]));
+    let gh = Tool {
+        mint: Some(purlis_core::sandbox::tools::mint::Mint {
+            app: "Iv23liExample".into(),
+        }),
+        ..Tool::one("gh", "forge", "GH_TOKEN", As::Env, "app-key")
+    };
+    let chat = purlis_core::forge::apptoken::For {
+        root: dir.path(),
+        chat: 6,
+        folder: None,
+        here: None,
+        writes: &[],
+        started: None,
+        on_a_runner: true,
+    };
+    assert_eq!(
+        minted(&ctx, &gh, &chat, &never_minted).map(|sent| sent.len()),
+        Err(NO_START_RECORDED.to_owned())
+    );
+}
+
+fn never_minted(
+    _: &Ctx,
+    _: &purlis_core::forge::apptoken::For<'_>,
+    _: &Tool,
+) -> Result<Zeroizing<String>, String> {
+    panic!("a runner chat with no recorded start is never minted for")
 }

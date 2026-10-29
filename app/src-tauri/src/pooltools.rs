@@ -470,6 +470,8 @@ pub fn run_on_its_runner(
         .and_then(|asker| asker.confines.as_ref())
         .map(|confines| confines.writable.clone())
         .unwrap_or_default();
+    // Its workspace clones as its session started here: only those name its repos (#2053).
+    let clones_at_start = held.chats().clones_at_start(session);
     let read = |tool: &Tool| match tool.mint {
         Some(_) => minted(
             &ctx,
@@ -482,8 +484,7 @@ pub fn run_on_its_runner(
                 // workspace's clones here, of one installation.
                 here: None,
                 writes: &grants,
-                // A runner chat writes no folder of this machine's.
-                started: None,
+                started: clones_at_start.as_deref(),
                 on_a_runner: true,
             },
             &purlis_core::forge::apptoken::token_from_vault,
@@ -605,6 +606,10 @@ pub(crate) fn minted(
     chat: &purlis_core::forge::apptoken::For<'_>,
     mint: Mints,
 ) -> Result<Vec<(String, Zeroizing<String>)>, String> {
+    // Fail closed: with no record of the clones its session started with, none names its repos.
+    if chat.started.is_none() {
+        return Err(NO_START_RECORDED.to_owned());
+    }
     let key = tool
         .values
         .first()
@@ -615,6 +620,12 @@ pub(crate) fn minted(
     purlis_core::secrets::seen::remember(&token);
     Ok(vec![(key, token)])
 }
+
+/// What a runner chat's GitHub App tool is refused with where this window holds no record of the
+/// clones its session started with (#2053): one reattached since this window started.
+pub(crate) const NO_START_RECORDED: &str = "this window did not see this runner chat's session \
+     start, so it holds no record of the clones its workspace had then and mints no GitHub App \
+     token for it: start the chat again";
 
 /// What mints a GitHub App's token for a runner chat's tool:
 /// `purlis_core::forge::apptoken::token_from_vault`, or a test's own.

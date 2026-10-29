@@ -2582,6 +2582,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             skills: None,
             plane_skills: true,
             skills_read: Default::default(),
+            clones_at_start: None,
         },
     );
 
@@ -2657,6 +2658,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     };
@@ -3096,6 +3098,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     };
@@ -7390,6 +7393,7 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
         let case = format!("compiled {}, recorded {ran:?}", confines.is_some());
@@ -7832,6 +7836,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     };
@@ -7886,6 +7891,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     };
@@ -8080,6 +8086,7 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     }
@@ -8238,6 +8245,7 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
                 }),
                 plane_skills,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     }
