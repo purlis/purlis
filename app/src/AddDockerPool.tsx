@@ -1,10 +1,20 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState } from "react";
-import type { PoolAdding, PoolLimitsShown } from "./bindings";
-import { Field, SettingRow } from "./settings/components";
-import { addPool, doneWithTheAddedPool, stopAddingAPool, usePools } from "./pools";
+import { useEffect, useState } from "react";
+import type { ClusterPoolKey, PoolAdding, PoolLimitsShown } from "./bindings";
+import { Choice, Field, SettingRow } from "./settings/components";
+import {
+  addClusterPool,
+  addPool,
+  checkClusterPoolKey,
+  choosePoolKind,
+  doneWithTheAddedPool,
+  readClusterContexts,
+  stopAddingAPool,
+  usePools,
+  type PoolKind,
+} from "./pools";
 import { PoolProfiles } from "./settings/PoolProfiles";
 import { Dialog } from "./ui/dialog/Dialog";
 
@@ -20,6 +30,13 @@ import { Dialog } from "./ui/dialog/Dialog";
  * is added, the dialog lists each profile as its runner keeps it, with Sign in for each not
  * signed in there, from a shell tab in the project `plane`'s window. Done closes it.
  *
+ * **A cluster pool is added from the same dialog** (#3292): its Kind, first, is Docker or
+ * Cluster ({@link KindRow}). A cluster pool takes a name, a kubeconfig (kubectl's own default
+ * when empty), one of its contexts and the cluster's Pool; **Check its key** reads the cluster
+ * operator key that Pool names and shows it whole, to check against the one the cluster's admin
+ * gives; **Add pool** then pins that key and claims, pairs and keeps its runner. Changing what
+ * names the cluster takes the key away, so only a key checked for what is added is pinned.
+ *
  * Drawn wherever the window is, while the palette's row or the Pools group asked for it
  * ({@link AddDockerPoolHost}).
  */
@@ -29,6 +46,7 @@ export function AddDockerPoolHost({ plane }: { plane?: string }) {
     return <SignInOnTheAddedPool pool={pools.added} plane={plane} />;
   }
   if (!pools.adding) return null;
+  if (pools.kind === "cluster") return <AddClusterPool />;
   const defaults = pools.read.state === "read" ? pools.read.shown.defaults : undefined;
   const suspendAfter = pools.read.state === "read" ? pools.read.shown.suspend_after : undefined;
   const linkFrames = pools.read.state === "read" ? pools.read.shown : undefined;
@@ -55,6 +73,34 @@ function SignInOnTheAddedPool({ pool, plane }: { pool: string; plane: string | u
     >
       <PoolProfiles pool={pool} plane={plane} />
     </Dialog>
+  );
+}
+
+/** The dialog's first row: which kind of pool it adds (#3292). */
+function KindRow({ kind, disabled }: { kind: PoolKind; disabled: boolean }) {
+  return (
+    <SettingRow
+      label="Kind"
+      help="Where its runner runs."
+      grouped
+      control={(ids) => (
+        <Choice
+          kind="radio"
+          ids={ids}
+          value={kind}
+          disabled={disabled}
+          onValueChange={(to) => choosePoolKind(to === "cluster" ? "cluster" : "docker")}
+          options={[
+            { value: "docker", label: "Docker", says: "A container on this machine's Docker." },
+            {
+              value: "cluster",
+              label: "Cluster",
+              says: "A runner in your team's cluster, claimed through your kubectl.",
+            },
+          ]}
+        />
+      )}
+    />
   );
 }
 
@@ -163,6 +209,7 @@ function AddDockerPool({
         onPress: () => void add(),
       }}
     >
+      <KindRow kind="docker" disabled={adding} />
       <SettingRow
         label="Name"
         help="Lower-case letters, digits and dashes. Its runner is called by it too."
@@ -248,6 +295,186 @@ function AddDockerPool({
         width,
         setWidth,
         linkFrames.width === undefined ? undefined : String(linkFrames.width),
+      )}
+
+      {trouble !== undefined && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </Dialog>
+  );
+}
+
+/**
+ * **Add a cluster pool** (#3292): Kind, Name, Kubeconfig, Context and Pool, then Check its key,
+ * which shows the cluster operator key the Pool names, then Add pool, which pins it.
+ */
+function AddClusterPool() {
+  const [name, setName] = useState("");
+  const [kubeconfig, setKubeconfig] = useState("");
+  // The kubeconfig whose contexts are offered: the one typed, once its box is left.
+  const [readFrom, setReadFrom] = useState("");
+  const [contexts, setContexts] = useState<string[]>([]);
+  const [defaultKubeconfig, setDefaultKubeconfig] = useState<string | undefined>();
+  const [context, setContext] = useState<string | undefined>();
+  const [pool, setPool] = useState("");
+  const [checked, setChecked] = useState<ClusterPoolKey | undefined>();
+  const [trouble, setTrouble] = useState<string | undefined>();
+  const [busy, setBusy] = useState<"checking" | "adding" | undefined>();
+
+  useEffect(() => {
+    let gone = false;
+    void readClusterContexts(readFrom).then((read) => {
+      if (gone) return;
+      if ("trouble" in read) {
+        setContexts([]);
+        setTrouble(read.trouble);
+        return;
+      }
+      if (readFrom === "") setDefaultKubeconfig(read.kubeconfig);
+      setContexts(read.contexts);
+      setContext((was) =>
+        was !== undefined && read.contexts.includes(was) ? was : (read.current ?? undefined),
+      );
+    });
+    return () => {
+      gone = true;
+    };
+  }, [readFrom]);
+
+  // What names the cluster changed: the key checked was for something else.
+  const changing =
+    <T,>(to: (value: T) => void) =>
+    (value: T) => {
+      setChecked(undefined);
+      to(value);
+    };
+
+  const check = async () => {
+    if (busy !== undefined) return;
+    if (context === undefined) {
+      setTrouble("Nothing was checked: choose a context of the kubeconfig.");
+      return;
+    }
+    setTrouble(undefined);
+    setBusy("checking");
+    const read = await checkClusterPoolKey(kubeconfig, context, pool);
+    setBusy(undefined);
+    if ("trouble" in read) setTrouble(read.trouble);
+    else setChecked(read);
+  };
+
+  const add = async () => {
+    if (busy !== undefined || checked === undefined || context === undefined) return;
+    setTrouble(undefined);
+    setBusy("adding");
+    const refused = await addClusterPool({
+      name,
+      kubeconfig: kubeconfig.trim() === "" ? null : kubeconfig,
+      context,
+      pool,
+      key: checked.key,
+    });
+    setBusy(undefined);
+    if (refused !== undefined) setTrouble(refused);
+  };
+
+  const main =
+    checked === undefined
+      ? busy === "checking"
+        ? "Reading its key…"
+        : "Check its key"
+      : busy === "adding"
+        ? "Claiming its runner…"
+        : "Add pool";
+
+  return (
+    <Dialog
+      onClose={() => {
+        // Not while its runner is being claimed: the answer would land where nobody is looking.
+        if (busy === undefined) stopAddingAPool();
+      }}
+      title="Add a cluster pool"
+      subtitle="in your team's cluster; its runner is claimed from a pool of purlis's cluster operator, through your kubectl"
+      cancel={{ isDisabled: busy !== undefined, onPress: stopAddingAPool }}
+      main={{
+        children: main,
+        reserve: ["Check its key", "Reading its key…", "Add pool", "Claiming its runner…"],
+        isDisabled: busy !== undefined,
+        onPress: () => void (checked === undefined ? check() : add()),
+      }}
+    >
+      <KindRow kind="cluster" disabled={busy !== undefined} />
+      <SettingRow
+        label="Name"
+        help="Lower-case letters, digits and dashes. Its runner is called by it too."
+        control={(ids) => (
+          <Field
+            kind="text"
+            ids={ids}
+            value={name}
+            placeholder="team"
+            maxLength={40}
+            disabled={busy !== undefined}
+            onChange={setName}
+          />
+        )}
+      />
+      <SettingRow
+        label="Kubeconfig"
+        help="The kubeconfig your kubectl signs in to the cluster with. Empty is kubectl's own."
+        control={(ids) => (
+          <Field
+            kind="text"
+            ids={ids}
+            value={kubeconfig}
+            placeholder={defaultKubeconfig}
+            disabled={busy !== undefined}
+            onChange={changing(setKubeconfig)}
+            onCommit={() => setReadFrom(kubeconfig.trim())}
+          />
+        )}
+      />
+      <SettingRow
+        label="Context"
+        help="The kubeconfig's context for the cluster. Its namespace is where the runner is claimed."
+        control={(ids) => (
+          <Choice
+            kind="select"
+            ids={ids}
+            value={context}
+            unset="Choose a context"
+            disabled={busy !== undefined || contexts.length === 0}
+            onValueChange={changing((to: string) => setContext(to === "" ? undefined : to))}
+            options={contexts.map((one) => ({ value: one, label: one }))}
+          />
+        )}
+      />
+      <SettingRow
+        label="Pool"
+        help="The name of the cluster's pool, as your cluster's admin gives it."
+        control={(ids) => (
+          <Field
+            kind="text"
+            ids={ids}
+            value={pool}
+            placeholder="default"
+            disabled={busy !== undefined}
+            onChange={changing(setPool)}
+          />
+        )}
+      />
+      {checked !== undefined && (
+        <SettingRow
+          label="Cluster operator key"
+          help={`Check it against the key your cluster's admin gives you before you add the pool. Its runner is claimed in namespace ${checked.namespace}.`}
+          control={(ids) => (
+            <output id={ids.id} aria-describedby={ids.describedBy} className="ui-machine-path">
+              <code>{checked.key}</code>
+            </output>
+          )}
+        />
       )}
 
       {trouble !== undefined && (

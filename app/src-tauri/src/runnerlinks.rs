@@ -10,13 +10,22 @@
 //!
 //! The session host the window starts relays a window's link through it (`relay_to`,
 //! [`relays_to`]).
+//!
+//! **A cluster pool's runner is reached through this machine's `kubectl`** (#3292,
+//! [`ToARunner::of_cluster`]): `kubectl exec -i` into the pod its pairing named, pointed at the
+//! pool's kubeconfig and context and handed no `KUBECONFIG` of this process's, after a check
+//! before every connection that the cluster's Pool still names the operator key pinned as the
+//! pool was added and that the operator still vouches for the pod and key the runner was paired
+//! with ([`purlis_core::clusterpool::before_link`]). Either refused is told as a changed key, so
+//! the window asks the person about it as it does for a Docker runner's.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use purlis_core::clusterpool::Kubectl;
 use purlis_core::dockerpool::Docker;
-use purlis_core::runners::Kept;
-use purlis_host::CommandConnector;
+use purlis_core::runners::{ClusterKept, ClusterPool, Kept};
+use purlis_host::{CommandConnector, NotChecked};
 use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
 
 /// What a link to one kept runner needs: its connector, this desktop's device id and key, and
@@ -157,6 +166,58 @@ impl ToARunner {
         }
     }
 
+    /// **The cluster pool `pool`'s runner `kept`**, as this machine keeps it under `config`,
+    /// reached through `kubectl` (#3292). Linking to it never starts anything: a claim's runner
+    /// is the cluster's to run.
+    pub fn of_cluster(
+        config: &Path,
+        kubectl: &Kubectl,
+        pool: &ClusterPool,
+        kept: &ClusterKept,
+    ) -> Result<ToARunner, String> {
+        let keyring = purlis_core::linkkey::this_builds_keyring(config);
+        let desktop = purlis_core::linkkey::kept(config, &*keyring)?.into_identity();
+        let checking = (
+            config.to_path_buf(),
+            kubectl.clone(),
+            pool.name().to_owned(),
+        );
+        let kubectl = pool.kubectl(kubectl);
+        let preparing = kubectl.clone();
+        let connector = CommandConnector::checked(
+            kubectl.program().to_path_buf(),
+            // In its requester's own runner namespace, which every statement it is linked on
+            // names (#2055).
+            kubectl.connect_args(
+                &purlis_core::clusterpool::runner_namespace(&kept.claimed.requester),
+                &kept.pod,
+            ),
+            // Before every connection: the pin as it is kept now, followed through a roll and
+            // kept again, and the runner vouched for (#3305).
+            Arc::new(move || {
+                let (config, kubectl, name) = &checking;
+                let now = crate::sandboxing::now_secs();
+                purlis_core::pools::before_cluster_link(config, kubectl, name, now)
+                    .map_err(not_checked)
+            }),
+        )
+        // Each run of `kubectl exec` is given what every run of this kubectl is (#3292).
+        .preparing(Arc::new(move || {
+            let (env, cleared) = preparing.environment();
+            Ok(purlis_host::Prepared {
+                env,
+                cleared,
+                held: Box::new(()),
+            })
+        }));
+        Ok(ToARunner {
+            connector,
+            device: desktop.device,
+            key: desktop.key,
+            pinned: kept.pinned.clone(),
+        })
+    }
+
     /// A link kept to the runner for as long as what it answers is held
     /// ([`hostlink::keep_linked`]).
     pub fn keep(&self) -> hostlink::Links {
@@ -173,6 +234,35 @@ impl ToARunner {
     }
 }
 
+/// **A cluster runner's check, said to the link** (#3292): a changed runner key or a changed
+/// cluster operator key is a changed key, which the window asks the person about.
+pub fn not_checked(why: purlis_core::clusterpool::Refused) -> NotChecked {
+    use purlis_core::clusterpool::Refused;
+    match why {
+        Refused::KeyChanged { .. } | Refused::OperatorKeyChanged { .. } => {
+            NotChecked::KeyChanged(why.to_string())
+        }
+        Refused::NotVouched(_) | Refused::Other(_) => NotChecked::Refused(why.to_string()),
+    }
+}
+
+/// **The cluster runner a link that names `name` reaches** (#3292): the runner of the cluster
+/// pool `name`, or `<pool>/<runner>` naming that same one. `None` where no cluster pool is
+/// called so, for a Docker pool's name to be looked up instead.
+pub fn cluster_reached(
+    config: &Path,
+    name: &str,
+) -> Result<Option<(ClusterPool, ClusterKept)>, String> {
+    let (pool, runner) = name.split_once('/').unwrap_or((name, name));
+    match purlis_core::runners::cluster_runner_for(config, pool).map_err(|why| why.to_string())? {
+        Some((pool, kept)) if kept.name == runner => Ok(Some((pool, kept))),
+        Some(_) => Err(format!(
+            "cluster pool {pool} has no runner {runner} on this machine, so nothing was reached"
+        )),
+        None => Ok(None),
+    }
+}
+
 /// This machine's `docker`, where the window's `PATH` or Docker's installers put it.
 pub fn docker() -> Result<Docker, String> {
     let path = purlis_core::envvar::var("PATH");
@@ -184,7 +274,24 @@ pub fn docker() -> Result<Docker, String> {
 /// a link kept to the runner of the pool the window names, read from `config_root` as each
 /// `relay_to` is taken, so a pool added or removed since is as it is now.
 pub fn relays_to(config_root: PathBuf) -> purlis_host::RelaysTo {
-    relaying(move || Machine::here(&config_root))
+    let docker = {
+        let config_root = config_root.clone();
+        relaying(move || Machine::here(&config_root))
+    };
+    // A cluster pool's runner, through kubectl (#3292); a Docker pool's otherwise.
+    Arc::new(move |pool: &str| {
+        let Some((cluster, kept)) = cluster_reached(&config_root, pool)? else {
+            return docker(pool);
+        };
+        let to = ToARunner::of_cluster(
+            &config_root,
+            &crate::clusterpools::kubectl()?,
+            &cluster,
+            &kept,
+        )?;
+        let resolved = format!("{}/{}", cluster.name(), kept.name);
+        Ok((Arc::new(move || to.keep()) as purlis_host::Keep, resolved))
+    })
 }
 
 /// [`relays_to`], on the machine `machine` answers as each `relay_to` is taken.
@@ -219,6 +326,8 @@ pub fn every_runner(config_root: PathBuf) -> purlis_host::EveryRunner {
             }
         };
         let machine = Machine::here(&config_root);
+        // A cluster pool's runner, through kubectl (#3292): nothing of it is suspended here.
+        let clusters = cluster_runners_to_stop(&config_root);
         kept.iter()
             .filter_map(|kept| {
                 let name = format!("{}/{}", kept.pool(), kept.name());
@@ -236,8 +345,26 @@ pub fn every_runner(config_root: PathBuf) -> purlis_host::EveryRunner {
                 .map(|to| Arc::new(move || to.keep()) as purlis_host::Keep);
                 Some((name, keep))
             })
+            .chain(clusters)
             .collect()
     })
+}
+
+/// Every cluster pool's runner kept under `config_root`, as the kill switch reaches it (#3292).
+fn cluster_runners_to_stop(config_root: &Path) -> Vec<(String, Result<purlis_host::Keep, String>)> {
+    let pools = purlis_core::runners::cluster_pools(config_root).unwrap_or_default();
+    let kept = purlis_core::runners::cluster_runners(config_root).unwrap_or_default();
+    let kubectl = crate::clusterpools::kubectl();
+    kept.iter()
+        .filter_map(|kept| {
+            let pool = pools.iter().find(|pool| pool.name() == kept.name)?;
+            let keep = kubectl
+                .clone()
+                .and_then(|kubectl| ToARunner::of_cluster(config_root, &kubectl, pool, kept))
+                .map(|to| Arc::new(move || to.keep()) as purlis_host::Keep);
+            Some((format!("{}/{}", pool.name(), kept.name), keep))
+        })
+        .collect()
 }
 
 /// **Which runner the session host the window starts relays to drains** (#2865): one reached as
@@ -254,6 +381,14 @@ fn drains(config_root: &Path, name: &str) -> bool {
     let Some((pool, runner)) = name.split_once('/') else {
         return true;
     };
+    // A cluster pool's one runner never drains (#3292).
+    if let Ok(clusters) = purlis_core::runners::cluster_runners(config_root)
+        && clusters
+            .iter()
+            .any(|kept| kept.name == pool && kept.name == runner)
+    {
+        return false;
+    }
     match purlis_core::runners::read(config_root) {
         Ok(kept) => !kept
             .iter()
@@ -346,6 +481,10 @@ pub fn count_of(
         Err(PoolLink::KeyChanged) => {
             Err("the runner answered with another key than the one pinned for it".to_owned())
         }
+        Err(PoolLink::OperatorKeyChanged) => Err(
+            "the cluster now names another cluster operator key than the one pinned for it"
+                .to_owned(),
+        ),
         Err(PoolLink::Suspended) => Err("the runner is suspended".to_owned()),
         Err(PoolLink::Linked) => Err("the runner did not list".to_owned()),
     }

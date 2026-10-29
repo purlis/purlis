@@ -637,3 +637,214 @@ fn a_draining_runner_is_reached_under_its_pool_until_it_is_removed() {
     drain(config.path(), &fake.docker(), "first", None).unwrap();
     assert!(runners::reachable(config.path(), "first/first").is_err());
 }
+
+#[cfg(unix)]
+mod cluster {
+    use super::*;
+    use crate::clusterpool::tests::FakeCluster;
+    use crate::runners::{ClusterPool, Reached};
+    use std::time::Duration;
+
+    fn team(cluster: &FakeCluster) -> ClusterPool {
+        ClusterPool::new(
+            "team",
+            Path::new("/home/ada/.kube/config"),
+            "team",
+            "default",
+            "ada",
+            cluster.pin(),
+        )
+        .unwrap()
+    }
+
+    fn file(config: &Path) -> serde_json::Value {
+        let path = crate::machine::dir(config).join(crate::machine::RUNNERS_FILE);
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_cluster_pool_is_added_with_its_runner_claimed_vouched_for_and_paired() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let claim = claim_name(config.path(), "team");
+        cluster.vouch("ada", &claim, &claim, cluster.runner.key);
+        let kept = add_cluster(
+            config.path(),
+            &cluster.kubectl(),
+            &team(&cluster),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+        assert_eq!(kept.pinned, cluster.runner);
+        assert_eq!(kept.pod, claim);
+        assert_eq!(kept.claimed.requester, crate::clusterpool::tests::REQUESTER);
+        match runners::runner_of(config.path(), "team").unwrap() {
+            Reached::Cluster(pool, runner) => {
+                assert_eq!(pool, team(&cluster));
+                assert_eq!(runner, kept);
+            }
+            other => panic!("{other:?}"),
+        }
+        let file = file(config.path());
+        assert_eq!(
+            file["pools"][0],
+            serde_json::json!({
+                "name": "team",
+                "kind": "cluster",
+                "kubeconfig": "/home/ada/.kube/config",
+                "context": "team",
+                "pool": "default",
+                "namespace": "ada",
+                "operatorKey": cluster.operator.key().spelled(),
+                "cluster": crate::clusterpool::tests::CLUSTER,
+            })
+        );
+        assert_eq!(file["runners"][0]["pool"], "cluster");
+        assert_eq!(file["runners"][0]["claim"], claim.as_str());
+        assert_eq!(
+            runners::pool_names(config.path()).unwrap(),
+            ["team".to_owned()]
+        );
+        // The claim is a kept one, made in the context's namespace on the cluster's pool.
+        let calls = cluster.calls();
+        assert!(
+            calls.lines().any(|call| call
+                .starts_with("--kubeconfig /home/ada/.kube/config --context team create")),
+            "{calls}"
+        );
+    }
+
+    #[test]
+    fn a_cluster_pool_naming_another_key_than_the_one_checked_is_not_added() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let checked = team(&cluster);
+        cluster.names_key(&crate::clusterpool::tests::Operator::new().key());
+        let why = add_cluster(
+            config.path(),
+            &cluster.kubectl(),
+            &checked,
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap_err();
+        assert!(why.to_string().contains("check the key again"), "{why}");
+        assert!(runners::cluster_pools(config.path()).unwrap().is_empty());
+        assert!(!cluster.calls().contains(" create "), "{}", cluster.calls());
+    }
+
+    #[test]
+    fn a_runner_answering_another_key_than_the_vouched_one_is_not_kept_and_its_claim_goes() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let claim = claim_name(config.path(), "team");
+        cluster.vouch("ada", &claim, &claim, LinkKey::generate().unwrap().public());
+        let why = add_cluster(
+            config.path(),
+            &cluster.kubectl(),
+            &team(&cluster),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap_err();
+        assert!(why.to_string().contains("another key"), "{why}");
+        assert!(runners::cluster_pools(config.path()).unwrap().is_empty());
+        assert!(runners::cluster_runners(config.path()).unwrap().is_empty());
+        assert!(
+            cluster
+                .calls()
+                .contains(&format!("delete claims.runners.purlis.dev {claim}")),
+            "{}",
+            cluster.calls()
+        );
+    }
+
+    #[test]
+    fn removing_a_cluster_pool_deletes_its_claim_and_runs_its_workspaces_here_again() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let claim = claim_name(config.path(), "team");
+        cluster.vouch("ada", &claim, &claim, cluster.runner.key);
+        add_cluster(
+            config.path(),
+            &cluster.kubectl(),
+            &team(&cluster),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+        let unpaired = std::cell::Cell::new(false);
+        let unpair = |_: &ClusterPool, _: &runners::ClusterKept| {
+            unpaired.set(true);
+            Err("not linked".to_owned())
+        };
+        remove_cluster(config.path(), &cluster.kubectl(), "team", Some(&unpair)).unwrap();
+        assert!(unpaired.get());
+        assert!(
+            cluster
+                .calls()
+                .contains(&format!("delete claims.runners.purlis.dev {claim}")),
+            "{}",
+            cluster.calls()
+        );
+        assert!(runners::pool_names(config.path()).unwrap().is_empty());
+        assert!(runners::cluster_runners(config.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_pin_moved_by_a_roll_is_kept_and_a_claim_not_yet_signed_again_is_tried_again() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let claim = claim_name(config.path(), "team");
+        cluster.vouch("ada", &claim, &claim, cluster.runner.key);
+        add_cluster(
+            config.path(),
+            &cluster.kubectl(),
+            &team(&cluster),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+        let next = crate::clusterpool::tests::Operator::new();
+        let now = runners::now();
+        cluster.rolls_to(&next, now + 24 * 3600);
+        // The Claim not reconciled since the roll: this link alone is refused, not as a changed
+        // key, and the moved pin is kept.
+        let first = before_cluster_link(config.path(), &cluster.kubectl(), "team", now);
+        assert!(
+            matches!(first, Err(crate::clusterpool::Refused::NotVouched(_))),
+            "{first:?}"
+        );
+        let kept = runners::cluster_pools(config.path()).unwrap();
+        assert_eq!(kept[0].pin().unwrap().key, next.key());
+        // Signed again, and the roll over: the kept pin links.
+        cluster.vouch_signed("ada", &claim, &claim, cluster.runner.key, Some(&next));
+        assert_eq!(
+            before_cluster_link(config.path(), &cluster.kubectl(), "team", now),
+            Ok(())
+        );
+        assert!(runners::cluster_runners(config.path()).unwrap().len() == 1);
+    }
+
+    #[test]
+    fn a_cluster_pools_name_is_never_a_docker_pools_and_never_reaches_one() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let claim = claim_name(config.path(), "team");
+        cluster.vouch("ada", &claim, &claim, cluster.runner.key);
+        add_cluster(
+            config.path(),
+            &cluster.kubectl(),
+            &team(&cluster),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+        let docker = FakeDocker::new(&inspected());
+        let refused = add(
+            config.path(),
+            &docker.docker(),
+            &pool("team", Set::default()),
+            &desktop(),
+        )
+        .unwrap_err();
+        assert!(refused.to_string().contains("already"), "{refused}");
+        // A Docker pool's own lookup never answers with a cluster pool's runner.
+        assert!(runners::runner_for(config.path(), "team").is_err());
+    }
+}

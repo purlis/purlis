@@ -22,6 +22,13 @@
 //!
 //! A pool's chats start on its one runner that is not draining: the one called by the pool's
 //! name, or the one made beside it after an update.
+//!
+//! - **A cluster pool is added with its runner claimed and paired at once** ([`add_cluster`],
+//!   #3292): the pool is recorded with the cluster operator key the person checked, a kept
+//!   runner is claimed from the cluster's Pool as who the kubeconfig is, waited on until the
+//!   operator vouches for its key, paired over this desktop's own `kubectl exec` and kept. What
+//!   fails deletes the claim and forgets the pool. Removing it deletes its claim, and with it its
+//!   runner ([`remove_cluster`]).
 
 use std::path::Path;
 
@@ -178,7 +185,7 @@ pub fn runs_on(
     let Some(pool) = loaded.store.chats_run_on(plane, workspace) else {
         return Ok(None);
     };
-    if let Err(missing) = runners::runner_for(config_root, pool) {
+    if let Err(missing) = runners::runner_of(config_root, pool) {
         return Err(format!(
             "Workspace {workspace} runs its chats on pool {pool}: {missing}. Choose where its \
              chats run in its settings, or add the pool again in {SETTING}."
@@ -324,6 +331,194 @@ pub fn drain(
             "no runner named {name} is kept on this machine"
         ))),
     }
+}
+
+/// **The claim a cluster pool's runner is made by on this desktop** (#3292): the pool's name and
+/// this desktop's label ([`runners::desktop_label`]), so two desktops of one person never take
+/// each other's claim, within the 63 characters a kept claim's pod is named in.
+pub fn claim_name(config_root: &Path, pool: &str) -> String {
+    format!("{pool}-{}", runners::desktop_label(config_root))
+}
+
+/// How long adding a cluster pool waits for the cluster operator to vouch for its runner.
+pub const VOUCHED_WITHIN: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// How often it asks.
+pub const ASKED_EVERY: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// **Adds the cluster pool `pool` on this machine** (#3292), through `kubectl` (found on this
+/// machine, pointed at the pool's kubeconfig and context here): records it with the operator key
+/// the person checked, once the cluster's Pool still names that key; claims a kept runner in its
+/// namespace, waits at most `within` for the operator to vouch for it, pairs it with `desktop`
+/// and keeps what it answered. What fails deletes the claim and forgets the pool, and says so.
+pub fn add_cluster(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    pool: &runners::ClusterPool,
+    desktop: &Pinned,
+    within: std::time::Duration,
+) -> Result<runners::ClusterKept, Refused> {
+    let kubectl = pool.kubectl(kubectl);
+    let locked = runners::lock(config_root);
+    let pin = pool.pin()?;
+    let named = kubectl
+        .pool_pin(pool.pool())
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    if named != pin {
+        return Err(Refused::Other(format!(
+            "the cluster's pool {} names another cluster operator key, or another cluster, than \
+             the one you checked, so nothing was added; check the key again",
+            pool.pool()
+        )));
+    }
+    runners::record_cluster_pool_locked(config_root, pool, &locked)?;
+    let name = claim_name(config_root, pool.name());
+    let paired = crate::clusterpool::claim_and_pair(
+        &kubectl,
+        &pin,
+        pool.pool(),
+        pool.namespace(),
+        &name,
+        desktop,
+        within,
+        ASKED_EVERY,
+    )
+    .map_err(|why| Refused::Other(why.to_string()));
+    let kept = paired.and_then(|paired| {
+        let kept = runners::ClusterKept {
+            name: pool.name().to_owned(),
+            claimed: paired.claimed,
+            pod: paired.vouched.pod,
+            pinned: paired.pinned,
+            paired: runners::now(),
+        };
+        match runners::keep_cluster_runner_locked(config_root, &kept, desktop, &locked) {
+            Ok(()) => Ok(kept),
+            Err(why) => Err(match kubectl.delete_claim(pool.namespace(), &name) {
+                Ok(()) => why,
+                Err(left) => Refused::Other(format!(
+                    "{why}; and the claim could not be deleted ({left}): delete the claim \
+                     {name} in namespace {} with kubectl",
+                    pool.namespace()
+                )),
+            }),
+        }
+    });
+    kept.map_err(|why| forgotten_cluster(config_root, pool.name(), why, &locked))
+}
+
+/// `why`, once the cluster pool `name`'s record is forgotten.
+fn forgotten_cluster(
+    config_root: &Path,
+    name: &str,
+    why: Refused,
+    locked: &runners::Locked,
+) -> Refused {
+    match runners::forget_pool_locked(config_root, name, locked) {
+        Ok(()) => why,
+        Err(left) => Refused::Other(format!(
+            "{why}; and the pool could not be forgotten ({left})"
+        )),
+    }
+}
+
+/// **The check before every link to the cluster pool `name`'s runner** (#3292, #3305), at
+/// `now`, through `kubectl` (found on this machine), with the pool and its runner as this machine
+/// keeps them now: the pool's pin follows a roll its pinned key vouches for and, moved, is kept
+/// in `runners.json` before anything else ([`runners::keep_cluster_pin`]), so the next check
+/// starts from it; then the operator must still vouch for the runner
+/// ([`crate::clusterpool::before_link`]).
+///
+/// Right after a move, a Claim not yet signed by the new key refuses this link as
+/// [`crate::clusterpool::Refused::NotVouched`], which only refuses it: the next try links once
+/// the operator has signed it again, and nothing is unpaired.
+pub fn before_cluster_link(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    now: u64,
+) -> Result<(), crate::clusterpool::Refused> {
+    use crate::clusterpool::Refused as Not;
+    let (pool, kept) = runners::cluster_runner_for(config_root, name)
+        .map_err(|why| Not::Other(why.to_string()))?
+        .ok_or_else(|| Not::Other(format!("no cluster pool named {name} is on this machine")))?;
+    let was = pool.pin().map_err(|why| Not::Other(why.to_string()))?;
+    let mut pin = was.clone();
+    let checked = crate::clusterpool::before_link(
+        &pool.kubectl(kubectl),
+        &mut pin,
+        pool.pool(),
+        &kept.claimed,
+        &kept.pod,
+        &kept.pinned,
+        now,
+    );
+    if pin != was
+        && let Err(why) = runners::keep_cluster_pin(config_root, name, &pin)
+    {
+        tracing::warn!("purlis: pool {name}'s cluster operator key moved, and was not kept: {why}");
+    }
+    checked
+}
+
+/// What a cluster runner's removal is handed to take this desktop out of its peers over its
+/// link, where that link is up.
+pub type UnpairCluster<'a> =
+    dyn Fn(&runners::ClusterPool, &runners::ClusterKept) -> Result<(), String> + 'a;
+
+/// **Removes the cluster pool `name`** (#3292): this desktop out of its runner's peers with
+/// `unpair`, where given, then its claim deleted, and with it its runner, through `kubectl`
+/// pointed at the pool's cluster; the pool and its runner are forgotten once the claim is, and
+/// every workspace that ran its chats on it runs them on this machine again. What could not be
+/// deleted is refused with how to delete it, and the pool kept, so the removal can be asked
+/// again.
+pub fn remove_cluster(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    unpair: Option<&UnpairCluster<'_>>,
+) -> Result<(), Refused> {
+    let locked = runners::lock(config_root);
+    let pool = runners::cluster_pools(config_root)?
+        .into_iter()
+        .find(|pool| pool.name() == name)
+        .ok_or_else(|| Refused::Other(format!("no pool named {name} is on this machine")))?;
+    let kept = runners::cluster_runners(config_root)?
+        .into_iter()
+        .find(|kept| kept.name == name);
+    if let Some(kept) = &kept {
+        if let Some(unpair) = unpair
+            && let Err(why) = unpair(&pool, kept)
+        {
+            // Its peers go with its claim's volume, so a runner that does not answer is no
+            // reason to stop.
+            tracing::info!("purlis: pool {name}'s runner was not unpaired: {why}");
+        }
+        pool.kubectl(kubectl)
+            .delete_claim(&kept.claimed.namespace, &kept.claimed.name)
+            .map_err(|why| {
+                Refused::Other(format!(
+                    "pool {name}'s claim could not be deleted ({why}); purlis keeps the pool \
+                     until it is, so it can be removed again, or delete the claim {} in \
+                     namespace {} with kubectl",
+                    kept.claimed.name, kept.claimed.namespace
+                ))
+            })?;
+        runners::forget_cluster_runner_locked(config_root, name, &locked)?;
+    }
+    runners::forget_pool_locked(config_root, name, &locked)?;
+    crate::machine::update(config_root, |store| {
+        for recent in &mut store.recents {
+            recent.chats_run_on.retain(|_, pool| pool != name);
+        }
+    })
+    .map_err(|why| {
+        Refused::Other(format!(
+            "pool {name} was removed, but the workspaces that ran their chats on it could not \
+             be set back to this machine: {why}"
+        ))
+    })?;
+    Ok(())
 }
 
 #[cfg(test)]

@@ -6,7 +6,14 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "../App";
-import type { PoolLink, PoolProfileRow, PoolRow, PoolVersion, PoolsShown } from "../bindings";
+import type {
+  ClusterPoolRow,
+  PoolLink,
+  PoolProfileRow,
+  PoolRow,
+  PoolVersion,
+  PoolsShown,
+} from "../bindings";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 
@@ -35,7 +42,19 @@ const a_pool = (name: string, suspend_after = "24h"): PoolRow => ({
   suspend_after,
 });
 
+const OPERATOR_KEY = `ed25519:${"ab".repeat(32)}`;
+
+const a_cluster_pool = (name: string): ClusterPoolRow => ({
+  name,
+  context: "team",
+  pool: "default",
+  namespace: "op",
+  operator_key: OPERATOR_KEY,
+});
+
 let pools: PoolRow[];
+let clusters: ClusterPoolRow[];
+let clustersAdded: unknown[];
 let link: PoolLink;
 let version: PoolVersion;
 let added: unknown[];
@@ -59,6 +78,8 @@ beforeEach(() => {
     theme: { path: "", found: false, document: null, trouble: null },
   };
   pools = [];
+  clusters = [];
+  clustersAdded = [];
   link = { state: "linked" };
   version = {
     runner: "0.4.2",
@@ -88,7 +109,17 @@ beforeEach(() => {
           suspend_after: "24h",
           frames: 15,
           width: 1280,
+          clusters: structuredClone(clusters),
         } satisfies PoolsShown;
+      if (cmd === "cluster_contexts")
+        return { kubeconfig: "/home/op/.kube/config", contexts: ["team", "kind"], current: "team" };
+      if (cmd === "cluster_pool_key") return { key: OPERATOR_KEY, namespace: "op" };
+      if (cmd === "add_cluster_pool") {
+        clustersAdded.push(a.adding);
+        const row = a_cluster_pool((a.adding as { name: string }).name);
+        clusters = [...clusters, row];
+        return row;
+      }
       if (cmd === "docker_pool_link") return link;
       if (cmd === "docker_pool_version") return version;
       if (cmd === "projects_not_held") return structuredClone(notHeld);
@@ -105,6 +136,7 @@ beforeEach(() => {
       if (cmd === "remove_docker_pool") {
         removed.push(a.name);
         pools = pools.filter((one) => one.name !== a.name);
+        clusters = clusters.filter((one) => one.name !== a.name);
         return null;
       }
       return null;
@@ -497,5 +529,64 @@ describe("You › This machine › Pools", () => {
       ),
     ).toBeInTheDocument();
     expect(group).not.toHaveTextContent(/has no runner image/);
+  });
+});
+
+describe("A cluster pool (#3292)", () => {
+  it("is added from the same dialog once its cluster operator key is shown to check", async () => {
+    render(<App />);
+    await palette("Add a Docker pool…");
+    const first = await screen.findByRole("dialog", { name: "Add a Docker pool" });
+    await userEvent.click(within(first).getByRole("radio", { name: /Cluster/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a cluster pool" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Name" }), "team");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Pool" }), "default");
+    // Nothing is added before its key is shown.
+    expect(within(dialog).queryByRole("button", { name: "Add pool" })).toBeNull();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Check its key" }));
+    expect(await within(dialog).findByText(OPERATOR_KEY)).toBeInTheDocument();
+    expect(clustersAdded).toEqual([]);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add pool" }));
+    await waitFor(() =>
+      expect(clustersAdded).toEqual([
+        { name: "team", kubeconfig: null, context: "team", pool: "default", key: OPERATOR_KEY },
+      ]),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Add a cluster pool" })).toBeNull(),
+    );
+    // Its runner keeps none of this machine's profiles: nothing to sign in there.
+    expect(screen.queryByRole("dialog", { name: /Sign your profiles in/ })).toBeNull();
+  });
+
+  it("takes the key away when what names the cluster changes after it was checked", async () => {
+    render(<App />);
+    await palette("Add a Docker pool…");
+    const first = await screen.findByRole("dialog", { name: "Add a Docker pool" });
+    await userEvent.click(within(first).getByRole("radio", { name: /Cluster/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a cluster pool" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Pool" }), "default");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Check its key" }));
+    await within(dialog).findByText(OPERATOR_KEY);
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Pool" }), "s");
+    expect(within(dialog).queryByText(OPERATOR_KEY)).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Check its key" })).toBeInTheDocument();
+  });
+
+  it("whose cluster names another operator key has the key-changed Notice with Remove", async () => {
+    clusters = [a_cluster_pool("team")];
+    link = { state: "operator_key_changed" };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(await within(group).findByText(/another cluster operator key/)).toBeInTheDocument();
+    await userEvent.click(within(group).getAllByRole("button", { name: "Remove" })[0]);
+    const asked = await screen.findByRole("alertdialog", { name: "Remove pool team?" });
+    expect(
+      within(asked).getByText(/claim is deleted from your team's cluster/),
+    ).toBeInTheDocument();
+    await userEvent.click(within(asked).getByRole("button", { name: "Remove pool" }));
+    await waitFor(() => expect(removed).toEqual(["team"]));
   });
 });

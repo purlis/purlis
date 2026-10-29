@@ -50,21 +50,21 @@ fn signed(text: &str, signature: &str) -> Signed {
 }
 
 /// An operator of the test's own: its key, and a signer.
-struct Operator(Ed25519KeyPair);
+pub(crate) struct Operator(Ed25519KeyPair);
 
 impl Operator {
-    fn new() -> Operator {
+    pub(crate) fn new() -> Operator {
         let rng = ring::rand::SystemRandom::new();
         let pkcs8 = Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
         Operator(Ed25519KeyPair::from_pkcs8(pkcs8.as_ref()).unwrap())
     }
 
-    fn key(&self) -> OperatorKey {
+    pub(crate) fn key(&self) -> OperatorKey {
         OperatorKey::from_spelled(&format!("ed25519:{}", hex_of(self.0.public_key().as_ref())))
             .unwrap()
     }
 
-    fn sign(&self, text: &str) -> String {
+    pub(crate) fn sign(&self, text: &str) -> String {
         hex_of(self.0.sign(text.as_bytes()).as_ref())
     }
 }
@@ -785,4 +785,359 @@ fn during_a_roll_a_moved_pin_reads_the_next_keys_signature() {
         ..during
     };
     assert!(pin(next_operator_key()).verified(&wrong_next).is_err());
+}
+
+/// **A cluster of the test's own, behind a stand-in for kubectl** (#3292): it answers who the
+/// kubeconfig is, a Pool naming its operator's key, a Claim made, the Claim's statement as its
+/// operator signed it, a runner's pairing, and the kubeconfig's contexts, each from a file the
+/// test can change, and records every run's words and environment.
+#[cfg(unix)]
+pub(crate) struct FakeCluster {
+    pub(crate) dir: tempfile::TempDir,
+    pub(crate) operator: Operator,
+    pub(crate) runner: Pinned,
+}
+
+/// The uid the stand-in gives every claim it makes.
+pub(crate) const CLAIM_UID: &str = "6f1c2b8e-0f43-4c2e-9d7a-1b2c3d4e5f60";
+
+/// The stand-in's cluster: the uid of its `kube-system` namespace.
+pub(crate) const CLUSTER: &str = "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b";
+
+/// Who the stand-in's kubeconfig signs in as.
+pub(crate) const REQUESTER: &str = "ada@example.com";
+
+#[cfg(unix)]
+impl FakeCluster {
+    pub(crate) fn new() -> FakeCluster {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let operator = Operator::new();
+        let runner = Pinned {
+            device: "01JB0RUNNER000000000000000".into(),
+            key: LinkKey::generate().unwrap().public(),
+        };
+        let d = dir.path().display().to_string();
+        let script = format!(
+            "#!/bin/sh\nd='{d}'\nprintf '%s ' \"$@\" >> \"$d/calls\"\nprintf '\\n' >> \"$d/calls\"\n\
+             printf '%s|%s\\n' \"${{KUBECONFIG-unset}}\" \"$PATH\" >> \"$d/env\"\ncat > /dev/null\n\
+             case \"$*\" in\n\
+             *'auth whoami'*) cat \"$d/whoami.json\";;\n\
+             *'get pools.runners.purlis.dev'*) cat \"$d/pool.json\";;\n\
+             *'create --filename'*) cat \"$d/created.json\";;\n\
+             *'get claims.runners.purlis.dev'*) cat \"$d/claim.json\";;\n\
+             *'exec -i'*) cat \"$d/paired.txt\";;\n\
+             *'delete claims'*) echo deleted;;\n\
+             *'--minify'*) cat \"$d/minify.json\";;\n\
+             *'config view'*) cat \"$d/view.json\";;\n\
+             *) exit 1;;\nesac\n"
+        );
+        let at = dir.path().join("bin");
+        std::fs::create_dir(&at).unwrap();
+        std::fs::write(at.join("kubectl"), script).unwrap();
+        std::fs::set_permissions(at.join("kubectl"), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+        let cluster = FakeCluster {
+            dir,
+            operator,
+            runner,
+        };
+        cluster.write(
+            "whoami.json",
+            &serde_json::json!({"status": {"userInfo": {"username": REQUESTER}}}).to_string(),
+        );
+        cluster.names_key(&cluster.operator.key());
+        cluster.write(
+            "created.json",
+            &serde_json::json!({"metadata": {"uid": CLAIM_UID}}).to_string(),
+        );
+        cluster.write("claim.json", "{}");
+        cluster.write("paired.txt", &crate::runnerlink::to_line(&cluster.runner));
+        cluster.write(
+            "minify.json",
+            &serde_json::json!({"contexts": [{"name": "team", "context": {"namespace": "ada"}}]})
+                .to_string(),
+        );
+        cluster.write(
+            "view.json",
+            &serde_json::json!({
+                "current-context": "team",
+                "contexts": [{"name": "team"}, {"name": "kind-test"}],
+            })
+            .to_string(),
+        );
+        cluster
+    }
+
+    pub(crate) fn write(&self, name: &str, text: &str) {
+        std::fs::write(self.dir.path().join(name), text).unwrap();
+    }
+
+    /// The Pool's status names `key` as its operator's, in the stand-in's cluster.
+    pub(crate) fn names_key(&self, key: &OperatorKey) {
+        self.write(
+            "pool.json",
+            &serde_json::json!({"status": {"signingKey": key.spelled(), "cluster": CLUSTER}})
+                .to_string(),
+        );
+    }
+
+    /// The Pool's status rolls its operator's key to `next`'s, the stand-in's operator vouching
+    /// for it until `until` (#3305).
+    pub(crate) fn rolls_to(&self, next: &Operator, until: u64) {
+        let roll = KeyRoll {
+            cluster: CLUSTER.into(),
+            from: self.operator.key(),
+            to: next.key(),
+            until,
+        }
+        .text();
+        self.write(
+            "pool.json",
+            &serde_json::json!({"status": {
+                "signingKey": self.operator.key().spelled(),
+                "cluster": CLUSTER,
+                "nextSigningKey": next.key().spelled(),
+                "nextSigningKeyVouch": {"statement": roll, "signature": self.operator.sign(&roll)},
+            }})
+            .to_string(),
+        );
+    }
+
+    /// The pin a desktop adding the stand-in's pool takes.
+    pub(crate) fn pin(&self) -> PoolPin {
+        PoolPin {
+            key: self.operator.key(),
+            cluster: CLUSTER.into(),
+        }
+    }
+
+    /// The operator vouches for the runner of claim `namespace`/`claim` in pod `pod` with `key`,
+    /// signed by its key and, during a roll, by `next` too.
+    pub(crate) fn vouch_signed(
+        &self,
+        namespace: &str,
+        claim: &str,
+        pod: &str,
+        key: PublicKey,
+        next: Option<&Operator>,
+    ) {
+        let text = Vouched {
+            cluster: CLUSTER.into(),
+            namespace: namespace.into(),
+            claim: claim.into(),
+            claim_uid: CLAIM_UID.into(),
+            runner_namespace: runner_namespace(REQUESTER),
+            pod: pod.into(),
+            key,
+            requester: REQUESTER.into(),
+            until: now() + 600,
+        }
+        .text();
+        let mut link_key = serde_json::json!({
+            "statement": text,
+            "signature": self.operator.sign(&text),
+        });
+        if let Some(next) = next {
+            link_key["nextSignature"] = next.sign(&text).into();
+        }
+        self.write(
+            "claim.json",
+            &serde_json::json!({"status": {"linkKey": link_key}}).to_string(),
+        );
+    }
+
+    /// [`Self::vouch_signed`], outside a roll.
+    pub(crate) fn vouch(&self, namespace: &str, claim: &str, pod: &str, key: PublicKey) {
+        self.vouch_signed(namespace, claim, pod, key, None);
+    }
+
+    /// kubectl, as this machine would find it here.
+    pub(crate) fn kubectl(&self) -> Kubectl {
+        Kubectl::found_in(
+            &[],
+            Some(&self.dir.path().join("bin").display().to_string()),
+            None,
+        )
+        .unwrap()
+    }
+
+    /// Every run's words, a line each.
+    pub(crate) fn calls(&self) -> String {
+        std::fs::read_to_string(self.dir.path().join("calls")).unwrap_or_default()
+    }
+
+    /// Every run's `KUBECONFIG` (`unset` where none) and `PATH`, a line each.
+    pub(crate) fn environments(&self) -> String {
+        std::fs::read_to_string(self.dir.path().join("env")).unwrap_or_default()
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn kubectl_is_found_by_an_absolute_path_and_never_by_a_relative_one() {
+    let cluster = FakeCluster::new();
+    let bin = cluster.dir.path().join("bin");
+    let found = Kubectl::found_in(&[], Some(&format!("bin:{}", bin.display())), None).unwrap();
+    assert_eq!(found.program(), bin.join("kubectl"));
+    let installed = bin.join("kubectl").display().to_string();
+    let first = Kubectl::found_in(&[&installed], Some("/nowhere"), None).unwrap();
+    assert_eq!(first.program(), bin.join("kubectl"));
+    let none = Kubectl::found_in(&[], Some("bin:relative/bin"), None).unwrap_err();
+    assert!(none.to_string().contains("no kubectl"), "{none}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_kubectl_run_never_inherits_a_kubeconfig_and_finds_plugins_beside_kubectl() {
+    let cluster = FakeCluster::new();
+    let kubectl = cluster
+        .kubectl()
+        .pointed_at(std::path::Path::new("/home/ada/.kube/config"), "team");
+    kubectl.whoami().unwrap();
+    let env = cluster.environments();
+    let (kubeconfig, path) = env.trim().split_once('|').unwrap();
+    assert_eq!(kubeconfig, "unset");
+    let bin = cluster.dir.path().join("bin").display().to_string();
+    assert_eq!(path.split(':').next(), Some(bin.as_str()));
+    assert!(path.split(':').any(|dir| dir == "/usr/bin"), "{path}");
+    assert!(
+        cluster
+            .calls()
+            .starts_with("--kubeconfig /home/ada/.kube/config --context team auth whoami"),
+        "{}",
+        cluster.calls()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_kubeconfigs_contexts_and_its_contexts_namespace_are_read() {
+    let cluster = FakeCluster::new();
+    let kubectl = cluster.kubectl();
+    let (contexts, current) = kubectl.contexts().unwrap();
+    assert_eq!(contexts, ["team", "kind-test"]);
+    assert_eq!(current.as_deref(), Some("team"));
+    assert_eq!(kubectl.namespace().unwrap(), "ada");
+    cluster.write(
+        "minify.json",
+        r#"{"contexts": [{"name": "team", "context": {}}]}"#,
+    );
+    assert_eq!(kubectl.namespace().unwrap(), "default");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_is_refused_once_the_pool_names_another_operator_key_than_the_pinned_one() {
+    let cluster = FakeCluster::new();
+    let kubectl = cluster.kubectl();
+    let mut pin = cluster.pin();
+    cluster.vouch("ada", "ada-1", "ada-1", cluster.runner.key);
+    let claimed = Claimed {
+        uid: CLAIM_UID.into(),
+        ..claimed()
+    };
+    let check = |pin: &mut PoolPin, pod: &str| {
+        before_link(
+            &kubectl,
+            pin,
+            "default",
+            &claimed,
+            pod,
+            &cluster.runner,
+            now(),
+        )
+    };
+    assert_eq!(check(&mut pin, "ada-1"), Ok(()));
+    // Another pod than the one paired with: a changed runner.
+    assert!(matches!(
+        check(&mut pin, "ada-2"),
+        Err(Refused::KeyChanged { .. })
+    ));
+    cluster.names_key(&Operator::new().key());
+    assert_eq!(
+        check(&mut pin, "ada-1"),
+        Err(Refused::OperatorKeyChanged {
+            pool: "default".into()
+        })
+    );
+    assert_eq!(pin, cluster.pin(), "a refusal leaves the pin");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_pin_follows_a_roll_and_a_claim_not_yet_signed_again_refuses_that_link_alone() {
+    let cluster = FakeCluster::new();
+    let kubectl = cluster.kubectl();
+    let next = Operator::new();
+    let mut pin = cluster.pin();
+    let claimed = Claimed {
+        uid: CLAIM_UID.into(),
+        ..claimed()
+    };
+    cluster.rolls_to(&next, now() + 24 * 3600);
+    // The Claim has not been reconciled since: signed by the old key alone.
+    cluster.vouch("ada", "ada-1", "ada-1", cluster.runner.key);
+    let first = before_link(
+        &kubectl,
+        &mut pin,
+        "default",
+        &claimed,
+        "ada-1",
+        &cluster.runner,
+        now(),
+    );
+    assert_eq!(pin.key, next.key(), "the pin moved, for the caller to keep");
+    // Not vouched for this once: the link is refused, never as a changed key, so nothing is
+    // unpaired and the next try goes ahead.
+    assert!(matches!(first, Err(Refused::NotVouched(_))), "{first:?}");
+    // Reconciled: the next key's signature beside the old one's, and the link goes ahead.
+    cluster.vouch_signed("ada", "ada-1", "ada-1", cluster.runner.key, Some(&next));
+    assert_eq!(
+        before_link(
+            &kubectl,
+            &mut pin,
+            "default",
+            &claimed,
+            "ada-1",
+            &cluster.runner,
+            now()
+        ),
+        Ok(())
+    );
+    assert_eq!(pin.key, next.key());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_claim_never_vouched_for_is_deleted_and_says_what_the_claim_says() {
+    let cluster = FakeCluster::new();
+    cluster.write(
+        "claim.json",
+        r#"{"status": {"conditions": [{"type": "Ready", "status": "False", "reason": "OverQuota", "message": "5 claims"}]}}"#,
+    );
+    let desktop = Pinned {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: LinkKey::generate().unwrap().public(),
+    };
+    let why = claim_and_pair(
+        &cluster.kubectl(),
+        &cluster.pin(),
+        "default",
+        "ada",
+        "team-1",
+        &desktop,
+        std::time::Duration::ZERO,
+        std::time::Duration::ZERO,
+    )
+    .unwrap_err();
+    assert!(why.to_string().contains("OverQuota: 5 claims"), "{why}");
+    assert!(
+        cluster
+            .calls()
+            .lines()
+            .any(|call| call.contains("delete claims.runners.purlis.dev team-1")),
+        "{}",
+        cluster.calls()
+    );
 }

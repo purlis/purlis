@@ -1464,6 +1464,9 @@ export const commands = {
 	removeDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
+	clusterContexts: __WINDOW_ONLY_RESULT,
+	clusterPoolKey: __WINDOW_ONLY_RESULT,
+	addClusterPool: __WINDOW_ONLY_RESULT,
 	poolProfiles: __WINDOW_ONLY_RESULT,
 	devices: __WINDOW_ONLY_RESULT,
 	deviceRunner: __WINDOW_ONLY_RESULT,
@@ -3672,6 +3675,48 @@ export type ClosingChat = {
 	 *  any, the close asks once: keep them running, or stop them.
 	 */
 	running: string[],
+};
+
+/**  The contexts of a kubeconfig, as the Add a pool dialog offers them. */
+export type ClusterContexts = {
+	/**  The kubeconfig read, by its absolute path. */
+	kubeconfig: string,
+	contexts: string[],
+	/**  The context it is on, where it names one. */
+	current: string | null,
+};
+
+/**  A cluster pool as the person typed it, with the key they checked. */
+export type ClusterPoolAdding = {
+	name: string,
+	/**  The kubeconfig, by its path; empty or none is kubectl's own default, `~/.kube/config`. */
+	kubeconfig: string | null,
+	context: string,
+	/**  The cluster's Pool. */
+	pool: string,
+	/**  The cluster operator key Check its key showed, spelled as it showed it. */
+	key: string,
+};
+
+/**  What Check its key read of a cluster's Pool. */
+export type ClusterPoolKey = {
+	/**  The cluster operator key the Pool's status names, spelled as it gives it. */
+	key: string,
+	/**  The namespace the context names, where the pool's claim would be made. */
+	namespace: string,
+};
+
+/**  One cluster pool, as its row draws it. */
+export type ClusterPoolRow = {
+	name: string,
+	/**  The kubeconfig's context its kubectl is pointed at. */
+	context: string,
+	/**  The cluster's Pool its runner is claimed from. */
+	pool: string,
+	/**  The namespace its claim is made in. */
+	namespace: string,
+	/**  The cluster operator key pinned as it was added, spelled `ed25519:<64 hex>`. */
+	operator_key: string,
 };
 
 /**  What a palette command does. */
@@ -7848,6 +7893,11 @@ export type PoolLink =
 { state: "linked" } | 
 /**  It answered with another key: it is refused, and the window offers to remove it. */
 { state: "key_changed" } | 
+/**
+ *  Its cluster's Pool names another cluster operator key than the one pinned as the pool was
+ *  added (#3292): its runner is refused, and the window offers to remove the pool.
+ */
+{ state: "operator_key_changed" } | 
 /**  It did not answer, and why. */
 { state: "down"; why: string } | 
 /**
@@ -7980,6 +8030,8 @@ export type PoolsShown = {
 	 *  by default (#3297).
 	 */
 	width?: number | null,
+	/**  This machine's cluster pools (#3292), each with its runner in a team's cluster. */
+	clusters?: ClusterPoolRow[] | null,
 };
 
 /**

@@ -4,6 +4,9 @@
 import { useSyncExternalStore } from "react";
 import {
   commands,
+  type ClusterContexts,
+  type ClusterPoolAdding,
+  type ClusterPoolKey,
   type PoolAdding,
   type PoolLink,
   type PoolProfileRow,
@@ -27,6 +30,12 @@ import {
  *
  * **Each pool's runner keeps this machine's profiles** ({@link askProfiles}, #2049): adding a
  * pool ends with them, each to sign in there, and the profile page says where each is signed in.
+ *
+ * **A cluster pool is added from the same dialog** (#3292): its kind chosen there, then its
+ * kubeconfig's context and the cluster's Pool, then the cluster operator key that Pool names,
+ * read ({@link checkClusterPoolKey}) and shown for the person to check before Add pool pins it
+ * ({@link addClusterPool}). Its runner keeps none of this machine's profiles: it is a team's
+ * cluster's, so adding one ends with nothing to sign in.
  */
 type Read =
   | { state: "reading" }
@@ -37,6 +46,8 @@ export type Held = {
   read: Read;
   /** Whether the Add a Docker pool dialog is open. */
   adding: boolean;
+  /** Which kind of pool it adds, as last chosen there (#3292). */
+  kind: PoolKind;
   /** What each pool's runner answered, or that it is being asked, by the pool's name. */
   links: Readonly<Record<string, PoolLink | "asking">>;
   /** Which version each pool's runner runs, by the pool's name, once it said (#2749). */
@@ -52,9 +63,13 @@ export type Held = {
   said: string | undefined;
 };
 
+/** A pool's kind: a runner on this machine's Docker, or one in a team's cluster (#3292). */
+export type PoolKind = "docker" | "cluster";
+
 const START: Held = {
   read: { state: "reading" },
   adding: false,
+  kind: "docker",
   links: {},
   versions: {},
   profiles: {},
@@ -97,7 +112,7 @@ export async function rereadPools() {
 
 function subscribe(listener: () => void) {
   if (listeners.size === 0) {
-    held = { ...START, adding: held.adding, added: held.added };
+    held = { ...START, adding: held.adding, added: held.added, kind: held.kind };
     void rereadPools();
   }
   listeners.add(listener);
@@ -110,15 +125,23 @@ export function usePools(): Held {
   return useSyncExternalStore(subscribe, () => held);
 }
 
-/** Whether this machine keeps a pool, as last read: the palette offers the Pools group only
- *  then. */
+/** Whether this machine keeps a pool of either kind, as last read: the palette offers the Pools
+ *  group only then. */
 export function anyPoolKept(): boolean {
-  return held.read.state === "read" && held.read.shown.pools.length > 0;
+  return (
+    held.read.state === "read" &&
+    held.read.shown.pools.length + (held.read.shown.clusters ?? []).length > 0
+  );
 }
 
 /** Opens the Add a Docker pool dialog. */
 export function startAddingAPool() {
   set((was) => ({ ...was, adding: true }));
+}
+
+/** Chooses which kind of pool the dialog adds (#3292). */
+export function choosePoolKind(kind: PoolKind) {
+  set((was) => ({ ...was, kind }));
 }
 
 /** Closes it. */
@@ -132,6 +155,45 @@ export async function addPool(adding: PoolAdding): Promise<string | undefined> {
   if (said.status === "error") return said.error;
   set((was) => ({ ...was, adding: false, added: adding.name, said: undefined }));
   // Its profiles are asked by what it ends with ({@link askProfiles}, #2049).
+  await rereadPools();
+  return undefined;
+}
+
+/** The contexts of the kubeconfig `kubeconfig` names (empty for kubectl's own default), or
+ *  why they could not be read (#3292). */
+export async function readClusterContexts(
+  kubeconfig: string,
+): Promise<ClusterContexts | { trouble: string }> {
+  const said = await caught(commands.clusterContexts(kubeconfig.trim() === "" ? null : kubeconfig));
+  if (said.status === "error") return { trouble: said.error };
+  return typeof said.data === "object" && said.data !== null && Array.isArray(said.data.contexts)
+    ? said.data
+    : { trouble: "purlis did not say which contexts the kubeconfig has." };
+}
+
+/** The cluster operator key the cluster's Pool `pool` names, through `context`, for the person to
+ *  check (#3292), or why it could not be read. */
+export async function checkClusterPoolKey(
+  kubeconfig: string,
+  context: string,
+  pool: string,
+): Promise<ClusterPoolKey | { trouble: string }> {
+  const said = await caught(
+    commands.clusterPoolKey(kubeconfig.trim() === "" ? null : kubeconfig, context, pool),
+  );
+  if (said.status === "error") return { trouble: said.error };
+  return typeof said.data === "object" && said.data !== null && typeof said.data.key === "string"
+    ? said.data
+    : { trouble: "purlis did not say which key the cluster's pool names." };
+}
+
+/** Adds the cluster pool `adding`, pinning the key the person checked: `undefined` once it is
+ *  added, else why not (#3292). It ends with nothing to sign in: its runner keeps no profile of
+ *  this machine's. */
+export async function addClusterPool(adding: ClusterPoolAdding): Promise<string | undefined> {
+  const said = await caught(commands.addClusterPool(adding));
+  if (said.status === "error") return said.error;
+  set((was) => ({ ...was, adding: false, said: undefined }));
   await rereadPools();
   return undefined;
 }

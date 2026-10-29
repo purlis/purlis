@@ -43,6 +43,10 @@ pub enum Refused {
     /// operator now vouches for another pod or key than the one this desktop paired with: it is
     /// refused, and the person is asked whether to claim a new runner.
     KeyChanged { claim: String },
+    /// The cluster pool's Pool now names another cluster operator key than the one this desktop
+    /// pinned when it added the pool (#3292): every runner of it is refused, and the person is
+    /// asked about it, as for a changed runner key.
+    OperatorKeyChanged { pool: String },
     /// No statement this desktop can trust vouches for the runner: none yet, one signed by
     /// another key than the pool's, or one about another claim or requester.
     NotVouched(String),
@@ -58,6 +62,13 @@ impl std::fmt::Display for Refused {
                 "the runner of claim {claim} answered with another key than the one the \
                  cluster operator vouched for, so purlis refused it; delete the claim and \
                  claim a new runner if you expected this"
+            ),
+            Refused::OperatorKeyChanged { pool } => write!(
+                f,
+                "the cluster's pool {pool} now names another cluster operator key than the one \
+                 this desktop pinned when the pool was added, so purlis refused its runner; \
+                 check the new key with your cluster's admin, then remove the pool and add it \
+                 again"
             ),
             Refused::NotVouched(why) | Refused::Other(why) => f.write_str(why),
         }
@@ -612,12 +623,42 @@ const PURLIS: &str = crate::dockerpool::PURLIS;
 
 /// **`kubectl`, held as data**: the program, and the kubeconfig and context it is pointed at,
 /// each passed on every run, so nothing it does reads another cluster than the pool's.
+///
+/// **Every run is given its own environment's two words** (#3292): `KUBECONFIG` is never handed
+/// on ([`CLEARED`]), so the kubeconfig is only ever the one named with `--kubeconfig`, or
+/// kubectl's own default, and never one a chat's environment pointed at; and, where it was found
+/// on this machine ([`Kubectl::on_this_machine`]), its `PATH` is the folder it is in and the
+/// fixed folders purlis looks for programs in, where a kubeconfig's own credential plugins are
+/// found as the person's terminal finds them.
 #[derive(Debug, Clone)]
 pub struct Kubectl {
     program: PathBuf,
     kubeconfig: Option<PathBuf>,
     context: Option<String>,
+    path: Option<std::ffi::OsString>,
 }
+
+/// The variables a run of kubectl is never handed from this process: the kubeconfig is named,
+/// never inherited (#3292).
+pub const CLEARED: [&str; 1] = ["KUBECONFIG"];
+
+/// Where a `kubectl` command is looked for first, before the home's installers and `PATH`:
+/// Homebrew's, `/usr/local`'s, Docker Desktop's own, the system's and snap's.
+const KUBECTL_INSTALLED: &[&str] = &[
+    "/opt/homebrew/bin/kubectl",
+    "/usr/local/bin/kubectl",
+    "/Applications/Docker.app/Contents/Resources/bin/kubectl",
+    "/usr/bin/kubectl",
+    "/snap/bin/kubectl",
+];
+
+/// Where Rancher Desktop, OrbStack and Docker Desktop link `kubectl` in the home folder, each
+/// taken only from its installer's own folder ([`crate::dockerpool::its_own_in`]).
+const KUBECTL_IN_HOME: &[&str] = &[
+    ".rd/bin/kubectl",
+    ".orbstack/bin/kubectl",
+    ".docker/bin/kubectl",
+];
 
 /// The most purlis reads of what kubectl prints for one object.
 const MOST_PRINTED: u64 = 1024 * 1024;
@@ -631,7 +672,86 @@ impl Kubectl {
             program: program.into(),
             kubeconfig: None,
             context: None,
+            path: None,
         }
+    }
+
+    /// **The `kubectl` command on this machine, by its absolute path** (#3292), found as
+    /// Docker's is ([`crate::dockerpool::Docker::on_this_machine`]): the first of the places
+    /// installers put it (`KUBECTL_INSTALLED`, then under `home`), else the first on `path`, of
+    /// its absolute folders alone. A window started from the Finder has a `PATH` that names
+    /// none. Its runs are given a `PATH` of its own folder, then `path`'s absolute folders and
+    /// the fixed ones ([`crate::programs::search_dirs_from`]), where a kubeconfig's credential
+    /// plugin is found. Refused, saying how to get one, where there is none.
+    pub fn on_this_machine(
+        path: Option<&str>,
+        home: Option<&std::path::Path>,
+    ) -> Result<Kubectl, Refused> {
+        Kubectl::found_in(KUBECTL_INSTALLED, path, home)
+    }
+
+    fn found_in(
+        installed: &[&str],
+        path: Option<&str>,
+        home: Option<&std::path::Path>,
+    ) -> Result<Kubectl, Refused> {
+        let installed = installed.iter().map(PathBuf::from);
+        let in_home = home.into_iter().flat_map(|home| {
+            KUBECTL_IN_HOME
+                .iter()
+                .filter(move |at| crate::dockerpool::its_own_in(home, at))
+                .map(move |at| home.join(at))
+        });
+        let on_path = path
+            .into_iter()
+            .flat_map(|path| path.split(':'))
+            .filter(|dir| dir.starts_with('/'))
+            .map(|dir| std::path::Path::new(dir).join("kubectl"));
+        let program = installed
+            .chain(in_home)
+            .chain(on_path)
+            .find(|candidate| crate::programs::runnable(candidate))
+            .ok_or_else(|| {
+                Refused::Other(
+                    "purlis found no kubectl on this machine; install kubectl, with Homebrew or \
+                     your cluster's own instructions, and try again"
+                        .into(),
+                )
+            })?;
+        let mut folders: Vec<PathBuf> = program.parent().map(PathBuf::from).into_iter().collect();
+        for folder in crate::programs::search_dirs_from(path.map(std::ffi::OsStr::new), home) {
+            if !folders.contains(&folder) {
+                folders.push(folder);
+            }
+        }
+        let path = std::env::join_paths(folders).ok();
+        Ok(Kubectl {
+            path,
+            ..Kubectl::at(program)
+        })
+    }
+
+    /// This kubectl, pointed at `context` of the kubeconfig at `kubeconfig`: the two a cluster
+    /// pool names (#3292).
+    #[must_use]
+    pub fn pointed_at(self, kubeconfig: &std::path::Path, context: &str) -> Kubectl {
+        self.with_kubeconfig(kubeconfig).with_context(context)
+    }
+
+    /// **What each run is given** besides its words: the variables it is handed, and those it
+    /// is not ([`CLEARED`]). A connector through this kubectl gives each of its runs the same.
+    pub fn environment(
+        &self,
+    ) -> (
+        Vec<(std::ffi::OsString, std::ffi::OsString)>,
+        Vec<std::ffi::OsString>,
+    ) {
+        let env = self
+            .path
+            .iter()
+            .map(|path| ("PATH".into(), path.clone()))
+            .collect();
+        (env, CLEARED.iter().map(std::ffi::OsString::from).collect())
     }
 
     /// This kubectl, reading the kubeconfig at `path`.
@@ -711,6 +831,11 @@ impl Kubectl {
                 .unwrap_or_default()
         };
         let mut command = std::process::Command::new(&self.program);
+        let (env, cleared) = self.environment();
+        command.envs(env);
+        for name in cleared {
+            command.env_remove(name);
+        }
         command.args(args);
         let ran = crate::boundedrun::run(&mut command, input, most, MOST_SAID).map_err(|why| {
             use crate::boundedrun::Unanswered;
@@ -758,6 +883,77 @@ impl Kubectl {
             .filter(|name| plain(name))
             .map(str::to_owned)
             .ok_or_else(|| Refused::Other("the cluster did not say who this kubeconfig is".into()))
+    }
+
+    /// **The contexts of the kubeconfig this kubectl reads** (#3292), as kubectl itself lists
+    /// them (`kubectl config view`, which leaves every credential out), and the one it is on.
+    pub fn contexts(&self) -> Result<(Vec<String>, Option<String>), Refused> {
+        let view = self.json(&["config", "view", "--output", "json"], None)?;
+        let names = view
+            .get("contexts")
+            .and_then(serde_json::Value::as_array)
+            .map(|contexts| {
+                contexts
+                    .iter()
+                    .filter_map(|one| one.get("name").and_then(serde_json::Value::as_str))
+                    .filter(|name| plain(name))
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let current = view
+            .get("current-context")
+            .and_then(serde_json::Value::as_str)
+            .filter(|name| plain(name))
+            .map(str::to_owned);
+        Ok((names, current))
+    }
+
+    /// **The namespace this kubectl's context names**, where a cluster pool's claims are made
+    /// (#3292): kubectl's own `default` where it names none.
+    pub fn namespace(&self) -> Result<String, Refused> {
+        let view = self.json(&["config", "view", "--minify", "--output", "json"], None)?;
+        let named = view
+            .pointer("/contexts/0/context/namespace")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("default");
+        if !is_label(named) {
+            return Err(Refused::Other(format!(
+                "the context names the namespace \"{named}\", which is not a namespace's name"
+            )));
+        }
+        Ok(named.to_owned())
+    }
+
+    /// **What the Claim `namespace`/`name`'s `Ready` condition says**, to show why its runner is
+    /// not vouched for yet; `None` where it says nothing. Only shown, never read to decide.
+    pub fn claim_said(&self, namespace: &str, name: &str) -> Option<String> {
+        let held = self
+            .json(
+                &[
+                    "get",
+                    "claims.runners.purlis.dev",
+                    name,
+                    "--namespace",
+                    namespace,
+                    "--output",
+                    "json",
+                ],
+                None,
+            )
+            .ok()?;
+        let ready = held
+            .pointer("/status/conditions")?
+            .as_array()?
+            .iter()
+            .find(|one| one.get("type").and_then(serde_json::Value::as_str) == Some("Ready"))?;
+        let field = |name: &str| ready.get(name).and_then(serde_json::Value::as_str);
+        let said: Vec<&str> = [field("reason"), field("message")]
+            .into_iter()
+            .flatten()
+            .filter(|said| !said.is_empty())
+            .collect();
+        (!said.is_empty()).then(|| crate::shown::short(&said.join(": ")))
     }
 
     /// **What a pool's status says of its operator**: its key, its cluster and any roll.
@@ -1026,27 +1222,160 @@ pub fn pair(
 /// kept claim's pod made again under its name, answering the key it was paired with, is the
 /// same runner (#2057): its pairing is the claim's.
 pub fn still_vouched(kubectl: &Kubectl, pin: &PoolPin, paired: &Paired) -> Result<(), Refused> {
-    let now = vouched_for(kubectl, pin, &paired.claimed)?.ok_or_else(|| {
+    still_vouched_for(
+        kubectl,
+        pin,
+        &paired.claimed,
+        &paired.vouched.pod,
+        &paired.pinned,
+    )
+}
+
+/// [`still_vouched`], for the runner of `claimed` paired in `pod` as `pinned`: what a desktop
+/// keeps of a pairing (`runners.json`, #3292).
+pub fn still_vouched_for(
+    kubectl: &Kubectl,
+    pin: &PoolPin,
+    claimed: &Claimed,
+    pod: &str,
+    pinned: &Pinned,
+) -> Result<(), Refused> {
+    let now = vouched_for(kubectl, pin, claimed)?.ok_or_else(|| {
         Refused::NotVouched(format!(
             "the cluster operator no longer vouches for the runner of claim {}/{}",
-            paired.claimed.namespace, paired.claimed.name
+            claimed.namespace, claimed.name
         ))
     })?;
-    held_to(paired, &now)
+    held_to_pod(claimed, pod, pinned, &now)
 }
 
 /// `now`, what the operator vouches for, held to what `paired` was paired with.
 pub fn held_to(paired: &Paired, now: &Vouched) -> Result<(), Refused> {
-    if now.runner_namespace != paired.vouched.runner_namespace
-        || now.pod != paired.vouched.pod
-        || now.key != paired.pinned.key
+    held_to_pod(&paired.claimed, &paired.vouched.pod, &paired.pinned, now)
+}
+
+/// `now` held to a pairing kept as `claimed`'s runner in `pod`, answering `pinned`: in that
+/// requester's own runner namespace (#2055), the same pod and the same key.
+fn held_to_pod(
+    claimed: &Claimed,
+    pod: &str,
+    pinned: &Pinned,
+    now: &Vouched,
+) -> Result<(), Refused> {
+    if now.runner_namespace != runner_namespace(&claimed.requester)
+        || now.pod != pod
+        || now.key != pinned.key
     {
         return Err(Refused::KeyChanged {
-            claim: format!("{}/{}", paired.claimed.namespace, paired.claimed.name),
+            claim: format!("{}/{}", claimed.namespace, claimed.name),
         });
     }
     Ok(())
 }
 
+/// **Before every link to a cluster runner** (#3292), at `now`: the Pool `pool`'s status read,
+/// `pin` follows a roll its pinned key vouches for ([`PoolPin::follow`], #3305), in place, so the
+/// caller keeps it where it keeps the pool's pin once it differs from what it was; a Pool that
+/// names another cluster, or a key the pin neither is nor vouched for, is
+/// [`Refused::OperatorKeyChanged`]. Then the operator must still vouch, with the pin as it now
+/// is, for the pod and key the runner was paired with ([`still_vouched_for`]).
+///
+/// **Right after a pin moves**, a Claim the operator has not reconciled since still carries its
+/// statement signed by the old key alone, with no `nextSignature`: that is
+/// [`Refused::NotVouched`], which refuses this link and no more. The next try, once the operator
+/// has signed it again, links; nothing is unpaired for it.
+pub fn before_link(
+    kubectl: &Kubectl,
+    pin: &mut PoolPin,
+    pool: &str,
+    claimed: &Claimed,
+    pod: &str,
+    pinned: &Pinned,
+    now: u64,
+) -> Result<(), Refused> {
+    let seen = kubectl.pool(pool)?;
+    pin.follow(&seen, now)
+        .map_err(|_| Refused::OperatorKeyChanged {
+            pool: pool.to_owned(),
+        })?;
+    still_vouched_for(kubectl, pin, claimed, pod, pinned)
+}
+
+/// **Claims a kept runner of `pool` as `name` in `namespace`, and pairs it with `desktop`**
+/// (#3292): made as who this kubeconfig is ([`Kubectl::whoami`]), waited on for at most
+/// `patience` until the operator vouches for its key (asked every `every`), then paired over this
+/// desktop's own `kubectl exec` ([`pair`]). What fails deletes the claim it made, and says what
+/// the claim last said of itself.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each is one of what a claim is made of"
+)]
+pub fn claim_and_pair(
+    kubectl: &Kubectl,
+    pin: &PoolPin,
+    pool: &str,
+    namespace: &str,
+    name: &str,
+    desktop: &Pinned,
+    patience: std::time::Duration,
+    every: std::time::Duration,
+) -> Result<Paired, Refused> {
+    // Claimed by name: a pool's name and namespace, each as Kubernetes names them.
+    if !is_subdomain(pool) || !is_label(namespace) || !is_subdomain(name) {
+        return Err(Refused::Other(format!(
+            "purlis claims a runner only by Kubernetes names, and {pool}, {namespace} or {name} \
+             is not one"
+        )));
+    }
+    let requester = kubectl.whoami()?;
+    let uid = kubectl.claim(namespace, name, pool, &requester, Keeping::Kept)?;
+    let claimed = Claimed {
+        namespace: namespace.to_owned(),
+        name: name.to_owned(),
+        uid,
+        requester,
+    };
+    let paired = vouched_within(kubectl, pin, &claimed, patience, every)
+        .and_then(|vouched| pair(kubectl, &claimed, &vouched, desktop));
+    paired.map_err(|why| match kubectl.delete_claim(namespace, name) {
+        Ok(()) => why,
+        Err(left) => Refused::Other(format!(
+            "{why}; and the claim could not be deleted ({left}): delete the claim {name} in \
+             namespace {namespace} with kubectl"
+        )),
+    })
+}
+
+/// The statement on `claimed`, once the operator has written one, asked every `every` for at
+/// most `patience`.
+fn vouched_within(
+    kubectl: &Kubectl,
+    pin: &PoolPin,
+    claimed: &Claimed,
+    patience: std::time::Duration,
+    every: std::time::Duration,
+) -> Result<Vouched, Refused> {
+    let start = std::time::Instant::now();
+    loop {
+        if let Some(vouched) = vouched_for(kubectl, pin, claimed)? {
+            return Ok(vouched);
+        }
+        if start.elapsed() >= patience {
+            let said = kubectl
+                .claim_said(&claimed.namespace, &claimed.name)
+                .map(|said| format!(" The claim says: {said}."))
+                .unwrap_or_default();
+            return Err(Refused::NotVouched(format!(
+                "the cluster operator did not vouch for the runner of claim {}/{} within {} \
+                 seconds, so purlis deleted the claim.{said}",
+                claimed.namespace,
+                claimed.name,
+                patience.as_secs()
+            )));
+        }
+        std::thread::sleep(every);
+    }
+}
+
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
