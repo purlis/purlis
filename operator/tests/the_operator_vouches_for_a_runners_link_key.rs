@@ -53,6 +53,7 @@ fn the_example() -> About<'static> {
         namespace: "ada",
         claim: "ada-1",
         claim_uid: "6f1c2b8e-0f43-4c2e-9d7a-1b2c3d4e5f60",
+        runner_namespace: "purlis-runners-b5fc85e55755f9e0",
         pod: "ada-1",
         key: KEY,
         requester: "ada@example.com",
@@ -547,6 +548,21 @@ const UPSTREAM_UID: &str = "11111111-1111-4111-8111-111111111111";
 const SANDBOX_UID: &str = "22222222-2222-4222-8222-222222222222";
 const POD_UID: &str = "33333333-3333-4333-8333-333333333333";
 
+/// Ada's runner namespace, as the operator made it (#2055).
+fn runner_namespace() -> k8s_openapi::api::core::v1::Namespace {
+    let mut runner = purlis_cluster_operator::person::namespace_for("ada@example.com");
+    runner.metadata.uid = Some("0d6f2c4a-1b3e-4f5a-8c7d-9e0f1a2b3c4d".into());
+    runner
+}
+
+#[test]
+fn the_examples_runner_namespace_is_the_one_worked_out_for_its_requester() {
+    assert_eq!(
+        purlis_cluster_operator::person::runner_namespace(the_example().requester),
+        the_example().runner_namespace
+    );
+}
+
 fn claim() -> Claim {
     let mut claim = Claim::new(
         "ada-1",
@@ -562,7 +578,7 @@ fn claim() -> Claim {
 }
 
 fn upstream_claim(names: &str) -> SandboxClaim {
-    let mut held = upstream::sandbox_claim_for(&claim(), &Default::default());
+    let mut held = upstream::sandbox_claim_for(&claim(), &Default::default(), &runner_namespace());
     held.metadata.uid = Some(UPSTREAM_UID.into());
     held.status = Some(SandboxClaimStatus {
         conditions: Vec::new(),
@@ -588,7 +604,7 @@ fn sandbox(owner_uid: &str) -> ObjectMeta {
 fn runner_pod(owner: Vec<OwnerReference>) -> Pod {
     let mut pod = pod(Some((0, KEY)));
     pod.metadata.uid = Some(POD_UID.into());
-    pod.metadata.namespace = Some("ada".into());
+    pod.metadata.namespace = runner_namespace().metadata.name;
     pod.metadata.owner_references = Some(owner);
     pod
 }
@@ -624,6 +640,23 @@ fn vouching(
 }
 
 #[test]
+fn a_runner_outside_its_requesters_runner_namespace_is_never_vouched_for() {
+    let pod = runner_pod(the_sandboxes());
+    let sandbox = sandbox(UPSTREAM_UID);
+    for elsewhere in ["ada", "purlis-runners-0000000000000000"] {
+        let mut upstream = upstream_claim("ada-1");
+        upstream.metadata.namespace = Some(elsewhere.into());
+        assert!(
+            matches!(
+                vouching(&upstream, Some(&sandbox), Some(&pod), None),
+                Vouching::Refused(why) if why.contains("runner namespace")
+            ),
+            "{elsewhere}"
+        );
+    }
+}
+
+#[test]
 fn a_claim_is_followed_to_its_pod_by_uid_and_its_key_vouched_for() {
     let upstream = upstream_claim("ada-1");
     let sandbox = sandbox(UPSTREAM_UID);
@@ -633,6 +666,13 @@ fn a_claim_is_followed_to_its_pod_by_uid_and_its_key_vouched_for() {
     };
     assert!(link_key.statement.contains("pod: ada-1\n"));
     assert!(!link_key.statement.contains("pod uid"));
+    // The Claim's namespace, and the runner namespace its pod is in (#2055).
+    assert!(link_key.statement.contains("namespace: ada\n"));
+    assert!(
+        link_key
+            .statement
+            .contains("runner namespace: purlis-runners-b5fc85e55755f9e0\n")
+    );
     assert!(link_key.statement.contains(&format!("key: {KEY}\n")));
     assert_eq!(link_key.signature, signing().sign(&link_key.statement));
     assert!(matches!(
@@ -820,6 +860,14 @@ fn a_name_or_uid_that_is_not_kubernetes_own_makes_no_statement() {
             ..the_example()
         },
         About {
+            runner_namespace: "a.b",
+            ..the_example()
+        },
+        About {
+            runner_namespace: "--namespace=kube-system",
+            ..the_example()
+        },
+        About {
             claim_uid: "not-a-uid",
             ..the_example()
         },
@@ -990,7 +1038,8 @@ fn vouching_kept(sandbox_name: &str, pod: &Pod) -> Vouching {
 /// [`vouching_kept`], with the pod named for its claim by upstream's label only if `labelled`.
 fn vouching_kept_labelled(sandbox_name: &str, pod: &Pod, labelled: bool) -> Vouching {
     let claim = kept_claim();
-    let mut upstream = upstream::sandbox_claim_for(&claim, &Default::default());
+    let mut upstream =
+        upstream::sandbox_claim_for(&claim, &Default::default(), &runner_namespace());
     upstream.metadata.uid = Some(UPSTREAM_UID.into());
     upstream.status = Some(SandboxClaimStatus {
         conditions: Vec::new(),
@@ -1110,7 +1159,12 @@ fn a_kept_claim_asks_upstream_for_its_own_volume_and_a_fresh_one_for_none() {
         size: "20Gi".into(),
         storage_class_name: Some("fast".into()),
     };
-    let kept = serde_json::to_value(upstream::sandbox_claim_for(&kept_claim(), &volume)).unwrap();
+    let kept = serde_json::to_value(upstream::sandbox_claim_for(
+        &kept_claim(),
+        &volume,
+        &runner_namespace(),
+    ))
+    .unwrap();
     assert_eq!(
         kept["spec"]["volumeClaimTemplates"],
         serde_json::json!([{
@@ -1122,7 +1176,12 @@ fn a_kept_claim_asks_upstream_for_its_own_volume_and_a_fresh_one_for_none() {
             },
         }])
     );
-    let fresh = serde_json::to_value(upstream::sandbox_claim_for(&claim(), &volume)).unwrap();
+    let fresh = serde_json::to_value(upstream::sandbox_claim_for(
+        &claim(),
+        &volume,
+        &runner_namespace(),
+    ))
+    .unwrap();
     assert!(
         fresh["spec"].get("volumeClaimTemplates").is_none(),
         "{fresh}"

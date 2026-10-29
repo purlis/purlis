@@ -99,18 +99,25 @@ fn written() -> Vec<Value> {
         },
         status: None,
     };
+    let mut runner = purlis_cluster_operator::person::namespace_for("ada@example.com");
+    runner.metadata.uid = Some("w".into());
+    let namespace = purlis_cluster_operator::person::runner_namespace("ada@example.com");
     [
         serde_json::to_value(upstream::template_for(
             &pool,
-            "ada",
-            upstream::owners_with(None, &claim, &[&claim]),
+            &namespace,
+            upstream::runner_owner(&runner),
         )),
         serde_json::to_value(upstream::warm_pool_for(
             &pool,
-            "ada",
-            upstream::owners_with(None, &claim, &[&claim]),
+            &namespace,
+            upstream::runner_owner(&runner),
         )),
-        serde_json::to_value(upstream::sandbox_claim_for(&claim, &Default::default())),
+        serde_json::to_value(upstream::sandbox_claim_for(
+            &claim,
+            &Default::default(),
+            &runner,
+        )),
     ]
     .into_iter()
     .map(|v| v.expect("serialises"))

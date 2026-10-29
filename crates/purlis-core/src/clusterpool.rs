@@ -64,15 +64,19 @@ impl std::error::Error for Refused {}
 pub const STATEMENT_HEADER: &str = "purlis runner link key v2";
 
 /// **What the cluster operator vouches for**: one claim's runner, the pod it runs in, by name,
-/// the public link key that runner holds, and who asked for the claim. A kept claim's pod made
+/// in its requester's runner namespace (#2055), the public link key that runner holds, and who
+/// asked for the claim. A kept claim's pod made
 /// again has the same name and key (#2057), so the statement says the same. Signed as its
 /// text ([`Vouched::text`]), one `name: value` line each, in this order, after
 /// [`STATEMENT_HEADER`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Vouched {
+    /// The claim's namespace.
     pub namespace: String,
     pub claim: String,
     pub claim_uid: String,
+    /// The namespace the runner's pod is in: its requester's own ([`runner_namespace`]).
+    pub runner_namespace: String,
     pub pod: String,
     pub key: PublicKey,
     pub requester: String,
@@ -82,10 +86,11 @@ pub struct Vouched {
 }
 
 /// The names of a statement's lines, in their order.
-const LINES: [&str; 7] = [
+const LINES: [&str; 8] = [
     "namespace",
     "claim",
     "claim uid",
+    "runner namespace",
     "pod",
     "key",
     "requester",
@@ -108,6 +113,7 @@ impl Vouched {
             self.namespace.as_str(),
             &self.claim,
             &self.claim_uid,
+            &self.runner_namespace,
             &self.pod,
             &key,
             &self.requester,
@@ -156,9 +162,17 @@ impl Vouched {
                 .ok_or_else(bad)?;
             values.push(value.to_owned());
         }
-        let key = bytes_of(&values[4]).ok_or_else(bad)?;
-        let [namespace, claim, claim_uid, pod, _key, requester, until]: [String; 7] =
-            values.try_into().map_err(|_| bad())?;
+        let key = bytes_of(&values[5]).ok_or_else(bad)?;
+        let [
+            namespace,
+            claim,
+            claim_uid,
+            runner_namespace,
+            pod,
+            _key,
+            requester,
+            until,
+        ]: [String; 8] = values.try_into().map_err(|_| bad())?;
         let until = Some(until)
             .filter(|digits| digits.len() <= 20 && digits.bytes().all(|b| b.is_ascii_digit()))
             .and_then(|digits| digits.parse::<u64>().ok())
@@ -166,6 +180,7 @@ impl Vouched {
         // Names and uids only as Kubernetes gives them: nothing that could read as a flag or
         // another kind of object where kubectl is handed the pod's name.
         let named = is_label(&namespace)
+            && is_label(&runner_namespace)
             && is_subdomain(&claim)
             && is_subdomain(&pod)
             && is_uid(&claim_uid);
@@ -176,6 +191,7 @@ impl Vouched {
             namespace,
             claim,
             claim_uid,
+            runner_namespace,
             pod,
             key: PublicKey::from_bytes(key),
             requester,
@@ -184,13 +200,25 @@ impl Vouched {
     }
 
     /// Whether it is about the claim `namespace`/`claim` of uid `claim_uid`, asked for by
-    /// `requester`: the one this desktop made.
+    /// `requester`, with its runner in that requester's own runner namespace: the one this
+    /// desktop made.
     pub fn is_for(&self, namespace: &str, claim: &str, claim_uid: &str, requester: &str) -> bool {
         self.namespace == namespace
             && self.claim == claim
             && self.claim_uid == claim_uid
             && self.requester == requester
+            && self.runner_namespace == runner_namespace(requester)
     }
+}
+
+/// **The runner namespace of `requester`** (#2055): `purlis-runners-` and the first 16 lower-case
+/// hex digits of the SHA-256 of the requester, exactly as the Claim names them. The cluster
+/// operator makes it and runs every runner of that person's claims there; a statement naming any
+/// other is refused.
+pub fn runner_namespace(requester: &str) -> String {
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(requester.as_bytes());
+    format!("purlis-runners-{}", &hex_of(digest.as_slice())[..16])
 }
 
 /// Whether `value` can be a statement's value: not empty, at most [`MOST_VALUE`] bytes, and
@@ -676,7 +704,8 @@ pub fn checked_at(
     ) {
         return Err(Refused::NotVouched(format!(
             "the cluster operator's statement is about another claim or requester than the claim {}/{} \
-             this desktop made as {}, so purlis refused it",
+             this desktop made as {}, or its runner is not in that requester's own namespace, so \
+             purlis refused it",
             claimed.namespace, claimed.name, claimed.requester
         )));
     }
@@ -705,7 +734,7 @@ pub fn pair(
 ) -> Result<Paired, Refused> {
     let line = format!("{}\n", crate::runnerlink::to_line(desktop));
     let out = kubectl.run(
-        &kubectl.pair_args(&claimed.namespace, &vouched.pod),
+        &kubectl.pair_args(&vouched.runner_namespace, &vouched.pod),
         Some(&line),
         crate::runnerlink::MOST_LINE,
     )?;
@@ -738,7 +767,10 @@ pub fn still_vouched(
 
 /// `now`, what the operator vouches for, held to what `paired` was paired with.
 pub fn held_to(paired: &Paired, now: &Vouched) -> Result<(), Refused> {
-    if now.pod != paired.vouched.pod || now.key != paired.pinned.key {
+    if now.runner_namespace != paired.vouched.runner_namespace
+        || now.pod != paired.vouched.pod
+        || now.key != paired.pinned.key
+    {
         return Err(Refused::KeyChanged {
             claim: format!("{}/{}", paired.claimed.namespace, paired.claimed.name),
         });

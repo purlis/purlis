@@ -2754,9 +2754,11 @@ impl Chats {
 
     /// **Starts chat `session` again on its conversation, where its workspace's chats run
     /// now** (#2048): what a move ends with, once the chat's work and conversation are there.
-    /// The old run stays until the new one has started, as [`Self::restart`]'s does; ending it
-    /// is the caller's next step. A person's opt-out is never carried: it starts sandboxed.
-    pub fn start_again_where_it_runs(&self, session: u32, size: Size) -> Result<u32, String> {
+    /// The new run is held apart until [`Self::took_over`] gives it the chat's place, or
+    /// [`Self::let_go_of_start`] ends it, so the chats of a workspace that move together all
+    /// start before any takes its place (#3453). The old run stays meanwhile. A person's opt-out
+    /// is never carried: it starts sandboxed.
+    pub fn start_again_held(&self, session: u32, size: Size) -> Result<u32, String> {
         self.claim(session)?;
         let started = self.again_on_its_conversation(session).and_then(|again| {
             if again.resume.is_none() {
@@ -2764,12 +2766,24 @@ impl Chats {
             }
             self.start_recorded_told(&again, size, Why::Relaunch, None, None)
         });
-        match started {
-            Ok(started) => self.restarted(session, started, true),
-            Err(why) => {
-                self.unclaim(session);
-                Err(why)
-            }
+        if started.is_err() {
+            self.unclaim(session);
+        }
+        started
+    }
+
+    /// **`started`, held apart by [`Self::start_again_held`], takes chat `session`'s place**
+    /// (#2048), as a restart's does; ending the old run is the caller's next step.
+    pub fn took_over(&self, session: u32, started: u32) -> Result<u32, String> {
+        self.restarted(session, started, true)
+    }
+
+    /// **`started`, held apart by [`Self::start_again_held`], ends**, and chat `session` runs on
+    /// where it was (#3453): another chat of its move did not start.
+    pub fn let_go_of_start(&self, session: u32, started: u32) {
+        self.unclaim(session);
+        if let Err(why) = self.close(started) {
+            tracing::warn!("purlis: a start of a move that did not happen did not end ({why})");
         }
     }
 
@@ -3859,6 +3873,19 @@ impl Chats {
         // opens, and flags it rides on go last among the flags. A harness charter wraps runs as
         // the wrap's program, with its whole line after it (ADR 0067).
         let socket = self.sessions.reports_to();
+        // **A task starts in its asking chat's mode, capped at auto** (#3787): the words its
+        // harness's adapter adds for the level its record holds, among purlis's own. None at
+        // the default, none where the profile's command names a mode of its own, none for a
+        // grade's chat, and none on the runner, which arms its chats itself.
+        let mut hooks = hooks;
+        if let Some(harness) = harness.filter(|_| !on_the_runner) {
+            hooks.extend(purlis_core::dispatchmode::task_words(
+                harness,
+                chat.task_level,
+                &command,
+                chat.graded,
+            ));
+        }
         // A chat reattached starts nothing: no line is built for it, so none refuses it (#2006).
         let (program, all, wrapped) = match sandbox.filter(|_| !reattaching) {
             Some(applied) => {

@@ -83,6 +83,32 @@ pub trait HarnessAdapter: Sync {
     /// default: each adapter says how its sandbox is applied.
     fn sandbox_holds_what_it_starts(&self) -> bool;
 
+    /// **What this harness's hook payload says of its permission mode** (#3787), in purlis's
+    /// words ([`crate::dispatchmode::Reported`]), from the payload's `permission_mode`. `None`
+    /// where it says nothing purlis reads: the default, for a harness whose word for its mode
+    /// is not read, so a chat on it is never taken to run in anything but its default.
+    fn reported_mode(
+        &self,
+        permission_mode: Option<&str>,
+    ) -> Option<crate::dispatchmode::Reported> {
+        let _ = permission_mode;
+        None
+    }
+
+    /// **The words that start a task on this harness at `level`** (#3787), added after the
+    /// profile's own `command` (the program, then the profile's words). None where the level
+    /// is the harness's default, where `command` names a mode of its own (the person's
+    /// declaration stands), and on a harness with no classifier-backed mode, which the
+    /// default is.
+    fn task_mode_words(
+        &self,
+        level: crate::dispatchmode::Level,
+        command: &[String],
+    ) -> Vec<String> {
+        let _ = (level, command);
+        Vec::new()
+    }
+
     /// **Whether a grade's chats can run on this harness** (SK-16, ADR 0105, #3310): purlis can
     /// hold one of its chats to the grade's limits there (to purlis's MCP server alone and its
     /// read tools), read what it spent, the operator's ruling of 2026-10-26, and turn off every

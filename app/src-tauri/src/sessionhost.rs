@@ -168,6 +168,9 @@ impl purlis_host::Compose for Composes {
                         starting.project_path,
                     ),
                 ) as std::sync::Arc<dyn purlis_core::skills::router::AskRouter>,
+                // The chat's confinement as it is now, which its tool's runs here are held to
+                // (#3407).
+                |confinement: &str| beside.reach_of(confinement),
             ),
         )
     }

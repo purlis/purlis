@@ -55,7 +55,18 @@ async fn operate() -> ExitCode {
         }
     };
     tracing::info!(signing_key = %signing.public(), "signing runners' link keys");
-    purlis_cluster_operator::run(client, signing).await;
+    // The chart's perPerson.quota (#2055): an operator that cannot read it does not start.
+    let var = purlis_cluster_operator::person::QUOTA_VAR;
+    let quota = match purlis_cluster_operator::person::Quota::from_var(
+        std::env::var(var).ok().as_deref(),
+    ) {
+        Ok(quota) => quota,
+        Err(error) => {
+            tracing::error!(%error, "no per-person quota (docs/cluster-operator.md)");
+            return ExitCode::FAILURE;
+        }
+    };
+    purlis_cluster_operator::run(client, signing, quota).await;
     ExitCode::SUCCESS
 }
 

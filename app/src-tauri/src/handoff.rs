@@ -1656,6 +1656,8 @@ struct Opening<'a> {
     id: Option<String>,
     /// The worktree the app cut for it, where the dispatch gave it one.
     worktree: Option<purlis_core::dispatchrecord::Worktree>,
+    /// The level its harness starts at (#3787, [`purlis_core::reopen::Chat::task_level`]).
+    task_level: purlis_core::dispatchmode::Level,
 }
 
 /// The project's profiles as one read of them: what a profile is chosen from and the chat is
@@ -1717,6 +1719,7 @@ fn start_on(
         from: Some(opening.from.clone()),
         held: start.held.clone(),
         renamed_from: None,
+        task_level: opening.task_level,
         ..Default::default()
     };
     // **A dispatch decided and reserved before a stop was recorded does not start**
@@ -2202,21 +2205,26 @@ impl HeldDispatches {
     }
 }
 
-/// **Which chats run with their harness's permission prompts off** (#1446): each chat's
-/// [`purlis_core::dispatchunattended::Mark`], fed by every hook report the board takes from
-/// it. It only ever goes one way for a chat's life.
+/// **What each chat's own harness said of how it runs**: whether its permission prompts are
+/// off (#1446) and the permission level it reported (#3787), per chat, as [`HeardOfAChat`].
+/// Fed by the hook reports the board takes from the chat, never by a line the chat sends. Its
+/// name is the first of the two it held.
 #[derive(Default)]
-pub struct Unattended(
-    std::sync::Mutex<std::collections::HashMap<u32, purlis_core::dispatchunattended::Mark>>,
-);
+pub struct Unattended(std::sync::Mutex<std::collections::HashMap<u32, HeardOfAChat>>);
+
+/// What the app heard of one chat's harness.
+#[derive(Debug, Clone, Copy, Default)]
+struct HeardOfAChat {
+    /// Whether it ever ran with its prompts off: one way, for the chat's life
+    /// ([`purlis_core::dispatchunattended::Mark`]).
+    mark: purlis_core::dispatchunattended::Mark,
+    /// The permission mode it last said it runs in ([`purlis_core::dispatchmode::Heard`]),
+    /// which a task it dispatches starts from.
+    mode: purlis_core::dispatchmode::Heard,
+}
 
 impl Unattended {
-    fn lock(
-        &self,
-    ) -> std::sync::MutexGuard<
-        '_,
-        std::collections::HashMap<u32, purlis_core::dispatchunattended::Mark>,
-    > {
+    fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<u32, HeardOfAChat>> {
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -2229,18 +2237,53 @@ impl Unattended {
             self.lock()
                 .entry(session)
                 .or_default()
+                .mark
                 .heard(Some(purlis_core::floorguard::UNATTENDED_MODE));
         }
     }
 
+    /// A hook of chat `session` reported, saying which mode its own harness runs in, where it
+    /// said one its adapter reads ([`heard_mode`] asks whether it was the chat's own).
+    pub fn heard_mode(&self, session: u32, mode: Option<purlis_core::dispatchmode::Reported>) {
+        if mode.is_some() {
+            self.lock().entry(session).or_default().mode.heard(mode);
+        }
+    }
+
     fn mark(&self, session: u32) -> purlis_core::dispatchunattended::Mark {
-        self.lock().get(&session).copied().unwrap_or_default()
+        self.lock()
+            .get(&session)
+            .map(|heard| heard.mark)
+            .unwrap_or_default()
+    }
+
+    /// **The level a task chat `session` dispatches starts at** (#3787): what its harness
+    /// last said, capped at auto. A chat whose harness never said starts its tasks asking.
+    pub fn task_level(&self, session: u32) -> purlis_core::dispatchmode::Level {
+        self.lock()
+            .get(&session)
+            .map(|heard| heard.mode)
+            .unwrap_or_default()
+            .for_a_task()
     }
 
     /// Chat `session` closed. A chat started again in its place is marked afresh.
     pub fn forget(&self, session: u32) {
         self.lock().remove(&session);
     }
+}
+
+/// **A hook report of chat `report.chat`, after the board took it** (#3787): the permission
+/// mode it names, kept as that chat's only where it is its own harness speaking
+/// ([`purlis_core::dispatchmode::of_its_own_harness`]): not a sub-agent's, and about the
+/// conversation the board holds for the chat now. A nested harness's report, or one the board
+/// refused, leaves the record as it was.
+pub fn heard_mode(held: &Held, report: &purlis_core::hookwire::Report) {
+    let now = held.board().conversation(report.chat);
+    held.unattended().heard_mode(
+        report.chat,
+        purlis_core::dispatchmode::of_its_own_harness(report, now.as_deref()),
+    );
 }
 
 /// **How chat `session`, recorded as `asking`, is taken to run**: unattended where its harness
@@ -3013,6 +3056,13 @@ fn dispatch_noting(
                 branch: Some(cut.branch.clone()),
                 removed: None,
             }),
+            // **A task starts in its asking chat's mode, capped at auto** (#3787): as the
+            // app heard it from that chat's own harness, never as the dispatch says. A
+            // handoff's chat is the person's to read, and starts in its harness's default.
+            task_level: match wanted.mode() {
+                Mode::Task => held.unattended().task_level(from),
+                Mode::Handoff => purlis_core::dispatchmode::Level::Asks,
+            },
         },
         (&on.declared, &on.launch),
         size,
