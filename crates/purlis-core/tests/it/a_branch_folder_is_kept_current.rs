@@ -798,9 +798,9 @@ fn a_clone_update_for_a_sandboxed_chat_that_would_write_a_denied_file_does_not_s
 
 #[test]
 fn an_abort_is_only_of_a_rebase_purlis_started_never_of_the_persons_own() {
+    purlis_core::unsteered!();
     // #3831: `--abort` undoes the update purlis started for the chat; a rebase the person
     // started in their own terminal is theirs to finish.
-    purlis_core::unsteered!();
     let w = world();
     write(&w.clone, "shared.txt", "a\nmine\nc\n");
     git(&w.clone, &["commit", "-q", "-am", "mine"]);
