@@ -162,12 +162,15 @@
     border-color var(--motion-duration-quick) var(--motion-easing-standard);
 }
 
-/* The button: no box of its own, its words the card's; its `::after` is the card's whole face. */
+/* The button: no box of its own, its words the card's; its `::after` is the card's whole face.
+   It is a target 24px tall at least (WCAG 2.5.8), as the button family's smallest is: axe measures
+   the button, never its `::after`. */
 [data-scope="card"][data-part="press"] {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
+  min-block-size: 24px;
   min-inline-size: 0;
   margin: 0;
   padding: 0;
@@ -213,7 +216,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1) var(--space-2);
+  padding: 0 var(--space-2);
   border-color: transparent;
   color: var(--accent-base);
 }
