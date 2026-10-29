@@ -6483,6 +6483,11 @@ export type NeedFix =
 { kind: "accept"; folder: string } | 
 /**  Rename the plane's copy of a skill: its page in the Library, with Rename open. */
 { kind: "rename"; name: string; level: Level; local: boolean } | 
+/**
+ *  Open the text of the plane's own skill: its page in the Library, its Text tab in Edit
+ *  (#3780).
+ */
+{ kind: "open-text"; name: string; level: Level; local: boolean } | 
 /**  The Harness skills page, where the other copy's switch is. */
 { kind: "harness" } | 
 /**  Take the pin `name` out of `by`'s pins (`skill_pin`, off). */

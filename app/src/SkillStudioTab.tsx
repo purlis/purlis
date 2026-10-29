@@ -393,8 +393,9 @@ export function SkillStudioTab({
         setDone((n) => n + 1);
       });
   };
-  const open = (skill: StudioSkill, level: SkillLevel) => {
-    const asked = at;
+  /** Opens `skill`'s text in Edit, once read, if the tab is still at `asked`: where it is now, or
+   *  where a step just taken goes. */
+  const open = (skill: StudioSkill, level: SkillLevel, asked: StudioPlace = at) => {
     void commands.skillText(plane, level, skill.name).then((answer) => {
       if (answer.status === "error")
         setSaid({ tone: "trouble", label: "The skill could not be opened", text: answer.error });
@@ -545,6 +546,27 @@ export function SkillStudioTab({
         go({ page: "library", scope, skill: skillRowId(skill) });
         const level = levelOf(skill, scope);
         if (level !== null) setDoing({ what: "rename", skill, level });
+        return;
+      }
+      case "open-text": {
+        // The plane's own skill whose lint Needs you holds (#3780): its Text tab, in Edit.
+        const skill = (studio?.skills ?? []).find(
+          (row) =>
+            row.name === fix.name &&
+            row.level === fix.level &&
+            row.local === fix.local &&
+            row.owner === null,
+        );
+        if (skill === undefined) return go({ page: "library", scope });
+        const place: StudioPlace = {
+          page: "library",
+          scope,
+          skill: skillRowId(skill),
+          tab: "text",
+        };
+        go(place);
+        const level = levelOf(skill, scope);
+        if (level !== null) open(skill, level, place);
         return;
       }
       case "harness":

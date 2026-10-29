@@ -2608,3 +2608,48 @@ fn a_built_in_skills_name_is_reserved_with_or_without_a_bundle() {
         assert!(!crate::skills::name_reserved(with, name), "{name}");
     }
 }
+
+#[test]
+fn the_studio_lints_the_planes_own_skills_a_chat_gets_once_per_list() {
+    // #3780: Needs you's problems in a skill hold the plane's own too. The prototype's deploy,
+    // whose step names a script it never shipped; a clean skill beside it says nothing.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(plane.join("skills/deploy/scripts")).unwrap();
+    std::fs::create_dir_all(plane.join("skills/review")).unwrap();
+    std::fs::write(plane.join("charter.toml"), "[plane]\n").unwrap();
+    std::fs::write(
+        plane.join("skills/deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Deploys the app to staging, then to production.\n---\n\n\
+         1. Run scripts/build.sh.\n2. Check it.\n3. Tag it with scripts/tag.sh.\n",
+    )
+    .unwrap();
+    std::fs::write(plane.join("skills/deploy/scripts/build.sh"), "#!/bin/sh\n").unwrap();
+    std::fs::write(
+        plane.join("skills/review/SKILL.md"),
+        "---\nname: review\ndescription: Reviews a change before it is merged.\n---\n",
+    )
+    .unwrap();
+    let env = crate::harness_plugin::Env {
+        chat: &[],
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let list = studio_list(None, &plane, None, None, &env);
+
+    let lint_of = |name: &str| {
+        list.rows
+            .iter()
+            .find(|row| row.name == name && row.origin == Origin::Project)
+            .map(|row| row.lint.clone())
+            .unwrap_or_else(|| panic!("{name} listed: {:?}", list.rows))
+    };
+    assert_eq!(
+        lint_of("deploy"),
+        [
+            "it names scripts/tag.sh, which its folder doesn't have: a chat told to run it finds none"
+        ]
+    );
+    assert_eq!(lint_of("review"), Vec::<String>::new());
+}

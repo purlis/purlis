@@ -2078,10 +2078,11 @@ pub struct StudioRow {
     /// for a skill a chat gets from purlis, its own harness for one from outside the plane, and
     /// none for a skill left out.
     pub compat: Vec<HarnessCompat>,
-    /// What the built-in lints say of a skill from outside the plane, as anywhere but the editor
-    /// says it (SK-8): that it widens the chat, a skill it names there is none of, a program it
-    /// calls that this machine lacks. Empty for the plane's and the built-in skills, which their
-    /// editor lints.
+    /// What the built-in lints say of a skill a chat gets, as anywhere but the editor says it
+    /// (SK-8): that it widens the chat, a skill it names there is none of, a program it calls
+    /// that this machine lacks, a script it names that its folder lacks. Filled for a skill from
+    /// outside the plane, and by [`studio_list`] for the plane's own too (#3780). Empty for the
+    /// built-in skills, which nobody here edits, and for a copy left out.
     pub lint: Vec<String>,
     /// Its lifecycle state (SK-19, #2782): in use, deprecated or archived. Always in use for a
     /// skill that is not the plane's, and for one whose file beside it cannot be read.
@@ -2280,28 +2281,48 @@ fn linted(
 ) -> Vec<Finding> {
     use purlis_skills::SkillLint;
     // Read through the skill's folder held from its root, never through a link (SK-36).
-    let others: Vec<(String, String)> = skill_md
-        .and_then(|(root, path)| purlis_skills::SkillFolder::open(root, path).ok())
-        .map(|folder| {
-            folder
-                .entries()
-                .into_iter()
-                .filter_map(|entry| match entry {
-                    purlis_skills::Entry::File(rel) => {
-                        let text = folder.read(&rel, purlis_skills::MOST_BYTES)?;
-                        Some((rel.to_string_lossy().into_owned(), text))
-                    }
-                    purlis_skills::Entry::Folder(_) => None,
+    let folder =
+        skill_md.and_then(|(root, path)| purlis_skills::SkillFolder::open(root, path).ok());
+    // Every file of it by its path inside it, `/` between its parts, text or not (#3780).
+    let listed: Option<Vec<(std::path::PathBuf, String)>> = folder.as_ref().map(|folder| {
+        folder
+            .entries()
+            .into_iter()
+            .filter_map(|entry| match entry {
+                purlis_skills::Entry::File(rel) => {
+                    let said = rel
+                        .components()
+                        .map(|part| part.as_os_str().to_string_lossy())
+                        .collect::<Vec<_>>()
+                        .join("/");
+                    Some((rel, said))
+                }
+                purlis_skills::Entry::Folder(_) => None,
+            })
+            .collect()
+    });
+    let others: Vec<(String, String)> = folder
+        .as_ref()
+        .zip(listed.as_ref())
+        .map(|(folder, listed)| {
+            listed
+                .iter()
+                .filter_map(|(rel, said)| {
+                    let text = folder.read(rel, purlis_skills::MOST_BYTES)?;
+                    Some((said.clone(), text))
                 })
                 .collect()
         })
         .unwrap_or_default();
+    let listed: Option<Vec<String>> =
+        listed.map(|listed| listed.into_iter().map(|(_, said)| said).collect());
     let files = purlis_skills::SkillFiles {
         name,
         text,
         others: &others,
         origin,
         plugin,
+        listed: listed.as_deref(),
     };
     let mut findings = purlis_skills::BuiltInLints {
         namespace: LINKED_PLUGIN,
@@ -2552,11 +2573,46 @@ pub fn studio_list(
         harnesses_in_the_studio(&set, &set_on, plane, workspace, &names, &pins, env, &known);
     let mut rows = studio_rows(&set, plane, &names);
     with_harness_badges(&mut rows, &harnesses, &known);
+    with_plane_lint(&mut rows, &set, &known);
     with_routing(&mut rows, &harnesses);
     StudioList {
         rows,
         harnesses,
         not_supported: not_supported(&crate::harness_declaration::read(plane)),
+    }
+}
+
+/// **What the built-in lints say of each of the plane's own skills a chat gets** (#3780), as
+/// anywhere but the editor says it: the problems in a skill Needs you holds. Linted once per
+/// list, against the [`Known`] the list already made, and never on a chat's open path.
+fn with_plane_lint(rows: &mut [StudioRow], set: &SkillSet, known: &Known) {
+    for got in set.effective.iter().filter(|got| got.origin.of_the_plane()) {
+        let Some(row) = rows.iter_mut().find(|row| {
+            row.left_out.is_none()
+                && row.origin == got.origin
+                && row.local == got.local
+                && row.name == got.skill.name
+        }) else {
+            continue;
+        };
+        // One that cannot be read is refused, which its badge already says.
+        let Ok(text) = purlis_skills::read_skill_md_of(&got.root, &got.skill.path, got.origin)
+        else {
+            continue;
+        };
+        row.lint = linted(
+            known,
+            &known.built_in,
+            Some((&got.root, &got.skill.path)),
+            &got.skill.name,
+            &text,
+            got.origin,
+            None,
+            &[],
+        )
+        .iter()
+        .filter_map(Finding::shown)
+        .collect();
     }
 }
 

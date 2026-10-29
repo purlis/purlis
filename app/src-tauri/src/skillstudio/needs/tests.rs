@@ -24,7 +24,7 @@ fn one_skill() -> (tempfile::TempDir, Studio) {
     skill(
         &tmp.path().join("skills"),
         "deploy",
-        "---\nname: deploy\ndescription: Deploys.\n---\n",
+        "---\nname: deploy\ndescription: Deploys the app to staging, then to production.\n---\n",
     );
     let studio = studio(tmp.path(), None, true, None, None, &no_harness());
     (tmp, studio)
@@ -174,6 +174,55 @@ fn a_lint_of_a_harness_skill_its_switch_can_leave_out_is_a_problem_in_a_skill() 
 }
 
 #[test]
+fn a_lint_of_the_planes_own_skill_is_a_problem_in_a_skill_that_opens_its_text() {
+    // #3780: the prototype's deploy, whose step names a script it never shipped.
+    let tmp = tempfile::tempdir().unwrap();
+    skill(
+        &tmp.path().join("skills"),
+        "deploy",
+        "---\nname: deploy\ndescription: Deploys the app to staging, then to production.\n---\n\n\
+         1. Build it.\n2. Check it.\n3. Tag it with scripts/tag.sh.\n",
+    );
+
+    let studio = studio(tmp.path(), None, true, None, None, &no_harness());
+
+    let [one] = studio.needs.as_slice() else {
+        panic!("one item: {:?}", studio.needs);
+    };
+    assert_eq!(one.kind, NeedKind::Problem);
+    assert_eq!(one.id, "problem:project:deploy");
+    assert_eq!(one.title, "deploy");
+    assert_eq!(one.tag.as_deref(), Some("project"));
+    assert_eq!(
+        one.reason,
+        "It names scripts/tag.sh, which its folder doesn't have: a chat told to run it finds none."
+    );
+    assert_eq!(
+        one.fix,
+        NeedFix::OpenText {
+            name: "deploy".to_owned(),
+            level: Level::Project,
+            local: false,
+        }
+    );
+    assert_eq!(one.fix_label, "Open its text");
+    assert_eq!(one.fix_does, "Opens deploy › Text in Edit.");
+}
+
+#[test]
+fn a_lint_of_a_skill_no_chat_gets_or_a_built_in_one_is_no_problem_here() {
+    let (_tmp, mut studio) = one_skill();
+    studio.skills[0].lint = vec!["its description: it is 4 characters".to_owned()];
+    studio.skills[0].on = false;
+    let mut built_in = studio.skills[0].clone();
+    built_in.on = true;
+    built_in.level = Level::BuiltIn;
+    studio.skills.push(built_in);
+
+    assert_eq!(of(&studio), []);
+}
+
+#[test]
 fn pins_no_chat_reads_offer_to_take_out_the_one_that_names_no_skill() {
     let (_tmp, mut studio) = one_skill();
     let by = SkillPinner::Workspace {
@@ -212,7 +261,7 @@ fn skills_only_some_programs_read_are_a_tidy_up_that_moves_them() {
     skill(
         &tmp.path().join("skills"),
         "notify",
-        "---\nname: notify\ndescription: Tells.\n---\n",
+        "---\nname: notify\ndescription: Tells the team what shipped.\n---\n",
     );
 
     let studio = studio(tmp.path(), None, true, None, None, &no_harness());

@@ -10,7 +10,8 @@
 //! - **Clashes:** a harness's or a repo's skill of the name of one purlis hands the chat. A
 //!   repo skill of a built-in skill's name is one too: the built-in is guarded, so the fix is
 //!   the other copy's switch.
-//! - **Problems in a skill:** what the built-in lints say of a skill from outside the plane that
+//! - **Problems in a skill:** what the built-in lints say of one of the plane's own skills a
+//!   chat gets (#3780), whose text the person changes, and of a skill from outside the plane that
 //!   its harness can leave out, so there is something to do about it.
 //! - **Pins no chat reads:** the scope's pins, where a chat reads none of them.
 //! - **Tidy up:** the project's skills still where only some programs read them, and the old
@@ -41,6 +42,13 @@ pub enum NeedFix {
     Accept { folder: String },
     /// Rename the plane's copy of a skill: its page in the Library, with Rename open.
     Rename {
+        name: String,
+        level: Level,
+        local: bool,
+    },
+    /// Open the text of the plane's own skill: its page in the Library, its Text tab in Edit
+    /// (#3780).
+    OpenText {
         name: String,
         level: Level,
         local: bool,
@@ -189,6 +197,33 @@ pub(crate) fn of(studio: &Studio) -> Vec<NeedsYou> {
             } else {
                 "Opens its page with Rename, so only one copy keeps the name.".to_owned()
             },
+        });
+    }
+
+    // What the lints say of one of the plane's own skills a chat gets (#3780): its text is the
+    // person's to change.
+    for skill in &studio.skills {
+        let planes = matches!(
+            skill.level,
+            Level::Project | Level::Workspace | Level::Persona
+        );
+        if skill.lint.is_empty() || !planes || !skill.on || skill.owner.is_some() {
+            continue;
+        }
+        let lines: Vec<String> = skill.lint.iter().map(|one| sentence(one)).collect();
+        needs.push(NeedsYou {
+            id: format!("problem:{}:{}", skill.label, skill.name),
+            kind: NeedKind::Problem,
+            title: skill.name.clone(),
+            tag: Some(skill.label.clone()),
+            reason: lines.join(" "),
+            fix: NeedFix::OpenText {
+                name: skill.name.clone(),
+                level: skill.level,
+                local: skill.local,
+            },
+            fix_label: "Open its text".to_owned(),
+            fix_does: format!("Opens {} › Text in Edit.", skill.name),
         });
     }
 
