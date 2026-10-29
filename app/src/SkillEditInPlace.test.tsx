@@ -152,6 +152,7 @@ describe("Edit, in place", () => {
     const user = userEvent.setup();
     typeIn(await startEditing(user), "More.\n");
 
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_save")?.args).toMatchObject({
@@ -175,6 +176,7 @@ describe("Edit, in place", () => {
     const user = userEvent.setup();
     typeIn(await startEditing(user), "More.\n");
 
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText(/changed on disk/)).toBeInTheDocument();
     expect(screen.getByTestId("skill-unsaved")).toBeInTheDocument();
@@ -190,6 +192,9 @@ describe("Edit, in place", () => {
     renderStudioAt(at(DEPLOY, { tab: "text" }));
     expect((await editorText()).textContent).toContain("More.");
     expect(screen.getByTestId("skill-unsaved")).toBeInTheDocument();
+    // Never saved on the word of a lint not yet asked of the text drawn afresh.
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeEnabled());
   });
 });
 
@@ -236,7 +241,9 @@ describe("leaving with unsaved changes", () => {
     typeIn(await startEditing(user), "More.\n");
 
     await user.click(screen.getByRole("button", { name: "Sources" }));
-    await user.click(within(await question()).getByRole("button", { name: "Save and leave" }));
+    const saveAndLeave = within(await question()).getByRole("button", { name: "Save and leave" });
+    await waitFor(() => expect(saveAndLeave).toBeEnabled());
+    await user.click(saveAndLeave);
 
     await waitFor(() => expect(asked.some((one) => one.cmd === "skill_save")).toBe(true));
     await waitFor(() => expect(screen.queryByTestId("skill-studio-skill")).toBeNull());

@@ -25,6 +25,7 @@ export default function SkillEditor({
   was,
   text,
   lint,
+  checking,
   saving,
   onChange,
   onSave,
@@ -37,6 +38,8 @@ export default function SkillEditor({
   text: string;
   /** What the core's lint finds in `text`. */
   lint: readonly SkillLintFinding[];
+  /** Whether the lint is still to say what it finds in `text`: Save waits for it. */
+  checking: boolean;
   saving: boolean;
   onChange: (text: string) => void;
   onSave: () => void;
@@ -66,7 +69,11 @@ export default function SkillEditor({
         </ul>
       )}
       <ButtonRow>
-        <Button variant="primary" isDisabled={saving || unchanged || blocked} onPress={onSave}>
+        <Button
+          variant="primary"
+          isDisabled={saving || checking || unchanged || blocked}
+          onPress={onSave}
+        >
           Save
         </Button>
         <Button isDisabled={saving || unchanged} onPress={onDiscard}>

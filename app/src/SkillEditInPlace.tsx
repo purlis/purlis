@@ -34,13 +34,23 @@ import type { Said } from "./SkillPage";
 /** The light editor, its own chunk (`tools/main-chunk-has-no-codemirror.mjs`). */
 const SkillEditor = lazy(() => import("./SkillEditor"));
 
-/** **The core's lint of `text`** (`skill_lint`), asked a moment after each edit while `edit`
- *  is open. */
-function useSkillLint(plane: string, edit: SkillEdit | undefined): readonly SkillLintFinding[] {
-  const [lint, setLint] = useState<readonly SkillLintFinding[]>([]);
+/**
+ * **The core's lint of the text typed** (`skill_lint`), asked a moment after each edit while
+ * `edit` is open: what it found, and whether that was found in the text as it is now. Until it
+ * has, nothing may be saved on its word, so a text drawn afresh is never saved unchecked.
+ */
+function useSkillLint(
+  plane: string,
+  edit: SkillEdit | undefined,
+): { findings: readonly SkillLintFinding[]; checked: boolean } {
+  const [lint, setLint] = useState<{ of: string; findings: readonly SkillLintFinding[] }>({
+    of: "",
+    findings: [],
+  });
   const level = edit?.level;
   const name = edit?.skill.name;
   const text = edit?.now;
+  const of = `${name ?? ""}\u0000${text ?? ""}`;
   useEffect(() => {
     if (level === undefined || name === undefined || text === undefined) return;
     let live = true;
@@ -48,7 +58,7 @@ function useSkillLint(plane: string, edit: SkillEdit | undefined): readonly Skil
       void commands
         .skillLint(plane, level, name, text)
         .then((answer) => {
-          if (live && answer.status === "ok") setLint(answer.data);
+          if (live && answer.status === "ok") setLint({ of, findings: answer.data });
         })
         .catch(() => undefined);
     }, 200);
@@ -57,8 +67,10 @@ function useSkillLint(plane: string, edit: SkillEdit | undefined): readonly Skil
       clearTimeout(asked);
     };
     // Each edit keeps the level it opened with: a keystroke never asks again for it alone.
-  }, [plane, level, name, text]);
-  return lint;
+  }, [plane, level, name, text, of]);
+  // Another skill's findings are never shown as this one's.
+  const findings = lint.of.startsWith(`${name ?? ""}\u0000`) ? lint.findings : [];
+  return { findings, checked: lint.of === of };
 }
 
 /** What is left, once the person has answered: a step, a close, or nothing more. */
@@ -90,7 +102,7 @@ export function useSkillEditInPlace({
   const edit = useSkillEdit(tab);
   const closeAsked = useCloseAsked(tab);
   const lint = useSkillLint(plane, edit);
-  const blocked = lint.find((finding) => finding.level === "blocks");
+  const blocked = lint.findings.find((finding) => finding.level === "blocks");
   const [leaving, setLeaving] = useState<Leaving>();
   const at = walked.at;
   // Where the tab is now, for the text that comes back after the person may have moved on.
@@ -144,6 +156,8 @@ export function useSkillEditInPlace({
       .skillSave(plane, now.level, now.skill.name, now.was, now.now)
       .then((answer) => {
         if (answer.status === "error") {
+          // Not saved: a leave from afar is asked again, so the person can go back to it.
+          setSavingAway(undefined);
           say({ tone: "trouble", label: "The skill was not saved", text: answer.error });
           return;
         }
@@ -151,9 +165,10 @@ export function useSkillEditInPlace({
         say({ tone: "news", label: "Skill saved", text: [SAVED, ...answer.data.notes].join(" ") });
         then?.();
       })
-      .catch((err: unknown) =>
-        say({ tone: "trouble", label: "The skill was not saved", text: String(err) }),
-      )
+      .catch((err: unknown) => {
+        setSavingAway(undefined);
+        say({ tone: "trouble", label: "The skill was not saved", text: String(err) });
+      })
       .finally(() => {
         setBusy(false);
         onSaved();
@@ -190,7 +205,8 @@ export function useSkillEditInPlace({
           name={here.skill.name}
           was={here.was}
           text={here.now}
-          lint={lint}
+          lint={lint.findings}
+          checking={!lint.checked}
           saving={busy}
           onChange={(now) => {
             const was = skillEditIn(tab);
@@ -204,15 +220,14 @@ export function useSkillEditInPlace({
 
   // A close of the tab asked while the editor held unsaved text (`askBeforeClosing`).
   const asking: Leaving | undefined =
-    leaving ??
-    (closeAsked !== undefined
+    // A close is the widest leave: answered, it answers any step asked before it too.
+    closeAsked !== undefined
       ? { then: closeAsked, closing: true }
-      : away && edit !== savingAway
-        ? { then: () => undefined, back: edit.at }
-        : undefined);
+      : (leaving ??
+        (away && edit !== savingAway ? { then: () => undefined, back: edit.at } : undefined));
   const answered = () => {
     setLeaving(undefined);
-    if (asking?.closing === true) closeAnswered(tab);
+    closeAnswered(tab);
   };
   const question =
     asking === undefined || edit === undefined || !unsaved(edit) ? undefined : (
@@ -220,6 +235,7 @@ export function useSkillEditInPlace({
         name={edit.skill.name}
         blocked={blocked !== undefined}
         busy={busy}
+        checking={!lint.checked}
         onKeep={() => {
           // Back first: a step drawn before the answer is cleared still finds it asked.
           if (asking.back !== undefined) walked.go(asking.back);
@@ -246,6 +262,8 @@ export function useSkillEditInPlace({
     leaveFor: stepTo,
     /** The editor open on the page the tab is at. */
     editing: here,
+    /** Whether that editor holds text not saved yet. */
+    unsaved: unsaved(here),
     open,
     stop,
     editor,
@@ -261,6 +279,7 @@ export function useSkillEditInPlace({
 export function LeaveQuestion({
   name,
   blocked,
+  checking = false,
   busy,
   onKeep,
   onDiscard,
@@ -269,6 +288,8 @@ export function LeaveQuestion({
   name: string;
   /** Whether the lint finds what keeps the text from being saved. */
   blocked: boolean;
+  /** Whether the lint is still to check the text as it is: Save and leave waits for it. */
+  checking?: boolean;
   busy: boolean;
   onKeep: () => void;
   onDiscard: () => void;
@@ -291,7 +312,11 @@ export function LeaveQuestion({
         isDisabled: busy,
         onPress: onDiscard,
       }}
-      main={{ children: "Save and leave", isDisabled: busy || blocked, onPress: onSave }}
+      main={{
+        children: "Save and leave",
+        isDisabled: busy || blocked || checking,
+        onPress: onSave,
+      }}
     />
   );
 }

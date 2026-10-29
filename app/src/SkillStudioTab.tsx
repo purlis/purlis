@@ -966,10 +966,16 @@ export function SkillStudioTab({
                 ? undefined
                 : { what: doing.what === "moving" ? "move" : doing.what, drawn: panel }
           }
-          unsaved={edits.editing !== undefined && edits.editing.now !== edits.editing.was}
+          unsaved={edits.unsaved}
           onTab={(tab) => history.replace({ ...at, tab })}
           onGo={(to, item) => go({ page: to, scope, ...(item === undefined ? {} : { item }) })}
-          onEdit={(level) => edits.leave(() => edits.open(chosen, level))}
+          onEdit={(level) =>
+            edits.leave(() => {
+              // Edit takes the place of a change in progress (Rename, Move, Delete).
+              setDoing(undefined);
+              edits.open(chosen, level);
+            })
+          }
           onStopEditing={edits.stop}
           onRename={(level) =>
             edits.leave(() => setDoing({ what: "rename", skill: chosen, level }))

@@ -18,6 +18,7 @@ function editor(lint: SkillLintFinding[], text = `${WHOLE}more\n`) {
       was={WHOLE}
       text={text}
       lint={lint}
+      checking={false}
       saving={false}
       onChange={() => undefined}
       onSave={() => undefined}
