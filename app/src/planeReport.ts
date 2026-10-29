@@ -94,6 +94,12 @@ export type PlaneReport = {
 export type ReportedWorkspaces = {
   names: readonly string[];
   pins: readonly string[];
+  /** **Pins whose workspace is gone, kept dormant** (V91c as amended, NO-1), in the store's
+   *  order: drawn as dormant chips after the pins, which a notice about them hangs from (#3651). */
+  dormant?: readonly string[];
+  /** Forgets a dormant pin for good, with an Undo for this run in the Notices centre ("Forgot
+   *  the pin to X"): the dormant notice's Forget, wherever it is drawn. */
+  forget?: (workspace: string) => void;
   focused?: string;
   waiting: Readonly<Record<string, number>>;
 };
