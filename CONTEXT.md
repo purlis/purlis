@@ -1713,7 +1713,10 @@ A skill that ships inside purlis itself, in its plugin (`skills/` in the bundle)
 every harness. It cannot be turned off or edited. Each harness is handed the built-in skills by
 its own route, for the chat alone: Claude Code loads the plugin, opencode is told the directory
 through the shim, and a Codex chat is **briefed** on them, a list of names, descriptions and
-`SKILL.md` paths at `SessionStart` (ADR 0063).
+`SKILL.md` paths at `SessionStart` (ADR 0063). Its name is reserved: no skill of the project may
+take it, so nothing stands in for one. A person who wants to change one uses **Make my own copy**:
+a skill of their own, under a new name at a skill level they pick, which chats get beside the
+built-in skill, never instead of it. The window folds the built-in skills into one quiet line.
 _Avoid_: purlis's skills (every skill a person makes is a skill in purlis too), system skill,
 "Claude Code skills" for these; a copy of them anywhere
 

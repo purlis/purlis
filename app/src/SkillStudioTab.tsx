@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
-import { MessageSquarePlus, Plus, RotateCw, Search, Sparkles } from "lucide-react";
+import { MessageSquarePlus, Plus, RotateCw, Search, Sparkle, Sparkles } from "lucide-react";
 import {
   commands,
   type DeletedSkill,
@@ -18,6 +18,7 @@ import {
   type StudioRouter,
   type StudioSkill,
 } from "./bindings";
+import { BUILT_IN_FIXED, MAKE_MY_OWN_COPY, SkillCopy } from "./SkillCopy";
 import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { SkillStudioHarnesses } from "./SkillStudioHarnesses";
@@ -26,6 +27,7 @@ import { Badge, type BadgeVariant } from "./ui/badge/Badge";
 import { Fact, Facts } from "./ui/card/Facts";
 import { TextField } from "./ui/field/Field";
 import { List, ListRow, type Selection } from "./ui/list/List";
+import { ListRun } from "./ui/list/Fold";
 import { RowBelow, RowLabel, RowTrail } from "./ui/list/Row";
 import { ViewFrame, ViewListHead, ViewPageHeader, type ViewPage } from "./ui/panel/ViewFrame";
 import { ViewBar, type Crumb } from "./ui/panel/ViewBar";
@@ -57,6 +59,7 @@ import {
 import {
   AT_THE_ROOT,
   SKILL_STUDIO_VIEW,
+  asPersona,
   STUDIO_PAGE_NAMES,
   STUDIO_START,
   inWorkspace,
@@ -180,6 +183,38 @@ function lineOf(skill: StudioSkill): string {
     : `Left out: ${skill.left_out}`;
 }
 
+/** **The Library's built-in skills, folded** (S12): their run's key, whose quiet line is
+ *  `built-in:fold` and closing line `built-in:end`, rows the list never chooses. */
+const BUILT_IN_RUN = "built-in";
+const BUILT_IN_RUN_ROWS = [`${BUILT_IN_RUN}:fold`, `${BUILT_IN_RUN}:end`];
+
+/**
+ * **A built-in skill drawn on its own, outside the fold** (S12): one that needs the person (a
+ * lint, a folder to accept, or one no chat gets), one a skill of the project's clashes with (a
+ * clash the core found, or a row of the same name at another level), one the search matched, or
+ * the one chosen, so the row of the page beside the list is always in sight.
+ */
+function builtInStandsOut(
+  skill: StudioSkill,
+  studio: Studio | undefined,
+  { query, chosen }: { query: string; chosen: string | undefined },
+): boolean {
+  if (query.trim() !== "" || skillRowId(skill) === chosen) return true;
+  if (skill.lint.length > 0 || skill.accept !== null || !skill.on) return true;
+  return (
+    (studio?.clashes ?? []).some((clash) => clash.name === skill.name) ||
+    (studio?.skills ?? []).some((one) => one.level !== "built-in" && one.name === skill.name)
+  );
+}
+
+/** The scope whose Library lists a skill at `level`: a workspace's or a persona's own, else the
+ *  scope shown. */
+function scopeOfLevel(level: SkillLevel, shown: StudioScope): StudioScope {
+  if (level.at === "workspace") return { at: "workspace", name: level.name };
+  if (level.at === "persona") return asPersona(level.name);
+  return shown;
+}
+
 /** **Rows held while the skills are read** (S11): the layout stays, and after about a second a
  *  line says what is happening. */
 function Placeholders() {
@@ -265,6 +300,9 @@ export function SkillStudioTab({
   const [need, setNeed] = useState<string>();
   const [query, setQuery] = useState("");
   const [chips, setChips] = useState<ReadonlySet<Chip>>(new Set());
+  // Make my own copy (#3686): of the built-in `from`, or of one the person picks; and why the
+  // core did not make the last one asked for.
+  const [copying, setCopying] = useState<{ from?: string; refused?: string }>();
   const { workspace, persona } = whoseChats(scope);
   const key = scopeKey(scope);
   // What was read for another scope is not this one's: placeholders until this one's is.
@@ -276,7 +314,11 @@ export function SkillStudioTab({
   if (on && !opened) setOpened(true);
   const drafts = useSkillDrafts(plane, changed + done);
   // A start the Skills view asked this studio to open on (#3266): the New skill form.
-  useStudioStart(tab, on, () => setDoing({ what: "new" }));
+  // Make my own copy, asked from the Skills view's folded built-in skills (#3693).
+  useStudioStart(tab, on, (start) => {
+    if (start === "copy") setCopying({});
+    else setDoing({ what: "new" });
+  });
   useEffect(() => {
     let live = true;
     void commands.skillStudio(plane, workspace, persona).then((answer) => {
@@ -423,6 +465,37 @@ export function SkillStudioTab({
     return one === undefined
       ? undefined
       : { tone: "news", label: "Skill deleted", text: `${name} is deleted.`, restore: one.id };
+  };
+
+  /** **Make my own copy** (#3686): the copy made, said with its built-in still loading, and its
+   *  page opened; or the core's refusal, said in the dialog. */
+  const copy = (name: string, level: SkillLevel, to: string) => {
+    setBusy(true);
+    const refusedWith = (why: string) =>
+      setCopying((was) => (was === undefined ? was : { ...was, refused: why }));
+    void commands
+      .skillCopy(plane, name, level, to)
+      .then((answer) => {
+        if (answer.status === "error") {
+          refusedWith(answer.error);
+          return;
+        }
+        setCopying(undefined);
+        go({ page: "library", scope: scopeOfLevel(level, scope), skill: skillRowNamed(to) });
+        setSaid({
+          tone: "news",
+          label: "Copy made",
+          text: [
+            `${to} is your own copy of ${name}. Chats still get ${name}.`,
+            ...answer.data.notes,
+          ].join(" "),
+        });
+      })
+      .catch((err: unknown) => refusedWith(String(err)))
+      .finally(() => {
+        setBusy(false);
+        setDone((n) => n + 1);
+      });
   };
 
   /** Moves the project's skills into the studio's: the doctor's fix, said as it said it. */
@@ -703,12 +776,40 @@ export function SkillStudioTab({
         />
       ) : null;
     // The first row of a name is the copy the chat gets, or its only copy; each row after it is
-    // a copy that one hides.
+    // a copy that one hides. Counted in the core's order, before the built-ins go to the end.
     const seen = new Map<string, number>();
-    const testid = (name: string) => {
-      const before = seen.get(name) ?? 0;
-      seen.set(name, before + 1);
-      return before === 0 ? `skill-${name}` : `skill-${name}-hidden-${before}`;
+    const testids = new Map(
+      shown.map((skill) => {
+        const before = seen.get(skill.name) ?? 0;
+        seen.set(skill.name, before + 1);
+        const said = before === 0 ? `skill-${skill.name}` : `skill-${skill.name}-hidden-${before}`;
+        return [skillRowId(skill), said];
+      }),
+    );
+    // **Built-in skills fold into one quiet line at the end** (S12), unless the Built-in chip
+    // asks for them alone; a built-in that needs the person, clashes or is searched for stands
+    // out of the fold.
+    const own = shown.filter((skill) => skill.level !== "built-in");
+    const builtIns = shown.filter((skill) => skill.level === "built-in");
+    const foldsBuiltIns = !chips.has("built-in");
+    const row = (skill: StudioSkill) => {
+      const mark = markOf(skill);
+      return (
+        <ListRow
+          key={skillRowId(skill)}
+          id={skillRowId(skill)}
+          textValue={skill.name}
+          data-testid={testids.get(skillRowId(skill))}
+          data-row={skillRowId(skill)}
+        >
+          <RowLabel>{skill.name}</RowLabel>
+          <RowTrail>
+            <Badge>{skill.label}</Badge>
+            {mark !== undefined && <Badge variant={mark.variant}>{mark.said}</Badge>}
+          </RowTrail>
+          <RowBelow clamp={1}>{lineOf(skill)}</RowBelow>
+        </ListRow>
+      );
     };
     const filtering = query.trim() !== "" || chips.size > 0;
     list = (
@@ -795,6 +896,9 @@ export function SkillStudioTab({
                 className="skill-library"
                 selectionMode="single"
                 disallowEmptySelection
+                // The fold's rows are never chosen: a press on one folds or unfolds it.
+                disabledKeys={BUILT_IN_RUN_ROWS}
+                disabledBehavior="selection"
                 selectedKeys={chosen === undefined ? new Set() : new Set([skillRowId(chosen)])}
                 onSelectionChange={(keys: Selection) => {
                   const [first] = keys === "all" ? [] : [...keys];
@@ -802,25 +906,38 @@ export function SkillStudioTab({
                   go({ page: "library", scope, skill: String(first) });
                 }}
               >
-                {shown.map((skill) => {
-                  const mark = markOf(skill);
-                  return (
-                    <ListRow
-                      key={skillRowId(skill)}
-                      id={skillRowId(skill)}
-                      textValue={skill.name}
-                      data-testid={testid(skill.name)}
-                      data-row={skillRowId(skill)}
-                    >
-                      <RowLabel>{skill.name}</RowLabel>
-                      <RowTrail>
-                        <Badge>{skill.label}</Badge>
-                        {mark !== undefined && <Badge variant={mark.variant}>{mark.said}</Badge>}
-                      </RowTrail>
-                      <RowBelow clamp={1}>{lineOf(skill)}</RowBelow>
-                    </ListRow>
-                  );
-                })}
+                {own.map(row)}
+                {foldsBuiltIns ? (
+                  <ListRun
+                    id={BUILT_IN_RUN}
+                    items={builtIns}
+                    standsOut={(skill) =>
+                      builtInStandsOut(skill, studio, {
+                        query,
+                        chosen: chosen === undefined ? undefined : skillRowId(chosen),
+                      })
+                    }
+                    says={(count) => counted(count, "built-in skill", "built-in skills")}
+                    mark={<Sparkle aria-hidden="true" />}
+                    closing={{
+                      says: BUILT_IN_FIXED,
+                      children: (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          isDisabled={busy}
+                          onPress={() => setCopying({})}
+                        >
+                          {`${MAKE_MY_OWN_COPY}…`}
+                        </Button>
+                      ),
+                    }}
+                  >
+                    {row}
+                  </ListRun>
+                ) : (
+                  builtIns.map(row)
+                )}
               </List>
             )}
           </>
@@ -865,6 +982,7 @@ export function SkillStudioTab({
           onDelete={askDelete}
           onMove={moveTo}
           onPersona={personaSkill}
+          onCopy={(skill) => setCopying({ from: skill.name })}
           onOpenTab={
             onOpenView === undefined
               ? undefined
@@ -1001,8 +1119,24 @@ export function SkillStudioTab({
     );
   }
 
+  const builtInNames = [
+    ...new Set(skills.filter((skill) => skill.level === "built-in").map((skill) => skill.name)),
+  ];
   return (
     <div className="skill-studio" data-testid="skill-studio">
+      {copying !== undefined && studio !== undefined && (
+        <SkillCopy
+          builtIns={builtInNames}
+          from={copying.from}
+          levels={levels}
+          start={start}
+          busy={busy}
+          refused={copying.refused}
+          onEdit={() => setCopying((was) => (was === undefined ? was : { from: was.from }))}
+          onCopy={copy}
+          onCancel={() => setCopying(undefined)}
+        />
+      )}
       <ViewFrame
         label="Skill studio pages"
         pages={pages}
@@ -1042,6 +1176,7 @@ function SkillItem({
   onDelete,
   onMove,
   onPersona,
+  onCopy,
   onOpenTab,
 }: {
   plane: string;
@@ -1057,6 +1192,8 @@ function SkillItem({
   onDelete: (skill: StudioSkill, level: SkillLevel) => void;
   onMove: (skill: StudioSkill, from: SkillLevel, to: SkillLevel) => void;
   onPersona: (who: string, written: string, how: "add" | "remove") => void;
+  /** Make my own copy, of a built-in skill (#3686). */
+  onCopy: (skill: StudioSkill) => void;
   /** Its own tab, with its history and runs. */
   onOpenTab?: (skill: StudioSkill) => void;
 }) {
@@ -1106,8 +1243,17 @@ function SkillItem({
         mark={mark !== undefined && <Badge variant={mark.variant}>{mark.said}</Badge>}
         description={skill.description}
         actions={
-          level === null && personaAct === null && onOpenTab === undefined ? undefined : (
+          level === null &&
+          personaAct === null &&
+          onOpenTab === undefined &&
+          skill.level !== "built-in" ? undefined : (
             <>
+              {/* A built-in skill is never edited or replaced: the person makes their own. */}
+              {skill.level === "built-in" && (
+                <Button isDisabled={busy} onPress={() => onCopy(skill)}>
+                  {`${MAKE_MY_OWN_COPY}…`}
+                </Button>
+              )}
               {level !== null && (
                 <>
                   <Button

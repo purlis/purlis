@@ -1645,7 +1645,7 @@ async fn an_upstream_claim_on_a_purlis_pool_made_directly_is_refused() {
                 warm_pool_ref: Reference {
                     name: warm_pool.to_owned(),
                 },
-                volume_claim_templates: None,
+                volume_claim_templates: Default::default(),
             },
         )
     };
