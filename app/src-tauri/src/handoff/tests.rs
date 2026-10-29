@@ -11430,3 +11430,32 @@ fn a_chat_open_in_a_workspace_with_no_id_is_drawn_specimens_from_the_plane_root_
         })
     );
 }
+
+#[test]
+fn a_dispatch_under_the_name_of_an_open_task_is_refused_and_one_after_its_report_is_not() {
+    // #3788, ruled 2026-10-29: a parent that lost track of a task it unblocked is told the
+    // task's number and state instead of starting the same work twice. Exact name only.
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let task = a_task_of(&held, &id, steward, "check prod");
+
+    let (said, _) = dispatch(&held, &id, &Tickets::default(), steward, None, "check prod");
+    assert!(
+        matches!(&said, Answer::No { why }
+            if why.contains(&format!("an open task named 'check prod' (chat {task}, running)"))),
+        "{said:?}"
+    );
+    // Another name is another task.
+    let other = a_task_of(&held, &id, steward, "check staging");
+    assert_ne!(other, task);
+
+    // Once it has reported, the name is free again.
+    assert!(matches!(
+        reports(&held, &id, task),
+        Answer::Reported { .. } | Answer::Finished { .. }
+    ));
+    let again = a_task_of(&held, &id, steward, "check prod");
+    assert_ne!(again, task);
+}

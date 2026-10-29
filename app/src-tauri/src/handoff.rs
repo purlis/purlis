@@ -1226,6 +1226,26 @@ pub struct PersonaChat {
 /// **Waiting on the operator is the board's own word that it asks mid-turn** (a permission
 /// prompt, a question), or a permission ask this app holds open for it. Its asking chat cannot
 /// answer either, and reads this to know the wait is not its own to end.
+/// Why chat `asker`'s dispatch named `name` is refused as a task it already has open (#3788,
+/// [`dispatchdecision::same_name_open`]), from this app's record of its tasks; or `None`.
+fn same_name_open(held: &Held, asker: u32, name: &str) -> Option<String> {
+    let tasks: Vec<(u32, String, dispatchdecision::Standing)> = held
+        .chats()
+        .tasks_of(asker)
+        .into_iter()
+        .filter_map(|(session, from)| {
+            let named = held.chats().shown_name(session)?;
+            Some((session, named, standing_of(held, session, &from)))
+        })
+        .collect();
+    dispatchdecision::same_name_open(
+        name,
+        tasks
+            .iter()
+            .map(|(session, named, standing)| (*session, named.as_str(), *standing)),
+    )
+}
+
 fn standing_of(held: &Held, chat: u32, from: &HandedFrom) -> dispatchdecision::Standing {
     dispatchdecision::standing(from.report, !still_working(held, chat), asks(held, chat))
 }
@@ -2505,6 +2525,13 @@ fn dispatch_noting(
     // that task still works, is told it is running.
     if wanted.by == By::Chat && wanted.moved.is_none() {
         crate::restored::refuse_twice(held, from, &asking, pair.to.as_deref(), &wanted.brief)?;
+    }
+    // **Nor under the name of a task of this chat's still open** (#3788): a parent that lost
+    // track of a task it unblocked is told the task's number and state, and what to do with it.
+    if let (By::Chat, None, Some(name)) = (wanted.by, &wanted.moved, label.as_deref())
+        && let Some(why) = same_name_open(held, from, name)
+    {
+        return Err(why.into());
     }
     let attended = attendance(held, from, &asking, &on.launch.0);
     // **A chat nobody is at makes no workspace** (D-1444-13): its handoff goes into one that
