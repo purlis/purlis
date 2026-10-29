@@ -7998,8 +7998,8 @@ refuses a `<data>` under a project or inside any git work tree.
   or is in `unaccepted.json`, reach no chat, with "accept it in the Skill studio", until the person
   does. **Held by default:** the records are read only where `confirmed`, a file of this folder,
   holds the project's [`app/app-state-id`](#appapp-state-id); purlis writes it when it makes the app
-  state of a project it has never kept any state for (no state folder at all), and at the
-  person's one Accept for the project. Without it (a project with a state folder at its first open,
+  state of a project it never kept open chats or levels records for, and at the
+  person's one Accept for the project. Without it (a project chats ran in, at its first open,
   another data home, a folder set aside, a move or copy, a link in its place), every workspace and
   persona folder is held until accepted, behind one item in the Skill studio for the project that
   lists the folders its Accept takes (`skills::levels::confirm`); `accepted.json` keeps those the
