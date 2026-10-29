@@ -3211,6 +3211,13 @@ body {
   border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
   margin-top: var(--space-4);
   padding-top: var(--space-2);
+}
+
+/* **A repo not cloned here is quieter than one that is** (#3790): its name in the muted tier,
+   strong as a cloned repo's, where the section was once drawn at 0.7. The tier goes on the name
+   itself: every word in the section sets its own colour, so one set on the section reaches none
+   of them. */
+.explorer .absent .repo {
   color: var(--text-muted);
 }
 

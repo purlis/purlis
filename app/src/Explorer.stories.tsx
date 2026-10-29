@@ -84,12 +84,12 @@ function core() {
   );
 }
 
-function stateOf(repos: string[]): WorkspaceState {
+function stateOf(repos: string[], absent: string[] = []): WorkspaceState {
   const panels: PanelsModel = {
     workspace: "smart-ide",
     repos,
     paths: {},
-    absent: [],
+    absent,
     refused: [],
     todos: [],
     done_todos: [],
@@ -119,7 +119,7 @@ function stateOf(repos: string[]): WorkspaceState {
 
 /** The view in a left side panel, its head the view's title and its actions, as `RegionFrame`
  *  draws it (#3330), and the view under it the one scroll. */
-function View({ repos }: { repos: string[] }) {
+function View({ repos, absent = [] }: { repos: string[]; absent?: string[] }) {
   const [head, setHead] = useState<HTMLElement | null>(null);
   return (
     <Panel variant="side" aria-label="Explorer" role="region">
@@ -142,7 +142,7 @@ function View({ repos }: { repos: string[] }) {
                 part="explorer"
                 plane={PLANE}
                 workspace="smart-ide"
-                state={stateOf(repos)}
+                state={stateOf(repos, absent)}
                 chats={[]}
                 spot={undefined}
                 onPick={() => {}}
@@ -214,6 +214,21 @@ export const FilterAllRepos: Story = {
       canvas.getByRole("button", { name: /Search contents in Workspace/ }),
     ).toBeVisible();
     (document.activeElement as HTMLElement | null)?.blur();
+    await settled();
+  },
+};
+
+/**
+ * **A repo the workspace names that is not cloned here** (#3790): under the cloned tree, in its
+ * own section, its name quieter than a cloned repo's (the muted tier, never a fade).
+ */
+export const ARepoNotClonedHere: Story = {
+  args: { repos: ["purlis"], absent: ["k8s-operator"] },
+  play: async ({ canvas }) => {
+    await canvas.findByRole("row", { name: /^README\.md/ });
+    const absent = canvas.getByTestId("absent");
+    await expect(absent).toHaveTextContent("Not cloned here");
+    await expect(absent).toHaveTextContent("k8s-operator");
     await settled();
   },
 };
