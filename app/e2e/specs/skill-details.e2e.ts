@@ -3,7 +3,7 @@
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { $, browser, expect } from "@wdio/globals";
+import { $, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
 import {
   closeTheViewTabsOpenedSince,
