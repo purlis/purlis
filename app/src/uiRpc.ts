@@ -6682,6 +6682,11 @@ export type OfferedSkill = {
 	folder: string,
 	/**  The levels it is installed at from this source, as a person reads them. */
 	installed: string[],
+	/**
+	 *  What its files do beyond its instructions, a few words each, as the core marks them;
+	 *  `None` where they were not read to browse, and its review reads them.
+	 */
+	marks: string[] | null,
 };
 
 /**
