@@ -9,10 +9,10 @@
  * test); the core is mocked here.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { SkillStudioTab } from "./SkillStudioTab";
+import { forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
 import { AT_THE_ROOT } from "./skillStudio";
 import { PROJECT } from "./skillChanges";
 import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
@@ -21,6 +21,7 @@ import { selectNamed } from "./ui/select/select.testkit";
 afterEach(() => {
   cleanup();
   clearMocks();
+  forgetStudio();
 });
 
 const secrets = {
@@ -108,7 +109,7 @@ describe("the empty Skill studio", () => {
     const asks: SkillChatAsk[] = [];
     const heard = (event: Event) => asks.push((event as CustomEvent<SkillChatAsk>).detail);
     window.addEventListener(SKILL_CHAT, heard);
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio();
 
     const empty = await screen.findByTestId("skill-studio-empty");
     expect(within(empty).getByText("This project has no skills of its own yet")).toBeVisible();
@@ -120,12 +121,18 @@ describe("the empty Skill studio", () => {
     window.removeEventListener(SKILL_CHAT, heard);
     expect(asks).toEqual([{ plane: "p", kind: "draft", level: PROJECT }]);
 
+    // Browse sources goes to the Sources page, and a step back returns to the Library (#3681).
     await user.click(within(starts).getByRole("button", { name: "Browse sources" }));
     await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "Skill sources" })).toHaveFocus(),
+      expect(screen.getByRole("button", { name: "Sources" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      ),
     );
-
-    await user.click(within(starts).getByRole("button", { name: "New skill" }));
+    expect(await screen.findByRole("heading", { name: "Skill sources" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    const again = await screen.findByTestId("skill-studio-empty");
+    await user.click(within(again).getByRole("button", { name: "New skill" }));
     expect(await screen.findByRole("form", { name: "New skill" })).toBeInTheDocument();
     expect(selectNamed("Starts from")).toHaveTextContent("Blank");
     expect(screen.queryByTestId("skill-studio-empty")).not.toBeInTheDocument();
@@ -133,7 +140,7 @@ describe("the empty Skill studio", () => {
 
   it("offers no starts once the project has a skill of its own", async () => {
     core(NOTHING_FIRST);
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio();
     await screen.findByTestId("skill-secrets");
     expect(screen.queryByTestId("skill-studio-empty")).not.toBeInTheDocument();
   });
@@ -143,7 +150,7 @@ describe("the offered skill sources", () => {
   it("fills in Add source with one click, asks first, and only adds it", async () => {
     const asked = core(NOTHING_FIRST, {}, [ANTHROPIC]);
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio(AT_THE_ROOT, "sources");
 
     const offered = await screen.findByTestId("skill-source-offered");
     expect(offered).toHaveTextContent("Anthropic's skills");
@@ -191,7 +198,7 @@ describe("skills still to move into the studio", () => {
       },
     );
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio(AT_THE_ROOT, "needs");
 
     expect(await screen.findByTestId("skill-studio-unmoved")).toHaveTextContent(
       "This project keeps 2 skills where only some chat programs read them.",
@@ -219,7 +226,7 @@ describe("skills still to move into the studio", () => {
       },
     );
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio(AT_THE_ROOT, "needs");
 
     await user.click(await screen.findByRole("button", { name: "Move them" }));
     expect(

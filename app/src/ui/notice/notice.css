@@ -39,6 +39,21 @@
   background-color: var(--danger-surface);
 }
 
+/* **What needs a decision** (#3678): nothing went wrong, but the person must choose. Its own
+   ground and words (`attention.*`), and its mark, a question in a circle, before its words, so it is never
+   told by colour alone. Trouble keeps the danger ground, for real failures. */
+[data-scope="notice"][data-part="root"][data-variant="attention"] {
+  color: var(--attention-text);
+  background-color: var(--attention-surface);
+}
+
+/* An attention line's mark, the first thing it says. */
+[data-scope="notice"][data-part="message"] > [data-scope="notice"][data-part="mark"] {
+  vertical-align: text-bottom;
+  margin-block-start: 0;
+  margin-inline-end: var(--space-2);
+}
+
 /* The line: what it says, and its ways out (`ButtonRow`, #1855). */
 [data-scope="notice"][data-part="root"] > [data-scope="button-row"] {
   margin: 0;
@@ -157,6 +172,10 @@
 
 [data-scope="notice"][data-part="root"][data-placement="inbox"][data-variant="trouble"] {
   background-color: var(--danger-surface);
+}
+
+[data-scope="notice"][data-part="root"][data-placement="inbox"][data-variant="attention"] {
+  background-color: var(--attention-surface);
 }
 
 [data-scope="notice"][data-part="root"][data-placement="inbox"] > [data-scope="button-row"] {
@@ -291,6 +310,10 @@
   background-color: var(--danger-surface);
 }
 
+[data-scope="notice"][data-part="root"][data-layout="card"][data-placement="alone"][data-variant="attention"] {
+  background-color: var(--attention-surface);
+}
+
 [data-scope="notice"][data-part="mark"] {
   display: inline-grid;
   margin-block-start: 1px;
@@ -299,6 +322,10 @@
 
 [data-scope="notice"][data-part="root"][data-variant="trouble"] > [data-part="mark"] {
   color: var(--danger-text);
+}
+
+[data-scope="notice"][data-part="root"][data-variant="attention"] [data-part="mark"] {
+  color: var(--attention-text);
 }
 
 [data-scope="notice"][data-part="mark"] svg {

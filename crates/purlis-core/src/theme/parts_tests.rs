@@ -107,15 +107,15 @@ fn a_theme_that_names_no_parts_draws_exactly_as_today() {
     }
     // Purlis names its panels' fill (#2913), the one its docked tabs join by default (#2914),
     // the edges it draws none of (#3177): its tooltip's, dialog's and popover's, and its cards'
-    // ground and edge (#2912). Its tabs and its buttons are the family defaults and cost nothing
+    // ground and edge (#2912), and its card rows' ground (#3669). Its tabs and its buttons are the
+    // family defaults and cost nothing
     // to measure: a button part would have its consent floors measured at every hue a
     // workspace's colour can take, at every launch.
     let purlis = built_in("purlis").expect("Purlis");
     assert!(
-        purlis
-            .parts
-            .keys()
-            .all(|key| ["panel", "tooltip", "dialog", "popover", "card"].contains(&key.family)),
+        purlis.parts.keys().all(
+            |key| ["panel", "tooltip", "dialog", "popover", "card", "list"].contains(&key.family)
+        ),
         "{:?}",
         purlis.parts.keys().collect::<Vec<_>>()
     );
@@ -1425,7 +1425,7 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     // The list family (#2911): a row, the list around it, its slots and a group's name.
     let list = family("list");
     assert_eq!(list["since"], 11);
-    assert_eq!(list["variants"], json!([]));
+    assert_eq!(names(&list, "variants"), ["row", "card"]);
     assert_eq!(
         names(&list, "parts"),
         [
@@ -1436,11 +1436,18 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
             "description",
             "trail",
             "header",
-            "shortcut"
+            "shortcut",
+            "summary",
+            "count",
+            "run",
+            "actions"
         ]
     );
-    // The key at a row's end (#2921), the next release's.
-    assert_eq!(list["parts"][7]["since"], parts::NEXT);
+    // The key at a row's end (#2921), the next release's, a card row's lines (#3669), and a
+    // group's count and a run's quiet line (#3670).
+    for at in 7..=11 {
+        assert_eq!(list["parts"][at]["since"], parts::NEXT);
+    }
     // The table family (#2911): a row, the card that holds the table, a column's name, a cell
     // and the bar over a table that chooses.
     let table = family("table");

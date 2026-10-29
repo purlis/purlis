@@ -312,15 +312,26 @@ use crate::view::{Limits, Views};
 /// chat's folder only to its own host, which is its own build, and refuses them for a chat on a
 /// runner.
 ///
-/// 1.47 added a pool's own browser frame limits (#3297, spec #2041 story 53): a browser's start
+/// 1.48 added the runner a relayed link reached (#3417, ADR 0078 amended 2026-10-21): a host
+/// answers `relay_to` from a window of 1.48 or later with `relayed_to`, the runner it resolved
+/// the name to as `<pool>/<runner>`, a draining one too. A host before 1.48, or one answering a
+/// window before it, answers `done` and names none.
+///
+/// 1.49 added a pool's own browser frame limits (#3297, spec #2041 story 53): a browser's start
 /// may say how its views over a link between hosts are held (`link_frames`: frames a second and
 /// the widest frame, each within its bounds), which the window gives as it starts a runner
-/// chat's browser on its pool's runner, from the pool's settings. A host before 1.47 ignores the
+/// chat's browser on its pool's runner, from the pool's settings. A host before 1.49 ignores the
 /// field and holds every such view to spec #2041's defaults, so the window holds that runner's
-/// views to the defaults too.
+/// views to the defaults too. 47 was passed over.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 47,
+    minor: 49,
+};
+
+/// The version that first answers `relay_to` with the runner the link reached (#3417).
+pub const KNOWS_RELAYED_TO: Version = Version {
+    major: 1,
+    minor: 48,
 };
 
 /// The version that first moves a chat's work tree and conversation (#2048): the window moves
@@ -1148,7 +1159,7 @@ pub struct StartProgram {
     /// A grade's chat is started so (SK-16).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ends_with_its_window: bool,
-    /// For a [`ProgramKind::Browser`], how its views over a link between hosts are held (1.47,
+    /// For a [`ProgramKind::Browser`], how its views over a link between hosts are held (1.49,
     /// #3297): its pool's own settings, given by the window as it starts the browser on the
     /// pool's runner. Absent, they are held to [`crate::browsing::LinkFrames::DEFAULT`]. A start
     /// whose `link_frames` are out of bounds is refused `malformed`.
@@ -1350,6 +1361,8 @@ pub enum Answer {
     Subscribed,
     /// Where the host's own event log ends: [`Command::LogEnd`] (1.41).
     LogEnd { device: String, seq: u64 },
+    /// The runner a relayed link reached, as `<pool>/<runner>`: [`Command::RelayTo`] (1.48).
+    RelayedTo { runner: String },
     /// Done, with nothing to say.
     Done,
 }
@@ -1828,6 +1841,7 @@ wire_words!(Answer {
     ProfileKept => "profile_kept",
     Subscribed => "subscribed",
     LogEnd => "log_end",
+    RelayedTo => "relayed_to",
     Done => "done",
 });
 
@@ -2909,12 +2923,19 @@ impl Client {
     }
 
     /// Ask the desktop's host to relay this link to the runner it keeps as `runner` (1.33,
-    /// #2679): the link's first command, before [`Client::subscribe`].
-    pub async fn relay_to(&self, runner: &str) -> Result<(), CallError> {
-        self.done(Command::RelayTo {
-            runner: runner.to_owned(),
-        })
-        .await
+    /// #2679): the link's first command, before [`Client::subscribe`]. Answers the runner it
+    /// reached, as `<pool>/<runner>` (1.48, #3417), or `None` from a host before 1.48.
+    pub async fn relay_to(&self, runner: &str) -> Result<Option<String>, CallError> {
+        match self
+            .call(Command::RelayTo {
+                runner: runner.to_owned(),
+            })
+            .await?
+        {
+            Answer::Done => Ok(None),
+            Answer::RelayedTo { runner } => Ok(Some(runner)),
+            other => Err(unexpected(&other)),
+        }
     }
 
     /// Have the host take into `repo` of `project` the refs `refs` names (1.34, #2046), from the

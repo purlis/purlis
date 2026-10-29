@@ -29,8 +29,9 @@
 //! window (#3274, id 157), 1.43's desktop keeping its profile on its runner (#2049, id 158),
 //! 1.44's chat moving between the desktop and a runner with its work tree and conversation
 //! (#2048, ids 159 to 162), 1.45's Inspect (#2028, ids 163 to 165), 1.46's files across a
-//! browser's edge (#2020, ids 166 to 168), and 1.47's browser started with its pool's own frame
-//! limits over a link (#3297, id 169). 1.35 adds no frame of the
+//! browser's edge (#2020, ids 166 to 168), 1.48's runner a relayed link reached (#3417, id
+//! 170), and 1.49's browser started with its pool's own frame limits over a link (#3297, id 171).
+//! 1.35 adds no frame of the
 //! control lane: its origin frame is a browser view's bytes, held by
 //! `a_browser_views_bytes_are_whole_frames_however_they_are_cut.rs` (#2300). Each must read back
 //! as it was recorded, by this build and so by every later one, which is what lets a client and a host one version apart

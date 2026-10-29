@@ -443,19 +443,29 @@ async fn a_link_to_a_draining_runner_reaches_its_chats_and_starts_none() {
     };
 
     let old = routed(Scope::LocalUi, a.clone()).await;
-    tokio::time::timeout(PATIENCE, old.relay_to("builds/old"))
-        .await
-        .unwrap()
-        .expect("a draining runner is reached");
+    assert_eq!(
+        tokio::time::timeout(PATIENCE, old.relay_to("builds/old"))
+            .await
+            .unwrap()
+            .expect("a draining runner is reached")
+            .as_deref(),
+        Some("builds/old"),
+        "the window is told the runner its link reached (1.48)"
+    );
     old.list().await.expect("its chats are listed");
     assert!(refused_as_draining(&old.start_program(start()).await));
 
     // Relayed by the pool's name while its runner is the pool's: it starts chats.
     let now = routed(Scope::LocalUi, a).await;
-    tokio::time::timeout(PATIENCE, now.relay_to("builds"))
-        .await
-        .unwrap()
-        .unwrap();
+    assert_eq!(
+        tokio::time::timeout(PATIENCE, now.relay_to("builds"))
+            .await
+            .unwrap()
+            .unwrap()
+            .as_deref(),
+        Some("builds/builds"),
+        "a pool's name is answered with the runner it resolved to"
+    );
     assert!(!refused_as_draining(&now.start_program(start()).await));
     // The pool moves to a new runner: that same link starts no new chat there.
     draining.lock().unwrap().push("builds/builds".to_owned());

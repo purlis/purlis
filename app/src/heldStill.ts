@@ -29,6 +29,7 @@ export function byKeyboard(target: Element): boolean {
 /** What the element a list is held by listens to, spread on it. */
 export type HeldBy<E extends HTMLElement> = {
   ref: RefObject<E | null>;
+  onPointerOverCapture: PointerEventHandler<E>;
   onPointerEnter: PointerEventHandler<E>;
   onPointerMove: PointerEventHandler<E>;
   onPointerLeave: PointerEventHandler<E>;
@@ -44,16 +45,26 @@ export type HeldBy<E extends HTMLElement> = {
  * in use, since a pointer parked over a list while the person works elsewhere sends no leave,
  * nor a focused row taken out of the page, which sends no blur.
  *
- * **Only the list and its rows' menus hold it** ({@link heardIn}). React hands the element
- * around the list what happens in every element drawn inside it in React's tree, a portal's
- * too, so the list's filter, drawn into the view's top, would hold the list while it is typed
- * in. The Chats list's filter stands outside its list and never holds it; this one does not
- * either.
+ * **What React hands the list is the list's own** ({@link heardIn}, #3594): React hands the
+ * element around the list what happens in every element drawn inside it in React's tree, a
+ * portal's too, so a row's menu and a row's card, each drawn in a layer of its own, hold it
+ * as its rows do. The one element of its tree that does not is its filter, drawn into the
+ * view's top, which would hold the list while it is typed in. The Chats list's filter stands
+ * outside its list and never holds it; this one does not either.
+ *
+ * **A menu that goes from under the pointer sends no leave** (#3594): the element the pointer is
+ * over next says it came from nowhere, so React tells the list nothing. So the pointer's hold
+ * is let go too when the window hears the pointer come over an element React did not hand the
+ * list, and the keyboard's when the focus lands on one: a menu of the window's elsewhere is
+ * not the list's for being a menu.
  *
  * `holding` says whether it is held; `held` goes on the element around the list. `drawn` is what
- * the list draws its rows by (a new value each draw that may move one): after each, the focus is
- * looked for, since a menu or row that held it can go with no blur. A
- * hold that is not `on` is never taken, and listens to nothing.
+ * the list draws its rows by: the focus is looked for after each draw it is a new value in,
+ * since a menu or row that held the focus can go with no blur. A list that passes a new array
+ * each time (the Personas view, the Chats list) has it looked for on every redraw of its panel,
+ * which costs two comparisons. A hold that is not `on` is never taken, listens to nothing, and
+ * lets go of what it held: the Chats list turns it off while it has no row to draw, where
+ * nothing would say the pointer left.
  */
 export function useHeldStill<E extends HTMLElement>(
   drawn: unknown,
@@ -62,16 +73,43 @@ export function useHeldStill<E extends HTMLElement>(
   const ref = useRef<E>(null);
   /** The element the hold last saw the keyboard on: the one that must still have it. */
   const focused = useRef<Element | null>(null);
+  /** The element a blur from the list said the focus went to, outside the list in the page:
+   *  the list's own only if the list hears the focus arrive there (a row's menu). */
+  const goingTo = useRef<Element | null>(null);
+  /** The last `pointerover` React handed the list, which the window hears after it. */
+  const seen = useRef<Event | null>(null);
   const [over, setOver] = useState(false);
   const [inside, setInside] = useState(false);
+  if (!on && (over || inside)) {
+    setOver(false);
+    setInside(false);
+  }
   useEffect(() => {
     if (!on) return;
     const away = () => {
       setOver(false);
       setInside(false);
     };
+    // Heard by the window after the list's own handlers: an element the focus went to that the
+    // list did not hear it arrive in is not one of its own.
+    const landed = (event: Event) => {
+      const to = goingTo.current;
+      goingTo.current = null;
+      if (to !== null && event.target === to) setInside(false);
+    };
+    // And the pointer over an element React did not hand the list is off it.
+    const pointedAt = (event: Event) => {
+      if (seen.current !== event) setOver(false);
+      seen.current = null;
+    };
     window.addEventListener("blur", away);
-    return () => window.removeEventListener("blur", away);
+    window.addEventListener("focusin", landed);
+    window.addEventListener("pointerover", pointedAt);
+    return () => {
+      window.removeEventListener("blur", away);
+      window.removeEventListener("focusin", landed);
+      window.removeEventListener("pointerover", pointedAt);
+    };
   }, [on]);
   // After each draw of new rows: a row the keyboard was on, taken out of the page, took the
   // focus with it. The element the hold saw is asked, never what the list holds in the page:
@@ -81,35 +119,48 @@ export function useHeldStill<E extends HTMLElement>(
     const at = focused.current;
     if (at === null || !at.isConnected || at !== document.activeElement) setInside(false);
   }, [inside, drawn]);
-  const heard = (target: EventTarget | null) => heardIn(ref.current, target);
   return {
     holding: on && (over || inside),
     held: {
       ref,
+      onPointerOverCapture: (event) => {
+        seen.current = event.nativeEvent;
+      },
       onPointerEnter: (event) => {
-        if (heard(event.target)) setOver(true);
+        if (heardIn(event.target)) setOver(true);
       },
       // Taken again by the pointer's next move, after the window was left and come back to; and
       // let go on a move over the filter, which React counts as inside.
       onPointerMove: (event) => {
-        const here = heard(event.target);
+        const here = heardIn(event.target);
         if (here !== over) setOver(here);
       },
       onPointerLeave: () => setOver(false),
       // A focus by the keyboard takes the hold; any focus in the list while it holds moves what
       // the hold follows (an arrow's move, a menu's item, the row a menu gave the focus back to).
       onFocus: (event) => {
-        if (!heard(event.target) || !(inside || byKeyboard(event.target))) return;
+        if (!heardIn(event.target)) return;
+        if (event.target === goingTo.current) goingTo.current = null;
+        if (!(inside || byKeyboard(event.target))) return;
         focused.current = event.target;
         setInside(true);
       },
+      // Kept for a focus that stays in the list. One that goes elsewhere in the page is kept
+      // until the window hears where it landed: the list's `onFocus` has heard it by then if
+      // that is its own (a row's menu), and it is let go if not. Never let go in between, which
+      // would draw the rows as they are now under the menu as it opens.
       onBlur: (event: FocusEvent<E>) => {
-        if (heard(event.relatedTarget)) return;
+        const to = event.relatedTarget;
+        if (to instanceof Node && ref.current?.contains(to)) return;
+        if (to instanceof Element) {
+          goingTo.current = to;
+          return;
+        }
         setInside(false);
       },
       // A key in the list is the keyboard being here.
       onKeyDownCapture: (event) => {
-        if (!heard(event.target) || !(event.target instanceof Element)) return;
+        if (!heardIn(event.target) || !(event.target instanceof Element)) return;
         focused.current = event.target;
         if (!inside) setInside(true);
       },
@@ -117,14 +168,16 @@ export function useHeldStill<E extends HTMLElement>(
   };
 }
 
+/** The view's top, where a list in a view draws its filter (`ui/panel/Panel`'s `InPanelTop`). */
+const IN_THE_TOP = "[data-top-slot]";
+
 /**
- * Whether `target` is in the list `list` holds, or in one of its rows' menus, which are drawn
- * in a layer of their own: what a hold is taken for. The view's top, where the list's filter
- * is drawn, is neither.
+ * Whether an event React handed the list, from `target`, is one a hold is taken for: any
+ * element React draws inside the list, its rows' menus and cards too, but the filter it draws
+ * into the view's top. Asked only of what React hands the list, which is its own.
  */
-export function heardIn(list: Element | null, target: EventTarget | null): boolean {
-  if (!(target instanceof Element) || list === null) return false;
-  return list.contains(target) || target.closest('[role="menu"]') !== null;
+export function heardIn(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(IN_THE_TOP) === null;
 }
 
 /**

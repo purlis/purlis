@@ -1481,7 +1481,7 @@ fn a_browsers_end_the_window_did_not_ask_for_is_said_crashed_and_one_it_asked_fo
 }
 
 /// #3297: the window holds a runner browser to the more of its pool's limits and the defaults,
-/// so it draws what a runner before 1.47 sends (the defaults) and what one since sends (the
+/// so it draws what a runner before 1.49 sends (the defaults) and what one since sends (the
 /// pool's), and nothing past both.
 #[test]
 fn the_window_holds_a_runner_browser_to_the_more_of_its_pools_limits_and_the_defaults() {

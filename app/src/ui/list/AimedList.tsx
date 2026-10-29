@@ -87,6 +87,7 @@ export function AimedOption({
       className={className}
       data-scope="list"
       data-part="root"
+      data-variant="row"
       data-size={size}
       data-aimed={aimed || undefined}
       data-focus-visible={aimed || undefined}

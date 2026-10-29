@@ -1251,9 +1251,8 @@ jobs:
       # file of `app/src/`, which runs no Rust suite of its own. Each is a module of the core's one
       # test binary (#3613), picked by its name.
       # A name that picks no test passes `cargo test` green, so a renamed file would quietly stop
-      # running: `tools/tests-ran.sh` fails the step on such a name instead (#3752). So do the other
-      # steps that pick tests by name, here and in the scheduled workflows, except the two in
-      # `scenario`, which #3742's lane wraps.
+      # running: `tools/tests-ran.sh` fails the step on such a name instead (#3752). So does every
+      # other step that picks tests by name, here and in the scheduled workflows.
       - name: The whole-tree guards, as Rust is out of scope
         if: needs.changes.outputs.rust == 'false'
         run: >-
@@ -1397,7 +1396,7 @@ jobs:
         env:
           PURLIS_SEATBELT_OUT: ${{ runner.temp }}/seatbelt-emitted
         run: |
-          cargo test --locked -p purlis-core --test it -- the_profiles_a_wrapped_chat_starts_under_are_written_out::
+          tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- the_profiles_a_wrapped_chat_starts_under_are_written_out::
           tools/seatbelt-case.sh "$PURLIS_SEATBELT_OUT"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -1426,7 +1425,7 @@ jobs:
           package="@anthropic-ai/claude-code-darwin-$arch"
           npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/claude-code" "$package@$version"
           PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
-            cargo test --locked -p purlis-core --test it -- claude_codes_own_sandbox_holds_the_settings_purlis_writes:: --nocapture
+            tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- claude_codes_own_sandbox_holds_the_settings_purlis_writes:: --nocapture
       # The `e2e` feature puts WebdriverIO's embedded WebDriver server inside the app, which is
       # what drives it on macOS as well as Linux. It is in no build anyone is given.
       #
@@ -1434,10 +1433,33 @@ jobs:
       # are built by the same cargo run as the app (the packages after `--`). Built apart, their
       # dependencies resolve other features than the app's, so purlis-core compiled twice
       # (2026-10-12); together, once. They take the app's `purlis-core/fenced` with it.
+      #
+      # **What this build spends its time on** (#3742, 2026-10-29; six legs' logs and cargo's
+      # timings). Not linking (6 s for the app's program) and not sccache's round trips (under a
+      # second a hit): the app's own crate, 193 s of a 394 s cargo run, compiled afresh on every
+      # leg. Its library also emitted a `staticlib` and a `cdylib`, Tauri's template's for iOS and
+      # Android, and sccache never caches a crate that links (`crate-type` among its
+      # non-cacheable calls), so "80 to 90% hits" counted only the small crates. The library is now
+      # an `rlib` alone (`app/src-tauri/Cargo.toml`). The frontend was the rest: `tsc` before vite
+      # took 20 to 150 s per leg, a type check the required `web` job already makes, so
+      # `build:e2e` is vite alone. Rejected: a lighter debug profile (`line-tables-only` is already
+      # the dev profile, and #3560's opt-level made the cold build 21 to 32 min), another linker
+      # (6 s to win), a `target/` cache (rust-cache already restores the dependencies, and the
+      # workspace's crates change with every pull request that runs this job).
       - name: Build the app, the harness and the CLI for the scenario tests
         if: ${{ !matrix.sandbox }}
-        run: npx tauri build --debug --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli
+        run: npx tauri build --debug --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli --timings
         working-directory: app
+      # Cargo's own account of that build, unit by unit (`--timings`), kept a week: what a slow
+      # build spent its time on, read without rerunning it (#3742).
+      - name: Keep cargo's timings of the build
+        if: ${{ !cancelled() && !matrix.sandbox }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cargo-timings-${{ matrix.os }}-${{ matrix.shard }}
+          path: target/cargo-timings/cargo-timing.html
+          retention-days: 7
       # What sccache found, as a notice: whether the experiment pays, without the log.
       - name: sccache's hits and misses
         if: runner.os == 'macOS' && !cancelled()

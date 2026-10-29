@@ -488,7 +488,7 @@ mod hosted {
     }
 
     /// **What the window holds a runner browser's frames to**, where its pool's are `frames`
-    /// (#3297): the more of each of those and the defaults. A runner before 1.47 holds its views
+    /// (#3297): the more of each of those and the defaults. A runner before 1.49 holds its views
     /// to the defaults, and one since to the pool's, and the window does not know which it
     /// links to, so it draws either and nothing past both.
     fn window_holds(frames: LinkFrames) -> LinkFrames {

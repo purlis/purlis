@@ -6,7 +6,7 @@
  * key registry reads them (`registry.ts`) without drawing either. Their components hand them on
  * under their old names.
  */
-import { onAMac } from "../tabKeys";
+import { onAMac } from "../mac";
 
 /** What a key event says, as much of it as these read: a DOM's or React's. */
 type Keyed = Pick<KeyboardEvent, "key" | "altKey" | "shiftKey" | "metaKey" | "ctrlKey">;

@@ -393,12 +393,38 @@ std::thread_local! {
     static HEARD_FROM: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
 
+std::thread_local! {
+    /// The runner the link the ask heard on this thread came over reached, as the desktop's
+    /// host said it (1.48, #3417): `None` for this machine's host's, and for a host before 1.48.
+    static REACHED: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
 /// Runs `hear` with the ask it hears known to have come over `pool`'s link, or this machine's.
+#[cfg(test)]
 pub(crate) fn heard_from<T>(pool: Option<String>, hear: impl FnOnce() -> T) -> T {
+    heard_reaching(pool, None, hear)
+}
+
+/// Runs `hear` with the ask it hears known to have come over `pool`'s link, which its host said
+/// reached the runner `reached` (#3417); `None` for this machine's host's, and a host before 1.48.
+pub(crate) fn heard_reaching<T>(
+    pool: Option<String>,
+    reached: Option<String>,
+    hear: impl FnOnce() -> T,
+) -> T {
     HEARD_FROM.with(|from| *from.borrow_mut() = pool);
+    REACHED.with(|runner| *runner.borrow_mut() = reached);
     let heard = hear();
     HEARD_FROM.with(|from| *from.borrow_mut() = None);
+    REACHED.with(|runner| *runner.borrow_mut() = None);
     heard
+}
+
+/// **The runner the link of the ask being heard reached** (#3417), as `<pool>/<runner>`, where
+/// the desktop's host said it: a draining runner's, for a chat that stayed on it after its pool
+/// moved on. What a runner chat is judged by (`poollogins::Bound::over_the_link`).
+pub fn reached_over_the_link() -> Option<String> {
+    REACHED.with(|runner| runner.borrow().clone())
 }
 
 /// **The pool whose runner's link the ask being heard came over** (#2046), or `None` where it
@@ -430,9 +456,24 @@ impl Relayed {
     /// heard on a thread of its own, and every other one after the lines that came before it,
     /// on the project's own thread ([`purlis_core::hookwire::relay::Heeding::hear`]). Returns
     /// at once.
+    #[cfg(test)]
     pub fn take(
         &self,
         link: u64,
+        id: u64,
+        heard: purlis_core::hookwire::relay::Heard,
+        reply: purlis_core::hookwire::relay::Reply,
+    ) {
+        self.take_reached(link, None, id, heard, reply);
+    }
+
+    /// **Takes line `id` as `take` does, for a link its host said reached the runner `reached`**
+    /// (1.48, #3417): what each ask heard on it is judged by. `None` for this machine's host's
+    /// link, and for a host before 1.48.
+    pub fn take_reached(
+        &self,
+        link: u64,
+        reached: Option<String>,
         id: u64,
         heard: purlis_core::hookwire::relay::Heard,
         reply: purlis_core::hookwire::relay::Reply,
@@ -456,13 +497,14 @@ impl Relayed {
             waiting.push((link, id, heard, reply));
             return;
         }
-        self.hand_on(link, id, heard, reply);
+        self.hand_on(link, reached, id, heard, reply);
     }
 
-    /// Hears line `id` as [`Self::take`] does, once no line waits for the host's board.
+    /// Hears line `id` as [`Self::take_reached`] does, once no line waits for the host's board.
     fn hand_on(
         &self,
         link: u64,
+        reached: Option<String>,
         id: u64,
         heard: purlis_core::hookwire::relay::Heard,
         reply: purlis_core::hookwire::relay::Reply,
@@ -480,7 +522,9 @@ impl Relayed {
             let pool = self.pool.clone();
             let spawned = std::thread::Builder::new()
                 .name("purlis-hook-ask".into())
-                .spawn(move || heard_from(pool, || heeding.hear(link, id, heard, reply)));
+                .spawn(move || {
+                    heard_reaching(pool, reached, || heeding.hear(link, id, heard, reply))
+                });
             if let Err(why) = spawned {
                 tracing::warn!("purlis: a chat's ask could not be heard ({why})");
                 // A secret exec that will not run keeps no input, and its host is told so
@@ -608,8 +652,9 @@ impl Relayed {
         // ones that came before it (#2571): a secret exec's input would otherwise find its exec
         // not yet taken, and be dropped.
         let mut waiting = self.waiting.lock().unwrap_or_else(PoisonError::into_inner);
+        // Only this machine's host's lines wait for its board, and its link reaches no runner.
         for (link, id, heard, reply) in waiting.take().unwrap_or_default() {
-            self.hand_on(link, id, heard, reply);
+            self.hand_on(link, None, id, heard, reply);
         }
     }
 

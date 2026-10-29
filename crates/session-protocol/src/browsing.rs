@@ -306,7 +306,7 @@ pub struct BrowserReach {
     pub open_web: bool,
 }
 
-/// **How a browser's views over a link between hosts are held** (1.47, #3297): at most `frames`
+/// **How a browser's views over a link between hosts are held** (1.49, #3297): at most `frames`
 /// a second, and no frame wider than `width` pixels, the engine scaling a wider page down. A
 /// pool's own settings, given with the browser's start on its runner; a start that gives none is
 /// held to purlis's defaults ([`LinkFrames::DEFAULT`]). Bounded both ways ([`LinkFrames::new`]):
