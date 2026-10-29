@@ -15,7 +15,7 @@ name: scorecard
 # Publishing later is `publish_results: true` plus `id-token: write` on the job, which the
 # action needs to prove the run is this repository's.
 #
-# `crates/release-manifest/tests/the_scorecard_runs_weekly_with_least_privilege.rs` holds this
+# `crates/release-manifest/tests/it/the_scorecard_runs_weekly_with_least_privilege.rs` holds this
 # file to those rules.
 
 on:

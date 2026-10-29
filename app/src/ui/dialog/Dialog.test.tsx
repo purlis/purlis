@@ -15,11 +15,59 @@ import { ProjectShownProvider } from "../../projectShown";
 import { Button } from "../button/Button";
 import { AlertDialog, Dialog, DialogSurface } from "./Dialog";
 import { Reserved } from "./Reserved";
-import { Menu, MenuItem, MenuTrigger, MenuWords } from "../menu/Menu";
+import { Menu, MenuItem, MenuTrigger, MenuWords, Submenu } from "../menu/Menu";
+import { List, ListRow } from "../list/List";
+import { RowLabel } from "../list/Row";
+import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "../table/Table";
 import { Select } from "../select/Select";
 import { selectNamed } from "../select/select.testkit";
 
 afterEach(cleanup);
+
+/**
+ * **React Aria's dialog's half-second wait, and every frame, held** (#3603): the dialog puts the
+ * keyboard on itself 500 ms after it opens when the keyboard is on nothing then, and a frame
+ * drawn late (a busy run) is what left it on nothing. The test says when each comes.
+ */
+function holdTheDialogsWait() {
+  const held: (() => void)[] = [];
+  const later = globalThis.setTimeout;
+  vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+    run: () => void,
+    ms?: number,
+    ...rest: unknown[]
+  ) => {
+    // React Aria's dialog's own, by where it is asked from: a tooltip's close waits 500 ms too.
+    if (ms === 500 && new Error().stack?.includes("useDialog")) {
+      held.push(run);
+      return 0;
+    }
+    return later(run, ms, ...rest);
+  }) as typeof setTimeout);
+  const frames = new Map<number, FrameRequestCallback>();
+  let ids = 0;
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation((frame) => {
+    frames.set(++ids, frame);
+    return ids;
+  });
+  vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => void frames.delete(id));
+  return {
+    drawFrame: () =>
+      act(() => {
+        const due = [...frames.values()];
+        frames.clear();
+        for (const frame of due) frame(performance.now());
+      }),
+    /** The dialog's half second runs out. It asks for one wait: if it ever waits otherwise,
+     *  this says so. */
+    halfASecond: () => {
+      expect(held).toHaveLength(1);
+      act(() => {
+        for (const run of held.splice(0)) run();
+      });
+    },
+  };
+}
 
 /** A dialog a button opens, as a call site writes one. */
 function Opened({ main, onClosed }: { main?: () => void; onClosed?: () => void }) {
@@ -251,33 +299,7 @@ describe("a dialog", () => {
   // is on nothing then (a screen reader's workaround), and a menu's own hand-back waits a frame.
   // A frame drawn late, as in a busy run, let that take the keyboard the menu had just given up.
   it("gives the keyboard back to a menu's trigger as the menu goes, however late the next frame", async () => {
-    // The timers a half-second wait asks for are held, to be run when the test says.
-    const held: (() => void)[] = [];
-    const later = globalThis.setTimeout;
-    vi.spyOn(globalThis, "setTimeout").mockImplementation(((
-      run: () => void,
-      ms?: number,
-      ...rest: unknown[]
-    ) => {
-      if (ms === 500) {
-        held.push(run);
-        return 0;
-      }
-      return later(run, ms, ...rest);
-    }) as typeof setTimeout);
-    const frames = new Map<number, FrameRequestCallback>();
-    let ids = 0;
-    vi.spyOn(window, "requestAnimationFrame").mockImplementation((frame) => {
-      frames.set(++ids, frame);
-      return ids;
-    });
-    vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => void frames.delete(id));
-    const drawFrame = () =>
-      act(() => {
-        const due = [...frames.values()];
-        frames.clear();
-        for (const frame of due) frame(performance.now());
-      });
+    const wait = holdTheDialogsWait();
     try {
       render(
         <Dialog onClose={() => {}} title="Workspace">
@@ -292,21 +314,199 @@ describe("a dialog", () => {
         </Dialog>,
       );
       const more = screen.getByRole("button", { name: "More" });
-      await drawFrame();
+      await wait.drawFrame();
       expect(more).toHaveFocus();
       await userEvent.keyboard("{Enter}");
-      await drawFrame();
+      await wait.drawFrame();
       expect(screen.getByRole("menuitem", { name: "Rename" })).toHaveFocus();
       await userEvent.keyboard("{Escape}");
       expect(screen.queryByRole("menu")).toBeNull();
       // Half a second after the dialog opened, and still no frame drawn.
-      // Only React Aria's dialog asks for one: if it ever waits otherwise, this test says so.
-      expect(held).toHaveLength(1);
-      act(() => {
-        for (const run of held.splice(0)) run();
-      });
-      await drawFrame();
+      wait.halfASecond();
+      await wait.drawFrame();
       expect(more).toHaveFocus();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  // #3642: a submenu is drawn into its root menu's wrapper, beside the root's surface and not in
+  // it, and a row picked in it takes the whole menu away in one commit.
+  it("gives the keyboard back to a menu's trigger as a row picked in its submenu takes it away, however late the next frame", async () => {
+    const wait = holdTheDialogsWait();
+    const chose = vi.fn();
+    try {
+      render(
+        <Dialog onClose={() => {}} title="Workspace">
+          <MenuTrigger>
+            <Button>More</Button>
+            <Menu aria-label="More">
+              <Submenu
+                row={<MenuItem textValue="Open">Open</MenuItem>}
+                aria-label="Open"
+                onAction={(key) => chose(key)}
+              >
+                <MenuItem id="activity" textValue="Activity">
+                  <MenuWords said="Activity" />
+                </MenuItem>
+              </Submenu>
+            </Menu>
+          </MenuTrigger>
+        </Dialog>,
+      );
+      const more = screen.getByRole("button", { name: "More" });
+      await wait.drawFrame();
+      expect(more).toHaveFocus();
+      await userEvent.keyboard("{Enter}");
+      await wait.drawFrame();
+      expect(screen.getByRole("menuitem", { name: "Open" })).toHaveFocus();
+      await userEvent.keyboard("{ArrowRight}");
+      await wait.drawFrame();
+      expect(screen.getByRole("menuitem", { name: "Activity" })).toHaveFocus();
+      await userEvent.keyboard("{Enter}");
+      expect(chose).toHaveBeenCalledWith("activity");
+      expect(screen.queryByRole("menu")).toBeNull();
+      // At once, before the dialog's half second and before any frame.
+      expect(more).toHaveFocus();
+      wait.halfASecond();
+      await wait.drawFrame();
+      expect(more).toHaveFocus();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  // #3642: a list's row takes the hand-back itself (React Aria's collection stops the restore
+  // event) and focuses the row on a render of its own, a task later.
+  it("gives the keyboard back to a list's row the moment the menu opened on it goes, before the list draws again", async () => {
+    const wait = holdTheDialogsWait();
+    try {
+      render(
+        <Dialog onClose={() => {}} title="Workspace">
+          <List aria-label="Memories">
+            <ListRow
+              id="a"
+              textValue="Deploys freeze on Fridays"
+              menu={() => (
+                <Menu aria-label="Deploys freeze on Fridays">
+                  <MenuItem id="open" textValue="Open">
+                    <MenuWords said="Open" />
+                  </MenuItem>
+                </Menu>
+              )}
+            >
+              <RowLabel>Deploys freeze on Fridays</RowLabel>
+            </ListRow>
+          </List>
+        </Dialog>,
+      );
+      await wait.drawFrame();
+      const row = screen.getByRole("row", { name: "Deploys freeze on Fridays" });
+      act(() => row.focus());
+      await userEvent.keyboard("{ContextMenu}");
+      await wait.drawFrame();
+      await waitFor(() => expect(screen.getByRole("menuitem", { name: "Open" })).toHaveFocus());
+      // Escape, and only the microtasks of the commit that takes the menu away: the moment it
+      // goes, before the collection draws again, a task later.
+      const key = { key: "Escape", code: "Escape", bubbles: true, cancelable: true };
+      const on = document.activeElement as HTMLElement;
+      on.dispatchEvent(new KeyboardEvent("keydown", key));
+      for (let tick = 0; tick < 10; tick++) await Promise.resolve();
+      expect(screen.queryByRole("menu")).toBeNull();
+      expect(row).toHaveFocus();
+      // The dialog's half second runs out there, and finds the keyboard placed.
+      wait.halfASecond();
+      await act(async () => {
+        on.dispatchEvent(new KeyboardEvent("keyup", key));
+      });
+      await wait.drawFrame();
+      expect(row).toHaveFocus();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  /** A table in a dialog whose one row has its ⋯ menu, open and holding the keyboard. */
+  async function aRowsMenuOpenInATable(wait: ReturnType<typeof holdTheDialogsWait>) {
+    render(
+      <Dialog onClose={() => {}} title="Workspace">
+        <Table aria-label="Personas" rowMenus>
+          <TableHeader>
+            <TableColumn id="persona" isRowHeader>
+              Persona
+            </TableColumn>
+          </TableHeader>
+          <TableBody>
+            <TableRow
+              id="steward"
+              textValue="steward"
+              menu={() => (
+                <Menu aria-label="steward">
+                  <MenuItem id="confirm" textValue="Confirm">
+                    <MenuWords said="Confirm" />
+                  </MenuItem>
+                </Menu>
+              )}
+            >
+              <TableCell>steward</TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </Dialog>,
+    );
+    await wait.drawFrame();
+    const more = screen.getByRole("button", { name: "More for steward" });
+    // Reached as a person reaches it: the row, then along it to its end.
+    act(() => screen.getByRole("row", { name: (said) => said.startsWith("steward") }).focus());
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}");
+    await waitFor(() => expect(more).toHaveFocus());
+    await userEvent.keyboard("{Enter}");
+    await wait.drawFrame();
+    await waitFor(() => expect(screen.getByRole("menuitem", { name: "Confirm" })).toHaveFocus());
+    console.log(
+      "DBG",
+      more.getAttribute("aria-expanded"),
+      more.closest("tr")?.hasAttribute("data-open"),
+    );
+    return more;
+  }
+
+  /** Escape on the menu, and only the microtasks of the commit that takes it away. */
+  async function escapeToTheMomentItGoes() {
+    const key = { key: "Escape", code: "Escape", bubbles: true, cancelable: true };
+    const on = document.activeElement as HTMLElement;
+    on.dispatchEvent(new KeyboardEvent("keydown", key));
+    for (let tick = 0; tick < 10; tick++) await Promise.resolve();
+    expect(screen.queryByRole("menu")).toBeNull();
+    return () => act(async () => void on.dispatchEvent(new KeyboardEvent("keyup", key)));
+  }
+
+  // #3642: the ⋯ is in a cell of the row, and the table stops the restore event for it as it does
+  // for the row; the ⋯ carries no key of its own, and stands in its row's.
+  it("gives the keyboard back to a table row's ⋯ the moment its menu goes, before the table draws again", async () => {
+    const wait = holdTheDialogsWait();
+    try {
+      const more = await aRowsMenuOpenInATable(wait);
+      const release = await escapeToTheMomentItGoes();
+      expect(more).toHaveFocus();
+      wait.halfASecond();
+      await release();
+      await wait.drawFrame();
+      expect(more).toHaveFocus();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  // A collection that draws another item into a row's element while its menu is up (a
+  // virtualized one reuses it) is left to send the keyboard to the item it means.
+  it("leaves the hand-back to the table when the ⋯'s row has since been drawn another item", async () => {
+    const wait = holdTheDialogsWait();
+    try {
+      const more = await aRowsMenuOpenInATable(wait);
+      more.closest("[data-key]")?.setAttribute("data-key", "reviewer");
+      await escapeToTheMomentItGoes();
+      expect(more).not.toHaveFocus();
     } finally {
       vi.restoreAllMocks();
     }
