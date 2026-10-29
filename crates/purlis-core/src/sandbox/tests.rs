@@ -353,10 +353,6 @@ fn a_chat_never_writes_charters_integrity_state() {
         // The folder chats' servers listen in (#2019).
         door::root_in(None),
     ];
-    // The Skill studio's records (SK-9, SK-16, SK-58, SK-59), under both names.
-    for state in [".purlis", ".charter"] {
-        held.extend(SKILL_STUDIO_RECORDS.map(|record| plane.path().join(state).join(record)));
-    }
     // The app's own state of every project (#3718), and the folders that hold it.
     for data in Homes::data_homes(&machine(Os::Linux)) {
         held.extend([
@@ -364,6 +360,10 @@ fn a_chat_never_writes_charters_integrity_state() {
             data.join(crate::appstate::DIR),
             data,
         ]);
+    }
+    // The Skill studio's records (SK-9, SK-16, SK-58, SK-59), under both names.
+    for state in [".purlis", ".charter"] {
+        held.extend(SKILL_STUDIO_RECORDS.map(|record| plane.path().join(state).join(record)));
     }
     assert_eq!(paths(&denied, Class::Integrity, Access::Write), held);
 }
