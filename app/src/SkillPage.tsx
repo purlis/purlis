@@ -389,9 +389,11 @@ export function SkillPage({
   changed: given,
   change,
   doing,
+  unsaved = false,
   onTab,
   onGo,
   onEdit,
+  onStopEditing,
   onRename,
   onMove,
   onDelete,
@@ -416,11 +418,15 @@ export function SkillPage({
   change: Change;
   /** The change in progress on this skill, as the studio draws it. */
   doing?: SkillDoing;
+  /** Whether the editor holds text not saved yet (#3683): the header marks it. */
+  unsaved?: boolean;
   onTab: (tab: SkillPageTab) => void;
   /** Goes to another page of the studio, on the same chats, at `item` in its list (a draft):
    *  a fix's way to it. */
   onGo: (page: StudioPage, item?: string) => void;
   onEdit: (level: SkillLevel) => void;
+  /** Stop editing (#3683): the editor closes, after asking where its text is unsaved. */
+  onStopEditing?: () => void;
   onRename: (level: SkillLevel) => void;
   onMove: (level: SkillLevel) => void;
   onDelete: (level: SkillLevel) => void;
@@ -576,12 +582,13 @@ export function SkillPage({
       )}
       {level !== null && (
         <>
+          {/* Edit turns the Text tab into the editor in place, and Stop editing back (S4). */}
           <Button
-            aria-label={`Edit ${name}`}
-            isDisabled={busy || editing}
-            onPress={() => onEdit(level)}
+            aria-label={editing ? `Stop editing ${name}` : `Edit ${name}`}
+            isDisabled={busy}
+            onPress={() => (editing ? onStopEditing?.() : onEdit(level))}
           >
-            Edit
+            {editing ? "Stop editing" : "Edit"}
           </Button>
           <Button aria-label={`Grade ${name}`} onPress={() => onTab("grades")}>
             Grade
@@ -829,7 +836,18 @@ export function SkillPage({
       <ViewPageHeader
         name={name}
         tag={<Badge>{skill.label}</Badge>}
-        mark={stateBadge}
+        mark={
+          editing && unsaved ? (
+            <>
+              {stateBadge}
+              <Badge variant="waiting" data-testid="skill-unsaved">
+                Unsaved changes
+              </Badge>
+            </>
+          ) : (
+            stateBadge
+          )
+        }
         description={skill.description === "" ? undefined : skill.description}
         actions={actions}
         more={moreMenu}

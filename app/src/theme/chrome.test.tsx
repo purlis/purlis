@@ -78,6 +78,7 @@ import { RemovePersona } from "../RemovePersona";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
 import { DeprecateDialog, OwnersDialog } from "../SkillPage";
+import { LeaveQuestion } from "../SkillEditInPlace";
 import { SkillCopy } from "../SkillCopy";
 import { RequestMerge } from "../SavingMerge";
 import { SavingView } from "../SavingView";
@@ -1190,6 +1191,21 @@ const DIALOGS: Opened[] = [
     open: async () =>
       render(
         <DeprecateDialog name="deploy" busy={false} onClose={nothing} onDeprecate={nothing} />,
+      ),
+  },
+  {
+    name: "leaving a skill's editor with unsaved changes (#3683)",
+    file: "SkillEditInPlace.tsx",
+    open: async () =>
+      render(
+        <LeaveQuestion
+          name="deploy"
+          blocked={false}
+          busy={false}
+          onKeep={nothing}
+          onDiscard={nothing}
+          onSave={nothing}
+        />,
       ),
   },
   {
