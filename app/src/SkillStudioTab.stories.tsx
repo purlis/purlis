@@ -22,7 +22,7 @@ import {
   type StudioPage,
   type StudioScope,
 } from "./skillStudio";
-import { skill, studio } from "./skillsListing.testkit";
+import { need, skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { expectFocusInSight, untilFocused, untilFocusWithin } from "./stories.testkit";
 import type { Studio } from "./bindings";
@@ -246,20 +246,41 @@ export const NotRead: Story = {
   },
 };
 
-/** **Needs you**, in the navigation with its count while something needs a decision. */
+/** **Needs you** (#3689): what needs a decision, grouped by kind, the first item beside the list
+ *  in the attention tone with its one fix. */
 export const NeedsYou: Story = {
   args: {
     page: "needs",
     scope: AT_THE_ROOT,
     answer: studio(SKILLS, {
-      first: { starts: false, unmoved: { skills: 2, fix: "project-skills" } },
+      needs: [
+        need("grilling", { tag: "persona steward" }),
+        need("clash:Project:deploy", {
+          kind: "clash",
+          title: "deploy",
+          reason: "The repo svc has a skill of this name too, and a chat there gets both.",
+          fix: { kind: "rename", name: "deploy", level: "project", local: false },
+          fix_label: "Rename it…",
+          fix_does: "Opens its page with Rename, so only one copy keeps the name.",
+        }),
+        need("tidy-up:unmoved", {
+          kind: "tidy-up",
+          title: "2 skills only some programs read",
+          tag: null,
+          reason:
+            "This project keeps 2 skills where only some chat programs read them. Moving them gives every chat each one, whichever program it runs on.",
+          fix: { kind: "move-skills", fix: "project-skills" },
+          fix_label: "Move them",
+          fix_does: "One commit, which can be undone.",
+        }),
+      ],
     }),
   },
   play: async ({ canvas }) => {
     const needs = await canvas.findByRole("button", { name: /^Needs you/ });
     await waitFor(() => expect(needs).toHaveAttribute("aria-current", "page"));
-    await expect(canvas.getByTestId("skill-studio-unmoved")).toBeInTheDocument();
-    await tabInto(() => canvas.getByRole("button", { name: "Move them" }));
+    await expect(canvas.getByTestId("skill-need")).toHaveAttribute("data-need", "grilling");
+    await tabInto(() => canvas.getByRole("button", { name: "Accept it" }));
     expectFocusInSight();
   },
 };
