@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793304510345,
+  "lastUpdate": 1793306837981,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29988,6 +29988,48 @@ window.BENCHMARK_DATA = {
             "value": 102.020325,
             "unit": "ms",
             "extra": "median of 5 runs: 100.753, 101.421, 102.020, 102.419, 102.758 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "700ce832f2c8e8727e1d912b0a0ef2ff12d68dfa",
+          "message": "Sandbox: purlis's own state names are held in every case on macOS (#3881)\n\n* Sandbox: purlis's own state names are held in every case on macOS\n\nEverything the sandbox holds in the state folder, under both of its\nspellings and where $PURLIS_HOME puts it, is held under every spelling\nof its name on macOS, in one pass so a later row cannot be left out.\nThe read row for what waits for a chat follows its write row. Linux,\nwhose disks do not fold case, is unchanged.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Sandbox tests: a write held in every case is read from either rule\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T20:19:19Z",
+          "tree_id": "62c68c0d6ab7ece09210d40294dd6a74fabf3a3b",
+          "url": "https://github.com/purlis/purlis/commit/700ce832f2c8e8727e1d912b0a0ef2ff12d68dfa"
+        },
+        "date": 1793306834791,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6602395000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.652, 0.660, 0.660, 0.661, 0.675 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5438315,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.392, 16.447, 16.544, 16.704, 16.842 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.726384,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.090, 102.163, 102.726, 102.847, 102.905 ms"
           }
         ]
       }
