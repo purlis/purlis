@@ -655,7 +655,7 @@ export function GradeRunningPage({
       summary={over ? "It has ended." : "Stopping keeps what ran so far."}
       summaryReserve={["It has ended.", "Stopping keeps what ran so far."]}
       onCancel={onBack}
-      cancel={{ children: "Back to Grades" }}
+      cancel={{ children: "Leave it running" }}
       main={{
         children: "Stop",
         variant: "danger",
@@ -698,7 +698,7 @@ export function GradeRunningPage({
           label="The grade ended"
           fixes={[
             { label: "Open its scorecard", onPress: onEnded },
-            { label: "Back to Grades", onPress: onBack },
+            { label: "Back to its grades", onPress: onBack },
           ]}
         >
           {endedSaid(step)}
