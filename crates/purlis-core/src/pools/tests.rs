@@ -680,7 +680,9 @@ mod cluster {
         assert_eq!(kept.claimed.requester, crate::clusterpool::tests::REQUESTER);
         match runners::runner_of(config.path(), "team").unwrap() {
             Reached::Cluster(pool, runner) => {
-                assert_eq!(pool, team(&cluster));
+                // Kept pointing at its own copy of the context.
+                let copy = runners::kubeconfig_kept_at(config.path(), "team");
+                assert_eq!(pool, team(&cluster).kept_at(&copy));
                 assert_eq!(runner, kept);
             }
             other => panic!("{other:?}"),
