@@ -32,7 +32,7 @@ import { TaskEndConfirm, type TaskEndInline } from "./TaskEnd";
 import type { AtLimit, FinishedTask } from "./bindings";
 import { HelpersSaid } from "./ExplorerChats";
 import { ChatDoingLine } from "./ChatRowActivity";
-import { cardDown, cardUp, skipsTheRest, useCardUp } from "./chatCard";
+import { aCardIsUp, cardDown, cardUp, skipsTheRest, useCardUp } from "./chatCard";
 import { ChatPersonaState, ChatShownState } from "./ChatRows";
 import { sameList, useChatsHere, useChatsSelect, type ChatStates } from "./chatState";
 import { useTokensOnHover } from "./tasksUsed";
@@ -500,10 +500,15 @@ export function ChatsSection({
   // row moves under a click. Taken as the pointer or the keyboard comes in, let go when both
   // have left, or the window stops being the one in use: the shared hold (`useHeldStill`,
   // #3594), which looks for the focus after every redraw. Off while there is no chat to list:
-  // the list is not drawn then, so nothing would say the pointer left it.
+  // the list is not drawn then, so nothing would say the pointer left it. **While a row's card
+  // is up, a pointer leaving the list is let go only after the card's own wait** (#3773): the
+  // card stands a step beside its row, over the view's inset, which is not the list, so the
+  // pointer crossing to it leaves the list for that moment; what the card is drawn in is the
+  // list's, so arriving there keeps the hold.
   const { holding: resting, held: holdBy } = useHeldStill<HTMLDivElement>(
     [rows, finished],
     rows.length > 0,
+    toTheCard,
   );
   // **What the person used last, the pointer or the keyboard** (#1675): a row's card comes up
   // on the keyboard resting on it, and not on a focus a press left there.
@@ -1252,6 +1257,12 @@ export const CARD_DELAY_MS = 500;
 export const CARD_LEAVE_MS = 150;
 
 export { CARD_SKIP_MS } from "./chatCard";
+
+/** How long the list's hold waits for a pointer that left it: the card's own wait while a card is
+ *  up, which the pointer may be crossing to, and none while none is. */
+function toTheCard(): number {
+  return aCardIsUp() ? CARD_LEAVE_MS : 0;
+}
 
 /**
  * One chat's row. Held on plain values, so only a row whose own facts changed is drawn again.

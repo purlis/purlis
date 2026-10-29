@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createPortal } from "react-dom";
 import { useHeldStill } from "./heldStill";
@@ -10,8 +10,17 @@ import { useHeldStill } from "./heldStill";
  * **The hold a list keeps still by** (V100-47), drawn small: one row, the row's menu drawn in a
  * layer of its own as a context menu is, and a button and a menu of the window's elsewhere.
  */
-function Held({ on = true, menu = false }: { on?: boolean; menu?: boolean }) {
-  const { holding, held } = useHeldStill<HTMLDivElement>({}, on);
+function Held({
+  on = true,
+  menu = false,
+  wait = 0,
+}: {
+  on?: boolean;
+  menu?: boolean;
+  /** How long the list asks the pointer's hold to wait as the pointer leaves it. */
+  wait?: number;
+}) {
+  const { holding, held } = useHeldStill<HTMLDivElement>({}, on, () => wait);
   return (
     <>
       <p data-testid="holding">{String(holding)}</p>
@@ -46,7 +55,14 @@ const keyboardOnTheRow = () => {
   fireEvent.keyDown(button("row"), { key: "ArrowDown" });
 };
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+/** The pointer goes from `from` onto `to`, as the browser says it. */
+const pointerFromTo = (from: Element, to: Element) =>
+  fireEvent.pointerOver(to, { relatedTarget: from });
 
 describe("a list held still (useHeldStill)", () => {
   it("is held while the keyboard is in a row's own menu, drawn in a layer of its own", () => {
@@ -114,6 +130,56 @@ describe("a list held still (useHeldStill)", () => {
     expect(holding()).toBe(false);
 
     rerender(<Held />);
+    expect(holding()).toBe(false);
+  });
+
+  it("lets the pointer's hold go at once as the pointer leaves, where its list asks no wait", () => {
+    render(<Held />);
+    fireEvent.pointerOver(button("row"), { relatedTarget: null });
+    expect(holding()).toBe(true);
+
+    pointerFromTo(button("row"), button("elsewhere"));
+
+    expect(holding()).toBe(false);
+  });
+
+  it("keeps the pointer's hold through the wait its list asks, and on when the pointer comes back over the list's own in that time", () => {
+    vi.useFakeTimers();
+    render(<Held menu wait={150} />);
+    fireEvent.pointerOver(button("row"), { relatedTarget: null });
+
+    // Off the list, as onto the gap beside a row's card: held while the wait lasts.
+    pointerFromTo(button("row"), button("elsewhere"));
+    act(() => void vi.advanceTimersByTime(100));
+    expect(holding()).toBe(true);
+
+    // Onto what the list draws in a layer of its own, as a row's card is: still held, for good.
+    pointerFromTo(button("elsewhere"), item("Open"));
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(holding()).toBe(true);
+  });
+
+  it("lets the pointer's hold go once the wait its list asks is over, with the pointer elsewhere", () => {
+    vi.useFakeTimers();
+    render(<Held wait={150} />);
+    fireEvent.pointerOver(button("row"), { relatedTarget: null });
+
+    pointerFromTo(button("row"), button("elsewhere"));
+    act(() => void vi.advanceTimersByTime(149));
+    expect(holding()).toBe(true);
+    act(() => void vi.advanceTimersByTime(1));
+
+    expect(holding()).toBe(false);
+  });
+
+  it("lets go at once, wait or none, when the window stops being the one in use", () => {
+    vi.useFakeTimers();
+    render(<Held wait={150} />);
+    fireEvent.pointerOver(button("row"), { relatedTarget: null });
+    pointerFromTo(button("row"), button("elsewhere"));
+
+    act(() => void window.dispatchEvent(new Event("blur")));
+
     expect(holding()).toBe(false);
   });
 });
