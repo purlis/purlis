@@ -457,8 +457,7 @@ export function SkillStudioTab({
   const refusedPins = pinner === null ? null : (studio?.pins_refused ?? null);
   // Where purlis cannot confirm which folders the person accepted (#3718): one item, one Accept.
   const toConfirm = studio?.levels_to_confirm ?? null;
-  const needing =
-    (moving ? 1 : 0) + (refusedPins === null ? 0 : 1) + (toConfirm === null ? 0 : 1);
+  const needing = (moving ? 1 : 0) + (refusedPins === null ? 0 : 1) + (toConfirm === null ? 0 : 1);
   const pages: ViewPage[] = [
     { id: "library", label: STUDIO_PAGE_NAMES.library },
     ...(needing > 0
