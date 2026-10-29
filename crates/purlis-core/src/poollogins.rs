@@ -63,16 +63,50 @@ impl Bound {
 
     /// The pool named `pool` as this machine keeps it under `config_root` now, with the runner a
     /// new chat of it reaches, where purlis can show that runner is the person's own
-    /// ([`owned`]); or why not, in words.
-    pub fn read(config_root: &Path, pool: &str) -> Result<Bound, String> {
-        let engine = owned(crate::dockerpool::Docker::engine_on_this_machine())?;
+    /// ([`owned`]); or which way it is not ([`Unbound`]).
+    pub fn read(config_root: &Path, pool: &str) -> Result<Bound, Unbound> {
+        Self::read_with(
+            crate::dockerpool::Docker::engine_on_this_machine(),
+            config_root,
+            pool,
+        )
+    }
+
+    /// [`Bound::read`] on `engine`, the engine this machine's Docker pools run on.
+    pub fn read_with(
+        engine: Result<std::path::PathBuf, String>,
+        config_root: &Path,
+        pool: &str,
+    ) -> Result<Bound, Unbound> {
+        let engine = owned(engine).map_err(Unbound::NotYours)?;
         let kept = crate::runners::pools(config_root)
-            .map_err(|why| why.to_string())?
+            .map_err(|why| Unbound::Unread(why.to_string()))?
             .into_iter()
             .find(|one| one.name() == pool)
-            .ok_or_else(|| format!("no pool named {pool} is on this machine"))?;
-        let runner =
-            crate::runners::runner_for(config_root, pool).map_err(|why| why.to_string())?;
+            .ok_or(Unbound::NotHere)?;
+        let runner = match crate::runners::runner_for(config_root, pool) {
+            Ok(runner) => runner,
+            // Read again for which way (#3814): a file that cannot be read says so, a pool gone
+            // since is not here, and a draining runner starts no new chat (#2749).
+            Err(_) => {
+                let runners = crate::runners::read(config_root)
+                    .map_err(|why| Unbound::Unread(why.to_string()))?;
+                let still = crate::runners::pools(config_root)
+                    .map_err(|why| Unbound::Unread(why.to_string()))?
+                    .iter()
+                    .any(|one| one.name() == pool);
+                return Err(if !still {
+                    Unbound::NotHere
+                } else if runners
+                    .iter()
+                    .any(|kept| kept.pool() == pool && kept.draining)
+                {
+                    Unbound::Draining
+                } else {
+                    Unbound::NoRunnerOfItsImage
+                });
+            }
+        };
         Ok(Bound::of(&kept, &runner, &engine))
     }
 
@@ -143,6 +177,22 @@ impl Bound {
         };
         Ok(Bound::of(&kept, &runner, &engine))
     }
+}
+
+/// **Which way a pool is not ready for a new chat of it, or a move to or from it** (#3646):
+/// [`Bound::read`]'s refusal, each said in its own words by whoever asked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Unbound {
+    /// Its runners are not shown to be the person's own ([`owned`]), and why.
+    NotYours(String),
+    /// No pool of that name is on this machine.
+    NotHere,
+    /// The pool has no runner of its image: it is to be removed and added again.
+    NoRunnerOfItsImage,
+    /// Its only runner of its image is draining (#2749), and it starts nothing new.
+    Draining,
+    /// What this machine keeps of its pools could not be read, and why.
+    Unread(String),
 }
 
 /// **Whether a Docker pool's runner is shown to be the person's own** (#2050): its engine is a

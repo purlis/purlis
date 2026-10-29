@@ -368,8 +368,14 @@ fn a_move_is_asked_of_the_pool_it_goes_to_or_comes_from_and_never_of_this_machin
         conversation: "0d6f3c1e".into(),
     };
     world.sessions.move_ahead("builds", "fleet").unwrap();
-    world.sessions.move_in("builds", &chat).unwrap();
-    world.sessions.move_out("builds", &chat).unwrap();
+    world
+        .sessions
+        .move_in("builds", std::slice::from_ref(&chat))
+        .unwrap();
+    world
+        .sessions
+        .move_out("builds", std::slice::from_ref(&chat))
+        .unwrap();
     assert_eq!(
         world.builds.moved(),
         vec![
@@ -380,7 +386,10 @@ fn a_move_is_asked_of_the_pool_it_goes_to_or_comes_from_and_never_of_this_machin
     );
     assert!(world.here.moved().is_empty());
     assert!(
-        world.sessions.move_in("gone", &chat).is_err(),
+        world
+            .sessions
+            .move_in("gone", std::slice::from_ref(&chat))
+            .is_err(),
         "a pool this machine does not keep moves nothing"
     );
 }

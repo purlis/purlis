@@ -304,20 +304,22 @@ pub trait SessionHost: Send + Sync {
         Err(MOVES_NO_CHAT.to_owned())
     }
 
-    /// **Moves `chat`'s work and conversation to the runner of `pool`** (#2048), at its pause:
-    /// each clone's work tree taken over there, and its conversation kept in its profile's
-    /// harness folder there. Refused, in a sentence, where any of it does not move.
-    fn move_in(&self, pool: &str, chat: &Moving) -> Result<(), String> {
-        let _ = (pool, chat);
+    /// **Moves `chats`' work and conversations to the runner of `pool`** (#2048), at their
+    /// pause: the chats of one workspace, which move together (#3453). Each clone's work tree is
+    /// taken over there once, and each conversation kept in its profile's harness folder there.
+    /// Refused, in a sentence, where any of it does not move.
+    fn move_in(&self, pool: &str, chats: &[Moving]) -> Result<(), String> {
+        let _ = (pool, chats);
         Err(MOVES_NO_CHAT.to_owned())
     }
 
-    /// **Moves `chat`'s work and conversation back from the runner of `pool`** (#2048), at its
-    /// pause: each clone's work tree here taken over onto the runner's, and its conversation kept
-    /// in its profile's harness folder here. Answers what came back that the person is to look
-    /// at before a tool here runs it, by its path in the project.
-    fn move_out(&self, pool: &str, chat: &Moving) -> Result<Vec<String>, String> {
-        let _ = (pool, chat);
+    /// **Moves `chats`' work and conversations back from the runner of `pool`** (#2048), at
+    /// their pause: the chats of one workspace, which move together (#3453). Each clone's work
+    /// tree here is taken over onto the runner's once, and each conversation kept in its
+    /// profile's harness folder here. Answers what came back that the person is to look at
+    /// before a tool here runs it, by its path in the project.
+    fn move_out(&self, pool: &str, chats: &[Moving]) -> Result<Vec<String>, String> {
+        let _ = (pool, chats);
         Err(MOVES_NO_CHAT.to_owned())
     }
 
@@ -984,12 +986,16 @@ pub(crate) mod pretend {
             lock(&self.seen.moved).push(("ahead", pool.to_owned(), workspace.to_owned()));
             Ok(())
         }
-        fn move_in(&self, pool: &str, chat: &super::Moving) -> Result<(), String> {
-            lock(&self.seen.moved).push(("in", pool.to_owned(), chat.workspace.clone()));
+        fn move_in(&self, pool: &str, chats: &[super::Moving]) -> Result<(), String> {
+            for chat in chats {
+                lock(&self.seen.moved).push(("in", pool.to_owned(), chat.workspace.clone()));
+            }
             Ok(())
         }
-        fn move_out(&self, pool: &str, chat: &super::Moving) -> Result<Vec<String>, String> {
-            lock(&self.seen.moved).push(("out", pool.to_owned(), chat.workspace.clone()));
+        fn move_out(&self, pool: &str, chats: &[super::Moving]) -> Result<Vec<String>, String> {
+            for chat in chats {
+                lock(&self.seen.moved).push(("out", pool.to_owned(), chat.workspace.clone()));
+            }
             Ok(Vec::new())
         }
         fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {
