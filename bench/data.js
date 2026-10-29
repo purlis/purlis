@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793286191840,
+  "lastUpdate": 1793287543296,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29778,6 +29778,48 @@ window.BENCHMARK_DATA = {
             "value": 101.67958250000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.452, 101.193, 101.680, 102.268, 102.808 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4049c67b02d27360d74ad99dfa4ff519998f64da",
+          "message": "Skills: a sandboxed chat learns purlis worktree from the skill, the guard and its briefing (#3798) (#3826)\n\n* Skills: a sandboxed chat learns purlis worktree from the skill, the guard and its briefing (#3798)\n\nThe working-in-a-clone skill gains a section on branch folders: cutting a\npiece, update, commit, push, done and abandon, and why a sandboxed chat\ncommits and pushes through purlis worktree. The plane-root guard's branch\nadvice names purlis worktree add before a new workspace; the session-start\nsandbox note and the Notice for a refused write in .git/worktrees name the\nsame commands. A new check fails when a purlis command family is named by\nno shipped skill or message.\n\nThe frozen plane-root corpora and one recorded scenario change only in that\nsentence; fixtures/corpora/README.md lists the rows.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M63HTVYZH8AREQ40PG70T5K1\nPurlis-Persona: steward\n\n* Skills: working-in-a-clone's description parses as YAML again (#3798)\n\nA colon inside the unquoted description made the frontmatter a mapping error.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M63HTVYZH8AREQ40PG70T5K1\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T14:06:57Z",
+          "tree_id": "eb4db07d036c4e012168ca0ed7b89fdb24caf943",
+          "url": "https://github.com/purlis/purlis/commit/4049c67b02d27360d74ad99dfa4ff519998f64da"
+        },
+        "date": 1793287539698,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5379065000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.533, 0.535, 0.538, 0.539, 0.550 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.420901,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.370, 16.399, 16.421, 16.426, 16.441 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.969122,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.476, 100.545, 100.969, 101.318, 101.559 ms"
           }
         ]
       }
