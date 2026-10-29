@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793273776370,
+  "lastUpdate": 1793275141221,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29484,6 +29484,48 @@ window.BENCHMARK_DATA = {
             "value": 101.918561,
             "unit": "ms",
             "extra": "median of 5 runs: 101.468, 101.772, 101.919, 102.097, 102.512 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f5108a12fea54260f1905e31b631ce0e5ff4da30",
+          "message": "Run purlis-core's resident-memory tests alone under cargo test (#3817)\n\nSince #3749 put purlis-core's integration tests into one binary, `cargo test` runs the two\ntests that read the process's resident memory as threads beside ~2,000 others, whose\nallocations count. The scheduled mutants run 40854378898 (2026-10-29) failed its baseline\nwith \"charter grew by 124010496 bytes\". nextest runs each test in its own process, so\nrequired CI never saw it. Both tests now re-run themselves alone, as the other\nwhole-process tests do.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T11:07:30Z",
+          "tree_id": "95b78befb1e5993d29e7ab17ccdd2879b5423ed4",
+          "url": "https://github.com/purlis/purlis/commit/f5108a12fea54260f1905e31b631ce0e5ff4da30"
+        },
+        "date": 1793275136463,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.45037150000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.436, 0.437, 0.450, 0.462, 0.469 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.675615,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.205, 16.546, 16.676, 16.688, 16.732 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.788533,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.459, 101.727, 101.789, 102.108, 102.288 ms"
           }
         ]
       }
