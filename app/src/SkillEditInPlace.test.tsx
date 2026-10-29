@@ -205,7 +205,10 @@ describe("leaving with unsaved changes", () => {
     await user.click(within(asked).getByRole("button", { name: "Keep editing" }));
 
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(screen.getByTestId("skill-studio-skill")).toHaveAttribute("data-row", skillRowId(DEPLOY));
+    expect(screen.getByTestId("skill-studio-skill")).toHaveAttribute(
+      "data-row",
+      skillRowId(DEPLOY),
+    );
     expect(screen.getByTestId("skill-unsaved")).toBeInTheDocument();
   });
 
@@ -218,7 +221,10 @@ describe("leaving with unsaved changes", () => {
     await user.click(within(await question()).getByRole("button", { name: "Discard and leave" }));
 
     await waitFor(() =>
-      expect(screen.getByTestId("skill-studio-skill")).toHaveAttribute("data-row", skillRowId(REVIEW)),
+      expect(screen.getByTestId("skill-studio-skill")).toHaveAttribute(
+        "data-row",
+        skillRowId(REVIEW),
+      ),
     );
     expect(asked.some((one) => one.cmd === "skill_save")).toBe(false);
     expect(skillEditIn(STUDIO_HISTORY)).toBeUndefined();

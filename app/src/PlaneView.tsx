@@ -7703,9 +7703,7 @@ export const PlaneView = memo(function PlaneView({
       // **A Skill studio whose editor holds unsaved text asks first** (#3683): its tab comes to
       // the front, where the studio asks Keep editing, Discard and leave, or Save and leave, and
       // the close is carried out once it is answered with a leave.
-      const unsaved = offer.available
-        ? unsavedClosedBy(plane, now.current, offer.does)
-        : undefined;
+      const unsaved = offer.available ? unsavedClosedBy(plane, now.current, offer.does) : undefined;
       if (unsaved !== undefined) {
         if (now.current.inFront !== unsaved.tab) bringToFront(unsaved.tab);
         askBeforeClosing(unsaved.history, () => void askAgain.current?.(offer, fromALink));

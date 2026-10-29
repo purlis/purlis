@@ -110,11 +110,7 @@ export function unsavedClosedBy(
   does: Offer["does"],
 ): { history: string; tab: number } | undefined {
   const tab =
-    does.verb === "closeTab"
-      ? does.tab
-      : does.verb === "closePane"
-        ? tabs.inFront
-        : undefined;
+    does.verb === "closeTab" ? does.tab : does.verb === "closePane" ? tabs.inFront : undefined;
   if (tab === undefined) return undefined;
   const focused = tabs.byId[tab]?.focused;
   for (const { pane, content } of contentsOf(tabs, tab)) {

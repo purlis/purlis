@@ -46,7 +46,12 @@ export default function SkillEditor({
   const blocked = lint.some((finding) => finding.level === "blocks");
   return (
     <section className="skill-editor" aria-label={`Edit ${name}`} data-testid="skill-editor">
-      <TextEditor path="SKILL.md" label={`${name}'s instructions`} text={text} onChange={onChange} />
+      <TextEditor
+        path="SKILL.md"
+        label={`${name}'s instructions`}
+        text={text}
+        onChange={onChange}
+      />
       {lint.length === 0 ? (
         <p className="honest" data-testid="skill-lint">
           It is a whole skill.
