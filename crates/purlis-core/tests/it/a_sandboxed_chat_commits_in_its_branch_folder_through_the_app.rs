@@ -651,8 +651,8 @@ fn a_chat(p: &Project, chat: u32, id: &str, live: &[purlis_core::piececlaim::Liv
 
 #[test]
 fn a_second_live_chats_commit_in_a_held_branch_folder_is_refused_naming_the_holder() {
-    // #3901: an original task and a resume chat both committed in one branch folder.
     purlis_core::unsteered!();
+    // #3901: an original task and a resume chat both committed in one branch folder.
     let p = project();
     const FIRST: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2A";
     const SECOND: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2B";
