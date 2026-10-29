@@ -137,7 +137,18 @@ pub trait Beside {
     fn confine(&self, plan: &session::ConfinePlan) -> Result<session::Confined, String>;
     /// Writes `entry` in the event log this host holds, durably, or says why not.
     fn record(&self, entry: serde_json::Value) -> Result<(), String>;
+    /// **What reads confinement `confinement` as it is now** (#3407), where it is one
+    /// [`Self::confine`] started for this program: what its board holds each time it is asked,
+    /// the hosts allowed live for the chat since it started among it, and nothing once it has
+    /// ended. `None` where the host reads none.
+    fn reach_of(&self, confinement: &str) -> Option<ReachOf> {
+        let _ = confinement;
+        None
+    }
 }
+
+/// What a confinement's board holds now, read each time it is asked ([`Beside::reach_of`]).
+pub type ReachOf = Arc<dyn Fn() -> session::ReachNow + Send + Sync + 'static>;
 
 /// A host whose binary composes no start: every start is refused with a sentence.
 pub struct ComposesNothing;
@@ -2999,6 +3010,28 @@ impl Beside for ForTheProgram {
 
     fn record(&self, entry: serde_json::Value) -> Result<(), String> {
         self.hosting.record().record(entry)
+    }
+
+    /// Read from the host's own hold, by the id and this program, each time: a confinement
+    /// that ended, or one held under its id for another program since, holds nothing for it.
+    fn reach_of(&self, confinement: &str) -> Option<ReachOf> {
+        let weak = Arc::downgrade(&self.hosting.inner);
+        let (id, program) = (confinement.to_owned(), self.program.clone());
+        Some(Arc::new(move || {
+            let Some(inner) = weak.upgrade() else {
+                return session::ReachNow::default();
+            };
+            let confining = Hosting { inner }
+                .state()
+                .confinements
+                .get(&id)
+                .filter(|held| matches!(&held.owner, Owner::Program(own) if *own == program))
+                .map(|held| Arc::clone(&held.confining));
+            // Its board is read outside the host's hold.
+            confining
+                .map(|confining| confining.now())
+                .unwrap_or_default()
+        }))
     }
 }
 

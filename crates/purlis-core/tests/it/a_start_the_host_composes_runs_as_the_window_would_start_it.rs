@@ -510,6 +510,81 @@ fn a_sandboxed_composed_start_runs_in_the_confinement_the_host_started_for_it() 
     );
 }
 
+/// The id [`Host`] gives the confinement it starts.
+const ITS_CONFINEMENT: &str = "01J9CNFNMNT0000000000000000";
+
+/// A host whose confinement for the chat allows live what `now` holds, read as it is asked.
+struct LiveHost {
+    host: Host,
+    now: std::sync::Arc<std::sync::Mutex<session::ReachNow>>,
+    /// Each confinement it was asked to read.
+    read: RefCell<Vec<String>>,
+}
+
+impl Beside for LiveHost {
+    fn confine(&self, plan: &ConfinePlan) -> Result<Confined, String> {
+        self.host.confine(plan)
+    }
+
+    fn record(&self, entry: serde_json::Value) -> Result<(), String> {
+        self.host.record(entry)
+    }
+
+    fn reach_of(&self, confinement: &str) -> Option<purlis_core::hostedchats::Live> {
+        self.read.borrow_mut().push(confinement.to_owned());
+        let now = std::sync::Arc::clone(&self.now);
+        Some(std::sync::Arc::new(move || now.lock().unwrap().clone()))
+    }
+}
+
+/// What a run of chat 3's tool here decides a connection to `host` on 443 by.
+fn its_tool_decides(project: &Project, host: &str) -> purlis_core::sandbox::reach::Decision {
+    purlis_core::hostedchats::asker(project.root(), 3)
+        .expect("the host recorded the chat it composed")
+        .confines
+        .expect("held to its sandbox")
+        .decides()
+        .decide(host, 443, &[443], &[])
+}
+
+/// #3407: a sandboxed chat the host composed runs its tool held to its confinement as it is now:
+/// a host the person allowed for the chat since it started is reached by the tool's next run, and
+/// one taken back again is not.
+#[test]
+fn a_composed_chats_tool_run_reaches_the_hosts_its_confinement_allows_live() {
+    use purlis_core::sandbox::reach::{By, Decision};
+    purlis_core::unsteered!();
+    let project = Project::on("codex");
+    let host = LiveHost {
+        host: Host {
+            tmp: Some(tempfile::tempdir().unwrap()),
+            ..Host::default()
+        },
+        now: std::sync::Arc::default(),
+        read: RefCell::default(),
+    };
+
+    composed_from(&project, a_sandboxed_opencode_start(&project), &host).expect("composed");
+
+    assert_eq!(
+        *host.read.borrow(),
+        [ITS_CONFINEMENT],
+        "its own confinement"
+    );
+    let host_name = "pypi.example.com";
+    assert_eq!(its_tool_decides(&project, host_name), Decision::Ask);
+    host.now.lock().unwrap().allowed_live = vec![session::Listed {
+        host: host_name.into(),
+        layer: session::Layer::Chat,
+    }];
+    assert_eq!(
+        its_tool_decides(&project, host_name),
+        Decision::Allowed(By::Chat)
+    );
+    host.now.lock().unwrap().allowed_live.clear();
+    assert_eq!(its_tool_decides(&project, host_name), Decision::Ask);
+}
+
 /// What a host that could not start a chat's confinement does.
 struct NoConfinement;
 

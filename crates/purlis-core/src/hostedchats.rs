@@ -12,13 +12,24 @@
 //! own ([`crate::secrets::brokered::serve_handed`]). The record is this process's memory alone:
 //! made as [`crate::hoststart`] composes the start, gone when the chat's hook channel forgets
 //! it. It holds no value.
+//!
+//! **A run is held to the chat's sandbox as it is now** (#3407): what it was compiled to as the
+//! chat started, with the hosts its confinement here allows live since, read from that
+//! confinement's own board as each run asks ([`Composed::live`]). An Allow on a block's Notice
+//! for the chat reaches its tool's next run here, and taking it back narrows that run again, as
+//! a run for a chat of the desktop's own is held (`confines_now` in the app).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 
+use std::sync::Arc;
+
+use purlis_session_protocol::session::ReachNow;
+
 use crate::harness::Harness;
 use crate::sandbox::Confines;
+use crate::sandbox::reach::by_of;
 use crate::secrets::Env;
 use crate::secrets::brokered::Asker;
 
@@ -31,6 +42,23 @@ pub struct Composed {
     pub harness: Option<Harness>,
     /// What its sandbox was compiled to here, with the tools its start armed here.
     pub confines: Confines,
+    /// What its confinement here allows live now (#3407): `None` where this host keeps no
+    /// confinement it can read, and the chat's runs are held to what it was compiled to.
+    pub live: Option<Reached>,
+}
+
+/// What a chat's confinement holds now, read from its board as it is asked: the hosts allowed
+/// live since the chat started, none once the confinement has ended.
+pub type Live = Arc<dyn Fn() -> ReachNow + Send + Sync + 'static>;
+
+/// [`Live`], kept with a chat's record.
+#[derive(Clone)]
+pub struct Reached(pub Live);
+
+impl std::fmt::Debug for Reached {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Reached(..)")
+    }
 }
 
 /// Each chat composed here, by its project's path and its number there.
@@ -55,9 +83,18 @@ pub fn forget(root: &Path, number: u32) {
 
 /// **Chat `number` of the project at `root` as it asks for a run here**, where this host
 /// composed it in a sandbox: the asker a brokered run is held to, from this host's own record
-/// and never from a line. Values are read in nothing here, so the environment is this process's.
+/// and never from a line, with the hosts its confinement allows live now (#3407). Values are
+/// read in nothing here, so the environment is this process's.
 pub fn asker(root: &Path, number: u32) -> Option<Asker> {
-    let composed = held().get(&(root.to_path_buf(), number)).cloned()?;
+    let mut composed = held().get(&(root.to_path_buf(), number)).cloned()?;
+    // Read outside the hold: the board takes locks of its own.
+    if let Some(Reached(live)) = &composed.live {
+        for listed in live().allowed_live {
+            composed
+                .confines
+                .allow_live(&listed.host, by_of(listed.layer));
+        }
+    }
     Some(Asker {
         root: root.to_path_buf(),
         env: Env::from_process(),

@@ -33,6 +33,7 @@ fn a_composed_chat() -> tempfile::TempDir {
             folder: tmp.path().to_path_buf(),
             harness: None,
             confines,
+            live: None,
         },
     );
     tmp
