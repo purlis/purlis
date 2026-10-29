@@ -13,6 +13,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Every `purlis dispatch` subcommand is a chat tool.** `dispatch_wait`, `dispatch_tell`,
+  `dispatch_answer`, `dispatch_cancel`, `dispatch_close`, `dispatch_note` and `dispatch_ask`
+  join `dispatch`, `dispatch_list`, `dispatch_read` and `dispatch_report`, on every harness. A
+  Claude Code chat runs each one without its harness asking. Chats are taught the tools first,
+  and the command stays for terminals and scripts (#3786).
+
 - **The event log keeps 30 days and can be followed from a cursor.** The host's event log
   (`<data>/events/<device>/`) is now written in segments: at 16 MiB a segment is sealed as
   `events.<first seq>.jsonl`, and a sealed segment whose newest event is more than 30 days old is
