@@ -9,6 +9,12 @@
  *
  * In Chromium only: what it reads is the cascade's answer, which is the same in WebKit, and a
  * second browser would only say each failure twice.
+ *
+ * **It relies on running after the screenshot gate.** Measuring finishes every opacity
+ * animation that ends (`fadedWords.ts`, D-15 of #3859), which would change the picture. Vitest
+ * runs `afterEach` hooks in reverse order of registration (`sequence.hooks: "stack"`, its
+ * default), and `vitest.project.ts` lists this file before `screenshots.setup.ts`, so the
+ * picture is taken first. Keep that order.
  */
 import { afterEach, expect } from "vitest";
 import { server } from "vitest/browser";
