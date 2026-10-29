@@ -313,15 +313,16 @@ fn a_chat_moves_only_to_a_runner_shown_to_be_the_persons_own_and_says_why_not() 
     assert!(refused.contains("not known to be yours"), "{refused}");
 }
 
+/// The pane says where the chat still runs (#3646), so the core's sentence does not say it
+/// again; where the setting could not be put back, it says how to set it back.
 #[test]
-fn a_move_that_did_not_start_and_could_not_set_its_workspace_back_says_where_the_chat_runs() {
+fn a_move_that_did_not_start_says_why_and_how_to_set_its_workspace_back() {
     let to: Place = Some("builds".into());
     let put_back = did_not_start_said("the runner refused it.", Ok(()), &None, &to, "app");
-    assert!(
-        put_back.contains("runs on this machine as before"),
-        "{put_back}"
+    assert_eq!(
+        put_back,
+        "It did not start on pool builds: the runner refused it."
     );
-    assert!(!put_back.contains("Runs on"), "{put_back}");
 
     let stuck = did_not_start_said(
         "the runner refused it.",
@@ -330,7 +331,7 @@ fn a_move_that_did_not_start_and_could_not_set_its_workspace_back_says_where_the
         &to,
         "app",
     );
-    assert!(stuck.contains("runs on this machine as before"), "{stuck}");
+    assert!(!stuck.contains("runs on this machine"), "{stuck}");
     assert!(stuck.contains("still set to run on pool builds"), "{stuck}");
     assert!(stuck.contains("set Runs on to this machine"), "{stuck}");
 }
