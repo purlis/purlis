@@ -2023,11 +2023,11 @@ export const commands = {
 	 */
 	skillLevelAccept: (plane: PlaneId, folder: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_level_accept", { plane, folder })),
 	/**
-	 *  **Accepts every workspace and persona folder of the project there now** (#3718): the person's one
-	 *  press where purlis cannot confirm which of them they accepted before
+	 *  **Accepts the workspace and persona folders `folders` the studio listed** (#3718), each there
+	 *  now: the person's one press where purlis cannot confirm which of them they accepted before
 	 *  (`levels::to_confirm`).
 	 */
-	skillLevelsConfirm: (plane: PlaneId) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_levels_confirm", { plane })),
+	skillLevelsConfirm: (plane: PlaneId, folders: string[]) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_levels_confirm", { plane, folders })),
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
 	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model })),
 	/**
@@ -12770,10 +12770,10 @@ export type Studio = {
 	router: StudioRouter | null,
 	/**
 	 *  Where purlis cannot confirm which of the project's workspace and persona folders the
-	 *  person accepted (#3718): the one sentence the studio shows once for the project, whose
-	 *  Accept accepts every folder there now (`skill_levels_confirm`). Null otherwise.
+	 *  person accepted (#3718): the one item the studio shows for the project, whose Accept
+	 *  accepts the folders it lists (`skill_levels_confirm`). Null otherwise.
 	 */
-	levels_to_confirm: string | null,
+	levels_to_confirm: StudioLevelsToConfirm | null,
 };
 
 /**
@@ -12837,6 +12837,15 @@ export type StudioLevel = {
 	level: SkillLevel,
 	/**  As a person reads it: `project`, `local workspace ops` (the core's `Level`). */
 	label: string,
+};
+
+/**
+ *  **The one item for the project's folders** (#3718): what it says, and the folders its Accept
+ *  accepts, relative to the project.
+ */
+export type StudioLevelsToConfirm = {
+	said: string,
+	folders: string[],
 };
 
 /**

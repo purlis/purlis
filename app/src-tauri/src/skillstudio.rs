@@ -507,9 +507,17 @@ pub struct Studio {
     /// while the studio is off.
     pub router: Option<StudioRouter>,
     /// Where purlis cannot confirm which of the project's workspace and persona folders the
-    /// person accepted (#3718): the one sentence the studio shows once for the project, whose
-    /// Accept accepts every folder there now (`skill_levels_confirm`). Null otherwise.
-    pub levels_to_confirm: Option<String>,
+    /// person accepted (#3718): the one item the studio shows for the project, whose Accept
+    /// accepts the folders it lists (`skill_levels_confirm`). Null otherwise.
+    pub levels_to_confirm: Option<StudioLevelsToConfirm>,
+}
+
+/// **The one item for the project's folders** (#3718): what it says, and the folders its Accept
+/// accepts, relative to the project.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioLevelsToConfirm {
+    pub said: String,
+    pub folders: Vec<String>,
 }
 
 /// **A declared harness skills are not supported on** (SK-30, #2985): the core's
@@ -706,7 +714,12 @@ pub(crate) fn studio(
         pins_refused,
         not_supported: not_supported.into_iter().map(Into::into).collect(),
         router: Some(router),
-        levels_to_confirm: purlis_core::skills::levels::to_confirm(root).map(str::to_owned),
+        levels_to_confirm: purlis_core::skills::levels::to_confirm(root).map(|(said, folders)| {
+            StudioLevelsToConfirm {
+                said: said.to_owned(),
+                folders,
+            }
+        }),
     }
 }
 

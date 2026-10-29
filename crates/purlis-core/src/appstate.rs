@@ -92,23 +92,69 @@ pub fn kept_here(root: &Path) -> bool {
     data_home(root).is_some()
 }
 
+/// What a file is as the disk has it now, without reading it: its device, inode, size and time
+/// of change. A file written again (every record here is renamed into place) is another.
+type Stamp = Option<(u64, u64, u64, i128)>;
+
+fn stamp(path: &Path) -> Stamp {
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        Some((
+            meta.dev(),
+            meta.ino(),
+            meta.len(),
+            i128::from(meta.ctime()) * 1_000_000_000 + i128::from(meta.ctime_nsec()),
+        ))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = meta;
+        None
+    }
+}
+
+/// What this process found true of a folder, with the stamps of the two files it was found
+/// from: an answer kept only while both files are as they were.
+type Found = std::sync::Mutex<std::collections::HashMap<PathBuf, (Stamp, Stamp)>>;
+
 /// The folders found to be their project's own in this process ([`bound`]).
-fn found_bound() -> &'static std::sync::Mutex<std::collections::HashSet<PathBuf>> {
-    static FOUND: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<PathBuf>>> =
-        std::sync::OnceLock::new();
+fn found_bound() -> &'static Found {
+    static FOUND: std::sync::OnceLock<Found> = std::sync::OnceLock::new();
     FOUND.get_or_init(Default::default)
 }
 
+/// Whether `found` holds `key` with these stamps, both of files that are there.
+fn still(found: &Found, key: &Path, stamps: (Stamp, Stamp)) -> bool {
+    stamps.0.is_some()
+        && stamps.1.is_some()
+        && found
+            .lock()
+            .is_ok_and(|found| found.get(key) == Some(&stamps))
+}
+
+fn remember(found: &Found, key: &Path, stamps: (Stamp, Stamp)) {
+    if stamps.0.is_some()
+        && stamps.1.is_some()
+        && let Ok(mut found) = found.lock()
+    {
+        found.insert(key.to_path_buf(), stamps);
+    }
+}
+
 /// Whether the folder `mine` is the project at `root`'s own: its [`OWNER`] is the project's
-/// [`PLANE_ID`]. Remembered for the process once it is.
+/// [`PLANE_ID`]. Remembered for the process while neither file changes, which is a look at each
+/// and no read.
 fn bound(mine: &Path, root: &Path) -> bool {
-    if found_bound().lock().is_ok_and(|found| found.contains(mine)) {
+    let stamps = (stamp(&mine.join(OWNER)), stamp(&plane_id_file(root)));
+    if still(found_bound(), mine, stamps) {
         return true;
     }
     let owner = record_text(&mine.join(OWNER));
     let ok = owner.is_some() && owner == record_text(&plane_id_file(root));
-    if ok && let Ok(mut found) = found_bound().lock() {
-        found.insert(mine.to_path_buf());
+    if ok {
+        remember(found_bound(), mine, stamps);
     }
     ok
 }
@@ -157,11 +203,7 @@ pub fn made(root: &Path) -> Result<PathBuf, String> {
     let data = data_home(root).ok_or_else(|| NO_DATA_HOME.to_owned())?;
     // A folder found this project's in this process, and still a folder: made already.
     let mine = in_data(&data, root);
-    if found_bound()
-        .lock()
-        .is_ok_and(|found| found.contains(&mine))
-        && std::fs::symlink_metadata(&mine).is_ok_and(|meta| meta.is_dir())
-    {
+    if std::fs::symlink_metadata(&mine).is_ok_and(|meta| meta.is_dir()) && bound(&mine, root) {
         return Ok(mine);
     }
     made_in(&data, root)
@@ -171,10 +213,14 @@ pub fn made(root: &Path) -> Result<PathBuf, String> {
 /// the `flock` of `<key>.lock` beside its folder.
 fn made_in(data: &Path, root: &Path) -> Result<PathBuf, String> {
     let all = data.join(DIR);
-    held_private(&all).map_err(|why| format!("{}: {why}", all.display()))?;
     let mine = in_data(data, root);
+    // Asked before anything is made: a fenced build keeps its data home in the state folder.
+    let fresh = plane_id(root).is_none()
+        && std::fs::symlink_metadata(&mine).is_err()
+        && !any_state_folder(root);
+    held_private(&all).map_err(|why| format!("{}: {why}", all.display()))?;
     let _held = locked(&mine)?;
-    made_locked(&mine, root)
+    made_locked(&mine, root, fresh)
 }
 
 /// How long a call waits for another to let go of a project's app state.
@@ -223,15 +269,13 @@ fn written_once(path: &Path, text: &str) -> Result<String, String> {
     }
 }
 
-/// [`made_in`], with the project's lock held.
-fn made_locked(mine: &Path, root: &Path) -> Result<PathBuf, String> {
+/// [`made_in`], with the project's lock held. `fresh`: a project purlis has never kept any state
+/// for (no id of its own, no folder, no state folder at all), asked before anything was made.
+/// Only such a one's records start out confirmed; every other folder is held until the person
+/// accepts them again.
+fn made_locked(mine: &Path, root: &Path, fresh: bool) -> Result<PathBuf, String> {
     let plane_id = record_text(&plane_id_file(root));
-    // A project purlis has never kept app state for, anywhere: no id of its own yet, no folder,
-    // and no levels records an older purlis kept in its state folder. Only such a one's records
-    // start out confirmed; every other folder is held until the person accepts them again.
-    let fresh = plane_id.is_none()
-        && std::fs::symlink_metadata(mine).is_err()
-        && !older_levels_records(root);
+    let fresh = fresh && plane_id.is_none() && std::fs::symlink_metadata(mine).is_err();
     let mut held_levels = false;
     if std::fs::symlink_metadata(mine).is_ok() {
         let owner = record_text(&mine.join(OWNER));
@@ -270,31 +314,35 @@ fn made_locked(mine: &Path, root: &Path) -> Result<PathBuf, String> {
     if fresh {
         mark_levels_confirmed(mine, root)?;
     }
-    if let Ok(mut found) = found_bound().lock() {
-        found.insert(mine.to_path_buf());
-    }
+    remember(
+        found_bound(),
+        mine,
+        (stamp(&mine.join(OWNER)), stamp(&plane_id_file(root))),
+    );
     Ok(mine.to_path_buf())
 }
 
-/// **Whether the project at `root` has never had app state kept for it**, where this machine can
-/// keep it: no id of its own, no folder, and no levels records an older purlis kept. Its first
-/// write confirms its records ([`made`]), so a reader before it holds nothing either.
+/// **Whether the project at `root` has never had any state kept for it**, where this machine can
+/// keep app state: no id of its own, no folder, and no state folder at all (under either
+/// spelling, or where `$PURLIS_HOME` puts it), so no record of open chats either. Its first write
+/// confirms its records ([`made`]), so a reader before it holds nothing either. A project with a
+/// state folder is held on its first open, whatever that folder holds.
 pub(crate) fn never_kept(root: &Path) -> bool {
     data_home(root).is_some_and(|data| {
         plane_id(root).is_none()
             && std::fs::symlink_metadata(in_data(&data, root)).is_err()
-            && !older_levels_records(root)
+            && !any_state_folder(root)
     })
 }
 
-/// Whether a state folder of the project at `root` holds levels records an older purlis kept
-/// there: under either spelling, or where `$PURLIS_HOME` puts it.
-fn older_levels_records(root: &Path) -> bool {
+/// Whether the project at `root` has a state folder: under either spelling, or where
+/// `$PURLIS_HOME` puts it.
+fn any_state_folder(root: &Path) -> bool {
     crate::names::STATE_DIR
         .spellings()
         .map(|state| root.join(state))
         .chain(std::iter::once(crate::plane::state_dir(root)))
-        .any(|state| std::fs::symlink_metadata(state.join(crate::skills::levels::DIR)).is_ok())
+        .any(|state| std::fs::symlink_metadata(state).is_ok())
 }
 
 /// The file in a project's levels records folder this purlis writes when it can vouch for what
@@ -303,9 +351,8 @@ fn older_levels_records(root: &Path) -> bool {
 pub const CONFIRMED: &str = "confirmed";
 
 /// The levels records folders found confirmed in this process ([`levels_confirmed`]).
-fn found_confirmed() -> &'static std::sync::Mutex<std::collections::HashSet<PathBuf>> {
-    static FOUND: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<PathBuf>>> =
-        std::sync::OnceLock::new();
+fn found_confirmed() -> &'static Found {
+    static FOUND: std::sync::OnceLock<Found> = std::sync::OnceLock::new();
     FOUND.get_or_init(Default::default)
 }
 
@@ -318,19 +365,18 @@ pub(crate) fn plane_id(root: &Path) -> Option<String> {
 /// at `root`**: a records folder of its own (no link) holding [`CONFIRMED`] with the project's
 /// id. Remembered for the process once it is.
 pub(crate) fn levels_confirmed(state: &Path, root: &Path) -> bool {
-    if found_confirmed()
-        .lock()
-        .is_ok_and(|found| found.contains(state))
-    {
+    let records = state.join(crate::skills::levels::DIR);
+    let stamps = (stamp(&records.join(CONFIRMED)), stamp(&plane_id_file(root)));
+    let folder = std::fs::symlink_metadata(&records).is_ok_and(|meta| meta.is_dir());
+    if folder && still(found_confirmed(), state, stamps) {
         return true;
     }
-    let records = state.join(crate::skills::levels::DIR);
-    let ok = std::fs::symlink_metadata(&records).is_ok_and(|meta| meta.is_dir())
+    let ok = folder
         && plane_id(root).is_some_and(|id| {
             record_text(&records.join(CONFIRMED)).as_deref() == Some(id.as_str())
         });
-    if ok && let Ok(mut found) = found_confirmed().lock() {
-        found.insert(state.to_path_buf());
+    if ok {
+        remember(found_confirmed(), state, stamps);
     }
     ok
 }
@@ -342,11 +388,7 @@ pub(crate) fn mark_levels_confirmed(state: &Path, root: &Path) -> Result<(), Str
     let records = state.join(crate::skills::levels::DIR);
     held_private(&records).map_err(|why| format!("{}: {why}", records.display()))?;
     crate::plane::write_private(state, &records.join(CONFIRMED), id.as_bytes())
-        .map_err(|why| why.to_string())?;
-    if let Ok(mut found) = found_confirmed().lock() {
-        found.insert(state.to_path_buf());
-    }
-    Ok(())
+        .map_err(|why| why.to_string())
 }
 
 /// Forgets what this process found of the folder `mine`.
@@ -560,8 +602,11 @@ pub fn move_from(root: &Path, states: &[PathBuf], into: &Path) -> Moved {
                     continue;
                 }
             }
+            // A chat an older purlis noted may still run: each on the record of open chats is
+            // noted again here, from the folders there now, never from what the plane held.
             if carried == Carried::AskedAgain
-                && let Err(why) = crate::skills::levels::ask_again_in(into, root)
+                && let Err(why) = crate::skills::levels::noted_again(into, root)
+                    .and_then(|()| crate::skills::levels::ask_again_in(into, root))
             {
                 out.left
                     .push(format!("{name} was left in the plane ({why})"));

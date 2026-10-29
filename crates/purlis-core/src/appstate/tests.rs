@@ -621,10 +621,8 @@ fn a_records_folder_that_is_a_link_is_never_confirmed() {
     let tmp = project();
     let root = tmp.path();
     let here = made(root).unwrap();
-    assert!(
-        levels_confirmed(&here, root),
-        "a project new to purlis starts confirmed"
-    );
+    mark_levels_confirmed(&here, root).unwrap();
+    assert!(levels_confirmed(&here, root));
     let elsewhere = tempfile::tempdir().unwrap();
     std::fs::copy(
         here.join(crate::skills::levels::DIR).join(CONFIRMED),
@@ -635,4 +633,34 @@ fn a_records_folder_that_is_a_link_is_never_confirmed() {
     forgotten(&here);
     std::os::unix::fs::symlink(elsewhere.path(), here.join(crate::skills::levels::DIR)).unwrap();
     assert!(!levels_confirmed(&here, root));
+}
+
+#[test]
+fn a_project_with_a_state_folder_is_held_on_its_first_open_whatever_it_holds() {
+    // A state folder with no levels records in it, as one whose records were taken away is.
+    let tmp = project();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
+    assert!(root.join(".purlis").is_dir());
+    move_out_of_the_plane(root);
+    assert!(!crate::skills::levels::confirmed(root));
+    assert_eq!(
+        crate::skills::levels::made_since(root)(&root.join("workspaces/ops")).as_deref(),
+        Some(crate::skills::levels::UNCONFIRMED)
+    );
+}
+
+#[test]
+fn a_project_replaced_at_the_same_path_is_never_answered_from_the_cache() {
+    let data = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let mine = made_in(data.path(), root).unwrap();
+    assert!(bound(&mine, root));
+    assert!(levels_confirmed(&mine, root), "a project new to purlis");
+    // Another project now stands at the path, with an id of its own.
+    let other = "fedcba9876543210fedcba9876543210";
+    crate::plane::write_private(root, &plane_id_file(root), other.as_bytes()).unwrap();
+    assert!(!bound(&mine, root));
+    assert!(!levels_confirmed(&mine, root));
 }

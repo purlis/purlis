@@ -10811,10 +10811,10 @@ export type Studio = {
 	router: StudioRouter | null,
 	/**
 	 *  Where purlis cannot confirm which of the project's workspace and persona folders the
-	 *  person accepted (#3718): the one sentence the studio shows once for the project, whose
-	 *  Accept accepts every folder there now (`skill_levels_confirm`). Null otherwise.
+	 *  person accepted (#3718): the one item the studio shows for the project, whose Accept
+	 *  accepts the folders it lists (`skill_levels_confirm`). Null otherwise.
 	 */
-	levels_to_confirm: string | null,
+	levels_to_confirm: StudioLevelsToConfirm | null,
 };
 
 /**
@@ -10878,6 +10878,15 @@ export type StudioLevel = {
 	level: SkillLevel,
 	/**  As a person reads it: `project`, `local workspace ops` (the core's `Level`). */
 	label: string,
+};
+
+/**
+ *  **The one item for the project's folders** (#3718): what it says, and the folders its Accept
+ *  accepts, relative to the project.
+ */
+export type StudioLevelsToConfirm = {
+	said: string,
+	folders: string[],
 };
 
 /**

@@ -40,7 +40,7 @@ describe("the Skill studio", () => {
     const said =
       "purlis can't confirm which of this project's folders you accepted before: accept them again in the Skill studio";
     const asked: string[] = [];
-    mockIPC((cmd) => {
+    mockIPC((cmd, args) => {
       if (cmd === "skill_studio")
         return {
           on: true,
@@ -53,11 +53,11 @@ describe("the Skill studio", () => {
           skills: [],
           pins_refused: null,
           not_supported: [],
-          levels_to_confirm: said,
+          levels_to_confirm: { said, folders: ["workspaces/ops", "personas/steward"] },
         };
       if (cmd === "skills_deleted") return [];
       if (cmd === "skill_levels_confirm") {
-        asked.push(cmd);
+        asked.push(JSON.stringify(args));
         return {};
       }
       return null;
@@ -66,8 +66,13 @@ describe("the Skill studio", () => {
     renderStudio(AT_THE_ROOT, "needs");
     const item = await screen.findByTestId("skill-studio-levels-to-confirm");
     expect(item).toHaveTextContent(said);
+    expect(item).toHaveTextContent("workspaces/ops, personas/steward");
     await user.click(screen.getByRole("button", { name: "Accept the folders" }));
-    await waitFor(() => expect(asked).toEqual(["skill_levels_confirm"]));
+    await waitFor(() =>
+      expect(asked).toEqual([
+        JSON.stringify({ plane: "p", folders: ["workspaces/ops", "personas/steward"] }),
+      ]),
+    );
   });
 
   it("says in one line why a declared harness's chats get no skills (SK-30)", async () => {

@@ -83,6 +83,7 @@ fn noted_long_ago(root: &Path, id: &str) {
 fn a_workspace_made_while_a_sandboxed_chat_runs_stays_left_out_until_the_person_accepts_it() {
     let tmp = plane(&[CHAT]);
     let root = tmp.path();
+    confirm(root, &listed(root)).unwrap();
     note(root, CHAT, "7").unwrap();
     // Made after the chat started: a chat there could have made it.
     skill(root, "workspaces/new/skills/planted", "planted");
@@ -161,6 +162,7 @@ fn a_restart_keeps_the_levels_its_chat_started_with() {
 fn a_workspace_purlis_made_for_the_person_is_vouched_for() {
     let tmp = plane(&[CHAT]);
     let root = tmp.path();
+    confirm(root, &listed(root)).unwrap();
     note(root, CHAT, "7").unwrap();
     skill(root, "workspaces/made/skills/mine", "mine");
     vouch(root, "workspaces/made");
@@ -222,6 +224,7 @@ fn a_chat_without_an_id_is_never_noted() {
 fn a_create_vouches_only_for_a_folder_it_made() {
     let tmp = plane(&[CHAT]);
     let root = tmp.path();
+    confirm(root, &listed(root)).unwrap();
     note(root, CHAT, "7").unwrap();
     skill(root, "workspaces/foo/skills/planted", "planted");
     assert!(there(root, "workspaces/foo"));
@@ -242,6 +245,7 @@ fn records_in_the_plane_s_state_folder_are_never_read() {
     // #3718: the records are read from this machine's app state alone.
     let tmp = plane(&[CHAT]);
     let root = tmp.path();
+    confirm(root, &listed(root)).unwrap();
     crate::appstate::made(root).unwrap();
     let old = crate::plane::state_dir(root).join(DIR);
     std::fs::create_dir_all(&old).unwrap();
@@ -255,7 +259,7 @@ fn records_in_the_plane_s_state_folder_are_never_read() {
 }
 
 #[test]
-fn with_no_app_state_a_sandboxed_start_is_refused_and_nothing_is_left_out() {
+fn with_no_app_state_a_sandboxed_start_is_refused_and_every_folder_is_held() {
     // #3718: no sandboxed chat starts where no record of its start can be kept, so none could have
     // made a folder, and every chat keeps the workspace and persona skills it had.
     let tmp = plane(&[]);
@@ -263,9 +267,15 @@ fn with_no_app_state_a_sandboxed_start_is_refused_and_nothing_is_left_out() {
     let refused = refusal_with(false).expect("refused");
     assert!(refused.contains("PURLIS_DATA_HOME"), "{refused}");
     assert_eq!(refusal_with(true), None);
+    // A project with a state folder and no app state could have had records: every folder is
+    // held. One that never had any state holds nothing.
     let held = made_since_in(root, None);
     for owner in ["workspaces/ops", "personas/steward"] {
-        assert_eq!(held(&root.join(owner)), None, "{owner}");
+        assert_eq!(
+            held(&root.join(owner)).as_deref(),
+            Some(UNCONFIRMED),
+            "{owner}"
+        );
     }
 }
 
@@ -273,6 +283,7 @@ fn with_no_app_state_a_sandboxed_start_is_refused_and_nothing_is_left_out() {
 fn a_start_that_could_not_be_noted_never_accepts_a_folder_made_since_until_it_is_accepted() {
     let tmp = plane(&[]);
     let root = tmp.path();
+    confirm(root, &listed(root)).unwrap();
     assert!(note_or_hold(root, "not-an-id", "7").unwrap().is_some());
     std::fs::create_dir_all(root.join("workspaces/later")).unwrap();
     assert!(made_since(root)(&root.join("workspaces/later")).is_some());
@@ -372,7 +383,8 @@ fn a_chat_reattached_across_the_upgrade_leaves_every_folder_held_behind_one_acce
     .unwrap();
     crate::appstate::move_out_of_the_plane(root);
     assert!(!confirmed(root));
-    assert_eq!(to_confirm(root), Some(UNCONFIRMED));
+    let (said, listed) = to_confirm(root).expect("one item");
+    assert_eq!(said, UNCONFIRMED);
     for owner in ["workspaces/ops", "personas/steward"] {
         assert_eq!(
             made_since(root)(&root.join(owner)).as_deref(),
@@ -381,7 +393,7 @@ fn a_chat_reattached_across_the_upgrade_leaves_every_folder_held_behind_one_acce
         );
     }
     // The one Accept: every folder there now, and the records are this purlis's from then on.
-    confirm(root).unwrap();
+    confirm(root, &listed).unwrap();
     assert!(confirmed(root));
     assert_eq!(to_confirm(root), None);
     for owner in ["workspaces/ops", "personas/steward"] {
@@ -390,23 +402,30 @@ fn a_chat_reattached_across_the_upgrade_leaves_every_folder_held_behind_one_acce
 }
 
 #[test]
-fn a_folder_s_accept_while_nothing_is_confirmed_is_the_one_accept() {
+fn a_folder_s_accept_while_nothing_is_confirmed_accepts_that_folder_alone() {
     let tmp = plane(&[]);
     let root = tmp.path();
     let old = crate::names::state(root).join(DIR);
     std::fs::create_dir_all(&old).unwrap();
     std::fs::write(old.join(UNACCEPTED), r#"{"levels":[]}"#).unwrap();
     crate::appstate::move_out_of_the_plane(root);
-    assert!(made_since(root)(&root.join("personas/steward")).is_some());
     accept(root, "workspaces/ops").unwrap();
-    assert!(confirmed(root));
-    assert_eq!(made_since(root)(&root.join("personas/steward")), None);
+    assert!(!confirmed(root));
+    assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
+    assert_eq!(
+        made_since(root)(&root.join("personas/steward")).as_deref(),
+        Some(UNCONFIRMED)
+    );
+    // The project's one Accept no longer lists it.
+    let (_, listed) = to_confirm(root).unwrap();
+    assert_eq!(listed, ["personas/steward"]);
 }
 
 #[test]
 fn a_project_new_to_purlis_starts_with_nothing_held() {
-    let tmp = plane(&[]);
+    let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
     assert_eq!(
         made_since(root)(&root.join("workspaces/ops")),
         None,
@@ -415,4 +434,53 @@ fn a_project_new_to_purlis_starts_with_nothing_held() {
     crate::appstate::made(root).unwrap();
     assert!(confirmed(root));
     assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
+}
+
+/// Every workspace and persona folder of the plane at `root`, as the studio lists them.
+fn listed(root: &Path) -> Vec<String> {
+    to_confirm(root)
+        .map(|(_, folders)| folders)
+        .unwrap_or_default()
+}
+
+#[test]
+fn a_chat_running_across_the_upgrade_holds_a_folder_it_makes_after_the_accept() {
+    // An older purlis noted chat C in the plane's state folder, and C runs across the upgrade.
+    let tmp = plane(&[CHAT]);
+    let root = tmp.path();
+    let old = crate::names::state(root).join(DIR);
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::write(
+        old.join(format!("{CHAT}.json")),
+        r#"{"name":"7","levels":[]}"#,
+    )
+    .unwrap();
+    crate::appstate::move_out_of_the_plane(root);
+    confirm(root, &listed(root)).unwrap();
+    assert_eq!(
+        made_since(root)(&root.join("workspaces/ops")),
+        None,
+        "there before"
+    );
+    std::fs::create_dir_all(root.join("workspaces/after")).unwrap();
+    let why = made_since(root)(&root.join("workspaces/after")).expect("held");
+    assert!(why.contains("chat 7"), "{why}");
+}
+
+#[test]
+fn a_noted_chat_s_folder_stays_held_through_either_accept() {
+    // Chat D is noted at its start, and makes a folder while it runs; nothing is confirmed.
+    let tmp = plane(&[CHAT]);
+    let root = tmp.path();
+    note(root, CHAT, "7").unwrap();
+    std::fs::create_dir_all(root.join("workspaces/made")).unwrap();
+    assert!(!confirmed(root));
+    let made = root.join("workspaces/made");
+    // Another folder's Accept leaves it held.
+    accept(root, "workspaces/ops").unwrap();
+    assert!(made_since(root)(&made).is_some_and(|why| why.contains("chat 7")));
+    // So does the project's one Accept, whatever it lists.
+    confirm(root, &listed(root)).unwrap();
+    assert!(confirmed(root));
+    assert!(made_since(root)(&made).is_some_and(|why| why.contains("chat 7")));
 }

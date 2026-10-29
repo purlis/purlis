@@ -54,6 +54,25 @@ export function stateOf(project: string): string {
 }
 
 /**
+ * **The project's workspace and persona folders, accepted once** (#3718): a project the run copied
+ * in carries a state folder, so purlis holds every such folder until the person accepts them, as
+ * at a first open after an upgrade. Each spec starts from the person having done so. Where the
+ * Skill studio is off, nothing is asked.
+ */
+export async function theProjectsFoldersAreAccepted(): Promise<void> {
+  const plane = await projectRoot();
+  const folders = ["workspaces", "personas"].flatMap((parent) => {
+    const at = join(plane, parent);
+    return existsSync(at)
+      ? readdirSync(at, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+          .map((entry) => `${parent}/${entry.name}`)
+      : [];
+  });
+  await ask("skill_levels_confirm", { plane, folders }).catch(() => undefined);
+}
+
+/**
  * The project's app state, `<data>/app-state/<clone key>` (`purlis_core::appstate`, #3718): in the
  * newest of this run's data homes that holds it, which the app made as it opened the project. The clone
  * key is the first 16 hex characters of the SHA-256 of the project's real path.

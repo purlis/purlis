@@ -309,9 +309,8 @@ fn made_since_in(root: &Path, state: Option<PathBuf>) -> MadeSince {
         // A project purlis has never kept state for starts confirmed at its first write.
         None => !crate::appstate::never_kept(root),
     };
-    if let Some(state) = &state
-        && !unconfirmed
-    {
+    let mut accepted = Unaccepted::default();
+    if let Some(state) = &state {
         match records_in(state) {
             Ok(found) => records.extend(found),
             Err(()) => unread = true,
@@ -320,16 +319,18 @@ fn made_since_in(root: &Path, state: Option<PathBuf>) -> MadeSince {
             Ok(found) => held = found,
             Err(()) => unread = true,
         }
+        if unconfirmed {
+            accepted = accepted_one_by_one(state);
+        }
     }
     let root = root.to_path_buf();
     Box::new(move |owner: &Path| {
         let rel = rel_in(&root, owner)?;
-        if unconfirmed && an_owner(&rel) {
-            return Some(UNCONFIRMED.to_owned());
-        }
         if unread && an_owner(&rel) {
             return Some(UNREAD.to_owned());
         }
+        // A chat's own reason first: no Accept of the project as a whole lets a folder through
+        // that a running chat could have made.
         if let Some((_, record)) = records
             .iter()
             .find(|(_, record)| !record.levels.contains(&rel))
@@ -339,6 +340,9 @@ fn made_since_in(root: &Path, state: Option<PathBuf>) -> MadeSince {
                  {ACCEPT_IT}",
                 record.name
             ));
+        }
+        if unconfirmed && an_owner(&rel) && !accepted.levels.contains(&rel) {
+            return Some(UNCONFIRMED.to_owned());
         }
         held.levels
             .contains(&rel)
@@ -397,10 +401,14 @@ pub fn accept(root: &Path, owner: &str) -> Result<(), String> {
         return Err("that folder is no workspace or persona of this project".to_owned());
     }
     if !confirmed(root) {
-        // The one Accept for the project: every folder there now.
-        return confirm(root);
-    }
-    if let Some(state) = crate::appstate::dir(root) {
+        // That folder alone, while the rest wait for the project's one Accept.
+        let state = crate::appstate::made(root)?;
+        repaired(&state)?;
+        let mut now = accepted_one_by_one(&state);
+        if now.levels.insert(owner.to_owned()) {
+            write_list(&state, ACCEPTED, &now)?;
+        }
+    } else if let Some(state) = crate::appstate::dir(root) {
         repaired(&state)?;
     }
     vouch(root, owner);
@@ -490,6 +498,42 @@ pub fn sweep(root: &Path, open: &[String]) {
     }
 }
 
+/// **Each chat on the plane at `root`'s record of open chats noted in the app state `state`**, its
+/// levels the workspace and persona folders there now, where it has no record there yet: what the
+/// move of an older purlis's records out of the plane does, so a chat that started before the
+/// upgrade and runs on holds every folder it makes after it, as a chat noted at its start does.
+/// Nothing of the plane's own records is read. Where the record of open chats cannot be read, one
+/// record no sweep removes holds them all ([`UNNOTED`]).
+pub(crate) fn noted_again(state: &Path, root: &Path) -> Result<(), String> {
+    let now = owners(root);
+    let chats: Vec<(String, String)> = match crate::reopen::read_or_refusal(root) {
+        Ok(record) => record
+            .chats
+            .iter()
+            .filter_map(|chat| {
+                let id = chat.identity.id.clone().filter(|id| an_id(id))?;
+                Some((id, chat.name.clone()))
+            })
+            .collect(),
+        Err(_) => vec![(UNNOTED.to_owned(), "a chat".to_owned())],
+    };
+    for (id, name) in chats {
+        if read(state, &id).is_some() {
+            continue;
+        }
+        write(
+            state,
+            &id,
+            None,
+            &Record {
+                name,
+                levels: now.clone(),
+            },
+        )?;
+    }
+    Ok(())
+}
+
 /// **Every workspace and persona folder of the project at `root` is held until the person
 /// accepts it again** in the Skill studio ([`accept`]): what the move of an older purlis's records
 /// out of the plane's state does (`crate::appstate`), with `state` the project's app state. Those
@@ -514,34 +558,74 @@ pub fn confirmed(root: &Path) -> bool {
 }
 
 /// **What the studio asks the person once for the plane at `root`**, where purlis cannot confirm
-/// which of its folders they accepted and it has some ([`UNCONFIRMED`]). `None` otherwise.
-pub fn to_confirm(root: &Path) -> Option<&'static str> {
-    (!confirmed(root) && !owners(root).is_empty()).then_some(UNCONFIRMED)
+/// which of its folders they accepted and it has some: the sentence ([`UNCONFIRMED`]) and the
+/// folders its Accept accepts, each there now and not accepted one by one yet. `None` otherwise.
+pub fn to_confirm(root: &Path) -> Option<(&'static str, Vec<String>)> {
+    if confirmed(root) {
+        return None;
+    }
+    let accepted = crate::appstate::dir(root)
+        .map(|state| accepted_one_by_one(&state))
+        .unwrap_or_default();
+    let folders: Vec<String> = owners(root)
+        .into_iter()
+        .filter(|folder| !accepted.levels.contains(folder))
+        .collect();
+    (!folders.is_empty()).then_some((UNCONFIRMED, folders))
 }
 
-/// **The person's one Accept for the plane at `root`** (#3718): its levels records are written
-/// bound to it, every record that cannot be read is replaced, and every workspace and persona
-/// folder there now is vouched for and taken off the folders not accepted yet. Folders made after
-/// it are held as usual.
-pub fn confirm(root: &Path) -> Result<(), String> {
+/// The file in [`DIR`] that keeps the folders the person accepted one by one while purlis could
+/// not confirm the rest ([`accept`]): taken up into the project's one Accept ([`confirm`]).
+const ACCEPTED: &str = "accepted.json";
+
+/// The folders accepted one by one while unconfirmed; none where the file cannot be read.
+fn accepted_one_by_one(state: &Path) -> Unaccepted {
+    crate::proposed::read_pinned(state, Path::new(&format!("{DIR}/{ACCEPTED}")))
+        .ok()
+        .flatten()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+/// `now` written as `name` in [`DIR`], beside it first and renamed into its place.
+fn write_list(state: &Path, name: &str, now: &Unaccepted) -> Result<(), String> {
+    let folder = state.join(DIR);
+    crate::profiletrust::private_dir(&folder).map_err(|why| why.to_string())?;
+    let text = serde_json::to_string(now).map_err(|why| why.to_string())?;
+    crate::rewrite::replace(
+        &folder,
+        &folder.join(name),
+        text.as_bytes(),
+        crate::rewrite::Mode::Private,
+    )
+    .map_err(|why| why.to_string())
+}
+
+/// **The person's one Accept for the plane at `root`** (#3718), of the folders `folders` the
+/// studio listed ([`to_confirm`]): its levels records are written bound to it, every record that
+/// cannot be read is replaced, and each listed folder there now is taken off the folders not
+/// accepted yet; every other folder there now goes on them. No chat's record is changed, so a
+/// folder a running chat could have made stays left out for that reason.
+pub fn confirm(root: &Path, folders: &[String]) -> Result<(), String> {
     let state = crate::appstate::made(root)?;
     std::fs::create_dir_all(state.join(DIR)).map_err(|why| why.to_string())?;
     repaired(&state)?;
     let now = owners(root);
-    for (id, was) in records_in(&state).unwrap_or_default() {
-        let mut record = was.clone();
-        record.levels.extend(now.iter().cloned());
-        if record != was {
-            write(&state, &id, Some(&was), &record)?;
-        }
-    }
+    // The listed folders, and those the person accepted one by one before.
+    let listed: BTreeSet<String> = folders
+        .iter()
+        .cloned()
+        .chain(accepted_one_by_one(&state).levels)
+        .filter(|folder| now.contains(folder))
+        .collect();
     let was = unaccepted_or_all(&state, root);
-    let kept = Unaccepted {
-        levels: was.levels.difference(&now).cloned().collect(),
-    };
+    let mut kept: BTreeSet<String> = was.levels.difference(&listed).cloned().collect();
+    kept.extend(now.difference(&listed).cloned());
+    let kept = Unaccepted { levels: kept };
     if kept != was || unaccepted_read(&state).is_err() {
         write_unaccepted(&state, &kept)?;
     }
+    write_list(&state, ACCEPTED, &Unaccepted::default())?;
     crate::appstate::mark_levels_confirmed(&state, root)
 }
 

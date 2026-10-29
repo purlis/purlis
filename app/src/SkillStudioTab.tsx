@@ -834,12 +834,14 @@ export function SkillStudioTab({
                   busy,
                   onPress: () =>
                     change("The folders were not accepted", () =>
-                      commands.skillLevelsConfirm(plane),
+                      commands.skillLevelsConfirm(plane, toConfirm.folders),
                     ),
                 },
               ]}
             >
-              <span data-testid="skill-studio-levels-to-confirm">{toConfirm}</span>
+              <span data-testid="skill-studio-levels-to-confirm">
+                {`${toConfirm.said}. Accepting takes ${toConfirm.folders.join(", ")}.`}
+              </span>
             </Notice>
           )}
           {refusedPins !== null && (
