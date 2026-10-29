@@ -533,6 +533,7 @@ fn a_statement_goes_when_what_its_claim_asks_for_cannot_be_applied() {
     vouched.link_key = Some(LinkKey {
         statement: "a statement".into(),
         signature: "a signature".into(),
+        next_signature: None,
     });
     let withdrawn = status_withdrawn(Some(&vouched), "upstream refused it");
     assert_eq!(withdrawn.link_key, None);

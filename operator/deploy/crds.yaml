@@ -74,6 +74,37 @@ spec:
             description: What the operator says about a Pool.
             nullable: true
             properties:
+              cluster:
+                description: |-
+                  The cluster the Pool is in: the uid of its `kube-system` namespace. A desktop pins it with
+                  the key, and refuses a statement made in any other cluster (#3305).
+                nullable: true
+                type: string
+              nextSigningKey:
+                description: |-
+                  While a team admin rolls the operator's key, the key it rolls to, spelled as
+                  `signingKey` (#3305). A desktop pinned to `signingKey` moves its pin here once
+                  `nextSigningKeyVouch` checks.
+                nullable: true
+                type: string
+              nextSigningKeyVouch:
+                description: |-
+                  The current key's word for the next one, signed by `signingKey` and holding for seven
+                  days at most (#3305).
+                nullable: true
+                properties:
+                  signature:
+                    description: Its Ed25519 signature, 128 lower-case hex, by the key `signingKey` names.
+                    type: string
+                  statement:
+                    description: |-
+                      The statement, exactly as signed (crate::vouch::roll_statement): the cluster, the key it
+                      rolls from, the key it rolls to, and until when it holds.
+                    type: string
+                required:
+                - signature
+                - statement
+                type: object
               signingKey:
                 description: |-
                   The public half of the key the operator signs each runner's link key with, `ed25519:`
@@ -210,6 +241,12 @@ spec:
                   signature (#2056).
                 nullable: true
                 properties:
+                  nextSignature:
+                    description: |-
+                      While the operator's key is rolled, the next key's signature over the same statement,
+                      128 lower-case hex, for a desktop that has moved its pin to it (#3305).
+                    nullable: true
+                    type: string
                   signature:
                     description: Its Ed25519 signature, 128 lower-case hex, by the key the Pool's status names.
                     type: string

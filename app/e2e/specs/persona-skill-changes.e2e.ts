@@ -123,7 +123,11 @@ describe("changing a persona's own skills", function () {
     expect(existsSync(own(RENAMED))).toBe(false);
 
     await studioPage("Deleted");
-    const restore = await $(`aria/Restore ${RENAMED}`);
+    // A deleted skill's page, beside the list, holds Bring back (S9, #3691).
+    const row = await $(`[data-testid="deleted-${RENAMED}"]`);
+    await row.waitForClickable({ timeout: 20_000 });
+    await row.click();
+    const restore = await $(`aria/Bring back ${RENAMED}`);
     await restore.waitForClickable({ timeout: 20_000 });
     await restore.click();
     await studioPage("Library");

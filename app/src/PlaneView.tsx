@@ -5242,7 +5242,8 @@ export const PlaneView = memo(function PlaneView({
   }, [change, plane]);
 
   /**
-   * **The Skill studio's "Ask a chat to draft a skill" and Try it** (SK-9, #2772): the core opens
+   * **The Skill studio's "Ask a chat to draft a skill", Try it and a draft's redo** (SK-9, #2772;
+   * S9, #3690): the core opens
    * the chat with its prompt typed and never sent (Try it's in a throwaway folder, with the
    * built-in skills and the draft alone), and its tab goes on the strip it is filed under, in
    * front. A refusal is the core's sentence.
@@ -5251,16 +5252,47 @@ export const PlaneView = memo(function PlaneView({
     const asked = (event: Event) => {
       const wanted = (event as CustomEvent<SkillChatAsk>).detail;
       if (wanted.plane !== plane) return;
+      // "Ask the chat to redo it" (S9, #3690): typed into the chat that drafted it, where a tab
+      // here holds it, and that tab brought to the front; else a chat opened afresh below.
+      const redoIn =
+        wanted.kind === "redo" && wanted.chat !== null
+          ? { session: wanted.chat, tab: tabHolding(now.current, wanted.chat) }
+          : undefined;
+      if (wanted.kind === "redo" && redoIn?.tab !== undefined) {
+        const { session, tab } = redoIn;
+        void commands
+          .skillDraftRedoIn(plane, wanted.id, session)
+          .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+          .then((said) => {
+            if (said.status === "error") {
+              setReport({ from: "skill-chat", refused: true, words: said.error });
+              return;
+            }
+            bringToFront(tab);
+            giveKeyboardTo(plane, session);
+            setReport({
+              from: "skill-chat",
+              refused: false,
+              words:
+                said.data.kind === "typed"
+                  ? `Typed the request to redo ${wanted.name} into ${nameOfNow.current(session)}. Nothing was sent.`
+                  : handedSaid(said.data, nameOfNow.current(session)),
+            });
+          });
+        return;
+      }
       const starting =
         wanted.kind === "draft"
           ? commands.skillDraftChat(plane, wanted.level, STARTING_SIZE.columns, STARTING_SIZE.rows)
-          : commands.skillDraftTry(
-              plane,
-              wanted.id,
-              wanted.profile,
-              STARTING_SIZE.columns,
-              STARTING_SIZE.rows,
-            );
+          : wanted.kind === "redo"
+            ? commands.skillDraftRedo(plane, wanted.id, STARTING_SIZE.columns, STARTING_SIZE.rows)
+            : commands.skillDraftTry(
+                plane,
+                wanted.id,
+                wanted.profile,
+                STARTING_SIZE.columns,
+                STARTING_SIZE.rows,
+              );
       void starting
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
         .then((started) => {
@@ -5277,7 +5309,7 @@ export const PlaneView = memo(function PlaneView({
     };
     window.addEventListener(SKILL_CHAT, asked);
     return () => window.removeEventListener(SKILL_CHAT, asked);
-  }, [change, plane]);
+  }, [bringToFront, change, plane]);
 
   /**
    * **"Start a chat here"** on a file or folder row (FM-9): a chat the core starts on the
@@ -7913,7 +7945,7 @@ export const PlaneView = memo(function PlaneView({
     const asked = (event: Event) => {
       const wanted = (event as CustomEvent<SkillStudioAsk>).detail;
       if (wanted.plane !== plane) return;
-      showView(skillStudioAt(wanted.scope, wanted.page), SKILL_STUDIO_TITLE);
+      showView(skillStudioAt(wanted.scope, wanted.page, { item: wanted.item }), SKILL_STUDIO_TITLE);
     };
     window.addEventListener(SKILL_STUDIO_ASKED, asked);
     return () => window.removeEventListener(SKILL_STUDIO_ASKED, asked);

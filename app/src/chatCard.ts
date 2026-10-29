@@ -50,6 +50,12 @@ export function skipsTheRest(): boolean {
   return up !== null || performance.now() - downAt < CARD_SKIP_MS;
 }
 
+/** Whether any row's card is up: the Chats list's hold waits for a pointer crossing to it
+ *  (#3773). */
+export function aCardIsUp(): boolean {
+  return up !== null;
+}
+
 /** Whether `session`'s card is up, for its row, which redraws when that changes. */
 export function useCardUp(session: number): boolean {
   return useSyncExternalStore(

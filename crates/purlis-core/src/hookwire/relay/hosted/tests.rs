@@ -18,6 +18,11 @@ const COMPOSED: u32 = 21;
 /// A project whose chat [`COMPOSED`] its host composed in a sandbox as `devops`, with tool
 /// `kubectl` handed `KUBECONFIG` from vault `team` as a file.
 fn a_composed_chat() -> tempfile::TempDir {
+    a_composed_chat_reaching(None)
+}
+
+/// [`a_composed_chat`], whose confinement here allows live what `live` reads (#3407).
+fn a_composed_chat_reaching(live: Option<crate::hostedchats::Live>) -> tempfile::TempDir {
     use crate::sandbox::tools::{Handed as As, Ready, Tool};
     let tmp = tempfile::tempdir().unwrap();
     let mut confines = crate::sandbox::Confines::default();
@@ -33,6 +38,7 @@ fn a_composed_chat() -> tempfile::TempDir {
             folder: tmp.path().to_path_buf(),
             harness: None,
             confines,
+            live: live.map(crate::hostedchats::Reached),
         },
     );
     tmp
@@ -86,9 +92,14 @@ struct Desktop {
     host: Hearing,
     heard: ExecsHeard,
     ran: Arc<Mutex<Vec<String>>>,
+    /// What each run here decided a connection to [`LIVE_HOST`] by.
+    decided: Arc<Mutex<Vec<crate::sandbox::reach::Decision>>>,
     relaying: Arc<Relaying>,
     numbers: Arc<Mutex<Vec<u64>>>,
 }
+
+/// A host the person may allow the composed chat live.
+const LIVE_HOST: &str = "pypi.example.com";
 
 fn a_desktop(there: &Arc<AtomicBool>, deciding: Deciding) -> Desktop {
     let (window, holding) = a_window();
@@ -114,6 +125,7 @@ fn a_desktop(there: &Arc<AtomicBool>, deciding: Deciding) -> Desktop {
     heeding.linked(LINK);
     let host: Arc<Mutex<Option<Arc<Relaying>>>> = Arc::default();
     let ran: Arc<Mutex<Vec<String>>> = Arc::default();
+    let decided: Arc<Mutex<Vec<crate::sandbox::reach::Decision>>> = Arc::default();
     let numbers: Arc<Mutex<Vec<u64>>> = Arc::default();
     let relaying = Relaying::new({
         let (host, there, numbers) = (Arc::clone(&host), Arc::clone(there), Arc::clone(&numbers));
@@ -143,8 +155,16 @@ fn a_desktop(there: &Arc<AtomicBool>, deciding: Deciding) -> Desktop {
         })
     })
     .running_handed_with({
-        let ran = Arc::clone(&ran);
+        let (ran, decided) = (Arc::clone(&ran), Arc::clone(&decided));
         Arc::new(move |asker, wanted, handed, reader, mut writer, _told| {
+            if let Some(confines) = &asker.confines {
+                decided.lock().unwrap().push(confines.decides().decide(
+                    LIVE_HOST,
+                    443,
+                    &[443],
+                    &[],
+                ));
+            }
             let keys: Vec<&str> = handed.keys().collect();
             ran.lock().unwrap().push(format!(
                 "chat {} as {:?} ran {} with {keys:?}",
@@ -165,6 +185,7 @@ fn a_desktop(there: &Arc<AtomicBool>, deciding: Deciding) -> Desktop {
         host: relaying.hearing(tokens),
         heard,
         ran,
+        decided,
         relaying,
         numbers,
     }
@@ -249,6 +270,111 @@ fn a_composed_chats_tool_runs_on_its_host_on_the_values_its_desktop_sent() {
         "read typed\n",
         "its input reached the run here"
     );
+}
+
+/// What the composed chat's confinement here allows live now, as a test sets it.
+type LiveNow = Arc<Mutex<Vec<purlis_session_protocol::session::Listed>>>;
+
+/// A reader of `now`, as the host's own hold would read the chat's confinement.
+fn reading(now: &LiveNow) -> crate::hostedchats::Live {
+    let now = Arc::clone(now);
+    Arc::new(move || purlis_session_protocol::session::ReachNow {
+        asked: Vec::new(),
+        allowed_live: now.lock().unwrap().clone(),
+    })
+}
+
+/// A window that, while the person is asked, runs `meanwhile`, then sends the run its values.
+fn sends_its_values_after(meanwhile: impl Fn() + Send + Sync + 'static) -> Deciding {
+    Arc::new(move |ask, _reader| {
+        meanwhile();
+        Some(its_values(ask))
+    })
+}
+
+/// #3407: a run is held to the chat's confinement as it is when its values come, not as it was
+/// when the command asked: a host the person took back while they were asked is not reached.
+#[test]
+fn a_host_taken_back_while_the_person_is_asked_is_not_reached_by_the_run() {
+    let now: LiveNow = Arc::new(Mutex::new(vec![purlis_session_protocol::session::Listed {
+        host: LIVE_HOST.into(),
+        layer: purlis_session_protocol::session::Layer::Chat,
+    }]));
+    let project = a_composed_chat_reaching(Some(reading(&now)));
+    let there = Arc::new(AtomicBool::new(true));
+    let desktop = a_desktop(
+        &there,
+        sends_its_values_after({
+            let now = Arc::clone(&now);
+            move || now.lock().unwrap().clear()
+        }),
+    );
+    desktop.relaying.of_project_at(project.path());
+
+    let (_written, asker, done) = an_exec_through(desktop.host, kubectl_asked());
+    soon("it never ran", || !desktop.ran.lock().unwrap().is_empty());
+    asker.shutdown(std::net::Shutdown::Write).unwrap();
+
+    assert_eq!(done.recv_timeout(Duration::from_secs(10)), Ok(()));
+    assert_eq!(
+        *desktop.decided.lock().unwrap(),
+        [crate::sandbox::reach::Decision::Ask],
+        "taken back before its values came"
+    );
+}
+
+/// #3407: and a host the person allowed while they were asked is reached by that run.
+#[test]
+fn a_host_allowed_while_the_person_is_asked_is_reached_by_the_run() {
+    let now: LiveNow = Arc::default();
+    let project = a_composed_chat_reaching(Some(reading(&now)));
+    let there = Arc::new(AtomicBool::new(true));
+    let desktop = a_desktop(
+        &there,
+        sends_its_values_after({
+            let now = Arc::clone(&now);
+            move || {
+                now.lock()
+                    .unwrap()
+                    .push(purlis_session_protocol::session::Listed {
+                        host: LIVE_HOST.into(),
+                        layer: purlis_session_protocol::session::Layer::Chat,
+                    });
+            }
+        }),
+    );
+    desktop.relaying.of_project_at(project.path());
+
+    let (_written, asker, done) = an_exec_through(desktop.host, kubectl_asked());
+    soon("it never ran", || !desktop.ran.lock().unwrap().is_empty());
+    asker.shutdown(std::net::Shutdown::Write).unwrap();
+
+    assert_eq!(done.recv_timeout(Duration::from_secs(10)), Ok(()));
+    assert_eq!(
+        *desktop.decided.lock().unwrap(),
+        [crate::sandbox::reach::Decision::Allowed(
+            crate::sandbox::reach::By::Chat
+        )]
+    );
+}
+
+/// A chat its host forgot while the person was asked runs nothing on the values that come.
+#[test]
+fn a_chat_forgotten_while_the_person_is_asked_runs_nothing() {
+    let project = a_composed_chat();
+    let root = project.path().to_path_buf();
+    let there = Arc::new(AtomicBool::new(true));
+    let desktop = a_desktop(
+        &there,
+        sends_its_values_after(move || crate::hostedchats::forget(&root, COMPOSED)),
+    );
+    desktop.relaying.of_project_at(project.path());
+
+    let (written, _asker, done) = an_exec_through(desktop.host, kubectl_asked());
+
+    assert_eq!(done.recv_timeout(Duration::from_secs(10)), Ok(()));
+    assert!(desktop.ran.lock().unwrap().is_empty(), "nothing ran");
+    assert!(said(&written).contains("is gone"), "{}", said(&written));
 }
 
 #[test]
