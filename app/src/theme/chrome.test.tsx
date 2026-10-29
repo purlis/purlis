@@ -1170,6 +1170,7 @@ const DIALOGS: Opened[] = [
       render(
         <SkillCopy
           builtIns={["browser", "secrets"]}
+          descriptionOf={(name) => `What ${name} does.`}
           levels={[{ level: { at: "project", local: false }, label: "project" }]}
           start={{ at: "project", local: false }}
           busy={false}

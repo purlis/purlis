@@ -1940,6 +1940,9 @@ fn gets_with(root: &Path, built_in: &Path, workspace: Option<&str>) -> Vec<Strin
         .collect()
 }
 
+/// A copy's own description, as Make my own copy proposes one (#3777).
+const MINE: &str = "Comes with purlis (your copy of bundled).";
+
 #[test]
 fn my_own_copy_of_a_built_in_skill_lands_at_the_level_picked_under_its_new_name() {
     let tmp = plane();
@@ -1948,13 +1951,26 @@ fn my_own_copy_of_a_built_in_skill_lands_at_the_level_picked_under_its_new_name(
     let was = std::fs::read_to_string(built_in.path().join("bundled/SKILL.md")).unwrap();
 
     let (folder, lines) = on(root, Some(built_in.path()), |cx| {
-        copy_built_in(cx, "bundled", &Level::workspace("ops"), "my-bundled")
+        copy_built_in(
+            cx,
+            "bundled",
+            &Level::workspace("ops"),
+            "my-bundled",
+            "Comes with purlis, my steps.",
+        )
     });
 
     let folder = folder.unwrap();
     assert_eq!(folder, root.join("workspaces/ops/skills/my-bundled"));
     let text = std::fs::read_to_string(folder.join("SKILL.md")).unwrap();
-    assert_eq!(text, was.replace("name: bundled", "name: my-bundled"));
+    // Its own name and its own description, every other byte the built-in's (#3777).
+    assert_eq!(
+        text,
+        was.replace("name: bundled", "name: my-bundled").replace(
+            "description: Comes with purlis.",
+            "description: Comes with purlis, my steps."
+        )
+    );
     assert!(said(&lines, |line| matches!(line, Say::Done(done) if done
         .contains("copied from the built-in skill bundled"))));
     // The built-in skill is as it was, and a chat in the workspace gets both.
@@ -1987,7 +2003,7 @@ fn my_own_copy_lands_at_every_level_and_a_project_copy_reaches_the_root() {
             every_level().iter().position(|one| *one == level).unwrap()
         );
         let folder = did(root, |cx| {
-            copy_built_in(cx, "bundled", &level, &to).map(|_| ())
+            copy_built_in(cx, "bundled", &level, &to, MINE).map(|_| ())
         });
         // `did` has no built-in skills: nothing to copy from.
         assert_eq!(
@@ -1995,7 +2011,7 @@ fn my_own_copy_lands_at_every_level_and_a_project_copy_reaches_the_root() {
             "bundled is no built-in skill, so there is nothing to copy"
         );
         let (made, _) = on(root, Some(built_in.path()), |cx| {
-            copy_built_in(cx, "bundled", &level, &to)
+            copy_built_in(cx, "bundled", &level, &to, MINE)
         });
         assert_eq!(made.unwrap(), root.join(at(&level, &to)), "{level}");
     }
@@ -2013,7 +2029,7 @@ fn my_own_copy_under_a_built_in_skills_name_is_refused_in_the_agreed_words() {
     for level in every_level() {
         for name in RESERVED {
             let (refused, _) = on(root, Some(built_in.path()), |cx| {
-                copy_built_in(cx, "bundled", &level, name)
+                copy_built_in(cx, "bundled", &level, name, MINE)
             });
             assert_eq!(
                 refused.unwrap_err(),
@@ -2032,7 +2048,7 @@ fn my_own_copy_is_refused_for_a_skill_that_is_not_built_in_or_a_name_the_level_h
     let built_in = bundle();
 
     let (refused, _) = on(root, Some(built_in.path()), |cx| {
-        copy_built_in(cx, "deploy", &Level::project(), "my-deploy")
+        copy_built_in(cx, "deploy", &Level::project(), "my-deploy", MINE)
     });
     assert_eq!(
         refused.unwrap_err(),
@@ -2042,7 +2058,7 @@ fn my_own_copy_is_refused_for_a_skill_that_is_not_built_in_or_a_name_the_level_h
 
     let was = std::fs::read_to_string(root.join("skills/release/SKILL.md")).unwrap();
     let (refused, _) = on(root, Some(built_in.path()), |cx| {
-        copy_built_in(cx, "bundled", &Level::project(), "release")
+        copy_built_in(cx, "bundled", &Level::project(), "release", MINE)
     });
     assert!(
         refused
@@ -2056,7 +2072,61 @@ fn my_own_copy_is_refused_for_a_skill_that_is_not_built_in_or_a_name_the_level_h
     );
 
     let (refused, _) = on(root, Some(built_in.path()), |cx| {
-        copy_built_in(cx, "bundled", &Level::project(), "Not A Name")
+        copy_built_in(cx, "bundled", &Level::project(), "Not A Name", MINE)
     });
     assert!(refused.unwrap_err().contains("cannot be a skill's name"));
+}
+
+#[test]
+fn my_own_copy_is_refused_the_built_ins_description_word_for_word_or_one_that_breaks_a_rule() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+
+    // The built-in's own words, spaces around them or not: a chat could not tell the two apart.
+    for same in ["Comes with purlis.", "  Comes with purlis. "] {
+        let (refused, _) = on(root, Some(built_in.path()), |cx| {
+            copy_built_in(cx, "bundled", &Level::project(), "my-bundled", same)
+        });
+        assert_eq!(
+            refused.unwrap_err(),
+            "the copy's description is bundled's word for word, so a chat could not tell them \
+             apart: say what your copy does differently"
+        );
+    }
+    let (refused, _) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(cx, "bundled", &Level::project(), "my-bundled", "")
+    });
+    assert!(
+        refused
+            .unwrap_err()
+            .starts_with("the copy's description: it is empty"),
+        "an empty description"
+    );
+    let (refused, _) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(
+            cx,
+            "bundled",
+            &Level::project(),
+            "my-bundled",
+            "Steps: mine",
+        )
+    });
+    assert!(
+        refused.unwrap_err().contains("\": \""),
+        "a rule of the line format"
+    );
+    assert!(!root.join("skills/my-bundled").exists());
+
+    // One made trims its description, and the built-in keeps its own.
+    let (made, _) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(cx, "bundled", &Level::project(), "my-bundled", "  Mine.  ")
+    });
+    let text = std::fs::read_to_string(made.unwrap().join("SKILL.md")).unwrap();
+    assert!(text.contains("\ndescription: Mine.\n"), "{text}");
+    assert!(
+        std::fs::read_to_string(built_in.path().join("bundled/SKILL.md"))
+            .unwrap()
+            .contains("\ndescription: Comes with purlis.\n")
+    );
 }

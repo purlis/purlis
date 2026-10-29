@@ -485,19 +485,23 @@ pub fn create(
 
 /// **Make my own copy** (#3686, spec #3679 S12): the built-in skill `name`, copied to `level`
 /// under the new name `to`, as a skill of the plane the person can edit, committed. Its
-/// `SKILL.md` keeps the built-in's text with its `name:` changed to `to`; a project skill starts
-/// granted to the project's root alone, as a new one does. The built-in skill is not touched and
-/// keeps loading: a chat gets both.
+/// `SKILL.md` keeps the built-in's text with its `name:` changed to `to` and its `description:`
+/// to `description`, the copy's own (#3777): a chat gets both skills, and two that describe
+/// themselves alike could not be told apart by it or by a router. A project skill starts granted
+/// to the project's root alone, as a new one does. The built-in skill is not touched and keeps
+/// loading.
 ///
 /// Refused where `name` is no built-in skill in `cx.built_in`, for a name the open format does
 /// not allow, one that belongs to a built-in skill ([`Ctx::not_built_in`]), or one `level`
-/// already holds. A built-in skill is its `SKILL.md` alone (held by a test of the bundle), so
+/// already holds; and for a description that breaks a rule ([`change::description_problem`]) or
+/// is the built-in's word for word. A built-in skill is its `SKILL.md` alone (held by a test of the bundle), so
 /// that one file is what is copied.
 pub fn copy_built_in(
     cx: &mut Ctx<'_>,
     name: &str,
     level: &Level,
     to: &str,
+    description: &str,
 ) -> Result<PathBuf, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
@@ -512,6 +516,16 @@ pub fn copy_built_in(
         return Err(format!("{to:?} cannot be a skill's name: {why}"));
     }
     cx.not_built_in(to)?;
+    let description = description.trim();
+    if let Some(why) = change::description_problem(description) {
+        return Err(format!("the copy's description: {why}"));
+    }
+    if description == source.description.trim() {
+        return Err(format!(
+            "the copy's description is {name}'s word for word, so a chat could not tell them \
+             apart: say what your copy does differently"
+        ));
+    }
     let is_file = std::fs::symlink_metadata(&source.path).is_ok_and(|meta| meta.is_file());
     let text = is_file
         .then(|| std::fs::read_to_string(&source.path).ok())
@@ -519,6 +533,8 @@ pub fn copy_built_in(
         .ok_or_else(|| format!("{name}'s instructions could not be read, so nothing was copied"))?;
     let copied = change::with_name(&text, to)
         .ok_or_else(|| format!("{name}'s instructions have no name: line to change"))?;
+    let copied = purlis_skills::fence::with_keys(&copied, &[("description", Some(description))])
+        .map_err(|why| format!("{name}'s instructions {why}, so nothing was copied"))?;
     if let Some(problem) = change::check(&copied, to).first() {
         return Err(format!("the copy would not be a whole skill: {problem}"));
     }

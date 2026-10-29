@@ -382,7 +382,8 @@ pub(crate) async fn skill_new(
 }
 
 /// **Make my own copy** (#3686): the built-in skill `name` copied to `level` under the new name
-/// `to`, which the person can edit. The built-in skill keeps loading.
+/// `to` and its own `description` (#3777), which the person can edit. The built-in skill keeps
+/// loading.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_copy(
@@ -391,12 +392,13 @@ pub(crate) async fn skill_copy(
     name: String,
     level: SkillLevel,
     to: String,
+    description: String,
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("copying the skill", move || {
         flag_on()?;
         heard(held.root(), |cx| {
-            verbs::copy_built_in(cx, &name, &(&level).into(), &to)
+            verbs::copy_built_in(cx, &name, &(&level).into(), &to, &description)
         })
     })
     .await
