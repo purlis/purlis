@@ -1595,6 +1595,33 @@ pub fn locate(plane: &Path, path: &Path) -> Option<Located> {
     }
 }
 
+/// Which workspace's clone a path stands in, as `(workspace, repo)`, or `None` for a path in no
+/// clone (#3831): `workspaces/<ws>/<repo>` or below it, where that folder holds a `.git`, and
+/// never a branch folder. Path arithmetic, as [`locate`] is; git is asked the rest by the
+/// command that runs there.
+pub fn locate_clone(plane: &Path, path: &Path) -> Option<(String, String)> {
+    let here = std::fs::canonicalize(path).ok()?;
+    let workspaces = std::fs::canonicalize(plane.join("workspaces")).ok()?;
+    let rest = here.strip_prefix(&workspaces).ok()?;
+    let mut parts = rest.components().map(|c| c.as_os_str().to_str());
+    let (Some(Some(ws)), Some(Some(repo))) = (parts.next(), parts.next()) else {
+        return None;
+    };
+    if repo == DIR_NAME
+        || !crate::contain::workspace_name_ok(ws)
+        || !crate::contain::repo_name_ok(repo)
+        || workspaces
+            .join(ws)
+            .join(repo)
+            .join(".git")
+            .symlink_metadata()
+            .is_err()
+    {
+        return None;
+    }
+    Some((ws.to_owned(), repo.to_owned()))
+}
+
 /// Where a path sits, when it sits in a piece.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Located {
@@ -1688,6 +1715,36 @@ mod locate_tests {
         assert_eq!(locate(&root, &root.join("workspaces/alpha/thing")), None);
         assert_eq!(locate(&root, &root.join("workspaces/alpha")), None);
         assert_eq!(locate(&root, &root), None);
+    }
+
+    #[test]
+    fn a_path_in_a_clone_names_its_workspace_and_repo_and_nothing_else_does() {
+        // #3831: `purlis worktree update` standing in a clone updates that clone.
+        let dir = plane();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::create_dir_all(root.join("workspaces/alpha/thing/.git")).unwrap();
+        std::fs::create_dir_all(root.join("workspaces/alpha/thing/src")).unwrap();
+        std::fs::create_dir_all(root.join("workspaces/alpha/notes")).unwrap();
+        let alpha_thing = Some(("alpha".to_owned(), "thing".to_owned()));
+
+        assert_eq!(
+            locate_clone(&root, &root.join("workspaces/alpha/thing")),
+            alpha_thing
+        );
+        assert_eq!(
+            locate_clone(&root, &root.join("workspaces/alpha/thing/src")),
+            alpha_thing
+        );
+        assert_eq!(
+            locate_clone(&root, &root.join("workspaces/alpha/notes")),
+            None
+        );
+        assert_eq!(locate_clone(&root, &root.join("workspaces/alpha")), None);
+        assert_eq!(locate_clone(&root, &root), None);
+        assert_eq!(
+            locate_clone(&root, &root.join("workspaces/alpha/.worktrees/thing/piece")),
+            None
+        );
     }
 
     #[test]

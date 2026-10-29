@@ -11,6 +11,7 @@ use purlis_core::piececmd;
 use purlis_core::pieces::{Declaration, Who};
 
 use crate::Here;
+use purlis_core::hookwire::GitWork;
 
 #[derive(Subcommand)]
 pub enum WorktreeCommand {
@@ -54,11 +55,14 @@ pub enum WorktreeCommand {
         paths: Vec<String>,
     },
     /// Bring the branch folder you stand in up to its base: fetch, bring the base up to its
-    /// remote, and rebase onto it. Stops on a conflict and names the files: resolve them, then
-    /// `--continue`, or `--abort` to put the branch back. Refused with uncommitted changes.
-    /// In a chat the app runs it.
+    /// remote, and rebase onto it. Standing in a workspace's clone, bring the clone's branch up
+    /// to the remote branch it follows: fetch, then fast-forward or rebase. Stops on a conflict
+    /// and names the files: resolve them, then `--continue`, or `--abort` to put the branch
+    /// back. Refused with uncommitted changes, or where it would overwrite a file on disk that
+    /// is not committed. In a chat the app runs it.
     Update {
-        /// The branch to rebase onto (default: the one the piece was cut from).
+        /// The branch to rebase onto (default: the one the piece was cut from). A branch
+        /// folder's only.
         #[arg(long, value_name = "BRANCH", conflicts_with_all = ["go_on", "abort"])]
         base: Option<String>,
         /// Stage the files the stopped rebase named, once resolved, and go on.
@@ -184,21 +188,7 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                 (_, true) => purlis_core::hookwire::UpdateStep::Abort,
                 _ => purlis_core::hookwire::UpdateStep::Start { base },
             };
-            standing_in(here, &mut say, |at, say| {
-                let work = purlis_core::hookwire::GitWork::WorktreeUpdate {
-                    repo: at.repo.clone(),
-                    piece: at.piece.clone(),
-                    step: step.clone(),
-                };
-                ran_by_the_app(at, work, say).unwrap_or_else(|| {
-                    purlis_core::pieceupdate::update(
-                        &piece_of(&root, at),
-                        &step,
-                        &purlis_core::pieceupdate::Reach::default(),
-                        say,
-                    )
-                })
-            })
+            update(here, &step, &mut say)
         }
         WorktreeCommand::Push { force_with_lease } => standing_in(here, &mut say, |at, say| {
             let work = purlis_core::hookwire::GitWork::WorktreePush {
@@ -270,6 +260,120 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
         }
     };
     Ok(code)
+}
+
+/// The folder `purlis worktree update` stands in (#3831): a branch folder, or a workspace's
+/// clone itself.
+enum Updated {
+    Piece(purlis_core::worktree::Located),
+    Clone { ws: String, repo: String },
+}
+
+impl Updated {
+    fn of(here: &Here) -> Option<Self> {
+        let root = here.plane.root();
+        if let Some(at) = purlis_core::worktree::locate(root, &here.cwd) {
+            return Some(Self::Piece(at));
+        }
+        purlis_core::worktree::locate_clone(root, &here.cwd)
+            .map(|(ws, repo)| Self::Clone { ws, repo })
+    }
+
+    /// The ask the app is handed for `step`, and the workspace it is in.
+    fn work(&self, step: &purlis_core::hookwire::UpdateStep) -> (&str, GitWork) {
+        match self {
+            Self::Piece(at) => (
+                &at.workspace,
+                GitWork::WorktreeUpdate {
+                    repo: at.repo.clone(),
+                    piece: at.piece.clone(),
+                    step: step.clone(),
+                },
+            ),
+            Self::Clone { ws, repo } => (
+                ws,
+                GitWork::CloneUpdate {
+                    repo: repo.clone(),
+                    step: step.clone(),
+                },
+            ),
+        }
+    }
+}
+
+/// What `update` says where it stands in no folder it updates.
+const NOT_IN_A_FOLDER: &str = "not inside a branch folder or a workspace's clone: run `purlis \
+     worktree update` from inside the one to bring up to date (`purlis worktree list` shows the \
+     branch folders)";
+
+/// `purlis worktree update`: in a chat the app started, handed to the app; elsewhere, run here.
+fn update(
+    here: &Here,
+    step: &purlis_core::hookwire::UpdateStep,
+    say: &mut dyn FnMut(purlis_core::repocmd::Say),
+) -> u8 {
+    let Some(updated) = Updated::of(here) else {
+        say(purlis_core::repocmd::Say::Fail(NOT_IN_A_FOLDER.into()));
+        return 1;
+    };
+    let (ws, work) = updated.work(step);
+    let asked = crate::gitask::told(
+        crate::gitask::forwarded(ws, work, crate::gitask::A_PIECE_UPDATE_TAKES_AT_MOST),
+        say,
+    );
+    if let Some(code) = asked {
+        return code;
+    }
+    let root = here.plane.root();
+    let reach = purlis_core::pieceupdate::Reach::default();
+    match &updated {
+        Updated::Piece(at) => {
+            purlis_core::pieceupdate::update(&piece_of(root, at), step, &reach, say)
+        }
+        Updated::Clone { ws, repo } => purlis_core::pieceupdate::update_clone(
+            &purlis_core::pieceupdate::CloneAt { root, ws, repo },
+            step,
+            &reach,
+            say,
+        ),
+    }
+}
+
+/// The `worktree_update` tool (#3831): `purlis worktree update` where the chat stands, handed
+/// to the app that started it, and answered with what it said. **Never run here**: the MCP
+/// server runs outside the chat's sandbox, where the app's judging of the move would not be,
+/// so with no app to take it nothing runs.
+pub fn update_by_the_app(
+    here: &Here,
+    step: &purlis_core::hookwire::UpdateStep,
+) -> Result<String, String> {
+    use crate::gitask::Forwarded;
+    use purlis_core::repocmd::Say;
+    let updated = Updated::of(here).ok_or_else(|| NOT_IN_A_FOLDER.to_owned())?;
+    let (ws, work) = updated.work(step);
+    let (lines, code) =
+        match crate::gitask::forwarded(ws, work, crate::gitask::A_PIECE_UPDATE_TAKES_AT_MOST) {
+            Forwarded::Said { lines, code } => (lines, code),
+            Forwarded::Refused(why) | Forwarded::Unsure(why) => return Err(why),
+            Forwarded::NotTaken => {
+                return Err(
+                    "no app took the update, so nothing was run: run `purlis worktree \
+                            update` in the chat"
+                        .to_owned(),
+                );
+            }
+        };
+    let text = lines
+        .iter()
+        .map(|line| match line {
+            Say::Info(t) | Say::Done(t) | Say::Warn(t) | Say::Fail(t) | Say::Plain(t) => {
+                t.to_string()
+            }
+            Say::Out(t) => t.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if code == 0 { Ok(text) } else { Err(text) }
 }
 
 /// Runs `then` for the branch folder this command stands in, or says there is none.

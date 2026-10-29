@@ -502,9 +502,10 @@ fn a_codex_chat_is_handed_each_plugin_and_skill_the_project_turned_off_by_its_ow
 /// `session_record`, the record command's twin (#1332), and the two dispatch tools (V98b),
 /// beside the read-only tools of `chattools::PRE_ALLOWED`. A handoff has a command and no
 /// tool, so it adds none here.
-/// And the browser tools, on the chat's browser Ask (#2245).
+/// And the browser tools, on the chat's browser Ask (#2245). And `worktree_update`, the
+/// update command's twin (#3831).
 const THE_RECORD_TOOLS_ALLOW: usize =
-    1 + crate::chattools::DISPATCH_TOOLS.len() + crate::browsertools::TOOLS.len()
+    2 + crate::chattools::DISPATCH_TOOLS.len() + crate::browsertools::TOOLS.len()
         - crate::browsertools::ASKED_EACH_TIME.len();
 
 #[test]
@@ -550,6 +551,9 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "Bash(purlis handoff report *)",
             "Bash(purlis persona where)",
             "Bash(purlis worktree commit *)",
+            "Bash(purlis worktree update)",
+            "Bash(purlis worktree update *)",
+            "mcp__purlis__worktree_update",
             "mcp__purlis__dispatch",
             "mcp__purlis__dispatch_report",
             "mcp__purlis__dispatch_tell",
@@ -861,6 +865,8 @@ fn a_claude_code_chat_is_still_asked_before_every_other_charter_tool() {
         // And a dispatch (V98b): the app asks the person, so the harness does not.
         "dispatch",
         "dispatch_report",
+        // And the update the app makes for the chat in its clone or branch folder (#3831).
+        "worktree_update",
         // And every other dispatch subcommand's tool (#3786): what a chat does with its own
         // tasks, and a task with its asker, is its own.
         "dispatch_wait",
@@ -1112,6 +1118,9 @@ fn a_sandboxed_claude_code_chat_carries_its_sandbox_in_the_same_settings() {
             "Bash(purlis handoff report *)",
             "Bash(purlis persona where)",
             "Bash(purlis worktree commit *)",
+            "Bash(purlis worktree update)",
+            "Bash(purlis worktree update *)",
+            "mcp__purlis__worktree_update",
             "mcp__purlis__dispatch",
             "mcp__purlis__dispatch_report",
             "mcp__purlis__dispatch_tell",

@@ -117,6 +117,7 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         }
         GitWork::WorktreeUpdate { repo, piece, .. } => format!("worktree update {repo} {piece}"),
         GitWork::WorktreePush { repo, piece, .. } => format!("worktree push {repo} {piece}"),
+        GitWork::CloneUpdate { repo, .. } => format!("worktree update {repo}"),
     };
     let isolation = isolation();
     let answer =

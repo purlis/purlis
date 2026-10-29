@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 use purlis_core::hookwire::UpdateStep;
 use purlis_core::pieces::Who;
-use purlis_core::pieceupdate::{self, Piece, Reach};
+use purlis_core::pieceupdate::{self, CloneAt, Piece, Reach};
 use purlis_core::repocmd::Say;
 use purlis_core::worktree::git;
 
@@ -655,4 +655,142 @@ fn a_resolved_file_with_a_second_name_is_not_staged_and_the_rebase_stays_stopped
     std::fs::remove_file(&second).unwrap();
     let (code, said) = update(&w, "p1", &UpdateStep::Continue, &Reach::default());
     assert_eq!(code, 0, "{said}");
+}
+
+/// #3831: `purlis worktree update` standing in a workspace's clone, which the app runs for a
+/// sandboxed chat as it runs a branch folder's.
+fn update_clone(w: &World, step: &UpdateStep, reach: &Reach) -> (u8, String) {
+    let mut lines = Vec::new();
+    let at = CloneAt {
+        root: &w.plane,
+        ws: WS,
+        repo: REPO,
+    };
+    let code = brokered(|| pieceupdate::update_clone(&at, step, reach, &mut |l| lines.push(l)));
+    (code, said(&lines))
+}
+
+#[test]
+fn a_clone_behind_its_remote_is_fetched_and_fast_forwarded() {
+    purlis_core::unsteered!();
+    let w = world();
+    w.they_commit("new.txt", "new\n");
+    let theirs = out(&w.theirs, &["rev-parse", "HEAD"]);
+
+    let (code, said) = update_clone(&w, &start(None), &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("fast-forwarded"), "{said}");
+    assert_eq!(out(&w.clone, &["rev-parse", "HEAD"]), theirs);
+    assert_eq!(out(&w.clone, &["branch", "--show-current"]), "main");
+    assert_eq!(
+        std::fs::read_to_string(w.clone.join("new.txt")).unwrap(),
+        "new\n"
+    );
+
+    // Nothing more to bring in.
+    let (code, said) = update_clone(&w, &start(None), &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("already"), "{said}");
+}
+
+#[test]
+fn a_clone_s_own_commits_are_rebased_onto_its_remote_and_a_conflict_goes_on_or_back() {
+    purlis_core::unsteered!();
+    let w = world();
+    write(&w.clone, "mine.txt", "mine\n");
+    git(&w.clone, &["add", "mine.txt"]);
+    git(&w.clone, &["commit", "-q", "-m", "mine"]);
+    w.they_commit("new.txt", "new\n");
+
+    let (code, said) = update_clone(&w, &start(None), &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("rebased onto origin/main"), "{said}");
+    assert_eq!(
+        out(&w.clone, &["rev-parse", "HEAD~1"]),
+        out(&w.theirs, &["rev-parse", "HEAD"])
+    );
+    assert_eq!(out(&w.clone, &["branch", "--show-current"]), "main");
+
+    // A conflict stops it and names the file; abort puts the branch back.
+    write(&w.clone, "shared.txt", "a\nmine\nc\n");
+    git(&w.clone, &["commit", "-q", "-am", "mine again"]);
+    let mine = out(&w.clone, &["rev-parse", "HEAD"]);
+    w.they_commit("shared.txt", "a\ntheirs\nc\n");
+    let (code, said) = update_clone(&w, &start(None), &Reach::default());
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("conflict in shared.txt"), "{said}");
+    let (code, said) = update_clone(&w, &UpdateStep::Abort, &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(out(&w.clone, &["rev-parse", "HEAD"]), mine);
+    assert_eq!(out(&w.clone, &["branch", "--show-current"]), "main");
+
+    // Resolved, it goes on.
+    let (code, _) = update_clone(&w, &start(None), &Reach::default());
+    assert_eq!(code, 1);
+    write(&w.clone, "shared.txt", "a\nboth\nc\n");
+    let (code, said) = update_clone(&w, &UpdateStep::Continue, &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(
+        out(&w.clone, &["rev-parse", "HEAD~1"]),
+        out(&w.theirs, &["rev-parse", "HEAD"])
+    );
+    assert_eq!(out(&w.clone, &["branch", "--show-current"]), "main");
+}
+
+#[test]
+fn a_clone_update_never_moves_uncommitted_work_or_a_file_the_commit_does_not_track() {
+    purlis_core::unsteered!();
+    let w = world();
+    w.they_commit("new.txt", "new\n");
+    let before = out(&w.clone, &["rev-parse", "HEAD"]);
+
+    // A change to a tracked file: refused, and nothing moved.
+    write(&w.clone, "README.md", "edited\n");
+    let (code, said) = update_clone(&w, &start(None), &Reach::default());
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("uncommitted changes"), "{said}");
+    assert_eq!(out(&w.clone, &["rev-parse", "HEAD"]), before);
+    git(&w.clone, &["checkout", "-q", "--", "README.md"]);
+
+    // An ignored file the update would write over: refused, named, and kept.
+    write(&w.clone, ".gitignore", "new.txt\n");
+    write(&w.clone, "new.txt", "my local copy\n");
+    let (code, said) = update_clone(&w, &start(None), &Reach::default());
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("would overwrite new.txt"), "{said}");
+    assert_eq!(out(&w.clone, &["rev-parse", "HEAD"]), before);
+    assert_eq!(
+        std::fs::read_to_string(w.clone.join("new.txt")).unwrap(),
+        "my local copy\n"
+    );
+
+    // Moved out of the way, the update runs.
+    std::fs::remove_file(w.clone.join("new.txt")).unwrap();
+    let (code, said) = update_clone(&w, &start(None), &Reach::default());
+    assert_eq!(code, 0, "{said}");
+
+    // `--base` is a branch folder's.
+    let (code, said) = update_clone(&w, &start(Some("main")), &Reach::default());
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("`--base` is for a branch folder"), "{said}");
+}
+
+#[test]
+fn a_clone_update_for_a_sandboxed_chat_that_would_write_a_denied_file_does_not_start() {
+    purlis_core::unsteered!();
+    let w = world();
+    std::fs::create_dir_all(w.theirs.join(".vscode")).unwrap();
+    w.they_commit(".vscode/tasks.json", "{}\n");
+    let before = out(&w.clone, &["rev-parse", "HEAD"]);
+    let chat = w.plane.join("workspaces").join(WS);
+    let reach = Reach {
+        hosts: None,
+        sandboxed_at: Some(&chat),
+    };
+
+    let (code, said) = update_clone(&w, &start(None), &reach);
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains(".vscode/tasks.json"), "{said}");
+    assert_eq!(out(&w.clone, &["rev-parse", "HEAD"]), before);
+    assert!(!w.clone.join(".vscode").exists());
 }

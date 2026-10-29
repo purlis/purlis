@@ -380,21 +380,25 @@ const HANDOFF: &str = "handoff";
 /// two words of the command.
 const WORKTREE_COMMIT: &str = "worktree commit";
 
-/// The command `own` names, for a sentence: `dispatch`, `handoff` or `commit`.
+/// And an update the app makes for a sandboxed chat in its clone or branch folder (#3831),
+/// pre-allowed by its spelling on the same terms.
+const WORKTREE_UPDATE: &str = "worktree update";
+
+/// The command `own` names, for a sentence: `dispatch`, `handoff`, `commit` or `update`.
 fn called(own: &str) -> &str {
-    if own == WORKTREE_COMMIT {
-        "commit"
-    } else {
-        own
+    match own {
+        WORKTREE_COMMIT => "commit",
+        WORKTREE_UPDATE => "update",
+        _ => own,
     }
 }
 
 /// What purlis lets run without the harness asking, for `own`'s sentence.
 fn let_run(own: &str) -> &'static str {
-    if own == WORKTREE_COMMIT {
-        "a commit the app makes for a chat"
-    } else {
-        "a dispatch or a handoff"
+    match own {
+        WORKTREE_COMMIT => "a commit the app makes for a chat",
+        WORKTREE_UPDATE => "an update the app makes for a chat",
+        _ => "a dispatch or a handoff",
     }
 }
 
@@ -426,8 +430,8 @@ fn pins_the_clock(cmd: &str) -> bool {
     })
 }
 
-/// Which of the commands handed an allow a segment's words run, if any: `dispatch`, `handoff`
-/// or `worktree commit`.
+/// Which of the commands handed an allow a segment's words run, if any: `dispatch`, `handoff`,
+/// `worktree commit` or `worktree update`.
 fn ours(toks: &[String]) -> Option<&'static str> {
     let (prog, _env, argv) = shellwrap::split_env(toks);
     let words: Vec<String> = match charter_words(&prog, &argv) {
@@ -437,7 +441,11 @@ fn ours(toks: &[String]) -> Option<&'static str> {
     };
     let first = words.first()?;
     if first == "worktree" {
-        return (words.get(1).map(String::as_str) == Some("commit")).then_some(WORKTREE_COMMIT);
+        return match words.get(1).map(String::as_str) {
+            Some("commit") => Some(WORKTREE_COMMIT),
+            Some("update") => Some(WORKTREE_UPDATE),
+            _ => None,
+        };
     }
     [WORD, HANDOFF].into_iter().find(|word| word == first)
 }
@@ -472,7 +480,7 @@ fn beside(cmd: &str) -> Option<(&'static str, String)> {
     let text = runs.join("\n");
     if shellseg::lex(&text).is_err() {
         let lower = text.to_lowercase();
-        return [WORD, HANDOFF, WORKTREE_COMMIT]
+        return [WORD, HANDOFF, WORKTREE_COMMIT, WORKTREE_UPDATE]
             .into_iter()
             .find(|word| {
                 crate::cliname::INSTALLED
@@ -1449,6 +1457,24 @@ mod tests {
         assert_eq!(
             refused("purlis worktree add thing piece && ls", the_chat()),
             None
+        );
+    }
+
+    #[test]
+    fn a_brokered_update_is_refused_where_it_shares_its_call() {
+        // #3831: `purlis worktree update` is pre-allowed by its spelling, on the commit's terms.
+        assert_eq!(refused("purlis worktree update", the_chat()), None);
+        assert_eq!(
+            refused("purlis worktree update --continue", the_chat()),
+            None
+        );
+        let said = refused("purlis worktree update && git push", the_chat()).expect("refused");
+        assert_eq!(
+            said,
+            "this call runs `purlis worktree update` beside another command (`git push`). \
+             purlis lets an update the app makes for a chat run without your harness asking \
+             only alone in its call, so this call is refused, and nobody was asked. Run the \
+             update in a call of its own, and the other command in another."
         );
     }
 

@@ -88,7 +88,8 @@ pub fn said(sub: &str) -> String {
          otherwise when the operator presses Save in the title bar or saves from the Saving \
          view. Leave the project's commits, pushes and fetches to it, and tell the operator \
          when something is ready to save. Read-only git (`git status`, `git log`, `git diff`) \
-         works here."
+         works here. A workspace's clone or branch folder is another repository: run `purlis \
+         worktree update` in it, and the app brings it up to its remote for this chat."
     )
 }
 
@@ -260,6 +261,8 @@ mod tests {
             assert!(why.contains("Save in the title bar"), "{why}");
             assert!(why.contains("Saving view"), "{why}");
             assert!(why.contains(&format!("`git {sub}`")), "{why}");
+            // #3831: a clone or branch folder the app updates for the chat.
+            assert!(why.contains("`purlis worktree update`"), "{why}");
         }
         let named = format!("git -C {} fetch", p.root());
         assert!(

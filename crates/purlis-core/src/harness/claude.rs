@@ -590,6 +590,13 @@ fn settings(
     allow.extend(READ_ALLOW.iter().map(|rule| (*rule).to_owned()));
     // And a commit the app makes for a sandboxed chat in its branch folder (#1476).
     allow.extend(WORKTREE_COMMIT_ALLOW.iter().map(|rule| (*rule).to_owned()));
+    // And an update the app makes for it in its clone or branch folder, and its tool (#3831).
+    allow.extend(WORKTREE_UPDATE_ALLOW.iter().map(|rule| (*rule).to_owned()));
+    allow.push(format!(
+        "mcp__{}__{}",
+        crate::chattools::SERVER,
+        crate::chattools::WORKTREE_UPDATE
+    ));
     allow.extend(
         crate::chattools::DISPATCH_TOOLS
             .iter()
@@ -961,6 +968,20 @@ pub const READ_ALLOW: [&str; 1] = ["Bash(purlis persona where)"];
 /// with the shape to retry ([`crate::dispatchguard::rider_refusal`], #3785), and an operator's
 /// own `ask` or `deny` still wins. Every other `worktree` word still asks.
 pub const WORKTREE_COMMIT_ALLOW: [&str; 1] = ["Bash(purlis worktree commit *)"];
+
+/// The permission rules a Claude Code chat the app starts carries for **an update the app
+/// makes for it in the clone or branch folder it stands in** (#3831, the operator's ruling of
+/// 2026-10-29, on [`WORKTREE_COMMIT_ALLOW`]'s terms): `purlis worktree update`, bare and with
+/// its flags. Beside them, its tool ([`crate::chattools::WORKTREE_UPDATE`]).
+///
+/// No approval, as for the commit: the app fetches and moves the chat's own clone or branch
+/// folder, refuses where that would overwrite uncommitted work, and judges the move for the
+/// files the chat's sandbox denies first. **Alone only**, as the commit is
+/// ([`crate::dispatchguard::rider_refusal`]).
+pub const WORKTREE_UPDATE_ALLOW: [&str; 2] = [
+    "Bash(purlis worktree update)",
+    "Bash(purlis worktree update *)",
+];
 
 /// The permission rules a Claude Code chat the app starts carries for a dispatch (V98b,
 /// amending ADR 0064): the task, by each flag its line can start with, and its report.

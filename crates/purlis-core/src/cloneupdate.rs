@@ -907,11 +907,14 @@ pub fn said_unnamed(sub: &str, tracked: &[String], top: &str, why: Unknown) -> S
     let (cannot, instead) = match why {
         Unknown::Fetched => (
             "a commit it fetches itself, which purlis cannot name before it runs",
-            "Fetch first, as a command of its own (`git fetch`). Then run `git merge --ff-only \
-             @{u}` or `git rebase @{u}`, each as a command of its own. Those are checked \
-             against what was fetched, and they run where they touch none of these files. \
-             Where they do, ask the person to run `git pull` in their own terminal, in that \
-             folder.",
+            "Where that folder is a workspace's clone or one of its branch folders, run \
+             `purlis worktree update` in it instead: the app fetches and fast-forwards or \
+             rebases it for this chat, and refuses only where the move would write one of \
+             these files or overwrite uncommitted work. Anywhere else, fetch first, as a \
+             command of its own (`git fetch`). Then run `git merge --ff-only @{u}` or `git \
+             rebase @{u}`, each as a command of its own. Those are checked against what was \
+             fetched, and they run where they touch none of these files. Where they do, ask \
+             the person to run `git pull` in their own terminal, in that folder.",
         ),
         Unknown::NotAlone => (
             "a commit purlis cannot tell before the line runs: a command before it on the same \
@@ -929,8 +932,10 @@ pub fn said_unnamed(sub: &str, tracked: &[String], top: &str, why: Unknown) -> S
             "Where the command can name one commit plainly (`git merge <commit>`, `git rebase \
              <upstream>`, `git cherry-pick <commit>`, `git checkout <branch>`, `git reset \
              --hard <commit>`), purlis checks which files it would write and it runs where it \
-             touches none of these. Otherwise ask the person to run this command in their own \
-             terminal, in that folder.",
+             touches none of these. To bring a workspace's clone or branch folder up to its \
+             remote, run `purlis worktree update` in it: the app does that for this chat. \
+             Otherwise ask the person to run this command in their own terminal, in that \
+             folder.",
         ),
     };
     format!(

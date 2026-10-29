@@ -496,3 +496,31 @@ fn a_branch_folders_own_git_is_run_for_a_chat_in_it_or_above_it_and_no_other() {
     assert!(refused.contains("widget · p2"), "{refused}");
     assert!(at_or_above(&root, None, "widget", "p1").is_err());
 }
+
+#[test]
+fn a_clones_own_checkout_is_updated_for_a_chat_in_it_or_above_it_and_no_other() {
+    // #3831: `purlis worktree update` standing in a clone names the clone; the chat must stand
+    // in it, in its workspace's folder or at the project root, never in a branch folder or
+    // beside the clone.
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let ws = root.join("workspaces/alpha");
+    for folder in ["widget/src", "gadget", "notes", ".worktrees/widget/p1"] {
+        std::fs::create_dir_all(ws.join(folder)).unwrap();
+    }
+    for here in [&root, &ws, &ws.join("widget"), &ws.join("widget/src")] {
+        assert_eq!(
+            at_or_above_clone(&root, Some(here), "alpha", "widget"),
+            Ok(()),
+            "{}",
+            here.display()
+        );
+    }
+    let beside = at_or_above_clone(&root, Some(&ws.join("gadget")), "alpha", "widget").unwrap_err();
+    assert!(beside.contains("gadget"), "{beside}");
+    assert!(at_or_above_clone(&root, Some(&ws.join("notes")), "alpha", "widget").is_err());
+    let piece = ws.join(".worktrees/widget/p1");
+    let refused = at_or_above_clone(&root, Some(&piece), "alpha", "widget").unwrap_err();
+    assert!(refused.contains("widget · p1"), "{refused}");
+    assert!(at_or_above_clone(&root, None, "alpha", "widget").is_err());
+}

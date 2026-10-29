@@ -601,6 +601,34 @@ fn a_sandboxed_chats_update_and_push_of_its_branch_folder_are_run_by_the_app() {
         "{}",
         err(&ran)
     );
+
+    // #3831: standing in the clone itself, the update is the clone's, and the app runs it.
+    let clone = root.join("workspaces/alpha/widget");
+    let ran = support::purlis()
+        .args(["worktree", "update"])
+        .current_dir(&clone)
+        .env_clear()
+        .env("CHARTER_ROOT", &root)
+        .env("HOME", &world.home)
+        .env("PATH", "/usr/bin:/bin")
+        .env("USER", "tester")
+        .env(SANDBOXED_ENV, "1")
+        .envs(chat_3(&socket, &token))
+        .output()
+        .expect("the binary runs");
+    assert!(ran.status.success(), "{}", err(&ran));
+    let Ok(Ask::Git(git)) = asked.recv_timeout(Duration::from_secs(5)) else {
+        panic!("the app was not asked to update the clone: {}", err(&ran));
+    };
+    assert_eq!(git.workspace, "alpha");
+    assert_eq!(
+        git.work,
+        GitWork::CloneUpdate {
+            repo: "widget".to_owned(),
+            step: hookwire::UpdateStep::Start { base: None },
+        }
+    );
+    assert!(err(&ran).contains("already up to date"), "{}", err(&ran));
 }
 
 #[test]

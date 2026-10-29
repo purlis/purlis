@@ -1693,6 +1693,11 @@ pub enum GitWork {
         piece: String,
         step: UpdateStep,
     },
+    /// `purlis worktree update [--continue | --abort]` standing in a workspace's clone
+    /// (#3831): the clone `<repo>` itself fetched, and its branch fast-forwarded or rebased
+    /// onto the remote branch it follows. A kind of its own, so an app that does not know it
+    /// answers nothing rather than reading it as a branch folder's.
+    CloneUpdate { repo: String, step: UpdateStep },
     /// `purlis worktree push [--force-with-lease]` (qw387): the branch of folder
     /// `<repo>/<piece>` pushed to its remote, under its own name and nothing else.
     WorktreePush {
@@ -5093,6 +5098,10 @@ mod tests {
                 repo: "widget".to_owned(),
                 piece: "p1".to_owned(),
                 step: UpdateStep::Continue,
+            },
+            GitWork::CloneUpdate {
+                repo: "widget".to_owned(),
+                step: UpdateStep::Abort,
             },
         ] {
             let ask = Ask::Git(Box::new(GitAsk {

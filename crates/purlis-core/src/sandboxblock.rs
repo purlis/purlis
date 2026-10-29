@@ -1319,7 +1319,8 @@ const NEW_WORKSPACE_WAY: &str = "purlis makes a workspace for a chat: create one
 const WORKTREE_COMMIT_WAY: &str = "A branch folder keeps its git record in its clone's .git, \
      which no chat writes, so git add and git commit are refused there. Commit with `purlis \
      worktree commit -m \"<message>\" --all`, or with paths in place of --all: the commit is made on \
-     the folder's branch, outside the sandbox.";
+     the folder's branch, outside the sandbox. A fetch, pull or rebase there is refused the same \
+     way: `purlis worktree update` brings the folder up to its base.";
 
 /// Whether `path` is in a linked worktree's own record in its clone's git directory
 /// (`.git/worktrees/<name>/…`), where git keeps a branch folder's index.
