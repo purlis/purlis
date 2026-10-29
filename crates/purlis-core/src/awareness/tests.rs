@@ -40,6 +40,7 @@ fn asked_by(mut known: Known, chat: u32, name: &str) -> Known {
         mode: Mode::Handoff,
         owes: false,
         again: false,
+        long: false,
     });
     known
 }
@@ -869,6 +870,16 @@ fn every_turn_a_chat_with_open_tasks_is_shown_them_and_one_with_none_is_shown_no
         "{said}"
     );
     known[1].from.as_mut().expect("asked").again = false;
+
+    // A long-running task says so beside its state (#3905).
+    known[1].from.as_mut().expect("asked").reported = false;
+    known[1].from.as_mut().expect("asked").long = true;
+    let said = turn(&known, 1, &mut told).expect("lines");
+    assert!(
+        said.contains("chat 4 'check prod' long-running, running;"),
+        "{said}"
+    );
+    known[1].from.as_mut().expect("asked").long = false;
 
     // A task that reported is no longer open, nor one that ended.
     known[1].from.as_mut().expect("asked").reported = true;

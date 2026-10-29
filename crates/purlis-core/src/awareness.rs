@@ -108,6 +108,9 @@ pub struct Asker {
     /// its report from its last message, or it came out blocked. While its program runs it is
     /// [`Doing::ReportedStillRunning`] (#3899).
     pub again: bool,
+    /// Whether it was dispatched as a long-running task (#3905): notes are its heartbeat, and
+    /// purlis never asks it for a report.
+    pub long: bool,
 }
 
 /// How the chat that asked for a chat started it, as the chat is told it (#1455): the
@@ -345,6 +348,9 @@ pub struct OpenTask {
     /// Whether it is stopped on the person: a prompt of its harness's or its sandbox's Notice.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub on_the_person: bool,
+    /// Whether it is a long-running task (#3905): said beside its state.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub long: bool,
 }
 
 /// Why a chat asks, which decides whether the app counts it as told.
@@ -540,6 +546,7 @@ fn open_tasks(known: &[Known], chat: u32) -> Vec<OpenTask> {
             name: one.name.clone(),
             state: Doing::of(one),
             on_the_person: one.asking.is_some(),
+            long: one.from.as_ref().is_some_and(|from| from.long),
         })
         .collect();
     tasks.sort_by_key(|one| one.chat);
@@ -828,7 +835,13 @@ fn roster_line(working: &Working) -> Option<String> {
             } else {
                 task.state.word()
             };
-            format!("chat {} {} {state}", task.chat, quoted(&task.name))
+            // A long-running task says so beside its state (#3905).
+            let long = if task.long {
+                format!("{}, ", crate::dispatched::LONG_RUNNING)
+            } else {
+                String::new()
+            };
+            format!("chat {} {} {long}{state}", task.chat, quoted(&task.name))
         })
         .collect();
     if working.more_tasks > 0 {

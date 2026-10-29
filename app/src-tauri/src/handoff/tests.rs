@@ -44,6 +44,7 @@ fn a_task_into_alpha(chat: u32, ticket: &str, name: Option<&str>) -> Ask {
         profile: None,
         place: Some(format!("{}alpha", purlis_core::dispatchplace::WORKSPACE)),
         ticket: ticket.to_owned(),
+        long: false,
     }))
 }
 
@@ -3710,6 +3711,7 @@ fn a_dispatch(chat: u32, ticket: &str, to: Option<&str>, name: &str) -> Ask {
         profile: None,
         place: None,
         ticket: ticket.to_owned(),
+        long: false,
     }))
 }
 
@@ -3834,6 +3836,7 @@ fn a_task_for_the_asking_chats_own_persona_starts_one_chat_beside_it_on_the_stam
             // Who is above it, from the app's record of the asking chat (#1521).
             above: Some(vec![Some("steward".to_owned())]),
             by_person: false,
+            long: false,
         })
     );
     // In the asking chat's folder, on its profile, as its persona.
@@ -4150,6 +4153,7 @@ fn a_slot_held_for_a_chat_that_is_starting_counts_and_is_let_go_when_its_start_e
             root: None,
             above: None,
             by_person: false,
+            long: false,
         }),
         ..Default::default()
     };
@@ -4183,6 +4187,7 @@ fn many_dispatches_at_once_from_one_chat_start_no_more_than_its_limit() {
         place: None,
         by: purlis_core::dispatchdecision::By::Chat,
         moved: None,
+        long: false,
     };
 
     let answers: Vec<Result<bool, String>> = std::thread::scope(|scope| {
@@ -4602,6 +4607,7 @@ fn dispatch_in(
             profile: None,
             place: Some(place.to_owned()),
             ticket,
+            long: false,
         })),
         &|arrived| *told.lock().unwrap() = Some(arrived),
     );
@@ -5754,6 +5760,7 @@ fn dispatch_with(
             profile: profile.map(str::to_owned),
             place: None,
             ticket,
+            long: false,
         })),
         &|arrived| *told.lock().unwrap() = Some(arrived),
     );
@@ -6953,6 +6960,7 @@ fn from_a_steward_chat_ask_devops_starts_a_devops_chat_that_may_use_the_devops_v
             // The steward chat is above it, as for a chat's own ask (#1521).
             above: Some(vec![Some("steward".to_owned())]),
             by_person: true,
+            long: false,
         }
     );
     // No handoff brief: its first message is purlis's two lines saying the person asked,
@@ -9987,6 +9995,63 @@ fn a_task_that_reported_while_its_program_still_runs_is_told_listed_and_cancelle
             if matches!(&**answered, Answered::Cancelling { of, .. } if *of == task)),
         "{cancelled:?}"
     );
+}
+
+#[test]
+fn a_long_running_task_is_recorded_told_so_and_listed_with_its_last_note() {
+    // #3905: `--long` is recorded on the task's lineage, said under its stamp, and its list
+    // row says it is long-running with its last note. Its turns' ends ask for nothing.
+    let plane = a_plane_with_personas();
+    let planes = planes();
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let alpha = held.root().join("workspaces").join("alpha");
+    let asking = a_chat_as(&held, &plane.root, Some("steward"), &alpha);
+    let tickets = Tickets::default();
+    let ticket = ticket(&held, &id, &tickets, asking);
+    let Ask::Dispatch(mut long) = a_dispatch(asking, &ticket, None, "build the forms") else {
+        unreachable!("a dispatch")
+    };
+    long.long = true;
+    let said = answer(&held, &id, &tickets, 1, Ask::Dispatch(long), &|_| {});
+    let Answer::Dispatched { chat: task, .. } = said else {
+        panic!("dispatched, not {said:?}")
+    };
+
+    let from = held.chats().handed_from(task).expect("its lineage");
+    assert!(from.long, "recorded by the app");
+    assert!(!purlis_core::dispatched::owes_at_turn_end(&from));
+    assert!(
+        tasks_first_message(&plane).contains(purlis_core::handoff::LONG_RUNNING_NOTE),
+        "told under its stamp"
+    );
+
+    assert_eq!(
+        asks(
+            &held,
+            &id,
+            task,
+            What::Note {
+                text: "ticket 1 merged".to_owned()
+            }
+        ),
+        sent(Kind::Note, "steward 1")
+    );
+    let listed = asks(&held, &id, asking, What::List);
+    assert!(
+        matches!(&listed, Answer::Task(answered)
+            if matches!(&**answered, Answered::Listed { rows }
+                if rows.iter().any(|row| row.chat == task
+                    && row.long
+                    && row.last_note.as_deref() == Some("ticket 1 merged")))),
+        "{listed:?}"
+    );
+
+    // A plain dispatch is one job with one answer, as before.
+    let (_plane, _planes, _id, held, _asking, plain) = a_dispatched_task();
+    let from = held.chats().handed_from(plain).expect("its lineage");
+    assert!(!from.long);
+    assert!(purlis_core::dispatched::owes_at_turn_end(&from));
 }
 
 #[test]

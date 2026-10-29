@@ -243,6 +243,17 @@ pub struct Row {
     /// app remembers closed tasks by number.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub finished: bool,
+    /// **A long-running task** (#3905, `purlis dispatch --long`): its notes are its heartbeat,
+    /// and purlis never asks it for a report. From the app's record of its dispatch.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub long: bool,
+    /// Its last progress note, as it sent it, where the app has one since it started (#3905):
+    /// a task's own words, which the list quotes as data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_note: Option<String>,
+    /// How long ago that note was sent, in seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub noted_secs: Option<u64>,
 }
 
 // ---- how long a wait may be -------------------------------------------------------------------
@@ -467,6 +478,23 @@ pub const STILL_RUNNING: &str = "still running";
 pub fn still_running_after_report(from: &HandedFrom, seen: Seen) -> bool {
     from.report == Owed::Again && !seen.ended
 }
+
+/// **Whether a task is asked for its report as its turn ends, and then has one made from its
+/// last message** (#1981): while it owes its one report, **unless it is a long-running task**
+/// (#3905, `purlis dispatch --long`). A long-running task works through many pieces and sends
+/// notes as it goes; a turn that ends without a report is just a turn, and it ends when it
+/// reports `done` or `failed`, or is cancelled.
+pub fn owes_at_turn_end(from: &HandedFrom) -> bool {
+    from.report == Owed::Due && !from.long
+}
+
+/// What a long-running task is said to be (#3905): its list row, and the roster of its asking
+/// chat ([`crate::awareness`]).
+pub const LONG_RUNNING: &str = "long-running";
+
+/// The most characters of a task's last note its list row shows (#3905): `purlis dispatch
+/// read` and the asking chat's turns have the whole of it.
+pub const NOTE_SHOWN_AT_MOST: usize = 120;
 
 /// **What a chat waiting on its own work is said to be** (#3878), whoever is told: its task's
 /// list, its wait, and the roster of its asking chat ([`crate::awareness`]).
@@ -709,6 +737,9 @@ struct Task {
     report_asked: bool,
     /// What it said and ran, for `purlis dispatch read` (#1981).
     heard: Heard,
+    /// Its last progress note to the chat that asked, and when it sent it (#3905). **In memory
+    /// only**: its dispatch record keeps every message.
+    last_note: Option<(String, SystemTime)>,
 }
 
 /// A report the app delivered, kept so a wait can answer with it.
@@ -1416,6 +1447,18 @@ impl Ledger {
         Owing::Ask
     }
 
+    /// Task `task` sent its asking chat the progress note `text` at `now` (#3905): the one its
+    /// list row shows, the latest only.
+    pub fn noted(&mut self, task: u32, text: &str, now: SystemTime) {
+        self.tasks.entry(task).or_default().last_note = Some((text.to_owned(), now));
+    }
+
+    /// Task `task`'s last progress note, and how long before `now` it was sent (#3905).
+    pub fn last_note(&self, task: u32, now: SystemTime) -> Option<(String, Duration)> {
+        let (text, at) = self.tasks.get(&task)?.last_note.as_ref()?;
+        Some((text.clone(), now.duration_since(*at).unwrap_or_default()))
+    }
+
     /// The person typed in task `task`'s pane while it worked.
     pub fn person_typed(&mut self, task: u32) {
         self.tasks.entry(task).or_default().stepped_in = true;
@@ -2058,8 +2101,25 @@ pub fn list_text(rows: &[Row]) -> String {
         } else {
             age
         };
+        // A long-running task says so, with its last note, quoted as data (#3905).
+        let long = if row.long {
+            match (&row.last_note, row.noted_secs) {
+                (Some(note), secs) => format!(
+                    " · {LONG_RUNNING}, last note{}: '{}'",
+                    secs.map(|secs| format!(" {} ago", age_word(Duration::from_secs(secs))))
+                        .unwrap_or_default(),
+                    crate::shown::one_line(
+                        &note.split_whitespace().collect::<Vec<_>>().join(" "),
+                        NOTE_SHOWN_AT_MOST
+                    )
+                ),
+                (None, _) => format!(" · {LONG_RUNNING}, no note yet"),
+            }
+        } else {
+            String::new()
+        };
         said.push_str(&format!(
-            "\n- {chat} · '{}' · {} · {place} · {} · {age}{}",
+            "\n- {chat} · '{}' · {} · {place} · {}{long} · {age}{}",
             crate::personas::one_line(&row.name),
             match &row.persona {
                 Some(persona) => crate::personas::one_line(persona),
@@ -2097,6 +2157,7 @@ mod tests {
             root: None,
             above: None,
             by_person: false,
+            long: false,
         }
     }
 
@@ -2248,6 +2309,9 @@ mod tests {
             by_person,
             branch: None,
             branch_stands: None,
+            long: false,
+            last_note: None,
+            noted_secs: None,
             finished: false,
         };
         let listed = list_text(&[row(8, false), row(9, true)]);
@@ -2993,6 +3057,88 @@ mod tests {
     }
 
     #[test]
+    fn a_long_running_task_is_never_asked_for_its_report_nor_has_one_made() {
+        // #3905: notes are its heartbeat. A plain task keeps today's one-job behaviour.
+        let long = HandedFrom {
+            long: true,
+            ..dispatched_by(ASKER)
+        };
+        assert!(!owes_at_turn_end(&long));
+        assert!(owes_at_turn_end(&dispatched_by(ASKER)));
+        let sent = HandedFrom {
+            report: Owed::Sent,
+            ..dispatched_by(ASKER)
+        };
+        assert!(!owes_at_turn_end(&sent));
+
+        // Read the way the app reads it, its turn's end asks nothing, however often.
+        let mut ledger = Ledger::default();
+        ledger.started(TASK, SystemTime::UNIX_EPOCH);
+        for _ in 0..3 {
+            assert_eq!(
+                ledger.turn_ended_owing(TASK, owes_at_turn_end(&long), false),
+                Owing::Nothing
+            );
+        }
+        assert_eq!(ledger.nudge_step(TASK, WAITING), Vec::<Landed>::new());
+    }
+
+    #[test]
+    fn a_task_s_last_note_is_kept_latest_only_with_when_it_was_sent() {
+        let mut ledger = Ledger::default();
+        let at = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
+        assert_eq!(ledger.last_note(TASK, at), None);
+        ledger.noted(TASK, "ticket 1 merged", at);
+        ledger.noted(TASK, "ticket 2 in review", at + Duration::from_secs(30));
+        assert_eq!(
+            ledger.last_note(TASK, at + Duration::from_secs(270)),
+            Some(("ticket 2 in review".to_owned(), Duration::from_secs(240)))
+        );
+    }
+
+    #[test]
+    fn a_long_running_task_is_listed_as_that_with_its_last_note_quoted() {
+        let row = |last_note: Option<&str>, noted_secs| Row {
+            chat: 9,
+            name: "build the forms".to_owned(),
+            persona: None,
+            place: "alpha".to_owned(),
+            state: State::Running.say(),
+            age_secs: Some(3600),
+            by_person: false,
+            branch: None,
+            branch_stands: None,
+            finished: false,
+            long: true,
+            last_note: last_note.map(str::to_owned),
+            noted_secs,
+        };
+        let listed = list_text(&[row(Some("ticket 2 merged\nnow ticket 3"), Some(240))]);
+        assert!(
+            listed.contains(
+                " · running · long-running, last note 4m ago: 'ticket 2 merged now ticket 3' · \
+                 started 1h 0m ago"
+            ),
+            "{listed}"
+        );
+        let listed = list_text(&[row(None, None)]);
+        assert!(
+            listed.contains(" · running · long-running, no note yet · "),
+            "{listed}"
+        );
+        // Cut to what a row shows.
+        let long_note = "x".repeat(NOTE_SHOWN_AT_MOST * 2);
+        let listed = list_text(&[row(Some(&long_note), Some(1))]);
+        assert!(!listed.contains(&long_note), "{listed}");
+        // And a plain task's row, read back from the wire, carries none of it.
+        let mut plain = row(None, None);
+        plain.long = false;
+        let wire = serde_json::to_string(&plain).unwrap();
+        assert!(!wire.contains("long") && !wire.contains("note"), "{wire}");
+        assert_eq!(serde_json::from_str::<Row>(&wire).unwrap(), plain);
+    }
+
+    #[test]
     fn the_list_says_persona_task_where_state_and_age_for_each() {
         let rows = [
             Row {
@@ -3005,6 +3151,9 @@ mod tests {
                 by_person: false,
                 branch: None,
                 branch_stands: None,
+                long: false,
+                last_note: None,
+                noted_secs: None,
                 finished: false,
             },
             Row {
@@ -3017,6 +3166,9 @@ mod tests {
                 by_person: false,
                 branch: None,
                 branch_stands: None,
+                long: false,
+                last_note: None,
+                noted_secs: None,
                 finished: false,
             },
         ];
@@ -3050,6 +3202,9 @@ mod tests {
             by_person: false,
             branch: Some("fix-the-queue-b5rc0def".to_owned()),
             branch_stands: Some(crate::dispatchplace::Standing::Kept.said().to_owned()),
+            long: false,
+            last_note: None,
+            noted_secs: None,
             finished: false,
         };
         let listed = list_text(std::slice::from_ref(&on_a_branch));
@@ -3652,6 +3807,9 @@ mod tests {
             by_person: false,
             branch: None,
             branch_stands: None,
+            long: false,
+            last_note: None,
+            noted_secs: None,
             finished: true,
         };
         assert_eq!(

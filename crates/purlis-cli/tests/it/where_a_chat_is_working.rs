@@ -48,6 +48,7 @@ fn a_task_of(chat: u32, name: &str) -> Option<Asker> {
         mode: awareness::Mode::Task,
         owes: true,
         again: false,
+        long: false,
     })
 }
 

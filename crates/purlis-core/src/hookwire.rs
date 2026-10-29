@@ -1585,6 +1585,12 @@ pub struct DispatchAsk {
     /// project's own. There is no field for a folder or a branch.
     #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
     pub place: Option<String>,
+    /// **A long-running task** (`--long`, #3905): its notes are its heartbeat, and purlis never
+    /// asks it for a report nor makes one from its last message. It ends when it reports
+    /// `done` or `failed`, or is cancelled. Absent, and `false`, for a task that is one job
+    /// with one answer.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub long: bool,
     /// See [`OpenChat`]. Minted by the app, spent once, never written down.
     pub ticket: String,
 }
@@ -5336,6 +5342,7 @@ mod tests {
             profile: None,
             place: None,
             ticket: "t".repeat(64),
+            long: false,
         }))
     }
 
@@ -5392,6 +5399,7 @@ mod tests {
                 profile: Some("prod".to_owned()),
                 place: None,
                 ticket: "t".to_owned(),
+                long: false,
             }
         );
     }
@@ -5419,6 +5427,7 @@ mod tests {
                 profile: None,
                 place: Some("worktree".to_owned()),
                 ticket: "t".to_owned(),
+                long: false,
             }
         );
         // And it is written back as that one word.
@@ -7414,6 +7423,7 @@ mod tests {
                 profile: None,
                 place: None,
                 ticket: ticket.to_owned(),
+                long: false,
             }))
         });
     }

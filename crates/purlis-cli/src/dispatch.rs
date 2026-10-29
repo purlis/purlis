@@ -5,7 +5,7 @@
 //!
 //! ```text
 //! purlis dispatch --name "<task>" [--to <persona>] [--profile <profile>]
-//!                 [--in workspace:<name> | --in worktree] <<'BRIEF'
+//!                 [--in workspace:<name> | --in worktree] [--long] <<'BRIEF'
 //! <the brief>
 //! BRIEF
 //!
@@ -186,6 +186,9 @@ pub struct Options<'a> {
     pub profile: Option<&'a str>,
     /// `--in`: `worktree`, or `workspace:<name>` (#1453).
     pub place: Option<&'a str>,
+    /// `--long`: a long-running task (#3905), whose notes are its heartbeat and which purlis
+    /// never asks for a report.
+    pub long: bool,
 }
 
 /// `purlis dispatch --name <task> [--to <persona>] [--profile <profile>] [--in <where>]
@@ -343,6 +346,7 @@ pub fn send(
             .map(str::to_owned),
         place,
         ticket,
+        long: options.long,
     }));
     // A worktree is cut before the chat starts: a checkout, which on a large repo takes far
     // longer than a start alone.

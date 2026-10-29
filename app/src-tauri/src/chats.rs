@@ -4656,6 +4656,7 @@ impl Chats {
                     mode: from.mode.into(),
                     owes: from.report == purlis_core::reopen::Owed::Due,
                     again: from.report == purlis_core::reopen::Owed::Again,
+                    long: from.long,
                 }),
                 asking: None,
             })

@@ -673,6 +673,14 @@ pub static TOOLS: [Tool; 26] = [
                                         instead of carrying on. A wait that runs out says the \
                                         task is still running.",
                     },
+                    "long": {
+                        "type": "boolean",
+                        "description": "A long-running task, which works through many \
+                                        pieces and sends dispatch_note as it goes: its notes \
+                                        are its heartbeat, purlis never asks it for a report, \
+                                        and it ends when it reports done or failed, or is \
+                                        cancelled. Leave it out for one job with one answer.",
+                    },
                     "wait_seconds": {
                         "type": "integer",
                         "description": "With wait, how long to wait: 100 seconds when left \
@@ -1247,6 +1255,16 @@ pub fn dispatch_place(args: &Map<String, Value>) -> Result<Option<String>, Strin
         Some(Value::String(place)) if !place.trim().is_empty() => Ok(Some(place.trim().to_owned())),
         Some(Value::String(_)) => Ok(None),
         Some(_) => Err("`in` is `worktree` or `workspace:<name>`".to_owned()),
+    }
+}
+
+/// The `dispatch` tool's `long` (#3905): whether the task is a long-running one, `false` where
+/// it is left out.
+pub fn dispatch_long(args: &Map<String, Value>) -> Result<bool, String> {
+    match args.get("long") {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(long)) => Ok(*long),
+        Some(_) => Err("`long` is true or false".to_owned()),
     }
 }
 

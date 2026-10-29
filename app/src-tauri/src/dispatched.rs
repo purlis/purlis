@@ -676,6 +676,10 @@ fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, S
             ledger.talk.ask(sender, &text, Some(file))?;
             ledger.landed(asker, Landed::Question(sender));
         }
+        // Its last note is what its list row shows (#3905).
+        if kind == Kind::Note {
+            ledger.noted(sender, &text, SystemTime::now());
+        }
     }
     // Kept, so it counts on this task's dispatch record (#1452): a note as a question does.
     crate::dispatches::message(held, sender, &message);
@@ -1157,6 +1161,7 @@ fn list(held: &Held, asker: u32) -> Vec<Row> {
                     .say(),
                 (false, _) => listed.said.clone(),
             };
+            let last_note = ledger.last_note(listed.session, now);
             Some(Row {
                 chat: listed.session,
                 name: listed.name,
@@ -1173,6 +1178,10 @@ fn list(held: &Held, asker: u32) -> Vec<Row> {
                 branch: branch.as_ref().map(|(branch, _)| branch.clone()),
                 branch_stands: branch.map(|(_, stands)| stands),
                 finished: false,
+                // A long-running task, and its last note (#3905).
+                long: from.long,
+                last_note: last_note.as_ref().map(|(text, _)| text.clone()),
+                noted_secs: last_note.map(|(_, ago)| ago.as_secs()),
             })
         })
         .collect();
@@ -1822,7 +1831,8 @@ fn owing(held: &Held, task: u32) {
     if from.mode != Mode::Task {
         return;
     }
-    let owes = from.report == Owed::Due;
+    // A long-running task is never asked, and has none made (#3905).
+    let owes = dispatched::owes_at_turn_end(&from);
     let waits = owes
         && (held.stopping().is_stopping(task)
             || held.stopping().is_cancelling(task)
