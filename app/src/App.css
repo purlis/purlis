@@ -3958,6 +3958,11 @@ body {
 }
 
 .chip-card [data-f6-card] {
+  /* Held to the room the card is given (React Aria's max height on the surface), its notices
+     scroll inside it, the point outside it left whole (#3653). */
+  box-sizing: border-box;
+  max-block-size: inherit;
+  overflow-y: auto;
   border-radius: var(--radius-lg);
   outline: none;
 }
