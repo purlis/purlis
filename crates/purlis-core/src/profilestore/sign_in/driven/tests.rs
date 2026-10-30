@@ -404,7 +404,10 @@ fn a_login_that_goes_quiet_after_its_page_or_its_code_cannot_be_followed() {
 fn what_is_typed_reaches_a_login_in_a_terminal_alone() {
     let out = tempfile::tempdir().expect("a folder");
     let file = out.path().join("typed");
-    let login = stand_in(&format!("read line; printf '%s' \"$line\" > {}", file.display()));
+    let login = stand_in(&format!(
+        "read line; printf '%s' \"$line\" > {}",
+        file.display()
+    ));
     let driving = in_a_terminal(&login, || Standing::SignedIn).expect("runs");
 
     driving.typed("yes\r\n").expect("typed");

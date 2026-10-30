@@ -802,7 +802,10 @@ fn a_terminal_in_the_window_is_the_runners_own_carried_over_pipes() {
     let terminal = made().sign_in_args_by(Typed::InOwnTerminal(size), "work", None);
 
     assert_eq!(terminal[1], "-i");
-    assert_eq!(terminal[terminal.len() - 2..], ["--in-own-terminal", "100x30"]);
+    assert_eq!(
+        terminal[terminal.len() - 2..],
+        ["--in-own-terminal", "100x30"]
+    );
 }
 
 /// **Open in terminal stays the harness's own login in a terminal the person drives** (#4043):

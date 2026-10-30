@@ -1,7 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { useEffect, useState } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
@@ -9,6 +10,32 @@ import type { PoolProfileRow, PoolSignInStep } from "../bindings";
 import { askProfiles } from "../pools";
 import { PoolProfiles } from "./PoolProfiles";
 import { PROFILE_SIGN_IN, type ProfileSignInAsk } from "./links";
+import type { Printer } from "./SignInTerminal";
+
+/** xterm draws on a page; here the strip's terminal is what it prints and one key typed. */
+vi.mock("./SignInTerminal", () => ({
+  SignInTerminal: function Stood({
+    label,
+    printer,
+    onType,
+  }: {
+    label: string;
+    printer: Printer;
+    onType: (text: string) => void;
+  }) {
+    const [printed, setPrinted] = useState("");
+    useEffect(() => {
+      printer((text) => setPrinted((before) => before + text));
+      return () => printer(undefined);
+    }, [printer]);
+    return (
+      <div role="group" aria-label={label}>
+        <pre>{printed}</pre>
+        <button onClick={() => onType("1\r")}>Type 1</button>
+      </div>
+    );
+  },
+}));
 
 /**
  * **A Claude Code profile signs in on a pool's runner from its line, with no terminal** (#4042,
@@ -85,7 +112,9 @@ async function strip(plane?: string) {
 describe("Signing a profile in on a pool's runner (#4042)", () => {
   it("opens the page here, takes the pasted code and ends signed in", async () => {
     const opened = await strip();
-    expect(calls("pool_sign_in_start")).toEqual([{ pool: "builds", name: "work", provider: null }]);
+    expect(calls("pool_sign_in_start")).toEqual([
+      { pool: "builds", name: "work", provider: null, terminal: null },
+    ]);
     expect(within(opened).getByText(/Step 1 of 3/)).toBeInTheDocument();
 
     says({ at: "open", url: PAGE });
@@ -174,37 +203,74 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     expect(screen.getByRole("button", { name: "Add a profile…" })).toBeVisible();
   });
 
-  it("says what the login printed when purlis cannot follow it, with a terminal the way out", async () => {
+  it("hands an unrecognised login over to the runner's terminal, then checks it (#4043)", async () => {
+    const opened = await strip();
+
+    says({ at: "could-not-follow", said: "Choose your sign-in method: [1] [2]" });
+
+    const terminal = await within(opened).findByRole("group", {
+      name: "The runner's terminal on builds",
+    });
+    expect(within(opened).getByText(/could not follow this sign-in/)).toBeVisible();
+    expect(screen.getByText("Needs you in the terminal")).toBeVisible();
+    await waitFor(() =>
+      expect(calls("pool_sign_in_start")).toEqual([
+        { pool: "builds", name: "work", provider: null, terminal: null },
+        { pool: "builds", name: "work", provider: null, terminal: { columns: 80, rows: 16 } },
+      ]),
+    );
+
+    says({ at: "printed", text: "Which account? " });
+    expect(await within(terminal).findByText("Which account?")).toBeVisible();
+    await userEvent.click(within(terminal).getByRole("button", { name: "Type 1" }));
+    expect(calls("pool_sign_in_type")).toEqual([{ flow: 7, text: "1\r" }]);
+
+    says({ at: "checking" });
+    says({ at: "signed-in" });
+    expect(await within(opened).findByText("Signed in")).toBeInTheDocument();
+  });
+
+  it("offers the terminal's Cancel, which ends the login, and Open in terminal (#4043)", async () => {
     const heard: ProfileSignInAsk[] = [];
     const hear = (event: Event) => heard.push((event as CustomEvent<ProfileSignInAsk>).detail);
     window.addEventListener(PROFILE_SIGN_IN, hear);
     try {
       const opened = await strip("/home/op/project");
       says({ at: "could-not-follow", said: "Choose your sign-in method: [1] [2]" });
+      await within(opened).findByRole("group", { name: "The runner's terminal on builds" });
+      await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
 
-      expect(await within(opened).findByRole("alert")).toHaveTextContent(
-        "purlis could not follow this sign-in",
-      );
-      expect(within(opened).getByText("Choose your sign-in method: [1] [2]")).toBeVisible();
       await userEvent.click(within(opened).getByRole("button", { name: "Open in terminal" }));
 
       expect(heard).toEqual([
         { plane: "/home/op/project", profile: "work", provider: undefined, pool: "builds" },
       ]);
+      expect(calls("pool_sign_in_cancel")).toEqual([{ flow: 7 }]);
     } finally {
       window.removeEventListener(PROFILE_SIGN_IN, hear);
     }
   });
 
-  it("says why a sign-in failed, and tries again", async () => {
+  it("says why a sign-in failed and starts another by opening the page again (#4043)", async () => {
     const opened = await strip();
+    says({ at: "open", url: PAGE });
     says({ at: "failed", why: "the code has expired" });
 
     expect(await within(opened).findByRole("alert")).toHaveTextContent(
       "work (Claude Code) did not sign in on builds: the code has expired",
     );
-    await userEvent.click(within(opened).getByRole("button", { name: "Try again" }));
+    await userEvent.click(within(opened).getByRole("button", { name: "Open the page again" }));
     await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
+  });
+
+  it("offers Try again where no page was opened, and the line stays failed (#4043)", async () => {
+    const opened = await strip();
+    says({ at: "failed", why: "the runner stopped answering" });
+    await within(opened).findByRole("button", { name: "Try again" });
+
+    await userEvent.click(within(opened).getByRole("button", { name: "Close" }));
+
+    expect(await screen.findByText("Sign-in failed")).toBeVisible();
   });
 
   it("keeps another harness's sign-in in a shell tab", async () => {

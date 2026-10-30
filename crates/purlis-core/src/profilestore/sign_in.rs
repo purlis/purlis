@@ -549,15 +549,12 @@ pub fn login_of(
     provider: Option<&str>,
     pinned: Option<&Path>,
 ) -> Result<Login, String> {
-    let (profile, program) = program_of(record, pinned)?;
+    let (profile, program) = harness_of(record, pinned)?;
     login_for(&profile, &program, provider)
 }
 
 /// The profile of `record` and the program its harness runs by, as [`login_of`] finds them.
-fn program_of(
-    record: &MachineProfile,
-    pinned: Option<&Path>,
-) -> Result<(Profile, String), String> {
+fn harness_of(record: &MachineProfile, pinned: Option<&Path>) -> Result<(Profile, String), String> {
     let name = crate::shown::short(&record.name);
     if record.adopted.is_some() && record.kept_for.is_none() {
         return Err(format!(
@@ -592,7 +589,7 @@ fn program_of(
 /// sign-out is only its own terminal's.
 pub fn logout_of(record: &MachineProfile, pinned: Option<&Path>) -> Result<Login, String> {
     let name = crate::shown::short(&record.name);
-    let (profile, program) = program_of(record, pinned)?;
+    let (profile, program) = harness_of(record, pinned)?;
     let words = flow(&profile.kind)
         .and_then(|flow| flow.logout)
         .ok_or_else(|| {

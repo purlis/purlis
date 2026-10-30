@@ -477,6 +477,8 @@ macro_rules! app_commands {
                 poolprofiles::pool_sign_in_next,
                 poolprofiles::pool_sign_in_paste,
                 poolprofiles::pool_sign_in_cancel,
+                poolprofiles::pool_sign_in_type,
+                poolprofiles::pool_sign_out,
                 devices::devices,
                 devices::device_runner,
                 devices::devices_disk,

@@ -1494,6 +1494,8 @@ export const commands = {
 	poolSignInNext: __WINDOW_ONLY_RESULT,
 	poolSignInPaste: __WINDOW_ONLY_RESULT,
 	poolSignInCancel: __WINDOW_ONLY,
+	poolSignInType: __WINDOW_ONLY_RESULT,
+	poolSignOut: __WINDOW_ONLY_RESULT,
 	devices: __WINDOW_ONLY_RESULT,
 	deviceRunner: __WINDOW_ONLY_RESULT,
 	devicesDisk: __WINDOW_ONLY_RESULT,

@@ -2986,9 +2986,11 @@ export const commands = {
 	 *  machine's `docker` as [`sign_in_line`]'s is, but with pipes, its output read for the steps
 	 *  [`pool_sign_in_next`] answers. Nothing of this machine's sign-in goes to the runner (ADR
 	 *  0095). A sign-in of the same profile on the same pool already running is cancelled. Answers
-	 *  the sign-in's number.
+	 *  the sign-in's number. With `terminal`, where purlis could not follow the login, it runs in a
+	 *  terminal the runner makes, for the person to drive in the strip (#4043): what it prints is
+	 *  [`PoolSignInStep::Printed`], and what is typed goes back by [`pool_sign_in_type`].
 	 */
-	poolSignInStart: (pool: string, name: string, provider: string | null) => typedError<number, string>(__TAURI_INVOKE("pool_sign_in_start", { pool, name, provider })),
+	poolSignInStart: (pool: string, name: string, provider: string | null, terminal: PoolSignInTerminal | null) => typedError<number, string>(__TAURI_INVOKE("pool_sign_in_start", { pool, name, provider, terminal })),
 	/**
 	 *  **The next step of sign-in `flow`**, waiting a while for one; null while there is none yet.
 	 *  After its last step, the sign-in is let go; signed in, its waits on the pool are too.
@@ -2998,6 +3000,8 @@ export const commands = {
 { at: "open"; url: string } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
+/**  What a login in the strip's terminal printed, escapes and all. */
+{ at: "printed"; text: string } | 
 /**  The harness refused the code, in its words. */
 { at: "refused"; said: string } | 
 /**  The login ended well, and the runner is asked whether it is signed in. */
@@ -3012,7 +3016,14 @@ export const commands = {
 { at: "cancelled" } | null, string>(__TAURI_INVOKE("pool_sign_in_next", { flow })),
 	/**  **Passes the code the person pasted to sign-in `flow`**, as one line. */
 	poolSignInPaste: (flow: number, code: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_paste", { flow, code })),
-	/**  **Cancels sign-in `flow`**: what drives its login is ended, and it is let go. */
+	/**  **Passes what the person typed in the strip's terminal to sign-in `flow`**, as it is. */
+	poolSignInType: (flow: number, text: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_type", { flow, text })),
+	/**  **Signs `name` out on pool `pool`'s runner** (#4043): the harness's own sign-out, run there. */
+	poolSignOut: (pool: string, name: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_out", { pool, name })),
+	/**
+	 *  **Cancels sign-in `flow`**: what drives its login is ended, and with its input the login
+	 *  ends on the runner.
+	 */
 	poolSignInCancel: (flow: number) => __TAURI_INVOKE<void>("pool_sign_in_cancel", { flow }),
 	/**
 	 *  **Every device and what runs on it** (#2052): this machine and every runner it keeps, each
@@ -10218,11 +10229,16 @@ export type PoolRow = {
  *  **One step of a sign-in on a pool's runner** that purlis drives with no terminal (#4042), as
  *  the window's sign-in strip shows it ([`driven::Event`]).
  */
+/**  The size of the terminal a sign-in's strip draws. */
+export type PoolSignInTerminal = { columns: number; rows: number };
+
 export type PoolSignInStep = 
 /**  Open this page in the browser here: the harness vendor's own. */
 { at: "open"; url: string } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
+/**  What a login in the strip's terminal printed, escapes and all. */
+{ at: "printed"; text: string } | 
 /**  The harness refused the code, in its words. */
 { at: "refused"; said: string } | 
 /**  The login ended well, and the runner is asked whether it is signed in. */
