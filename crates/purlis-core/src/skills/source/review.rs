@@ -18,8 +18,8 @@ use serde::{Deserialize, Serialize};
 
 use super::fetch::{Fetched, Found, NotASkill, SourceFile, fetch};
 use super::{Commit, Source, lock};
-use crate::skills::Reserved;
-use crate::skills::verbs::Level;
+use crate::skills::verbs::{Level, Whose};
+use crate::skills::{Reference, Reserved};
 
 /// One file of a skill, as the review shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -468,27 +468,99 @@ pub(super) fn has(plane: &Path, level: &Level, name: &str) -> bool {
 
 /// **Whether a skill installed at `level` that refers to `name` has it met already**, so the
 /// source's `name` is not brought along, as the review and the install agree (ADR 0100 as amended
-/// 2026-10-31): `name` belongs to a built-in skill, which every chat has and no plane skill may
-/// take (#4155), or `level` holds a skill of that name, from any source or made there (#4032).
-/// `reserved` is the built-in skills' names.
-pub(super) fn met(plane: &Path, reserved: &Reserved, level: &Level, name: &str) -> bool {
-    reserved.holds(name) || has(plane, level, name)
+/// 2026-10-31): where every chat that gets the installed skill gets a skill named `name` without
+/// it, by the rule [`purlis_skills::skill_set`] resolves a chat's skills by.
+///
+/// - `name` belongs to a built-in skill, which every chat has and no plane skill may take (#4155);
+/// - `level` holds a skill of that name, from any source or made there (#4032);
+/// - at a workspace's level, a project skill of that name is granted to the workspace and not
+///   turned off there (#4154);
+/// - at a persona's level, the persona's `skills:` list names a project skill of that name, which
+///   its chats get in any workspace (#4154).
+///
+/// A shared install is met by shared skills alone, as its copy reaches every clone and another
+/// person's local skills are not there; a local install, which runs on this machine alone, by its
+/// local skills and the shared ones. `reserved` is the built-in skills' names, and `wider` what
+/// the wider levels say ([`Wider`]).
+pub(super) fn met(
+    plane: &Path,
+    reserved: &Reserved,
+    wider: &Wider,
+    level: &Level,
+    name: &str,
+) -> bool {
+    let sides: &[bool] = if level.local {
+        &[true, false]
+    } else {
+        &[false]
+    };
+    let project_skill = |reaches: &dyn Fn(&Path) -> bool| {
+        sides.iter().any(|&local| {
+            crate::skills::named_at(plane, &Whose::Project, local, name)
+                .is_some_and(|folder| reaches(&folder))
+        })
+    };
+    reserved.holds(name)
+        || sides
+            .iter()
+            .any(|&local| has(plane, &level.clone().local(local), name))
+        || match &level.at {
+            Whose::Project => false,
+            Whose::Workspace(ws) => {
+                !wider.turned_off.iter().any(|off| off == name)
+                    && project_skill(&|folder| {
+                        crate::skills::grant_of(folder).is_ok_and(|grant| grant.reaches(ws))
+                    })
+            }
+            Whose::Persona(_) => {
+                wider
+                    .persona_names
+                    .iter()
+                    .any(|one| matches!(one, Reference::Named(named) if named == name))
+                    && project_skill(&|_| true)
+            }
+        }
 }
 
-/// [`met`] for one review, with the built-in skills in `built_in`: their names read once, and each
-/// name looked up once, however many skills refer to it.
+/// What the levels wider than one a skill is installed at say of what its chats get, read once
+/// for a review: the project skills a workspace turned off, and what a persona's `skills:` list
+/// names.
+pub(super) struct Wider {
+    turned_off: Vec<String>,
+    persona_names: Vec<Reference>,
+}
+
+impl Wider {
+    /// What they say for `level` in the plane at `plane`.
+    fn of(plane: &Path, level: &Level) -> Wider {
+        Wider {
+            turned_off: match &level.at {
+                Whose::Workspace(ws) => crate::skills::turned_off(plane, ws),
+                _ => Vec::new(),
+            },
+            persona_names: match &level.at {
+                Whose::Persona(persona) => crate::skills::names_of(plane, persona),
+                _ => Vec::new(),
+            },
+        }
+    }
+}
+
+/// [`met`] for one review, with the built-in skills in `built_in`: their names and the wider
+/// levels read once, and each name looked up once, however many skills refer to it.
 pub(super) fn met_at<'a>(
     plane: &'a Path,
     built_in: Option<&Path>,
     level: &'a Level,
 ) -> impl Fn(&str) -> bool + 'a {
     let reserved = Reserved::of(built_in);
+    let wider = Wider::of(plane, level);
     let seen = std::cell::RefCell::new(std::collections::HashMap::<String, bool>::new());
     move |name| {
         if let Some(known) = seen.borrow().get(name) {
             return *known;
         }
-        let held = met(plane, &reserved, level, name);
+        let held = met(plane, &reserved, &wider, level, name);
         seen.borrow_mut().insert(name.to_owned(), held);
         held
     }

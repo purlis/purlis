@@ -319,7 +319,14 @@ fn an_install_lands_a_pinned_copy_and_a_lockfile_entry() {
     let tmp = plane();
     let root = tmp.path();
     let source = remote.source();
-    let review = review(root, None, &source, &["deploy".to_owned()], &Level::project()).unwrap();
+    let review = review(
+        root,
+        None,
+        &source,
+        &["deploy".to_owned()],
+        &Level::project(),
+    )
+    .unwrap();
 
     let (made, _) = on(root, |cx| {
         install(cx, &source, &Level::project(), &review.accepted(), None)
@@ -371,7 +378,14 @@ fn a_local_install_is_recorded_in_the_local_lockfile() {
     let tmp = plane();
     let root = tmp.path();
     let source = remote.source();
-    let review = review(root, None, &source, &["notify".to_owned()], &Level::project()).unwrap();
+    let review = review(
+        root,
+        None,
+        &source,
+        &["notify".to_owned()],
+        &Level::project(),
+    )
+    .unwrap();
     let level = Level::workspace("ops").local(true);
     on(root, |cx| {
         install(cx, &source, &level, &review.accepted(), None)
@@ -393,9 +407,15 @@ fn an_install_whose_source_changed_since_the_review_installs_nothing() {
     let tmp = plane();
     let root = tmp.path();
     let source = remote.source();
-    let mut accepted = review(root, None, &source, &["notify".to_owned()], &Level::project())
-        .unwrap()
-        .accepted();
+    let mut accepted = review(
+        root,
+        None,
+        &source,
+        &["notify".to_owned()],
+        &Level::project(),
+    )
+    .unwrap()
+    .accepted();
     // A digest that is not what the source holds: the bytes were not the reviewed ones.
     accepted.skills[0].digest = "sha256:00".into();
     let (answer, _) = on(root, |cx| {
@@ -541,9 +561,15 @@ fn a_newer_commit_is_offered_and_never_applied_by_itself() {
     let tmp = plane();
     let root = tmp.path();
     let source = remote.source();
-    let accepted = review(root, None, &source, &["notify".to_owned()], &Level::project())
-        .unwrap()
-        .accepted();
+    let accepted = review(
+        root,
+        None,
+        &source,
+        &["notify".to_owned()],
+        &Level::project(),
+    )
+    .unwrap()
+    .accepted();
     on(root, |cx| {
         install(cx, &source, &Level::project(), &accepted, None)
     })
@@ -625,9 +651,15 @@ fn a_force_pushed_source_moves_no_pin() {
     let tmp = plane();
     let root = tmp.path();
     let source = remote.source();
-    let accepted = review(root, None, &source, &["notify".to_owned()], &Level::project())
-        .unwrap()
-        .accepted();
+    let accepted = review(
+        root,
+        None,
+        &source,
+        &["notify".to_owned()],
+        &Level::project(),
+    )
+    .unwrap()
+    .accepted();
     on(root, |cx| {
         install(cx, &source, &Level::project(), &accepted, None)
     })
@@ -669,9 +701,15 @@ fn an_edited_copy_says_so_and_its_update_lists_the_edits() {
     let tmp = plane();
     let root = tmp.path();
     let source = remote.source();
-    let accepted = review(root, None, &source, &["notify".to_owned()], &Level::project())
-        .unwrap()
-        .accepted();
+    let accepted = review(
+        root,
+        None,
+        &source,
+        &["notify".to_owned()],
+        &Level::project(),
+    )
+    .unwrap()
+    .accepted();
     on(root, |cx| {
         install(cx, &source, &Level::project(), &accepted, None)
     })
@@ -904,7 +942,14 @@ fn an_install_into_a_git_plane_is_one_commit_of_the_copies_and_the_lockfile() {
     std::fs::write(root.join("notes.md"), "mine\n").unwrap();
 
     let source = remote.source();
-    let review = review(root, None, &source, &["deploy".to_owned()], &Level::project()).unwrap();
+    let review = review(
+        root,
+        None,
+        &source,
+        &["deploy".to_owned()],
+        &Level::project(),
+    )
+    .unwrap();
     on(root, |cx| {
         install(cx, &source, &Level::project(), &review.accepted(), None)
     })
@@ -1129,9 +1174,15 @@ fn an_install_that_fails_part_way_takes_back_everything_it_wrote() {
     let tmp = plane();
     let root = tmp.path();
     let source = remote.source();
-    let accepted = review(root, None, &source, &["deploy".to_owned()], &Level::project())
-        .unwrap()
-        .accepted();
+    let accepted = review(
+        root,
+        None,
+        &source,
+        &["deploy".to_owned()],
+        &Level::project(),
+    )
+    .unwrap()
+    .accepted();
     // The grant names a workspace the project does not have: it fails after both copies landed.
     let grant = Grant::Only(vec!["nowhere".into()]);
     let (answer, _) = on(root, |cx| {
@@ -1182,9 +1233,15 @@ fn an_update_renaming_a_file_by_its_case_keeps_the_new_one() {
     let tmp = plane();
     let root = tmp.path();
     let source = remote.source();
-    let accepted = review(root, None, &source, &["casey".to_owned()], &Level::project())
-        .unwrap()
-        .accepted();
+    let accepted = review(
+        root,
+        None,
+        &source,
+        &["casey".to_owned()],
+        &Level::project(),
+    )
+    .unwrap()
+    .accepted();
     on(root, |cx| {
         install(cx, &source, &Level::project(), &accepted, None)
     })
@@ -1220,9 +1277,15 @@ fn an_update_brings_along_a_skill_it_newly_refers_to_and_shows_the_local_edits()
     let tmp = plane();
     let root = tmp.path();
     let source = remote.source();
-    let accepted = review(root, None, &source, &["notify".to_owned()], &Level::project())
-        .unwrap()
-        .accepted();
+    let accepted = review(
+        root,
+        None,
+        &source,
+        &["notify".to_owned()],
+        &Level::project(),
+    )
+    .unwrap()
+    .accepted();
     on(root, |cx| {
         install(cx, &source, &Level::project(), &accepted, None)
     })
@@ -1537,9 +1600,15 @@ fn an_update_of_a_skill_from_an_unconfirmed_committed_source_fetches_nothing() {
     let tmp = plane();
     let root = tmp.path();
     let source = remote.source();
-    let accepted = review(root, None, &source, &["notify".to_owned()], &Level::project())
-        .unwrap()
-        .accepted();
+    let accepted = review(
+        root,
+        None,
+        &source,
+        &["notify".to_owned()],
+        &Level::project(),
+    )
+    .unwrap()
+    .accepted();
     on(root, |cx| {
         install(cx, &source, &Level::project(), &accepted, None)
     })
@@ -1632,9 +1701,15 @@ fn no_skill_with_a_built_in_skills_name_lands_by_an_install() {
     let root = tmp.path();
     let source = remote.source();
 
-    let accepted = review(root, None, &source, &["secrets".to_owned()], &Level::project())
-        .unwrap()
-        .accepted();
+    let accepted = review(
+        root,
+        None,
+        &source,
+        &["secrets".to_owned()],
+        &Level::project(),
+    )
+    .unwrap()
+    .accepted();
     let refused = on(root, |cx| {
         install(cx, &source, &Level::project(), &accepted, None)
     })
@@ -1644,7 +1719,6 @@ fn no_skill_with_a_built_in_skills_name_lands_by_an_install() {
         "secrets cannot be installed: its name belongs to a built-in skill"
     );
     assert!(!root.join("skills/secrets").exists());
-
 }
 
 /// #4155: a reference to a built-in skill's name is met already, as every chat has the built-in
@@ -1670,7 +1744,11 @@ fn a_reference_to_a_built_in_skills_name_is_met_and_brings_nothing_along() {
     let names: Vec<&str> = review.skills.iter().map(|s| s.name.as_str()).collect();
     assert_eq!(names, ["deploy"]);
     assert_eq!(review.skills[0].already, ["secrets"]);
-    assert!(review.skills[0].lint.is_empty(), "{:?}", review.skills[0].lint);
+    assert!(
+        review.skills[0].lint.is_empty(),
+        "{:?}",
+        review.skills[0].lint
+    );
     let (made, _) = on(root, |cx| {
         install(cx, &source, &project, &review.accepted(), None)
     });
@@ -1705,9 +1783,15 @@ fn a_reference_to_a_built_in_skills_name_is_met_and_brings_nothing_along() {
 
 /// What a review of installing notify at the project says to accept.
 fn review_of_notify(root: &Path, source: &Source) -> Accepted {
-    review(root, None, source, &["notify".to_owned()], &Level::project())
-        .unwrap()
-        .accepted()
+    review(
+        root,
+        None,
+        source,
+        &["notify".to_owned()],
+        &Level::project(),
+    )
+    .unwrap()
+    .accepted()
 }
 
 /// Seconds since the epoch, now.
@@ -1757,9 +1841,15 @@ fn an_updates_check_records_when_it_asked_and_keeps_the_count_the_browse_found()
     let tmp = plane();
     let root = tmp.path();
     let source = remote.source();
-    let accepted = review(root, None, &source, &["notify".to_owned()], &Level::project())
-        .unwrap()
-        .accepted();
+    let accepted = review(
+        root,
+        None,
+        &source,
+        &["notify".to_owned()],
+        &Level::project(),
+    )
+    .unwrap()
+    .accepted();
     on(root, |cx| {
         install(cx, &source, &Level::project(), &accepted, None)
     })
@@ -1786,9 +1876,15 @@ fn a_source_that_does_not_answer_the_updates_check_is_not_recorded_as_checked() 
     let tmp = plane();
     let root = tmp.path();
     let source = remote.source();
-    let accepted = review(root, None, &source, &["notify".to_owned()], &Level::project())
-        .unwrap()
-        .accepted();
+    let accepted = review(
+        root,
+        None,
+        &source,
+        &["notify".to_owned()],
+        &Level::project(),
+    )
+    .unwrap()
+    .accepted();
     on(root, |cx| {
         install(cx, &source, &Level::project(), &accepted, None)
     })
@@ -1874,9 +1970,15 @@ fn the_skills_installed_from_a_source_are_counted_from_the_lockfiles() {
     let tmp = plane();
     let root = tmp.path();
     let source = remote.source();
-    let accepted = review(root, None, &source, &["deploy".to_owned()], &Level::project())
-        .unwrap()
-        .accepted();
+    let accepted = review(
+        root,
+        None,
+        &source,
+        &["deploy".to_owned()],
+        &Level::project(),
+    )
+    .unwrap()
+    .accepted();
     on(root, |cx| {
         install(cx, &source, &Level::project(), &accepted, None)
     })
@@ -2189,4 +2291,113 @@ fn a_ticked_skill_the_level_holds_already_is_said_to_be_there_and_left_out() {
     let (all, there) = whole_and_there(review_all(root, None, &source, &ops).unwrap());
     assert!(all.skills.is_empty(), "{:?}", all.skills);
     assert_eq!(there, ["notify"]);
+}
+
+/// Writes the skill `notify` into the plane at `root` under `folder`, as a person would by hand.
+fn notify_at(root: &Path, folder: &str) {
+    std::fs::create_dir_all(root.join(folder).join("notify")).unwrap();
+    std::fs::write(root.join(folder).join("notify/SKILL.md"), NOTIFY).unwrap();
+}
+
+/// The skills a review of `deploy` at `level` would install, and the references it says are met
+/// already.
+fn deploy_at(root: &Path, source: &Source, level: &Level) -> (Vec<String>, Vec<String>) {
+    let review = review(root, None, source, &["deploy".to_owned()], level).unwrap();
+    (
+        review.skills.iter().map(|s| s.name.clone()).collect(),
+        review.skills[0].already.clone(),
+    )
+}
+
+/// #4154: a reference is met where every chat that gets the installed skill gets the skill it
+/// refers to without it, as a chat resolves its skills. A shared install relies on shared skills
+/// alone, which reach every clone; a local install, which runs here alone, on local and shared.
+#[test]
+fn a_reference_is_met_on_the_side_every_chat_of_the_install_has() {
+    let remote = three_skills();
+    let tmp = plane();
+    let root = tmp.path();
+    let source = remote.source();
+    let both = (vec!["deploy".to_owned(), "notify".to_owned()], Vec::new());
+    let met = (vec!["deploy".to_owned()], vec!["notify".to_owned()]);
+
+    // A local notify is this machine's: a shared deploy, which a teammate gets, brings its own.
+    notify_at(root, "skills.local");
+    assert_eq!(deploy_at(root, &source, &Level::project()), both);
+    assert_eq!(deploy_at(root, &source, &Level::project().local(true)), met);
+
+    // A shared notify is in every clone: a local deploy relies on it.
+    std::fs::remove_dir_all(root.join("skills.local")).unwrap();
+    notify_at(root, "skills");
+    let local = Level::project().local(true);
+    assert_eq!(deploy_at(root, &source, &local), met);
+    let review = review(root, None, &source, &["deploy".to_owned()], &local).unwrap();
+    let (made, _) = on(root, |cx| {
+        install(cx, &source, &local, &review.accepted(), None)
+    });
+    assert_eq!(made.unwrap().len(), 1);
+    assert!(!root.join("skills.local/notify").exists());
+}
+
+/// #4154: at a workspace, a project skill granted to it and not turned off there meets the
+/// reference, as its chats get that skill; one not granted to it, or turned off there, does not,
+/// and the source's comes along.
+#[test]
+fn a_project_skill_granted_to_the_workspace_meets_a_reference_there() {
+    let remote = three_skills();
+    let tmp = plane();
+    let root = tmp.path();
+    let source = remote.source();
+    let ops = Level::workspace("ops");
+    let both = (vec!["deploy".to_owned(), "notify".to_owned()], Vec::new());
+    let met = (vec!["deploy".to_owned()], vec!["notify".to_owned()]);
+    notify_at(root, "skills");
+
+    // Granted to the root alone, as a project skill is by default.
+    assert_eq!(deploy_at(root, &source, &ops), both);
+
+    crate::skills::grant(root, "notify", &Grant::Only(vec!["ops".into()])).unwrap();
+    assert_eq!(deploy_at(root, &source, &ops), met);
+    let review = review(root, None, &source, &["deploy".to_owned()], &ops).unwrap();
+    let (made, _) = on(root, |cx| {
+        install(cx, &source, &ops, &review.accepted(), None)
+    });
+    assert_eq!(made.unwrap().len(), 1);
+    assert!(!root.join("workspaces/ops/skills/notify").exists());
+
+    // Turned off in the workspace: its chats do not get it, so the source's comes along.
+    std::fs::remove_dir_all(root.join("workspaces/ops/skills/deploy")).unwrap();
+    crate::skills::switch(root, "ops", "notify", false).unwrap();
+    assert_eq!(deploy_at(root, &source, &ops), both);
+}
+
+/// #4154: at a persona, a project skill its `skills:` list names meets the reference, as the
+/// persona brings it into every workspace; a project skill it does not name does not.
+#[test]
+fn a_project_skill_the_persona_names_meets_a_reference_at_the_persona() {
+    let remote = three_skills();
+    let tmp = plane();
+    let root = tmp.path();
+    let source = remote.source();
+    let steward = Level::persona("steward");
+    std::fs::create_dir_all(root.join("personas/steward")).unwrap();
+    let persona = |skills: &str| {
+        std::fs::write(
+            root.join("personas/steward/persona.md"),
+            format!("---\nname: steward\nskills: {skills}\n---\n\nKeeps it.\n"),
+        )
+        .unwrap();
+    };
+    notify_at(root, "skills");
+
+    persona("lint");
+    assert_eq!(
+        deploy_at(root, &source, &steward),
+        (vec!["deploy".to_owned(), "notify".to_owned()], Vec::new())
+    );
+    persona("lint, notify");
+    assert_eq!(
+        deploy_at(root, &source, &steward),
+        (vec!["deploy".to_owned()], vec!["notify".to_owned()])
+    );
 }

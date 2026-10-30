@@ -24,7 +24,7 @@ use super::fetch::{SourceFile, fetch};
 use super::install::{level_parts, paths_fit};
 use super::lock::{self, Kept, Locked};
 use super::review::{
-    Accepted, SkillReview, digest_of, met, met_at, review_of, sha256, summary_of, wrote,
+    Accepted, SkillReview, digest_of, met_at, review_of, sha256, summary_of, wrote,
 };
 use super::{Commit, Remote, Source, listed, write};
 use crate::skills::verbs::{self, Ctx, Level};
@@ -383,8 +383,8 @@ pub fn update_review(
         _ => Vec::new(),
     };
     let was = pinned.unwrap_or_else(|| here.clone());
-    let reserved = crate::skills::Reserved::of(built_in);
-    let reviewed = fetched.review_with(&[name.to_owned()], &met_at(plane, built_in, level))?;
+    let met_here = met_at(plane, built_in, level);
+    let reviewed = fetched.review_with(&[name.to_owned()], &met_here)?;
     let mut skills = reviewed.skills.into_iter();
     let review = skills.next().unwrap_or_else(|| {
         let held_names: Vec<String> = found.iter().map(|f| f.name.clone()).collect();
@@ -394,7 +394,7 @@ pub fn update_review(
             tree::left_in(&fetched.left, &one.dir),
             None,
             &held_names,
-            &|other| other != name && met(plane, &reserved, level, other),
+            &|other| other != name && met_here(other),
         )
     });
     let brought: Vec<SkillReview> = skills.collect();
