@@ -375,9 +375,14 @@ fn a_clone_the_runner_chat_made_comes_back_with_move_here_and_names_what_a_tool_
     let made = committed(&there, "Makefile", "all:\n");
     std::fs::write(there.join("lib.rs"), "pub fn api() {}\n").unwrap();
 
-    let watch =
+    let came =
         super::move_workspace_back(&link, &project, &world.root, "app", "builds").expect("moved");
-    assert_eq!(watch, ["workspaces/app/api/Makefile"]);
+    assert_eq!(came.watch, ["workspaces/app/api/Makefile"]);
+    assert_eq!(
+        came.made,
+        ["workspaces/app/api"],
+        "the clone is said to be whole from the runner"
+    );
     let api = world.root.join("workspaces/app/api");
     assert_eq!(git(&api, &["rev-parse", "main"]), made);
     assert_eq!(git(&api, &["symbolic-ref", "--short", "HEAD"]), "main");

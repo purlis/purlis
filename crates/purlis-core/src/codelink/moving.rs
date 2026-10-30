@@ -280,9 +280,12 @@ fn move_tree(
 /// (`.gitattributes`, `.gitmodules`, `.lfsconfig`), dev containers and environments (`mise.toml`,
 /// `flake.nix`), CI workflows, and the files a build or a toolchain runs: `package.json` (its
 /// scripts), `.yarnrc.yml`, `Makefile`, `justfile`, `Taskfile.yml`, `Cargo.toml`, `build.rs`,
-/// `.cargo/`, `rust-toolchain.toml`, `pyproject.toml`, `setup.py`, Gradle's and Maven's.
+/// `.cargo/`, `rust-toolchain.toml`, `pyproject.toml`, `setup.py`, Gradle's and Maven's. And
+/// the harnesses' instruction files, which a harness here reads as instructions, in any folder
+/// of a clone (#3990): `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, Copilot's
+/// `.github/copilot-instructions.md` and `.github/instructions/`, and the like.
 pub fn runs_here(path: &str) -> bool {
-    const FOLDERS: [&str; 13] = [
+    const FOLDERS: [&str; 15] = [
         ".claude/",
         ".codex/",
         ".cursor/",
@@ -296,8 +299,10 @@ pub fn runs_here(path: &str) -> bool {
         ".mvn/",
         ".gemini/",
         ".github/workflows/",
+        ".github/instructions/",
+        ".clinerules/",
     ];
-    const NAMES: [&str; 35] = [
+    const NAMES: [&str; 44] = [
         ".envrc",
         ".mcp.json",
         "opencode.json",
@@ -333,13 +338,24 @@ pub fn runs_here(path: &str) -> bool {
         ".lfsconfig",
         ".nvim.lua",
         ".exrc",
+        "claude.md",
+        "claude.local.md",
+        "agents.md",
+        "agents.override.md",
+        "gemini.md",
+        ".cursorrules",
+        ".windsurfrules",
+        ".clinerules",
+        "copilot-instructions.md",
     ];
     let lower = path.to_ascii_lowercase();
     let name = lower.rsplit('/').next().unwrap_or(&lower);
     FOLDERS
         .iter()
         .any(|folder| lower.starts_with(folder) || lower.contains(&format!("/{folder}")))
-        || NAMES.contains(&name)
+        || (NAMES.contains(&name)
+            // Copilot reads its instructions only from the clone's `.github/`.
+            && (name != "copilot-instructions.md" || lower == ".github/copilot-instructions.md"))
 }
 
 /// **What came onto `repo`'s work tree, moving it from tree `from` to tree `to`, that the person

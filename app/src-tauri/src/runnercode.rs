@@ -247,14 +247,14 @@ pub(crate) fn move_workspace_to(
 /// the runner's work (#3811, [`codelink::take_work_fresh`]), where the runner names its clones
 /// (session protocol 1.51); a runner before it cannot, and such a clone stays there. Answers
 /// what came back that the person is to look at, by its path in the project
-/// ([`codelink::take_work_back`]).
+/// ([`codelink::take_work_back`]), and each clone made fresh.
 pub(crate) fn move_workspace_back(
     link: &HostLink,
     project: &str,
     root: &Path,
     workspace: &str,
     pool: &str,
-) -> Result<Vec<String>, String> {
+) -> Result<crate::host::CameBack, String> {
     let here = clones_of(root, workspace);
     // Asked first, so a runner that cannot say changes nothing here.
     let only_there = made_there(link, project, workspace, &here)?;
@@ -263,7 +263,7 @@ pub(crate) fn move_workspace_back(
     for rel in &only_there {
         room_for(root, rel)?;
     }
-    let mut watch = Vec::new();
+    let mut came_back = crate::host::CameBack::default();
     for rel in here {
         let repo = root.join(&rel);
         let leave_out = leave_out_of(root, &rel)?;
@@ -287,7 +287,9 @@ pub(crate) fn move_workspace_back(
                 .map_err(|why| why.to_string())
             });
         match moved {
-            Ok(came) => watch.extend(came.into_iter().map(|path| in_clone(&rel, &path))),
+            Ok(came) => came_back
+                .watch
+                .extend(came.into_iter().map(|path| in_clone(&rel, &path))),
             Err(why) => {
                 return Err(format!(
                     "the work in {} did not come back from the runner: {why}",
@@ -308,7 +310,12 @@ pub(crate) fn move_workspace_back(
                     .map_err(|why| why.to_string())
             });
         match made {
-            Ok(came) => watch.extend(came.into_iter().map(|path| in_clone(&rel, &path))),
+            Ok(came) => {
+                came_back
+                    .watch
+                    .extend(came.into_iter().map(|path| in_clone(&rel, &path)));
+                came_back.made.push(rel);
+            }
             Err(why) => {
                 return Err(format!(
                     "{rel}, which the runner's chat cloned, did not come back from the runner: \
@@ -317,7 +324,7 @@ pub(crate) fn move_workspace_back(
             }
         }
     }
-    Ok(watch)
+    Ok(came_back)
 }
 
 /// **Whether a fresh clone at `rel` can be made here** (#3811): its folder in the project is

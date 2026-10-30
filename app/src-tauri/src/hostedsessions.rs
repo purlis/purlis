@@ -3327,7 +3327,11 @@ impl SessionHost for HostedSessions {
         Ok(())
     }
 
-    fn move_out(&self, pool: &str, chats: &[crate::host::Moving]) -> Result<Vec<String>, String> {
+    fn move_out(
+        &self,
+        pool: &str,
+        chats: &[crate::host::Moving],
+    ) -> Result<crate::host::CameBack, String> {
         let Some(workspace) = chats.first().map(|chat| chat.workspace.as_str()) else {
             return Ok(Vec::new());
         };
@@ -3348,14 +3352,14 @@ impl SessionHost for HostedSessions {
                 .map_err(|why| format!("its conversation did not come back: {why}"))?;
             came.push((chat, shape, file));
         }
-        let watch =
+        let came_back =
             crate::runnercode::move_workspace_back(&link, &project, &self.root, workspace, pool)?;
         for (chat, shape, file) in came {
             of_a_chat(&self.root, chat)
                 .keep(&shape, &file)
                 .map_err(|why| format!("its conversation could not be kept here: {why}"))?;
         }
-        Ok(watch)
+        Ok(came_back)
     }
 
     /// Saved in the session host, where this project's chats run: the window starts no worker

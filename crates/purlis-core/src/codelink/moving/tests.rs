@@ -349,7 +349,42 @@ fn runs_here_names_what_a_local_tool_runs_or_reads_as_its_settings() {
     ] {
         assert!(runs_here(path), "{path}");
     }
-    for path in ["src/main.rs", "README.md", "docs/claude.md", "packages.txt"] {
+    for path in [
+        "src/main.rs",
+        "README.md",
+        "docs/claude-notes.md",
+        "packages.txt",
+    ] {
+        assert!(!runs_here(path), "{path}");
+    }
+}
+
+/// **A harness's instruction files** are read here as instructions, at the top of a clone and
+/// in any folder of it, so they are named as what a tool here reads (#3990). A disk here may
+/// not tell `claude.md` from `CLAUDE.md`, so neither is told apart.
+#[test]
+fn runs_here_names_the_harnesses_instruction_files_in_any_folder() {
+    for path in [
+        "CLAUDE.md",
+        "docs/claude.md",
+        "CLAUDE.local.md",
+        "web/AGENTS.md",
+        "AGENTS.override.md",
+        "GEMINI.md",
+        ".github/copilot-instructions.md",
+        ".github/instructions/rust.instructions.md",
+        ".cursorrules",
+        ".windsurfrules",
+        ".clinerules",
+        ".clinerules/style.md",
+    ] {
+        assert!(runs_here(path), "{path}");
+    }
+    for path in [
+        "docs/copilot-instructions.md",
+        "agents.txt",
+        "docs/instructions/a.md",
+    ] {
         assert!(!runs_here(path), "{path}");
     }
 }
