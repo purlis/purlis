@@ -300,3 +300,24 @@ fn a_folder_cut_for_the_person_or_a_chat_with_no_id_holds_nothing() {
         Writer::Free
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_fifo_at_the_lock_s_place_is_refused_at_once() {
+    // A chat may write the workspace: a FIFO it planted there must not hold the broker.
+    let (_dir, root) = a_plane();
+    let fifo = lock_path(&root, "alpha");
+    let made = crate::forklock::status(std::process::Command::new("mkfifo").arg(&fifo));
+    if !made.is_ok_and(|status| status.success()) {
+        return; // no mkfifo here
+    }
+    let started = std::time::Instant::now();
+    let refused = take_as(&root, &chat(77, Some(FIRST)), Some(&[live(FIRST, 77)])).unwrap_err();
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(2),
+        "it waited"
+    );
+    assert!(refused.contains("not a plain file"), "{refused}");
+    // Nothing was claimed.
+    assert!(!dir_for(&root, "alpha").join("box.jsonl").exists());
+}

@@ -225,13 +225,22 @@ fn locked(plane: &Path, ws: &str) -> Result<crate::filelock::Held, String> {
         crate::contain::writable(plane, &path).map_err(std::io::Error::other)?;
         std::fs::create_dir_all(pieces::dir_for(plane, ws))?;
         let mut open = std::fs::OpenOptions::new();
-        open.create(true).truncate(false).write(true);
+        open.create(true).truncate(false).read(true).write(true);
+        // Never waits to open: a FIFO a chat planted at the path opens at once, rather than
+        // holding the broker until a reader comes, and is refused below. `flock` takes no
+        // notice of the flag, so it stays.
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
-            open.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+            open.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK);
         }
-        open.open(&path)
+        let file = open.open(&path)?;
+        if !file.metadata()?.file_type().is_file() {
+            return Err(std::io::Error::other(
+                "what is at its lock's place is not a plain file",
+            ));
+        }
+        Ok(file)
     })();
     opened
         .and_then(|file| {
