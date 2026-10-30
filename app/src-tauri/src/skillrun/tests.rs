@@ -304,3 +304,27 @@ fn an_open_runs_tokens_rise_from_its_start_and_its_level_goes_with_it() {
         Some(None)
     );
 }
+
+/// #3694 review: a run first seen before its harness said any usage counts from the first figure
+/// it says, rather than never.
+#[test]
+fn a_run_seen_before_any_usage_counts_from_the_first_figure() {
+    let (runs, told) = listening();
+    let spent = Arc::new(Mutex::new(None::<u64>));
+    runs.count_tokens_by({
+        let spent = Arc::clone(&spent);
+        Arc::new(move |_| *spent.lock().unwrap())
+    });
+
+    runs.heard(&call(4, "toolu_1", Some("deploy")));
+    *spent.lock().unwrap() = Some(2_000);
+    runs.heard(&call(4, "toolu_2", None));
+    *spent.lock().unwrap() = Some(2_600);
+    runs.heard(&call(4, "toolu_3", None));
+
+    let tokens: Vec<_> = told
+        .try_iter()
+        .map(|t| t.run.and_then(|run| run.tokens))
+        .collect();
+    assert_eq!(tokens, vec![None, Some(0), Some(600)]);
+}

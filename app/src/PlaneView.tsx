@@ -9294,7 +9294,7 @@ export const PlaneView = memo(function PlaneView({
                   onOpenView={showView}
                   onUseSkill={openUseSkill}
                   onShowInExplorer={revealInExplorer}
-                  onRestart={(session) => void askRestart(session)}
+                  onRestart={askRestart}
                 />
               ),
               // **Changes** (#1676, B-7): what the bottom region drew, the same content.

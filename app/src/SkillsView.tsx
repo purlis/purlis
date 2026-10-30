@@ -6,12 +6,14 @@ import {
   commands,
   type ChatSkill,
   type HarnessKind,
+  type PlaneUpdated,
   type SkillPinsRefused,
   type StudioFirst,
   type StudioLevel,
 } from "./bindings";
 import { Notice } from "./Notice";
-import { skillsIn, useViewChanged } from "./planeChanged";
+import { INSTRUCTIONS, skillsIn, usePlaneChanged, useViewChanged } from "./planeChanged";
+import { planeUpdatedAt } from "./PlaneUpdated";
 import { askDraft } from "./skillDraftAsks";
 import { SkillsNotRead, SkillsReading, type SkillStart } from "./SkillStarts";
 import {
@@ -104,6 +106,8 @@ async function readSkills(
   plane: string,
   workspace: string | undefined,
   chat: FrontChat | undefined,
+  /** What changed since each chat started: the answer the chats' panes read at this change. */
+  updated: () => Promise<readonly PlaneUpdated[]> = async () => [],
 ): Promise<Read> {
   if (chat === undefined) {
     const base = await answered(commands.skillStudio(plane, workspace ?? null, null));
@@ -122,7 +126,7 @@ async function readSkills(
     answered(commands.skillPersonaSkills(plane, chat.workspace ?? null)),
     answered(commands.chatSkills(plane, chat.session)),
     answered(commands.chatSkillsMissing(plane, chat.session)),
-    answered(commands.chatsPlaneUpdated(plane)),
+    updated(),
   ]);
   if ("refused" in base) return base;
   const rows = viewRowsOf(base.ok, "ok" in personas ? personas.ok : undefined);
@@ -132,10 +136,7 @@ async function readSkills(
     budget: "ok" in set ? set.ok.budget : null,
     routing: "ok" in set ? set.ok.routing : null,
     missing: "ok" in missing ? missing.ok : null,
-    changed:
-      "ok" in updated
-        ? ((updated.ok ?? []).find((one) => one.session === chat.session && one.skills) ?? null)
-        : null,
+    changed: updated.find((one) => one.session === chat.session && one.skills) ?? null,
   };
   return {
     rows: narrowedTo(rows, given.skills, {
@@ -193,7 +194,7 @@ export function SkillsView({
    *  title bar's workspace. */
   onShowInExplorer: (place: ExplorerPlace) => void;
   /** Restarts chat `session` on its conversation: what a chat whose skills changed is offered. */
-  onRestart?: (session: number) => void;
+  onRestart?: (session: number) => void | Promise<void>;
 }) {
   const [folded, onFold] = useFoldedGroups();
   // Where the rows are read for, and where the switch and the pin act: the chat's own workspace
@@ -201,6 +202,10 @@ export function SkillsView({
   const place = chat === undefined ? workspace : chat.workspace;
   const persona = chat?.persona ?? null;
   const changed = useViewChanged([plane], skillsIn(place));
+  // What changed since its chat started is asked once a change, with the chats' panes (S8).
+  const instructions = usePlaneChanged([plane], INSTRUCTIONS);
+  // Asked again after the chat in front is restarted from here: it then has what changed.
+  const [restarted, setRestarted] = useState(0);
   const [read, setRead] = useState<{ of: FrontChat | undefined; read: Read }>();
   const [said, setSaid] = useState<{ label: string; text: string }>();
   const [busy, setBusy] = useState(false);
@@ -215,7 +220,7 @@ export function SkillsView({
       session === undefined
         ? undefined
         : { session, name: chatName, workspace: chatWorkspace, persona, harness };
-    void readSkills(plane, place, of)
+    void readSkills(plane, place, of, () => planeUpdatedAt(plane, instructions))
       .catch((err: unknown): Read => ({ refused: String(err) }))
       .then((answer) => {
         if (live) setRead({ of, read: answer });
@@ -225,7 +230,7 @@ export function SkillsView({
     };
     // The name is not read by: it only says whose set it is.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plane, place, session, chatWorkspace, persona, harness, changed]);
+  }, [plane, place, session, chatWorkspace, persona, harness, changed, instructions, restarted]);
 
   const rows = read !== undefined && "rows" in read.read ? read.read.rows : NO_ROWS;
   const nameOf = useCallback((row: ListedSkill) => row.skill.name, []);
@@ -340,7 +345,8 @@ export function SkillsView({
   const chatFix = (need: ChatNeed) => {
     const one = need.fix;
     if (one.act === "restart") {
-      if (acting !== undefined) onRestart?.(acting.session);
+      if (acting === undefined || onRestart === undefined) return;
+      void Promise.resolve(onRestart(acting.session)).then(() => setRestarted((was) => was + 1));
       return;
     }
     onOpenView(skillStudioAt(one.scope, one.page), SKILL_STUDIO_TITLE);

@@ -168,7 +168,8 @@ export function SkillsList({
     );
   };
   /** A need of the chat's own: a card with its title, what it says in the waiting colour, and its
-   *  fix. Enter or a click runs the fix, as a skill's card opens it. */
+   *  fix. Enter or a click goes where the fix goes, as a skill's card opens it; a restart, which
+   *  ends what the chat is doing, is only ever its button. */
   const needCard = (need: ChatNeed) => (
     <ListCardRow
       key={`need:${need.id}`}
@@ -251,7 +252,8 @@ export function SkillsList({
           onAction={(key) => {
             const need = chatNeeds.find((one) => `need:${one.id}` === String(key));
             if (need !== undefined) {
-              onChatFix?.(need);
+              // A press on the card goes where its fix goes; a restart is only ever its button.
+              if (need.fix.act !== "restart" && !busy) onChatFix?.(need);
               return;
             }
             const row = rows.find((one) => one.key === String(key));

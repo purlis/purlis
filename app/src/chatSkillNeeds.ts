@@ -38,7 +38,7 @@ export type ChatNeed = {
 
 /** **A chat need's one fix**: the studio at a page, or the chat's restart. */
 export type ChatNeedFix =
-  | { act: "studio"; label: string; scope: StudioScope; page: "library" | "routing" }
+  | { act: "studio"; label: string; scope: StudioScope; page: "library" | "routing" | "harness" }
   | { act: "restart"; label: string };
 
 /** What the chat's view knows of its skills as a whole: what Use skill… was told, what its
@@ -80,8 +80,14 @@ export function chatNeedsOf(said: ChatSkillsSaid, scope: StudioScope): ChatNeed[
   const budget = said.budget;
   const warns = budget === null ? undefined : warnsSaid(budget);
   if (budget !== null && warns !== undefined)
-    needs.push({ id: "budget", title: "Near the skill budget", says: warns, fix: routing });
+    needs.push({
+      id: "budget",
+      title: "Near the skill budget",
+      says: warns,
+      fix: budgetFix(budget, routing),
+    });
   const together = budget === null ? undefined : pinsTogetherSaid(budget);
+  // One fix a card (S8): the studio of the first that pins; the text names each.
   const pinner = budget?.pins_together?.held[0]?.by;
   if (together !== undefined && pinner !== undefined) {
     const at = scopeOfPinner(pinner);
@@ -101,15 +107,18 @@ export function chatNeedsOf(said: ChatSkillsSaid, scope: StudioScope): ChatNeed[
     });
   const missing = said.missing;
   if (missing !== null) {
+    // A repo's own copy of a built-in skill is one the chat got, beside purlis's: not counted.
     const count =
       missing.missing.length +
       missing.no_built_in.length +
       missing.broken.length +
-      missing.by_a_repo.length +
-      missing.beside_a_built_in.length;
+      missing.by_a_repo.length;
     needs.push({
       id: "missing",
-      title: `Started without ${counted(count, "skill", "skills")}`,
+      title:
+        count === 0
+          ? "A repo copies a built-in skill"
+          : `Started without ${counted(count, "skill", "skills")}`,
       says: missingSays("This chat", missing),
       fix: {
         act: "studio",
@@ -127,6 +136,19 @@ export function chatNeedsOf(said: ChatSkillsSaid, scope: StudioScope): ChatNeed[
       fix: { act: "restart", label: "Restart" },
     });
   return needs;
+}
+
+/** **Where a budget past its most is fixed**, as its sentence says (`warnsSaid`): in the studio of
+ *  whoever pins, for pins past it; on Harness skills, for a program's and repos' own past it; on
+ *  Routing otherwise. */
+function budgetFix(budget: SkillBudget, routing: ChatNeedFix): ChatNeedFix {
+  if (budget.still_over === "pins" && budget.pinned_by.length > 0) {
+    const at = scopeOfPinner(budget.pinned_by[0]);
+    return { act: "studio", label: `Open ${skillStudioTitle(at)}`, scope: at, page: "library" };
+  }
+  if (budget.still_over === "not-hideable" && routing.act === "studio")
+    return { act: "studio", label: "Open Harness skills", scope: routing.scope, page: "harness" };
+  return routing;
 }
 
 /** **What the view's header says of the chat's set** under whose it is: its budget, and how its

@@ -396,7 +396,8 @@ const WHOLE: ChatSkillsSaid = {
  * **The chat's own needs** (S8, #3694): its budget under whose set it is, and in Needs you, before
  * its skills' own, what the chat needs as a whole: its set past the budget (Open Routing), what
  * it started without (Open in Skill studio) and what changed since it started (Restart). Tab
- * walks the header onto Needs you; ↓ reaches each need, and Enter runs its fix. The picture is
+ * walks the header onto Needs you; ↓ reaches each need, and Enter goes where its fix goes, except
+ * a restart, which is only ever its button. The picture is
  * the groups as they start.
  */
 export const TheChatsOwnNeeds: Story = {
@@ -422,7 +423,10 @@ export const TheChatsOwnNeeds: Story = {
     const changed = row(/^Changed since it started/);
     await untilFocused(() => changed, "Skills: Down reaches what changed");
     await expect(changed).toHaveTextContent("new: triage; gone: old-deploy");
+    // A press on the card restarts nothing: the restart is only ever its button.
     await userEvent.keyboard("{Enter}");
+    await expect(canvas.getByRole("status")).toHaveTextContent("Open Routing");
+    await userEvent.click(within(changed).getByRole("button", { name: "Restart" }));
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Restart"));
     expectFocusInSight();
     await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull(), { timeout: 3_000 });

@@ -46,7 +46,8 @@ describe("Use skill… on a Codex chat", function () {
     const dialog = await $('[data-testid="use-skill"]');
     await dialog.waitForDisplayed({ timeout: 20_000 });
     // Every skill a Codex chat is briefed on is listed with its path; its count is the Skills
-    // view's now (S8, #3694).
+    // view's now (S8, #3694), and the picker says none.
+    await expect($('[data-testid="use-skill-budget"]')).not.toExist();
     await browser.waitUntil(
       async () => {
         for (const row of await $$('[data-testid="use-skill-row"]')) {

@@ -99,4 +99,43 @@ describe("a chat's needs as a whole", () => {
       "This chat's skills changed since it started. It keeps the skills it started with until it restarts on the same conversation.",
     );
   });
+
+  it("send a budget past its most where its sentence says it is fixed (review of #3694)", () => {
+    const pins = chatNeedsOf(
+      {
+        ...NOTHING,
+        budget: {
+          ...BUDGET,
+          warns: "skills",
+          still_over: "pins",
+          pinned_by: [{ at: "persona", name: "reviewer" }],
+        },
+      },
+      inWorkspace("ops"),
+    );
+    expect(pins[0].fix).toMatchObject({ scope: asPersona("reviewer"), page: "library" });
+    const own = chatNeedsOf(
+      { ...NOTHING, budget: { ...BUDGET, warns: "skills", still_over: "not-hideable" } },
+      inWorkspace("ops"),
+    );
+    expect(own[0].fix).toMatchObject({ label: "Open Harness skills", page: "harness" });
+  });
+
+  it("count only what the chat started without, not a repo's copy of a built-in skill", () => {
+    const [need] = chatNeedsOf(
+      {
+        ...NOTHING,
+        missing: {
+          persona: null,
+          missing: [],
+          no_built_in: [],
+          broken: [],
+          by_a_repo: [],
+          beside_a_built_in: ["secrets", "browser"],
+        },
+      },
+      AT_THE_ROOT,
+    );
+    expect(need.title).toBe("A repo copies a built-in skill");
+  });
 });

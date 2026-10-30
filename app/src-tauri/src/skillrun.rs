@@ -79,9 +79,10 @@ pub struct SkillRuns {
     teller: Mutex<Option<Teller>>,
     /// How a chat's tokens are read ([`Self::count_tokens_by`]): none until it is told.
     tokens: Mutex<Option<Tokens>>,
-    /// The tokens each open run's chat had spent as the run was first seen open, by chat and run
-    /// id: what its tokens so far are counted from. A chat's go once it has no run open.
-    started_at: Mutex<std::collections::HashMap<(u32, String), Option<u64>>>,
+    /// The tokens each open run's chat had spent as the run was first seen open with a figure,
+    /// by chat and run id: what its tokens so far are counted from. A chat's go once it has no
+    /// run open.
+    started_at: Mutex<std::collections::HashMap<(u32, String), u64>>,
     /// The chats a grade watches, by number, each told what it did ([`Self::watch`]).
     watched: Mutex<std::collections::HashMap<u32, std::sync::mpsc::Sender<Watched>>>,
 }
@@ -137,18 +138,29 @@ impl SkillRuns {
     }
 
     /// **Run `run` of chat `chat` with its tokens so far** (SK-26): what the chat has spent since
-    /// the run was first seen open. Read here, outside every lock this holds, and only for a run
-    /// that is open: a chat with none reads nothing.
+    /// the run was first seen open with a figure. Read here, outside every lock this holds, and
+    /// only for a run that is open: a chat with none reads nothing. A run first seen before its
+    /// harness said any usage is counted from the first figure it says.
+    ///
+    /// The read takes a moment, in which another hook of the chat may have moved its run on: the
+    /// run as it is once the figure is read is what is told, so a run the turn's end closed
+    /// meanwhile is never told open again.
     fn with_tokens(&self, chat: u32, run: Option<OpenRun>) -> Option<OpenRun> {
-        let Some(mut run) = run else {
+        if run.is_none() {
+            lock(&self.started_at).retain(|(of, _), _| *of != chat);
+            return None;
+        }
+        let reader = lock(&self.tokens).clone();
+        let now = reader.and_then(|tokens| tokens(chat));
+        let Some(mut run) = open_of(&self.runs(), &chat.to_string()) else {
             lock(&self.started_at).retain(|(of, _), _| *of != chat);
             return None;
         };
-        let reader = lock(&self.tokens).clone();
-        let now = reader.and_then(|tokens| tokens(chat));
-        let start = *lock(&self.started_at)
-            .entry((chat, run.id.clone()))
-            .or_insert(now);
+        let mut started = lock(&self.started_at);
+        let start = match now {
+            Some(now) => Some(*started.entry((chat, run.id.clone())).or_insert(now)),
+            None => started.get(&(chat, run.id.clone())).copied(),
+        };
         run.tokens = now.zip(start).map(|(now, then)| now.saturating_sub(then));
         Some(run)
     }
