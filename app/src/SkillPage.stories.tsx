@@ -12,6 +12,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, screen, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { language, syntaxTreeAvailable } from "@codemirror/language";
+import { EditorView } from "@codemirror/view";
 import { SkillStudioTab } from "./SkillStudioTab";
 import { Panel } from "./ui/panel/Panel";
 import {
@@ -361,6 +363,18 @@ async function typeALine(canvas: ReturnType<typeof within>): Promise<void> {
   const text = await canvas.findByRole(
     "textbox",
     { name: "deploy's instructions" },
+    { timeout: 10_000 },
+  );
+  // Its grammar is a chunk of its own as well, which lands after the editor is up (`colour`) and
+  // draws every line again. Landing between two keys, it drew the line being typed again under
+  // user-event's caret, which WebKit then put at the line's start: "5." ended the line typed
+  // (#4026). Typed into once the grammar is in and has read the whole text.
+  await waitFor(
+    () => {
+      const view = EditorView.findFromDOM(text);
+      expect(view?.state.facet(language)).toBeTruthy();
+      expect(view !== null && syntaxTreeAvailable(view.state)).toBe(true);
+    },
     { timeout: 10_000 },
   );
   await userEvent.click(text);
