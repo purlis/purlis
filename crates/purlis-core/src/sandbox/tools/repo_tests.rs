@@ -293,6 +293,49 @@ fn git_s_own_options_that_name_another_config_or_folder_never_run() {
     ] {
         assert!(refused_git(&said(words)).is_some(), "{words:?}");
     }
-    assert!(refused_git(&said(&["status", "--short"])).is_none());
-    assert!(refused_git(&said(&["commit", "-m", "x"])).is_none());
+    for words in [
+        &["ls-remote", "--upload-pack=x", "."][..],
+        &["push", "--receive-pack=x"],
+        &["clone", "--template=/t", "u"],
+        &["clone", "--config", "core.hooksPath=/h", "u"],
+        &["grep", "--open-files-in-pager=x", "a"],
+        &["difftool", "--extcmd=x"],
+    ] {
+        assert!(refused_git(&said(words)).is_some(), "{words:?}");
+    }
+    // A command's own -c and -C mean something else, and run.
+    for words in [
+        &["status", "--short"][..],
+        &["commit", "-m", "x"],
+        &["log", "-c"],
+        &["grep", "-C3", "x"],
+        &["blame", "-C", "f"],
+        &["--no-pager", "log"],
+    ] {
+        assert!(refused_git(&said(words)).is_none(), "{words:?}");
+    }
+}
+
+#[test]
+fn a_declared_git_runs_only_with_the_arguments_its_args_let_in() {
+    let place = Place::new();
+    let mut tool = super::Tool::one("git", "forge", "GIT_TOKEN", super::Handed::Env, "token");
+    let ready = |tool: &super::Tool| super::Ready {
+        tool: tool.clone(),
+        program: PathBuf::from("/usr/bin/git"),
+    };
+    let said = vec!["status".to_owned()];
+    let run = |ready: &super::Ready| {
+        super::reads_held_repository(
+            ready,
+            &said,
+            &place.scratch,
+            &place.root,
+            std::slice::from_ref(&place.scratch),
+        )
+    };
+    let why = run(&ready(&tool)).expect_err("refused");
+    assert!(why.contains("tools.git.args"), "{why}");
+    tool.args = Some(vec!["status".to_owned()]);
+    assert!(run(&ready(&tool)).is_ok());
 }

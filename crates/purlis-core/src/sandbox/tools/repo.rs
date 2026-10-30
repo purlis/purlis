@@ -299,8 +299,8 @@ fn unquoted(value: &str) -> String {
         .to_owned()
 }
 
-/// The options with which git reads a config, a git folder or a work tree other than the
-/// repository judged, or runs a program the run names: a declared git's run never takes one.
+/// git's own options, before its command, with which it reads a config, a git folder or a
+/// work tree other than the repository judged, or runs a program the run names.
 const GIT_ELSEWHERE: &[&str] = &[
     "-c",
     "-C",
@@ -312,22 +312,42 @@ const GIT_ELSEWHERE: &[&str] = &[
     "--super-prefix",
 ];
 
-/// **Why a run of git with `args` never runs with a vault's value**, if it does not: an option
-/// of [`GIT_ELSEWHERE`], written alone, joined to its value (`-ckey=value`, `--git-dir=x`), or
-/// anywhere among the arguments (git reads its own before the command, and a command's own
-/// `-c` is refused with them).
+/// A command's long options that name a program git runs (`--upload-pack`, `--exec`…), a
+/// template or a config for a new repository, wherever they stand. Short forms that mean
+/// something else in another command (`-u`, `-x`, `-O`) are the person's `args` to allow.
+const GIT_RUNS: &[&str] = &[
+    "--upload-pack",
+    "--receive-pack",
+    "--exec",
+    "--extcmd",
+    "--template",
+    "--config",
+    "--open-files-in-pager",
+];
+
+/// **Why a run of a declared git with `args` never runs with a vault's value**, if it does
+/// not: one of [`GIT_ELSEWHERE`] before its command (alone, or joined to its value:
+/// `-ckey=value`, `--git-dir=x`), or one of [`GIT_RUNS`] anywhere.
 pub fn refused_git(args: &[String]) -> Option<String> {
-    let odd = args.iter().find(|arg| {
-        GIT_ELSEWHERE.iter().any(|option| {
-            arg.as_str() == *option
-                || arg.starts_with(&format!("{option}="))
-                || (option.len() == 2 && arg.starts_with(option))
-        })
+    let joined = |arg: &str, option: &str| {
+        arg == option
+            || arg.starts_with(&format!("{option}="))
+            || (option.len() == 2 && arg.starts_with(option))
+    };
+    // git's own options stand before its command, the first argument that is not an option.
+    let command = args
+        .iter()
+        .position(|arg| !arg.starts_with('-'))
+        .unwrap_or(args.len());
+    let odd = args.iter().enumerate().find(|(at, arg)| {
+        (*at < command && GIT_ELSEWHERE.iter().any(|option| joined(arg, option)))
+            || GIT_RUNS.iter().any(|option| joined(arg, option))
     })?;
     Some(format!(
-        "git runs with a vault's value only in the repository purlis judged, and {odd:?} names \
-         a config, a git folder or a program of its own, so nothing ran; run it in your own \
-         terminal, where purlis limits nothing."
+        "git runs with a vault's value only in the repository purlis judged, and {:?} names a \
+         config, a git folder or a program of its own, so nothing ran; run it in your own \
+         terminal, where purlis limits nothing.",
+        odd.1
     ))
 }
 
