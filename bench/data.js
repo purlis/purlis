@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793395469512,
+  "lastUpdate": 1793396854532,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32214,6 +32214,48 @@ window.BENCHMARK_DATA = {
             "value": 102.353622,
             "unit": "ms",
             "extra": "median of 5 runs: 100.742, 101.749, 102.354, 102.476, 103.561 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1b13d2f9bc33e67e6fa27fc2725e5a46b618b858",
+          "message": "Field errors: one signal per refusal, polite lines and one alert summary (#3291) (#4136)\n\n* Field errors: one signal per refusal, polite lines and one alert summary (red, #3291)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Field errors: polite lines and one alert summary per refused send (#3291)\n\nA field's error line is a polite live region, never an alert as well. A Form says a refused\nsend once, as one alert summary for a screen reader alone (one field: its name and why; more:\nhow many and which), and its lines are quiet while it does. A refusal from elsewhere is handed\nto the form by its owner (refused) or from inside it (useFormRefusal). Wired: settings rows in\na form, a collection's New and Rename, the Doctor's git identity, the todo box and Answer.\nRecorded as ADR 0104's amendment of 2026-10-30.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Field errors: the stories find the field's polite line and the form's one summary (#3291)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Settings: a row's empty refusal line in a form takes no place in its grid (#3291)\n\nThe line is kept from the start so its words are heard as they land; empty, it is taken out\nof the row's grid, so no gap is added and the dialogs' baselines stand.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Field errors: pin the review's cases, a Rename's reason, the Notice's form, a pick, an edit while sent (red, #3291)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Field errors: answers counted, a pick ends the summary, one place says a refusal (#3291)\n\nFrom the review of #4136:\n- A form's owner hands the core's refusal with an answer count: each new answer is said once,\n  an edit to it never is, nor a send's waiting, and the summary is drawn from the props in the\n  render the answer lands in.\n- A Rename leaves out the reasons its entry says as its own alert.\n- The git identity form on a Notice is a Form of its own, so its rows' refusals are one summary.\n- A select's or combobox's pick ends the summary, as a native change does.\n- summaryOf names one field with no why; nameOf keeps a box's own aria-label.\n- ADR 0104 lists its amendments; the field family's old alert line is marked superseded.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Project expects e2e: wait for the Notice drawn again naming B, not only its sentence\n\nA refused Allow says the changed sentence at once and reads the list again after it, so the\nNotice can say the sentence while it still draws A. The spec moved on at the sentence and read\nthe list before it was drawn again (run 41115678163). It now waits for B, with the sentence.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T21:17:49Z",
+          "tree_id": "c9fd15a80a6f1799f9df689bbbd0e128c92717e1",
+          "url": "https://github.com/purlis/purlis/commit/1b13d2f9bc33e67e6fa27fc2725e5a46b618b858"
+        },
+        "date": 1793396848622,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6473585,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.628, 0.639, 0.647, 0.650, 0.669 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.674315999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.615, 16.644, 16.674, 16.749, 16.788 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.382457,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.797, 102.839, 103.382, 103.472, 104.330 ms"
           }
         ]
       }
