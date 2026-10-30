@@ -697,6 +697,78 @@ pub fn vouched_now(config_root: &Path, name: &str) -> Result<(), crate::clusterp
     before_cluster_link(config_root, &kubectl, name, runners::now())
 }
 
+/// **The runner's own sign-in of its profile `profile` on the cluster pool `name`'s runner**
+/// (#3819), to `provider`'s plan where one is named, by `typed`: through `kubectl` pointed at
+/// the pool's context, into the pod its pairing named, in its requester's runner namespace, as
+/// every link to it is ([`Kubectl::connect_args`]), checked first as every link is
+/// ([`before_cluster_link`]). Refused, with nothing to run, where that check fails.
+pub fn cluster_sign_in(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    profile: &str,
+    provider: Option<&str>,
+    typed: crate::dockerpool::Typed,
+) -> Result<crate::profilestore::sign_in::Login, String> {
+    before_cluster_link(config_root, kubectl, name, runners::now())
+        .map_err(|why| why.to_string())?;
+    let (pool, kept) = runners::cluster_runner_for(config_root, name)
+        .map_err(|why| why.to_string())?
+        .ok_or_else(|| format!("no cluster pool named {name} is on this machine"))?;
+    let kubectl = pool.kubectl(kubectl);
+    let (env, cleared) = kubectl.environment();
+    let text = |value: std::ffi::OsString| {
+        value
+            .into_string()
+            .map_err(|_| "kubectl's settings are not text purlis can pass on".to_owned())
+    };
+    Ok(crate::profilestore::sign_in::Login {
+        program: text(kubectl.program().as_os_str().to_owned())?,
+        args: kubectl.sign_in_args(
+            &crate::clusterpool::runner_namespace(&kept.claimed.requester),
+            &kept.pod,
+            typed,
+            profile,
+            provider,
+        ),
+        env: env
+            .into_iter()
+            .map(|(name, value)| Ok((text(name)?, text(value)?)))
+            .collect::<Result<_, String>>()?,
+        cleared: cleared.into_iter().map(text).collect::<Result<_, _>>()?,
+    })
+}
+
+/// **Whether the cluster pool `name`'s runner keeps its home past its pod** (#3819, spec #4023
+/// Q6): its claim, as the cluster holds it now, is a kept one, so a sign-in there outlives the
+/// pod; a fresh one's lasts only for that claim. Asked on this machine's `kubectl`, held to
+/// [`VOUCHED_NOW_WITHIN`].
+pub fn claim_keeps_its_home(config_root: &Path, name: &str) -> Result<bool, String> {
+    let kubectl = kubectl_here(config_root)?.within(VOUCHED_NOW_WITHIN);
+    claim_keeps_its_home_with(config_root, &kubectl, name)
+}
+
+/// [`claim_keeps_its_home`], on `kubectl`: only the claim this desktop kept, by its uid, is read.
+/// Refused, in words, where the cluster cannot say.
+pub fn claim_keeps_its_home_with(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+) -> Result<bool, String> {
+    let (pool, kept) = runners::cluster_runner_for(config_root, name)
+        .map_err(|why| why.to_string())?
+        .ok_or_else(|| format!("no cluster pool named {name} is on this machine"))?;
+    let seen = pool
+        .kubectl(kubectl)
+        .claim_seen(&kept.claimed.namespace, &kept.claimed.name)
+        .map_err(|why| why.to_string())?
+        .filter(|seen| seen.uid == kept.claimed.uid)
+        .ok_or_else(|| {
+            format!("pool {name}'s cluster no longer holds the claim this desktop made")
+        })?;
+    Ok(seen.kept)
+}
+
 /// What a cluster runner's removal is handed to take this desktop out of its peers over its
 /// link, where that link is up.
 pub type UnpairCluster<'a> =

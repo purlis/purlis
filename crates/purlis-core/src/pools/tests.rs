@@ -1075,6 +1075,112 @@ mod cluster {
         Bound::of_a_cluster_pool(config, "team", Some(reached.as_str()), &vouches)
     }
 
+    /// **A cluster runner's sign-in runs its own `purlis profile sign-in` in the pod its pairing
+    /// named** (#3819), through kubectl pointed at the pool's context, after the check every link
+    /// makes; a runner not vouched for now runs nothing.
+    #[test]
+    fn a_cluster_runners_sign_in_runs_in_its_vouched_pod_after_the_links_check() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let claim = claim_name(OURS, "team");
+        let login = cluster_sign_in(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            "work",
+            None,
+            crate::dockerpool::Typed::Driven,
+        )
+        .unwrap();
+        assert_eq!(
+            std::path::Path::new(&login.program),
+            cluster.kubectl().program()
+        );
+        let pod = format!("pod/{claim}");
+        let runners = crate::clusterpool::runner_namespace(crate::clusterpool::tests::REQUESTER);
+        let at = login.args.iter().position(|arg| arg == "exec").unwrap();
+        assert_eq!(
+            login.args[at..],
+            [
+                "exec",
+                "-i",
+                "--namespace",
+                &runners,
+                "--container",
+                "runner",
+                &pod,
+                "--",
+                "purlis",
+                "profile",
+                "sign-in",
+                "work",
+            ]
+        );
+        assert!(login.args.contains(&"--context".to_owned()));
+        assert!(login.cleared.contains(&"KUBECONFIG".to_owned()));
+        assert!(cluster.calls().contains("get claims.runners.purlis.dev"));
+
+        let typed = cluster_sign_in(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            "work",
+            Some("github-copilot"),
+            crate::dockerpool::Typed::InATerminal,
+        )
+        .unwrap();
+        assert!(typed.args.contains(&"-it".to_owned()));
+        assert!(
+            typed
+                .args
+                .ends_with(&["--provider".to_owned(), "github-copilot".to_owned()])
+        );
+
+        // Its claim no longer vouched for: nothing to run.
+        cluster.write("claim.json", "{}");
+        assert!(
+            cluster_sign_in(
+                config.path(),
+                &cluster.kubectl(),
+                "team",
+                "work",
+                None,
+                crate::dockerpool::Typed::Driven,
+            )
+            .is_err()
+        );
+    }
+
+    /// **A cluster runner's claim says whether its home outlives its pod** (#3819): a kept claim's
+    /// does, a fresh one's does not, and only the claim this desktop kept is believed.
+    #[test]
+    fn a_cluster_runners_claim_says_whether_a_sign_in_there_outlives_its_pod() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let keeps = || claim_keeps_its_home_with(config.path(), &cluster.kubectl(), "team");
+        let mut claim: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(cluster.dir.path().join("claim.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            keeps(),
+            Ok(false),
+            "a claim that does not say kept is fresh"
+        );
+        claim["spec"]["kept"] = true.into();
+        cluster.write("claim.json", &claim.to_string());
+        assert_eq!(keeps(), Ok(true));
+        claim["spec"]["kept"] = "yes".into();
+        cluster.write("claim.json", &claim.to_string());
+        assert_eq!(keeps(), Ok(false), "kept is true alone");
+        claim["spec"]["kept"] = true.into();
+        claim["metadata"]["uid"] = "another".into();
+        cluster.write("claim.json", &claim.to_string());
+        assert!(keeps().is_err(), "another claim of its name says nothing");
+        cluster.write("claim.json", "");
+        assert!(keeps().is_err(), "a claim gone says nothing");
+    }
+
     #[test]
     fn a_cluster_pool_is_added_unmarked_so_its_runner_is_sent_nothing_and_nothing_asks_its_cluster()
     {

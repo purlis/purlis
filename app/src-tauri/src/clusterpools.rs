@@ -352,4 +352,4 @@ pub fn link_through(
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

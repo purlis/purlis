@@ -593,6 +593,41 @@ pub enum Typed {
     InOwnTerminal(crate::engine::Size),
 }
 
+impl Typed {
+    /// The flag `docker exec` and `kubectl exec` run it with: `-it` in a terminal the person
+    /// drives, `-i` with pipes purlis drives.
+    pub fn exec_flag(self) -> &'static str {
+        match self {
+            Typed::InATerminal => "-it",
+            Typed::Driven | Typed::InOwnTerminal(_) => "-i",
+        }
+    }
+}
+
+/// **The runner's own words that sign its profile `name` in**, to `provider`'s plan where one is
+/// named, by `typed`: what `docker exec` runs in a Docker runner's container and `kubectl exec`
+/// in a cluster runner's pod (#3819), so both run the same sign-in, and a login over pipes ends
+/// with its input on either (#4043).
+pub fn sign_in_words(typed: Typed, name: &str, provider: Option<&str>) -> Vec<String> {
+    let mut words: Vec<String> = [PURLIS, "profile", "sign-in", name]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect();
+    if let Some(provider) = provider {
+        words.extend(["--provider".to_owned(), provider.to_owned()]);
+    }
+    // Over pipes the login ends with its input (#4043), on a cluster runner too (#3819).
+    match typed {
+        Typed::InATerminal => {}
+        Typed::Driven => words.push("--until-input-ends".to_owned()),
+        Typed::InOwnTerminal(size) => words.extend([
+            "--in-own-terminal".to_owned(),
+            format!("{}x{}", size.columns, size.rows),
+        ]),
+    }
+    words
+}
+
 impl Made {
     /// `docker`'s arguments for the connector (ADR 0078 §2's container preset): the bridge to
     /// the runner's host, run in the container pinned by id, as the runner's user and group
@@ -688,32 +723,15 @@ impl Made {
     pub fn sign_in_args_by(&self, typed: Typed, name: &str, provider: Option<&str>) -> Vec<String> {
         let mut args: Vec<String> = [
             "exec",
-            match typed {
-                Typed::InATerminal => "-it",
-                Typed::Driven | Typed::InOwnTerminal(_) => "-i",
-            },
+            typed.exec_flag(),
             "--user",
             &self.runner.user.spelled(),
             self.container.as_str(),
-            PURLIS,
-            "profile",
-            "sign-in",
-            name,
         ]
         .iter()
         .map(|word| (*word).to_owned())
         .collect();
-        if let Some(provider) = provider {
-            args.extend(["--provider".to_owned(), provider.to_owned()]);
-        }
-        match typed {
-            Typed::InATerminal => {}
-            Typed::Driven => args.push("--until-input-ends".to_owned()),
-            Typed::InOwnTerminal(size) => args.extend([
-                "--in-own-terminal".to_owned(),
-                format!("{}x{}", size.columns, size.rows),
-            ]),
-        }
+        args.extend(sign_in_words(typed, name, provider));
         args
     }
 
@@ -2385,7 +2403,9 @@ impl Docker {
             .map_err(|why| why.0)
     }
 
-    fn checked_sign_in(
+    /// **The runner's own sign-in of the profile `name`, by `typed`**, the container checked as it
+    /// was made first ([`Docker::sign_in_line`], [`Docker::driven_sign_in`]).
+    pub fn checked_sign_in(
         &self,
         made: &Made,
         engine: &std::path::Path,

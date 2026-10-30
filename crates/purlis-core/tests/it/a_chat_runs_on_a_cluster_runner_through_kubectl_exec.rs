@@ -8,7 +8,9 @@
 //! started, drawn and stopped on it, as on any host. A runner answering another key than the one
 //! vouched for, as one reached in another runner's place is, is refused. A kept claim's runner
 //! whose pod is lost is made again on its own volume and resumed with the pairing it had, its
-//! home as it was left (#2057). Everything it made is removed, whatever the outcome.
+//! home as it was left (#2057). A profile kept there is asked its standing over the link and by
+//! the sign-in's own `kubectl exec`, and what a sign-in leaves in its folder outlives the pod
+//! (#3819). Everything it made is removed, whatever the outcome.
 //!
 //! It needs a cluster with purlis's cluster operator installed and the runner image of this
 //! build named by digest in `CLUSTER_POOL_TEST_IMAGE`, with the kubeconfig context in
@@ -29,7 +31,9 @@ use purlis_session_protocol::hostlink::{
     self, Handshake, Identity, LinkKey, Linked, Liveness, Pinned,
 };
 use purlis_session_protocol::link::Acceptor;
-use purlis_session_protocol::session::{Client, Launch, ProgramKind, StartProgram, ViewKind};
+use purlis_session_protocol::session::{
+    Client, Launch, ProfileStanding, ProfileToKeep, ProgramKind, StartProgram, ViewKind,
+};
 use purlis_session_protocol::view::{Chunk, Opened, Viewer};
 
 const PATIENCE: Duration = Duration::from_secs(60);
@@ -328,6 +332,75 @@ async fn ran(client: &Client, views: &mut Acceptor, command: &str, until: &str) 
     String::from_utf8_lossy(&drawn).into_owned()
 }
 
+/// The profile `work` of Claude Code, as a desktop has a runner keep it (#3819).
+fn work() -> ProfileToKeep {
+    ProfileToKeep {
+        name: "work".into(),
+        harness: "claude".into(),
+        sandbox_only: false,
+        pinned: None,
+        settings: None,
+    }
+}
+
+/// **Where the runner in `pod` of `namespace` says `work` stands**, asked by its own `purlis
+/// profile sign-in --check` over the `kubectl exec` a sign-in there runs by (#3819).
+fn standing_by_exec(kubectl: &Kubectl, namespace: &str, pod: &str) -> String {
+    let mut args = kubectl.sign_in_args(
+        namespace,
+        pod,
+        purlis_core::dockerpool::Typed::Driven,
+        "work",
+        None,
+    );
+    args.push("--check".into());
+    let ran = std::process::Command::new(kubectl.program())
+        .args(&args)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("kubectl runs");
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&ran.stdout),
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    match purlis_core::dockerpool::standing_said("work", &said) {
+        Ok(standing) => format!("{standing:?}"),
+        Err(why) => panic!("the runner said no standing of work: {why}"),
+    }
+}
+
+/// Runs `script` with `sh -c` in the runner `pod` of `namespace`, and answers what it printed.
+fn in_the_pod(kubectl: &Kubectl, namespace: &str, pod: &str, script: &str) -> String {
+    kubectl
+        .run(
+            &kubectl.args(&[
+                "exec",
+                "--namespace",
+                namespace,
+                "--container",
+                clusterpool::RUNNER_CONTAINER,
+                &format!("pod/{pod}"),
+                "--",
+                "/bin/sh",
+                "-c",
+                script,
+            ]),
+            None,
+            64 * 1024,
+        )
+        .expect("the script ran in the runner's pod")
+}
+
+/// Leaves a mark where a sign-in of `work` would, in its folder in the runner's home, and prints
+/// that folder.
+const MARK_SIGN_IN: &str = "f=$(find \"$HOME\" -type d -path '*/profiles/work' | head -n 1) && \
+     test -n \"$f\" && echo 'signed in before the pod went' > \"$f/e2e-sign-in\" && echo \"$f\"";
+
+/// What the sign-in left in `work`'s folder, as the runner holds it now.
+const READ_SIGN_IN: &str =
+    "cat \"$(find \"$HOME\" -type d -path '*/profiles/work' | head -n 1)/e2e-sign-in\"";
+
 /// What kubectl prints for `jsonpath` of the object `kind`/`name` in `namespace`, if it is there.
 fn field(
     kubectl: &Kubectl,
@@ -448,7 +521,19 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
             "written",
         )
         .await;
+        // A profile kept there (#3819): nothing signed it in, and its harness says so, or that
+        // it cannot tell yet.
+        let standing = client
+            .keep_profile(work())
+            .await
+            .expect("the runner keeps the profile");
+        assert_ne!(standing, ProfileStanding::SignedIn, "nothing signed it in");
     });
+    // Its standing, asked by the sign-in's own kubectl exec into the vouched pod.
+    standing_by_exec(&kubectl, &runner, &paired.vouched.pod);
+    // What a sign-in leaves in the profile's folder, in the runner's home on the kept volume.
+    let folder = in_the_pod(&kubectl, &runner, &paired.vouched.pod, MARK_SIGN_IN);
+    assert!(folder.trim().starts_with('/'), "{folder}");
 
     // The pod is lost: upstream makes it again, under the same name, on the same volume.
     let first_pod =
@@ -511,7 +596,18 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
         )
         .await;
         assert!(drawn.contains("the conversation so far"), "{drawn}");
+        // The profile is still kept, and asked again (#3819).
+        client
+            .keep_profile(work())
+            .await
+            .expect("the runner keeps the profile again");
     });
+    // A sign-in on a kept claim outlives the pod (#3819, spec #4023 Q6).
+    assert_eq!(
+        in_the_pod(&kubectl, &runner, &paired.vouched.pod, READ_SIGN_IN).trim(),
+        "signed in before the pod went"
+    );
+    standing_by_exec(&kubectl, &runner, &paired.vouched.pod);
 
     // Stopped and run again (#2058): suspended, never destroyed, it is the same runner, paired
     // as it was.

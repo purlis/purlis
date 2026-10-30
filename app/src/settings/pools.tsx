@@ -261,6 +261,10 @@ function KeyChangedNotice({
 const MY_OWN_SAID =
   "Your cluster's admins, whoever holds the node or its storage, and anyone else allowed into this runner's pod can read what it holds, the vault values, tokens and logins purlis sends it among them. Turn this on only if you accept that. It stays off until you do, and purlis sends this runner nothing while it is off. Each run still asks you, and the cluster must vouch for the runner at that moment.";
 
+/** What an unmarked cluster pool's row says of profiles (#3819): none goes there until it is marked. */
+export const notMarkedSaid = (pool: string) =>
+  `Your profiles go to pool ${pool}'s runner, and sign in there, only once you turn on This is my own.`;
+
 /** A cluster pool's row (#3292): its cluster's pool, where it is claimed, and Remove. */
 function ClusterPoolEntry({
   pool,
@@ -268,6 +272,7 @@ function ClusterPoolEntry({
   removing,
   onAsk,
   notHeld,
+  profiles,
 }: {
   pool: ClusterPoolRow;
   link: PoolLink | "asking" | undefined;
@@ -276,6 +281,8 @@ function ClusterPoolEntry({
   onAsk: () => void;
   /** The marks of projects whose chats run on it, drawn on its row. */
   notHeld: ReactNode;
+  /** Its profiles (#3819), drawn only while it is marked as the person's own. */
+  profiles: ReactNode;
 }) {
   const said = useId();
   const [refused, setRefused] = useState<string | undefined>();
@@ -318,6 +325,7 @@ function ClusterPoolEntry({
       {typeof link === "object" && link.state === "down" && (
         <p className="ui-setting-help">{link.why}</p>
       )}
+      {pool.owned ? profiles : <p className="ui-setting-help">{notMarkedSaid(pool.name)}</p>}
       {notHeld}
     </li>
   );
@@ -431,6 +439,7 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
                     removing={now.removing === pool.name}
                     onAsk={() => setAsking(pool.name)}
                     notHeld={marks(shown.filter((one) => rowOf(one) === pool.name))}
+                    profiles={<PoolProfiles pool={pool.name} plane={plane} />}
                   />
                 ))}
               </ul>
