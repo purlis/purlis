@@ -10,7 +10,7 @@ use crate::support;
 use std::path::{Path, PathBuf};
 
 use purlis_core::gitbroker::{Asker, commit};
-use purlis_core::hookwire::{Answer, CommitAsk, Stage};
+use purlis_core::hookwire::{Answer, CommitAsk, FolderName, Stage};
 use purlis_core::repocmd::Say;
 use purlis_core::worktree::{self, git, link};
 
@@ -38,6 +38,11 @@ fn project() -> Project {
 impl Project {
     /// What the app answers chat 4, standing in `cwd`, asking for `stage` to be committed.
     fn asked_from(&self, cwd: &Path, stage: Stage) -> Answer {
+        self.asked_for(cwd, None, stage)
+    }
+
+    /// [`Self::asked_from`], for a command that ran in branch folder `folder` (#3927).
+    fn asked_for(&self, cwd: &Path, folder: Option<FolderName>, stage: Stage) -> Answer {
         let asker = Asker {
             chat: 4,
             cwd: Some(cwd.to_path_buf()),
@@ -50,6 +55,7 @@ impl Project {
             chat: 4,
             message: "piece: one change\n\nWhy it was made.".to_owned(),
             stage,
+            folder,
         };
         let identity = git::Isolated::identity(Some("The Person"), Some("person@example.invalid"));
         commit::answer(&self.f.plane, &asker, &ask, &identity)
@@ -222,6 +228,34 @@ fn a_path_is_read_from_where_the_chat_stands() {
         p.git(&p.piece, &["show", "--format=", "--name-only", "HEAD"]),
         "deep/a.txt"
     );
+}
+
+#[test]
+fn a_command_run_in_the_folder_names_it_and_its_paths_are_the_folders_for_a_chat_above_it() {
+    // #3927: the chat stands in its workspace; the command ran in the branch folder.
+    purlis_core::unsteered!();
+    let p = project();
+    std::fs::write(p.piece.join("b.txt"), "b\n").unwrap();
+    let workspace = p.f.plane.join("workspaces").join(&p.f.ws);
+    let folder = FolderName {
+        workspace: p.f.ws.clone(),
+        repo: p.f.repo.clone(),
+        piece: "piece".to_owned(),
+    };
+
+    committed(&p.asked_for(&workspace, Some(folder.clone()), paths(&["b.txt"])));
+    assert_eq!(
+        p.git(&p.piece, &["show", "--format=", "--name-only", "HEAD"]),
+        "b.txt"
+    );
+
+    // The same names from a chat in another workspace are refused, and nothing is staged.
+    let elsewhere = p.f.plane.join("workspaces/other");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::fs::write(p.piece.join("c.txt"), "c\n").unwrap();
+    let why = refused(&p.asked_for(&elsewhere, Some(folder), paths(&["c.txt"]))).to_owned();
+    assert!(why.contains("nothing was committed"), "{why}");
+    assert!(p.nothing_staged());
 }
 
 #[cfg(unix)]

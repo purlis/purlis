@@ -835,3 +835,106 @@ fn a_sandboxed_chats_commit_in_its_branch_folder_is_made_by_the_app_and_its_answ
     );
     assert_eq!(git_said(&piece, &["rev-parse", "HEAD"]), after);
 }
+
+#[test]
+fn a_commit_run_in_a_branch_folder_takes_its_paths_from_there_for_a_chat_above_it() {
+    // #3927: the chat stands in its workspace, and the command runs in the branch folder
+    // (`env -C <folder>`, or a shell standing in it): its paths are the folder's, as git's are.
+    purlis_core::unsteered!();
+    let tmp = tempfile::tempdir().unwrap();
+    let world = World::at(tmp.path());
+    world.widget();
+    let root = world.plane("committing-from-above", "[\"forge\"]");
+    for args in [
+        &["clone", "widget", "-w", "alpha"][..],
+        &["worktree", "add", "widget", "p1", "-w", "alpha"][..],
+    ] {
+        let made = world.purlis(&root, args, &[]);
+        assert!(made.status.success(), "{args:?}: {}", err(&made));
+    }
+    let piece = root.join("workspaces/alpha/.worktrees/widget/p1");
+    std::fs::create_dir_all(piece.join("docs")).unwrap();
+    std::fs::write(piece.join("docs/one.md"), "one\n").unwrap();
+    std::fs::write(piece.join("two.md"), "two\n").unwrap();
+    std::fs::write(piece.join("three.md"), "three\n").unwrap();
+    let (_reading, token, socket, asked) = an_app(
+        &world.base,
+        the_commit_broker(root.clone(), root.join("workspaces/alpha")),
+    );
+    let commit = |from: &Path, args: &[&str]| {
+        support::purlis()
+            .args(args)
+            .current_dir(from)
+            .env_clear()
+            .env("CHARTER_ROOT", &root)
+            .env("HOME", &world.home)
+            .env("PATH", "/usr/bin:/bin")
+            .env("USER", "tester")
+            .env(SANDBOXED_ENV, "1")
+            .envs(chat_3(&socket, &token))
+            .output()
+            .expect("the binary runs")
+    };
+    let printed = |out: &Output| {
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
+    };
+
+    // From below the folder's top, a path as git takes it there, and a message that starts
+    // with two dashes.
+    let ran = commit(
+        &piece.join("docs"),
+        &[
+            "worktree",
+            "commit",
+            "-m",
+            "--docs: one",
+            "one.md",
+            "../two.md",
+        ],
+    );
+    assert_eq!(ran.status.code(), Some(0), "{}", printed(&ran));
+    let Ok(Ask::Commit(sent)) = asked.recv_timeout(Duration::from_secs(5)) else {
+        panic!("the app was not asked to commit: {}", printed(&ran));
+    };
+    assert_eq!(sent.message, "--docs: one");
+    assert_eq!(
+        sent.stage,
+        Stage::Paths(vec!["docs/one.md".to_owned(), "two.md".to_owned()])
+    );
+    assert_eq!(
+        git_said(&piece, &["show", "--format=", "--name-only", "HEAD"]),
+        "docs/one.md\ntwo.md"
+    );
+
+    // From the top, a path spelled from the workspace still names the same file.
+    let ran = commit(
+        &piece,
+        &[
+            "worktree",
+            "commit",
+            "-m",
+            "three",
+            ".worktrees/widget/p1/three.md",
+        ],
+    );
+    assert_eq!(ran.status.code(), Some(0), "{}", printed(&ran));
+    assert!(asked.recv_timeout(Duration::from_secs(5)).is_ok());
+    assert_eq!(
+        git_said(&piece, &["show", "--format=", "--name-only", "HEAD"]),
+        "three.md"
+    );
+
+    // A path that leaves the folder is refused here, naming what works, and nothing is asked.
+    let ran = commit(&piece, &["worktree", "commit", "-m", "x", "../p2/a.md"]);
+    assert_eq!(ran.status.code(), Some(2), "{}", printed(&ran));
+    assert!(
+        printed(&ran).contains(".worktrees/widget/p1/<path>"),
+        "{}",
+        printed(&ran)
+    );
+    assert!(asked.recv_timeout(Duration::from_millis(200)).is_err());
+}

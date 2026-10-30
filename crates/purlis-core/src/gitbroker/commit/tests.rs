@@ -157,6 +157,7 @@ fn ask() -> CommitAsk {
         chat: 4,
         message: "one".to_owned(),
         stage: Stage::Tracked,
+        folder: None,
     }
 }
 
@@ -457,6 +458,7 @@ impl Tree {
             chat: 4,
             message: message.to_owned(),
             stage,
+            folder: None,
         };
         let identity = git::Isolated::identity(Some("The Person"), Some("person@example.invalid"));
         let plain = git::Isolated::default().pinned(&here.top, &here.git_dir);
@@ -1084,4 +1086,91 @@ fn a_file_swapped_after_it_was_staged_is_refused_unstaged_and_its_blob_taken_out
         std::fs::read_to_string(top.join("swapped.txt")).unwrap(),
         "other bytes\n"
     );
+}
+
+fn named(workspace: &str, repo: &str, piece: &str) -> FolderName {
+    FolderName {
+        workspace: workspace.to_owned(),
+        repo: repo.to_owned(),
+        piece: piece.to_owned(),
+    }
+}
+
+#[test]
+fn a_folder_the_command_ran_in_takes_its_paths_from_its_top_wherever_the_chat_stands() {
+    // #3927: a chat in its workspace ran the command in a branch folder below it.
+    let (_dir, root, workspace) = folders();
+    let piece = workspace.join(".worktrees/thing/piece");
+    let ran_in = named("alpha", "thing", "piece");
+    for cwd in [
+        root.clone(),
+        workspace.clone(),
+        workspace.join(".worktrees/thing"),
+        piece.clone(),
+        piece.join("src"),
+    ] {
+        let (folder, stage) =
+            named_folder(&root, &cwd, &ran_in, &staging(&["src/a.rs"])).expect("placed");
+        assert_eq!(folder, piece, "{}", cwd.display());
+        assert_eq!(stage, staging(&["src/a.rs"]));
+        let (_, stage) = named_folder(&root, &cwd, &ran_in, &Stage::Tracked).expect("placed");
+        assert_eq!(stage, Stage::Tracked);
+    }
+}
+
+#[test]
+fn a_folder_the_command_ran_in_beside_the_chats_own_or_not_there_is_refused() {
+    let (_dir, root, workspace) = folders();
+    let stage = staging(&["src/a.rs"]);
+    // A chat in another branch folder, or in another workspace.
+    std::fs::create_dir_all(root.join("workspaces/beta")).expect("a workspace");
+    for cwd in [
+        workspace.join(".worktrees/thing/other"),
+        root.join("workspaces/beta"),
+    ] {
+        let why = named_folder(&root, &cwd, &named("alpha", "thing", "piece"), &stage).unwrap_err();
+        assert!(why.contains("thing · piece"), "{why}");
+        assert!(why.contains("nothing was committed"), "{why}");
+    }
+    // A folder that is not there, and names that cannot name one.
+    for bad in [
+        named("alpha", "thing", "gone"),
+        named("alpha", "..", "piece"),
+        named("../x", "thing", "piece"),
+    ] {
+        assert!(
+            named_folder(&root, &workspace, &bad, &stage).is_err(),
+            "{bad:?}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_the_command_ran_in_reached_through_a_link_is_refused() {
+    let (_dir, root, workspace) = folders();
+    std::os::unix::fs::symlink(
+        workspace.join(".worktrees/thing/piece"),
+        workspace.join(".worktrees/thing/linked"),
+    )
+    .expect("a link");
+    let why = named_folder(
+        &root,
+        &workspace,
+        &named("alpha", "thing", "linked"),
+        &staging(&["src/a.rs"]),
+    )
+    .unwrap_err();
+    assert!(why.contains("through a link"), "{why}");
+    // And a path through a link inside it is refused as from where the chat stands.
+    std::os::unix::fs::symlink(&workspace, workspace.join(".worktrees/thing/piece/out"))
+        .expect("a link");
+    let why = named_folder(
+        &root,
+        &workspace,
+        &named("alpha", "thing", "piece"),
+        &staging(&["out/a.rs"]),
+    )
+    .unwrap_err();
+    assert!(why.contains("through a link"), "{why}");
 }
