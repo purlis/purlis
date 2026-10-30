@@ -2019,6 +2019,8 @@ pub(crate) fn serve_recorded(
     let mut minting: Option<crate::sandbox::tools::Tool> = None;
     // The repository a declared tool's run reads (#3868), judged with its arguments.
     let mut its_repository: Option<crate::sandbox::tools::Ready> = None;
+    // A forge tool's host, told to its run (#3869).
+    let mut forge_env: Vec<(String, String)> = Vec::new();
     // The variables an approved server's run starts with beside
     // [`crate::sandbox::tools::a_run_starts_from`]'s: those its approved entry sets, with the
     // values the person approved (#3441).
@@ -2047,6 +2049,7 @@ pub(crate) fn serve_recorded(
                 minting = ready.tool.mint.is_some().then(|| ready.tool.clone());
                 command = words;
                 its_repository = Some(ready.clone());
+                forge_env = crate::sandbox::tools::forge_env(ready);
             }
             Err(why) => return refuse(&mut *writer, 1, why),
         },
@@ -2205,6 +2208,9 @@ pub(crate) fn serve_recorded(
     }
     // Its git held to the repository judged above (#3868).
     for (k, v) in held_to {
+        exec::set_var(&mut base, &k, v);
+    }
+    for (k, v) in forge_env {
         exec::set_var(&mut base, &k, v);
     }
     // ssh, and git over ssh, through the run's own SOCKS port (#1667): the chat's route names

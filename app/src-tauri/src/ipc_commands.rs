@@ -464,6 +464,7 @@ macro_rules! app_commands {
                 dockerpools::remove_docker_pool,
                 dockerpools::docker_pool_link,
                 dockerpools::docker_pool_version,
+                dockerpools::runner_image_of_this_version,
                 clusterpools::cluster_contexts,
                 clusterpools::cluster_pool_key,
                 clusterpools::add_cluster_pool,

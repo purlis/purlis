@@ -464,6 +464,35 @@ fn a_rebase_purlis_runs_is_judged_for_the_head_it_is_handed_whatever_head_says()
 }
 
 #[test]
+fn a_rebase_onto_a_new_base_is_judged_for_the_commits_after_the_old_one() {
+    // #3836: `rebase --onto p o t` replays what `t` has and `o` lacks, not what `p` lacks. The
+    // old base's own commits (`p..o`) carry a denied file and are left behind, so they are not
+    // judged; the piece's own are.
+    let moved = Fake {
+        differ: vec![("t", "p", vec!["src/a.rs"])],
+        replayed_from: vec![
+            ("p", "t", vec!["app/.vscode/tasks.json", "src/a.rs"]),
+            ("o", "t", vec!["src/a.rs"]),
+        ],
+        ..a_clone()
+    };
+    assert_eq!(
+        judged_rebase_from(TOP, "p", "o", "t", &place(true), &moved),
+        None
+    );
+    // The same move with no old base replays them, and is refused.
+    assert!(judged_rebase(TOP, "p", "t", &place(true), &moved).is_some());
+    // And the piece's own commits are judged: one that touches a denied file is refused.
+    let own = Fake {
+        differ: vec![("t", "p", vec!["src/a.rs"])],
+        replayed_from: vec![("o", "t", vec![".husky/pre-commit"])],
+        ..a_clone()
+    };
+    let said = judged_rebase_from(TOP, "p", "o", "t", &place(true), &own).expect("refused");
+    assert!(said.contains("would write `.husky/pre-commit`"), "{said}");
+}
+
+#[test]
 fn a_rebase_answers_for_every_commit_it_replays() {
     // The two commits differ in no denied file, but a commit of the branch's own changed a
     // hook, which the rebase writes again.
