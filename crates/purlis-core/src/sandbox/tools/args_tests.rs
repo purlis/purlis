@@ -261,7 +261,7 @@ fn glab_has_its_own_and_both_refuse_api_against_another_host() {
     ] {
         assert!(runs(&glab, words).is_err(), "{words:?}");
     }
-    assert!(runs(&glab, &["api", "projects/1"]).is_ok());
+    assert!(runs(&glab, &["api", "projects/1/issues"]).is_ok());
     assert!(runs(&glab, &["mr", "list"]).is_ok());
     let gh = ready(tool_with("gh", None), "/opt/homebrew/bin/gh");
     assert!(runs(&gh, &["api", "--hostname", "evil.example", "user"]).is_err());
