@@ -687,10 +687,7 @@ impl Talk {
         now: Instant,
     ) -> Result<(), String> {
         may_send(limits, self.in_the_last_minute(asker, task, now))?;
-        self.sent
-            .entry((asker, task))
-            .or_default()
-            .push_back(now);
+        self.sent.entry((asker, task)).or_default().push_back(now);
         Ok(())
     }
 
@@ -1126,8 +1123,7 @@ impl Talk {
         for pair in moved {
             if let Some(sent) = self.sent.remove(&pair) {
                 let renumber = |chat: u32| if chat == old { new } else { chat };
-                self.sent
-                    .insert((renumber(pair.0), renumber(pair.1)), sent);
+                self.sent.insert((renumber(pair.0), renumber(pair.1)), sent);
             }
         }
     }
