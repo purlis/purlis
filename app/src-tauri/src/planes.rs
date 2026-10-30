@@ -1044,6 +1044,11 @@ impl Held {
             self.chats.owes(session, purlis_core::reopen::Owed::Failed);
         }
         let reported = handoff::reported_by(self, session);
+        // **What it queued while the app did not answer is delivered first** (#3902), while the
+        // app still knows the chat and its tasks; what cannot be is kept on the dispatch record
+        // it is about, and the spool clears its folder as it ends. A chat started again in its
+        // own place (`in_its_place`) goes on, and keeps its queue.
+        crate::dispatched::sender_ending(self, session);
         let closed = self.end_chat(session);
         if let Some(me) = self.me.get().and_then(std::sync::Weak::upgrade) {
             handoff::close_reported(&me, reported, deciding);
@@ -1298,6 +1303,7 @@ impl Held {
         // A chat the person is stopping is not started again (#1448): it is ended, as the stop
         // would have ended it.
         if self.stopping.is_stopping(session) {
+            crate::dispatched::sender_ending(self, session);
             if let Err(ended) = self.end_chat(session) {
                 tracing::warn!("purlis: chat {session} did not end cleanly ({ended})");
             }
@@ -1331,6 +1337,7 @@ impl Held {
                 // Kept with why among the chats that would not start, so a window that opens
                 // later still says so.
                 self.chats.keep_aside(session, &said);
+                crate::dispatched::sender_ending(self, session);
                 if let Err(ended) = self.end_chat(session) {
                     tracing::warn!("purlis: chat {session} did not end cleanly ({ended})");
                 }

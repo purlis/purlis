@@ -4111,14 +4111,17 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
 /// `purlis profile sign-in <name>` (#2035, ADR 0095 §3): the harness's own sign-in, run in this
 /// terminal with the profile's folder variables set, to `provider` for opencode, its input and
 /// output the person's own and none of it read; or, with `check`, whether its harness says it
-/// is signed in here.
+/// is signed in here. On a runner, a profile it keeps for its desktop with a pin is signed in
+/// and asked by that version, fetched first where it is not installed yet, as a chat's start
+/// fetches it, with a line in this terminal saying so (#4007); a fetch that is refused says why
+/// and signs nothing in.
 fn profile_sign_in(
     store: &purlis_core::profilestore::Homes,
     name: &str,
     check: bool,
     provider: Option<&str>,
 ) -> ExitCode {
-    use purlis_core::profilestore::{self, sign_in};
+    use purlis_core::profilestore::{self, installs, sign_in};
     let record = match profilestore::list(store.config_root()) {
         Ok(records) => records.into_iter().find(|p| p.name == name),
         Err(why) => return refused(&why),
@@ -4130,6 +4133,16 @@ fn profile_sign_in(
         ));
     };
     let here = profilestore::this_device();
+    let pinned = match installs::on_this_runner(&record, &|line| eprintln!("{line}")) {
+        Ok(pinned) => pinned,
+        Err(why) if check => {
+            return refused(&format!(
+                "{why}. purlis cannot tell whether '{}' is signed in on {here}.",
+                record.name
+            ));
+        }
+        Err(why) => return refused(&format!("{why}. Nothing was signed in.")),
+    };
     if check {
         let said = match sign_in::standing_of(&record, &sign_in::ThisMachine) {
             None => format!(
@@ -4155,7 +4168,7 @@ fn profile_sign_in(
         eprintln!("{said}");
         return ExitCode::SUCCESS;
     }
-    let login = match sign_in::login_of(&record, provider) {
+    let login = match sign_in::login_of(&record, provider, pinned.as_deref()) {
         Ok(login) => login,
         Err(why) => return refused(&why),
     };

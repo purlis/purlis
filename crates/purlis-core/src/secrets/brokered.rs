@@ -1605,6 +1605,24 @@ pub fn serve_handed(
     );
 }
 
+/// **The value a minting tool's run is handed for `key`** (#2053): the token minted from the
+/// tool's one key, and nothing for any other key.
+fn minted_for(
+    tool: &crate::sandbox::tools::Tool,
+    key: &str,
+    token: &zeroize::Zeroizing<String>,
+) -> Result<zeroize::Zeroizing<String>, super::VaultError> {
+    if tool.values.iter().any(|value| value.key == key) {
+        super::seen::remember(token);
+        Ok(token.clone())
+    } else {
+        Err(super::VaultError::new(format!(
+            "{} is handed a GitHub App's token alone, and no value of key {key}",
+            tool.name
+        )))
+    }
+}
+
 /// [`serve_handed`] in `wrap`, telling nothing of what its proxy refused.
 #[cfg(test)]
 pub(crate) fn serve_handed_wrapped(
@@ -1982,6 +2000,8 @@ pub(crate) fn serve_recorded(
     let persona = asker.persona.as_deref().unwrap_or_default();
     let listed = declared_now(&asker.root, persona);
     let mut declared_as: Option<String> = None;
+    // A tool whose token a GitHub App mints (#2053): handed the token, never the key.
+    let mut minting: Option<crate::sandbox::tools::Tool> = None;
     // The variables an approved server's run starts with beside
     // [`crate::sandbox::tools::a_run_starts_from`]'s: those its approved entry sets, with the
     // values the person approved (#3441).
@@ -2007,6 +2027,7 @@ pub(crate) fn serve_recorded(
         Ok(ready) => match crate::sandbox::tools::run_words(ready, &command[1..]) {
             Ok(words) => {
                 declared_as = ready.argv0().map(str::to_owned);
+                minting = ready.tool.mint.is_some().then(|| ready.tool.clone());
                 command = words;
             }
             Err(why) => return refuse(&mut *writer, 1, why),
@@ -2183,14 +2204,50 @@ pub(crate) fn serve_recorded(
         command: command.clone(),
         argv0: None,
     };
-    let prepared = match (&v, handed) {
-        (Some(v), _) => exec::prepare(&ctx, v, &req, base, Some(&within), &|| None),
-        (None, Some(handed)) => {
+    let prepared = match (&v, handed, &minting) {
+        // A GitHub App's token, minted here from its key, which goes to nothing else (#2053, E2):
+        // the tool's one key is answered with the token.
+        (Some(_), _, Some(tool)) => {
+            // Only the clones its workspace had when the chat started, as they were then, and
+            // whose git directory is in none of its grants, name the chat's repos.
+            let mut grants = confines.writable.clone();
+            if let Some(caches) = &confines.widened.caches {
+                grants.extend(caches.trees.iter().chain(caches.bare.iter()).cloned());
+            }
+            // And only those purlis cloned or the person saved from the window.
+            let config_root = crate::forge::apptoken::record_root();
+            let token = match crate::forge::apptoken::token_from_vault(
+                &ctx,
+                &crate::forge::apptoken::For {
+                    root: &asker.root,
+                    chat: asker.chat,
+                    folder: asker.folder.as_deref(),
+                    here: wanted.cwd.as_deref(),
+                    writes: &grants,
+                    started: Some(&confines.clones),
+                    on_a_runner: false,
+                    config_root: config_root.as_deref(),
+                },
+                tool,
+            ) {
+                Ok(token) => token,
+                Err(why) => return refuse(&mut *writer, 1, why),
+            };
+            exec::prepare_from(
+                &|key| minted_for(tool, key, &token),
+                &req,
+                base,
+                Some(&within),
+                &|| None,
+            )
+        }
+        (Some(v), _, None) => exec::prepare(&ctx, v, &req, base, Some(&within), &|| None),
+        (None, Some(handed), _) => {
             exec::prepare_from(&|key| handed.value(key), &req, base, Some(&within), &|| {
                 None
             })
         }
-        (None, None) => return refuse(&mut *writer, 1, "no vault to read".to_owned()),
+        (None, None, _) => return refuse(&mut *writer, 1, "no vault to read".to_owned()),
     };
     let prepared = match prepared {
         Ok(prepared) => prepared,

@@ -13,6 +13,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, screen, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillStudioTab } from "./SkillStudioTab";
+import { Panel } from "./ui/panel/Panel";
 import {
   SKILL_STUDIO_VIEW,
   inWorkspace,
@@ -73,25 +74,31 @@ const version = (commit: string, subject: string, at: string) => ({
   grade: null,
 });
 
-/** The studio tab, opened at `chosen`'s page on `tab`, `width` by 560 px. */
+/** The studio tab, opened at `chosen`'s page on `tab`, `width` by `height` (560) px. */
 function Tab({
   width,
+  height = 560,
   narrow,
 }: {
   width: number;
+  height?: number;
   narrow?: boolean;
   chosen: StudioSkill;
   tab: SkillPageTab;
 }) {
   return (
-    // Isolated as the window's root is (`App.css`, #1481), so a dialog opened over the page is
-    // drawn over its sticky header here too.
-    <div
-      className="view-body"
-      style={{ inlineSize: width, blockSize: 560, display: "flex", isolation: "isolate" }}
-    >
-      <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
-    </div>
+    // In the content panel, as a view tab is drawn (`PlaneView`): its fill is the ground the
+    // page header is drawn on while the page scrolls under it (#3944). Isolated as the window's
+    // root is (`App.css`, #1481), so a dialog opened over the page is drawn over its sticky
+    // header here too.
+    <Panel variant="content">
+      <div
+        className="view-body"
+        style={{ inlineSize: width, blockSize: height, display: "flex", isolation: "isolate" }}
+      >
+        <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
+      </div>
+    </Panel>
   );
 }
 
@@ -293,6 +300,58 @@ export const Narrow: Story = {
     await tabInto(() => back);
     expectFocusInSight();
   },
+};
+
+/**
+ * **Scrolled under its header** (#3944): the page's body, its tabs first, scrolls under the
+ * header, which is drawn on its panel's fill, so none of it shows through behind the actions.
+ * The keyboard on the page tabs brings them out from under the header, never leaves them behind
+ * it (WCAG 2.4.11). Pictured scrolled to its end.
+ */
+async function scrolledUnderTheHeader(canvasElement: HTMLElement): Promise<void> {
+  const canvas = within(canvasElement);
+  const tabs = await canvas.findByRole("tablist", { name: "deploy's sections" });
+  await canvas.findByTestId("skill-owners");
+  const pane = tabs.closest<HTMLElement>('[data-scope="view-frame"][data-part="item"]');
+  const header = pane?.querySelector<HTMLElement>('[data-scope="view-frame"][data-part="header"]');
+  const panel = pane?.closest<HTMLElement>('[data-scope="panel"][data-part="root"]');
+  if (!pane || !header || !panel) throw new Error("the skill's page is not in a pane of a panel");
+  await expect(pane.scrollHeight).toBeGreaterThan(pane.clientHeight);
+  // The header's ground is its panel's fill, so nothing shows through it.
+  await expect(getComputedStyle(header).backgroundColor).toBe(
+    getComputedStyle(panel).backgroundColor,
+  );
+  const toTheEnd = async () => {
+    pane.scrollTop = pane.scrollHeight;
+    await waitFor(() =>
+      expect(tabs.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+        header.getBoundingClientRect().bottom,
+      ),
+    );
+  };
+  await toTheEnd();
+  // The keyboard reaches the tabs from under the header: they are scrolled clear of it.
+  const chosen = within(tabs).getByRole("tab", { name: /Overview/ });
+  chosen.focus();
+  expectFocusInSight();
+  await expect(tabs.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+    header.getBoundingClientRect().bottom - 1,
+  );
+  // Pictured scrolled to its end, the keyboard gone from the page.
+  chosen.blur();
+  await toTheEnd();
+}
+
+/** **Scrolled**, wide beside the Library: the body under the header, clear of its actions. */
+export const Scrolled: Story = {
+  args: { height: 360 },
+  play: async ({ canvasElement }) => scrolledUnderTheHeader(canvasElement),
+};
+
+/** **Scrolled, narrow**: the page alone, its header wrapping, the body under it all the same. */
+export const ScrolledNarrow: Story = {
+  args: { width: 460, height: 360, narrow: true },
+  play: async ({ canvasElement }) => scrolledUnderTheHeader(canvasElement),
 };
 
 /** Edit, then a line typed at the end of the text: the editor in place, as the person types. */

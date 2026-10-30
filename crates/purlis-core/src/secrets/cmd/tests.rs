@@ -1147,3 +1147,129 @@ fn a_list_that_names_no_vault_where_there_are_none_says_one_sentence() {
     );
     assert_eq!(io.out(), "");
 }
+
+// ---------------------------------------------------------------------------------------
+// A GitHub App's key is never handed over raw (#2053, E2).
+
+/// A plane whose persona `dev` mints with `app-key` of vault `forge`, which holds it beside
+/// `other`.
+fn a_plane_minting_with_its_key() -> Plane {
+    let plane = Plane::new(&[]);
+    std::fs::write(
+        crate::names::manifest(plane.root()),
+        "[sandbox.personas.dev]\ntools = { gh = { vault = \"forge\", mint = \"github-app\", \
+         app = \"Iv1.abc\", key = \"app-key\" } }\n",
+    )
+    .unwrap();
+    plane.plain(
+        "forge",
+        json!({"app-key": "the-app-key-9c2e", "other": "other-value-5d1a"}),
+    );
+    plane
+}
+
+#[test]
+fn a_key_a_mint_line_names_is_refused_to_every_raw_read_and_others_are_not() {
+    let plane = a_plane_minting_with_its_key();
+    let v = provider(&plane.ctx, "forge").unwrap();
+    let refused = get_value(&plane.ctx, &v, "app-key").unwrap_err();
+    assert!(
+        refused.message.to_string().contains("never hands it over"),
+        "{}",
+        refused.message
+    );
+    assert_eq!(
+        get_value(&plane.ctx, &v, "other").unwrap(),
+        "other-value-5d1a"
+    );
+
+    let mut io = Rec::default();
+    assert_eq!(get(&plane.ctx, "forge", "app-key", true, true, &mut io), 1);
+    assert!(!io.out().contains("the-app-key-9c2e"), "{}", io.out());
+    assert!(io.said().contains("never hands it over"), "{}", io.said());
+
+    // `secret exec`, whatever it is asked to hand it as: a variable, a file or a dotenv entry.
+    for req in [
+        crate::secrets::exec::Request {
+            vault: "forge".into(),
+            env: vec!["GH_TOKEN=app-key".into()],
+            command: vec!["true".into()],
+            ..Default::default()
+        },
+        crate::secrets::exec::Request {
+            vault: "forge".into(),
+            file: vec!["KEY=app-key".into()],
+            command: vec!["true".into()],
+            ..Default::default()
+        },
+        crate::secrets::exec::Request {
+            vault: "forge".into(),
+            dotenv: vec!["ENV_FILE=APP_KEY:app-key".into()],
+            command: vec!["true".into()],
+            ..Default::default()
+        },
+    ] {
+        let prepared =
+            crate::secrets::exec::prepare(&plane.ctx, &v, &req, Vec::new(), None, &|| None);
+        assert!(prepared.is_err(), "{:?} was handed the key", req.env);
+    }
+}
+
+#[test]
+fn a_key_a_mint_line_names_still_resolves_for_verify_and_the_mint_but_is_not_renamed_away() {
+    let plane = a_plane_minting_with_its_key();
+    let v = provider(&plane.ctx, "forge").unwrap();
+    assert!(resolves(&plane.ctx, &v, "app-key").is_ok());
+    assert_eq!(
+        read_to_mint(&plane.ctx, &v, "app-key").unwrap(),
+        "the-app-key-9c2e"
+    );
+    let refused = rename(&plane.ctx, &v, "app-key", "loose").unwrap_err();
+    assert!(
+        refused.message.to_string().contains("does not rename it"),
+        "{}",
+        refused.message
+    );
+    assert_eq!(keys(&plane.ctx, &v).unwrap(), ["app-key", "other"]);
+}
+
+#[test]
+fn while_the_project_file_does_not_parse_no_private_key_is_handed_over_raw() {
+    let plane = Plane::new(&[]);
+    std::fs::write(
+        crate::names::manifest(plane.root()),
+        "[sandbox.personas.dev\ntools = <<<<<<< a conflict\n",
+    )
+    .unwrap();
+    let armour = ["-----BEGIN RSA ", "PRIVATE KEY-----"].concat();
+    plane.plain(
+        "forge",
+        json!({"app-key": format!("{armour}\nMIIEabc\n"), "token": "plain-token-0a1b"}),
+    );
+    let v = provider(&plane.ctx, "forge").unwrap();
+    let refused = get_value(&plane.ctx, &v, "app-key").unwrap_err();
+    assert!(
+        refused.message.to_string().contains("cannot be read"),
+        "{}",
+        refused.message
+    );
+    assert_eq!(
+        get_value(&plane.ctx, &v, "token").unwrap(),
+        "plain-token-0a1b"
+    );
+}
+
+#[test]
+fn while_the_project_file_does_not_parse_no_key_is_renamed() {
+    let plane = Plane::new(&[]);
+    std::fs::write(crate::names::manifest(plane.root()), "[sandbox\nbroken\n").unwrap();
+    plane.plain("forge", json!({"app-key": "the-app-key-9c2e"}));
+    let v = provider(&plane.ctx, "forge").unwrap();
+    let refused = rename(&plane.ctx, &v, "app-key", "loose").unwrap_err();
+    assert!(
+        refused.message.to_string().contains("renames no key"),
+        "{}",
+        refused.message
+    );
+    assert_eq!(keys(&plane.ctx, &v).unwrap(), ["app-key"]);
+}

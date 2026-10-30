@@ -12844,6 +12844,11 @@ export type SkillUsers = {
 	persona: string | null,
 	personas: string[],
 	skills: string[],
+	/**
+	 *  Every workspace and persona whose pins name it, the workspaces first: what a rename
+	 *  changes with it.
+	 */
+	pinned_by: SkillPinner[],
 };
 
 /**  One version of a skill: one commit that changed it. */
