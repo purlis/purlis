@@ -68,7 +68,6 @@ import {
   PASS_THROUGH_KEY,
   FOCUS_MODE_ID,
   SHORTCUTS_ID,
-  usingSkillId,
   saidOf,
   type BranchPath,
   type FileRef,
@@ -8264,26 +8263,30 @@ export const PlaneView = memo(function PlaneView({
   }, [by, inFront, press]);
 
   /**
-   * **Use skill…'s key** (#3954, the key registry's `chat.useSkill`): the Use skill… row of the
-   * tab in front, pressed as the palette would press it, so the key opens the picker on the chat
-   * in front. Claimed on the window, capture-phase, by the project in front, as the shell's key
-   * is; never under a modal. A tab in front that is no chat has no such row, and the key goes on.
+   * **Use skill…'s key** (#3954, the key registry's `chat.useSkill`): Use skill… on the chat in
+   * front, as the Use skill… row of its tab opens it. In a split tab that is the pane that has
+   * the keyboard (`focusedChat`), else the tab's chat in front (`chatInFrontOf`, a view's tab
+   * included). Claimed on the window, capture-phase, by the project in front, as the shell's key
+   * is; never under a modal. With the Skill studio off, a shell or no chat in front, there is no
+   * Use skill… to open, and the key goes on.
    */
   useEffect(() => {
-    if (!inFront) return;
+    if (!inFront || !studioOn) return;
     const key = (e: KeyboardEvent) => {
       if (pressed(e, ["chat.useSkill"]) === undefined) return;
-      const front = now.current.inFront;
-      const offer = front === undefined ? undefined : by(usingSkillId(front));
-      if (offer === undefined) return;
+      const tabs = now.current;
+      const session =
+        focusedChat(tabs) ??
+        (tabs.inFront === undefined ? undefined : chatInFrontOf(tabs, tabs.inFront));
+      if (session === undefined || shells.has(session)) return;
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat) return;
-      press(offer);
+      openUseSkill(session);
     };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
-  }, [by, inFront, press]);
+  }, [inFront, studioOn, shells, openUseSkill]);
 
   /**
    * **Focus mode's key and the keyboard shortcuts' key** (#2921, `keys/ownKeys.ts`): each presses

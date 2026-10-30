@@ -21,14 +21,7 @@ import { ListBox, ListOption } from "./ui/list/List";
 import { RowBelow, RowDescription, RowLabel } from "./ui/list/Row";
 import { Button } from "./ui/button/Button";
 import { counted } from "./dispatches";
-import {
-  AT_THE_ROOT,
-  pinnerSaid,
-  scopeOfPinner,
-  SKILL_STUDIO_TITLE,
-  skillStudioTitle,
-  useSkillStudioOn,
-} from "./skillStudio";
+import { AT_THE_ROOT, useSkillStudioOn } from "./skillStudio";
 import { SKILLS_MISSING_PUT_AWAY, askChatSkills, type ChatSkillsAsk } from "./chatSkillsAsk";
 import { chatNeedsOf, type ChatSkillsSaid } from "./chatSkillNeeds";
 import type { SkillsChangedHere } from "./PlaneUpdated";
@@ -38,69 +31,7 @@ import {
   type ChatSkills,
   type PlaneId,
   type SkillBudget,
-  type SkillPinner,
 } from "./bindings";
-
-/** The budget in a line: `12 skills of 30 · 3,400 of 6,000 characters`, and the manual-only
- *  skills, free on every chat (SK-8). */
-export function budgetSaid(budget: SkillBudget): string {
-  const chars = `${budget.chars.toLocaleString("en-US")} of ${budget.most_chars.toLocaleString("en-US")} characters`;
-  const skills = `${counted(budget.skills, "skill", "skills")} of ${budget.most_skills}`;
-  const manual = counted(budget.manual, "manual-only skill", "manual-only skills");
-  const free = budget.manual === 0 ? "" : ` · ${manual} free`;
-  const hidden =
-    budget.hidden === 0 ? "" : ` · ${counted(budget.hidden, "skill", "skills")} in the index skill`;
-  return `${skills} · ${chars}${free}${hidden}`;
-}
-
-/**
- * What the chat warns of where its set is at four fifths of the budget or past it, or nothing
- * below: which part, and what can be done.
- */
-export function warnsSaid(budget: SkillBudget): string | undefined {
-  const what =
-    budget.warns === "both"
-      ? "skills and their descriptions are"
-      : budget.warns === "skills"
-        ? "skills are"
-        : budget.warns === "chars"
-          ? "skills' descriptions are"
-          : undefined;
-  if (what === undefined) return undefined;
-  if (budget.still_over === "not-hideable")
-    return `purlis's own skills and the ones this chat's program and repos bring are past purlis's skill budget by themselves, so all of them are listed. Turn some of the program's or repos' skills off in the Skill studio.`;
-  if (budget.still_over === "pins")
-    return `This chat's pinned skills are past purlis's skill budget, so all of them are listed. Unpin some in ${unpinIn(budget)}, or make some manual-only.`;
-  if (budget.hidden > 0)
-    return `This chat's ${what} past purlis's skill budget, so ${counted(budget.hidden, "skill is", "skills are")} hidden behind the index skill, which the chat loads them from. Make some skills manual-only, or turn some off for this workspace.`;
-  return `This chat's ${what} near or past purlis's skill budget, past which some are hidden behind the index skill. Make some skills manual-only, or turn some off for this workspace.`;
-}
-
-/**
- * **A chat whose workspace's and persona's pins pass the most it reads only together** (#3391):
- * each list alone is accepted, so neither studio says anything is wrong, but the chat reads none
- * of either. Names both, how many each pins, and where to unpin; nothing where its pins are read.
- */
-export function pinsTogetherSaid(budget: SkillBudget): string | undefined {
-  const together = budget.pins_together;
-  if (together === null) return undefined;
-  const held = together.held
-    .map((one) => `${pinnerSaid(one.by)} pins ${counted(one.pins, "skill", "skills")}`)
-    .join(" and ");
-  const where = studiosOf(together.held.map((one) => one.by));
-  return `This chat reads none of its pins: ${held}, more than the ${together.most} a chat reads together. Unpin some in ${where}.`;
-}
-
-/** Where a chat's pins are undone (SK-15d): the studio of each of its workspace and persona that
- *  pins a skill, by its tab's title, or the studio itself where the window was not told. */
-function unpinIn(budget: SkillBudget): string {
-  return budget.pinned_by.length === 0 ? SKILL_STUDIO_TITLE : studiosOf(budget.pinned_by);
-}
-
-/** Each pinner's studio, by its tab's title: `Skill studio · ops or Skill studio · reviewer`. */
-function studiosOf(pinners: readonly SkillPinner[]): string {
-  return pinners.map((by) => skillStudioTitle(scopeOfPinner(by))).join(" or ");
-}
 
 /** What the filter over a chat's skills calls them. */
 const SKILLS = { one: "skill", many: "skills" };
@@ -398,14 +329,16 @@ export function useChatSkillSets(
 ): [ChatSkillSets, (session: number, said: ChatSkills | null) => void] {
   const [held, setHeld] = useState<Readonly<Record<number, HeldSet>>>({});
   const asked = useRef(new Set<number>());
+  // The chats whose "started without" notice was put away: an answer read before that, landing
+  // after, does not bring it back.
+  const putAway = useRef(new Set<number>());
   const set = useCallback((session: number, said: ChatSkills | null) => {
     setHeld((was) => {
       const budget = said?.budget ?? null;
-      if (said !== null && budget !== null)
-        return {
-          ...was,
-          [session]: { budget, routing: said.routing, missing: said.missing },
-        };
+      if (said !== null && budget !== null) {
+        const missing = putAway.current.has(session) ? null : said.missing;
+        return { ...was, [session]: { budget, routing: said.routing, missing } };
+      }
       if (!(session in was)) return was;
       return Object.fromEntries(
         Object.entries(was).filter(([one]) => Number(one) !== session),
@@ -430,17 +363,18 @@ export function useChatSkillSets(
   }, [key, on, plane, set]);
   // A "started without" notice put away is put away in the core too: the chip says it no more.
   useEffect(() => {
-    const putAway = (event: Event) => {
+    const hear = (event: Event) => {
       const { detail } = event as CustomEvent<ChatSkillsAsk>;
       if (detail.plane !== plane) return;
+      putAway.current.add(detail.session);
       setHeld((was) => {
         const one = was[detail.session];
         if (one === undefined || one.missing === null) return was;
         return { ...was, [detail.session]: { ...one, missing: null } };
       });
     };
-    window.addEventListener(SKILLS_MISSING_PUT_AWAY, putAway);
-    return () => window.removeEventListener(SKILLS_MISSING_PUT_AWAY, putAway);
+    window.addEventListener(SKILLS_MISSING_PUT_AWAY, hear);
+    return () => window.removeEventListener(SKILLS_MISSING_PUT_AWAY, hear);
   }, [plane]);
   const sets = useMemo<ChatSkillSets>(
     () =>

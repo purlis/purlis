@@ -9,7 +9,8 @@
  * what each surface says and does, in the DOM a reader reads.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { skillsMissingPutAway } from "./chatSkillsAsk";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type {
@@ -96,8 +97,8 @@ function core(
         budget: more.budget ?? null,
         routing: more.routing ?? null,
         repos: more.repos ?? [],
+        missing: more.missing ?? null,
       };
-    if (cmd === "chat_skills_missing") return more.missing ?? null;
     if (cmd === "chats_plane_updated") return more.updated ?? [];
     if (cmd === "skills_deleted" || cmd === "skill_drafts" || cmd === "skill_sources") return [];
     if (cmd === "skill_sources_offered") return [];
@@ -886,6 +887,14 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
       skillStudioAt(asPersona("reviewer"), "library"),
       SKILL_STUDIO_TITLE,
     );
+
+    // Its notice put away, its card goes, as the chip's warning does (#3953); another chat's
+    // put-away is not its own.
+    act(() => skillsMissingPutAway("p", 6));
+    expect(needOf("Started without 1 skill")).toBeInTheDocument();
+    act(() => skillsMissingPutAway("p", 5));
+    await waitFor(() => expect(() => needOf("Started without 1 skill")).toThrow());
+    expect(needOf("Its router fell back")).toBeInTheDocument();
   });
 
   it("names what changed since it started, and offers the restart that brings it", async () => {
@@ -931,7 +940,7 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
     await list();
     await waitFor(() => expect(hasRow("deploy")).toBe(true));
     expect(document.querySelector('[data-testid^="skills-need-"]')).toBeNull();
-    expect(asked.some((one) => one.cmd === "chat_skills_missing")).toBe(false);
+    expect(asked.some((one) => one.cmd === "chat_skills")).toBe(false);
   });
 });
 

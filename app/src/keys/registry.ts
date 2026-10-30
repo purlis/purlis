@@ -557,7 +557,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
     chords: { mac: [USE_SKILL.mac], other: [USE_SKILL.other] },
     said: (mac) => (mac ? "⌘⇧S" : "Ctrl+Shift+S"),
     yields: ["modal", "editor"],
-    // Each chat tab's row (`tab.useskill:<tab>`): the key presses the one in front.
+    // Each chat tab's Use skill… row (`tab.useskill:<tab>`) says it, as each tab's Close row says
+    // ⌫: the key opens it on the chat in front, the pane with the keyboard in a split tab.
     rows: ["tab.useskill:"],
     matches: (e, mac) => isChord(e, mac ? USE_SKILL.mac : USE_SKILL.other),
   },

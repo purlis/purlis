@@ -11,15 +11,12 @@ import {
   SkillsChip,
   UseSkill,
   UseSkillOpener,
-  budgetSaid,
-  pinsTogetherSaid,
   skillsMatching,
   useChatSkillSets,
-  warnsSaid,
 } from "./UseSkill";
 import type { ChatSkill, ChatSkills, PlaneUpdated, SkillBudget } from "./bindings";
 import { CHAT_SKILLS_ASKED, skillsMissingPutAway, type ChatSkillsAsk } from "./chatSkillsAsk";
-import type { ChatSkillsSaid } from "./chatSkillNeeds";
+import { budgetSaid, pinsTogetherSaid, warnsSaid, type ChatSkillsSaid } from "./chatSkillNeeds";
 
 afterEach(() => {
   cleanup();
@@ -452,6 +449,9 @@ describe("the Skills chip on a chat's pane", () => {
     act(() => skillsMissingPutAway("q", 5));
     expect(result.current[0][5]?.missing).toEqual(missing);
     act(() => skillsMissingPutAway("p", 5));
+    expect(result.current[0][5]?.missing).toBeNull();
+    // An answer read before the put-away, landing after, does not bring it back.
+    act(() => result.current[1](5, { ...skills([], BUDGET), missing }));
     expect(result.current[0][5]?.missing).toBeNull();
   });
 });
