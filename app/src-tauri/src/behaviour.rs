@@ -109,6 +109,19 @@ impl Target {
         self.saved_by.as_deref().unwrap_or(self.sessions.as_ref())
     }
 
+    /// The project as `runner` holds it, `<data>/projects/<id>`.
+    fn project_on_its_runner(&self, runner: &OnTheRunner) -> String {
+        let project =
+            purlis_core::scaffold::planefile::id_to_hold_by(&self.root).expect("the project's id");
+        runner
+            .path(&format!(
+                "{}/{}/{project}",
+                purlis_core::datahome::IN_A_RUNNER_CONTAINER,
+                purlis_core::datahome::PROJECTS
+            ))
+            .expect("the runner holds the project")
+    }
+
     /// You let every chat of the project reach the service on `port` of the machine its chats
     /// run on, as that machine's own sandbox for the project gives it (#2445): on a pool's
     /// runner, in the project as the runner holds it, `<data>/projects/<id>`.
@@ -117,15 +130,7 @@ impl Target {
             purlis_core::sandbox::local::grant_port(&self.root, port).expect("you gave it");
             return;
         };
-        let project =
-            purlis_core::scaffold::planefile::id_to_hold_by(&self.root).expect("the project's id");
-        let there = runner
-            .path(&format!(
-                "{}/{}/{project}",
-                purlis_core::datahome::IN_A_RUNNER_CONTAINER,
-                purlis_core::datahome::PROJECTS
-            ))
-            .expect("the runner holds the project");
+        let there = self.project_on_its_runner(runner);
         // Granted on the runner, by a program of the runner's run as its host is, so the
         // runner's own sandbox for the project, under its config home, gives it.
         runner.runs_as_its_host(
@@ -3572,39 +3577,53 @@ fn a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(target: &Targe
         ),
     );
     a_profile_of(target, "claude", "work", &program);
-    let id = target
-        .sessions
-        .open_named(
-            None,
-            &named("Run the probes.", false),
-            purlis_core::sandbox::plan::Hearing::default(),
-            &|_| {},
-        )
-        .expect("the sandboxed chat starts on the runner")
-        .number;
-    let pane = Pane::on(target, id);
-    pane.shows("TRIED.");
-    pane.shows("CLAUDE-CODE ended 0.");
-    for said in PAST_A_CHAT {
-        pane.shows(said);
-    }
-    for said in [
-        "TURN yes.",
-        "SETTINGS no.",
-        "STATE no.",
-        "HOOKS no.",
-        "DIRECT no.",
-    ] {
-        pane.shows(said);
-    }
-    // Its plugin's hook ran inside the wrap and reached the host over the hook socket.
-    until("its hook's line is in the event log", || {
-        target
-            .events_where_its_chats_run()
-            .iter()
-            .any(|event| event.kind == "hook.stop")
-    });
-    target.sessions.close(id).expect("it closes");
+    let chat_says = |direct: &str| {
+        let id = target
+            .sessions
+            .open_named(
+                None,
+                &named("Run the probes.", false),
+                purlis_core::sandbox::plan::Hearing::default(),
+                &|_| {},
+            )
+            .expect("the sandboxed chat starts on the runner")
+            .number;
+        let pane = Pane::on(target, id);
+        pane.shows("TRIED.");
+        pane.shows("CLAUDE-CODE ended 0.");
+        for said in PAST_A_CHAT {
+            pane.shows(said);
+        }
+        for said in [
+            "TURN yes.",
+            "SETTINGS no.",
+            "STATE no.",
+            "HOOKS no.",
+            direct,
+        ] {
+            pane.shows(said);
+        }
+        // Its plugin's hook ran inside the wrap and reached the host over the hook socket.
+        until("its hook's line is in the event log", || {
+            target
+                .events_where_its_chats_run()
+                .iter()
+                .any(|event| event.kind == "hook.stop")
+        });
+        target.sessions.close(id).expect("it closes");
+    };
+    // At the floor a chat reaches other machines as it reaches them with no sandbox, as a
+    // Codex chat there does; at the full sandbox it reaches them only through its proxy.
+    chat_says("DIRECT yes.");
+    runner.runs(
+        false,
+        &format!(
+            "printf '\\n[sandbox]\\nmode = \"on\"\\negress = [\"model-providers\"]\\n' >> '{}/purlis.toml'",
+            target.project_on_its_runner(runner)
+        ),
+        b"",
+    );
+    chat_says("DIRECT no.");
     browsers.close(&browser).expect("the browser ends");
 }
 
