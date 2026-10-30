@@ -1005,7 +1005,7 @@ fn within_the_budget(
     Err(format!(
         "workspace.md would be {next} bytes, past the {} KiB a chat may grow it to, since every \
          later chat here reads it whole: nothing was written. Keep it to what each later chat \
-         must act on: record the rest as a workspace memory (purlis workspace remember), and \
+         must act on: record the rest as a workspace memory (the memory_add tool), and \
          ask the person to fold older entries down",
         WORKSPACE_MD_GROWS_TO_AT_MOST / 1024
     ))

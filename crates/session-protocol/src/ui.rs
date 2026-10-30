@@ -631,6 +631,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A skill pinned or unpinned for a workspace's or a persona's chats (SK-15d, #3232): one
     // commit to the project, the person's own press in their window, as a turn-off is.
     "skill_pin",
+    // A router chosen for a workspace's or a persona's chats (#3692): one commit to the project,
+    // the person's own press in their window, as a pin is.
+    "skill_router_choose",
     // A skill's tab (#2782): reverting it to a version, deprecating, archiving or restoring it,
     // and naming its owners. Each is one commit to the project, the person's own press in their
     // window.
@@ -646,6 +649,15 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_draft_reject",
     "skill_draft_chat",
     "skill_draft_try",
+    // "Ask the chat to redo it" on an out-of-date draft (S9, #3690): the redo typed into the
+    // chat that drafted it as the person, or a chat started with it typed, as a draft chat is.
+    "skill_draft_redo",
+    "skill_draft_redo_in",
+    // A skill's trigger tests started from a template, or a chat opened to write them (#3925):
+    // the start is one commit to the project, and the chat starts a program as the person, as
+    // a draft chat does. The person's own press in their window.
+    "skill_trigger_tests_start",
+    "skill_trigger_tests_chat",
     // A grade of a skill started or stopped (SK-16, #2779): it runs chats on the person's
     // profile, each started on a trigger test's query, and records the grade in the project.
     // The person's own press in their window, after the plan showed what it costs.
@@ -665,6 +677,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Accepting a workspace or persona folder a chat could have made (SK-9): its skills then
     // reach chats, so only the person's own press in their window does it.
     "skill_level_accept",
+    "skill_levels_confirm",
     // Skill sources (#2773): each reaches a git repository the person named, a private one with
     // a credential read from a vault, and an install or an update is one commit to the project.
     // The person's own press in their window, never a link's.
@@ -706,6 +719,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     "remove_docker_pool",
     "docker_pool_link",
     "docker_pool_version",
+    // This machine's cluster pools (#3292): reading a kubeconfig's contexts and a cluster's
+    // operator key runs this machine's kubectl with the person's credentials, and adding one
+    // claims a runner as them and pins that key, so only their own press in their window does.
+    "cluster_contexts",
+    "cluster_pool_key",
+    "add_cluster_pool",
     // This machine's profiles on a pool's runner (#2049): keeping one there sends its name to a
     // runner, so only the person's own look in their window does.
     "pool_profiles",
@@ -1094,6 +1113,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "session_record",
     "set_dismissed",
     "show_window_holding",
+    // A deleted skill's last text, for its page on Deleted (S9, #3691): read only.
+    "skill_deleted_text",
     "skill_details",
     "skill_diff",
     // What a router's grade runs (SK-15e, #3233): read only.
@@ -1104,12 +1125,16 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_grade_chat",
     "skill_grade_plan",
     "skill_grade_scorecard",
+    // A skill's grades, for its Grades tab (S6, #3688): read only.
+    "skill_grades",
     "skill_lint",
     "skill_move_needs_grant",
     "skill_panels",
     // Every persona's own skills, for the Skills view (#3266): read only.
     "skill_persona_skills",
     "skill_revert_widens",
+    // The router extensions Change… offers (#3692): read only.
+    "skill_routers",
     "skill_runs",
     "skill_stats",
     "skill_studio",

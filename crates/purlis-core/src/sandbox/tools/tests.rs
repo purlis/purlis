@@ -660,6 +660,8 @@ fn kibana() -> Tool {
             value("KIBANA_USER", Handed::Env, "kibana-username"),
         ],
         login: None,
+        args: None,
+        mint: None,
     }
 }
 

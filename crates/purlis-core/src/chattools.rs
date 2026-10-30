@@ -115,6 +115,39 @@ pub const DISPATCH_NOTE: &str = "dispatch_note";
 /// `purlis dispatch ask`.
 pub const DISPATCH_ASK: &str = "dispatch_ask";
 
+/// The tool that brings the clone or branch folder this chat stands in up to its remote
+/// (#3831): the one operation `purlis worktree update` run there performs, which [`call`] does
+/// not answer either. The server hands it to the app that started the chat, which runs it
+/// outside the chat's sandbox after judging it; with no app, it runs nothing.
+pub const WORKTREE_UPDATE: &str = "worktree_update";
+
+/// What [`WORKTREE_UPDATE`] is asked to do: `start` (the default), `continue` or `abort`, and
+/// for a branch folder's start, the `base` branch.
+pub fn worktree_update_args(
+    args: &Map<String, Value>,
+) -> Result<crate::hookwire::UpdateStep, String> {
+    use crate::hookwire::UpdateStep;
+    let base = match args.get("base") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(base)) if !base.trim().is_empty() => Some(base.trim().to_owned()),
+        Some(_) => return Err("base is the name of a branch".to_owned()),
+    };
+    let step = match args.get("step") {
+        None | Some(Value::Null) => "start",
+        Some(Value::String(step)) => step.as_str(),
+        Some(_) => return Err("step is start, continue or abort".to_owned()),
+    };
+    match (step, base) {
+        ("start", base) => Ok(UpdateStep::Start { base }),
+        ("continue" | "abort", Some(_)) => {
+            Err("base is taken only when an update starts".to_owned())
+        }
+        ("continue", None) => Ok(UpdateStep::Continue),
+        ("abort", None) => Ok(UpdateStep::Abort),
+        _ => Err("step is start, continue or abort".to_owned()),
+    }
+}
+
 /// The tools a Claude Code chat runs without asking (V79, #1050, amending SI-8e in ADR 0064):
 /// the five that only read, [`PERSONA_WHERE`] (V98a, #1450), which reads the app's own
 /// record and answers names and states a chat is told at its start anyway, and
@@ -147,6 +180,28 @@ pub const PRE_ALLOWED: [&str; 14] = [
     crate::skilltools::SKILL_RUNS,
     crate::skilltools::SKILL_FIND,
     crate::skilltools::SKILL_LOAD,
+];
+
+/// The tools a Claude Code chat runs without asking that **write only the chat's own scope**
+/// (#3829, the operator's ruling of 2026-10-29, amending ADR 0064): its workspace's todos and
+/// memory, its persona's memory (`--shared` included, as ruled), and its workspace's
+/// `workspace.md`; and [`ASK_OPERATOR`], whose consent is the person's own answer, so the
+/// harness's prompt in front of it asked the person twice. **The person is asked only when
+/// something new reaches someone new**, and none of these reaches anyone new.
+///
+/// Apart from [`PRE_ALLOWED`] on purpose: a grade's chat is served the reads alone (SK-16), and
+/// is handed none of these. Named one by one, so a tool added later is asked about until it is
+/// ruled in here; an operator's or a project's `ask` or `deny` for any of them still wins.
+pub const OWN_SCOPE_TOOLS: [&str; 8] = [
+    "todo_add",
+    "todo_done",
+    "memory_add",
+    PERSONA_REMEMBER,
+    WORKSPACE_SECTION,
+    WORKSPACE_VISION,
+    ASK_OPERATOR,
+    // The update the app makes for the chat in its own clone, branch folder or root (#3831).
+    WORKTREE_UPDATE,
 ];
 
 /// The variables the server reads to find the chat's place, as a `charter` command in the chat
@@ -351,7 +406,7 @@ fn wait_seconds() -> Value {
 }
 
 /// Every tool, in the order a harness lists them.
-pub static TOOLS: [Tool; 25] = [
+pub static TOOLS: [Tool; 26] = [
     Tool {
         name: "todo_list",
         description: "List the open todos of the workspace this chat works in, oldest first, \
@@ -489,6 +544,36 @@ pub static TOOLS: [Tool; 25] = [
         read_only: false,
     },
     Tool {
+        name: WORKTREE_UPDATE,
+        description: "Bring the clone, branch folder or project root this chat stands in up \
+                      to date, as `purlis worktree update` there does: the app fetches, then \
+                      fast-forwards or rebases the folder's branch onto its remote (a clone), \
+                      its base (a branch folder), or runs the window's Update (the root). \
+                      Refused with uncommitted changes, or where it would overwrite a file that \
+                      is not committed. A conflict stops it and names the files: resolve them, \
+                      then call it with step continue, or abort.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "step": {
+                        "type": "string",
+                        "enum": ["start", "continue", "abort"],
+                        "description": "start (the default), or continue or abort a rebase \
+                                        it stopped.",
+                    },
+                    "base": {
+                        "type": "string",
+                        "description": "A branch folder only, at start: the branch to rebase \
+                                        onto (default: the one it was cut from).",
+                    },
+                },
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
         name: WORKSPACE_VISION,
         description: "Set the vision of the workspace this chat works in: one or a few lines \
                       saying what the work is for, which every later chat here reads first. \
@@ -577,16 +662,26 @@ pub static TOOLS: [Tool; 25] = [
                         "description": "Where it works: `workspace:<name>` for another \
                                         workspace of the project, or `worktree` for a new \
                                         worktree of the repo this chat works in, on a new \
-                                        branch purlis names, which only the person merges. A \
-                                        sandboxed chat commits there with `purlis worktree \
-                                        commit`. Leave it out for \
-                                        this chat's folder.",
+                                        branch purlis names, which only the person merges. \
+                                        From a workspace's own folder, `worktree` is cut from \
+                                        its one clone, and `worktree:<repo>` names which \
+                                        clone where it holds several. A sandboxed chat \
+                                        commits there with `purlis worktree commit`. Leave it \
+                                        out for this chat's folder.",
                     },
                     "wait": {
                         "type": "boolean",
                         "description": "Wait for the task's report and answer with it, \
                                         instead of carrying on. A wait that runs out says the \
                                         task is still running.",
+                    },
+                    "long": {
+                        "type": "boolean",
+                        "description": "A long-running task, which works through many \
+                                        pieces and sends dispatch_note as it goes: its notes \
+                                        are its heartbeat, purlis never asks it for a report, \
+                                        and it ends when it reports done or failed, or is \
+                                        cancelled. Leave it out for one job with one answer.",
                     },
                     "wait_seconds": {
                         "type": "integer",
@@ -650,8 +745,9 @@ pub static TOOLS: [Tool; 25] = [
         name: DISPATCH_TELL,
         description: "Send a follow-up to a task this chat dispatched that is still working, \
                       quoted as data from this chat. A task at rest is started on it at once; \
-                      one mid-turn reads it when that turn ends. Refused, with the task's \
-                      state, once the task has finished.",
+                      one mid-turn reads it when that turn ends. A task that reported while \
+                      its program still runs is told too. Refused, with the task's state, once \
+                      its program has ended.",
         schema: || {
             json!({
                 "type": "object",
@@ -693,7 +789,8 @@ pub static TOOLS: [Tool; 25] = [
         name: DISPATCH_CANCEL,
         description: "Cancel a task this chat dispatched: its turn is ended and it is asked for \
                       one short report of what it did, which arrives with the outcome \
-                      `cancelled`. Refused for a task the person has typed in: that one is \
+                      `cancelled`. A task that reported while its program still runs can be \
+                      cancelled too. Refused for a task the person has typed in: that one is \
                       theirs.",
         schema: || {
             json!({
@@ -863,6 +960,7 @@ pub fn call(
         DISPATCH_REPORT,
         DISPATCH_NOTE,
         DISPATCH_ASK,
+        WORKTREE_UPDATE,
     ]
     .contains(&tool)
     {
@@ -1152,13 +1250,23 @@ pub fn dispatch_profile(args: &Map<String, Value>) -> Result<Option<String>, Str
 }
 
 /// The `dispatch` tool's `in`: where the new chat works, where that is asked for (#1453). One
-/// of two words and nothing more: the app reads it ([`crate::dispatchplace::asked`]).
+/// of three words and nothing more: the app reads it ([`crate::dispatchplace::asked`]).
 pub fn dispatch_place(args: &Map<String, Value>) -> Result<Option<String>, String> {
     match args.get("in") {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(place)) if !place.trim().is_empty() => Ok(Some(place.trim().to_owned())),
         Some(Value::String(_)) => Ok(None),
-        Some(_) => Err("`in` is `worktree` or `workspace:<name>`".to_owned()),
+        Some(_) => Err("`in` is `worktree`, `worktree:<repo>` or `workspace:<name>`".to_owned()),
+    }
+}
+
+/// The `dispatch` tool's `long` (#3905): whether the task is a long-running one, `false` where
+/// it is left out.
+pub fn dispatch_long(args: &Map<String, Value>) -> Result<bool, String> {
+    match args.get("long") {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(long)) => Ok(*long),
+        Some(_) => Err("`long` is true or false".to_owned()),
     }
 }
 

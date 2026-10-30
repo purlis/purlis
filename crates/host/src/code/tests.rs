@@ -51,6 +51,8 @@ struct Recorded {
     taken_over: Arc<Mutex<Vec<String>>>,
     /// Each conversation kept: what it was carried as, and its bytes (1.44).
     conversations: Arc<Mutex<Vec<KeptConversation>>>,
+    /// Each project and workspace whose clones were asked for (1.51).
+    clones_asked: Arc<Mutex<Vec<(PathBuf, String)>>>,
 }
 
 const CONVERSATION: &[u8] = b"{\"said\":\"the runner's conversation\"}\n";
@@ -134,6 +136,14 @@ impl Code for Recorded {
             "{{config}}/projects/{{cwd_key}}/{}.jsonl",
             carried.conversation
         ))
+    }
+
+    fn clones_of(&self, project: &Path, workspace: &str) -> Result<Vec<String>, Refusal> {
+        self.clones_asked
+            .lock()
+            .unwrap()
+            .push((project.to_path_buf(), workspace.to_owned()));
+        Ok(vec!["api".into(), "web".into()])
     }
 }
 
@@ -540,4 +550,34 @@ async fn only_the_window_carries_a_conversation_through_the_relay() {
         assert_eq!(refusal.code, session::NOT_ALLOWED, "{scope:?}");
     }
     assert!(runner.recorded.conversations.lock().unwrap().is_empty());
+}
+
+/// **The window asks a runner which clones it holds in a workspace** (1.51, #3811): through the
+/// relay, of a project the runner keeps, answered as its binary names them; and no other client
+/// of the desktop's host may ask.
+#[tokio::test]
+async fn the_window_hears_the_clones_a_runner_holds_in_a_workspace_and_no_other_client_does() {
+    let runner = a_runner();
+    let (client, _streams) = through_the_relay(Scope::LocalUi, &runner).await;
+    client.hold_project(PROJECT, "").await.unwrap();
+    let clones = tokio::time::timeout(PATIENCE, client.clones_of(PROJECT, "app"))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(clones, ["api", "web"]);
+    assert_eq!(
+        *runner.recorded.clones_asked.lock().unwrap(),
+        vec![(runner.projects.join(PROJECT), "app".to_owned())]
+    );
+
+    for scope in [Scope::Terminal, Scope::FleetMcp] {
+        let (client, _streams) = through_the_relay(scope, &runner).await;
+        let refused = tokio::time::timeout(PATIENCE, client.clones_of(PROJECT, "app"))
+            .await
+            .unwrap()
+            .unwrap_err();
+        let refusal = refused.refusal().expect("refused");
+        assert_eq!(refusal.code, session::NOT_ALLOWED, "{scope:?}");
+    }
+    assert_eq!(runner.recorded.clones_asked.lock().unwrap().len(), 1);
 }

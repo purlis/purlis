@@ -30,6 +30,7 @@
 use std::path::{Path, PathBuf};
 
 use purlis_skills::change::{self, SkillTemplate, TemplateId};
+use purlis_skills::fence;
 
 use super::{Grant, LINKED_PLUGIN, Origin, beside, grant_of, level_dir, set_grant};
 use crate::planegit::literally;
@@ -136,7 +137,7 @@ impl Level {
 
     /// **Every copy of skill `name` in the plane at `plane`, in the order its tab shows them**
     /// (#3443): each level of [`Self::every`] that holds one, with its folder. The one place that
-    /// order is decided: the first is the copy the tab shows first, and the one its Grades panel
+    /// order is decided: the first is the copy the tab shows first, and the one its Grades tab
     /// reads until the tab names another.
     pub fn copies_of<'a>(
         plane: &'a Path,
@@ -485,19 +486,23 @@ pub fn create(
 
 /// **Make my own copy** (#3686, spec #3679 S12): the built-in skill `name`, copied to `level`
 /// under the new name `to`, as a skill of the plane the person can edit, committed. Its
-/// `SKILL.md` keeps the built-in's text with its `name:` changed to `to`; a project skill starts
-/// granted to the project's root alone, as a new one does. The built-in skill is not touched and
-/// keeps loading: a chat gets both.
+/// `SKILL.md` keeps the built-in's text with its `name:` changed to `to` and its `description:`
+/// to `description`, the copy's own (#3777): a chat gets both skills, and two that describe
+/// themselves alike could not be told apart by it or by a router. A project skill starts granted
+/// to the project's root alone, as a new one does. The built-in skill is not touched and keeps
+/// loading.
 ///
 /// Refused where `name` is no built-in skill in `cx.built_in`, for a name the open format does
 /// not allow, one that belongs to a built-in skill ([`Ctx::not_built_in`]), or one `level`
-/// already holds. A built-in skill is its `SKILL.md` alone (held by a test of the bundle), so
+/// already holds; and for a description that breaks a rule ([`change::description_problem`]) or
+/// is the built-in's word for word. A built-in skill is its `SKILL.md` alone (held by a test of the bundle), so
 /// that one file is what is copied.
 pub fn copy_built_in(
     cx: &mut Ctx<'_>,
     name: &str,
     level: &Level,
     to: &str,
+    description: &str,
 ) -> Result<PathBuf, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
@@ -512,13 +517,36 @@ pub fn copy_built_in(
         return Err(format!("{to:?} cannot be a skill's name: {why}"));
     }
     cx.not_built_in(to)?;
+    let description = description.trim();
+    if let Some(why) = change::description_problem(description) {
+        return Err(format!("the copy's description: {why}"));
+    }
+    // What the line format cannot hold as one line (a form feed, a separator a reader strips) is
+    // the person's text, said as theirs, not as a fault of the built-in's instructions.
+    if !fence::holds(description) {
+        return Err(
+            "the copy's description holds a character a frontmatter line cannot keep: type it \
+             as plain words on one line"
+                .to_owned(),
+        );
+    }
+    if description == source.description.trim() {
+        return Err(format!(
+            "the copy's description is {name}'s word for word, so a chat could not tell them \
+             apart: say what your copy does differently"
+        ));
+    }
     let is_file = std::fs::symlink_metadata(&source.path).is_ok_and(|meta| meta.is_file());
     let text = is_file
         .then(|| std::fs::read_to_string(&source.path).ok())
         .flatten()
         .ok_or_else(|| format!("{name}'s instructions could not be read, so nothing was copied"))?;
-    let copied = change::with_name(&text, to)
-        .ok_or_else(|| format!("{name}'s instructions have no name: line to change"))?;
+    // Both keys through the line format's one writer, which reads them back as written.
+    let copied = fence::with_keys(
+        &text,
+        &[("name", Some(to)), ("description", Some(description))],
+    )
+    .map_err(|why| format!("{name}'s instructions {why}, so nothing was copied"))?;
     if let Some(problem) = change::check(&copied, to).first() {
         return Err(format!("the copy would not be a whole skill: {problem}"));
     }
@@ -612,6 +640,50 @@ pub fn edit(
     }
     cx.commit(&[file], &format!("skill edit {name}"));
     Ok(folder)
+}
+
+/// **Starts the trigger tests of the skill named `name` at `level`** (#3925): its
+/// `evals/triggers.json` from a short template ([`purlis_skills::grade::triggers_template`]: one
+/// query it should start on, one near miss it should leave alone), where it has none, committed
+/// alone. A file it has already is left as it is, and that is said; one purlis would not read is
+/// refused, with why. The answer is the file, relative to the plane, for the person to write in.
+pub fn start_trigger_tests(cx: &mut Ctx<'_>, level: &Level, name: &str) -> Result<String, String> {
+    use purlis_skills::grade;
+    let plane = cx.plane;
+    crate::settings::writable(plane)?;
+    let folder = find(plane, level, name)?;
+    let folder_rel = rel(plane, &folder);
+    let file = format!("{folder_rel}/{}", grade::triggers_path());
+    match grade::fixtures_of(plane, Path::new(&folder_rel), name).triggers {
+        grade::Read::Absent => {}
+        grade::Read::Read(_) => {
+            (cx.say)(Say::Info(
+                format!("{name} has a trigger tests file already, so it was left as it is.").into(),
+            ));
+            return Ok(file);
+        }
+        // One purlis would not read (a link, too large) is never opened to write in either.
+        grade::Read::Refused(why) => {
+            return Err(format!(
+                "{name}'s trigger tests were left as they are: {}",
+                why.in_window()
+            ));
+        }
+    }
+    write(
+        plane,
+        &file,
+        &format!("{name}'s trigger tests"),
+        None,
+        &grade::triggers_template(name),
+        // Its `evals/` folder may be made, never the skill's own.
+        folder_rel.split('/').count() + 1,
+    )?;
+    cx.done(format!(
+        "{name}'s trigger tests are started in {file}, from a template"
+    ));
+    cx.commit(std::slice::from_ref(&file), &format!("skill tests {name}"));
+    Ok(file)
 }
 
 /// **Renames the skill named `old` at `level` to `new`** (#2770, decision 14): its `SKILL.md`'s
@@ -725,6 +797,56 @@ fn references_renamed(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> 
     }
     if level.at == Whose::Project {
         changed.extend(turned_off_renamed(cx, old, Some(new)));
+    }
+    // Pins are written in the project's files: a local skill's rename leaves them as they are,
+    // since a teammate's pin of the name means the skill they have.
+    if !level.local {
+        changed.extend(pins_renamed(cx, old, new));
+    }
+    changed
+}
+
+/// Each workspace's and persona's pins of `old` named `new`, in their place in the list (spec
+/// #3679 S4: a rename's pins follow it), and the files it changed. What could not be written is
+/// said, and the rest is still changed.
+fn pins_renamed(cx: &mut Ctx<'_>, old: &str, new: &str) -> Vec<String> {
+    use super::PinnedBy;
+    let plane = cx.plane;
+    let mut changed = Vec::new();
+    for by in super::pinners_of(plane, old) {
+        let pins: Vec<String> = super::pins_written(plane, &by)
+            .into_iter()
+            .map(|one| if one == old { new.to_owned() } else { one })
+            .fold(Vec::new(), |mut kept, one| {
+                if !kept.contains(&one) {
+                    kept.push(one);
+                }
+                kept
+            });
+        let (written, file, whose) = match &by {
+            PinnedBy::Workspace(ws) => (
+                super::set_names_in_settings(
+                    plane,
+                    ws,
+                    crate::settings::workspace::SKILLS_PINNED,
+                    pins,
+                ),
+                crate::settings::workspace::named(ws),
+                format!("workspace {ws}"),
+            ),
+            PinnedBy::Persona(persona) => (
+                super::persona::write_pins(plane, persona, &pins),
+                rel(plane, &crate::personas::def_path(plane, persona)),
+                format!("persona {persona}"),
+            ),
+        };
+        match written {
+            Ok(()) => {
+                cx.done(format!("{whose} pins {new} now"));
+                changed.push(file);
+            }
+            Err(why) => cx.warn(format!("{whose} still pins {old}: {why}")),
+        }
     }
     changed
 }
@@ -914,6 +1036,9 @@ pub struct Users {
     pub personas: Vec<String>,
     /// The other skills whose text names it.
     pub skills: Vec<String>,
+    /// Every workspace and persona whose pins name it, the workspaces first: what a rename
+    /// changes with it and a delete leaves pinning nothing.
+    pub pinned_by: Vec<super::PinnedBy>,
 }
 
 /// **Who uses the skill named `name` at `level`**: the chats it reaches, and the personas and
@@ -964,6 +1089,7 @@ pub fn users(plane: &Path, level: &Level, name: &str) -> Result<Users, String> {
             }
         }
     }
+    users.pinned_by = super::pinners_of(plane, name);
     Ok(users)
 }
 
@@ -1028,19 +1154,43 @@ impl Deleted {
     pub fn stays(&self, now: std::time::SystemTime) -> String {
         match &self.kept.0 {
             Source::Commit(_) => "kept in the project's history".to_owned(),
-            Source::Here(_) => {
-                let now = u64::try_from(ms_since_epoch(now) / 1000).unwrap_or(u64::MAX);
-                let kept_for = KEPT_HERE_FOR.as_secs();
-                let until = self.at.saturating_add(kept_for);
-                let days = until.saturating_sub(now).min(kept_for).div_ceil(DAY);
-                match days {
-                    0 => "removed from this machine soon".to_owned(),
-                    1 => "kept on this machine for 1 more day".to_owned(),
-                    days => format!("kept on this machine for {days} more days"),
-                }
-            }
+            Source::Here(_) => match self.days_left(now) {
+                0 => "removed from this machine soon".to_owned(),
+                1 => "kept on this machine for 1 more day".to_owned(),
+                days => format!("kept on this machine for {days} more days"),
+            },
         }
     }
+
+    /// **How many days are left to bring it back at `now`** (S9, #3691): the Skill studio's
+    /// Deleted page lists a skill for [`KEPT_HERE_FOR`] after its delete, wherever it is kept,
+    /// and counts the days left, never more than that (a delete stamped by a clock that ran
+    /// ahead). Zero once its time is past: the page lists it no more. One git keeps can still be
+    /// brought back after that by `purlis skill restore`, from the project's history.
+    pub fn days_left(&self, now: std::time::SystemTime) -> u64 {
+        let now = u64::try_from(ms_since_epoch(now) / 1000).unwrap_or(u64::MAX);
+        let kept_for = KEPT_HERE_FOR.as_secs();
+        let until = self.at.saturating_add(kept_for);
+        until.saturating_sub(now).min(kept_for).div_ceil(DAY)
+    }
+}
+
+/// **The text of the deleted skill `deleted`'s `SKILL.md`, as it was when it was deleted** (S9,
+/// #3691): from the commit's parent where git keeps it, else from this machine's
+/// [`DELETED_DIR`], read without following a link, as [`deleted`] reads it to list it. Only a
+/// record the listing itself made is answered: it comes from the window, so its folder and its
+/// commit are never read as it names them.
+pub fn deleted_text(plane: &Path, deleted: &Deleted) -> Result<String, String> {
+    deleted_with_text(plane)
+        .into_iter()
+        .find(|(one, _)| one == deleted)
+        .map(|(_, text)| text)
+        .ok_or_else(|| {
+            format!(
+                "{} is not a deleted skill this project lists any more",
+                deleted.name
+            )
+        })
 }
 
 /// A day, in seconds.
@@ -1520,6 +1670,15 @@ pub(in crate::skills) fn shared_globs() -> Vec<String> {
 /// a link. One whose folder, or whose name at its level, is taken again is left out: it would
 /// come back as a second copy.
 pub fn deleted(plane: &Path) -> Vec<Deleted> {
+    deleted_with_text(plane)
+        .into_iter()
+        .map(|(one, _)| one)
+        .collect()
+}
+
+/// [`deleted`], each with the text of its `SKILL.md` as it was when it was deleted, which the
+/// listing reads anyway to name it.
+fn deleted_with_text(plane: &Path) -> Vec<(Deleted, String)> {
     let mut out = Vec::new();
     let state = crate::plane::state_dir(plane);
     let now_ms = ms_since_epoch(std::time::SystemTime::now());
@@ -1547,13 +1706,16 @@ pub fn deleted(plane: &Path) -> Vec<Deleted> {
             continue;
         }
         let at = u64::try_from(stamp / 1000).unwrap_or(u64::MAX);
-        out.push(Deleted {
-            name,
-            level,
-            folder,
-            kept: Kept(Source::Here(kept)),
-            at,
-        });
+        out.push((
+            Deleted {
+                name,
+                level,
+                folder,
+                kept: Kept(Source::Here(kept)),
+                at,
+            },
+            text,
+        ));
     }
     let globs = shared_globs();
     let mut args = vec![
@@ -1601,20 +1763,23 @@ pub fn deleted(plane: &Path) -> Vec<Deleted> {
             // Kept on this machine as well, where its delete could not be a commit then.
             let here_too = out
                 .iter()
-                .any(|one: &Deleted| one.level == level && one.folder == folder);
+                .any(|(one, _): &(Deleted, String)| one.level == level && one.folder == folder);
             if here_too || taken_again(plane, &level, &name, folder, true) {
                 continue;
             }
-            out.push(Deleted {
-                name,
-                level,
-                folder: folder.to_owned(),
-                kept: Kept(Source::Commit(sha.to_owned())),
-                at: at.trim().parse().unwrap_or(0),
-            });
+            out.push((
+                Deleted {
+                    name,
+                    level,
+                    folder: folder.to_owned(),
+                    kept: Kept(Source::Commit(sha.to_owned())),
+                    at: at.trim().parse().unwrap_or(0),
+                },
+                text,
+            ));
         }
     }
-    out.sort_by(|a, b| b.at.cmp(&a.at).then(a.name.cmp(&b.name)));
+    out.sort_by(|(a, _), (b, _)| b.at.cmp(&a.at).then(a.name.cmp(&b.name)));
     out
 }
 
@@ -1646,7 +1811,18 @@ fn taken_again(plane: &Path, level: &Level, name: &str, folder: &str, toml_count
 /// removed it, or from this machine's [`DELETED_DIR`]. Refused where it is no longer one
 /// [`deleted`] lists (restored already, or its folder or its name at that level taken again).
 /// One commit.
-pub fn restore(cx: &mut Ctx<'_>, deleted: &Deleted) -> Result<PathBuf, String> {
+///
+/// **`under` a new name** (#3729), and only where its own belongs to a built-in skill now (a
+/// newer purlis ships one of that name): the name is checked as [`rename`]'s is
+/// ([`Ctx::not_built_in`] among them), and the skill comes back with its `SKILL.md`'s `name:`
+/// rewritten and its folder named as it, in the same commit, or does not come back at all.
+/// Nothing that names its old name is changed: that name means the built-in skill now. A skill
+/// whose name is free comes back under it, to be renamed after, so what names it follows.
+pub fn restore(
+    cx: &mut Ctx<'_>,
+    deleted: &Deleted,
+    under: Option<&str>,
+) -> Result<PathBuf, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
     if !self::deleted(plane).contains(deleted) {
@@ -1657,22 +1833,57 @@ pub fn restore(cx: &mut Ctx<'_>, deleted: &Deleted) -> Result<PathBuf, String> {
         ));
     }
     let name = &deleted.name;
-    if cx.reserved(name) {
-        return Err(format!(
-            "{name} cannot be restored under its name: it belongs to a built-in skill now"
-        ));
+    let reserved = cx.reserved(name);
+    match under {
+        None if reserved => {
+            return Err(format!(
+                "{name} cannot be restored under its name: it belongs to a built-in skill now, so \
+                 restore it under a new name"
+            ));
+        }
+        None => {}
+        Some(_) if !reserved => {
+            return Err(format!(
+                "{name} is restored under its own name: restore it, then rename it, so what \
+                 names it follows"
+            ));
+        }
+        Some(new) => {
+            if let Some(why) = change::name_problem(new) {
+                return Err(format!("{new:?} cannot be a skill's name: {why}"));
+            }
+            cx.not_built_in(new)?;
+            if new == deleted.folder {
+                if deleted.level.named(plane, new).is_some() {
+                    return Err(format!(
+                        "the {} skills already have one named {new}: pick another name",
+                        deleted.level
+                    ));
+                }
+            } else {
+                free_at(plane, &deleted.level, new, new)?;
+            }
+            // Its text has a name to rewrite, or nothing comes back.
+            let text = deleted_text(plane, deleted)?;
+            if change::with_name(&text, new).is_none() {
+                return Err(format!(
+                    "{name}'s instructions have no name: line to change, so it was not restored"
+                ));
+            }
+        }
     }
     let dir = level_is_there(plane, &deleted.level)?;
     let folder = dir.join(&deleted.folder);
     let folder_rel = rel(plane, &folder);
     let toml_rel = rel(plane, &beside(&folder));
+    let mut toml_there = false;
     match &deleted.kept.0 {
         Source::Commit(sha) => {
             let source = format!("--source={sha}^");
             let folder_spec = literally(&folder_rel);
             let toml_spec = literally(&toml_rel);
             let mut args = vec!["restore", source.as_str(), "--worktree", "--", &folder_spec];
-            let toml_there = git(plane, &["cat-file", "-e", &format!("{sha}^:{toml_rel}")]).is_ok();
+            toml_there = git(plane, &["cat-file", "-e", &format!("{sha}^:{toml_rel}")]).is_ok();
             if toml_there {
                 args.push(&toml_spec);
             }
@@ -1691,16 +1902,124 @@ pub fn restore(cx: &mut Ctx<'_>, deleted: &Deleted) -> Result<PathBuf, String> {
                     }
                 },
             )?;
-            // Its `from` and the folder it kept, now empty, and nothing else.
-            store::put_away(&state, DELETED_DIR, kept, KEPT_FROM);
         }
     }
+    let mut touched = vec![folder_rel.clone(), toml_rel];
+    let landed = match under {
+        None => folder.clone(),
+        Some(new) => match renamed_back(plane, &folder, name, new) {
+            Ok(landed) => landed,
+            // Never left under a built-in skill's name: what came back goes back.
+            Err(Unmoved::Nothing(why)) => {
+                return Err(match taken_back(plane, deleted, &folder, toml_there) {
+                    Ok(()) => format!("{name} was not restored: {why}"),
+                    Err(left) => format!(
+                        "{name} was restored under its old name and could not be named {new} \
+                         ({why}), nor taken back ({left}): rename it"
+                    ),
+                });
+            }
+            Err(Unmoved::Stranded(what)) => {
+                return Err(format!("{name} was restored only in part: {what}"));
+            }
+        },
+    };
+    if let Source::Here(kept) = &deleted.kept.0 {
+        // Its `from` and the folder it kept, now empty, and nothing else.
+        store::put_away(
+            &crate::plane::state_dir(plane),
+            DELETED_DIR,
+            kept,
+            KEPT_FROM,
+        );
+    }
+    let Some(new) = under else {
+        cx.done(format!(
+            "{name} is restored, a {} skill in {folder_rel}",
+            deleted.level
+        ));
+        cx.commit(&touched, &format!("skill restore {name}"));
+        return Ok(folder);
+    };
+    if landed != folder {
+        touched.push(rel(plane, &landed));
+        touched.push(rel(plane, &beside(&landed)));
+    }
     cx.done(format!(
-        "{name} is restored, a {} skill in {folder_rel}",
-        deleted.level
+        "{name} is restored as {new}, a {} skill in {}",
+        deleted.level,
+        rel(plane, &landed)
     ));
-    cx.commit(&[folder_rel, toml_rel], &format!("skill restore {name}"));
-    Ok(folder)
+    cx.commit(&touched, &format!("skill restore {name} as {new}"));
+    Ok(landed)
+}
+
+/// The skill `name` just restored to `folder`, named `new`: its `SKILL.md`'s `name:` rewritten,
+/// then its folder, and the file beside it, moved to `new` beside it where it is named otherwise.
+/// Answers where it is now; [`Unmoved::Nothing`] where it is still where it came back to, for
+/// [`taken_back`] to take away.
+fn renamed_back(plane: &Path, folder: &Path, name: &str, new: &str) -> Result<PathBuf, Unmoved> {
+    let what = format!("{name}'s instructions");
+    let file = format!("{}/SKILL.md", rel(plane, folder));
+    let text = text_in(plane, folder, name).map_err(Unmoved::Nothing)?;
+    let renamed = change::with_name(&text, new)
+        .ok_or_else(|| Unmoved::Nothing(format!("{what} has no name: line to change")))?;
+    write(plane, &file, &what, Some(&text), &renamed, usize::MAX).map_err(Unmoved::Nothing)?;
+    if folder_name(folder) == new {
+        return Ok(folder.to_path_buf());
+    }
+    let to = folder.with_file_name(new);
+    move_skill(plane, folder, plane, &to, usize::MAX)?;
+    Ok(to)
+}
+
+/// **Takes away what a restore of `deleted` put back at `folder`**, where it could not be named
+/// as asked: the kept copy moved back to this machine's [`DELETED_DIR`], or each file the commit
+/// that removed it held taken away again (the file beside it too, where `toml_there`), then its
+/// folders once empty. A file git ignores, there already, is left.
+fn taken_back(
+    plane: &Path,
+    deleted: &Deleted,
+    folder: &Path,
+    toml_there: bool,
+) -> Result<(), String> {
+    match &deleted.kept.0 {
+        Source::Here(kept) => {
+            let state = crate::plane::state_dir(plane);
+            let from = state.join(DELETED_DIR).join(kept).join(&deleted.folder);
+            move_skill(plane, folder, &state, &from, usize::MAX).map_err(|unmoved| match unmoved {
+                Unmoved::Nothing(why) | Unmoved::Stranded(why) => why,
+            })
+        }
+        Source::Commit(sha) => {
+            let tree = format!("{sha}^:{}", rel(plane, folder));
+            let listed = git(plane, &["ls-tree", "-r", "-z", "--name-only", &tree])?;
+            let mut folders = vec![folder.to_path_buf()];
+            for part in listed.split('\0').filter(|part| !part.is_empty()) {
+                let path = folder.join(part);
+                let mut up = path.parent();
+                while let Some(at) = up.filter(|at| at.starts_with(folder) && *at != folder) {
+                    if !folders.iter().any(|one| one == at) {
+                        folders.push(at.to_path_buf());
+                    }
+                    up = at.parent();
+                }
+                if path.symlink_metadata().is_ok_and(|meta| !meta.is_dir()) {
+                    std::fs::remove_file(&path).map_err(|why| why.to_string())?;
+                }
+            }
+            let toml = beside(folder);
+            if toml_there && toml.symlink_metadata().is_ok_and(|meta| meta.is_file()) {
+                std::fs::remove_file(&toml).map_err(|why| why.to_string())?;
+            }
+            // The deepest first: each folder goes once nothing is left in it.
+            folders.sort_by_key(|one| std::cmp::Reverse(one.components().count()));
+            for one in folders {
+                let _ = std::fs::remove_dir(one);
+            }
+            Ok(())
+        }
+    }
 }
 
 /// **Grants the project skill `name`** `grant` (#2767), committed (#2770).
@@ -1748,6 +2067,41 @@ pub fn pin(cx: &mut Ctx<'_>, by: &super::PinnedBy, name: &str, on: bool) -> Resu
         cx.done(format!("{name} is {verb} for {whose}"));
         let word = if on { "pin" } else { "unpin" };
         cx.commit(&[file], &format!("skill {word} {name} for {whose}"));
+    }
+    Ok(changed)
+}
+
+/// **Chooses the router `router` for `by`'s chats, or takes the choice out** (`None`; SK-15b,
+/// ADR 0102 §5, #3692), committed. `Ok(false)` where it already was so, and nothing is written.
+/// Chats started after it are routed by it; a chat open now keeps the router its start asked.
+pub fn route(
+    cx: &mut Ctx<'_>,
+    by: &super::PinnedBy,
+    router: Option<&super::router::Chosen>,
+) -> Result<bool, String> {
+    use super::router::Chosen;
+    let changed = super::router::choose(cx.plane, by, router)?;
+    if changed {
+        let (whose, file) = match by {
+            super::PinnedBy::Workspace(ws) => (
+                format!("chats in {ws}"),
+                crate::settings::workspace::named(ws),
+            ),
+            super::PinnedBy::Persona(persona) => (
+                format!("chats as {persona}"),
+                rel(cx.plane, &crate::personas::def_path(cx.plane, persona)),
+            ),
+        };
+        let by_what = match (by, router) {
+            (super::PinnedBy::Persona(_), None) => "their workspace's router".to_owned(),
+            (_, None | Some(Chosen::BuiltIn)) => super::Router::BuiltIn.shown(),
+            (_, Some(Chosen::Extension(id))) => super::Router::Extension(id.clone()).shown(),
+        };
+        cx.done(format!(
+            "{} started from now are routed by {by_what}",
+            super::router::capitalised(&whose)
+        ));
+        cx.commit(&[file], &format!("skill router for {whose}: {by_what}"));
     }
     Ok(changed)
 }

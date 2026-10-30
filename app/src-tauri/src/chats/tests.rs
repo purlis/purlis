@@ -654,6 +654,7 @@ fn a_task_started_from_a_session_holding_a_grant_compiles_its_sandbox_without_it
             root: None,
             above: None,
             by_person: false,
+            long: false,
         }),
         ..plain.clone()
     };
@@ -934,6 +935,7 @@ fn a_start_is_made_as_the_record_says_and_a_dispatched_chat_names_its_asker() {
         root: None,
         above,
         by_person,
+        long: false,
     };
     let chat = |from| Chat {
         from,
@@ -2582,6 +2584,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             skills: None,
             plane_skills: true,
             skills_read: Default::default(),
+            clones_at_start: None,
         },
     );
 
@@ -2657,6 +2660,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     };
@@ -3096,6 +3100,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     };
@@ -4511,6 +4516,7 @@ fn one_dispatched_on_work(root: &std::path::Path) -> Record {
                 root: None,
                 above: None,
                 by_person: false,
+                long: false,
             }),
             ..record.chats[0].clone()
         }],
@@ -5317,6 +5323,7 @@ fn started_by(dir: &std::path::Path, name: &str, mode: purlis_core::reopen::Mode
             root: None,
             above: None,
             by_person: false,
+            long: false,
         }),
         ..chat(&a_claude(dir), name, None)
     }
@@ -6015,6 +6022,7 @@ fn a_dispatched_chat_started_again_in_its_own_place_keeps_its_lineage_and_its_ta
         root: Some(root.to_owned()),
         above: None,
         by_person: false,
+        long: false,
     };
     let task = Chat {
         from: Some(lineage.clone()),
@@ -7390,6 +7398,7 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
         let case = format!("compiled {}, recorded {ran:?}", confines.is_some());
@@ -7832,6 +7841,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     };
@@ -7886,6 +7896,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     };
@@ -8002,7 +8013,16 @@ impl purlis_core::sandbox::Board for Told {
         Vec::new()
     }
 
-    fn keep_blocked(&self, _: &purlis_core::sandbox::hosts::Host) {}
+    /// As a chat's board does: an Allow it covers, or that covers it, ends, and it says so.
+    fn keep_blocked(&self, host: &purlis_core::sandbox::hosts::Host) -> bool {
+        let mut allowed = lock(&self.allowed);
+        let before = allowed.len();
+        allowed.retain(|(entry, _)| {
+            purlis_core::sandbox::hosts::Host::parse(entry)
+                .is_ok_and(|allowed| !host.covers(&allowed) && !allowed.covers(host))
+        });
+        allowed.len() != before
+    }
 
     fn forget(
         &self,
@@ -8080,6 +8100,7 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     }
@@ -8149,6 +8170,122 @@ fn a_one_chat_allow_forgotten_live_reaches_only_its_chat() {
     chats.forget_live(None, &host, Level::You);
     assert_eq!(hosts_of(&one.forgot), ["live.example.com"]);
     assert_eq!(hosts_of(&two.forgot), ["live.example.com"]);
+}
+
+/// #3407: **Keep blocked ends the chat's own Allow of the host**: the Allow kept for the chat
+/// goes, so its Granted list and its next start agree with its proxy, and its browsers end as
+/// they do when an Allow is removed. Another chat's is left as it is.
+#[test]
+fn keep_blocked_ends_the_chats_own_allow_of_the_host_and_its_browsers() {
+    use purlis_core::sandbox::grant::{Level, What};
+    let host = purlis_core::sandbox::grant::host("live.example.com").expect("a host");
+    let plane = a_sandboxed_plane();
+    let (chats, [one, two]) = two_chats_asking_live(plane.path());
+    chats.allow_live(Some(1), &host, Level::Chat);
+    chats.allow_live(Some(2), &host, Level::Chat);
+    chats
+        .hold_grant(1, What::Host(host.clone()), 1)
+        .expect("held");
+    chats
+        .hold_grant(2, What::Host(host.clone()), 1)
+        .expect("held");
+    let narrowed = Arc::new(Mutex::new(Vec::new()));
+    chats.tell_narrowed_to({
+        let narrowed = Arc::clone(&narrowed);
+        Arc::new(move |session| lock(&narrowed).push(session))
+    });
+
+    let audited = Mutex::new(Vec::new());
+    chats.keep_blocked_live(1, &host, &|chat, audit| {
+        lock(&audited).push((
+            chat,
+            audit.granted,
+            audit.what.to_owned(),
+            audit.target.to_owned(),
+        ));
+        Ok(())
+    });
+
+    assert_eq!(
+        *lock(&audited),
+        [(
+            Some(1),
+            false,
+            "host".to_owned(),
+            "live.example.com".to_owned()
+        )],
+        "taken back as a Revoke is audited"
+    );
+    assert!(!chats.holds_for(1, &What::Host(host.clone())), "its own");
+    assert!(
+        chats.holds_for(2, &What::Host(host.clone())),
+        "not chat 2's"
+    );
+    assert!(hosts_of(&one.allowed).is_empty(), "its proxy's");
+    assert_eq!(hosts_of(&two.allowed), ["live.example.com"]);
+    assert_eq!(*lock(&narrowed), [1]);
+}
+
+/// #3407: Keep blocked of a host the chat was never allowed ends none of its browsers.
+#[test]
+fn keep_blocked_of_a_host_never_allowed_ends_no_browser() {
+    let plane = a_sandboxed_plane();
+    let (chats, _boards) = two_chats_asking_live(plane.path());
+    let narrowed = Arc::new(Mutex::new(Vec::new()));
+    chats.tell_narrowed_to({
+        let narrowed = Arc::clone(&narrowed);
+        Arc::new(move |session| lock(&narrowed).push(session))
+    });
+
+    chats.keep_blocked_live(
+        1,
+        &purlis_core::sandbox::grant::host("other.example.com").expect("a host"),
+        &|_, _| panic!("nothing to audit"),
+    );
+
+    assert!(lock(&narrowed).is_empty());
+}
+
+/// #3407: Keep blocked of a host the chat was allowed live alone, with nothing kept for it,
+/// ends its browsers too.
+#[test]
+fn keep_blocked_of_a_host_allowed_live_alone_ends_the_chats_browsers() {
+    use purlis_core::sandbox::grant::Level;
+    let host = purlis_core::sandbox::grant::host("live.example.com").expect("a host");
+    let plane = a_sandboxed_plane();
+    let (chats, [one, _two]) = two_chats_asking_live(plane.path());
+    chats.allow_live(None, &host, Level::Project);
+    let narrowed = Arc::new(Mutex::new(Vec::new()));
+    chats.tell_narrowed_to({
+        let narrowed = Arc::clone(&narrowed);
+        Arc::new(move |session| lock(&narrowed).push(session))
+    });
+
+    chats.keep_blocked_live(1, &host, &|_, _| panic!("nothing kept to audit"));
+
+    assert!(hosts_of(&one.allowed).is_empty());
+    assert_eq!(*lock(&narrowed), [1]);
+}
+
+/// #3407: an Allow for the chat reserved before a Keep blocked that takes the chat's Allow
+/// back is not kept after it, as after a Revoke.
+#[test]
+fn an_allow_reserved_before_keep_blocked_takes_it_back_is_not_kept() {
+    use purlis_core::sandbox::grant::What;
+    let host = purlis_core::sandbox::grant::host("live.example.com").expect("a host");
+    let plane = a_sandboxed_plane();
+    let (chats, _boards) = two_chats_asking_live(plane.path());
+    chats
+        .hold_grant(1, What::Host(host.clone()), 1)
+        .expect("held");
+    let reserved = chats
+        .reserve_grant(1, What::Host(host.clone()), 2, false)
+        .expect("reserved");
+
+    chats.keep_blocked_live(1, &host, &|_, _| Ok(()));
+
+    assert!(chats.commit_grant(reserved).is_err());
+    assert!(!chats.holds_for(1, &What::Host(host.clone())));
 }
 
 /// #2629: **a host is never allowed once**, from a chat's Notice: the Allow is refused before
@@ -8238,6 +8375,7 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
                 }),
                 plane_skills,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     }

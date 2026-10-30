@@ -70,6 +70,7 @@ fn the_task() -> Chat {
             root: Some(STEWARD_ID.to_owned()),
             above: None,
             by_person: false,
+            long: false,
         }),
         identity: Identity {
             id: Some(TASK_ID.to_owned()),

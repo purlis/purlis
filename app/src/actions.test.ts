@@ -57,6 +57,7 @@ import {
   RESTART_NOTE,
   MOVE_HERE_NOTE,
   MOVE_TO_RUNNER_NOTE,
+  MOVE_TOGETHER_NOTE,
   noteOf,
   restartNoteNoState,
   titleOf,
@@ -3258,8 +3259,27 @@ describe("Move to runner and Move here on a chat's tab (#2048)", () => {
       title: "Move chat one here",
       note: MOVE_HERE_NOTE,
     });
+    // Its runner names the clones it holds (1.51, #3811): a clone its chat made comes back too.
+    const back = catalogue(now({ tabs, movesTo: () => [null], clonesComeBack: () => true }));
+    expect(catalogued(back).get(`tab.move:${tab}:`)?.note).toBe(
+      "Its branch, uncommitted work and conversation come back to this machine at its next pause, with each repository it cloned on the runner.",
+    );
     const none = catalogue(now({ tabs, movesTo: () => [] }));
     expect([...catalogued(none).keys()].filter((id) => id.startsWith("tab.move:"))).toEqual([]);
+  });
+
+  it("names the chats of its workspace that move with it, both ways (#3453)", () => {
+    const offers = catalogued(
+      catalogue(now({ tabs, movesTo: () => ["builds"], movesWith: () => ["two", "steward 1"] })),
+    );
+    expect(offers.get(`tab.move:${tab}:builds`)).toMatchObject({
+      title: "Move chat one with two and steward 1 to pool builds",
+      note: `${MOVE_TO_RUNNER_NOTE} ${MOVE_TOGETHER_NOTE}`,
+    });
+    const here = catalogued(
+      catalogue(now({ tabs, movesTo: () => [null], movesWith: () => ["two"] })),
+    );
+    expect(here.get(`tab.move:${tab}:`)?.title).toBe("Move chat one with two here");
   });
 });
 

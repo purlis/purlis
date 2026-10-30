@@ -521,8 +521,13 @@ fn ready_given(
     // given (charter-app#134). A bare word handed to a pty is resolved against whatever
     // `PATH` the app itself was started with — which for a Finder-launched `.app` is
     // `/usr/bin:/bin:/usr/sbin:/sbin` and holds no harness.
-    let mut argv = crate::programs::resolve_argv(&profiles::expanded_command(profile, &home))
-        .map_err(|gone| format!("{} Nothing was started.", gone.said()))?;
+    let pinned = pinned_program(profile, &home)?;
+    let runs_its_pin = pinned.is_some();
+    let mut argv = match pinned {
+        Some(argv) => argv,
+        None => crate::programs::resolve_argv(&profiles::expanded_command(profile, &home))
+            .map_err(|gone| format!("{} Nothing was started.", gone.said()))?,
+    };
     let mut program = argv.remove(0);
     let standing = Standing::of(&here, root);
     let mut env = environment(
@@ -532,6 +537,11 @@ fn ready_given(
         start.show_footer,
         &standing,
     );
+    // A runner's pinned version is the one it runs (#3446): Claude Code's own updater, which
+    // would fetch another version beside it, is kept off.
+    if runs_its_pin && profile.kind == "claude" {
+        env.push(("DISABLE_AUTOUPDATER".to_owned(), "1".to_owned()));
+    }
     // What the program answered `--version`, where the sandbox's check asked it.
     let mut heard = None;
     // Ruling V87g: a sandbox binds only the harness it was compiled for, and never a program a
@@ -649,6 +659,36 @@ fn ready_given(
         sign_in,
         first_message: None,
     })
+}
+
+/// **On a runner, a chat on a profile it keeps for its desktop with a pin runs exactly that
+/// version** (#3446, [`crate::profilestore::installs`]): its whole command, its program the
+/// pinned version installed in the runner's data home (installed now where it is not there yet).
+/// `None` for every other profile and machine, whose program is found on `PATH`; `Err`, said by
+/// the chat, where the version could not be installed.
+fn pinned_program(profile: &Profile, home: &Path) -> Result<Option<Vec<String>>, String> {
+    let installed = crate::profilestore::installs::for_a_start(profile)
+        .map_err(|why| format!("{why}. Nothing was started."))?;
+    Ok(installed.map(|program| with_program(profile, home, &program)))
+}
+
+/// `profile`'s whole command, its first word `program` in place of the one it names.
+fn with_program(profile: &Profile, home: &Path, program: &Path) -> Vec<String> {
+    let mut words = profiles::expanded_command(profile, home);
+    let program = program.display().to_string();
+    match words.first_mut() {
+        Some(first) => *first = program,
+        None => words.push(program),
+    }
+    words
+}
+
+/// Whether `profile` is one this machine keeps for its desktop with a pin: a runner's, whose
+/// program is the pinned version it installs ([`pinned_program`]).
+fn kept_pinned(profile: &Profile) -> bool {
+    let records = crate::profilestore::listed_here();
+    crate::profilestore::pin::record_of(profile, &records)
+        .is_some_and(|r| r.kept_for.is_some() && r.pinned.is_some())
 }
 
 /// **A chat runs on its profile's pinned harness version** (#2038,
@@ -829,11 +869,19 @@ impl<'a> AheadOnce<'a> {
                 return Ok(());
             }
             let home = profiles::home().unwrap_or_else(|| PathBuf::from("~"));
-            // A program that is not there is the start's own refusal, not the sandbox's.
-            let Ok(words) =
-                crate::programs::resolve_argv(&profiles::expanded_command(profile, &home))
-            else {
-                return Ok(());
+            // A program that is not there is the start's own refusal, not the sandbox's; a
+            // runner's pinned version not installed yet is installed by the start (#3446).
+            let words = match crate::profilestore::installs::installed_for(profile) {
+                Some(program) => with_program(profile, &home, &program),
+                None if kept_pinned(profile) => return Ok(()),
+                None => {
+                    let Ok(words) =
+                        crate::programs::resolve_argv(&profiles::expanded_command(profile, &home))
+                    else {
+                        return Ok(());
+                    };
+                    words
+                }
             };
             let env = environment(profile, root, None, false, &Standing::of(root, root));
             let mut writable = applied.writable();

@@ -1203,6 +1203,31 @@ impl HostLink {
         .map(|(file, _)| file)
     }
 
+    /// **The clones the host holds in `workspace`** of `project` (1.51, #3811), by their folder
+    /// names: `None` from a host before 1.51, which cannot say, so a clone it made stays there.
+    pub(crate) fn clones_of(
+        &self,
+        project: &str,
+        workspace: &str,
+    ) -> Result<Option<Vec<String>>, String> {
+        if !self.names_its_clones() {
+            return Ok(None);
+        }
+        match self.call(Command::ClonesOf {
+            project: project.to_owned(),
+            workspace: workspace.to_owned(),
+        })? {
+            Answer::Clones { repos } => Ok(Some(repos)),
+            _ => Err("the runner did not say which clones it holds".to_owned()),
+        }
+    }
+
+    /// Whether the host names the clones it holds in a workspace (1.51, #3811), so a chat moving
+    /// off it brings back a clone it made.
+    pub(crate) fn names_its_clones(&self) -> bool {
+        self.version() >= session::KNOWS_CLONES_OF
+    }
+
     /// Refused in purlis's words where the host is before 1.44 and moves no chat.
     pub(crate) fn moves_chats(&self) -> Result<(), String> {
         if self.version() < session::MOVES_CHATS {
@@ -1898,6 +1923,12 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                 device, resumes_at, ..
             }) => lock(&shared.runner_log).missed(&device, resumes_at),
             Told::Pushed(Pushed::LinkDown { key_changed, .. }) => {
+                // The runner let go of every line it handed on over the link that went: each
+                // command of its that waits here has gone, its Ask with it (#3408).
+                let projects: Vec<Arc<Relayed>> = lock(&shared.hearing).values().cloned().collect();
+                for relayed in projects {
+                    relayed.lost_its_host(lines.link);
+                }
                 lock(&shared.runner_log).link(true);
                 reconnect(&shared, Reconnect::Started);
                 if key_changed {
@@ -2103,6 +2134,12 @@ impl HostedSessions {
     /// The link, with this project held on it.
     fn link(&self) -> Result<(Arc<HostLink>, String), String> {
         held_on(&self.holding())
+    }
+
+    /// [`Self::moving_link`], for the tests of what moves over it.
+    #[cfg(test)]
+    pub(crate) fn moving_link_in_a_test(&self) -> Result<(Arc<HostLink>, String), String> {
+        self.moving_link()
     }
 
     /// The link a chat moves over (#2048): this project held on a pool's runner that keeps it,
@@ -3253,6 +3290,15 @@ impl SessionHost for HostedSessions {
         }
     }
 
+    /// Only of a link already open: a tab drawn never opens one to the runner.
+    fn clones_come_back(&self, _id: u32) -> bool {
+        self.kept_on_the_runner
+            && self
+                .connection
+                .of_project(&self.root, Duration::ZERO)
+                .is_ok_and(|link| link.names_its_clones())
+    }
+
     /// The project held on the pool's runner, and each clone of `workspace` sent ahead
     /// (#2048). Only where the runner keeps the project and moves chats.
     fn move_ahead(&self, _pool: &str, workspace: &str) -> Result<(), String> {
@@ -3260,24 +3306,31 @@ impl SessionHost for HostedSessions {
         crate::runnercode::send_ahead(&link, &project, &self.root, workspace, &self.sent)
     }
 
-    fn move_in(&self, _pool: &str, chat: &crate::host::Moving) -> Result<(), String> {
+    fn move_in(&self, _pool: &str, chats: &[crate::host::Moving]) -> Result<(), String> {
+        let Some(workspace) = chats.first().map(|chat| chat.workspace.as_str()) else {
+            return Ok(());
+        };
         let (link, project) = self.moving_link()?;
-        crate::runnercode::move_workspace_to(
-            &link,
-            &project,
-            &self.root,
-            &chat.workspace,
-            &self.sent,
-        )?;
-        let here = of_a_chat(&self.root, chat);
-        let found = here
-            .find()
-            .map_err(|why| format!("its conversation did not move to the runner: {why}"))?;
-        link.send_conversation(&project, &carried(chat, &found.shape), &found.path)
-            .map_err(|why| format!("its conversation did not move to the runner: {why}"))
+        // Each conversation is found first: where one is not, nothing has moved.
+        let mut found = Vec::new();
+        for chat in chats {
+            let here = of_a_chat(&self.root, chat)
+                .find()
+                .map_err(|why| format!("its conversation did not move to the runner: {why}"))?;
+            found.push((chat, here));
+        }
+        crate::runnercode::move_workspace_to(&link, &project, &self.root, workspace, &self.sent)?;
+        for (chat, here) in found {
+            link.send_conversation(&project, &carried(chat, &here.shape), &here.path)
+                .map_err(|why| format!("its conversation did not move to the runner: {why}"))?;
+        }
+        Ok(())
     }
 
-    fn move_out(&self, pool: &str, chat: &crate::host::Moving) -> Result<Vec<String>, String> {
+    fn move_out(&self, pool: &str, chats: &[crate::host::Moving]) -> Result<Vec<String>, String> {
+        let Some(workspace) = chats.first().map(|chat| chat.workspace.as_str()) else {
+            return Ok(Vec::new());
+        };
         let (link, project) = self.moving_link()?;
         let scratch = tempfile::Builder::new()
             .prefix("purlis-conversation-")
@@ -3285,22 +3338,23 @@ impl SessionHost for HostedSessions {
             .map_err(|why| {
                 format!("there is no room on this machine for its conversation: {why}")
             })?;
-        let came = scratch.path().join("conversation");
-        // The conversation first: where it does not come, nothing of this machine's clones has
-        // changed, and the chat stays on the runner as it was.
-        let shape = link
-            .fetch_conversation(&project, &carried(chat, ""), &came)
-            .map_err(|why| format!("its conversation did not come back: {why}"))?;
-        let watch = crate::runnercode::move_workspace_back(
-            &link,
-            &project,
-            &self.root,
-            &chat.workspace,
-            pool,
-        )?;
-        of_a_chat(&self.root, chat)
-            .keep(&shape, &came)
-            .map_err(|why| format!("its conversation could not be kept here: {why}"))?;
+        // Every conversation first: where one does not come, nothing of this machine's clones
+        // has changed, and the chats stay on the runner as they were.
+        let mut came = Vec::new();
+        for (at, chat) in chats.iter().enumerate() {
+            let file = scratch.path().join(format!("conversation-{at}"));
+            let shape = link
+                .fetch_conversation(&project, &carried(chat, ""), &file)
+                .map_err(|why| format!("its conversation did not come back: {why}"))?;
+            came.push((chat, shape, file));
+        }
+        let watch =
+            crate::runnercode::move_workspace_back(&link, &project, &self.root, workspace, pool)?;
+        for (chat, shape, file) in came {
+            of_a_chat(&self.root, chat)
+                .keep(&shape, &file)
+                .map_err(|why| format!("its conversation could not be kept here: {why}"))?;
+        }
         Ok(watch)
     }
 

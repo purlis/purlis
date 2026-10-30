@@ -20,10 +20,10 @@ import { studioPage } from "../studio.js";
  * against the real core, with the `skill-studio` flag on for the run (`wdio.conf.ts`).
  *
  * The spec builds a git repository of two skills in a temporary folder (one with a script that
- * fetches from a host and a `!` command, which refers to the other), adds it with Add source,
- * browses it, and opens the install review. The review leads with the summary, its risky items
- * marked, says the referred skill comes along, and shows a file's text on a click. Install copies
- * both and records them in `skills.lock`. That the copy is one commit, and every refusal of a
+ * fetches from a host and a `!` command, which refers to the other), adds it with Add source…,
+ * opens its page (#3687), and opens the install review page. The review leads with the summary,
+ * its risky items marked, says the referred skill comes along, and shows a file's text on a
+ * click. Install, at the page's foot, copies both and records them in `skills.lock`. That the copy is one commit, and every refusal of a
  * malicious source, are the core's seam tests (`skills/source/tests.rs`).
  *
  * **It leaves the window and the project as it found them.**
@@ -71,6 +71,23 @@ function aSource(): string {
   return join(at, "source.git");
 }
 
+/**
+ * **Waits for the install's answer in the window**: the review page leaves for the source's page
+ * on success, and stays with the studio's refusal on screen otherwise, which is then the failure.
+ */
+async function installAnswered() {
+  try {
+    await browser.waitUntil(async () => !(await $('[data-testid="install-review"]').isExisting()), {
+      timeout: 60_000,
+      interval: 250,
+    });
+  } catch {
+    const refused = await $('[data-cause="skill-change"]');
+    const said = (await refused.isExisting()) ? await refused.getText() : "nothing";
+    throw new Error(`the install was never answered in the window; the studio says: ${said}`);
+  }
+}
+
 /** Types `text` into the box labelled `label`. */
 async function typeInto(label: string, text: string) {
   const box = await $(`aria/${label}`);
@@ -114,26 +131,34 @@ describe("installing a skill from a skill source", function () {
     await runFromThePalette("Open Skill studio", "skills.studio");
     await studioPage("Sources");
 
-    const add = await $("button=Add source");
+    // Add source… is a short dialog: the repository and who can browse it, the rest under More.
+    const add = await $("button=Add source…");
     await add.waitForClickable({ timeout: 20_000 });
     await add.click();
     await typeInto("Repository", url);
-    await typeInto("Folder", "skills");
     // A folder on this machine is this machine's source alone.
-    await choose('[data-scope="select"][data-part="root"][aria-label="Who browses it"]', "local");
-    await (await $("button=Add it")).click();
+    await choose(
+      '[data-testid="skill-source-add"] [data-scope="select"][data-part="root"]',
+      "local",
+    );
+    await (await $("button=More: branch, folder, sign-in")).click();
+    await typeInto("Folder", "skills");
+    await (await $('[data-testid="skill-source-add"]').$("button=Add source")).click();
 
-    const browse = await $(`aria/Browse ${url}, skills`);
-    await browse.waitForClickable({ timeout: 20_000 });
-    await browse.click();
+    // The source opens on its own page, its skills marked with what their files do.
+    const row = await $('[data-testid="skill-source"]');
+    await row.waitForClickable({ timeout: 20_000 });
+    await row.click();
     const offered = await $(`[data-testid="offered-${SHIPPER}"]`);
     await offered.waitForExist({ timeout: 30_000 });
-    await (await $(`aria/Review ${SHIPPER}`)).click();
+    await expect(offered).toHaveText(/runs a script/);
+    await (await $(`aria/Review install: ${SHIPPER}`)).click();
 
     const review = await $('[data-testid="install-review"]');
     await review.waitForExist({ timeout: 30_000 });
-    await expect(review).toHaveText(/2 skills at/);
-    await expect(review).toHaveText(/risky items marked/);
+    const pinned = await $('[data-testid="install-commit"]');
+    await pinned.waitForExist({ timeout: 30_000 });
+    await expect(pinned).toHaveText(/2 skills, .*risky items marked/);
     const summary = await $(`[data-testid="summary-${SHIPPER}"]`);
     await expect(summary).toHaveText(/Script scripts\/ship\.sh runs with sh/);
     await expect(summary).toHaveText(/Network host get\.example\.net/);
@@ -145,9 +170,22 @@ describe("installing a skill from a skill source", function () {
     await expect(review).toHaveText(new RegExp(`Comes along: ${SHIPPER} refers to it`));
 
     await (await $("aria/Show scripts/ship.sh")).click();
-    await expect($('[data-testid="skill-review-file"]')).toHaveText(/curl -fsSL/);
+    await expect(
+      $('[data-testid="file-scripts/ship.sh"] [data-testid="skill-review-file"]'),
+    ).toHaveText(/curl -fsSL/);
 
-    await (await $("button=Install")).click();
+    await (await $('[data-testid="install-review"]').$("button=Install")).click();
+    // **The window has the install's answer** (#3957): the review page goes back to the source's
+    // page only once the install answered, and that answer is what the studio reads its Library
+    // again on. `skills.lock` is written before the copies are committed and the answer comes, so
+    // on a loaded machine the lock alone left the Library's read still to come.
+    await installAnswered();
+    // And the app says the install ended: the source's page, the skill marked Installed (#3973).
+    await $('[data-testid="skill-source-page"]').waitForExist({ timeout: 30_000 });
+    await browser.waitUntil(
+      async () => /Installed/.test(await $(`[data-testid="offered-${SHIPPER}"]`).getText()),
+      { timeout: 30_000, timeoutMsg: `the source's page never marked ${SHIPPER} Installed` },
+    );
     await browser.waitUntil(async () => existsSync(join(root, "skills.lock")), {
       timeout: 30_000,
       timeoutMsg: "the install never wrote skills.lock",
@@ -158,6 +196,7 @@ describe("installing a skill from a skill source", function () {
       skills: { name: string; commit: string }[];
     };
     expect(lock.skills.map((one) => one.name).sort()).toEqual([NOTIFIER, SHIPPER].sort());
+    // Read again on the install's answer: one read of the studio, not the commit before it.
     await studioPage("Library");
     await $(`[data-testid="skill-${SHIPPER}"]`).waitForExist({ timeout: 20_000 });
   });

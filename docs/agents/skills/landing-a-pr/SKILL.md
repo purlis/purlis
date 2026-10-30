@@ -26,6 +26,8 @@ A small fix after approval lands on that approval when the new commits only answ
 
 Run `tools/land.mjs` with `--watch` and act on what it says.
 
+**Runs held for approval are the operator's.** When a run of the head waits on approval, the tool names each one (name, id and link), says the operator approves them, and exits with status 4 without reading a check or enqueueing anything. Never rerun or approve such a run yourself, and never start a fresh run some other way (an empty push, `gh pr update-branch`) to get past it. Hand the run ids to the operator, and land again once they have run (#3991).
+
 When it reports a drop from the queue, read the annotations it prints:
 
 - **The pull request's own failure:** fix it, review the fix (step 1), land again.

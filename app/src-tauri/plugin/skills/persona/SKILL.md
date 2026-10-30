@@ -80,6 +80,14 @@ shows who exists.
   devops" is the `dispatch` tool with `to: devops` (`purlis dispatch --to devops`), never
   `purlis handoff --persona devops`.
 
+  **A task that writes to a repo gets a branch of its own**: the `dispatch` tool's `in:
+  worktree` (`--in worktree`). purlis cuts a branch folder for it and claims it for the task,
+  which commits, updates and pushes there with `purlis worktree commit`, `update` and `push`.
+  From a workspace's own folder, whose clones sit in subfolders, `worktree` uses its one
+  clone; where it holds several, name one with `in: worktree:<repo>`
+  (`--in worktree:<repo>`). Two tasks in one folder share every file, so give each writer its
+  own.
+
   **Before you dispatch, check what is already open**: the roster purlis adds to each turn
   while this chat has open tasks, or `dispatch_list`. A task still at work is waited on
   (`dispatch_wait`), told more (`dispatch_tell`) or cancelled (`dispatch_cancel`), never
@@ -91,7 +99,15 @@ shows who exists.
   gone quiet, is stopped on the person, is back at work, and when it reports or ends.
   `dispatch_close` closes a finished task of yours once you have read its report. Each has a
   `purlis dispatch` subcommand of the same name (`list`, `wait`, `tell`, `answer`, `cancel`,
-  `read`, `close`) for a terminal.
+  `read`, `close`) for a terminal. A task that has reported while its program still runs is
+  listed as "reported, still running", and you can still tell or cancel it.
+
+  **Work that goes on piece after piece** (a builder working through tickets) is a
+  long-running task: the `dispatch` tool with `long: true` (`purlis dispatch --long --name …`
+  in a terminal). It sends `dispatch_note` as it finishes each piece, since notes are its
+  heartbeat. purlis never asks it for a report and never makes one from its last message, and
+  it ends when it reports `done` or `failed`, or when you cancel it. `dispatch_list` shows it
+  as long-running, with its last note. Without `long`, a task is one job with one answer.
 
 - **When this chat is the task**, it owes the chat that dispatched it one report, and it can
   talk to that chat while it works, with `dispatch_note` (a note; nothing waits on it, so
@@ -109,7 +125,9 @@ shows who exists.
   wait runs out, end the turn, and the answer is handed to the next one. The report ends the
   task. A turn that ends without one is asked for it once; if the next turn ends without one
   too, purlis sends your last message in its place, marked as **a report purlis made from its
-  last message**. Send the report yourself.
+  last message**. Send the report yourself. **A long-running task** (its first message says
+  so) is never asked: send `dispatch_note` as you finish each piece, and report once, `done` or
+  `failed`, when all of the work is done.
 
 - **Partial or ambiguous match:** name the persona you would use and ask before dispatching.
 - **No persona fits:** say so. Offer to create one only when the domain is large enough to
@@ -137,17 +155,19 @@ you access to it. Only an explicit `uses:` shares tools.
 
 ## Memory
 
-A persona remembers across sessions. Search rather than reading everything:
+A persona remembers across sessions. In a chat purlis started, record with the
+`persona_remember` tool: it writes to the persona this chat runs as (or, with `shared`, to every
+persona), runs without a prompt, and purlis writes it even where the chat's sandbox would not
+let it. The workspace's own memory takes the `memory_add` tool. On the command line, name this
+chat's own persona or workspace, which is the spelling that runs without a prompt; search
+rather than reading everything:
 
 ```bash
-purlis recall "<keywords>"                            # every base at once, labelled by source
-purlis persona remember <name> "<durable fact>"       # persistent, committed
-purlis persona remember <name> "<fact>" --shared      # for every persona
+purlis recall "<keywords>"                                  # every base at once, labelled by source
+purlis persona remember <name> "<durable fact>"             # persistent, committed
+purlis persona remember <name> "<fact>" --shared            # for every persona
+purlis workspace remember -w <workspace> "<durable fact>"   # the workspace's memory
 ```
-
-In a chat purlis started, the `persona_remember` tool does the same for the persona this chat
-runs as (or, with `shared`, for every persona), and purlis writes it even where the chat's
-sandbox would not let it.
 
 Record what the work *taught* you, such as a decision, a gotcha or a verified fact. Do not
 record what the repo already records. **Never put a secret in memory**; secrets belong in the

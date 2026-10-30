@@ -206,6 +206,22 @@ const DRAWN: &[Drawn] = &[
         around: &[],
         on: None,
     },
+    Drawn {
+        family: "titlebar",
+        part: "dot-warning",
+        css: include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
+        own: &["[data-part=\"dot-warning\"][data-scope=\"titlebar\"]"],
+        around: &[],
+        on: None,
+    },
+    Drawn {
+        family: "titlebar",
+        part: "dot-needs",
+        css: include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
+        own: &["[data-part=\"dot-needs\"][data-scope=\"titlebar\"]"],
+        around: &[],
+        on: None,
+    },
 ];
 
 /// A theme over Purlis Classic that sets `tokens` and `parts`, as read.

@@ -1887,6 +1887,7 @@ fn handed() -> HandedFrom {
         root: None,
         above: None,
         by_person: false,
+        long: false,
     }
 }
 
@@ -2253,6 +2254,40 @@ fn a_chat_the_person_started_from_a_tab_comes_back_saying_so_and_no_other_writes
     assert_eq!(back.chats[1].from, Some(a_handoff()));
     let text = std::fs::read_to_string(path(plane.path())).unwrap();
     assert_eq!(text.matches("\"by\"").count(), 1, "{text}");
+}
+
+#[test]
+fn a_long_running_task_comes_back_long_running_and_no_other_writes_the_key() {
+    // #3905: the mode outlives a relaunch, so its turns' ends still ask for nothing.
+    let plane = tempfile::tempdir().unwrap();
+    let long = HandedFrom {
+        id: None,
+        mode: crate::dispatchdecision::Mode::Task,
+        depth: 1,
+        above: None,
+        long: true,
+        ..handed()
+    };
+    let record = Record {
+        chats: vec![
+            Chat {
+                from: Some(long.clone()),
+                ..claude("3", None)
+            },
+            Chat {
+                from: Some(a_handoff()),
+                ..claude("4", None)
+            },
+        ],
+        ..Default::default()
+    };
+    write(plane.path(), &record).unwrap();
+
+    let back = read(plane.path());
+    assert_eq!(back.chats[0].from, Some(long));
+    assert_eq!(back.chats[1].from, Some(a_handoff()));
+    let text = std::fs::read_to_string(path(plane.path())).unwrap();
+    assert_eq!(text.matches("\"long\"").count(), 1, "{text}");
 }
 
 #[test]

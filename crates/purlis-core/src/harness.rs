@@ -31,7 +31,7 @@ pub use adapter::{HarnessAdapter, SkillStart, SkillToStart};
 /// lines they sit on, so no harness has to cut anything. Each adapter adds its own cap on one
 /// description and whether it lists a skill's path ([`HarnessAdapter::skill_budget`]); whether a
 /// manual-only skill is free follows from what it reads ([`Harness::skill_budget`]).
-pub(crate) const SKILL_BUDGET: crate::skills::Budget = crate::skills::Budget {
+pub const SKILL_BUDGET: crate::skills::Budget = crate::skills::Budget {
     skills: 30,
     chars: 6_000,
     per_description: None,

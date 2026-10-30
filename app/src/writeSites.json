@@ -474,6 +474,11 @@
       "by": ["allowSandboxBlockForTasks"]
     },
     {
+      "at": "taskblocks.rs keep_sandbox_block_for_tasks",
+      "writes": "this machine's network record",
+      "by": ["keepSandboxBlockForTasks"]
+    },
+    {
       "at": "updates.rs give_back",
       "writes": null,
       "why": "It writes the updater's own record, which no lane's read draws."

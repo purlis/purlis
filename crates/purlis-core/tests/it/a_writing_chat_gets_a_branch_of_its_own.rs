@@ -151,6 +151,7 @@ fn a_chat_that_started_is_logged_as_having_claimed_its_branch() {
     let who = purlis_core::pieces::Who {
         session: None,
         persona: None,
+        chat: None,
         host: "here".into(),
         log: "here".into(),
     };
@@ -386,6 +387,7 @@ fn a_branch_whose_chat_started_is_not_unclaimed() {
     let who = purlis_core::pieces::Who {
         session: None,
         persona: None,
+        chat: None,
         host: "here".into(),
         log: "here".into(),
     };
@@ -403,6 +405,7 @@ fn a_claimed_branch_stays_claimed_after_git_worktree_repair_rewrites_its_tree() 
     let who = purlis_core::pieces::Who {
         session: None,
         persona: None,
+        chat: None,
         host: "here".into(),
         log: "here".into(),
     };
@@ -431,6 +434,7 @@ fn a_started_chat_whose_claim_could_not_be_logged_is_not_called_unclaimed() {
     let who = purlis_core::pieces::Who {
         session: None,
         persona: None,
+        chat: None,
         host: "here".into(),
         log: "here".into(),
     };

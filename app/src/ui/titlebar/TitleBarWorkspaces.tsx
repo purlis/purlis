@@ -9,8 +9,8 @@
  * its own (`purlis/titlebar-family` in `eslint.config.js`).
  *
  * - **Drawn by its parts.** A chip carries `data-scope="titlebar"`, `data-part="workspace"` and
- *   its `data-variant`: `pinned`, `unpinned`, or `root` for the plane root's house, which
- *   stands outside the strip. Its waiting count is the `count` part.
+ *   its `data-variant`: `pinned`, `unpinned`, `dormant` for a pin whose workspace is gone
+ *   (#3651), or `root` for the plane root's house, which stands outside the strip. Its waiting count is the `count` part.
  *   `titlebar.css` draws the defaults (the Purlis look: 28px, corners of 8, quiet words) and a
  *   theme's parts reach the same attributes (`titlebar.workspace.corner-radius`, ADR 0103).
  * - **States a theme can key** are the ones this wrapper marks: `data-hovered` under the pointer,
@@ -22,7 +22,9 @@
  * - **A chip's notice dot** (#3648, spec #3647): a hidden notice about the workspace that is not
  *   dismissed leaves a `dot` part on the chip's leading corner, opposite its count, which brings
  *   the notice's card back. Each chip stands in a `slot` the dot is placed in, so the dot coming
- *   and going moves nothing.
+ *   and going moves nothing. Its shape and its part are the most urgent kind's (#3649): `dot`,
+ *   a disc, for news; `dot-warning`, a triangle, for a warning; `dot-needs`, a raised hand, for
+ *   a chat asking to remove the workspace (#3652).
  * - **The strip is a toolbar**, one Tab stop whose arrows walk its chips. It is at most 62% of the bar and scrolls sideways with its scrollbar hidden
  *   (R103, R167); the slash before it is a part of its own, in the faint tier (R92, R156).
  */
@@ -34,22 +36,56 @@ import type {
   Ref,
 } from "react";
 import { mergeProps, useFocusRing, useHover, useId } from "react-aria";
-import { ChevronDown, Circle, House, type LucideIcon } from "lucide-react";
+import { ChevronDown, Circle, Hand, House, Triangle, type LucideIcon } from "lucide-react";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
 
-/** **What a notice is**, which its dot's shape says (spec #3647): `info`, ●. The warning and
- *  needs-you kinds come with the notices that are them (#3649, #3652). */
-export type NoticeKind = "info";
+/**
+ * **The kinds of notice, least urgent first** (spec #3647): `info` ●, `warning` ▲, `needs` ✋, a
+ * chat waiting on the person's answer about the workspace (#3652). A chip's dot shows the most
+ * urgent kind among its notices, so the order is the urgency: a kind's place in this list is its
+ * rank.
+ */
+export const NOTICE_KINDS = ["info", "warning", "needs"] as const;
+export type NoticeKind = (typeof NOTICE_KINDS)[number];
 
-/** Each kind's shape on a dot, a Lucide icon filled: a shape, never a colour alone (WCAG
- *  1.4.1). News is a disc. */
-const SHAPE: Record<NoticeKind, LucideIcon> = { info: Circle };
+/** How urgent `kind` is: its place in {@link NOTICE_KINDS}. */
+export const urgencyOf = (kind: NoticeKind): number => NOTICE_KINDS.indexOf(kind);
 
-/** How many notices a chip's dot shows, as its description says it. */
-const noticesSaid = (count: number) => (count === 1 ? "1 notice" : `${count} notices`);
+/** **The most urgent of `kinds`**: what a dot shows. None is `info`, the least urgent. */
+export const mostUrgentOf = (kinds: Iterable<NoticeKind>): NoticeKind => {
+  let top: NoticeKind = NOTICE_KINDS[0];
+  for (const one of kinds) if (urgencyOf(one) > urgencyOf(top)) top = one;
+  return top;
+};
+
+/**
+ * **What each kind draws and says**: the dot's part, which a theme keys its colours by (one
+ * part per kind, `titlebar.dot`, `titlebar.dot-warning` and `titlebar.dot-needs`, so a theme
+ * colouring one never colours another the same); its shape, a Lucide icon, never a colour alone
+ * (WCAG 1.4.1), filled, or drawn in its strokes where it is `stroked` (the hand, which filled is
+ * a blob); and the words a description gives it after the count, none for news.
+ */
+const KINDS: Record<
+  NoticeKind,
+  { part: string; shape: LucideIcon; said: string | undefined; stroked?: true }
+> = {
+  info: { part: "dot", shape: Circle, said: undefined },
+  warning: { part: "dot-warning", shape: Triangle, said: "warning" },
+  needs: { part: "dot-needs", shape: Hand, said: "a chat asks you to remove it", stroked: true },
+};
+
+/** How many notices a chip has and the most urgent kind among them, as its description says it:
+ *  "1 notice", "3 notices, most urgent: warning". A ✋ alone, with no notice, says only its kind
+ *  ("a chat asks you to remove it"), never "0 notices" (#3652); nothing at all says nothing. */
+export const noticesSaid = (count: number, kind: NoticeKind = "info"): string | undefined => {
+  const counted = count === 0 ? undefined : count === 1 ? "1 notice" : `${count} notices`;
+  const said = KINDS[kind].said;
+  if (said === undefined) return counted;
+  return counted === undefined ? said : `${counted}, most urgent: ${said}`;
+};
 
 /** The family's variants, in the order the manifest names them. */
-export const TITLEBAR_VARIANTS = ["pinned", "unpinned", "root"] as const;
+export const TITLEBAR_VARIANTS = ["pinned", "unpinned", "root", "dormant"] as const;
 export type TitleBarVariant = (typeof TITLEBAR_VARIANTS)[number];
 
 type Native = Omit<
@@ -60,8 +96,9 @@ type Native = Omit<
 export interface WorkspaceChipProps extends Native {
   /** The workspace's name: what the chip says, and its name. */
   name: string;
-  /** A pin, or the current workspace while it is not pinned, whose press pins it (R105). The
-   *  `root` variant is `RootChip`'s alone (#3654). */
+  /** A pin, or the current workspace while it is not pinned, whose press pins it (R105), or a
+   *  pin whose workspace is gone, kept dormant, whose press shows its notice (#3651). The `root`
+   *  variant is `RootChip`'s alone (#3654). */
   variant?: Exclude<TitleBarVariant, "root">;
   /** It is the workspace in front (R101). */
   current?: boolean;
@@ -107,7 +144,11 @@ export function WorkspaceChip({
   const describedBy =
     [
       (handed as { "aria-describedby"?: string })["aria-describedby"],
-      waiting > 0 || (notices?.count ?? 0) > 0 ? said : undefined,
+      waiting > 0 ||
+      variant === "dormant" ||
+      (notices !== undefined && noticesSaid(notices.count, notices.kind) !== undefined)
+        ? said
+        : undefined,
     ]
       .filter(Boolean)
       .join(" ") || undefined;
@@ -145,8 +186,10 @@ export function WorkspaceChip({
   // What waits in it and what its dot shows, beside it and not in it, so its words are only
   // what it draws.
   const describes = [
+    // A dormant chip says what it is, as its dotted edge and slanted words draw it (#3651).
+    variant === "dormant" ? "gone, kept dormant" : undefined,
     waiting > 0 ? `${waiting} waiting` : undefined,
-    notices !== undefined && notices.count > 0 ? noticesSaid(notices.count) : undefined,
+    notices === undefined ? undefined : noticesSaid(notices.count, notices.kind),
   ].filter((one) => one !== undefined);
   const description =
     describes.length > 0 ? (
@@ -178,7 +221,8 @@ export function ChipSlot({ children }: { children: ReactNode }) {
 /**
  * **A chip's notice dot** (#3648, spec #3647): a hidden notice about the workspace, not yet
  * dismissed, as a shape on the chip's leading corner, opposite its waiting count. A press
- * brings the notice's card back. It is one of the stops the strip's arrows walk, never a Tab
+ * brings the notice's card back; a needs-you dot's press brings forward the chat that asks
+ * (#3652). It is one of the stops the strip's arrows walk, never a Tab
  * stop of its own, as every chip but one is (charter-app#189). Its glyph is the kind's shape
  * (WCAG 1.4.1); its name says what a press shows, and the chip's description says it too.
  */
@@ -187,38 +231,48 @@ export function NoticeDot({
   count,
   kind,
   stop = false,
-  scope = "titlebar",
   onPress,
 }: {
-  /** What it is on, as its name says it: a workspace, or the status bar's Notices. */
   workspace: string;
   count: number;
   kind: NoticeKind;
-  /** A Tab stop of its own, where no strip's arrows walk to it: the plane root's house's, and
-   *  the status bar's. */
+  /** A Tab stop of its own, where no strip's arrows walk to it: the plane root's house's. */
   stop?: boolean;
-  /** The family it is a part of: a title-bar chip's, or the status bar's Notices item's
-   *  (`status-item.dot`, #3653), the same dot on the same ground. */
-  scope?: "titlebar" | "status-item";
   onPress: () => void;
 }) {
   const marked = useMarked({ onClick: onPress }, false);
-  const Shape = SHAPE[kind];
+  const { part, shape: Shape, stroked } = KINDS[kind];
+  const shows =
+    count === 1 ? `Show the notice on ${workspace}` : `Show the ${count} notices on ${workspace}`;
+  const said = KINDS[kind].said;
+  // The disc and the triangle are filled shapes; the hand is read by its strokes (#3652).
+  const filled = stroked !== true;
   return (
     <button
       type="button"
       {...marked}
       tabIndex={stop ? 0 : -1}
+      // What a press shows, then the most urgent kind where it is not news: the shape says it
+      // to the eye, this to the ear (WCAG 1.4.1). A ✋'s press brings the asking chat forward,
+      // and the workspace's own notices with it where it has some (#3652).
       aria-label={
-        count === 1
-          ? `Show the notice on ${workspace}`
-          : `Show the ${count} notices on ${workspace}`
+        kind === "needs"
+          ? `Show the chat asking to remove ${workspace}${
+              count === 0 ? "" : count === 1 ? ", and its notice" : `, and its ${count} notices`
+            }`
+          : said === undefined
+            ? shows
+            : `${shows}, most urgent: ${said}`
       }
-      data-scope={scope}
-      data-part="dot"
+      data-scope="titlebar"
+      data-part={part}
       data-kind={kind}
     >
-      <Shape aria-hidden="true" fill="currentColor" strokeWidth={0} />
+      {filled ? (
+        <Shape aria-hidden="true" fill="currentColor" strokeWidth={0} />
+      ) : (
+        <Shape aria-hidden="true" strokeWidth={2.5} />
+      )}
     </button>
   );
 }
@@ -252,7 +306,8 @@ export function RootChip({
   // What a context menu around it hands it (`asChild`) reaches the button with the press.
   const marked = useMarked({ ...handed, onClick: onPress }, current);
   const said = useId();
-  const shows = notices !== undefined && notices.count > 0;
+  const shown = notices === undefined ? undefined : noticesSaid(notices.count, notices.kind);
+  const shows = shown !== undefined;
   return (
     <Tooltip tip={name}>
       <button
@@ -278,7 +333,7 @@ export function RootChip({
         <House aria-hidden="true" />
         {shows && (
           <span id={said} hidden>
-            {noticesSaid(notices.count)}
+            {shown}
           </span>
         )}
       </button>
@@ -310,7 +365,7 @@ export function PinnedStrip({
   const walk = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const items = [
       ...event.currentTarget.querySelectorAll<HTMLElement>(
-        '[data-part="workspace"][data-scope="titlebar"], [data-part="dot"][data-scope="titlebar"], [data-titlebar-all]',
+        '[data-part="workspace"][data-scope="titlebar"], [data-kind][data-scope="titlebar"], [data-titlebar-all]',
       ),
     ];
     const at = items.findIndex((one) => one === document.activeElement);

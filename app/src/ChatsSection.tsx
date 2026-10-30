@@ -32,7 +32,7 @@ import { TaskEndConfirm, type TaskEndInline } from "./TaskEnd";
 import type { AtLimit, FinishedTask } from "./bindings";
 import { HelpersSaid } from "./ExplorerChats";
 import { ChatDoingLine } from "./ChatRowActivity";
-import { cardDown, cardUp, skipsTheRest, useCardUp } from "./chatCard";
+import { aCardIsUp, cardDown, cardUp, skipsTheRest, useCardUp } from "./chatCard";
 import { ChatPersonaState, ChatShownState } from "./ChatRows";
 import { sameList, useChatsHere, useChatsSelect, type ChatStates } from "./chatState";
 import { useTokensOnHover } from "./tasksUsed";
@@ -188,8 +188,9 @@ function onMemoryWords(waiting: number): string {
   return waiting === 1 ? "1 dispatch waits on memory" : `${waiting} dispatches wait on memory`;
 }
 
-/** The whole sentence, on the line's hover: what they wait for, and where they are named. */
-const ON_MEMORY_SAID =
+/** The whole sentence, on the line's hover, in the row's card and its description: what they
+ *  wait for, and where they are named. */
+export const ON_MEMORY_SAID =
   "This machine is short on memory: they start by themselves once it frees, and the chat that asked is told when each starts or gives up. The Dispatches tab lists them under Not started.";
 
 /**
@@ -500,10 +501,15 @@ export function ChatsSection({
   // row moves under a click. Taken as the pointer or the keyboard comes in, let go when both
   // have left, or the window stops being the one in use: the shared hold (`useHeldStill`,
   // #3594), which looks for the focus after every redraw. Off while there is no chat to list:
-  // the list is not drawn then, so nothing would say the pointer left it.
+  // the list is not drawn then, so nothing would say the pointer left it. **While a row's card
+  // is up, a pointer leaving the list is let go only after the card's own wait** (#3773): the
+  // card stands a step beside its row, over the view's inset, which is not the list, so the
+  // pointer crossing to it leaves the list for that moment; what the card is drawn in is the
+  // list's, so arriving there keeps the hold.
   const { holding: resting, held: holdBy } = useHeldStill<HTMLDivElement>(
     [rows, finished],
     rows.length > 0,
+    toTheCard,
   );
   // **What the person used last, the pointer or the keyboard** (#1675): a row's card comes up
   // on the keyboard resting on it, and not on a focus a press left there.
@@ -1031,6 +1037,11 @@ export function ChatsSection({
         </>
       }
     >
+      {/* What each restart asked for from a row says, announced as it comes (#1462), beside
+          the tree and not in it (#3759), and there whether or not the list draws a row
+          (#3886): the rows draw it, and say it. Of every chat listed, whatever the scope, the
+          filter and the folds draw: a line comes with its words, never with its row. */}
+      <RestartsSaid rows={every} restarts={restarts} />
       {rows.length === 0 ? (
         <p className="empty ui-text-secondary">
           {every.length === 0
@@ -1253,6 +1264,58 @@ export const CARD_LEAVE_MS = 150;
 
 export { CARD_SKIP_MS } from "./chatCard";
 
+/** How long the list's hold waits for a pointer that left it: the card's own wait while a card is
+ *  up, which the pointer may be crossing to, and none while none is. */
+function toTheCard(): number {
+  return aCardIsUp() ? CARD_LEAVE_MS : 0;
+}
+
+/** `said` after what was `before`, each its own sentence where there are two. */
+function sentences(before: string, said: string): string {
+  if (before === "") return said;
+  const stop = (one: string) => (/[.!?]$/.test(one) ? one : `${one}.`);
+  return `${stop(before)} ${stop(said)}`;
+}
+
+/**
+ * **What a restart asked for from a row says, to a screen reader** (#1462, #3759, #3886): one
+ * status, mounted with the section and empty until a restart says something, since a region
+ * that arrives already full is not announced by every screen reader; only its text changes. A
+ * line for each chat listed with a restart said, in the chats' numbers' order, and only a line
+ * that comes is announced (`aria-atomic="false"`), not every line again. **Built from every
+ * chat listed, not the rows drawn** (the review of #3935): a fold, the filter or the scope
+ * drawing a row again would add its line again, and a screen reader would announce old words
+ * as new. Beside the tree, which may own its rows alone: the row draws the words under it, for
+ * the eye, and says them in its description and its card.
+ */
+function RestartsSaid({
+  rows,
+  restarts,
+}: {
+  rows: readonly ChatRow[];
+  restarts: Readonly<Record<number, string>>;
+}) {
+  const said = rows
+    .filter((row) => !row.tab && restarts[row.session] !== undefined)
+    .sort((one, other) => one.session - other.session);
+  return (
+    <div className="hidden-words" role="status" aria-label="Restarts" aria-atomic="false">
+      {said.map((row) => (
+        <p key={row.session}>{restartLine(row.name, restarts[row.session])}</p>
+      ))}
+    </div>
+  );
+}
+
+/** A restart's line in the restarts' status: its words as they are where they name the chat,
+ *  else led by which chat's restart it was. */
+function restartLine(name: string, words: string): string {
+  return words.includes(name) ? words : `Restart of ${name}. ${words}`;
+}
+
+/** What a row says (#3886), each by its kind: what its card keys its lines by. */
+type Said = { kind: "needs" | "limit" | "memory" | "restart"; line: string };
+
 /**
  * One chat's row. Held on plain values, so only a row whose own facts changed is drawn again.
  *
@@ -1407,6 +1470,22 @@ const Row = memo(function Row({
   // row, never polled.
   const used = useTokensOnHover({ chat: session });
   const state: ShownFacts = { session, shell, report, outcome, asking, harness };
+  // **What the row says** (#3658, #3759, #3886): a chat below it needs you, its task limit, its
+  // dispatches waiting on memory and where they are named, and what its restart says. Said in
+  // the row's description, which is where a screen reader is, since what is drawn beside it
+  // and under it is the pointer's; and drawn in its card, which describes the row in its place
+  // while it is up, and is where the keyboard reads the hints the lines carry on their hover.
+  const sayings: (Said | null)[] = [
+    needs !== null && needs !== session
+      ? { kind: "needs", line: `${needsName ?? "A chat"} below it needs you` }
+      : null,
+    atLimit === null ? null : { kind: "limit", line: atLimit.said },
+    waitingOnMemory !== null && waitingOnMemory > 0
+      ? { kind: "memory", line: sentences(onMemoryWords(waitingOnMemory), ON_MEMORY_SAID) }
+      : null,
+    restartSaid === null ? null : { kind: "restart", line: restartSaid },
+  ];
+  const said = sayings.filter((one): one is Said => one !== null);
   // **The card** (#1675). Up after the pointer rests on the row, or the keyboard does, for
   // `CARD_DELAY_MS`: a pointer running down the list, or the arrows going down the tree, bring
   // up none. Down when the pointer leaves, the keyboard moves on, a press lands, or Escape,
@@ -1478,15 +1557,11 @@ const Row = memo(function Row({
             aria-setsize={setsize}
             aria-current={current || undefined}
             aria-expanded={open ?? undefined}
-            // What the card says, while it is up: the row's description.
+            // What the card says, while it is up: the row's description, which says what the
+            // row says too (#3886).
             aria-describedby={carded ? cardId : undefined}
-            // A chat below it needs you: said on the row, which is where a screen reader
-            // is, since the hand beside it is out of the keyboard's way.
-            aria-description={
-              needs !== null && needs !== session
-                ? `${needsName ?? "A chat"} below it needs you`
-                : undefined
-            }
+            // What the row says, while its card is down.
+            aria-description={said.map((one) => one.line).reduce(sentences, "") || undefined}
             data-tab={tab}
             // The chat's number, as a pane carries it: what a reveal finds the row by (#1490).
             data-session={session}
@@ -1586,6 +1661,7 @@ const Row = memo(function Row({
             cameFrom={from === null ? null : cameFromSaid(from, task, askerWaiting)}
             wentTo={handedToName === null ? null : handedOffSaid(handedToName, handedMore)}
             byYou={byYou}
+            said={said}
             clock={clock}
             tokens={task ? used.said : undefined}
           />
@@ -1593,14 +1669,30 @@ const Row = memo(function Row({
       </AnchoredPopover>
       {atLimit !== null && (
         /* **At its task limit** (#1498, V100-54): said where the limit binds, on a refusal,
-           until a slot frees; with the number and the way to where it is changed. */
-        <span className="at-limit ui-text-secondary" data-testid={`at-limit-${session}`}>
+           until a slot frees; with the number and the way to where it is changed. **The
+           pointer's and the eye's, as the hand is** (#3759): what the row's `li` holds is the
+           tree's, which may own its rows alone (axe's `aria-required-children`), and a group
+           around them does not help, since the tree owns what is in its groups too. The row
+           says the whole sentence, which names where the limit is changed; the line goes into
+           the row when the list moves onto the tree family (#3198). */
+        <span
+          className="at-limit ui-text-secondary"
+          data-testid={`at-limit-${session}`}
+          aria-hidden="true"
+        >
           {/* Which limit binds, with its number: only its own is "its task limit". Its words
-              carry the whole sentence, and the link beside them is its own Tab stop. */}
+              carry the whole sentence on their hover, and the link beside them goes there. */}
           <Tooltip tip={atLimit.said}>
-            <span>{atLimit.row}</span>
+            <span aria-hidden="true">{atLimit.row}</span>
           </Tooltip>
-          <Button variant="link" onPress={onLimits} className="at-limit-settings">
+          <Button
+            variant="link"
+            onPress={onLimits}
+            className="at-limit-settings"
+            excludeFromTabOrder
+            // Nor focused by its press: the focus never rests on what is hidden from the tree.
+            preventFocusOnPress
+          >
             Dispatch settings
           </Button>
         </span>
@@ -1608,20 +1700,23 @@ const Row = memo(function Row({
       {waitingOnMemory !== null && waitingOnMemory > 0 && (
         /* **Its dispatches waiting on memory** (#1617): said on the asking chat's row, in the
            at-limit line's place and style, as the Dispatches tab's Not started list names them. */
+        /* The pointer's and the eye's, as the at-limit line is (#3759): the row says it. */
         <Tooltip tip={ON_MEMORY_SAID}>
-          <span className="at-limit ui-text-secondary" data-testid={`on-memory-${session}`}>
+          <span
+            className="at-limit ui-text-secondary"
+            data-testid={`on-memory-${session}`}
+            aria-hidden="true"
+          >
             {onMemoryWords(waitingOnMemory)}
           </span>
         </Tooltip>
       )}
       {restartSaid !== null && (
-        /* **A restart asked for from this row, refused or waiting** (#1462): said here, in
-           the core's words, for a chat with no pane to say it on. */
-        <span
-          className="restart-said ui-text-secondary"
-          role="status"
-          aria-label={`Restart of ${name}`}
-        >
+        /* **A restart asked for from this row, refused or waiting** (#1462): drawn here, in
+           the core's words, for a chat with no pane to say it on. The eye's (#3759): the row
+           says it, and it is announced from outside the tree (`RestartsSaid`), which may own
+           no status. */
+        <span className="restart-said ui-text-secondary" aria-hidden="true">
           {restartSaid}
         </span>
       )}
@@ -1706,6 +1801,7 @@ function ChatCard({
   cameFrom,
   wentTo,
   byYou,
+  said,
   clock,
   tokens,
 }: {
@@ -1723,6 +1819,8 @@ function ChatCard({
   /** Where its work went, as its row said it. */
   wentTo: string | null;
   byYou: boolean;
+  /** What its row says (#3886): each a line of the card, as the row's description has them. */
+  said: readonly Said[];
   clock: StateClock;
   /** A task's tokens, once read. */
   tokens: string | undefined;
@@ -1738,6 +1836,12 @@ function ChatCard({
       {/* What a working chat is doing (#1493): read as a line of the card, where the row's own
           line was out of the tree and named by the row's description. */}
       <ChatDoingLine session={session} heard />
+      {/* What the row says (#3886): its card describes the row in place of the row's own
+          description while it is up, so the card says it too; and here a sighted keyboard
+          user reads what the lines under the row carry on their hover. */}
+      {said.map((one) => (
+        <p key={one.kind}>{one.line}</p>
+      ))}
       <dl className="chat-card-facts">
         {persona !== null && <Fact term="Persona">{persona}</Fact>}
         {(runsOn ?? harness) !== null && <Fact term="Harness">{runsOn ?? harness}</Fact>}

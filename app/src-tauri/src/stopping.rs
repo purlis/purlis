@@ -264,6 +264,8 @@ impl Facts {
             heard: self.state != State::Unknown,
             running: self.state == State::Running,
             waiting: self.state == State::Waiting,
+            // Not read by `prompt_showing`.
+            own_work: false,
             asking: self.asking,
             measured: self.types,
             interrupts: self.interrupts,
@@ -1134,12 +1136,17 @@ fn facts_of(held: &Held, session: u32) -> Facts {
                 .as_ref()
                 .is_some_and(|from| from.mode == purlis_core::dispatchdecision::Mode::Task);
             // A task whose report is settled has nothing left to write: it sent it, or purlis
-            // said in its place that it went without one.
+            // said in its place that it went without one. **But a cancel of one that reported
+            // while its program still runs** (#3899) asks it for its one more report, which it
+            // may send (`Owed::Again`), so it is given the cancel's turn.
+            let cancelling = held.stopping().is_cancelling(session);
+            let ended = matches!(board.state, State::Done | State::Failed);
             let settled = task
-                && open
-                    .from
-                    .as_ref()
-                    .is_some_and(|from| from.report != purlis_core::reopen::Owed::Due);
+                && open.from.as_ref().is_some_and(|from| {
+                    from.report != purlis_core::reopen::Owed::Due
+                        && !(cancelling
+                            && dispatched::still_running_after_report(from.report, ended))
+                });
             let harness = held.chats().harness(session);
             let measured = dispatched::told_by_a_line(harness);
             Facts {
@@ -1153,7 +1160,7 @@ fn facts_of(held: &Held, session: u32) -> Facts {
                 types: measured && !held.tasks().ledger().keyed(session),
                 measured,
                 interrupts: dispatched::interrupted_by_escape(harness),
-                cancelled: held.stopping().is_cancelling(session),
+                cancelled: cancelling,
             }
         }
         None => Facts {
@@ -1685,7 +1692,10 @@ fn cancel_ends(held: &Held, session: u32) {
         Some(Err(why)) => {
             tracing::warn!("purlis: a cancelled task's report was not written ({why})");
         }
-        None => {}
+        // It owed none: it had reported before the cancel, while its program still ran
+        // (#3899). Where it sent no other in the cancel's turn, the one it had stands, and its
+        // program is ended at it.
+        None => crate::dispatched::cancelled_without_a_report(held, session),
     }
 }
 
@@ -2048,6 +2058,7 @@ pub(crate) fn task_ending_of(held: &Held, session: u32) -> Result<TaskEnding, St
         heard: board.state != State::Unknown,
         running: board.state == State::Running,
         waiting: board.state == State::Waiting,
+        own_work: board.own_work,
         asking: board.asking,
         measured: dispatched::told_by_a_line(held.chats().harness(session)),
         interrupts: dispatched::interrupted_by_escape(held.chats().harness(session)),

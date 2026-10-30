@@ -88,6 +88,33 @@ fn a_branch_switch_in_the_root_is_refused_and_the_remedy_is_not() {
     );
 }
 
+/// #3798: a chat refused a branch move in the root is sent to a branch folder of the clone it
+/// already has, `purlis worktree add`, before a new workspace, which is for a new task: a chat
+/// told only `workspace create` made a second workspace the app then refused it. The same tail
+/// ends a refusal of a `git` call the guard cannot read.
+#[test]
+fn a_refused_branch_move_names_purlis_worktree_add_before_a_new_workspace() {
+    let f = fixture();
+    for cmd in ["git checkout feature", "git checkout --track README"] {
+        let said = branch(&f, cmd).unwrap();
+        let piece = said
+            .find("`purlis worktree add <repo> <piece>`")
+            .unwrap_or_else(|| panic!("{cmd}: {said}"));
+        let workspace = said
+            .find("`purlis workspace create <task>`")
+            .unwrap_or_else(|| panic!("{cmd}: {said}"));
+        assert!(piece < workspace, "{cmd}: {said}");
+        for then in ["`purlis worktree commit`", "`purlis worktree push`"] {
+            assert!(said.contains(then), "{cmd}: {then}: {said}");
+        }
+        // #3865: the commit through purlis is a sandboxed chat's; any other chat uses git.
+        let sandboxed = said.find("in a sandboxed chat with `purlis worktree commit`");
+        let plain = said.find("in any other chat with plain `git commit` and `git push`");
+        assert!(sandboxed.is_some() && plain.is_some(), "{cmd}: {said}");
+        assert!(sandboxed < plain, "{cmd}: {said}");
+    }
+}
+
 #[test]
 fn a_file_restore_is_not_a_branch_move_and_an_ambiguous_name_is_refused() {
     let f = fixture();

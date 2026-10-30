@@ -88,13 +88,15 @@ pub use code::{Carried, Code, MovesNoCode, TRANSFER_WITHIN};
 #[cfg(unix)]
 pub use confining::{Askable, Confine, ConfinesNothing, Confining, Planned, Tell, ToConfine};
 #[cfg(unix)]
-pub use connector::{BeforeEach, CommandConnector, Connected, Prepare, Prepared};
+pub use connector::{
+    BeforeEach, BeforeEachChecked, CommandConnector, Connected, NotChecked, Prepare, Prepared,
+};
 #[cfg(unix)]
 pub use hearing::{Channel, HandOn, Hear, HearsNothing};
 #[cfg(unix)]
 pub use hosting::{
     ASK_WITHIN, AskTheWindow, Beside, Compose, ComposesNothing, ENDS_WITHIN, Hosting, Looked, Poke,
-    Run, Running, Save, SavesNothing, Saving, Terminals, ToCompose, ToSave, Working,
+    ReachOf, Run, Running, Save, SavesNothing, Saving, Terminals, ToCompose, ToSave, Working,
 };
 #[cfg(unix)]
 pub use hostrecord::{HOST_RECORD, Started, this_boot};

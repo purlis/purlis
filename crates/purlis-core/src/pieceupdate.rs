@@ -18,9 +18,20 @@
 //!   sandboxed chat, the rebase is judged by the clone guard's own rules first
 //!   ([`crate::cloneupdate::judged`]) and refused where it would write a file the chat's
 //!   sandbox denies, naming it. A folder with uncommitted changes is refused.
+//! - **update, standing in a workspace's clone** (#3831): fetch the remote its branch follows,
+//!   and fast-forward the branch to it or rebase the branch's own commits onto it, with the
+//!   same `--continue` and `--abort`, the same judging for a sandboxed chat, and the same
+//!   refusal of uncommitted changes. Never the project's root folder, which is the person's.
+//!   Either kind is refused where it would write over a file on disk that the current commit
+//!   does not track (an ignored `.env`, an untracked file): someone's work, which git would
+//!   overwrite or stop on halfway.
 //! - **push**: the folder's own branch, under its own name, to its remote, after purlis's scan
-//!   of what it would publish. `--force-with-lease` only after an update rewrote the branch,
-//!   leased to what the remote had when it was fetched just before.
+//!   of what it would publish. Over the remote's copy only where purlis's own update rewrote
+//!   the branch (#3895): the update notes the commit the remote's copy was at, where the folder
+//!   had all of it, and the push is leased to exactly that commit, with any commits added since
+//!   on top. A remote someone else moved, a branch rewritten any other way, or a note purlis
+//!   cannot read refuses it, naming what to do. A plain push does this; `--force-with-lease`
+//!   asks for nothing more, so no chat ever needs a force push approved.
 //!
 //! Every git call goes through the hardened runner. Nothing here amends, resets, merges or
 //! pushes another branch.
@@ -83,8 +94,8 @@ pub fn update(piece: &Piece, step: &UpdateStep, reach: &Reach, say: &mut dyn FnM
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         match step {
             UpdateStep::Start { base } => start(piece, &here, base.as_deref(), reach, say),
-            UpdateStep::Continue => go_on(piece, &here, say),
-            UpdateStep::Abort => abort(piece, &here, say),
+            UpdateStep::Continue => go_on(&here, say),
+            UpdateStep::Abort => abort(&here, say),
         }
     });
     ran.unwrap_or_else(|why| {
@@ -93,14 +104,49 @@ pub fn update(piece: &Piece, step: &UpdateStep, reach: &Reach, say: &mut dyn FnM
     })
 }
 
-/// `purlis worktree push [--force-with-lease]`: the branch of `piece` pushed to its remote.
-pub fn push(piece: &Piece, lease: bool, reach: &Reach, say: &mut dyn FnMut(Say)) -> u8 {
+/// A workspace's clone, its own checkout, that `purlis worktree update` brings up to its
+/// remote (#3831).
+pub struct CloneAt<'a> {
+    pub root: &'a Path,
+    pub ws: &'a str,
+    pub repo: &'a str,
+}
+
+/// `purlis worktree update` standing in a clone (#3831): one step of it, its exit status, its
+/// lines said. A rebase it stops goes on or back as a branch folder's does.
+pub fn update_clone(
+    at: &CloneAt,
+    step: &UpdateStep,
+    reach: &Reach,
+    say: &mut dyn FnMut(Say),
+) -> u8 {
+    let on_a_branch = matches!(step, UpdateStep::Start { .. });
+    let ran = Here::of_clone(at, on_a_branch).and_then(|here| {
+        let lock = broker::lock_of(&here.git_dir);
+        let _held = lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match step {
+            UpdateStep::Start { base } => start_clone(at, &here, base.as_deref(), reach, say),
+            UpdateStep::Continue => go_on(&here, say),
+            UpdateStep::Abort => abort(&here, say),
+        }
+    });
+    ran.unwrap_or_else(|why| {
+        say(Say::Fail(why.into()));
+        1
+    })
+}
+
+/// `purlis worktree push`: the branch of `piece` pushed to its remote, over the remote's copy
+/// where purlis's own update rewrote it (#3895).
+pub fn push(piece: &Piece, reach: &Reach, say: &mut dyn FnMut(Say)) -> u8 {
     let ran = Here::of(piece, true).and_then(|here| {
         let lock = broker::lock_of(&here.git_dir);
         let _held = lock
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        pushed(piece, &here, lease, reach, say)
+        pushed(piece, &here, reach, say)
     });
     ran.unwrap_or_else(|why| {
         say(Say::Fail(why.into()));
@@ -114,6 +160,8 @@ struct Here {
     clone: PathBuf,
     git_dir: PathBuf,
     branch: String,
+    /// The folder, as a sentence names it: `<repo> · <piece>`, or `<repo>` for a clone.
+    label: String,
 }
 
 impl Here {
@@ -135,7 +183,16 @@ impl Here {
             ));
         }
         let clone = worktree::clone_dir(root, ws, repo).map_err(|e| e.to_string())?;
-        let git_dir = ran(&folder, &["rev-parse", "--absolute-git-dir"])?;
+        let git_dir = PathBuf::from(ran(&folder, &["rev-parse", "--absolute-git-dir"])?);
+        // purlis's notes of its own updates are kept in this directory and vouch for a push
+        // over the remote (#3895): it must be the clone's own record of this very folder.
+        if !own_record_of(&clone, &git_dir, &folder) {
+            return Err(format!(
+                "{repo} · {piece} keeps its git directory somewhere other than its clone's \
+                 `.git/worktrees`, so purlis does not update or push it for a chat: do it from \
+                 your own terminal"
+            ));
+        }
         let branch = ran(&folder, &["branch", "--show-current"])?;
         if branch.is_empty() && on_a_branch {
             return Err(format!(
@@ -146,10 +203,69 @@ impl Here {
         Ok(Self {
             folder,
             clone,
-            git_dir: PathBuf::from(git_dir),
+            git_dir,
             branch,
+            label: format!("{repo} · {piece}"),
         })
     }
+
+    /// The clone `at` itself, its own checkout (#3831), refused where it is on no branch and
+    /// `on_a_branch` is asked, or where its git directory is not its own `.git`.
+    fn of_clone(at: &CloneAt, on_a_branch: bool) -> Result<Self, String> {
+        let CloneAt { root, ws, repo } = *at;
+        let clone = worktree::clone_dir(root, ws, repo).map_err(|e| e.to_string())?;
+        let git_dir = PathBuf::from(ran(&clone, &["rev-parse", "--absolute-git-dir"])?);
+        let own = std::fs::canonicalize(clone.join(".git")).ok();
+        if !worktree::is_own_git_dir(&clone.join(".git"))
+            || own.is_none()
+            || own != std::fs::canonicalize(&git_dir).ok()
+        {
+            return Err(format!(
+                "{repo} keeps its git directory somewhere other than its own `.git`, so purlis \
+                 does not update it for a chat: update it from your own terminal"
+            ));
+        }
+        let branch = ran(&clone, &["branch", "--show-current"])?;
+        if branch.is_empty() && on_a_branch {
+            return Err(format!(
+                "{repo} is on no branch (a detached HEAD), so there is no branch to update"
+            ));
+        }
+        Ok(Self {
+            folder: clone.clone(),
+            clone,
+            git_dir,
+            branch,
+            label: repo.to_owned(),
+        })
+    }
+}
+
+/// Whether `git_dir` is the record the clone at `clone` keeps of the linked worktree at
+/// `folder`: a directory right inside the clone's own `.git/worktrees`, whose `gitdir` names
+/// that folder's `.git`. Links are followed on both sides before they are compared.
+fn own_record_of(clone: &Path, git_dir: &Path, folder: &Path) -> bool {
+    let canon = |path: &Path| std::fs::canonicalize(path).ok();
+    if !worktree::is_own_git_dir(&clone.join(".git")) {
+        return false;
+    }
+    let (Some(records), Some(record), Some(folder)) = (
+        canon(&clone.join(".git").join("worktrees")),
+        canon(git_dir),
+        canon(folder),
+    ) else {
+        return false;
+    };
+    if record.parent() != Some(records.as_path()) {
+        return false;
+    }
+    let Ok(pointer) = std::fs::read_to_string(record.join("gitdir")) else {
+        return false;
+    };
+    Path::new(pointer.trim())
+        .parent()
+        .and_then(canon)
+        .is_some_and(|named| named == folder)
 }
 
 /// What git printed for `args` in `dir`, trimmed, or why not.
@@ -193,8 +309,8 @@ fn stopped_in(here: &Here) -> Option<gitstate::Stopped> {
 }
 
 /// What a rebase that git stopped says, and its status.
-fn stopped_said(piece: &Piece, here: &Here, git_said: &str, say: &mut dyn FnMut(Say)) -> u8 {
-    let (repo, name) = (piece.repo, piece.piece);
+fn stopped_said(here: &Here, git_said: &str, say: &mut dyn FnMut(Say)) -> u8 {
+    let label = &here.label;
     match stopped_in(here) {
         Some(stopped) if stopped.operation == Some(Operation::Rebase) => {
             let files = if stopped.unmerged.is_empty() {
@@ -202,18 +318,17 @@ fn stopped_said(piece: &Piece, here: &Here, git_said: &str, say: &mut dyn FnMut(
             } else {
                 format!(" on a conflict in {}", stopped.unmerged.join(", "))
             };
-            say(Say::Fail(format!(
-                "the rebase of {repo} · {name} stopped{files}. Resolve them in the folder, then \
+            say(Say::Fail(
+                format!(
+                    "the rebase of {label} stopped{files}. Resolve them in the folder, then \
                  `purlis worktree update --continue`; or `purlis worktree update --abort` puts \
                  the branch back where it was"
-            ).into()));
+                )
+                .into(),
+            ));
         }
         _ => say(Say::Fail(
-            format!(
-                "git did not rebase {repo} · {name}: {}",
-                first_line(git_said)
-            )
-            .into(),
+            format!("git did not rebase {label}: {}", first_line(git_said)).into(),
         )),
     }
     1
@@ -226,24 +341,7 @@ fn start(
     reach: &Reach,
     say: &mut dyn FnMut(Say),
 ) -> Result<u8, String> {
-    let (repo, name_) = (piece.repo, piece.piece);
-    if let Some(stopped) = stopped_in(here) {
-        let what = stopped.operation.map_or("merge", Operation::word);
-        return Err(format!(
-            "a {what} is stopped in {repo} · {name_}: `purlis worktree update --continue` once \
-             its files are resolved, or `purlis worktree update --abort`"
-        ));
-    }
-    let changed = ran(
-        &here.folder,
-        &["status", "--porcelain", "--untracked-files=no"],
-    )?;
-    if !changed.is_empty() {
-        return Err(format!(
-            "{repo} · {name_} has uncommitted changes, so nothing was moved: commit them \
-             (`purlis worktree commit`), then update"
-        ));
-    }
+    unstopped_and_clean(here)?;
     let base = match base {
         Some(base) => base.to_owned(),
         None => worktree::recorded_base(&here.clone, &here.branch).ok_or_else(|| {
@@ -270,26 +368,156 @@ fn start(
     }
     // The base, or its remote-tracking branch where the base is behind it and checked out.
     let onto = fresh.instead.clone().unwrap_or_else(|| name::as_ref(&base));
+    let label = &here.label;
+    match rebased(piece.root, here, &onto, Leased::Piece, reach, say)? {
+        Moved::Already => say(Say::Done(format!("{label} is already on {base}").into())),
+        Moved::Stopped(code) => return Ok(code),
+        Moved::Forward | Moved::Rebased => {
+            let moved = match (&fresh.moved_to, onto.strip_prefix("refs/remotes/")) {
+                (Some(up), _) => format!(" ({base} brought up to {up})"),
+                (None, Some(up)) => format!(" (as {up} has it)"),
+                (None, None) => String::new(),
+            };
+            say(Say::Done(
+                format!("{label} is rebased onto {base}{moved}").into(),
+            ));
+        }
+    }
+    Ok(0)
+}
+
+/// `purlis worktree update` standing in a workspace's clone (#3831): fetch the remote its
+/// branch follows, and fast-forward the branch to it, or rebase the branch's own commits onto
+/// it. Never with `--base`: a clone is brought up to its own branch's remote.
+fn start_clone(
+    at: &CloneAt,
+    here: &Here,
+    base: Option<&str>,
+    reach: &Reach,
+    say: &mut dyn FnMut(Say),
+) -> Result<u8, String> {
+    let label = &here.label;
+    if base.is_some() {
+        return Err(format!(
+            "{label} is a clone, brought up to the remote branch its own branch follows: \
+             `--base` is for a branch folder. Nothing was moved"
+        ));
+    }
+    unstopped_and_clean(here)?;
+    let branch = &here.branch;
+    let remote = remote_of(&here.clone, branch)
+        .ok_or_else(|| format!("{label} has no remote to update {branch} from"))?;
+    crate::repocmd::sync::fetch_remote(at.root, &here.clone, &remote, reach.hosts)
+        .map_err(|why| format!("{why}. Nothing was moved"))?;
+    let up = upstream_of(&here.clone, branch, &remote);
+    if commit_of(&here.folder, &up).is_none() {
+        return Err(format!(
+            "{remote} has no branch {branch} that {label} follows, so nothing was moved"
+        ));
+    }
+    let shown = up.strip_prefix("refs/remotes/").unwrap_or(&up).to_owned();
+    match rebased(at.root, here, &up, Leased::Clone, reach, say)? {
+        Moved::Already => say(Say::Done(
+            format!("{label} is already up to date with {shown}").into(),
+        )),
+        Moved::Stopped(code) => return Ok(code),
+        Moved::Forward => say(Say::Done(
+            format!("{label}: {branch} fast-forwarded to {shown}").into(),
+        )),
+        Moved::Rebased => say(Say::Done(
+            format!("{label}: {branch} rebased onto {shown}").into(),
+        )),
+    }
+    Ok(0)
+}
+
+/// The remote-tracking branch `branch` of `clone` follows: its upstream as the clone's own
+/// config names it, else `<remote>/<branch>`.
+fn upstream_of(clone: &Path, branch: &str, remote: &str) -> String {
+    let local = name::as_ref(branch);
+    let said = git::run(
+        clone,
+        &["for-each-ref", "--format=%(upstream)", &local],
+        git::READ,
+    );
+    match said {
+        Ok(run) if run.ok() && run.line().trim().starts_with("refs/remotes/") => {
+            run.line().trim().to_owned()
+        }
+        _ => format!("refs/remotes/{remote}/{branch}"),
+    }
+}
+
+/// Refused where git has an operation stopped in the folder, or where it holds uncommitted
+/// changes: an update never moves the person's or the chat's own work out of the way.
+fn unstopped_and_clean(here: &Here) -> Result<(), String> {
+    let label = &here.label;
+    if let Some(stopped) = stopped_in(here) {
+        let what = stopped.operation.map_or("merge", Operation::word);
+        return Err(format!(
+            "a {what} is stopped in {label}: `purlis worktree update --continue` once its \
+             files are resolved, or `purlis worktree update --abort`"
+        ));
+    }
+    let changed = ran(
+        &here.folder,
+        &["status", "--porcelain", "--untracked-files=no"],
+    )?;
+    if !changed.is_empty() {
+        return Err(format!(
+            "{label} has uncommitted changes, so nothing was moved: commit them (`purlis \
+             worktree commit` in a branch folder, `git commit` in a clone), then update"
+        ));
+    }
+    Ok(())
+}
+
+/// How an update's move ended.
+enum Moved {
+    /// The folder already had every commit of what it is brought up to.
+    Already,
+    /// The branch was a fast-forward away, and was moved there.
+    Forward,
+    /// The branch's own commits were replayed on top.
+    Rebased,
+    /// git stopped, and said why: the status to exit with.
+    Stopped(u8),
+}
+
+/// Whether an update notes a lease for the branch it rewrites (#3895).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Leased {
+    /// A branch folder's branch, which `purlis worktree push` publishes: the update notes what
+    /// the branch's remote had, so the push can go over exactly that.
+    Piece,
+    /// A clone's own branch, which purlis never pushes.
+    Clone,
+}
+
+/// The folder's branch rebased onto `onto`: judged first for a sandboxed chat, refused where
+/// it would overwrite a file on disk that the current commit does not track, and run on the two
+/// ids read once, whatever a ref names by the time git runs.
+fn rebased(
+    root: &Path,
+    here: &Here,
+    onto: &str,
+    leased: Leased,
+    reach: &Reach,
+    say: &mut dyn FnMut(Say),
+) -> Result<Moved, String> {
+    let label = &here.label;
     // Each read once as a commit id, and git run on the ids: what is judged is what moves,
     // whatever a ref names by the time git runs.
-    let onto_id = commit_of(&here.folder, &onto)
+    let onto_id = commit_of(&here.folder, onto)
         .ok_or_else(|| format!("{onto} names no commit here, so nothing was moved"))?;
     let head_id = commit_of(&here.folder, "HEAD")
-        .ok_or_else(|| format!("{repo} · {name_} has no commit, so nothing was moved"))?;
-    let there = git::run(
-        &here.folder,
-        &["merge-base", "--is-ancestor", &onto_id, &head_id],
-        git::READ,
-    )
-    .map_err(|e| e.to_string())?;
-    if there.ok() {
-        say(Say::Done(
-            format!("{repo} · {name_} is already on {base}").into(),
-        ));
-        return Ok(0);
+        .ok_or_else(|| format!("{label} has no commit, so nothing was moved"))?;
+    if is_ancestor(&here.folder, &onto_id, &head_id)? {
+        return Ok(Moved::Already);
     }
+    let forward = is_ancestor(&here.folder, &head_id, &onto_id)?;
     if let Some(chat_dir) = reach.sandboxed_at {
-        let root = piece.root.to_string_lossy();
+        let root = root.to_string_lossy();
         let place = crate::cloneupdate::Place {
             root: &root,
             chat_dir: Some(chat_dir),
@@ -309,14 +537,20 @@ fn start(
             return Err(why);
         }
     }
+    untracked_kept(here, &head_id, &onto_id)?;
     // The commits judged are those of the head read above: a branch moved since is not
     // rebased.
     if commit_of(&here.folder, "HEAD").as_deref() != Some(head_id.as_str()) {
         return Err(MOVED.to_owned());
     }
+    let lease = match leased {
+        Leased::Piece => lease_seen(here, &head_id, say)?,
+        Leased::Clone => None,
+    };
     let record = Record {
         branch: here.branch.clone(),
         head: head_id.clone(),
+        lease,
     };
     record.write(&here.git_dir)?;
     let mut args: Vec<&str> = REBASE.to_vec();
@@ -329,37 +563,93 @@ fn start(
         &head_id,
     ]);
     // Untimed: a rebase checks trees out, and one killed halfway is left half done.
-    let rebased = git::run_untimed(&here.folder, &args).map_err(|e| e.to_string())?;
-    if !rebased.ok() {
-        return Ok(stopped_said(piece, here, &rebased.err, say));
+    let went = git::run_untimed(&here.folder, &args).map_err(|e| e.to_string())?;
+    if !went.ok() {
+        return Ok(Moved::Stopped(stopped_said(here, &went.err, say)));
     }
     finish(here, &record)?;
-    let moved = match (&fresh.moved_to, onto.strip_prefix("refs/remotes/")) {
-        (Some(up), _) => format!(" ({base} brought up to {up})"),
-        (None, Some(up)) => format!(" (as {up} has it)"),
-        (None, None) => String::new(),
-    };
-    say(Say::Done(
-        format!("{repo} · {name_} is rebased onto {base}{moved}").into(),
-    ));
-    Ok(0)
+    Ok(if forward {
+        Moved::Forward
+    } else {
+        Moved::Rebased
+    })
+}
+
+/// Whether `old` is an ancestor of `new`, both commit ids, in `dir`.
+fn is_ancestor(dir: &Path, old: &str, new: &str) -> Result<bool, String> {
+    let there = git::run(dir, &["merge-base", "--is-ancestor", old, new], git::READ)
+        .map_err(|e| e.to_string())?;
+    Ok(there.ok())
+}
+
+/// The most paths a refusal names.
+const NAMED_AT_MOST: usize = 5;
+
+/// Refused where the move would write a path that is on disk and that the current commit does
+/// not track: an ignored file (a `.env`, a local config), which git overwrites without a word,
+/// or an untracked one, which git stops on halfway (#3831). Either is someone's work.
+fn untracked_kept(here: &Here, head_id: &str, onto_id: &str) -> Result<(), String> {
+    let added = git::run(
+        &here.folder,
+        &[
+            "diff",
+            "--name-only",
+            "-z",
+            "--no-renames",
+            "--diff-filter=A",
+            head_id,
+            onto_id,
+        ],
+        git::READ,
+    )
+    .map_err(|e| e.to_string())?;
+    if !added.ok() {
+        return Err(format!(
+            "git could not say what the update writes: {}. Nothing was moved",
+            first_line(&added.err)
+        ));
+    }
+    let held: Vec<&str> = added
+        .out
+        .split('\0')
+        .filter(|path| !path.is_empty())
+        .filter(|path| here.folder.join(path).symlink_metadata().is_ok())
+        .collect();
+    if held.is_empty() {
+        return Ok(());
+    }
+    let mut named = held
+        .iter()
+        .take(NAMED_AT_MOST)
+        .copied()
+        .collect::<Vec<_>>()
+        .join(", ");
+    if held.len() > NAMED_AT_MOST {
+        named.push_str(&format!(" and {} more", held.len() - NAMED_AT_MOST));
+    }
+    Err(format!(
+        "the update would overwrite {named} in {}, which {} on disk and not committed. \
+         Nothing was moved: move or commit them, then update",
+        here.label,
+        if held.len() == 1 { "is" } else { "are" }
+    ))
 }
 
 /// A line of a file that git left a conflict in, as git writes the first marker.
 const MARKER: &[u8] = b"<<<<<<< ";
 
-fn go_on(piece: &Piece, here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
-    let (repo, name_) = (piece.repo, piece.piece);
+fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
+    let label = &here.label;
     let Some(stopped) =
         stopped_in(here).filter(|stopped| stopped.operation == Some(Operation::Rebase))
     else {
         return Err(format!(
-            "no rebase is stopped in {repo} · {name_}: `purlis worktree update` starts one"
+            "no rebase is stopped in {label}: `purlis worktree update` starts one"
         ));
     };
-    let record = Record::read(&here.git_dir).ok_or_else(|| {
+    let record = Record::of_the_stopped_rebase(&here.git_dir).ok_or_else(|| {
         format!(
-            "the rebase stopped in {repo} · {name_} is not one purlis started: finish it from \
+            "the rebase stopped in {label} is not one purlis started: finish it from \
              your own terminal"
         )
     })?;
@@ -411,14 +701,14 @@ fn go_on(piece: &Piece, here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, Str
     let went = git::run_untimed(&here.folder, &args).map_err(|e| e.to_string())?;
     if !went.ok() && went.err.contains("no rebase in progress") {
         return Err(format!(
-            "no rebase is stopped in {repo} · {name_}: `purlis worktree update` starts one"
+            "no rebase is stopped in {label}: `purlis worktree update` starts one"
         ));
     }
     if !went.ok() {
-        return Ok(stopped_said(piece, here, &went.err, say));
+        return Ok(stopped_said(here, &went.err, say));
     }
     finish(here, &record)?;
-    say(Say::Done(format!("{repo} · {name_} is rebased").into()));
+    say(Say::Done(format!("{label} is rebased").into()));
     Ok(0)
 }
 
@@ -437,34 +727,151 @@ const MOVED: &str = "the folder's branch moved while purlis worked on it, so it 
      it is. Run the update again";
 
 /// What an update purlis started records in the folder's own git directory, which no chat
-/// writes: the branch it rebases, and the commit that branch was at when it was judged.
+/// writes: the branch it rebases, the commit that branch was at when it was judged, and what
+/// the branch's remote had then, where the update may push over it.
 struct Record {
     branch: String,
     head: String,
+    lease: Option<Lease>,
+}
+
+/// What the branch's remote had when an update rewrote the branch (#3895): the remote, and
+/// the commit its copy of the branch was at. Noted only where the folder had every commit of
+/// that copy, so a push over it drops nothing but what the update itself rewrote.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Lease {
+    remote: String,
+    at: String,
 }
 
 /// The file [`Record`] is kept in while an update is under way.
 const UNDER_WAY: &str = "purlis-update";
 
-/// The file that says which commit purlis's last update left the branch at: what a
-/// `--force-with-lease` push asks for.
+/// The file that says which commit purlis's last update left the branch at, and what the
+/// branch's remote had then: what a push over the remote's copy is leased to (#3895).
 const UPDATED: &str = "purlis-updated";
 
 impl Record {
+    /// The record's lines: the branch and the commit, then the remote and its commit where the
+    /// update noted a lease.
+    fn text(branch: &str, head: &str, lease: Option<&Lease>) -> String {
+        match lease {
+            Some(Lease { remote, at }) => format!("{branch}\n{head}\n{remote}\n{at}\n"),
+            None => format!("{branch}\n{head}\n"),
+        }
+    }
+
     fn write(&self, git_dir: &Path) -> Result<(), String> {
         std::fs::write(
             git_dir.join(UNDER_WAY),
-            format!("{}\n{}\n", self.branch, self.head),
+            Self::text(&self.branch, &self.head, self.lease.as_ref()),
         )
         .map_err(|why| format!("purlis could not note the update it starts: {why}"))
     }
 
-    fn read(git_dir: &Path) -> Option<Self> {
-        let text = std::fs::read_to_string(git_dir.join(UNDER_WAY)).ok()?;
+    /// The record purlis's last update left in `git_dir` ([`UPDATED`]): the branch, the commit
+    /// the update left it at, and the lease it noted. `None` where there is none, or it is not
+    /// one this purlis wrote (an earlier one wrote the commit alone).
+    fn updated(git_dir: &Path) -> Option<Self> {
+        Self::parse(&std::fs::read_to_string(git_dir.join(UPDATED)).ok()?)
+    }
+
+    fn parse(text: &str) -> Option<Self> {
         let mut lines = text.lines();
         let (branch, head) = (lines.next()?.to_owned(), lines.next()?.to_owned());
-        (name::branch_name_ok(&branch).is_ok() && full_id(&head)).then_some(Self { branch, head })
+        if name::branch_name_ok(&branch).is_err() || !full_id(&head) {
+            return None;
+        }
+        let lease = match (lines.next(), lines.next()) {
+            (None, None) => None,
+            (Some(remote), Some(at)) if remote_name_ok(remote) && full_id(at) => Some(Lease {
+                remote: remote.to_owned(),
+                at: at.to_owned(),
+            }),
+            _ => return None,
+        };
+        Some(Self {
+            branch,
+            head,
+            lease,
+        })
     }
+
+    /// The record of the rebase stopped in `git_dir` now, only where that rebase is the one
+    /// purlis started (#3831): git's own note of the commit it started from (`orig-head`) is the
+    /// commit purlis recorded. A record left from an earlier update never vouches for a rebase
+    /// the person started since.
+    fn of_the_stopped_rebase(git_dir: &Path) -> Option<Self> {
+        let record = Self::read(git_dir)?;
+        let started_from = ["rebase-merge", "rebase-apply"].iter().find_map(|dir| {
+            std::fs::read_to_string(git_dir.join(dir).join("orig-head"))
+                .ok()
+                .map(|text| text.trim().to_owned())
+        })?;
+        (started_from == record.head).then_some(record)
+    }
+
+    fn read(git_dir: &Path) -> Option<Self> {
+        Self::parse(&std::fs::read_to_string(git_dir.join(UNDER_WAY)).ok()?)
+    }
+}
+
+/// What the remote the folder's branch is pushed to has of it now, as the update's fetch left
+/// it, where a push may later go over it (#3895): `None` where the remote has no such branch,
+/// or where its copy holds commits that `head` does not, unless an earlier update of purlis's,
+/// not pushed since, vouched for that very copy and `head` holds what it made. Otherwise that
+/// copy is someone's work the rebase never saw, so the update says so and vouches for nothing.
+fn lease_seen(here: &Here, head: &str, say: &mut dyn FnMut(Say)) -> Result<Option<Lease>, String> {
+    let branch = &here.branch;
+    let Some(remote) = remote_of(&here.clone, branch) else {
+        return Ok(None);
+    };
+    let Some(at) = commit_of(&here.clone, &format!("refs/remotes/{remote}/{branch}")) else {
+        return Ok(None);
+    };
+    if !is_ancestor(&here.folder, &at, head)? {
+        // A second update before the first was pushed: the remote's copy is still the one the
+        // first update saw and vouched for, and the branch still holds what that update made.
+        if let Some(Record {
+            branch: noted,
+            head: made,
+            lease: Some(lease),
+        }) = Record::updated(&here.git_dir)
+            && noted == *branch
+            && lease.remote == remote
+            && lease.at == at
+            && is_ancestor(&here.folder, &made, head)?
+        {
+            return Ok(Some(lease));
+        }
+        say(Say::Warn(
+            format!(
+                "{remote}'s {branch} has commits that {} did not have, so purlis will not push \
+                 over them: bring them in first, from your own terminal",
+                here.label
+            )
+            .into(),
+        ));
+        return Ok(None);
+    }
+    Ok(Some(Lease { remote, at }))
+}
+
+/// Whether `remote` reads as a remote's name as `git remote add` takes one: not empty, not
+/// an option, and no space, control character, `:` or `..`, nor any character a ref may not
+/// hold, since git keeps its branches under `refs/remotes/<remote>/`.
+fn remote_name_ok(remote: &str) -> bool {
+    !remote.is_empty()
+        && !remote.starts_with(['-', '.', '/'])
+        && !remote.ends_with(['.', '/'])
+        && !remote.contains("..")
+        && !remote.contains("//")
+        && !remote.ends_with(".lock")
+        && !remote.chars().any(|c| {
+            c.is_whitespace()
+                || c.is_control()
+                || matches!(c, ':' | '~' | '^' | '?' | '*' | '[' | '\\' | '@')
+        })
 }
 
 /// Whether `id` is a full commit id as git prints one.
@@ -510,8 +917,11 @@ fn finish(here: &Here, record: &Record) -> Result<(), String> {
             first_line(&back.err)
         ));
     }
-    std::fs::write(here.git_dir.join(UPDATED), format!("{new}\n"))
-        .map_err(|why| format!("purlis could not note the update it made: {why}"))
+    std::fs::write(
+        here.git_dir.join(UPDATED),
+        Record::text(&record.branch, &new, record.lease.as_ref()),
+    )
+    .map_err(|why| format!("purlis could not note the update it made: {why}"))
 }
 
 /// Why the files git named as conflicted may not be staged for a chat, or nothing: each a
@@ -570,10 +980,18 @@ fn resolved(folder: &Path, files: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn abort(piece: &Piece, here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
-    let (repo, name_) = (piece.repo, piece.piece);
+fn abort(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
+    let label = &here.label;
     if !stopped_in(here).is_some_and(|stopped| stopped.operation == Some(Operation::Rebase)) {
-        return Err(format!("no rebase is stopped in {repo} · {name_}"));
+        return Err(format!("no rebase is stopped in {label}"));
+    }
+    // Only a rebase purlis started for an update, as `--continue` holds it: one the person
+    // started is theirs to finish or abort.
+    if Record::of_the_stopped_rebase(&here.git_dir).is_none() {
+        return Err(format!(
+            "the rebase stopped in {label} is not one purlis started: finish or abort it from \
+             your own terminal"
+        ));
     }
     let mut args: Vec<&str> = REBASE.to_vec();
     args.extend(["rebase", "--abort"]);
@@ -593,16 +1011,16 @@ fn abort(piece: &Piece, here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, Str
         }
     }
     if !back.ok() && back.err.contains("no rebase in progress") {
-        return Err(format!("no rebase is stopped in {repo} · {name_}"));
+        return Err(format!("no rebase is stopped in {label}"));
     }
     if !back.ok() {
         return Err(format!(
-            "git did not put {repo} · {name_} back: {}",
+            "git did not put {label} back: {}",
             first_line(&back.err)
         ));
     }
     say(Say::Done(
-        format!("{repo} · {name_} is back where it was before the update").into(),
+        format!("{label} is back where it was before the update").into(),
     ));
     Ok(0)
 }
@@ -620,15 +1038,14 @@ const NOTHING: &str = "0000000000000000000000000000000000000000";
 fn pushed(
     piece: &Piece,
     here: &Here,
-    lease: bool,
     reach: &Reach,
     say: &mut dyn FnMut(Say),
 ) -> Result<u8, String> {
-    let (repo, name_) = (piece.repo, piece.piece);
+    let (repo, label) = (piece.repo, &here.label);
     let branch = &here.branch;
     if stopped_in(here).is_some() {
         return Err(format!(
-            "an operation is stopped in {repo} · {name_}: finish it (`purlis worktree update \
+            "an operation is stopped in {label}: finish it (`purlis worktree update \
              --continue`) or abort it before pushing"
         ));
     }
@@ -651,18 +1068,16 @@ fn pushed(
     let (url, helper) =
         crate::repocmd::sync::reach(piece.root, &here.clone, &remote, reach.hosts, true)?;
     let local_ref = name::as_ref(branch);
-    let ours = commit_of(&here.folder, "HEAD")
-        .ok_or_else(|| format!("{repo} · {name_} has no commit to push"))?;
+    let ours =
+        commit_of(&here.folder, "HEAD").ok_or_else(|| format!("{label} has no commit to push"))?;
     let theirs = commit_of(&here.clone, &format!("refs/remotes/{remote}/{branch}"));
-    if lease {
-        // purlis's own note of where its last update left the branch, which no chat writes.
-        let updated = std::fs::read_to_string(here.git_dir.join(UPDATED)).unwrap_or_default();
-        if updated.trim() != ours {
-            return Err(format!(
-                "--force-with-lease pushes over {remote}'s {branch}, which purlis does only \
-                 right after `purlis worktree update` rewrote it. Nothing was pushed"
-            ));
-        }
+    // Over the remote's copy only where purlis's own update rewrote the branch (#3895).
+    let over = match &theirs {
+        Some(theirs) if !is_ancestor(&here.folder, theirs, &ours)? => Some(theirs.clone()),
+        _ => None,
+    };
+    if let Some(theirs) = &over {
+        vouched(here, &remote, theirs, &ours)?;
     }
     // purlis's scan of what the push would publish, as a chat's own push runs it (ADR 0074).
     let updates = format!(
@@ -682,13 +1097,14 @@ fn pushed(
     }
     // The commit scanned, by its id: a branch moved since sends nothing unscanned.
     let refspec = format!("{ours}:{local_ref}");
-    let leased = format!(
-        "--force-with-lease={local_ref}:{}",
-        theirs.as_deref().unwrap_or("")
-    );
+    // Leased to the very commit the update saw, which [`vouched`] matched to what was fetched:
+    // a remote moved since is refused by the remote itself.
+    let leased = over
+        .as_deref()
+        .map(|theirs| format!("--force-with-lease={local_ref}:{theirs}"));
     let mut args = vec!["push"];
-    if lease {
-        args.push(&leased);
+    if let Some(leased) = &leased {
+        args.push(leased);
     }
     args.extend([remote.as_str(), refspec.as_str()]);
     let sent =
@@ -699,8 +1115,61 @@ fn pushed(
             first_line(&sent.err)
         ));
     }
+    if over.is_some() {
+        // Spent: the remote has the rewrite now, and a later rewrite needs an update of its own.
+        let note = here.git_dir.join(UPDATED);
+        if let Err(why) = std::fs::remove_file(&note)
+            && why.kind() != std::io::ErrorKind::NotFound
+        {
+            say(Say::Warn(
+                format!(
+                    "purlis could not remove its note of the update it pushed ({}): {why}",
+                    note.display()
+                )
+                .into(),
+            ));
+        }
+    }
     say(Say::Done(
-        format!("{repo} · {name_}: {branch} pushed to {remote}").into(),
+        format!("{label}: {branch} pushed to {remote}").into(),
     ));
     Ok(0)
+}
+
+/// Refused unless purlis's own update rewrote the branch (#3895): its record names this
+/// branch, the commit it left the branch at is in what is pushed (commits added on top are
+/// fine), and the remote's copy, `theirs`, is still exactly the one the update saw and had
+/// every commit of. Where the record cannot be read, the push is refused, naming the retry.
+fn vouched(here: &Here, remote: &str, theirs: &str, ours: &str) -> Result<(), String> {
+    let branch = &here.branch;
+    let by_hand = format!(
+        "{remote}'s {branch} has commits that {branch} here does not, and purlis's own update \
+         did not rewrite it to where it is now, so purlis does not push over them. Nothing was \
+         pushed. To keep them, bring them in first; to replace {remote}'s copy with yours, push \
+         from your own terminal: `git push --force-with-lease=refs/heads/{branch}:{theirs} \
+         {remote} {branch}`"
+    );
+    let Some(record) = Record::updated(&here.git_dir) else {
+        return Err(by_hand);
+    };
+    if record.branch != *branch || !is_ancestor(&here.folder, &record.head, ours)? {
+        return Err(by_hand);
+    }
+    let Some(lease) = record.lease.filter(|lease| lease.remote == remote) else {
+        return Err(format!(
+            "when purlis's update rewrote {branch}, {remote}'s copy had commits that {} did \
+             not, so purlis does not push over them. Nothing was pushed. Bring them in first, \
+             from your own terminal",
+            here.label
+        ));
+    };
+    if lease.at != theirs {
+        return Err(format!(
+            "{remote}'s {branch} moved since purlis's update saw it (it was at {}, it is at \
+             {theirs} now): someone else pushed to it. Nothing was pushed. Bring their commits \
+             in first, from your own terminal",
+            lease.at
+        ));
+    }
+    Ok(())
 }

@@ -323,9 +323,23 @@ use crate::view::{Limits, Views};
 /// chat's browser on its pool's runner, from the pool's settings. A host before 1.49 ignores the
 /// field and holds every such view to spec #2041's defaults, so the window holds that runner's
 /// views to the defaults too. 47 was passed over.
+///
+/// 1.50 added a profile's settings on its runner (#3448, spec #2041): `keep_profile` may carry
+/// the profile's settings files (`settings`: each by its path under the harness's settings
+/// folder and its bytes, the files a made profile imports and never a credential file), which
+/// the runner then keeps in that profile's folder in place of the ones it kept before. Left out,
+/// the runner leaves the settings it keeps as they are. A host before 1.50 ignores the field, so
+/// the desktop sends it only to a runner of 1.50 or later.
+///
+/// 1.51 added the clones a host holds in a workspace (#3811, spec #2041): `clones_of` answers
+/// `clones`, the folder name of each repository a project it keeps has in the workspace's
+/// folder, so a chat moving off a runner brings back a clone the runner chat made there. The
+/// window's alone ([`crate::grants::Power::Code`]), relayed for it. A host before 1.51 refuses
+/// it `unknown_command`, so the window asks only one of 1.51 or later, and a clone a runner
+/// before it made stays there.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 49,
+    minor: 51,
 };
 
 /// The version that first answers `relay_to` with the runner the link reached (#3417).
@@ -352,6 +366,21 @@ pub const KNOWS_EVENT_LOG: Version = Version {
 pub const KNOWS_KEEP_PROFILE: Version = Version {
     major: 1,
     minor: 43,
+};
+
+/// The version that first keeps a profile's settings on a runner (#3448): a runner before it
+/// ignores [`ProfileToKeep::settings`], so the desktop sends them only to one of this version or
+/// later.
+pub const KNOWS_PROFILE_SETTINGS: Version = Version {
+    major: 1,
+    minor: 50,
+};
+
+/// The version that first answers the clones it holds in a workspace (#3811): the window asks
+/// no host before it, and a clone such a runner made stays there at a move.
+pub const KNOWS_CLONES_OF: Version = Version {
+    major: 1,
+    minor: 51,
 };
 
 /// The version that first knows browsers relayed for a window (#2050): a runner before it refuses
@@ -853,6 +882,11 @@ pub enum Command {
         profile: String,
         conversation: String,
     },
+    /// **The clones the host holds in `workspace`** of `project` (1.51, #3811): answered
+    /// [`Answer::Clones`] with the folder name of each repository in the workspace's folder of
+    /// the project it keeps there, none reached through a link. The window's alone
+    /// ([`crate::grants::Power::Code`]), relayed for it.
+    ClonesOf { project: String, workspace: String },
     /// The person cancels the engine's download for browser `program`'s start (1.37, #2207):
     /// the download stops, nothing of it is kept, and the start is refused in words that say
     /// so. Answered [`Answer::Done`], also where nothing is downloading for it. The window's
@@ -1041,8 +1075,8 @@ pub struct Start {
 }
 
 /// **A desktop's profile, as its runner keeps it** (1.43, #2049): what [`Command::KeepProfile`]
-/// sends, and nothing else. No file, setting, sign-in or vault reference of the desktop's
-/// profile has a field here, so none can reach a runner through it.
+/// sends, and nothing else. No sign-in or vault reference of the desktop's profile has a field
+/// here, so none can reach a runner through it; its settings files do, since 1.50 (#3448).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProfileToKeep {
     /// The name the desktop's chats run on it by.
@@ -1055,6 +1089,30 @@ pub struct ProfileToKeep {
     /// The harness version the desktop's profile is pinned to (#2038), where it is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pinned: Option<String>,
+    /// The profile's settings files (1.50, #3448), which the runner keeps in place of the ones
+    /// it kept before: none left out is kept there. Left out, it leaves them as they are.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings: Option<Vec<SettingsFile>>,
+}
+
+/// **One settings file of a profile** (1.50, #3448): its path under the harness's settings
+/// folder, `/`-separated (`settings.json`, `agents/review.md`), and its bytes.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsFile {
+    pub path: String,
+    #[serde(with = "base64_bytes")]
+    pub bytes: Vec<u8>,
+}
+
+/// A settings file may carry a secret (an MCP server's environment), so its bytes are never
+/// written to a log through `Debug`.
+impl std::fmt::Debug for SettingsFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SettingsFile")
+            .field("path", &self.path)
+            .field("bytes", &self.bytes.len())
+            .finish()
+    }
 }
 
 /// **Whether a profile a runner keeps is signed in there**, as its harness says (1.43, #2049).
@@ -1354,6 +1412,9 @@ pub enum Answer {
     /// Where a conversation is kept, as its harness's declaration says it (1.44):
     /// [`Command::GiveConversation`].
     Conversation { file: String },
+    /// The folder name of each clone a host holds in a workspace (1.51):
+    /// [`Command::ClonesOf`].
+    Clones { repos: Vec<String> },
     /// Whether the profile a runner keeps is signed in there, as its harness says:
     /// [`Command::KeepProfile`] (1.43).
     ProfileKept { standing: ProfileStanding },
@@ -1714,6 +1775,7 @@ wire_words!(Command {
     GiveCode => "give_code",
     TakeConversation => "take_conversation",
     GiveConversation => "give_conversation",
+    ClonesOf => "clones_of",
     CancelEngineDownload => "cancel_engine_download",
     NoteProgram => "note_program",
     LogEnd => "log_end",
@@ -1770,7 +1832,8 @@ impl Command {
             Command::TakeCode { .. }
             | Command::GiveCode { .. }
             | Command::TakeConversation { .. }
-            | Command::GiveConversation { .. } => Power::Code,
+            | Command::GiveConversation { .. }
+            | Command::ClonesOf { .. } => Power::Code,
             Command::LogEnd => Power::EventLog,
         }
     }
@@ -1838,6 +1901,7 @@ wire_words!(Answer {
     TakenBack => "taken_back",
     Code => "code",
     Conversation => "conversation",
+    Clones => "clones",
     ProfileKept => "profile_kept",
     Subscribed => "subscribed",
     LogEnd => "log_end",
@@ -2276,6 +2340,7 @@ impl Lane {
             | Command::GiveCode { .. }
             | Command::TakeConversation { .. }
             | Command::GiveConversation { .. }
+            | Command::ClonesOf { .. }
             // Never behind the start it cancels, which waits on the download.
             | Command::CancelEngineDownload { .. } => None,
             Command::Attach { chat: program }
@@ -3046,6 +3111,25 @@ impl Client {
             .await?
         {
             Answer::Conversation { file } => Ok(file),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// **The clones the host holds in `workspace`** of `project` (1.51, #3811), by their folder
+    /// names.
+    pub async fn clones_of(
+        &self,
+        project: &str,
+        workspace: &str,
+    ) -> Result<Vec<String>, CallError> {
+        match self
+            .call(Command::ClonesOf {
+                project: project.to_owned(),
+                workspace: workspace.to_owned(),
+            })
+            .await?
+        {
+            Answer::Clones { repos } => Ok(repos),
             other => Err(unexpected(&other)),
         }
     }

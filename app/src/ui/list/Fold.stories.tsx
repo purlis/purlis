@@ -15,6 +15,7 @@ import { Sparkle } from "lucide-react";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { Badge } from "../badge/Badge";
 import { Button } from "../button/Button";
+import { Panel } from "../panel/Panel";
 import { List } from "./List";
 import { ListCardRow } from "./CardRow";
 import { ListFoldSection, ListRun } from "./Fold";
@@ -82,7 +83,7 @@ const card = (skill: Skill, tone?: "warning" | "quiet") => (
   />
 );
 
-/** **The sidebar Skills view's groups**, in a 260 px side view. */
+/** **The sidebar Skills view's groups**, in a 260 px side view, on the side panel's ground (#3774). */
 function SkillGroups() {
   const [query, setQuery] = useState("");
   const [leftOutFolded, setLeftOutFolded] = useState(true);
@@ -91,53 +92,55 @@ function SkillGroups() {
     query === "" ? skills : skills.filter((one) => one.name.includes(query.toLowerCase()));
   const needs = shown(NEEDS);
   return (
-    <div style={{ inlineSize: "260px", background: "var(--surface-base)" }}>
-      <ListFilter noun={SKILL} total={9} query={query} onQuery={setQuery} />
-      <List aria-label="Skills" size="sm" onAction={(key) => setSaid(`Opened ${String(key)}`)}>
-        {/* Needs you is drawn only while it holds something. */}
-        {needs.length > 0 && (
-          <ListFoldSection id="needs" title="Needs you" count={needs.length} tone="waiting">
-            {needs.map((one) => card(one, "warning"))}
-          </ListFoldSection>
-        )}
-        <ListFoldSection
-          id="in"
-          title="In this chat"
-          count={shown(IN_THIS_CHAT).length + BUILT_IN.length}
-        >
-          {shown(IN_THIS_CHAT).map((one) => card(one))}
-          <ListRun
-            id="built-in"
-            items={BUILT_IN}
-            standsOut={matches(query)}
-            says={(count) => `${count} built-in skills`}
-            mark={<Sparkle aria-hidden="true" />}
-            closing={{
-              says: "They ship with purlis: they can't be edited or turned off.",
-              children: (
-                <Button size="sm" variant="ghost" onPress={() => setSaid("Make my own copy")}>
-                  Make my own copy…
-                </Button>
-              ),
-            }}
+    <Panel variant="side">
+      <div style={{ inlineSize: "260px" }}>
+        <ListFilter noun={SKILL} total={9} query={query} onQuery={setQuery} />
+        <List aria-label="Skills" size="sm" onAction={(key) => setSaid(`Opened ${String(key)}`)}>
+          {/* Needs you is drawn only while it holds something. */}
+          {needs.length > 0 && (
+            <ListFoldSection id="needs" title="Needs you" count={needs.length} tone="waiting">
+              {needs.map((one) => card(one, "warning"))}
+            </ListFoldSection>
+          )}
+          <ListFoldSection
+            id="in"
+            title="In this chat"
+            count={shown(IN_THIS_CHAT).length + BUILT_IN.length}
           >
-            {(one) => card(one)}
-          </ListRun>
-        </ListFoldSection>
-        <ListFoldSection
-          id="out"
-          title="Left out"
-          count={shown(LEFT_OUT).length}
-          folded={leftOutFolded}
-          onFoldedChange={setLeftOutFolded}
-        >
-          {shown(LEFT_OUT).map((one) => card(one, "quiet"))}
-        </ListFoldSection>
-      </List>
-      <p role="status" style={{ margin: "var(--space-3) 0 0" }}>
-        {said}
-      </p>
-    </div>
+            {shown(IN_THIS_CHAT).map((one) => card(one))}
+            <ListRun
+              id="built-in"
+              items={BUILT_IN}
+              standsOut={matches(query)}
+              says={(count) => `${count} built-in skills`}
+              mark={<Sparkle aria-hidden="true" />}
+              closing={{
+                says: "They ship with purlis: they can't be edited or turned off.",
+                children: (
+                  <Button size="sm" variant="ghost" onPress={() => setSaid("Make my own copy")}>
+                    Make my own copy…
+                  </Button>
+                ),
+              }}
+            >
+              {(one) => card(one)}
+            </ListRun>
+          </ListFoldSection>
+          <ListFoldSection
+            id="out"
+            title="Left out"
+            count={shown(LEFT_OUT).length}
+            folded={leftOutFolded}
+            onFoldedChange={setLeftOutFolded}
+          >
+            {shown(LEFT_OUT).map((one) => card(one, "quiet"))}
+          </ListFoldSection>
+        </List>
+        <p role="status" style={{ margin: "var(--space-3) 0 0" }}>
+          {said}
+        </p>
+      </div>
+    </Panel>
   );
 }
 

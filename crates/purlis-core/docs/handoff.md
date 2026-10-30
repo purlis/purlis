@@ -315,7 +315,7 @@ which runs as a persona for its whole life.
 
 ```bash
 purlis dispatch --name "<short task>" [--to <persona>] [--profile <profile>] \
-                [--in workspace:<name> | --in worktree] <<'BRIEF'
+                [--in workspace:<name> | --in worktree | --in worktree:<repo>] <<'BRIEF'
 <the brief>
 BRIEF
 ```
@@ -396,9 +396,10 @@ that says what to do:
 | past a limit: how deep a chain may go (3), how many tasks one chat is still waiting on (6), how many chats one lineage holds that still owe work (16) | a runaway stops |
 | past a persona's own two limits, where the project sets them: how many tasks the chats running as it wait on between them, and how many chats run as it at once | the project said how much of that persona it wants at once |
 | where a limit is set to 0 | dispatch is off at the level that set it, and the refusal says where |
-| `--in` that is neither `worktree` nor `workspace:<name>`, or a name that cannot be a workspace's | `--in` holds one of two words, never a folder or a branch |
+| `--in` that is neither `worktree`, `worktree:<repo>` nor `workspace:<name>`, or a name that cannot be a workspace's or a repo's | `--in` holds one of three words, never a folder or a branch |
 | `--in workspace:<name>` for a workspace the project does not have, or one reached through a link | a chat starts only in a workspace's own folder, inside the project |
-| `--in worktree` from a chat that works in no repo (the project's root, a workspace's own folder) | a worktree is cut from the repo the asking chat works in, and there is none |
+| `--in worktree` from a chat that works in no repo (the project's root, a workspace's own folder that holds no clone) | a worktree is cut from the repo the asking chat works in, and there is none |
+| `--in worktree` from a workspace's own folder that holds more than one clone, or `--in worktree:<repo>` for a clone the workspace does not hold | the refusal names the workspace's clones, and `--in worktree:<repo>` picks one |
 | `--in worktree` where the worktree cannot be cut: its folder or branch is already there, or the repo's own git config names a program | purlis's name for it is used exactly, and the app runs no git in a repo that could run a program outside the chat's sandbox |
 
 **The limits are the project's**, set in Settings › Project › Dispatch for the project, a
@@ -450,6 +451,15 @@ The new chat works in the asking chat's folder unless the dispatch says one word
   the asking chat has not committed stays where it is, and the command says so. Its record is
   written before the worktree is cut, so an app that quits in between leaves a worktree a
   dispatch lists, and the project's next open takes it away where nothing was written in it.
+- **From a workspace's own folder** (#3903), whose clones sit in subfolders, `--in worktree`
+  cuts from the workspace's one clone; where it holds several, the refusal names them and
+  `--in worktree:<repo>` picks one. A chat in one clone may name another clone of its
+  workspace the same way. Such a worktree is cut as `purlis worktree add` cuts one: from the
+  branch the remote names its default, moved up to the clone's copy of the remote as the last
+  `purlis sync` left it (nothing is fetched for the cut). Where no default can be read, it is
+  cut from the clone's current commit, and the asking chat is told so. It is a branch folder
+  like any other, claimed by the task, so the task commits, updates and pushes it with
+  `purlis worktree commit`, `update` and `push`.
 - **A persona whose definition says `dispatch-isolation: worktree`** gets a worktree by
   default, when the dispatch names no place. Where the asking chat works in no repo, that
   default gives way to the asking chat's folder and the command says so. `--in` wins over it.

@@ -817,6 +817,7 @@ fn started(chats: &crate::chats::Chats, dir: &std::path::Path, names: &[&str]) -
                     root: None,
                     above: None,
                     by_person: false,
+                    long: false,
                 }),
                 ..plain.clone()
             };
@@ -937,18 +938,18 @@ fn keep_blocked_is_checked_against_the_held_blocks_and_lets_them_go() {
     let (session, tasks) = started(&chats, dir.path(), &["talk", "sweep"]);
     let seen = on_npm(&tasks);
     assert!(
-        keep_blocked(&chats, session, &seen, None).is_err(),
+        keep_blocked(&chats, session, &seen, None, &|_, _| Ok(())).is_err(),
         "nothing held"
     );
     for one in &seen {
         chats.blocks().heard(one.task, held(one));
     }
     assert_eq!(
-        keep_blocked(&chats, session, &seen, None).expect("kept"),
+        keep_blocked(&chats, session, &seen, None, &|_, _| Ok(())).expect("kept"),
         tasks
     );
     assert!(
-        keep_blocked(&chats, session, &seen, None).is_err(),
+        keep_blocked(&chats, session, &seen, None, &|_, _| Ok(())).is_err(),
         "answered once"
     );
     for chat in tasks.iter().chain([&session]) {

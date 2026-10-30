@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use purlis_core::clusterpool::{
-    self, Claimed, Keeping, Kubectl, OperatorKey, Paired, Refused, Vouched,
+    self, Claimed, Keeping, Kubectl, Paired, PoolPin, Refused, Vouched,
 };
 use purlis_host::CommandConnector;
 use purlis_session_protocol::hostlink::{
@@ -92,7 +92,7 @@ fn claimed(
     }
 }
 
-fn vouched(kubectl: &Kubectl, operator: &OperatorKey, claimed: &Claimed) -> Vouched {
+fn vouched(kubectl: &Kubectl, operator: &PoolPin, claimed: &Claimed) -> Vouched {
     eventually("the operator vouches for the runner's key", || {
         clusterpool::vouched_for(kubectl, operator, claimed).expect("the statement checks")
     })
@@ -100,13 +100,13 @@ fn vouched(kubectl: &Kubectl, operator: &OperatorKey, claimed: &Claimed) -> Vouc
 
 async fn linked(
     kubectl: &Kubectl,
-    operator: &OperatorKey,
+    operator: &PoolPin,
     paired: &Paired,
     ours: Identity,
 ) -> (Client, Acceptor) {
     let connector = CommandConnector::new(
         kubectl.program(),
-        kubectl.connect_args(&paired.claimed.namespace, &paired.vouched.pod),
+        kubectl.connect_args(&paired.vouched.runner_namespace, &paired.vouched.pod),
         {
             let (kubectl, operator, paired) = (kubectl.clone(), operator.clone(), paired.clone());
             Arc::new(move || {
@@ -173,9 +173,9 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
         )
         .expect("the pool");
 
-    // Adding the pool pins the operator's key its status names.
+    // Adding the pool pins the operator's key and the cluster its status names (#3305).
     let operator = eventually("the pool names the operator's key", || {
-        kubectl.operator_key(&pool).ok()
+        kubectl.pool_pin(&pool).ok()
     });
 
     let first = claimed(&kubectl, &namespace, "ada-1", &pool, Keeping::Fresh);
@@ -393,7 +393,7 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
         )
         .expect("the pool");
     let operator = eventually("the pool names the operator's key", || {
-        kubectl.operator_key(&pool).ok()
+        kubectl.pool_pin(&pool).ok()
     });
 
     let kept = claimed(&kubectl, &namespace, "ada-kept", &pool, Keeping::Kept);
@@ -402,10 +402,13 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
         vouched_first.pod, "ada-kept",
         "a kept claim's runner is its own, cold"
     );
+    // Its runner, and its volume, are in its requester's own runner namespace (#2055).
+    let runner = clusterpool::runner_namespace(&kept.requester);
+    assert_eq!(vouched_first.runner_namespace, runner);
     let volume = eventually("the claim's own volume", || {
         field(
             &kubectl,
-            &namespace,
+            &runner,
             "persistentvolumeclaim",
             "purlis-kept-ada-kept",
             "{.metadata.uid}",
@@ -448,8 +451,8 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
     });
 
     // The pod is lost: upstream makes it again, under the same name, on the same volume.
-    let first_pod = field(&kubectl, &namespace, "pod", "ada-kept", "{.metadata.uid}")
-        .expect("the runner's pod");
+    let first_pod =
+        field(&kubectl, &runner, "pod", "ada-kept", "{.metadata.uid}").expect("the runner's pod");
     kubectl
         .run(
             &kubectl.args(&[
@@ -457,7 +460,7 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
                 "pod",
                 "ada-kept",
                 "--namespace",
-                &namespace,
+                &runner,
                 "--wait=true",
             ]),
             None,
@@ -465,10 +468,10 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
         )
         .expect("the runner's pod deleted");
     eventually("the runner's pod made again and ready", || {
-        let uid = field(&kubectl, &namespace, "pod", "ada-kept", "{.metadata.uid}")?;
+        let uid = field(&kubectl, &runner, "pod", "ada-kept", "{.metadata.uid}")?;
         let ready = field(
             &kubectl,
-            &namespace,
+            &runner,
             "pod",
             "ada-kept",
             "{.status.conditions[?(@.type==\"Ready\")].status}",
@@ -478,7 +481,7 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
     assert_eq!(
         field(
             &kubectl,
-            &namespace,
+            &runner,
             "persistentvolumeclaim",
             "purlis-kept-ada-kept",
             "{.metadata.uid}"
@@ -494,6 +497,55 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
     assert_eq!(again.key, paired.pinned.key);
 
     // Resumed with the pairing it had, never paired again: its home is as it was left.
+    runtime.block_on(async {
+        let (client, mut views) = linked(&kubectl, &operator, &paired, identity()).await;
+        client
+            .hold_project(PROJECT, "")
+            .await
+            .expect("the runner holds the project where it keeps it");
+        let drawn = ran(
+            &client,
+            &mut views,
+            "cat \"$HOME/conversation\"; echo done; exec sleep 120",
+            "done",
+        )
+        .await;
+        assert!(drawn.contains("the conversation so far"), "{drawn}");
+    });
+
+    // Stopped and run again (#2058): suspended, never destroyed, it is the same runner, paired
+    // as it was.
+    let stop = |stopped: bool| {
+        kubectl
+            .run(
+                &kubectl.args(&[
+                    "patch",
+                    "claims.runners.purlis.dev",
+                    "ada-kept",
+                    "--namespace",
+                    &namespace,
+                    "--type",
+                    "merge",
+                    "-p",
+                    &format!("{{\"spec\":{{\"stopped\":{stopped}}}}}"),
+                ]),
+                None,
+                64 * 1024,
+            )
+            .expect("the claim patched");
+    };
+    stop(true);
+    eventually("the stopped runner's pod ends", || {
+        field(&kubectl, &runner, "pod", "ada-kept", "{.metadata.uid}")
+            .is_none()
+            .then_some(())
+    });
+    stop(false);
+    let resumed = eventually("the operator vouches for the runner run again", || {
+        let now = clusterpool::vouched_for(&kubectl, &operator, &kept).ok()??;
+        (clusterpool::held_to(&paired, &now).is_ok()).then_some(now)
+    });
+    assert_eq!(resumed.key, paired.pinned.key);
     runtime.block_on(async {
         let (client, mut views) = linked(&kubectl, &operator, &paired, identity()).await;
         client

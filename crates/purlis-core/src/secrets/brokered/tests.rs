@@ -506,6 +506,91 @@ fn an_approved_servers_run_starts_from_its_entrys_variables_and_no_other_of_the_
     );
 }
 
+/// A persona `devops` (vault `team`) declaring one credentialed server, `server`, running
+/// `script` with `env` as its entry's `env`, approved on this machine.
+fn an_approved_server_running(root: &Path, script: &str, env: serde_json::Value) {
+    let persona = root.join("personas/devops");
+    std::fs::create_dir_all(&persona).unwrap();
+    std::fs::write(
+        persona.join("persona.md"),
+        "---\nname: devops\nvault: team\ndelegate-when: deploys\n---\n# devops\n",
+    )
+    .unwrap();
+    let entry = serde_json::json!({
+        "type": "stdio",
+        "command": "/bin/sh",
+        "args": ["-c", script],
+        "env": env,
+        "secrets": {"X": "TOKEN"},
+    });
+    std::fs::write(
+        persona.join("mcp.json"),
+        serde_json::json!({"mcpServers": {"server": entry}}).to_string(),
+    )
+    .unwrap();
+    let fingerprint =
+        crate::personaverbs::mcp::fingerprint(Some("team"), &entry).expect("it needs consent");
+    crate::personaverbs::mcp::approve(
+        root,
+        &crate::personaverbs::state_dir(root),
+        "devops",
+        &[fingerprint],
+    )
+    .unwrap();
+}
+
+/// #3441: an approved server's environment values come from the person's approval. A value the
+/// chat sets for one of its entry's variables never reaches the run, which starts with the value
+/// approved; one the chat's environment lacks is set all the same; and one the harness expands
+/// (`${…}`) is no value the person read, so the run starts without it.
+#[test]
+fn an_approved_servers_environment_values_come_from_the_approval_not_the_chat() {
+    let project = project();
+    let root = project.path();
+    let script = r#"echo "[$SERVER_URL][$REGION][${TEAM:-}]""#;
+    an_approved_server_running(
+        root,
+        script,
+        serde_json::json!({
+            "SERVER_URL": "https://server.example.com",
+            "REGION": "eu",
+            "TEAM": "${TEAM}",
+        }),
+    );
+    let mut want = wanted(root, "team", sh(script));
+    want.env = vec!["X=TOKEN".into()];
+    want.environment
+        .push(("SERVER_URL".into(), "https://chat.example.com".into()));
+    want.environment
+        .push(("TEAM".into(), "the-chats-team".into()));
+    let frames = served_as_asked(&asker(root, Some("devops")), want);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "[https://server.example.com][eu][]\n");
+}
+
+/// #3441: an approved value is held to the names a chat's is. One the entry writes out under a
+/// name that makes a program load code it names never reaches the run, whatever the line says.
+#[test]
+fn an_approved_servers_value_that_makes_a_program_load_code_never_reaches_its_run() {
+    let project = project();
+    let root = project.path();
+    let script = r#"echo "[${NODE_OPTIONS:-}][${DYLD_INSERT_LIBRARIES:-}][$REGION]""#;
+    an_approved_server_running(
+        root,
+        script,
+        serde_json::json!({
+            "NODE_OPTIONS": "--require /work/x.js",
+            "DYLD_INSERT_LIBRARIES": "/work/x.dylib",
+            "REGION": "eu",
+        }),
+    );
+    let mut want = wanted(root, "team", sh(script));
+    want.env = vec!["X=TOKEN".into()];
+    let frames = served_as_asked(&asker(root, Some("devops")), want);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "[][][eu]\n");
+}
+
 /// #2047: a brokered tool's process keeps no core dump, which would hold its values. This
 /// covers the run's own limit (`no_core_files`, from #3405). It can go red only where each test
 /// has a process of its own, as under nextest on CI: under plain `cargo test` another test's
@@ -4936,4 +5021,80 @@ fn the_values_sent_for_a_run_say_their_keys_alone() {
     );
     assert!(!back.is_for(8, "sh", "a-run"), "nor another chat's");
     assert!(!back.is_for(7, "kubectl", "a-run"), "nor another tool's");
+}
+
+/// A GitHub App's tool (#2053, E2): its run is handed the token minted from the App's key in
+/// `GH_TOKEN`, and the key itself reaches nothing of the run: not its environment, not its
+/// output, not a frame.
+#[test]
+fn a_github_app_tool_is_handed_the_token_minted_for_it_and_never_its_key() {
+    use crate::sandbox::tools::{Handed, Ready, Tool, mint::Mint};
+    let project = project();
+    // The vault's TOKEN stands in for the App's key; the mint is the test's own.
+    crate::forge::apptoken::MINT_HERE.with(|mint| {
+        *mint.borrow_mut() = Some(Box::new(|key: &str| {
+            if key == TOKEN {
+                Ok(zeroize::Zeroizing::new("minted-gh-token-5c3a".to_owned()))
+            } else {
+                Err("the mint was handed something other than the App's key".to_owned())
+            }
+        }));
+    });
+    let mut asker = asker(project.path(), Some("devops"));
+    asker.confines.as_mut().unwrap().tools.push(Ready {
+        tool: Tool {
+            mint: Some(Mint {
+                app: "Iv23liExample".to_owned(),
+            }),
+            ..Tool::one("sh", "team", "GH_TOKEN", Handed::Env, "TOKEN")
+        },
+        program: PathBuf::from("/bin/sh"),
+    });
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(
+            r#"case "$GH_TOKEN" in minted-gh-token-5c3a) echo token-handed;; esac
+              if env | grep -q 's3cret-value'; then echo key-in-env; fi"#,
+        ),
+    );
+    want.env = vec!["GH_TOKEN=TOKEN".into()];
+    let frames = served_as_asked(&asker, want);
+    crate::forge::apptoken::MINT_HERE.with(|mint| *mint.borrow_mut() = None);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "token-handed\n");
+    let wire = serde_json::to_string(&frames).unwrap();
+    assert!(!wire.contains(&b64(TOKEN.as_bytes())), "{wire}");
+    assert!(!wire.contains(TOKEN), "{wire}");
+}
+
+/// A GitHub App's tool whose mint is refused runs nothing, and says why.
+#[test]
+fn a_github_app_tool_whose_mint_is_refused_runs_nothing() {
+    use crate::sandbox::tools::{Handed, Ready, Tool, mint::Mint};
+    let project = project();
+    crate::forge::apptoken::MINT_HERE.with(|mint| {
+        *mint.borrow_mut() = Some(Box::new(|_: &str| {
+            Err("the GitHub App is installed on none of this chat's repos".to_owned())
+        }));
+    });
+    let mut asker = asker(project.path(), Some("devops"));
+    asker.confines.as_mut().unwrap().tools.push(Ready {
+        tool: Tool {
+            mint: Some(Mint {
+                app: "Iv23liExample".to_owned(),
+            }),
+            ..Tool::one("sh", "team", "GH_TOKEN", Handed::Env, "TOKEN")
+        },
+        program: PathBuf::from("/bin/sh"),
+    });
+    let mut want = wanted(project.path(), "team", sh("echo ran"));
+    want.env = vec!["GH_TOKEN=TOKEN".into()];
+    let frames = served_as_asked(&asker, want);
+    crate::forge::apptoken::MINT_HERE.with(|mint| *mint.borrow_mut() = None);
+    assert!(
+        matches!(frames.last(), Some(Frame::Refused { why, .. }) if why.contains("installed on none")),
+        "{frames:?}"
+    );
+    assert_eq!(stdout(&frames), "");
 }

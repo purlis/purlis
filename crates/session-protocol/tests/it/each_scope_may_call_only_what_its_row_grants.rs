@@ -311,6 +311,7 @@ fn every_command() -> Vec<Command> {
             harness: "claude".into(),
             sandbox_only: false,
             pinned: None,
+            settings: None,
         }),
         // A browser the person takes over, drives and hands back: the window's alone (1.14).
         Command::TakeOver {
@@ -434,6 +435,11 @@ fn every_command() -> Vec<Command> {
             profile: "claude".into(),
             conversation: "0d6f3c1e".into(),
         },
+        // The clones a host holds in a workspace (1.51, #3811): the window's, and relayed.
+        Command::ClonesOf {
+            project: "01J9PRJCT00000000000000000".into(),
+            workspace: "app".into(),
+        },
         // Where the host's own event log ends (1.41, #3393): the window's, and relayed.
         Command::LogEnd,
         // The person's DevTools of a browser they drive (1.45, #2028): the window's alone, on its
@@ -527,6 +533,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "give_code",
             "take_conversation",
             "give_conversation",
+            "clones_of",
             "log_end",
             "inspect",
             "attach_view", // DevTools' frames
@@ -600,11 +607,12 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "log_in",
             "take_back",
             // Code moved for the desktop's window (1.34, #2046), and a chat's conversation as it
-            // moves (1.44, #2048).
+            // moves (1.44, #2048), with the clones it may bring back (1.51, #3811).
             "take_code",
             "give_code",
             "take_conversation",
             "give_conversation",
+            "clones_of",
             // The runner's own event log, read by its desktop's window (1.41, #3393).
             "log_end",
         ],

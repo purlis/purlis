@@ -209,7 +209,7 @@ describe("the Skill studio's frame", () => {
     act(() => openViewAt(STUDIO_HISTORY, { page: "routing", scope: inWorkspace("ops") }));
     await waitFor(() => expect(current()).toBe("Routing"));
     expect(screen.getByLabelText("Whose chats")).toHaveTextContent("A chat in ops");
-    expect(screen.getByTestId("skill-routing-built-in")).toBeInTheDocument();
+    expect(screen.getByText(/a router decides which it sees/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Back" }));
     await waitFor(() => expect(current()).toBe("Library"));
     expect(screen.getByLabelText("Whose chats")).toHaveTextContent("A chat at the project's root");

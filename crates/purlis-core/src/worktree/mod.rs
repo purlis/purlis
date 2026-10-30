@@ -404,6 +404,12 @@ pub enum Note {
     DirtUnknown { repo: String },
     /// The layer did not land, and why — a sentence naming the path and the repair.
     Unwired { why: String },
+    /// What bringing the base up to its remote found to say ([`fresh::Fresh::notes`]): the
+    /// base was behind it and left where it is, or had moved on from it (#3903).
+    Fresh(String),
+    /// No default branch of the remote could be read, or the clone has none of that name, so
+    /// the branch was cut from the clone's HEAD, as `purlis worktree add` does then (#3903).
+    FromHead { repo: String },
 }
 
 impl std::fmt::Display for Note {
@@ -421,6 +427,13 @@ impl std::fmt::Display for Note {
                 )
             }
             Self::Unwired { why } => f.write_str(&unwired_warning(why)),
+            Self::Fresh(said) => f.write_str(said),
+            Self::FromHead { repo } => write!(
+                f,
+                "purlis could not read which branch {repo}'s remote names its default, or the \
+                 clone has no branch of that name, so the new branch is cut from the clone's \
+                 current commit."
+            ),
         }
     }
 }
@@ -443,6 +456,11 @@ impl Note {
             Self::Unwired { .. } => "purlis could not write its layer into the new branch's \
                  folder. A chat started on it writes the layer, or says why it cannot."
                 .to_string(),
+            Self::Fresh(said) => said.clone(),
+            Self::FromHead { repo } => format!(
+                "purlis could not read which branch {repo}'s remote names its default, so the \
+                 new branch starts from the commit the clone is on."
+            ),
         }
     }
 }
@@ -1595,6 +1613,34 @@ pub fn locate(plane: &Path, path: &Path) -> Option<Located> {
     }
 }
 
+/// Whether `dot_git` is a clone's own git folder: a real folder, never a link to one, nor a
+/// `.git` file pointing elsewhere (#3831).
+pub fn is_own_git_dir(dot_git: &Path) -> bool {
+    std::fs::symlink_metadata(dot_git).is_ok_and(|meta| meta.file_type().is_dir())
+}
+
+/// Which workspace's clone a path stands in, as `(workspace, repo)`, or `None` for a path in no
+/// clone (#3831): `workspaces/<ws>/<repo>` or below it, where that folder holds a `.git`, and
+/// never a branch folder. Path arithmetic, as [`locate`] is; git is asked the rest by the
+/// command that runs there.
+pub fn locate_clone(plane: &Path, path: &Path) -> Option<(String, String)> {
+    let here = std::fs::canonicalize(path).ok()?;
+    let workspaces = std::fs::canonicalize(plane.join("workspaces")).ok()?;
+    let rest = here.strip_prefix(&workspaces).ok()?;
+    let mut parts = rest.components().map(|c| c.as_os_str().to_str());
+    let (Some(Some(ws)), Some(Some(repo))) = (parts.next(), parts.next()) else {
+        return None;
+    };
+    if repo == DIR_NAME
+        || !crate::contain::workspace_name_ok(ws)
+        || !crate::contain::repo_name_ok(repo)
+        || !is_own_git_dir(&workspaces.join(ws).join(repo).join(".git"))
+    {
+        return None;
+    }
+    Some((ws.to_owned(), repo.to_owned()))
+}
+
 /// Where a path sits, when it sits in a piece.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Located {
@@ -1688,6 +1734,54 @@ mod locate_tests {
         assert_eq!(locate(&root, &root.join("workspaces/alpha/thing")), None);
         assert_eq!(locate(&root, &root.join("workspaces/alpha")), None);
         assert_eq!(locate(&root, &root), None);
+    }
+
+    #[test]
+    fn a_path_in_a_clone_names_its_workspace_and_repo_and_nothing_else_does() {
+        // #3831: `purlis worktree update` standing in a clone updates that clone.
+        let dir = plane();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::create_dir_all(root.join("workspaces/alpha/thing/.git")).unwrap();
+        std::fs::create_dir_all(root.join("workspaces/alpha/thing/src")).unwrap();
+        std::fs::create_dir_all(root.join("workspaces/alpha/notes")).unwrap();
+        let alpha_thing = Some(("alpha".to_owned(), "thing".to_owned()));
+
+        assert_eq!(
+            locate_clone(&root, &root.join("workspaces/alpha/thing")),
+            alpha_thing
+        );
+        assert_eq!(
+            locate_clone(&root, &root.join("workspaces/alpha/thing/src")),
+            alpha_thing
+        );
+        assert_eq!(
+            locate_clone(&root, &root.join("workspaces/alpha/notes")),
+            None
+        );
+        assert_eq!(locate_clone(&root, &root.join("workspaces/alpha")), None);
+        assert_eq!(locate_clone(&root, &root), None);
+        assert_eq!(
+            locate_clone(&root, &root.join("workspaces/alpha/.worktrees/thing/piece")),
+            None
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_clone_whose_git_folder_is_a_link_is_no_clone() {
+        let dir = plane();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let elsewhere = root.join("elsewhere.git");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::fs::create_dir_all(root.join("workspaces/alpha/linked")).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, root.join("workspaces/alpha/linked/.git")).unwrap();
+
+        assert_eq!(
+            locate_clone(&root, &root.join("workspaces/alpha/linked")),
+            None
+        );
+        assert!(!is_own_git_dir(&root.join("workspaces/alpha/linked/.git")));
+        assert!(is_own_git_dir(&elsewhere));
     }
 
     #[test]

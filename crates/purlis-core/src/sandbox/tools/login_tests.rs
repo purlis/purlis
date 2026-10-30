@@ -48,6 +48,8 @@ fn shop_login_with(user: Option<&str>, key: &str) -> Tool {
             url: "https://shop.example.test/login".to_owned(),
             origin: "https://shop.example.test".to_owned(),
         }),
+        args: None,
+        mint: None,
     }
 }
 

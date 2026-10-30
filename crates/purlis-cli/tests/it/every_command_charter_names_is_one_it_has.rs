@@ -39,7 +39,7 @@ use std::sync::LazyLock;
 
 const PLANNED: &str = "not in this version yet";
 
-fn repo() -> PathBuf {
+pub(crate) fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -47,7 +47,7 @@ fn repo() -> PathBuf {
 }
 
 /// Every shipped `.rs` file: `crates/*/src` and the app's, without test files.
-fn shipped_sources(root: &Path) -> Vec<PathBuf> {
+pub(crate) fn shipped_sources(root: &Path) -> Vec<PathBuf> {
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
@@ -77,7 +77,7 @@ fn shipped_sources(root: &Path) -> Vec<PathBuf> {
 
 /// The string literals of `src` outside comments and before the first `#[cfg(test)]`, with
 /// Rust's line continuation (`\` + newline + leading whitespace) already applied.
-fn literals(src: &str) -> Vec<String> {
+pub(crate) fn literals(src: &str) -> Vec<String> {
     let src = src.find("#[cfg(test)]").map_or(src, |at| &src[..at]);
     let chars: Vec<char> = src.chars().collect();
     let mut out = Vec::new();
@@ -150,7 +150,7 @@ fn literals(src: &str) -> Vec<String> {
 }
 
 /// Every `SKILL.md` under the plugin charter ships.
-fn shipped_skills(root: &Path) -> Vec<PathBuf> {
+pub(crate) fn shipped_skills(root: &Path) -> Vec<PathBuf> {
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
@@ -392,5 +392,77 @@ fn the_scan_sees_a_suggestion_and_a_planned_one_is_let_through() {
     assert!(
         exists("ws", Some("todo")),
         "an alias clap accepts is a command"
+    );
+}
+
+/// The top-level commands `purlis --help` lists, without `help`.
+fn families() -> Vec<String> {
+    let text = help(&[]).expect("the binary answers --help");
+    let (_, listed) = text.split_once("\nCommands:\n").expect("a command list");
+    listed
+        .lines()
+        .take_while(|line| line.starts_with("  "))
+        .filter_map(|line| line.split_whitespace().next())
+        .filter(|word| *word != "help")
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The command families no shipped skill or message names, each with why. Plumbing and the
+/// person's own switches are never a chat's to run; the rest are gaps to close by naming them
+/// where a chat would reach for them. A family leaves this list once something names it; the
+/// test refuses a stale entry, so the list only shrinks.
+const UNREACHED: &[(&str, &str)] = &[
+    (
+        "bridge",
+        "plumbing: a runner's connector runs it, never a chat",
+    ),
+    ("stop", "the person's kill switch, never a chat's"),
+    (
+        "gl-refresh",
+        "the window's background refresher, never a chat's: a chat asks its forge itself",
+    ),
+];
+
+/// #3798: a chat learns a command only from what it reads — a skill, a guard's refusal, a
+/// briefing — and `purlis worktree`, the one way a sandboxed chat gets a second branch of a repo,
+/// was named in none of them, so a chat made a second workspace instead. Every family the
+/// binary lists is named by at least one shipped skill or message.
+#[test]
+fn every_command_family_is_named_by_a_skill_or_a_message() {
+    let root = repo();
+    let mut named: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for file in shipped_sources(&root) {
+        let src = std::fs::read_to_string(&file).expect("a source file reads");
+        for text in literals(&src) {
+            named.extend(suggestions(&text).into_iter().map(|(first, _)| first));
+        }
+    }
+    for file in shipped_skills(&root) {
+        let page = std::fs::read_to_string(&file).expect("a skill reads");
+        for text in skill_texts(&page) {
+            named.extend(suggestions(&text).into_iter().map(|(first, _)| first));
+        }
+    }
+    let families = families();
+    assert!(families.len() > 10, "the families were read: {families:?}");
+    assert!(families.iter().any(|f| f == "worktree"), "{families:?}");
+    let unreached: Vec<&String> = families
+        .iter()
+        .filter(|f| !named.contains(*f) && !UNREACHED.iter().any(|(u, _)| u == f))
+        .collect();
+    assert!(
+        unreached.is_empty(),
+        "no shipped skill or message names these purlis commands, so a chat never learns them: \
+         {unreached:?}"
+    );
+    let stale: Vec<&str> = UNREACHED
+        .iter()
+        .map(|(u, _)| *u)
+        .filter(|u| named.contains(*u) || !families.iter().any(|g| g == u))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "named now, or gone — take them off UNREACHED: {stale:?}"
     );
 }

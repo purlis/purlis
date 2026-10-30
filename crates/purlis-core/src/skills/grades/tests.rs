@@ -345,6 +345,38 @@ fn a_query_no_chat_can_be_started_on_is_left_out_with_why() {
     assert_eq!(request.triggers[0].query, "ship it");
 }
 
+/// #3928: what a skill's Grades tab asks, whether there is anything to grade, is answered without
+/// a plan: the tests a grade would run (one no chat can start on is not one), or why the file
+/// was not read.
+#[test]
+fn a_copys_trigger_tests_are_counted_as_a_grade_would_run_them() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("skills/deploy")).unwrap();
+    std::fs::write(root.join("skills/deploy/SKILL.md"), SKILL).unwrap();
+    let count = || trigger_tests(root, &Level::project(), "deploy").unwrap();
+    assert_eq!(
+        count(),
+        TriggerTests {
+            runs: 0,
+            refused: None
+        },
+        "no file: none, and nothing refused"
+    );
+    std::fs::create_dir_all(root.join("skills/deploy/evals")).unwrap();
+    std::fs::write(
+        root.join("skills/deploy/evals/triggers.json"),
+        r#"[{"query": "--help", "should_trigger": false}, {"query": "ship it", "should_trigger": true}]"#,
+    )
+    .unwrap();
+    assert_eq!(count().runs, 1, "the query no chat starts on is left out");
+    std::fs::write(root.join("skills/deploy/evals/triggers.json"), "[").unwrap();
+    let refused = count();
+    assert_eq!(refused.runs, 0);
+    assert!(refused.refused.is_some(), "{refused:?}");
+    assert!(trigger_tests(root, &Level::project(), "nowhere").is_err());
+}
+
 #[test]
 fn a_row_that_says_more_than_purlis_writes_is_skipped() {
     let plane = plane();
@@ -435,7 +467,7 @@ fn a_local_copys_grade_stays_on_this_machine_and_is_read_back() {
     row.level = local.rel();
     let written = record(root, &local, &row, "laptop").unwrap();
     assert!(
-        written.starts_with(crate::plane::state_dir(root)),
+        written.starts_with(crate::appstate::dir(root).unwrap()),
         "{}",
         written.display()
     );
@@ -443,6 +475,21 @@ fn a_local_copys_grade_stays_on_this_machine_and_is_read_back() {
     let read = grades_of(root, "deploy", Some(&local));
     assert_eq!(read.len(), 1);
     assert_eq!(read[0].grade, "mine");
+}
+
+#[test]
+fn a_local_grade_in_the_plane_s_state_folder_is_never_read() {
+    // #3718: this machine's grades are read from its app state alone.
+    let plane = plane();
+    let root = plane.path();
+    let local = Level::project().local(true);
+    std::fs::create_dir_all(root.join("skills.local/deploy")).unwrap();
+    std::fs::write(root.join("skills.local/deploy/SKILL.md"), SKILL).unwrap();
+    let mut row = graded(root, "mine", "2026-10-25T10:00:00+00:00", Spent::default());
+    row.level = local.rel();
+    record(root, &local, &row, "laptop").unwrap();
+    crate::appstate::put_in_the_plane(root, LOCAL_DIR);
+    assert!(grades_of(root, "deploy", Some(&local)).is_empty());
 }
 
 #[test]
@@ -550,7 +597,7 @@ fn uncommitted_row() -> Graded {
 }
 
 /// #3353 (L1): a row read back is checked whole, its spend and its report too: a teammate's
-/// purlis writes them, and the Grades panel and the terminal say them.
+/// purlis writes them, and the Grades tab and the terminal say them.
 #[test]
 fn a_row_whose_spend_or_report_does_not_hold_together_is_skipped() {
     assert!(

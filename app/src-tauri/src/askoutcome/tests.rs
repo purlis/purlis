@@ -86,7 +86,8 @@ fn keep_blocked_on_every_kind_of_block_tells_its_chat_exactly_one_line() {
                 what,
                 target: target.to_owned(),
             };
-            crate::sandboxing::keep_block(&chats, 4, &shown, reason).expect("kept blocked");
+            crate::sandboxing::keep_block(&chats, 4, &shown, reason, &|_, _| Ok(()))
+                .expect("kept blocked");
             assert_eq!(
                 told(&talk, 4),
                 vec![format!(

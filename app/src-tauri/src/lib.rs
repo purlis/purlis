@@ -45,6 +45,7 @@ mod clipath;
 mod createproject;
 mod curation;
 // The Devices view (#2052).
+mod clusterpools;
 mod devices;
 mod dispatchaway;
 mod dispatched;
@@ -782,6 +783,15 @@ struct OpenChat {
     /// Move here, and a chat here Move to runner.
     #[specta(optional)]
     pool: Option<String>,
+    /// The workspace it works in, or `null` at the project's root (#3453): its tab's move names
+    /// the other chats of its workspace, which move with it.
+    #[specta(optional)]
+    workspace: Option<String>,
+    /// Whether Move here brings back a clone its runner's chat made there (#3811): its runner
+    /// names the clones it holds (session protocol 1.51). `null` for a chat here, and for one on
+    /// a runner before 1.51, whose Move here row says such a clone stays there.
+    #[specta(optional)]
+    clones_come_back: Option<bool>,
     /// The persona it adopted.
     persona: Option<String>,
     /// What its harness cannot tell charter, said on the chat — none where it tells all.
@@ -889,10 +899,12 @@ fn drawn_of(held: &planes::Held, open: chats::Open) -> OpenChat {
     let id = held.chats().chat_at(open.session).and_then(|at| at.id);
     let browser_sites = browser_sites_of(held, open.session);
     let pool = held.chats().pool_of(open.session);
+    let clones_come_back = held.chats().clones_come_back(open.session).then_some(true);
     OpenChat {
         id,
         browser_sites,
         pool,
+        clones_come_back,
         ..OpenChat::from(open)
     }
 }
@@ -2299,15 +2311,22 @@ async fn move_chat_now(
     let held = planes.held(&plane)?;
     tauri::async_runtime::spawn_blocking(move || {
         match held.move_chat_now(session, Size { columns, rows })? {
-            Some(started) => Ok(chatmoves::MoveNow {
-                chat: Some(drawn(&held, started)?),
+            Some(moved) => Ok(chatmoves::MoveNow {
+                moved: moved
+                    .into_iter()
+                    .map(|(was, started)| {
+                        Ok(chatmoves::MovedChat {
+                            was,
+                            chat: drawn(&held, started)?,
+                            notices: held.chats().start_notes(started),
+                        })
+                    })
+                    .collect::<Result<_, String>>()?,
                 not_yet: None,
-                notices: held.chats().start_notes(started),
             }),
             None => Ok(chatmoves::MoveNow {
-                chat: None,
+                moved: Vec::new(),
                 not_yet: Some(chatmoves::NOT_AT_A_PAUSE.to_owned()),
-                notices: Vec::new(),
             }),
         }
     })
@@ -2325,8 +2344,8 @@ fn chat_moves(
     Ok(planes.held(&plane)?.moves().shown())
 }
 
-/// **Puts chat `session`'s move away** (#2048): one still prepared is forgotten, and a failed
-/// one's reason is dismissed.
+/// **Puts chat `session`'s move away** (#2048): one still prepared is forgotten for every chat
+/// of it, and a failed one's reason is dismissed. One being made now is refused (#3814).
 #[tauri::command]
 #[specta::specta]
 fn put_away_chat_move(
@@ -2334,8 +2353,7 @@ fn put_away_chat_move(
     plane: PlaneId,
     session: u32,
 ) -> Result<(), String> {
-    planes.held(&plane)?.moves().put_away(session);
-    Ok(())
+    planes.held(&plane)?.moves().put_away(session)
 }
 
 /// **The chats this project has open that run under a sandbox other than the one the
@@ -2737,6 +2755,8 @@ impl From<chats::Open> for OpenChat {
                 .map(|card| HarnessGlance::from(&card)),
             profile: open.profile,
             pool: None,
+            clones_come_back: None,
+            workspace: open.workspace,
             persona: open.persona,
             in_front: open.in_front,
             shows: open.shows,

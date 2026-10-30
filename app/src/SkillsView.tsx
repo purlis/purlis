@@ -321,6 +321,7 @@ export function SkillsView({
   return (
     <SkillsList
       whose={whose}
+      chat={read.of !== undefined}
       groups={groups}
       count={whole.needs.length + whole.inChat.length + whole.builtIns.length}
       clashes={(row) => clashing.has(row.skill.name)}

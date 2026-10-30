@@ -339,6 +339,16 @@ server nobody approved is **withheld**, never started without its credential, an
 told at its start which servers it did not get and how they are approved. No credential is
 ever written into the chat's configuration: the server asks the vault when it starts.
 
+**In a sandboxed chat, an approved server's `env` values come from your approval** (#3441).
+Its run starts with each variable its entry's `env` writes out, at the value the approved line
+shows, never the value in the chat's own environment. A value the harness fills in (`${VAR}`,
+`${VAR:-default}`) is not on the line, so the run starts without that variable, and so does a
+variable that makes a program load code or write out its memory (`NODE_OPTIONS`, `DYLD_*` and
+their kind). `approve-mcp` names each one under the server's line. Write the value out in
+`mcp.json` instead, or, if it is a credential, name it under `secrets` so it comes from the
+persona's vault, then approve again. In your own terminal and in a chat the app did not start
+sandboxed, the harness's values reach the server as before.
+
 **A credentialed server that fails as the chat starts is tried once more.** Its `purlis secret
 exec` asks the app for the server's run again, after two seconds, when the first run ended
 before the server answered or the chat was not yet open; the second run is handed what Claude

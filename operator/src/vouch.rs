@@ -16,7 +16,9 @@
 //! both test against one worked example, `fixtures/runner-link-key/`.
 
 use crate::reconcile::FIELD_MANAGER;
-use crate::resources::{Claim, KEY_PUBLISHED, LinkKey, condition_of};
+use crate::resources::{
+    Claim, KEY_PUBLISHED, LinkKey, NextSigningKeyVouch, PoolStatus, condition_of,
+};
 use crate::upstream::{KEY_STEP, SandboxClaim, TERMINATION_LOG};
 use k8s_openapi::api::core::v1::{Pod, PodSpec, PodTemplateSpec};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{Condition, ObjectMeta};
@@ -26,19 +28,35 @@ use ring::signature::{Ed25519KeyPair, KeyPair};
 /// The first line of every statement: what it is, and its version.
 /// `v2` since a kept claim's runner keeps its pairing through the loss of its pod (#2057, ruled
 /// 2026-10-28): the statement names the claim, the pod's name and the key, and no longer the
-/// pod's uid, which changes when the pod is made again.
-pub const STATEMENT_HEADER: &str = "purlis runner link key v2";
+/// pod's uid, which changes when the pod is made again. v2 names the runner namespace the pod
+/// is in too, its requester's own (#2055, ruled 2026-10-29). `v3` names the cluster it was made in
+/// first, the uid of its `kube-system` namespace (#3305, ruled 2026-10-29).
+pub const STATEMENT_HEADER: &str = "purlis runner link key v3";
 
-/// Where the operator's pod holds its signing key: a Secret the kubelet mounts there
-/// (`deploy/operator.yaml`), so the operator itself holds no right to read any Secret.
+/// Where the operator's pod holds its signing keys: the whole Secret, which the kubelet mounts
+/// there (`deploy/operator.yaml`) and refreshes when it changes, so the operator itself holds no
+/// right to read any Secret and a key roll needs no restart (#3305).
+pub const SIGNING_KEY_DIR: &str = "/var/run/purlis-cluster-operator/signing-key";
+
+/// The key the operator signs with now: `key.pem` in the Secret.
 pub const SIGNING_KEY_PATH: &str = "/var/run/purlis-cluster-operator/signing-key/key.pem";
+
+/// The key it rolls to, while a team admin rolls it: `next.pem` in the same Secret, there only
+/// during a roll (#3305).
+pub const NEXT_SIGNING_KEY_PATH: &str = "/var/run/purlis-cluster-operator/signing-key/next.pem";
 
 /// What a statement is about, each value one plain line.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct About<'a> {
+    /// The cluster it is made in: the uid of its `kube-system` namespace ([`crate::cluster_of`]).
+    pub cluster: &'a str,
+    /// The Claim's namespace.
     pub namespace: &'a str,
     pub claim: &'a str,
     pub claim_uid: &'a str,
+    /// The namespace the runner's pod is in: its requester's runner namespace
+    /// ([`crate::person::runner_namespace`]).
+    pub runner_namespace: &'a str,
     /// The pod's name, which the desktop execs into: a kept claim's pod is made again under
     /// the same name.
     pub pod: &'a str,
@@ -75,13 +93,15 @@ const MOST_VALUE: usize = 512;
 
 /// The statement's text, exactly as signed, or `None` when a value could not be one plain line
 /// (empty, longer than 512 bytes, padded, or holding a control character), a name is not one
-/// Kubernetes gives (a DNS-1123 label for the namespace, a subdomain for the claim and the pod),
-/// or a uid is not one.
+/// Kubernetes gives (a DNS-1123 label for each namespace, a subdomain for the claim and the pod),
+/// or a uid (the cluster's or the claim's) is not one.
 pub fn statement(about: &About<'_>) -> Option<String> {
     let lines = [
+        ("cluster", about.cluster),
         ("namespace", about.namespace),
         ("claim", about.claim),
         ("claim uid", about.claim_uid),
+        ("runner namespace", about.runner_namespace),
         ("pod", about.pod),
         ("key", about.key),
         ("requester", about.requester),
@@ -90,9 +110,11 @@ pub fn statement(about: &About<'_>) -> Option<String> {
     let mut lines = lines.to_vec();
     lines.push(("until", until.as_str()));
     let named = is_label(about.namespace)
+        && is_label(about.runner_namespace)
         && is_subdomain(about.claim)
         && is_subdomain(about.pod)
-        && is_uid(about.claim_uid);
+        && is_uid(about.claim_uid)
+        && is_uid(about.cluster);
     if !named || !lines.iter().all(|(_, value)| plain(value)) || !is_lower_hex(about.key, 64) {
         return None;
     }
@@ -195,6 +217,187 @@ impl SigningKey {
     pub fn sign(&self, text: &str) -> String {
         hex(self.0.sign(text.as_bytes()).as_ref())
     }
+}
+
+/// The link a kubelet keeps in a mounted Secret's folder to the folder holding its current
+/// version, swapped in one step when the Secret changes.
+pub const KUBELET_DATA: &str = "..data";
+
+/// **The keys the operator signs with** (#3305): the current one, and while a team admin rolls
+/// it, the next one beside it. Every statement is signed by both during a roll, and the current
+/// key vouches for the next on every Pool ([`roll_statement`]).
+#[derive(Debug)]
+pub struct SigningKeys {
+    pub current: SigningKey,
+    /// The key it rolls to: none outside a roll, or when it is the current key already.
+    pub next: Option<SigningKey>,
+}
+
+impl SigningKeys {
+    /// The keys PEM blocks `current` and `next` hold ([`SigningKey::from_pem`]).
+    pub fn from_pems(current: &str, next: Option<&str>) -> Result<SigningKeys, String> {
+        let current = SigningKey::from_pem(current)?;
+        let next = next
+            .map(|pem| SigningKey::from_pem(pem).map_err(|why| format!("next.pem: {why}")))
+            .transpose()?
+            .filter(|next| next.public() != current.public());
+        Ok(SigningKeys { current, next })
+    }
+
+    /// The keys in the folder `dir`, as the kubelet mounts the Secret: `key.pem`, which must be
+    /// there, and `next.pem`, there only during a roll.
+    ///
+    /// Both are read from one snapshot of the Secret: the kubelet writes each version of a
+    /// mounted Secret to a folder of its own and swaps the link `..data` to it in one step, so
+    /// both files are read under the folder `..data` names when it is read. Read through `dir`
+    /// itself, a promotion landing between the two reads would show the old key with no next
+    /// key. A folder with no `..data`, not mounted by a kubelet, is read as it is.
+    pub fn read(dir: &std::path::Path) -> Result<SigningKeys, String> {
+        let snapshot = match std::fs::canonicalize(dir.join(KUBELET_DATA)) {
+            Ok(snapshot) => snapshot,
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => dir.to_path_buf(),
+            Err(why) => return Err(format!("{KUBELET_DATA}: {why}")),
+        };
+        let dir = snapshot.as_path();
+        let current = std::fs::read_to_string(dir.join("key.pem"))
+            .map_err(|why| format!("key.pem: {why}"))?;
+        let next = match std::fs::read_to_string(dir.join("next.pem")) {
+            Ok(pem) => Some(pem),
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => None,
+            Err(why) => return Err(format!("next.pem: {why}")),
+        };
+        SigningKeys::from_pems(&current, next.as_deref())
+    }
+
+    /// The signature of the next key over `text`, during a roll.
+    pub fn next_signature(&self, text: &str) -> Option<String> {
+        self.next.as_ref().map(|next| next.sign(text))
+    }
+}
+
+/// **The signing keys as the kubelet mounts them now** (#3305): read again on every use, since
+/// the kubelet refreshes the mounted Secret when a team admin changes it, so a roll needs no
+/// restart. Keys that cannot be read, as while the kubelet swaps the files, leave the last ones
+/// read in use.
+#[derive(Debug)]
+pub struct MountedKeys {
+    dir: std::path::PathBuf,
+    last: std::sync::Mutex<std::sync::Arc<SigningKeys>>,
+}
+
+impl MountedKeys {
+    /// The keys in `dir`, which must be readable as the operator starts.
+    pub fn read(dir: impl Into<std::path::PathBuf>) -> Result<MountedKeys, String> {
+        let dir = dir.into();
+        let keys = SigningKeys::read(&dir)?;
+        Ok(MountedKeys {
+            dir,
+            last: std::sync::Mutex::new(std::sync::Arc::new(keys)),
+        })
+    }
+
+    /// The keys mounted now, or the last ones read where they cannot be read.
+    pub fn now(&self) -> std::sync::Arc<SigningKeys> {
+        let mut last = self
+            .last
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match SigningKeys::read(&self.dir) {
+            Ok(keys) => {
+                if keys.current.public() != last.current.public()
+                    || keys.next.as_ref().map(SigningKey::public)
+                        != last.next.as_ref().map(SigningKey::public)
+                {
+                    tracing::info!(
+                        signing_key = %keys.current.public(),
+                        next_signing_key = ?keys.next.as_ref().map(SigningKey::public),
+                        "the signing keys changed"
+                    );
+                }
+                *last = std::sync::Arc::new(keys);
+            }
+            Err(error) => {
+                tracing::warn!(%error, "the signing keys could not be read again; the last ones read stay in use");
+            }
+        }
+        last.clone()
+    }
+}
+
+/// The first line of the current key's word for the next one, and its version (#3305).
+pub const ROLL_HEADER: &str = "purlis cluster operator key roll v1";
+
+/// How long the current key's word for the next one holds once signed: seven days (ruled
+/// 2026-10-29). It is signed again while the roll lasts ([`ROLL_RENEW_WITHIN`]), so a desktop
+/// that sees the Pool during the roll follows it, and one that sees none of it asks again.
+pub const ROLL_VALID_FOR: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 3600);
+
+/// How near its end that word is signed again: a day.
+pub const ROLL_RENEW_WITHIN: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
+
+/// **The current key's word for the next one**, exactly as signed: the cluster, the key it rolls
+/// from, the key it rolls to, and until when it holds, one `name: value` line each after
+/// [`ROLL_HEADER`]. `None` where the cluster is not a uid or a key not one's spelling.
+pub fn roll_statement(cluster: &str, from: &str, to: &str, until: u64) -> Option<String> {
+    let spelled = |key: &str| {
+        key.strip_prefix("ed25519:")
+            .is_some_and(|hex| is_lower_hex(hex, 64))
+    };
+    if !is_uid(cluster) || !spelled(from) || !spelled(to) {
+        return None;
+    }
+    Some(format!(
+        "{ROLL_HEADER}\ncluster: {cluster}\nfrom: {from}\nto: {to}\nuntil: {until}\n"
+    ))
+}
+
+/// **What the operator says on every Pool** (#3305): its signing key, its cluster, and during a
+/// roll the next key with the current key's word for it, signed again only near its end, so a
+/// Pool's status is not written every pass.
+pub fn pool_status(
+    keys: &SigningKeys,
+    cluster: &str,
+    previous: Option<&PoolStatus>,
+    now: u64,
+) -> PoolStatus {
+    let current = keys.current.public();
+    let mut status = PoolStatus {
+        signing_key: Some(current.clone()),
+        cluster: Some(cluster.to_owned()),
+        next_signing_key: None,
+        next_signing_key_vouch: None,
+    };
+    let Some(next) = keys.next.as_ref().map(SigningKey::public) else {
+        return status;
+    };
+    let kept = previous
+        .and_then(|held| held.next_signing_key_vouch.as_ref())
+        .filter(|held| {
+            until_of(&held.statement).is_some_and(|until| {
+                until > now.saturating_add(ROLL_RENEW_WITHIN.as_secs())
+                    && until <= now.saturating_add(ROLL_VALID_FOR.as_secs())
+                    && roll_statement(cluster, &current, &next, until).as_deref()
+                        == Some(held.statement.as_str())
+            }) && held.signature == keys.current.sign(&held.statement)
+        })
+        .cloned();
+    let vouch = kept.or_else(|| {
+        roll_statement(
+            cluster,
+            &current,
+            &next,
+            now.saturating_add(ROLL_VALID_FOR.as_secs()),
+        )
+        .map(|statement| NextSigningKeyVouch {
+            signature: keys.current.sign(&statement),
+            statement,
+        })
+    });
+    if let Some(vouch) = vouch {
+        status.next_signing_key = Some(next);
+        status.next_signing_key_vouch = Some(vouch);
+    }
+    status
 }
 
 /// Why a pod's key is not vouched for yet, or never will be.
@@ -447,6 +650,24 @@ pub fn key_published(pod: &Pod, template: &PodSpec) -> Result<String, NotYet> {
     Ok(key.to_owned())
 }
 
+/// The annotation upstream records an adopted pod's name in on its sandbox, where that name is
+/// not the sandbox's own (agent-sandbox v1.0.6, `SandboxPodNameAnnotation`).
+pub const POD_NAME_ANNOTATION: &str = "agents.x-k8s.io/pod-name";
+
+/// **The name of the pod `sandbox` runs**, as upstream finds it (agent-sandbox v1.0.6,
+/// `resolvePodName`): the one [`POD_NAME_ANNOTATION`] records, where it records one, and the
+/// sandbox's own name otherwise (#2058, from #2056). It names a pod to read; the pod is still
+/// held to being that sandbox's ([`controlled_by`]).
+pub fn pod_name_of(sandbox: &ObjectMeta) -> String {
+    sandbox
+        .annotations
+        .as_ref()
+        .and_then(|annotations| annotations.get(POD_NAME_ANNOTATION))
+        .filter(|name| !name.is_empty())
+        .cloned()
+        .unwrap_or_else(|| sandbox.name.clone().unwrap_or_default())
+}
+
 /// Whether `object` is controlled by the object `owner` of `kind` in the API group `group`, by
 /// its uid: what an owner reference anyone can write cannot fake without the owner's uid, and
 /// what names alone never prove.
@@ -544,25 +765,36 @@ impl Vouching {
 pub struct Held<'a> {
     /// Now, in seconds since the epoch: when the statement is signed, and from when it holds.
     pub now: u64,
+    /// The cluster the operator runs in: the uid of its `kube-system` namespace.
+    pub cluster: &'a str,
     pub claim: &'a Claim,
     /// The claim's upstream claim, the operator's own.
     pub upstream: &'a SandboxClaim,
-    /// The pool's template in the claim's namespace, as the cluster holds it: its metadata, and
+    /// The pool's template in the runner namespace, as the cluster holds it: its metadata, and
     /// its pod template.
     pub template: Option<&'a ObjectMeta>,
     pub template_spec: Option<&'a PodTemplateSpec>,
     /// The sandbox the upstream claim's status names.
     pub sandbox: Option<&'a ObjectMeta>,
-    /// The pod of that sandbox's name.
+    /// The pod that sandbox records ([`pod_name_of`]).
     pub pod: Option<&'a Pod>,
 }
 
 /// **Vouches for a claim's runner's link key, or says why not** (#2056): the chain from the
 /// claim to its pod by uid (upstream claim, its sandbox, its pod, each controlling the next),
 /// the pool's template changed by no one else, the pod the operator's `template` in full, and
-/// the key its first step published; then the statement, signed with `signing`.
-pub fn vouch(held: &Held<'_>, wanted_template: &PodTemplateSpec, signing: &SigningKey) -> Vouching {
+/// the key its first step published; then the statement, signed with `keys`: by the current key,
+/// and during a roll by the next one too (#3305).
+pub fn vouch(held: &Held<'_>, wanted_template: &PodTemplateSpec, keys: &SigningKeys) -> Vouching {
+    let signing = &keys.current;
     let not_yet = |why: &str| Vouching::Starting(why.to_owned());
+    if held.upstream.metadata.namespace.as_deref()
+        != Some(crate::person::runner_namespace(&held.claim.spec.requester).as_str())
+    {
+        return Vouching::Refused(
+            "its upstream claim is not in its requester's runner namespace".into(),
+        );
+    }
     let Some(named) = held
         .upstream
         .status
@@ -609,6 +841,9 @@ pub fn vouch(held: &Held<'_>, wanted_template: &PodTemplateSpec, signing: &Signi
         );
     };
     let template = &template;
+    if pod.metadata.name.as_deref() != Some(pod_name_of(sandbox).as_str()) {
+        return Vouching::Refused("its pod is not the one its sandbox records".into());
+    }
     if !controlled_by(&pod.metadata, "agents.x-k8s.io", "Sandbox", sandbox) {
         return Vouching::Refused("its pod is not the one its sandbox made".into());
     }
@@ -639,10 +874,14 @@ pub fn vouch(held: &Held<'_>, wanted_template: &PodTemplateSpec, signing: &Signi
     let (claim_name, claim_uid) = (claim.name_any(), claim.uid().unwrap_or_default());
     let pod_name = pod.name_any();
     let namespace = claim.namespace().unwrap_or_default();
+    // The pod is in its upstream claim's namespace, its requester's runner namespace (#2055).
+    let runner_namespace = held.upstream.namespace().unwrap_or_default();
     let about = About {
+        cluster: held.cluster,
         namespace: &namespace,
         claim: &claim_name,
         claim_uid: &claim_uid,
+        runner_namespace: &runner_namespace,
         pod: &pod_name,
         key: &key,
         requester: &claim.spec.requester,
@@ -664,12 +903,14 @@ pub fn vouch(held: &Held<'_>, wanted_template: &PodTemplateSpec, signing: &Signi
         .as_deref()
             == Some(previous.statement.as_str())
         && previous.signature == signing.sign(&previous.statement)
+        && previous.next_signature == keys.next_signature(&previous.statement)
     {
         return Vouching::Vouched(previous.clone());
     }
     match statement(&about) {
         Some(text) => Vouching::Vouched(LinkKey {
             signature: signing.sign(&text),
+            next_signature: keys.next_signature(&text),
             statement: text,
         }),
         None => {

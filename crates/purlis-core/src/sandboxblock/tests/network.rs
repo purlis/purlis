@@ -638,6 +638,96 @@ fn a_server_refused_its_port_is_a_block_naming_the_port_to_listen_on() {
     assert_eq!(printed_port(&codex), Some(5173));
 }
 
+/// A server that did not start (#3396, #3440): a listen refused on no port a person could allow.
+fn not_started(picked: bool) -> (Block, Option<String>) {
+    (
+        Block {
+            operation: Operation::Listen,
+            kind: Kind::System,
+            ours: false,
+        },
+        picked.then(|| crate::sandbox::localport::PICKED.to_owned()),
+    )
+}
+
+/// #3396: a test server on a port the system picks is refused with no port to allow, and still
+/// raises a block, a server that did not start, naming the port as the system's to pick: in
+/// Node's and Go's own words, and in the sandbox's line. Words that only printed it raise nothing.
+#[test]
+fn a_server_refused_a_port_the_system_picks_is_a_server_that_did_not_start() {
+    let node = "Error: listen EPERM: operation not permitted 127.0.0.1\n    at \
+                Server.setupListenHandle [as _listen2] (node:net:1872:21)";
+    assert_eq!(
+        detect_with_targets(
+            &failed("npm test", &format!("Exit code 1\n{node}")),
+            &place()
+        ),
+        vec![not_started(true)]
+    );
+    let go = "listen tcp 127.0.0.1:0: bind: operation not permitted";
+    assert_eq!(
+        detect_with_targets(
+            &failed("go test ./...", &format!("Exit code 1\n{go}")),
+            &place()
+        ),
+        vec![not_started(true)]
+    );
+    let stderr = "FAIL\n<sandbox_violations>\n\
+                  python3(812) deny(1) network-bind 127.0.0.1:0\n\
+                  </sandbox_violations>";
+    assert_eq!(
+        detect_with_targets(&came_back("pytest | tee log", "", stderr), &place()),
+        vec![not_started(true)]
+    );
+    assert_eq!(
+        detect_with_targets(&came_back("cat test.log", go, ""), &place()),
+        Vec::new()
+    );
+    // Said as a server that did not start, never as a folder of the system's.
+    let (block, _) = not_started(true);
+    assert_eq!(
+        block.said(),
+        "a server this chat started, which did not start"
+    );
+}
+
+/// #3440: the wrap on Linux tells a listen it refused with no port to allow, a socket it never
+/// bound or one it could not take, as macOS tells a refused bind: a server that did not start.
+/// The port the system would have picked is named as such, and a socket not taken as one, so
+/// its Notice can say why; anything else the wrap named there names nothing.
+#[test]
+fn a_listen_the_wrap_refused_with_no_port_to_allow_is_a_server_that_did_not_start() {
+    use crate::sandbox::localport::{PICKED, SOCKET_NOT_TAKEN};
+    for (target, named) in [
+        ("*:0", Some(PICKED)),
+        (
+            "(the chat's socket could not be taken: pidfd_getfd was refused)",
+            Some(SOCKET_NOT_TAKEN),
+        ),
+        ("(something else)", None),
+    ] {
+        let refusal = supervised::Refusal {
+            operation: "network-bind",
+            target: target.to_owned(),
+            process: Some("node".to_owned()),
+        };
+        let (block, _) = not_started(false);
+        assert_eq!(
+            supervised::block_of(&refusal, &place()),
+            Some((block, named.map(str::to_owned))),
+            "{target}"
+        );
+    }
+    // And the hook leaves it to the supervisor, which tells every refused listen.
+    for harness in ["codex", "opencode"] {
+        assert_eq!(
+            the_hooks_own(vec![not_started(true)], Some(harness), Os::Linux),
+            Vec::new(),
+            "{harness}"
+        );
+    }
+}
+
 /// #2019: on Linux the wrap's supervisor tells a refused listen itself, so the hook leaves it.
 #[test]
 fn a_chat_purlis_wraps_on_linux_leaves_a_refused_listen_to_the_supervisor() {

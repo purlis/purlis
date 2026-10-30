@@ -276,6 +276,14 @@ pub trait SessionHost: Send + Sync {
         None
     }
 
+    /// **Whether Move here brings back a clone the runner chat `id` runs on made** (#3811): its
+    /// runner names the clones it holds (session protocol 1.51). False for a chat here, and for
+    /// one on a runner before 1.51, or one this window has no link to now.
+    fn clones_come_back(&self, id: u32) -> bool {
+        let _ = id;
+        false
+    }
+
     /// Each pool's runner log the project's chats read, by the pool (#3393): none where they
     /// all run here.
     fn runner_logs(&self) -> Vec<(String, crate::runnerlog::RunnerLogNow)> {
@@ -304,20 +312,22 @@ pub trait SessionHost: Send + Sync {
         Err(MOVES_NO_CHAT.to_owned())
     }
 
-    /// **Moves `chat`'s work and conversation to the runner of `pool`** (#2048), at its pause:
-    /// each clone's work tree taken over there, and its conversation kept in its profile's
-    /// harness folder there. Refused, in a sentence, where any of it does not move.
-    fn move_in(&self, pool: &str, chat: &Moving) -> Result<(), String> {
-        let _ = (pool, chat);
+    /// **Moves `chats`' work and conversations to the runner of `pool`** (#2048), at their
+    /// pause: the chats of one workspace, which move together (#3453). Each clone's work tree is
+    /// taken over there once, and each conversation kept in its profile's harness folder there.
+    /// Refused, in a sentence, where any of it does not move.
+    fn move_in(&self, pool: &str, chats: &[Moving]) -> Result<(), String> {
+        let _ = (pool, chats);
         Err(MOVES_NO_CHAT.to_owned())
     }
 
-    /// **Moves `chat`'s work and conversation back from the runner of `pool`** (#2048), at its
-    /// pause: each clone's work tree here taken over onto the runner's, and its conversation kept
-    /// in its profile's harness folder here. Answers what came back that the person is to look
-    /// at before a tool here runs it, by its path in the project.
-    fn move_out(&self, pool: &str, chat: &Moving) -> Result<Vec<String>, String> {
-        let _ = (pool, chat);
+    /// **Moves `chats`' work and conversations back from the runner of `pool`** (#2048), at
+    /// their pause: the chats of one workspace, which move together (#3453). Each clone's work
+    /// tree here is taken over onto the runner's once, and each conversation kept in its
+    /// profile's harness folder here. Answers what came back that the person is to look at
+    /// before a tool here runs it, by its path in the project.
+    fn move_out(&self, pool: &str, chats: &[Moving]) -> Result<Vec<String>, String> {
+        let _ = (pool, chats);
         Err(MOVES_NO_CHAT.to_owned())
     }
 
@@ -546,6 +556,9 @@ pub struct Glance {
     pub turns: u32,
     /// The prompt it is stopped on in its terminal, where it is (#1691).
     pub prompt: Option<purlis_core::harness::model::Prompt>,
+    /// Whether its turn ended waiting on work of its own (#3878,
+    /// `purlis_core::state::Chat::own_work`): it is still at work through it.
+    pub own_work: bool,
 }
 
 impl Glance {
@@ -606,6 +619,11 @@ pub trait ChatBoard: Send + Sync {
     /// turn that was held for its tasks, or for its asker's answer, is the needs-you item now.
     /// Nothing when no reader would see a difference.
     fn rested(&self, session: u32) -> Option<Moved>;
+
+    /// A sandbox block's Notice went up for chat `session` while it waits on its own work
+    /// (#3878, `purlis_core::state::Board::blocked_while_waiting`): the wait ends, and the
+    /// person has the next move. Nothing when no reader would see a difference.
+    fn blocked_while_waiting(&self, session: u32) -> Option<Moved>;
 
     /// A task chat `session` asked for failed, ended without a report, or did not start
     /// (#1491): a needs-you item on it. Nothing when no reader would see a difference.
@@ -984,12 +1002,16 @@ pub(crate) mod pretend {
             lock(&self.seen.moved).push(("ahead", pool.to_owned(), workspace.to_owned()));
             Ok(())
         }
-        fn move_in(&self, pool: &str, chat: &super::Moving) -> Result<(), String> {
-            lock(&self.seen.moved).push(("in", pool.to_owned(), chat.workspace.clone()));
+        fn move_in(&self, pool: &str, chats: &[super::Moving]) -> Result<(), String> {
+            for chat in chats {
+                lock(&self.seen.moved).push(("in", pool.to_owned(), chat.workspace.clone()));
+            }
             Ok(())
         }
-        fn move_out(&self, pool: &str, chat: &super::Moving) -> Result<Vec<String>, String> {
-            lock(&self.seen.moved).push(("out", pool.to_owned(), chat.workspace.clone()));
+        fn move_out(&self, pool: &str, chats: &[super::Moving]) -> Result<Vec<String>, String> {
+            for chat in chats {
+                lock(&self.seen.moved).push(("out", pool.to_owned(), chat.workspace.clone()));
+            }
             Ok(Vec::new())
         }
         fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {

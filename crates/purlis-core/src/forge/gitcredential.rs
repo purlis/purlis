@@ -353,7 +353,7 @@ const PUSH_REMOTES_MOST: u64 = 1 << 20;
 
 /// The recorded remotes, or none when the file is missing, unreadable or not a record: a push
 /// then gets no purlis helper until the person saves from the window.
-fn read_push_remotes(config_root: &Path) -> std::collections::BTreeMap<String, String> {
+pub(crate) fn read_push_remotes(config_root: &Path) -> std::collections::BTreeMap<String, String> {
     crate::machine::read_beside(
         config_root,
         PUSH_REMOTES,
@@ -367,7 +367,7 @@ fn read_push_remotes(config_root: &Path) -> std::collections::BTreeMap<String, S
 }
 
 /// Writes the record into purlis's own folder of the config home, private to the person.
-fn write_push_remotes(
+pub(crate) fn write_push_remotes(
     config_root: &Path,
     recorded: &std::collections::BTreeMap<String, String>,
 ) -> std::io::Result<()> {

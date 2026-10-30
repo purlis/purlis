@@ -603,9 +603,15 @@ enum Command {
         timeout: Option<u32>,
         /// Where the new chat works: `workspace:<name>` for another workspace, or `worktree`
         /// for a new worktree on its own branch (default: this chat's folder, or a worktree
-        /// where the persona's definition says `dispatch-isolation: worktree`).
+        /// where the persona's definition says `dispatch-isolation: worktree`). From a
+        /// workspace whose folder holds several clones, `worktree:<repo>` names the clone.
         #[arg(long = "in", value_name = "WHERE")]
         place: Option<String>,
+        /// A long-running task, which works through many pieces and sends `purlis dispatch
+        /// note` as it goes: its notes are its heartbeat, purlis never asks it for a report,
+        /// and it ends when it reports done or failed, or is cancelled (#3905).
+        #[arg(long)]
+        long: bool,
         #[command(subcommand)]
         command: Option<dispatch::DispatchCommand>,
     },
@@ -1070,6 +1076,9 @@ impl purlis_host::Compose for Composes {
                         starting.project_path,
                     ),
                 ) as std::sync::Arc<dyn purlis_core::skills::router::AskRouter>,
+                // The chat's confinement as it is now, which its tool's runs here are held to
+                // (#3407).
+                |confinement: &str| beside.reach_of(confinement),
             ),
         )
     }
@@ -1214,7 +1223,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Skill(
             skill::SkillCommand::List { .. }
             | skill::SkillCommand::Show { .. }
-            | skill::SkillCommand::Restore { name: None },
+            | skill::SkillCommand::Restore { name: None, .. },
         )
         | Command::Change(change::ChangeCommand::List { .. })
         | Command::Session(session::SessionCommand::List { .. })
@@ -4102,14 +4111,17 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
 /// `purlis profile sign-in <name>` (#2035, ADR 0095 §3): the harness's own sign-in, run in this
 /// terminal with the profile's folder variables set, to `provider` for opencode, its input and
 /// output the person's own and none of it read; or, with `check`, whether its harness says it
-/// is signed in here.
+/// is signed in here. On a runner, a profile it keeps for its desktop with a pin is signed in
+/// and asked by that version, fetched first where it is not installed yet, as a chat's start
+/// fetches it, with a line in this terminal saying so (#4007); a fetch that is refused says why
+/// and signs nothing in.
 fn profile_sign_in(
     store: &purlis_core::profilestore::Homes,
     name: &str,
     check: bool,
     provider: Option<&str>,
 ) -> ExitCode {
-    use purlis_core::profilestore::{self, sign_in};
+    use purlis_core::profilestore::{self, installs, sign_in};
     let record = match profilestore::list(store.config_root()) {
         Ok(records) => records.into_iter().find(|p| p.name == name),
         Err(why) => return refused(&why),
@@ -4121,6 +4133,16 @@ fn profile_sign_in(
         ));
     };
     let here = profilestore::this_device();
+    let pinned = match installs::on_this_runner(&record, &|line| eprintln!("{line}")) {
+        Ok(pinned) => pinned,
+        Err(why) if check => {
+            return refused(&format!(
+                "{why}. purlis cannot tell whether '{}' is signed in on {here}.",
+                record.name
+            ));
+        }
+        Err(why) => return refused(&format!("{why}. Nothing was signed in.")),
+    };
     if check {
         let said = match sign_in::standing_of(&record, &sign_in::ThisMachine) {
             None => format!(
@@ -4146,7 +4168,7 @@ fn profile_sign_in(
         eprintln!("{said}");
         return ExitCode::SUCCESS;
     }
-    let login = match sign_in::login_of(&record, provider) {
+    let login = match sign_in::login_of(&record, provider, pinned.as_deref()) {
         Ok(login) => login,
         Err(why) => return refused(&why),
     };
@@ -4739,6 +4761,7 @@ fn main() -> ExitCode {
         wait,
         timeout,
         place,
+        long,
         command,
     } = &cli.command
     {
@@ -4760,6 +4783,7 @@ fn main() -> ExitCode {
             &dispatch::Options {
                 profile: profile.as_deref(),
                 place: place.as_deref(),
+                long: *long,
             },
             waits,
         );

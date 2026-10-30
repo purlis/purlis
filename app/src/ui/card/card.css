@@ -134,3 +134,161 @@
   color: var(--text-quiet);
   font-size: var(--font-size-sm);
 }
+
+/* ---------------------------------------------------------------------------------------------
+   **A card pressed whole** (`CardButton.tsx`, #3655): a door on the welcome, a repo to get. It is
+   a family of its own (`card-button`, #3885), so a theme that sets its cards flat on their panel
+   never takes a pressed card's edge away, and a theme's `card.title` never reaches its title.
+   It is a thing that is pressed, so it is drawn in the `control.*` shades. The button in it
+   (`press`) holds its title, and the button's `::after` covers the whole box, so a press anywhere
+   on the card presses it and its ring is drawn around the card. Under the pointer and while
+   pressed, the box's ground and edge change and nothing moves (#2800); its ring is the window's,
+   from the keyboard only, outside it.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="card-button"][data-part="root"] {
+  position: relative;
+  display: flex;
+  box-sizing: border-box;
+  min-inline-size: 0;
+  margin: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  background-color: transparent;
+  text-align: start;
+  overflow-wrap: anywhere;
+  transition:
+    background-color var(--motion-duration-quick) var(--motion-easing-standard),
+    border-color var(--motion-duration-quick) var(--motion-easing-standard);
+}
+
+/* The button: no box of its own, its words the card's; its `::after` is the card's whole face.
+   It is a target 24px tall at least (WCAG 2.5.8), as the button family's smallest is: axe measures
+   the button, never its `::after`. */
+[data-scope="card-button"][data-part="press"] {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: 24px;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: none;
+  border-radius: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  outline: none;
+}
+
+[data-scope="card-button"][data-part="press"]::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+}
+
+/* **A door**: its mark, title and line in a column, on the control's ground. */
+[data-scope="card-button"][data-part="root"][data-variant="door"] {
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-5) var(--space-6);
+  border-radius: var(--radius-xl);
+  background-color: var(--control-base);
+}
+
+[data-scope="card-button"][data-part="root"][data-variant="door"]:is(
+    [data-hovered],
+    [data-pressed]
+  ):not([data-disabled]) {
+  border-color: var(--border-strong);
+  background-color: var(--control-hover);
+}
+
+/* **A pick from a list**: one line on the surface under it, its words in the accent. */
+[data-scope="card-button"][data-part="root"][data-variant="pick"] {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  border-color: transparent;
+  color: var(--accent-base);
+}
+
+[data-scope="card-button"][data-part="root"][data-variant="pick"]:is(
+    [data-hovered],
+    [data-pressed]
+  ):not([data-disabled]) {
+  background-color: var(--surface-hover);
+}
+
+/* Unavailable: its words in the faint tier, on its own ground and edge, so nothing moves, and
+   what follows the title (a badge, which draws its own colours) dimmed with them. Its line steps
+   down to the quiet tier, not faint: it stands beside the button, not in it, so it is words a
+   person reads and keeps the text floor (WCAG 1.4.3), and it no longer reads louder than it did. */
+[data-scope="card-button"][data-part="root"][data-disabled] {
+  color: var(--text-faint);
+}
+
+[data-scope="card-button"][data-part="root"][data-disabled] > [data-part="line"] {
+  color: var(--text-quiet);
+}
+
+[data-scope="card-button"][data-part="root"][data-disabled] [data-part="more"] {
+  opacity: 0.45;
+}
+
+[data-scope="card-button"][data-part="press"][data-disabled] {
+  cursor: default;
+}
+
+/* The ring, around the whole card: outside a door, as a control's is. */
+[data-scope="card-button"][data-part="press"][data-focus-visible]::after {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* A pick's ring sits inside it, as a row's does: picks stand in a list that scrolls, which would
+   clip a ring drawn outside (`theme/geometry.css`, `--focus-ring-inset`). */
+[data-scope="card-button"][data-part="root"][data-variant="pick"]
+  > [data-part="press"][data-focus-visible]::after {
+  outline-offset: var(--focus-ring-inset);
+}
+
+/* Its mark, in the accent: the only colour on a page of doors, so the eye finds them first. */
+[data-scope="card-button"][data-part="mark"] {
+  display: inline-flex;
+  margin-block-end: var(--space-2);
+  font-size: var(--font-size-xl);
+  color: var(--accent-base);
+}
+
+/* Its title, at the size of the words around it, in the strong weight: a card's first line, but
+   pressed whole. */
+[data-scope="card-button"][data-part="title"] {
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: var(--font-weight-strong);
+}
+
+/* What follows its title (a badge): its own items, in a row, beside the title. */
+[data-scope="card-button"][data-part="more"] {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Its line: what it does, in the secondary tier. */
+[data-scope="card-button"][data-part="line"] {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-body);
+  color: var(--text-secondary);
+}

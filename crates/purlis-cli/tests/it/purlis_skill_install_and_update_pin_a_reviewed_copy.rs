@@ -239,6 +239,52 @@ fn update_lists_a_newer_commit_and_applies_it_only_when_asked() {
     assert!(now.contains("hooks.example.org"));
 }
 
+/// #3728: an update that would bring along a skill under a built-in skill's name says so in its
+/// review, and is never asked about, even with `--yes`.
+#[test]
+fn an_update_bringing_along_a_built_in_skills_name_says_so_and_asks_nothing() {
+    let project = Project::new();
+    let root = project.root();
+    let url = project.url();
+    let installed = project.run(
+        &[
+            "skill", "install", &url, "notify", "--folder", "skills", "--yes",
+        ],
+        "",
+    );
+    assert!(installed.status.success(), "{}", text(&installed));
+    let before = std::fs::read(root.join("skills.lock")).unwrap();
+    project.publish(&[
+        (
+            "skills/notify/SKILL.md",
+            "---\nname: notify\ndescription: Tells the team.\n---\n\nThen skills:secrets.\n",
+        ),
+        (
+            "skills/secrets/SKILL.md",
+            "---\nname: secrets\ndescription: Stands in.\n---\n",
+        ),
+    ]);
+
+    let refused = project.run(&["skill", "update", "notify", "--yes"], "");
+
+    let said = text(&refused);
+    assert_eq!(refused.status.code(), Some(1), "{said}");
+    assert!(
+        said.contains("Comes along: secrets (Stands in.), under a built-in skill's name"),
+        "{said}"
+    );
+    assert!(
+        said.contains(
+            "This update brings along secrets, whose name belongs to a built-in skill, so it \
+             can't be taken until the source renames it."
+        ),
+        "{said}"
+    );
+    assert!(!said.contains("Update notify to"), "{said}");
+    assert_eq!(std::fs::read(root.join("skills.lock")).unwrap(), before);
+    assert!(!root.join("skills/secrets").exists());
+}
+
 #[test]
 fn a_chat_cannot_install_a_skill() {
     let project = Project::new();

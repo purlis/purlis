@@ -57,6 +57,18 @@ export async function startAChat(press = "New tab"): Promise<Started> {
   return { plane, session, name };
 }
 
+/**
+ * **The project's default profile, approved as the operator approves it** (#3562): a chat
+ * started through the picker, which asks once ("Approve and start"), and then ended. For a spec
+ * whose chats the core starts without the picker (the Skill studio's Try it and Ask a chat to
+ * draft a skill), which the core refuses on a profile nobody has approved: run first in a fresh
+ * app, such a spec started nothing, since the approval was an earlier spec's to pay.
+ */
+export async function theDefaultProfileApproved(): Promise<void> {
+  const started = await startAChat();
+  await endChatById(started.session, started.plane);
+}
+
 /** The chat whose pane is drawn in front, by its number, or -1 where none is: read at once. */
 export async function paneInFront(): Promise<number> {
   return browser.execute(() => {

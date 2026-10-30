@@ -1676,6 +1676,10 @@ fn only_the_exact_mark_the_app_sets_reads_as_a_sandboxed_chat() {
         "Start without the sandbox",
         // D-PE-browser-1: a website login is a declared tool too.
         "browser-login tool",
+        // #3798: git work in a sandboxed chat goes through branch folders purlis cuts.
+        "`purlis worktree add <repo> <piece>`",
+        "`purlis worktree commit`",
+        "`purlis worktree push`",
     ] {
         assert!(SANDBOXED_NOTE.contains(said), "{said}");
     }

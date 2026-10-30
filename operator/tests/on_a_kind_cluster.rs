@@ -11,13 +11,16 @@
 use k8s_openapi::api::authorization::v1::{
     ResourceAttributes, SubjectAccessReview, SubjectAccessReviewSpec,
 };
-use k8s_openapi::api::core::v1::{Namespace, Pod};
+use k8s_openapi::api::core::v1::{Namespace, Pod, Secret};
 use kube::api::{
     Api, DeleteParams, ListParams, LogParams, ObjectMeta, Patch, PatchParams, PostParams,
 };
 use kube::{Client, ResourceExt};
 use purlis_cluster_operator::{Claim, ClaimSpec, Pool, PoolSpec};
 use std::time::{Duration, Instant};
+
+/// The Secret holding the operator's signing keys, as docs/cluster-operator.md makes it.
+const SIGNING_KEY_SECRET: &str = "purlis-cluster-operator-signing-key";
 
 const SERVICE_ACCOUNT: &str = "system:serviceaccount:purlis-system:purlis-cluster-operator";
 
@@ -66,7 +69,25 @@ impl Scratch {
         }
     }
 
+    /// Its claims deleted first, and waited for: each one's finalizer removes its runner from
+    /// the runner namespace the tests' claims share (#2055), so the next test's claims of the
+    /// same names find nothing of these.
     async fn end(self) {
+        let claims = Api::<Claim>::namespaced(self.client.clone(), &self.name);
+        let _ = claims
+            .delete_collection(&DeleteParams::default(), &ListParams::default())
+            .await;
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(180) {
+            if claims
+                .list(&ListParams::default())
+                .await
+                .is_ok_and(|list| list.items.is_empty())
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
         let _ = Api::<Namespace>::all(self.client)
             .delete(&self.name, &DeleteParams::default())
             .await;
@@ -75,6 +96,39 @@ impl Scratch {
 
 /// Who the tests' own kubeconfig signs in as: kind's cluster admin.
 const ADMIN: &str = "kubernetes-admin";
+
+/// The runner namespace of the cluster admin the tests sign in as, where the runners of the
+/// tests' claims run (#2055).
+fn runners() -> String {
+    purlis_cluster_operator::person::runner_namespace(ADMIN)
+}
+
+/// The label selector of the pods of the claim `name`'s runner, once its upstream claim is
+/// made in the runner namespace: upstream names the upstream claim on each by uid.
+async fn runner_selector(client: &Client, name: &str) -> String {
+    let upstream = Api::<purlis_cluster_operator::upstream::SandboxClaim>::namespaced(
+        client.clone(),
+        &runners(),
+    );
+    eventually(
+        &format!("{name}'s upstream claim in the runner namespace"),
+        Duration::from_secs(120),
+        || async {
+            let uid = upstream.get_opt(name).await.ok()??.uid()?;
+            Some(format!("agents.x-k8s.io/claim-uid={uid}"))
+        },
+    )
+    .await
+}
+
+/// The runner namespace's pods `selector` picks ([`runner_selector`]).
+async fn pods_selected(client: &Client, selector: &str) -> Vec<Pod> {
+    Api::<Pod>::namespaced(client.clone(), &runners())
+        .list(&ListParams::default().labels(selector))
+        .await
+        .map(|list| list.items)
+        .unwrap_or_default()
+}
 
 /// A claim on `pool`, made by the cluster admin the tests sign in as.
 fn claim(name: &str, pool: &str) -> Claim {
@@ -89,6 +143,7 @@ fn claim_by(name: &str, pool: &str, requester: &str) -> Claim {
             pool: pool.to_owned(),
             requester: requester.to_owned(),
             kept: false,
+            stopped: false,
         },
     )
 }
@@ -109,13 +164,7 @@ async fn a_pool_and_a_claim_yield_a_running_session_host_that_goes_with_the_clai
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-runs").await;
     let pools = Api::<Pool>::all(client.clone());
-    let pool = Pool::new(
-        "e2e-runs",
-        PoolSpec {
-            image: runner_image(),
-            kept_volume: Default::default(),
-        },
-    );
+    let pool = Pool::new("e2e-runs", PoolSpec::new(runner_image()));
     pools
         .patch(
             "e2e-runs",
@@ -136,12 +185,19 @@ async fn a_pool_and_a_claim_yield_a_running_session_host_that_goes_with_the_clai
     })
     .await;
 
-    let pods = Api::<Pod>::namespaced(client.clone(), &scratch.name);
+    // Its runner is in the runner namespace, and nothing of it in the claim's (#2055).
+    let selector = runner_selector(&client, "ada-1").await;
     let pod = eventually("one runner pod", Duration::from_secs(30), || async {
-        let list = pods.list(&ListParams::default()).await.ok()?;
-        (list.items.len() == 1).then(|| list.items[0].name_any())
+        let list = pods_selected(&client, &selector).await;
+        (list.len() == 1).then(|| list[0].name_any())
     })
     .await;
+    let here = Api::<Pod>::namespaced(client.clone(), &scratch.name)
+        .list(&ListParams::default())
+        .await
+        .expect("the claim's namespace's pods");
+    assert!(here.items.is_empty(), "{:?}", here.items);
+    let pods = Api::<Pod>::namespaced(client.clone(), &runners());
     eventually(
         "the session host says it is ready",
         Duration::from_secs(60),
@@ -160,8 +216,10 @@ async fn a_pool_and_a_claim_yield_a_running_session_host_that_goes_with_the_clai
         "the runner goes with its claim",
         Duration::from_secs(120),
         || async {
-            let list = pods.list(&ListParams::default()).await.ok()?;
-            list.items.is_empty().then_some(())
+            pods_selected(&client, &selector)
+                .await
+                .is_empty()
+                .then_some(())
         },
     )
     .await;
@@ -183,13 +241,7 @@ async fn a_runners_link_key_is_vouched_for_with_the_key_its_pool_names() {
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-vouch").await;
     let pools = Api::<Pool>::all(client.clone());
-    let pool = Pool::new(
-        "e2e-vouch",
-        PoolSpec {
-            image: runner_image(),
-            kept_volume: Default::default(),
-        },
-    );
+    let pool = Pool::new("e2e-vouch", PoolSpec::new(runner_image()));
     pools
         .patch(
             "e2e-vouch",
@@ -209,6 +261,20 @@ async fn a_runners_link_key_is_vouched_for_with_the_key_its_pool_names() {
             .strip_prefix("ed25519:")
             .expect("an Ed25519 key"),
     );
+    // The pool names its cluster too: the uid of kube-system (#3305).
+    let cluster = Api::<Namespace>::all(client.clone())
+        .get("kube-system")
+        .await
+        .expect("kube-system")
+        .uid()
+        .expect("its uid");
+    let named = eventually(
+        "the pool names its cluster",
+        Duration::from_secs(60),
+        || async { pools.get("e2e-vouch").await.ok()?.status?.cluster },
+    )
+    .await;
+    assert_eq!(named, cluster);
     let claims = claims_in(&client, &scratch.name);
     let made = claims
         .create(&PostParams::default(), &claim("ada-1", "e2e-vouch"))
@@ -238,10 +304,9 @@ async fn a_runners_link_key_is_vouched_for_with_the_key_its_pool_names() {
         .verify(link_key.statement.as_bytes(), &unhex(&link_key.signature))
         .expect("signed with the key the pool names");
 
-    let pods = Api::<Pod>::namespaced(client.clone(), &scratch.name);
-    let list = pods.list(&ListParams::default()).await.expect("pods");
-    assert_eq!(list.items.len(), 1);
-    let pod = &list.items[0];
+    let list = pods_selected(&client, &runner_selector(&client, "ada-1").await).await;
+    assert_eq!(list.len(), 1);
+    let pod = &list[0];
     let published = pod
         .status
         .as_ref()
@@ -251,9 +316,11 @@ async fn a_runners_link_key_is_vouched_for_with_the_key_its_pool_names() {
         .expect("the pod's first step published its key");
     let expected =
         purlis_cluster_operator::vouch::statement(&purlis_cluster_operator::vouch::About {
+            cluster: &cluster,
             namespace: &scratch.name,
             claim: "ada-1",
             claim_uid: &made.uid().expect("its uid"),
+            runner_namespace: &runners(),
             pod: &pod.name_any(),
             key: &published,
             requester: ADMIN,
@@ -274,6 +341,147 @@ async fn a_runners_link_key_is_vouched_for_with_the_key_its_pool_names() {
         (vouched.status.as_str(), vouched.reason.as_str()),
         ("True", "Vouched")
     );
+
+    // The roll (#3305): next.pem added to the Secret beside key.pem. The kubelet refreshes the
+    // mounted Secret, and the operator, not restarted, names the next key on the pool with its
+    // current key's word for it, and signs the claim's statement with both.
+    let secrets = Api::<Secret>::namespaced(client.clone(), "purlis-system");
+    let held = secrets
+        .get(SIGNING_KEY_SECRET)
+        .await
+        .expect("the signing key's Secret");
+    let first_pem = held
+        .data
+        .as_ref()
+        .and_then(|data| data.get("key.pem"))
+        .cloned()
+        .expect("key.pem");
+    let next_pkcs8 =
+        ring::signature::Ed25519KeyPair::generate_pkcs8(&ring::rand::SystemRandom::new())
+            .expect("a next key");
+    let next_pem = {
+        use base64::Engine;
+        format!(
+            "{}\n{}\n{}\n",
+            purlis_cluster_operator::vouch::PEM_BEGIN,
+            base64::engine::general_purpose::STANDARD.encode(next_pkcs8.as_ref()),
+            purlis_cluster_operator::vouch::PEM_END
+        )
+    };
+    let next = purlis_cluster_operator::vouch::SigningKey::from_pem(&next_pem)
+        .expect("the next key")
+        .public();
+    let next_public = unhex(next.strip_prefix("ed25519:").expect("an Ed25519 key"));
+    let data = |pem: &str| {
+        use base64::Engine;
+        serde_json::Value::String(base64::engine::general_purpose::STANDARD.encode(pem))
+    };
+    let set = |data: serde_json::Value| {
+        let secrets = secrets.clone();
+        async move {
+            secrets
+                .patch(
+                    SIGNING_KEY_SECRET,
+                    &PatchParams::default(),
+                    &Patch::Merge(serde_json::json!({ "data": data })),
+                )
+                .await
+                .expect("the Secret changed")
+        }
+    };
+    // Whatever the roll does, the first key goes back and the claim goes after it, so a
+    // failure here does not leave the next tests a key or a claim of this one.
+    let rolled = futures::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(async {
+        set(serde_json::json!({ "next.pem": data(&next_pem) })).await;
+        let rolling = eventually(
+            "the pool names the next key and the current key's word for it",
+            Duration::from_secs(300),
+            || async {
+                let status = pools.get("e2e-vouch").await.ok()?.status?;
+                (status.next_signing_key.as_deref() == Some(next.as_str())).then_some(status)
+            },
+        )
+        .await;
+        let word = rolling
+            .next_signing_key_vouch
+            .expect("the current key's word");
+        ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &public)
+            .verify(word.statement.as_bytes(), &unhex(&word.signature))
+            .expect("the word is signed by the current key");
+        let until = purlis_cluster_operator::vouch::until_of(&word.statement).expect("its until");
+        assert_eq!(
+            Some(word.statement.clone()),
+            purlis_cluster_operator::vouch::roll_statement(&cluster, &signing_key, &next, until)
+        );
+        let both = eventually(
+            "the claim's statement is signed by both keys",
+            Duration::from_secs(120),
+            || async {
+                let link_key = claims.get("ada-1").await.ok()?.status?.link_key?;
+                link_key.next_signature.is_some().then_some(link_key)
+            },
+        )
+        .await;
+        ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &next_public)
+            .verify(
+                both.statement.as_bytes(),
+                &unhex(both.next_signature.as_deref().unwrap_or_default()),
+            )
+            .expect("signed by the next key too");
+
+        // The roll over: next.pem moved to key.pem. The pool names the new key alone.
+        set(serde_json::json!({ "key.pem": data(&next_pem), "next.pem": null })).await;
+        eventually(
+            "the pool names the new key alone",
+            Duration::from_secs(300),
+            || async {
+                let status = pools.get("e2e-vouch").await.ok()?.status?;
+                (status.signing_key.as_deref() == Some(next.as_str())
+                    && status.next_signing_key.is_none()
+                    && status.next_signing_key_vouch.is_none())
+                .then_some(())
+            },
+        )
+        .await;
+        let after = eventually(
+            "the claim's statement is signed by the new key",
+            Duration::from_secs(120),
+            || async {
+                let link_key = claims.get("ada-1").await.ok()?.status?.link_key?;
+                let new = ring::signature::UnparsedPublicKey::new(
+                    &ring::signature::ED25519,
+                    &next_public,
+                )
+                .verify(link_key.statement.as_bytes(), &unhex(&link_key.signature))
+                .is_ok();
+                (new && link_key.next_signature.is_none()).then_some(link_key)
+            },
+        )
+        .await;
+        assert!(after.statement.contains(&format!("cluster: {cluster}\n")));
+    }))
+    .await;
+
+    // The first key back, so the tests after this one meet the key the install made.
+    let first = {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.encode(&first_pem.0)
+    };
+    set(serde_json::json!({ "key.pem": first })).await;
+    eventually(
+        "the pool names the first key again",
+        Duration::from_secs(300),
+        || async {
+            let status = pools.get("e2e-vouch").await.ok()?.status?;
+            (status.signing_key.as_deref() == Some(signing_key.as_str())).then_some(())
+        },
+    )
+    .await;
+    if let Err(panic) = rolled {
+        let _ = claims.delete("ada-1", &DeleteParams::foreground()).await;
+        let _ = pools.delete("e2e-vouch", &DeleteParams::default()).await;
+        std::panic::resume_unwind(panic);
+    }
 
     let _ = claims.delete("ada-1", &DeleteParams::foreground()).await;
     let _ = pools.delete("e2e-vouch", &DeleteParams::default()).await;
@@ -309,16 +517,57 @@ async fn a_pool_names_its_image_by_digest_and_a_claim_keeps_its_pool() {
     let pools = Api::<Pool>::all(client.clone());
     let by_tag = Pool::new(
         "e2e-tag",
-        PoolSpec {
-            image: "ghcr.io/purlis/purlis-runner:main".into(),
-            kept_volume: Default::default(),
-        },
+        PoolSpec::new("ghcr.io/purlis/purlis-runner:main"),
     );
     let refused = pools.create(&PostParams::default(), &by_tag).await;
     assert!(
         matches!(&refused, Err(kube::Error::Api(status)) if status.code == 422),
         "{refused:?}"
     );
+    // A Pool's times and warm count are only what purlis takes (#3737).
+    for (said, spec) in [
+        (
+            "a day spelled in days",
+            serde_json::json!({ "idleAfter": "1d" }),
+        ),
+        (
+            "idle for less than a minute",
+            serde_json::json!({ "idleAfter": "30s" }),
+        ),
+        ("no time at all", serde_json::json!({ "maxAge": "0h" })),
+        (
+            "the Update after the deletion",
+            serde_json::json!({ "deleteSuspendedAfter": "24h", "noticeBeforeDelete": "48h" }),
+        ),
+        (
+            "fewer than no runners warm",
+            serde_json::json!({ "warmReplicas": -1 }),
+        ),
+        (
+            "more runners warm than purlis keeps",
+            serde_json::json!({ "warmReplicas": 21 }),
+        ),
+        (
+            "a time too long to read",
+            serde_json::json!({ "maxAge": "99999999999h" }),
+        ),
+    ] {
+        let mut asked = serde_json::json!({
+            "apiVersion": "runners.purlis.dev/v1alpha1",
+            "kind": "Pool",
+            "metadata": { "name": "e2e-times" },
+            "spec": { "image": runner_image() },
+        });
+        for (key, value) in spec.as_object().expect("keys") {
+            asked["spec"][key] = value.clone();
+        }
+        let pool: Pool = serde_json::from_value(asked).expect("a pool");
+        let refused = pools.create(&PostParams::default(), &pool).await;
+        assert!(
+            matches!(&refused, Err(kube::Error::Api(status)) if status.code == 422),
+            "{said}: {refused:?}"
+        );
+    }
 
     let scratch = Scratch::new(&client, "e2e-keeps").await;
     let claims = Api::<Claim>::namespaced(client.clone(), &scratch.name);
@@ -347,13 +596,7 @@ async fn an_upstream_object_the_operator_did_not_make_is_left_as_it_is_until_it_
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-in-the-way").await;
     let pools = Api::<Pool>::all(client.clone());
-    let pool = Pool::new(
-        "e2e-in-the-way",
-        PoolSpec {
-            image: runner_image(),
-            kept_volume: Default::default(),
-        },
-    );
+    let pool = Pool::new("e2e-in-the-way", PoolSpec::new(runner_image()));
     pools
         .patch(
             "e2e-in-the-way",
@@ -362,9 +605,50 @@ async fn an_upstream_object_the_operator_did_not_make_is_left_as_it_is_until_it_
         )
         .await
         .expect("the pool");
-    // A template under the name the operator would use, made by hand: no owner.
-    let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &scratch.name);
-    let mut by_hand = upstream::template_for(&pool, &scratch.name, vec![]);
+    // The runner namespace the operator makes, made by a claim on another pool if it is not
+    // there yet; then a template in it under the name the operator would use, made by hand:
+    // no owner.
+    let claims = Api::<Claim>::namespaced(client.clone(), &scratch.name);
+    let namespaces = Api::<Namespace>::all(client.clone());
+    if namespaces
+        .get_opt(&runners())
+        .await
+        .ok()
+        .flatten()
+        .is_none()
+    {
+        let seeds = Api::<Pool>::all(client.clone());
+        seeds
+            .patch(
+                "e2e-in-the-way-seed",
+                &PatchParams::apply("e2e").force(),
+                &Patch::Apply(&Pool::new(
+                    "e2e-in-the-way-seed",
+                    PoolSpec::new(runner_image()),
+                )),
+            )
+            .await
+            .expect("the seed pool");
+        claims
+            .create(
+                &PostParams::default(),
+                &claim("ada-seed", "e2e-in-the-way-seed"),
+            )
+            .await
+            .expect("a claim that makes the runner namespace");
+        eventually(
+            "the runner namespace is made",
+            Duration::from_secs(60),
+            || async { namespaces.get_opt(&runners()).await.ok()?.map(|_| ()) },
+        )
+        .await;
+        let _ = claims.delete("ada-seed", &DeleteParams::default()).await;
+        let _ = seeds
+            .delete("e2e-in-the-way-seed", &DeleteParams::default())
+            .await;
+    }
+    let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &runners());
+    let mut by_hand = upstream::template_for(&pool, &runners(), vec![]);
     by_hand.metadata.owner_references = None;
     let containers = &mut by_hand
         .spec
@@ -378,7 +662,6 @@ async fn an_upstream_object_the_operator_did_not_make_is_left_as_it_is_until_it_
         .create(&PostParams::default(), &by_hand)
         .await
         .expect("the template made by hand");
-    let claims = Api::<Claim>::namespaced(client.clone(), &scratch.name);
     claims
         .create(&PostParams::default(), &claim("ada-1", "e2e-in-the-way"))
         .await
@@ -402,6 +685,7 @@ async fn an_upstream_object_the_operator_did_not_make_is_left_as_it_is_until_it_
         message.contains(&format!("SandboxTemplate {}", made.name_any())),
         "{message}"
     );
+    assert!(message.contains(&runners()), "{message}");
     // A while later: still as it was made, and nothing asked of upstream for the claim.
     tokio::time::sleep(Duration::from_secs(20)).await;
     let held = templates.get(&made.name_any()).await.expect("the template");
@@ -414,7 +698,7 @@ async fn an_upstream_object_the_operator_did_not_make_is_left_as_it_is_until_it_
             .all(|entry| entry.manager.as_deref() != Some(purlis_cluster_operator::FIELD_MANAGER)),
         "{held:?}"
     );
-    assert_eq!(upstream_claims_in(&client, &scratch.name).await, 0);
+    assert!(!upstream_claim_made(&client, "ada-1").await);
 
     templates
         .delete(&made.name_any(), &DeleteParams::default())
@@ -433,9 +717,17 @@ async fn an_upstream_object_the_operator_did_not_make_is_left_as_it_is_until_it_
         .get(&made.name_any())
         .await
         .expect("the operator's template");
-    assert_eq!(
-        ours.owner_references().first().map(|o| o.kind.as_str()),
-        Some("Claim")
+    // Controlled by the runner namespace, by its uid (#2055).
+    let runner_uid = namespaces
+        .get(&runners())
+        .await
+        .expect("the runner namespace")
+        .uid();
+    assert!(
+        ours.owner_references()
+            .iter()
+            .any(|o| o.kind == "Namespace" && Some(&o.uid) == runner_uid.as_ref()),
+        "{ours:?}"
     );
 
     let _ = pools
@@ -452,13 +744,7 @@ async fn a_claims_runner_keeps_running_when_its_pool_is_deleted_and_the_claim_sa
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-pool-gone").await;
     let pools = Api::<Pool>::all(client.clone());
-    let pool = Pool::new(
-        "e2e-pool-gone",
-        PoolSpec {
-            image: runner_image(),
-            kept_volume: Default::default(),
-        },
-    );
+    let pool = Pool::new("e2e-pool-gone", PoolSpec::new(runner_image()));
     pools
         .patch(
             "e2e-pool-gone",
@@ -477,10 +763,11 @@ async fn a_claims_runner_keeps_running_when_its_pool_is_deleted_and_the_claim_sa
         (ready_of(&claim)?.0 == "True").then_some(())
     })
     .await;
-    let pods = Api::<Pod>::namespaced(client.clone(), &scratch.name);
-    let running = pods.list(&ListParams::default()).await.expect("pods");
-    assert_eq!(running.items.len(), 1);
-    let pod = running.items[0].clone();
+    let pods = Api::<Pod>::namespaced(client.clone(), &runners());
+    let selector = runner_selector(&client, "ada-1").await;
+    let running = pods_selected(&client, &selector).await;
+    assert_eq!(running.len(), 1);
+    let pod = running[0].clone();
 
     pools
         .delete("e2e-pool-gone", &DeleteParams::foreground())
@@ -514,11 +801,11 @@ async fn a_claims_runner_keeps_running_when_its_pool_is_deleted_and_the_claim_sa
         Some("Running")
     );
     let template = name_for("e2e-pool-gone");
-    Api::<SandboxTemplate>::namespaced(client.clone(), &scratch.name)
+    Api::<SandboxTemplate>::namespaced(client.clone(), &runners())
         .get(&template)
         .await
         .expect("the runner's template");
-    Api::<NetworkPolicy>::namespaced(client.clone(), &scratch.name)
+    Api::<NetworkPolicy>::namespaced(client.clone(), &runners())
         .get(&format!("{template}-network-policy"))
         .await
         .expect("the runner's network policy");
@@ -536,8 +823,10 @@ async fn a_claims_runner_keeps_running_when_its_pool_is_deleted_and_the_claim_sa
         "the runner goes with its claim",
         Duration::from_secs(120),
         || async {
-            let list = pods.list(&ListParams::default()).await.ok()?;
-            list.items.is_empty().then_some(())
+            pods_selected(&client, &selector)
+                .await
+                .is_empty()
+                .then_some(())
         },
     )
     .await;
@@ -546,18 +835,12 @@ async fn a_claims_runner_keeps_running_when_its_pool_is_deleted_and_the_claim_sa
 
 #[tokio::test]
 #[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
-async fn a_pools_template_and_warm_pool_go_with_its_last_claim_in_a_namespace() {
+async fn a_pools_template_and_warm_pool_go_with_its_persons_last_claim_on_it() {
     use purlis_cluster_operator::upstream::{SandboxTemplate, SandboxWarmPool, name_for};
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-last-claim").await;
     let pools = Api::<Pool>::all(client.clone());
-    let pool = Pool::new(
-        "e2e-last-claim",
-        PoolSpec {
-            image: runner_image(),
-            kept_volume: Default::default(),
-        },
-    );
+    let pool = Pool::new("e2e-last-claim", PoolSpec::new(runner_image()));
     pools
         .patch(
             "e2e-last-claim",
@@ -567,8 +850,8 @@ async fn a_pools_template_and_warm_pool_go_with_its_last_claim_in_a_namespace() 
         .await
         .expect("the pool");
     let claims = Api::<Claim>::namespaced(client.clone(), &scratch.name);
-    let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &scratch.name);
-    let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &scratch.name);
+    let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &runners());
+    let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &runners());
     let name = name_for("e2e-last-claim");
     let ready = |claim: &'static str| {
         let claims = claims.clone();
@@ -600,21 +883,14 @@ async fn a_pools_template_and_warm_pool_go_with_its_last_claim_in_a_namespace() 
         .await
         .expect("a claim made as the last one goes");
     ready("ada-2").await;
-    let template = templates.get(&name).await.expect("the template");
-    assert!(
-        template
-            .owner_references()
-            .iter()
-            .any(|owner| owner.kind == "Claim" && owner.name == "ada-2"),
-        "{template:?}"
-    );
+    templates.get(&name).await.expect("the template");
 
     claims
         .delete("ada-2", &DeleteParams::default())
         .await
         .expect("the last claim deleted");
     eventually(
-        "the template and warm pool go with the last claim",
+        "the template and warm pool go with the last claim, by its finalizer",
         Duration::from_secs(120),
         || async {
             let template = templates.get_opt(&name).await.ok()?;
@@ -643,15 +919,43 @@ async fn may(
     resource: &str,
     subresource: Option<&str>,
 ) -> bool {
+    may_as(
+        client,
+        SERVICE_ACCOUNT,
+        Asked {
+            group,
+            verb,
+            resource,
+            subresource,
+            namespace: Some("default"),
+            name: None,
+        },
+    )
+    .await
+}
+
+/// What an access review asks of the cluster.
+struct Asked<'a> {
+    group: &'a str,
+    verb: &'a str,
+    resource: &'a str,
+    subresource: Option<&'a str>,
+    namespace: Option<&'a str>,
+    name: Option<&'a str>,
+}
+
+/// Whether the cluster lets `user` do what `asked` says.
+async fn may_as(client: &Client, user: &str, asked: Asked<'_>) -> bool {
     let review = SubjectAccessReview {
         spec: SubjectAccessReviewSpec {
-            user: Some(SERVICE_ACCOUNT.to_owned()),
+            user: Some(user.to_owned()),
             resource_attributes: Some(ResourceAttributes {
-                group: Some(group.to_owned()),
-                verb: Some(verb.to_owned()),
-                resource: Some(resource.to_owned()),
-                subresource: subresource.map(str::to_owned),
-                namespace: Some("default".to_owned()),
+                group: Some(asked.group.to_owned()),
+                verb: Some(asked.verb.to_owned()),
+                resource: Some(asked.resource.to_owned()),
+                subresource: asked.subresource.map(str::to_owned),
+                namespace: asked.namespace.map(str::to_owned),
+                name: asked.name.map(str::to_owned),
                 ..ResourceAttributes::default()
             }),
             ..SubjectAccessReviewSpec::default()
@@ -684,7 +988,22 @@ async fn the_cluster_refuses_the_operator_exec_attach_and_secrets() {
             "the operator may {verb} {resource} {subresource:?}"
         );
     }
+    // It deletes no namespace, and binds no role but a person's own runners' (#2055).
+    assert!(!may(&client, "", "delete", "namespaces", None).await);
+    fn bind(name: &str) -> Asked<'_> {
+        Asked {
+            group: "rbac.authorization.k8s.io",
+            verb: "bind",
+            resource: "clusterroles",
+            subresource: None,
+            namespace: None,
+            name: Some(name),
+        }
+    }
+    assert!(!may_as(&client, SERVICE_ACCOUNT, bind("cluster-admin")).await);
+    assert!(!may_as(&client, SERVICE_ACCOUNT, bind("admin")).await);
     // The check is the cluster's answer, not an empty one: what the operator needs, it may.
+    assert!(may_as(&client, SERVICE_ACCOUNT, bind("purlis-runner-owner")).await);
     assert!(
         may(
             &client,
@@ -695,6 +1014,564 @@ async fn the_cluster_refuses_the_operator_exec_attach_and_secrets() {
         )
         .await
     );
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_runner_namespace_made_again_as_its_policys_binding_settles_waits_for_it() {
+    use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
+    use purlis_cluster_operator::RUNNER_NAMESPACES_POLICY;
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-settling").await;
+    let pools = Api::<Pool>::all(client.clone());
+    pools
+        .patch(
+            "e2e-settling",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&Pool::new("e2e-settling", PoolSpec::new(runner_image()))),
+        )
+        .await
+        .expect("the pool");
+    let claims = claims_in(&client, &scratch.name);
+    claims
+        .create(
+            &PostParams::default(),
+            &claim("ada-settling", "e2e-settling"),
+        )
+        .await
+        .expect("the claim");
+    let ready = || async {
+        eventually("the claim is ready", Duration::from_secs(400), || async {
+            let claim = claims.get("ada-settling").await.ok()?;
+            (ready_of(&claim)?.0 == "True").then_some(())
+        })
+        .await
+    };
+    ready().await;
+
+    // As on an upgrade that brings the policy: its binding is made while the operator already
+    // has a claim to serve, and the claim's runner namespace is not there.
+    let bindings = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone());
+    let installed = bindings
+        .get(RUNNER_NAMESPACES_POLICY)
+        .await
+        .expect("the installed binding");
+    bindings
+        .delete(RUNNER_NAMESPACES_POLICY, &DeleteParams::default())
+        .await
+        .expect("the binding deleted");
+    eventually("the binding is gone", Duration::from_secs(30), || async {
+        bindings
+            .get_opt(RUNNER_NAMESPACES_POLICY)
+            .await
+            .ok()?
+            .is_none()
+            .then_some(())
+    })
+    .await;
+    restore_binding(&bindings, &installed).await;
+    let namespaces = Api::<Namespace>::all(client.clone());
+    let _ = namespaces
+        .delete(&runners(), &DeleteParams::default())
+        .await;
+
+    // The operator makes it again only once the binding is in force, and serves the claim there.
+    let bound = bindings
+        .get(RUNNER_NAMESPACES_POLICY)
+        .await
+        .expect("the binding")
+        .creation_timestamp()
+        .expect("its creation time");
+    let in_force = bound
+        .0
+        .checked_add(purlis_cluster_operator::SETTLE)
+        .expect("a time");
+    eventually(
+        "the runner namespace made again, after the binding is in force",
+        Duration::from_secs(300),
+        || async {
+            let held = namespaces.get_opt(&runners()).await.ok()??;
+            let made = held.creation_timestamp()?;
+            (held.metadata.deletion_timestamp.is_none() && made.0 > in_force).then_some(())
+        },
+    )
+    .await;
+    eventually(
+        "the claim's runner asked for again there",
+        Duration::from_secs(120),
+        || async {
+            upstream_claim_made(&client, "ada-settling")
+                .await
+                .then_some(())
+        },
+    )
+    .await;
+    ready().await;
+    let _ = pools.delete("e2e-settling", &DeleteParams::default()).await;
+    scratch.end().await;
+}
+
+/// Whether `made` was refused at admission, in words that hold `words`.
+fn refused_saying<T: std::fmt::Debug>(made: &Result<T, kube::Error>, words: &str) -> bool {
+    matches!(made, Err(kube::Error::Api(status)) if status.code == 403 && status.message.contains(words))
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_runner_namespace_and_what_the_operator_binds_are_guarded_at_admission() {
+    use k8s_openapi::api::core::v1::ResourceQuota;
+    use k8s_openapi::api::rbac::v1::RoleBinding;
+    use purlis_cluster_operator::person;
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-guarded").await;
+    let namespaces = Api::<Namespace>::all(client.clone());
+
+    // A runner namespace made by anyone but the operator, the cluster admin included, marked as
+    // the operator's for someone or not: refused.
+    for marked in [true, false] {
+        let mut forged = person::namespace_for("e2e-forged");
+        if !marked {
+            forged.metadata.labels = None;
+            forged.metadata.annotations = None;
+        }
+        let made = namespaces.create(&PostParams::default(), &forged).await;
+        assert!(
+            refused_saying(
+                &made,
+                "Only the purlis cluster operator makes a runner namespace"
+            ),
+            "{made:?}"
+        );
+    }
+
+    // Who a runner namespace the operator made is for is changed by no one else; another label
+    // may be.
+    let pools = Api::<Pool>::all(client.clone());
+    pools
+        .patch(
+            "e2e-guarded",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&Pool::new("e2e-guarded", PoolSpec::new(runner_image()))),
+        )
+        .await
+        .expect("the pool");
+    let claims = claims_in(&client, &scratch.name);
+    claims
+        .create(&PostParams::default(), &claim("ada-guarded", "e2e-guarded"))
+        .await
+        .expect("a claim that makes the runner namespace");
+    eventually(
+        "the runner namespace is made",
+        Duration::from_secs(120),
+        || async { namespaces.get_opt(&runners()).await.ok()?.map(|_| ()) },
+    )
+    .await;
+    let retargeted = namespaces
+        .patch(
+            &runners(),
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({
+                "metadata": { "annotations": { person::REQUESTER_ANNOTATION: "e2e-someone-else" } }
+            })),
+        )
+        .await;
+    assert!(
+        refused_saying(&retargeted, "changes who it is for"),
+        "{retargeted:?}"
+    );
+    let labelled = namespaces
+        .patch(
+            &runners(),
+            &PatchParams::default(),
+            &Patch::Merge(
+                serde_json::json!({ "metadata": { "labels": { "e2e/touched": "yes" } } }),
+            ),
+        )
+        .await;
+    assert!(labelled.is_ok(), "{labelled:?}");
+    let unmarked = namespaces
+        .patch(
+            &runners(),
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({
+                "metadata": { "labels": { person::MANAGED_BY.0: null } }
+            })),
+        )
+        .await;
+    assert!(
+        refused_saying(&unmarked, "changes who it is for"),
+        "{unmarked:?}"
+    );
+
+    // The operator binds purlis-runner-owner in a runner namespace alone, to one person who is
+    // not itself, and caps a person there alone: asked as its service account.
+    let as_operator = acting_as(SERVICE_ACCOUNT).await;
+    let binding = |namespace: &str, subject: serde_json::Value| -> RoleBinding {
+        serde_json::from_value(serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "RoleBinding",
+            "metadata": { "name": person::OWNER_ROLE, "namespace": namespace },
+            "roleRef": { "apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": person::OWNER_ROLE },
+            "subjects": [subject]
+        }))
+        .expect("a binding")
+    };
+    let someone = serde_json::json!({ "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": "e2e-someone" });
+    let itself = serde_json::json!({ "kind": "ServiceAccount", "name": "purlis-cluster-operator", "namespace": "purlis-system" });
+    let words = "binds purlis-runner-owner alone, in a runner namespace alone";
+    let outside = Api::<RoleBinding>::namespaced(as_operator.clone(), &scratch.name)
+        .create(
+            &PostParams::default(),
+            &binding(&scratch.name, someone.clone()),
+        )
+        .await;
+    assert!(refused_saying(&outside, words), "{outside:?}");
+    let to_itself = Api::<RoleBinding>::namespaced(as_operator.clone(), &runners())
+        .patch(
+            person::OWNER_ROLE,
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&binding(&runners(), itself)),
+        )
+        .await;
+    assert!(refused_saying(&to_itself, words), "{to_itself:?}");
+    // Nor to anyone but the person the runner namespace is for, nor a group, nor to a Role of
+    // the role's name: each refused before the cluster looks for the binding already there.
+    let in_runners = Api::<RoleBinding>::namespaced(as_operator.clone(), &runners());
+    let mut role = binding(
+        &runners(),
+        serde_json::json!({ "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": ADMIN }),
+    );
+    role.role_ref.kind = "Role".into();
+    for (what, wrong) in [
+        ("another person", binding(&runners(), someone.clone())),
+        (
+            "a group",
+            binding(
+                &runners(),
+                serde_json::json!({ "apiGroup": "rbac.authorization.k8s.io", "kind": "Group", "name": "system:authenticated" }),
+            ),
+        ),
+        (
+            "a system user",
+            binding(
+                &runners(),
+                serde_json::json!({ "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": "system:kube-scheduler" }),
+            ),
+        ),
+    ] {
+        let made = in_runners.create(&PostParams::default(), &wrong).await;
+        assert!(refused_saying(&made, words), "{what}: {made:?}");
+    }
+    // A Role of the role's name: refused, by RBAC itself where there is no such Role for the
+    // operator to bind, and by the policy where there is one.
+    let made = in_runners.create(&PostParams::default(), &role).await;
+    assert!(
+        matches!(&made, Err(kube::Error::Api(status)) if matches!(status.code, 403 | 404)),
+        "a Role: {made:?}"
+    );
+    let quota: ResourceQuota = serde_json::from_value(serde_json::json!({
+        "apiVersion": "v1", "kind": "ResourceQuota",
+        "metadata": { "name": person::QUOTA, "namespace": scratch.name },
+        "spec": { "hard": { "pods": "0" } }
+    }))
+    .expect("a quota");
+    let capped = Api::<ResourceQuota>::namespaced(as_operator.clone(), &scratch.name)
+        .create(&PostParams::default(), &quota)
+        .await;
+    assert!(
+        refused_saying(&capped, "in a runner namespace alone"),
+        "{capped:?}"
+    );
+    let elsewhere = Namespace {
+        metadata: ObjectMeta {
+            name: Some("e2e-not-a-runner-namespace".into()),
+            ..ObjectMeta::default()
+        },
+        ..Namespace::default()
+    };
+    let made = Api::<Namespace>::all(as_operator)
+        .create(&PostParams::default(), &elsewhere)
+        .await;
+    assert!(
+        refused_saying(&made, "makes runner namespaces (purlis-runners-*) alone"),
+        "{made:?}"
+    );
+
+    // What the operator made itself stands: the claim is served.
+    eventually("the claim is ready", Duration::from_secs(300), || async {
+        let claim = claims.get("ada-guarded").await.ok()?;
+        (ready_of(&claim)?.0 == "True").then_some(())
+    })
+    .await;
+    let _ = pools.delete("e2e-guarded", &DeleteParams::default()).await;
+    scratch.end().await;
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_persons_runners_run_in_their_own_namespace_within_their_quota_and_go_with_their_claims()
+{
+    use k8s_openapi::api::core::v1::ResourceQuota;
+    use k8s_openapi::api::rbac::v1::RoleBinding;
+    use purlis_cluster_operator::person;
+    use purlis_cluster_operator::upstream::{
+        SandboxClaim, SandboxTemplate, SandboxWarmPool, name_for,
+    };
+    const WHO: &str = "e2e-quota";
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-person").await;
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new("e2e-person", PoolSpec::new(runner_image()));
+    pools
+        .patch(
+            "e2e-person",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    // They may make, read and delete claims in the namespace, and use the pool.
+    apply_rbac(
+        &client,
+        "Role",
+        Some(&scratch.name),
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "Role",
+            "metadata": { "name": "e2e-person", "namespace": scratch.name },
+            "rules": [{ "apiGroups": ["runners.purlis.dev"], "resources": ["claims"],
+                        "verbs": ["create", "get", "list", "delete"] }]
+        }),
+    )
+    .await;
+    apply_rbac(
+        &client,
+        "RoleBinding",
+        Some(&scratch.name),
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "RoleBinding",
+            "metadata": { "name": "e2e-person", "namespace": scratch.name },
+            "roleRef": { "apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": "e2e-person" },
+            "subjects": [{ "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": WHO }]
+        }),
+    )
+    .await;
+    apply_rbac(
+        &client,
+        "ClusterRole",
+        None,
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRole",
+            "metadata": { "name": "e2e-person-pool" },
+            "rules": [{ "apiGroups": ["runners.purlis.dev"], "resources": ["pools"],
+                        "resourceNames": ["e2e-person"], "verbs": ["use"] }]
+        }),
+    )
+    .await;
+    apply_rbac(
+        &client,
+        "ClusterRoleBinding",
+        None,
+        serde_json::json!({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRoleBinding",
+            "metadata": { "name": "e2e-person-pool" },
+            "roleRef": { "apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "e2e-person-pool" },
+            "subjects": [{ "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": WHO }]
+        }),
+    )
+    .await;
+    let theirs = Api::<Claim>::namespaced(acting_as(WHO).await, &scratch.name);
+    let runner = person::runner_namespace(WHO);
+    let upstream = Api::<SandboxClaim>::namespaced(client.clone(), &runner);
+    let made = |name: &'static str| {
+        let upstream = upstream.clone();
+        async move { upstream.get_opt(name).await.ok().flatten().is_some() }
+    };
+    const FIVE: [&str; 5] = ["quota-1", "quota-2", "quota-3", "quota-4", "quota-5"];
+
+    // The default quota's five claims, each asked of upstream in their runner namespace.
+    for name in FIVE {
+        theirs
+            .create(&PostParams::default(), &claim_by(name, "e2e-person", WHO))
+            .await
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+    }
+    eventually(
+        "five upstream claims in their runner namespace",
+        Duration::from_secs(120),
+        || async {
+            for name in FIVE {
+                if !made(name).await {
+                    return None;
+                }
+            }
+            Some(())
+        },
+    )
+    .await;
+    assert_eq!(upstream_claims_in(&client, &scratch.name).await, 0);
+
+    // The namespace is the operator's, for them; they alone are bound there; the quota holds.
+    let namespace = Api::<Namespace>::all(client.clone())
+        .get(&runner)
+        .await
+        .expect("their runner namespace");
+    assert_eq!(
+        namespace
+            .labels()
+            .get("app.kubernetes.io/managed-by")
+            .map(String::as_str),
+        Some("purlis-cluster-operator")
+    );
+    assert_eq!(
+        namespace
+            .annotations()
+            .get("runners.purlis.dev/requester")
+            .map(String::as_str),
+        Some(WHO)
+    );
+    let binding = Api::<RoleBinding>::namespaced(client.clone(), &runner)
+        .get("purlis-runner-owner")
+        .await
+        .expect("their binding");
+    assert_eq!(binding.role_ref.name, "purlis-runner-owner");
+    let bound: Vec<String> = binding
+        .subjects
+        .unwrap_or_default()
+        .into_iter()
+        .map(|subject| format!("{}:{}", subject.kind, subject.name))
+        .collect();
+    assert_eq!(bound, [format!("User:{WHO}")]);
+    let quota = Api::<ResourceQuota>::namespaced(client.clone(), &runner)
+        .get("purlis-person")
+        .await
+        .expect("their quota");
+    let hard = quota.spec.and_then(|spec| spec.hard).unwrap_or_default();
+    assert_eq!(
+        hard.get(person::CLAIMS_KEY).map(|q| q.0.as_str()),
+        Some("5"),
+        "{hard:?}"
+    );
+    fn pod_right<'a>(verb: &'a str, subresource: Option<&'a str>, namespace: &'a str) -> Asked<'a> {
+        Asked {
+            group: "",
+            verb,
+            resource: "pods",
+            subresource,
+            namespace: Some(namespace),
+            name: None,
+        }
+    }
+    // They may reach their runners: see them, exec into them, read their logs.
+    for (verb, subresource) in [
+        ("get", None),
+        ("list", None),
+        ("create", Some("exec")),
+        ("get", Some("log")),
+    ] {
+        assert!(
+            may_as(&client, WHO, pod_right(verb, subresource, &runner)).await,
+            "{verb} {subresource:?}"
+        );
+    }
+    // Nothing more there, nothing in another person's, and no one else in theirs.
+    for (verb, subresource) in [
+        ("create", None),
+        ("delete", None),
+        ("create", Some("attach")),
+    ] {
+        assert!(
+            !may_as(&client, WHO, pod_right(verb, subresource, &runner)).await,
+            "{verb} {subresource:?}"
+        );
+    }
+    assert!(!may_as(&client, WHO, pod_right("create", Some("exec"), &runners())).await);
+    assert!(
+        !may_as(
+            &client,
+            "e2e-someone-else",
+            pod_right("create", Some("exec"), &runner)
+        )
+        .await
+    );
+
+    // A sixth is over their quota: it says so, and nothing is asked of upstream for it.
+    theirs
+        .create(
+            &PostParams::default(),
+            &claim_by("quota-6", "e2e-person", WHO),
+        )
+        .await
+        .expect("a sixth claim");
+    eventually(
+        "the sixth claim says it is over the quota",
+        Duration::from_secs(60),
+        || async {
+            let claim = theirs.get("quota-6").await.ok()?;
+            (ready_of(&claim)? == ("False".into(), "OverQuota".into())).then_some(())
+        },
+    )
+    .await;
+    assert!(!made("quota-6").await);
+
+    // One goes: its finalizer removes its runner first, and the sixth goes on.
+    let first = theirs.get("quota-1").await.expect("quota-1");
+    assert!(
+        first.finalizers().iter().any(|f| f == person::FINALIZER),
+        "{first:?}"
+    );
+    theirs
+        .delete("quota-1", &DeleteParams::default())
+        .await
+        .expect("quota-1 deleted");
+    eventually(
+        "quota-1 and its upstream claim are gone",
+        Duration::from_secs(120),
+        || async {
+            let gone = theirs.get_opt("quota-1").await.ok()?.is_none();
+            (gone && !made("quota-1").await).then_some(())
+        },
+    )
+    .await;
+    eventually(
+        "the sixth claim is asked of upstream",
+        Duration::from_secs(120),
+        || async { made("quota-6").await.then_some(()) },
+    )
+    .await;
+
+    // All go: the pool's template and warm pool with the last of them. Their namespace, its
+    // binding and its quota stay, empty, for their next claim.
+    for name in ["quota-2", "quota-3", "quota-4", "quota-5", "quota-6"] {
+        let _ = theirs.delete(name, &DeleteParams::default()).await;
+    }
+    let object = name_for("e2e-person");
+    eventually(
+        "every runner of theirs goes, and the pool's objects with the last",
+        Duration::from_secs(180),
+        || async {
+            let left = upstream.list(&ListParams::default()).await.ok()?.items;
+            let template = Api::<SandboxTemplate>::namespaced(client.clone(), &runner)
+                .get_opt(&object)
+                .await
+                .ok()?;
+            let warm = Api::<SandboxWarmPool>::namespaced(client.clone(), &runner)
+                .get_opt(&object)
+                .await
+                .ok()?;
+            (left.is_empty() && template.is_none() && warm.is_none()).then_some(())
+        },
+    )
+    .await;
+    Api::<Namespace>::all(client.clone())
+        .get(&runner)
+        .await
+        .expect("their runner namespace stays");
+    Api::<RoleBinding>::namespaced(client.clone(), &runner)
+        .get("purlis-runner-owner")
+        .await
+        .expect("and their binding");
+
+    let _ = pools.delete("e2e-person", &DeleteParams::default()).await;
+    scratch.end().await;
 }
 
 fn claims_in(client: &Client, namespace: &str) -> Api<Claim> {
@@ -740,13 +1617,7 @@ async fn a_claim_is_refused_to_someone_the_cluster_does_not_let_use_its_pool() {
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-use").await;
     let pools = Api::<Pool>::all(client.clone());
-    let pool = Pool::new(
-        "e2e-use",
-        PoolSpec {
-            image: runner_image(),
-            kept_volume: Default::default(),
-        },
-    );
+    let pool = Pool::new("e2e-use", PoolSpec::new(runner_image()));
     pools
         .patch(
             "e2e-use",
@@ -930,6 +1801,7 @@ async fn an_upstream_claim_on_a_purlis_pool_made_directly_is_refused() {
                 sandbox_template_ref: Reference {
                     name: template.to_owned(),
                 },
+                update_strategy: None,
             },
         )
     };
@@ -989,13 +1861,7 @@ async fn an_upstream_claim_on_a_purlis_pool_made_directly_is_refused() {
 
     // And what the operator made for a Claim cannot be moved off a purlis pool's objects.
     let pools = Api::<Pool>::all(client.clone());
-    let pool = Pool::new(
-        "e2e-direct",
-        PoolSpec {
-            image: runner_image(),
-            kept_volume: Default::default(),
-        },
-    );
+    let pool = Pool::new("e2e-direct", PoolSpec::new(runner_image()));
     pools
         .patch(
             "e2e-direct",
@@ -1008,6 +1874,9 @@ async fn an_upstream_claim_on_a_purlis_pool_made_directly_is_refused() {
         .create(&PostParams::default(), &claim("ada-1", "e2e-direct"))
         .await
         .expect("the claim");
+    // In its requester's runner namespace (#2055).
+    let upstream_claims = Api::<SandboxClaim>::namespaced(client.clone(), &runners());
+    let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &runners());
     eventually(
         "the operator asks upstream for the claim's runner",
         Duration::from_secs(120),
@@ -1046,7 +1915,16 @@ async fn an_upstream_claim_on_a_purlis_pool_made_directly_is_refused() {
     scratch.end().await;
 }
 
-/// Whether the operator has asked upstream for a runner for any claim in `namespace`.
+/// Whether the claim `name`'s upstream claim is made, in the runner namespace (#2055).
+async fn upstream_claim_made(client: &Client, name: &str) -> bool {
+    Api::<purlis_cluster_operator::upstream::SandboxClaim>::namespaced(client.clone(), &runners())
+        .get_opt(name)
+        .await
+        .expect("upstream claims")
+        .is_some()
+}
+
+/// How many upstream claims there are in `namespace`.
 async fn upstream_claims_in(client: &Client, namespace: &str) -> usize {
     Api::<purlis_cluster_operator::upstream::SandboxClaim>::namespaced(client.clone(), namespace)
         .list(&ListParams::default())
@@ -1106,13 +1984,7 @@ async fn only_a_claim_made_while_the_policy_is_in_force_is_acted_on() {
     let outcome = std::panic::AssertUnwindSafe(async {
         let scratch = Scratch::new(&client, "e2e-policy").await;
         let pools = Api::<Pool>::all(client.clone());
-        let pool = Pool::new(
-            "e2e-policy",
-            PoolSpec {
-                image: runner_image(),
-                kept_volume: Default::default(),
-            },
-        );
+        let pool = Pool::new("e2e-policy", PoolSpec::new(runner_image()));
         pools
             .patch(
                 "e2e-policy",
@@ -1136,7 +2008,7 @@ async fn only_a_claim_made_while_the_policy_is_in_force_is_acted_on() {
             },
         )
         .await;
-        assert_eq!(upstream_claims_in(&client, &scratch.name).await, 0);
+        assert!(!upstream_claim_made(&client, "ada-1").await);
 
         restore_binding(&bindings, &installed).await;
         eventually(
@@ -1148,7 +2020,7 @@ async fn only_a_claim_made_while_the_policy_is_in_force_is_acted_on() {
             },
         )
         .await;
-        assert_eq!(upstream_claims_in(&client, &scratch.name).await, 0);
+        assert!(!upstream_claim_made(&client, "ada-1").await);
 
         // A claim made while the binding settles is refused too: wait past it.
         tokio::time::sleep(settled()).await;
@@ -1159,7 +2031,7 @@ async fn only_a_claim_made_while_the_policy_is_in_force_is_acted_on() {
         eventually(
             "the claim made after the binding is acted on",
             Duration::from_secs(60),
-            || async { (upstream_claims_in(&client, &scratch.name).await == 1).then_some(()) },
+            || async { upstream_claim_made(&client, "ada-2").await.then_some(()) },
         )
         .await;
         let refused = claims.get("ada-1").await.expect("ada-1");
@@ -1200,13 +2072,7 @@ async fn a_refused_claims_running_runner_keeps_its_template_and_network_policy()
     let pools = Api::<Pool>::all(client.clone());
 
     let outcome = std::panic::AssertUnwindSafe(async {
-        let pool = Pool::new(
-            "e2e-refused-runs",
-            PoolSpec {
-                image: runner_image(),
-                kept_volume: Default::default(),
-            },
-        );
+        let pool = Pool::new("e2e-refused-runs", PoolSpec::new(runner_image()));
         pools
             .patch(
                 "e2e-refused-runs",
@@ -1229,10 +2095,10 @@ async fn a_refused_claims_running_runner_keeps_its_template_and_network_policy()
             },
         )
         .await;
-        let pods = Api::<Pod>::namespaced(client.clone(), &scratch.name);
-        let running = pods.list(&ListParams::default()).await.expect("pods");
-        assert_eq!(running.items.len(), 1);
-        let runner = running.items[0].clone();
+        let pods = Api::<Pod>::namespaced(client.clone(), &runners());
+        let running = pods_selected(&client, &runner_selector(&client, "ada-1").await).await;
+        assert_eq!(running.len(), 1);
+        let runner = running[0].clone();
 
         // The binding made again: the first claim was made before it.
         bindings
@@ -1255,25 +2121,18 @@ async fn a_refused_claims_running_runner_keeps_its_template_and_network_policy()
         .await;
         tokio::time::sleep(settled()).await;
 
-        // A claim made under the new binding: the template is owned only by a claim the
-        // operator refused, so it is not taken for the operator's, nothing is written, and the
-        // claim says whose it is.
+        // A claim made under the new binding, of the same person on the same pool: served from
+        // the pool's template in their runner namespace, which the operator made (#2055).
         claims
             .create(&PostParams::default(), &claim("ada-2", "e2e-refused-runs"))
             .await
             .expect("a claim made under the new binding");
         eventually(
-            "the new claim leaves the refused claim's template as it is",
-            Duration::from_secs(60),
+            "the new claim is served",
+            Duration::from_secs(300),
             || async {
                 let claim = claims.get("ada-2").await.ok()?;
-                let ready = claim
-                    .status?
-                    .conditions
-                    .into_iter()
-                    .find(|c| c.type_ == "Ready")?;
-                (ready.reason == "HeldByClaimsMadeBeforePolicy" && ready.message.contains("ada-1"))
-                    .then_some(())
+                (ready_of(&claim)?.0 == "True").then_some(())
             },
         )
         .await;
@@ -1288,17 +2147,12 @@ async fn a_refused_claims_running_runner_keeps_its_template_and_network_policy()
         tokio::time::sleep(Duration::from_secs(10)).await;
 
         let template = name_for("e2e-refused-runs");
-        let held = Api::<SandboxTemplate>::namespaced(client.clone(), &scratch.name)
+        // The new claim's finalizer leaves them: the refused claim on the pool is still there.
+        Api::<SandboxTemplate>::namespaced(client.clone(), &runners())
             .get(&template)
             .await
             .expect("the refused claim's runner keeps its template");
-        assert!(
-            held.owner_references()
-                .iter()
-                .any(|owner| owner.kind == "Claim" && owner.name == "ada-1"),
-            "{held:?}"
-        );
-        Api::<NetworkPolicy>::namespaced(client.clone(), &scratch.name)
+        Api::<NetworkPolicy>::namespaced(client.clone(), &runners())
             .get(&format!("{template}-network-policy"))
             .await
             .expect("and the network policy upstream makes of it");
@@ -1421,11 +2275,12 @@ async fn a_fresh_claim_takes_a_warm_runner_and_a_kept_one_starts_cold_saying_its
     let pool = Pool::new(
         "e2e-warm",
         PoolSpec {
-            image: runner_image(),
             kept_volume: purlis_cluster_operator::KeptVolume {
                 size: "1Gi".into(),
                 storage_class_name: None,
             },
+            stopped: false,
+            ..PoolSpec::new(runner_image())
         },
     );
     pools
@@ -1443,7 +2298,7 @@ async fn a_fresh_claim_takes_a_warm_runner_and_a_kept_one_starts_cold_saying_its
         .await
         .expect("the first claim");
     vouched_pod(&claims, "ada-first").await;
-    let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &scratch.name);
+    let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &runners());
     let name = name_for("e2e-warm");
     assert_eq!(
         warm_pools
@@ -1455,16 +2310,16 @@ async fn a_fresh_claim_takes_a_warm_runner_and_a_kept_one_starts_cold_saying_its
         0,
         "no runner kept warm by default"
     );
-    // A team admin keeps one runner warm; the operator keeps the number it finds.
-    warm_pools
+    // A team admin keeps one runner warm with the pool's warmReplicas (#3737).
+    pools
         .patch(
-            &name,
+            "e2e-warm",
             &PatchParams::default(),
-            &Patch::Merge(serde_json::json!({ "spec": { "replicas": 1 } })),
+            &Patch::Merge(serde_json::json!({ "spec": { "warmReplicas": 1 } })),
         )
         .await
         .expect("one runner kept warm");
-    let pods = Api::<Pod>::namespaced(client.clone(), &scratch.name);
+    let pods = Api::<Pod>::namespaced(client.clone(), &runners());
     let warm = eventually("a warm runner, ready", Duration::from_secs(300), || async {
         let list = pods.list(&ListParams::default()).await.ok()?;
         list.items.into_iter().find_map(|pod| {
@@ -1498,8 +2353,23 @@ async fn a_fresh_claim_takes_a_warm_runner_and_a_kept_one_starts_cold_saying_its
             .spec
             .replicas,
         1,
-        "the operator kept the number the admin set"
+        "the operator kept the pool's warm count"
     );
+    // The count is the operator's own: a warm pool scaled by hand is brought back to it.
+    warm_pools
+        .patch(
+            &name,
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({ "spec": { "replicas": 3 } })),
+        )
+        .await
+        .expect("scaled by hand");
+    eventually(
+        "the warm pool brought back to its pool's count",
+        Duration::from_secs(60),
+        || async { (warm_pools.get(&name).await.ok()?.spec.replicas == 1).then_some(()) },
+    )
+    .await;
 
     // A kept claim starts a runner of its own, cold, saying its stages as it goes.
     let mut kept = claim("ada-kept", "e2e-warm");
@@ -1546,7 +2416,7 @@ async fn a_fresh_claim_takes_a_warm_runner_and_a_kept_one_starts_cold_saying_its
     assert_eq!(pod, "ada-kept", "a kept claim's runner is its own");
     let volumes = Api::<k8s_openapi::api::core::v1::PersistentVolumeClaim>::namespaced(
         client.clone(),
-        &scratch.name,
+        &runners(),
     );
     let volume = volumes
         .get("purlis-kept-ada-kept")
@@ -1689,5 +2559,584 @@ async fn a_fresh_claim_takes_a_warm_runner_and_a_kept_one_starts_cold_saying_its
     )
     .await;
     let _ = pools.delete("e2e-warm", &DeleteParams::default()).await;
+    scratch.end().await;
+}
+
+/// A pool `name` of the runner image, its kept volume 1Gi, applied by the tests.
+async fn small_pool(client: &Client, name: &str) -> Api<Pool> {
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new(
+        name,
+        PoolSpec {
+            kept_volume: purlis_cluster_operator::KeptVolume {
+                size: "1Gi".into(),
+                storage_class_name: None,
+            },
+            stopped: false,
+            ..PoolSpec::new(runner_image())
+        },
+    );
+    pools
+        .patch(
+            name,
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    pools
+}
+
+/// The sandboxes in `namespace`, by name.
+async fn sandboxes_in(client: &Client, namespace: &str) -> Vec<String> {
+    use purlis_cluster_operator::upstream::Sandbox;
+    let mut names: Vec<String> = Api::<Sandbox>::namespaced(client.clone(), namespace)
+        .list(&ListParams::default())
+        .await
+        .expect("the sandboxes")
+        .items
+        .iter()
+        .map(|sandbox| sandbox.name_any())
+        .collect();
+    names.sort();
+    names
+}
+
+/// Whether `pod` is ready.
+fn pod_ready(pod: &Pod) -> bool {
+    pod.status
+        .as_ref()
+        .and_then(|status| status.conditions.as_ref())
+        .is_some_and(|conditions| {
+            conditions
+                .iter()
+                .any(|c| c.type_ == "Ready" && c.status == "True")
+        })
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_pool_scales_from_zero_for_a_claim_and_back_to_zero() {
+    use purlis_cluster_operator::upstream::{SandboxWarmPool, name_for};
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-zero").await;
+    let pools = small_pool(&client, "e2e-zero").await;
+    // Nothing runs for a pool no one claims.
+    let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &runners());
+    assert!(
+        warm_pools
+            .get_opt(&name_for("e2e-zero"))
+            .await
+            .expect("the warm pools")
+            .is_none()
+    );
+    let claims = claims_in(&client, &scratch.name);
+    claims
+        .create(&PostParams::default(), &claim("zero-1", "e2e-zero"))
+        .await
+        .expect("the claim");
+    vouched_pod(&claims, "zero-1").await;
+    let selector = runner_selector(&client, "zero-1").await;
+    // One runner, the claim's, and none kept warm.
+    assert_eq!(pods_selected(&client, &selector).await.len(), 1);
+    assert_eq!(
+        warm_pools
+            .get(&name_for("e2e-zero"))
+            .await
+            .expect("the warm pool")
+            .spec
+            .replicas,
+        0
+    );
+    claims
+        .delete("zero-1", &DeleteParams::foreground())
+        .await
+        .expect("the claim deleted");
+    eventually(
+        "back to no runner at all",
+        Duration::from_secs(180),
+        || async {
+            let none = !sandboxes_in(&client, &runners())
+                .await
+                .iter()
+                .any(|name| name == "zero-1");
+            (none && pods_selected(&client, &selector).await.is_empty()).then_some(())
+        },
+    )
+    .await;
+    let _ = pools.delete("e2e-zero", &DeleteParams::default()).await;
+    scratch.end().await;
+}
+
+/// The reason of `name`'s `Ready`, once its statement is gone and it says `Stopped`.
+async fn says_stopped(claims: &Api<Claim>, name: &str) -> String {
+    eventually(
+        &format!("{name} says it is stopped"),
+        Duration::from_secs(120),
+        || async {
+            let claim = claims.get(name).await.ok()?;
+            let ready = claim
+                .status
+                .as_ref()?
+                .conditions
+                .iter()
+                .find(|c| c.type_ == "Ready")?
+                .clone();
+            let gone = claim.status.as_ref()?.link_key.is_none();
+            (gone && ready.status == "False" && ready.reason == "Stopped").then_some(ready.message)
+        },
+    )
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn stopped_on_a_pool_or_a_claim_suspends_its_runners_and_never_destroys_them() {
+    use purlis_cluster_operator::upstream::{SUSPENDED, Sandbox};
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-stop").await;
+    let pools = small_pool(&client, "e2e-stop").await;
+    let claims = claims_in(&client, &scratch.name);
+    // Its runners are in the requester's runner namespace (#2055).
+    let pods = Api::<Pod>::namespaced(client.clone(), &runners());
+    let sandboxes = Api::<Sandbox>::namespaced(client.clone(), &runners());
+    let volumes = Api::<k8s_openapi::api::core::v1::PersistentVolumeClaim>::namespaced(
+        client.clone(),
+        &runners(),
+    );
+    let mut kept = claim("stop-kept", "e2e-stop");
+    kept.spec.kept = true;
+    claims
+        .create(&PostParams::default(), &kept)
+        .await
+        .expect("a kept claim");
+    claims
+        .create(&PostParams::default(), &claim("stop-fresh", "e2e-stop"))
+        .await
+        .expect("a fresh claim");
+    vouched_pod(&claims, "stop-kept").await;
+    let (fresh_pod, _) = vouched_pod(&claims, "stop-fresh").await;
+    let volume = volumes
+        .get("purlis-kept-stop-kept")
+        .await
+        .expect("the kept claim's volume")
+        .uid();
+
+    // The pool stopped from kubectl: every runner of it suspended.
+    let stop = |stopped: bool| serde_json::json!({ "spec": { "stopped": stopped } });
+    pools
+        .patch(
+            "e2e-stop",
+            &PatchParams::default(),
+            &Patch::Merge(stop(true)),
+        )
+        .await
+        .expect("the pool stopped");
+    for name in ["stop-kept", "stop-fresh"] {
+        let message = says_stopped(&claims, name).await;
+        assert!(
+            message.contains("The pool e2e-stop is stopped"),
+            "{message}"
+        );
+    }
+    eventually("their pods end", Duration::from_secs(180), || async {
+        let kept = pods.get_opt("stop-kept").await.ok()?;
+        let fresh = pods.get_opt(&fresh_pod).await.ok()?;
+        (kept.is_none() && fresh.is_none()).then_some(())
+    })
+    .await;
+    for name in ["stop-kept", &fresh_pod] {
+        let sandbox = sandboxes.get(name).await.expect("the sandbox is kept");
+        assert_eq!(sandbox.spec.operating_mode.as_deref(), Some(SUSPENDED));
+    }
+    assert_eq!(
+        volumes
+            .get("purlis-kept-stop-kept")
+            .await
+            .expect("the kept claim's volume is kept")
+            .uid(),
+        volume
+    );
+    // A claim made while its pool is stopped gets no runner yet.
+    claims
+        .create(&PostParams::default(), &claim("stop-later", "e2e-stop"))
+        .await
+        .expect("a claim on a stopped pool");
+    says_stopped(&claims, "stop-later").await;
+    assert!(!upstream_claim_made(&client, "stop-later").await);
+
+    // Run again: the kept runner comes back on its own volume, and the later claim is served.
+    pools
+        .patch(
+            "e2e-stop",
+            &PatchParams::default(),
+            &Patch::Merge(stop(false)),
+        )
+        .await
+        .expect("the pool running again");
+    for name in ["stop-fresh", "stop-later"] {
+        vouched_pod(&claims, name).await;
+    }
+    // The kept runner comes back on its own volume. (That a paired one keeps its key is the
+    // desktop's side to show, as it pairs: a_chat_runs_on_a_cluster_runner_through_kubectl_exec.)
+    vouched_pod(&claims, "stop-kept").await;
+    assert_eq!(
+        volumes
+            .get("purlis-kept-stop-kept")
+            .await
+            .expect("the kept claim's volume")
+            .uid(),
+        volume
+    );
+
+    // One claim stopped alone: only its runner is suspended.
+    claims
+        .patch(
+            "stop-kept",
+            &PatchParams::default(),
+            &Patch::Merge(stop(true)),
+        )
+        .await
+        .expect("the claim stopped");
+    let message = says_stopped(&claims, "stop-kept").await;
+    assert!(message.contains("This claim is stopped"), "{message}");
+    eventually("its pod ends", Duration::from_secs(180), || async {
+        pods.get_opt("stop-kept")
+            .await
+            .ok()?
+            .is_none()
+            .then_some(())
+    })
+    .await;
+    let others = claims.get("stop-later").await.expect("the other claim");
+    assert_eq!(ready_of(&others).map(|r| r.0).as_deref(), Some("True"));
+    claims
+        .patch(
+            "stop-kept",
+            &PatchParams::default(),
+            &Patch::Merge(stop(false)),
+        )
+        .await
+        .expect("the claim running again");
+    vouched_pod(&claims, "stop-kept").await;
+    eventually("its pod is back", Duration::from_secs(180), || async {
+        pods.get_opt("stop-kept")
+            .await
+            .ok()?
+            .filter(pod_ready)
+            .map(|_| ())
+    })
+    .await;
+
+    // Its pool deleted, a runner it served is still stopped by its claim.
+    let (later_pod, _) = vouched_pod(&claims, "stop-later").await;
+    pools
+        .delete("e2e-stop", &DeleteParams::default())
+        .await
+        .expect("the pool deleted");
+    eventually(
+        "the claim says its pool is deleted",
+        Duration::from_secs(120),
+        || async {
+            let claim = claims.get("stop-later").await.ok()?;
+            (ready_of(&claim)?.1 == "PoolDeleted").then_some(())
+        },
+    )
+    .await;
+    claims
+        .patch(
+            "stop-later",
+            &PatchParams::default(),
+            &Patch::Merge(stop(true)),
+        )
+        .await
+        .expect("the claim stopped");
+    let message = says_stopped(&claims, "stop-later").await;
+    assert!(message.contains("This claim is stopped"), "{message}");
+    eventually("its pod ends", Duration::from_secs(180), || async {
+        pods.get_opt(&later_pod).await.ok()?.is_none().then_some(())
+    })
+    .await;
+    // Set running again while its pool is gone, it stays suspended, and says so.
+    claims
+        .patch(
+            "stop-later",
+            &PatchParams::default(),
+            &Patch::Merge(stop(false)),
+        )
+        .await
+        .expect("the claim no longer stopped");
+    eventually(
+        "the claim says its runner stays suspended",
+        Duration::from_secs(120),
+        || async {
+            let claim = claims.get("stop-later").await.ok()?;
+            let ready = claim
+                .status?
+                .conditions
+                .into_iter()
+                .find(|c| c.type_ == "Ready")?;
+            (ready.reason == "PoolDeleted" && ready.message.contains("stays suspended"))
+                .then_some(())
+        },
+    )
+    .await;
+    tokio::time::sleep(Duration::from_secs(15)).await;
+    assert!(
+        pods.get_opt(&later_pod)
+            .await
+            .expect("its pod looked for")
+            .is_none(),
+        "a runner of a deleted pool is never run again"
+    );
+
+    for name in ["stop-kept", "stop-fresh", "stop-later"] {
+        let _ = claims.delete(name, &DeleteParams::foreground()).await;
+    }
+    let _ = pools.delete("e2e-stop", &DeleteParams::default()).await;
+    scratch.end().await;
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn a_warm_runner_of_an_earlier_template_is_replaced_and_a_fresh_claim_takes_a_current_one() {
+    use purlis_cluster_operator::upstream::{Sandbox, name_for};
+    use purlis_cluster_operator::vouch::pod_name_of;
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-stale").await;
+    let pools = small_pool(&client, "e2e-stale").await;
+    let claims = claims_in(&client, &scratch.name);
+    // Its runners are in the requester's runner namespace (#2055).
+    let pods = Api::<Pod>::namespaced(client.clone(), &runners());
+    // The first claim makes the pool's warm pool; a team admin keeps one runner warm (#3737).
+    claims
+        .create(&PostParams::default(), &claim("stale-first", "e2e-stale"))
+        .await
+        .expect("the first claim");
+    let (first, _) = vouched_pod(&claims, "stale-first").await;
+    pools
+        .patch(
+            "e2e-stale",
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({ "spec": { "warmReplicas": 1 } })),
+        )
+        .await
+        .expect("one runner kept warm");
+    let warm_ready = |not: Option<String>| {
+        let pods = pods.clone();
+        let first = first.clone();
+        async move {
+            let list = pods.list(&ListParams::default()).await.ok()?;
+            list.items.into_iter().find_map(|pod| {
+                // Made warm for this pool, as upstream marks it.
+                let warm = pod
+                    .labels()
+                    .get(purlis_cluster_operator::vouch::WARM_POOL_LABEL)
+                    == Some(&purlis_cluster_operator::vouch::name_hash(&name_for(
+                        "e2e-stale",
+                    )))
+                    && pod.name_any() != first
+                    && Some(pod.name_any()) != not;
+                (warm && pod_ready(&pod) && pod.metadata.deletion_timestamp.is_none())
+                    .then(|| pod.name_any())
+            })
+        }
+    };
+    let stale = eventually("a warm runner, ready", Duration::from_secs(300), || {
+        warm_ready(None)
+    })
+    .await;
+
+    // The pool changes: the warm runner, of the earlier template, is replaced.
+    pools
+        .patch(
+            "e2e-stale",
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({ "spec": { "keptVolume": { "size": "2Gi" } } })),
+        )
+        .await
+        .expect("the pool changed");
+    eventually(
+        "the stale warm runner goes",
+        Duration::from_secs(180),
+        || async { pods.get_opt(&stale).await.ok()?.is_none().then_some(()) },
+    )
+    .await;
+    let current = eventually(
+        "a warm runner of the current template, ready",
+        Duration::from_secs(300),
+        || warm_ready(Some(stale.clone())),
+    )
+    .await;
+
+    // A fresh claim takes it, and is vouched for: never stuck on the stale one.
+    claims
+        .create(&PostParams::default(), &claim("stale-fresh", "e2e-stale"))
+        .await
+        .expect("a fresh claim");
+    let (pod, _) = vouched_pod(&claims, "stale-fresh").await;
+    assert_ne!(pod, stale);
+    assert_eq!(pod, current, "the fresh claim took the current warm runner");
+    // The pod vouched for is the one its sandbox records, as upstream records an adopted pod.
+    let upstream_claim = Api::<purlis_cluster_operator::upstream::SandboxClaim>::namespaced(
+        client.clone(),
+        &runners(),
+    )
+    .get("stale-fresh")
+    .await
+    .expect("its upstream claim");
+    let sandbox_name = upstream_claim
+        .status
+        .and_then(|status| status.sandbox)
+        .expect("its sandbox")
+        .name;
+    let sandbox = Api::<Sandbox>::namespaced(client.clone(), &runners())
+        .get(&sandbox_name)
+        .await
+        .expect("the sandbox");
+    assert_eq!(pod_name_of(&sandbox.metadata), pod);
+
+    for name in ["stale-first", "stale-fresh"] {
+        let _ = claims.delete(name, &DeleteParams::foreground()).await;
+    }
+    let _ = pools.delete("e2e-stale", &DeleteParams::default()).await;
+    scratch.end().await;
+}
+
+/// Whether `result` is the refusal of the policy on the operator's sandbox changes, in its own
+/// words.
+fn refused_by_policy<T: std::fmt::Debug>(result: &Result<T, kube::Error>) -> bool {
+    matches!(result, Err(kube::Error::Api(status))
+        if status.code == 403
+            && status.message.contains("purlis-operator-changes-only-a-sandboxs-mode")
+            && status.message.contains("purlis's cluster operator changes"))
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn the_cluster_lets_the_operator_change_only_the_mode_of_a_claims_sandbox() {
+    use kube::api::{ApiResource, DynamicObject};
+    use purlis_cluster_operator::upstream::{Sandbox, sandbox_in_mode};
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-sandbox-right").await;
+    let pools = small_pool(&client, "e2e-sandbox-right").await;
+    let claims = claims_in(&client, &scratch.name);
+    claims
+        .create(
+            &PostParams::default(),
+            &claim("right-1", "e2e-sandbox-right"),
+        )
+        .await
+        .expect("the claim");
+    let (pod, _) = vouched_pod(&claims, "right-1").await;
+    let as_operator = acting_as(SERVICE_ACCOUNT).await;
+    // Its runner is in the requester's runner namespace (#2055).
+    let sandboxes = Api::<Sandbox>::namespaced(as_operator.clone(), &runners());
+    // Dry runs: admission is asked, and nothing changes.
+    let dry = PatchParams {
+        dry_run: true,
+        ..PatchParams::default()
+    };
+    // Its claim's sandbox, in its mode: let through.
+    sandboxes
+        .patch(
+            &pod,
+            &dry,
+            &Patch::Merge(serde_json::json!({ "spec": { "operatingMode": "Suspended" } })),
+        )
+        .await
+        .expect("the operator may change a claim's sandbox's mode");
+    // Anything else of it: refused by the cluster.
+    for (what, body) in [
+        (
+            "another spec field",
+            serde_json::json!({ "spec": { "shutdownPolicy": "Delete" } }),
+        ),
+        (
+            "a label",
+            serde_json::json!({ "metadata": { "labels": { "e2e": "x" } } }),
+        ),
+        (
+            "an annotation",
+            serde_json::json!({ "metadata": { "annotations": { "e2e": "x" } } }),
+        ),
+        (
+            "its pod template",
+            serde_json::json!({ "spec": { "podTemplate": { "spec": {
+                "automountServiceAccountToken": true
+            } } } }),
+        ),
+        (
+            "a finalizer",
+            serde_json::json!({ "metadata": { "finalizers": ["e2e.example/hold"] } }),
+        ),
+    ] {
+        let refused = sandboxes.patch(&pod, &dry, &Patch::Merge(body)).await;
+        assert!(refused_by_policy(&refused), "{what}: {refused:?}");
+    }
+    // A field taken away (null in a merge patch), of its spec or its owners: refused too.
+    for (what, body) in [
+        (
+            "a field of its pod template",
+            serde_json::json!({ "spec": { "podTemplate": { "spec": {
+                "enableServiceLinks": null
+            } } } }),
+        ),
+        (
+            "its owners",
+            serde_json::json!({ "metadata": { "ownerReferences": null } }),
+        ),
+    ] {
+        let refused = sandboxes.patch(&pod, &dry, &Patch::Merge(body)).await;
+        assert!(refused_by_policy(&refused), "{what}: {refused:?}");
+    }
+    // Applied to the sandbox it read, by uid: one of another uid under the name is refused.
+    let mut other = sandboxes.get(&pod).await.expect("the sandbox");
+    other.metadata.uid = Some("00000000-0000-4000-8000-000000000000".into());
+    let mut apply = PatchParams::apply("purlis-cluster-operator").force();
+    apply.dry_run = true;
+    let refused = sandboxes
+        .patch(
+            &pod,
+            &apply,
+            &Patch::Apply(&sandbox_in_mode(&other, "Suspended")),
+        )
+        .await;
+    // The API server refuses an apply whose uid is not the object's.
+    assert!(
+        matches!(&refused, Err(kube::Error::Api(status))
+            if (status.code == 409 || status.code == 422) && status.message.contains("uid")),
+        "{refused:?}"
+    );
+
+    // A sandbox no SandboxClaim controls, made by someone else: not even its mode.
+    let resource = ApiResource::erase::<Sandbox>(&());
+    let bare: DynamicObject = serde_json::from_value(serde_json::json!({
+        "apiVersion": "agents.x-k8s.io/v1beta1",
+        "kind": "Sandbox",
+        "metadata": { "name": "someone-elses", "namespace": scratch.name },
+        "spec": {
+            "operatingMode": "Suspended",
+            "podTemplate": { "spec": { "containers": [{ "name": "x", "image": runner_image() }] } },
+        },
+    }))
+    .expect("a sandbox");
+    Api::<DynamicObject>::namespaced_with(client.clone(), &scratch.name, &resource)
+        .create(&PostParams::default(), &bare)
+        .await
+        .expect("a sandbox of someone else's");
+    let refused = Api::<Sandbox>::namespaced(as_operator, &scratch.name)
+        .patch(
+            "someone-elses",
+            &dry,
+            &Patch::Merge(serde_json::json!({ "spec": { "operatingMode": "Running" } })),
+        )
+        .await;
+    assert!(refused_by_policy(&refused), "{refused:?}");
+
+    let _ = claims.delete("right-1", &DeleteParams::foreground()).await;
+    let _ = pools
+        .delete("e2e-sandbox-right", &DeleteParams::default())
+        .await;
     scratch.end().await;
 }

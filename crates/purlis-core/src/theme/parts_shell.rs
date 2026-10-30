@@ -475,7 +475,9 @@ fn rail_look(variant: &str, states: &[State]) -> Look {
 /// (#3654): a house drawn as a pin is, outside the strip.
 ///
 /// The family's root is the chip (`titlebar.workspace.*`, as the prototype's part keys name it):
-/// the strip around the chips lays them out and scrolls, and is no part a theme keys.
+/// the strip around the chips lays them out and scrolls, and is no part a theme keys. The crumb,
+/// the ⌄, and a switcher's rows and pin toggles are drawn apart from every chip, each a control
+/// in its own states (`parts::APART`, #3656), and a notice's dot beside one (`around`).
 pub(super) const TITLEBAR: Family = Family {
     name: "titlebar",
     description: "The title bar's pinned workspaces: a chip per pin, and the chip that pins the current one.",
@@ -521,7 +523,23 @@ pub(super) const TITLEBAR: Family = Family {
             name: "dot",
             since: super::NEXT,
             description: "The dot a notice about the workspace leaves on its chip's corner while \
-                          its card is hidden: its shape and its fill, ringed in the bar's ground.",
+                          its card is hidden, where the most urgent is news: its disc and its \
+                          fill, ringed in the bar's ground.",
+            properties: &[Prop::Fill, Prop::Text],
+        },
+        Part {
+            name: "dot-warning",
+            since: super::NEXT,
+            description: "The dot on a chip's corner where the most urgent of its hidden notices \
+                          is a warning: its triangle and its fill, ringed in the bar's ground.",
+            properties: &[Prop::Fill, Prop::Text],
+        },
+        Part {
+            name: "dot-needs",
+            since: super::NEXT,
+            description: "The dot on a chip's corner while a chat asks the person to remove the \
+                          workspace, the most urgent kind: its raised hand and its fill, ringed \
+                          in the bar's ground.",
             properties: &[Prop::Fill, Prop::Text],
         },
     ],
@@ -543,6 +561,13 @@ pub(super) const TITLEBAR: Family = Family {
             since: super::NEXT,
             description: "The plane root's house after the project's name, outside the strip: \
                           always there, never unpinned, the accent's wash while the root is in front.",
+            consent: None,
+        },
+        Variant {
+            name: "dormant",
+            since: super::NEXT,
+            description: "A pin whose workspace is gone, kept dormant, after the live pins: muted \
+                          slanted words and a dotted edge; a press shows its notice.",
             consent: None,
         },
     ],
@@ -568,12 +593,22 @@ pub(super) const TITLEBAR: Family = Family {
         ("row", "text.secondary"),
         // A notice's dot (#3648): its shape, a mark, in the window's ground on the accent.
         ("dot", "surface.base"),
+        // A warning's dot (#3649): its triangle, a mark, in the window's ground on the amber.
+        ("dot-warning", "surface.base"),
+        // A needs-you dot (#3652): its hand, a mark, in the window's ground on the failed red.
+        ("dot-needs", "surface.base"),
     ],
     corner_most: None,
     // A chip's notice dot is the chip's sibling in its slot (#3648), drawn around the chip.
-    around: &["dot"],
+    // Each kind's dot is a part of its own (#3649), so a theme colours one kind at a time.
+    around: &["dot", "dot-warning", "dot-needs"],
     // The count's pill, the amber wash (`titlebar.css`): its digits are read on it (#3041).
-    fills: &[("count", "wash.warning"), ("dot", "accent.base")],
+    fills: &[
+        ("count", "wash.warning"),
+        ("dot", "accent.base"),
+        ("dot-warning", "state.waiting"),
+        ("dot-needs", "state.failed"),
+    ],
     // A switcher's row and its pin paint no ground at rest: they stand on the popover's surface
     // the switcher is drawn on, which their words are read on (#3099).
     under: &[("row", "surface.overlay"), ("pin", "surface.overlay")],
@@ -583,11 +618,14 @@ pub(super) const TITLEBAR: Family = Family {
 /// at rest; the card's fill and the primary words under the pointer; the accent's wash and the
 /// primary words while current, and the stronger wash while current under the pointer, so the
 /// chosen chip never looks hovered (#3345). The unpinned chip's words are muted, its edge the
-/// window's subtle line, dashed, and it is lit only under the pointer.
+/// window's subtle line, dashed, and it is lit only under the pointer. A dormant chip (#3651) is
+/// drawn as the unpinned one is, its line dotted and its words slanted.
 fn titlebar_look(variant: &str, states: &[State]) -> Look {
     let hovered = states.contains(&State::Hover);
     // The unpinned chip is always current, and draws no fill for it: only the pointer lights it.
-    let chosen = variant != "unpinned" && states.contains(&State::Selected);
+    // A dormant one is never current (#3651).
+    let edged = variant == "unpinned" || variant == "dormant";
+    let chosen = !edged && states.contains(&State::Selected);
     let lit = hovered || chosen;
     Look {
         fill: match (chosen, hovered) {
@@ -598,12 +636,12 @@ fn titlebar_look(variant: &str, states: &[State]) -> Look {
         },
         text: if lit {
             "text.primary"
-        } else if variant == "unpinned" {
+        } else if edged {
             "text.muted"
         } else {
             "text.quiet"
         },
-        border: if variant == "unpinned" {
+        border: if edged {
             "border.subtle"
         } else {
             TRANSPARENT

@@ -542,7 +542,13 @@ export function HungPopover({
   useLayoutEffect(() => {
     hide.current = onHide;
   });
-  const [nudge, setNudge] = useState(0);
+  // **How many times it has been placed again since it last came to rest** (#3896): each asks
+  // React Aria to place it again by a nudge that differs from the last one drawn, so two in one
+  // frame (a scroll's and its end's) never undo each other, as a nudge toggled twice would.
+  // Back to none at rest, where it is drawn with no nudge.
+  const [nudged, setNudged] = useState(0);
+  const nudge = nudged === 0 ? 0 : nudged % 2 === 1 ? 0.01 : 0.02;
+  const again = () => setNudged((was) => was + 1);
   useEffect(() => {
     if (!isOpen) return;
     let asked = 0;
@@ -561,26 +567,44 @@ export function HungPopover({
     // still on its way in: a smooth scroll bringing a new chip into view (R104) finds it out of
     // sight on its first frames.
     let seen = inSight();
-    // Out of sight as it comes: brought in, as R104 brings a chip in, and followed as it comes.
-    const trigger = triggerRef.current;
-    if (!seen && trigger instanceof HTMLElement && typeof trigger.scrollIntoView === "function")
-      trigger.scrollIntoView({
-        inline: "nearest",
-        block: "nearest",
-        behavior: moves() ? "smooth" : "auto",
-      });
-    /** Placed again where what it hangs from is now, or hidden once that has left sight. */
+    /** Where what it hangs from stands now, to tell a frame it moved in from one it did not. */
+    const where = () => {
+      const at = triggerRef.current?.getBoundingClientRect();
+      return at === undefined ? "" : `${at.left},${at.top}`;
+    };
+    /**
+     * Placed again where what it hangs from is now, or hidden once that has left sight; **and
+     * again on each frame after, while it is still moving** (#3896). A smooth scroll is not
+     * always told to the end by its scroll events (WebKit's last steps can land with none), so a
+     * card placed only on them was left where the scroll's last event found its chip, short of
+     * where the chip came to rest. It settles on the first frame that finds it where it was, and
+     * the scroll's end places it once more besides (`ended`), should a scroll pause a frame. At
+     * rest it is always placed with no nudge.
+     * **A trigger that never stops moving** (an endless animation of its box) would have it
+     * placed on every frame for as long as it is up: hang it from something that holds still.
+     */
     const follow = () => {
       cancelAnimationFrame(asked);
-      asked = requestAnimationFrame(() => {
+      let placedAt: string | undefined;
+      const place = () => {
         const now = inSight();
         if (seen && !now) {
           hide.current();
           return;
         }
         seen = seen || now;
-        setNudge((was) => (was === 0 ? 0.01 : 0));
-      });
+        const at = where();
+        // At rest: placed with no nudge, so a card at rest is drawn at the one place whatever
+        // number of frames brought it there (a hundredth of a pixel moves its words' pixels).
+        if (at === placedAt) {
+          setNudged(0);
+          return;
+        }
+        placedAt = at;
+        again();
+        asked = requestAnimationFrame(place);
+      };
+      asked = requestAnimationFrame(place);
     };
     /** Whether `event` is a scroll of something what it hangs from is in. */
     const around = (event: Event) => {
@@ -602,11 +626,28 @@ export function HungPopover({
       ending = requestAnimationFrame(() => {
         seen = seen || inSight();
         if (!seen) hide.current();
+        // A last placement where the scroll left it (#3896), in this frame of its own, and then
+        // at rest with no nudge: the following frame (`asked`) is not touched.
+        else {
+          again();
+          ending = requestAnimationFrame(() => setNudged(0));
+        }
       });
     };
     window.addEventListener("scroll", scrolled, true);
     window.addEventListener("scrollend", ended, true);
     window.addEventListener("resize", follow);
+    // Out of sight as it comes: brought in, as R104 brings a chip in, and followed as it comes,
+    // to where it comes to rest (`follow`).
+    const trigger = triggerRef.current;
+    if (!seen && trigger instanceof HTMLElement && typeof trigger.scrollIntoView === "function") {
+      trigger.scrollIntoView({
+        inline: "nearest",
+        block: "nearest",
+        behavior: moves() ? "smooth" : "auto",
+      });
+      follow();
+    }
     return () => {
       window.removeEventListener("scroll", scrolled, true);
       window.removeEventListener("scrollend", ended, true);

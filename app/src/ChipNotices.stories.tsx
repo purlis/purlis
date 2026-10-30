@@ -7,15 +7,18 @@
  * its chip with its point, over the window, pushing nothing; hidden by a press elsewhere, it
  * leaves a ● dot on the chip's corner opposite the amber waiting count, which brings it back; ×
  * and Esc dismiss it. At the window's edge the card shifts inward and its point stays on the
- * chip. Each held to axe, walked by the keyboard and compared with its baseline
+ * chip. Several notices stack in the one card, newest first, and the dot takes the most urgent
+ * kind, ▲ for a warning (#3649). Each held to axe, walked by the keyboard and compared with its baseline
  * (`docs/component-stories.md`). The card draws outside its frame, so the pictures are the page's.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useMemo, useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { OUTSIDE } from "./actions";
-import { workspaceMade } from "./actionResult";
-import type { ChipNotice, ChipNotices } from "./ChipNotices";
+import { reposCloning, reposNotCloned, workspaceMade } from "./actionResult";
+import type { Said } from "./actions";
+import { dormantCause, dormantSays, type ChipNotice, type ChipNotices } from "./ChipNotices";
+import { untilFocused } from "./stories.testkit";
 import { TitleBarSwitch, type SwitchProject } from "./TitleBarSwitch";
 
 /** What `purlis workspace create` says of a workspace made with no vision. */
@@ -24,35 +27,103 @@ const LINES = [
   '⬢ No vision yet — ask the developer what this workspace is for, then record it: purlis workspace vision "<the goal>"',
 ];
 
+/** A stale clone's warning, as #3650 brings them to a workspace's chip. */
+const OFF_MAIN = (workspace: string): Said => ({
+  from: "story",
+  refused: true,
+  title: "web is on spike/search, not main",
+  words: "New chats here start from spike/search.",
+  workspace,
+});
+
+/** **More than one notice on the chip** (#3649), newest first: `stacked`, the clone counting
+ *  over a warning over the ready notice; `failed`, a clone that did not land over the ready
+ *  notice. */
+type Stack = "ready" | "stacked" | "failed";
+
 function TheWindow({
   pins,
   hasNotice,
   width,
   startOpen = true,
+  dormant = false,
+  stack = "ready",
+  asking,
 }: {
+  /** A workspace chat 7 asks the person to remove (#3652): a ✋ on its chip. */
+  asking?: string;
   pins: string[];
   hasNotice: string;
+  /** `hasNotice` is a pin whose workspace is gone, kept dormant (#3651): its notice is the
+   *  standing "kept dormant" line, and the first pin is in front. */
+  dormant?: boolean;
   /** The title bar's width: the window's. */
   width: string;
   startOpen?: boolean;
+  stack?: Stack;
 }) {
   const [said, setSaid] = useState("Nothing pressed");
   const [open, setOpen] = useState<string | undefined>(startOpen ? hasNotice : undefined);
+  /** The standing line was dismissed: the per-project record's, not the kept list's. */
+  const [putAway, setPutAway] = useState(false);
   const [kept, setKept] = useState<readonly ChipNotice[]>(() => [
-    {
-      id: 1,
-      kind: "info",
-      said:
-        hasNotice === OUTSIDE
-          ? {
-              from: "story",
-              refused: false,
-              title: "The root's layout is up to date",
-              words: "Its layout was read again.",
-              workspace: OUTSIDE,
-            }
-          : workspaceMade(hasNotice, LINES, { onAddVision: () => setSaid("Asked for a vision") }),
-    },
+    ...(dormant
+      ? [
+          {
+            id: dormantCause(hasNotice),
+            kind: "info" as const,
+            standing: {
+              workspace: hasNotice,
+              cause: dormantCause(hasNotice),
+              says: dormantSays(hasNotice),
+              fixes: [
+                { label: "Forget", onPress: () => setSaid(`Forgot the pin to ${hasNotice}`) },
+              ],
+              dismiss: () => setPutAway(true),
+            },
+          },
+        ]
+      : [
+          ...(stack === "stacked"
+            ? [
+                {
+                  id: 3,
+                  kind: "info" as const,
+                  said: reposCloning(hasNotice, ["api", "web"], 1, 1),
+                },
+                { id: 2, kind: "warning" as const, said: OFF_MAIN(hasNotice) },
+              ]
+            : stack === "failed"
+              ? [
+                  {
+                    id: 2,
+                    kind: "warning" as const,
+                    said: reposNotCloned(
+                      hasNotice,
+                      [{ repo: "web", said: "web: clone failed — no access to acme/web." }],
+                      () => setSaid("Asked to clone web again"),
+                      1,
+                    ),
+                  },
+                ]
+              : []),
+          {
+            id: 1,
+            kind: "info" as const,
+            said:
+              hasNotice === OUTSIDE
+                ? {
+                    from: "story",
+                    refused: false,
+                    title: "The root's layout is up to date",
+                    words: "Its layout was read again.",
+                    workspace: OUTSIDE,
+                  }
+                : workspaceMade(hasNotice, LINES, {
+                    onAddVision: () => setSaid("Asked for a vision"),
+                  }),
+          },
+        ]),
   ]);
   const projects = useMemo<SwitchProject[]>(
     () => [
@@ -60,23 +131,34 @@ function TheWindow({
         plane: "/p/purlis-demo",
         name: "purlis-demo",
         waiting: 2,
-        workspaces: {
-          names: pins,
-          pins,
-          focused: hasNotice,
-          waiting: { [OUTSIDE]: 0, [hasNotice]: 2 },
-        },
+        workspaces: dormant
+          ? {
+              names: pins,
+              pins,
+              dormant: [hasNotice],
+              focused: pins[0],
+              waiting: { [OUTSIDE]: 0, [pins[0]]: 2 },
+            }
+          : {
+              names: pins,
+              pins,
+              focused: hasNotice,
+              waiting: { [OUTSIDE]: 0, [hasNotice]: 2 },
+            },
       },
     ],
-    [pins, hasNotice],
+    [pins, hasNotice, dormant],
   );
+  const standing = putAway ? kept.filter((one) => !("standing" in one)) : kept;
   const notices: ChipNotices = {
-    on: new Map(kept.length === 0 ? [] : [[hasNotice, kept]]),
-    open: kept.length === 0 ? undefined : open,
+    on: new Map(standing.length === 0 ? [] : [[hasNotice, standing]]),
+    open: standing.length === 0 ? undefined : open,
     show: setOpen,
     hide: () => setOpen(undefined),
     dismiss: (id) => setKept((was) => was.filter((one) => one.id !== id)),
     onSettings: () => undefined,
+    needs: new Map(asking === undefined ? [] : [[asking, 7]]),
+    bring: (session) => setSaid(`Brought chat ${session} forward`),
   };
   return (
     <div style={{ display: "grid", gap: "var(--space-6)", inlineSize: width }}>
@@ -140,6 +222,11 @@ const chipOf = (name: string) =>
 const centre = (box: DOMRect) => box.left + box.width / 2;
 // Centred within a pixel and a half: layout rounds a subpixel box to the device's pixels.
 const cardOf = () => screen.queryByRole("region", { name: "Notices for 3rd-try" });
+/** How long a smooth scroll the length of a strip too long to show takes to bring its last chip
+ *  in, with the card following, at the most: WebKit's scroll over that distance runs past the
+ *  testkit's `SETTLES_WITHIN_MS` (3 s) on a loaded runner (#3896). The wait ends as soon as the
+ *  card is centred. */
+const SCROLLS_IN_WITHIN_MS = 5_000;
 const surfaceOf = (card: HTMLElement) =>
   card.closest<HTMLElement>('[data-scope="popover"][data-part="root"]') as HTMLElement;
 
@@ -177,13 +264,19 @@ export const HangsFromItsChip: Story = {
     await expect(dot.querySelector("svg")).not.toBeNull();
     await userEvent.click(dot);
     const again = await waitFor(() => cardOf() as HTMLElement);
-    // The keyboard reaches it as F6 lands it there, on the card: Tab walks its ways.
-    again.focus();
+    // Asked for, so the keyboard goes into it, on the card, as F6 lands it there (#3896: the
+    // card takes it over a few frames, once placed; read once it has): Tab walks its ways.
+    await untilFocused(() => again, "the card, brought back by its dot");
     await userEvent.tab();
     await expect(again.contains(document.activeElement)).toBe(true);
     await expect(document.activeElement).not.toBe(again);
     // Details opens in place. The picture is the card, its Details open.
-    await userEvent.click(within(again).getByRole("button", { name: "Details" }));
+    const details = within(again).getByRole("button", { name: "Details" });
+    await userEvent.click(details);
+    // WebKit's click focuses no button, so the keyboard is put on Details as Chromium's click
+    // leaves it: one picture in both browsers.
+    details.focus();
+    await untilFocused(() => details, "Details, on the card");
     await expect(again).toHaveTextContent("ready (LOCAL)");
   },
 };
@@ -297,13 +390,18 @@ export const ComesUpOnAChipOutOfSight: Story = {
     const card = await waitFor(
       () => screen.queryByRole("region", { name: "Notices for design-tokens" }) as HTMLElement,
     );
-    await waitFor(() => {
-      const chip = chipOf("design-tokens").getBoundingClientRect();
-      const seen = strip.getBoundingClientRect();
-      expect(chip.right).toBeLessThanOrEqual(seen.right + 1);
-      const surface = surfaceOf(card).getBoundingClientRect();
-      expect(Math.abs(centre(surface) - centre(chip))).toBeLessThanOrEqual(1.5);
-    });
+    // Until the scroll has brought the chip all the way in and the card has followed it there:
+    // a smooth scroll the length of the strip, which WebKit takes longer over (#3896).
+    await waitFor(
+      () => {
+        const chip = chipOf("design-tokens").getBoundingClientRect();
+        const seen = strip.getBoundingClientRect();
+        expect(chip.right).toBeLessThanOrEqual(seen.right + 1);
+        const surface = surfaceOf(card).getBoundingClientRect();
+        expect(Math.abs(centre(surface) - centre(chip))).toBeLessThanOrEqual(1.5);
+      },
+      { timeout: SCROLLS_IN_WITHIN_MS },
+    );
     // Up all the way in: the same card, never taken down by its own scroll.
     await expect(card.isConnected).toBe(true);
     // The picture once everything has come to rest: the strip still over two frames, with the
@@ -318,5 +416,197 @@ export const ComesUpOnAChipOutOfSight: Story = {
       expect(still).toBe(true);
     });
     await waitFor(() => expect(surfaceOf(card).hasAttribute("data-entering")).toBe(false));
+  },
+};
+
+/**
+ * **A dormant pin's notice, on its dormant chip** (#3651): the pin whose workspace is gone is
+ * drawn after the live pins, its words muted and slanted and its edge dotted, so its shape says
+ * it. "Kept dormant" hangs from it with Forget; the chip says what it is to a screen reader.
+ */
+export const OnADormantChip: Story = {
+  args: {
+    pins: ["skills-studio", "another-workspace", "3rd-try"],
+    hasNotice: "second-try",
+    dormant: true,
+  },
+  play: async ({ canvas, userEvent }) => {
+    const chip = chipOf("second-try");
+    await expect(chip).toHaveAttribute("data-variant", "dormant");
+    await expect(chip).toHaveAccessibleDescription("gone, kept dormant, 1 notice");
+    // After the live pins, not among them.
+    const live = chipOf("3rd-try").getBoundingClientRect();
+    await expect(chip.getBoundingClientRect().left).toBeGreaterThan(live.right);
+    const card = await waitFor(
+      () => screen.queryByRole("region", { name: "Notices for second-try" }) as HTMLElement,
+    );
+    await expect(card).toHaveTextContent("second-try is gone, kept dormant");
+    const surface = surfaceOf(card).getBoundingClientRect();
+    await expect(
+      Math.abs(centre(surface) - centre(chip.getBoundingClientRect())),
+    ).toBeLessThanOrEqual(1.5);
+    // Its Forget, reached by the keyboard as F6 lands it in the card.
+    card.focus();
+    const forget = within(card).getByRole("button", { name: "Forget" });
+    forget.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect(canvas.getByRole("status")).toHaveTextContent("Forgot the pin to second-try");
+    // The picture once the card has arrived, never mid-entrance.
+    await waitFor(() => expect(surfaceOf(card).hasAttribute("data-entering")).toBe(false));
+  },
+};
+
+/** **A dormant chip whose card is hidden**: the dot on its corner, and a press on the chip
+ *  itself brings the card back, since the chip opens nothing else. */
+export const ADormantChipShowsItsNotice: Story = {
+  args: {
+    pins: ["skills-studio", "another-workspace", "3rd-try"],
+    hasNotice: "second-try",
+    dormant: true,
+    startOpen: false,
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(
+      canvas.getByRole("button", { name: "Show the notice on second-try" }),
+    ).toBeInTheDocument();
+    await expect(screen.queryByRole("region", { name: "Notices for second-try" })).toBeNull();
+    // Pressed from the keyboard, as the strip's arrows reach it: no pointer is left over the
+    // chip to light it, so the picture is the same on every run.
+    chipOf("second-try").focus();
+    await userEvent.keyboard("{Enter}");
+    const card = await waitFor(
+      () => screen.queryByRole("region", { name: "Notices for second-try" }) as HTMLElement,
+    );
+    // Asked for, so the keyboard goes into it.
+    await untilFocused(() => card, "the dormant chip's card, brought by its press");
+    // The picture once the card has arrived, never mid-entrance.
+    await waitFor(() => expect(surfaceOf(card).hasAttribute("data-entering")).toBe(false));
+  },
+};
+
+/**
+ * **A notice about the current, unpinned workspace** (#3651): it hangs from the dashed
+ * `name +` chip, centred under it with its point, as from a pin.
+ */
+export const OnTheDashedChip: Story = {
+  args: { pins: ["skills-studio", "another-workspace"], hasNotice: "3rd-try" },
+  play: async () => {
+    const chip = chipOf("3rd-try");
+    await expect(chip).toHaveAttribute("data-variant", "unpinned");
+    const card = await waitFor(() => cardOf() as HTMLElement);
+    await expect(card).toHaveTextContent("Workspace 3rd-try is ready");
+    const surface = surfaceOf(card).getBoundingClientRect();
+    await expect(
+      Math.abs(centre(surface) - centre(chip.getBoundingClientRect())),
+    ).toBeLessThanOrEqual(1.5);
+    // The picture once the card has arrived, never mid-entrance.
+    await waitFor(() => expect(surfaceOf(card).hasAttribute("data-entering")).toBe(false));
+  },
+};
+
+/** **The ▲ dot**, while a card holding a warning is hidden: the most urgent of its three
+ *  notices, though the newest is news, beside the amber waiting count. */
+export const WarningDotBesideTheCount: Story = {
+  args: { startOpen: false, stack: "stacked" },
+  play: async ({ canvas }) => {
+    const dot = canvas.getByRole("button", {
+      name: "Show the 3 notices on 3rd-try, most urgent: warning",
+    });
+    await expect(dot).toHaveAttribute("data-kind", "warning");
+    await expect(dot.querySelector("svg.lucide-triangle")).not.toBeNull();
+    const chip = chipOf("3rd-try");
+    const count = chip.querySelector('[data-part="count"]') as HTMLElement;
+    const [d, c, k] = [dot, chip, count].map((one) => one.getBoundingClientRect());
+    await expect(centre(d)).toBeLessThan(c.left + 8);
+    await expect(d.top).toBeLessThan(c.top + 4);
+    await expect(d.right).toBeLessThan(k.left);
+    await expect(chip).toHaveAccessibleDescription("2 waiting, 3 notices, most urgent: warning");
+  },
+};
+
+/** **Stacked, newest first** (#3649): one card for the chip, a line that says how many, the
+ *  clone counting at the top. */
+export const StackedNewestFirst: Story = {
+  args: { stack: "stacked" },
+  play: async () => {
+    const card = await waitFor(() => cardOf() as HTMLElement);
+    await expect(card).toHaveTextContent("3 notices, newest first");
+    const words = card.textContent ?? "";
+    const order = [
+      "Cloning 2 repos…",
+      "web is on spike/search, not main",
+      "Workspace 3rd-try is ready",
+    ];
+    await expect(order.map((one) => words.indexOf(one))).toEqual(
+      [...order.map((one) => words.indexOf(one))].sort((a, b) => a - b),
+    );
+    await expect(card).toHaveTextContent("1 of 2 done.");
+    await expect(screen.getAllByRole("region", { name: /^Notices for / })).toHaveLength(1);
+  },
+};
+
+/** **A clone that did not land** (#3649): its notice offers Retry and the way to the
+ *  workspace's repo settings, and Retry asks for the clone again. */
+export const CloneCouldNotLand: Story = {
+  args: { stack: "failed" },
+  play: async ({ canvas, userEvent }) => {
+    const card = await waitFor(() => cardOf() as HTMLElement);
+    await expect(card).toHaveTextContent("Could not clone web into 3rd-try");
+    await expect(card).toHaveTextContent("2 notices, newest first");
+    const retry = within(card).getByRole("button", { name: "Retry" });
+    await expect(
+      within(card).getByRole("button", { name: "Open 3rd-try's repo settings" }),
+    ).toBeInTheDocument();
+    await userEvent.click(retry);
+    await expect(canvas.getByText("Asked to clone web again")).toBeInTheDocument();
+  },
+};
+
+/** **The needs-you dot** (#3652): a chat asks to remove 3rd-try, so its chip shows a ✋, the
+ *  most urgent kind, beside the amber count. Its press brings the asking chat forward, where the
+ *  consent is answered on its band, and brings up the workspace's own card beside it without the
+ *  keyboard; the ✋ stays, since the question is not answered yet. */
+export const NeedsYouBesideTheCount: Story = {
+  args: { startOpen: false, asking: "3rd-try" },
+  play: async ({ canvas, userEvent }) => {
+    const hand = canvas.getByRole("button", {
+      name: "Show the chat asking to remove 3rd-try, and its notice",
+    });
+    await expect(hand).toHaveAttribute("data-kind", "needs");
+    await expect(hand).toHaveAttribute("data-part", "dot-needs");
+    await expect(hand.querySelector("svg.lucide-hand")).not.toBeNull();
+    const chip = chipOf("3rd-try");
+    await expect(chip).toHaveAccessibleDescription(
+      "2 waiting, 1 notice, most urgent: a chat asks you to remove it",
+    );
+    // The arrows of the strip reach it, as they reach every dot: from the chip, back one.
+    chip.focus();
+    await untilFocused(() => chip, "the chip of 3rd-try");
+    await userEvent.keyboard("{ArrowLeft}");
+    await untilFocused(() => hand, "the ✋ on 3rd-try");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(canvas.getByText("Brought chat 7 forward")).toBeInTheDocument());
+    const card = await waitFor(() => cardOf() as HTMLElement);
+    // The card comes up beside the chat, never taking the keyboard from it.
+    await expect(card.contains(document.activeElement)).toBe(false);
+    // The ✋ stays while its own chip's card is up: the question is not on the card.
+    await expect(
+      canvas.getByRole("button", { name: /^Show the chat asking to remove 3rd-try/ }),
+    ).toBeInTheDocument();
+  },
+};
+
+/** **The ✋ at rest** (#3652): the hand on its own fill, ringed in the bar's ground, beside the
+ *  amber count, nothing pressed: the picture of the dot as it is first seen. */
+export const NeedsYouAtRest: Story = {
+  args: { startOpen: false, asking: "3rd-try" },
+  play: async ({ canvas }) => {
+    const hand = canvas.getByRole("button", { name: /^Show the chat asking to remove 3rd-try/ });
+    const chip = chipOf("3rd-try");
+    const count = chip.querySelector('[data-part="count"]') as HTMLElement;
+    const [d, c, k] = [hand, chip, count].map((one) => one.getBoundingClientRect());
+    await expect(centre(d)).toBeLessThan(c.left + 8);
+    await expect(d.right).toBeLessThan(k.left);
+    await expect(cardOf()).toBeNull();
   },
 };

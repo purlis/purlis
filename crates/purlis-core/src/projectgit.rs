@@ -88,7 +88,10 @@ pub fn said(sub: &str) -> String {
          otherwise when the operator presses Save in the title bar or saves from the Saving \
          view. Leave the project's commits, pushes and fetches to it, and tell the operator \
          when something is ready to save. Read-only git (`git status`, `git log`, `git diff`) \
-         works here."
+         works here. A workspace's clone or branch folder is another repository: run `purlis \
+         worktree update` in it, and the app brings it up to its remote for this chat. The \
+         project itself is brought up to date by the operator's Update in the window, or by \
+         `purlis worktree update` from a chat at the project root."
     )
 }
 
@@ -140,7 +143,7 @@ pub fn refusal(cmd: &str, cwd: &str, root: &str, chat_dir: &Path) -> Option<(Str
 }
 
 /// Whether a word names a place only the shell knows: an expansion this arm cannot follow.
-fn unplaceable(word: &str) -> bool {
+pub(crate) fn unplaceable(word: &str) -> bool {
     word.contains(['$', '`', '~'])
 }
 
@@ -152,7 +155,7 @@ fn unplaceable(word: &str) -> bool {
 /// in. A work tree (`--work-tree`, `GIT_WORK_TREE`) moves no lock: the index and the refs are
 /// the git directory's. `None` where a word naming the place is a shell expansion, or the
 /// place does not resolve.
-fn repository(cwd: &Path, pre: &[String], env: &[String]) -> Option<PathBuf> {
+pub(crate) fn repository(cwd: &Path, pre: &[String], env: &[String]) -> Option<PathBuf> {
     let mut git_dir: Option<String> = env
         .iter()
         .rev()
@@ -260,6 +263,8 @@ mod tests {
             assert!(why.contains("Save in the title bar"), "{why}");
             assert!(why.contains("Saving view"), "{why}");
             assert!(why.contains(&format!("`git {sub}`")), "{why}");
+            // #3831: a clone or branch folder the app updates for the chat.
+            assert!(why.contains("`purlis worktree update`"), "{why}");
         }
         let named = format!("git -C {} fetch", p.root());
         assert!(

@@ -382,6 +382,18 @@ rule while one who reads a bare refusal files an issue.
   through a filter and no
   program a repository's configuration names is started. A path that reads as prose is
   counted in a refusal and never repeated.
+- **`git add` or `git commit` in a branch folder purlis made** (#3830). A branch folder keeps
+  its index in its clone's `.git/worktrees/<name>`, which every sandboxed chat's sandbox
+  denies writing, so these stopped on "Operation not permitted" and raised a sandbox Notice
+  for you, though the chat could fix it itself. Asked only of a chat the app sandboxed, and
+  only in a folder git's own record places at `workspaces/<ws>/.worktrees/<repo>/<piece>`;
+  refused before it runs with the command that commits there, `purlis worktree commit -m
+  "<message>" <path>…` (or `--all` in place of the paths), which the app runs outside the
+  sandbox on the folder's branch. A worktree you made yourself with `git worktree add` is
+  left to the sandbox. A `cd` to a folder named on the line is followed where every command
+  on it runs in one shell in turn (`&&`, `;`); a `cd` in a subshell or a pipeline, or a move
+  the guard cannot place (`cd $X`, `cd -`, `popd`), leaves the line to the sandbox. Read-only
+  git and the dry runs (`add -n`, `add --dry-run`, `commit --dry-run`) run.
 - **One credential.** SSH to a forge, `GIT_SSH_COMMAND`, `-S`/`--gpg-sign`, and the
   `core.sshCommand` family that reaches the same transport by another road (`-c`,
   `--config-env`, `GIT_CONFIG_KEY_n`, and a `git config` write of it). This one *is*
@@ -498,8 +510,8 @@ rule while one who reads a bare refusal files an issue.
   reaches a public repository by an indirect route:
 
   ```bash
-  purlis persona remember "the marker is appended to `pending` each pass"   # DENIED
-  purlis persona remember "the marker is appended to \`pending\` each pass"  # allowed
+  purlis persona remember devops "the marker is appended to `pending` each pass"   # DENIED
+  purlis persona remember devops "the marker is appended to \`pending\` each pass"  # allowed
   ```
 
   That is not a constructed example. It happened while a guard review's findings were being
@@ -745,7 +757,7 @@ it, is not winnable in a tokeniser, so the honest move is to say what is open:
   one: a `gh`/`glab` command that publishes prose, and a purlis command that persists it,
   are refused whenever a live substitution stands on the line — so
   `gh issue create --body "$(cat <vault>)"` and
-  `purlis persona remember "$(cat <vault>)"` both stop. See *Forge body substitution* and
+  `purlis persona remember <persona> "$(cat <vault>)"` both stop. See *Forge body substitution* and
   *purlis's own text substitution* above. Neither guard looks inside the substitution or
   knows anything about vaults; they refuse the shape. Everywhere else on this page, a quoted
   substitution is still open;
@@ -895,6 +907,15 @@ Some guards name a narrower move first, and it is usually the one you want:
   what the sub-agent found to its chat, which can hand it off. Your own terminal is the
   override here too, and it does something different: outside the app, the command opens
   nothing and says to open purlis ([handoff.md](handoff.md)).
+
+**A refusal the chat can fix itself does not send it to you** (#3830, the operator's ruling of
+2026-10-29). Where the refusal already names the exact shape to retry — a dispatch, handoff or
+commit beside another command ("in a call of its own"), a live substitution in a forge's or
+purlis's own text, a commit that skips the hooks, a handoff's brief, and `git add` or `git
+commit` in a branch folder — it ends with that shape, and not with the note above that says
+to run it yourself in your own terminal, so a chat in a loop corrects its own call instead of
+stopping on you. Every other refusal keeps the note. Your terminal is still the override for
+all of them.
 
 **If a guard is wrong about you *every time*, that is not an override problem.** It means
 purlis is holding a policy your organisation does not — an org that mandates signed

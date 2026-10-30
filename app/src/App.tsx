@@ -43,10 +43,23 @@ import { Notice, NoticeList } from "./Notice";
 import { ForgeSignInEnded } from "./ForgeSignInEnded";
 import { AddDockerPoolHost } from "./AddDockerPool";
 import { ActionResultNotice, ResultsGroup } from "./ActionResultNotice";
-import { AT_STATUS, useChipNotices, type ChipNotices } from "./ChipNotices";
+import {
+  dormantCause,
+  dormantSays,
+  placeOfSaid,
+  useChipNotices,
+  type StandingNotice,
+} from "./ChipNotices";
 import { chipsOf } from "./noticePlace";
 import { dismissGone, GoneProjectNotice, settleGone, useGoneDismissed } from "./GoneProjectNotice";
-import { goneCause, goneKept, keepGoneDismissed, letGoneGo, settleGoneKept } from "./dismissals";
+import {
+  goneCause,
+  goneKept,
+  keepGoneDismissed,
+  letGoneGo,
+  settleGoneKept,
+  useDismissals,
+} from "./dismissals";
 import { askUpdate, tellSaved, useRepoSaving } from "./saving";
 import { OPEN_LICENCES } from "./LicencesView";
 import {
@@ -108,6 +121,7 @@ import { slideTowards } from "./workspaceSlide";
 import { pinsChanged } from "./workspacePins";
 import type { Needing, Quiet } from "./NeedsYou";
 import { useAsks } from "./asks";
+import { giveKeyboardTo } from "./paneKeyboard";
 import { landsOn, useNotificationLanding, type Landing } from "./askNotices";
 import { aQuestionIsUp, useCloseHanded } from "./closeHanded";
 import { useAwayRefusals } from "./dispatchAway";
@@ -1281,37 +1295,72 @@ function App() {
     () =>
       workspacesInFront === undefined
         ? []
-        : chipsOf({ pins: workspacesInFront.pins, focused: workspacesInFront.focused }),
+        : chipsOf({
+            pins: workspacesInFront.pins,
+            dormant: workspacesInFront.dormant,
+            focused: workspacesInFront.focused,
+          }),
     [workspacesInFront],
   );
+  /** **"X is gone, kept dormant", on its dormant chip** (#3651): the same line the Notices
+   *  centre lists, with its Forget, and dismissed in the one per-project record both read. */
+  const {
+    dismissed: dismissedInFront,
+    dismiss: dismissInFront,
+    showAgain: showAgainInFront,
+  } = useDismissals(inFront ?? "");
+  const dormantInFront = workspacesInFront?.dormant;
+  const forgetInFront = workspacesInFront?.forget;
+  const standingInFront = useMemo<StandingNotice[]>(
+    () =>
+      (dormantInFront ?? [])
+        .filter((name) => !dismissedInFront.has(dormantCause(name)))
+        .map((name) => ({
+          workspace: name,
+          cause: dormantCause(name),
+          says: dormantSays(name),
+          fixes: [{ label: "Forget", onPress: () => forgetInFront?.(name) }],
+          dismiss: () => dismissInFront(dormantCause(name)),
+        })),
+    [dormantInFront, dismissedInFront, dismissInFront, forgetInFront],
+  );
+  /** **Every ask the registry derives, in every project** (#1690): what the hand's number
+   *  counts, and where it opens the Inbox. */
+  const registry = useAsks(planes);
+  /** **Brings chat `session` of the project in front forward** (#3652): a ✋ dot's press, whose
+   *  chat answers its question on its own band. The same `showChat` a Go of the Inbox runs. */
+  const bringChat = useCallback((session: number) => {
+    const plane = inFrontNow.current;
+    if (plane === undefined) return;
+    setShowing({ at: "plane", plane });
+    void reportsNow.current[plane]?.run({
+      id: `needs.show:${session}`,
+      title: "Show the chat that asks",
+      available: true,
+      reason: "",
+      does: { verb: "showChat", session },
+    });
+    // The asking chat types next even where it was in front already: `showChat` hands the
+    // keyboard over only when its pane changes, and the press was on the ✋ (#3652's review).
+    giveKeyboardTo(plane, session);
+  }, []);
   /** The notices hung from those chips: a view onto the kept results, so a dismissal in either
-   *  place is one (#3648). */
+   *  place is one (#3648); and the ✋ of a chat asking to remove a chip's workspace (#3652). */
   const chipNotices = useChipNotices({
+    asks: inFront === undefined ? undefined : registry.held[inFront],
+    bring: bringChat,
     said,
     kept: keptResults,
     plane: inFront,
     chips: chipsInFront,
     drop: dropResult,
     onSettings: followSaid,
+    standing: standingInFront,
+    // A dormant chip's press asks for its line again, dismissed or not (#3651).
+    bringBack: (workspace) => {
+      if (dormantInFront?.includes(workspace) === true) showAgainInFront(dormantCause(workspace));
+    },
   });
-  /** **The status bar's card** (#3653): the same notices, its card down while the palette is up,
-   *  which is modal and says the newest result on its own line. */
-  const statusList = chipNotices.on.get(AT_STATUS);
-  const statusUp = !paletteOpen && chipNotices.open === AT_STATUS;
-  const { show: showNotices, hide: hideNotices, dismiss: dismissNotice } = chipNotices;
-  // Its own list alone, which keeps while the chips change, so the project's view handed it is
-  // drawn again only when what the status bar shows does.
-  const statusNotices = useMemo<ChipNotices>(
-    () => ({
-      on: new Map(statusList === undefined ? [] : [[AT_STATUS, statusList]]),
-      open: statusUp ? AT_STATUS : undefined,
-      show: showNotices,
-      hide: hideNotices,
-      dismiss: dismissNotice,
-      onSettings: followSaid,
-    }),
-    [statusList, statusUp, showNotices, hideNotices, dismissNotice, followSaid],
-  );
   const windowLines = useMemo(
     () => ({
       at: setInboxLinesAt,
@@ -1814,9 +1863,6 @@ function App() {
     [planes, reports],
   );
 
-  /** **Every ask the registry derives, in every project** (#1690): what the hand's number
-   *  counts, and where it opens the Inbox. */
-  const registry = useAsks(planes);
   /**
    * **The ✋ opens the Inbox** (#1692, I-2): the project in front's, where something waits there,
    * and otherwise the first project along the strip with something waiting, brought to the
@@ -2249,25 +2295,46 @@ function App() {
           />
         )}
         <div className="window-work">
-          {/* **No result is in the page's flow while a project is in front** (#3648, #3653): one
-          about a workspace hangs from its chip, and a project's or the app's pops from the status
-          bar's Notices item; each is listed in the Notices centre too. With no project in front
-          the window has no status bar and no Notices centre, so its result stands here, at the
-          top of the opener's page, as the window's own lines do (D-LB-1). */}
-          {said && said !== closedSaid && !paletteOpen && inFront === undefined && (
-            <ActionResultNotice
-              cause={`result:${said.from}`}
-              said={said}
-              onClose={() => setClosedSaid(said)}
-              onSettings={followSaid}
-            />
-          )}
+          {/* What the last action answered, as a closable notice at the top of the content
+          (#3344). Said here only while the palette is down: it is modal and draws over this
+          notice, and shows the same words itself rather than leaving the operator to guess at a
+          sentence behind the overlay. One state, two places it can be drawn — never two states.
+          Closed, it stays closed until the next result; it is kept under Results in the Inbox's
+          Notices either way. */}
+          {/* A result about a workspace is never in the page's flow (#3648): it hangs from its
+          chip, or is listed in the Notices centre alone while it has none. A project's or the
+          app's result still stands here until the status bar's card takes it (#3653). */}
+          {said &&
+            said !== closedSaid &&
+            !paletteOpen &&
+            placeOfSaid(said, chipsInFront).at === "status" && (
+              <ActionResultNotice
+                cause={`result:${said.from}`}
+                said={said}
+                onClose={() => setClosedSaid(said)}
+                onSettings={followSaid}
+              />
+            )}
           {resultsAt !== null && inFront !== undefined && (
             <ResultsGroup
               kept={resultsInFront}
               into={resultsAt}
               onDrop={dropResult}
               onSettings={followSaid}
+              // **No chip, so listed here alone, with a way there** (#3651, D-3648-16): a
+              // result about a workspace the title bar draws no chip for offers "Open X",
+              // while the project has that workspace.
+              openOf={(one) => {
+                const place = placeOfSaid(one, chipsInFront);
+                if (place.at !== "centre") return undefined;
+                // Only to a workspace the project still has: one removed or renamed since has
+                // no way there, and a way that does nothing is no way (#3651's review).
+                if (workspacesInFront?.names.includes(place.open) !== true) return undefined;
+                return {
+                  label: `Open ${place.open}`,
+                  onPress: () => switchDoes.go(inFront, place.open),
+                };
+              }}
             />
           )}
 
@@ -2438,7 +2505,6 @@ function App() {
               onReport={onReport}
               onSessionRows={onSessionRows}
               alerts={alerts}
-              statusNotices={plane === inFront ? statusNotices : undefined}
               contributed={contributedPanels}
               views={extensionViews}
               commands={extensionCommands}

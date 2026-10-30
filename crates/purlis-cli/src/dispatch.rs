@@ -5,7 +5,7 @@
 //!
 //! ```text
 //! purlis dispatch --name "<task>" [--to <persona>] [--profile <profile>]
-//!                 [--in workspace:<name> | --in worktree] <<'BRIEF'
+//!                 [--in workspace:<name> | --in worktree] [--long] <<'BRIEF'
 //! <the brief>
 //! BRIEF
 //!
@@ -138,14 +138,15 @@ pub enum DispatchCommand {
     /// Cancel a task this chat dispatched: its turn is ended and it is asked for one short
     /// report of what it did, which arrives with the outcome `cancelled`. Only a task this
     /// chat dispatched can be cancelled by it, and not one the person typed in: that one is
-    /// theirs.
+    /// theirs. A task that reported while its program still runs can be cancelled too.
     Cancel {
         /// The task's chat, by its number in `purlis dispatch list`.
         chat: u32,
     },
     /// Send a follow-up to a task this chat dispatched that is still working, quoted as data
     /// from this chat. A task at rest is started on it at once; one mid-turn reads it when that
-    /// turn ends. Refused, with the task's state, once the task has finished.
+    /// turn ends. A task that reported while its program still runs is told too. Refused,
+    /// with the task's state, once its program has ended.
     Tell {
         /// The task's chat, by its number in `purlis dispatch list`.
         chat: u32,
@@ -185,6 +186,9 @@ pub struct Options<'a> {
     pub profile: Option<&'a str>,
     /// `--in`: `worktree`, or `workspace:<name>` (#1453).
     pub place: Option<&'a str>,
+    /// `--long`: a long-running task (#3905), whose notes are its heartbeat and which purlis
+    /// never asks for a report.
+    pub long: bool,
 }
 
 /// `purlis dispatch --name <task> [--to <persona>] [--profile <profile>] [--in <where>]
@@ -229,7 +233,7 @@ fn refusal(why: String) -> Markup {
     }
 }
 
-/// `--in` as the app will read it, or the refusal: one of its two words, said before a brief
+/// `--in` as the app will read it, or the refusal: one of its three words, said before a brief
 /// is read. Whether the workspace is there, and whether this chat works in a repo a worktree
 /// can be cut from, are the app's to say, from its own record of this chat.
 fn placed(place: Option<&str>) -> Result<Option<String>, String> {
@@ -342,13 +346,12 @@ pub fn send(
             .map(str::to_owned),
         place,
         ticket,
+        long: options.long,
     }));
     // A worktree is cut before the chat starts: a checkout, which on a large repo takes far
-    // longer than a start alone.
-    let cuts_a_worktree = matches!(
-        purlis_core::dispatchplace::asked(options.place),
-        Ok(Some(purlis_core::dispatchplace::Where::Worktree))
-    );
+    // longer than a start alone, and from a workspace's folder a question to the remote too.
+    let persona = to.map(str::to_owned).or_else(|| here.active_persona(None));
+    let cuts_a_worktree = may_cut_a_worktree(here.plane.root(), options.place, persona.as_deref());
     let within = if cuts_a_worktree {
         A_WORKTREE_TAKES_AT_MOST
     } else {
@@ -432,6 +435,19 @@ pub fn send(
             | Answer::Task(_),
         )
         | Err(_) => Err(no_answer(&ask_name(&ask), cuts_a_worktree)),
+    }
+}
+
+/// Whether the app may cut a worktree for this dispatch, and so is given the longer wait
+/// ([`A_WORKTREE_TAKES_AT_MOST`]): `--in worktree` or `--in worktree:<repo>`, or no `--in` to
+/// a persona whose definition says `dispatch-isolation: worktree` (#3903), whose cut asks the
+/// remote for its default branch where the asking chat stands in a workspace's own folder.
+fn may_cut_a_worktree(root: &std::path::Path, place: Option<&str>, persona: Option<&str>) -> bool {
+    use purlis_core::dispatchplace::{Where, asked, isolates};
+    match asked(place) {
+        Ok(Some(Where::Worktree(_))) => true,
+        Ok(None) => persona.is_some_and(|persona| isolates(root, persona)),
+        Ok(Some(Where::Workspace(_))) | Err(_) => false,
     }
 }
 
@@ -1167,6 +1183,42 @@ fn read_brief() -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    /// **A `--long`-first line reaches no subcommand** (#3905): `Bash(purlis dispatch --long *)`
+    /// is pre-allowed for Claude Code, and it allows the task and nothing else only because the
+    /// command's arguments and its subcommands exclude each other
+    /// (`args_conflicts_with_subcommands`). So a subcommand after `--long` is no command at all,
+    /// and `--long` is a task's flag, never a subcommand's.
+    #[test]
+    fn a_long_first_line_reaches_no_subcommand() {
+        use clap::Parser as _;
+        for words in [
+            vec!["purlis", "dispatch", "--long", "cancel", "9"],
+            vec!["purlis", "dispatch", "--long", "close", "9"],
+            vec![
+                "purlis",
+                "dispatch",
+                "--long",
+                "report",
+                "--outcome",
+                "done",
+                "x",
+            ],
+            vec!["purlis", "dispatch", "--long", "tell", "9", "x"],
+            vec!["purlis", "dispatch", "cancel", "9", "--long"],
+        ] {
+            assert!(crate::Cli::try_parse_from(&words).is_err(), "{words:?}");
+        }
+        for words in [
+            vec!["purlis", "dispatch", "--long", "--name", "x"],
+            vec!["purlis", "dispatch", "--name", "x", "--long"],
+            vec![
+                "purlis", "dispatch", "--long", "--to", "devops", "--name", "x",
+            ],
+        ] {
+            assert!(crate::Cli::try_parse_from(&words).is_ok(), "{words:?}");
+        }
+    }
+
     use super::*;
 
     #[test]
@@ -1236,6 +1288,38 @@ mod tests {
             );
         }
         assert!(A_WORKTREE_TAKES_AT_MOST > crate::handoff::AN_OPEN_TAKES_AT_MOST);
+    }
+
+    #[test]
+    fn a_persona_that_isolates_by_default_is_given_the_worktree_s_wait() {
+        // #3903: its default cut may ask the remote for its default branch, so it is waited
+        // on as `--in worktree` is.
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("personas/web")).expect("a persona folder");
+        std::fs::write(
+            root.join("personas/web/persona.md"),
+            "---\nname: web\ndescription: the site\ndispatch-isolation: worktree\n---\n# web\n",
+        )
+        .expect("its definition");
+        std::fs::create_dir_all(root.join("personas/ops")).expect("a persona folder");
+        std::fs::write(
+            root.join("personas/ops/persona.md"),
+            "---\nname: ops\ndescription: the servers\n---\n# ops\n",
+        )
+        .expect("its definition");
+
+        assert!(may_cut_a_worktree(root, None, Some("web")));
+        assert!(!may_cut_a_worktree(root, None, Some("ops")));
+        assert!(!may_cut_a_worktree(root, None, None));
+        assert!(may_cut_a_worktree(root, Some("worktree"), None));
+        assert!(may_cut_a_worktree(root, Some("worktree:api"), Some("ops")));
+        // A place that names another workspace is never a worktree, whatever the persona says.
+        assert!(!may_cut_a_worktree(
+            root,
+            Some("workspace:beta"),
+            Some("web")
+        ));
     }
 
     #[test]

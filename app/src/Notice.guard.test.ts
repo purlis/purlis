@@ -87,11 +87,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "something true now that has a way out of its own",
   },
   "AddDockerPool.tsx": {
-    count: 1,
+    count: 2,
     why:
       ACTION +
-      ". Add a Docker pool's refusal (#2679), in the core's words, under the form it refused; " +
-      "the form, kept as it was typed, and Add pool are the way on",
+      ". Add a Docker pool's refusal (#2679), and a cluster pool's (#3292), each in the core's " +
+      "words, under the form it refused; the form, kept as it was typed, and Add pool or Check " +
+      "its key are the way on",
   },
   "ui/notice/Notice.tsx": {
     count: 1,
@@ -447,12 +448,30 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "a copy the clipboard refused, said beside the read-only screen it was asked of (#3676)",
   },
   "SearchTab.tsx": { count: 1, why: "the search's progress, a live value" },
-  "SkillCopy.tsx": {
+  "SkillChangeDialogs.tsx": {
     count: 2,
     why:
+      "Rename, Move and Delete's checks and the core's refusals (#3685), beside the fields the " +
+      "person is still filling, in the dialog that stays open",
+  },
+  "SkillCopy.tsx": {
+    count: 3,
+    why:
       "Make my own copy's refusals (#3686), beside the fields the person is still filling: a " +
-      "built-in skill's name, said as it is typed, and the core's sentence for the copy just " +
-      "asked for. Make the copy is the retry",
+      "built-in skill's name and the built-in's description word for word (#3777), each said " +
+      "as it is typed, and the core's sentence for the copy just asked for. Make the copy is " +
+      "the retry",
+  },
+  "SkillSources.tsx": {
+    count: 3,
+    why: "the Sources pages' reads in place (#3687): the line said after a second while rows are held, a read that failed with Try again, and the updates still being read",
+  },
+  "SkillStudioDeleted.tsx": {
+    count: 1,
+    why:
+      "Bring back's refusal of a built-in skill's name for a deleted skill whose own a built-in " +
+      "took (#3729), said as it is typed beside the New name field, in the core's sentence. " +
+      "Bring back is the retry",
   },
   "SkillStudioTab.tsx": {
     count: 1,

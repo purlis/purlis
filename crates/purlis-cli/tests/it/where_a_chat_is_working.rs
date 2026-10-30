@@ -31,6 +31,7 @@ fn a_chat(chat: u32, name: &str, persona: &str, workspace: &str) -> Known {
         persona: Some(persona.to_owned()),
         workspace: Place::Workspace(workspace.to_owned()),
         state: State::Running,
+        own_work: false,
         started: Some(STARTED),
         lineage: None,
         from: None,
@@ -46,6 +47,8 @@ fn a_task_of(chat: u32, name: &str) -> Option<Asker> {
         reported: false,
         mode: awareness::Mode::Task,
         owes: true,
+        report: purlis_core::reopen::Owed::Due,
+        long: false,
     })
 }
 

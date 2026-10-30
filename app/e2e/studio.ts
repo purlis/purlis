@@ -64,3 +64,43 @@ export async function studioSkill(name: string) {
   await item.waitForExist({ timeout: 20_000, timeoutMsg: `${name} never opened beside the list` });
   return item;
 }
+
+/**
+ * **Chooses `said` from the "…" menu of skill `name`'s page** (#3682): Rename…, Move to another
+ * level…, Delete…, each the start of what it changes.
+ */
+export async function studioMore(name: string, said: string) {
+  const more = `button[aria-label="More for ${name}"]`;
+  const menu = `[role="menu"][aria-label="More for ${name}"]`;
+  await $(more).waitForExist({ timeout: 20_000 });
+  // Pressed again until its menu is up: a press that lands while the page redraws opens none.
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (button: string, opened: string) => {
+          if (document.querySelector(opened) !== null) return true;
+          const one = document.querySelector<HTMLElement>(button);
+          if (one !== null && one.getAttribute("aria-disabled") !== "true") one.click();
+          return false;
+        },
+        more,
+        menu,
+      ),
+    { timeout: 20_000, interval: 500, timeoutMsg: `${name}'s menu never opened` },
+  );
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (css: string, words: string) => {
+          const row = [...document.querySelectorAll<HTMLElement>(`${css} [role="menuitem"]`)].find(
+            (one) => (one.textContent ?? "").startsWith(words),
+          );
+          row?.click();
+          return row !== undefined;
+        },
+        menu,
+        said,
+      ),
+    { timeout: 20_000, interval: 250, timeoutMsg: `${name}'s menu has no ${said}` },
+  );
+}
