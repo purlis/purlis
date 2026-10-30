@@ -16,7 +16,7 @@ import { askProfileSignIn } from "./links";
 import { PoolSignIn } from "./PoolSignIn";
 
 /** The harnesses whose sign-in purlis drives in place, with no terminal (#4042). */
-const DRIVEN = new Set(["claude"]);
+export const DRIVEN = new Set(["claude"]);
 
 /** Whether the sign-in of `row` to the plan `plan` is driven in place: opencode's Copilot (#4045). */
 const drivenPlan = (row: PoolProfileRow, plan: string) =>

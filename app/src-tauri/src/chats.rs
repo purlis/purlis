@@ -1412,9 +1412,14 @@ impl Chats {
     }
 
     /// **Keeps `profile` on pool `pool`'s runner, signed in there** (#2049), as a start there
-    /// does first: what a chat moving there asks before its conversation goes (#2048). `Ok`
-    /// where this machine keeps no pool to ready it on.
-    pub fn ready_profile_on(&self, pool: &str, profile: &str) -> Result<(), String> {
+    /// does first: what a chat moving there asks before its conversation goes (#2048), and the
+    /// sign-in it waits on where it is signed out there (#3477). `Ok` where this machine keeps no
+    /// pool to ready it on.
+    pub fn ready_profile_on(
+        &self,
+        pool: &str,
+        profile: &str,
+    ) -> Result<(), purlis_core::profilestore::onrunner::NotYet> {
         match &self.profiles_on_pools {
             Some(on_pools) => on_pools.ready_to_move(&self.project, pool, profile),
             None => Ok(()),

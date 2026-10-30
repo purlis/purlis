@@ -127,7 +127,15 @@ export async function askMove(
     .moveChat(plane, session, to)
     .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
   if (said.status === "error")
-    heardMove(plane, { session, from, to, stage: "failed", why: said.error, with: [] });
+    heardMove(plane, {
+      session,
+      from,
+      to,
+      stage: "failed",
+      why: said.error,
+      with: [],
+      sign_in: null,
+    });
 }
 
 /**
@@ -147,9 +155,27 @@ export function putAwayMove(plane: PlaneId, session: number) {
     .catch(() => undefined);
 }
 
-/** Whether a move may still be cancelled: while it is prepared or ready, never while it is made. */
+/**
+ * **Chat `session`'s move waited on its profile's sign-in, which is done** (#3477): the core
+ * prepares it again, asking the runner itself, so it goes ahead by itself once signed in there.
+ * Where the core refused, its moves are read back, so the pane says what the core holds (another
+ * tab of the move may have told it first).
+ */
+export function signedInForMove(plane: PlaneId, session: number) {
+  void commands
+    .chatMoveSignedIn(plane, session)
+    .then(async (said) => {
+      if (said.status === "ok") return;
+      const read = await commands.chatMoves(plane);
+      if (read.status === "ok") for (const one of read.data) heardMove(plane, one);
+    })
+    .catch(() => undefined);
+}
+
+/** Whether a move may still be cancelled: while it is prepared, waits on a sign-in or is ready,
+ *  never while it is made. */
 export function moveCancellable(one: ChatMove): boolean {
-  return one.stage === "preparing" || one.stage === "ready";
+  return one.stage === "preparing" || one.stage === "signing-in" || one.stage === "ready";
 }
 
 /**
@@ -188,6 +214,15 @@ export function moveSaid(one: ChatMove): { words: string; trouble: boolean } {
           others.length === 0
             ? `Moving to ${where}. It keeps working here while ${meanwhile}, and moves at its next pause.`
             : `Moving to ${where} with ${listed(others)}, which share its workspace's clones. Each keeps working here while ${meanwhile}, and they move together once each is at a pause.`,
+        trouble: false,
+      };
+    case "signing-in":
+      return {
+        words: `Moves to ${where} once ${one.sign_in?.profile ?? "its profile"} is signed in there. ${
+          others.length === 0
+            ? "It keeps working here meanwhile."
+            : `It and ${listed(others)} keep working here meanwhile.`
+        }`,
         trouble: false,
       };
     case "ready":

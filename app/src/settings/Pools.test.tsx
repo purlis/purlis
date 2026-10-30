@@ -289,10 +289,16 @@ describe("You › This machine › Pools", () => {
       ]),
     );
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add a pool" })).toBeNull());
-    // Adding it ends with this machine's profiles, each to sign in on its runner (#2049).
+    // Adding it ends with choosing the profiles that sign in on its runner (#2049, #4048).
     const signIn = await screen.findByRole("dialog", {
       name: "Sign your profiles in on pool builds",
     });
+    const choose = await within(signIn).findByRole("group", {
+      name: "Profiles that sign in on pool builds",
+    });
+    expect(within(choose).getByRole("checkbox", { name: "work" })).toBeChecked();
+    expect(within(choose).getByRole("checkbox", { name: "home" })).not.toBeChecked();
+    await userEvent.click(within(signIn).getByRole("button", { name: "Not now" }));
     const list = await within(signIn).findByRole("list", { name: "Profiles on pool builds" });
     expect(within(list).getByText(/Not signed in on pool builds/)).toBeInTheDocument();
     expect(within(list).getByText("Signed in on pool builds.")).toBeInTheDocument();
@@ -366,6 +372,8 @@ describe("You › This machine › Pools", () => {
     const signIn = await screen.findByRole("dialog", {
       name: "Sign your profiles in on pool builds",
     });
+    await within(signIn).findByRole("group", { name: "Profiles that sign in on pool builds" });
+    await userEvent.click(within(signIn).getByRole("button", { name: "Not now" }));
     const list = await within(signIn).findByRole("list", { name: "Profiles on pool builds" });
     expect(within(list).getByText("Fetching Claude Code for this runner…")).toBeInTheDocument();
     expect(

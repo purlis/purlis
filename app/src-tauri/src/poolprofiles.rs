@@ -44,9 +44,15 @@ pub trait ProfilesOnPools: Send + Sync {
     /// runner, or why not, in words.
     fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String>;
 
-    /// [`Self::ready`], for a chat that moves to pool `pool`'s runner (#2048): said of the move.
-    fn ready_to_move(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
-        self.ready(root, pool, profile)
+    /// [`Self::ready`], for a chat that moves to pool `pool`'s runner (#2048): said of the move,
+    /// and a profile signed out there is the sign-in the move waits on (#3477).
+    fn ready_to_move(
+        &self,
+        root: &Path,
+        pool: &str,
+        profile: &str,
+    ) -> Result<(), onrunner::NotYet> {
+        Ok(self.ready(root, pool, profile)?)
     }
 }
 
@@ -70,9 +76,14 @@ impl ProfilesOnPools for Linked {
         })
     }
 
-    fn ready_to_move(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+    fn ready_to_move(
+        &self,
+        root: &Path,
+        pool: &str,
+        profile: &str,
+    ) -> Result<(), onrunner::NotYet> {
         chosen_by_a_chat(&self.config, root, pool, profile);
-        onrunner::ready_to_move_on(&self.config, root, pool, profile, &|kept| {
+        onrunner::ready_to_move_on(&self.config, pool, profile, &|kept| {
             keep_on_as(owned(), &self.config, pool, kept, Waking::Yes)
         })
     }
