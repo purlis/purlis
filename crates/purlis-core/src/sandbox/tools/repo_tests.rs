@@ -40,13 +40,24 @@ impl Place {
     }
 
     fn judged(&self, folder: &Path, glab: bool) -> Result<(), String> {
-        held(folder, &self.root, std::slice::from_ref(&self.scratch), glab).map(|_| ())
+        held(
+            folder,
+            &self.root,
+            std::slice::from_ref(&self.scratch),
+            glab,
+        )
+        .map(|_| ())
     }
 
     fn pinned(&self, folder: &Path, clones: bool) -> Vec<(String, String)> {
-        held(folder, &self.root, std::slice::from_ref(&self.scratch), false)
-            .expect("held")
-            .env(clones)
+        held(
+            folder,
+            &self.root,
+            std::slice::from_ref(&self.scratch),
+            false,
+        )
+        .expect("held")
+        .env(clones)
     }
 }
 
