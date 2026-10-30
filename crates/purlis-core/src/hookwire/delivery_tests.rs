@@ -27,6 +27,7 @@ fn call(chat: u32, id: &str) -> ToolCall {
 
 fn hearing(tool: Tooled) -> Hearing {
     Hearing {
+        serve: crate::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, writer| crate::secrets::brokered::not_answered(writer)),
         blocked: Box::new(|_| {}),
         doing: Box::new(|_| {}),

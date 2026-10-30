@@ -79,6 +79,17 @@ pub const SLOT_WITHIN: Duration = Duration::from_secs(3);
 /// The most slots one dialled door keeps parked (#3316); one more is handed back unparked.
 pub const SLOTS_MOST: usize = 16;
 
+/// What a slot is told where its chat has no dialled door on the port it asked for: it was not
+/// allowed to serve there, or its grant was taken back (#3316).
+pub const NO_DOOR: &str = "this chat may not serve on that port: no door is open for it there";
+
+/// What a slot is told where its door, or its chat, holds the most slots it may (#3316).
+pub const SLOTS_FULL: &str = "this chat's server holds the most connections it may park";
+
+/// What a slot is told as it is parked: the receipt every hook line is answered with (#3316).
+/// [`GO`] comes on it later.
+pub const PARKED: &str = "{\"taken\":true}\n";
+
 /// What a dialled door writes on a slot as it takes it: the request follows (#3316).
 pub const GO: &str = "{\"go\":true}\n";
 
@@ -543,6 +554,8 @@ pub struct Slots {
 struct Parked {
     idle: std::collections::VecDeque<UnixStream>,
     closed: bool,
+    /// Whether a slot was ever parked.
+    given: bool,
 }
 
 impl Slots {
@@ -560,27 +573,31 @@ impl Slots {
         self.port
     }
 
-    /// **Parks `slot`**, or hands it back where these are closed or [`SLOTS_MOST`] are parked
-    /// already: a slot whose server has gone is let go first, so it holds no room.
-    pub fn park(&self, slot: UnixStream) -> Result<(), UnixStream> {
+    /// **Parks `slot`, telling it [`PARKED`]**, or hands it back where these are closed or
+    /// [`SLOTS_MOST`] are parked already, or it could not be told: a slot whose server has gone
+    /// is let go first, so it holds no room. Told under the same hold as it is parked, so its
+    /// [`GO`] never comes before it. Whether it is the first slot these were ever given.
+    pub fn park(&self, mut slot: UnixStream) -> Result<bool, UnixStream> {
         let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
         held.idle.retain(alive);
-        if held.closed || held.idle.len() >= SLOTS_MOST {
+        if held.closed
+            || held.idle.len() >= SLOTS_MOST
+            || slot.write_all(PARKED.as_bytes()).is_err()
+        {
             return Err(slot);
         }
         held.idle.push_back(slot);
+        let first = !std::mem::replace(&mut held.given, true);
         drop(held);
         self.parked.notify_one();
-        Ok(())
+        Ok(first)
     }
 
-    /// How many slots are parked now, their servers there or not.
+    /// How many slots are parked now whose servers are still there.
     pub fn parked(&self) -> usize {
-        self.held
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .idle
-            .len()
+        let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
+        held.idle.retain(alive);
+        held.idle.len()
     }
 
     /// **Closes every parked slot, and parks none again**: what ends a door's slots when the

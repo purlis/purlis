@@ -3271,6 +3271,7 @@ fn a_tool_call_is_its_own_line_and_is_handed_to_the_app_with_its_chats_token() {
     let (tx, rx) = mpsc::channel();
     let tx = std::sync::Mutex::new(tx);
     let _reading = listener.hear(Hearing {
+        serve: crate::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, writer| crate::secrets::brokered::not_answered(writer)),
         blocked: Box::new(|_| {}),
         doing: Box::new(|_| {}),
@@ -3327,6 +3328,7 @@ fn a_touched_path_is_its_own_line_handed_to_the_app_with_its_chats_token() {
     let (tx, rx) = mpsc::channel();
     let tx = std::sync::Mutex::new(tx);
     let _reading = listener.hear(Hearing {
+        serve: crate::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, writer| crate::secrets::brokered::not_answered(writer)),
         each: Box::new(|_| panic!("no report was sent")),
         answer: Box::new(|_, _| panic!("no ask was sent")),
@@ -3558,6 +3560,7 @@ fn what_a_chat_is_doing_is_its_own_line_handed_to_the_app_with_its_chats_token()
     let (tx, rx) = mpsc::channel();
     let tx = std::sync::Mutex::new(tx);
     let _reading = listener.hear(Hearing {
+        serve: crate::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, writer| crate::secrets::brokered::not_answered(writer)),
         each: Box::new(|_| panic!("no report was sent")),
         answer: Box::new(|_, _| panic!("no ask was sent")),
@@ -3659,6 +3662,7 @@ fn a_sandbox_block_is_its_own_line_handed_to_the_app_with_its_chats_token() {
     let (tx, rx) = mpsc::channel();
     let tx = std::sync::Mutex::new(tx);
     let _reading = listener.hear(Hearing {
+        serve: crate::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, writer| crate::secrets::brokered::not_answered(writer)),
         each: Box::new(|_| panic!("no report was sent")),
         answer: Box::new(|_, _| panic!("no ask was sent")),
@@ -3745,6 +3749,7 @@ fn a_refused_commit_is_its_own_line_and_is_handed_to_the_app_with_its_chats_toke
     let (tx, rx) = mpsc::channel();
     let tx = std::sync::Mutex::new(tx);
     let _reading = listener.hear(Hearing {
+        serve: crate::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, writer| crate::secrets::brokered::not_answered(writer)),
         blocked: Box::new(|_| {}),
         doing: Box::new(|_| {}),

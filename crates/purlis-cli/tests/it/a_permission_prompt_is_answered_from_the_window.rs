@@ -61,6 +61,7 @@ fn host() -> Host {
         .to_owned();
     let hooks = Arc::new(HookAsks::new(Arc::new(Asks::new())));
     let reading = listener.hear(Hearing {
+        serve: purlis_core::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, writer| purlis_core::secrets::brokered::not_answered(writer)),
         each: Box::new(|_| Ok(())),
         answer: Box::new(|_, _| panic!("no ask for a ticket")),

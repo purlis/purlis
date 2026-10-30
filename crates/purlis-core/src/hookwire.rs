@@ -2212,6 +2212,9 @@ enum Line {
     /// After every other kind: it requires `frames`, which none of them carries. The
     /// connection carries frames from the app's acceptance on ([`framed`], #1996).
     Frames(framed::Hello),
+    /// After every other kind: it requires `serve`, which none of them carries. The connection
+    /// is parked as a slot of the chat's door from the app's acceptance on ([`serve`], #3316).
+    Serve(serve::ServeAsk),
 }
 
 impl Ask {
@@ -2255,6 +2258,7 @@ impl Line {
             Self::Output(output) => output.chat,
             Self::SecretExec(ask) => ask.chat,
             Self::Frames(hello) => hello.chat,
+            Self::Serve(ask) => ask.chat,
         }
     }
 }
@@ -2731,6 +2735,11 @@ pub type SecretExecuting = Box<
         + 'static,
 >;
 
+/// **What hears a `serve` line** (#3316): the ask and its connection, once the chat's token
+/// has checked. It parks the connection as a slot of the chat's door, or refuses it
+/// ([`serve::parked`], [`serve::refused`]); it returns at once either way.
+pub type Serves = Box<dyn Fn(serve::ServeAsk, serve::Slot) + Send + Sync + 'static>;
+
 /// What hears a [`SandboxBlocked`]. Nothing is answered: the hook does not wait for it.
 pub type Blocked = Box<dyn Fn(SandboxBlocked) + Send + Sync + 'static>;
 
@@ -2764,6 +2773,8 @@ pub struct Hearing {
     pub output: OutputHeard,
     /// Every brokered `secret exec`: held on its connection while the command runs.
     pub secret_exec: SecretExecuting,
+    /// Every `serve`: its connection parked as a slot of the chat's door, or refused (#3316).
+    pub serve: Serves,
 }
 
 /// Whether an app is accepting on the hook socket at `path` right now (#95): what the status
@@ -3219,6 +3230,8 @@ pub mod permission;
 pub mod framed;
 
 pub mod relay;
+
+pub mod serve;
 #[cfg(unix)]
 pub use framed::Framed;
 #[cfg(not(unix))]
@@ -3433,6 +3446,7 @@ impl Listener {
             secret_exec: Box::new(|_, _, writer| {
                 crate::secrets::brokered::not_answered(writer);
             }),
+            serve: serve::refusing(),
         })
     }
 
@@ -3962,6 +3976,22 @@ fn serve(
                 let _ = writer.set_read_timeout(None);
                 let _ = writer.set_write_timeout(Some(A_FRAME_WRITE_TAKES_AT_MOST));
                 (hearing.secret_exec)(ask, Box::new(reader), Box::new(writer));
+                return;
+            }
+            Line::Serve(ask) => {
+                // Parked for as long as the chat's server keeps it (#3316): the turn is let go
+                // first, and the connection is handed on whole. A sender that wrote past its
+                // line is not the shim, which waits for its answer, and is refused.
+                turn.finish();
+                drop(writer);
+                if !reader.buffer().is_empty() {
+                    serve::refused(reader.into_inner().socket, serve::NOT_ONE_LINE);
+                    return;
+                }
+                let slot = reader.into_inner().socket;
+                let _ = slot.set_read_timeout(None);
+                let _ = slot.set_write_timeout(Some(A_REPORT_TAKES_AT_MOST));
+                (hearing.serve)(ask, slot);
                 return;
             }
             Line::Frames(hello) => {

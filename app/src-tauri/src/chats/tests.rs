@@ -8469,8 +8469,11 @@ fn a_chat_serving_on_a_port_is_owed_a_restart_once_its_grant_is_taken_back() {
         chats.owe_restart_serving(None, port.wrapping_add(1)),
         Vec::<u32>::new()
     );
+    assert_eq!(chats.served_ports(session), vec![port]);
     assert_eq!(chats.owe_restart_serving(None, port), vec![session]);
     assert!(chats.owed_restarts().contains(&session));
+    // Its door there is closed at once (#3316): nothing reaches its server from now on.
+    assert_eq!(chats.served_ports(session), Vec::<u16>::new());
     chats.close(session).expect("closed");
 }
 

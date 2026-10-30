@@ -1610,6 +1610,7 @@ fn an_app_answering(
     let listener = Listener::bind(dir.path(), &socket).unwrap();
     let token = listener.tokens().issue_to_this_process(7).unwrap();
     let reading = listener.hear(Hearing {
+        serve: crate::hookwire::serve::refusing(),
         secret_exec: Box::new(move |ask, reader, writer| {
             asked.store(true, Ordering::SeqCst);
             answer(ask, reader, writer);
@@ -1990,6 +1991,7 @@ fn from_outside_the_chat_secret_exec_says_why_and_runs_nothing() {
         .tokens()
         .bind(7, Program::of(program.id()).expect("the program, read"));
     let _reading = listener.hear(Hearing {
+        serve: crate::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, _| panic!("nothing outside the chat is run")),
         blocked: Box::new(|_| {}),
         doing: Box::new(|_| {}),

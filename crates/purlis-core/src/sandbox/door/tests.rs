@@ -584,8 +584,8 @@ mod sockets {
         }
         let slots = Arc::clone(slots);
         std::thread::spawn(move || {
-            let mut go = [0u8; GO.len()];
-            if server.read_exact(&mut go).is_err() || go != GO.as_bytes() {
+            let mut said = [0u8; PARKED.len() + GO.len()];
+            if server.read_exact(&mut said).is_err() || said != format!("{PARKED}{GO}").as_bytes() {
                 return;
             }
             dial(&slots, Arc::clone(&answer));
@@ -751,12 +751,9 @@ mod sockets {
         let (parked, mut server) = UnixStream::pair().expect("a pair");
         slots.park(parked).expect("parked");
         drop(door);
-        let mut buf = [0u8; 8];
-        assert_eq!(
-            server.read(&mut buf).expect("read"),
-            0,
-            "the slot was closed"
-        );
+        let mut said = String::new();
+        server.read_to_string(&mut said).expect("read to its end");
+        assert_eq!(said, PARKED, "the slot was closed");
         let (more, _server) = UnixStream::pair().expect("a pair");
         assert!(
             slots.park(more).is_err(),
@@ -796,7 +793,8 @@ fn slots_are_capped_and_a_gone_one_makes_room() {
     assert!(slots.park(room).is_ok(), "a gone slot made room");
     slots.close();
     for mut server in servers {
-        let mut buf = [0u8; 8];
-        assert_eq!(server.read(&mut buf).expect("read"), 0, "closed");
+        let mut said = String::new();
+        server.read_to_string(&mut said).expect("read to its end");
+        assert_eq!(said, PARKED, "closed");
     }
 }
