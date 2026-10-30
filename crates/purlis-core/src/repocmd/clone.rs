@@ -24,8 +24,8 @@
 //!
 //! # How it runs
 //!
-//! A clone that is not a chat's lands whole, with no total deadline ([`landing`]). A chat's
-//! brokered clone keeps [`git::NETWORK`] for now ([`brokered`]).
+//! Every clone lands whole, with no total deadline ([`landing`]): the window's, the terminal's,
+//! and a chat's brokered one (#4080), whose command waits on it for as long as git speaks.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -39,6 +39,7 @@ use crate::contain;
 use crate::counts::counted;
 use crate::forge::{self, Forge, py_str};
 use crate::guest::{self, Hidden, Status};
+use crate::hookwire::alive;
 use crate::inventory;
 use crate::manifest::Ownership;
 use crate::pyrepr::repr_str;
@@ -340,26 +341,30 @@ fn workspace_dir(request: &Request, say: Sink) -> Result<PathBuf, String> {
 fn clone_all(request: &Request, ws_dir: &Path, targets: &[Value]) -> Vec<Outcome> {
     let slots: Mutex<Vec<Option<Outcome>>> = Mutex::new((0..targets.len()).map(|_| None).collect());
     let next = AtomicUsize::new(0);
-    // A brokered clone's isolation is held per thread, so each worker takes it on (#1335), and
-    // the window's own clone its credential scope (#4079): with neither, a worker's git would be
-    // the terminal's.
+    // A brokered clone's isolation is held per thread, so each worker takes it on (#1335), the
+    // window's own clone its credential scope (#4079), and a chat waiting on the clone its pulse
+    // (#4080): with none, a worker's git would be the terminal's.
     let isolation = git::isolation();
     let window = forge::gitcredential::held();
+    let pulse = alive::held();
     std::thread::scope(|scope| {
         for _ in 0..WORKERS.min(targets.len()) {
             scope.spawn(|| {
                 forge::gitcredential::within(window.as_ref(), || {
                     git::within(isolation.as_ref(), || {
-                        loop {
-                            let i = next.fetch_add(1, Ordering::SeqCst);
-                            let Some(record) = targets.get(i) else {
-                                break;
-                            };
-                            let outcome = clone_one(request, ws_dir, record);
-                            if let Ok(mut slots) = slots.lock() {
-                                slots[i] = Some(outcome);
+                        alive::within(pulse.as_ref(), || {
+                            loop {
+                                let i = next.fetch_add(1, Ordering::SeqCst);
+                                let Some(record) = targets.get(i) else {
+                                    break;
+                                };
+                                alive::beat();
+                                let outcome = clone_one(request, ws_dir, record);
+                                if let Ok(mut slots) = slots.lock() {
+                                    slots[i] = Some(outcome);
+                                }
                             }
-                        }
+                        });
                     });
                 });
             });
@@ -512,28 +517,21 @@ fn clone_one(request: &Request, ws_dir: &Path, record: &Value) -> Outcome {
     {
         return Outcome::Refused(why);
     }
-    let failed = if git::isolation().is_some() {
-        brokered(ws_dir, name, &dest, &url, &forge)
-    } else {
-        let route = landing::Route {
-            root,
-            ws,
-            ws_dir,
-            name,
-            dest: &dest,
-            url: &url,
-            forge: &forge,
-            watch: request.watch,
-        };
-        match landing::land(&route) {
-            landing::Landed::Cloned => None,
-            landing::Landed::Refused(why) => return Outcome::Refused(why),
-            landing::Landed::Stopped => return Outcome::Stopped,
-            landing::Landed::Failed { head, said } => Some(Outcome::Failed { head, said }),
-        }
+    let route = landing::Route {
+        root,
+        ws,
+        ws_dir,
+        name,
+        dest: &dest,
+        url: &url,
+        forge: &forge,
+        watch: request.watch,
     };
-    if let Some(failed) = failed {
-        return failed;
+    match landing::land(&route) {
+        landing::Landed::Cloned => {}
+        landing::Landed::Refused(why) => return Outcome::Refused(why),
+        landing::Landed::Stopped => return Outcome::Stopped,
+        landing::Landed::Failed { head, said } => return Outcome::Failed { head, said },
     }
     // The remote the window cloned from is the one its saves push to (#752).
     forge::gitcredential::record_push_remote(&dest, &url);
@@ -554,45 +552,6 @@ fn clone_one(request: &Request, ws_dir: &Path, record: &Value) -> Outcome {
     }
 }
 
-/// A clone the app runs for a sandboxed chat: to `dest` itself, under [`git::NETWORK`]'s deadline,
-/// which `gitask` bounds its wait on. What failed, or `None`.
-fn brokered(ws_dir: &Path, name: &str, dest: &Path, url: &str, forge: &Forge) -> Option<Outcome> {
-    let cli = forge.kind.cli();
-    let head = format!(
-        "{name}: clone failed — no access, network, or {cli} isn't authed (`{cli} auth status`). \
-         Skipping."
-    );
-    let dest_arg = dest.display().to_string();
-    // No `--branch`: the remote's HEAD is its real default branch, where the inventory's
-    // field may be one `discover` assumed, or one the forge has since moved off.
-    let cloned = git::run_network(
-        ws_dir,
-        Some(&forge::helper_for(forge)),
-        &["clone", "--", url, &dest_arg],
-    );
-    let run = match cloned {
-        Ok(run) => run,
-        Err(why) => {
-            return Some(Outcome::Failed {
-                head,
-                said: why.to_string(),
-            });
-        }
-    };
-    if run.ok() {
-        return None;
-    }
-    let mut said = failure(&run, dest);
-    // A clone the app made for a chat read none of your git config (#1413): where it could
-    // not reach its host and yours would have changed its route, say which key (#1550).
-    if (run.code.is_none() || super::unread::reads_as_a_route_failure(&run.err))
-        && let Some(note) = super::unread::network_note(&super::unread::global_entries(), url)
-    {
-        said = format!("{said}\n{note}");
-    }
-    Some(Outcome::Failed { head, said })
-}
-
 /// Why `url`'s host is not one `hosts` lets a sandboxed chat reach, or `None` when it is
 /// (#1335, D-5). Checked by the app before git runs, so a clone it makes for a chat reaches no
 /// host the chat itself could not.
@@ -607,20 +566,6 @@ fn unreachable_host(hosts: &[String], url: &str) -> Option<String> {
             crate::plane::MANIFEST
         )
     })
-}
-
-/// What a failed clone says: git's own words, and why when the why is charter's rule.
-fn failure(run: &git::Run, dest: &Path) -> String {
-    let said = run.err.trim().to_string();
-    match run.code {
-        None => format!(
-            "git did not finish within {} seconds and was stopped; whatever it left at {} is \
-             yours to inspect or remove — purlis does not delete it",
-            git::NETWORK.as_secs(),
-            dest.display()
-        ),
-        Some(_) => explained(said),
-    }
 }
 
 /// git's words, with why when the why is charter's rule.

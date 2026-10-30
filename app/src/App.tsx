@@ -44,10 +44,12 @@ import { ForgeSignInEnded } from "./ForgeSignInEnded";
 import { AddDockerPoolHost } from "./AddDockerPool";
 import { ActionResultNotice, ResultsGroup } from "./ActionResultNotice";
 import {
+  AT_STATUS,
   dormantCause,
   dormantSays,
   placeOfSaid,
   useChipNotices,
+  type ChipNotices,
   type StandingNotice,
 } from "./ChipNotices";
 import { chipsOf } from "./noticePlace";
@@ -1408,6 +1410,24 @@ function App() {
       if (dormantInFront?.includes(workspace) === true) showAgainInFront(dormantCause(workspace));
     },
   });
+  /** **The status bar's card** (#3653): the project's and the app's results, its own list alone,
+   *  which keeps while the chips change, so the project's view handed it is drawn again only when
+   *  what the status bar shows does. It stays drawn under the palette, as a chip's card does: the
+   *  palette is modal and gives the keyboard back where it was as it closes (#3653's review). */
+  const statusList = chipNotices.on.get(AT_STATUS);
+  const statusUp = chipNotices.open === AT_STATUS;
+  const { show: showNotices, hide: hideNotices, dismiss: dismissNotice } = chipNotices;
+  const statusNotices = useMemo<ChipNotices>(
+    () => ({
+      on: new Map(statusList === undefined ? [] : [[AT_STATUS, statusList]]),
+      open: statusUp ? AT_STATUS : undefined,
+      show: showNotices,
+      hide: hideNotices,
+      dismiss: dismissNotice,
+      onSettings: followSaid,
+    }),
+    [statusList, statusUp, showNotices, hideNotices, dismissNotice, followSaid],
+  );
   const windowLines = useMemo(
     () => ({
       at: setInboxLinesAt,
@@ -2348,26 +2368,24 @@ function App() {
           />
         )}
         <div className="window-work">
-          {/* What the last action answered, as a closable notice at the top of the content
-          (#3344). Said here only while the palette is down: it is modal and draws over this
-          notice, and shows the same words itself rather than leaving the operator to guess at a
-          sentence behind the overlay. One state, two places it can be drawn — never two states.
-          Closed, it stays closed until the next result; it is kept under Results in the Inbox's
-          Notices either way. */}
-          {/* A result about a workspace is never in the page's flow (#3648): it hangs from its
-          chip, or is listed in the Notices centre alone while it has none. A project's or the
-          app's result still stands here until the status bar's card takes it (#3653). */}
-          {said &&
-            said !== closedSaid &&
-            !paletteOpen &&
-            placeOfSaid(said, chipsInFront).at === "status" && (
-              <ActionResultNotice
-                cause={`result:${said.from}`}
-                said={said}
-                onClose={() => setClosedSaid(said)}
-                onSettings={followSaid}
-              />
-            )}
+          {/* **No result is in the page's flow while a project is in front** (#3648, #3653): one
+          about a workspace hangs from its chip, and a project's or the app's pops from the status
+          bar's Notices item; each is listed in the Notices centre too. With no project in front
+          the window has no status bar and no Notices centre, so its result stands here, at the
+          top of the opener's page, as the window's own lines do (D-LB-1). */}
+          {said && said !== closedSaid && !paletteOpen && inFront === undefined && (
+            <ActionResultNotice
+              cause={`result:${said.from}`}
+              said={said}
+              onClose={() => {
+                setClosedSaid(said);
+                // Closed here, it does not pop on the status bar of the project that comes next
+                // (#3653's review).
+                hideNotices();
+              }}
+              onSettings={followSaid}
+            />
+          )}
           {resultsAt !== null && inFront !== undefined && (
             <ResultsGroup
               kept={resultsInFront}
@@ -2558,6 +2576,7 @@ function App() {
               onReport={onReport}
               onSessionRows={onSessionRows}
               alerts={alerts}
+              statusNotices={plane === inFront ? statusNotices : undefined}
               contributed={contributedPanels}
               views={extensionViews}
               commands={extensionCommands}

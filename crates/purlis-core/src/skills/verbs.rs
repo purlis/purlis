@@ -1023,7 +1023,9 @@ fn after_edit_dropped(cx: &mut Ctx<'_>, level: &Level, name: &str) {
 
 /// The earlier names this machine kept of a skill named `name` at `level` before (#4018),
 /// dropped as a new skill takes its place: the grades of the one before are none of its own.
-fn earlier_dropped(cx: &mut Ctx<'_>, level: &Level, name: &str) {
+/// Every verb that makes a skill calls it (#4104): `create`, `copy_built_in`, a draft's accept, an
+/// install and the skills an update brings.
+pub(in crate::skills) fn earlier_dropped(cx: &mut Ctx<'_>, level: &Level, name: &str) {
     if let Err(why) = super::grades::earlier::dropped(cx.plane, level, name) {
         cx.warn(why);
     }
@@ -2003,6 +2005,13 @@ pub fn restore(
         );
     }
     let Some(new) = under else {
+        // The folder git brought back is another than the one deleted, and the one its earlier
+        // names are kept for (#4104); a folder kept on this machine comes back as itself.
+        if matches!(deleted.kept.0, Source::Commit(_))
+            && let Err(why) = super::grades::earlier::refound(plane, &deleted.level, name)
+        {
+            cx.warn(why);
+        }
         cx.done(format!(
             "{name} is restored, a {} skill in {folder_rel}",
             deleted.level

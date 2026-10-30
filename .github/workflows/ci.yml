@@ -450,7 +450,7 @@ jobs:
         run: >-
           tools/no-orphans.sh --reap --
           cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
-          --test it -E 'test(/^(a_docker_pool_runner_is_linked_through_docker_exec|code_crosses_to_a_docker_pools_runner_and_back|a_chat_moves_to_a_docker_pools_runner_and_back)::/)'
+          --test it -E 'test(/^(a_docker_pool_runner_is_linked_through_docker_exec|a_killed_docker_exec_closes_what_it_ran_on_a_runner|code_crosses_to_a_docker_pools_runner_and_back|a_chat_moves_to_a_docker_pools_runner_and_back)::/)'
       - name: What the runners left, if a test failed
         if: failure() && steps.scope.outputs.run == 'true'
         run: docker ps --all --no-trunc || true

@@ -113,6 +113,29 @@ impl World {
         (code, said)
     }
 
+    /// Clones `repos` as the app does for a sandboxed chat (#4080): under git's isolation, held
+    /// to the chat's hosts, with `watch` standing in for the forge.
+    fn clone_for_a_chat(&self, repos: &[&str], watch: &Watch) -> (u8, Vec<Say>) {
+        let repos: Vec<String> = repos.iter().map(|name| (*name).to_owned()).collect();
+        let hosts = [HOST.to_owned()];
+        let mut said = Vec::new();
+        let code = git::isolated(&git::Isolated::default(), || {
+            clone(
+                &Request {
+                    root: &self.root,
+                    ws: "alpha",
+                    repos: &repos,
+                    now: chrono::Utc::now(),
+                    author: "tester",
+                    hosts: Some(&hosts),
+                    watch: Some(watch),
+                },
+                &mut |line| said.push(line),
+            )
+        });
+        (code, said)
+    }
+
     /// [`Self::clone_as_the_window`] with nobody listening and nobody pressing Cancel.
     fn clone_plainly(&self, repos: &[&str]) -> (u8, Vec<Say>) {
         let off = AtomicBool::new(false);
@@ -175,29 +198,55 @@ impl Drop for Silent {
 }
 
 fn seed(top: &Path, name: &str) {
+    seed_with(top, name, &[], None);
+}
+
+/// [`seed`], with `files` beside the README, and `attributes` as its `.gitattributes`. That is
+/// committed after what it names, so no filter of this machine's runs as the seed is made.
+fn seed_with(top: &Path, name: &str, files: &[(&str, &str)], attributes: Option<&str>) {
     let work = top.join(format!("{name}-seed"));
     std::fs::create_dir(&work).unwrap();
     std::fs::write(work.join("README.md"), "# seed\n").unwrap();
+    // An hour old, so git never takes a file for racily clean and hashes it again through the
+    // attributes committed after it.
+    let then = std::time::SystemTime::now() - Duration::from_secs(3600);
+    for (file, text) in files {
+        std::fs::write(work.join(file), text).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(work.join(file))
+            .unwrap()
+            .set_modified(then)
+            .unwrap();
+    }
     let ok = |run: git::Run| assert!(run.ok(), "{run:?}");
+    let commit = |message: &str| {
+        ok(testgit::run(
+            &work,
+            &[
+                "-c",
+                "user.name=Seed",
+                "-c",
+                "user.email=seed@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-m",
+                message,
+            ],
+        ));
+    };
     ok(testgit::run(
         &work,
         &["-c", "init.defaultBranch=trunk", "init"],
     ));
     ok(testgit::run(&work, &["add", "."]));
-    ok(testgit::run(
-        &work,
-        &[
-            "-c",
-            "user.name=Seed",
-            "-c",
-            "user.email=seed@example.invalid",
-            "-c",
-            "commit.gpgsign=false",
-            "commit",
-            "-m",
-            "first",
-        ],
-    ));
+    commit("first");
+    if let Some(attributes) = attributes {
+        std::fs::write(work.join(".gitattributes"), attributes).unwrap();
+        ok(testgit::run(&work, &["add", "--", ".gitattributes"]));
+        commit("attributes");
+    }
     let bare = format!("acme/{name}.git");
     ok(testgit::run(
         top,
@@ -562,4 +611,264 @@ fn no_sentence_from_a_window_clone_names_a_forge_cli() {
         let text = words(&said);
         assert!(!names_a_forge_cli(&text), "{repo}: {text}");
     }
+}
+
+// A chat's brokered clone (#4080): the same landing, its own words.
+
+#[test]
+fn a_chats_clone_lands_through_the_hidden_folder_too() {
+    let world = World::holding(&["widget"]);
+    let at_dest = Mutex::new(Vec::new());
+    let heard = |_: Stage, _: u8| {
+        at_dest.lock().unwrap().push((
+            world.dest("widget").exists(),
+            world.hidden("widget").is_dir(),
+        ));
+    };
+    let off = AtomicBool::new(false);
+    let watch = world.watching(&heard, &off, Duration::from_secs(60), None);
+    let (code, said) = world.clone_for_a_chat(&["widget"], &watch);
+    assert_eq!(code, 0, "{said:?}");
+    assert!(world.dest("widget").join("README.md").is_file(), "{said:?}");
+    assert!(!world.hidden("widget").exists());
+    assert_eq!(world.members(), ["widget"]);
+    let mut at_dest = at_dest.into_inner().unwrap();
+    assert_eq!(at_dest.pop(), Some((true, false)), "{said:?}");
+    assert!(!at_dest.is_empty(), "{said:?}");
+    assert!(
+        at_dest.iter().all(|seen| *seen == (false, true)),
+        "{at_dest:?}"
+    );
+}
+
+#[test]
+fn a_chats_clone_that_keeps_making_progress_outlasts_the_stall_limit() {
+    let world = World::holding(&["widget"]);
+    let script = "i=0; while [ $i -lt 10 ]; do i=$((i+1)); \
+         printf 'Receiving objects: %d%% (%d/10)\r' $((i*10)) $i >&2; sleep 0.1; done; \
+         git init -q \"$1\"";
+    let off = AtomicBool::new(false);
+    let heard = |_: Stage, _: u8| {};
+    let watch = world.watching(&heard, &off, Duration::from_millis(400), Some(script));
+    let (code, said) = world.clone_for_a_chat(&["widget"], &watch);
+    assert_eq!(code, 0, "{said:?}");
+    assert!(world.dest("widget").join(".git").is_dir(), "{said:?}");
+}
+
+#[test]
+fn a_chats_silent_clone_is_stopped_at_the_stall_limit_says_so_and_leaves_nothing() {
+    let world = World::holding(&["widget"]);
+    let _silent = world.silent("widget");
+    let off = AtomicBool::new(false);
+    let heard = |_: Stage, _: u8| {};
+    let watch = world.watching(&heard, &off, Duration::from_millis(400), None);
+    let (code, said) = world.clone_for_a_chat(&["widget"], &watch);
+    assert_eq!(code, 1, "{said:?}");
+    assert!(words(&said).contains("stalled"), "{said:?}");
+    assert!(!world.dest("widget").exists(), "{said:?}");
+    assert!(!world.hidden("widget").exists(), "{said:?}");
+}
+
+/// What a chat's clone says when `script` stands in for git, with the forge's CLI on this
+/// machine or not.
+fn a_chats_failure(world: &World, script: &str, cli: bool) -> String {
+    let off = AtomicBool::new(false);
+    let heard = |_: Stage, _: u8| {};
+    let mut watch = world.watching(&heard, &off, Duration::from_secs(60), Some(script));
+    watch.stand_in.cli = Some(cli);
+    let (code, said) = world.clone_for_a_chat(&["widget"], &watch);
+    assert_eq!(code, 1, "{said:?}");
+    words(&said)
+}
+
+#[test]
+fn a_chats_clone_with_no_forge_cli_here_names_none() {
+    let world = World::holding(&["widget"]);
+    let refused =
+        format!("echo \"fatal: Authentication failed for 'https://{HOST}/'\" >&2; exit 128");
+    let hidden = format!(
+        "echo '/bin/sh: glab: command not found' >&2; \
+         echo \"fatal: could not read Username for 'https://{HOST}': terminal prompts \
+         disabled\" >&2; exit 128"
+    );
+    let other = "echo 'error: glab auth git-credential get: broke' >&2; \
+         echo 'fatal: something else' >&2; exit 128";
+    for script in [refused.as_str(), hidden.as_str(), other] {
+        let text = a_chats_failure(&world, script, false);
+        assert!(!names_a_forge_cli(&text), "{text}");
+        assert!(text.contains("widget"), "{text}");
+    }
+    // Refused: where it can be cloned instead, since a chat's clone never has the sign-in.
+    let text = a_chats_failure(&world, &refused, false);
+    assert!(text.contains(HOST), "{text}");
+    assert!(text.contains("window"), "{text}");
+}
+
+#[test]
+fn a_chats_refused_clone_with_the_forge_cli_here_says_to_sign_it_in() {
+    let world = World::holding(&["widget"]);
+    let refused =
+        format!("echo \"fatal: Authentication failed for 'https://{HOST}/'\" >&2; exit 128");
+    let text = a_chats_failure(&world, &refused, true);
+    assert!(text.contains("glab auth login"), "{text}");
+    assert!(!text.contains("Settings › You › Accounts"), "{text}");
+}
+
+#[test]
+fn a_chats_clone_never_gets_the_persons_sign_in() {
+    // #752: the account the person signed in with in the window signs the window's clones
+    // alone, even where a chat's clone runs on the window's scope.
+    use crate::forge::gitcredential::HELPER_ARG;
+    let world = World::holding(&["widget"]);
+    let home = super::account_on(HOST);
+    let url = format!("https://{HOST}/acme/widget.git");
+    let forge = Forge::for_clone(&json!({"forge": "gitlab"}), &url);
+    let dest = world.dest("widget");
+    let ws = world.ws();
+    let route = landing::Route {
+        root: &world.root,
+        ws: "alpha",
+        ws_dir: &ws,
+        name: "widget",
+        dest: &dest,
+        url: &url,
+        forge: &forge,
+        watch: None,
+    };
+    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/charter-app");
+    let (window, chat) = as_the_window(&HostScope::for_a_test(), exe, home.path(), || {
+        let window = route.helper().is_some_and(|h| h.contains(HELPER_ARG));
+        let chat = git::isolated(&git::Isolated::default(), || route.helper())
+            .is_some_and(|h| h.contains(HELPER_ARG));
+        (window, chat)
+    });
+    assert!(window, "the window's clone is signed by the account");
+    assert!(!chat, "a chat's clone never is");
+}
+
+// Git LFS (#4102): one large file silent past the stall limit.
+
+/// A smudge filter standing in for git-lfs's: a second and a half per file, as a download is,
+/// unless told to skip as git-lfs is (`GIT_LFS_SKIP_SMUDGE`).
+const SLOW_SMUDGE: &str =
+    "filter.lfs.smudge=sh -c '[ \"$GIT_LFS_SKIP_SMUDGE\" = 1 ] && exec cat; sleep 1.5; cat'";
+
+impl World {
+    /// [`World::holding`], with `big.bin` in `name` a Git LFS file.
+    fn holding_a_large_file(name: &str) -> Self {
+        let world = Self::holding(&[]);
+        let rows = json!([{
+            "name": name,
+            "path_with_namespace": format!("acme/{name}"),
+            "web_url": format!("https://{HOST}/acme/{name}"),
+            "forge": "gitlab",
+        }]);
+        std::fs::write(
+            world.root.join("inventory/repos.json"),
+            json!({"group": "acme", "count": 1, "repos": rows}).to_string(),
+        )
+        .unwrap();
+        seed_with(
+            world.forge.path(),
+            name,
+            &[("big.bin", "pointer\n")],
+            Some("big.bin filter=lfs\n"),
+        );
+        world
+    }
+
+    /// [`World::watching`], with the slow smudge filter, and git reading none of this machine's
+    /// own config, whose LFS filter would run in the stand-in's place.
+    fn watching_large_files<'a>(
+        &self,
+        heard: &'a (dyn Fn(Stage, u8) + Sync),
+        off: &'a AtomicBool,
+        stall: Duration,
+    ) -> Watch<'a> {
+        let mut watch = self.watching(heard, off, stall, None);
+        watch.stand_in.config.push(SLOW_SMUDGE.to_owned());
+        watch
+            .stand_in
+            .config
+            .push("filter.lfs.required=true".to_owned());
+        watch.stand_in.pass = vec![
+            ("GIT_CONFIG_GLOBAL".to_owned(), "/dev/null".into()),
+            ("GIT_CONFIG_NOSYSTEM".to_owned(), "1".into()),
+        ];
+        watch
+    }
+}
+
+/// `git lfs pull` as a stand-in: `lines` progress lines 0.1 s apart, then the file's content
+/// written, as git-lfs draws its meter while one large file arrives. Then `after`.
+fn lfs_pull(lines: u32, after: &str) -> String {
+    format!(
+        "i=0; while [ $i -lt {lines} ]; do i=$((i+1)); \\
+         printf 'Downloading LFS objects:   0%% (0/1), %d KB | 1 MB/s\\r' $((i*100)) >&2; \\
+         sleep 0.1; done; \\
+         printf 'Downloading LFS objects: 100%% (1/1), 1 MB | 1 MB/s, done.\\n' >&2; \\
+         {after}"
+    )
+}
+
+#[test]
+fn a_clone_whose_one_large_file_downloads_past_the_stall_limit_lands() {
+    let world = World::holding_a_large_file("widget");
+    let seen = Mutex::new(Vec::new());
+    let heard = |stage: Stage, percent: u8| seen.lock().unwrap().push((stage, percent));
+    let off = AtomicBool::new(false);
+    let mut watch = world.watching_large_files(&heard, &off, Duration::from_millis(500));
+    // 1.5 s in all, more than three stall limits, never silent for one.
+    watch.stand_in.lfs = Some(lfs_pull(15, "echo fetched > \"$1/big.bin\""));
+    let (code, said) = world.clone_as_the_window(&["widget"], &watch);
+    assert_eq!(code, 0, "{said:?}");
+    assert_eq!(
+        std::fs::read_to_string(world.dest("widget").join("big.bin")).unwrap(),
+        "fetched\n",
+        "{said:?}"
+    );
+    assert!(!world.hidden("widget").exists());
+    // The percent never goes back through it, and the large files are a stage of their own.
+    let seen = seen.into_inner().unwrap();
+    let percents: Vec<u8> = seen.iter().map(|(_, percent)| *percent).collect();
+    assert!(percents.is_sorted(), "{seen:?}");
+    assert!(
+        seen.iter().any(|(stage, _)| *stage == Stage::LargeFiles),
+        "{seen:?}"
+    );
+    assert_eq!(seen.last(), Some(&(Stage::LargeFiles, 100)), "{seen:?}");
+}
+
+#[test]
+fn a_large_file_download_gone_dead_is_stopped_says_so_and_leaves_nothing() {
+    let world = World::holding_a_large_file("widget");
+    let off = AtomicBool::new(false);
+    let heard = |_: Stage, _: u8| {};
+    let mut watch = world.watching_large_files(&heard, &off, Duration::from_millis(500));
+    watch.stand_in.lfs = Some(lfs_pull(2, "sleep 30"));
+    let started = std::time::Instant::now();
+    let (code, said) = world.clone_as_the_window(&["widget"], &watch);
+    assert!(
+        started.elapsed() < Duration::from_secs(20),
+        "it was not stopped"
+    );
+    assert_eq!(code, 1, "{said:?}");
+    let text = words(&said);
+    assert!(text.contains("stalled"), "{text}");
+    assert!(text.contains("Git LFS"), "{text}");
+    assert!(!world.dest("widget").exists(), "{said:?}");
+    assert!(!world.hidden("widget").exists(), "{said:?}");
+}
+
+#[test]
+fn a_clone_with_no_large_files_never_fetches_any() {
+    let world = World::holding(&["widget"]);
+    let ran = world.forge.path().join("lfs-ran");
+    let off = AtomicBool::new(false);
+    let heard = |_: Stage, _: u8| {};
+    let mut watch = world.watching(&heard, &off, Duration::from_secs(60), None);
+    watch.stand_in.lfs = Some(format!("touch '{}'", ran.display()));
+    let (code, said) = world.clone_as_the_window(&["widget"], &watch);
+    assert_eq!(code, 0, "{said:?}");
+    assert!(!ran.exists(), "{said:?}");
 }

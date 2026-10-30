@@ -109,8 +109,12 @@ describe("a Skill studio start refused for its profile's approval", function () 
     await option.click();
     await page.$("button=Try it").click();
 
-    // Refused, with the approval offered beside the refusal; nothing started.
-    const offer = await $("button=Approve and start…");
+    // Refused, with the approval offered beside the refusal; nothing started. The refusal pops
+    // from the status bar's Notices item (#3653), on its card; the Notices centre lists it too,
+    // earlier in the page's order, where its copy can stand out of its list's sight.
+    const offer = await $(
+      '//*[@data-chip="status/bar/notices"]//button[contains(., "Approve and start…")]',
+    );
     await offer.waitForClickable({
       timeout: 30_000,
       timeoutMsg: "the refusal offered no Approve and start…",

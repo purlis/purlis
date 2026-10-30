@@ -1614,8 +1614,12 @@ export const commands = {
 	machineProfileImport: (name: string) => typedError<MachineProfileImported, string>(__TAURI_INVOKE("machine_profile_import", { name })),
 	/**  What removing `name` takes away, for the window to ask about. */
 	machineProfileRemoval: (name: string) => typedError<MachineProfileRemoval, string>(__TAURI_INVOKE("machine_profile_removal", { name })),
-	/**  Removes `name`, only if `shown` is what removing it takes away now. */
-	machineProfileRemove: (name: string, shown: MachineProfileRemoval) => typedError<null, string>(__TAURI_INVOKE("machine_profile_remove", { name, shown })),
+	/**
+	 *  Removes `name`, only if `shown` is what removing it takes away now, and has each pool's
+	 *  runner that kept it forget it, its sign-in there with it (#3849). `Some` note, in words, for
+	 *  a runner of a purlis before 1.52, which keeps it.
+	 */
+	machineProfileRemove: (name: string, shown: MachineProfileRemoval) => typedError<string | null, string>(__TAURI_INVOKE("machine_profile_remove", { name, shown })),
 	/**
 	 *  Types the profile `name`'s sign-in into shell session `session`, and runs it (#2035, ADR
 	 *  0095 §3): its harness's own sign-in command, with the profile's folder variables set, to the
@@ -2190,13 +2194,17 @@ export const commands = {
 	skillSourceConfirm: (plane: PlaneId, remote: SourceRemote) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_source_confirm", { plane, remote })),
 	/**  **Browses a skill source** at its newest commit. */
 	skillSourceBrowse: (plane: PlaneId, source: SkillSource) => typedError<SourceBrowse, string>(__TAURI_INVOKE("skill_source_browse", { plane, source })),
-	/**  **The install review** of `names` from a source, and the skills they refer to. */
-	skillInstallReview: (plane: PlaneId, source: SkillSource, names: string[]) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_install_review", { plane, source, names })),
+	/**
+	 *  **The install review** of `names` from a source into `level`, and the skills they refer to
+	 *  that `level` does not hold already.
+	 */
+	skillInstallReview: (plane: PlaneId, source: SkillSource, names: string[], level: SkillLevel) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_install_review", { plane, source, names, level })),
 	/**
 	 *  **The review of installing `names` from a source together** (#4024, Install all…): one review
-	 *  of the set and the skills they refer to, or which of them fit one read.
+	 *  of the set into `level` and the skills they refer to that it does not hold already, or which of
+	 *  them fit one read.
 	 */
-	skillInstallSetReview: (plane: PlaneId, source: SkillSource, names: string[]) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_install_set_review", { plane, source, names })),
+	skillInstallSetReview: (plane: PlaneId, source: SkillSource, names: string[], level: SkillLevel) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_install_set_review", { plane, source, names, level })),
 	/**  **Installs what was reviewed** at `level`, with `grant` where it is a project skill. */
 	skillInstall: (plane: PlaneId, source: SkillSource, level: SkillLevel, reviewed: Reviewed, grant: 
 /**  Chats at the project's root alone. */
@@ -3013,9 +3021,14 @@ export const commands = {
 	 *  machine's `docker` as [`sign_in_line`]'s is, but with pipes, its output read for the steps
 	 *  [`pool_sign_in_next`] answers. Nothing of this machine's sign-in goes to the runner (ADR
 	 *  0095). A sign-in of the same profile on the same pool already running is cancelled. Answers
-	 *  the sign-in's number.
+	 *  the sign-in's number. With `terminal`, where purlis could not follow the login, it runs in a
+	 *  terminal the runner makes, for the person to drive in the strip (#4043): what it prints is
+	 *  [`PoolSignInStep::Printed`], and what is typed goes back by [`pool_sign_in_type`].
 	 */
-	poolSignInStart: (pool: string, name: string, provider: string | null) => typedError<number, string>(__TAURI_INVOKE("pool_sign_in_start", { pool, name, provider })),
+	poolSignInStart: (pool: string, name: string, provider: string | null, terminal: {
+	columns: number,
+	rows: number,
+} | null) => typedError<number, string>(__TAURI_INVOKE("pool_sign_in_start", { pool, name, provider, terminal })),
 	/**
 	 *  **The next step of sign-in `flow`**, waiting a while for one; null while there is none yet.
 	 *  After its last step, the sign-in is let go; signed in, its waits on the pool are too.
@@ -3027,6 +3040,8 @@ export const commands = {
 { at: "device"; url: string; code: string } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
+/**  What a login in the strip's terminal printed, escapes and all. */
+{ at: "printed"; text: string } | 
 /**  The harness refused the code, in its words. */
 { at: "refused"; said: string } | 
 /**  The login ended well, and the runner is asked whether it is signed in. */
@@ -3041,8 +3056,15 @@ export const commands = {
 { at: "cancelled" } | null, string>(__TAURI_INVOKE("pool_sign_in_next", { flow })),
 	/**  **Passes the code the person pasted to sign-in `flow`**, as one line. */
 	poolSignInPaste: (flow: number, code: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_paste", { flow, code })),
-	/**  **Cancels sign-in `flow`**: what drives its login is ended, and it is let go. */
+	/**
+	 *  **Cancels sign-in `flow`**: what drives its login is ended, and with its input the login
+	 *  ends on the runner.
+	 */
 	poolSignInCancel: (flow: number) => __TAURI_INVOKE<void>("pool_sign_in_cancel", { flow }),
+	/**  **Passes what the person typed in the strip's terminal to sign-in `flow`**, as it is. */
+	poolSignInType: (flow: number, text: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_type", { flow, text })),
+	/**  **Signs `name` out on pool `pool`'s runner** (#4043): the harness's own sign-out, run there. */
+	poolSignOut: (pool: string, name: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_out", { pool, name })),
 	/**
 	 *  **Every device and what runs on it** (#2052): this machine and every runner it keeps, each
 	 *  with the chats and browsers the window has open there, and each pool's limits.
@@ -10318,6 +10340,8 @@ export type PoolSignInStep =
 { at: "device"; url: string; code: string } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
+/**  What a login in the strip's terminal printed, escapes and all. */
+{ at: "printed"; text: string } | 
 /**  The harness refused the code, in its words. */
 { at: "refused"; said: string } | 
 /**  The login ended well, and the runner is asked whether it is signed in. */
@@ -10330,6 +10354,12 @@ export type PoolSignInStep =
 { at: "failed"; why: string } | 
 /**  It was cancelled, and its login ended. */
 { at: "cancelled" };
+
+/**  The size of the terminal a sign-in's strip draws. */
+export type PoolSignInTerminal = {
+	columns: number,
+	rows: number,
+};
 
 /**
  *  **How a pool's runner was made to suspend itself** (#3717), which its row says where it is
@@ -11384,6 +11414,11 @@ export type ReviewSkill = {
 	description: string,
 	folder: string,
 	brought_by: string | null,
+	/**
+	 *  The skills it refers to that the level it lands in holds already (#4032): left as they
+	 *  are, not brought along.
+	 */
+	already: string[],
 	summary: ReviewSummary,
 	files: ReviewFile[],
 	left_out: ReviewLeftOut[],
@@ -12795,6 +12830,11 @@ export type SkillGradePlan = {
 	/**  The chats it runs in all, each one turn, and how many times each test runs in each arm. */
 	chats: number,
 	runs: number,
+	/**
+	 *  **The chats each grade after an edit may run** (#4035): with its previous version's arm
+	 *  counted where its first saved edit brings one (`after_edit::chats_to_accept`).
+	 */
+	after_edit_chats: number,
 	/**  Why the trigger tests could not be read, where they were not. */
 	tests_refused: string | null,
 	/**  The trigger tests left out, each with why: a query no chat can be started on. */

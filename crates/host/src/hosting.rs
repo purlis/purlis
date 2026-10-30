@@ -3625,7 +3625,10 @@ impl session::Host for Hosting {
             }),
             // A runner's host keeps its desktop's profile on its link from that desktop
             // (`serving`) before this host hears of it (1.43, #2049).
-            Command::KeepProfile(_) | Command::ForgetProfile { .. } => Err(Refusal {
+            Command::KeepProfile(_)
+            | Command::ForgetProfile { .. }
+            | Command::StageProfileSettings(_)
+            | Command::KeptProfiles => Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
                 why: "this host is paired with no desktop over this link, so it keeps no \
                       desktop's profile"

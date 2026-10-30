@@ -558,6 +558,7 @@ fn a_git_ask_is_read_back_whole_and_names_the_chat_its_token_must_be() {
         let ask = Ask::Git(Box::new(GitAsk {
             chat: 7,
             workspace: "alpha".to_owned(),
+            alive: false,
             work,
         }));
         let token = ChatToken("t".repeat(64));
@@ -957,11 +958,127 @@ fn an_answer_that_takes_longer_than_a_report_may_still_reaches_the_asker() {
                 work: GitWork::Clone {
                     repos: vec!["widget".to_owned()],
                 },
+                alive: false,
             })),
             slow * 4,
         )
         .expect("answered");
     assert!(matches!(answer, Answer::Said { code: 0, .. }), "{answer:?}");
+}
+
+/// A git ask whose asker reads [`Answer::Alive`], answered after `takes`, beating the pulse its
+/// thread holds every 20 ms where `beats`.
+#[cfg(unix)]
+fn asked_alive(
+    alive: bool,
+    takes: std::time::Duration,
+    beats: bool,
+    within: std::time::Duration,
+) -> std::io::Result<Answer> {
+    let dir = tempfile::tempdir().expect("a directory");
+    let path = dir.path().join("hooks.sock");
+    let listener = Listener::bind(dir.path(), &path).expect("a socket");
+    let token = listener.tokens().issue_to_this_process(3).expect("a token");
+    let _reading = listener.each_answering(
+        Box::new(|_| {}),
+        Box::new(move |_, _| {
+            let begun = std::time::Instant::now();
+            while begun.elapsed() < takes {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                if beats {
+                    alive::beat();
+                }
+            }
+            Answer::Said {
+                lines: vec![crate::repocmd::Say::Done("cloned".to_owned().into())],
+                code: 0,
+            }
+        }),
+    );
+    Asking::on(&path, Some(token)).expect("connected").ask(
+        &Ask::Git(Box::new(GitAsk {
+            chat: 3,
+            workspace: "alpha".to_owned(),
+            work: GitWork::Clone {
+                repos: vec!["widget".to_owned()],
+            },
+            alive,
+        })),
+        within,
+    )
+}
+
+#[cfg(unix)]
+#[test]
+fn a_clone_that_keeps_showing_life_is_waited_for_past_the_askers_bound() {
+    // #4080: the bound is on a silence, not on the whole clone.
+    let within = std::time::Duration::from_millis(400);
+    let answer = asked_alive(true, within * 4, true, within).expect("answered");
+    assert!(matches!(answer, Answer::Said { code: 0, .. }), "{answer:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_clone_that_shows_no_life_is_given_up_on_at_the_askers_bound() {
+    let within = std::time::Duration::from_millis(400);
+    let gave_up = asked_alive(true, within * 4, false, within).expect_err("gave up");
+    assert!(
+        matches!(
+            gave_up.kind(),
+            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+        ),
+        "{gave_up:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn an_asker_that_does_not_read_alive_lines_is_sent_only_its_answer() {
+    // An older command reads its first line as its answer.
+    use std::io::{BufRead, Write};
+    let dir = tempfile::tempdir().expect("a directory");
+    let path = dir.path().join("hooks.sock");
+    let listener = Listener::bind(dir.path(), &path).expect("a socket");
+    let token = listener.tokens().issue_to_this_process(3).expect("a token");
+    let _reading = listener.each_answering(
+        Box::new(|_| {}),
+        Box::new(move |_, _| {
+            for _ in 0..10 {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                alive::beat();
+            }
+            Answer::Said {
+                lines: vec![],
+                code: 0,
+            }
+        }),
+    );
+    let ask = GitAsk {
+        chat: 3,
+        workspace: "alpha".to_owned(),
+        work: GitWork::Clone {
+            repos: vec!["widget".to_owned()],
+        },
+        alive: false,
+    };
+    assert!(!serde_json::to_string(&ask).unwrap().contains("alive"));
+    let mut stream = std::os::unix::net::UnixStream::connect(&path).expect("connected");
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .unwrap();
+    let line = line_with(Some(&token), &Ask::Git(Box::new(ask))).expect("a line");
+    stream.write_all(&line).unwrap();
+    let mut first = String::new();
+    std::io::BufReader::new(stream)
+        .read_line(&mut first)
+        .unwrap();
+    assert!(
+        matches!(
+            serde_json::from_str(&first),
+            Ok(Answer::Said { code: 0, .. })
+        ),
+        "{first}"
+    );
 }
 
 #[test]
@@ -971,6 +1088,7 @@ fn the_largest_git_ask_a_command_line_makes_fits_on_one_line_of_the_socket() {
     let ask = Ask::Git(Box::new(GitAsk {
         chat: u32::MAX,
         workspace: "w".repeat(100),
+        alive: false,
         work: GitWork::Clone {
             repos: vec!["\"".repeat(100); 256],
         },

@@ -209,6 +209,27 @@ describe("the doctor's git identity finding, as a Notice (#1250)", () => {
     expect(notice).toBeInTheDocument();
   });
 
+  it("says a refusal of both fields once, as its own form's summary, not an alert a row (#3291)", async () => {
+    core({
+      identity: () => unset,
+      fixIdentity: () => ({
+        kind: "invalid",
+        name: ["A name is needed."],
+        email: ["That does not look like an email."],
+      }),
+    });
+    render(<App />);
+    const { form } = await openForm();
+    const email = within(form).getByLabelText("Email");
+    await type(email, "nope");
+    await userEvent.click(within(form).getByRole("button", { name: "Set identity" }));
+
+    await waitFor(() => expect(email).toHaveAccessibleDescription(/does not look like an email/));
+    const alerts = within(form).getAllByRole("alert");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveTextContent("2 fields to fix: Name, Email.");
+  });
+
   it("goes once the fix is applied and the doctor checks again", async () => {
     let fixed = false;
     const asked = core({

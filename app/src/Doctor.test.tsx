@@ -620,7 +620,10 @@ describe("the git identity form (FX-3)", () => {
     await waitFor(() => expect(email).toHaveAccessibleDescription(/does not look like an email/));
     // The keyboard goes back to the field the core refused.
     expect(email).toHaveFocus();
-    expect(within(form).getByRole("alert")).toHaveTextContent("That does not look like an email.");
+    // Heard once, as the dialog's form says a refused send (#3291); the words are the field's.
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Email: That does not look like an email.",
+    );
     expect(within(form).getByLabelText("Name")).not.toHaveAccessibleDescription(/email/);
     expect(email).toHaveValue("nope");
     // Nothing was fixed, so nothing says it was.

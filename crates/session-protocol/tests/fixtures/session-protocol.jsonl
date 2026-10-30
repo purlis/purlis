@@ -187,3 +187,9 @@
 {"reply":{"re":172,"ok":{"profile_kept":{"standing":"fetching"}}}}
 {"call":{"id":176,"command":"clones_of","project":"01J9PRJCT00000000000000000","workspace":"app"}}
 {"reply":{"re":176,"ok":{"clones":{"repos":["api","web"],"origins":{"api":"https://github.com/owner/api.git","web":"git@github.com:owner/web.git"}}}}}
+{"call":{"id":177,"command":"stage_profile_settings","profile":"work","pieces":[{"path":"settings.json","bytes":"eyJ0aGVtZSI6ImRhcmsifQ=="},{"path":"agents/review.md","bytes":"UmV2"},{"path":"agents/review.md","continues":true,"bytes":"aWV3Lg=="}]}}
+{"reply":{"re":177,"ok":"done"}}
+{"call":{"id":178,"command":"keep_profile","name":"work","harness":"claude","pinned":"2.1.300","settings_staged":2}}
+{"reply":{"re":178,"ok":{"profile_kept":{"standing":"signed_in"}}}}
+{"call":{"id":179,"command":"kept_profiles"}}
+{"reply":{"re":179,"ok":{"profiles":{"names":["work","claude"]}}}}

@@ -89,7 +89,10 @@ pub fn install(
     let fetched = fetch(plane, source, Some(&accepted.commit))?;
     // The files each review read are the ones copied: read once, so a set that fit one read for
     // its review fits it for its install too (#4024).
-    let reviewed = review::reviewed(&fetched, &names, &|_| false).map_err(Unread::said)?;
+    // A skill they refer to that `level` holds already is left as it is, as the review left it
+    // (#4032).
+    let reviewed =
+        review::reviewed(&fetched, &names, &review::held_at(plane, level)).map_err(Unread::said)?;
     let now = Accepted {
         commit: fetched.commit.clone(),
         skills: reviewed
@@ -101,11 +104,10 @@ pub fn install(
             .collect(),
     };
     if !accepted.is(&now) {
-        return Err(
-            "what the source holds is not what was reviewed, so nothing was installed: review it \
-             again"
-                .to_owned(),
-        );
+        return Err(format!(
+            "what the source holds, or the {level} skills, changed since the review, so nothing was \
+             installed: review it again"
+        ));
     }
     let held = lock::read(plane, kept)?;
     let parts = level_parts(level)?;
@@ -207,6 +209,11 @@ pub fn install(
         cx.warn(format!(
             "The source was not confirmed on this machine: {why}"
         ));
+    }
+    // Each is a new skill: the grades of one that had its name before are none of its own
+    // (#4104).
+    for Reviewed { review: skill, .. } in &reviewed {
+        verbs::earlier_dropped(cx, level, &skill.name);
     }
     let shown: Vec<&str> = reviewed.iter().map(|s| s.review.name.as_str()).collect();
     cx.done(format!(

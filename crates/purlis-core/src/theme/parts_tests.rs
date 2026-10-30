@@ -2068,6 +2068,25 @@ fn a_grounds_alpha_is_read_as_drawn() {
 // The field families (#2905)
 // ---------------------------------------------------------------------------------------
 
+/// **An sm field is never clamped under the 24px target** (#3250, WCAG 2.5.8): a theme that
+/// rounds a field family's root clamps its sm roots to the same floor its stylesheet draws them
+/// at, the sm button's (#3210), so a compact density's 18px chrome never makes an sm field a
+/// smaller target.
+#[test]
+fn an_sm_field_is_clamped_to_the_24px_floor_in_every_field_family() {
+    let sheet = sheet_of(json!({
+        "text-input.root.corner-radius": 8,
+        "select.root.corner-radius": 8,
+        "combobox.root.corner-radius": 8,
+    }));
+    for scope in ["text-input", "select", "combobox"] {
+        let sm = format!(
+            ":where([data-scope=\"{scope}\"][data-part=\"root\"][data-size=\"sm\"]) {{ --purlis-part-height: max(24px, var(--size-chrome), var(--space-7)); }}"
+        );
+        assert!(sheet.contains(&sm), "{scope}: {sheet}");
+    }
+}
+
 #[test]
 fn a_family_with_no_variants_is_reached_by_its_part_alone() {
     let sheet = sheet_of(json!({
@@ -2091,7 +2110,7 @@ fn a_family_with_no_variants_is_reached_by_its_part_alone() {
     assert!(!sheet.contains("data-variant"), "{sheet}");
     // Only the families whose corners the theme sets are clamped to their own sizes.
     assert!(sheet.contains(
-        ":where([data-scope=\"text-input\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(var(--size-chrome), var(--space-7)); }"
+        ":where([data-scope=\"text-input\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(24px, var(--size-chrome), var(--space-7)); }"
     ));
     assert!(!sheet.contains("[data-scope=\"button\"]"), "{sheet}");
 }

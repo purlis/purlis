@@ -1303,7 +1303,11 @@ impl session::Host for Relay {
         }
         // A runner keeps a profile for the desktop it is paired with, on that desktop's own link
         // to it (#2049): never sent on for a client.
-        if let Command::KeepProfile(_) | Command::ForgetProfile { .. } = command {
+        if let Command::KeepProfile(_)
+        | Command::ForgetProfile { .. }
+        | Command::StageProfileSettings(_)
+        | Command::KeptProfiles = command
+        {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
                 why: "a runner keeps a profile for its desktop on that desktop's own link, never \

@@ -646,6 +646,7 @@ fn in_the_app(
             | Answer::Recorded { .. }
             | Answer::Written { .. }
             | Answer::Said { .. }
+            | Answer::Alive {}
             | Answer::Drafted { .. }
             | Answer::Vaults { .. }
             | Answer::Keys { .. }
@@ -693,6 +694,7 @@ pub(crate) fn ticketed() -> Ticketed {
             | Answer::Recorded { .. }
             | Answer::Written { .. }
             | Answer::Said { .. }
+            | Answer::Alive {}
             | Answer::Drafted { .. }
             | Answer::Vaults { .. }
             | Answer::Keys { .. }

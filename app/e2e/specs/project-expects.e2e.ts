@@ -375,9 +375,12 @@ describe("the Notice of what a project expects", function () {
     expect(await theNotice("the Notice went when the link moved")).toContain(named.a);
 
     await press(ALLOW);
-    // Not kept, said, and drawn again naming B.
-    const again = await theNoticeSaying(CHANGED, "the Allow did not say what was shown changed");
-    expect(again).toContain(named.b);
+    // Not kept, said, and drawn again naming B. The sentence lands with the refusal and the list
+    // is read again after it, so the Notice is waited on for both: the list it draws in between
+    // is still A's.
+    await theNoticeSaying(CHANGED, "the Allow did not say what was shown changed");
+    const again = await theNoticeSaying(named.b, "the Notice was not drawn again naming B");
+    expect(again).toContain(CHANGED);
     expect(await grants()).not.toContainEqual(expect.objectContaining({ what: "socket" }));
 
     // Allowed as it stands now, it is kept: B, the socket the Notice names.

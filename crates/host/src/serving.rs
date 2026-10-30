@@ -70,15 +70,20 @@ pub type Keeping = Arc<
 /// folder and sign-in there (`forget_profile`, 1.52, #4047).
 pub type Forgetting = Arc<dyn Fn(&Pinned, &str) -> Result<(), String> + Send + Sync>;
 
+/// The name of each profile the runner keeps for the desktop a link proved, and for no other
+/// (`kept_profiles`, 1.57, #4060).
+pub type Listing = Arc<dyn Fn(&Pinned) -> Result<Vec<String>, String> + Send + Sync>;
+
 /// A runner's pairing, as its host serves it: who it is and whom it admits ([`Answering`]),
 /// how the desktop it admits is taken out of its peers ([`Unpairing`]), and how it keeps that
-/// desktop's profiles ([`Keeping`]) and forgets them ([`Forgetting`]).
+/// desktop's profiles ([`Keeping`]), forgets them ([`Forgetting`]) and names them ([`Listing`]).
 #[derive(Clone)]
 pub struct Pairing {
     pub answering: Answering,
     pub unpairing: Unpairing,
     pub keeping: Keeping,
     pub forgetting: Forgetting,
+    pub listing: Listing,
 }
 
 /// The lock's file name beside `purlisd.sock`, the socket of a person's own config home.
@@ -215,6 +220,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
         let unpairing = Arc::clone(&pairing.unpairing);
         let keeping = Arc::clone(&pairing.keeping);
         let forgetting = Arc::clone(&pairing.forgetting);
+        let listing = Arc::clone(&pairing.listing);
         tokio::spawn(async move {
             let chats = Arc::new(hosting.clone());
             match hostlink::answer_local(
@@ -235,6 +241,8 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
                         unpairing,
                         keeping,
                         forgetting,
+                        staged: std::sync::Mutex::default(),
+                        listing,
                         unpaired: Arc::clone(&unpaired),
                     };
                     let serving = session::serve(answered.link, paired, None);
@@ -256,14 +264,19 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
 
 /// The session protocol on a link from the desktop a runner is paired with: the host's own,
 /// `unpair` (1.25, #2525), which takes that desktop, the one the handshake proved, out of the
-/// runner's peers, `keep_profile` (1.43, #2049), which keeps one of its profiles here, and
-/// `forget_profile` (1.52, #4047), which forgets one.
+/// runner's peers, `keep_profile` (1.43, #2049), which keeps one of its profiles here, its
+/// settings staged on this link first (`stage_profile_settings`, 1.56, #4081),
+/// `forget_profile` (1.52, #4047), which forgets one, and `kept_profiles` (1.57, #4060), which
+/// names the ones kept.
 struct PairedLink {
     hosting: Hosting,
     desktop: Pinned,
     unpairing: Unpairing,
     keeping: Keeping,
     forgetting: Forgetting,
+    /// The settings staged on this link: in memory, so they end with it.
+    staged: std::sync::Mutex<session::StagedSettings>,
+    listing: Listing,
     /// Told once the desktop is unpaired, so its link ends.
     unpaired: Arc<tokio::sync::Notify>,
 }
@@ -292,12 +305,55 @@ impl PairedLink {
         }
     }
 
+    /// What this link has staged, taken: a keep, or a refused batch, starts the next afresh.
+    fn staged(&self) -> session::StagedSettings {
+        std::mem::take(
+            &mut *self
+                .staged
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
+    /// `stage_profile_settings` (1.56, #4081): part of a profile's settings, held on this link.
+    /// A batch refused drops all of them, so nothing of them can be kept.
+    fn stage(&self, batch: session::SettingsBatch) -> Result<session::Answer, session::Refusal> {
+        let mut staged = self
+            .staged
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match staged.add(batch) {
+            Ok(()) => Ok(session::Answer::Done),
+            Err(why) => {
+                *staged = session::StagedSettings::default();
+                Err(session::Refusal {
+                    code: session::NOT_STARTED.into(),
+                    why,
+                })
+            }
+        }
+    }
+
     /// `keep_profile` (1.43, #2049): the desktop's profile kept here, off the runtime, since
-    /// its harness is asked whether it is signed in.
+    /// its harness is asked whether it is signed in. Settings staged for it (#4081) are kept as
+    /// the same settings sent with it are, checked whole.
     async fn keep(
         &self,
-        profile: session::ProfileToKeep,
+        mut profile: session::ProfileToKeep,
     ) -> Result<session::Answer, session::Refusal> {
+        let staged = self.staged();
+        if let Some(files) = profile.settings_staged.take() {
+            let refused = |why| session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            };
+            if profile.settings.is_some() {
+                return Err(refused(
+                    "a profile's settings came both staged and with it".to_owned(),
+                ));
+            }
+            profile.settings = Some(staged.finished(&profile.name, files).map_err(refused)?);
+        }
         let (keeping, desktop) = (Arc::clone(&self.keeping), self.desktop.clone());
         tokio::task::spawn_blocking(move || keeping(&desktop, &profile))
             .await
@@ -326,6 +382,20 @@ impl PairedLink {
             .await
             .unwrap_or_else(|why| Err(format!("the profile was not forgotten: {why}")))
             .map(|()| session::Answer::Done)
+            .map_err(|why| session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            })
+    }
+
+    /// `kept_profiles` (1.57, #4060): the desktop's profiles kept here, by name, read off the
+    /// runtime.
+    async fn list(&self) -> Result<session::Answer, session::Refusal> {
+        let (listing, desktop) = (Arc::clone(&self.listing), self.desktop.clone());
+        tokio::task::spawn_blocking(move || listing(&desktop))
+            .await
+            .unwrap_or_else(|why| Err(format!("the profiles kept here were not read: {why}")))
+            .map(|names| session::Answer::Profiles { names })
             .map_err(|why| session::Refusal {
                 code: session::NOT_STARTED.into(),
                 why,
@@ -364,6 +434,8 @@ impl session::Host for PairedLink {
         match command {
             session::Command::KeepProfile(profile) => self.keep(profile).await,
             session::Command::ForgetProfile { name } => self.forget(name).await,
+            session::Command::StageProfileSettings(batch) => self.stage(batch),
+            session::Command::KeptProfiles => self.list().await,
             session::Command::Unpair => self.unpair().await,
             command => session::Host::call(&self.hosting, command, peer).await,
         }

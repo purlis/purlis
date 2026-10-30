@@ -8180,6 +8180,18 @@
         "status-item.count.accent.disabled.text": {
           "$ref": "#/$defs/part-text"
         },
+        "status-item.dot.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "status-item.dot.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "status-item.dot-warning.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "status-item.dot-warning.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "switch.root.text": {
           "$ref": "#/$defs/part-text"
         },

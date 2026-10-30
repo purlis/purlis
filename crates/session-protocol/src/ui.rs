@@ -754,6 +754,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_sign_in_next",
     "pool_sign_in_paste",
     "pool_sign_in_cancel",
+    "pool_sign_in_type",
+    "pool_sign_out",
     // The Devices view (#2052): it reads this machine's runners and links to each, so only the
     // person's own window asks it.
     "devices",

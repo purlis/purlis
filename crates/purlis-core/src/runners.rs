@@ -578,6 +578,19 @@ pub fn set_pool_profiles(
     change_pool_profiles(config_root, name, |_| profiles)
 }
 
+/// **Has the Docker pool `name`, where it names no profiles, name `profiles` from now on**
+/// (#4060): read and written under the file's lock, so a pool that names its own meanwhile
+/// keeps them as they are. Refused where no such pool is kept.
+pub fn name_pool_profiles_where_none(
+    config_root: &Path,
+    name: &str,
+    profiles: Vec<String>,
+) -> Result<(), Refused> {
+    change_pool_profiles(config_root, name, |pool| {
+        Some(pool.profiles().map_or(profiles, <[String]>::to_vec))
+    })
+}
+
 /// **Adds the profile `profile` to the Docker pool `name`** (#4047): a pool that named none
 /// keeps `default`, the profile a new chat in the open project gets, beside it. Kept once.
 pub fn add_pool_profile(

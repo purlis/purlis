@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Field, SettingActions, SettingRow } from "./settings/components";
+import { Form, useFormRefusal, type Refused } from "./ui/field/Field";
 import { Button } from "./ui/button/Button";
 import { DialogAnswers, useInADialog } from "./ui/dialog/Dialog";
 
@@ -53,8 +54,15 @@ export function GitIdentityForm({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [refused, setRefused] = useState<IdentityRefused>();
+  // A refused send is said once (#3291): in a dialog by the dialog's form, which this is inside;
+  // elsewhere by this form's own, counted by its answers.
+  const refuse = useFormRefusal();
+  const [answers, setAnswers] = useState(0);
   const [sending, setSending] = useState(false);
-  const form = useRef<HTMLDivElement>(null);
+  const form = useRef<HTMLElement | null>(null);
+  const holds = (element: HTMLElement | null) => {
+    form.current = element;
+  };
   const inADialog = useInADialog();
   const nameSet = current.name !== "";
   const emailSet = current.email !== "";
@@ -80,28 +88,18 @@ export function GitIdentityForm({
     if (busy || sending) return;
     setSending(true);
     void submit(nameSet ? "" : name, emailSet ? "" : email)
-      .then(setRefused)
+      .then((answer) => {
+        setRefused(answer);
+        if (answer === undefined) return;
+        // Its own form counts the answer; a dialog's form is told.
+        if (inADialog) refuse(refusedOf(answer));
+        else setAnswers((n) => n + 1);
+      })
       .finally(() => setSending(false));
   };
 
-  // **A form by its role, not a `<form>` element** (#2910): it is drawn in the Doctor dialog's
-  // body, which is the dialog's own form, and a form element is never inside another. Return in
-  // its fields sets the identity, as its own form's Return did, and goes no further.
-  return (
-    <div
-      id={id}
-      ref={form}
-      className="doctor-form"
-      role="form"
-      aria-label="Git identity"
-      onKeyDown={(event) => {
-        if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
-        if (!(event.target instanceof HTMLInputElement)) return;
-        event.preventDefault();
-        event.stopPropagation();
-        send();
-      }}
-    >
+  const rows = (
+    <>
       <SettingRow
         label="Name"
         help={
@@ -138,9 +136,31 @@ export function GitIdentityForm({
           />
         )}
       />
-      {/* In a dialog its answers are the dialog's, in its footer, so the main action is where
-        it is in every dialog (#2910); elsewhere (a Notice) they end the form, Cancel first. */}
-      {inADialog ? (
+    </>
+  );
+
+  // **In a dialog, a form by its role, not a `<form>` element** (#2910): it is drawn in the
+  // Doctor dialog's body, which is the dialog's own form, and a form element is never inside
+  // another. Return in its fields sets the identity, as its own form's Return did, and goes no
+  // further. Its answers are the dialog's, in its footer, so the main action is where it is in
+  // every dialog; the dialog's form says its refusal once (#3291).
+  if (inADialog)
+    return (
+      <div
+        id={id}
+        ref={holds}
+        className="doctor-form"
+        role="form"
+        aria-label="Git identity"
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+          if (!(event.target instanceof HTMLInputElement)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          send();
+        }}
+      >
+        {rows}
         <DialogAnswers
           cancel={{ children: "Cancel", onPress: onCancel }}
           main={{
@@ -150,14 +170,39 @@ export function GitIdentityForm({
             onPress: send,
           }}
         />
-      ) : (
-        <SettingActions>
-          <Button onPress={onCancel}>Cancel</Button>
-          <Button variant="primary" isDisabled={busy || sending} onPress={send}>
-            {sending ? "Setting…" : "Set identity"}
-          </Button>
-        </SettingActions>
-      )}
-    </div>
+      </div>
+    );
+  // **Elsewhere (a Notice), a form of its own** (#3291): its answers end it, Cancel first, and
+  // it says a refusal of both fields once, as its summary, not as an alert from each row.
+  return (
+    <Form
+      id={id}
+      ref={holds}
+      refused={refused === undefined ? undefined : { ...refusedOf(refused), answer: answers }}
+      className="doctor-form"
+      aria-label="Git identity"
+      onSubmit={(event) => {
+        event.preventDefault();
+        send();
+      }}
+    >
+      {rows}
+      <SettingActions>
+        <Button onPress={onCancel}>Cancel</Button>
+        <Button type="submit" variant="primary" isDisabled={busy || sending}>
+          {sending ? "Setting…" : "Set identity"}
+        </Button>
+      </SettingActions>
+    </Form>
   );
+}
+
+/** The core's refusal of an identity, as a form says it once (#3291). */
+function refusedOf(answer: IdentityRefused): Refused {
+  return {
+    fields: [
+      ...(answer.name.length > 0 ? [{ name: "Name", why: answer.name.join(" ") }] : []),
+      ...(answer.email.length > 0 ? [{ name: "Email", why: answer.email.join(" ") }] : []),
+    ],
+  };
 }

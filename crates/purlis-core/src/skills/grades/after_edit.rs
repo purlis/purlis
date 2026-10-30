@@ -122,6 +122,20 @@ pub fn tests_of(request: &purlis_skills::grade::GradeRequest) -> String {
         .collect()
 }
 
+/// **The chats the plan that turns grading after each edit on shows and keeps** (#4035): the
+/// chats of `plan`, with its previous version's arm counted where it has none yet and its edits
+/// are committed (`committed`: a copy git holds, not one only on this machine). Each saved edit
+/// of such a copy is committed, so a skill with one version gains a previous version at its
+/// first edit, and every grade after an edit then runs that arm too. Its cap and dollar limit
+/// stay the plan's: they hold each grade whole, however many chats it runs.
+pub fn chats_to_accept(plan: &purlis_skills::grade::Plan, committed: bool) -> u32 {
+    if !committed {
+        return plan.chats;
+    }
+    let arms = u32::try_from(super::ARMS_WITH_PREVIOUS.len()).unwrap_or(u32::MAX);
+    plan.chats.max(plan.per_arm.saturating_mul(arms))
+}
+
 /// The file, as it is written.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct Kept {
@@ -338,6 +352,9 @@ pub struct Now {
     pub limit_usd: f64,
     pub tests: String,
     pub consent: String,
+    /// Whether it compares with a previous version (#4035): what a grade of a skill with one
+    /// version gains at its first saved edit.
+    pub previous: bool,
 }
 
 impl Now {
@@ -355,6 +372,7 @@ impl Now {
             limit_usd,
             tests: tests_of(request),
             consent: planned.consent.clone()?,
+            previous: planned.previous.is_some(),
         })
     }
 }
@@ -398,8 +416,18 @@ pub fn next(accepted: &Accepted, now: &Now) -> Next {
         );
     }
     // The version it compares with is the one before the edit (#4016): each saved edit is
-    // committed and moves it, so it is not held to the one the plan showed. Its arm arriving
-    // runs more chats, which waits below.
+    // committed and moves it, so it is not held to the one the plan showed. The plan that turns
+    // it on counts that version's arm (#4035, [`chats_to_accept`]); an opt-in that accepted
+    // fewer chats waits below, and says why where that arm is what grew.
+    if now.chats > accepted.chats && now.previous && accepted.previous.is_none() {
+        return Next::Waits(format!(
+            "Your edit made a version of it to compare with, so a grade of it now also runs its \
+             previous version: {}, more than the {} you accepted. No grade was started after \
+             your edit: see the cost again and turn grading after each edit on again.",
+            crate::counts::counted(now.chats, "chat", "chats"),
+            accepted.chats
+        ));
+    }
     if now.chats > accepted.chats {
         return Next::Waits(format!(
             "A grade of it now runs {}, more than the {} you accepted, so no grade was started \

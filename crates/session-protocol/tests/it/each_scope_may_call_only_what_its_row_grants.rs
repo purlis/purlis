@@ -312,11 +312,19 @@ fn every_command() -> Vec<Command> {
             sandbox_only: false,
             pinned: None,
             settings: None,
+            settings_staged: None,
         }),
         // A desktop's profile taken off its runner (1.52, #4047).
         Command::ForgetProfile {
             name: "work".into(),
         },
+        // Its settings in batches, for that keep (1.56, #4081).
+        Command::StageProfileSettings(session::SettingsBatch {
+            profile: "work".into(),
+            pieces: Vec::new(),
+        }),
+        // The profiles a runner keeps for its desktop (1.57, #4060).
+        Command::KeptProfiles,
         // A browser the person takes over, drives and hands back: the window's alone (1.14).
         Command::TakeOver {
             program: CHAT.into(),
@@ -605,6 +613,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "unpair",
             "keep_profile",
             "forget_profile",
+            "stage_profile_settings",
+            "kept_profiles",
             "take_over",
             "browser_input",
             "size_browser",

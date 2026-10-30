@@ -1763,6 +1763,11 @@ pub struct GitAsk {
     /// The workspace, as the command resolved it.
     pub workspace: String,
     pub work: GitWork,
+    /// Whether the asker reads [`Answer::Alive`] lines while it waits (#4080), as a clone's
+    /// does, whose wait follows the clone's liveness and has no total bound. Absent, as from an
+    /// older command, reads as no, and nothing but the answer is sent.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub alive: bool,
 }
 
 /// A commit a sandboxed chat asks the app to make in the branch folder it stands in, as
@@ -2162,6 +2167,9 @@ pub enum Answer {
         lines: Vec<crate::repocmd::Say>,
         code: u8,
     },
+    /// Not an answer: the ask is still being worked on, and shows life (#4080). Sent only to an
+    /// asker that said it reads it ([`GitAsk::alive`]), before its one answer, and read past.
+    Alive {},
     /// A chat's theme draft is started or saved ([`Ask::ThemeDraft`], #2332): every line the
     /// app said, its exit status, and whether the draft was **made** by this ask, a copy of its
     /// kept folder or a new theme, rather than there already. The command makes its working copy
@@ -3385,7 +3393,8 @@ impl Asking {
         })
     }
 
-    /// Writes `ask` and reads the app's answer, waiting at most `within` for each half.
+    /// Writes `ask` and reads the app's answer, waiting at most `within` for each half, and
+    /// for each [`Answer::Alive`] line that comes before the answer.
     ///
     /// Every way this fails is an `Err` and never a wait: a handoff whose app did not answer
     /// prints the command to run in a terminal, which is a handoff the operator can still
@@ -3399,19 +3408,26 @@ impl Asking {
         socket.set_read_timeout(Some(within))?;
         socket.write_all(&line)?;
         socket.flush()?;
-        let mut said = String::new();
-        // The same cap the app holds a report to, turned round: an answer is a ticket or a
-        // sentence, and something that writes for ever without a newline is not the app.
-        (&mut self.stream)
-            .take(A_REPORT_IS_AT_MOST)
-            .read_line(&mut said)?;
-        if said.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "the app closed the connection without answering",
-            ));
+        // A line saying the ask is still alive is read past, and the wait starts again (#4080):
+        // `within` bounds each line, so only a silence that long ends it.
+        loop {
+            let mut said = String::new();
+            // The same cap the app holds a report to, turned round: an answer is a ticket or a
+            // sentence, and something that writes for ever without a newline is not the app.
+            (&mut self.stream)
+                .take(A_REPORT_IS_AT_MOST)
+                .read_line(&mut said)?;
+            if said.is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "the app closed the connection without answering",
+                ));
+            }
+            match serde_json::from_str(&said).map_err(io::Error::other)? {
+                Answer::Alive {} => {}
+                answer => return Ok(answer),
+            }
         }
-        serde_json::from_str(&said).map_err(io::Error::other)
     }
 }
 
@@ -3427,6 +3443,8 @@ pub mod spool;
 pub mod armed;
 
 pub mod permission;
+
+pub mod alive;
 
 pub mod framed;
 
@@ -4184,7 +4202,16 @@ fn serve(
                 if let Ok(asker) = writer.try_clone() {
                     tokens.answering(this, asker);
                 }
-                let answer = framed::on_a_line((hearing.answer)(this, ask));
+                // An asker that reads [`Answer::Alive`] is told while its ask shows life (#4080).
+                let pulse = match &ask {
+                    Ask::Git(git) if git.alive => alive::on(&writer),
+                    _ => None,
+                };
+                let answer = alive::within(pulse.as_ref(), || (hearing.answer)(this, ask));
+                if let Some(pulse) = &pulse {
+                    pulse.end();
+                }
+                let answer = framed::on_a_line(answer);
                 tokens.answered(this);
                 let Ok(mut said) = serde_json::to_vec(&answer) else {
                     return;
