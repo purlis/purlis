@@ -40,6 +40,27 @@
         "limits": { "$ref": "#/definitions/quantities" }
       }
     },
+    "metrics": {
+      "description": "The operator's metrics.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowFrom": {
+          "description": "Who may scrape them, as a NetworkPolicy's from peers. Empty: nothing may.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "namespaceSelector": { "type": "object" },
+              "podSelector": { "type": "object" },
+              "ipBlock": { "type": "object" }
+            }
+          }
+        }
+      }
+    },
     "perPerson": {
       "description": "What each person's runners may hold at once, in their runner namespace.",
       "type": "object",
