@@ -232,7 +232,7 @@ export type PoolProfiles = PoolProfilesAnswered | "asking" | { trouble: string }
  *  (#2049, #4047): a pool that names none keeps the default of the open project `plane`. */
 export async function askProfiles(name: string, plane?: string) {
   set((was) => ({ ...was, profiles: { ...was.profiles, [name]: "asking" } }));
-  const said = await caught(commands.poolProfiles(name, plane ?? null));
+  const said = await caught(commands.poolProfiles(name, { plane: plane ?? null }));
   const rows: PoolProfiles =
     said.status === "error"
       ? { trouble: said.error }
@@ -249,7 +249,7 @@ export async function addProfileToPool(
   profile: string,
   plane?: string,
 ): Promise<string | undefined> {
-  const said = await caught(commands.poolProfileAdd(name, profile, plane ?? null));
+  const said = await caught(commands.poolProfileAdd(name, profile, { plane: plane ?? null }));
   await askProfiles(name, plane);
   return said.status === "error" ? said.error : undefined;
 }
@@ -261,7 +261,7 @@ export async function removeProfileFromPool(
   profile: string,
   plane?: string,
 ): Promise<string | undefined> {
-  const said = await caught(commands.poolProfileRemove(name, profile, plane ?? null));
+  const said = await caught(commands.poolProfileRemove(name, profile, { plane: plane ?? null }));
   await askProfiles(name, plane);
   return said.status === "error" ? said.error : (said.data ?? undefined);
 }
