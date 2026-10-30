@@ -469,6 +469,9 @@ pub fn run_on_its_runner(
     let root = held.root();
     let ctx = Ctx::new(root, Env::from_process());
     let authorised = |persona: &str, vault: &str| brokered::authorise(&ctx, Some(persona), vault);
+    // Counted before it is found open: the run may wait on the person's Allow before its
+    // token is minted, and an end meanwhile keeps nothing minted for it (#3808).
+    let ends_seen = purlis_core::forge::apptoken::ends_so_far();
     // A GitHub App's tool is sent the token this desktop mints for the chat, never the key
     // (#2053): its repos are the remotes of the clones in its workspace here.
     let asker = held
@@ -500,6 +503,7 @@ pub fn run_on_its_runner(
                 started: clones_at_start.as_deref(),
                 on_a_runner: true,
                 config_root: config_root.as_deref(),
+                ends_seen: Some(ends_seen),
             },
             &purlis_core::forge::apptoken::token_from_vault,
         ),
