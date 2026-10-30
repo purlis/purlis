@@ -26,6 +26,7 @@
 //! chat's too, and signed out, it waits as one Ask, *Profile <profile> on pool <pool>*, whose
 //! Sign in on pool <pool> signs it in there.
 
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -41,18 +42,21 @@ use crate::runnerlinks::{Machine, ToARunner};
 /// pool asks before it is sent there.
 pub trait ProfilesOnPools: Send + Sync {
     /// `Ok` where a chat in the project at `root` on `profile` may start on pool `pool`'s
-    /// runner, or why not, in words.
-    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String>;
+    /// runner, or why not, in words. `Ok` carries what the chat's tab says of settings that
+    /// stayed behind (#4081), where some did.
+    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<Option<String>, String>;
 
     /// [`Self::ready`], for a chat that moves to pool `pool`'s runner (#2048): said of the move,
-    /// and a profile signed out there is the sign-in the move waits on (#3477).
+    /// and a profile signed out there is the sign-in the move waits on (#3477). What stayed
+    /// behind is said by the chat's start there, which keeps its profile again.
     fn ready_to_move(
         &self,
         root: &Path,
         pool: &str,
         profile: &str,
     ) -> Result<(), onrunner::NotYet> {
-        Ok(self.ready(root, pool, profile)?)
+        self.ready(root, pool, profile)?;
+        Ok(())
     }
 }
 
@@ -68,12 +72,18 @@ impl Linked {
 }
 
 impl ProfilesOnPools for Linked {
-    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<Option<String>, String> {
         chosen_by_a_chat(&self.config, root, pool, profile);
+        let behind = RefCell::default();
         // A chat's start is what wakes a suspended runner (#2051), so its keep does too.
         onrunner::ready_on(&self.config, root, pool, profile, &|kept| {
-            keep_on_as(owned(), &self.config, pool, kept, Waking::Yes)
-        })
+            keep_on_as(owned(), &self.config, pool, kept, Waking::Yes, &behind)
+        })?;
+        Ok(onrunner::left_behind_note(
+            pool,
+            profile,
+            &behind.into_inner(),
+        ))
     }
 
     fn ready_to_move(
@@ -84,7 +94,14 @@ impl ProfilesOnPools for Linked {
     ) -> Result<(), onrunner::NotYet> {
         chosen_by_a_chat(&self.config, root, pool, profile);
         onrunner::ready_to_move_on(&self.config, pool, profile, &|kept| {
-            keep_on_as(owned(), &self.config, pool, kept, Waking::Yes)
+            keep_on_as(
+                owned(),
+                &self.config,
+                pool,
+                kept,
+                Waking::Yes,
+                &RefCell::default(),
+            )
         })
     }
 }
@@ -138,7 +155,7 @@ pub fn keep_on(
     pool: &str,
     kept: &onrunner::Kept,
 ) -> Result<Option<Standing>, String> {
-    keep_on_as(owned(), config, pool, kept, Waking::No)
+    keep_on_as(owned(), config, pool, kept, Waking::No, &RefCell::default())
 }
 
 /// Whether a link made to keep a profile starts a suspended runner again (#2051): only a chat's
@@ -160,13 +177,14 @@ fn to_a_runner(config: &Path, pool: &str, waking: Waking) -> Result<ToARunner, S
 }
 
 /// [`keep_on`], with `owned` what [`owned`] said of this machine's pools: nothing is read or
-/// sent where it said no.
+/// sent where it said no. `behind` is told what of its settings stayed behind (#4081).
 fn keep_on_as(
     owned: Result<PathBuf, String>,
     config: &Path,
     pool: &str,
     kept: &onrunner::Kept,
     waking: Waking,
+    behind: &RefCell<Vec<onrunner::LeftBehind>>,
 ) -> Result<Option<Standing>, String> {
     if owned.is_err() {
         return Ok(None);
@@ -189,7 +207,10 @@ fn keep_on_as(
     said.into_iter()
         .next()
         .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
-        .map(|standing| Some(onrunner::standing_on_the_wire(standing)))
+        .map(|kept| {
+            behind.replace(kept.left_behind);
+            Some(onrunner::standing_on_the_wire(kept.standing))
+        })
 }
 
 /// One of this machine's profiles, as a pool's runner stands with it.
@@ -345,7 +366,7 @@ pub async fn pool_profiles(
                     Some(said) => said
                         .next()
                         .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
-                        .map(onrunner::standing_on_the_wire),
+                        .map(|kept| onrunner::standing_on_the_wire(kept.standing)),
                 });
                 match record {
                     Ok(record) => row(record, standing),

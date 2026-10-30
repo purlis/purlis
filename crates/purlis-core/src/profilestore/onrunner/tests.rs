@@ -840,6 +840,399 @@ fn settings_too_large_for_the_link_are_refused_in_words() {
     assert!(refused.contains("larger than"), "{refused}");
 }
 
+/// **A profile with 17 MiB of skills reaches its runner** (#4081), the size of the one whose every
+/// chat was refused on a real pool, in batches and whole.
+#[test]
+fn a_profile_with_several_mib_of_skills_is_sent_to_its_runner() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let skill = desktop.folders.config.join("skills/large");
+    fs::create_dir_all(&skill).unwrap();
+    for one in 0..170 {
+        fs::write(skill.join(format!("{one}.md")), vec![b'a'; 100 * 1024]).unwrap();
+    }
+
+    let sent = in_batches(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap();
+    assert!(sent.batches.len() > 1, "{} batches", sent.batches.len());
+    assert!(sent.left_behind.is_empty());
+
+    let runner = homes(dir.path(), "runner");
+    let record = kept_staged(&runner, dir.path(), sent).expect("it is kept");
+    let settings = &record.folders.config;
+    assert_eq!(
+        fs::read_dir(settings.join("skills/large")).unwrap().count(),
+        170
+    );
+    assert_eq!(
+        fs::read(settings.join("skills/large/7.md")).unwrap().len(),
+        100 * 1024
+    );
+    assert_eq!(fs::read(settings.join("CLAUDE.md")).unwrap(), b"Be brief.");
+    assert!(!settings.join("agents/credentials.json").exists());
+    assert_eq!(staged_left_in(settings), 0);
+}
+
+/// [`in_batches`]'s `sent`, staged as a link stages them and kept as a runner keeps them.
+fn kept_staged(runner: &Homes, dir: &Path, sent: ToKeep) -> Result<MachineProfile, String> {
+    use purlis_session_protocol::session::StagedSettings;
+    let mut staged = StagedSettings::default();
+    for batch in sent.batches {
+        staged.add(batch)?;
+    }
+    let mut profile = sent.profile;
+    let files = profile.settings_staged.take().expect("it names its files");
+    profile.settings = Some(staged.finished(&profile.name, files)?);
+    kept_for_the_desktop(
+        runner,
+        &runner_home(dir),
+        DESKTOP,
+        &profile,
+        &Answers(Some(0)),
+        7,
+    )?;
+    Ok(list(runner.config_root())
+        .unwrap()
+        .into_iter()
+        .find(|p| p.name == profile.name)
+        .expect("kept"))
+}
+
+/// How many stages a keep left in the settings folder `settings`.
+fn staged_left_in(settings: &Path) -> usize {
+    fs::read_dir(settings)
+        .unwrap()
+        .filter(|one| {
+            let name = one.as_ref().unwrap().file_name();
+            name.to_string_lossy().contains("staged")
+        })
+        .count()
+}
+
+/// **Nothing refused before is sent now, however many batches they take**: a file named like a
+/// credential and a sign-in inside a settings file stay behind, one split across batches too,
+/// and a settings file that does not parse refuses all of them.
+#[test]
+fn batches_send_nothing_that_was_refused_before() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let config = &desktop.folders.config;
+    fs::write(
+        config.join("settings.json"),
+        r#"{"env":{"TOKEN":"a-signed-in-token"},"theme":"dark"}"#,
+    )
+    .unwrap();
+    fs::create_dir_all(config.join("skills/large")).unwrap();
+    fs::write(
+        config.join("skills/large/SKILL.md"),
+        vec![b'a'; 3 * 1024 * 1024],
+    )
+    .unwrap();
+    fs::write(config.join(".credentials.json"), "a sign-in").unwrap();
+    fs::create_dir_all(config.join("skills/one")).unwrap();
+    fs::write(config.join("skills/one/.env"), "a secret").unwrap();
+    let kept = Kept::of(&desktop).unwrap().with_settings_of(&desktop);
+
+    let sent = in_batches(&kept).unwrap();
+
+    let pieces: Vec<_> = sent.batches.iter().flat_map(|b| &b.pieces).collect();
+    assert!(
+        pieces
+            .iter()
+            .filter(|p| p.path == "skills/large/SKILL.md")
+            .count()
+            > 1
+    );
+    assert!(pieces.iter().all(|p| p.path != ".credentials.json"
+        && p.path != "skills/one/.env"
+        && p.path != "agents/credentials.json"));
+    let settings: Vec<u8> = pieces
+        .iter()
+        .filter(|p| p.path == "settings.json")
+        .flat_map(|p| p.bytes.clone())
+        .collect();
+    assert!(!String::from_utf8_lossy(&settings).contains("a-signed-in-token"));
+
+    fs::write(config.join("settings.json"), "{ not json").unwrap();
+    assert!(in_batches(&kept).is_err());
+}
+
+/// **A runner checks what it stages as it checks what one keep carries**: a sign-in split across
+/// a desktop's pieces is removed once the file is whole, whatever sent it.
+#[test]
+fn a_runner_removes_a_sign_in_a_sender_split_across_pieces() {
+    use purlis_session_protocol::session::{SettingsBatch, SettingsPiece};
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let runner = homes(dir.path(), "runner");
+    fs::remove_file(desktop.folders.config.join("settings.json")).unwrap();
+    let whole = br#"{"env":{"TOKEN":"a-signed-in-token"},"theme":"dark"}"#;
+    let (first, second) = whole.split_at(20);
+    let mut sent = in_batches(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap();
+    sent.batches.push(SettingsBatch {
+        profile: desktop.name.clone(),
+        pieces: vec![
+            SettingsPiece {
+                path: "settings.json".to_owned(),
+                continues: false,
+                bytes: first.to_vec(),
+            },
+            SettingsPiece {
+                path: "settings.json".to_owned(),
+                continues: true,
+                bytes: second.to_vec(),
+            },
+        ],
+    });
+    sent.profile.settings_staged = sent.profile.settings_staged.map(|files| files + 1);
+
+    let record = kept_staged(&runner, dir.path(), sent).unwrap();
+
+    let kept = fs::read_to_string(record.folders.config.join("settings.json")).unwrap();
+    assert!(!kept.contains("a-signed-in-token"), "{kept}");
+    assert!(kept.contains("dark"), "{kept}");
+}
+
+/// **A keep that fails leaves the settings as they were** (#4081): files that cannot both be
+/// written (`skills/a` as a file and as a folder) stop at the stage, with nothing of the settings
+/// the runner kept touched and no stage left, and the next keep goes through.
+#[test]
+fn a_keep_that_fails_leaves_the_settings_it_kept() {
+    use purlis_session_protocol::session::SettingsFile;
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let record = kept_with_its_settings(dir.path(), &desktop);
+    let settings = record.folders.config.clone();
+
+    let mut profile = to_send(&Kept::of(&desktop).unwrap()).unwrap();
+    profile.settings = Some(vec![
+        SettingsFile {
+            path: "agents/new.md".to_owned(),
+            bytes: b"new".to_vec(),
+        },
+        SettingsFile {
+            path: "skills/a".to_owned(),
+            bytes: b"a file".to_vec(),
+        },
+        SettingsFile {
+            path: "skills/a/b.md".to_owned(),
+            bytes: b"under a file".to_vec(),
+        },
+    ]);
+    kept_for_the_desktop(
+        &runner,
+        &runner_home(dir.path()),
+        DESKTOP,
+        &profile,
+        &Answers(Some(0)),
+        7,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        fs::read(settings.join("agents/review.md")).unwrap(),
+        b"Review."
+    );
+    assert!(!settings.join("agents/new.md").exists());
+    assert_eq!(staged_left_in(&settings), 0);
+    let stages = runner.folder_of(".settings-staged");
+    assert_eq!(fs::read_dir(stages).unwrap().count(), 0);
+
+    assert_eq!(
+        kept_with_its_settings(dir.path(), &desktop).folders.config,
+        settings
+    );
+    assert_eq!(fs::read(settings.join("CLAUDE.md")).unwrap(), b"Be brief.");
+}
+
+/// **The stage is where no chat writes** (#4081): nothing of a keep appears in a settings folder
+/// a chat can write in, a stage a killed keep left is swept, and one that cannot be swept stands
+/// in no keep's way.
+#[cfg(unix)]
+#[test]
+fn a_stage_is_kept_apart_from_the_settings_folder_and_what_a_killed_keep_left_goes() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let record = kept_with_its_settings(dir.path(), &desktop);
+    let settings = record.folders.config.clone();
+    fs::write(settings.join("history.jsonl"), "the runner's own").unwrap();
+    let stages = homes(dir.path(), "runner").folder_of(".settings-staged");
+    let stuck = stages.join("1.killed/new/stuck");
+    fs::create_dir_all(&stuck).unwrap();
+    fs::write(stuck.join("a"), "a").unwrap();
+    fs::set_permissions(&stuck, fs::Permissions::from_mode(0o500)).unwrap();
+
+    kept_with_its_settings(dir.path(), &desktop);
+
+    fs::set_permissions(&stuck, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(
+        fs::read(settings.join("history.jsonl")).unwrap(),
+        b"the runner's own"
+    );
+    assert_eq!(staged_left_in(&settings), 0);
+    assert_eq!(fs::read(settings.join("CLAUDE.md")).unwrap(), b"Be brief.");
+}
+
+/// **Over the overall limit a profile still goes, by whole skills** (#4081): a skill with a file
+/// past the limit stays behind whole, what was read of it with it, and the rest goes; the note
+/// says what, its size and how to bring it.
+#[test]
+fn over_the_overall_limit_whole_skills_stay_behind_and_the_rest_goes() {
+    use purlis_session_protocol::session::MOST_PROFILE_SETTINGS_BYTES;
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let config = &desktop.folders.config;
+    let skill = config.join("skills/large");
+    fs::create_dir_all(&skill).unwrap();
+    fs::write(skill.join("SKILL.md"), "Use me.").unwrap();
+    // Sparse: its size is what an over-limit file says, and nothing of it is read.
+    let over = fs::File::create(skill.join("weights.bin")).unwrap();
+    over.set_len(MOST_PROFILE_SETTINGS_BYTES as u64 + 1)
+        .unwrap();
+    fs::create_dir_all(config.join("skills/small")).unwrap();
+    fs::write(config.join("skills/small/SKILL.md"), "Small.").unwrap();
+
+    let sent = in_batches(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap();
+
+    assert_eq!(sent.left_behind.len(), 1, "{:?}", sent.left_behind);
+    assert_eq!(sent.left_behind[0].path, "skills/large");
+    let paths: Vec<_> = sent
+        .batches
+        .iter()
+        .flat_map(|b| &b.pieces)
+        .map(|p| &p.path)
+        .collect();
+    assert!(paths.iter().any(|p| p.as_str() == "skills/small/SKILL.md"));
+    assert!(paths.iter().any(|p| p.as_str() == "CLAUDE.md"));
+    assert!(!paths.iter().any(|p| p.starts_with("skills/large")));
+
+    let note = left_behind_note("builds", &desktop.name, &sent.left_behind).unwrap();
+    assert!(note.contains("skills/large (129 MiB)"), "{note}");
+    assert!(note.contains("smaller"), "{note}");
+    assert_eq!(left_behind_note("builds", "work", &[]), None);
+}
+
+/// A note of many names names the largest, and counts the rest.
+#[test]
+fn a_note_of_many_names_the_largest_and_counts_the_rest() {
+    let behind: Vec<_> = (1..=9u64)
+        .map(|one| LeftBehind {
+            path: format!("skills/{one}"),
+            bytes: one * 1024 * 1024,
+        })
+        .collect();
+
+    let note = left_behind_note("builds", "work", &behind).unwrap();
+
+    assert!(note.contains("skills/9 (9 MiB), skills/8"), "{note}");
+    assert!(note.contains("3 more"), "{note}");
+    assert!(!note.contains("skills/1 "), "{note}");
+}
+
+/// **A harness's own settings file that cannot go refuses the chat** (#4081): it says what a chat
+/// may do, so no chat starts as if it had said nothing. A larger `CLAUDE.md` is only left behind.
+#[test]
+fn a_harness_settings_file_too_large_to_go_refuses_the_chat() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let config = &desktop.folders.config;
+    let kept = Kept::of(&desktop).unwrap().with_settings_of(&desktop);
+    fs::write(
+        config.join("settings.json"),
+        format!(r#"{{"a":"{}"}}"#, "a".repeat(MOST_SETTINGS_BYTES)),
+    )
+    .unwrap();
+
+    let refused = in_batches(&kept).unwrap_err();
+
+    assert!(refused.contains("larger than"), "{refused}");
+    let over = fs::File::create(config.join("settings.json")).unwrap();
+    over.set_len(1 + purlis_session_protocol::session::MOST_PROFILE_SETTINGS_BYTES as u64)
+        .unwrap();
+    assert!(in_batches(&kept).unwrap_err().contains("larger than"));
+}
+
+/// **What a runner has no use for does not go** (#4081): a skill's `node_modules`, `__pycache__`
+/// and `.git` stay behind unsaid, and what a made profile imports on this machine is not changed.
+#[test]
+fn a_skills_build_folders_do_not_go_to_a_runner() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let skill = desktop.folders.config.join("skills/built");
+    for folder in [
+        "node_modules/left",
+        "__pycache__",
+        ".git",
+        "venv/bin",
+        "scripts",
+    ] {
+        fs::create_dir_all(skill.join(folder)).unwrap();
+        fs::write(skill.join(folder).join("a.txt"), "a").unwrap();
+    }
+
+    let sent = in_batches(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap();
+
+    let paths: Vec<_> = sent
+        .batches
+        .iter()
+        .flat_map(|b| &b.pieces)
+        .map(|p| p.path.as_str())
+        .filter(|p| p.starts_with("skills/built"))
+        .collect();
+    assert_eq!(paths, ["skills/built/scripts/a.txt"]);
+    assert!(sent.left_behind.is_empty());
+}
+
+/// More files than a runner holds stay behind too, unread, rather than refusing the chat.
+#[test]
+fn files_past_the_limit_stay_behind_too() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let config = &desktop.folders.config;
+
+    let read =
+        crate::profilestore::made::settings_read("claude", config, 1024, 1, &|_| true).unwrap();
+
+    assert_eq!(read.files.len(), 1);
+    assert!(!read.left_behind.is_empty());
+}
+
+/// **A large skill keeps out as little as it can** (#4081): what stays behind is chosen by size
+/// before anything is read, so one of 20,000 files spends nothing of the limit on itself, and the
+/// harness's own files go first, whatever their size.
+#[test]
+fn a_large_skill_costs_the_ones_after_it_nothing() {
+    let wholes = Measured::from([
+        ("CLAUDE.md".to_owned(), (60, 1)),
+        ("agents/a.md".to_owned(), (10, 1)),
+        ("skills/a-vendored".to_owned(), (40, 20_000)),
+        ("skills/b".to_owned(), (20, 2)),
+        ("skills/c".to_owned(), (20, 2)),
+        ("skills/d-large".to_owned(), (70, 3)),
+    ]);
+
+    let (going, behind) = wholes_that_fit(wholes, 110, 8192);
+
+    let going: Vec<_> = going.iter().map(String::as_str).collect();
+    assert_eq!(going, ["CLAUDE.md", "agents/a.md", "skills/b", "skills/c"]);
+    assert_eq!(
+        behind,
+        BTreeMap::from([
+            ("skills/a-vendored".to_owned(), 40),
+            ("skills/d-large".to_owned(), 70),
+        ])
+    );
+}
+
+/// A skill goes or stays whole; an agent is a whole of its own.
+#[test]
+fn a_skill_goes_or_stays_whole() {
+    assert_eq!(whole_of("skills/a/deep/SKILL.md"), "skills/a");
+    assert_eq!(whole_of("agents/review.md"), "agents/review.md");
+    assert_eq!(whole_of("CLAUDE.md"), "CLAUDE.md");
+}
+
 /// **A runner keeps no settings file it would not import**: one named like a credential, a
 /// hidden one, one the list does not name, and one outside the settings folder are each refused,
 /// and nothing of what was sent is written.

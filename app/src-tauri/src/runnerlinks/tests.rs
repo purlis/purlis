@@ -581,9 +581,9 @@ fn only_a_runner_of_1_50_or_later_is_sent_a_profiles_settings() {
     let older = for_a_runner_of(version(49), &kept).unwrap();
     let newer = for_a_runner_of(version(50), &kept).unwrap();
 
-    assert_eq!(older.settings, None);
-    assert_eq!(older.name, "work");
-    let sent = newer.settings.expect("sent");
+    assert_eq!(older.profile.settings, None);
+    assert_eq!(older.profile.name, "work");
+    let sent = newer.profile.settings.expect("sent");
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].path, "CLAUDE.md");
 }
@@ -605,6 +605,28 @@ fn settings_too_large_to_send_refuse_no_chat_on_a_runner_before_1_50() {
     assert!(for_a_runner_of(version(43), &kept).is_ok());
     let refused = for_a_runner_of(version(50), &kept).unwrap_err();
     assert!(refused.contains("larger than"), "{refused}");
+}
+
+/// **Only a runner of 1.56 or later takes settings in batches** (#4081): one before it keeps
+/// today's refusal, in words; one of 1.56 is sent them, however large, and the keep names them.
+#[test]
+fn a_runner_of_1_56_takes_settings_too_large_for_one_keep_in_batches() {
+    let folder = tempfile::tempdir().unwrap();
+    std::fs::write(
+        folder.path().join("CLAUDE.md"),
+        vec![b'a'; 3 * purlis_core::profilestore::onrunner::MOST_SETTINGS_BYTES],
+    )
+    .unwrap();
+    let kept = work_with_settings_in(folder.path());
+
+    let refused = for_a_runner_of(version(55), &kept).unwrap_err();
+    assert!(refused.contains("larger than"), "{refused}");
+
+    let sent = for_a_runner_of(version(56), &kept).unwrap();
+    assert!(sent.batches.len() >= 3, "{} batches", sent.batches.len());
+    assert_eq!(sent.profile.settings, None);
+    assert_eq!(sent.profile.settings_staged, Some(1));
+    assert!(sent.left_behind.is_empty());
 }
 
 /// **A runner's refusal is said as its own words, cut short** (#2049, L4): a runner cannot fill

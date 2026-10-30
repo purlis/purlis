@@ -35,6 +35,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
+use std::collections::BTreeMap;
+
+use super::made::{Measured, whole_of};
 use super::sign_in::{self, Look, Standing};
 use super::{Homes, MachineProfile};
 
@@ -54,11 +57,12 @@ pub struct Kept {
     pub settings_in: Option<PathBuf>,
 }
 
-/// **The most bytes of settings files sent with a profile** (#3448): half of what one frame of
-/// the link carries, since their bytes cross as base64.
+/// **The most bytes of settings files sent in one `keep_profile`**, to a runner before 1.56
+/// (#3448): half of what one frame of the link carries, since their bytes cross as base64. A
+/// runner of 1.56 or later takes them in batches ([`in_batches`], #4081).
 pub const MOST_SETTINGS_BYTES: usize = purlis_session_protocol::link::MOST_CONTROL_FRAME_BYTES / 2;
 
-/// **The most settings files sent with a profile** (#3448).
+/// **The most settings files sent in one `keep_profile`**, to a runner before 1.56 (#3448).
 pub const MOST_SETTINGS_FILES: usize = 2048;
 
 /// What frames one settings file on the wire beside its path and bytes, counted against
@@ -122,10 +126,11 @@ impl Kept {
     }
 }
 
-/// **What the desktop sends its runner to keep `kept`** (`keep_profile`): its name, harness,
-/// sandbox-only mark and pin, and, where [`Kept::settings_in`] names its settings folder, the
-/// settings files a made profile imports, read as an import reads them (#3448): never a sign-in
-/// or a file named like a credential, and at most [`MOST_SETTINGS_BYTES`], or why not.
+/// **What the desktop sends a runner before 1.56 to keep `kept`** (`keep_profile`): its name,
+/// harness, sandbox-only mark and pin, and, where [`Kept::settings_in`] names its settings
+/// folder, the settings files a made profile imports, read as an import reads them (#3448):
+/// never a sign-in or a file named like a credential, and at most [`MOST_SETTINGS_BYTES`], or why
+/// not.
 ///
 /// **Each settings file is sent with no sign-in in it** ([`super::sent::without_credentials`],
 /// D-3448-8): every environment block, and every setting that names or runs a credential source,
@@ -135,7 +140,24 @@ impl Kept {
 pub fn to_send(kept: &Kept) -> Result<purlis_session_protocol::session::ProfileToKeep, String> {
     let settings = match &kept.settings_in {
         Some(folder) => {
-            let read = super::made::settings_read(&kept.harness, folder, MOST_SETTINGS_BYTES)?;
+            let read = super::made::settings_read(
+                &kept.harness,
+                folder,
+                MOST_SETTINGS_BYTES,
+                usize::MAX,
+                &|_| true,
+            )?;
+            let too_large = || {
+                format!(
+                    "its settings in {} are larger than a link to a runner carries ({} KiB)",
+                    folder.display(),
+                    MOST_SETTINGS_BYTES / 1024
+                )
+            };
+            if !read.left_behind.is_empty() {
+                return Err(too_large());
+            }
+            let read = read.files;
             if read.len() > MOST_SETTINGS_FILES {
                 return Err(format!(
                     "its settings in {} are more than {MOST_SETTINGS_FILES} files, more than a \
@@ -151,11 +173,7 @@ pub fn to_send(kept: &Kept) -> Result<purlis_session_protocol::session::ProfileT
                 sent.push(purlis_session_protocol::session::SettingsFile { path, bytes });
             }
             if size > MOST_SETTINGS_BYTES {
-                return Err(format!(
-                    "its settings in {} are larger than a link to a runner carries ({} KiB)",
-                    folder.display(),
-                    MOST_SETTINGS_BYTES / 1024
-                ));
+                return Err(too_large());
             }
             Some(sent)
         }
@@ -165,6 +183,173 @@ pub fn to_send(kept: &Kept) -> Result<purlis_session_protocol::session::ProfileT
         settings,
         ..purlis_session_protocol::session::ProfileToKeep::from(kept.clone())
     })
+}
+
+/// **What the desktop sends a runner of 1.56 or later to keep a profile** (#4081).
+#[derive(Debug)]
+pub struct ToKeep {
+    /// The keep itself, which names how many files were staged for it.
+    pub profile: purlis_session_protocol::session::ProfileToKeep,
+    /// Its settings, each batch within a control frame, sent first.
+    pub batches: Vec<purlis_session_protocol::session::SettingsBatch>,
+    /// What stayed behind, over the limits, so the person is told.
+    pub left_behind: Vec<LeftBehind>,
+}
+
+/// **A skill, an agent or a settings file that stayed on the desktop** (#4081): a whole skill's
+/// folder, since half a skill is no skill.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeftBehind {
+    /// Its path under the settings folder: `skills/review`, `CLAUDE.md`.
+    pub path: String,
+    pub bytes: u64,
+}
+
+/// **Which of the settings folder's `wholes` go, and what size of each stays** (#4081): the
+/// harness's top-level files first, then the smallest first, so a large skill keeps out as little
+/// as it can, within `most_bytes` and `most_files`.
+fn wholes_that_fit(
+    wholes: Measured,
+    most_bytes: u64,
+    most_files: usize,
+) -> (std::collections::BTreeSet<String>, BTreeMap<String, u64>) {
+    let mut smallest: Vec<_> = wholes.into_iter().collect();
+    smallest.sort_by_key(|(path, (bytes, _))| (path.contains('/'), *bytes));
+    let (mut going, mut behind) = (std::collections::BTreeSet::new(), BTreeMap::new());
+    let (mut size, mut count) = (0, 0);
+    for (path, (bytes, files)) in smallest {
+        if size + bytes > most_bytes || count + files > most_files {
+            behind.insert(path, bytes);
+        } else {
+            size += bytes;
+            count += files;
+            going.insert(path);
+        }
+    }
+    (going, behind)
+}
+
+/// What the read of a profile leaves of the overall limit, as a runner counts it: a settings file
+/// rewritten without its credentials can come out longer than it went in.
+const REWRITING_ROOM: usize = 8 * 1024 * 1024;
+
+/// **`kept`, as a runner of 1.56 or later is sent it** (`stage_profile_settings`, #4081): what
+/// [`to_send`] reads and removes, whatever its size, in batches, under one overall limit
+/// ([`MOST_PROFILE_SETTINGS_BYTES`](purlis_session_protocol::session::MOST_PROFILE_SETTINGS_BYTES),
+/// [`MOST_PROFILE_SETTINGS_FILES`](purlis_session_protocol::session::MOST_PROFILE_SETTINGS_FILES)).
+/// What is over it stays behind, by whole skills ([`LeftBehind`]), and the rest goes: no chat is
+/// refused for it. A harness's own settings file is the exception: it says what a chat may do, so
+/// one that cannot go, over [`MOST_SETTINGS_BYTES`], or one that does not parse, is refused in
+/// words, and nothing is sent.
+pub fn in_batches(kept: &Kept) -> Result<ToKeep, String> {
+    use purlis_session_protocol::session as wire;
+    let mut profile = wire::ProfileToKeep::from(kept.clone());
+    let Some(folder) = &kept.settings_in else {
+        return Ok(ToKeep {
+            profile,
+            batches: Vec::new(),
+            left_behind: Vec::new(),
+        });
+    };
+    let most = wire::MOST_PROFILE_SETTINGS_BYTES - REWRITING_ROOM;
+    let too_large = |path: &str, bytes: usize| {
+        (super::sent::rewritten(&kept.harness, path) && bytes > MOST_SETTINGS_BYTES).then(|| {
+            format!(
+                "its settings file {} in {} is larger than a settings file can be ({} KiB)",
+                crate::shown::short(path),
+                folder.display(),
+                MOST_SETTINGS_BYTES / 1024
+            )
+        })
+    };
+    let wholes = super::made::settings_measured(&kept.harness, folder)?;
+    for (path, (bytes, _)) in &wholes {
+        if let Some(why) = too_large(path, usize::try_from(*bytes).unwrap_or(usize::MAX)) {
+            return Err(why);
+        }
+    }
+    let (going, mut behind) =
+        wholes_that_fit(wholes, most as u64, wire::MOST_PROFILE_SETTINGS_FILES);
+    let read = super::made::settings_read(
+        &kept.harness,
+        folder,
+        most,
+        wire::MOST_PROFILE_SETTINGS_FILES,
+        &|path| going.contains(whole_of(path)),
+    )?;
+    // What grew since it was measured stays behind whole too.
+    for (path, bytes) in &read.left_behind {
+        if let Some(why) = too_large(path, usize::MAX) {
+            return Err(why);
+        }
+        *behind.entry(whole_of(path).to_owned()).or_default() += bytes;
+    }
+    let mut sent = Vec::with_capacity(read.files.len());
+    for (path, bytes) in read.files {
+        if let Some(why) = too_large(&path, bytes.len()) {
+            return Err(why);
+        }
+        match behind.get_mut(whole_of(&path)) {
+            Some(size) => *size += bytes.len() as u64,
+            None => {
+                let bytes = super::sent::without_credentials(&kept.harness, &path, &bytes)?;
+                sent.push(wire::SettingsFile { path, bytes });
+            }
+        }
+    }
+    profile.settings_staged = Some(u32::try_from(sent.len()).unwrap_or(u32::MAX));
+    Ok(ToKeep {
+        batches: wire::settings_in_batches(&kept.name, sent),
+        left_behind: behind
+            .into_iter()
+            .map(|(path, bytes)| LeftBehind { path, bytes })
+            .collect(),
+        profile,
+    })
+}
+
+/// How many of what stayed behind a Notice names before it counts the rest.
+const NAMED_LEFT_BEHIND: usize = 6;
+
+/// **What a chat's tab says of what stayed behind on pool `pool`** (#4081): what, its size, and
+/// how to bring it. `None` where nothing did.
+pub fn left_behind_note(pool: &str, name: &str, behind: &[LeftBehind]) -> Option<String> {
+    use purlis_session_protocol::session::{
+        MOST_PROFILE_SETTINGS_BYTES, MOST_PROFILE_SETTINGS_FILES,
+    };
+    const MIB: u64 = 1024 * 1024;
+    if behind.is_empty() {
+        return None;
+    }
+    let mut largest: Vec<_> = behind.iter().collect();
+    largest.sort_by_key(|one| std::cmp::Reverse(one.bytes));
+    let mut named: Vec<String> = largest
+        .iter()
+        .take(NAMED_LEFT_BEHIND)
+        .map(|one| {
+            format!(
+                "{} ({} MiB)",
+                crate::shown::short(&one.path),
+                one.bytes.div_ceil(MIB)
+            )
+        })
+        .collect();
+    if let Some(more) = behind
+        .len()
+        .checked_sub(NAMED_LEFT_BEHIND)
+        .filter(|n| *n > 0)
+    {
+        named.push(format!("{more} more"));
+    }
+    Some(format!(
+        "This chat runs on pool {pool} without some of the profile '{}''s settings, which came to \
+         more than the {} MiB and {MOST_PROFILE_SETTINGS_FILES} files a runner keeps: {}. Make \
+         them smaller or remove them from the profile, and its next chat on the pool brings the \
+         rest.",
+        crate::shown::short(name),
+        MOST_PROFILE_SETTINGS_BYTES as u64 / MIB,
+        named.join(", ")
+    ))
 }
 
 /// **Keeps the desktop's profile `kept` for the desktop `desktop` in this runner's store under
@@ -366,6 +551,7 @@ impl From<Kept> for purlis_session_protocol::session::ProfileToKeep {
             sandbox_only: kept.sandbox_only,
             pinned: kept.pinned,
             settings: None,
+            settings_staged: None,
         }
     }
 }
