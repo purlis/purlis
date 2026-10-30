@@ -16,8 +16,10 @@
 //! **Where the hook socket is the session host's** (#2000), the host admits the line and hands
 //! the connection on to the window, which holds the doors: over a socket of the window's own
 //! beside the hook socket ([`beside`]), one connection a slot, its descriptor passed with the
-//! ask ([`hand_on`], [`Receiving`]). Only this user's processes are read there, and no chat's
-//! sandbox lets it reach that socket. A slot the window is not there to take is refused.
+//! ask ([`hand_on`], [`Receiving`]). Only the process that holds the hook socket's listener, the
+//! session host itself, is read there: the line it hands on was admitted by its token already,
+//! and no other process, of this user or not, can hand the window a slot. No chat's sandbox
+//! reaches that socket either. A slot the window is not there to take is refused.
 //!
 //! Nothing here hands a chat a descriptor or binds anything for it: the chat only ever holds the
 //! connection it opened itself.
@@ -132,6 +134,8 @@ pub fn hand_on(path: &std::path::Path, ask: &ServeAsk, slot: &Slot) -> io::Resul
 #[cfg(unix)]
 pub struct Receiving {
     path: std::path::PathBuf,
+    /// Which file at `path` is this one's: the one `bind` made, so a later one is never removed.
+    file: (u64, u64),
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     waking: Option<std::os::unix::net::UnixStream>,
     reading: Option<std::thread::JoinHandle<()>>,
@@ -140,10 +144,20 @@ pub struct Receiving {
 #[cfg(unix)]
 impl Receiving {
     /// **Binds [`beside`] the hook socket at `hook_socket`**, in its folder, which is made this
-    /// user's alone where it is not; every slot handed on is handed to `each`. Only this user's
-    /// processes are read.
+    /// user's alone where it is not; every slot handed on is handed to `each`. Only the process
+    /// that holds the hook socket's listener is read ([`HookHolder`]).
     pub fn bind(hook_socket: &std::path::Path, each: super::Serves) -> io::Result<Receiving> {
-        use std::os::unix::fs::PermissionsExt as _;
+        Self::bind_admitting(hook_socket, each, HookHolder::new(hook_socket))
+    }
+
+    /// [`Self::bind`], admitting whom `admits` admits: for the tests, which hand slots on from
+    /// their own process.
+    fn bind_admitting(
+        hook_socket: &std::path::Path,
+        each: super::Serves,
+        mut admits: impl FnMut(&std::os::unix::net::UnixStream) -> bool + Send + 'static,
+    ) -> io::Result<Receiving> {
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
         let path = beside(hook_socket);
         if let Some(folder) = path.parent() {
             purlis_same_user::private_directory(folder)?;
@@ -154,11 +168,12 @@ impl Receiving {
         }
         let listener = std::os::unix::net::UnixListener::bind(&path)?;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+        let made = std::fs::symlink_metadata(&path)?;
+        let file = (made.dev(), made.ino());
         listener.set_nonblocking(true)?;
         let (woken, waking) = std::os::unix::net::UnixStream::pair()?;
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let stopped = std::sync::Arc::clone(&stop);
-        let owner = purlis_same_user::Uid::effective();
         let reading = std::thread::Builder::new()
             .name("purlis-slots".into())
             .spawn(move || {
@@ -178,10 +193,12 @@ impl Receiving {
                         return;
                     }
                     let Ok((handing, _)) = listener.accept() else {
+                        // Out of descriptors, most likely: the socket stays readable, so wait a
+                        // little rather than spin.
+                        std::thread::sleep(std::time::Duration::from_millis(10));
                         continue;
                     };
-                    let peer = purlis_same_user::peer_process_of(&handing).map(|(uid, _)| uid);
-                    if purlis_same_user::admit_peer(peer, owner).is_err() {
+                    if !admits(&handing) {
                         continue;
                     }
                     if let Some((ask, slot)) = taken_from(&handing) {
@@ -191,6 +208,7 @@ impl Receiving {
             })?;
         Ok(Receiving {
             path,
+            file,
             stop,
             waking: Some(waking),
             reading: Some(reading),
@@ -206,7 +224,61 @@ impl Drop for Receiving {
         if let Some(reading) = self.reading.take() {
             let _ = reading.join();
         }
-        let _ = std::fs::remove_file(&self.path);
+        use std::os::unix::fs::MetadataExt as _;
+        let its = std::fs::symlink_metadata(&self.path)
+            .is_ok_and(|now| (now.dev(), now.ino()) == self.file);
+        if its {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+/// **Whether a connection to the window's slots socket comes from the session host** (#3316):
+/// this user's, and the process that holds the hook socket's listener now, read from the
+/// kernel's own tables as `purlis_same_user::admit_host` reads a host. The peer's pid is the
+/// process that connected, which is alive while the connection is open. One found to hold it is
+/// taken at its word for [`A_HOST_IS_KNOWN_FOR`], so not every request pays for the read.
+#[cfg(unix)]
+struct HookHolder {
+    hook: std::path::PathBuf,
+    owner: purlis_same_user::Uid,
+    known: Option<(u32, std::time::Instant)>,
+}
+
+/// How long a process found holding the hook socket is taken for the session host.
+#[cfg(unix)]
+const A_HOST_IS_KNOWN_FOR: std::time::Duration = std::time::Duration::from_secs(60);
+
+#[cfg(unix)]
+impl HookHolder {
+    fn new(
+        hook: &std::path::Path,
+    ) -> impl FnMut(&std::os::unix::net::UnixStream) -> bool + Send + use<> {
+        let mut holder = HookHolder {
+            hook: hook.to_path_buf(),
+            owner: purlis_same_user::Uid::effective(),
+            known: None,
+        };
+        move |handing| holder.admits(handing)
+    }
+
+    fn admits(&mut self, handing: &std::os::unix::net::UnixStream) -> bool {
+        let Ok((uid, pid)) = purlis_same_user::peer_process_of(handing) else {
+            return false;
+        };
+        if purlis_same_user::admit_peer(Ok(uid), self.owner).is_err() {
+            return false;
+        }
+        if self
+            .known
+            .is_some_and(|(known, at)| known == pid && at.elapsed() < A_HOST_IS_KNOWN_FOR)
+        {
+            return true;
+        }
+        let holds = purlis_same_user::holds_a_socket_at(pid, &self.hook, crate::forklock::output)
+            .unwrap_or(false);
+        self.known = holds.then(|| (pid, std::time::Instant::now()));
+        holds
     }
 }
 

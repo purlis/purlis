@@ -31,6 +31,10 @@ const token = process.env.PURLIS_CHAT_TOKEN;
 const SLOTS = 4;
 /** What the door writes on a parked connection as it takes it, and what is written back. */
 const GO = '{"go":true}';
+/** How a refusal begins where the chat has no door on the port: its grant is gone. */
+const NO_DOOR = 'this chat may not serve on that port';
+/** The longest wait before a connection refused for another reason is dialled again. */
+const MOST_WAIT = 30000;
 
 /** The port a call of `listen` asks for, or undefined where it names none. */
 const wanted = (args) => {
@@ -68,6 +72,15 @@ if (valid && !net.Server.prototype.__purlisListen && (socket || dial)) {
     let parked = false;
     let stopped = false;
     let unanswered = 0;
+    let wait = 500;
+
+    // Once one was parked, a connection turned away for any reason but a door gone (the hook
+    // socket busy, the window away) is dialled again, a little later each time.
+    const later = () => {
+      if (stopped) return;
+      setTimeout(once, wait).unref();
+      wait = Math.min(wait * 2, MOST_WAIT);
+    };
 
     const stop = () => {
       stopped = true;
@@ -108,11 +121,16 @@ if (valid && !net.Server.prototype.__purlisListen && (socket || dial)) {
               said = undefined;
             }
             if (!said || said.taken !== true) {
+              state = 'refused';
               slot.destroy();
-              refused();
+              const gone = typeof said?.refused === 'string' && said.refused.startsWith(NO_DOOR);
+              if (!parked || gone) refused();
+              else later();
               return;
             }
             state = 'parked';
+            wait = 500;
+            unanswered = 0;
             if (!parked) {
               parked = true;
               if (callback) server.once('listening', callback);
@@ -138,13 +156,15 @@ if (valid && !net.Server.prototype.__purlisListen && (socket || dial)) {
       const onClose = () => {
         slots.delete(slot);
         if (state === 'asking') {
-          // Closed unanswered: nothing parks it.
+          // Closed unanswered: nothing parks it. Before any was parked, as many of these as
+          // it dials are a refusal; after, it is dialled again.
           unanswered += 1;
-          if (unanswered >= SLOTS) refused();
+          if (!parked && unanswered >= SLOTS) refused();
+          else if (parked) later();
           return;
         }
         // A parked connection the door let go of: dial another, a moment later.
-        if (state === 'parked' && !stopped) setTimeout(once, 500).unref();
+        if (state === 'parked') later();
       };
       slot.on('connect', () => {
         slot.write(`${JSON.stringify({ chat, serve: port, token })}\n`);

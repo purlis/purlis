@@ -702,7 +702,7 @@ other.listen(port + 1, "127.0.0.1", () => console.log("other listening"));
                 .arg(&node)
                 .arg("server.js")
                 .current_dir(&cwd_path)
-                .env("NODE_OPTIONS", format!("--require "{}"", shim.display()))
+                .env("NODE_OPTIONS", format!("--require \"{}\"", shim.display()))
                 .env("PORT", port.to_string())
                 .env("HOST", "127.0.0.1")
                 .env(door::DIAL_ENV, &hook)
@@ -746,6 +746,20 @@ other.listen(port + 1, "127.0.0.1", () => console.log("other listening"));
                 .current_dir(&cwd_path),
         )
         .expect("it runs");
+        // Nor on every interface: nothing of the chat's binds its port anywhere.
+        let elsewhere: Vec<String> = [("4", "0.0.0.0"), ("6", "::")]
+            .iter()
+            .map(|(family, address)| {
+                let out = crate::forklock::output(
+                    std::process::Command::new(backend::SANDBOX_EXEC)
+                        .args(["-p", &profile, "/usr/bin/perl", "-e", TCP])
+                        .args([*family, *address, &port.to_string()])
+                        .current_dir(&cwd_path),
+                )
+                .expect("it runs");
+                String::from_utf8_lossy(&out.stdout).trim().to_owned()
+            })
+            .collect();
         drop(door);
         let _ = server.kill();
         let _ = server.wait();
@@ -761,7 +775,7 @@ other.listen(port + 1, "127.0.0.1", () => console.log("other listening"));
             carried.lines().next()
         );
         assert!(
-            said.contains(&format!(""port":{port}")),
+            said.contains(&format!("\"port\":{port}")),
             "it says it listens on its port: {said}"
         );
         assert!(carried.starts_with("HTTP/1.1 200 OK"), "{carried}");
@@ -774,6 +788,11 @@ other.listen(port + 1, "127.0.0.1", () => console.log("other listening"));
             String::from_utf8_lossy(&direct.stdout).trim(),
             "bind",
             "a direct bind of its own port is refused"
+        );
+        assert_eq!(
+            elsewhere,
+            ["bind", "bind"],
+            "its port is bound nowhere else"
         );
     }
 

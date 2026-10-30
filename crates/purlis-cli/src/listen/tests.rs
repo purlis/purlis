@@ -99,3 +99,12 @@ fn each_run_writes_its_shim_new_under_a_name_of_its_own() {
     assert_ne!(first, second);
     assert_eq!(std::fs::read_to_string(&first).expect("read"), SHIM);
 }
+
+/// #3316 review: the shim stops dialling only where the window says the chat's door is gone, in
+/// the window's own words; any other refusal after the first is parked is dialled again.
+#[test]
+fn the_shim_knows_a_door_gone_by_the_windows_own_words() {
+    let lead = "this chat may not serve on that port";
+    assert!(purlis_core::sandbox::door::NO_DOOR.starts_with(lead));
+    assert!(SHIM.contains(&format!("const NO_DOOR = '{lead}';")));
+}

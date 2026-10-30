@@ -749,9 +749,6 @@ impl Relayed {
     }
 }
 
-/// What runs a brokered `secret exec` (#1407): the ask, the connection it is held on, and what
-/// is told each host the run's sandbox refused, as the asking chat's block (the same road a
-/// block its own hook found takes: [`heard_block`]).
 /// The audit's kind for a connection a chat's server dialled in, parked or refused (#3316).
 pub const SERVE_AUDITED: &str = "trust.sandbox.serve";
 
@@ -764,6 +761,9 @@ pub type ParkSlots = Arc<
         + 'static,
 >;
 
+/// What runs a brokered `secret exec` (#1407): the ask, the connection it is held on, and what
+/// is told each host the run's sandbox refused, as the asking chat's block (the same road a
+/// block its own hook found takes: [`heard_block`]).
 pub type SecretExecs = Arc<
     dyn Fn(
             purlis_core::secrets::brokered::Ask,
@@ -1166,6 +1166,19 @@ const RUNNER_SERVICE_UNNAMED: &str = "The runner this chat runs on refused a ser
 /// (#2510): its Notice names that runner, `runner`, where the window knows its name. Any other
 /// block is as it was told.
 pub(crate) fn on_its_runner(mut told: ChatBlocked, runner: Option<&str>) -> ChatBlocked {
+    // A Claude Code chat's server dials in to a door in this window on macOS alone (#3316): one
+    // on a runner reaches none, so its refused listen is offered as it was before.
+    if runner.is_some()
+        && told.offer == BlockOffer::Listen
+        && told.route.is_some()
+        && told.route == told.target.as_deref().map(claude_code_listen_said)
+    {
+        let (offer, _, why) = without_the_sandbox(CLAUDE_CODE_LISTEN_SAID);
+        told.offer = offer;
+        told.levels = Vec::new();
+        told.route = why;
+        return told;
+    }
     if told.kind == purlis_core::sandboxblock::Kind::RunnerService.word()
         && told.offer == BlockOffer::Port
         && let Some(port) = told

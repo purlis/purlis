@@ -4262,10 +4262,12 @@ impl std::io::Read for Deadlined {
 fn refuse_with(line: &Line, why: &str, writer: &mut std::os::unix::net::UnixStream) {
     use std::io::Write;
     let said = match line {
-        Line::Report(_) | Line::Tool(_) | Line::Refused(_) => serde_json::to_vec(&Receipt {
-            taken: false,
-            refused: Some(why.to_owned()),
-        }),
+        Line::Report(_) | Line::Tool(_) | Line::Refused(_) | Line::Serve(_) => {
+            serde_json::to_vec(&Receipt {
+                taken: false,
+                refused: Some(why.to_owned()),
+            })
+        }
         Line::Ask(_) | Line::Frames(_) => serde_json::to_vec(&Answer::No {
             why: why.to_owned(),
         }),

@@ -2319,11 +2319,17 @@ impl Chats {
     }
 
     /// **Each open chat serving on `port` is owed a restart** (#2019): its server's grant was
-    /// taken back. Its door there closes at once, so nothing reaches its server on that port from
-    /// now on (#3316), and its profile was fixed as it started, so it restarts without it.
-    /// `chat` names the one chat it was taken back from, by id; none, every chat. The chats owed
-    /// it, by number.
-    pub fn owe_restart_serving(&self, chat: Option<&str>, port: u16) -> Vec<u32> {
+    /// taken back, and its profile was fixed as it started, so it restarts without it. Where no
+    /// grant lets it listen there any more (`project_holds` says whether the project's own still
+    /// does; a chat's own is read here), its door there closes at once, so nothing reaches its
+    /// server on that port from now on (#3316). `chat` names the one chat it was taken back
+    /// from, by id; none, every chat. The chats owed it, by number.
+    pub fn owe_restart_serving(
+        &self,
+        chat: Option<&str>,
+        port: u16,
+        project_holds: bool,
+    ) -> Vec<u32> {
         let serving: Vec<u32> = lock(&self.open)
             .iter()
             .filter(|(_, running)| {
@@ -2335,15 +2341,32 @@ impl Chats {
             })
             .map(|(number, _)| *number)
             .collect();
-        // Its door closes at once (#3316): nothing reaches its server there from now on, and a
-        // server that dials in has its parked connections closed.
-        {
+        // Its door closes at once where nothing lets it listen there any more (#3316): nothing
+        // reaches its server there from now on, and a server that dials in has its parked
+        // connections closed.
+        if !project_holds {
+            // The chats whose own grant still lets them listen there, read under the grants'
+            // hold alone, so no two holds are ever taken together here.
+            let held_by_their_own: Vec<String> = lock(&self.grants)
+                .iter()
+                .filter(|(_, made)| {
+                    made.iter()
+                        .any(|one| one.what == purlis_core::sandbox::grant::What::Listen(port))
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
             let mut open = lock(&self.open);
             for number in &serving {
-                if let Some(confinement) = open
-                    .get_mut(number)
-                    .and_then(|running| running.confinement.as_mut())
-                {
+                let Some(running) = open.get_mut(number) else {
+                    continue;
+                };
+                let its_own = running
+                    .chat
+                    .identity
+                    .id
+                    .as_ref()
+                    .is_some_and(|id| held_by_their_own.contains(id));
+                if let Some(confinement) = running.confinement.as_mut().filter(|_| !its_own) {
                     confinement.stop_serving(port);
                 }
             }

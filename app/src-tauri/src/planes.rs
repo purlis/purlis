@@ -3163,6 +3163,13 @@ impl Planes {
         held.hooks.park_slots_with({
             let held = Arc::downgrade(&held);
             let plane = id.clone();
+            // A refusal is audited once a minute for each chat, port and reason at most: a
+            // server that keeps dialling is said once, never a row a dial.
+            const SERVE_REFUSALS_SAID_EVERY: std::time::Duration =
+                std::time::Duration::from_secs(60);
+            let audited: Arc<
+                Mutex<std::collections::HashMap<(u32, u16, &'static str), std::time::Instant>>,
+            > = Arc::default();
             Arc::new(move |ask, slot| {
                 let Some(held) = held.upgrade() else {
                     purlis_core::hookwire::serve::refused(
@@ -3174,7 +3181,15 @@ impl Planes {
                 let refused = match held.chats().park_slot(&ask, slot) {
                     Ok(false) => return,
                     Ok(true) => None,
-                    Err(why) => Some(why),
+                    Err(why) => {
+                        let now = std::time::Instant::now();
+                        let mut said = audited.lock().unwrap_or_else(PoisonError::into_inner);
+                        said.retain(|_, at| now.duration_since(*at) < SERVE_REFUSALS_SAID_EVERY);
+                        if said.insert((ask.chat, ask.serve, why), now).is_some() {
+                            return;
+                        }
+                        Some(why)
+                    }
                 };
                 if let Err(why) =
                     held.hooks

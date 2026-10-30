@@ -541,9 +541,9 @@ mod sockets {
 
     /// **The two backends a door carries to** (#3316): the chat's own socket, or slots its
     /// server dialled in. Each test below is run against both.
-    enum Served {
-        Socket(tempfile::TempDir),
-        Dialled(Arc<Slots>),
+    struct Served {
+        _dir: Option<tempfile::TempDir>,
+        _slots: Option<Arc<Slots>>,
     }
 
     /// A door on a free port to a server that answers with `answer`, through `backend`
@@ -565,13 +565,27 @@ mod sockets {
                 }
             });
             let door = Door::open(port, &socket).expect("the door opens");
-            (door, port, Served::Socket(dir))
+            (
+                door,
+                port,
+                Served {
+                    _dir: Some(dir),
+                    _slots: None,
+                },
+            )
         } else {
             let (door, slots) = Door::dialled(port).expect("the door opens");
             for _ in 0..4 {
                 dial(&slots, Arc::clone(&answer));
             }
-            (door, port, Served::Dialled(slots))
+            (
+                door,
+                port,
+                Served {
+                    _dir: None,
+                    _slots: Some(slots),
+                },
+            )
         }
     }
 

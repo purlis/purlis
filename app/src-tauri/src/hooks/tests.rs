@@ -2729,6 +2729,14 @@ fn a_port_to_serve_on_is_never_a_system_ones_or_one_in_use() {
     );
     // #3316: where the chat's server dials in, one that bound the port itself is no Node server
     // `purlis listen` started: told how one is, and offered Start without the sandbox.
+    // A Claude Code chat on a runner reaches no door of this window, so its listen is offered
+    // as it was before dial-in.
+    let mut claude = told.clone();
+    claude.route = Some(claude_code_listen_said("5173"));
+    let on_a_runner = on_its_runner(claude.clone(), Some("build-box"));
+    assert_eq!(on_a_runner.offer, BlockOffer::Unsandboxed);
+    assert_eq!(on_a_runner.route.as_deref(), Some(CLAUDE_CODE_LISTEN_SAID));
+    assert_eq!(on_its_runner(claude, None).offer, BlockOffer::Listen);
     let dialled = on_its_serving(told, &[5173], true);
     assert_eq!(dialled.offer, BlockOffer::Unsandboxed);
     assert!(dialled.levels.is_empty());

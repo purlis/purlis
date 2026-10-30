@@ -122,9 +122,11 @@ fn a_host_hands_a_slot_on_to_the_window_beside_its_hook_socket() {
     let hook = dir.path().join("app").join("hooks.sock");
     let kept: Arc<Mutex<Vec<(ServeAsk, Slot)>>> = Arc::default();
     let keeping = Arc::clone(&kept);
-    let receiving = Receiving::bind(
+    // This process stands in for the session host.
+    let receiving = Receiving::bind_admitting(
         &hook,
         Box::new(move |ask, slot| keeping.lock().unwrap().push((ask, slot))),
+        |_| true,
     )
     .expect("the window's socket");
     assert!(beside(&hook).exists());
@@ -160,4 +162,45 @@ fn a_host_with_no_window_to_take_a_slot_is_told_so() {
         )
         .is_err()
     );
+}
+
+/// #3316 review: only the process holding the hook socket's listener, the session host, may
+/// hand the window a slot. Another process of this user, here this test's own, which holds no
+/// listener at the hook socket's path, is never read, and nothing is parked.
+#[test]
+fn a_process_that_is_not_the_session_host_cannot_hand_the_window_a_slot() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let hook = dir.path().join("app").join("hooks.sock");
+    let kept: Arc<Mutex<Vec<(ServeAsk, Slot)>>> = Arc::default();
+    let keeping = Arc::clone(&kept);
+    let _receiving = Receiving::bind(
+        &hook,
+        Box::new(move |ask, slot| keeping.lock().unwrap().push((ask, slot))),
+    )
+    .expect("the window's socket");
+    let (slot, _server) = UnixStream::pair().expect("a pair");
+    let _ = hand_on(
+        &beside(&hook),
+        &ServeAsk {
+            chat: 3,
+            serve: 5173,
+        },
+        &slot,
+    );
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(kept.lock().unwrap().is_empty(), "nothing was parked");
+}
+
+/// #3316 review: a window's slots socket let go removes its own file alone, never one bound in
+/// its place since.
+#[test]
+fn a_slots_socket_let_go_never_removes_its_successor() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let hook = dir.path().join("app").join("hooks.sock");
+    let first = Receiving::bind_admitting(&hook, refusing(), |_| true).expect("bound");
+    let second = Receiving::bind_admitting(&hook, refusing(), |_| true).expect("bound again");
+    drop(first);
+    assert!(beside(&hook).exists(), "the second one's socket stays");
+    drop(second);
+    assert!(!beside(&hook).exists());
 }
