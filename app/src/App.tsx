@@ -106,6 +106,8 @@ import { placeOf, scopeLadder } from "./fileFind";
 import { useJumpAsks, type Pending } from "./fileJump";
 import type { Place } from "./pieceViews";
 import { ClosingProject } from "./ClosingProject";
+import { discardUnsavedIn, unsavedIn, unsavedNow } from "./unsavedWork";
+import { UnsavedWorkQuestion, type UnsavedAsk } from "./UnsavedWorkQuestion";
 import { QuitWarning, type Ending } from "./QuitWarning";
 import { RelaunchAsk } from "./RelaunchAsk";
 import { useNoBrowserMenu } from "./Menus";
@@ -677,6 +679,9 @@ function App() {
       void gone;
       return rest;
     });
+    // And the unsaved work its views held (#3929): asked about first where the close was this
+    // window's, and never drawn here again.
+    discardUnsavedIn(plane);
   }, []);
 
   const letGoOf = useCallback(
@@ -724,6 +729,9 @@ function App() {
 
   /** The project whose close is waiting on the operator's answer (`ClosingProject`). */
   const [closing, setClosing] = useState<string>();
+  /** **A project's close or a quit waiting on the answer about the unsaved work it would lose**
+   *  (#3929, `unsavedWork.ts`), asked before what it ends is. */
+  const [unsavedAsk, setUnsavedAsk] = useState<UnsavedAsk>();
   /** Every project's report as of the last render, read when a close arrives rather than
    *  closed over, so the verb below stays one function. */
   const reportsNow = useRef(reports);
@@ -744,6 +752,12 @@ function App() {
    */
   const closeProject = useCallback(
     async (plane: string): Promise<Ran> => {
+      // **Its views' unsaved work is asked about first** (#3929): then the close is asked again.
+      const work = unsavedIn(plane);
+      if (work.length > 0) {
+        setUnsavedAsk({ work, then: () => void closeProject(plane) });
+        return { ok: true };
+      }
       const said = reportsNow.current[plane];
       if (said?.settled && said.ending.length === 0) return letGoOf(plane);
       setClosing(plane);
@@ -1468,13 +1482,24 @@ function App() {
   useEffect(() => {
     // The catch is attached here and not in the cleanup: a window that cannot listen is
     // still a window, and a rejection nothing is holding yet is an unhandled one.
-    const listening = listen("quit-asked", () => {
+    const askToQuit = () => {
       // Nothing to end is nothing to warn about — but only once every project has said what
       // it has open. Before that, no tabs means "not yet", and quitting on it would end every
       // chat the window had not drawn.
       if (atQuit.current.settled && atQuit.current.ending.length === 0)
         void commands.quit().catch(() => undefined);
       else setAsking(true);
+    };
+    const listening = listen("quit-asked", () => {
+      // **The unsaved work of the window's views is asked about first** (#3929): Keep editing
+      // is a quit not taken, which the core is told as the warning's Not now tells it.
+      const work = unsavedNow();
+      if (work.length === 0) return askToQuit();
+      setUnsavedAsk({
+        work,
+        then: askToQuit,
+        kept: () => void commands.quitCancelled().catch(() => undefined),
+      });
     }).catch(() => undefined);
     // Unlistening can fail too — the window may be going away under it — and a cleanup
     // that throws into nothing is an unhandled rejection, not a diagnosis.
@@ -2611,6 +2636,12 @@ function App() {
       {extensions && <Extensions onClose={() => setExtensions(false)} />}
 
       {asking && <QuitWarning chats={everyEnding} onQuit={quit} onCancel={dontQuit} />}
+
+      {/* The one question a close asks about a view's unsaved work (#3929): a project's, a
+          quit's. */}
+      {unsavedAsk && (
+        <UnsavedWorkQuestion asked={unsavedAsk} onAnswered={() => setUnsavedAsk(undefined)} />
+      )}
 
       {closing !== undefined && (
         <ClosingProject

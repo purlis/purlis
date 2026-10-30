@@ -253,7 +253,8 @@ export function SkillStudioTab({
   /** Narrow or wide whatever the width: for a story or a test. Measured when left out. */
   narrow?: boolean;
 }) {
-  const historyId = studioHistoryOf(plane, { ...SKILL_STUDIO_VIEW, key: tab });
+  const view = { ...SKILL_STUDIO_VIEW, key: tab };
+  const historyId = studioHistoryOf(plane, view);
   const walked = useViewHistory<StudioPlace>(historyId, STUDIO_START);
   const at = walked.at;
   // Where the tab is now, for an answer that comes back after the person may have moved on.
@@ -288,6 +289,7 @@ export function SkillStudioTab({
   const edits = useSkillEditInPlace({
     plane,
     tab: historyId,
+    view,
     walked,
     busy,
     setBusy,
