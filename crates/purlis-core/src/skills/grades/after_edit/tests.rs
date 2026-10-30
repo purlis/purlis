@@ -6,6 +6,8 @@
 
 use super::*;
 
+mod across_edits;
+
 fn accepted() -> Accepted {
     Accepted {
         profile: "work".into(),
@@ -33,7 +35,6 @@ fn now(chats: u32, token_cap: u64, limit_usd: f64) -> Now {
         token_cap,
         limit_usd,
         tests: TESTS.into(),
-        previous: None,
         consent: CONSENT.into(),
     }
 }
@@ -165,19 +166,26 @@ fn what_an_edit_graded_and_why_it_waits_are_kept() {
 }
 
 #[test]
-fn other_trigger_tests_or_another_version_compared_with_wait_for_the_person() {
-    // The review of #3238: a chat can write a fixture or make a commit; neither runs unseen.
+fn other_trigger_tests_wait_for_the_person() {
+    // The review of #3238: a chat can write a fixture; it never runs unseen.
     let tests = Now {
         tests: CONSENT.into(),
         ..now(12, 200_000, 3.0)
     };
     assert!(matches!(next(&accepted(), &tests), Next::Waits(why) if why.contains("trigger tests")));
-    let version = Now {
+}
+
+#[test]
+fn the_version_compared_with_moves_with_each_edit_and_waits_for_nothing_4016() {
+    // Each saved edit is committed, so the version before it is another one each time: what the
+    // plan showed when it was turned on does not hold a grade back (`across_edits`).
+    let turned_on_against = Accepted {
         previous: Some("a".repeat(40)),
-        ..now(12, 200_000, 3.0)
+        ..accepted()
     };
-    assert!(
-        matches!(next(&accepted(), &version), Next::Waits(why) if why.contains("compares with"))
+    assert_eq!(
+        next(&turned_on_against, &now(12, 200_000, 3.0)),
+        Next::Grade
     );
 }
 
