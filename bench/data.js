@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793320793654,
+  "lastUpdate": 1793321982771,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30408,6 +30408,48 @@ window.BENCHMARK_DATA = {
             "value": 101.710635,
             "unit": "ms",
             "extra": "median of 5 runs: 100.639, 101.360, 101.711, 102.114, 102.255 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "fba773598faeff491fd06b2420356d42a789f80d",
+          "message": "Skills: built-in names in the update review and in Restore (#3728, #3729) (#3936)\n\n* Skills: the update review marks a brought-along skill under a built-in name (#3728)\n\nAn update that brings along a skill whose name belongs to a built-in\nskill was refused only once accepted. update_review now takes the\nbuilt-in skills' folder and marks those skills (UpdateReview.reserved),\nand UpdateReview::refused says why the update can't be taken until the\nsource renames it. The window shows that line and holds Accept update;\npurlis skill update marks the skill, prints the line and asks nothing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: mirror the update review's built-in marks in the UI RPC's types (#3728)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: restore a deleted skill under a new name when a built-in took its name (#3729)\n\nA deleted skill whose name now belongs to a built-in skill could not\ncome back at all until it expired. verbs::restore takes an optional new\nname, checked as a rename's is (Ctx::not_built_in among them), rewrites\nthe skill's SKILL.md name: and names its folder to match, in the\nrestore's one commit. The Deleted page asks for the name where the\nskill's own is reserved (DeletedSkill.reserved), refusing a built-in's\nas it is typed; purlis skill restore takes --as and marks such a skill\nin its list.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: a restore under a new name lands whole or not at all (#3729)\n\nReview fixes. Where the name cannot be rewritten or the folder cannot\nmove, what came back is taken back again (the kept copy moved back, or\nthe files the removing commit held taken away), so no skill is ever\nleft under a built-in skill's name; the kept copy is put away only once\nthe restore stands. A new name is offered only where the skill's own is\nreserved: a free one comes back under it, to be renamed after so what\nnames it follows. --as with the reserved name itself is refused with\nthe agreed sentence.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: list the Deleted page's inline refusal with the window's live regions (#3729)\n\nThe Notice guard counts each standing alert: the New name field's\nbuilt-in-name refusal is one, said as it is typed. Bring back is a\nplain disabled button there, so the test asks toBeDisabled.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T00:30:03Z",
+          "tree_id": "00c524118edd7a9a0e3c7f6d959eb8fd7c86e5be",
+          "url": "https://github.com/purlis/purlis/commit/fba773598faeff491fd06b2420356d42a789f80d"
+        },
+        "date": 1793321978492,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.546956,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.532, 0.539, 0.547, 0.547, 0.555 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3994285,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.204, 16.350, 16.399, 16.444, 16.537 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.97466800000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.861, 100.769, 100.975, 101.810, 101.915 ms"
           }
         ]
       }
