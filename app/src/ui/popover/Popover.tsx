@@ -542,7 +542,13 @@ export function HungPopover({
   useLayoutEffect(() => {
     hide.current = onHide;
   });
-  const [nudge, setNudge] = useState(0);
+  // **How many times it has been placed again since it last came to rest** (#3896): each asks
+  // React Aria to place it again by a nudge that differs from the last one drawn, so two in one
+  // frame (a scroll's and its end's) never undo each other, as a nudge toggled twice would.
+  // Back to none at rest, where it is drawn with no nudge.
+  const [nudged, setNudged] = useState(0);
+  const nudge = nudged === 0 ? 0 : nudged % 2 === 1 ? 0.01 : 0.02;
+  const again = () => setNudged((was) => was + 1);
   useEffect(() => {
     if (!isOpen) return;
     let asked = 0;
@@ -591,11 +597,11 @@ export function HungPopover({
         // At rest: placed with no nudge, so a card at rest is drawn at the one place whatever
         // number of frames brought it there (a hundredth of a pixel moves its words' pixels).
         if (at === placedAt) {
-          setNudge(0);
+          setNudged(0);
           return;
         }
         placedAt = at;
-        setNudge((was) => (was === 0 ? 0.01 : 0));
+        again();
         asked = requestAnimationFrame(place);
       };
       asked = requestAnimationFrame(place);
@@ -623,8 +629,8 @@ export function HungPopover({
         // A last placement where the scroll left it (#3896), in this frame of its own, and then
         // at rest with no nudge: the following frame (`asked`) is not touched.
         else {
-          setNudge((was) => (was === 0 ? 0.01 : 0));
-          ending = requestAnimationFrame(() => setNudge(0));
+          again();
+          ending = requestAnimationFrame(() => setNudged(0));
         }
       });
     };
