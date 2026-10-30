@@ -444,13 +444,15 @@ describe("Restart chat on a task's row in the Chats list, for a task with no tab
 
     await waitFor(() => expect(asked("restart_chat")).toHaveLength(1));
     // Its text changes, and the region is the one that was there.
-    await waitFor(() => expect(region).toHaveTextContent(`Restart of talk. ${refused}`));
+    // Led by its chat, since the window's words for it name the chat by number only.
+    await waitFor(() => expect(region).toHaveTextContent(/^Restart of talk\. /));
+    expect(region).toHaveTextContent(refused);
     expect(screen.getByRole("status", { name: "Restarts" })).toBe(region);
     expect(region.isConnected).toBe(true);
 
     // The row says it with its card down, and its card says it while it is up (#3886).
     const talk = await row("talk");
-    expect(talk).toHaveAttribute("aria-description", refused);
+    expect(talk.getAttribute("aria-description")).toContain(refused);
     await userEvent.keyboard("{Shift}");
     act(() => talk.focus());
     const shown = await theCard();
