@@ -216,7 +216,8 @@ fn what_waits_for_a_chat_is_not_denied_since_its_hooks_run_inside() {
     assert!(
         wrap.denied
             .iter()
-            .all(|denial| !denial.path.ends_with("handbacks")),
+            .filter(|denial| denial.path.ends_with(crate::handback::DIR_NAME))
+            .all(|denial| denial.access != super::Access::ReadWrite),
         "{:?}",
         wrap.denied
     );

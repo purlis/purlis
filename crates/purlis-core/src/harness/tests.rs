@@ -1136,7 +1136,10 @@ fn a_claude_code_chat_purlis_wraps_runs_its_commands_unasked_as_its_own_sandbox_
     let text = super::claude::armed_settings_for_tests(&settings);
     let armed: serde_json::Value = serde_json::from_str(&text).expect("JSON");
     assert_eq!(armed["sandbox"], settings.sandbox);
-    assert_eq!(armed["permissions"]["deny"], serde_json::json!(["WebFetch"]));
+    assert_eq!(
+        armed["permissions"]["deny"],
+        serde_json::json!(["WebFetch"])
+    );
     let allow = armed["permissions"]["allow"].as_array().expect("a list");
     assert!(allow.iter().any(|rule| rule == "Bash"), "{allow:?}");
 }

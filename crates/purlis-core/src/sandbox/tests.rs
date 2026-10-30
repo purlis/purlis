@@ -964,6 +964,7 @@ fn every_harness_denies_a_chat_writing_the_persons_harness_approvals_or_the_decl
         )
         .expect("compiles");
         match applied.form() {
+            Form::ClaudeWrapped(_) => unreachable!("wrapped only on a runner"),
             // Claude Code: its own sandbox's write denials, and its file tools'.
             Form::ClaudeCode(settings) => {
                 let deny_write: Vec<&str> = settings.sandbox["filesystem"]["denyWrite"]
@@ -1084,6 +1085,7 @@ fn every_harness_denies_a_chat_writing_the_skill_studio_s_records() {
         )
         .expect("compiles");
         match applied.form() {
+            Form::ClaudeWrapped(_) => unreachable!("wrapped only on a runner"),
             // Claude Code: its own sandbox's write denials, and its file tools'.
             Form::ClaudeCode(settings) => {
                 let deny_write: Vec<&str> = settings.sandbox["filesystem"]["denyWrite"]
@@ -1334,6 +1336,7 @@ fn every_harness_denies_a_chat_making_purlis_s_state_records_under_another_spell
             )
             .expect("compiles");
             match applied.form() {
+                Form::ClaudeWrapped(_) => unreachable!("wrapped only on a runner"),
                 // Claude Code: its own sandbox's write denials, and its file tools', each in
                 // either case on macOS.
                 Form::ClaudeCode(settings) => {
@@ -2050,6 +2053,7 @@ fn the_model_provider_preset_reaches_the_three_harnesses_providers() {
 /// Code's `network.allowedDomains`, and the egress proxy's list for a harness purlis wraps.
 fn reached(applied: &Applied) -> Vec<String> {
     match applied.form() {
+        Form::ClaudeWrapped(_) => unreachable!("wrapped only on a runner"),
         Form::ClaudeCode(settings) => settings.sandbox["network"]["allowedDomains"]
             .as_array()
             .expect("a list")
@@ -7349,6 +7353,7 @@ fn the_state_folder_is_held_whole_in_purlis_s_wrap() {
         )
         .expect("compiles");
         match applied.form() {
+            Form::ClaudeWrapped(_) => unreachable!("wrapped only on a runner"),
             Form::ClaudeCode(settings) => {
                 let deny_write = settings.sandbox["filesystem"]["denyWrite"].to_string();
                 let named = super::real(&state).display().to_string();
@@ -7424,6 +7429,7 @@ fn every_harness_denies_a_chat_writing_the_app_state_and_lets_it_read_it() {
         )
         .expect("compiles");
         match applied.form() {
+            Form::ClaudeWrapped(_) => unreachable!("wrapped only on a runner"),
             // Claude Code: its own sandbox's write denials, and its file tools', and no read
             // denial of it.
             Form::ClaudeCode(settings) => {

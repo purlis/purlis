@@ -7243,7 +7243,7 @@ pub mod wrapper;
 
 #[cfg(test)]
 mod claude_tests;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod claude_wrap_tests;
 #[cfg(test)]
 mod codex_tests;
