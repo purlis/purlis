@@ -230,6 +230,14 @@ const DRAWN: &[Drawn] = &[
         around: &[],
         on: None,
     },
+    Drawn {
+        family: "titlebar",
+        part: "row-count",
+        css: include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
+        own: &["[data-part=\"row-count\"][data-scope=\"titlebar\"]"],
+        around: &[],
+        on: None,
+    },
 ];
 
 /// A theme over Purlis Classic that sets `tokens` and `parts`, as read.

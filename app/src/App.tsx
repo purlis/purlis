@@ -108,6 +108,8 @@ import { placeOf, scopeLadder } from "./fileFind";
 import { useJumpAsks, type Pending } from "./fileJump";
 import type { Place } from "./pieceViews";
 import { ClosingProject } from "./ClosingProject";
+import { discardUnsavedIn, unsavedIn, unsavedNow } from "./unsavedWork";
+import { UnsavedWorkQuestion, type UnsavedAsk } from "./UnsavedWorkQuestion";
 import { QuitWarning, type Ending } from "./QuitWarning";
 import { RelaunchAsk } from "./RelaunchAsk";
 import { useNoBrowserMenu } from "./Menus";
@@ -679,6 +681,9 @@ function App() {
       void gone;
       return rest;
     });
+    // And the unsaved work its views held (#3929): asked about first where the close was this
+    // window's, and never drawn here again.
+    discardUnsavedIn(plane);
   }, []);
 
   const letGoOf = useCallback(
@@ -712,8 +717,30 @@ function App() {
    * takes its tab out. A split window left holding nothing goes (`windows.rs`), and the main
    * window left holding nothing shows the opener.
    */
+  /** **A project's close, its move or a quit waiting on the answer about the unsaved work it
+   *  would lose** (#3929, `unsavedWork.ts`), asked before what it ends is. */
+  const [unsavedAsk, setUnsavedAsk] = useState<UnsavedAsk>();
+  const unsavedAskNow = useRef(unsavedAsk);
+  /** Asks about `ask`'s work, unless a question about unsaved work is up already: that one is
+   *  answered first, and this ask is one not taken (`kept`). */
+  const askUnsaved = useCallback((ask: UnsavedAsk) => {
+    if (unsavedAskNow.current !== undefined) return ask.kept?.();
+    unsavedAskNow.current = ask;
+    setUnsavedAsk(ask);
+  }, []);
+  const unsavedAnswered = useCallback(() => {
+    unsavedAskNow.current = undefined;
+    setUnsavedAsk(undefined);
+  }, []);
+
   const moveProject = useCallback(
-    async (plane: string, to: string | null): Promise<Ran> => {
+    async (plane: string, to: string | null, unsavedAsked = false): Promise<Ran> => {
+      // **Its views' unsaved work stays in this window** (#3929, #4028): asked about first.
+      const work = unsavedAsked ? [] : unsavedIn(plane);
+      if (work.length > 0) {
+        askUnsaved({ work, then: () => void moveProject(plane, to, true) });
+        return { ok: true };
+      }
       const answer = await commands
         .moveProjects([plane], plane, to)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
@@ -721,11 +748,12 @@ function App() {
       takeOut(plane);
       return { ok: true };
     },
-    [takeOut],
+    [askUnsaved, takeOut],
   );
 
   /** The project whose close is waiting on the operator's answer (`ClosingProject`). */
   const [closing, setClosing] = useState<string>();
+
   /** Every project's report as of the last render, read when a close arrives rather than
    *  closed over, so the verb below stays one function. */
   const reportsNow = useRef(reports);
@@ -745,13 +773,20 @@ function App() {
    * about, as `PlaneView`'s `run` does.
    */
   const closeProject = useCallback(
-    async (plane: string): Promise<Ran> => {
+    async (plane: string, unsavedAsked = false): Promise<Ran> => {
+      // **Its views' unsaved work is asked about first** (#3929): then what the close ends. The
+      // work goes with the project once it is let go of (`takeOut`).
+      const work = unsavedAsked ? [] : unsavedIn(plane);
+      if (work.length > 0) {
+        askUnsaved({ work, then: () => void closeProject(plane, true) });
+        return { ok: true };
+      }
       const said = reportsNow.current[plane];
       if (said?.settled && said.ending.length === 0) return letGoOf(plane);
       setClosing(plane);
       return { ok: true };
     },
-    [letGoOf],
+    [askUnsaved, letGoOf],
   );
 
   /**
@@ -1488,18 +1523,29 @@ function App() {
   useEffect(() => {
     // The catch is attached here and not in the cleanup: a window that cannot listen is
     // still a window, and a rejection nothing is holding yet is an unhandled one.
-    const listening = listen("quit-asked", () => {
+    const askToQuit = () => {
       // Nothing to end is nothing to warn about — but only once every project has said what
       // it has open. Before that, no tabs means "not yet", and quitting on it would end every
       // chat the window had not drawn.
       if (atQuit.current.settled && atQuit.current.ending.length === 0)
         void commands.quit().catch(() => undefined);
       else setAsking(true);
+    };
+    const listening = listen("quit-asked", () => {
+      // **The unsaved work of the window's views is asked about first** (#3929): Keep editing
+      // is a quit not taken, which the core is told as the warning's Not now tells it.
+      const work = unsavedNow();
+      if (work.length === 0) return askToQuit();
+      askUnsaved({
+        work,
+        then: askToQuit,
+        kept: () => void commands.quitCancelled().catch(() => undefined),
+      });
     }).catch(() => undefined);
     // Unlistening can fail too — the window may be going away under it — and a cleanup
     // that throws into nothing is an unhandled rejection, not a diagnosis.
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
-  }, []);
+  }, [askUnsaved]);
 
   // The app menu's Settings… (`⌘,`), which is the core's (`lifecycle.rs`) and says so with an
   // event, as its Quit does. The same verb the palette row runs.
@@ -2451,7 +2497,7 @@ function App() {
               ))}
             {/* A browser sign-in a forge ended, with Sign in again (#729). */}
             <ForgeSignInEnded />
-            {/* Add a Docker pool… (#2679): a dialog, opened from the palette or the Pools group. */}
+            {/* Add a pool… (#2679): a dialog, opened from the palette or the Pools group. */}
             <AddDockerPoolHost plane={inFront} />
             {/* An entry the store itself would not take back, said the same way. */}
             {notRestored.map((line) => (
@@ -2630,6 +2676,10 @@ function App() {
       {extensions && <Extensions onClose={() => setExtensions(false)} />}
 
       {asking && <QuitWarning chats={everyEnding} onQuit={quit} onCancel={dontQuit} />}
+
+      {/* The one question a close asks about a view's unsaved work (#3929): a project's, a
+          quit's. */}
+      {unsavedAsk && <UnsavedWorkQuestion asked={unsavedAsk} onAnswered={unsavedAnswered} />}
 
       {closing !== undefined && (
         <ClosingProject

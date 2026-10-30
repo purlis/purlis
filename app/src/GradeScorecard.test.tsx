@@ -30,6 +30,7 @@ vi.stubGlobal("matchMedia", (query: string) => ({
 const CARD: GradeScorecard = {
   grade: "01GRADE",
   skill: "deploy",
+  level: { at: "project", local: false },
   graded: "2026-10-28 10:00 UTC",
   version: "0123456789ab",
   ran_on: "Claude Code · claude-sonnet-4-5",

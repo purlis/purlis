@@ -9713,6 +9713,12 @@
         "titlebar.dot-needs.text": {
           "$ref": "#/$defs/part-text"
         },
+        "titlebar.row-count.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row-count.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "tooltip.root.fill": {
           "$ref": "#/$defs/part-fill"
         },

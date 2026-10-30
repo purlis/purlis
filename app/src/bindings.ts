@@ -2043,27 +2043,27 @@ export const commands = {
 	 *  from (the project's root, or the workspace's folder), on the project's default profile, with
 	 *  the core's prompt typed and never sent.
 	 */
-	skillDraftChat: (plane: PlaneId, level: SkillLevel, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_draft_chat", { plane, level, columns, rows })),
+	skillDraftChat: (plane: PlaneId, level: SkillLevel, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_draft_chat", { plane, level, columns, rows })),
 	/**
 	 *  **"Ask a chat to write them"** (#3925): a chat where `level`'s skills are reached from, on the
 	 *  project's default profile, with the core's prompt for the trigger tests of the skill `name`
 	 *  typed and never sent ([`drafts::asking_for_trigger_tests`]). It starts as "Ask a chat to draft
 	 *  a skill" does, through the same start; its write comes back as a draft.
 	 */
-	skillTriggerTestsChat: (plane: PlaneId, level: SkillLevel, name: string, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_trigger_tests_chat", { plane, level, name, columns, rows })),
+	skillTriggerTestsChat: (plane: PlaneId, level: SkillLevel, name: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_trigger_tests_chat", { plane, level, name, columns, rows })),
 	/**
 	 *  **Try it** (decision 50): a scratch chat in a throwaway piece, armed with the built-in skills
 	 *  and the draft `id` alone, on `profile` (the project's default where none is picked), with the
 	 *  core's prompt typed and never sent. Tries a closed chat never ended (a quit, a crash) are
 	 *  ended first. Nothing is left once the chat closes but the skill runs it recorded.
 	 */
-	skillDraftTry: (plane: PlaneId, id: string, profile: string | null, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_draft_try", { plane, id, profile, columns, rows })),
+	skillDraftTry: (plane: PlaneId, id: string, profile: string | null, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_draft_try", { plane, id, profile, columns, rows })),
 	/**
 	 *  **"Ask a chat to redo it"** (S9), where the chat that drafted it is closed: a chat where the
 	 *  draft's level's skills are reached from, as "Ask a chat to draft a skill" opens one, with the
 	 *  core's redo prompt typed and never sent, which the person ends with what the change was.
 	 */
-	skillDraftRedo: (plane: PlaneId, id: string, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_draft_redo", { plane, id, columns, rows })),
+	skillDraftRedo: (plane: PlaneId, id: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_draft_redo", { plane, id, columns, rows })),
 	/**
 	 *  **"Ask the chat to redo it"** (S9), for a draft the project changed a file of since: the
 	 *  core's redo prompt typed into chat `session`, the chat that drafted it, unsent — or copied,
@@ -2160,6 +2160,12 @@ export const commands = {
 	 *  ignored.
 	 */
 	skillSourcesOffered: (plane: PlaneId) => typedError<OfferedSource[], string>(__TAURI_INVOKE("skill_sources_offered", { plane })),
+	/**
+	 *  **When each of the project's sources was last checked, and its counts** (#3840): one for each
+	 *  source [`skill_sources`] lists, read from what the last browse or updates check recorded and
+	 *  from the lockfiles, so Sources opens without asking any source.
+	 */
+	skillSourcesChecked: (plane: PlaneId) => typedError<SourceChecked[], string>(__TAURI_INVOKE("skill_sources_checked", { plane })),
 	/**  **Adds a skill source**, shared with the project or kept on this machine. */
 	skillSourceAdd: (plane: PlaneId, source: SkillSource) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_source_add", { plane, source })),
 	/**  **Takes a skill source out** of the project's. Skills installed from it stay. */
@@ -2925,6 +2931,13 @@ export const commands = {
 	dockerPoolLink: (name: string) => typedError<PoolLink, string>(__TAURI_INVOKE("docker_pool_link", { name })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
+	/**
+	 *  **The runner image a new pool is offered** (the person's ruling of 2026-10-30): what the Add
+	 *  a pool dialog's Image box shows, and what a pool added with the box empty is made from.
+	 *  Refused, in the updater's words, where it could not be read or was not signed as a release
+	 *  signs it.
+	 */
+	runnerImageOfThisVersion: () => typedError<RunnerImageOffered, string>(__TAURI_INVOKE("runner_image_of_this_version")),
 	/**  **The contexts of the kubeconfig `kubeconfig` names** (#3292), as kubectl lists them. */
 	clusterContexts: (kubeconfig: string | null) => typedError<ClusterContexts, string>(__TAURI_INVOKE("cluster_contexts", { kubeconfig })),
 	/**
@@ -2944,6 +2957,40 @@ export const commands = {
 	 *  nothing sent, for a pool not shown to be the person's own.
 	 */
 	poolProfiles: (pool: string) => typedError<PoolProfileRow[], string>(__TAURI_INVOKE("pool_profiles", { pool })),
+	/**
+	 *  **Starts signing `name` in on pool `pool`'s runner with no terminal** (#4042, spec #4023):
+	 *  the runner's own `purlis profile sign-in`, kept there first and run there through this
+	 *  machine's `docker` as [`sign_in_line`]'s is, but with pipes, its output read for the steps
+	 *  [`pool_sign_in_next`] answers. Nothing of this machine's sign-in goes to the runner (ADR
+	 *  0095). A sign-in of the same profile on the same pool already running is cancelled. Answers
+	 *  the sign-in's number.
+	 */
+	poolSignInStart: (pool: string, name: string, provider: string | null) => typedError<number, string>(__TAURI_INVOKE("pool_sign_in_start", { pool, name, provider })),
+	/**
+	 *  **The next step of sign-in `flow`**, waiting a while for one; null while there is none yet.
+	 *  After its last step, the sign-in is let go; signed in, its waits on the pool are too.
+	 */
+	poolSignInNext: (flow: number) => typedError<
+/**  Open this page in the browser here: the harness vendor's own. */
+{ at: "open"; url: string } | 
+/**  Ask for the code the page shows. */
+{ at: "code" } | 
+/**  The harness refused the code, in its words. */
+{ at: "refused"; said: string } | 
+/**  The login ended well, and the runner is asked whether it is signed in. */
+{ at: "checking" } | 
+/**  The runner's own status check says it is signed in. */
+{ at: "signed-in" } | 
+/**  purlis could not follow the login: what it printed. */
+{ at: "could-not-follow"; said: string } | 
+/**  It did not sign in, and why. */
+{ at: "failed"; why: string } | 
+/**  It was cancelled, and its login ended. */
+{ at: "cancelled" } | null, string>(__TAURI_INVOKE("pool_sign_in_next", { flow })),
+	/**  **Passes the code the person pasted to sign-in `flow`**, as one line. */
+	poolSignInPaste: (flow: number, code: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_paste", { flow, code })),
+	/**  **Cancels sign-in `flow`**: what drives its login is ended, and it is let go. */
+	poolSignInCancel: (flow: number) => __TAURI_INVOKE<void>("pool_sign_in_cancel", { flow }),
 	/**
 	 *  **Every device and what runs on it** (#2052): this machine and every runner it keeps, each
 	 *  with the chats and browsers the window has open there, and each pool's limits.
@@ -7573,6 +7620,12 @@ export type GradeScorecard = {
 	grade: string,
 	skill: string,
 	/**
+	 *  **The copy it graded, by its level**, where its row says one (#3978): a scorecard
+	 *  opened from where that copy is not listed (a retired tab comes back at the project's
+	 *  root) goes to the scope that lists it.
+	 */
+	level: SkillLevel | null,
+	/**
 	 *  When it ran, the version it graded, what its chats ran on and how it ended, as its row
 	 *  says each.
 	 */
@@ -9050,6 +9103,18 @@ export type OpenRun = {
 	id: string,
 	/**  Tool calls made inside it so far, each once. */
 	tool_calls: number,
+	/**
+	 *  The tokens the chat has spent since it opened, as its harness last said them (SK-26,
+	 *  #3694): what the eventlog records the run's tokens from, live. `None` where the harness
+	 *  says none, so the chip shows no zero. A `u32`, as the window reads it whole: a run past
+	 *  four billion tokens says the most it can.
+	 */
+	tokens: number | null,
+	/**
+	 *  The level of the copy it is of, as a person reads it (`persona`, `local workspace`), where
+	 *  its start knew it: the scope its chip opens the Skill studio at (#3694).
+	 */
+	level: string | null,
 };
 
 /**
@@ -9960,6 +10025,15 @@ export type PlaneUpdated = {
 	 *  itself (#2770): its pane offers a restart on the same conversation.
 	 */
 	skills: boolean,
+	/**
+	 *  The skills a chat started now would get that it lacks, by name (#3694): what its Skills
+	 *  view marks as new, once its pane's What changed is pressed.
+	 */
+	skills_added: string[],
+	/**  The skills it has that a chat started now would not get, by name. */
+	skills_gone: string[],
+	/**  The skills it has that changed since it started, by name. */
+	skills_edited: string[],
 };
 
 /**  A pool as the person typed it: each limit left empty takes the default. */
@@ -10078,6 +10152,28 @@ export type PoolRow = {
 	 */
 	suspend_after: string,
 };
+
+/**
+ *  **One step of a sign-in on a pool's runner** that purlis drives with no terminal (#4042), as
+ *  the window's sign-in strip shows it ([`driven::Event`]).
+ */
+export type PoolSignInStep = 
+/**  Open this page in the browser here: the harness vendor's own. */
+{ at: "open"; url: string } | 
+/**  Ask for the code the page shows. */
+{ at: "code" } | 
+/**  The harness refused the code, in its words. */
+{ at: "refused"; said: string } | 
+/**  The login ended well, and the runner is asked whether it is signed in. */
+{ at: "checking" } | 
+/**  The runner's own status check says it is signed in. */
+{ at: "signed-in" } | 
+/**  purlis could not follow the login: what it printed. */
+{ at: "could-not-follow"; said: string } | 
+/**  It did not sign in, and why. */
+{ at: "failed"; why: string } | 
+/**  It was cancelled, and its login ended. */
+{ at: "cancelled" };
 
 /**
  *  **How a pool's runner was made to suspend itself** (#3717), which its row says where it is
@@ -11369,6 +11465,26 @@ export type RunnerBranch = {
 	ahead: number,
 };
 
+/**
+ *  **The runner image a new pool is offered** (the person's ruling of 2026-10-30), by the
+ *  release that names it.
+ */
+export type RunnerImageOffered = 
+/**  This version's own, as its release names it. */
+{ state: "ours"; image: string } | 
+/**
+ *  A newer version's, as the channel's newest release names it: an update of purlis to
+ *  `version` is waiting.
+ */
+{ state: "newer"; image: string; version: string } | 
+/**
+ *  None: this version's release names none, as a release whose runner image was not built
+ *  does.
+ */
+{ state: "none_named" } | 
+/**  None: a local build, with no update channel, names none. */
+{ state: "local_build" };
+
 /**  How the window reads what a runner records (#3393). */
 export type RunnerLogRead = 
 /**  Over the link, which is up. */
@@ -12484,6 +12600,8 @@ export type SkillGradeAfterEdit = {
 export type SkillGradeAfterEditStep = {
 	plane: PlaneId,
 	skill: string,
+	/**  The copy, by its level (#3978): a same-named copy at another level is another skill. */
+	level: SkillLevel,
 	said: string,
 };
 
@@ -12550,6 +12668,11 @@ export type SkillGradePlan = {
 export type SkillGradeStep = {
 	plane: PlaneId,
 	skill: string,
+	/**
+	 *  The copy it grades, by its level (#3978): a same-named copy at another level is another
+	 *  skill, whose tab a step of this one moves nothing on.
+	 */
+	level: SkillLevel,
 	grade: string,
 	ran: number,
 	of: number,
@@ -12930,6 +13053,23 @@ export type SourceBrowse = {
 	commit: SourceCommit,
 	skills: OfferedSkill[],
 	not_skills: NotASkill[],
+	/**  When it was read, in seconds since the epoch (#3840): what its page's lead says. */
+	checked: number | null,
+};
+
+/**
+ *  **What the last check of a source found** (#3840): when it was, and how many skills it
+ *  offered then, as the core recorded it (`source::checked`), with how many are installed from it
+ *  now. Read with the source list, and never by asking a source.
+ */
+export type SourceChecked = {
+	remote: SourceRemote,
+	/**  When it was last checked, in seconds since the epoch; `None` where nothing has yet. */
+	at: number | null,
+	/**  How many skills it offered at its last browse; `None` where it was never browsed here. */
+	skills: number | null,
+	/**  How many skills are installed from it, at any level, each once. */
+	installed: number,
 };
 
 /**  A commit, and its short name as the core gives it. */
@@ -13065,6 +13205,23 @@ export type StartOptions = {
 	 *  window's type so a picker drawn from an older answer says the number in words.
 	 */
 	next_number?: number | null,
+};
+
+/**
+ *  **Why a start the window asked for did not start** (#3942, #3968): the core's sentence, and
+ *  the approval the profile it started on needs, where its start was refused while that profile
+ *  waits for one. The window then offers Approve and start…, which shows that line and approves
+ *  it only on the person's answer (`approve_profile`), from this and never from the words. The
+ *  Skill studio's starts, a curation action, a theme chat and Start a chat here refuse with it:
+ *  the starts the core makes on a profile without the new-chat picker, which asks first itself.
+ */
+export type StartRefused = {
+	words: string,
+	/**
+	 *  Read as the start was refused, of the profile it was refused on. Null for a refusal
+	 *  before any start was tried, or on a profile with nothing to approve.
+	 */
+	approval: NeedsApproval | null,
 };
 
 /**  A chat that started: its session, and the name it was given as charter holds it. */

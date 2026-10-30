@@ -3109,8 +3109,8 @@ impl Hooks {
             .unwrap_or_else(PoisonError::into_inner) = Some(following);
     }
 
-    /// Where this listens. Only a test asks: a chat is told through [`Hooks::reporting`].
-    #[cfg(test)]
+    /// Where this listens: what a test asks, and where the message queue beside it is found
+    /// (#3902, `purlis_core::dispatchqueue`). A chat is told through [`Hooks::reporting`].
     pub fn socket(&self) -> Option<&Path> {
         self.socket.as_deref()
     }

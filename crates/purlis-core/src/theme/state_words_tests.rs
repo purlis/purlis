@@ -70,6 +70,10 @@ fn state_words() -> Vec<Words> {
                     vec![look.fill]
                 };
                 for (at, part) in family.parts.iter().enumerate() {
+                    // A part drawn apart from the root is read on its own ground, below.
+                    if super::drawn_apart(family, part.name).is_some() {
+                        continue;
+                    }
                     let words = if at == 0 {
                         look.text
                     } else {
@@ -116,6 +120,42 @@ fn state_words() -> Vec<Words> {
                     } else {
                         found.push((named, words, fill, None));
                     }
+                }
+            }
+        }
+        // Each part drawn apart from the root, in each of its own states, on what it is drawn
+        // on (#3949): a wash over each ground under it, or the ground itself.
+        for part in family.parts {
+            let Some(carried) = super::drawn_apart(family, part.name) else {
+                continue;
+            };
+            for state in std::iter::once(None).chain(carried.iter().copied().map(Some)) {
+                let look = super::apart_look(family.name, part.name, state);
+                if !is_held_as_words(look.words) {
+                    continue;
+                }
+                let named = format!(
+                    "{}.{}{}",
+                    family.name,
+                    part.name,
+                    state
+                        .map(|one| format!(".{}", one.name()))
+                        .unwrap_or_default()
+                );
+                if look.fill == TRANSPARENT {
+                    found.extend(
+                        look.under
+                            .iter()
+                            .map(|ground| (named.clone(), look.words, *ground, None)),
+                    );
+                } else if is_wash(look.fill) {
+                    found.extend(
+                        look.under
+                            .iter()
+                            .map(|below| (named.clone(), look.words, look.fill, Some(*below))),
+                    );
+                } else {
+                    found.push((named, look.words, look.fill, None));
                 }
             }
         }

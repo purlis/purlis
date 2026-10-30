@@ -594,7 +594,13 @@ impl NeedsApproval {
     /// launch's own read, as `approve_profile` reads it: a profile in a file the launch
     /// refuses has nothing a yes could buy.
     fn of(chat: &Chat, root: &std::path::Path) -> Option<Self> {
-        let name = chat.profile.as_deref()?;
+        Self::of_profile(chat.profile.as_deref()?, root)
+    }
+
+    /// What the profile `name` needs approved at `root` before a chat on it can start, read as
+    /// [`NeedsApproval::of`] reads a chat's: for a start the window asked for that the core
+    /// refused, such as the Skill studio's (#3942).
+    pub(crate) fn of_profile(name: &str, root: &std::path::Path) -> Option<Self> {
         let (set, _check) = purlis_core::profiles::for_launch(root);
         let profile = set.get(name)?;
         let needs = purlis_core::profiletrust::approval_needed(root, profile)?;
@@ -3100,8 +3106,9 @@ impl Chats {
     /// **The open chats whose skills changed since they started** (#2770, ADR 0099 §5), by
     /// session: the plane skills each would get now differ from those it started with, in a way
     /// its harness does not take in by itself ([`Harness::skills_reload`]). Its tab offers a
-    /// restart on the same conversation. Read from disk each time it is asked.
-    pub fn skills_changed(&self) -> Vec<u32> {
+    /// restart on the same conversation, and its Skills view names what changed (#3694). Read
+    /// from disk each time it is asked.
+    pub fn skills_changed(&self) -> Vec<(u32, purlis_core::skills::SkillsChanged)> {
         // Asked once, for every chat: where the project's skills reach no chat, none changed.
         if !purlis_core::skills::reach_chats_here(&self.project) {
             return Vec::new();
@@ -3110,7 +3117,7 @@ impl Chats {
     }
 
     /// [`Self::skills_changed`] while the `skill-studio` flag is on.
-    fn skills_changed_while_on(&self) -> Vec<u32> {
+    fn skills_changed_while_on(&self) -> Vec<(u32, purlis_core::skills::SkillsChanged)> {
         // Read out first: no lock is held while the plane's skill folders are read.
         type Started = (
             u32,
@@ -3134,22 +3141,22 @@ impl Chats {
             })
             .collect();
         let built_in = built_in_skills_here();
-        let mut changed: Vec<u32> = started
+        let mut changed: Vec<(u32, purlis_core::skills::SkillsChanged)> = started
             .into_iter()
-            .filter(|(_, workspace, persona, harness, start, then)| {
-                purlis_core::skills::stamp_of(&purlis_core::skills::Running {
+            .filter_map(|(session, workspace, persona, harness, start, then)| {
+                let now = purlis_core::skills::stamp_of(&purlis_core::skills::Running {
                     plane: &self.project,
                     workspace: workspace.as_deref(),
                     persona: persona.as_deref(),
-                    harness: *harness,
+                    harness,
                     built_in: built_in.as_deref(),
                     plane_skills: true,
-                    start: Some(start),
-                }) != *then
+                    start: Some(&start),
+                });
+                (now != then).then(|| (session, then.changed_to(&now)))
             })
-            .map(|(session, ..)| session)
             .collect();
-        changed.sort_unstable();
+        changed.sort_unstable_by_key(|(session, _)| *session);
         changed
     }
 
@@ -3172,6 +3179,8 @@ impl Chats {
             lock(&self.owed).remove(&session);
         }
         self.project_settings.forget(session);
+        // The GitHub App tokens minted for it go with its program (#3808).
+        purlis_core::forge::apptoken::chat_ended(&self.project, session);
     }
 
     /// Starts a chat, and remembers what it was started as.
@@ -4358,6 +4367,8 @@ impl Chats {
         lock(&self.told).remove(&session);
         lock(&self.records).remove(&session);
         self.blocks.ended(session);
+        // The GitHub App tokens minted for it are revoked, in the background (#3808).
+        purlis_core::forge::apptoken::chat_ended(&self.project, session);
         if let Some(gone) = gone {
             // A chat's grants end with it (D-1348-1): kept only while a session of that chat is
             // open, which a restart for a grant is, since it starts before the old one ends.
@@ -6297,6 +6308,11 @@ impl Chats {
     pub fn end_all(&self) {
         self.ending.store(true, Ordering::SeqCst);
         self.sessions.end_all();
+        // Waited on a little, so a quit right after does not cut the revokes off (#3808).
+        purlis_core::forge::apptoken::project_ended(
+            &self.project,
+            std::time::Duration::from_secs(2),
+        );
         lock(&self.open).clear();
         lock(&self.would_not_start).clear();
         lock(&self.coming).clear();

@@ -201,6 +201,25 @@
   line-height: 1;
 }
 
+/* A switcher row's count (#3947): the chip's count, on the row's own ground, a part of its own
+   so a theme reaches it apart from every chip. */
+[data-part="row-count"][data-scope="titlebar"] {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  min-inline-size: 16px;
+  block-size: 16px;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-full);
+  color: var(--state-waiting);
+  background-color: var(--wash-warning);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
 /* ---------------------------------------------------------------------------------------------
    A chip's slot and its notice dot (#3648, spec #3647): a hidden notice about the workspace, not
    dismissed, as a 16px shape over the chip's leading corner, opposite its count. It is ringed in

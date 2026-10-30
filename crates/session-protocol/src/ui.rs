@@ -683,6 +683,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The person's own press in their window, never a link's.
     "skill_sources",
     "skill_sources_offered",
+    "skill_sources_checked",
     "skill_source_add",
     "skill_source_remove",
     "skill_source_confirm",
@@ -719,6 +720,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "remove_docker_pool",
     "docker_pool_link",
     "docker_pool_version",
+    // The runner image this version's release names (2026-10-30): the Add a pool dialog's
+    // default image, read through the updater, for the person's own window.
+    "runner_image_of_this_version",
     // This machine's cluster pools (#3292): reading a kubeconfig's contexts and a cluster's
     // operator key runs this machine's kubectl with the person's credentials, and adding one
     // claims a runner as them and pins that key, so only their own press in their window does.
@@ -728,6 +732,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     // This machine's profiles on a pool's runner (#2049): keeping one there sends its name to a
     // runner, so only the person's own look in their window does.
     "pool_profiles",
+    // Signing a profile in on a pool's runner with no terminal (#4042): it runs the runner's
+    // own sign-in and passes the person's code to it, so only their own window drives it.
+    "pool_sign_in_start",
+    "pool_sign_in_next",
+    "pool_sign_in_paste",
+    "pool_sign_in_cancel",
     // The Devices view (#2052): it reads this machine's runners and links to each, so only the
     // person's own window asks it.
     "devices",
