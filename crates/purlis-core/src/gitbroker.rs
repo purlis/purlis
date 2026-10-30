@@ -795,9 +795,15 @@ fn claim(
             ),
         };
     }
-    match crate::piececlaim::take(root, at, &who(asker), asker.live.as_deref(), act.act(), now) {
+    let live = asker.live.as_deref();
+    match crate::piececlaim::take_telling(root, at, &who(asker), live, act.act(), now) {
         Ok(()) => may,
-        Err(why) => Answer::No { why },
+        // The one answer the guard refuses on: another live chat holds the folder.
+        Err(crate::piececlaim::Refusal::HeldByALiveChat(why)) => Answer::Said {
+            lines: vec![Say::Fail(why.into())],
+            code: crate::hookwire::CLAIM_HELD,
+        },
+        Err(crate::piececlaim::Refusal::Otherwise(why)) => Answer::No { why },
     }
 }
 

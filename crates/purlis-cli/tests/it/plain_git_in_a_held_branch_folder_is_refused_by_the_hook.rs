@@ -32,6 +32,17 @@ const ME: &str = "01ASKING";
 /// Chat 4's: the other live chat.
 const HOLDER: &str = "01HOLDER";
 
+/// How the stand-in app answers a git ask.
+#[derive(Clone, Copy)]
+enum App {
+    /// As the core broker does.
+    Broker,
+    /// As the broker does, after longer than any guard waits.
+    Slow,
+    /// `No`, as the app answers a chat it does not have open.
+    SaysNo,
+}
+
 /// A project with a clone in workspace `alpha` and two branch folders of it, `widget/p1` and
 /// `widget/p2`, laid out as git lays out a linked worktree: each folder's `.git` names its
 /// record in the clone's `.git/worktrees`, and the record's `gitdir` names the folder's `.git`
@@ -116,9 +127,8 @@ impl Project {
     }
 
     /// An app listening for chat 3 whose answer to a git ask is the core broker's, judging
-    /// claims against chats 3 and 4, both live; or, `slow`, one that takes longer than any
-    /// guard waits.
-    fn an_app(&self, slow: bool) -> (Reading, ChatToken, PathBuf) {
+    /// claims against chats 3 and 4, both live; or one that answers [`App`] otherwise.
+    fn an_app(&self, app: App) -> (Reading, ChatToken, PathBuf) {
         let socket = self.base.join("app").join("hooks.sock");
         let listener = Listener::bind(&self.base, &socket).expect("a socket");
         let token = listener.tokens().issue_to_this_process(3).expect("a token");
@@ -126,8 +136,14 @@ impl Project {
         let reading = listener.each_answering(
             Box::new(|_| {}),
             Box::new(move |_, ask| {
-                if slow {
-                    std::thread::sleep(Duration::from_secs(5));
+                match app {
+                    App::Broker => {}
+                    App::Slow => std::thread::sleep(Duration::from_secs(5)),
+                    App::SaysNo => {
+                        return Answer::No {
+                            why: "chat 3 is not one this app has open".to_owned(),
+                        };
+                    }
                 }
                 let Ask::Git(asked) = ask else {
                     return Answer::No {
@@ -226,7 +242,7 @@ fn chat_3<'a>(socket: &'a Path, token: &'a ChatToken) -> [(&'a str, &'a str); 4]
 fn plain_git_in_a_folder_another_live_chat_holds_is_refused_naming_the_holder() {
     let p = Project::new();
     p.claimed_by("p1", 4, HOLDER);
-    let (_app, token, socket) = p.an_app(false);
+    let (_app, token, socket) = p.an_app(App::Broker);
     for (command, act) in [
         ("git push", "push"),
         ("git commit -am 'mine too'", "commit"),
@@ -250,7 +266,7 @@ fn plain_git_in_a_folder_another_live_chat_holds_is_refused_naming_the_holder() 
 fn a_second_write_on_the_line_and_one_moved_by_env_c_are_judged_too() {
     let p = Project::new();
     p.claimed_by("p1", 4, HOLDER);
-    let (_app, token, socket) = p.an_app(false);
+    let (_app, token, socket) = p.an_app(App::Broker);
     let line = format!(
         "git -C {} commit -m free && env -C {} git push",
         p.p2.display(),
@@ -277,7 +293,7 @@ fn the_holders_own_git_and_the_persons_own_harness_are_never_refused() {
     let p = Project::new();
     p.claimed_by("p1", 3, ME);
     p.claimed_by("p2", 4, HOLDER);
-    let (_app, token, socket) = p.an_app(false);
+    let (_app, token, socket) = p.an_app(App::Broker);
     assert_eq!(p.denial("git push", &p.p1, &chat_3(&socket, &token)), None);
     // A harness the app did not start has no chat number: it is the person's own.
     assert_eq!(p.denial("git push", &p.p2, &[]), None);
@@ -291,7 +307,7 @@ fn the_holders_own_git_and_the_persons_own_harness_are_never_refused() {
 #[test]
 fn the_first_chat_to_commit_in_a_free_folder_takes_it() {
     let p = Project::new();
-    let (_app, token, socket) = p.an_app(false);
+    let (_app, token, socket) = p.an_app(App::Broker);
     assert_eq!(
         p.denial("git commit -m first", &p.p1, &chat_3(&socket, &token)),
         None
@@ -311,6 +327,21 @@ fn where_no_app_answers_in_time_the_git_runs() {
         None
     );
     // An app that takes longer than the guard waits.
-    let (_app, token, socket) = p.an_app(true);
+    let (_app, token, socket) = p.an_app(App::Slow);
     assert_eq!(p.denial("git push", &p.p1, &chat_3(&socket, &token)), None);
+}
+
+/// The review of #4129: the guard refuses only where the app says another live chat holds the
+/// folder. Any other `No` from the app (a chat it does not have open, a name it cannot read, a
+/// claim it could not judge) lets the git run, as no answer does.
+#[test]
+fn an_app_that_answers_no_for_any_other_reason_lets_the_git_run() {
+    let p = Project::new();
+    p.claimed_by("p1", 4, HOLDER);
+    let (_app, token, socket) = p.an_app(App::SaysNo);
+    assert_eq!(p.denial("git push", &p.p1, &chat_3(&socket, &token)), None);
+    assert_eq!(
+        p.denial("git commit -m x", &p.p1, &chat_3(&socket, &token)),
+        None
+    );
 }
