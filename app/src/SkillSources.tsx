@@ -24,6 +24,7 @@ import { counted } from "./dispatches";
 import { Notice, type NoticeAction } from "./Notice";
 import { Choice, Field, SettingRow } from "./settings/components";
 import { labelOf, picking, sameLevel } from "./skillChanges";
+import { NotRead, ReadingRows } from "./SkillPanels";
 import { sourceKey, type SourcesAt } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
 import { Button, ButtonRow } from "./ui/button/Button";
@@ -210,26 +211,6 @@ function checkedOf(checked: readonly SourceChecked[], source: SkillSource) {
   return checked.find((one) => sourceKey(one.remote) === key);
 }
 
-/** **Rows held while a read is asked** (S11): the layout stays, and after about a second a line
- *  says what is being read. */
-function Reading({ what }: { what: string }) {
-  const [late, setLate] = useState(false);
-  useEffect(() => {
-    const after = window.setTimeout(() => setLate(true), 1000);
-    return () => window.clearTimeout(after);
-  }, []);
-  return (
-    <div className="skill-studio-placeholders" aria-busy="true" data-testid="skill-sources-reading">
-      {[0, 1, 2].map((at) => (
-        <div key={at} className="skill-studio-placeholder" aria-hidden="true" />
-      ))}
-      <p role="status" className="honest">
-        {late ? `Reading ${what}…` : ""}
-      </p>
-    </div>
-  );
-}
-
 /** **A read in place**: rows held while it is asked, why it failed with Try again, or what it
  *  read, without hiding the rest of the page. */
 function Held<T>({
@@ -244,20 +225,15 @@ function Held<T>({
   again: () => void;
   children: (data: T) => ReactNode;
 }) {
-  if (read === undefined) return <Reading what={what} />;
+  if (read === undefined) return <ReadingRows what={what} testid="skill-sources-reading" />;
   if (read.refused !== undefined)
     return (
-      <EmptyState
-        headline={`purlis could not read ${what}`}
-        body={read.refused}
-        variant="panel"
-        role="status"
+      <NotRead
+        what={what}
+        why={read.refused}
+        onAgain={again}
         testid="skill-sources-unread"
-        action={
-          <Button size="sm" icon={<RotateCw aria-hidden="true" />} onPress={again}>
-            Try again
-          </Button>
-        }
+        size="sm"
       />
     );
   return <>{children(read.data)}</>;

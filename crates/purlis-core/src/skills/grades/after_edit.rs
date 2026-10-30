@@ -54,10 +54,13 @@ pub struct Accepted {
     pub chats: u32,
     pub token_cap: u64,
     pub limit_usd: f64,
-    /// **The trigger tests the plan ran, by digest, and the version it compared with** (the
-    /// review of #3238): a grade after an edit runs only these tests against only this version,
-    /// so a test or a commit a chat could add changes nothing the person did not see.
+    /// **The trigger tests the plan ran, by digest** (the review of #3238): a grade after an edit
+    /// runs only these tests, so a test a chat could add changes nothing the person did not see.
     pub tests: String,
+    /// **The version the plan compared with when it was turned on.** A grade after an edit
+    /// compares with the version before that edit (#4016): each saved edit is committed, so that
+    /// version moves with every edit and is not held to this one. A previous version's arm that
+    /// the plan did not show runs more chats, and waits for the person as any growth does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous: Option<String>,
     /// **The model its chats ran on as the plan showed it** (#3622): the one their line names,
@@ -323,8 +326,8 @@ pub fn dropped(root: &Path, level: &Level, name: &str) -> Result<(), String> {
 }
 
 /// **What a grade after an edit would run now**: the chats of the copy's plan, the cap and the
-/// dollar limit it would be held to, its trigger tests and the version it compares with, and its
-/// consent, the digest of what it would grade.
+/// dollar limit it would be held to, its trigger tests, and its consent, the digest of what it
+/// would grade.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Now {
     /// The profile and the model its chats would run on (#3622).
@@ -334,7 +337,6 @@ pub struct Now {
     pub token_cap: u64,
     pub limit_usd: f64,
     pub tests: String,
-    pub previous: Option<String>,
     pub consent: String,
 }
 
@@ -352,7 +354,6 @@ impl Now {
             token_cap: planned.cap.tokens,
             limit_usd,
             tests: tests_of(request),
-            previous: planned.previous.as_ref().map(|one| one.commit.clone()),
             consent: planned.consent.clone()?,
         })
     }
@@ -396,14 +397,9 @@ pub fn next(accepted: &Accepted, now: &Now) -> Next {
                 .to_owned(),
         );
     }
-    if now.previous != accepted.previous {
-        return Next::Waits(
-            "The version a grade of it compares with changed since you turned grading after each \
-             edit on, so no grade was started after your edit: see the plan again and turn it on \
-             again."
-                .to_owned(),
-        );
-    }
+    // The version it compares with is the one before the edit (#4016): each saved edit is
+    // committed and moves it, so it is not held to the one the plan showed. Its arm arriving
+    // runs more chats, which waits below.
     if now.chats > accepted.chats {
         return Next::Waits(format!(
             "A grade of it now runs {}, more than the {} you accepted, so no grade was started \

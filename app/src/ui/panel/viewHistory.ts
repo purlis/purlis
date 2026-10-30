@@ -108,6 +108,9 @@ export function forgetViewHistory(tab: string): void {
 export interface ViewHistory<P> {
   /** Where the person is now. */
   at: P;
+  /** The step back goes to, where there is one: a page that goes back only to a place it
+   *  names looks here first (#3978). */
+  behind: P | undefined;
   canGoBack: boolean;
   canGoForward: boolean;
   /** Go to `to`: a new step, which forgets what was ahead. */
@@ -145,6 +148,7 @@ export function useViewHistory<P>(tab: string, start: P, same: Same<P> = byValue
   );
   return {
     at: now.at,
+    behind: now.back.at(-1),
     canGoBack: now.back.length > 0,
     canGoForward: now.forward.length > 0,
     go: useCallback((to: P) => write((was) => wentTo(was, to, same)), [write, same]),
