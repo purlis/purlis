@@ -14,6 +14,7 @@
 //! - [`review`]: the install review, summary first, and Browse.
 //! - [`install`] and [`update`]: the copy, the pin, and each newer commit's review.
 //! - [`lock`]: the lockfiles; [`write`]: every write, through handles that follow no link.
+//! - [`checked`]: when each source was last checked, and how many skills it offered then.
 //!
 //! **What is installed is what was reviewed.** The review answers the commit and a digest of
 //! each skill's files; an install is handed both back ([`Accepted`]), fetches that commit again,
@@ -24,6 +25,7 @@
 use purlis_skills::tree;
 use serde::{Deserialize, Serialize};
 
+pub mod checked;
 pub mod extension;
 pub mod fetch;
 pub mod install;

@@ -216,7 +216,9 @@ add or change one:
    with `--update` in the pinned image, the story files and cells whose pictures failed in it, and the check keeps every live baseline, of every shard,
    as one `story-baselines`, with `drawn.json` naming the
    head and the base it tested. The check stays red: a picture counts only once it is committed.
-   A story that fails any other gate draws nothing: fix it first.
+   A story that fails any other gate draws nothing: fix it first. The check's first annotation
+   names every such story, and each shard's summary lists them before every picture that failed
+   alone, since GitHub shows only ten annotations of a step.
 2. Take the baselines, in either of two ways. Neither draws again, and both take only whole PNG
    baselines within a size and a count limit, and delete every other file in the
    `__screenshots__` directories (`tools/story-baselines.mjs take`):

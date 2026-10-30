@@ -163,11 +163,13 @@ pub struct NotASkill {
 }
 
 /// What a source offers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct SourceBrowse {
     pub commit: SourceCommit,
     pub skills: Vec<OfferedSkill>,
     pub not_skills: Vec<NotASkill>,
+    /// When it was read, in seconds since the epoch (#3840): what its page's lead says.
+    pub checked: f64,
 }
 
 /// Why an item of the summary is marked.
@@ -645,6 +647,63 @@ pub(crate) async fn skill_sources(
     .await
 }
 
+/// **What the last check of a source found** (#3840): when it was, and how many skills it
+/// offered then, as the core recorded it (`source::checked`), with how many are installed from it
+/// now. Read with the source list, and never by asking a source.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct SourceChecked {
+    pub remote: SourceRemote,
+    /// When it was last checked, in seconds since the epoch; `None` where nothing has yet.
+    pub at: Option<f64>,
+    /// How many skills it offered at its last browse; `None` where it was never browsed here.
+    pub skills: Option<u32>,
+    /// How many skills are installed from it, at any level, each once.
+    pub installed: u32,
+}
+
+/// **When each of the project's sources was last checked, and its counts** (#3840): one for each
+/// source [`skill_sources`] lists, read from what the last browse or updates check recorded and
+/// from the lockfiles, so Sources opens without asking any source.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_sources_checked(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+) -> Result<Vec<SourceChecked>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading when the skill sources were checked", move || {
+        flag_on()?;
+        checked_shown(held.root())
+    })
+    .await
+}
+
+/// Seconds since the epoch as the window reads a number: exact for every second before the year
+/// 285 million.
+#[allow(clippy::cast_precision_loss)]
+fn seconds(at: u64) -> f64 {
+    at as f64
+}
+
+/// [`skill_sources_checked`] for the project at `root`.
+fn checked_shown(root: &std::path::Path) -> Result<Vec<SourceChecked>, String> {
+    let recorded = source::checked::read(root);
+    let (locked, _) = source::lock::every(root);
+    Ok(source::sources(root)?
+        .into_iter()
+        .map(|one| {
+            let remote = one.source.remote;
+            let last = recorded.iter().find(|at| at.remote == remote);
+            SourceChecked {
+                remote: (&remote).into(),
+                at: last.map(|at| seconds(at.at)),
+                skills: last.and_then(|at| at.skills),
+                installed: source::checked::installed_from(&locked, &remote),
+            }
+        })
+        .collect())
+}
+
 /// Whose list an offered source is on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "kebab-case")]
@@ -792,6 +851,7 @@ pub(crate) async fn skill_source_browse(
                     why: esc(&one.why),
                 })
                 .collect(),
+            checked: seconds(browse.checked),
         })
     })
     .await

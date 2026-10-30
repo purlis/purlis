@@ -18,6 +18,7 @@ import App from "./App";
 import { forgetRepoClones } from "./repoClones";
 import { chipName, openAllWorkspaces, workspaceChips, workspaceInFront } from "./test-strips";
 import { findOnCard, findResult } from "./actionResult.testkit";
+import { keepUnsaved, unsavedNow, type UnsavedWork } from "./unsavedWork";
 
 /**
  * Making a workspace and deleting one, from the window.
@@ -49,6 +50,7 @@ afterEach(() => {
   cleanup();
   clearMocks();
   forgetRepoClones();
+  for (const one of unsavedNow()) keepUnsaved(one.key, undefined);
 });
 
 const PLANE = "/home/dev/plane";
@@ -248,6 +250,36 @@ async function settled() {
 }
 
 describe("deleting a workspace", () => {
+  it("asks first about the unsaved work a save writes into it (#3929)", async () => {
+    const { calls } = core();
+    render(<App />);
+    await settled();
+    const deploy: UnsavedWork = {
+      key: "deploy",
+      plane: PLANE,
+      view: { from: null, view: "skill-studio", key: "" },
+      workspace: "alpha",
+      name: "deploy",
+      save: vi.fn(() => Promise.resolve(undefined)),
+      discard: vi.fn(() => keepUnsaved("deploy", undefined)),
+    };
+    keepUnsaved("deploy", deploy);
+
+    const asked = await askToDelete("alpha");
+    expect(asked).toHaveAccessibleName("Save your changes to deploy?");
+    expect(calls("workspace_at_risk")).toEqual([]);
+    await userEvent.click(within(asked).getByRole("button", { name: "Discard and leave" }));
+
+    // Then the removal's own question, which deletes nothing until it is answered: the work
+    // goes only with the workspace.
+    expect(deploy.discard).not.toHaveBeenCalled();
+    await waitFor(() => expect(calls("workspace_at_risk")).toHaveLength(1));
+    expect(await screen.findByRole("alertdialog")).not.toHaveAccessibleName(
+      "Save your changes to deploy?",
+    );
+    expect(calls("workspace_remove")).toEqual([]);
+  });
+
   it("is reached from the workspace tab's own menu, which the operator asked for", async () => {
     core();
     render(<App />);

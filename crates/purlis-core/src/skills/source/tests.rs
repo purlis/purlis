@@ -1673,6 +1673,206 @@ fn no_skill_with_a_built_in_skills_name_lands_by_an_install_or_an_update() {
     assert!(!notify.contains("skills:secrets"), "{notify}");
 }
 
+/// Seconds since the epoch, now.
+fn epoch_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+#[test]
+fn a_browse_records_when_it_read_the_source_and_how_many_skills_it_offers() {
+    let (remote, _) = good_remote();
+    let tmp = plane();
+    let root = tmp.path();
+    assert!(checked::read(root).is_empty());
+    let before = epoch_now();
+
+    let browsed = browse(root, &remote.source()).unwrap();
+
+    let read = checked::read(root);
+    assert_eq!(read.len(), 1, "{read:?}");
+    assert_eq!(read[0].remote, remote.source().remote);
+    assert_eq!(read[0].skills, Some(2));
+    assert_eq!(
+        read[0].at, browsed.checked,
+        "the browse says when it was recorded"
+    );
+    assert!(
+        read[0].at >= before && read[0].at <= epoch_now(),
+        "{read:?}"
+    );
+    // A cache in the state folder, private, and nothing else written for it.
+    let file = checked::path(root);
+    assert!(file.starts_with(crate::names::state(root).join("cache")));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+}
+
+#[test]
+fn an_updates_check_records_when_it_asked_and_keeps_the_count_the_browse_found() {
+    let (remote, _) = good_remote();
+    let tmp = plane();
+    let root = tmp.path();
+    let source = remote.source();
+    let accepted = review(root, &source, &["notify".to_owned()])
+        .unwrap()
+        .accepted();
+    on(root, |cx| {
+        install(cx, &source, &Level::project(), &accepted, None)
+    })
+    .0
+    .unwrap();
+    checked::noted(root, &source.remote, 5, Some(7));
+
+    let found = updates(root);
+
+    assert!(found.unasked.is_empty(), "{:?}", found.unasked);
+    let read = checked::read(root);
+    assert_eq!(read.len(), 1, "{read:?}");
+    assert!(read[0].at > 5, "{read:?}");
+    assert_eq!(
+        read[0].skills,
+        Some(7),
+        "asking for a commit counts no skills"
+    );
+}
+
+#[test]
+fn a_source_that_does_not_answer_the_updates_check_is_not_recorded_as_checked() {
+    let (remote, _) = good_remote();
+    let tmp = plane();
+    let root = tmp.path();
+    let source = remote.source();
+    let accepted = review(root, &source, &["notify".to_owned()])
+        .unwrap()
+        .accepted();
+    on(root, |cx| {
+        install(cx, &source, &Level::project(), &accepted, None)
+    })
+    .0
+    .unwrap();
+    checked::noted(root, &source.remote, 5, Some(2));
+    std::fs::remove_dir_all(&remote.git_dir).unwrap();
+
+    let found = updates(root);
+
+    assert_eq!(found.unasked.len(), 1, "{:?}", found.unasked);
+    assert_eq!(checked::read(root)[0].at, 5);
+}
+
+#[test]
+fn a_checked_record_purlis_did_not_write_reads_as_none() {
+    let tmp = plane();
+    let root = tmp.path();
+    let file = checked::path(root);
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let remote = Remote {
+        url: "https://example.com/skills".into(),
+        branch: None,
+    };
+    for bad in [
+        "not json".to_owned(),
+        r#"{"v":2,"sources":[{"url":"https://example.com/skills","at":1}]}"#.to_owned(),
+        format!(
+            "{{\"v\":1,\"sources\":[{}]}}",
+            "{\"url\":\"x\",\"at\":1},".repeat(600) + "{\"url\":\"x\",\"at\":1}"
+        ),
+        " ".repeat(300 * 1024),
+    ] {
+        std::fs::write(&file, &bad).unwrap();
+        assert!(
+            checked::read(root).is_empty(),
+            "{}",
+            &bad[..bad.len().min(60)]
+        );
+    }
+    // A record that is a link is never read, nor written through.
+    std::fs::remove_file(&file).unwrap();
+    let elsewhere = tmp.path().join("elsewhere.json");
+    std::fs::write(
+        &elsewhere,
+        r#"{"v":1,"sources":[{"url":"https://example.com/skills","at":1}]}"#,
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&elsewhere, &file).unwrap();
+        assert!(checked::read(root).is_empty());
+        checked::noted(root, &remote, 9, Some(1));
+        assert_eq!(
+            std::fs::read_to_string(&elsewhere).unwrap(),
+            r#"{"v":1,"sources":[{"url":"https://example.com/skills","at":1}]}"#
+        );
+    }
+}
+
+#[test]
+fn the_record_keeps_the_sources_checked_most_recently() {
+    let tmp = plane();
+    let root = tmp.path();
+    for n in 0..520u64 {
+        let remote = Remote {
+            url: format!("https://example.com/skills-{n}"),
+            branch: None,
+        };
+        checked::noted(root, &remote, 1000 + n, None);
+    }
+    let read = checked::read(root);
+    assert_eq!(read.len(), 512);
+    assert!(
+        read.iter().all(|one| one.at >= 1008),
+        "the oldest went first"
+    );
+}
+
+#[test]
+fn the_skills_installed_from_a_source_are_counted_from_the_lockfiles() {
+    let (remote, _) = good_remote();
+    let tmp = plane();
+    let root = tmp.path();
+    let source = remote.source();
+    let accepted = review(root, &source, &["deploy".to_owned()])
+        .unwrap()
+        .accepted();
+    on(root, |cx| {
+        install(cx, &source, &Level::project(), &accepted, None)
+    })
+    .0
+    .unwrap();
+    let (locked, _) = lock::every(root);
+    // deploy, and notify, which it brought along.
+    assert_eq!(checked::installed_from(&locked, &source.remote), 2);
+    let other = Remote {
+        url: "https://example.com/other".into(),
+        branch: None,
+    };
+    assert_eq!(checked::installed_from(&locked, &other), 0);
+}
+
+#[test]
+fn a_record_of_long_urls_keeps_the_newest_that_fit_and_is_never_read_as_none() {
+    let tmp = plane();
+    let root = tmp.path();
+    let long = "x".repeat(1500);
+    for n in 0..300u64 {
+        let remote = Remote {
+            url: format!("https://example.com/{long}/{n}"),
+            branch: None,
+        };
+        checked::noted(root, &remote, 1000 + n, Some(1));
+    }
+    let read = checked::read(root);
+    assert!(!read.is_empty() && read.len() < 300, "{}", read.len());
+    assert_eq!(read[0].at, 1299, "the newest is kept");
+    assert!(std::fs::metadata(checked::path(root)).unwrap().len() <= 256 * 1024);
+}
+
 /// #4024: a source of `deploy` (which refers to `notify`), `notify` and `lint`, which refers to
 /// nothing.
 fn three_skills() -> Upstream {

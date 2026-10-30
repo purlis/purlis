@@ -594,7 +594,13 @@ impl NeedsApproval {
     /// launch's own read, as `approve_profile` reads it: a profile in a file the launch
     /// refuses has nothing a yes could buy.
     fn of(chat: &Chat, root: &std::path::Path) -> Option<Self> {
-        let name = chat.profile.as_deref()?;
+        Self::of_profile(chat.profile.as_deref()?, root)
+    }
+
+    /// What the profile `name` needs approved at `root` before a chat on it can start, read as
+    /// [`NeedsApproval::of`] reads a chat's: for a start the window asked for that the core
+    /// refused, such as the Skill studio's (#3942).
+    pub(crate) fn of_profile(name: &str, root: &std::path::Path) -> Option<Self> {
         let (set, _check) = purlis_core::profiles::for_launch(root);
         let profile = set.get(name)?;
         let needs = purlis_core::profiletrust::approval_needed(root, profile)?;

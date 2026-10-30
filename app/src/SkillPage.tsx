@@ -25,7 +25,7 @@
  * the rest of the page as it is.
  */
 import { useContext, useId, useState, type ReactNode } from "react";
-import { Ellipsis, RotateCw } from "lucide-react";
+import { Ellipsis } from "lucide-react";
 import {
   commands,
   SKILL_RUNS_PANEL,
@@ -63,7 +63,16 @@ import {
 import { GradesTab, TRIGGER_TESTS_FILE, type GradingGo } from "./SkillGrades";
 import { SkillPinSwitch, SkillPinnedBy } from "./SkillPins";
 import { GrantPicker } from "./SkillLevelPickers";
-import { SkillPanelSection, SkillTotals, keyOf, runsOf, useRead, type Read } from "./SkillPanels";
+import {
+  NotRead,
+  ReadingRows,
+  SkillPanelSection,
+  SkillTotals,
+  keyOf,
+  runsOf,
+  useRead,
+  type Read,
+} from "./SkillPanels";
 import { ownerShown } from "./SkillStudioHarnesses";
 import { levelOf, sameLevel, whoseOf } from "./skillChanges";
 import {
@@ -336,40 +345,6 @@ function copyAt(copies: readonly SkillCopy[], level: SkillLevel | null): SkillCo
 /** `text` with its first letter lower-cased, to go inside a sentence. */
 export function lowerFirst(text: string): string {
   return text.charAt(0).toLowerCase() + text.slice(1);
-}
-
-/** A read that failed, said where its data would be, with Try again. */
-function NotRead({
-  what,
-  read,
-  onAgain,
-}: {
-  what: string;
-  read: Read<unknown>;
-  onAgain: () => void;
-}) {
-  return (
-    <EmptyState
-      variant="panel"
-      headline={`purlis could not read ${what}`}
-      body={read.refused}
-      testid="skill-page-not-read"
-      action={
-        <Button icon={<RotateCw aria-hidden="true" />} onPress={onAgain}>
-          Try again
-        </Button>
-      }
-    />
-  );
-}
-
-/** A read still on its way: the layout is kept, and a line says so. */
-function Reading({ what }: { what: string }) {
-  return (
-    <p className="pending" aria-busy="true" data-testid="skill-page-reading">
-      {`Reading ${what}…`}
-    </p>
-  );
 }
 
 // --- The page -----------------------------------------------------------------------------------
@@ -727,8 +702,16 @@ export function SkillPage({
         return editing ? doing.drawn : <SkillText plane={plane} skill={skill} level={level} />;
       case "history":
         if (details.refused !== undefined)
-          return <NotRead what={`the history of ${name}`} read={details} onAgain={tryAgain} />;
-        if (details.data === undefined) return <Reading what={`the history of ${name}`} />;
+          return (
+            <NotRead
+              what={`the history of ${name}`}
+              why={details.refused}
+              onAgain={tryAgain}
+              testid="skill-page-not-read"
+            />
+          );
+        if (details.data === undefined)
+          return <ReadingRows what={`the history of ${name}`} testid="skill-page-reading" />;
         if (copy === undefined)
           return (
             <EmptyState
@@ -816,9 +799,14 @@ export function SkillPage({
           <div className="skill-page-panel">
             <SkillTotals name={name} stats={stats.data} refused={stats.refused} />
             {panels.refused !== undefined ? (
-              <NotRead what={`the runs of ${name}`} read={panels} onAgain={tryAgain} />
+              <NotRead
+                what={`the runs of ${name}`}
+                why={panels.refused}
+                onAgain={tryAgain}
+                testid="skill-page-not-read"
+              />
             ) : panels.data === undefined ? (
-              <Reading what={`the runs of ${name}`} />
+              <ReadingRows what={`the runs of ${name}`} testid="skill-page-reading" />
             ) : (
               panels.data
                 .filter((one) => one.key.kind === SKILL_RUNS_PANEL)
@@ -1183,9 +1171,14 @@ function Overview({
           </p>
         )}
       {details.refused !== undefined ? (
-        <NotRead what={`what ${name} names`} read={details} onAgain={onAgain} />
+        <NotRead
+          what={`what ${name} names`}
+          why={details.refused}
+          onAgain={onAgain}
+          testid="skill-page-not-read"
+        />
       ) : details.data === undefined ? (
-        <Reading what={`what ${name} names`} />
+        <ReadingRows what={`what ${name} names`} testid="skill-page-reading" />
       ) : (
         <>
           <SkillUses name={name} details={details.data} />
@@ -1249,12 +1242,13 @@ function SkillText({
     return (
       <NotRead
         what={`the text of ${skill.name}`}
-        read={text}
+        why={text.refused}
         onAgain={() => setAgain((n) => n + 1)}
+        testid="skill-page-not-read"
       />
     );
   if (text.data === undefined || text.data === null)
-    return <Reading what={`the text of ${skill.name}`} />;
+    return <ReadingRows what={`the text of ${skill.name}`} testid="skill-page-reading" />;
   return (
     <figure className="skill-page-text">
       <figcaption id={id} className="honest">

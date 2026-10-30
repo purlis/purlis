@@ -49,6 +49,12 @@ spec:
       containers:
         - name: operator
           image: {{ include "purlis-cluster-operator.image" . }}
+          # Its metrics (#3737), served at /metrics; the Service purlis-cluster-operator-metrics
+          # reaches them.
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
           env:
             # What each person's runners may hold at once (#2055), as JSON.
             - name: PURLIS_PER_PERSON_QUOTA

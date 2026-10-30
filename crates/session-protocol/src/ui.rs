@@ -683,6 +683,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The person's own press in their window, never a link's.
     "skill_sources",
     "skill_sources_offered",
+    "skill_sources_checked",
     "skill_source_add",
     "skill_source_remove",
     "skill_source_confirm",
