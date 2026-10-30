@@ -87,14 +87,25 @@ import type { Offer } from "./actions";
 export type Answer = { status: "ok"; data: SkillChanged } | { status: "error"; error: string };
 
 /** What the studio says after a change: a refusal, or what the change left to say. */
-export type Said = { tone: "news" | "trouble"; label: string; text: string; restore?: string };
+export type Said = {
+  tone: "news" | "trouble";
+  label: string;
+  text: string;
+  /** Bring it back, after a delete: the deleted skill's id. */
+  restore?: string;
+  /** Undo, after a change that can be undone (a rename, a move; #3685): what it runs. */
+  undo?: () => void;
+};
 
 /** **Runs one change and says what came of it**: the studio's, so its notice and its reads are
  *  one for every page. */
 export type Change = (
   label: string,
   run: () => Promise<Answer>,
-  then?: () => Promise<Said | undefined>,
+  /** What is said once it is done, given the core's notes on it. */
+  then?: (notes: readonly string[]) => Promise<Said | undefined>,
+  /** Where a refusal is said instead of the notice: a dialog still open (#3685). */
+  refusedIn?: (why: string) => void,
 ) => void;
 
 /** What a change answers, made one: a command that answers nothing beyond being done. */
@@ -1009,8 +1020,9 @@ function Overview({
       ? null
       : skill.named
         ? {
-            label: "Remove",
-            name: `Remove ${skill.written} from ${persona}`,
+            // S2's split of Remove: this one takes it out of the persona's list.
+            label: "Take out of this persona",
+            name: `Take ${skill.written} out of ${persona}`,
             how: "remove" as const,
           }
         : {
