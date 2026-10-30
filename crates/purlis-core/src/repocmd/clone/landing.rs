@@ -14,6 +14,9 @@
 //! - **The hidden folder is held while it runs** ([`Hidden`]), so a crash's leftover is told from
 //!   a clone running now: a leftover is ours by name and replaced, a running one is left to the
 //!   run that has it. The lock goes with the process, so a killed clone never wedges the next.
+//! - **Git LFS files are fetched as a stage of their own** ([`Route::large_files`], #4102): one
+//!   large file downloading in a checkout's filter says nothing for as long as it takes, so the
+//!   clone leaves pointers, and `git lfs pull` then runs with its own progress.
 //! - **One second try**, on a transfer that broke part way ([`cloning::is_transient`]), over
 //!   HTTP/1.1, with a fresh token check.
 //! - **The words come from the failure** ([`spoken`]). What the window says names no forge CLI.
@@ -50,7 +53,16 @@ pub(super) struct StandIn {
     pub script: Option<String>,
     /// Whether the forge's CLI is on this machine, in place of looking.
     pub cli: Option<bool>,
+    /// A script run in `git lfs pull`'s place, with the clone's folder as `$1`; its being there
+    /// stands for a git that fetches Git LFS files.
+    pub lfs: Option<String>,
+    /// Variables for the stand-in forge's git, by name.
+    pub pass: Vec<(String, std::ffi::OsString)>,
 }
+
+/// What tells git-lfs's filter to leave each file as its pointer, for [`Route::large_files`] to
+/// fetch as a stage of its own (#4102).
+const SKIP_SMUDGE: &str = "GIT_LFS_SKIP_SMUDGE";
 
 /// One clone, where it comes from and where it goes.
 pub(super) struct Route<'a> {
@@ -135,13 +147,25 @@ impl Route<'_> {
         })
     }
 
+    /// Variables handed to this clone's git by name.
+    fn pass(&self) -> Vec<(String, std::ffi::OsString)> {
+        #[allow(unused_mut)]
+        let mut pass = Vec::new();
+        #[cfg(test)]
+        if let Some(watch) = self.watch {
+            pass.extend(watch.stand_in.pass.iter().cloned());
+        }
+        pass
+    }
+
     fn tell(&self, stage: Stage, percent: u8) {
         if let Some(watch) = self.watch {
             (watch.heard)(stage, percent);
         }
     }
 
-    /// One `git clone` into `hidden`, followed to its end.
+    /// One `git clone` into `hidden`, followed to its end. Git LFS files are left as their
+    /// pointers ([`SKIP_SMUDGE`]), and fetched after it ([`Self::large_files`]).
     fn attempt(&self, hidden: &Path, second: bool, climb: &mut Climb) -> Tried {
         let into = hidden.display().to_string();
         let args = [
@@ -152,17 +176,73 @@ impl Route<'_> {
             self.url,
             into.as_str(),
         ];
-        let settings = self.settings(second);
+        let mut pass = self.pass();
+        pass.push((SKIP_SMUDGE.to_owned(), "1".into()));
         #[cfg(test)]
-        let spawned = match self
+        let script = self
             .watch
-            .and_then(|watch| watch.stand_in.script.as_deref())
-        {
-            Some(script) => Ok(Ok(in_gits_place(script, &into, &settings.join(" ")))),
-            None => git::spawn_network(self.ws_dir, self.helper().as_deref(), &settings, &args),
-        };
+            .and_then(|watch| watch.stand_in.script.as_deref());
         #[cfg(not(test))]
-        let spawned = git::spawn_network(self.ws_dir, self.helper().as_deref(), &settings, &args);
+        let script = None;
+        self.followed(self.ws_dir, &args, &into, script, second, pass, climb)
+    }
+
+    /// Whether the clone in `hidden` has Git LFS files this machine's git would have fetched
+    /// as it checked them out: the person's config names git-lfs's filter, and a file the
+    /// repo's attributes give it is there.
+    fn has_large_files(&self, hidden: &Path) -> bool {
+        #[cfg(test)]
+        let configured = self.watch.is_some_and(|watch| watch.stand_in.lfs.is_some());
+        #[cfg(not(test))]
+        let configured = git::run(
+            hidden,
+            &["config", "--get-regexp", r"^filter\.lfs\.(process|smudge)$"],
+            git::READ,
+        )
+        .is_ok_and(|run| run.ok() && !run.out.trim().is_empty());
+        configured
+            && git::run(hidden, &["ls-files", "--", ":(attr:filter=lfs)"], git::READ)
+                .is_ok_and(|run| run.ok() && !run.out.trim().is_empty())
+    }
+
+    /// **Git LFS files fetched as a stage of their own** (#4102): `git lfs pull` in `hidden`,
+    /// followed as the clone was. git-lfs rewrites its progress line as bytes arrive, so one
+    /// large file downloading is a clone that speaks, and one gone dead says nothing and is
+    /// stopped at the stall limit.
+    fn large_files(&self, hidden: &Path, climb: &mut Climb) -> Tried {
+        let at = hidden.display().to_string();
+        let mut pass = self.pass();
+        // git-lfs draws its progress only on a terminal unless told.
+        pass.push(("GIT_LFS_FORCE_PROGRESS".to_owned(), "1".into()));
+        #[cfg(test)]
+        let script = self.watch.and_then(|watch| watch.stand_in.lfs.as_deref());
+        #[cfg(not(test))]
+        let script = None;
+        self.followed(hidden, &["lfs", "pull"], &at, script, false, pass, climb)
+    }
+
+    /// git run with `args` in `dir`, on the one-credential rule, followed to its end. In a
+    /// test, `script` runs in its place with `target` as `$1`.
+    #[allow(clippy::too_many_arguments)]
+    fn followed(
+        &self,
+        dir: &Path,
+        args: &[&str],
+        target: &str,
+        script: Option<&str>,
+        second: bool,
+        pass: Vec<(String, std::ffi::OsString)>,
+        climb: &mut Climb,
+    ) -> Tried {
+        let settings = self.settings(second);
+        let spawned = match script {
+            #[cfg(test)]
+            Some(script) => Ok(Ok(in_gits_place(script, target, &settings.join(" ")))),
+            _ => {
+                let _ = target;
+                git::spawn_network(dir, self.helper().as_deref(), &settings, pass, args)
+            }
+        };
         let child = match spawned {
             Ok(Ok(child)) => child,
             Ok(Err(why)) => return Tried::Failed(vec![why]),
@@ -177,7 +257,7 @@ impl Route<'_> {
             }
         });
         let ok = matches!(followed, Ok(Followed::Ended { ok: true, .. }));
-        git::network_call_ended(self.ws_dir, &args, ok, started);
+        git::network_call_ended(dir, args, ok, started);
         match followed {
             Ok(Followed::Ended { ok: true, .. }) => Tried::Done,
             Ok(Followed::Ended { said, .. }) => Tried::Failed(said),
@@ -210,6 +290,7 @@ impl Route<'_> {
         // and yours would have changed its route, say which key (#1550).
         if Self::for_a_chat()
             && (reading == Reading::Stalled
+                || reading == Reading::StalledOnLargeFiles
                 || reading == Reading::Unreachable
                 || super::super::unread::reads_as_a_route_failure(&said))
             && let Some(note) = super::super::unread::network_note(
@@ -258,6 +339,10 @@ pub(super) fn land(route: &Route) -> Landed {
         hidden.empty();
         tried = route.attempt(&hidden.path, true, &mut climb);
     }
+    // A chat's clone runs no filter of your config (#1413), so it has no large files to fetch.
+    if matches!(tried, Tried::Done) && !Route::for_a_chat() && route.has_large_files(&hidden.path) {
+        tried = route.large_files(&hidden.path, &mut climb);
+    }
     match tried {
         Tried::Done => {}
         Tried::Stopped => {
@@ -267,6 +352,9 @@ pub(super) fn land(route: &Route) -> Landed {
             return Landed::Stopped;
         }
         Tried::Failed(said) => return route.failed(cloning::read_words(&said), &said),
+        Tried::Stalled if climb.now().0 == Stage::LargeFiles => {
+            return route.failed(Reading::StalledOnLargeFiles, &[]);
+        }
         Tried::Stalled => return route.failed(Reading::Stalled, &[]),
         Tried::Lost(why) => return route.failed(Reading::Other(why), &[]),
     }
@@ -280,7 +368,8 @@ pub(super) fn land(route: &Route) -> Landed {
         );
     }
     // git's last stages say nothing on a small repo, so the clone's end is said here.
-    route.tell(Stage::WritingFiles, 100);
+    let (stage, _) = climb.now();
+    route.tell(stage.max(Stage::WritingFiles), 100);
     Landed::Cloned
 }
 
@@ -468,6 +557,11 @@ fn spoken(
         Reading::Stalled => format!(
             "{name}: the clone stalled: nothing came from {host} for {} minutes, so purlis \
              stopped it and kept nothing. Retry when your connection is back.",
+            cloning::STALL.as_secs() / 60
+        ),
+        Reading::StalledOnLargeFiles => format!(
+            "{name}: the clone stalled fetching its large files (Git LFS): nothing came for {} \
+             minutes, so purlis stopped it and kept nothing. Retry when your connection is back.",
             cloning::STALL.as_secs() / 60
         ),
         Reading::Other(last) if no_cli => {

@@ -308,7 +308,7 @@ pub fn read_failure(url: &ProjectUrl, said: &[String]) -> Refused {
                  you cannot reach looks missing too."
             ),
         ),
-        Reading::Unreachable | Reading::Stalled => (
+        Reading::Unreachable | Reading::Stalled | Reading::StalledOnLargeFiles => (
             Why::Unreachable,
             format!("purlis could not reach {host}. Check your connection, then Retry."),
         ),

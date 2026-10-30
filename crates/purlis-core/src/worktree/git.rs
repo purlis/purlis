@@ -2100,12 +2100,14 @@ pub(crate) fn run_network_handing(
 /// [`run_network`] as a child the caller reads as it runs, for its progress, and may stop with
 /// [`stop`] (#4079): the child, or the sentence that refuses the call. Under the one-credential
 /// rule, unlike [`spawn_persons_clone`]: the same [`NETWORK_RULE`], and `helper` the only
-/// helper git consults. `config` adds `-c` settings after them. **The caller owns the deadline**,
-/// and tells the network log how it went ([`network_call_ended`]).
+/// helper git consults. `config` adds `-c` settings after them, and `pass` variables by name.
+/// **The caller owns the deadline**, and tells the network log how it went
+/// ([`network_call_ended`]).
 pub(crate) fn spawn_network(
     dir: &Path,
     helper: Option<&str>,
     config: &[String],
+    pass: Vec<(String, std::ffi::OsString)>,
     args: &[&str],
 ) -> Result<Result<Child, String>, GitUnavailable> {
     let mut all: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
@@ -2117,6 +2119,7 @@ pub(crate) fn spawn_network(
         config: all,
         credentials: true,
         network: true,
+        pass,
         ..Extra::default()
     };
     match held(dir, args, extra)? {

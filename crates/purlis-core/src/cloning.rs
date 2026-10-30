@@ -55,6 +55,8 @@ pub enum Stage {
     Unpacking,
     /// The project's files written into the folder.
     WritingFiles,
+    /// Its Git LFS files fetched, after the rest (#4102).
+    LargeFiles,
 }
 
 impl Stage {
@@ -65,6 +67,7 @@ impl Stage {
             Self::Downloading => "Downloading",
             Self::Unpacking => "Unpacking",
             Self::WritingFiles => "Writing files",
+            Self::LargeFiles => "Downloading large files",
         }
     }
 
@@ -74,7 +77,8 @@ impl Stage {
             Self::Connecting => (0, 5),
             Self::Downloading => (5, 80),
             Self::Unpacking => (80, 90),
-            Self::WritingFiles => (90, 100),
+            Self::WritingFiles => (90, 95),
+            Self::LargeFiles => (95, 100),
         }
     }
 }
@@ -98,6 +102,8 @@ pub fn read_progress(line: &str) -> Option<Progress> {
         "Receiving objects" => Stage::Downloading,
         "Resolving deltas" => Stage::Unpacking,
         "Updating files" | "Checking out files" => Stage::WritingFiles,
+        // git-lfs's own line, as `git lfs pull` draws it.
+        "Downloading LFS objects" => Stage::LargeFiles,
         _ => return None,
     };
     let percent = rest.split_once('%').and_then(|(number, _)| {
@@ -161,6 +167,9 @@ pub enum Reading {
     Unreachable,
     /// curl ended a transfer that had gone dead (`http.lowSpeedTime`).
     Stalled,
+    /// Git LFS fetched nothing for the stall limit (#4102). Never read from git's words: said of
+    /// a stall in [`Stage::LargeFiles`].
+    StalledOnLargeFiles,
     /// Anything else: git's last line.
     Other(String),
 }
