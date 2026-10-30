@@ -17,7 +17,8 @@
  *   or leaves): the parts fade in over `duration.enter` (`data-focus-back`), and go at once, as
  *   every part that closes does (R128). Reduced motion makes the duration nothing.
  * - **The keyboard stays on the work**: a key pressed in a part that is going takes the keyboard
- *   to the work in front, else it would be left on nothing.
+ *   to the work in front, else it would be left on nothing; and so does a surface that gives the
+ *   keyboard back into a hidden part once focus mode is on (the palette, #4072).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -61,7 +62,24 @@ export function useFocusMode() {
     setOn(!was);
   }, []);
   useEffect(() => () => window.clearTimeout(timer.current), []);
+  // Once the parts are hidden, a keyboard that reached one of them meanwhile is taken off it:
+  // a surface that closed while the toggle was being drawn may have handed it there (#4072).
+  useEffect(() => {
+    if (on) keepTheKeyboardOnTheWork();
+  }, [on]);
   return { on, back, toggle };
+}
+
+/**
+ * **The keyboard kept off what focus mode hides, wherever it was put** (#4072): while focus mode
+ * is on, a keyboard given to an element in a part it hides goes to the work instead. The
+ * palette gives the keyboard back to where it was opened from as it closes, after its row ran:
+ * Focus mode run from a part it hides would otherwise hand the keyboard to a part no longer
+ * drawn, which leaves it on the page.
+ */
+export function keepTheKeyboardOffWhatFocusModeHides(): void {
+  if (document.querySelector(`[${FOCUS_MODE}]`) === null) return;
+  keepTheKeyboardOnTheWork();
 }
 
 /**
