@@ -10,7 +10,8 @@
 //! whose pod is lost is made again on its own volume and resumed with the pairing it had, its
 //! home as it was left (#2057). A profile kept there is asked its standing over the link and by
 //! the sign-in's own `kubectl exec`, and what a sign-in leaves in its folder outlives the pod
-//! (#3819). Everything it made is removed, whatever the outcome.
+//! (#3819); and a killed `kubectl exec -i` closes the input of what it ran in the pod, which
+//! is how Cancel ends a sign-in there. Everything it made is removed, whatever the outcome.
 //!
 //! It needs a cluster with purlis's cluster operator installed and the runner image of this
 //! build named by digest in `CLUSTER_POOL_TEST_IMAGE`, with the kubeconfig context in
@@ -278,6 +279,45 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
         client.stop(&chat).await.expect("the chat stops");
     });
     runtime.shutdown_timeout(Duration::from_secs(5));
+
+    // A killed `kubectl exec -i` closes the input of what it ran in the pod (#3819): what Cancel
+    // ends a sign-in on a cluster runner by, since nothing else reaches into the pod.
+    let (runners, pod) = (&paired.vouched.runner_namespace, &paired.vouched.pod);
+    let mut exec = std::process::Command::new(kubectl.program())
+        .args(kubectl.args(&[
+            "exec",
+            "-i",
+            "--namespace",
+            runners,
+            "--container",
+            clusterpool::RUNNER_CONTAINER,
+            &format!("pod/{pod}"),
+            "--",
+            "/bin/sh",
+            "-c",
+            "echo started > \"$HOME/e2e-input\"; cat > /dev/null; echo ended > \"$HOME/e2e-input\"",
+        ]))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("kubectl exec runs");
+    let said = || {
+        in_the_pod(
+            &kubectl,
+            runners,
+            pod,
+            "cat \"$HOME/e2e-input\" 2>/dev/null; true",
+        )
+    };
+    eventually("what kubectl exec ran has started", || {
+        said().contains("started").then_some(())
+    });
+    exec.kill().expect("kubectl exec is ended");
+    let _ = exec.wait();
+    eventually("what it ran sees its input close, and ends", || {
+        said().contains("ended").then_some(())
+    });
     let _ = kubectl.delete_claim(&namespace, "ada-1");
     let _ = kubectl.delete_claim(&namespace, "ada-2");
 }
