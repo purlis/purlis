@@ -1214,7 +1214,8 @@ fn read_only_standing(command: &Command) -> ReadOnly {
             ProfileCommand::Create { .. }
             | ProfileCommand::Import { .. }
             | ProfileCommand::Remove { .. }
-            | ProfileCommand::Authenticate { .. },
+            | ProfileCommand::Authenticate { .. }
+            | ProfileCommand::SignOut { .. },
         )
         | Command::Update { .. }
         | Command::Version { .. }
@@ -1409,6 +1410,26 @@ enum ProfileCommand {
         /// the code it shows, and exits non-zero if it did not sign in.
         #[arg(long, value_name = "POOL", conflicts_with = "check")]
         pool: Option<String>,
+        /// Ends the sign-in when this command's input closes: how a desktop drives it on a
+        /// runner, where ending `docker exec` ends nothing in the container.
+        #[arg(long, hide = true, conflicts_with_all = ["check", "pool"])]
+        until_input_ends: bool,
+        /// As --until-input-ends, in a terminal made here of this size, drawn on this command's
+        /// output.
+        #[arg(
+            long,
+            hide = true,
+            value_name = "COLUMNSxROWS",
+            conflicts_with_all = ["check", "until_input_ends", "pool"]
+        )]
+        in_own_terminal: Option<String>,
+    },
+    /// Sign a profile of this machine's out on this device, through its harness's own sign-out:
+    /// how a desktop signs one out on a runner.
+    #[command(name = "sign-out", hide = true)]
+    SignOut {
+        /// The profile's name.
+        name: String,
     },
 }
 
@@ -3464,7 +3485,8 @@ fn run(command: Command) -> Result<u8, String> {
             ProfileCommand::Create { .. }
             | ProfileCommand::Import { .. }
             | ProfileCommand::Remove { .. }
-            | ProfileCommand::Authenticate { .. },
+            | ProfileCommand::Authenticate { .. }
+            | ProfileCommand::SignOut { .. },
         )
         | Command::Vault(_) => {
             unreachable!("answered before run")
@@ -4125,15 +4147,26 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
             check,
             provider,
             pool,
+            until_input_ends,
+            in_own_terminal,
         } => {
-            return match pool {
-                Some(pool) => match pool_sign_in(&store, name, pool, provider.as_deref()) {
+            if let Some(pool) = pool {
+                return match pool_sign_in(&store, name, pool, provider.as_deref()) {
                     Ok(()) => ExitCode::SUCCESS,
                     Err(why) => refused(&why),
+                };
+            }
+            let held = match in_own_terminal {
+                Some(size) => match terminal_size(size) {
+                    Ok(size) => Held::InOwnTerminal(size),
+                    Err(why) => return refused(&why),
                 },
-                None => profile_sign_in(&store, name, *check, provider.as_deref()),
+                None if *until_input_ends => Held::UntilInputEnds,
+                None => Held::No,
             };
+            return profile_sign_in(&store, name, *check, provider.as_deref(), held);
         }
+        ProfileCommand::SignOut { name } => return profile_sign_out(&store, name),
         ProfileCommand::List => unreachable!("listed in run"),
     };
     match said {
@@ -4151,12 +4184,13 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
 /// is signed in here. On a runner, a profile it keeps for its desktop with a pin is signed in
 /// and asked by that version, fetched first where it is not installed yet, as a chat's start
 /// fetches it, with a line in this terminal saying so (#4007); a fetch that is refused says why
-/// and signs nothing in.
+/// and signs nothing in. Held to its input ([`Held`]), the login ends with it (#4043).
 fn profile_sign_in(
     store: &purlis_core::profilestore::Homes,
     name: &str,
     check: bool,
     provider: Option<&str>,
+    held: Held,
 ) -> ExitCode {
     use purlis_core::profilestore::{self, installs, sign_in};
     let record = match profilestore::list(store.config_root()) {
@@ -4169,6 +4203,14 @@ fn profile_sign_in(
             shown::short(name)
         ));
     };
+    // Only a desktop drives a sign-in held to its input, on a runner that keeps the profile.
+    if !matches!(held, Held::No) && record.kept_for.is_none() {
+        return refused(&format!(
+            "'{}' is not kept on this device for a desktop, so purlis holds no sign-in of it \
+             here: run purlis profile sign-in {} without those options",
+            record.name, record.name
+        ));
+    }
     let here = profilestore::this_device();
     let pinned = match installs::on_this_runner(&record, &|line| eprintln!("{line}")) {
         Ok(pinned) => pinned,
@@ -4220,6 +4262,9 @@ fn profile_sign_in(
         record.name,
         record.folders.config.display()
     );
+    if !matches!(held, Held::No) {
+        return held_login(&login, held);
+    }
     let ran = std::process::Command::new(&login.program)
         .args(&login.args)
         .envs(login.env.iter().map(|(n, v)| (n, v)))
@@ -4363,6 +4408,100 @@ impl purlis_core::profilestore::sign_in::terminal::Terminal for ThisTerminal {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn();
+    }
+}
+
+/// How a sign-in a desktop drives is held to this command's input, which ends it (#4043).
+enum Held {
+    No,
+    UntilInputEnds,
+    InOwnTerminal(purlis_core::engine::Size),
+}
+
+/// The largest terminal a sign-in is drawn in.
+const MOST_TERMINAL: (u16, u16) = (500, 200);
+
+/// `COLUMNSxROWS`, as `--in-own-terminal` is given it, no larger than [`MOST_TERMINAL`].
+fn terminal_size(said: &str) -> Result<purlis_core::engine::Size, String> {
+    said.split_once('x')
+        .and_then(|(columns, rows)| {
+            let (columns, rows) = (columns.parse().ok()?, rows.parse().ok()?);
+            ((1..=MOST_TERMINAL.0).contains(&columns) && (1..=MOST_TERMINAL.1).contains(&rows))
+                .then_some(purlis_core::engine::Size { columns, rows })
+        })
+        .ok_or_else(|| format!("{} is not a terminal's size", shown::short(said)))
+}
+
+/// Runs `login` held to this command's input, as `held` says.
+#[cfg(unix)]
+fn held_login(login: &purlis_core::profilestore::sign_in::Login, held: Held) -> ExitCode {
+    use purlis_core::profilestore::sign_in::held::{in_own_terminal, until_input_ends};
+    let ended = match held {
+        Held::InOwnTerminal(size) => {
+            in_own_terminal(login, size, std::io::stdin(), std::io::stdout())
+        }
+        _ => until_input_ends(login, std::io::stdin()),
+    };
+    match ended {
+        Ok(Some(0)) => ExitCode::SUCCESS,
+        Ok(_) => ExitCode::FAILURE,
+        Err(why) => refused(&why),
+    }
+}
+
+/// A runner is never Windows.
+#[cfg(not(unix))]
+fn held_login(_: &purlis_core::profilestore::sign_in::Login, _: Held) -> ExitCode {
+    refused("a sign-in is held to its input only on a runner")
+}
+
+/// `purlis profile sign-out <name>` (#4043): the harness's own sign-out, on this device, with the
+/// profile's folder variables set: what a desktop runs on a runner, so the runner holds no
+/// sign-in the person does not want. A pinned version is the one that runs it, as for a sign-in.
+fn profile_sign_out(store: &purlis_core::profilestore::Homes, name: &str) -> ExitCode {
+    use purlis_core::profilestore::{self, installs, sign_in};
+    let record = match profilestore::list(store.config_root()) {
+        Ok(records) => records.into_iter().find(|p| p.name == name),
+        Err(why) => return refused(&why),
+    };
+    let Some(record) = record else {
+        return refused(&format!(
+            "this machine has no profile named '{}'. purlis profile list names the ones it has.",
+            shown::short(name)
+        ));
+    };
+    // A desktop signs out what a runner keeps for it; on any other device the person runs their
+    // harness's own sign-out.
+    if record.kept_for.is_none() {
+        return refused(&format!(
+            "'{}' is not kept on this device for a desktop, so purlis signs nothing out: run its \
+             harness's own sign-out",
+            record.name
+        ));
+    }
+    let pinned = match installs::on_this_runner(&record, &|line| eprintln!("{line}")) {
+        Ok(pinned) => pinned,
+        Err(why) => return refused(&format!("{why}. Nothing was signed out.")),
+    };
+    let logout = match sign_in::logout_of(&record, pinned.as_deref()) {
+        Ok(logout) => logout,
+        Err(why) => return refused(&why),
+    };
+    let ran = std::process::Command::new(&logout.program)
+        .args(&logout.args)
+        .envs(logout.env.iter().map(|(n, v)| (n, v)))
+        .stdin(std::process::Stdio::null())
+        .status();
+    match ran {
+        Ok(status) if status.success() => ExitCode::SUCCESS,
+        Ok(status) => {
+            eprintln!(
+                "purlis: the harness's sign-out of '{}' did not end well ({status})",
+                record.name
+            );
+            ExitCode::FAILURE
+        }
+        Err(e) => refused(&format!("{} could not be run: {e}", logout.program)),
     }
 }
 
@@ -4796,7 +4935,8 @@ fn main() -> ExitCode {
             verb @ (ProfileCommand::Create { .. }
             | ProfileCommand::Import { .. }
             | ProfileCommand::Remove { .. }
-            | ProfileCommand::Authenticate { .. }),
+            | ProfileCommand::Authenticate { .. }
+            | ProfileCommand::SignOut { .. }),
         ) => return machine_profile(verb),
         // A background refresh and a footer: neither is a plane write, and both choose their
         // own exit status as their Python counterparts do.

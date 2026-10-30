@@ -8,12 +8,13 @@ import {
   addProfileToPool,
   askProfiles,
   removeProfileFromPool,
+  signProfileOutOfPool,
   usePools,
 } from "../pools";
 import { Button } from "../ui/button/Button";
 import { Menu, MenuItem, MenuTrigger } from "../ui/menu/Menu";
 import { askProfileSignIn } from "./links";
-import { PoolSignIn } from "./PoolSignIn";
+import { PoolSignIn, type SignInStanding } from "./PoolSignIn";
 
 /** The harnesses whose sign-in purlis drives in place, with no terminal (#4042). */
 export const DRIVEN = new Set(["claude"]);
@@ -21,6 +22,17 @@ export const DRIVEN = new Set(["claude"]);
 /** Whether the sign-in of `row` to the plan `plan` is driven in place: opencode's Copilot (#4045). */
 const drivenPlan = (row: PoolProfileRow, plan: string) =>
   row.kind === "opencode" && plan === "github-copilot";
+
+/** The harnesses with a sign-out of their own that purlis runs: opencode's asks in a terminal. */
+const SIGNS_OUT = new Set(["claude", "codex"]);
+
+/** What a profile's line says of it while its sign-in strip is open (spec #4023 story 29). */
+const STANDING_SAID: Record<SignInStanding, string> = {
+  "signing-in": "Signing in…",
+  "in-the-terminal": "Needs you in the terminal",
+  failed: "Sign-in failed",
+  "signed-in": "Signed in",
+};
 
 /** What a profile's row on a pool says of it (#2049). */
 export function standingOnPool(pool: string, row: PoolProfileRow): string {
@@ -48,7 +60,8 @@ export function standingOnPool(pool: string, row: PoolProfileRow): string {
  * #4042, #4045). Another opens a shell tab in the project `plane`'s window, where the core types
  * the runner's own sign-in, which the person drives; with no project open, it says how to sign in
  * from a terminal instead.
- * Nothing of this machine's sign-in goes to the runner.
+ * Nothing of this machine's sign-in goes to the runner. Each line says where it stands, and a
+ * signed-in one offers Sign out, asked first, which runs the harness's own there (#4043).
  */
 export function PoolProfiles({ pool, plane }: { pool: string; plane: string | undefined }) {
   const now = usePools();
@@ -62,6 +75,12 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   // The profile whose Remove was pressed, asked about before it goes; and what a change said.
   const [removing, setRemoving] = useState<string | undefined>(undefined);
   const [said, setSaid] = useState<string | undefined>(undefined);
+  // What the open strip's line says, and the lines whose last sign-in failed.
+  const [strip, setStrip] = useState<SignInStanding>("signing-in");
+  const [failed, setFailed] = useState<ReadonlySet<string>>(new Set());
+  // The profile whose Sign out was pressed, asked about first, then running; and what it said.
+  const [out, setOut] = useState<{ name: string; running: boolean }>();
+  const [outSaid, setOutSaid] = useState<{ text: string; trouble: boolean }>();
   useEffect(() => {
     if (asked === undefined) void askProfiles(pool, plane);
   }, [pool, plane, asked]);
@@ -103,11 +122,23 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   };
   const open = (row: PoolProfileRow, provider?: string) => {
     setRemoving(undefined);
+    setOut(undefined);
+    setOutSaid(undefined);
+    setStrip("signing-in");
     setHeldRows(rows);
     setPlan(provider);
     setSigning(row.name);
   };
   const ended = (signedIn: boolean) => {
+    if (signing !== undefined) {
+      const name = signing;
+      setFailed((before) => {
+        const after = new Set(before);
+        if (strip === "failed") after.add(name);
+        else after.delete(name);
+        return after;
+      });
+    }
     setSigning(undefined);
     setHeldRows(undefined);
     if (signedIn) void askProfiles(pool, plane);
@@ -118,6 +149,17 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   const remove = async (name: string) => {
     setRemoving(undefined);
     setSaid(await removeProfileFromPool(pool, name, plane));
+  };
+  const signOut = async (name: string) => {
+    setOut({ name, running: true });
+    setOutSaid(undefined);
+    const why = await signProfileOutOfPool(pool, name, plane);
+    setOut(undefined);
+    setOutSaid(
+      why === undefined
+        ? { text: `${name} is signed out on pool ${pool}.`, trouble: false }
+        : { text: why, trouble: true },
+    );
   };
   const adding =
     rows.addable.length === 0 ? null : (
@@ -163,7 +205,13 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
           <li key={row.name} className="ui-machine-entry">
             <span className="ui-machine-name">{row.name}</span>
             <span className="ui-setting-help">
-              {signing === row.name ? `Signing in on pool ${pool}…` : standingOnPool(pool, row)}
+              {signing === row.name
+                ? STANDING_SAID[strip]
+                : out?.name === row.name && out.running
+                  ? `Signing out on pool ${pool}…`
+                  : failed.has(row.name) && row.standing !== "signed-in"
+                    ? STANDING_SAID.failed
+                    : standingOnPool(pool, row)}
             </span>
             {signing === row.name ? (
               <PoolSignIn
@@ -172,6 +220,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
                 harness={row.harness}
                 provider={plan}
                 onEnd={ended}
+                onStanding={setStrip}
                 onTerminal={
                   plane === undefined
                     ? undefined
@@ -187,6 +236,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
               (DRIVEN.has(row.kind) ? (
                 <Button
                   aria-label={`Sign ${row.name} in on pool ${pool}`}
+                  isDisabled={out?.running === true}
                   onPress={() => open(row)}
                   className="ui-setting-reset"
                 >
@@ -204,6 +254,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
                       <Button
                         key={one.id}
                         aria-label={`Sign ${row.name} in to ${one.title} on pool ${pool}`}
+                        isDisabled={out?.running === true}
                         onPress={() =>
                           drivenPlan(row, one.id) ? open(row, one.id) : signIn(row, one.id)
                         }
@@ -221,6 +272,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
               ) : (
                 <Button
                   aria-label={`Sign ${row.name} in on pool ${pool}`}
+                  isDisabled={out?.running === true}
                   onPress={() => signIn(row)}
                   className="ui-setting-reset"
                 >
@@ -229,6 +281,50 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
               ))
             )}
             {signing === undefined &&
+              row.not_kept === null &&
+              row.standing === "signed-in" &&
+              removing !== row.name &&
+              (!SIGNS_OUT.has(row.kind) ? (
+                <span className="ui-setting-help">
+                  {`${row.harness} signs out only in its own terminal.`}
+                </span>
+              ) : out?.name === row.name && !out.running ? (
+                <>
+                  <span className="ui-setting-help">
+                    {`Sign ${row.name} out on pool ${pool}? A chat with it does not start there until it signs in again.`}
+                  </span>
+                  <Button
+                    variant="danger"
+                    aria-label={`Yes, sign out ${row.name} on pool ${pool}`}
+                    onPress={() => void signOut(row.name)}
+                    className="ui-setting-reset"
+                  >
+                    Sign out
+                  </Button>
+                  <Button
+                    aria-label={`Keep ${row.name} signed in on pool ${pool}`}
+                    onPress={() => setOut(undefined)}
+                    className="ui-setting-reset"
+                  >
+                    Keep
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="ghost"
+                  aria-label={`Sign out ${row.name} on pool ${pool}`}
+                  isDisabled={out?.running === true}
+                  onPress={() => {
+                    setRemoving(undefined);
+                    setOut({ name: row.name, running: false });
+                  }}
+                  className="ui-setting-reset"
+                >
+                  Sign out
+                </Button>
+              ))}
+            {signing === undefined &&
+              out?.name !== row.name &&
               (removing === row.name ? (
                 <>
                   <span className="ui-setting-help">
@@ -254,6 +350,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
                 <Button
                   variant="ghost"
                   aria-label={`Remove ${row.name} from pool ${pool}`}
+                  isDisabled={out?.running === true}
                   onPress={() => setRemoving(row.name)}
                   className="ui-setting-reset"
                 >
@@ -264,6 +361,11 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
         ))}
       </ul>
       {told}
+      {outSaid !== undefined && (
+        <p className="ui-setting-help" role={outSaid.trouble ? "alert" : "status"}>
+          {outSaid.text}
+        </p>
+      )}
       {signing === undefined && adding}
       {signing === undefined && again}
     </>

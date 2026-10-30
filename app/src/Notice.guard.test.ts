@@ -607,11 +607,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "did it; the pool's own lines follow it",
   },
   "settings/PoolProfiles.tsx": {
-    count: 2,
+    count: 3,
     why:
       ACTION +
       ". A pool's profiles refusing (#2049), in the core's words: its Ask again is the way on;" +
-      " and what adding or removing one of them said (#4047), beside the buttons that did it",
+      " what adding or removing one of them said (#4047), beside the buttons that did it; and" +
+      " what a profile's Sign out said (#4043), beside its line",
   },
   "settings/PoolSignIn.tsx": {
     count: 3,

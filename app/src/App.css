@@ -7309,13 +7309,9 @@ nav.piece-files-head {
   align-items: baseline;
 }
 
-.pool-sign-in-said {
-  max-height: 12em;
-  overflow: auto;
-  margin: 0;
-  font-size: var(--font-size-xs);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+.pool-sign-in-terminal {
+  max-inline-size: 100%;
+  overflow-x: auto;
 }
 
 /* A form's buttons (SettingActions, V89j): the row a form ends in, under its rows or as a

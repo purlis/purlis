@@ -1,17 +1,27 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { commands, type PoolSignInStep } from "../bindings";
+import { commands, type PoolSignInStep, type PoolSignInTerminal } from "../bindings";
 import { Badge } from "../ui/badge/Badge";
 import { Button } from "../ui/button/Button";
 import { Card } from "../ui/card/Card";
 import { TextField } from "../ui/field/Field";
 import { SettingActions } from "./components";
+import { SignInTerminal, type Printer } from "./SignInTerminal";
 
 /** Where a sign-in is, as the strip draws it: starting, one of the core's steps, or refused. */
-export type StripStep = { at: "starting" } | PoolSignInStep | { at: "not-started"; why: string };
+export type StripStep =
+  | { at: "starting" }
+  | Exclude<PoolSignInStep, { at: "printed" }>
+  | { at: "not-started"; why: string };
+
+/** A profile's standing on its line while its strip is open (spec #4023 story 29). */
+export type SignInStanding = "signing-in" | "in-the-terminal" | "failed" | "signed-in";
+
+/** The size of the strip's terminal: as wide as a login expects, and a few lines shorter. */
+const TERMINAL: PoolSignInTerminal = { columns: 80, rows: 16 };
 
 /**
  * **The step the strip is on, in words** (spec #4023 story 12): "Step 2 of 3: …". A device code's
@@ -31,6 +41,8 @@ export function stepSaid(step: StripStep, device = false): string | null {
       return "Step 2 of 3: Paste the code the page shows";
     case "checking":
       return "Step 3 of 3: Checking it is signed in on the runner";
+    case "could-not-follow":
+      return "purlis could not follow this sign-in: the runner's own terminal is open below";
     default:
       return null;
   }
@@ -48,8 +60,12 @@ export function stepSaid(step: StripStep, device = false): string | null {
  *
  * Each step is said by the core (`pool_sign_in_next`); the strip draws it, says which step it is
  * on, moves the keyboard to the code field when it appears, and says each step change to a
- * screen reader. Cancel, or closing the strip, stops driving the login (the login itself on the
- * runner: #4043).
+ * screen reader. Cancel, closing the strip, or trying again ends the login on the runner too, as
+ * its input closes (#4043).
+ *
+ * **Where purlis cannot follow the login, the person can** (#4043): the core says so, and the
+ * login is started again in a terminal the runner makes, drawn here ({@link SignInTerminal}). The
+ * core reads nothing of it, and asks the runner's status check when it ends.
  */
 export function PoolSignIn({
   pool,
@@ -59,6 +75,7 @@ export function PoolSignIn({
   onEnd,
   onTerminal,
   onSignedIn,
+  onStanding,
 }: {
   pool: string;
   profile: string;
@@ -72,17 +89,34 @@ export function PoolSignIn({
   onTerminal?: () => void;
   /** Told once the runner says it is signed in, before anything is pressed (#3477). */
   onSignedIn?: () => void;
+  /** Told the standing its line says, as it changes. */
+  onStanding?: (standing: SignInStanding) => void;
 }) {
   const [step, setStep] = useState<StripStep>({ at: "starting" });
   const [page, setPage] = useState<string>();
   const [code, setCode] = useState("");
   const [pasteRefused, setPasteRefused] = useState<string>();
   const [attempt, setAttempt] = useState(0);
+  // Whether this try runs in the strip's terminal: purlis could not follow the one before.
+  const [inTerminal, setInTerminal] = useState(false);
   const flow = useRef<number>(undefined);
   const signedIn = useRef(onSignedIn);
   useEffect(() => {
     signedIn.current = onSignedIn;
   }, [onSignedIn]);
+  // How to print in the terminal once it is drawn, and what was printed before it was (a step
+  // the core said while the strip's terminal was not yet drawn).
+  const printing = useRef<{ held: string[]; print?: (text: string) => void }>({ held: [] });
+
+  const standing = standingAt(step);
+  useEffect(() => onStanding?.(standing), [onStanding, standing]);
+
+  const printer: Printer = useCallback((print) => {
+    printing.current.print = print;
+    if (print === undefined) return;
+    printing.current.held.forEach(print);
+    printing.current.held = [];
+  }, []);
 
   // One try: start it, then ask for each step until the last. Leaving the strip, or trying again,
   // cancels it.
@@ -99,20 +133,33 @@ export function PoolSignIn({
         }
         if (next.data === null) continue;
         const now = next.data;
+        if (now.at === "printed") {
+          const { print, held } = printing.current;
+          if (print === undefined) held.push(now.text);
+          else print(now.text);
+          continue;
+        }
         if (now.at === "open") {
           setPage(now.url);
           void openUrl(now.url).catch(() => undefined);
         }
         setStep(now);
+        if (now.at === "could-not-follow") {
+          flow.current = undefined;
+          // The page the login opened is over with it.
+          setPage(undefined);
+          setInTerminal(true);
+          return;
+        }
         if (now.at === "signed-in") signedIn.current?.();
-        if (["signed-in", "could-not-follow", "failed", "cancelled"].includes(now.at)) {
+        if (["signed-in", "failed", "cancelled"].includes(now.at)) {
           flow.current = undefined;
           return;
         }
       }
     };
     void commands
-      .poolSignInStart(pool, profile, provider ?? null)
+      .poolSignInStart(pool, profile, provider ?? null, inTerminal ? TERMINAL : null)
       .catch(said)
       .then((started) => {
         if (started.status === "error") {
@@ -134,7 +181,7 @@ export function PoolSignIn({
         flow.current = undefined;
       }
     };
-  }, [pool, profile, provider, attempt]);
+  }, [pool, profile, provider, attempt, inTerminal]);
 
   const paste = (event: FormEvent) => {
     event.preventDefault();
@@ -150,11 +197,23 @@ export function PoolSignIn({
   };
 
   const tryAgain = () => {
-    setStep({ at: "starting" });
+    // A sign-in purlis could not follow starts again in the terminal, never at the first step.
+    setStep(inTerminal ? { at: "could-not-follow", said: "" } : { at: "starting" });
     setPage(undefined);
     setCode("");
     setPasteRefused(undefined);
+    printing.current.held = [];
     setAttempt((n) => n + 1);
+  };
+
+  const type = (text: string) => {
+    if (flow.current === undefined) return;
+    void commands
+      .poolSignInType(flow.current, text)
+      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+      .then((typed) => {
+        if (typed.status === "error") setPasteRefused(typed.error);
+      });
   };
 
   return (
@@ -172,8 +231,24 @@ export function PoolSignIn({
       onTryAgain={tryAgain}
       onEnd={onEnd}
       onTerminal={onTerminal}
+      terminal={inTerminal ? { printer, onType: type } : undefined}
     />
   );
+}
+
+/** The standing `step` gives its line. */
+function standingAt(step: StripStep): SignInStanding {
+  switch (step.at) {
+    case "could-not-follow":
+      return "in-the-terminal";
+    case "failed":
+    case "not-started":
+      return "failed";
+    case "signed-in":
+      return "signed-in";
+    default:
+      return "signing-in";
+  }
 }
 
 /** What a sign-in strip draws, and what its buttons do. */
@@ -195,6 +270,8 @@ export type SignInStripProps = {
   onTryAgain: () => void;
   onEnd: (signedIn: boolean) => void;
   onTerminal?: () => void;
+  /** The strip's terminal, while a login runs in it or just ended there. */
+  terminal?: { printer: Printer; onType: (text: string) => void };
 };
 
 /** **The strip at one step**, as {@link PoolSignIn} drives it: its head, its body, its foot. */
@@ -203,9 +280,7 @@ export function SignInStrip(props: SignInStripProps) {
   // opencode's Copilot plan signs in by a device code (#4045).
   const device = provider === "github-copilot";
   const now = stepSaid(step, device);
-  const over = ["signed-in", "could-not-follow", "failed", "cancelled", "not-started"].includes(
-    step.at,
-  );
+  const over = ["signed-in", "failed", "cancelled", "not-started"].includes(step.at);
   const who = `${profile} (${harness})`;
   // The keyboard was in the code field, which goes once the code is sent: it goes to the strip,
   // never to the page's start.
@@ -240,14 +315,19 @@ export function SignInStrip(props: SignInStripProps) {
           </Button>
         ) : over ? (
           <>
+            {/* The login ended, so the page it opened is over too: this starts another. */}
             <Button size="sm" variant="primary" onPress={props.onTryAgain}>
-              Try again
+              {step.at === "failed" && props.page !== undefined
+                ? "Open the page again"
+                : "Try again"}
             </Button>
             <Button size="sm" variant="ghost" onPress={() => onEnd(false)}>
               Close
             </Button>
           </>
-        ) : (
+        ) : step.at === "checking" ? null : (
+          // While it is checked, the login on the runner has already ended: nothing is left to
+          // cancel, and what it signed in stays.
           <Button size="sm" variant="ghost" onPress={() => onEnd(false)}>
             Cancel
           </Button>
@@ -275,22 +355,13 @@ export function SignInStrip(props: SignInStripProps) {
 }
 
 /** What went wrong at `step`, in one line, where anything did. */
-function troubleAt(
-  step: StripStep,
-  who: string,
-  pool: string,
-  pasteRefused?: string,
-  terminal = false,
-) {
+function troubleAt(step: StripStep, who: string, pool: string, pasteRefused?: string) {
   switch (step.at) {
     case "code":
+    case "could-not-follow":
       return pasteRefused;
     case "refused":
       return pasteRefused ?? `The sign-in refused that code: ${step.said}`;
-    case "could-not-follow":
-      return terminal
-        ? "purlis could not follow this sign-in, so it ended it. Sign in with Open in terminal, where the harness asks you itself. It said:"
-        : "purlis could not follow this sign-in, so it ended it. Open a project to sign in from a terminal there, where the harness asks you itself. It said:";
     case "failed":
       return `${who} did not sign in on ${pool}: ${step.why}`;
     case "not-started":
@@ -302,13 +373,7 @@ function troubleAt(
 
 /** The strip's body at `step`: what went wrong first, in one line, then the step's own. */
 function Body(props: SignInStripProps & { who: string }) {
-  const trouble = troubleAt(
-    props.step,
-    props.who,
-    props.pool,
-    props.pasteRefused,
-    props.onTerminal !== undefined,
-  );
+  const trouble = troubleAt(props.step, props.who, props.pool, props.pasteRefused);
   return (
     <>
       {trouble !== undefined && (
@@ -317,6 +382,15 @@ function Body(props: SignInStripProps & { who: string }) {
         </p>
       )}
       <StepBody {...props} />
+      {props.terminal !== undefined && props.step.at !== "not-started" && (
+        <SignInTerminal
+          label={`The runner's terminal on ${props.pool}`}
+          size={TERMINAL}
+          printer={props.terminal.printer}
+          onType={props.terminal.onType}
+          live={props.step.at === "could-not-follow"}
+        />
+      )}
     </>
   );
 }
@@ -398,7 +472,13 @@ function StepBody({
         </p>
       );
     case "could-not-follow":
-      return <pre className="pool-sign-in-said">{step.said}</pre>;
+      return (
+        <p>
+          purlis could not follow this sign-in, so it started it again in the runner&apos;s own
+          terminal below, and a page it opened before is over. Finish it there; purlis checks when
+          it ends.
+        </p>
+      );
     case "cancelled":
       return <p className="ui-setting-help">The sign-in was cancelled; nothing changed there.</p>;
     default:
