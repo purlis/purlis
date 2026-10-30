@@ -3057,6 +3057,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             chat,
             message: "stop this chat".to_owned(),
             stage: purlis_core::hookwire::Stage::Tracked,
+            folder: None,
         })),
         // A workspace the chat asks the person to remove (qw356): it names a workspace.
         Ask::Removal(purlis_core::hookwire::RemovalAsk {
