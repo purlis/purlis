@@ -8,6 +8,201 @@ const ASKER: u32 = 3;
 const TASK: u32 = 9;
 const SIBLING: u32 = 10;
 
+/// The key ([`Sent`]) of chat `chat`, in these tests.
+fn key(chat: u32) -> String {
+    format!("id-{chat}")
+}
+
+fn follow_up(instruction: u32, to: &[u32]) -> Record {
+    Record {
+        id: None,
+        kind: Kind::FollowUp,
+        instruction: Some(instruction),
+        to_all: to.len() > 1,
+        to: to
+            .iter()
+            .map(|chat| Delivery {
+                chat: *chat,
+                key: key(*chat),
+                name: format!("task {chat}"),
+                state: Delivered::Delivered,
+            })
+            .collect(),
+        queued: false,
+    }
+}
+
+#[test]
+fn a_task_acknowledges_only_an_instruction_its_asking_chat_sent_it() {
+    let mut talk = Talk::default();
+    let asker = key(ASKER);
+    let number = talk.instruction(&asker);
+    assert_eq!(number, 1);
+    assert_eq!(talk.instruction(&asker), 2, "each has a number of its own");
+    assert_eq!(talk.instruction(&key(SIBLING)), 1, "numbered per sender");
+    talk.record(&asker, follow_up(number, &[TASK, SIBLING]));
+
+    talk.acknowledge(&asker, &key(TASK), number)
+        .expect("sent to it");
+
+    let states: Vec<Delivered> = talk.records(&asker)[0]
+        .to
+        .iter()
+        .map(|to| to.state.clone())
+        .collect();
+    assert_eq!(states, vec![Delivered::Acknowledged, Delivered::Delivered]);
+    // Not an instruction it was not sent, nor one of another asking chat's, nor one that
+    // was never numbered.
+    assert_eq!(
+        talk.acknowledge(&asker, &key(77), number),
+        Err(no_instruction(number))
+    );
+    assert_eq!(
+        talk.acknowledge(&key(SIBLING), &key(TASK), number),
+        Err(no_instruction(number))
+    );
+    assert_eq!(
+        talk.acknowledge(&asker, &key(TASK), 9),
+        Err(no_instruction(9))
+    );
+}
+
+#[test]
+fn instruction_numbers_and_acknowledgements_outlast_a_restart_of_the_app() {
+    let folder = tempfile::tempdir().expect("a folder");
+    let path = folder.path().join("records.json");
+    let asker = key(ASKER);
+    let mut before = Talk::default();
+    before.keep_at(&path);
+    let first = before.instruction(&asker);
+    before.record(&asker, follow_up(first, &[TASK, SIBLING]));
+    before
+        .acknowledge(&asker, &key(SIBLING), first)
+        .expect("sent to it");
+
+    // The app starts again.
+    let mut after = Talk::default();
+    after.keep_at(&path);
+
+    assert_eq!(after.instruction(&asker), 2, "numbers never go back");
+    let states: Vec<Delivered> = after.records(&asker)[0]
+        .to
+        .iter()
+        .map(|to| to.state.clone())
+        .collect();
+    assert_eq!(states, vec![Delivered::Delivered, Delivered::Acknowledged]);
+    // Instruction 2 was sent to nobody yet: the number alone acknowledges nothing.
+    assert_eq!(
+        after.acknowledge(&asker, &key(TASK), 2),
+        Err(no_instruction(2))
+    );
+    after
+        .acknowledge(&asker, &key(TASK), first)
+        .expect("the instruction it was really sent");
+}
+
+#[test]
+fn an_acknowledgement_alone_marks_no_earlier_record_queued() {
+    let mut talk = Talk::default();
+    let asker = key(ASKER);
+    talk.record(&asker, follow_up(1, &[TASK]));
+    let before = talk.recorded(&asker);
+    talk.acknowledge(&asker, &key(TASK), 1).expect("sent");
+    // The caller marks only where a record was kept.
+    assert_eq!(talk.recorded(&asker), before);
+    talk.record(&asker, follow_up(2, &[TASK]));
+    assert_eq!(talk.recorded(&asker), before + 1);
+    talk.mark_last_queued(&asker, "m-2");
+    let records = talk.records(&asker);
+    assert!(!records[0].queued && records[0].id.is_none());
+    assert!(records[1].queued && records[1].id.as_deref() == Some("m-2"));
+}
+
+#[test]
+fn an_undeliverable_message_cannot_be_acknowledged_and_records_are_bounded() {
+    let mut talk = Talk::default();
+    let asker = key(ASKER);
+    let mut record = follow_up(1, &[TASK]);
+    record.to[0].state = Delivered::Undeliverable {
+        why: "it has finished".to_owned(),
+    };
+    talk.record(&asker, record);
+    assert!(talk.acknowledge(&asker, &key(TASK), 1).is_err());
+
+    for n in 0..(RECORDS_KEPT as u32 + 5) {
+        talk.record(&asker, follow_up(n + 2, &[TASK]));
+    }
+    assert_eq!(talk.records(&asker).len(), RECORDS_KEPT);
+    talk.forget_records(&asker);
+    assert!(talk.records(&asker).is_empty());
+}
+
+#[test]
+fn a_list_says_who_acknowledged_an_instruction_and_who_has_not() {
+    let mut talk = Talk::default();
+    let asker = key(ASKER);
+    talk.record(&asker, follow_up(4, &[TASK, SIBLING]));
+    talk.acknowledge(&asker, &key(SIBLING), 4)
+        .expect("sent to it");
+    talk.record(
+        &asker,
+        Record {
+            id: None,
+            kind: Kind::FollowUp,
+            instruction: None,
+            to_all: true,
+            to: Vec::new(),
+            queued: true,
+        },
+    );
+    talk.record(
+        &asker,
+        Record {
+            id: None,
+            kind: Kind::Answer,
+            instruction: None,
+            to_all: false,
+            to: vec![Delivery {
+                chat: TASK,
+                key: key(TASK),
+                name: "task 9".to_owned(),
+                state: Delivered::Undeliverable {
+                    why: "'task 9' (chat 9) has finished.".to_owned(),
+                },
+            }],
+            queued: true,
+        },
+    );
+
+    assert_eq!(
+        records_text(&talk.records(&asker)).expect("some"),
+        "Messages this chat sent lately, oldest first:\n\
+         - instruction 4 (follow-up), to every live task: 'task 9' (chat 9) delivered, not \
+         acknowledged yet; 'task 10' (chat 10) acknowledged\n\
+         - follow-up, queued while the app did not answer, to every live task: queued, not \
+         yet delivered\n\
+         - answer, queued while the app did not answer, to 'task 9' (chat 9) undeliverable: \
+         'task 9' (chat 9) has finished."
+    );
+    assert_eq!(records_text(&[]), None);
+}
+
+#[test]
+fn a_numbered_follow_up_says_how_to_acknowledge_it() {
+    let told = said(&Message {
+        kind: Kind::FollowUp,
+        from: "coordinator".to_owned(),
+        chat: ASKER,
+        text: "no PRs from builders".to_owned(),
+        instruction: Some(7),
+    });
+    assert!(
+        told.contains("It is instruction 7.") && told.contains("`purlis dispatch note --ack 7`"),
+        "{told}"
+    );
+    assert!(told.ends_with("\n> no PRs from builders"), "{told}");
+}
+
 fn task_of(chat: u32) -> HandedFrom {
     HandedFrom {
         id: None,
@@ -1108,6 +1303,7 @@ fn a_message(kind: Kind, text: &str) -> Message {
         from: "steward 3".to_owned(),
         chat: 3,
         text: text.to_owned(),
+        instruction: None,
     }
 }
 
@@ -1255,6 +1451,7 @@ fn a_note_a_question_and_an_answer_each_say_whose_words_follow() {
         from: "check the queue".to_owned(),
         chat: 9,
         text: text.to_owned(),
+        instruction: None,
     };
     assert_eq!(
         said(&from_task(Kind::Note, "Half way.")),

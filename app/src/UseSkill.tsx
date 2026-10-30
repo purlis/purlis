@@ -10,24 +10,24 @@ import {
   useId,
   useRef,
   useState,
+  type KeyboardEvent,
 } from "react";
 import { Sparkles, TriangleAlert } from "lucide-react";
 import { Field, SettingRow } from "./settings/components";
 import { Dialog } from "./ui/dialog/Dialog";
-import { FILTERED_FROM, ListFilter, noMatchSaid } from "./ui/list/ListFilter";
+import { ListFilter, noMatchSaid } from "./ui/list/ListFilter";
 import { ListBox, ListOption } from "./ui/list/List";
 import { RowBelow, RowDescription, RowLabel } from "./ui/list/Row";
 import { Button } from "./ui/button/Button";
 import { counted } from "./dispatches";
-import { codeSpans } from "./PanelList";
 import {
   pinnerSaid,
   scopeOfPinner,
   SKILL_STUDIO_TITLE,
   skillStudioTitle,
-  type StudioScope,
   useSkillStudioOn,
 } from "./skillStudio";
+import { askChatSkills } from "./chatSkillsAsk";
 import {
   commands,
   type ChatSkill,
@@ -96,7 +96,7 @@ export function pinsTogetherSaid(budget: SkillBudget): string | undefined {
 
 /** Everything the chat warns of about its skills, in one sentence or two: what its Skills chip
  *  says, or nothing where it warns of nothing. */
-function chipWarning(budget: SkillBudget): string | undefined {
+export function chipWarning(budget: SkillBudget): string | undefined {
   const said = [pinsTogetherSaid(budget), warnsSaid(budget)].filter((one) => one !== undefined);
   return said.length === 0 ? undefined : said.join(" ");
 }
@@ -125,19 +125,33 @@ export function skillsMatching(skills: readonly ChatSkill[], query: string): Cha
 }
 
 /**
- * **Use skill…** (#2775), from the palette, a chat tab's menu or the Skills chip on its pane: the
- * chat's own skills, exactly its set and nothing else, with the chat's skill budget above them.
+ * **The skills Use skill… lists, in its order** (S8, #3694): only the ones this chat can use,
+ * which is its set, with its built-in skills last, each part in the order the core gave.
+ */
+export function pickable(skills: readonly ChatSkill[]): ChatSkill[] {
+  return [
+    ...skills.filter((skill) => skill.level !== "built-in"),
+    ...skills.filter((skill) => skill.level === "built-in"),
+  ];
+}
+
+/**
+ * **Use skill…** (#2775; spec #3679 S8, #3694): a quick picker, like the command palette, from
+ * the palette, a chat tab's menu, a Skills view card's Use and a skill page's Use in this chat.
+ * It lists only the chat's own skills, exactly its set, with built-in skills last, filtered as
+ * the person types: Enter takes the first match, and the arrow keys walk the list. The chat's
+ * budget, routing and pins are not said here: they are in the Skills view's header and its
+ * Needs you, the one answer to what the chat gets.
  *
  * **Picking one types it into the chat in the way the chat's tool expects, and sends nothing**:
  * the person reads the line in the chat and presses Enter themselves. A skill that declares its
- * arguments asks for them first, one box each, in the order it takes them; a skill that only
- * says what to pass gets one box with that hint. Nothing is checked here: what a skill accepts
- * is the skill's, and a chat that cannot be typed into now gets the line on the clipboard, with
- * why (the core's sentence).
+ * arguments asks for them in a second step, one box each, in the order it takes them; a skill
+ * that only says what to pass gets one box with that hint. Nothing is checked here: what a skill
+ * accepts is the skill's, and a chat that cannot be typed into now gets the line on the
+ * clipboard, with why (the core's sentence).
  *
  * A manual-only skill is listed with the others and marked: it runs only when it is asked for by
- * name, which is what this does. It costs nothing in the budget: every chat leaves it out of its
- * listing.
+ * name, which is what this does.
  *
  * **Opened on one skill** (`picks`, the Skills view's Use in this chat, #3266), it is that skill
  * picked as the chat's skills arrive: typed at once where it asks for nothing, its boxes where it
@@ -151,7 +165,6 @@ export function UseSkill({
   busy,
   onUse,
   onCancel,
-  onOpenStudio,
 }: {
   /** The chat it types into, as its tab shows it. */
   chat: string;
@@ -166,8 +179,6 @@ export function UseSkill({
   /** Types `skill` with `values`, one per declared argument in order. */
   onUse: (skill: string, values: string[]) => void;
   onCancel: () => void;
-  /** Opens the Skill studio on `scope`'s chats: where a pinner's pins are undone (#3391). */
-  onOpenStudio: (scope: StudioScope) => void;
 }) {
   const [query, setQuery] = useState(picks ?? "");
   const named = picks === undefined ? undefined : skills?.skills.find((one) => one.name === picks);
@@ -177,14 +188,8 @@ export function UseSkill({
   const [values, setValues] = useState<string[]>(() => (named === undefined ? [] : boxesOf(named)));
   const content = useRef<HTMLDivElement>(null);
   const listId = useId();
-  const listed = skills?.skills ?? [];
+  const listed = pickable(skills?.skills ?? []);
   const shown = skillsMatching(listed, query);
-  const budget = skills?.budget ?? null;
-  // How its router extension did at its start (SK-15b): its timing, or why it fell back.
-  const routing = skills?.routing ?? null;
-  const warning = budget === null ? undefined : warnsSaid(budget);
-  const together = budget?.pins_together ?? null;
-  const togetherSaid = budget === null ? undefined : pinsTogetherSaid(budget);
 
   // **The skill it was opened on** (`picks`): drawn picked where it asks for something, typed at
   // once where it asks for nothing. The window draws this dialog again once the chat's skills are
@@ -199,7 +204,7 @@ export function UseSkill({
   // The first box of whatever is on screen takes the keys: the filter, or the first argument.
   useEffect(() => {
     content.current?.querySelector<HTMLElement>("input")?.focus();
-  }, [picked]);
+  }, [picked, skills]);
 
   const pick = (skill: ChatSkill) => {
     if (busy) return;
@@ -209,6 +214,22 @@ export function UseSkill({
     }
     setPicked(skill);
     setValues(boxesOf(skill));
+  };
+
+  /** **The filter's keys, as a palette's** (S8): Enter takes the first match, and the down arrow
+   *  goes into the list, where the arrows walk it and Enter takes the one on. */
+  const filterKey = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const first = shown[0];
+      if (first !== undefined) pick(first);
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      document
+        .getElementById(listId)
+        ?.querySelector<HTMLElement>('[role="option"]:not([aria-disabled="true"])')
+        ?.focus();
+    }
   };
 
   // **On the dialog family** (#2910): picking a skill that takes arguments asks for them in
@@ -237,63 +258,16 @@ export function UseSkill({
           })}
     >
       <div ref={content}>
-        {budget !== null && (
-          <p className="use-skill-budget" data-testid="use-skill-budget">
-            {budgetSaid(budget)}
-          </p>
-        )}
-        {routing !== null &&
-          (routing.fell_back ? (
-            <p className="honest use-skill-over" role="status" data-testid="use-skill-routing">
-              <TriangleAlert aria-hidden="true" /> {routing.said}
-            </p>
-          ) : (
-            <p className="use-skill-budget" data-testid="use-skill-routing">
-              {routing.said}
-            </p>
-          ))}
-        {together !== null && (
-          <div
-            className="honest use-skill-over use-skill-pins-together"
-            role="status"
-            data-testid="use-skill-pins-together"
-          >
-            <TriangleAlert aria-hidden="true" />
-            <div>
-              <p>{togetherSaid}</p>
-              <div className="use-skill-studios">
-                {together.held.map(({ by }) => {
-                  const scope = scopeOfPinner(by);
-                  const title = skillStudioTitle(scope);
-                  return (
-                    <Button
-                      key={`${by.at}:${by.name}`}
-                      variant="secondary"
-                      size="sm"
-                      onPress={() => onOpenStudio(scope)}
-                    >
-                      {`Open ${title}`}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-        {warning !== undefined && (
-          <p className="honest use-skill-over" role="status">
-            <TriangleAlert aria-hidden="true" /> {codeSpans(warning)}
-          </p>
-        )}
-
         {picked === undefined ? (
           <>
-            {listed.length >= FILTERED_FROM && (
+            {/* A quick picker's box, on every list however short: typing is how it is used. */}
+            {listed.length > 0 && (
               <ListFilter
                 noun={SKILLS}
                 total={listed.length}
                 query={query}
                 onQuery={setQuery}
+                onKeyDown={filterKey}
                 controls={listId}
               />
             )}
@@ -305,7 +279,7 @@ export function UseSkill({
                   {!skills.known
                     ? (skills.not_supported ??
                       "This chat runs no tool purlis knows, so it has no skills to use here.")
-                    : "This chat has no skills. Open Skill studio from the palette to see why any skill is left out."}
+                    : "This chat has no skills. Its skills chip shows why any skill is left out."}
                 </p>
               ) : shown.length === 0 ? (
                 <p className="honest">{noMatchSaid(SKILLS, query)}</p>
@@ -454,20 +428,31 @@ export function useChatSkillBudgets(
 /** No chat's budget known: what the window holds while the Skill studio is off. */
 const NO_BUDGETS: SkillBudgets = {};
 
+/** What the Skills chip's tooltip says it does (S8, #3694). */
+export const SHOW_THIS_CHATS_SKILLS = "Show this chat's skills";
+
 /**
- * **The Skills chip on a chat's pane** (#2775), in its top line beside the gauge: the chat's
- * skill budget at a glance, in the warning look where its set is near or past it, and the way to
- * Use skill… for this chat. Its budget is the window's ({@link SkillBudgetsHere}). Nothing while
+ * **The Skills chip on a chat's pane** (#2775; spec #3679 S8, #3694), in its top line beside the
+ * gauge: how many skills the chat's set holds, warning-coloured where something in it needs the
+ * person (its set near or past the budget, or its pins read by none). Pressed, it shows this
+ * chat's skills in the sidebar Skills view, the one answer to what the chat gets and why; it no
+ * longer opens Use skill…. Its budget is the window's ({@link SkillBudgetsHere}). Nothing while
  * the Skill studio is off, or for a chat purlis knows no skills of; where the pane leaves the chip
  * out, the chat tab's menu row says the budget.
  */
-export const SkillsChip = memo(function SkillsChip({ session }: { session: number }) {
+export const SkillsChip = memo(function SkillsChip({
+  plane,
+  session,
+}: {
+  plane: PlaneId;
+  session: number;
+}) {
   const on = useSkillStudioOn();
-  const open = useOpenUseSkill();
   const budget = useContext(SkillBudgetsHere)[session];
   if (!on || budget === undefined) return null;
   const warning = chipWarning(budget);
-  const said = `${budgetSaid(budget)}. Use one of this chat's skills.`;
+  const said =
+    warning === undefined ? `${SHOW_THIS_CHATS_SKILLS}.` : `${warning} ${SHOW_THIS_CHATS_SKILLS}.`;
   return (
     <Button
       variant={warning === undefined ? "ghost" : "warning-soft"}
@@ -475,8 +460,8 @@ export const SkillsChip = memo(function SkillsChip({ session }: { session: numbe
       className="pane-skills"
       data-testid="pane-skills"
       data-over={warning === undefined ? undefined : ""}
-      tooltip={warning === undefined ? said : `${warning} ${said}`}
-      aria-label={warning === undefined ? said : `${warning} ${said}`}
+      tooltip={said}
+      aria-label={`${counted(skillsInTheSet(budget), "skill", "skills")}. ${said}`}
       icon={
         warning === undefined ? (
           <Sparkles aria-hidden="true" />
@@ -484,7 +469,7 @@ export const SkillsChip = memo(function SkillsChip({ session }: { session: numbe
           <TriangleAlert aria-hidden="true" />
         )
       }
-      onPress={() => open(session)}
+      onPress={() => askChatSkills(plane, session)}
     >
       {counted(skillsInTheSet(budget), "skill", "skills")}
     </Button>

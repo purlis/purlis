@@ -215,6 +215,161 @@ pub struct Talk {
     /// one asked before the restart was not kept, and an answer to it is told so
     /// ([`asked_before_the_restart`]).
     restored: HashSet<u32>,
+    /// What became of each chat's messages, and its instruction numbers (#3902, #3904): kept
+    /// on disk where [`Talk::keep_at`] says, so a restart of the app forgets neither.
+    messages: Sent,
+    /// Where [`Talk::messages`] is kept.
+    kept_at: Option<PathBuf>,
+}
+
+/// **What became of each chat's messages, and the last instruction number each has used**, by
+/// the chat's key: its id, which it keeps across a restart of the app (ADR 0066), or its number
+/// where it has none.
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct Sent {
+    #[serde(default)]
+    v: u32,
+    /// By sender: what became of the messages it sent lately, oldest first, at most
+    /// [`RECORDS_KEPT`].
+    #[serde(default)]
+    records: HashMap<String, VecDeque<Record>>,
+    /// By sender: the last instruction number it used. Never goes back.
+    #[serde(default)]
+    instructions: HashMap<String, u32>,
+    /// By sender: how many records it has had kept, ever: what says a delivery kept one.
+    #[serde(default)]
+    recorded: HashMap<String, u64>,
+}
+
+/// The version of the file [`Sent`] is kept in.
+const SENT_VERSION: u32 = 1;
+
+/// The most records of its messages the app keeps for one sender.
+pub const RECORDS_KEPT: usize = 32;
+
+/// **What became of one message a chat sent** (#3902, #3904): what `purlis dispatch list`
+/// shows its sender.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Record {
+    /// The queued message's id, where it waited in the queue: what a `Deliver` is answered by.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub kind: Kind,
+    /// The instruction's number, on a follow-up: what its task acknowledges it by.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instruction: Option<u32>,
+    /// Sent to every live task of the sender's (`tell --all`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub to_all: bool,
+    /// Each chat it was for, and what became of it there. Empty for a message still queued
+    /// to every live task, which are counted as it is delivered.
+    pub to: Vec<Delivery>,
+    /// It waited in the queue because the app did not answer when it was sent.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub queued: bool,
+}
+
+/// One chat a message was for, and what became of it there.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Delivery {
+    /// The chat, by the app's number; 0 where it is not known yet.
+    pub chat: u32,
+    /// The chat's key ([`Sent`]): what an acknowledgement is matched by, across a restart.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub key: String,
+    /// The name the person sees it under.
+    pub name: String,
+    pub state: Delivered,
+}
+
+/// What became of a message for one chat.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Delivered {
+    /// Still in the sender's queue: the app has not taken it yet.
+    Queued,
+    /// Left for the chat's next turn.
+    Delivered,
+    /// The task said it took the instruction in (`note --ack`).
+    Acknowledged,
+    /// It could not be delivered, and why: it is not kept.
+    Undeliverable { why: String },
+}
+
+impl Delivered {
+    /// The state, as a list says it.
+    pub fn say(&self) -> String {
+        match self {
+            Self::Queued => "queued, not yet delivered".to_owned(),
+            Self::Delivered => "delivered".to_owned(),
+            Self::Acknowledged => "acknowledged".to_owned(),
+            Self::Undeliverable { why } => {
+                format!(
+                    "undeliverable: {}",
+                    crate::shown::one_line(why, crate::shown::NO_CLIP)
+                )
+            }
+        }
+    }
+}
+
+/// **What became of the messages a chat sent lately**, as `purlis dispatch list` and `read`
+/// say it (#3902, #3904), or `None` for none: each message, and for each chat it was for,
+/// whether it is queued, delivered, acknowledged or undeliverable, and why.
+pub fn records_text(records: &[Record]) -> Option<String> {
+    if records.is_empty() {
+        return None;
+    }
+    let mut said = "Messages this chat sent lately, oldest first:".to_owned();
+    for record in records {
+        let what = match record.instruction {
+            Some(number) => format!("instruction {number} ({})", record.kind.word()),
+            None => record.kind.word().to_owned(),
+        };
+        let queued = if record.queued {
+            ", queued while the app did not answer"
+        } else {
+            ""
+        };
+        let to = if record.to.is_empty() {
+            "every live task: queued, not yet delivered".to_owned()
+        } else {
+            record
+                .to
+                .iter()
+                .map(|to| {
+                    let state = match (&to.state, record.instruction) {
+                        (Delivered::Delivered, Some(_)) => {
+                            "delivered, not acknowledged yet".to_owned()
+                        }
+                        (state, _) => state.say(),
+                    };
+                    let chat = if to.chat == 0 {
+                        String::new()
+                    } else {
+                        format!(" (chat {})", to.chat)
+                    };
+                    format!("'{}'{chat} {state}", crate::personas::one_line(&to.name))
+                })
+                .collect::<Vec<_>>()
+                .join("; ")
+        };
+        let all = if record.to_all && !record.to.is_empty() {
+            "every live task: "
+        } else {
+            ""
+        };
+        said.push_str(&format!("\n- {what}{queued}, to {all}{to}"));
+    }
+    Some(said)
+}
+
+/// What a task is told when it acknowledges an instruction its asking chat did not send it.
+pub fn no_instruction(number: u32) -> String {
+    format!(
+        "this task was sent no instruction {number} by its asking chat. Nothing was \
+         acknowledged. The number is the one its follow-up said."
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -393,6 +548,132 @@ pub const THE_PERSON: &str = "the person";
 const A_MINUTE: Duration = Duration::from_secs(60);
 
 impl Talk {
+    /// **Keeps what became of each chat's messages at `path`** (#3902, #3904), and reads what is
+    /// there: once, as the app first needs it. What does not read is started afresh, and said.
+    pub fn keep_at(&mut self, path: &Path) {
+        if self.kept_at.as_deref() == Some(path) {
+            return;
+        }
+        self.messages = match std::fs::read(path) {
+            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|why| {
+                tracing::warn!(
+                    "purlis: {} does not read as the record of dispatch messages ({why}); it \
+                     is started afresh",
+                    path.display()
+                );
+                Sent::default()
+            }),
+            Err(_) => Sent::default(),
+        };
+        self.kept_at = Some(path.to_path_buf());
+    }
+
+    /// Writes what became of each chat's messages where [`Talk::keep_at`] said.
+    fn save(&mut self) {
+        let Some(path) = &self.kept_at else { return };
+        self.messages.v = SENT_VERSION;
+        let written = serde_json::to_vec(&self.messages)
+            .map_err(std::io::Error::other)
+            .and_then(|bytes| {
+                let dir = path.parent().unwrap_or(Path::new("."));
+                std::fs::create_dir_all(dir)?;
+                crate::rewrite::replace(dir, path, &bytes, crate::rewrite::Mode::Private)
+            });
+        if let Err(why) = written {
+            tracing::warn!(
+                "purlis: the record of dispatch messages was not written ({why}); it is kept in \
+                 memory until the next write"
+            );
+        }
+    }
+
+    /// **Numbers one more instruction of chat `sender`'s** (#3904): a follow-up, by which its
+    /// task acknowledges it. Each chat's numbers go up and never back, across a restart too.
+    pub fn instruction(&mut self, sender: &str) -> u32 {
+        let next = self
+            .messages
+            .instructions
+            .get(sender)
+            .copied()
+            .unwrap_or(0)
+            .saturating_add(1);
+        self.messages.instructions.insert(sender.to_owned(), next);
+        self.save();
+        next
+    }
+
+    /// Keeps `record` of a message chat `sender` sent, dropping its oldest past
+    /// [`RECORDS_KEPT`].
+    pub fn record(&mut self, sender: &str, record: Record) {
+        let kept = self.messages.records.entry(sender.to_owned()).or_default();
+        kept.push_back(record);
+        while kept.len() > RECORDS_KEPT {
+            kept.pop_front();
+        }
+        *self.messages.recorded.entry(sender.to_owned()).or_default() += 1;
+        self.save();
+    }
+
+    /// How many records chat `sender` has had kept, ever: a caller compares it before and after
+    /// a delivery to know whether the delivery kept one ([`Talk::mark_last_queued`]).
+    pub fn recorded(&self, sender: &str) -> u64 {
+        self.messages.recorded.get(sender).copied().unwrap_or(0)
+    }
+
+    /// **The last record of chat `sender`'s waited in the queue as message `id`**: marked so.
+    /// Only for a delivery that kept a record ([`Talk::recorded`]), so an acknowledgement alone,
+    /// which keeps none, never marks an earlier message's.
+    pub fn mark_last_queued(&mut self, sender: &str, id: &str) {
+        if let Some(last) = self
+            .messages
+            .records
+            .get_mut(sender)
+            .and_then(VecDeque::back_mut)
+        {
+            last.queued = true;
+            last.id = Some(id.to_owned());
+            self.save();
+        }
+    }
+
+    /// What became of the messages chat `sender` sent lately, oldest first.
+    pub fn records(&self, sender: &str) -> Vec<Record> {
+        self.messages
+            .records
+            .get(sender)
+            .map(|kept| kept.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// **Task `task` acknowledges instruction `number`**, which its asking chat `asker` sent it
+    /// (#3904): both by their keys. Refused where `asker` sent `task` no instruction of that
+    /// number, or one that was not delivered.
+    pub fn acknowledge(&mut self, asker: &str, task: &str, number: u32) -> Result<(), String> {
+        let delivery = self
+            .messages
+            .records
+            .get_mut(asker)
+            .and_then(|kept| {
+                kept.iter_mut()
+                    .rev()
+                    .find(|record| record.instruction == Some(number))
+            })
+            .and_then(|record| record.to.iter_mut().find(|to| to.key == task))
+            .filter(|to| matches!(to.state, Delivered::Delivered | Delivered::Acknowledged))
+            .ok_or_else(|| no_instruction(number))?;
+        delivery.state = Delivered::Acknowledged;
+        self.save();
+        Ok(())
+    }
+
+    /// Chat `chat` has closed for good: the records of what it sent, and its numbers, go with it.
+    pub fn forget_records(&mut self, chat: &str) {
+        self.messages.records.remove(chat);
+        self.messages.instructions.remove(chat);
+        self.messages.recorded.remove(chat);
+        self.save();
+    }
+
     /// How many messages the asking chat `asker` and its task `task` have exchanged in the
     /// minute before `now`.
     pub fn in_the_last_minute(&mut self, asker: u32, task: u32, now: Instant) -> u32 {
@@ -1031,6 +1312,10 @@ pub struct Message {
     pub chat: u32,
     /// What it says, as [`text`] passed it.
     pub text: String,
+    /// **The instruction's number**, on a follow-up (#3904): what the task acknowledges it by,
+    /// `purlis dispatch note --ack <number>`. The app's, minted as it delivers the follow-up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instruction: Option<u32>,
 }
 
 /// Where the messages for chat `chat` wait: beside the reports ([`crate::handback::dir`]), in
@@ -1279,6 +1564,8 @@ fn sound(read: &str) -> Option<Message> {
         from: sender(&message.from)?,
         chat: message.chat,
         text: crate::handoff::report_summary(&message.text).ok()?,
+        // A number, and nothing a number could carry (#3904).
+        instruction: message.instruction,
     })
 }
 
@@ -1317,7 +1604,15 @@ pub fn said(message: &Message) -> String {
              approves anything."
         ),
     };
-    format!("{head}\n{}", quoted(&message.text))
+    // A follow-up says how to acknowledge it, by its number (#3904).
+    let ack = match (message.kind, message.instruction) {
+        (Kind::FollowUp, Some(number)) => format!(
+            "\nIt is instruction {number}. Once you have taken it in, acknowledge it: \
+             `purlis dispatch note --ack {number}` (or the dispatch_note tool's `ack`)."
+        ),
+        _ => String::new(),
+    };
+    format!("{head}{ack}\n{}", quoted(&message.text))
 }
 
 /// `text` as a turn is handed it: every line behind `> `, so none of it reads as purlis's.

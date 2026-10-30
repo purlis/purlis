@@ -13,6 +13,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, screen, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillStudioTab } from "./SkillStudioTab";
+import { Panel } from "./ui/panel/Panel";
 import {
   SKILL_STUDIO_VIEW,
   inWorkspace,
@@ -22,6 +23,7 @@ import {
 } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
+import { forgetSkillEdit } from "./skillEdit";
 import { expectFocusInSight, untilFocused, untilFocusWithin } from "./stories.testkit";
 import type { StudioSkill } from "./bindings";
 
@@ -72,20 +74,31 @@ const version = (commit: string, subject: string, at: string) => ({
   grade: null,
 });
 
-/** The studio tab, opened at `chosen`'s page on `tab`, `width` by 560 px. */
+/** The studio tab, opened at `chosen`'s page on `tab`, `width` by `height` (560) px. */
 function Tab({
   width,
+  height = 560,
   narrow,
 }: {
   width: number;
+  height?: number;
   narrow?: boolean;
   chosen: StudioSkill;
   tab: SkillPageTab;
 }) {
   return (
-    <div className="view-body" style={{ inlineSize: width, blockSize: 560, display: "flex" }}>
-      <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
-    </div>
+    // In the content panel, as a view tab is drawn (`PlaneView`): its fill is the ground the
+    // page header is drawn on while the page scrolls under it (#3944). Isolated as the window's
+    // root is (`App.css`, #1481), so a dialog opened over the page is drawn over its sticky
+    // header here too.
+    <Panel variant="content">
+      <div
+        className="view-body"
+        style={{ inlineSize: width, blockSize: height, display: "flex", isolation: "isolate" }}
+      >
+        <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
+      </div>
+    </Panel>
   );
 }
 
@@ -158,6 +171,7 @@ const meta = {
     });
     return () => {
       clearMocks();
+      forgetSkillEdit(HISTORY);
       forgetViewHistory(HISTORY);
     };
   },
@@ -285,5 +299,108 @@ export const Narrow: Story = {
     const back = canvas.getByRole("button", { name: "Back to Library" });
     await tabInto(() => back);
     expectFocusInSight();
+  },
+};
+
+/**
+ * **Scrolled under its header** (#3944): the page's body, its tabs first, scrolls under the
+ * header, which is drawn on its panel's fill, so none of it shows through behind the actions.
+ * The keyboard on the page tabs brings them out from under the header, never leaves them behind
+ * it (WCAG 2.4.11). Pictured scrolled to its end.
+ */
+async function scrolledUnderTheHeader(canvasElement: HTMLElement): Promise<void> {
+  const canvas = within(canvasElement);
+  const tabs = await canvas.findByRole("tablist", { name: "deploy's sections" });
+  await canvas.findByTestId("skill-owners");
+  const pane = tabs.closest<HTMLElement>('[data-scope="view-frame"][data-part="item"]');
+  const header = pane?.querySelector<HTMLElement>('[data-scope="view-frame"][data-part="header"]');
+  const panel = pane?.closest<HTMLElement>('[data-scope="panel"][data-part="root"]');
+  if (!pane || !header || !panel) throw new Error("the skill's page is not in a pane of a panel");
+  await expect(pane.scrollHeight).toBeGreaterThan(pane.clientHeight);
+  // The header's ground is its panel's fill, so nothing shows through it.
+  await expect(getComputedStyle(header).backgroundColor).toBe(
+    getComputedStyle(panel).backgroundColor,
+  );
+  const toTheEnd = async () => {
+    pane.scrollTop = pane.scrollHeight;
+    await waitFor(() =>
+      expect(tabs.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+        header.getBoundingClientRect().bottom,
+      ),
+    );
+  };
+  await toTheEnd();
+  // The keyboard reaches the tabs from under the header: they are scrolled clear of it.
+  const chosen = within(tabs).getByRole("tab", { name: /Overview/ });
+  chosen.focus();
+  expectFocusInSight();
+  await expect(tabs.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+    header.getBoundingClientRect().bottom - 1,
+  );
+  // Pictured scrolled to its end, the keyboard gone from the page.
+  chosen.blur();
+  await toTheEnd();
+}
+
+/** **Scrolled**, wide beside the Library: the body under the header, clear of its actions. */
+export const Scrolled: Story = {
+  args: { height: 360 },
+  play: async ({ canvasElement }) => scrolledUnderTheHeader(canvasElement),
+};
+
+/** **Scrolled, narrow**: the page alone, its header wrapping, the body under it all the same. */
+export const ScrolledNarrow: Story = {
+  args: { width: 460, height: 360, narrow: true },
+  play: async ({ canvasElement }) => scrolledUnderTheHeader(canvasElement),
+};
+
+/** Edit, then a line typed at the end of the text: the editor in place, as the person types. */
+async function typeALine(canvas: ReturnType<typeof within>): Promise<void> {
+  await userEvent.click(await canvas.findByRole("button", { name: "Edit deploy" }));
+  // The editor is a chunk of its own, loaded the first time: given the time a busy cell takes.
+  const text = await canvas.findByRole(
+    "textbox",
+    { name: "deploy's instructions" },
+    { timeout: 10_000 },
+  );
+  await userEvent.click(text);
+  await userEvent.keyboard("{Control>}{End}{/Control}{Meta>}{ArrowDown}{/Meta}");
+  await userEvent.keyboard("5. Tag the release.");
+  await expect(await canvas.findByTestId("skill-unsaved")).toHaveTextContent("Unsaved changes");
+}
+
+/**
+ * **Editing in place** (#3683, S4): the Text tab is the editor, checked as the person types, with
+ * Save and Discard, and the header says the changes are unsaved. Tab reaches Save.
+ */
+export const Editing: Story = {
+  parameters: {
+    // The light editor fails colour contrast on a list's numbers in every cell (#3796): it is
+    // kept out of axe here until that ticket fixes it, as the draft page's merge view is, and the
+    // rest of the page is held to axe.
+    a11y: { context: { exclude: [".cm-editor"] } },
+  },
+  play: async ({ canvas }) => {
+    await typeALine(canvas);
+    await canvas.findByText("It is a whole skill.");
+    const save = canvas.getByRole("button", { name: "Save" });
+    await waitFor(() => expect(save).toBeEnabled());
+    await tabInto(() => save);
+    expectFocusInSight();
+  },
+};
+
+/** **Leaving with unsaved changes** (#3683, S4): choosing another skill asks first, on Keep
+ *  editing, the safe answer. */
+export const Leaving: Story = {
+  parameters: { a11y: { context: { exclude: [".cm-editor"] } } },
+  play: async ({ canvas }) => {
+    await typeALine(canvas);
+    await userEvent.click(canvas.getByTestId("skill-lint-rs"));
+    const asked = await screen.findByRole("alertdialog", { name: "Save your changes to deploy?" });
+    await untilFocused(
+      () => within(asked).getByRole("button", { name: "Keep editing" }),
+      "the question starts on Keep editing",
+    );
   },
 };

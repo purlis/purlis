@@ -618,5 +618,5 @@ type ChatStripProps = {
   openBrowser?: (shown: BrowserShown) => void;
   /** Opens a skill's Runs in the studio on one of its runs, from the chip of the run open in a
    *  tab's chat (`session`'s). */
-  openSkillRun?: (skill: string, run: string, session: number) => void;
+  openSkillRun?: (skill: string, run: string, session: number, level: string | null) => void;
 };

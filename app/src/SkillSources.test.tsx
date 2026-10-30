@@ -597,6 +597,63 @@ describe("the install review", () => {
     await user.click(within(review).getByRole("button", { name: "Cancel" }));
     expect(await screen.findByTestId("skill-source-page")).toBeInTheDocument();
   });
+
+  it("leaves a person who went to the Library before the install ended in the Library (#3973)", async () => {
+    let installed: (answer: unknown) => void = () => undefined;
+    const asked = core({
+      answers: {
+        skill_install: () =>
+          new Promise((resolve) => {
+            installed = resolve;
+          }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
+    const review = await screen.findByTestId("install-review");
+    await within(review).findByTestId("install-commit");
+    await user.click(within(review).getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(did(asked, "skill_install")).toBe(true));
+    // The Sources page is left while the install is still being made.
+    await user.click(screen.getByRole("button", { name: "Library" }));
+    await waitFor(() => expect(screen.queryByTestId("install-review")).toBeNull());
+    const reads = times(asked, "skill_studio");
+    installed({ notes: [] });
+    // The install's end reads the skills again, and leaves the tab where the person went.
+    await waitFor(() => expect(times(asked, "skill_studio")).toBeGreaterThan(reads));
+    expect(screen.getByRole("button", { name: "Library" })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByTestId("skill-source-page")).toBeNull();
+  });
+
+  it("still goes on to the source's page for a person who came back to the review before the install ended", async () => {
+    let installed: (answer: unknown) => void = () => undefined;
+    const asked = core({
+      answers: {
+        skill_install: () =>
+          new Promise((resolve) => {
+            installed = resolve;
+          }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
+    await within(await screen.findByTestId("install-review")).findByTestId("install-commit");
+    await user.click(
+      within(screen.getByTestId("install-review")).getByRole("button", { name: "Install" }),
+    );
+    await waitFor(() => expect(did(asked, "skill_install")).toBe(true));
+    // Away and back: the review is drawn again, and the tab is where Install was pressed.
+    await user.click(screen.getByRole("button", { name: "Library" }));
+    await waitFor(() => expect(screen.queryByTestId("install-review")).toBeNull());
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    await screen.findByTestId("install-review");
+    installed({ notes: [] });
+    expect(await screen.findByTestId("skill-source-page")).toBeInTheDocument();
+  });
 });
 
 describe("the update review", () => {

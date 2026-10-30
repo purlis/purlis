@@ -371,6 +371,14 @@
   border-inline-end: 1px solid var(--border-subtle);
 }
 
+/* **The item's pane keeps its page header's room at its top** (#3944): what the keyboard reaches
+   in its body is scrolled into view under the header, never behind it (WCAG 2.4.11). The header
+   writes its height here (`ViewPageHeader`). */
+[data-scope="view-frame"][data-part="item"] {
+  --view-frame-header-size: 0px;
+  scroll-padding-block-start: var(--view-frame-header-size);
+}
+
 /* The list pane takes the keyboard only as the person comes back from an item to it. */
 [data-scope="view-frame"][data-part="list"]:focus {
   outline: none;

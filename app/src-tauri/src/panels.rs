@@ -1203,7 +1203,10 @@ fn memory_panel(
         ),
         empty: panel::Empty {
             headline: "Nothing remembered yet".into(),
-            body: Some("A chat records one with `purlis workspace remember`.".into()),
+            body: Some(format!(
+                "A chat records one with the memory_add tool, or `purlis workspace remember -w \
+                 {workspace}`."
+            )),
             // The `+` on the list's heading, drawn again where the list is empty (#1156).
             offer: Some(format!("memory.new:workspace/{workspace}")),
         },
@@ -1249,7 +1252,9 @@ pub(crate) fn shared_memory_view(root: &Path) -> Result<Vec<panel::Block>, Strin
                 empty: panel::Empty {
                     headline: "Nothing shared yet".into(),
                     body: Some(
-                        "A chat records one with `purlis persona remember --shared`.".into(),
+                        "A chat records one with the persona_remember tool and shared, or \
+                         `purlis persona remember <persona> --shared`."
+                            .into(),
                     ),
                     offer: Some("memory.new:shared".into()),
                 },
@@ -1437,7 +1442,8 @@ pub(crate) fn persona_view(
                 empty: panel::Empty {
                     headline: "Nothing remembered yet".into(),
                     body: Some(format!(
-                        "A chat as {name} records one with `purlis persona remember`."
+                        "A chat as {name} records one with the persona_remember tool, or \
+                         `purlis persona remember {name}`."
                     )),
                     offer: Some(format!("memory.new:persona/{name}")),
                 },

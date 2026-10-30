@@ -281,3 +281,18 @@ fn an_evals_file_path_with_a_control_character_or_too_long_is_refused() {
         Wrong::IdTwice { id: 1 }
     ));
 }
+
+/// #3925: a skill with no trigger tests starts from a template its file reads back as: one query
+/// it should start on, one near miss it should leave alone, each naming the skill.
+#[test]
+fn the_trigger_tests_template_reads_back_as_one_start_and_one_near_miss() {
+    let tests = triggers_of(&triggers_template("deploy")).unwrap();
+    assert_eq!(tests.len(), 2);
+    assert!(tests[0].should_trigger);
+    assert!(!tests[1].should_trigger);
+    assert!(
+        tests.iter().all(|test| test.query.contains("deploy")),
+        "{tests:?}"
+    );
+    assert_eq!(triggers_path(), "evals/triggers.json");
+}

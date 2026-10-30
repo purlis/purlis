@@ -93,7 +93,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use super::{Access, Compiled, Level, Uncompilable};
+use super::{Access, Compiled, Level, Os, Uncompilable};
 use crate::harness::Harness;
 
 /// `path` as written, and as the kernel names it where that differs.
@@ -123,7 +123,16 @@ pub struct Settings {
     pub sandbox: Value,
     /// `permissions.deny` rules for its own tools.
     pub deny: Vec<String>,
+    /// Files made, empty, where there is none, before the chat starts ([`Self::make_empty`]):
+    /// on Linux at the floor, the home's git config ([`HOME_GIT_CONFIG`]).
+    pub made_empty: Vec<PathBuf>,
 }
+
+/// The home's git config, a later-code name the floor holds ([`super::PLANTED`]). On Linux,
+/// Claude Code's sandbox puts a denied path that does not exist out of reach of a read as well,
+/// and git stops on a config it cannot read, so no git command would run in the chat. Made
+/// empty first, it is held as an existing file is, and git reads it as none.
+pub const HOME_GIT_CONFIG: &str = ".gitconfig";
 
 /// `compiled`, for Claude Code — or the class it cannot hold on this machine.
 ///
@@ -414,7 +423,11 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
                 .collect::<Vec<_>>()
         );
     }
-    Ok(Settings { sandbox, deny })
+    Ok(Settings {
+        sandbox,
+        deny,
+        made_empty: Vec::new(),
+    })
 }
 
 /// **The floor's settings** (#2071): Claude Code's sandbox on, holding `filesystem` (every
@@ -460,10 +473,36 @@ fn floor(
             .chain(read_rules)
             .chain(edit_rules)
             .collect(),
+        made_empty: match &compiled.homes.home {
+            Some(home) if compiled.os == Os::Linux => vec![home.join(HOME_GIT_CONFIG)],
+            _ => Vec::new(),
+        },
     }
 }
 
 impl Settings {
+    /// Makes each of [`Self::made_empty`], outside the sandbox, as an empty file where nothing
+    /// is there: a file already there keeps what it holds, and a link, even one to nothing, is
+    /// neither followed nor replaced. One not made is left to the chat, whose git then says why.
+    pub fn make_empty(&self) {
+        for path in &self.made_empty {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+            {
+                Ok(_) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(err) => {
+                    tracing::warn!(
+                        "purlis: {} was not made for the chat ({err})",
+                        path.display()
+                    );
+                }
+            }
+        }
+    }
+
     /// These settings with `held` folders never written, at the floor (#2071): each under every
     /// name a rule on it is written by, to the sandbox and to the Edit tool.
     pub fn holding(&self, held: &[PathBuf]) -> Settings {

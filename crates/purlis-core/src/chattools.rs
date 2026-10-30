@@ -662,10 +662,12 @@ pub static TOOLS: [Tool; 26] = [
                         "description": "Where it works: `workspace:<name>` for another \
                                         workspace of the project, or `worktree` for a new \
                                         worktree of the repo this chat works in, on a new \
-                                        branch purlis names, which only the person merges. A \
-                                        sandboxed chat commits there with `purlis worktree \
-                                        commit`. Leave it out for \
-                                        this chat's folder.",
+                                        branch purlis names, which only the person merges. \
+                                        From a workspace's own folder, `worktree` is cut from \
+                                        its one clone, and `worktree:<repo>` names which \
+                                        clone where it holds several. A sandboxed chat \
+                                        commits there with `purlis worktree commit`. Leave it \
+                                        out for this chat's folder.",
                     },
                     "wait": {
                         "type": "boolean",
@@ -742,21 +744,30 @@ pub static TOOLS: [Tool; 26] = [
     Tool {
         name: DISPATCH_TELL,
         description: "Send a follow-up to a task this chat dispatched that is still working, \
-                      quoted as data from this chat. A task at rest is started on it at once; \
-                      one mid-turn reads it when that turn ends. A task that reported while \
-                      its program still runs is told too. Refused, with the task's state, once \
-                      its program has ended.",
+                      quoted as data from this chat, or with `all` to every task of this chat \
+                      still working. A task at rest is started on it at once; one mid-turn \
+                      reads it when that turn ends. A task that reported while its program \
+                      still runs is told too. Refused, with the task's state, once its program \
+                      has ended. Each follow-up is an instruction with a number, which a task \
+                      acknowledges with dispatch_note's `ack`; dispatch_list shows which tasks \
+                      have. Where the app does not answer, it is queued and delivered when it \
+                      does.",
         schema: || {
             json!({
                 "type": "object",
                 "properties": {
                     "chat": a_task(),
+                    "all": {
+                        "type": "boolean",
+                        "description": "Send it to every task of this chat still working, \
+                                        instead of the one `chat` names.",
+                    },
                     "text": {
                         "type": "string",
                         "description": "What to add or correct, in a few lines.",
                     },
                 },
-                "required": ["chat", "text"],
+                "required": ["text"],
                 "additionalProperties": false,
             })
         },
@@ -850,7 +861,9 @@ pub static TOOLS: [Tool; 26] = [
     Tool {
         name: DISPATCH_NOTE,
         description: "From a dispatched task: send the chat that asked a progress note. It \
-                      reads it on its next turn, and nothing waits on it.",
+                      reads it on its next turn, and nothing waits on it. With `ack`, it \
+                      acknowledges that instruction (a follow-up's number) of the asking \
+                      chat's, and `text` may be left out.",
         schema: || {
             json!({
                 "type": "object",
@@ -859,8 +872,12 @@ pub static TOOLS: [Tool; 26] = [
                         "type": "string",
                         "description": "Where the task has got to, in a few lines.",
                     },
+                    "ack": {
+                        "type": "integer",
+                        "description": "The number of an instruction of the asking chat's \
+                                        this task has taken in.",
+                    },
                 },
-                "required": ["text"],
                 "additionalProperties": false,
             })
         },
@@ -1248,13 +1265,13 @@ pub fn dispatch_profile(args: &Map<String, Value>) -> Result<Option<String>, Str
 }
 
 /// The `dispatch` tool's `in`: where the new chat works, where that is asked for (#1453). One
-/// of two words and nothing more: the app reads it ([`crate::dispatchplace::asked`]).
+/// of three words and nothing more: the app reads it ([`crate::dispatchplace::asked`]).
 pub fn dispatch_place(args: &Map<String, Value>) -> Result<Option<String>, String> {
     match args.get("in") {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(place)) if !place.trim().is_empty() => Ok(Some(place.trim().to_owned())),
         Some(Value::String(_)) => Ok(None),
-        Some(_) => Err("`in` is `worktree` or `workspace:<name>`".to_owned()),
+        Some(_) => Err("`in` is `worktree`, `worktree:<repo>` or `workspace:<name>`".to_owned()),
     }
 }
 
@@ -1289,6 +1306,28 @@ pub fn dispatch_text(args: &Map<String, Value>, key: &str, tool: &str) -> Result
     match args.get(key) {
         Some(Value::String(text)) => Ok(text.clone()),
         _ => Err(format!("{tool} needs `{key}`, as text")),
+    }
+}
+
+/// A yes-or-no field of a dispatch tool's, `false` where it is left out (#3904).
+pub fn dispatch_flag(args: &Map<String, Value>, key: &str, tool: &str) -> Result<bool, String> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(flag)) => Ok(*flag),
+        Some(_) => Err(format!("{tool}'s `{key}` is true or false")),
+    }
+}
+
+/// The instruction `dispatch_note` acknowledges, where it names one (#3904).
+pub fn dispatch_ack(args: &Map<String, Value>) -> Result<Option<u32>, String> {
+    match args.get("ack") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Number(n)) => n
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .map(Some)
+            .ok_or_else(|| "`ack` is an instruction's number".to_owned()),
+        Some(_) => Err("`ack` is an instruction's number".to_owned()),
     }
 }
 

@@ -384,6 +384,9 @@ pub const PAIRS: &[Pair] = &[
     // - A warning's dot (#3649): the waiting amber, told apart from the same ground; its
     //   triangle on it is `surface.base` on `state.waiting`, held among the marks above.
     p("state.waiting", "surface.deep", 3.0),
+    // - A needs-you dot (#3652): the failed red, told apart from the same ground; its hand on it
+    //   is `surface.base` on `state.failed`, held among the marks below.
+    p("state.failed", "surface.deep", 3.0),
     // - The update pill's words in the accent's words on the accent's surface (#3177).
     p("accent.text", "accent.surface", TEXT),
     // - What an extension runs as you, said inside its approval dialog on the danger wash.
@@ -404,6 +407,8 @@ pub const PAIRS: &[Pair] = &[
     // - What waits said in a badge or a count (#2912): the same amber on its wash, on a popover's
     //   surface.
     p("state.waiting", "wash.warning", TEXT).over("surface.overlay"),
+    // - A switcher row's count (#3947): the same, on the row Enter would go to.
+    p("state.waiting", "wash.warning", TEXT).over("list.selected"),
     // - The rail's waiting badge (R79): its digits in amber on the overlay's pill.
     p("state.waiting", "surface.overlay", TEXT),
     // - The warning-soft button: amber words on the control, and under the pointer.
@@ -791,6 +796,9 @@ pub const PAIRS: &[Pair] = &[
     // A warning's notice dot (#3649): its triangle in the window's colour on the waiting amber, a
     // mark held to 3:1.
     p("surface.base", "state.waiting", 3.0),
+    // A needs-you dot (#3652): its hand in the window's colour on the failed red, a mark held to
+    // 3:1.
+    p("surface.base", "state.failed", 3.0),
 ];
 
 /// The floor the sixteen ANSI colours clear on the terminal's own background.

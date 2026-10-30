@@ -79,7 +79,11 @@ fn table() -> String {
                     .iter()
                     .map(|one| format!("`{}`", one.as_str().unwrap_or_default()))
                     .collect();
-                format!(", drawn apart, in no variant: {}", states.join(", "))
+                if states.is_empty() {
+                    ", drawn apart, in no variant and no state".to_owned()
+                } else {
+                    format!(", drawn apart, in no variant: {}", states.join(", "))
+                }
             });
             format!(" ({}{apart})", properties.join(", "))
         });
