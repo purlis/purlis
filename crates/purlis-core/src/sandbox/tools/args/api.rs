@@ -93,6 +93,11 @@ const GLAB_ROUTES: &[&str] = &[
     "groups/*$",
 ];
 
+/// The placeholders gh and glab fill in an endpoint with a value that can hold `/` (a branch,
+/// a group, a namespace), so the path read is not the path sent: an endpoint with one never
+/// runs.
+const SPREADING: &[&str] = &["{branch}", ":branch", ":namespace", ":group", ":repo"];
+
 /// The fields of GitHub's GraphQL schema that show or make a credential: a query naming one
 /// never runs. Its schema has no mutation that adds or removes a key or a secret.
 const GH_GRAPHQL_FIELDS: &[&str] = &[
@@ -130,18 +135,22 @@ fn readings(arg: &str) -> Vec<Vec<String>> {
             .filter(|one| !one.is_empty())
             .cloned()
             .collect();
-        let mut resolved: Vec<String> = Vec::new();
-        for one in &written {
-            match one.as_str() {
-                "." => {}
-                ".." => {
-                    resolved.pop();
+        // A server resolves `..` against its API's own base (`/api/v3`, `/api/v4`), so each
+        // base is tried; `read_as_routed` drops it again.
+        for base in [&[][..], &["api", "v3"][..], &["api", "v4"][..]] {
+            let mut resolved: Vec<String> = base.iter().map(|one| (*one).to_owned()).collect();
+            for one in &written {
+                match one.as_str() {
+                    "." => {}
+                    ".." => {
+                        resolved.pop();
+                    }
+                    _ => resolved.push(one.clone()),
                 }
-                _ => resolved.push(one.clone()),
             }
+            out.push(read_as_routed(resolved));
         }
         out.push(read_as_routed(written));
-        out.push(read_as_routed(resolved));
     }
     out
 }
@@ -195,6 +204,13 @@ pub(super) fn refused(forge: Forge, args: &[String]) -> Option<String> {
     };
     let mut graphql = false;
     for arg in args.iter().skip(1) {
+        let lower = arg.to_ascii_lowercase();
+        if !arg.starts_with('-') && SPREADING.iter().any(|one| lower.contains(one)) {
+            return Some(format!(
+                "the endpoint {arg:?} has a placeholder the program fills with a branch, group or \
+                 namespace, which can stand for more than one part of the path"
+            ));
+        }
         for segments in readings(arg) {
             if let Some(route) = routes.iter().find(|route| under(route, &segments)) {
                 let route = route.trim_end_matches('$');
@@ -203,7 +219,7 @@ pub(super) fn refused(forge: Forge, args: &[String]) -> Option<String> {
                      command does"
                 ));
             }
-            graphql |= segments == ["graphql"];
+            graphql |= segments == ["graphql"] || segments == ["api", "graphql"];
         }
     }
     if !graphql {

@@ -219,6 +219,8 @@ impl Forge {
                 (&["runner-controller", "rc"], &["token"]),
                 (&["ci", "pipe", "pipeline"], &["--with-variables"]),
                 (&["repo", "project"], &["-F", "--output", "--jq"]),
+                (&["schedule", "sched", "skd"], &["--variable"]),
+                (&["orbit"], &["local"]),
             ],
         }
     }
@@ -233,14 +235,24 @@ impl Forge {
         if words.is_empty() {
             return Some(command.to_owned());
         }
+        // A project's own page alone carries its runner token; its lists do not.
+        if self == Self::Glab
+            && matches!(command, "repo" | "project")
+            && !args.iter().skip(1).any(|arg| arg == "view")
+        {
+            return None;
+        }
         let word = args.iter().skip(1).find_map(|arg| {
             words.iter().find(|word| {
                 if !word.starts_with('-') {
                     return arg.eq_ignore_ascii_case(word);
                 }
-                arg == *word
-                    || arg.starts_with(&format!("{word}="))
-                    || (word.len() == 2 && arg.starts_with(**word))
+                // A short option also in a run of short options (`-wFjson`).
+                let short = word.len() == 2
+                    && arg.starts_with('-')
+                    && !arg.starts_with("--")
+                    && arg[1..].contains(&word[1..]);
+                arg == *word || arg.starts_with(&format!("{word}=")) || short
             })
         })?;
         Some(format!("{command} {word}"))

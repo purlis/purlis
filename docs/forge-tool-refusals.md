@@ -17,7 +17,7 @@ A command refused "with" a word is refused where that word is any of the run's a
 **Aliases.** A command is refused by every name its program takes for it. `gh` names its aliases in each
 help page; `glab` names none, so its aliases were found by trying names: `conf` (`config`), `var`
 (`variable`), `tf` and `terraform` (`opentofu`), `rc` (`runner-controller`), `pipe` and `pipeline` (`ci`),
-`project` (`repo`), `sched` (`schedule`) and `v` (`version`). An installed extension or an alias the person
+`project` (`repo`), `sched` and `skd` (`schedule`) and `v` (`version`). An installed extension or an alias the person
 defined is never there: a run's home is its own (#3419), so none is installed for it.
 
 A run with `--` among its arguments is refused for both: `repo clone` and `repo fork` hand what follows to
@@ -57,12 +57,14 @@ token in its environment.
 | `mcp` | refused | `mcp serve` offers a tool for nearly every glab command, the refused ones among them, so a run through it is judged by none of this list |
 | `opentofu` (`tf`, `terraform`) with `init` or `download` | refused | `init` runs a chosen program with the token and leaves it in the state backend's settings; a downloaded state often holds secrets in plain text |
 | `ci` (`pipe`, `pipeline`) with `--with-variables` | refused | shows a pipeline's variables' values |
-| `repo` (`project`) with `-F`, `--output` or `--jq` | refused | the project as JSON carries its runner registration token for a maintainer |
+| `repo view` (`project view`) with `-F`, `--output` or `--jq` | refused | the project as JSON carries its runner registration token for a maintainer; its lists do not, so `repo list -F json` runs |
+| `schedule` (`sched`, `skd`) with `--variable` | refused | sets a pipeline schedule's variables, which may be masked secrets, as `variable` does |
+| `orbit local` | refused | downloads a program and runs it with the run's arguments and environment |
 | `cluster` with `get-token`, `token`, `token-cache`, `bootstrap` or `update-kubeconfig` | refused | makes or shows an agent's token, or writes kubectl's settings |
 | `runner-controller` (`rc`) with `token` | refused | makes, shows and rotates runner controller tokens |
 | `opentofu state list`, `lock`, `unlock`, `delete`; `cluster agent list`; `runner` | runs | none shows a credential |
-| `skills`, `orbit` | runs | write agent skills into the folder, as a chat can |
-| `attestation`, `changelog`, `check-update`, `ci`, `container-registry`, `incident`, `issue`, `iteration`, `job`, `label`, `milestone`, `mr`, `packages`, `release`, `repo`, `schedule`, `search`, `snippet`, `stack`, `todo`, `user`, `version`, `whatsnew`, `work-items` | runs | none shows a credential or changes credentials or settings |
+| `skills`, `orbit` (but `local`) | runs | write agent skills into the folder, as a chat can |
+| `attestation`, `changelog`, `check-update`, `ci`, `container-registry`, `incident`, `issue`, `iteration`, `job`, `label`, `milestone`, `mr`, `packages`, `release`, `repo` (but as above), `schedule` (but as above), `search`, `snippet`, `stack`, `todo`, `user`, `version`, `whatsnew`, `work-items` | runs | none shows a credential or changes credentials or settings |
 
 ## `api` on the forge's own host
 
@@ -72,7 +74,9 @@ refused whole (`*` is any one segment). Before it is matched, an endpoint's quer
 percent-decoded and lower-cased, empty segments drop, a leading `api/v3` or `api/v4` drops, and
 `repositories/<id>` and `organizations/<id>` read as `repos/…` and `orgs/…`. An endpoint is matched every
 way a server may read it: split at `/` (and `\`) before and after percent-decoding, with its `.` and `..`
-segments as written and as resolved. A segment matches a route's name with a format after a dot
+segments as written and as resolved against each API base a server may resolve them from (`/`, `/api/v3`,
+`/api/v4`). An endpoint with a placeholder the program fills with a value that can hold `/` (`{branch}`,
+`:branch`, `:namespace`, `:group`, `:repo`) is refused, since the path sent is not the path read. A segment matches a route's name with a format after a dot
 (`variables.json`), as GitLab routes it. A route ending in `$` is refused alone, not the paths under it.
 
 | Forge | Routes | Stands for |

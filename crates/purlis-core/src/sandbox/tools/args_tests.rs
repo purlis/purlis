@@ -499,3 +499,36 @@ fn what_follows_a_double_dash_goes_to_another_program_so_it_never_runs() {
     assert!(runs(&glab, &["repo", "clone", "g/p", "--", "--depth=1"]).is_err());
     assert!(runs(&gh, &["repo", "clone", "o/r"]).is_ok());
 }
+
+#[test]
+fn the_re_review_s_forms_never_run_and_lists_still_do() {
+    let glab = ready(tool_with("glab", None), "/usr/local/bin/glab");
+    for words in [
+        &["api", "../v4/projects/1/variables"][..],
+        &["api", "../v4/user/keys"],
+        &["api", "../../api/graphql", "-f", "query={x}"],
+        &["api", "projects/:namespace/variables"],
+        &["schedule", "create", "--variable", "K:v"],
+        &["sched", "update", "1", "--variable=K:v"],
+        &["orbit", "local", "x"],
+        &["repo", "view", "-wFjson"],
+    ] {
+        assert!(runs(&glab, words).is_err(), "{words:?}");
+    }
+    for words in [
+        &["repo", "list", "-F", "json"][..],
+        &["project", "list", "--jq", ".[]"],
+        &["schedule", "list"],
+    ] {
+        assert!(runs(&glab, words).is_ok(), "{words:?}");
+    }
+    let gh = ready(tool_with("gh", None), "/opt/homebrew/bin/gh");
+    for words in [
+        &["api", "{branch}"][..],
+        &["api", "repos/{owner}/{repo}/git/refs/heads/{branch}"],
+        &["api", "../v3/user/keys"],
+    ] {
+        assert!(runs(&gh, words).is_err(), "{words:?}");
+    }
+    assert!(runs(&gh, &["api", "repos/{owner}/{repo}/pulls"]).is_ok());
+}
