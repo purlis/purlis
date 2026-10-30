@@ -20,7 +20,13 @@
    **A state never changes size** (#2800, R153): under the pointer, ticked, picked, focused or
    unavailable, a choice changes a colour, a ground, an edge's colour or a ring, never a padding, a
    border width, a height or a weight, and a mark that shows only in one state keeps its room in
-   every other. A thumb slides, and only as it is turned; never under reduced motion. */
+   every other. A thumb slides, and only as it is turned; never under reduced motion.
+
+   **A choice is never under the 24px target** (#4173, WCAG 2.5.8): a row (a checkbox, a chip, a
+   radio, a switch, a slider) and a small segmented control are at least
+   `max(24px, var(--size-chrome), var(--space-7))` tall, the sm button's floor (#3210) and the sm
+   field's (#3250). The compact density draws the chrome at 18px and the scale's 24 at 16, and a
+   smaller text size shrinks both, so neither token alone keeps one. */
 
 /* ---------------------------------------------------------------------------------------------
    The checkbox: its row (the label), its box and its words.
@@ -32,7 +38,7 @@
   align-items: center;
   gap: 0 var(--space-4);
   box-sizing: border-box;
-  min-block-size: max(var(--size-chrome), var(--space-7));
+  min-block-size: max(24px, var(--size-chrome), var(--space-7));
   min-inline-size: 0;
   color: var(--text-primary);
   background-color: transparent;
@@ -108,7 +114,7 @@
 [data-scope="checkbox"][data-part="root"][data-variant="chip"] {
   display: inline-flex;
   gap: var(--space-1);
-  min-block-size: max(var(--size-chrome), var(--space-7));
+  min-block-size: max(24px, var(--size-chrome), var(--space-7));
   padding-inline: var(--space-4);
   /* A control's corner, a field's and a chip's alike (8 in Purlis, #3113). */
   border-radius: var(--radius-control);
@@ -170,7 +176,7 @@
   align-items: center;
   gap: 0 var(--space-4);
   box-sizing: border-box;
-  min-block-size: max(var(--size-chrome), var(--space-7));
+  min-block-size: max(24px, var(--size-chrome), var(--space-7));
   color: var(--text-primary);
   background-color: transparent;
   cursor: default;
@@ -244,7 +250,7 @@
   align-items: center;
   gap: var(--space-4);
   box-sizing: border-box;
-  min-block-size: max(var(--size-chrome), var(--space-7));
+  min-block-size: max(24px, var(--size-chrome), var(--space-7));
   color: var(--text-primary);
   background-color: transparent;
   cursor: default;
@@ -373,7 +379,7 @@
 }
 
 [data-scope="segmented-control"][data-part="root"][data-size="sm"] {
-  block-size: max(var(--size-chrome), var(--space-7));
+  block-size: max(24px, var(--size-chrome), var(--space-7));
 }
 
 [data-scope="segment"][data-part="root"] {
@@ -441,7 +447,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-4);
-  min-block-size: max(var(--size-chrome), var(--space-7));
+  min-block-size: max(24px, var(--size-chrome), var(--space-7));
   min-inline-size: 0;
   color: var(--text-secondary);
 }
