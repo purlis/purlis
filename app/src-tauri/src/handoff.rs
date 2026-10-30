@@ -1236,33 +1236,61 @@ pub struct PersonaChat {
 /// Why chat `asker`'s dispatch named `name` is refused as a task it already has open (#3788,
 /// [`dispatchdecision::same_name_open`]), from this app's record of its tasks; or `None`.
 ///
+/// **Decided under the lock a dispatch's slot is reserved under** (#3795, the `_deciding`
+/// hold): read from the records [`crate::chats::Chats::deciding_over`] hands a decision, the
+/// chats open and the ones let through and still starting, so two dispatches under one name
+/// arriving together cannot both be let past it. A task still starting is running, under the
+/// name its slot was reserved with.
+///
 /// Each is named with its liveness (#3900): a task that came back after a restart is named
-/// live, never left to be taken for a dead one.
-fn same_name_open(held: &Held, asker: u32, name: &str) -> Option<String> {
+/// live, never left to be taken for a dead one. A task still starting has no program to say
+/// anything of yet, and is named running alone.
+fn same_name_open(held: &Held, asker: u32, name: &str, _deciding: &Deciding<'_>) -> Option<String> {
     type Listed = (
         u32,
         String,
         dispatchdecision::Standing,
-        purlis_core::dispatchliveness::Liveness,
+        Option<purlis_core::dispatchliveness::Liveness>,
     );
-    let tasks: Vec<Listed> = held
-        .chats()
-        .tasks_of(asker)
+    // Read under the store's own locks, then let go of them before the board, the asks and
+    // the ledger are read, which take their own.
+    let tasks: Vec<(u32, Chat, bool)> = held.chats().deciding_over(|records, starting| {
+        records
+            .iter()
+            .filter(|(number, chat)| {
+                *number != asker
+                    && chat.from.as_ref().is_some_and(|from| {
+                        from.chat == asker && from.mode == purlis_core::reopen::Mode::Task
+                    })
+            })
+            .map(|(number, chat)| (*number, (*chat).clone(), starting(*number)))
+            .collect()
+    });
+    let tasks: Vec<Listed> = tasks
         .into_iter()
-        .filter_map(|(session, from)| {
+        .filter_map(|(session, chat, starting)| {
+            if starting {
+                return Some((
+                    session,
+                    purlis_core::reopen::shown_name(&chat, None),
+                    dispatchdecision::Standing::Running,
+                    None,
+                ));
+            }
+            let from = chat.from.as_ref()?;
             let named = held.chats().shown_name(session)?;
             Some((
                 session,
                 named,
-                standing_of(held, session, &from),
-                crate::dispatched::liveness(held, session),
+                standing_of(held, session, from),
+                Some(crate::dispatched::liveness(held, session)),
             ))
         })
         .collect();
     dispatchdecision::same_name_open(
         name,
         tasks.iter().map(|(session, named, standing, live)| {
-            (*session, named.as_str(), *standing, Some(live))
+            (*session, named.as_str(), *standing, live.as_ref())
         }),
     )
 }
@@ -2614,13 +2642,6 @@ fn dispatch_noting(
     if wanted.by == By::Chat && wanted.moved.is_none() {
         crate::restored::refuse_twice(held, from, &asking, pair.to.as_deref(), &wanted.brief)?;
     }
-    // **Nor under the name of a task of this chat's still open** (#3788): a parent that lost
-    // track of a task it unblocked is told the task's number and state, and what to do with it.
-    if let (By::Chat, None, Some(name)) = (wanted.by, &wanted.moved, label.as_deref())
-        && let Some(why) = same_name_open(held, from, name)
-    {
-        return Err(why.into());
-    }
     let attended = attendance(held, from, &asking, &on.launch.0);
     // **A chat nobody is at makes no workspace** (D-1444-13): its handoff goes into one that
     // exists. Said before anything is decided, and nothing is created.
@@ -2713,7 +2734,15 @@ fn dispatch_noting(
     // open would both be let past a limit. So the decision and the slot that makes it count
     // are one step, and the lock is let go before anything starts.
     let (to, profile, its, lineage_of_it, number, _slot) = {
-        let _deciding = held.chats().deciding();
+        let deciding = held.chats().deciding();
+        // **Nor under the name of a task of this chat's still open** (#3788): a parent that
+        // lost track of a task it unblocked is told the task's number and state, and what to do
+        // with it. Under this lock (#3795), so a task let through and still starting counts.
+        if let (By::Chat, None, Some(name)) = (wanted.by, &wanted.moved, label.as_deref())
+            && let Some(why) = same_name_open(held, from, name, &deciding)
+        {
+            return Err(why.into());
+        }
         // A chat the person is stopping, or one below it, starts no chat (#1448). Under the
         // lock the decision is made under, so it is part of that decision.
         // **A chat's own ask.** The person asking from that chat's tab is not that chat
@@ -2928,6 +2957,9 @@ fn dispatch_noting(
             number,
             Chat {
                 name: number.to_string(),
+                // Its task's name, so a dispatch under the same name while it starts is
+                // refused as one it already has open (#3795).
+                label: label.clone(),
                 profile: Some(chosen.profile.clone()),
                 persona: asked.to.clone(),
                 from: Some(its_lineage.clone()),
