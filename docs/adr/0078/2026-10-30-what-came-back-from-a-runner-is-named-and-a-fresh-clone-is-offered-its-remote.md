@@ -5,13 +5,6 @@ runner chat made comes back with Move here). The guards are the person's ruling 
 (item 8 of that day's amendment), unchanged; the rest was **decided in implementation, to be
 confirmed** (D-3990-1 to D-3990-2 and D-3985-1 to D-3985-6 in the pull request).
 
-# Amended 2026-10-30: what came back from a runner is named, and a fresh clone is offered its remote
-
-**Built by #3990 and #3985**, under spec #2041, after the amendment of the same day (a clone the
-runner chat made comes back with Move here). The guards are the person's ruling of 2026-10-27
-(item 8 of that day's amendment), unchanged; the rest was **decided in implementation, to be
-confirmed** (D-3990-1 to D-3990-2 and D-3985-1 to D-3985-6 in the pull request).
-
 1. **The harnesses' instruction files are what a tool here reads** (#3990). A harness here reads
    `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`, `GEMINI.md`, `.cursorrules`,
    `.windsurfrules` and `.clinerules` in any folder of a clone, Copilot its
