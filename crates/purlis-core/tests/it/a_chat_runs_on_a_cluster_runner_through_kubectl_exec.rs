@@ -283,7 +283,8 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
     // A killed `kubectl exec -i` closes the input of what it ran in the pod (#3819): what Cancel
     // ends a sign-in on a cluster runner by, since nothing else reaches into the pod.
     let (runners, pod) = (&paired.vouched.runner_namespace, &paired.vouched.pod);
-    let mut exec = std::process::Command::new(kubectl.program())
+    let mut command = std::process::Command::new(kubectl.program());
+    command
         .args(kubectl.args(&[
             "exec",
             "-i",
@@ -299,9 +300,8 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
         ]))
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .expect("kubectl exec runs");
+        .stderr(std::process::Stdio::null());
+    let mut exec = purlis_core::forklock::spawn(&mut command).expect("kubectl exec runs");
     let said = || {
         in_the_pod(
             &kubectl,
@@ -394,11 +394,9 @@ fn standing_by_exec(kubectl: &Kubectl, namespace: &str, pod: &str) -> String {
         None,
     );
     args.push("--check".into());
-    let ran = std::process::Command::new(kubectl.program())
-        .args(&args)
-        .stdin(std::process::Stdio::null())
-        .output()
-        .expect("kubectl runs");
+    let ran =
+        purlis_core::forklock::output(std::process::Command::new(kubectl.program()).args(&args))
+            .expect("kubectl runs");
     let said = format!(
         "{}{}",
         String::from_utf8_lossy(&ran.stdout),
