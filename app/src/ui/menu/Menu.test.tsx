@@ -468,6 +468,28 @@ describe("a context menu", () => {
     expect(await screen.findByRole("menu")).toBeInTheDocument();
   });
 
+  it("stays up for a scroll that left its row where it was, and closes for one that moved it", async () => {
+    // #3797: the keyboard's arrival scrolls a list to the row, and that scroll's event comes a
+    // frame later, after a Shift+F10 pressed at once has opened the menu.
+    render(
+      <div data-testid="scroller" style={{ overflow: "auto" }}>
+        <OnARow />
+      </div>,
+    );
+    const row = screen.getByRole("button", { name: "steward 4" });
+    row.focus();
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    await screen.findByRole("menu", { name: "Row steward 4" });
+
+    fireEvent.scroll(screen.getByTestId("scroller"));
+    await new Promise((soon) => setTimeout(soon, 20));
+    expect(screen.getByRole("menu", { name: "Row steward 4" })).toBeInTheDocument();
+
+    vi.spyOn(row, "getBoundingClientRect").mockReturnValue(new DOMRect(0, -58, 100, 20));
+    fireEvent.scroll(screen.getByTestId("scroller"));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  });
+
   it("runs no row on the release of the press that opened it (a Mac's Ctrl+click)", async () => {
     render(<OnARow />);
     const row = screen.getByRole("button", { name: "steward 4" });

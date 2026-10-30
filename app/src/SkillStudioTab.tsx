@@ -546,6 +546,27 @@ export function SkillStudioTab({
         if (level !== null) setDoing({ what: "rename", skill, level });
         return;
       }
+      case "open-text": {
+        // The plane's own skill whose lint Needs you holds (#3780): its Text tab, in Edit.
+        const skill = (studio?.skills ?? []).find(
+          (row) =>
+            row.name === fix.name &&
+            row.level === fix.level &&
+            row.local === fix.local &&
+            row.owner === null,
+        );
+        if (skill === undefined) return go({ page: "library", scope });
+        const place: StudioPlace = {
+          page: "library",
+          scope,
+          skill: skillRowId(skill),
+          tab: "text",
+        };
+        go(place);
+        const level = levelOf(skill, scope);
+        if (level !== null) edits.open(skill, level, place);
+        return;
+      }
       case "harness": {
         // The program's own skill the item is about, chosen beside the list with its switch.
         const program = (studio?.harnesses ?? []).find((harness) =>

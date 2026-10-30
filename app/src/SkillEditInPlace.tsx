@@ -175,9 +175,9 @@ export function useSkillEditInPlace({
       });
   };
 
-  /** **Edit**: the skill's text, read now, in the editor on its page's Text tab. */
-  const open = (skill: StudioSkill, level: SkillLevel) => {
-    const asked = placeNow.current;
+  /** **Edit**: the skill's text, read now, in the editor on its page's Text tab, if the tab is
+   *  still at `asked` when it comes back: where it is now, or where a step just taken goes. */
+  const open = (skill: StudioSkill, level: SkillLevel, asked: StudioPlace = placeNow.current) => {
     void commands.skillText(plane, level, skill.name).then((answer) => {
       if (answer.status === "error")
         say({ tone: "trouble", label: "The skill could not be opened", text: answer.error });

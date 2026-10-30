@@ -594,7 +594,8 @@ fn tell(held: &Held, asker: u32, to: u32, said: &str) -> Result<Answer, String> 
             state.say()
         ));
     }
-    dispatchtalk::still_working(&name, to, &from, &state.say())?;
+    // A task that reported while its program still runs is told too (#3899).
+    dispatchtalk::still_working(&name, to, &from, seen, &state.say())?;
     let text = dispatchtalk::text(said)?;
     let message = Message {
         kind: Kind::FollowUp,
@@ -674,6 +675,10 @@ fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, S
         if kind == Kind::Question {
             ledger.talk.ask(sender, &text, Some(file))?;
             ledger.landed(asker, Landed::Question(sender));
+        }
+        // Its last note is what its list row shows (#3905).
+        if kind == Kind::Note {
+            ledger.noted(sender, &text, SystemTime::now());
         }
     }
     // Kept, so it counts on this task's dispatch record (#1452): a note as a question does.
@@ -1156,6 +1161,7 @@ fn list(held: &Held, asker: u32) -> Vec<Row> {
                     .say(),
                 (false, _) => listed.said.clone(),
             };
+            let last_note = ledger.last_note(listed.session, now);
             Some(Row {
                 chat: listed.session,
                 name: listed.name,
@@ -1172,6 +1178,10 @@ fn list(held: &Held, asker: u32) -> Vec<Row> {
                 branch: branch.as_ref().map(|(branch, _)| branch.clone()),
                 branch_stands: branch.map(|(_, stands)| stands),
                 finished: false,
+                // A long-running task, and its last note (#3905).
+                long: from.long,
+                last_note: last_note.as_ref().map(|(text, _)| text.clone()),
+                noted_secs: last_note.map(|(_, ago)| ago.as_secs()),
             })
         })
         .collect();
@@ -1208,7 +1218,9 @@ fn cancel(held: &Held, asker: u32, of: u32) -> Result<Answer, String> {
         if stepped_in(held, of) || held.tasks().ledger().keyed(of) {
             return Err(dispatched::the_person_typed_in(&name, of, "cancel"));
         }
-        let began = held.tasks().ledger().cancel(of, &name, &from)?;
+        // A task that reported while its program still runs is cancelled too (#3899).
+        let seen = seen(held, of);
+        let began = held.tasks().ledger().cancel(of, &name, &from, seen)?;
         if began {
             crate::stopping::cancel(held, of, &deciding);
         }
@@ -1217,6 +1229,29 @@ fn cancel(held: &Held, asker: u32, of: u32) -> Result<Answer, String> {
     // What the cancel asks for, carried out with the lock let go.
     held.stops_carry_on();
     Ok(task(Answered::Cancelling { of, name }))
+}
+
+/// **Cancelled task `task` ended its cancel's turn without a report, having reported before
+/// the cancel** (#3899): its report stands, and its program is ended as a task's is at its
+/// report, once that turn has settled, on a thread of this module's own ([`end_look_after`]).
+/// Nothing for a task that is not such a one.
+pub(crate) fn cancelled_without_a_report(held: &Held, task: u32) {
+    // Only while it is still running after a report, by the one rule (#3899): one that
+    // reported in the cancel's turn is ending at that report already, and one whose program
+    // has ended has nothing left to end.
+    let ended = seen(held, task).ended;
+    let reported_before = held
+        .chats()
+        .handed_from(task)
+        .is_some_and(|from| dispatched::still_running_after_report(from.report, ended));
+    if reported_before && held.tasks().ledger().cancelled_without_a_report(task) {
+        end_look_after(
+            held,
+            task,
+            dispatched::A_TURN_SETTLES_WITHIN,
+            Looked::WaitedOut,
+        );
+    }
 }
 
 /// The app started the persona chat `task`.
@@ -1798,7 +1833,8 @@ fn owing(held: &Held, task: u32) {
     if from.mode != Mode::Task {
         return;
     }
-    let owes = from.report == Owed::Due;
+    // A long-running task is never asked, and has none made (#3905).
+    let owes = dispatched::owes_at_turn_end(&from);
     let waits = owes
         && (held.stopping().is_stopping(task)
             || held.stopping().is_cancelling(task)

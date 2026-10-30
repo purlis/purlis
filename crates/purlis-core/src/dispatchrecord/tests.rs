@@ -2327,6 +2327,7 @@ fn older_chat_back(root: &Path, owed: crate::reopen::Owed) {
                 root: None,
                 above: None,
                 by_person: false,
+                long: false,
             }),
             ..Default::default()
         }],

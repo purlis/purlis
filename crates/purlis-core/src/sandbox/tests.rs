@@ -2244,6 +2244,7 @@ fn a_path_denied_to_read_is_denied_to_the_sandbox_and_to_claude_codes_own_tools(
         services: vec![],
         unread: None,
         untold: None,
+        git_folder_pins: vec![],
     };
     let settings = claude::settings(&compiled(denied, Os::Linux)).expect("compiles");
     assert_eq!(
@@ -2271,6 +2272,7 @@ fn a_path_denied_to_write_stays_readable() {
         services: vec![],
         unread: None,
         untold: None,
+        git_folder_pins: vec![],
     };
     let settings = claude::settings(&compiled(denied, Os::Linux)).expect("compiles");
     assert_eq!(
@@ -2348,6 +2350,7 @@ fn on_macos_the_store_holds_the_credential_store_so_a_claude_code_chat_compiles(
         services: vec![Service::CredentialStore],
         unread: None,
         untold: None,
+        git_folder_pins: vec![],
     };
     claude::settings(&compiled(denied, Os::MacOs)).expect("compiles on macOS");
 }
@@ -2361,6 +2364,7 @@ fn on_linux_claude_code_cannot_hold_the_credential_store_so_the_chat_does_not_st
         services: vec![Service::CredentialStore],
         unread: None,
         untold: None,
+        git_folder_pins: vec![],
     };
     let refused = claude::settings(&compiled(denied, Os::Linux)).expect_err("refused");
     assert_eq!(refused.class(), Some(Class::Vaults));
@@ -7516,4 +7520,337 @@ fn every_spelling_of_the_data_home_is_held() {
             );
         }
     }
+}
+
+// -------------------------------------------------------------------------------------
+// A repository's git folder, held as a whole
+// -------------------------------------------------------------------------------------
+
+/// A plane that turned the sandbox on, with a repository at its top, a nested one with a
+/// submodule, a linked worktree of the nested one five folders down (as a workspace keeps its
+/// branch folders), and a folder outside it, listed as one chats may be granted, that holds
+/// another. Each path as the test lays it out.
+struct Repositories {
+    plane: tempfile::TempDir,
+    granted: tempfile::TempDir,
+}
+
+impl Repositories {
+    fn laid_out() -> Self {
+        let plane = plane_saying(ON);
+        let granted = tempfile::tempdir().expect("a folder chats may be granted");
+        let repository = |at: &std::path::Path| {
+            for dir in [
+                "objects/pack",
+                "refs/heads",
+                "logs/refs/heads",
+                "hooks",
+                "info",
+            ] {
+                std::fs::create_dir_all(at.join(".git").join(dir)).expect("a git folder");
+            }
+            std::fs::write(at.join(".git/HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+            std::fs::write(at.join(".git/config"), "[core]\n\tbare = false\n").expect("config");
+        };
+        repository(plane.path());
+        let nested = plane.path().join("ws/app/repo");
+        repository(&nested);
+        std::fs::create_dir_all(nested.join(".git/modules/x")).expect("a submodule's git folder");
+        std::fs::write(nested.join(".git/modules/x/HEAD"), "ref: refs/heads/main\n")
+            .expect("its HEAD");
+        std::fs::create_dir_all(nested.join(".git/worktrees/b")).expect("a worktree record");
+        std::fs::write(nested.join(".git/worktrees/b/HEAD"), "ref: refs/heads/b\n").expect("HEAD");
+        std::fs::write(nested.join(".git/worktrees/b/commondir"), "../..\n").expect("commondir");
+        let branch = plane.path().join("workspaces/w/.worktrees/repo/b");
+        std::fs::create_dir_all(&branch).expect("a branch folder");
+        std::fs::write(
+            branch.join(".git"),
+            format!("gitdir: {}\n", nested.join(".git/worktrees/b").display()),
+        )
+        .expect("its .git file");
+        repository(&granted.path().join("other"));
+        local::list_grantable(plane.path(), granted.path()).expect("listed");
+        Self { plane, granted }
+    }
+
+    fn at(&self, rel: &str) -> std::path::PathBuf {
+        self.plane.path().join(rel)
+    }
+
+    /// The path whose denial holds each git folder.
+    fn pins(&self) -> Vec<std::path::PathBuf> {
+        vec![
+            self.at(".git/config"),
+            self.at("ws/app/repo/.git/config"),
+            self.at("ws/app/repo/.git/modules/x/config"),
+            self.at("workspaces/w/.worktrees/repo/b/.git"),
+            self.granted.path().join("other/.git/config"),
+        ]
+    }
+
+    /// The repositories with a `.git` directory.
+    fn clones(&self) -> Vec<std::path::PathBuf> {
+        vec![
+            self.plane.path().to_path_buf(),
+            self.at("ws/app/repo"),
+            self.granted.path().join("other"),
+        ]
+    }
+
+    /// The settings a Claude Code chat in the plane starts with, compiled as a start compiles
+    /// them, at the full sandbox; and at the floor, from the same denials.
+    fn claude_settings(&self) -> Vec<(Level, claude::Settings)> {
+        let machine = machine(Os::MacOs);
+        let applied =
+            compiled_anyway(Harness::ClaudeCode, self.plane.path(), &machine).expect("compiles");
+        let Form::ClaudeCode(full) = applied.form_in(Some(self.plane.path())) else {
+            panic!("not Claude Code's settings");
+        };
+        let mut floor = compiled(
+            Denied {
+                git_folder_pins: git_folder_pins_of(self.plane.path()),
+                ..Denied::of(self.plane.path(), &machine)
+            },
+            Os::MacOs,
+        );
+        floor.level = Level::Floor;
+        let floor = claude::settings(&floor).expect("compiles");
+        vec![(Level::Full, full), (Level::Floor, floor)]
+    }
+}
+
+/// What Claude Code's `denyWrite` `entry` holds, as its profile builder reads one, as
+/// `tools/seatbelt-case.sh` describes it: `**/` any folders or none, `**` anything, `*` and `?`
+/// within one name, a `[...]` class kept, and what is below the entry held with it. A relative
+/// entry is read as matching at any depth, which holds at least as much as Claude Code does.
+fn claude_entry_pattern(entry: &str) -> regex::Regex {
+    let (mut pattern, body) = match entry.strip_prefix('/') {
+        Some(_) => (String::from("^"), entry),
+        None => (
+            String::from("^/(.*/)?"),
+            entry.strip_prefix("**/").unwrap_or(entry),
+        ),
+    };
+    let chars: Vec<char> = body.chars().collect();
+    let mut at = 0;
+    while at < chars.len() {
+        let rest: String = chars[at..].iter().collect();
+        if rest.starts_with("**/") {
+            pattern.push_str("(.*/)?");
+            at += 3;
+        } else if rest.starts_with("**") {
+            pattern.push_str(".*");
+            at += 2;
+        } else if chars[at] == '*' {
+            pattern.push_str("[^/]*");
+            at += 1;
+        } else if chars[at] == '?' {
+            pattern.push_str("[^/]");
+            at += 1;
+        } else if chars[at] == '[' {
+            let end = chars[at..]
+                .iter()
+                .position(|c| *c == ']')
+                .map_or(chars.len(), |end| at + end + 1);
+            pattern.extend(&chars[at..end]);
+            at = end;
+        } else {
+            pattern.push_str(&regex::escape(&chars[at].to_string()));
+            at += 1;
+        }
+    }
+    pattern.push_str("(/.*)?$");
+    regex::Regex::new(&pattern).expect("a pattern")
+}
+
+/// Claude Code's `denyWrite`, each entry as written.
+fn deny_write_as_written(settings: &claude::Settings) -> Vec<String> {
+    settings.sandbox["filesystem"]["denyWrite"]
+        .as_array()
+        .expect("a list")
+        .iter()
+        .map(|it| it.as_str().expect("a path").to_owned())
+        .collect()
+}
+
+#[test]
+fn every_repository_s_git_folder_is_found_as_a_chat_starts() {
+    let repositories = Repositories::laid_out();
+    let pins = git_folder_pins_of(repositories.plane.path());
+    for pin in repositories.pins() {
+        assert!(pins.contains(&pin), "{pin:?} not in {pins:?}");
+    }
+    // A `.git` directory is never itself a pin: what is below it is git's to write. Nor is a
+    // linked worktree's own record, which `.git/worktrees` holds by name.
+    for clone in repositories.clones() {
+        assert!(!pins.contains(&clone.join(".git")), "{clone:?}");
+    }
+    assert!(
+        !pins.contains(&repositories.at("ws/app/repo/.git/worktrees/b/config")),
+        "{pins:?}"
+    );
+    // Found for a start alone, never with the denials every caller reads.
+    assert_eq!(
+        Denied::of(repositories.plane.path(), &machine(Os::MacOs)).git_folder_pins,
+        Vec::<std::path::PathBuf>::new()
+    );
+}
+
+/// Measured where it ships by `claude_codes_own_sandbox_holds_the_settings_purlis_writes`
+/// (`tools/seatbelt-case.sh --here`): the git folders stay where they are, and git still works.
+#[test]
+fn a_claude_code_chat_denies_a_path_in_each_repository_s_git_folder() {
+    let repositories = Repositories::laid_out();
+    for (level, settings) in repositories.claude_settings() {
+        let deny_write = deny_write_as_written(&settings);
+        for pin in repositories.pins() {
+            // As a plain path, never a glob: Claude Code pins every folder above a denied path,
+            // so the git folder and the folders that hold it stay where they are.
+            for name in [pin.clone(), super::real(&pin)] {
+                let name = name.display().to_string();
+                assert!(deny_write.contains(&name), "{level:?}: {name} not denied");
+                for rule in [format!("Edit(/{name})"), format!("Edit(/{name}/**)")] {
+                    assert!(settings.deny.contains(&rule), "{level:?}: {rule}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn git_still_writes_what_is_inside_a_held_git_folder() {
+    // Claude Code's `denyWrite` holds a path and what is below it, so no entry may hold a git
+    // folder, or what git writes in it, in ordinary work: a commit, a branch, a checkout, a
+    // fetch, a gc, a submodule's update.
+    let repositories = Repositories::laid_out();
+    for (level, settings) in repositories.claude_settings() {
+        let deny_write: Vec<(String, regex::Regex)> = deny_write_as_written(&settings)
+            .into_iter()
+            .map(|entry| {
+                let pattern = claude_entry_pattern(&entry);
+                (entry, pattern)
+            })
+            .collect();
+        let holding = |path: &std::path::Path| -> Vec<String> {
+            let mut out = Vec::new();
+            for name in [path.to_path_buf(), super::real(path)] {
+                let name = name.display().to_string();
+                out.extend(
+                    deny_write
+                        .iter()
+                        .filter(|(_, pattern)| pattern.is_match(&name))
+                        .map(|(entry, _)| entry.clone()),
+                );
+            }
+            out
+        };
+        for repo in repositories.clones() {
+            // The control: what git does not write in ordinary work is held, as read here.
+            for kept in [".git/config", ".git/hooks/pre-commit"] {
+                let path = repo.join(kept);
+                assert!(!holding(&path).is_empty(), "{level:?}: {path:?} not held");
+            }
+            for written in [
+                ".git",
+                ".git/objects",
+                ".git/objects/ab/cdef",
+                ".git/objects/pack/pack-1.pack",
+                ".git/refs/heads/main",
+                ".git/refs/remotes/origin/main",
+                ".git/index",
+                ".git/index.lock",
+                ".git/HEAD",
+                ".git/ORIG_HEAD",
+                ".git/FETCH_HEAD",
+                ".git/COMMIT_EDITMSG",
+                ".git/packed-refs",
+                ".git/logs/HEAD",
+                ".git/logs/refs/heads/main",
+                ".git/modules/x/objects/ab/cdef",
+                ".git/modules/x/refs/heads/main",
+                ".git/modules/x/index",
+                ".git/modules/x/HEAD",
+            ] {
+                let path = repo.join(written);
+                let held = holding(&path);
+                assert!(held.is_empty(), "{level:?}: {path:?} held by {held:?}");
+            }
+            // A new linked worktree's record is held by the name `.git/worktrees` alone, as it was:
+            // no path in a git folder adds to it.
+            let record = repo.join(".git/worktrees/new/HEAD");
+            for entry in holding(&record) {
+                assert!(
+                    claude::uncased(&entry).ends_with(".git/worktrees"),
+                    "{level:?}: {record:?} held by {entry}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_wrapped_chat_is_compiled_as_before_whatever_git_folders_are_found() {
+    // Codex and opencode run in purlis's own wrap, which holds every `.git` by itself already
+    // (`Reach::Itself`): what it compiles does not change with the git folders found.
+    let repositories = Repositories::laid_out();
+    let without = Denied::of(repositories.plane.path(), &machine(Os::MacOs));
+    let with = Denied {
+        git_folder_pins: git_folder_pins_of(repositories.plane.path()),
+        ..without.clone()
+    };
+    assert!(!with.git_folder_pins.is_empty());
+    for os in [Os::MacOs, Os::Linux] {
+        assert_eq!(
+            codex::wrap(&compiled(with.clone(), os)),
+            codex::wrap(&compiled(without.clone(), os)),
+            "{os:?}"
+        );
+        assert_eq!(
+            opencode::wrap(&compiled(with.clone(), os)),
+            opencode::wrap(&compiled(without.clone(), os)),
+            "{os:?}"
+        );
+    }
+}
+
+#[test]
+fn a_plane_with_no_repository_has_no_git_folder_pins() {
+    let plane = plane_saying(ON);
+    assert_eq!(
+        git_folder_pins_of(plane.path()),
+        Vec::<std::path::PathBuf>::new()
+    );
+}
+
+#[test]
+fn a_block_on_a_git_folder_or_a_folder_above_one_is_known_as_kept_in_place() {
+    let repositories = Repositories::laid_out();
+    let root = repositories.plane.path();
+    for path in [
+        repositories.at("ws/app/repo/.git"),
+        repositories.at("ws/app/repo/.GIT"),
+        repositories.at("ws/app/repo"),
+        repositories.at("ws/app"),
+        repositories.at("workspaces/w/.worktrees/repo/b/.git"),
+        repositories.at("workspaces/w/.worktrees/repo/b"),
+        repositories.at("ws/app/repo/.git/modules"),
+        repositories.granted.path().join("other/.git"),
+        super::real(&repositories.at("ws/app/repo")),
+    ] {
+        assert!(grant::keeps_git_folder(&path, root, true), "{path:?}");
+    }
+    for path in [
+        repositories.at("ws/app/repo/.git/index"),
+        repositories.at("ws/app/repo/src"),
+        repositories.at("ws/app/beside"),
+        repositories.at("ws/app/repo/.git/worktrees/new"),
+    ] {
+        assert!(!grant::keeps_git_folder(&path, root, true), "{path:?}");
+    }
+    // A spelling in another case is the same folder only where names are folded.
+    assert!(!grant::keeps_git_folder(
+        &repositories.at("ws/app/repo/.GIT"),
+        root,
+        false
+    ));
 }

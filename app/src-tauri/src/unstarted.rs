@@ -418,6 +418,9 @@ pub(crate) fn listed_for(held: &Held, asker: u32) -> Vec<purlis_core::dispatched
                 .is_some_and(|from| from.by_person),
             branch: None,
             branch_stands: None,
+            long: false,
+            last_note: None,
+            noted_secs: None,
             finished: false,
         })
         .collect()

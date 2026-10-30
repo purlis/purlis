@@ -3188,3 +3188,63 @@ fn an_ask_heard_over_a_link_knows_the_runner_its_host_said_it_reached() {
     );
     assert_eq!(reached_over_the_link(), None);
 }
+
+/// A refused write of a repository's git folder that was there as a Claude Code chat started, or
+/// of a folder above one, is held so the git folder stays where it is: no grant lifts that, so
+/// its Notice offers no Allow, and says the way that works. Anything beside it or inside it, and
+/// any other harness's block, is offered as before.
+#[test]
+fn a_refused_write_that_keeps_a_git_folder_in_place_offers_no_allow() {
+    use purlis_core::harness::Harness;
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let repo = root.join("ws/app/repo");
+    std::fs::create_dir_all(repo.join(".git")).expect("a clone");
+    std::fs::write(repo.join(".git/HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+    std::fs::create_dir_all(root.join("ws/app/other")).expect("a folder beside it");
+    let write = |kind| Block {
+        operation: Operation::Write,
+        kind,
+        ours: false,
+    };
+    let claude = Some(Harness::ClaudeCode);
+    for (kind, path) in [
+        (Kind::ProtectedFile, repo.join(".git")),
+        (Kind::ProjectFiles, repo.clone()),
+        (Kind::ProjectFiles, root.join("ws/app")),
+        (Kind::ProjectFiles, root.join("ws")),
+    ] {
+        let named = path.display().to_string();
+        let (offer, target, why) = kept_in_place(claude, &root, &write(kind), Some(&named))
+            .unwrap_or_else(|| panic!("{named} is not kept in place"));
+        assert_eq!((offer, target), (BlockOffer::Brokered, None), "{named}");
+        assert!(
+            why.as_deref()
+                .is_some_and(|why| why.contains("`purlis worktree remove`")),
+            "{named}: {why:?}"
+        );
+    }
+    for path in [
+        root.join("ws/app/other"),
+        repo.join("src/main.rs"),
+        repo.join(".git/index"),
+    ] {
+        let named = path.display().to_string();
+        assert_eq!(
+            kept_in_place(claude, &root, &write(Kind::ProjectFiles), Some(&named)),
+            None,
+            "{named}"
+        );
+    }
+    let named = repo.display().to_string();
+    assert_eq!(
+        kept_in_place(
+            Some(Harness::Codex),
+            &root,
+            &write(Kind::ProjectFiles),
+            Some(&named)
+        ),
+        None
+    );
+}
