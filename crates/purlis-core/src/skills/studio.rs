@@ -54,6 +54,9 @@ pub struct Asked {
     pub id: String,
     pub name: String,
     pub declared: wire::Declared,
+    /// The fingerprint this machine approved it by, or `None` for one of the app's own: what
+    /// tells one version of it from the next (#3940).
+    pub approved: Option<String>,
 }
 
 /// **What the studio asks extensions with in the project at `root`, handed to `with`**: the
@@ -96,6 +99,7 @@ impl<'a> Studio<'a> {
                     id: id.clone(),
                     name: manifest.name.clone(),
                     declared,
+                    approved: entry.approved.clone(),
                 })
             })
             .collect()
@@ -119,8 +123,16 @@ impl<'a> Studio<'a> {
                 studio: *self,
                 by: asked.declared.lint.clone().unwrap_or(asked.name),
                 id: asked.id,
+                approved: asked.approved,
             })
             .collect()
+    }
+
+    /// **The lints of each extension that declares `skill-lint`, as a studio list asks them**
+    /// (#3940): answered from what each said of the same files before, and asked only within
+    /// the list's time ([`ListLints`]).
+    pub fn list_lints(&self) -> ListLints<ExtensionLint<'a>> {
+        ListLints::new(self.lints(), &KEPT, ListTime::default())
     }
 
     /// **The panels on `skill`'s tab**, in the project at `plane`: purlis's Runs panel first,
@@ -225,10 +237,40 @@ pub struct ExtensionLint<'a> {
     id: String,
     /// What a finding is said under: its declared title, or the extension's name.
     by: String,
+    /// The fingerprint this machine approved it by ([`Asked::approved`]).
+    approved: Option<String>,
 }
 
 impl SkillLint for ExtensionLint<'_> {
     fn findings(&self, skill: &SkillFiles<'_>) -> Vec<Finding> {
+        let says = match self.asked(skill, None) {
+            Ok(says) => says,
+            Err(why) => vec![format!("could not lint this skill: {why}")],
+        };
+        said_by(&self.by, says)
+    }
+}
+
+/// Each of `says` as a finding of the lint said under `by`: a warning.
+fn said_by(by: &str, says: Vec<String>) -> Vec<Finding> {
+    says.into_iter()
+        .map(|says| Finding {
+            severity: Severity::Warns,
+            lint: Lint::Said {
+                by: by.to_owned(),
+                says,
+            },
+        })
+        .collect()
+}
+
+impl ExtensionLint<'_> {
+    /// What it answers of `skill`, by `until` where given, or why it did not.
+    fn asked(
+        &self,
+        skill: &SkillFiles<'_>,
+        until: Option<std::time::Instant>,
+    ) -> Result<Vec<String>, String> {
         let mut files = vec![HandedFile {
             path: purlis_skills::FILE.to_owned(),
             text: skill.text.to_owned(),
@@ -244,28 +286,208 @@ impl SkillLint for ExtensionLint<'_> {
             })
             .collect();
         files.extend(wire::handed(&others));
-        let said = self
-            .studio
-            .ask(
-                &self.id,
-                &Ask::Findings {
-                    skill: skill.name,
-                    files: &files,
-                },
-            )
-            .and_then(|doc| wire::findings_of(&self.id, &doc));
-        let says = match said {
-            Ok(says) => says,
-            Err(why) => vec![format!("could not lint this skill: {why}")],
+        let ask = Ask::Findings {
+            skill: skill.name,
+            files: &files,
         };
-        says.into_iter()
-            .map(|says| Finding {
-                severity: Severity::Warns,
-                lint: Lint::Said {
-                    by: self.by.clone(),
-                    says,
-                },
-            })
+        let studio = &self.studio;
+        match until {
+            None => studio.ask(&self.id, &ask),
+            Some(until) => studio.executor.studio_until(
+                studio.config_root,
+                studio.project,
+                &self.id,
+                &ask,
+                until,
+            ),
+        }
+        .and_then(|doc| wire::findings_of(&self.id, &doc))
+    }
+}
+
+impl InTheList for ExtensionLint<'_> {
+    fn by(&self) -> &str {
+        &self.by
+    }
+
+    fn key(&self, skill: &SkillFiles<'_>) -> [u8; 32] {
+        use sha2::Digest as _;
+        let mut hash = sha2::Sha256::new();
+        // Each part with its length, so no two lists of parts hash alike.
+        let mut part = |bytes: &[u8]| {
+            hash.update((bytes.len() as u64).to_le_bytes());
+            hash.update(bytes);
+        };
+        part(self.id.as_bytes());
+        part(self.approved.as_deref().unwrap_or_default().as_bytes());
+        // The project's choices, its settings for the extension among them, and its plane.
+        part(format!("{:?}", self.studio.project).as_bytes());
+        part(skill.name.as_bytes());
+        part(skill.text.as_bytes());
+        for (path, text) in skill.others {
+            part(path.as_bytes());
+            part(text.as_bytes());
+        }
+        hash.finalize().into()
+    }
+
+    fn ask(
+        &self,
+        skill: &SkillFiles<'_>,
+        until: std::time::Instant,
+    ) -> Result<Vec<String>, String> {
+        self.asked(skill, Some(until))
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// Lints in a list (#3940)
+// ---------------------------------------------------------------------------------------
+
+/// **How long one studio list asks the extensions' lints for**, from its first question: past
+/// it, a list asks no more, and shows what each said of the same files before.
+pub const LIST_LINT_TIME: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// **How long one lint asked in a list has to answer**, its confined program's start inside it,
+/// as a router has (ADR 0102 §6). A list that started its last question just before
+/// [`LIST_LINT_TIME`] ran out spends both, at most.
+pub const LIST_LINT_DEADLINE: std::time::Duration = wire::ROUTER_DEADLINE;
+
+/// **How long a lint that did not answer in a list waits before a list asks it again** about the
+/// same files: a slow or failing extension costs a list one question at most this often, and the
+/// editor's live lint, which waits for it, says why.
+pub const ASK_AGAIN_AFTER: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// The most answers kept: past it, every one is dropped and asked again.
+const MOST_KEPT: usize = 4096;
+
+/// What each extension's lint said of a skill's files, in this process, by [`InTheList::key`].
+static KEPT: std::sync::Mutex<Kept> = std::sync::Mutex::new(Kept::new());
+
+/// **What lints asked in a list said, by the files they were asked about**: kept while the app
+/// runs, never written, so nothing to remove ([`ListLints`]).
+#[derive(Debug, Default)]
+pub struct Kept(std::collections::BTreeMap<[u8; 32], Was>);
+
+#[derive(Debug, Clone)]
+enum Was {
+    Said(Vec<String>),
+    /// It did not answer, at this time.
+    Unanswered(std::time::Instant),
+}
+
+impl Kept {
+    pub const fn new() -> Self {
+        Self(std::collections::BTreeMap::new())
+    }
+}
+
+/// **A lint a studio list asks**, and what tells one question of it from another.
+pub trait InTheList {
+    /// What its findings are said under.
+    fn by(&self) -> &str;
+    /// What its answer about `skill` is kept by: the lint, its version, the project's choices
+    /// and every file it is handed. Equal only for the same question.
+    fn key(&self, skill: &SkillFiles<'_>) -> [u8; 32];
+    /// Its answer about `skill`, by `until`, or why there is none.
+    fn ask(&self, skill: &SkillFiles<'_>, until: std::time::Instant)
+    -> Result<Vec<String>, String>;
+}
+
+/// The time a list gives its lints, and the clock it reads.
+#[derive(Clone, Copy)]
+pub struct ListTime {
+    pub time: std::time::Duration,
+    pub deadline: std::time::Duration,
+    pub now: fn() -> std::time::Instant,
+}
+
+impl Default for ListTime {
+    fn default() -> Self {
+        Self {
+            time: LIST_LINT_TIME,
+            deadline: LIST_LINT_DEADLINE,
+            now: std::time::Instant::now,
+        }
+    }
+}
+
+/// **The extensions' lints, as one studio list asks them** (#3940): one [`SkillLint`] for them
+/// all. Each answers a skill's files from what it said of the same files before, kept while
+/// the app runs. Only a question with no such answer is asked, and only within the list's time
+/// ([`LIST_LINT_TIME`]), each by its deadline ([`LIST_LINT_DEADLINE`]): past it, the list shows
+/// what it has, and the next list asks on. A lint that did not answer shows nothing in the list,
+/// and is asked again after [`ASK_AGAIN_AFTER`]. So a list whose skills were all asked about
+/// costs no question at all, and the window and Needs you's count read the same answers.
+pub struct ListLints<L> {
+    lints: Vec<L>,
+    kept: &'static std::sync::Mutex<Kept>,
+    time: ListTime,
+    /// When the list asked its first question.
+    began: std::cell::Cell<Option<std::time::Instant>>,
+}
+
+impl<L: InTheList> ListLints<L> {
+    pub fn new(lints: Vec<L>, kept: &'static std::sync::Mutex<Kept>, time: ListTime) -> Self {
+        Self {
+            lints,
+            kept,
+            time,
+            began: std::cell::Cell::new(None),
+        }
+    }
+
+    /// Whether it has any lint to ask.
+    pub fn is_empty(&self) -> bool {
+        self.lints.is_empty()
+    }
+
+    /// What `lint` says of `skill`: what it said of the same files, or its answer now, within
+    /// the list's time.
+    fn said(&self, lint: &L, skill: &SkillFiles<'_>) -> Vec<String> {
+        let key = lint.key(skill);
+        let now = (self.time.now)();
+        let before = self
+            .kept
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .0
+            .get(&key)
+            .cloned();
+        match before {
+            Some(Was::Said(says)) => return says,
+            Some(Was::Unanswered(at)) if now.saturating_duration_since(at) < ASK_AGAIN_AFTER => {
+                return Vec::new();
+            }
+            _ => {}
+        }
+        let began = self.began.get().unwrap_or(now);
+        self.began.set(Some(began));
+        if now.saturating_duration_since(began) >= self.time.time {
+            return Vec::new();
+        }
+        let answer = lint.ask(skill, now + self.time.deadline);
+        let was = match &answer {
+            Ok(says) => Was::Said(says.clone()),
+            Err(_) => Was::Unanswered((self.time.now)()),
+        };
+        let mut kept = self
+            .kept
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if kept.0.len() >= MOST_KEPT {
+            kept.0.clear();
+        }
+        kept.0.insert(key, was);
+        answer.unwrap_or_default()
+    }
+}
+
+impl<L: InTheList> SkillLint for ListLints<L> {
+    fn findings(&self, skill: &SkillFiles<'_>) -> Vec<Finding> {
+        self.lints
+            .iter()
+            .flat_map(|lint| said_by(lint.by(), self.said(lint, skill)))
             .collect()
     }
 }

@@ -88,7 +88,7 @@ fn one_list_reads_at_most_its_bytes_across_every_skill_it_lints() {
     // What is left of the list's when it comes to these two: three whole scripts' worth.
     known.reads.set(3 * purlis_skills::MOST_BYTES);
 
-    with_plane_lint(&mut rows, &set, &known);
+    with_plane_lint(&mut rows, &set, &known, &[]);
 
     let lint_of = |name: &str| {
         rows.iter()

@@ -2667,7 +2667,15 @@ pub fn studio_list(
     persona: Option<&str>,
     env: &crate::harness_plugin::Env<'_>,
 ) -> StudioList {
-    studio_list_for(Reading::Whole, built_in, plane, workspace, persona, env)
+    studio_list_for(
+        Reading::Whole,
+        built_in,
+        plane,
+        workspace,
+        persona,
+        env,
+        &[],
+    )
 }
 
 /// **What a studio list is read for** (#3781).
@@ -2682,7 +2690,8 @@ pub enum Reading {
     Needs,
 }
 
-/// [`studio_list`], read for `reading`.
+/// [`studio_list`], read for `reading`, with the plane's own skills linted by `more` too: the
+/// extensions' lints as a list asks them ([`studio::Studio::list_lints`], #3940).
 pub fn studio_list_for(
     reading: Reading,
     built_in: Option<&Path>,
@@ -2690,6 +2699,7 @@ pub fn studio_list_for(
     workspace: Option<&str>,
     persona: Option<&str>,
     env: &crate::harness_plugin::Env<'_>,
+    more: &[&dyn purlis_skills::SkillLint],
 ) -> StudioList {
     let set = in_the_studio(built_in, plane, workspace, persona);
     let names = persona
@@ -2702,7 +2712,7 @@ pub fn studio_list_for(
         &set, &set_on, plane, workspace, &names, &pins, env, &known, reading,
     );
     let mut rows = rows_of(&set, plane, &names, reading);
-    with_plane_lint(&mut rows, &set, &known);
+    with_plane_lint(&mut rows, &set, &known, more);
     if reading == Reading::Whole {
         with_harness_badges(&mut rows, &harnesses, &known);
         with_routing(&mut rows, &harnesses);
@@ -2716,8 +2726,14 @@ pub fn studio_list_for(
 
 /// **What the built-in lints say of each of the plane's own skills a chat gets** (#3780), as
 /// anywhere but the editor says it: the problems in a skill Needs you holds. Linted once per
-/// list, against the [`Known`] the list already made, and never on a chat's open path.
-fn with_plane_lint(rows: &mut [StudioRow], set: &SkillSet, known: &Known) {
+/// list, against the [`Known`] the list already made, and never on a chat's open path. Then by
+/// each of `more` (#3940).
+fn with_plane_lint(
+    rows: &mut [StudioRow],
+    set: &SkillSet,
+    known: &Known,
+    more: &[&dyn purlis_skills::SkillLint],
+) {
     for got in set.effective.iter().filter(|got| got.origin.of_the_plane()) {
         let Some(row) = rows.iter_mut().find(|row| {
             row.left_out.is_none()
@@ -2740,7 +2756,7 @@ fn with_plane_lint(rows: &mut [StudioRow], set: &SkillSet, known: &Known) {
             &text,
             got.origin,
             None,
-            &[],
+            more,
         )
         .iter()
         .filter_map(Finding::shown)

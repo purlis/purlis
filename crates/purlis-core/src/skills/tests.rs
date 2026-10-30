@@ -2697,8 +2697,17 @@ fn a_list_read_for_needs_you_has_every_row_lint_and_clash_of_the_whole_and_no_ba
             })
             .collect()
     };
-    let read =
-        |reading| studio_list_for(reading, Some(&built_in), &plane, Some("alpha"), None, &env);
+    let read = |reading| {
+        studio_list_for(
+            reading,
+            Some(&built_in),
+            &plane,
+            Some("alpha"),
+            None,
+            &env,
+            &[],
+        )
+    };
 
     let whole = read(Reading::Whole);
     let needs = read(Reading::Needs);
