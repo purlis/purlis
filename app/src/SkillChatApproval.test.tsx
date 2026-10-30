@@ -161,6 +161,14 @@ describe("what it names and starts again", () => {
     expect(
       studioStartNamed({ plane: PLANE, kind: "redo", id: "d1", name: "deploy", chat: null }),
     ).toBe("Ask a chat to redo deploy");
+    expect(
+      studioStartNamed({
+        plane: PLANE,
+        kind: "triggers",
+        level: { at: "project", local: false },
+        name: "deploy",
+      }),
+    ).toBe("Ask a chat to write the trigger tests of deploy");
     expect(startedAgain(TRY, "work")).toEqual({ ...TRY, profile: "work" });
     expect(startedAgain(DRAFT, "work")).toBe(DRAFT);
   });

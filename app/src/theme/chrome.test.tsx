@@ -41,7 +41,7 @@ import { ApproveExtension } from "../ApproveExtension";
 import { ApprovePlane } from "../ApprovePlane";
 import { AskPersona } from "../AskPersona";
 import { UseSkill } from "../UseSkill";
-import type { LandQuestion, PlaneId, VaultContents } from "../bindings";
+import type { LandQuestion, PlaneId, StudioSkill, VaultContents } from "../bindings";
 import { BriefPanel } from "../Brief";
 import { LandAsk, PushAsk } from "../ChangeActions";
 import { ChatAsk } from "../ChatAsk";
@@ -79,6 +79,8 @@ import { RemovePersona } from "../RemovePersona";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
 import { DeprecateDialog, OwnersDialog } from "../SkillPage";
+import { DeleteDialog, MoveDialog, RenameDialog } from "../SkillChangeDialogs";
+import { LeaveQuestion } from "../SkillEditInPlace";
 import { SkillCopy } from "../SkillCopy";
 import { RequestMerge } from "../SavingMerge";
 import { SavingView } from "../SavingView";
@@ -383,6 +385,33 @@ const LAND: LandQuestion = {
   said: ["checks passed"],
 };
 
+/** A project skill, for the dialogs that change one (#3685). */
+const SKILL: StudioSkill = {
+  name: "deploy",
+  level: "project",
+  label: "project",
+  local: false,
+  grant: "root",
+  granted: { to: "root" },
+  turned_off: false,
+  not_granted: null,
+  on: true,
+  left_out: null,
+  accept: null,
+  description: "Ships it.",
+  folder: "skills/deploy",
+  written: "deploy",
+  named: false,
+  unchecked: null,
+  owner: null,
+  switch: null,
+  compat: [],
+  lint: [],
+  hidden: [],
+  pinned: false,
+  pinned_by: [],
+};
+
 /** The core, for the dialogs that read something as they open. Anything else is refused, so a
  *  dialog that reads more draws its refusal, which is a state to check too. */
 function dialogCore() {
@@ -420,6 +449,17 @@ function dialogCore() {
         return [{ id: "relevance", name: "Relevance router" }];
       case "reachable_repos":
         return { repos: [{ name: "svc", path: "acme/svc", description: "" }], trouble: [] };
+      case "skill_users":
+        return {
+          root: true,
+          workspaces: ["ops"],
+          persona: null,
+          personas: ["steward"],
+          skills: ["release"],
+          pinned_by: [{ at: "workspace", name: "ops" }],
+        };
+      case "skill_move_needs_grant":
+        return false;
       case "forge_device_sign_in_start":
         return {
           flow: 1,
@@ -711,7 +751,6 @@ const DIALOGS: Opened[] = [
           busy={false}
           onUse={nothing}
           onCancel={nothing}
-          onOpenStudio={nothing}
         />,
       ),
   },
@@ -930,12 +969,12 @@ const DIALOGS: Opened[] = [
     open: async () => render(<RemovePool name="builds" onRemove={nothing} onCancel={nothing} />),
   },
   {
-    name: "adding a Docker pool",
+    name: "adding a pool",
     file: "AddDockerPool.tsx",
     open: async () => {
       startAddingAPool();
       render(<AddDockerPoolHost />);
-      await screen.findByRole("dialog", { name: "Add a Docker pool" });
+      await screen.findByRole("dialog", { name: "Add a pool" });
     },
   },
   {
@@ -1204,6 +1243,21 @@ const DIALOGS: Opened[] = [
       ),
   },
   {
+    name: "leaving a skill's editor with unsaved changes (#3683)",
+    file: "SkillEditInPlace.tsx",
+    open: async () =>
+      render(
+        <LeaveQuestion
+          name="deploy"
+          blocked={false}
+          busy={false}
+          onKeep={nothing}
+          onDiscard={nothing}
+          onSave={nothing}
+        />,
+      ),
+  },
+  {
     name: "naming who looks after a skill, from its page (#3682)",
     file: "SkillPage.tsx",
     open: async () =>
@@ -1247,6 +1301,61 @@ const DIALOGS: Opened[] = [
           onEdit={nothing}
           onCopy={nothing}
           onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "renaming a skill, from its page's menu (#3685)",
+    file: "SkillChangeDialogs.tsx",
+    open: async () =>
+      render(
+        <RenameDialog
+          plane="p"
+          skill={SKILL}
+          level={{ at: "project", local: false }}
+          taken={["review"]}
+          builtIns={["secrets"]}
+          busy={false}
+          refused="the project is opened read-only"
+          onEdit={nothing}
+          onRename={nothing}
+          onClose={nothing}
+        />,
+      ),
+  },
+  {
+    name: "moving a skill to another level (#3685)",
+    file: "SkillChangeDialogs.tsx",
+    open: async () =>
+      render(
+        <MoveDialog
+          plane="p"
+          skill={SKILL}
+          from={{ at: "project", local: false }}
+          levels={[
+            { level: { at: "project", local: false }, label: "project" },
+            { level: { at: "workspace", name: "ops", local: false }, label: "workspace ops" },
+          ]}
+          workspaces={["ops"]}
+          busy={false}
+          onEdit={nothing}
+          onMove={nothing}
+          onClose={nothing}
+        />,
+      ),
+  },
+  {
+    name: "deleting a skill (#3685)",
+    file: "SkillChangeDialogs.tsx",
+    open: async () =>
+      render(
+        <DeleteDialog
+          plane="p"
+          skill={SKILL}
+          level={{ at: "project", local: false }}
+          busy={false}
+          onDelete={nothing}
+          onClose={nothing}
         />,
       ),
   },

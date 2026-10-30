@@ -134,7 +134,6 @@ import {
 } from "./tabs";
 import { isBrowser } from "./browsers";
 import { anyPoolKept, startAddingAPool } from "./pools";
-import { POOLS } from "./settings/pools";
 import { isDriven } from "./browserDriving";
 
 /**
@@ -887,6 +886,9 @@ export type Now = {
   /** The other chats of a chat's workspace running where it runs (#3453), by name: they share
    *  its clones, so they move with it, and its Move rows name them. */
   movesWith?: (session: number) => readonly string[];
+  /** Whether Move here brings back the repositories a chat cloned on its runner (#3811): the
+   *  runner names the clones it holds. */
+  clonesComeBack?: (session: number) => boolean;
   /** Why each chat's Smart close stopped without its record (SI-8f), for its needs-you rows. */
   stopped?: Readonly<Record<number, string>>;
   /**
@@ -1444,9 +1446,16 @@ function can(id: string, title: string, does: Does, name?: string): Offer {
 export const MOVE_TO_RUNNER_NOTE =
   "Its branch, uncommitted work and conversation go with it at its next pause. Its browsers start fresh there.";
 
-/** What Move here says it does (#2048), and of a clone the runner made (#3454). */
+/**
+ * What Move here says it does (#2048), and of a clone the runner made (#3454): a runner before
+ * session protocol 1.51 cannot name its clones, so such a clone stays there.
+ */
 export const MOVE_HERE_NOTE =
   "Its branch, uncommitted work and conversation come back to this machine at its next pause. A repository cloned only on the runner stays there.";
+
+/** What Move here says it does from a runner that names its clones (1.51, #3811). */
+export const MOVE_HERE_WITH_CLONES_NOTE =
+  "Its branch, uncommitted work and conversation come back to this machine at its next pause, with each repository it cloned on the runner.";
 
 /** What a Move row says of the other chats of the workspace that move with it (#3453). */
 export const MOVE_TOGETHER_NOTE =
@@ -2163,7 +2172,9 @@ export function catalogue(now: Now): Offer[] {
     const others = now.movesWith?.(chat) ?? [];
     const together = others.length === 0 ? "" : ` with ${namesListed(others)}`;
     for (const to of now.movesTo?.(chat) ?? []) {
-      const note = to === null ? MOVE_HERE_NOTE : MOVE_TO_RUNNER_NOTE;
+      const here =
+        (now.clonesComeBack?.(chat) ?? false) ? MOVE_HERE_WITH_CLONES_NOTE : MOVE_HERE_NOTE;
+      const note = to === null ? here : MOVE_TO_RUNNER_NOTE;
       offers.push({
         ...can(
           `tab.move:${tab}:${to ?? ""}`,
@@ -2411,11 +2422,11 @@ export function catalogue(now: Now): Offer[] {
     ...can("settings.you", "Your settings…", { verb: "openYourSettings" }),
     note: "Your text sizes and your editor, on this machine.",
   });
-  // **Add a Docker pool…** (#2679): the way to this machine's first pool, there with or without
-  // a project, as Your settings… is. Nothing else about pools is listed until one is kept.
+  // **Add a pool…** (#2679): the way to this machine's first pool, there with or without a
+  // project, as Your settings… is. Its dialog adds a Docker or a cluster pool (#3292).
   offers.push({
-    ...can("pool.add", "Add a Docker pool…", { verb: "addDockerPool" }),
-    note: "A runner on your Docker, held to the limits you set.",
+    ...can("pool.add", "Add a pool…", { verb: "addDockerPool" }),
+    note: "A runner on your Docker, or one claimed in your team's cluster.",
   });
   // **Devices** (#2052): this machine and every runner it keeps, offered once it keeps a pool,
   // so nothing about runners shows before the first is added (spec #2041 story 6).
@@ -3685,9 +3696,9 @@ function settingsGroupRows(
     group,
     ...extra,
   });
-  // The Pools group only once this machine keeps a pool (#2679).
-  const you = SETTINGS_GROUPS.you.filter((one) => one.id !== POOLS || anyPoolKept());
-  const rows: Offer[] = you.map((one) => ({
+  // The Pools group with or without a pool, as Settings lists it (the person's ruling of
+  // 2026-10-30).
+  const rows: Offer[] = SETTINGS_GROUPS.you.map((one) => ({
     ...can(
       `settings.group:${one.id}`,
       `Your settings: ${one.label}`,

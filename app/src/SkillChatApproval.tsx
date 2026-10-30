@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from "react";
-import { commands, type NeedsApproval, type StudioRefused } from "./bindings";
+import { commands, type NeedsApproval, type StartRefused } from "./bindings";
 import type { Said } from "./actions";
 import { ChatAsk } from "./ChatAsk";
 import { ApprovalSentence, ProfileMeta } from "./ProfileApproval";
@@ -17,7 +17,7 @@ import type { SkillChatAsk } from "./skillDraftAsks";
  * again, with its prompt typed and not sent. Nothing is approved without that answer.
  *
  * What needs approving is what the core read of the profile as it refused the start
- * (`StudioRefused::approval`), never the refusal's words, as a waiting chat's Review and approve…
+ * (`StartRefused::approval`), never the refusal's words, as a waiting chat's Review and approve…
  * reads it.
  */
 
@@ -36,6 +36,8 @@ export function studioStartNamed(wanted: SkillChatAsk): string {
       return "Try it";
     case "redo":
       return `Ask a chat to redo ${wanted.name}`;
+    case "triggers":
+      return `Ask a chat to write the trigger tests of ${wanted.name}`;
   }
 }
 
@@ -51,7 +53,7 @@ export function startedAgain(wanted: SkillChatAsk, profile: string): SkillChatAs
  */
 export function skillChatRefused(
   wanted: SkillChatAsk,
-  refused: StudioRefused | string,
+  refused: StartRefused | string,
   ask: (approving: SkillChatApproving) => void,
 ): Said {
   const { words, approval } =

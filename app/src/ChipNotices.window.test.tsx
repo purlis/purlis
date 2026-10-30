@@ -3,7 +3,7 @@
 
 import { StrictMode, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
@@ -11,6 +11,7 @@ import { OUTSIDE, type Said } from "./actions";
 import { TitleBarSwitch } from "./TitleBarSwitch";
 import { forgetRailMode } from "./railMode";
 import { forgetRepoClones } from "./repoClones";
+import { findOnCard } from "./actionResult.testkit";
 
 /**
  * **A workspace's notices hang from its chip** (#3648, the tracer of spec #3647), on the real
@@ -104,9 +105,16 @@ function core({
   const gone = [...missing];
   const made: string[] = [];
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
+  const listeners = new Map<string, number[]>();
   mockIPC((cmd, args) => {
     const given = (args ?? {}) as Record<string, unknown>;
     asked.push({ cmd, args: given });
+    if (cmd === "plugin:event|listen") {
+      const { event, handler } = given as unknown as { event: string; handler: number };
+      listeners.set(event, [...(listeners.get(event) ?? []), handler]);
+      return 1;
+    }
+    if (cmd === "open_plane") return { plane: given.path, ask: null };
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "plane_sidebar")
       return {
@@ -163,7 +171,32 @@ function core({
     if (cmd === "extensions_on") return [];
     return null;
   });
-  return { asked, pinned, gone };
+  /** What the core tells the window, as Tauri delivers it. */
+  const fire = (event: string, payload: unknown) => {
+    const handlers = listeners.get(event) ?? [];
+    if (handlers.length === 0) throw new Error(`the window is not listening for ${event}`);
+    act(() => {
+      for (const handler of handlers)
+        (
+          window as unknown as {
+            __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
+          }
+        ).__TAURI_INTERNALS__.runCallback(handler, { event, id: 1, payload });
+    });
+  };
+  /** Takes `name` away, as `purlis workspace remove` does, pin and all. */
+  const remove = (name: string) => {
+    made.splice(made.indexOf(name), 1);
+    pinned.splice(pinned.indexOf(name), 1);
+  };
+  return {
+    asked,
+    pinned,
+    gone,
+    fire,
+    remove,
+    listening: (event: string) => listeners.has(event),
+  };
 }
 
 const bar = () => screen.getByTestId("title-bar");
@@ -403,6 +436,37 @@ describe("a dot pressed from the keyboard (#3648's review, WCAG 2.4.3)", () => {
     await userEvent.keyboard("{Enter}");
     const card = await screen.findByRole("region", { name: "Notices for alpha" });
     await waitFor(() => expect(card).toHaveFocus());
+  });
+
+  // #3896: the card hands itself the keyboard over a few frames, while React Aria places it;
+  // the keyboard going on into the card in those frames was taken back to the card's edge.
+  it("leaves the keyboard where it went in the card, as the card takes it", async () => {
+    // The window's frames, run by hand: no frame of the card's hand-off runs before the keyboard
+    // has gone on into it, however slow the run.
+    const frames = new Map<number, FrameRequestCallback>();
+    let next = 0;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.set(++next, callback);
+      return next;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
+      frames.delete(id);
+    });
+    const aFrame = () =>
+      act(() => {
+        const now = [...frames.values()];
+        frames.clear();
+        for (const callback of now) callback(performance.now());
+      });
+    render(<Bar on="alpha" startOpen={false} />);
+    screen.getByRole("button", { name: "Show the notice on alpha" }).focus();
+    await userEvent.keyboard("{Enter}");
+    const card = await screen.findByRole("region", { name: "Notices for alpha" });
+    // On into the card before it has taken the keyboard: to its first way on.
+    const way = within(card).getAllByRole("button")[0];
+    way.focus();
+    for (let frame = 0; frame < 12; frame += 1) aFrame();
+    expect(way).toHaveFocus();
   });
 
   it("gives the keyboard to the chip once the card it went into is dismissed", async () => {
@@ -879,5 +943,60 @@ describe("a new workspace's clone, counted and retried (#3649's review)", () => 
     await waitFor(() => expect(kept).toHaveTextContent("Cloning 1 repo…"));
     expect(document.activeElement).not.toBe(document.body);
     expect(kept.contains(document.activeElement)).toBe(true);
+  });
+});
+
+describe("a new workspace's clone, across what else happens (#3898)", () => {
+  it("leaves another workspace's card up when that card's result is said between two clone lines", async () => {
+    const { clone, held } = heldClone();
+    core({ clone, repos: ["api", "web"] });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma", ["api", "web"]);
+    await waitFor(() => expect(held).toHaveLength(1));
+    // Another workspace made while gamma clones: its ready card comes up.
+    await make("delta");
+    const delta = await findCard("delta");
+    expect(queryCard("gamma")).toBeNull();
+    // gamma's next count lands: delta's card stays, and gamma's does not come up.
+    held[0].land(["✓ api cloned"]);
+    await waitFor(() => expect(held).toHaveLength(2));
+    await waitFor(() =>
+      expect(
+        within(bar()).getByRole("button", { name: /^Show the 2 notices on gamma/ }),
+      ).toBeInTheDocument(),
+    );
+    expect(queryCard("delta")).toBe(delta);
+    expect(queryCard("gamma")).toBeNull();
+  });
+
+  it("draws a remade workspace's ready notice and its clone after the project is closed and reopened", async () => {
+    const { clone, held } = heldClone();
+    const { fire, remove, listening } = core({ clone });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma", ["api"]);
+    const card = await findCard("gamma");
+    await waitFor(() => expect(held).toHaveLength(1));
+    held[0].land(["✓ api cloned"]);
+    const cloned = await findOnCard("gamma", "Cloned 1 repo");
+    await userEvent.click(within(cloned).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(card).not.toHaveTextContent("Cloned 1 repo"));
+
+    // The project closed and opened again: the window's kept results outlive it.
+    await waitFor(() => expect(listening("plane-closed")).toBe(true));
+    fire("plane-closed", { plane: PLANE });
+    await waitFor(() =>
+      expect(screen.queryByTestId("title-bar")?.textContent ?? "").not.toContain("alpha"),
+    );
+    fire("projects-arrived", { planes: [PLANE], front: PLANE });
+    await waitFor(() => expect(chips()).toContain("gamma"));
+
+    // gamma removed, and made again with a repo.
+    remove("gamma");
+    await make("gamma", ["api"]);
+    const again = await findCard("gamma");
+    await waitFor(() => expect(again).toHaveTextContent("Cloning 1 repo…"));
+    expect(again).toHaveTextContent("Workspace gamma is ready");
   });
 });

@@ -1086,6 +1086,37 @@ pub fn asking(level: &Level) -> String {
     )
 }
 
+/// **The prompt "Ask a chat to write them" types** (#3925), unsent, for the trigger tests of the
+/// skill named `name` at `level` in the project at `root`, into a chat that starts where `level`'s
+/// skills are reached from, as [`asking`]'s does: the file to write, skill-creator's
+/// `triggers.json` format, and what makes a good test. The write comes back as a draft, as any
+/// chat's write to a skill's files does. One line, which the person may add to before sending.
+pub fn asking_for_trigger_tests(root: &Path, level: &Level, name: &str) -> Result<String, String> {
+    let found = find(root, level, name)?;
+    // Only a skill whose folder is the level's own: a chat is told its file from there.
+    if level.dir(root).as_deref() != found.parent() {
+        return Err(format!(
+            "{name}'s files are not in its level's folder, so no chat can be asked to write its \
+             trigger tests"
+        ));
+    }
+    let folder = found
+        .file_name()
+        .map(|one| one.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let at = format!("{}/{folder}", skills_dir_told(level));
+    let file = purlis_skills::grade::triggers_path();
+    Ok(format!(
+        "Write trigger tests for the {name} skill in {at}/{file}, in skill-creator's \
+         triggers.json format: a JSON array of {{\"query\": \"<a prompt as a person would type \
+         it>\", \"should_trigger\": true or false}}. Read {at}/SKILL.md first, then write prompts \
+         {name} should start for and near misses it should leave alone, each a real request and \
+         none twice, keeping any tests the file has already (where you cannot write it, write it \
+         in your own folder and run purlis propose with --from); purlis keeps it as a draft in \
+         the Skill studio for me to accept."
+    ))
+}
+
 /// **The prompt "Ask the chat to redo it" types** (S9), unsent, for the draft of the skill in
 /// `folder` at `level` whose files `stale` (below the skill's folder) the project changed since:
 /// into the chat that drafted it where it is still open (`same_chat`), else into a new chat that

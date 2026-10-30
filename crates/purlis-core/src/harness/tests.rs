@@ -535,6 +535,7 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "Bash(purlis dispatch --to *)",
             "Bash(purlis dispatch --profile *)",
             "Bash(purlis dispatch --long *)",
+            "Bash(purlis dispatch --in *)",
             "Bash(purlis dispatch report *)",
             "Bash(purlis dispatch --wait *)",
             "Bash(purlis dispatch wait *)",
@@ -664,6 +665,7 @@ fn a_dispatch_is_pre_allowed_by_each_spelling_it_has_and_by_no_wildcard_over_the
             "Bash(purlis dispatch --to *)",
             "Bash(purlis dispatch --profile *)",
             "Bash(purlis dispatch --long *)",
+            "Bash(purlis dispatch --in *)",
             "Bash(purlis dispatch report *)",
             "Bash(purlis dispatch --wait *)",
             "Bash(purlis dispatch wait *)",
@@ -700,7 +702,7 @@ fn a_dispatch_is_pre_allowed_by_each_spelling_it_has_and_by_no_wildcard_over_the
         assert_ne!(first, "*", "{rule}");
         if first.starts_with("--") {
             assert!(
-                ["--name", "--to", "--profile", "--long", "--wait"].contains(&first),
+                ["--name", "--to", "--profile", "--long", "--in", "--wait"].contains(&first),
                 "{first}"
             );
         } else {

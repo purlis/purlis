@@ -277,8 +277,10 @@ pub(crate) async fn router_grade_start(
                     plane: plane.clone(),
                     // No skill's: a router's grade is stopped by its id alone.
                     skill: String::new(),
+                    level: None,
                     stop: Arc::clone(&stop),
                     after_edit: None,
+                    step: None,
                 },
             );
         }

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Plus, RotateCw } from "lucide-react";
 import {
   commands,
@@ -273,6 +273,7 @@ export function SkillSourcesPage({
   plane,
   at,
   onGo,
+  stillAt,
   onOpenSkill,
   levels,
   start,
@@ -285,6 +286,10 @@ export function SkillSourcesPage({
   at: SourcesAt | undefined;
   /** Goes to a page inside Sources, or to Sources itself: a step of the tab's history. */
   onGo: (to: SourcesAt | undefined) => void;
+  /** Whether the tab is still at `from`, asked when a change ends: the tab's own place, so a
+   *  person who went to Library meanwhile, or a page drawn again, is judged by where the tab is
+   *  and not by this page's life (#3973). */
+  stillAt: (from: SourcesAt | undefined) => boolean;
   /** Opens an installed skill in the Library. */
   onOpenSkill: (name: string) => void;
   levels: readonly StudioLevel[];
@@ -296,18 +301,13 @@ export function SkillSourcesPage({
 }) {
   const read = useSourcesRead(plane, changed, at === undefined);
   const [adding, setAdding] = useState<{ offered?: OfferedSource }>();
-  // Where the tab is now, for a change that ends after the person has gone somewhere else.
-  const here = useRef(at);
-  useEffect(() => {
-    here.current = at;
-  }, [at]);
   /** A change, and where the tab goes once it is made: only from the page it was made on, so a
    *  person who went on meanwhile is never pulled back. */
   const changeThen = (label: string, run: () => Promise<Answer>, to?: SourcesAt) => {
     const from = at;
     change(label, () =>
       run().then((answer) => {
-        if (answer.status === "ok" && here.current === from) onGo(to);
+        if (answer.status === "ok" && stillAt(from)) onGo(to);
         return answer;
       }),
     );

@@ -13,6 +13,8 @@
 //!   ([`skill_draft_reject`]).
 //! - **"Ask a chat to draft a skill"** ([`skill_draft_chat`]) opens a chat where the level's skills
 //!   are reached from, with the core's prompt typed and never sent, as a curation chat is opened.
+//!   **"Ask a chat to write them"** ([`skill_trigger_tests_chat`]) opens one the same way, asked
+//!   for a skill's trigger tests (#3925).
 //! - **Try it** opens a scratch chat in a throwaway piece, armed with the built-in skills and the
 //!   draft alone, on the profile the person picked or the project's default; the piece goes when
 //!   the chat closes (`Chats::close`).
@@ -27,7 +29,7 @@ use specta::Type;
 use purlis_core::hookwire::{Answer, ProposeAsk};
 use purlis_core::skills::verbs::drafts;
 
-use crate::curation::{ChatTyped, Curating};
+use crate::curation::{ChatTyped, Curating, StartRefused, off_the_window_refused};
 use crate::planes::{Held, PlaneId, Planes};
 use crate::skillchange::{SkillChanged, SkillLevel};
 
@@ -255,7 +257,7 @@ pub(crate) async fn skill_draft_chat(
     level: SkillLevel,
     columns: u16,
     rows: u16,
-) -> Result<Curating, StudioRefused> {
+) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
     off_the_window_refused("starting the chat", move || {
         crate::skillchange::flag_on()?;
@@ -280,6 +282,45 @@ pub(crate) async fn skill_draft_chat(
     .await
 }
 
+/// **"Ask a chat to write them"** (#3925): a chat where `level`'s skills are reached from, on the
+/// project's default profile, with the core's prompt for the trigger tests of the skill `name`
+/// typed and never sent ([`drafts::asking_for_trigger_tests`]). It starts as "Ask a chat to draft
+/// a skill" does, through the same start; its write comes back as a draft.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_trigger_tests_chat(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    level: SkillLevel,
+    name: String,
+    columns: u16,
+    rows: u16,
+) -> Result<Curating, StartRefused> {
+    let held = planes.held(&plane)?;
+    off_the_window_refused("starting the chat", move || {
+        crate::skillchange::flag_on()?;
+        let root = held.root().to_path_buf();
+        let level: purlis_core::skills::verbs::Level = (&level).into();
+        let prompt = drafts::asking_for_trigger_tests(&root, &level, &name)?;
+        let cwd = where_level_is_reached(&root, &level)?;
+        let (profile, _) = crate::curation::default_profile(&root, "no chat was opened")?;
+        open(
+            &held,
+            ChatTyped {
+                profile,
+                persona: None,
+                cwd,
+                label: format!("Trigger tests of {name}"),
+                prompt,
+                then_a_space: false,
+                starts_runs: None,
+            },
+            purlis_core::engine::Size { columns, rows },
+        )
+    })
+    .await
+}
+
 /// **Try it** (decision 50): a scratch chat in a throwaway piece, armed with the built-in skills
 /// and the draft `id` alone, on `profile` (the project's default where none is picked), with the
 /// core's prompt typed and never sent. Tries a closed chat never ended (a quit, a crash) are
@@ -293,7 +334,7 @@ pub(crate) async fn skill_draft_try(
     profile: Option<String>,
     columns: u16,
     rows: u16,
-) -> Result<Curating, StudioRefused> {
+) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
     off_the_window_refused("starting Try it", move || {
         crate::skillchange::flag_on()?;
@@ -424,7 +465,7 @@ pub(crate) async fn skill_draft_redo(
     id: String,
     columns: u16,
     rows: u16,
-) -> Result<Curating, StudioRefused> {
+) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
     off_the_window_refused("starting the chat", move || {
         crate::skillchange::flag_on()?;
@@ -465,54 +506,20 @@ fn where_level_is_reached(
     }
 }
 
-/// **Why a studio start did not start** (#3942): the core's sentence, and the approval the
-/// profile it started on needs, where its start was refused while that profile waits for one. The
-/// window then offers Approve and start…, which shows that line and approves it only on the
-/// person's answer (`approve_profile`), from this and never from the words.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
-pub struct StudioRefused {
-    pub words: String,
-    /// Read as the start was refused, of the profile it was refused on. Null for a refusal
-    /// before any start was tried, or on a profile with nothing to approve.
-    pub approval: Option<Box<crate::chats::NeedsApproval>>,
-}
-
-impl From<String> for StudioRefused {
-    fn from(words: String) -> StudioRefused {
-        StudioRefused {
-            words,
-            approval: None,
-        }
-    }
-}
-
-/// `work` off the window's thread, its refusal kept whole.
-async fn off_the_window_refused(
-    what: &'static str,
-    work: impl FnOnce() -> Result<Curating, StudioRefused> + Send + 'static,
-) -> Result<Curating, StudioRefused> {
-    crate::off_the_window(what, move || Ok(work()))
-        .await
-        .map_err(StudioRefused::from)?
-}
-
 /// Opens `chat` with its prompt typed once its harness has started, as a curation chat is. A
 /// refused start says the approval its profile needs, where it needs one.
 fn open(
     held: &Arc<Held>,
     chat: ChatTyped,
     size: purlis_core::engine::Size,
-) -> Result<Curating, StudioRefused> {
+) -> Result<Curating, StartRefused> {
     let root = held.root().to_path_buf();
     let (label, cwd, profile) = (chat.label.clone(), chat.cwd.clone(), chat.profile.clone());
     let typed =
         crate::curation::start_typed(held, chat, size, crate::curation::when_typed, |why| {
             format!("{why}, so nothing was typed and no chat was opened.")
         })
-        .map_err(|words| StudioRefused {
-            approval: crate::chats::NeedsApproval::of_profile(&profile, &root).map(Box::new),
-            words,
-        })?;
+        .map_err(StartRefused::on(&profile, &root))?;
     Ok(Curating {
         session: typed.session,
         name: typed.name,

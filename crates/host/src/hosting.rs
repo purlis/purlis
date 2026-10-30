@@ -3393,6 +3393,9 @@ impl session::Host for Hosting {
                 self.move_code(&project, String::new(), transfer, way, peer)
                     .await
             }
+            Command::ClonesOf { project, workspace } => {
+                self.clones_of(&project, workspace, peer).await
+            }
             Command::StartProgram(start) => match start.kind {
                 ProgramKind::Harness | ProgramKind::Shell => self.start(*start, peer).await,
                 ProgramKind::Browser => self.start_browser(*start, peer).await,

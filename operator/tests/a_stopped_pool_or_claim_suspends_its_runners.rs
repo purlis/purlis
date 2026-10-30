@@ -23,9 +23,9 @@ fn pool(stopped: bool) -> Pool {
     Pool::new(
         "team",
         PoolSpec {
-            image: IMAGE.into(),
             kept_volume: Default::default(),
             stopped,
+            ..PoolSpec::new(IMAGE)
         },
     )
 }
@@ -277,12 +277,13 @@ fn a_stopped_claim_says_so_and_no_key_is_vouched_for() {
 }
 
 #[test]
-fn a_stopped_pool_keeps_no_runner_warm_whatever_its_warm_pool_held() {
-    let mut held = upstream::warm_pool_for(&pool(false), "ada", Vec::new());
-    held.spec.replicas = 3;
-    assert_eq!(upstream::replicas_kept(&pool(false), Some(&held)), 3);
-    assert_eq!(upstream::replicas_kept(&pool(true), Some(&held)), 0);
-    assert_eq!(upstream::replicas_kept(&pool(false), None), 0);
+fn a_stopped_pool_keeps_no_runner_warm_whatever_its_warm_count() {
+    let mut running = pool(false);
+    running.spec.warm_replicas = 3;
+    assert_eq!(upstream::replicas_kept(&running, true), 3);
+    let mut stopped = pool(true);
+    stopped.spec.warm_replicas = 3;
+    assert_eq!(upstream::replicas_kept(&stopped, true), 0);
 }
 
 #[test]

@@ -523,24 +523,42 @@ test("with --watch, pending checks are waited for, then it lands", () => {
   assert.match(got.stdout, /#7 merged/);
 });
 
-test("runs waiting on approval are rerun, then given a moment, before the checks are read", () => {
+test("a run held for approval is named and never rerun: the tool stops for the operator (#3991)", () => {
+  // A run held for approval is held so a person approves it. The tool reran four such runs on
+  // #3659 and #3871, which skipped that person, and a lane's own rerun of one is refused.
   const waiting = {
     match: "status=action_required",
-    replies: [{ out: runs([{ id: 41, name: "ci", html_url: "https://ci/41" }]) }],
+    replies: [
+      {
+        out: runs([
+          { id: 41, name: "ci", html_url: "https://ci/41" },
+          { id: 42, name: "stories", html_url: "https://ci/42" },
+        ]),
+      },
+    ],
   };
-  const got = land(["7", "--sha", HEAD], { waiting }, { LAND_SETTLE_SECONDS: "1" });
-  assert.equal(got.status, 0, got.stderr);
+  const got = land(["7", "--sha", HEAD, "--watch"], { waiting });
+  assert.equal(got.status, 4, got.stderr);
   const said = lines(got.calls);
-  const rerun = said.indexOf("run rerun 41 --repo purlis/purlis");
-  assert.ok(rerun >= 0);
-  assert.ok(rerun < said.findIndex((line) => line.startsWith("pr checks")));
+  assert.ok(!said.some((line) => line.startsWith("run rerun")), said.join("\n"));
   assert.ok(
     said.some((line) => line.includes(`head_sha=${HEAD}`) && line.includes("action_required")),
   );
-  // The pause after a rerun is what keeps the old, failed check from being read.
-  assert.ok(got.took >= 1000, `took ${got.took}ms`);
-  // With nothing rerun, there is no pause.
-  assert.ok(land(["7", "--sha", HEAD], {}, { LAND_SETTLE_SECONDS: "2" }).took < 2000);
+  // It stops before it reads a check, marks a draft ready or enqueues anything.
+  assert.ok(!said.some((line) => line.startsWith("pr checks")));
+  assert.ok(!said.some((line) => line.startsWith("pr ready")));
+  assert.equal(enqueueCall(got.calls), undefined);
+  // Each held run by its name, id and link, and who approves them.
+  assert.match(got.stderr, /ci 41 https:\/\/ci\/41/);
+  assert.match(got.stderr, /stories 42 https:\/\/ci\/42/);
+  assert.match(got.stderr, /the operator approves them/);
+});
+
+test("with nothing held for approval, nothing is rerun and there is no pause", () => {
+  const got = land(["7", "--sha", HEAD], {}, { LAND_SETTLE_SECONDS: "2" });
+  assert.equal(got.status, 0, got.stderr);
+  assert.ok(!lines(got.calls).some((line) => line.startsWith("run rerun")));
+  assert.ok(got.took < 2000);
 });
 
 test("a required check that has never posted is refused without --watch, naming it", () => {
@@ -608,15 +626,11 @@ test("a failed read of main's rules or its protection stops it, enqueueing nothi
   }
 });
 
-test("with --watch, after a rerun it waits until every required check has posted and passed", () => {
-  // #3539: the rerun runs' checks had not posted when the checks were read, so the tool read
-  // nothing pending and enqueued, and GitHub refused: "5 of 9 required status checks are expected".
+test("with --watch, it waits until every required check has posted and passed", () => {
+  // #3539: a run's checks had not posted when the checks were read, so the tool read nothing
+  // pending and enqueued, and GitHub refused: "5 of 9 required status checks are expected".
   const required = ["rust (fmt, clippy, test)", "stories", "docs (build, links, reachable)"];
   const got = land(["7", "--sha", HEAD, "--watch"], {
-    waiting: {
-      match: "status=action_required",
-      replies: [{ out: runs([{ id: 41, name: "docs", html_url: "https://ci/41" }]) }],
-    },
     ruleset: {
       match: "^api repos/purlis/purlis/rules/branches/main",
       replies: [{ out: rulesFor(["stories"]) }],
@@ -658,7 +672,6 @@ test("with --watch, after a rerun it waits until every required check has posted
     .map((line, i) => (line.startsWith("pr checks") ? i : -1))
     .filter((i) => i >= 0);
   assert.equal(checkReads.length, 4);
-  assert.ok(said.indexOf("run rerun 41 --repo purlis/purlis") < checkReads[0]);
   assert.ok(checkReads[3] < said.findIndex((line) => line.includes("enqueuePullRequest")));
   assert.match(got.stdout, /#7 merged/);
 });

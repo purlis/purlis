@@ -317,9 +317,10 @@ fn is_ours(
 
 /// **Whether the profile `record`, kept on this runner, is signed in here**, as its harness says
 /// through `look` now: never a remembered answer, since this is what the desktop asks after a
-/// sign-in.
+/// sign-in. Asked of the version it is pinned to where this runner installs it (#4007), since a
+/// runner image carries no harness on `PATH`.
 pub fn standing(record: &MachineProfile, look: &dyn Look) -> Standing {
-    match sign_in::profile_of(record) {
+    match sign_in::asked_of(record, look) {
         Some(profile) => {
             sign_in::forget(&profile);
             sign_in::standing_remembered(&profile, look)

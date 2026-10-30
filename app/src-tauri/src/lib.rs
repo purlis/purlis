@@ -787,6 +787,11 @@ struct OpenChat {
     /// the other chats of its workspace, which move with it.
     #[specta(optional)]
     workspace: Option<String>,
+    /// Whether Move here brings back a clone its runner's chat made there (#3811): its runner
+    /// names the clones it holds (session protocol 1.51). `null` for a chat here, and for one on
+    /// a runner before 1.51, whose Move here row says such a clone stays there.
+    #[specta(optional)]
+    clones_come_back: Option<bool>,
     /// The persona it adopted.
     persona: Option<String>,
     /// What its harness cannot tell charter, said on the chat — none where it tells all.
@@ -894,10 +899,12 @@ fn drawn_of(held: &planes::Held, open: chats::Open) -> OpenChat {
     let id = held.chats().chat_at(open.session).and_then(|at| at.id);
     let browser_sites = browser_sites_of(held, open.session);
     let pool = held.chats().pool_of(open.session);
+    let clones_come_back = held.chats().clones_come_back(open.session).then_some(true);
     OpenChat {
         id,
         browser_sites,
         pool,
+        clones_come_back,
         ..OpenChat::from(open)
     }
 }
@@ -2748,6 +2755,7 @@ impl From<chats::Open> for OpenChat {
                 .map(|card| HarnessGlance::from(&card)),
             profile: open.profile,
             pool: None,
+            clones_come_back: None,
             workspace: open.workspace,
             persona: open.persona,
             in_front: open.in_front,
@@ -3100,11 +3108,11 @@ fn ui_rpc_client() -> String {
     let names = if client.contains("Channel<") {
         "invoke as __TAURI_INVOKE, windowOnly as __WINDOW_ONLY, windowOnlyRefused as \
          __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, \
-         windowOnlyStudioRefused as __WINDOW_ONLY_STUDIO_REFUSED, Channel"
+         windowOnlyStartRefused as __WINDOW_ONLY_START_REFUSED, Channel"
     } else {
         "invoke as __TAURI_INVOKE, windowOnly as __WINDOW_ONLY, windowOnlyRefused as \
          __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, \
-         windowOnlyStudioRefused as __WINDOW_ONLY_STUDIO_REFUSED"
+         windowOnlyStartRefused as __WINDOW_ONLY_START_REFUSED"
     };
     client.replacen(
         TAURI_INVOKE,
@@ -3191,8 +3199,8 @@ fn without_channel_commands(bindings: &str) -> String {
                 "__WINDOW_ONLY_RESULT"
             } else if command.contains(", Refused>(__TAURI_INVOKE(") {
                 "__WINDOW_ONLY_REFUSED"
-            } else if command.contains(", StudioRefused>(__TAURI_INVOKE(") {
-                "__WINDOW_ONLY_STUDIO_REFUSED"
+            } else if command.contains(", StartRefused>(__TAURI_INVOKE(") {
+                "__WINDOW_ONLY_START_REFUSED"
             } else {
                 panic!(
                     "`{name}` is the window's alone and its error is a shape the link's client has no refusal for"
