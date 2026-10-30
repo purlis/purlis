@@ -123,6 +123,16 @@ describe("the combobox", () => {
     await waitFor(() => expect(sent).toHaveBeenCalledWith("my-own"));
   });
 
+  // WCAG 2.5.8 (#3250): sm's floor is 24 CSS px, as the sm button's is (#3210).
+  it("never draws an sm combobox under the 24px target, in any density or text size", () => {
+    render(<ComboBox label="Skill" size="sm" suggestions={SKILLS} value="" onChange={() => {}} />);
+    const root = screen
+      .getByRole("combobox", { name: "Skill" })
+      .closest('[data-scope="combobox"][data-part="root"]') as Element;
+    expect(root).toHaveAttribute("data-size", "sm");
+    expect(drawnWith(root, "block-size")).toBe("max(24px, var(--size-chrome), var(--space-7))");
+  });
+
   it("is held off when it is unavailable", () => {
     render(<Box isDisabled />);
     expect(box()).toBeDisabled();
