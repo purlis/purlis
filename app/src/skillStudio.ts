@@ -149,25 +149,18 @@ export const SKILL_PAGE_TAB_NAMES: Record<SkillPageTab, string> = {
  */
 export type GradingAt =
   | { at: "plan"; afterEdit?: true }
-  /** `chats` and `limitUsd`: what the plan it was started from said, until its first step. */
-  | { at: "running"; grade: string; chats?: number; limitUsd?: number }
+  | { at: "running"; grade: string }
   | { at: "scorecard"; grade: string }
   | { at: "chat"; grade: string; chat: string };
 
 /** A grading page read back from a target, or nothing for one that names none. */
 function gradingOf(read: unknown): GradingAt | undefined {
   if (typeof read !== "object" || read === null) return undefined;
-  const { at, grade, chat, afterEdit, chats, limitUsd } = read as Record<string, unknown>;
+  const { at, grade, chat, afterEdit } = read as Record<string, unknown>;
   if (at === "plan") return afterEdit === true ? { at, afterEdit } : { at };
   if (typeof grade !== "string") return undefined;
   if (at === "scorecard") return { at, grade };
-  if (at === "running")
-    return {
-      at,
-      grade,
-      ...(typeof chats === "number" ? { chats } : {}),
-      ...(typeof limitUsd === "number" ? { limitUsd } : {}),
-    };
+  if (at === "running") return { at, grade };
   return at === "chat" && typeof chat === "string" ? { at, grade, chat } : undefined;
 }
 

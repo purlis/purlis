@@ -399,7 +399,7 @@ fn persona_remember(args: &serde_json::Map<String, serde_json::Value>) -> Result
         }
         Forwarded::NotTaken(not) if !not.may_write_outside() => Err(format!(
             "nothing was written: {}",
-            not.refusal("purlis persona remember")
+            not.refusal("purlis persona remember <persona> \"<fact>\"")
         )),
         Forwarded::NotTaken(_) => {
             let here = crate::Here::read()?;

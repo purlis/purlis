@@ -594,6 +594,15 @@ impl SessionHost for RoutedSessions {
         lock(&self.shared.chats).get(&id).cloned()
     }
 
+    /// Asked of the host of the pool it runs on, where there is one already: never made for it.
+    fn clones_come_back(&self, id: u32) -> bool {
+        let Some(pool) = self.pool_of(id) else {
+            return false;
+        };
+        let host = lock(&self.shared.pools).get(&pool).map(Arc::clone);
+        host.is_some_and(|host| host.clones_come_back(id))
+    }
+
     /// None for the project as a whole: each pool's is said by [`Self::runner_logs`] (#3393).
     fn runner_log(&self) -> Option<crate::runnerlog::RunnerLogNow> {
         None

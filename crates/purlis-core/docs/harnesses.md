@@ -293,7 +293,7 @@ prompt, as it runs the reads (#3829): each writes only the chat's own workspace 
 `ask_operator`'s form is the question itself, so a prompt in front of it asked you twice. The
 same holds for their commands where they name the chat's own persona or workspace, and for
 the chat's own branch folder: `purlis persona remember <its persona>` (`--shared` included),
-`purlis workspace remember` and `note` with `-w <its workspace>` first, `purlis ws todo` to
+`purlis workspace remember -w <its workspace>` and `purlis workspace note -w <its workspace>`, `purlis ws todo` to
 list, and `purlis worktree add -w <its workspace>`, `update`, `push`, `done`, `abandon` and
 `list`, each by its name. A line naming another persona or workspace still asks, and so does
 the command's own way to add or close a todo (use the tools). A grade's chat is handed none of

@@ -5282,8 +5282,8 @@ export const PlaneView = memo(function PlaneView({
   }, [change, plane]);
 
   /**
-   * **The Skill studio's "Ask a chat to draft a skill", Try it and a draft's redo** (SK-9, #2772;
-   * S9, #3690): the core opens
+   * **The Skill studio's "Ask a chat to draft a skill", Try it, a draft's redo and "Ask a chat to
+   * write them"** (SK-9, #2772; S9, #3690; #3925): the core opens
    * the chat with its prompt typed and never sent (Try it's in a throwaway folder, with the
    * built-in skills and the draft alone), and its tab goes on the strip it is filed under, in
    * front. A refusal is the core's sentence.
@@ -5324,15 +5324,23 @@ export const PlaneView = memo(function PlaneView({
       const starting =
         wanted.kind === "draft"
           ? commands.skillDraftChat(plane, wanted.level, STARTING_SIZE.columns, STARTING_SIZE.rows)
-          : wanted.kind === "redo"
-            ? commands.skillDraftRedo(plane, wanted.id, STARTING_SIZE.columns, STARTING_SIZE.rows)
-            : commands.skillDraftTry(
+          : wanted.kind === "triggers"
+            ? commands.skillTriggerTestsChat(
                 plane,
-                wanted.id,
-                wanted.profile,
+                wanted.level,
+                wanted.name,
                 STARTING_SIZE.columns,
                 STARTING_SIZE.rows,
-              );
+              )
+            : wanted.kind === "redo"
+              ? commands.skillDraftRedo(plane, wanted.id, STARTING_SIZE.columns, STARTING_SIZE.rows)
+              : commands.skillDraftTry(
+                  plane,
+                  wanted.id,
+                  wanted.profile,
+                  STARTING_SIZE.columns,
+                  STARTING_SIZE.rows,
+                );
       void starting
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
         .then((started) => {
@@ -5963,6 +5971,11 @@ export const PlaneView = memo(function PlaneView({
   );
   /** The other chats of a chat's workspace running where it runs, which move with it (#3453). */
   const movesWithChat = useCallback((session: number) => movesWith(session, reopened), [reopened]);
+  /** Whether Move here brings back what the chat cloned on its runner (#3811). */
+  const clonesComeBack = useCallback(
+    (session: number) => reopened.find((one) => one.session === session)?.clones_come_back === true,
+    [reopened],
+  );
   const moveTab = useCallback(
     (tab: number, to: string | null) => {
       const session = chatOf(now.current, tab);
@@ -7539,6 +7552,7 @@ export const PlaneView = memo(function PlaneView({
             restartable,
             movesTo,
             movesWith: movesWithChat,
+            clonesComeBack,
             ask: askOffer,
             // Not from a shell: it is on no harness profile to start the persona's chat on.
             askable: (session) => !shells.has(session),
@@ -7606,6 +7620,7 @@ export const PlaneView = memo(function PlaneView({
       restartable,
       movesTo,
       movesWithChat,
+      clonesComeBack,
       askOffer,
       shells,
       nearBranch,
