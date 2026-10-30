@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793364604906,
+  "lastUpdate": 1793366164149,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31542,6 +31542,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2142625,
             "unit": "ms",
             "extra": "median of 5 runs: 101.434, 101.623, 102.214, 102.716, 102.953 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5afff7fcb2a9093ecebfeeb0b4f8079ee21b8e08",
+          "message": "Approve and start in place for curation actions, Start a chat here and theme chats (#3968) (#4030)\n\n* Skill studio: Approve and start in place for a start refused for approval (#3942)\n\nThe studio's Try it, Ask a chat to draft a skill and a draft's redo start\nin the core without the picker, which refuses a profile nobody approved.\nThe refusal's notice now offers Approve and start…: the picker's own\nquestion with the profile's command, whose answer approves the line on\nscreen (approve_profile) and starts the same chat again. What needs\napproving is read from the profile (skill_chat_approval), never from the\nrefusal's words. Nothing is approved without the person's answer.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill studio Sources: each row says when it was last checked, and its counts (#3840)\n\nEach browse records when it read a source and how many skills it offers,\nand each updates check a source answered records when it asked, in a\nrebuildable cache (<state>/cache/skill-sources-checked.json). Sources\nreads that with the list (skill_sources_checked), counting installed\nskills from the lockfiles, so no source is asked per row. A row says\n\"14 skills, 2 installed · checked 3 hours ago\"; a source's page says\n\"checked …\" in its lead.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Approve and start: the refused start says the approval, not a second read (#3942)\n\nReview findings: a read after the refusal could resolve another profile\nthan the one refused, and offered approval for refusals that were not a\nstart's. The studio's starts now refuse with StudioRefused, the words and\nthe approval the profile they were refused on needs, read as the start\nwas refused; skill_chat_approval is gone. The UI RPC client learns that\nrefusal's shape. Only the skill-chat line is put away on approving; the\ne2e spec removes a Local file it made; changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Sources' checked line: fresh on return, one write per check, bounded (#3840)\n\nReview findings: the list reads the record again on coming back from a\nsource's page; an updates check writes once for every source it asked;\none change of the record at a time in the process; a record of long URLs\ndrops its oldest entries until it fits what is read; ages keep up with\nthe clock and say days, not 'yesterday'; changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Copy check: name the studio refusal's From, which writes no words (#3942)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Approve and start story and test: write the purlis name (#3942)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Offer Approve and start in place for curation actions, Start a chat here and theme chats (#3968)\n\nThe core's starts on a profile without the new-chat picker now all refuse with\nStartRefused { words, approval } (was the studio's StudioRefused), the approval read\nof the profile the start was refused on. The window's StartApproval.tsx holds the\nshared notice way and question; the Skill studio keeps only its adapter. A row's Ran\ncarries the ways into its notice through saidOf.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Approve and start: fix the review's findings (#3968)\n\nDrop the stray old body of startChatHere. Approving puts away the very line that\noffered the way, and a start run again says only what it says. The palette's line\ndraws a refusal's ways too. The scenario spec asks for its buttons by name.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Approve and start: change only the command's line in the core test (#3968)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Copy check: StartRefused::from is now followed, so no entry for it (#3942)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Copy check: name StartRefused::from again, which off_the_window_refused calls (#3968)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Story baselines: Approve and start's question and the Sources' checked line\n\nDrawn by this pull request's stories run; they are #3967's pictures.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T12:37:30Z",
+          "tree_id": "18279e35d1ce0069df2e7ab20faea062bf6369f4",
+          "url": "https://github.com/purlis/purlis/commit/5afff7fcb2a9093ecebfeeb0b4f8079ee21b8e08"
+        },
+        "date": 1793366161085,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.516811,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.512, 0.515, 0.517, 0.524, 0.534 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.427612,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.272, 16.309, 16.428, 16.576, 16.621 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.40367599999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.473, 101.042, 101.404, 102.476, 102.988 ms"
           }
         ]
       }
