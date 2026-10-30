@@ -759,17 +759,21 @@ impl crate::planes::Held {
     /// is at a pause between turns** (#2048, #3453): their work and conversations go where they
     /// move, their workspace's chats run there from now on, and a new run of each starts there
     /// on its conversation in its place; the runs they leave then end. Not yet (`None`)
-    /// mid-turn, while one waits on the person, while the person stops one, or while the move is
-    /// prepared. A switch that fails leaves every one of them running where it was, and its move
-    /// says why. Answers each run left and the run that took its place.
+    /// mid-turn (waiting on work of its own is mid-turn, #3887), while one waits on the person,
+    /// while the person stops one, or while the move is prepared. A switch that fails leaves
+    /// every one of them running where it was, and its move says why. Answers each run left
+    /// and the run that took its place.
     pub(crate) fn move_chat_now(
         &self,
         session: u32,
         size: purlis_core::engine::Size,
     ) -> Result<Option<Vec<(u32, u32)>>, String> {
         let asks = self.asks();
+        // A chat waiting on its own work is in its turn (#3887): a move would cut it off.
         let at_a_pause = |one: u32| {
-            self.board().glance(one).state == purlis_core::state::State::Waiting
+            let glance = self.board().glance(one);
+            glance.state == purlis_core::state::State::Waiting
+                && !glance.in_its_turn()
                 && !asks.asks.iter().any(|ask| ask.session == one)
                 && !self.stopping().is_stopping(one)
         };

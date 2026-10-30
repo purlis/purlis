@@ -568,6 +568,14 @@ impl Glance {
     pub fn waits_on_its_prompt(&self) -> bool {
         self.asking && self.state == State::Waiting
     }
+
+    /// **Whether it is in its turn, as what waits for a pause between turns counts it**
+    /// (#3887): running, or its turn ended waiting on work of its own (#3878), whose monitors
+    /// and background shells a restart, a move or a save would cut off. The board says
+    /// `waiting` for that, and it is no pause.
+    pub fn in_its_turn(&self) -> bool {
+        self.state == State::Running || (self.state == State::Waiting && self.own_work)
+    }
 }
 
 /// What the host's board says about each chat, as its hooks reported it, and the moves the

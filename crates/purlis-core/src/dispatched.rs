@@ -460,8 +460,15 @@ impl Seen {
         self.takes_keys() && self.running && self.interrupts
     }
 
-    /// Its turn has ended, by its harness's own word, whatever its harness is.
+    /// Its turn has ended, by its harness's own word, whatever its harness is. **A turn that
+    /// ended waiting on work of its own has not** (#3921): its monitors and background shells
+    /// still run, and that work wakes it.
     fn turn_ended(self) -> bool {
+        self.turn_ended_whatever_its_own_work() && !self.own_work
+    }
+
+    /// Its turn has ended, whether or not it waits on work of its own.
+    fn turn_ended_whatever_its_own_work(self) -> bool {
         self.heard && !self.ended && self.waiting && !self.asking
     }
 
@@ -782,6 +789,12 @@ struct Task {
     end: Option<End>,
     /// A turn began in it after its report: the bound on the reporting turn is spent.
     later_turn: bool,
+    /// After its report, it was last seen waiting on work of its own (#3921): its bound does
+    /// not run then, and is set anew once that work has ended.
+    on_its_own_work: bool,
+    /// Which bound on its reporting turn is the live one (#3921): a bound set anew as its own
+    /// work ends makes every one set before it stale ([`Ledger::bound_epoch`]).
+    bound_epoch: u32,
     /// The bound on its reporting turn passed while something kept it from ending (it was
     /// held, or it was showing the person a prompt), with that turn not known to be over: it
     /// is set again once that has gone.
@@ -1721,6 +1734,12 @@ impl Ledger {
     ///   over), the bound ends nothing, and that turn's own end is waited for. Nor does it end
     ///   a chat that is showing the person a prompt: there the bound is set again once the
     ///   prompt is answered, since the reporting turn goes on after it ([`Ends::Bound`]).
+    /// - **Not while its own work runs** (#3921). A turn that ended waiting on work of its own
+    ///   (#3878: monitors and background shells) is not over: ending it would stop that work.
+    ///   Nor does the bound run then: it is set anew once that work has ended or lapsed
+    ///   ([`Ends::Bound`], [`Self::bound_epoch`]), so the turn the work wakes it for has the
+    ///   whole bound, and the own-work wait's own limit (#3878) bounds the wait itself. A
+    ///   cancelled task is not waited for: the cancel is the word to stop that work too.
     /// - **Not while it is held.** Ending it while a task of its own works would leave that
     ///   one's report with nobody to read it; ending it in front of the person would take
     ///   away what they are reading. It is ended when the hold has gone. Where its bound
@@ -1735,7 +1754,28 @@ impl Ledger {
         let Some(stage) = entry.end else {
             return Ends::Nothing;
         };
-        let over = seen.ended || seen.turn_ended();
+        // A cancel stops its own work with it: its turn is over at its end.
+        let over = seen.ended
+            || seen.turn_ended()
+            || (entry.cancelled && seen.turn_ended_whatever_its_own_work());
+        let on_its_own_work = !over && seen.waiting && seen.own_work;
+        let own_work_ended =
+            std::mem::replace(&mut entry.on_its_own_work, on_its_own_work) && !on_its_own_work;
+        // Its own work has ended, and the reporting turn goes on: the bound runs from now. A
+        // turn that is over goes on to its settle as any other does.
+        if own_work_ended && !over && !entry.later_turn && stage != End::Settling {
+            entry.bound_owed = true;
+            if held {
+                entry.end = Some(End::Due);
+                return Ends::Hold;
+            }
+            entry.end = Some(End::Reported);
+            if seen.prompt_showing() {
+                return Ends::Hold;
+            }
+            entry.bound_owed = false;
+            return Self::bound_anew(entry);
+        }
         match (looked, stage) {
             // The bound was the reporting turn's. A later turn is waited for, a prompt is the
             // person's to answer, and a settle under way is the settle's to finish.
@@ -1746,6 +1786,11 @@ impl Ledger {
                 Ends::Hold
             }
             (Looked::WaitedOut, End::Settling) => Ends::Hold,
+            // Its own work runs: the bound is set anew once that work has ended (#3921).
+            (Looked::WaitedOut, _) if on_its_own_work => {
+                entry.bound_owed = true;
+                Ends::Hold
+            }
             (Looked::WaitedOut, _) if held => {
                 entry.end = Some(End::Due);
                 entry.bound_owed = !over;
@@ -1796,8 +1841,15 @@ impl Ledger {
                 } else {
                     entry.end = Some(End::Reported);
                     entry.bound_owed = false;
-                    Ends::Bound
+                    Self::bound_anew(entry)
                 }
+            }
+            // Held once its turn was over, and found waiting on work of its own when the hold
+            // goes (#3921): still the reporting turn, whose bound is set once that work ends.
+            (Looked::Moved, End::Due) if !held && on_its_own_work => {
+                entry.end = Some(End::Reported);
+                entry.bound_owed = true;
+                Ends::Hold
             }
             // Held once its turn was over, and found working when the hold goes: its harness
             // began a turn, with or without a prompt purlis heard. A later turn, as one purlis
@@ -1809,6 +1861,19 @@ impl Ledger {
             }
             (Looked::Moved, _) => Ends::Hold,
         }
+    }
+
+    /// A bound set anew on `entry`'s reporting turn: every one set before it is stale.
+    fn bound_anew(entry: &mut Task) -> Ends {
+        entry.bound_epoch = entry.bound_epoch.wrapping_add(1);
+        Ends::Bound
+    }
+
+    /// **Which bound on task `task`'s reporting turn is the live one** (#3921). The app reads
+    /// it as it sets a bound, and a bound whose epoch has moved on by the time it passes is
+    /// stale and looks at nothing: its own work ended since, and the bound runs from then.
+    pub fn bound_epoch(&self, task: u32) -> u32 {
+        self.tasks.get(&task).map_or(0, |entry| entry.bound_epoch)
     }
 
     /// The report `task` sent, where the app still has it.
@@ -2024,7 +2089,9 @@ impl Ledger {
     /// handed every report that waited. And whatever the person had open in its pane is
     /// behind it.
     pub fn turn_began(&mut self, chat: u32) {
-        // A turn after its report: the bound on the reporting turn ends nothing from here.
+        // A turn after its report: the bound on the reporting turn ends nothing from here. A
+        // prompt the person typed while it waited on its own work is one too (#3921): the hook
+        // does not say whether its own work or a person began a turn, so every one is later.
         if let Some(entry) = self.tasks.get_mut(&chat)
             && entry.end.is_some()
         {

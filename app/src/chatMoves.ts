@@ -11,7 +11,7 @@ import {
   type PlaneId,
   type PoolsShown,
 } from "./bindings";
-import type { State } from "./chatState";
+import { atAPause, type ChatStates } from "./chatState";
 
 /**
  * **Move to runner and Move here, as the window holds them** (#2048): each chat's move by
@@ -152,13 +152,14 @@ export function moveCancellable(one: ChatMove): boolean {
   return one.stage === "preparing" || one.stage === "ready";
 }
 
-/** The chats whose move switches now: prepared, and at a pause between turns (`waiting`). */
-export function movesDue(
-  moves: Readonly<Record<number, ChatMove>>,
-  stateOf: (session: number) => State,
-): number[] {
+/**
+ * The chats whose move switches now: prepared, and at a pause between turns ({@link atAPause}). A
+ * chat waiting on its own work (#3878) is not at a pause: a move would cut its monitors and
+ * background shells off, so it waits for them (#3887).
+ */
+export function movesDue(moves: Readonly<Record<number, ChatMove>>, states: ChatStates): number[] {
   return Object.values(moves)
-    .filter((one) => one.stage === "ready" && stateOf(one.session) === "waiting")
+    .filter((one) => one.stage === "ready" && atAPause(states, one.session))
     .map((one) => one.session);
 }
 
