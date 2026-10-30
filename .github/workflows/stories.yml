@@ -104,6 +104,8 @@ jobs:
     defaults:
       run:
         working-directory: app
+        # A container's steps run in `sh` unless told otherwise; the drawing step reads arrays.
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
