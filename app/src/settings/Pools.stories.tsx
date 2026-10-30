@@ -3,7 +3,8 @@
 
 /**
  * **You › This machine › Pools, and Add a pool** (#2679; the person's ruling of 2026-10-30): the
- * group with no pool yet, saying what a pool is, with Add a pool…; the group with a pool; and the
+ * group with no pool yet, saying what a pool is, with Add a pool…; the group with a pool; a pool
+ * whose runner was removed outside purlis (#4149); and the
  * Add a pool dialog with its Image box showing the runner image it is offered.
  * Each is drawn, held to axe, walked by the keyboard, and pictured in every pictured theme cell
  * (`docs/component-stories.md`). The core is faked at its command boundary.
@@ -12,7 +13,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { AddDockerPoolHost } from "../AddDockerPool";
-import type { PoolRow, PoolsShown } from "../bindings";
+import type { PoolLink, PoolRow, PoolsShown } from "../bindings";
 import { startAddingAPool, stopAddingAPool } from "../pools";
 import { expectFocusInSight, pictureNow, untilFocused } from "../stories.testkit";
 import { SettingGroup, SettingRow } from "./components";
@@ -29,8 +30,9 @@ const BUILDS: PoolRow = {
   suspend_after: "24h",
 };
 
-/** The core, faked: this machine keeps `pools`, and its release names {@link IMAGE}. */
-function theCore(pools: PoolRow[]) {
+/** The core, faked: this machine keeps `pools`, whose runner answers `link`, and its release
+ *  names {@link IMAGE}. */
+function theCore(pools: PoolRow[], link: PoolLink = { state: "linked" }) {
   mockIPC(
     (cmd) => {
       if (cmd === "docker_pools")
@@ -42,7 +44,7 @@ function theCore(pools: PoolRow[]) {
           width: 1280,
           clusters: [],
         } satisfies PoolsShown;
-      if (cmd === "docker_pool_link") return { state: "linked" };
+      if (cmd === "docker_pool_link") return link;
       if (cmd === "docker_pool_version")
         return {
           runner: "0.4.2",
@@ -108,7 +110,10 @@ const meta = {
   component: Pools,
   // The pools the faked core keeps: a story's `parameters.pools`, none by default.
   beforeEach: ({ parameters }) => {
-    theCore((parameters.pools as PoolRow[] | undefined) ?? []);
+    theCore(
+      (parameters.pools as PoolRow[] | undefined) ?? [],
+      parameters.link as PoolLink | undefined,
+    );
     return () => {
       stopAddingAPool();
       clearMocks();
@@ -140,6 +145,22 @@ export const WithAPool: Story = {
     await within(group).findByText("linked");
     await expect(within(group).queryByText(/No pool yet/)).toBeNull();
     await expect(within(group).getByRole("button", { name: "Add a pool…" })).toBeVisible();
+  },
+};
+
+/** **A pool whose runner was removed outside purlis** (#4149): its row says so, and its Notice
+ *  says its home went too, with Make the runner again, which Tab reaches. */
+export const RunnerRemoved: Story = {
+  parameters: { pools: [BUILDS], link: { state: "removed", home_kept: false } },
+  play: async ({ canvas, userEvent }) => {
+    const group = await canvas.findByRole("region", { name: "Pools" });
+    await within(group).findByText("removed outside purlis");
+    await within(group).findByText(/sign-ins and work kept there/);
+    const again = within(group).getByRole("button", { name: "Make the runner again" });
+    await userEvent.click(within(group).getByText(/sign-ins and work kept there/));
+    for (let i = 0; i < 6 && document.activeElement !== again; i++) await userEvent.tab();
+    await untilFocused(() => again, "Tab reaches Make the runner again");
+    expectFocusInSight();
   },
 };
 
