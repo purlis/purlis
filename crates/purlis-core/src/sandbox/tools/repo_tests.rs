@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::TEMPS_HERE;
-use super::repo::held;
+use super::repo::{held, refused_git};
 
 /// A project at `<tmp>/project`, which a chat writes but for what class 5 holds, and a scratch
 /// folder at `<tmp>/scratch` a chat writes whole; the machine's temporary folders are none here.
@@ -40,7 +40,13 @@ impl Place {
     }
 
     fn judged(&self, folder: &Path, glab: bool) -> Result<(), String> {
-        held(folder, &self.root, &[self.scratch.clone()], glab)
+        held(folder, &self.root, &[self.scratch.clone()], glab).map(|_| ())
+    }
+
+    fn pinned(&self, folder: &Path, clones: bool) -> Vec<(String, String)> {
+        held(folder, &self.root, &[self.scratch.clone()], false)
+            .expect("held")
+            .env(clones)
     }
 }
 
@@ -123,8 +129,8 @@ fn an_included_config_or_a_hooks_folder_a_chat_writes_never_runs() {
     for config in [
         "[include]\n\tpath = ../shared.gitconfig\n",
         "[includeIf \"gitdir:**\"]\n\tpath = ../../shared.gitconfig\n",
-        "[core]\n\thooksPath = .husky\n",
         "[core]\n\tHooksPath = \"tools/hooks\"\n",
+        "[include] path = ../shared.gitconfig\n",
         &format!("[core]\n\thookspath = {}\n", place.scratch.display()),
     ] {
         git_folder(&clone.join(".git"), config);
@@ -141,6 +147,9 @@ fn an_included_config_or_a_hooks_folder_a_chat_writes_never_runs() {
         ),
         format!("[core]\n\thooksPath = {}\n", place.outside.display()),
         "[core]\n\thooksPath = .git/hooks\n".to_owned(),
+        // Class 5 holds these too.
+        "[core]\n\thooksPath = .husky/_\n".to_owned(),
+        "[core]\n\thooksPath = .githooks\n".to_owned(),
     ] {
         git_folder(&clone.join(".git"), &config);
         assert_eq!(place.judged(&clone, false), Ok(()), "{config}");
@@ -185,4 +194,94 @@ fn a_repository_outside_every_folder_a_chat_writes_runs() {
     let repo = place.outside.join("theirs");
     git_folder(&repo.join(".git"), "[core]\n\thooksPath = hooks\n");
     assert_eq!(place.judged(&repo, false), Ok(()));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_is_judged_as_the_kernel_names_it() {
+    let place = Place::new();
+    let made = place.scratch.join("made");
+    git_folder(&made.join(".git"), "[core]\n\tfsmonitor = ./x\n");
+    fs::create_dir_all(made.join("x")).expect("mkdir");
+    let link = place.root.join("ws/link");
+    fs::create_dir_all(link.parent().expect("parent")).expect("mkdir");
+    std::os::unix::fs::symlink(made.join("x"), &link).expect("symlink");
+    assert!(place.judged(&link, false).is_err());
+}
+
+#[test]
+fn a_git_file_is_read_as_git_reads_it() {
+    let place = Place::new();
+    let clone = place.root.join("ws/repo");
+    git_folder(&clone.join(".git"), "");
+    let folder = place.scratch.join("w");
+    // git takes everything after `gitdir: `, spaces and all, so these name other folders.
+    for text in [
+        format!("gitdir:  {}\n", clone.join(".git").display()),
+        format!("gitdir: {} \n", clone.join(".git").display()),
+    ] {
+        write(&folder.join(".git"), &text);
+        assert!(place.judged(&folder, false).is_err(), "{text:?}");
+    }
+    write(
+        &folder.join(".git"),
+        &format!("gitdir: {}\r\n", clone.join(".git").display()),
+    );
+    assert_eq!(place.judged(&folder, false), Ok(()));
+}
+
+#[test]
+fn a_submodule_of_the_project_s_clone_runs() {
+    let place = Place::new();
+    let clone = place.root.join("ws/repo");
+    git_folder(&clone.join(".git"), "");
+    git_folder(&clone.join(".git/modules/lib"), "");
+    let sub = clone.join("lib");
+    write(&sub.join(".git"), "gitdir: ../.git/modules/lib\n");
+    assert_eq!(place.judged(&sub, false), Ok(()));
+}
+
+#[test]
+fn the_run_s_git_is_held_to_the_repository_judged() {
+    let place = Place::new();
+    let clone = place.root.join("ws/repo");
+    git_folder(&clone.join(".git"), "");
+    fs::create_dir_all(clone.join("src")).expect("mkdir");
+    assert_eq!(
+        place.pinned(&clone.join("src"), false),
+        vec![
+            (
+                "GIT_DIR".to_owned(),
+                clone.join(".git").display().to_string()
+            ),
+            ("GIT_WORK_TREE".to_owned(), clone.display().to_string()),
+        ]
+    );
+    // Cloning, or in no repository, git finds none.
+    let nothing = vec![("GIT_DIR".to_owned(), "/dev/null".to_owned())];
+    assert_eq!(place.pinned(&clone, true), nothing);
+    assert_eq!(place.pinned(&place.scratch, false), nothing);
+}
+
+#[test]
+fn git_s_own_options_that_name_another_config_or_folder_never_run() {
+    let said = |words: &[&str]| {
+        words
+            .iter()
+            .map(|one| (*one).to_owned())
+            .collect::<Vec<_>>()
+    };
+    for words in [
+        &["-c", "core.fsmonitor=x", "status"][..],
+        &["-ccore.pager=x", "log"],
+        &["--git-dir=/tmp/x", "status"],
+        &["-C", "/tmp/x", "status"],
+        &["--config-env=core.pager=X", "log"],
+        &["--work-tree", "/tmp", "status"],
+        &["--exec-path=/tmp", "status"],
+    ] {
+        assert!(refused_git(&said(words)).is_some(), "{words:?}");
+    }
+    assert!(refused_git(&said(&["status", "--short"])).is_none());
+    assert!(refused_git(&said(&["commit", "-m", "x"])).is_none());
 }

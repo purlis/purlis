@@ -1374,22 +1374,36 @@ pub fn allows(ready: &Ready, args: &[String]) -> Result<(), String> {
     args::permits(&ready.tool.name, ready.tool.args.as_deref(), args)
 }
 
-/// **Whether `ready`'s run in `folder` reads only repository configuration the person
-/// controls** (#3868, [`repo::held`]), for a project at `root` whose chat may write `writable`:
-/// glab's own settings judged where the tool's name or program is glab. Judged before any
-/// value is read for the run.
+/// **Whether `ready`'s run with `args` in `folder` reads only repository configuration the
+/// person controls** (#3868, [`repo::held`]), for a project at `root` whose chat may write
+/// `writable`: the variables that hold its git to the repository judged ([`repo::Pin::env`]),
+/// or why it never runs. glab's own settings are judged where the tool's name or program is
+/// glab, and git's options that name another config, folder or program where it is git
+/// ([`repo::refused_git`]). Judged before any value is read for the run.
 pub fn reads_held_repository(
     ready: &Ready,
+    args: &[String],
     folder: &Path,
     root: &Path,
     writable: &[PathBuf],
-) -> Result<(), String> {
+) -> Result<Vec<(String, String)>, String> {
     let real = ready.program.canonicalize().ok();
-    let glab = [Path::new(&ready.tool.name), ready.program.as_path()]
+    let names: Vec<String> = [Path::new(&ready.tool.name), ready.program.as_path()]
         .into_iter()
         .chain(real.as_deref())
-        .any(|name| file_name_of(name) == "glab");
-    repo::held(folder, root, writable, glab)
+        .map(file_name_of)
+        .collect();
+    if names.iter().any(|name| name == "git") {
+        if let Some(why) = repo::refused_git(args) {
+            return Err(why);
+        }
+    }
+    let glab = names.iter().any(|name| name == "glab");
+    let pin = repo::held(folder, root, writable, glab)?;
+    let clones = args
+        .iter()
+        .any(|arg| arg == "clone" || arg == "--clone" || arg.starts_with("--clone="));
+    Ok(pin.env(clones))
 }
 
 /// `path`, a `PATH` a brokered tool run starts from, without each folder in the project at

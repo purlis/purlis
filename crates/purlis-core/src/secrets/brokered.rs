@@ -1699,6 +1699,7 @@ pub fn armed_as(asker: &Asker, wanted: &Wanted) -> Result<String, String> {
     {
         crate::sandbox::tools::reads_held_repository(
             ready,
+            &args,
             &folder,
             &asker.root,
             &chat_writes(asker, confines),
@@ -2088,20 +2089,24 @@ pub(crate) fn serve_recorded(
         #[cfg(test)]
         Wrap::Unwrapped | Wrap::Refusing(_) => Applying::Unwrapped,
     };
-    // A declared tool reads only the person's repository configuration where it runs (#3868).
+    // A declared tool reads only the person's repository configuration where it runs, and its
+    // git is held to the repository judged (#3868).
+    let mut held_to: Vec<(String, String)> = Vec::new();
     if let Some(ready) = &its_repository {
         let start_in = wanted
             .cwd
             .clone()
             .filter(|cwd| cwd.is_absolute() && cwd.is_dir())
             .unwrap_or_else(|| folder.clone());
-        if let Err(why) = crate::sandbox::tools::reads_held_repository(
+        match crate::sandbox::tools::reads_held_repository(
             ready,
+            &command[1..],
             &start_in,
             &asker.root,
             &chat_writes(asker, confines),
         ) {
-            return refuse(&mut *writer, 1, why);
+            Ok(env) => held_to = env,
+            Err(why) => return refuse(&mut *writer, 1, why),
         }
     }
     let v = match handed {
@@ -2196,6 +2201,10 @@ pub(crate) fn serve_recorded(
         exec::set_var(&mut base, &k, v);
     }
     for (k, v) in crate::sandbox::tools::home_of_its_own(beside.tmp()) {
+        exec::set_var(&mut base, &k, v);
+    }
+    // Its git held to the repository judged above (#3868).
+    for (k, v) in held_to {
         exec::set_var(&mut base, &k, v);
     }
     // ssh, and git over ssh, through the run's own SOCKS port (#1667): the chat's route names
