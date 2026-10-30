@@ -8002,15 +8002,15 @@ refuses a `<data>` under a project or inside any git work tree.
   had; `level`, that level's folder (`skills.local`, `workspaces/ops/skills`); `until`, when it
   left it (RFC 3339); `grades`, the ids of its grades under way as it left (absent for none, at
   most 16, #4104), whose rows are recorded by that name once they end; and `folder`, which folder
-  took the key, as this machine tells folders apart (its device, inode and the time it was made,
-  `<dev>:<ino>:<nanos or ->`; absent where that does not read, #4104). Written `0600`, whole or not at all, through no link, by the core's rename,
+  took the key, as this machine tells folders apart (its inode and the time it was made,
+  `<ino>:<nanos or ->`; absent where that does not read, #4104). Written `0600`, whole or not at all, through no link, by the core's rename,
   move and share of a skill (`grades::earlier`): where either side is a skill only on this machine
   (`skills.local/`), the place it leaves is added, and the earlier places of any renamed or moved
   skill go along to its new key. A move from a shared level into `skills.local/` adds the places
   git followed it through too, which its history no longer reads. A skill made with a name at a
-  level (a create, a copy of a built-in skill, a draft's accept or an install) drops that key's
-  entry; a delete keeps it, and a Restore takes the folder it brings back as the entry's, so the
-  grades come back. Read by a skill's Grades tab and a grade's scorecard, never as a chat opens:
+  level (a create, a copy of a built-in skill, a draft's accept, an install or an update that brings it) drops that key's
+  entry; a delete keeps it, and a Restore from git takes the folder it brings back as the
+  entry's (one kept on this machine comes back as itself), so the grades come back. Read by a skill's Grades tab and a grade's scorecard, never as a chat opens:
   an earlier place lends the grades recorded under its name and level before `until`, and those
   of its `grades`, only while the folder at the key is its `folder` (a skill made there by hand
   after the first was removed by hand shows none of them). A file that is a link, past 256 KiB, of another `v`, or holding
