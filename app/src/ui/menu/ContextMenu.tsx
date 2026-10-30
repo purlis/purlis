@@ -18,6 +18,7 @@
 import {
   cloneElement,
   isValidElement,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -197,46 +198,50 @@ type MenuState = ReturnType<typeof useMenuTriggerState>;
  * menu is never left behind by what it belongs to. But the keyboard's arrival on a row scrolls
  * its list to it, and that scroll's event comes a frame later: a Shift+F10 within that frame
  * opened the menu where the row now stands, and the late event closed it again at once, so the
- * press seemed to do nothing. Heard first (on the window, as it is captured), a scroll that left
- * the opener where it was placed holds back every close until it has been heard; one that moved
- * it closes the menu, as before.
+ * press seemed to do nothing.
+ *
+ * So the scroll is heard first, on the window as it is captured, ahead of React Aria's own
+ * listeners, which its popover adds in an effect. A scroll of a region around the opener that
+ * left the opener where the menu was placed is noted, and the one close it causes, the close
+ * asked while that same event is being heard, is not made. Every other close (Escape, a row's
+ * action, a press outside) is made as before, and so is the close of a scroll that moved it.
  */
 function useClosedOnlyByAMove(
   state: MenuState,
   on: Element | null,
   placed: { current: DOMRect | null },
 ): MenuState {
-  const still = useRef(false);
-  // Before React Aria's own listeners, which its popover adds in an effect: the first on the
-  // window is the first a scroll reaches.
+  // The scroll event that left the opener in place, while it is being heard.
+  const still = useRef<Event | null>(null);
   useLayoutEffect(() => {
     if (!state.isOpen || on === null) return;
-    let done = 0;
-    const scrolled = () => {
+    const scrolled = (event: Event) => {
+      // Only a region around the opener, as React Aria's own close asks: the window and the
+      // document are around everything.
+      const region = event.target;
+      if (region instanceof Node && region !== document && !region.contains(on)) return;
       const was = placed.current;
       const now = on.getBoundingClientRect();
       if (was === null || Math.abs(now.left - was.left) >= 1 || Math.abs(now.top - was.top) >= 1)
         return;
-      still.current = true;
-      window.clearTimeout(done);
-      done = window.setTimeout(() => (still.current = false));
+      still.current = event;
     };
     window.addEventListener("scroll", scrolled, true);
     return () => {
       window.removeEventListener("scroll", scrolled, true);
-      window.clearTimeout(done);
-      still.current = false;
+      still.current = null;
     };
   }, [state.isOpen, on, placed]);
-  return useMemo(
-    () => ({
-      ...state,
-      close: () => {
-        if (!still.current) state.close();
-      },
-    }),
-    [state],
-  );
+  const { close } = state;
+  // One close for as long as the menu's own is the same, so React Aria's listeners keyed on it
+  // are not added again at every render.
+  const closeUnlessStill = useCallback(() => {
+    // `window.event` is the event being heard: the noted scroll's, while React Aria's listener
+    // for it runs, and never a key's or a press's.
+    if (still.current !== null && window.event === still.current) return;
+    close();
+  }, [close]);
+  return { ...state, close: closeUnlessStill };
 }
 
 /**
