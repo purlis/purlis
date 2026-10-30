@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793394012629,
+  "lastUpdate": 1793395469512,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32172,6 +32172,48 @@ window.BENCHMARK_DATA = {
             "value": 101.070235,
             "unit": "ms",
             "extra": "median of 5 runs: 100.267, 100.880, 101.070, 101.097, 101.910 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b41c79847997aec6a9aee36d8e5022a24c037c42",
+          "message": "Runners: the sign-in strip's other outcomes: cancel ends the login, inline terminal, sign out (#4043) (#4157)\n\n* Runners: the sign-in strip's other outcomes: cancel ends the login, inline terminal, sign out (#4043)\n\nThe change of #4091, applied onto main beside #4108's Copilot device code and\npurlis profile sign-in --pool: the driver keeps the device code's words and shared\ninput and adds the terminal path and its bounded queue; pool_sign_in_start takes\nboth provider and terminal; --pool does not combine with the hidden runner flags.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66ZT322QGMH2H7EFFSAYQZT\nPurlis-Persona: steward\n\n* Runners: purlis profile sign-in --pool refuses a runner on another version in words, and never takes the runner's own modes (#4043, #4046)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66ZT322QGMH2H7EFFSAYQZT\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image (#4043)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66ZT322QGMH2H7EFFSAYQZT\nPurlis-Persona: steward\n\n* Runners: a move's sign-in test names the start's terminal too (#4043)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66ZT322QGMH2H7EFFSAYQZT\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image (#4043)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66ZT322QGMH2H7EFFSAYQZT\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T20:59:56Z",
+          "tree_id": "6f2cb8a984240a7ba3a9a19e53e92347eea95e25",
+          "url": "https://github.com/purlis/purlis/commit/b41c79847997aec6a9aee36d8e5022a24c037c42"
+        },
+        "date": 1793395463652,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6687384999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.666, 0.666, 0.669, 0.693, 0.701 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.509358499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.332, 16.356, 16.509, 16.542, 16.670 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.353622,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.742, 101.749, 102.354, 102.476, 103.561 ms"
           }
         ]
       }
