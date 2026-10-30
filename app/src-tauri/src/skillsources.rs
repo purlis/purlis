@@ -810,7 +810,7 @@ pub(crate) async fn skill_install_review(
     crate::off_the_window("reviewing the install", move || {
         flag_on()?;
         let review = source::review(held.root(), &source.core(), &names)?;
-        Ok((&review).into())
+        Ok(InstallReview::from(&review))
     })
     .await
 }

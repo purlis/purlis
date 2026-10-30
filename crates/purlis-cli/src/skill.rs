@@ -1548,6 +1548,7 @@ fn seconds(ms: u64) -> String {
 }
 
 /// Which skills `purlis skill install` installs.
+#[derive(Clone, Copy)]
 enum Named<'a> {
     /// Those named, and the ones they refer to.
     These(&'a [String]),
