@@ -21,10 +21,6 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 import { AnsweredBlocks, type RowOpens } from "./Views";
 
-/** The key of purlis's Grades panel on a skill's page (SK-16): its rows open a grade's
- *  scorecard. */
-export const SKILL_GRADES_PANEL = "grades";
-
 /** What a read of the core answered: its data, or why it was refused; nothing while it is read. */
 export type Read<T> = { data?: T; refused?: string };
 

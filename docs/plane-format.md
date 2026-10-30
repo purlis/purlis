@@ -2559,6 +2559,23 @@ file `memstore.write` could have written in its new store.
 | `host` | string | required | short hostname, as a label: the file is named by the device id (FD-25) | stable | `charter/pieces.py:110` |
 | `persona` | string or null | required key | `persona.resolve_active()` | stable | `charter/pieces.py:111` |
 | `reason` | string | present only when given | a `done`/`abandoned` reason | stable | `charter/pieces.py:113` |
+| `chat` | string | present only where a chat speaks | the chat's stable id (ADR 0066), naming a branch folder's one live writer (#3901); see below | stable | `pieces::record`, `piececlaim` |
+
+**Who holds a branch folder** (#3901, `piececlaim::holder`), read from the lines about it in
+`ts` order:
+
+- a `claimed` line with `chat` makes that chat the holder;
+- a `claimed` line with no `chat` (the window's, the person's, or one written before the key)
+  changes nothing: it holds nothing and releases no holder;
+- a `done` or `abandoned` line releases the holder only when it is the holder's own (its `chat`
+  is the holder's) or the person's (it has neither `chat` nor a `session`). Any other chat's,
+  and one with a `session` but no `chat`, releases nothing;
+- the holder is also released when the app has its chat neither open with its program running
+  nor still coming back after a restart; that is the app's, not a line's.
+
+The check and the claim a brokered write makes hold an advisory lock on
+`workspaces/<ws>/pieces/.claims.lock`, an empty file, taken by the app and the command line
+alike.
 
 ### `workspaces/<ws>/pieces/seen/<repo>.json` and `pieces/seen/<repo>/<piece>.json`
 
@@ -7987,9 +8004,9 @@ refuses a `<data>` under a project or inside any git work tree.
 - **Format:** what one chat of a grade showed as the grade ended it (SK-59, #3239; ADR 0105 as
   amended 2026-10-28): its screen and scrollback as the escape sequences that draw them into a
   blank terminal (the session's snapshot, `purlis_core::engine`), at most 4 MiB, so a row of the
-  grade's scorecard opens the chat read-only in a tab. `<skill>`, `<grade>` (the grade's id, a
-  ULID) and `<chat>` (the chat's id, as the eval record's `report.triggers[].chats` names it) are
-  plain names. Each folder `0700` and never a link, each file `0600`, written and read through no
+  grade's scorecard opens the chat read-only, on a page of the Skill studio (S6, #3688).
+  `<skill>`, `<grade>` (the grade's id, a ULID) and `<chat>` (the chat's id, as the eval record's
+  `report.triggers[].chats` names it) are plain names. Each folder `0700` and never a link, each file `0600`, written and read through no
   link (`grades::kept`). When a grade ends, the chats of every grade of its skill but the three
   newest are removed (`grades::kept::sweep`).
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.

@@ -1121,6 +1121,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_grade_chat",
     "skill_grade_plan",
     "skill_grade_scorecard",
+    // A skill's grades, for its Grades tab (S6, #3688): read only.
+    "skill_grades",
     "skill_lint",
     "skill_move_needs_grant",
     "skill_panels",

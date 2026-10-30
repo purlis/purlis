@@ -6053,6 +6053,23 @@ impl Chats {
     /// The chats a launch could not start as the record holds them, each with why and the
     /// approval its profile needs: what says whose task one was (#1497, `crate::unstarted`).
     /// The window's list is [`Self::would_not_start`].
+    /// **The chats that have not come back since the launch** (#3900, #3901), by their ids
+    /// (ADR 0066) and the numbers their tabs are drawn under: still restoring, or waiting to
+    /// start again. No program of theirs runs here yet, and each may yet: whether one still
+    /// works is not something this app can say of it.
+    pub(crate) fn not_back(&self) -> Vec<(String, Option<u32>)> {
+        let coming: Vec<(String, Option<u32>)> = lock(&self.coming)
+            .iter()
+            .filter_map(|one| Some((one.chat.identity.id.clone()?, Some(one.number))))
+            .collect();
+        // One waiting to start has the number its record kept, where it kept one.
+        let waiting = lock(&self.would_not_start)
+            .iter()
+            .filter_map(|one| Some((one.chat.identity.id.clone()?, one.chat.number)))
+            .collect::<Vec<_>>();
+        coming.into_iter().chain(waiting).collect()
+    }
+
     pub(crate) fn waiting_to_start(&self) -> Vec<WaitingChat> {
         lock(&self.would_not_start)
             .iter()

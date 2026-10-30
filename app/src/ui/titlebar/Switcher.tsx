@@ -144,8 +144,9 @@ export function SwitcherList({
 
 /**
  * **A row** (R96, R107): its mark, its name and its waiting count, 32px, the card's fill under the
- * pointer and the accent's wash on the row Enter would go to (`active`); a press goes to it. Named
- * by its words; what waits in it is its description.
+ * pointer and the accent's wash on the row Enter would go to (`active`, marked selected as well, as
+ * the family's state is keyed); a press goes to it. Named by its words; what waits in it is its
+ * description.
  */
 export function SwitcherRow({
   id,
@@ -193,6 +194,9 @@ export function SwitcherRow({
       data-scope="titlebar"
       data-part="row"
       data-active={active ? "" : undefined}
+      // The family's selected state, as `aria-selected` says it: a theme's
+      // `titlebar.row.selected` keys reach the row Enter would go to by it (#3656).
+      data-selected={active ? "" : undefined}
       data-hovered={isHovered ? "" : undefined}
       data-unavailable={unavailable === undefined ? undefined : ""}
     >
