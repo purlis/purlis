@@ -112,10 +112,18 @@ const OFFER = {
   edited: true,
 };
 
+/** Seconds since the epoch, `ago` seconds ago: the checks are ages, so the pictures hold. */
+const secondsAgo = (ago: number) => Math.floor(Date.now() / 1000) - ago;
+
 /** The faked core: two sources, one update waiting, one source not confirmed here. */
 function core() {
   mockIPC((cmd) => {
     switch (cmd) {
+      case "skill_sources_checked":
+        return [
+          { remote: SUPERPOWERS.remote, at: secondsAgo(3 * 3600 + 60), skills: 14, installed: 1 },
+          { remote: PLATFORM.remote, at: null, skills: null, installed: 1 },
+        ];
       case "skill_studio":
         return studio([], {});
       case "skill_sources":
@@ -150,6 +158,7 @@ function core() {
       case "skill_source_browse":
         return {
           commit: commit("3"),
+          checked: secondsAgo(5 * 60 + 30),
           skills: [
             {
               name: "brainstorming",
@@ -264,6 +273,13 @@ export const Sources: Story = {
     await canvas.findByTestId("skill-updates");
     await canvas.findByTestId("skill-source-unconfirmed");
     await waitFor(() => expect(canvas.getAllByTestId("skill-source")).toHaveLength(2));
+    // What each source's last check found, on its row (#3840).
+    await waitFor(() =>
+      expect(canvas.getAllByTestId("skill-source")[0]).toHaveTextContent(
+        "14 skills, 1 installed · checked 3 hours ago",
+      ),
+    );
+    await expect(canvas.getAllByTestId("skill-source")[1]).toHaveTextContent("1 installed");
     await expect(canvas.getAllByTestId("skill-source-offered")).toHaveLength(2);
     const review = canvas.getByRole("button", { name: "Review update" });
     for (let step = 0; step < 30 && document.activeElement !== review; step++)
@@ -301,6 +317,9 @@ export const SourcePage: Story = {
     const debugging = await canvas.findByTestId("offered-systematic-debugging");
     await expect(debugging).toHaveTextContent("runs a script");
     await expect(canvas.getByTestId("offered-brainstorming")).toHaveTextContent("Update available");
+    await expect(canvas.getByTestId("skill-source-page")).toHaveTextContent(
+      "checked 5 minutes ago",
+    );
   },
 };
 

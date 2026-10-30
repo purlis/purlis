@@ -159,6 +159,9 @@ pub fn updates(plane: &Path) -> Updates {
             Some((_, answer)) => answer.clone(),
             None => {
                 let answer = source_of(plane, one).and_then(|source| super::newest(plane, &source));
+                if answer.is_ok() {
+                    super::checked::asked(plane, &one.source);
+                }
                 asked.push((one.source.clone(), answer.clone()));
                 answer
             }

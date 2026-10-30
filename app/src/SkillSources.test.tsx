@@ -14,6 +14,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillStudioTab } from "./SkillStudioTab";
+import { checkedAgo, checkedSaid } from "./SkillSources";
 import { PLANE, STUDIO_HISTORY, forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
 import { AT_THE_ROOT, sourceKey } from "./skillStudio";
 import { openViewAt } from "./ui/panel/viewHistory";
@@ -296,6 +297,83 @@ describe("the Sources page", () => {
     await user.click(within(unread).getByRole("button", { name: "Try again" }));
     expect(await screen.findByTestId("skill-source")).toBeInTheDocument();
     expect(times(asked, "skill_sources")).toBeGreaterThan(1);
+  });
+});
+
+describe("what each source's last check found (#3840)", () => {
+  const nowSecs = () => Math.floor(Date.now() / 1000);
+
+  it("says its skills, how many are installed and when it was checked on its row, asking no source", async () => {
+    const asked = core({
+      answers: {
+        skill_sources_checked: () => [
+          { remote: SOURCE.remote, at: nowSecs() - 3 * 3600 - 30, skills: 14, installed: 2 },
+        ],
+        // The updates check has not answered: the row does not wait for it.
+        skill_updates: () => new Promise(() => undefined),
+      },
+    });
+    renderStudio(AT_THE_ROOT, "sources");
+    const row = await screen.findByTestId("skill-source");
+    await waitFor(() =>
+      expect(row).toHaveTextContent(
+        "https://example.com/skills · folder skills · 14 skills, 2 installed · checked 3 hours ago · The whole project",
+      ),
+    );
+    expect(did(asked, "skill_source_browse")).toBe(false);
+  });
+
+  it("reads what was recorded again once the updates check has answered", async () => {
+    let at: number | null = null;
+    const asked = core({
+      answers: {
+        skill_sources_checked: () => [{ remote: SOURCE.remote, at, skills: null, installed: 1 }],
+        skill_updates: () => {
+          at = nowSecs();
+          return { offers: [], unasked: [], unconfirmed: [] };
+        },
+      },
+    });
+    renderStudio(AT_THE_ROOT, "sources");
+    const row = await screen.findByTestId("skill-source");
+    await waitFor(() => expect(row).toHaveTextContent("1 installed · checked just now"));
+    expect(times(asked, "skill_sources_checked")).toBeGreaterThan(1);
+  });
+
+  it("says when its page read it in the page's lead", async () => {
+    core({
+      answers: {
+        skill_sources_checked: () => [
+          { remote: SOURCE.remote, at: nowSecs() - 5 * 86_400, skills: 2, installed: 0 },
+        ],
+        skill_source_browse: () => ({ ...BROWSE, checked: nowSecs() }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const row = await screen.findByTestId("skill-source");
+    await waitFor(() => expect(row).toHaveTextContent("checked 5 days ago"));
+    const page = await openSource(user);
+    await within(page).findByTestId("offered-deploy");
+    expect(page).toHaveTextContent("folder skills · checked just now · The whole project");
+  });
+
+  it("says ages a person reads at a glance, and nothing where nothing is known", () => {
+    const now = new Date(Date.UTC(2026, 9, 30, 12));
+    expect(checkedAgo(-5, now)).toBe("checked just now");
+    expect(checkedAgo(59, now)).toBe("checked just now");
+    expect(checkedAgo(60, now)).toBe("checked 1 minute ago");
+    expect(checkedAgo(3599, now)).toBe("checked 59 minutes ago");
+    expect(checkedAgo(7200, now)).toBe("checked 2 hours ago");
+    expect(checkedAgo(86_400, now)).toBe("checked yesterday");
+    expect(checkedAgo(29 * 86_400, now)).toBe("checked 29 days ago");
+    expect(checkedAgo(60 * 86_400, now)).toBe("checked 31 Aug 2026");
+    const remote = SOURCE.remote;
+    expect(checkedSaid(undefined, now)).toBeNull();
+    expect(checkedSaid({ remote, at: null, skills: null, installed: 0 }, now)).toBeNull();
+    expect(checkedSaid({ remote, at: null, skills: 1, installed: 0 }, now)).toBe(
+      "1 skill, 0 installed",
+    );
   });
 });
 

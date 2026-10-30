@@ -369,6 +369,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`cache/update-baseline`](#cacheupdate-baseline)
   - [`cache/vaulthealth.json`](#cachevaulthealthjson)
   - [`cache/harness-wiring.json`](#cacheharness-wiringjson)
+  - [`cache/skill-sources-checked.json`](#cacheskill-sources-checkedjson)
   - [`index/<clone-key>/` — the project's search index](#indexclone-key--the-projects-search-index)
   - [`index/<clone-key>/writer.lock`](#indexclone-keywriterlock)
   - [State purlis keeps **outside** the plane](#state-purlis-keeps-outside-the-plane)
@@ -7632,6 +7633,27 @@ semantics below.
 - **Read by:** `charter/wiring.py:838` (`_read_cache`), `charter/wiring.py:853` (`cached`)
 - **Git:** gitignored; key = `sha256(json.dumps({**profiletrust.fingerprint(p), "name":
   p.name, "cwd": str(cwd)}, sort_keys=True))` (`charter/wiring.py:770`)
+
+### `cache/skill-sources-checked.json`
+- **Format:** one JSON object (#3840): `v` (1) and `sources`, one entry for each skill source
+  this machine last checked, newest first and at most 512: `url`, `branch` (absent for the
+  repository's own `HEAD`), `at`, when it was last checked, in seconds since the epoch, and
+  `skills`, how many skills its last browse offered (absent where it was only asked for its
+  newest commit). Written `0600`, whole or not at all, through no link
+  (`rewrite::replace`), by each browse of a source (`skills::source::browse`, which records `at`
+  and `skills`) and by each updates check a source answered (`skills::source::updates`, which
+  records `at` and keeps `skills`). Read with the Skill studio's source list
+  (`skill_sources_checked`), whose rows say "N skills, i installed · checked 3 hours ago"
+  without asking any source; how many are installed is read from the lockfiles then, never
+  recorded here. A file past 256 KiB, of another `v`, holding more than 512 entries, or that is a
+  link, reads as none.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Clone state, rebuildable — deleting it loses the line until the next browse or
+  updates check.
+- **Written by:** `crates/purlis-core/src/skills/source/checked.rs`
+- **Read by:** `crates/purlis-core/src/skills/source/checked.rs` (`read`), for
+  `app/src-tauri/src/skillsources.rs` (`skill_sources_checked`)
+- **Git:** gitignored, in the state folder.
 
 ### `index/<clone-key>/` — the project's search index
 

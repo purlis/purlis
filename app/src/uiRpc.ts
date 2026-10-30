@@ -1084,6 +1084,7 @@ export const commands = {
 	skillGradeAfterEditOff: __WINDOW_ONLY_RESULT,
 	skillSources: __WINDOW_ONLY_RESULT,
 	skillSourcesOffered: __WINDOW_ONLY_RESULT,
+	skillSourcesChecked: __WINDOW_ONLY_RESULT,
 	skillSourceAdd: __WINDOW_ONLY_RESULT,
 	skillSourceRemove: __WINDOW_ONLY_RESULT,
 	skillSourceConfirm: __WINDOW_ONLY_RESULT,
@@ -10835,6 +10836,23 @@ export type SourceBrowse = {
 	commit: SourceCommit,
 	skills: OfferedSkill[],
 	not_skills: NotASkill[],
+	/**  When it was read, in seconds since the epoch (#3840): what its page's lead says. */
+	checked: number | null,
+};
+
+/**
+ *  **What the last check of a source found** (#3840): when it was, and how many skills it
+ *  offered then, as the core recorded it (`source::checked`), with how many are installed from it
+ *  now. Read with the source list, and never by asking a source.
+ */
+export type SourceChecked = {
+	remote: SourceRemote,
+	/**  When it was last checked, in seconds since the epoch; `None` where nothing has yet. */
+	at: number | null,
+	/**  How many skills it offered at its last browse; `None` where it was never browsed here. */
+	skills: number | null,
+	/**  How many skills are installed from it, at any level, each once. */
+	installed: number,
 };
 
 /**  A commit, and its short name as the core gives it. */

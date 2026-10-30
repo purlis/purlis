@@ -357,6 +357,7 @@ macro_rules! app_commands {
                 skillgrade::after_edit::skill_grade_after_edit_off,
                 skillsources::skill_sources,
                 skillsources::skill_sources_offered,
+                skillsources::skill_sources_checked,
                 skillsources::skill_source_add,
                 skillsources::skill_source_remove,
                 skillsources::skill_source_confirm,

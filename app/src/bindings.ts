@@ -2164,6 +2164,12 @@ export const commands = {
 	 *  ignored.
 	 */
 	skillSourcesOffered: (plane: PlaneId) => typedError<OfferedSource[], string>(__TAURI_INVOKE("skill_sources_offered", { plane })),
+	/**
+	 *  **When each of the project's sources was last checked, and its counts** (#3840): one for each
+	 *  source [`skill_sources`] lists, read from what the last browse or updates check recorded and
+	 *  from the lockfiles, so Sources opens without asking any source.
+	 */
+	skillSourcesChecked: (plane: PlaneId) => typedError<SourceChecked[], string>(__TAURI_INVOKE("skill_sources_checked", { plane })),
 	/**  **Adds a skill source**, shared with the project or kept on this machine. */
 	skillSourceAdd: (plane: PlaneId, source: SkillSource) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_source_add", { plane, source })),
 	/**  **Takes a skill source out** of the project's. Skills installed from it stay. */
@@ -12854,6 +12860,23 @@ export type SourceBrowse = {
 	commit: SourceCommit,
 	skills: OfferedSkill[],
 	not_skills: NotASkill[],
+	/**  When it was read, in seconds since the epoch (#3840): what its page's lead says. */
+	checked: number | null,
+};
+
+/**
+ *  **What the last check of a source found** (#3840): when it was, and how many skills it
+ *  offered then, as the core recorded it (`source::checked`), with how many are installed from it
+ *  now. Read with the source list, and never by asking a source.
+ */
+export type SourceChecked = {
+	remote: SourceRemote,
+	/**  When it was last checked, in seconds since the epoch; `None` where nothing has yet. */
+	at: number | null,
+	/**  How many skills it offered at its last browse; `None` where it was never browsed here. */
+	skills: number | null,
+	/**  How many skills are installed from it, at any level, each once. */
+	installed: number,
 };
 
 /**  A commit, and its short name as the core gives it. */
