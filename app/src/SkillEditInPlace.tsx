@@ -275,6 +275,9 @@ export function useSkillEditInPlace({
     editor,
     /** The question a leave asks, while it is asked. */
     question,
+    /** Whether the tab is at `place` now, for an answer that comes back after the person may have
+     *  moved on: the tab's one place ref (#3973). */
+    isAt: (place: StudioPlace) => samePlace(placeNow.current, place),
   };
 }
 

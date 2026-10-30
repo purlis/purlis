@@ -21,6 +21,8 @@ import { SkillMenu, SkillsList } from "./SkillsList";
 import { fixOf, groupsOf, markOf, type GroupId, type ListedSkill } from "./skillsListing";
 import { DEFAULT_SKILLS_VIEW } from "./skillsViewPrefs";
 import { skill } from "./skillsListing.testkit";
+import { chatNeedsOf, chatSetSaid, type ChatSkillsSaid } from "./chatSkillNeeds";
+import { inWorkspace } from "./skillStudio";
 
 /** A workspace's skills, as the studio answers them for `ops`. */
 const OPS: ListedSkill[] = [
@@ -64,6 +66,7 @@ function Skills({
   rows = OPS,
   pinsRefused = null,
   chat = true,
+  whole,
 }: {
   starts?: boolean;
   /** Whether a chat is in front, or the set is a new chat's (#3778). */
@@ -71,6 +74,8 @@ function Skills({
   rows?: ListedSkill[];
   /** Why ops's chats read none of its pins, where they read none (#3432). */
   pinsRefused?: SkillPinsRefused | null;
+  /** What the chat's set says as a whole (S8, #3694): its header line and its own needs. */
+  whole?: ChatSkillsSaid;
 }) {
   const [said, setSaid] = useState("Nothing done");
   const [folded, setFolded] = useState<readonly GroupId[]>(DEFAULT_SKILLS_VIEW.folded);
@@ -87,6 +92,9 @@ function Skills({
       <SkillsList
         whose={chat ? "steward 5" : "A new chat in ops"}
         chat={chat}
+        setSaid={whole === undefined ? [] : chatSetSaid(whole)}
+        chatNeeds={whole === undefined ? [] : chatNeedsOf(whole, inWorkspace("ops"))}
+        onChatFix={(need) => setSaid(need.fix.label)}
         groups={groupsOf(filter.shown)}
         count={rows.length}
         clashes={() => false}
@@ -328,5 +336,81 @@ export const APinNoChatReads: Story = {
     await pictureNow();
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
+  },
+};
+
+/** A chat whose set is past its budget, which started without a skill its persona names, and
+ *  whose skills changed since it started (S8, #3694). */
+const WHOLE: ChatSkillsSaid = {
+  budget: {
+    skills: 31,
+    chars: 6400,
+    manual: 1,
+    most_skills: 30,
+    most_chars: 6000,
+    hidden: 2,
+    still_over: null,
+    pinned_by: [],
+    pins_together: null,
+    warns: "both",
+  },
+  routing: null,
+  missing: {
+    persona: "reviewer",
+    missing: ["grill"],
+    no_built_in: [],
+    broken: [],
+    by_a_repo: [],
+    beside_a_built_in: [],
+  },
+  changed: {
+    session: 5,
+    files: [],
+    skills: true,
+    skills_added: ["triage"],
+    skills_gone: ["old-deploy"],
+    skills_edited: [],
+  },
+};
+
+/**
+ * **The chat's own needs** (S8, #3694): its budget under whose set it is, and in Needs you, before
+ * its skills' own, what the chat needs as a whole: its set past the budget (Open routing), what
+ * it started without (Open in Skill studio) and what changed since it started (Restart). Tab
+ * walks the header onto Needs you; ↓ reaches each need, and Enter goes where its fix goes, except
+ * a restart, which is only ever its button. The picture is of the
+ * view as it opens. */
+export const TheChatsOwnNeeds: Story = {
+  render: () => <Skills whole={WHOLE} />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Skills" });
+    const row = (name: string | RegExp) => within(list).getByRole("row", { name });
+    await expect(canvas.getByTestId("skills-view-said")).toHaveTextContent(
+      "31 skills of 30 · 6,400 of 6,000 characters",
+    );
+    await expect(row(/^Needs you/)).toHaveAccessibleName(/^Needs you, 5/);
+    // Pictured as it opens, before the keyboard moves anything (a tooltip, a scroll).
+    await pictureNow();
+    await userEvent.tab();
+    await userEvent.tab();
+    await userEvent.tab();
+    await untilFocused(() => row(/^Needs you/), "Skills: Tab lands on Needs you");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => row(/^Near the skill budget/), "Skills: Down reaches the budget");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Open routing"));
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => row(/^Started without 1 skill/), "Skills: Down reaches what it lacks");
+    await userEvent.keyboard("{ArrowDown}");
+    const changed = row(/^Changed since it started/);
+    await untilFocused(() => changed, "Skills: Down reaches what changed");
+    await expect(changed).toHaveTextContent("new: triage; gone: old-deploy");
+    // A press on the card restarts nothing: the restart is only ever its button.
+    await userEvent.keyboard("{Enter}");
+    await expect(canvas.getByRole("status")).toHaveTextContent("Open routing");
+    await userEvent.click(within(changed).getByRole("button", { name: "Restart" }));
+    await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Restart"));
+    expectFocusInSight();
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull(), { timeout: 3_000 });
   },
 };

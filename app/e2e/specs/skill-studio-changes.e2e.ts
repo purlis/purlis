@@ -9,6 +9,7 @@ import {
   closeTheViewTabsOpenedSince,
   focusWorkspace,
   runFromThePalette,
+  shownButton,
   tabNames,
 } from "../reach.js";
 import { studioPage, studioMore, studioSkill, studioTab } from "../studio.js";
@@ -69,7 +70,7 @@ describe("making and changing a skill in the Skill studio", function () {
     await runFromThePalette("Open Skill studio", "skills.studio");
 
     // New skill… asks how first; Write it yourself lands where the person came from (#3684).
-    const make = await $('[data-testid="skill-studio"]').$("button=New skill…");
+    const make = await shownButton("New skill…");
     await make.waitForClickable({ timeout: 20_000 });
     await make.click();
     await press('[data-testid="skill-new"]', "Write it yourself");

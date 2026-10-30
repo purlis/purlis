@@ -1299,6 +1299,7 @@ export function SkillStudioTab({
         plane={plane}
         at={at.sources}
         onGo={(sources) => go({ page: "sources", scope, ...(sources && { sources }) })}
+        stillAt={(sources) => edits.isAt({ page: "sources", scope, ...(sources && { sources }) })}
         onOpenSkill={(name) => go({ page: "library", scope, skill: skillRowNamed(name) })}
         levels={levels}
         start={start}

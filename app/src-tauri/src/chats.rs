@@ -437,6 +437,12 @@ struct Running {
     /// stamp and Use skill… route it from again, so neither reads its clone a second time and
     /// both see the set it was handed (#3245).
     skills_read: purlis_core::hoststart::ChatSkills,
+    /// **A runner chat's workspace clones as its session started here** (#2053): each clone of
+    /// the plane's workspaces and its `.git`'s identity, read as this window started it. Only
+    /// these name its repos for a GitHub App's token this desktop mints for it. `None` for a
+    /// chat of this machine, whose sandbox records its own, and for one reattached, whose start
+    /// this window did not see.
+    clones_at_start: Option<Vec<purlis_core::forge::apptoken::Started>>,
 }
 
 /// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
@@ -3094,8 +3100,9 @@ impl Chats {
     /// **The open chats whose skills changed since they started** (#2770, ADR 0099 §5), by
     /// session: the plane skills each would get now differ from those it started with, in a way
     /// its harness does not take in by itself ([`Harness::skills_reload`]). Its tab offers a
-    /// restart on the same conversation. Read from disk each time it is asked.
-    pub fn skills_changed(&self) -> Vec<u32> {
+    /// restart on the same conversation, and its Skills view names what changed (#3694). Read
+    /// from disk each time it is asked.
+    pub fn skills_changed(&self) -> Vec<(u32, purlis_core::skills::SkillsChanged)> {
         // Asked once, for every chat: where the project's skills reach no chat, none changed.
         if !purlis_core::skills::reach_chats_here(&self.project) {
             return Vec::new();
@@ -3104,7 +3111,7 @@ impl Chats {
     }
 
     /// [`Self::skills_changed`] while the `skill-studio` flag is on.
-    fn skills_changed_while_on(&self) -> Vec<u32> {
+    fn skills_changed_while_on(&self) -> Vec<(u32, purlis_core::skills::SkillsChanged)> {
         // Read out first: no lock is held while the plane's skill folders are read.
         type Started = (
             u32,
@@ -3128,22 +3135,22 @@ impl Chats {
             })
             .collect();
         let built_in = built_in_skills_here();
-        let mut changed: Vec<u32> = started
+        let mut changed: Vec<(u32, purlis_core::skills::SkillsChanged)> = started
             .into_iter()
-            .filter(|(_, workspace, persona, harness, start, then)| {
-                purlis_core::skills::stamp_of(&purlis_core::skills::Running {
+            .filter_map(|(session, workspace, persona, harness, start, then)| {
+                let now = purlis_core::skills::stamp_of(&purlis_core::skills::Running {
                     plane: &self.project,
                     workspace: workspace.as_deref(),
                     persona: persona.as_deref(),
-                    harness: *harness,
+                    harness,
                     built_in: built_in.as_deref(),
                     plane_skills: true,
-                    start: Some(start),
-                }) != *then
+                    start: Some(&start),
+                });
+                (now != then).then(|| (session, then.changed_to(&now)))
             })
-            .map(|(session, ..)| session)
             .collect();
-        changed.sort_unstable();
+        changed.sort_unstable_by_key(|(session, _)| *session);
         changed
     }
 
@@ -4237,6 +4244,9 @@ impl Chats {
                 start: Some(&skills),
             })
         });
+        // A runner chat's workspace clones as it starts (#2053), read before any lock is taken.
+        let mut clones_at_start = (on_the_runner && !reattaching)
+            .then(|| purlis_core::forge::apptoken::clones_now(&self.project));
         // A start under this number has been told nothing yet (#1450).
         lock(&self.told).remove(&session);
         lock(&self.starting_as).remove(&session);
@@ -4260,6 +4270,7 @@ impl Chats {
                 skills: stamp,
                 skills_read: (*skills).clone(),
                 plane_skills,
+                clones_at_start: clones_at_start.take(),
             },
         );
         // Its routing record, after its run began (SK-15b), where its router was asked now. A chat
@@ -5339,6 +5350,17 @@ impl Chats {
             running.composed_by_its_host
                 && running.ran != Some(purlis_session_protocol::session::RunSandbox::Off)
         })
+    }
+
+    /// **Runner chat `session`'s workspace clones as its session started here** (#2053): `None`
+    /// for a chat not open, of this machine, or reattached.
+    pub fn clones_at_start(
+        &self,
+        session: u32,
+    ) -> Option<Vec<purlis_core::forge::apptoken::Started>> {
+        lock(&self.open)
+            .get(&session)
+            .and_then(|running| running.clones_at_start.clone())
     }
 
     /// What chat `session`'s sandbox was compiled to as it started (#1407), while it is open:

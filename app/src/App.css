@@ -954,55 +954,17 @@ body {
   text-overflow: ellipsis;
 }
 
-/* **A chat's skills** (`SkillsChip`, #2775): how many it lists, and Use skill… for it, drawn by
-   the button family (ghost, or warning-soft while the chat's set is past its skill budget). Its
-   place on the line only: it never pushes the line wider than it is. */
+/* **A chat's skills** (`SkillsChip`, #2775, S8): how many its set holds, and the way to them in
+   the Skills view, drawn by the button family (ghost, or warning-soft while something in the set
+   needs the person). Its place on the line only: it never pushes the line wider than it is. */
 .pane-chips > .pane-skills {
   flex: 0 1 auto;
   min-width: 0;
 }
 
-/* **Use skill…** (`UseSkill.tsx`, #2775): the chat's skills to pick from, then the boxes of the
-   one picked, in a dialog of the family (#2910); each row says the skill's name, its level,
-   whether it is manual-only, and what it does. */
-.use-skill-budget {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-}
-
-.use-skill-over {
-  display: flex;
-  gap: var(--space-2);
-  align-items: flex-start;
-  color: var(--state-waiting);
-}
-
-.use-skill-over > svg {
-  flex: none;
-  inline-size: 1em;
-  block-size: 1em;
-  margin-block-start: var(--space-1);
-}
-
-/* Pins past the most a chat reads only together (#3391): the sentence, and under it a way to
-   each pinner's studio. */
-.use-skill-pins-together > div {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.use-skill-pins-together p {
-  margin: 0;
-}
-
-.use-skill-studios {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
+/* **Use skill…** (`UseSkill.tsx`, #2775, S8): a quick picker of the chat's skills, then the
+   boxes of the one picked, in a dialog of the family (#2910); each row says the skill's name,
+   its level, whether it is manual-only, and what it does. */
 /* The skills are a list of the family (`ui/list`, #2911): a skill's name, its level and its
    description under them, in the row. The list scrolls inside the dialog. */
 .use-skill-list {
@@ -7833,6 +7795,14 @@ nav.piece-files-head {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The chat's budget and how its router did at its start, under whose skills (S8, #3694): what
+   Use skill… used to say above its list, said once, here. */
+.skills-view-said {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
 }
 
 .skills-view > .skills-view-list {

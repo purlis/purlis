@@ -230,12 +230,12 @@ export function PaneFrame({
             before anything else the line holds for a task. */}
             {crumbs && <BriefButton of={briefOfShown(crumbs)} />}
             {crumbs && ending}
-            {/* The chat's skills and its skill budget, and Use skill… for it (#2775). */}
+            {/* The chat's skills, and the way to them in the Skills view (#2775, S8). */}
             {/* Not beside a task's breadcrumb: that line is the fullest a pane has, and the
               state in it is read whole before anything else (`pane-crumbs.e2e.ts`); nor in a
               narrow pane, for the same line. The palette and the tab's menu still have Use
               skill… there. */}
-            {!crumbs && roomy && <SkillsChip session={session} />}
+            {!crumbs && roomy && <SkillsChip plane={plane} session={session} />}
             {harness && <HarnessChip glance={harness} onOpen={() => onOpenCard(harness)} />}
             {from && <span className="pane-from">{from}</span>}
             {workItem && <span className="pane-work-item">{workItemSaid(workItem)}</span>}

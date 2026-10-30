@@ -1063,6 +1063,18 @@ fn a_dispatch_tool_names_its_task_by_number_and_its_text_whole() {
         ),
         Ok("and the logs".to_owned())
     );
+    assert_eq!(
+        dispatch_flag(&args(json!({})), "all", DISPATCH_TELL),
+        Ok(false)
+    );
+    assert_eq!(
+        dispatch_flag(&args(json!({"all": true})), "all", DISPATCH_TELL),
+        Ok(true)
+    );
+    assert!(dispatch_flag(&args(json!({"all": "yes"})), "all", DISPATCH_TELL).is_err());
+    assert_eq!(dispatch_ack(&args(json!({"ack": 7}))), Ok(Some(7)));
+    assert_eq!(dispatch_ack(&args(json!({}))), Ok(None));
+    assert!(dispatch_ack(&args(json!({"ack": -1}))).is_err());
     let said = dispatch_text(&args(json!({})), "question", DISPATCH_ASK).expect_err("refused");
     assert_eq!(said, "dispatch_ask needs `question`, as text");
     assert_eq!(dispatch_wait_seconds(&args(json!({}))), Ok(None));
@@ -1073,11 +1085,13 @@ fn a_dispatch_tool_names_its_task_by_number_and_its_text_whole() {
     assert!(dispatch_wait_seconds(&args(json!({"wait_seconds": "60"}))).is_err());
     for (tool, required) in [
         (DISPATCH_WAIT, json!(["chat"])),
-        (DISPATCH_TELL, json!(["chat", "text"])),
+        // `chat`, or `all` for every task still working (#3904).
+        (DISPATCH_TELL, json!(["text"])),
         (DISPATCH_ANSWER, json!(["chat", "text"])),
         (DISPATCH_CANCEL, json!(["chat"])),
         (DISPATCH_CLOSE, json!(["chat"])),
-        (DISPATCH_NOTE, json!(["text"])),
+        // `text`, or `ack` alone (#3904).
+        (DISPATCH_NOTE, serde_json::Value::Null),
         (DISPATCH_ASK, json!(["question"])),
     ] {
         let spec = TOOLS.iter().find(|spec| spec.name == tool).expect("a tool");

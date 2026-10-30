@@ -288,7 +288,8 @@ pub fn checked(gate: &Gate<'_>) -> Result<Checked, String> {
 /// **Tool `name` of `persona`, as this machine allows it**, where `wanted` asks for exactly its
 /// vault and hand-over: the persona's tools as the project declares them and this machine
 /// allowed them, read now (the runner armed the chat's tools, of which this window holds no
-/// record). Refused in the words a chat of this machine is refused in otherwise.
+/// record), run with arguments it allows. Refused in the words a chat of this machine is refused
+/// in otherwise.
 fn allowed_tool(
     gate: &Gate<'_>,
     persona: &str,
@@ -316,6 +317,16 @@ fn allowed_tool(
             program: name,
         },
     )?;
+    // Its arguments (#3421), judged here as well as on the runner's host, so nothing is read
+    // or minted for a run the tool's `args` or the forge's refusals would refuse.
+    let args: Vec<String> = wanted
+        .command
+        .iter()
+        .skip_while(|word| *word == "--")
+        .skip(1)
+        .cloned()
+        .collect();
+    tools::allows(ready, &args)?;
     Ok(ready.tool.clone())
 }
 
@@ -458,7 +469,42 @@ pub fn run_on_its_runner(
     let root = held.root();
     let ctx = Ctx::new(root, Env::from_process());
     let authorised = |persona: &str, vault: &str| brokered::authorise(&ctx, Some(persona), vault);
-    let read = |tool: &Tool| read(&ctx, tool);
+    // A GitHub App's tool is sent the token this desktop mints for the chat, never the key
+    // (#2053): its repos are the remotes of the clones in its workspace here.
+    let asker = held
+        .chats()
+        .login_asker(root, session)
+        .map(|(asker, _)| asker);
+    let folder = asker.as_ref().and_then(|asker| asker.folder.clone());
+    let grants: Vec<PathBuf> = asker
+        .as_ref()
+        .and_then(|asker| asker.confines.as_ref())
+        .map(|confines| confines.writable.clone())
+        .unwrap_or_default();
+    // Its workspace clones as its session started here: only those name its repos (#2053).
+    let clones_at_start = held.chats().clones_at_start(session);
+    // And only those purlis cloned or the person saved from the window.
+    let config_root = purlis_core::forge::apptoken::record_root();
+    let read = |tool: &Tool| match tool.mint {
+        Some(_) => minted(
+            &ctx,
+            tool,
+            &purlis_core::forge::apptoken::For {
+                root,
+                chat: session,
+                folder: folder.as_deref(),
+                // A runner's folder is not one of this machine's: the token is minted for the
+                // workspace's clones here, of one installation.
+                here: None,
+                writes: &grants,
+                started: clones_at_start.as_deref(),
+                on_a_runner: true,
+                config_root: config_root.as_deref(),
+            },
+            &purlis_core::forge::apptoken::token_from_vault,
+        ),
+        None => read(&ctx, tool),
+    };
     let moved = || held.chats().asks_may_have_moved();
     // The runner this chat's link reached, as the desktop's host said it (#3417).
     let reached = crate::hooks::reached_over_the_link();
@@ -583,6 +629,43 @@ fn read(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>, Stri
     }
     Ok(values)
 }
+
+/// **The token a GitHub App mints for a runner chat's tool `tool`, sent as the value of its key**
+/// (#2053, E2): the key itself is read to mint and goes nowhere else.
+pub(crate) fn minted(
+    ctx: &Ctx,
+    tool: &Tool,
+    chat: &purlis_core::forge::apptoken::For<'_>,
+    mint: Mints,
+) -> Result<Vec<(String, Zeroizing<String>)>, String> {
+    // Fail closed: with no record of the clones its session started with, none names its repos.
+    if chat.started.is_none() {
+        return Err(NO_START_RECORDED.to_owned());
+    }
+    let key = tool
+        .values
+        .first()
+        .map(|value| value.key.clone())
+        .ok_or_else(|| format!("{} names no key", tool.name))?;
+    let token = mint(ctx, chat, tool)?;
+    // Masked wherever this desktop keeps a chat's words, as the run's own values are.
+    purlis_core::secrets::seen::remember(&token);
+    Ok(vec![(key, token)])
+}
+
+/// What a runner chat's GitHub App tool is refused with where this window holds no record of the
+/// clones its session started with (#2053): one reattached since this window started.
+pub(crate) const NO_START_RECORDED: &str = "this window did not see this runner chat's session \
+     start, so it holds no record of the clones its workspace had then and mints no GitHub App \
+     token for it: start the chat again";
+
+/// What mints a GitHub App's token for a runner chat's tool:
+/// `purlis_core::forge::apptoken::token_from_vault`, or a test's own.
+pub(crate) type Mints<'a> = &'a dyn Fn(
+    &Ctx,
+    &purlis_core::forge::apptoken::For<'_>,
+    &Tool,
+) -> Result<Zeroizing<String>, String>;
 
 /// What a pool tool Ask answered by nothing any more says.
 const WAITS_NO_MORE: &str = "Nothing is asking about that run of a tool on a pool any more.";
