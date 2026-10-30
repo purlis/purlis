@@ -4267,7 +4267,8 @@ fn pool_sign_in(
     {
         return Err(format!(
             "purlis follows only Claude Code's and opencode's Copilot sign-in on a pool so far. \
-             Sign '{}' in with Open in terminal on its line in Settings › Pools.",
+             Sign '{}' in from its line in Settings › Pools, with a project open: its Sign in \
+             opens a shell tab on the runner.",
             record.name
         ));
     }
