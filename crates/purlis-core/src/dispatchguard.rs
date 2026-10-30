@@ -1204,8 +1204,7 @@ mod tests {
 
     /// A dispatch may say where its chat works (`--in`, #1453). The word is one more argument
     /// of a line a rule already allows, so the rule for a shared call sees it wherever it
-    /// stands (D-T61-3); and no rule allows a line that opens with it, so that spelling is the
-    /// harness's own to ask about, alone or not.
+    /// stands (D-T61-3); and a line that opens with it is allowed by its own rule (#3903).
     #[test]
     fn a_dispatch_that_says_where_it_works_is_alone_or_refused_too() {
         use crate::harness::claude::{DISPATCH_ALLOW, DISPATCH_TASK_ALLOW, HANDOFF_ALLOW};
@@ -1245,15 +1244,24 @@ mod tests {
                 true,
             ),
             ("purlis dispatch --name x --long <<'B'\nlook\nB", true),
-            // No rule opens with `--in`: these the harness asks about itself.
+            // A line may open with `--in` too (#3903), and name the repo's clone.
             (
                 "purlis dispatch --in worktree --name x <<'B'\nlook\nB",
-                false,
+                true,
+            ),
+            (
+                "purlis dispatch --in worktree:api --name x <<'B'\nlook\nB",
+                true,
+            ),
+            (
+                "purlis dispatch --name x --in worktree:api <<'B'\nlook\nB",
+                true,
             ),
             (
                 "purlis dispatch --in workspace:beta --name x <<'B'\nlook\nB",
-                false,
+                true,
             ),
+            // Not by the spelling with `=`: that the harness asks about itself.
             (
                 "purlis dispatch --in=worktree --name x <<'B'\nlook\nB",
                 false,

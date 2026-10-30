@@ -20,25 +20,52 @@ fn project() -> (tempfile::TempDir, PathBuf) {
 fn a_dispatch_names_a_worktree_or_a_workspace_and_nothing_else_is_a_place() {
     assert_eq!(asked(None), Ok(None));
     assert_eq!(asked(Some("  ")), Ok(None));
-    assert_eq!(asked(Some("worktree")), Ok(Some(Where::Worktree)));
+    assert_eq!(asked(Some("worktree")), Ok(Some(Where::Worktree(None))));
+    // #3903: a repo's clone in the asking chat's workspace, by its folder's name.
+    assert_eq!(
+        asked(Some(" worktree:api ")),
+        Ok(Some(Where::Worktree(Some("api".to_owned()))))
+    );
     assert_eq!(
         asked(Some(" workspace:beta ")),
         Ok(Some(Where::Workspace("beta".to_owned())))
     );
     // A bare name, a folder, a branch: none is a word `--in` has.
-    for word in [
-        "beta",
-        "worktree:my-branch",
-        "worktree=../x",
-        "/tmp/x",
-        "branch:main",
-    ] {
+    for word in ["beta", "worktree=../x", "/tmp/x", "branch:main"] {
         assert_eq!(asked(Some(word)), Err(Refused::Word(word.to_owned())));
     }
     assert_eq!(
         Refused::Word("beta".to_owned()).say(),
-        "--in is `worktree` or `workspace:<name>`, not 'beta'. Leave it out and the new chat \
-         works in this chat's folder."
+        "--in is `worktree`, `worktree:<repo>` or `workspace:<name>`, not 'beta'. Leave it out \
+         and the new chat works in this chat's folder."
+    );
+}
+
+#[test]
+fn a_repo_with_path_characters_names_no_clone() {
+    // #3903: what follows `worktree:` is a clone's folder in the workspace, and nothing else.
+    for name in [
+        "../api",
+        "api/..",
+        "a/b",
+        "..",
+        ".",
+        "",
+        "/etc",
+        "-x",
+        ".worktrees",
+    ] {
+        let word = format!("worktree:{name}");
+        assert_eq!(
+            asked(Some(&word)),
+            Err(Refused::RepoName(name.to_owned())),
+            "{word:?}"
+        );
+    }
+    assert_eq!(
+        Refused::RepoName("../api".to_owned()).say(),
+        "'../api' cannot name a repo, so nothing is cut. A repo is named by its clone's \
+         folder in the workspace, and by nothing else."
     );
 }
 
@@ -218,7 +245,7 @@ fn a_worktree_asked_for_where_the_asking_chat_works_in_no_repo_is_refused_in_a_s
         None,
     ] {
         assert_eq!(
-            ground(&root, Some(Where::Worktree), None, cwd.as_deref()),
+            ground(&root, Some(Where::Worktree(None)), None, cwd.as_deref()),
             Err(Refused::NotInARepo),
             "{cwd:?}"
         );
@@ -229,6 +256,192 @@ fn a_worktree_asked_for_where_the_asking_chat_works_in_no_repo_is_refused_in_a_s
          repo's clone: this folder is not a git repository purlis cuts worktrees of. Dispatch \
          it from a chat that works in a repo, or leave out `--in worktree` and the new chat \
          works in this chat's folder."
+    );
+}
+
+/// A clone of `repo` in workspace `ws`: a folder holding a `.git`, which is all that reads.
+fn clone_in(root: &Path, ws: &str, repo: &str) -> PathBuf {
+    let clone = root.join("workspaces").join(ws).join(repo);
+    std::fs::create_dir_all(clone.join(".git")).unwrap();
+    clone
+}
+
+/// What a dispatch cut from workspace `ws`'s clone of `repo` is grounded on: the branch the
+/// remote names its default, as `purlis worktree add` cuts (#3903).
+fn by_default(ws: &str, repo: &str) -> Ground {
+    Ground::Worktree(Repo {
+        workspace: ws.to_owned(),
+        repo: repo.to_owned(),
+        piece: None,
+        from_default: true,
+    })
+}
+
+#[test]
+fn a_worktree_asked_for_from_a_workspace_with_one_clone_is_cut_from_that_clone() {
+    // #3897 concern 4, #3903: the workspace's folder holds the clone in a subfolder.
+    let (_dir, root) = project();
+    clone_in(&root, "alpha", "api");
+    std::fs::create_dir_all(root.join("workspaces/alpha/notes")).unwrap();
+    // Not a clone: a folder with no `.git`, and purlis's own folders.
+    std::fs::create_dir_all(root.join("workspaces/alpha/docs")).unwrap();
+
+    for cwd in [
+        root.join("workspaces/alpha"),
+        root.join("workspaces/alpha/notes"),
+    ] {
+        assert_eq!(
+            ground(&root, Some(Where::Worktree(None)), None, Some(&cwd)),
+            Ok(by_default("alpha", "api")),
+            "{}",
+            cwd.display()
+        );
+        assert_eq!(
+            ground(
+                &root,
+                Some(Where::Worktree(Some("api".to_owned()))),
+                None,
+                Some(&cwd)
+            ),
+            Ok(by_default("alpha", "api")),
+        );
+    }
+    // purlis's own folders under a workspace stand in no repo.
+    std::fs::create_dir_all(root.join("workspaces/alpha/.worktrees/api")).unwrap();
+    assert_eq!(
+        ground(
+            &root,
+            Some(Where::Worktree(None)),
+            None,
+            Some(&root.join("workspaces/alpha/.worktrees/api"))
+        ),
+        Err(Refused::NotInARepo)
+    );
+    // Nor does the project's root, whatever its workspaces hold.
+    assert_eq!(
+        ground(&root, Some(Where::Worktree(None)), None, Some(&root)),
+        Err(Refused::NotInARepo)
+    );
+}
+
+#[test]
+fn a_worktree_asked_for_from_a_workspace_with_several_clones_names_them_until_one_is_named() {
+    let (_dir, root) = project();
+    clone_in(&root, "alpha", "web");
+    clone_in(&root, "alpha", "api");
+    let alpha = root.join("workspaces/alpha");
+
+    let refused = ground(&root, Some(Where::Worktree(None)), None, Some(&alpha))
+        .expect_err("which repo is not said");
+    assert_eq!(
+        refused,
+        Refused::WhichRepo {
+            workspace: "alpha".to_owned(),
+            repos: vec!["api".to_owned(), "web".to_owned()],
+        }
+    );
+    assert_eq!(
+        refused.say(),
+        "workspace 'alpha' holds more than one repo's clone ('api' and 'web'), so `--in \
+         worktree` does not say which one to cut a branch from. Name one: `--in \
+         worktree:<repo>`, such as `--in worktree:api`."
+    );
+    assert_eq!(
+        ground(
+            &root,
+            Some(Where::Worktree(Some("web".to_owned()))),
+            None,
+            Some(&alpha)
+        ),
+        Ok(by_default("alpha", "web"))
+    );
+    let missing = ground(
+        &root,
+        Some(Where::Worktree(Some("db".to_owned()))),
+        None,
+        Some(&alpha),
+    )
+    .expect_err("no such clone");
+    assert_eq!(
+        missing,
+        Refused::NoSuchRepo {
+            workspace: "alpha".to_owned(),
+            repo: "db".to_owned(),
+            repos: vec!["api".to_owned(), "web".to_owned()],
+        }
+    );
+    assert_eq!(
+        missing.say(),
+        "workspace 'alpha' holds no clone called 'db', so nothing is cut. Its clones are \
+         'api' and 'web': name one with `--in worktree:<repo>`."
+    );
+    // A persona's default worktree gives way where the workspace does not say which repo.
+    std::fs::create_dir_all(root.join("personas/web")).unwrap();
+    std::fs::write(
+        root.join("personas/web/persona.md"),
+        "---\nname: web\ndescription: the site\ndispatch-isolation: worktree\n---\n# web\n",
+    )
+    .unwrap();
+    assert!(isolates(&root, "web"));
+    assert_eq!(
+        ground(&root, None, Some("web"), Some(&alpha)),
+        Ok(Ground::Asker { fell_back: true })
+    );
+    // And where the workspace holds one clone, the default is a worktree of it.
+    let (_one, single) = project();
+    clone_in(&single, "alpha", "api");
+    std::fs::create_dir_all(single.join("personas/web")).unwrap();
+    std::fs::copy(
+        root.join("personas/web/persona.md"),
+        single.join("personas/web/persona.md"),
+    )
+    .unwrap();
+    assert_eq!(
+        ground(
+            &single,
+            None,
+            Some("web"),
+            Some(&single.join("workspaces/alpha"))
+        ),
+        Ok(by_default("alpha", "api"))
+    );
+}
+
+#[test]
+fn a_chat_in_one_clone_may_name_another_clone_of_its_workspace() {
+    let (_dir, root) = project();
+    let api = clone_in(&root, "alpha", "api");
+    clone_in(&root, "alpha", "web");
+
+    // Its own repo, named or not, is cut as before: from where it stands.
+    let own = Ground::Worktree(Repo {
+        workspace: "alpha".to_owned(),
+        repo: "api".to_owned(),
+        piece: None,
+        from_default: false,
+    });
+    assert_eq!(
+        ground(&root, Some(Where::Worktree(None)), None, Some(&api)),
+        Ok(own.clone())
+    );
+    assert_eq!(
+        ground(
+            &root,
+            Some(Where::Worktree(Some("api".to_owned()))),
+            None,
+            Some(&api)
+        ),
+        Ok(own)
+    );
+    // Another clone of its workspace is cut as `purlis worktree add` cuts it.
+    assert_eq!(
+        ground(
+            &root,
+            Some(Where::Worktree(Some("web".to_owned()))),
+            None,
+            Some(&api)
+        ),
+        Ok(by_default("alpha", "web"))
     );
 }
 
@@ -301,6 +514,7 @@ fn what_the_chats_are_told_names_the_branch_and_says_nothing_merges() {
         workspace: "alpha".to_owned(),
         repo: "api".to_owned(),
         piece: None,
+        from_default: false,
     });
     assert_eq!(
         said_to_the_asker(&ground, Some(&cut), false),
@@ -319,7 +533,8 @@ fn what_the_chats_are_told_names_the_branch_and_says_nothing_merges() {
          worktree's git data is outside the folder it may write, so `git add` and `git commit` \
          are refused here: commit your work with `purlis worktree commit -m \"<message>\" \
          --all` (or paths in place of `--all`; a new file must be named). It only commits. \
-         Nothing is merged for you: your report names the branch, and only the person merges it, \
+         `purlis worktree update` brings the branch up to its base and `purlis worktree push` \
+         pushes it, and the app runs both for you too. Nothing is merged for you: your report names the branch, and only the person merges it, \
          from the task's Changes in the window (a chat may ask them to)"
     );
     assert!(!told.contains("Commit your work"), "{told}");

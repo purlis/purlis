@@ -265,11 +265,13 @@ pub fn told_the_asker(new: &str, others: &[String], folder: &str) -> String {
     format!(
         "'{}' works in {} with no branch of its own, and {} {verb} still working there. There \
          are no file locks between tasks, so a file two of them change cannot be told apart \
-         afterwards. Give a task a branch of its own with `--in {}` to keep {them} apart",
+         afterwards. Give a task a branch of its own with `--in {}`, or `--in {}<repo>` \
+         where the workspace holds more than one repo's clone, to keep {them} apart",
         crate::shown::short(new),
         crate::shown::short(folder),
         listed(others),
         crate::dispatchplace::WORKTREE,
+        crate::dispatchplace::WORKTREE_OF,
     )
 }
 
@@ -333,7 +335,8 @@ mod tests {
             "'review' works in workspaces/alpha with no branch of its own, and 'talk' is still \
              working there. There are no file locks between tasks, so a file two of them \
              change cannot be told apart afterwards. Give a task a branch of its own with `--in \
-             worktree` to keep the two apart"
+             worktree`, or `--in worktree:<repo>` where the workspace holds more than one \
+             repo's clone, to keep the two apart"
         );
         assert_eq!(
             said_in_window(
@@ -405,7 +408,8 @@ mod tests {
             "'third' works in workspaces/alpha with no branch of its own, and 'first' and \
              'second' are still working there. There are no file locks between tasks, so a \
              file two of them change cannot be told apart afterwards. Give a task a branch of \
-             its own with `--in worktree` to keep them apart"
+             its own with `--in worktree`, or `--in worktree:<repo>` where the workspace holds \
+             more than one repo's clone, to keep them apart"
         );
     }
 

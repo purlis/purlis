@@ -27,6 +27,7 @@ fn repo(f: &support::Fixture) -> Repo {
         workspace: f.ws.clone(),
         repo: f.repo.clone(),
         piece: None,
+        from_default: false,
     }
 }
 
@@ -107,7 +108,7 @@ fn a_worktree_is_cut_from_the_repo_the_asking_chat_works_in_wherever_in_it_that_
 
     for cwd in [f.clone.clone(), f.clone.join("src/deep")] {
         assert_eq!(
-            dispatchplace::ground(&f.plane, Some(Where::Worktree), None, Some(&cwd)),
+            dispatchplace::ground(&f.plane, Some(Where::Worktree(None)), None, Some(&cwd)),
             Ok(Ground::Worktree(repo(&f))),
             "{}",
             cwd.display()
@@ -116,21 +117,34 @@ fn a_worktree_is_cut_from_the_repo_the_asking_chat_works_in_wherever_in_it_that_
     // A chat that itself works in a worktree: its repo is the clone that was cut from, and
     // the worktree it stands in is named, for its task to be cut from (#1472).
     assert_eq!(
-        dispatchplace::ground(&f.plane, Some(Where::Worktree), None, Some(&own.path)),
+        dispatchplace::ground(&f.plane, Some(Where::Worktree(None)), None, Some(&own.path)),
         Ok(Ground::Worktree(Repo {
             piece: Some(own.piece.clone()),
             ..repo(&f)
         }))
     );
-    // And the project's root, a workspace's own folder and the worktrees' folder are no repo.
+    // A workspace's own folder works in its one clone, cut as `purlis worktree add` cuts
+    // (#3903).
+    assert_eq!(
+        dispatchplace::ground(
+            &f.plane,
+            Some(Where::Worktree(None)),
+            None,
+            Some(&f.workspace())
+        ),
+        Ok(Ground::Worktree(Repo {
+            from_default: true,
+            ..repo(&f)
+        }))
+    );
+    // And the project's root and the worktrees' folder are no repo.
     for cwd in [
         f.plane.clone(),
-        f.workspace(),
         f.workspace().join(".worktrees"),
         f.workspace().join(".worktrees/api"),
     ] {
         assert_eq!(
-            dispatchplace::ground(&f.plane, Some(Where::Worktree), None, Some(&cwd)),
+            dispatchplace::ground(&f.plane, Some(Where::Worktree(None)), None, Some(&cwd)),
             Err(Refused::NotInARepo),
             "{}",
             cwd.display()
@@ -1220,9 +1234,86 @@ fn a_merge_lands_the_commit_it_was_given_and_not_the_branch_s_newer_one() {
     assert!(!f.clone.join("not-shown").exists());
 }
 
+#[test]
+fn a_task_asked_for_from_a_workspace_s_folder_is_cut_as_purlis_worktree_add_cuts() {
+    purlis_core::unsteered!();
+    // #3897 concern 4, #3903: the asking chat's folder holds the clone in a subfolder. Its
+    // task gets a branch folder of its own off the remote's default branch, brought up to the
+    // remote, and claimed, so the task commits, updates and pushes by the brokered route.
+    let f = support::plane_with_clone("api");
+    let remote = f.plane.join("remote.git");
+    support::git(
+        &f.plane,
+        &[
+            "clone",
+            "-q",
+            "--bare",
+            f.clone.to_str().unwrap(),
+            remote.to_str().unwrap(),
+        ],
+    );
+    support::git(
+        &f.clone,
+        &["remote", "add", "origin", remote.to_str().unwrap()],
+    );
+    support::git(&f.clone, &["fetch", "-q", "origin"]);
+    support::git(
+        &f.clone,
+        &["branch", "-q", "--set-upstream-to=origin/main", "main"],
+    );
+    // The remote moves on; the clone's own `main` is behind it, and the clone stands on
+    // another branch, as a shared clone left on someone's branch does.
+    let other = f.plane.join("other");
+    support::git(
+        &f.plane,
+        &[
+            "clone",
+            "-q",
+            remote.to_str().unwrap(),
+            other.to_str().unwrap(),
+        ],
+    );
+    f.commit(&other, "upstream-work");
+    support::git(&other, &["push", "-q", "origin", "main"]);
+    support::git(&f.clone, &["fetch", "-q", "origin"]);
+    support::git(&f.clone, &["checkout", "-q", "-b", "someones-branch"]);
+    f.commit(&f.clone, "someones-work");
+
+    let repo = asked_from(&f, &f.workspace());
+    assert!(repo.from_default, "{repo:?}");
+    let cut = dispatchplace::cut(
+        &f.plane,
+        &repo,
+        "check the queue",
+        &dispatchrecord::mint(),
+        &Isolated::default(),
+    )
+    .expect("the worktree is cut");
+
+    assert_eq!(cut.base, worktree::Base::Branch("main".to_owned()));
+    assert!(
+        cut.path.join("upstream-work").is_file(),
+        "brought up to the remote"
+    );
+    assert!(
+        !cut.path.join("someones-work").exists(),
+        "not the clone's HEAD"
+    );
+    assert_eq!(
+        cut.path,
+        f.workspace().join(".worktrees/api").join(&cut.piece),
+        "a branch folder where `purlis worktree add` puts one"
+    );
+    // A branch folder the brokered `purlis worktree` words find.
+    assert_eq!(
+        worktree::locate(&f.plane, &cut.path).map(|found| found.piece),
+        Some(cut.piece.clone())
+    );
+}
+
 /// The repo a dispatch from a chat standing at `cwd` cuts its worktree from.
 fn asked_from(f: &support::Fixture, cwd: &Path) -> Repo {
-    match dispatchplace::ground(&f.plane, Some(Where::Worktree), None, Some(cwd)) {
+    match dispatchplace::ground(&f.plane, Some(Where::Worktree(None)), None, Some(cwd)) {
         Ok(Ground::Worktree(repo)) => repo,
         other => panic!("not a worktree ground: {other:?}"),
     }
