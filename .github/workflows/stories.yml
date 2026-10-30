@@ -32,6 +32,7 @@ name: stories
 
 on:
   pull_request:
+    branches: [never-probe-3892]
   push:
     branches: [main]
   workflow_dispatch:

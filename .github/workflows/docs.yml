@@ -19,6 +19,7 @@ name: docs
 
 on:
   pull_request:
+    branches: [never-probe-3892]
   push:
     branches: [main]
   # The merge queue's run, so `docs (build, links, reachable)` reports for the group a pull

@@ -5,6 +5,7 @@ name: ci
 
 on:
   pull_request:
+    branches: [never-probe-3892]
   push:
     branches: [main]
   # The merge queue's run of the group a pull request joins: main, or the entries ahead of it, with

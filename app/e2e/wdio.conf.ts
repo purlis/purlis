@@ -222,6 +222,61 @@ export const config: WebdriverIO.Config = {
   async afterTest(test, _context, { passed, error, duration }) {
     recordTiming(test, duration);
     if (!passed) {
+      // THROWAWAY probe for #3892: a picture and the window's state at the failure.
+      if (process.env.PURLIS_PROBE) {
+        const { writeFileSync } = await import("node:fs");
+        const name = `${test.parent} ${test.title}`.replace(/[^a-z0-9]+/gi, "-").slice(0, 80);
+        await browser.saveScreenshot(join(LOGS, `probe-${name}.png`)).catch(() => undefined);
+        const state = await browser
+          .execute(() => {
+            const rect = (el: Element | null) => {
+              if (!el) return null;
+              const b = el.getBoundingClientRect();
+              return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)];
+            };
+            const said = (el: Element | null) =>
+              el === null
+                ? null
+                : `${el.tagName}.${el.className}#${el.getAttribute("data-testid") ?? ""} "${(el.textContent ?? "").slice(0, 60)}"`;
+            return {
+              window: [window.innerWidth, window.innerHeight],
+              doc: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
+              body: [document.body.scrollWidth, document.body.scrollHeight],
+              active: said(document.activeElement),
+              tabs: [...document.querySelectorAll('[role="tab"]')].map(
+                (t) => `${t.getAttribute("aria-selected")} ${(t.textContent ?? "").slice(0, 40)} ${JSON.stringify(rect(t))}`,
+              ),
+              studio: [...document.querySelectorAll('[data-testid="skill-studio"]')].map((one) => {
+                const hidden: string[] = [];
+                for (let at: Element | null = one; at; at = at.parentElement) {
+                  const cs = getComputedStyle(at);
+                  if (at.hasAttribute("hidden") || cs.display === "none" || cs.visibility === "hidden")
+                    hidden.push(`${at.tagName}.${at.className} hidden=${at.hasAttribute("hidden")} display=${cs.display}`);
+                }
+                return { rect: rect(one), hidden };
+              }),
+              statusCard: rect(document.querySelector('[data-chip="status/bar/notices"]')),
+              statusCardText: (document.querySelector('[data-chip="status/bar/notices"]')?.textContent ?? "").slice(0, 300),
+              chipCards: [...document.querySelectorAll(".chip-card")].map((c) => `${JSON.stringify(rect(c))} ${(c.textContent ?? "").slice(0, 120)}`),
+              dot: rect(document.querySelector('[data-scope="status-item"][data-part^="dot"]')),
+              statusLine: rect(document.querySelector('[data-testid="status-line"]')),
+              titleBar: rect(document.querySelector('[data-testid="title-bar"]')),
+              update: rect(document.querySelector('[data-testid="status-update"]')),
+              frames: [...document.querySelectorAll(".pane-frame")].map((f) => JSON.stringify(rect(f))),
+              slots: [...document.querySelectorAll(".region-slot, .region-centre, .window-work, .window-below, .project-views")].map(
+                (f) => `${f.className} ${JSON.stringify(rect(f))}`,
+              ),
+              workKids: [...(document.querySelector(".window-work")?.children ?? [])].map(
+                (k) => `${k.tagName}.${k.className} ${JSON.stringify(rect(k))}`,
+              ),
+              popovers: [...document.querySelectorAll('[data-scope="popover"][data-part="root"]')].map(
+                (p) => `${p.getAttribute("data-variant")} ${JSON.stringify(rect(p))} ${(p.textContent ?? "").slice(0, 80)}`,
+              ),
+            };
+          })
+          .catch((e: unknown) => ({ error: String(e) }));
+        writeFileSync(join(LOGS, `probe-${name}.json`), JSON.stringify(state, null, 2));
+      }
       recordFailure(test, error ?? "failed with no error", await evidence(error));
       const where = collectEvidence(app, `${test.parent} ${test.title}`);
       console.error(`charter-e2e: what was left to look at is in ${where}`);

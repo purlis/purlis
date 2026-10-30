@@ -31,6 +31,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [never-probe-3892]
     # **What the run EXECUTES, not what the spec is about.** Its assertions are on the whole
     # app process — its thread count, its memory, one round's budget — so any module that
     # runs a thread, and any render that grows with fifty chats, is inside the dependency set
