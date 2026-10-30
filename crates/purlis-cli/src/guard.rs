@@ -45,6 +45,7 @@
 //! ask for it.
 
 use std::io::Write;
+use std::path::Path;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
@@ -135,6 +136,14 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
     if let Some(verdict) = toolgate::verdict(&call, plane.as_ref()) {
         return crate::hooks::Answered::of(Answer::Deny(verdict));
     }
+    // A11: plain git that writes a branch folder another live chat holds, from a chat that runs
+    // git itself (#3931). After every refusal, because it is the one that asks the app.
+    if let Some(found) = &found
+        && !launched.sandboxed
+        && let Some(verdict) = held_branch_folder(Path::new(&found.root), &command, &cwd)
+    {
+        return crate::hooks::Answered::of(Answer::Deny(verdict));
+    }
     // Nothing refused: a dispatch or a handoff that writes and shares its call with another
     // command was refused above (#3785), and nothing here asks the person.
     // Then the persona tool gate is asked. Its answer is an allow or nothing;
@@ -147,6 +156,54 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
         return crate::hooks::Answered::of(Answer::Deny(toolgate::too_deep()));
     }
     crate::hooks::Answered::of(allowed.map_or(Answer::Nothing, Answer::Say))
+}
+
+/// How long the guard waits for the app to judge a branch folder's claim (#3931): a check and
+/// one appended line, well inside the hook's [`BUDGET`].
+const A_CLAIM_IS_ANSWERED_WITHIN: Duration = Duration::from_millis(1200);
+
+/// **The one-writer guard on a chat's plain git** (#3931): the refusal of `command`, run in
+/// `cwd` in the project at `root` by a chat that runs git itself, where it commits, updates or
+/// pushes in a branch folder another live chat holds ([`purlis_core::piececlaim`]), in the
+/// brokered refusal's words; or `None`.
+///
+/// Asked only of a chat the app started (it has a chat number): the person's own terminal runs
+/// no hook, and a harness they start themselves is theirs. The app judges the claim against the
+/// chats it has, and the chat takes a folder no live chat holds. Where no app takes the ask, or
+/// it does not answer in time, the piece log alone decides, as `purlis worktree push` does
+/// with no app: a folder another chat holds is refused, since whether that chat lives cannot be
+/// told (fail closed), and the holder's own git runs.
+fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate::Verdict> {
+    use purlis_core::hookwire::{ClaimAct, GitWork};
+    let chat = crate::session::chat_number()?;
+    let (sub, act, folder) =
+        purlis_core::branchgit::branch_write(command, cwd, &root.display().to_string())?;
+    let at = purlis_core::worktree::locate(root, &folder)?;
+    let work = GitWork::WorktreeClaim {
+        repo: at.repo.clone(),
+        piece: at.piece.clone(),
+        act: ClaimAct::of(act)?,
+    };
+    let refused = match crate::gitask::forwarded(&at.workspace, work, A_CLAIM_IS_ANSWERED_WITHIN) {
+        crate::gitask::Forwarded::Said { code: 0, .. } => None,
+        crate::gitask::Forwarded::Refused(why) => Some(why),
+        crate::gitask::Forwarded::Said { .. }
+        | crate::gitask::Forwarded::NotTaken
+        | crate::gitask::Forwarded::Unsure(_) => {
+            let who = purlis_core::pieces::Who::here(
+                purlis_core::machine::config_root_if_there().as_deref(),
+                Some(chat.to_string()),
+                purlis_core::envvar::var(purlis_core::active::PERSONA_ENV),
+            )
+            .for_chat(purlis_core::envvar::var(purlis_core::hookwire::CHAT_ID_ENV));
+            purlis_core::piececlaim::take(root, &at, &who, None, act, chrono::Utc::now()).err()
+        }
+    };
+    refused.map(|why| toolgate::Verdict {
+        reason: purlis_core::piececlaim::REASON.to_owned(),
+        shape: Some(sub),
+        denial: why,
+    })
 }
 
 /// The stack the guards run on: far more than any of them needs.

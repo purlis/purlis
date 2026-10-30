@@ -150,6 +150,10 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         GitWork::WorktreeRemove { repo, piece, .. } => format!("worktree remove {repo} {piece}"),
         GitWork::CloneUpdate { repo, .. } => format!("worktree update {repo}"),
         GitWork::RootUpdate {} => "worktree update at the project root".to_owned(),
+        // Its own git's claim on a branch folder, asked by the chat's Bash guard (#3931).
+        GitWork::WorktreeClaim { repo, piece, act } => {
+            format!("hold {repo} {piece} for its own git's {act:?}")
+        }
     };
     let isolation = isolation();
     let run =
