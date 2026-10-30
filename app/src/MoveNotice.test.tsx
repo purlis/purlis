@@ -80,7 +80,7 @@ describe("a move waiting on its profile's sign-in", () => {
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(calls("pool_sign_in_start")).toEqual([
-        { pool: "builds", name: "work", provider: null },
+        { pool: "builds", name: "work", provider: null, terminal: null },
       ]),
     );
   });
