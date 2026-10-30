@@ -37,6 +37,8 @@
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+pub mod undelivered;
+
 /// The folder of the spool directory messages wait in.
 pub const DIR: &str = "messages";
 
@@ -82,6 +84,80 @@ pub enum Queued {
     Question { text: String },
     /// An answer to task `to`'s question.
     Answer { to: u32, text: String },
+}
+
+/// **Whom a queued message is for** ([`Queued::to`]): the one switch over its kinds that the
+/// app's delivery, its records and the notice of what was not delivered all read (#3958).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum For {
+    /// Task `to` of the sender's.
+    Task(u32),
+    /// Every task of the sender's still working.
+    Tasks,
+    /// The sender's asking chat.
+    Asker,
+}
+
+impl Queued {
+    /// The kind of message it is.
+    pub fn kind(&self) -> crate::dispatchtalk::Kind {
+        use crate::dispatchtalk::Kind;
+        match self {
+            Self::Tell { .. } | Self::TellAll { .. } => Kind::FollowUp,
+            Self::Note { .. } => Kind::Note,
+            Self::Question { .. } => Kind::Question,
+            Self::Answer { .. } => Kind::Answer,
+        }
+    }
+
+    /// Whom it is for.
+    pub fn to(&self) -> For {
+        match self {
+            Self::Tell { to, .. } | Self::Answer { to, .. } => For::Task(*to),
+            Self::TellAll { .. } => For::Tasks,
+            Self::Note { .. } | Self::Question { .. } => For::Asker,
+        }
+    }
+
+    /// Its text: none for an acknowledgement alone.
+    pub fn text(&self) -> Option<&str> {
+        match self {
+            Self::Tell { text, .. }
+            | Self::TellAll { text }
+            | Self::Question { text }
+            | Self::Answer { text, .. } => Some(text),
+            Self::Note { text, .. } => text.as_deref(),
+        }
+    }
+
+    /// Its text, to change: none for an acknowledgement alone.
+    fn text_mut(&mut self) -> Option<&mut String> {
+        match self {
+            Self::Tell { text, .. }
+            | Self::TellAll { text }
+            | Self::Question { text }
+            | Self::Answer { text, .. } => Some(text),
+            Self::Note { text, .. } => text.as_mut(),
+        }
+    }
+
+    /// The instruction it acknowledges, where it is a note that does.
+    pub fn acknowledges(&self) -> Option<u32> {
+        match self {
+            Self::Note { ack, .. } => *ack,
+            _ => None,
+        }
+    }
+
+    /// What it is, as a sentence names it: "a follow-up to chat 4".
+    pub fn named(&self) -> String {
+        let kind = self.kind().word();
+        match self.to() {
+            For::Task(to) => format!("a {kind} to chat {to}"),
+            For::Tasks => format!("a {kind} to every task"),
+            For::Asker => format!("a {kind} to its asking chat"),
+        }
+    }
 }
 
 /// One message, as its file holds it.
@@ -596,202 +672,6 @@ fn raise(socket: &Path, chat: u32, message: &Waiting) {
 
 #[cfg(not(unix))]
 fn raise(_: &Path, _: u32, _: &Waiting) {}
-
-/// The folder of the messages folder where what an ended chat left queued is reported (#3958).
-pub const LEFT: &str = "left";
-
-/// The most of a report's file that is read: [`MOST_QUEUED`] messages of at most 4,096 bytes'
-/// text, with room.
-const A_REPORT_IS_READ_UP_TO: u64 = 4 * 1024 * 1024;
-
-/// **What a chat left queued as it ended without the app delivering it** (#3958): its messages,
-/// read from their own files while its key still checked them, kept until the app records each
-/// where the person reads it ([`left`], [`reported`]).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct Left {
-    v: u32,
-    /// The chat that queued them, by the number it had then.
-    pub sender: u32,
-    /// Its name, where the app found one for it ([`unplaced`]).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    /// When its queue was cleared, in seconds since the epoch.
-    pub at: i64,
-    /// What it queued, oldest first.
-    pub messages: Vec<LeftMessage>,
-}
-
-/// One message of a [`Left`] report.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct LeftMessage {
-    /// Its id, which its sender was told.
-    pub id: String,
-    /// When it was queued, in seconds since the epoch.
-    pub at: i64,
-    #[serde(flatten)]
-    pub what: Queued,
-}
-
-/// **Sets aside what chat `chat` left queued in the spool directory `spool`**, as its keys are
-/// about to be dropped (#3958, [`crate::hookwire::spool::forget_all_but`]): every message that
-/// checks under them, and is above what the app delivered, is written to one report under
-/// [`LEFT`] before the queue is cleared. Answers how many were reported. What does not check is
-/// no message of the chat's, and is not reported.
-pub(crate) fn set_aside(spool: &Path, chat: u32, at: i64) -> io::Result<usize> {
-    let messages: Vec<LeftMessage> = waiting_in(spool, chat)
-        .into_iter()
-        .filter_map(|found| match found {
-            Found::Message(message) => Some(LeftMessage {
-                id: message.id,
-                at: message.at,
-                what: message.what,
-            }),
-            Found::Unchecked(_) | Found::Delivered(_) => None,
-        })
-        .collect();
-    if messages.is_empty() {
-        return Ok(0);
-    }
-    let count = messages.len();
-    let folder = spool.join(DIR).join(LEFT);
-    crate::secrets::make_private_dir(&folder)?;
-    crate::contain::no_link_on_the_way(spool, &folder)?;
-    let report = Left {
-        v: VERSION,
-        sender: chat,
-        name: None,
-        at,
-        messages,
-    };
-    let name = format!("{chat}.{}.json", uuid::Uuid::new_v4().simple());
-    whole(
-        &folder.join(name),
-        &serde_json::to_vec(&report).map_err(io::Error::other)?,
-    )
-    .map(|()| count)
-}
-
-/// **Writes `bytes` to `path` whole**: into a `.part` beside it, synced, then renamed over it,
-/// so a reader never sees half of one. A part that could not be written is removed.
-fn whole(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let part = path.with_extension("part");
-    let done = (|| {
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&part)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        std::fs::rename(&part, path)
-    })();
-    if done.is_err() {
-        let _ = std::fs::remove_file(&part);
-    }
-    done
-}
-
-/// **Every report of what an ended chat left queued**, beside `socket` (#3958): each with its
-/// file, for [`reported`] once it is recorded. A file that does not read is left alone.
-pub fn left(socket: &Path) -> Vec<(PathBuf, Left)> {
-    reports(socket, true)
-}
-
-/// The reports under [`LEFT`]: those not looked at yet (`fresh`), or those [`unplaced`] kept.
-fn reports(socket: &Path, fresh: bool) -> Vec<(PathBuf, Left)> {
-    use std::io::Read;
-    let spool = spool_dir(socket);
-    let folder = queues_for(socket).join(LEFT);
-    if crate::contain::no_link_on_the_way(&spool, &folder).is_err() {
-        return Vec::new();
-    }
-    let Ok(entries) = std::fs::read_dir(&folder) else {
-        return Vec::new();
-    };
-    let mut reports: Vec<(PathBuf, Left)> =
-        entries
-            .filter_map(Result::ok)
-            .filter(|entry| {
-                entry.file_name().to_str().is_some_and(|name| {
-                    name.ends_with(".json") && name.ends_with(UNPLACED) != fresh
-                }) && entry.file_type().is_ok_and(|kind| kind.is_file())
-            })
-            .filter_map(|entry| {
-                let mut bytes = Vec::new();
-                std::fs::File::open(entry.path())
-                    .ok()?
-                    .take(A_REPORT_IS_READ_UP_TO + 1)
-                    .read_to_end(&mut bytes)
-                    .ok()?;
-                if bytes.len() as u64 > A_REPORT_IS_READ_UP_TO {
-                    return None;
-                }
-                let report: Left = serde_json::from_slice(&bytes).ok()?;
-                (report.v == VERSION).then(|| (entry.path(), report))
-            })
-            .collect();
-    reports.sort_by_key(|(path, report)| (report.at, path.clone()));
-    reports
-}
-
-/// A report has been recorded where the person reads it: it is removed.
-pub fn reported(path: &Path) {
-    let _ = std::fs::remove_file(path);
-}
-
-/// How a report's file ends once the app found no dispatch record for some of its messages.
-const UNPLACED: &str = ".unplaced.json";
-
-/// **The messages of report `path` the app found no running dispatch record for** (#3958), kept
-/// for the person as one notice ([`unplaced_reports`]) until they put it away
-/// ([`put_away`]), with the name the app found for the sender. The report itself goes.
-pub fn unplaced(path: &Path, report: &Left, messages: Vec<LeftMessage>, name: Option<String>) {
-    let Some(stem) = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .and_then(|name| name.strip_suffix(".json"))
-    else {
-        return;
-    };
-    let kept = Left {
-        v: VERSION,
-        sender: report.sender,
-        name,
-        at: report.at,
-        messages,
-    };
-    let to = path.with_file_name(format!("{stem}{UNPLACED}"));
-    let written = serde_json::to_vec(&kept)
-        .map_err(io::Error::other)
-        .and_then(|bytes| whole(&to, &bytes));
-    match written {
-        Ok(()) => reported(path),
-        Err(why) => tracing::warn!(
-            "purlis: what chat {} left queued is reported at the next open ({why})",
-            report.sender
-        ),
-    }
-}
-
-/// **The reports the person is told of as a notice** ([`unplaced`]), beside `socket`: each by
-/// the name [`put_away`] takes.
-pub fn unplaced_reports(socket: &Path) -> Vec<(String, Left)> {
-    reports(socket, false)
-        .into_iter()
-        .filter_map(|(path, report)| Some((path.file_name()?.to_str()?.to_owned(), report)))
-        .collect()
-}
-
-/// **The person put the notice of report `name` away** ([`unplaced_reports`]): it is removed. A
-/// name that is not one of those reports' removes nothing.
-pub fn put_away(socket: &Path, name: &str) -> io::Result<()> {
-    if !unplaced_reports(socket).iter().any(|(one, _)| one == name) {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "there is no such notice of undelivered messages",
-        ));
-    }
-    std::fs::remove_file(queues_for(socket).join(LEFT).join(name))
-}
 
 /// A file that did not check is removed.
 pub fn drop_unchecked(path: &Path) {

@@ -286,67 +286,21 @@ fn requests_red(root: &Path) -> Vec<AlertRow> {
 pub(crate) const LEFT_MESSAGES: &str = "undelivered messages";
 
 /// **The Inbox's alert for what a chat that did not come back left queued** (#3958): one a
-/// sender, naming it and how many, with each message's kind and the start of its text, for the
-/// messages the app found no running dispatch record to keep on
-/// ([`purlis_core::dispatchqueue::unplaced_reports`]).
+/// sender, naming it, how many, and each message's line, for the messages the app found no
+/// running dispatch record to keep on
+/// ([`purlis_core::dispatchqueue::undelivered::notices`]). It is the needs-you item #3958 asks
+/// for: the Inbox is where everything waiting on the person is listed.
 fn left_messages(root: &Path) -> Vec<AlertRow> {
     let socket = purlis_core::hookchannel::socket_for(Some(root)).socket;
-    purlis_core::dispatchqueue::unplaced_reports(&socket)
+    purlis_core::dispatchqueue::undelivered::notices(&socket)
         .into_iter()
-        .map(|(report, left)| AlertRow {
+        .map(|(report, notice)| AlertRow {
             severity: "warn".to_owned(),
             subject: LEFT_MESSAGES.to_owned(),
-            detail: left_said(&left),
+            detail: notice.notice(),
             way: AlertWay::LeftMessages { report },
         })
         .collect()
-}
-
-/// What the alert says of `left`.
-fn left_said(left: &purlis_core::dispatchqueue::Left) -> String {
-    use purlis_core::dispatchqueue::Queued;
-    let who = left.name.as_ref().map_or_else(
-        || format!("chat {}", left.sender),
-        |name| {
-            format!(
-                "{} (chat {})",
-                purlis_core::personas::one_line(name),
-                left.sender
-            )
-        },
-    );
-    let count = left.messages.len();
-    let messages = if count == 1 { "message" } else { "messages" };
-    let said: Vec<String> = left
-        .messages
-        .iter()
-        .map(|message| {
-            let (kind, text) = match &message.what {
-                Queued::Tell { to, text } => (format!("a follow-up to chat {to}"), text.as_str()),
-                Queued::TellAll { text } => {
-                    ("a follow-up to all its tasks".to_owned(), text.as_str())
-                }
-                Queued::Answer { to, text } => (format!("an answer to chat {to}"), text.as_str()),
-                Queued::Question { text } => {
-                    ("a question to its asking chat".to_owned(), text.as_str())
-                }
-                Queued::Note { text, .. } => (
-                    "a note to its asking chat".to_owned(),
-                    text.as_deref().unwrap_or_default(),
-                ),
-            };
-            // On one line, its line breaks read as spaces, and clipped as a line is.
-            let words = text.split_whitespace().collect::<Vec<_>>().join(" ");
-            format!("{kind}: \"{}\"", purlis_core::personas::one_line(&words))
-        })
-        .collect();
-    format!(
-        "{who} did not come back after purlis restarted, and {count} {messages} it queued while \
-         purlis did not answer {were} never delivered, with no running dispatch left to keep \
-         them on: {}",
-        said.join("; "),
-        were = if count == 1 { "was" } else { "were" },
-    )
 }
 
 /// **Put away on the Notice of a chat's undelivered messages** (#3958): the person has read it,
@@ -361,7 +315,8 @@ pub async fn put_away_left_messages(
     let root = planes.held(&plane)?.root().to_path_buf();
     crate::off_the_window("putting away undelivered messages", move || {
         let socket = purlis_core::hookchannel::socket_for(Some(&root)).socket;
-        purlis_core::dispatchqueue::put_away(&socket, &report).map_err(|why| why.to_string())
+        purlis_core::dispatchqueue::undelivered::put_away(&socket, &report)
+            .map_err(|why| why.to_string())
     })
     .await
 }

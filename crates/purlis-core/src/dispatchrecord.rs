@@ -719,7 +719,7 @@ pub fn said(
 /// process read or stored ([`crate::secrets::seen`]), or a forge token it holds
 /// ([`crate::applog::holds_a_value_kept_out`]). **Fails closed**: where a vault value could not
 /// be remembered, every message is kept without its text.
-fn holds_a_secret(text: &str) -> bool {
+pub(crate) fn holds_a_secret(text: &str) -> bool {
     crate::secretshape::kind_as_read(None, text).is_some()
         || crate::secrets::seen::holds(text)
         || crate::applog::holds_a_value_kept_out(text)

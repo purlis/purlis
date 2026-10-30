@@ -27,29 +27,6 @@ fn the_inbox_gets_charters_words_for_each_alert() {
     );
 }
 
-#[test]
-fn a_chat_s_undelivered_messages_are_one_notice_naming_it_how_many_and_what_each_said() {
-    // #3958: what the Inbox says of the messages no running dispatch could keep.
-    let left: purlis_core::dispatchqueue::Left = serde_json::from_value(serde_json::json!({
-        "v": 1,
-        "sender": 3,
-        "name": "steward 1",
-        "at": 0,
-        "messages": [
-            { "id": "a", "at": 0, "what": "tell", "to": 4, "text": "carry on" },
-            { "id": "b", "at": 0, "what": "question", "text": "which\nqueue?" },
-        ],
-    }))
-    .expect("a report");
-    assert_eq!(
-        left_said(&left),
-        "steward 1 (chat 3) did not come back after purlis restarted, and 2 messages it \
-         queued while purlis did not answer were never delivered, with no running dispatch \
-         left to keep them on: a follow-up to chat 4: \"carry on\"; a question to its \
-         asking chat: \"which queue?\""
-    );
-}
-
 fn merge(state: &str) -> crate::saving::SaveMerge {
     crate::saving::SaveMerge {
         state: state.to_owned(),

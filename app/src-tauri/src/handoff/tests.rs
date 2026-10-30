@@ -10441,22 +10441,21 @@ fn a_tell_queued_while_the_app_was_away_is_delivered_once_the_project_is_back() 
 
 #[test]
 fn what_a_sender_that_never_came_back_queued_is_kept_on_its_dispatch_or_said_in_the_inbox() {
-    // #3958: the asking chat queued two follow-ups while the app did not answer, and the app
-    // restarted without it. Neither is cleared unseen: the one for its running task is kept on
-    // that task's dispatch, marked not delivered, and the one no running dispatch is for is one
-    // Notice in the Inbox naming the sender.
-    use purlis_core::dispatchqueue::{self, Queued};
+    // #3958: the asking chat queued two follow-ups and an acknowledgement while the app did
+    // not answer, and the app restarted without it. None is cleared unseen: the one for its
+    // running task is kept on that task's dispatch, marked not delivered, and the one no
+    // running dispatch is for is one Notice in the Inbox naming the sender and how many.
+    use purlis_core::dispatchqueue::{Queued, holds, undelivered};
     let (_plane, _planes, _id, held, asking, task) = a_dispatched_task();
-    let Some(_) = queued_by(
+    queued_by(
         &held,
         asking,
         Queued::Tell {
             to: task,
             text: "carry on".to_owned(),
         },
-    ) else {
-        return;
-    };
+    )
+    .expect("this project's socket has a queue beside it");
     queued_by(
         &held,
         asking,
@@ -10464,7 +10463,8 @@ fn what_a_sender_that_never_came_back_queued_is_kept_on_its_dispatch_or_said_in_
             to: 9999,
             text: "to nobody".to_owned(),
         },
-    );
+    )
+    .expect("queued");
     let socket = held.hooks().socket().expect("listening").to_path_buf();
     // The project opens again with the task and without the chat that asked for it.
     purlis_core::hookwire::spool::forget_all_but(
@@ -10472,30 +10472,34 @@ fn what_a_sender_that_never_came_back_queued_is_kept_on_its_dispatch_or_said_in_
         &[task],
     )
     .expect("forgotten");
-    assert!(
-        !dispatchqueue::holds(&socket, asking),
-        "its queue is cleared"
-    );
+    assert!(!holds(&socket, asking), "its queue is cleared");
+    let (report, _) = undelivered::to_place(&socket).remove(0);
+    let left_behind = std::fs::read(&report).expect("the report");
 
+    crate::dispatched::deliver_all_queued_now(&held);
+    // An app that stopped once it had placed them, before it removed the report, places it
+    // again at the next open: nothing is said twice.
+    std::fs::write(&report, &left_behind).expect("left behind");
     crate::dispatched::deliver_all_queued_now(&held);
 
     let record = purlis_core::dispatchrecord::list(held.root())
         .into_iter()
         .find(|record| record.worker.chat.chat == task)
         .expect("the task's dispatch");
-    assert!(
-        record
-            .talk
-            .iter()
-            .any(|said| said.text.starts_with("Not delivered") && said.text.contains("carry on")),
-        "{:?}",
-        record.talk
-    );
+    let kept: Vec<&str> = record
+        .talk
+        .iter()
+        .map(|said| said.text.as_str())
+        .filter(|text| text.starts_with("Not delivered"))
+        .collect();
+    assert_eq!(kept.len(), 1, "{kept:?}");
+    assert!(kept[0].contains("a follow-up to chat"), "{kept:?}");
+    assert!(kept[0].contains("\"carry on\""), "{kept:?}");
     assert!(
         dispatchtalk::take(held.root(), task).is_empty(),
         "it was never delivered, and is not now"
     );
-    let notices = dispatchqueue::unplaced_reports(&socket);
+    let notices = undelivered::notices(&socket);
     assert_eq!(
         notices.len(),
         1,
@@ -10514,13 +10518,19 @@ fn what_a_sender_that_never_came_back_queued_is_kept_on_its_dispatch_or_said_in_
             text: "to nobody".to_owned(),
         }]
     );
+    let said = notices[0].1.notice();
     assert!(
-        dispatchqueue::left(&socket).is_empty(),
-        "each report is looked at once"
+        said.contains(&format!("chat {asking})")) || said.contains(&format!("chat {asking} did")),
+        "{said}"
+    );
+    assert!(said.contains("1 message"), "{said}");
+    assert!(
+        undelivered::to_place(&socket).is_empty(),
+        "each report is placed once"
     );
 
-    dispatchqueue::put_away(&socket, &notices[0].0).expect("put away");
-    assert!(dispatchqueue::unplaced_reports(&socket).is_empty());
+    undelivered::put_away(&socket, &notices[0].0).expect("put away");
+    assert!(undelivered::notices(&socket).is_empty());
 }
 
 #[test]

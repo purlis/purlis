@@ -333,19 +333,26 @@ fn kept_on(
 }
 
 /// **A message a chat left queued when it did not come back after a restart** (#3958): kept on
-/// the running dispatch record `id` it was between, in purlis's words around the message, where
-/// the person reads it in the Dispatches tab. Whether the record took it.
-pub(crate) fn left_undelivered(
+/// the running dispatch `record` it was between, in purlis's words around its line
+/// ([`purlis_core::dispatchqueue::undelivered::Message::line`]: masked, or without its words
+/// where they held a secret), where the person reads it in the Dispatches tab. **Once**: the
+/// line names the message's id, and a record that holds it already takes it no second time.
+/// Whether the record holds it now.
+pub(crate) fn undelivered_on(
     held: &Held,
-    id: &str,
-    kind: purlis_core::dispatchtalk::Kind,
-    text: &str,
+    record: &Record,
+    message: &purlis_core::dispatchqueue::undelivered::Message,
 ) -> bool {
+    let named = format!("(queued as {})", message.id);
+    if record.talk.iter().any(|said| said.text.contains(&named)) {
+        return true;
+    }
     let said = format!(
-        "Not delivered: its sender was queueing it while purlis did not answer, and did not come \
-         back after purlis restarted, so it was never delivered. It said: {text}"
+        "Not delivered {named}: its sender queued it while purlis did not answer, and did not \
+         come back after purlis restarted, so it was never delivered. It was {}.",
+        message.line()
     );
-    kept_on(held, id, kind, None, &said, None)
+    kept_on(held, &record.id, message.what.kind(), None, &said, None)
 }
 
 /// The person answered the question persona chat `task` put to its asking chat (#1496), with
