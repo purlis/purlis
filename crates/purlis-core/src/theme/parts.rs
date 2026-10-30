@@ -671,6 +671,10 @@ const APART: &[(&str, &str, &[State])] = &[
     ("titlebar", "row", &[State::Hover, State::Selected]),
 ];
 
+/// **The version the manifest says which parts are drawn apart in** (#3656): its `apart` on each
+/// such part. The release step writes the number over `NEXT`, as it does a part's `since`.
+const APART_SINCE: u32 = NEXT;
+
 /// The states `part` of `family` is marked in on its own element, when it is drawn apart from
 /// the family's root ([`APART`]).
 fn drawn_apart(family: &Family, part: &str) -> Option<&'static [State]> {
@@ -3993,7 +3997,7 @@ pub fn manifest_as_of(version: u32) -> Value {
                     // Drawn apart from the root, in no variant of it and only in its own states
                     // (#3656). Said from the next release on: what version 12 shipped keeps its
                     // contract.
-                    if version > VERSION
+                    if version >= APART_SINCE
                         && let Some(carried) = drawn_apart(family, part.name)
                     {
                         let states: Vec<&str> = carried.iter().map(|one| one.name()).collect();
@@ -4045,7 +4049,8 @@ pub fn manifest_as_of(version: u32) -> Value {
 /// **Whether the manifest holds anything no release has shipped yet**: a family, a part, a
 /// variant, a state or a property `since` [`NEXT`].
 pub fn has_unreleased() -> bool {
-    STATES.iter().any(|state| state.since() > VERSION)
+    APART_SINCE > VERSION
+        || STATES.iter().any(|state| state.since() > VERSION)
         || PROPERTIES.iter().any(|property| property.since() > VERSION)
         || MANIFEST.iter().any(|family| {
             family.since > VERSION

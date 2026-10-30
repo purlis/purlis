@@ -921,3 +921,31 @@ fn the_pairs_the_crumb_the_all_button_a_row_and_a_pin_draw_are_held() {
         );
     }
 }
+
+#[test]
+fn the_manifest_says_which_parts_are_drawn_apart_from_the_next_version_on() {
+    // What version 12 shipped keeps its contract; the next version says it, and the release
+    // step carries it into the version it gives the next release.
+    let part = |version: u32, name: &str| -> Value {
+        parts::manifest_as_of(version)["families"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|one| one["name"] == "titlebar")
+            .unwrap()["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|one| one["name"] == name)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(
+        part(parts::VERSION + 1, "crumb")["apart"],
+        json!(["hover", "selected", "focused"])
+    );
+    assert_eq!(part(parts::VERSION + 1, "row")["apart"], json!(["hover", "selected"]));
+    assert!(part(parts::VERSION, "crumb").get("apart").is_none());
+    assert!(part(parts::VERSION + 1, "count").get("apart").is_none());
+    assert!(parts::has_unreleased());
+}

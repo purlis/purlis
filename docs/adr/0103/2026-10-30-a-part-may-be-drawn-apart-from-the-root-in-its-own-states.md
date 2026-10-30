@@ -20,7 +20,7 @@ pointer, open, pinned or focused.
 - **A part drawn apart never falls with the root's look.** A fallback is written for a look of
   the root, and one written for a part that is not in it would reach every such part in the
   window: a chip that breaks a floor never takes a crumb's colours back. Measuring these parts on
-  their own grounds, and falling back for their own breaks, is its own ticket.
+  their own grounds, and falling back for their own breaks, is #3949.
 - **Two families never share a part's scope.** A card pressed whole is the `card-button` family,
   not a part of the card's, so a theme's `card.title` and `card-button.title` each reach their own
   title wherever it stands, and neither wins over the other.
