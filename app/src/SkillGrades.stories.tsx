@@ -55,6 +55,7 @@ const PLAN: SkillGradePlan = {
     harness: "Claude Code",
     model: "sonnet",
     same_profile: true,
+    interrupted: false,
   },
   record_said: null,
   running: null,

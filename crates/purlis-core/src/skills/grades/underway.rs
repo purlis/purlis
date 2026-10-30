@@ -48,7 +48,8 @@ impl Marker {
 
     /// **Says in the file what the grade's chats spent so far** (#3582): `spent`, its chats,
     /// tokens and cost as the chats said them, in the row and in its report, so a grade purlis
-    /// stops under is recorded with what it spent. Written whole beside the file and renamed
+    /// stops under is recorded with what it spent, and the chats it asked for so far, ran or not
+    /// (`Spent::asked_for`, #3602), so an estimate can share that spend over them. Written whole beside the file and renamed
     /// over it, as [`began`] writes it, and locked before it is in its place where the first
     /// was: the lock is the file's, so the new file takes it before the old one lets it go. A
     /// spend no sound row could hold is refused, and the file stays as it was, so the grade is

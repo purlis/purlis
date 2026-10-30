@@ -3863,15 +3863,18 @@ An end row, never a pass or a fail:
   dollars past ten times its dearest limit, a stamp more than an hour ahead of this machine's
   clock, a `spent` that is not what the report adds up to (its chats the arms' runs, its tokens
   `spent_tokens`, its cost `spent_usd` where the report has one; for an `interrupted` row with no
-  arms, its chats at most what its runs could have asked for, #3582), or an arm whose chats are not
+  arms, its chats at most what its runs could have asked for, #3582, and its `asked_for`, where it
+  says one, from its chats to that most, #3602; a `spent.asked_for` in a scored row, whose arms
+  count it, #3602), or an arm whose chats are not
   what its tests ran and asked for) is skipped. **What was left out is said** (#3273): the
   Grades tab, the plan and `purlis skill grade` say how many rows of the skill were skipped
   (a row of it no purlis parses among them) and name each file not read (a link, or one past
   16 MiB), never dropping them unseen; a byte that is not text spoils only its own row. At most 200 grades of a skill are answered, newest first
   (`purlis_core::skills::grades::read`). The plan's estimate is worked out from the newest grade
   on the profile the grade runs on that asked for a chat, else the newest that asked for one, its
-  spend shared over every chat it asked for, and says which grade it is, that it ran no chat, or
-  that its cost is not known where its chats said nothing of it.
+  spend shared over every chat it asked for (an `interrupted` row's `spent.asked_for`, #3602; one
+  from before that counts none), and says which grade it is, that it was interrupted, that it ran
+  no chat, or that its cost is not known where its chats said nothing of it.
 - **Git:** committed. Nothing commits it by itself: the next save does.
 - **Encoding details:** path `personas/_grades/{%Y-%m}.{device}.jsonl`, `<device>` named as the
   skill log's is; keys sorted, `\n`, `O_APPEND` through no link, `0o644` (`dispatch::append`).
@@ -8030,7 +8033,8 @@ refuses a `<data>` under a project or inside any git work tree.
   it would be recorded were it interrupted now (`report.ended` `interrupted`, no chat scored,
   and what its chats spent so far: nothing as it starts, then, as each chat ends, its chats that
   ran, its tokens and its cost as the chats said them, in `spent` and in the report's
-  `spent_tokens` and `spent_usd`, #3582). Written `0600` through no link when a grade starts
+  `spent_tokens` and `spent_usd`, #3582, and the chats it asked for so far, ran or not, in
+  `spent.asked_for`, #3602). Written `0600` through no link when a grade starts
   (`grades::underway::began`), written again as each chat ends (`grades::underway::Marker::spent`),
   and removed when it ends (`grades::underway::ended`). Each write goes to
   `.<grade>.json.partial` beside it, locked, and is renamed over it, so a reader finds the whole

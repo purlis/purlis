@@ -269,6 +269,7 @@ fn the_estimate_is_the_last_grades_spend_per_chat_times_the_chats() {
                 chats: 3,
                 tokens: Some(30_000),
                 cost_usd: Some(0.3),
+                asked_for: None,
             },
         ),
         "laptop",
@@ -588,6 +589,7 @@ fn uncommitted_row() -> Graded {
             chats: 3,
             tokens: Some(1200),
             cost_usd: Some(0.04),
+            asked_for: None,
         },
         plugins_off: None,
         model: None,
@@ -747,6 +749,7 @@ fn a_row(id: &str, ts: &str, profile: &str, tokens: Option<u64>, ran: bool) -> G
         chats: 3,
         tokens,
         cost_usd: None,
+        asked_for: None,
     };
     row.report.spent_tokens = tokens;
     row.report.spent_usd = None;
@@ -1095,6 +1098,7 @@ fn an_interrupted_row_says_what_its_chats_spent_and_no_more_than_it_could_3582()
         chats: 4,
         tokens: Some(9_000),
         cost_usd: Some(0.09),
+        asked_for: None,
     };
     assert!(
         interrupted(spent).sound(now),
@@ -1113,6 +1117,93 @@ fn an_interrupted_row_says_what_its_chats_spent_and_no_more_than_it_could_3582()
     let mut unlike = interrupted(spent);
     unlike.spent.tokens = Some(9_001);
     assert!(!unlike.sound(now), "a spend its report does not say");
+}
+
+/// #3602: a grade purlis stopped under says how many chats it asked for, ran or not: at least
+/// those that ran, at most what its runs could ask for; a scored row's arms say it instead.
+#[test]
+fn an_interrupted_rows_chats_asked_for_are_held_to_what_it_could_ask_3602() {
+    let now = chrono::Utc::now();
+    let interrupted = |asked_for: Option<u32>| {
+        let spent = Spent {
+            chats: 4,
+            tokens: Some(9_000),
+            cost_usd: None,
+            asked_for,
+        };
+        Graded {
+            report: GradeReport {
+                spent_tokens: spent.tokens,
+                ..underway::interrupted_report(50_000, None, None)
+            },
+            spent,
+            ..uncommitted_row()
+        }
+    };
+    assert!(interrupted(Some(6)).sound(now), "more asked for than ran");
+    assert!(interrupted(Some(4)).sound(now), "as many as ran");
+    assert!(interrupted(None).sound(now), "a row from before #3602");
+    assert!(!interrupted(Some(3)).sound(now), "fewer than ran");
+    let most = u32::from(uncommitted_row().runs)
+        * u32::try_from(purlis_skills::grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE).unwrap();
+    assert!(interrupted(Some(most)).sound(now));
+    assert!(
+        !interrupted(Some(most + 1)).sound(now),
+        "more than its runs could ask for"
+    );
+    let mut scored = uncommitted_row();
+    scored.spent.asked_for = Some(3);
+    assert!(
+        !scored.sound(now),
+        "a scored row's arms say what it asked for"
+    );
+}
+
+/// #3602: the estimate is worked out from a grade purlis stopped under, its spend shared over
+/// the chats its marker said it asked for, and it says that grade was interrupted. One from
+/// before its marker counted them is passed over, as before.
+#[test]
+fn the_estimate_is_worked_out_from_an_interrupted_grades_spend_3602() {
+    let mut stopped = a_row(
+        "stopped",
+        "2026-10-27T10:00:00+00:00",
+        "work",
+        Some(4_000),
+        false,
+    );
+    // Two chats ran, two more were ended at an ask or never started: four spent 4,000 tokens.
+    stopped.spent = Spent {
+        chats: 2,
+        tokens: Some(4_000),
+        cost_usd: Some(0.04),
+        asked_for: Some(4),
+    };
+    stopped.report.spent_tokens = Some(4_000);
+    stopped.report.spent_usd = Some(0.04);
+    assert!(stopped.sound(chrono::Utc::now()), "{stopped:?}");
+    let older = a_row(
+        "older",
+        "2026-10-25T10:00:00+00:00",
+        "work",
+        Some(30_000),
+        true,
+    );
+
+    let estimate = estimate_of(&[stopped.clone(), older.clone()], 12, Some("work")).unwrap();
+    assert_eq!(estimate.ts, "2026-10-27T10:00:00+00:00", "the newest");
+    assert_eq!(estimate.chats_then, 4, "every chat it asked for");
+    assert_eq!(estimate.tokens, Some(12_000), "a thousand a chat, not two");
+    assert!(
+        (estimate.cost_usd.unwrap() - 0.12).abs() < 1e-9,
+        "{estimate:?}"
+    );
+    assert!(estimate.interrupted, "the plan says it was interrupted");
+
+    let mut uncounted = stopped;
+    uncounted.spent.asked_for = None;
+    let estimate = estimate_of(&[uncounted, older], 12, Some("work")).unwrap();
+    assert_eq!(estimate.ts, "2026-10-25T10:00:00+00:00", "passed over");
+    assert!(!estimate.interrupted);
 }
 
 /// #3584: the estimate shares what a grade spent over every chat that spent it: a chat ended at
@@ -1134,6 +1225,7 @@ fn the_estimate_shares_the_spend_over_the_chats_that_asked_too_3584() {
         chats: 1,
         tokens: Some(3_000),
         cost_usd: Some(0.03),
+        asked_for: None,
     };
     assert!(row.sound(chrono::Utc::now()), "{row:?}");
     let estimate = estimate_of(&[row], 12, Some("work")).unwrap();

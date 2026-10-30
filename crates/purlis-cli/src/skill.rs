@@ -1291,8 +1291,14 @@ fn estimate_said(estimate: Option<&purlis_core::skills::grades::Estimate>) -> St
              is not known.\n"
         );
     }
+    // A grade purlis stopped under is gone by as far as its chats went, and says so (#3602).
+    let which = if estimate.interrupted {
+        "interrupted grade"
+    } else {
+        "grade"
+    };
     format!(
-        "From its grade{on}, {when}, of {}, a grade spends {}.\n",
+        "From its {which}{on}, {when}, of {}, a grade spends {}.\n",
         counted(estimate.chats_then, "chat", "chats"),
         parts.join(", ")
     )
