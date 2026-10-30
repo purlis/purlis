@@ -12,6 +12,7 @@ import type { BrowserFrame, ChatBrowser, OpenChat, TimelineMoment } from "./bind
 import { setChatsListPrefs } from "./chatsListPrefs";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
+import { wears } from "./textRoles.testkit";
 import { eventually, tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
@@ -691,6 +692,9 @@ describe("who drives a chat's browser, on its row and its thumbnail (#2300)", ()
     });
     const row = within(browsers).getByRole("button", { name: /Browser b1/ });
     expect(row.textContent).toContain("you are driving");
+    // Louder than the row's other marks by its weight: the meta role, strong (#3917). A colour
+    // App.css set on it lost to the role's layer and was never drawn.
+    wears(row.querySelector(".chat-browser-driver"), "meta", "the person's driving mark", true);
     expect(tipOf(row)).toContain("You are driving this browser.");
     const thumbnail = await screen.findByRole("button", {
       name: "Open browser b1 of steward 1, you are driving",

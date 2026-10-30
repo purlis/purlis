@@ -3,6 +3,7 @@
 
 use super::super::StudioRun;
 use super::*;
+use crate::skills::verbs::Level;
 use crate::skilluse::{End, Run};
 use purlis_skills::runs::{Ended, StartedBy};
 
@@ -221,118 +222,32 @@ fn a_grade() -> super::super::grades::Graded {
     }
 }
 
-#[test]
-fn the_grades_panel_is_a_scorecard_of_each_grade_against_no_skill() {
-    let blocks = grades_blocks(&[a_grade()], "deploy");
-    let [Block::Note { text, .. }, Block::Table(table)] = blocks.as_slice() else {
-        panic!("{blocks:?}");
-    };
-    assert!(text.contains("3 times each"), "{text}");
-    assert_eq!(table.caption, "Grades of deploy");
-    assert_eq!(
-        table.rows[0].cells,
-        [
-            "2026-10-25 10:00 UTC",
-            "0123456789ab",
-            "Claude Code",
-            "1 of 1",
-            "100%",
-            "50% ± 12",
-            "",
-            "+50 points",
-            "6 chats",
-            "Finished",
-        ]
-    );
-    assert_eq!(table.columns.len(), table.rows[0].cells.len());
-}
-
-/// SK-57 (#3237): a grade against the previous version shows that arm, and its difference is
-/// against it.
-#[test]
-fn a_grade_against_the_previous_version_shows_its_arm_and_the_difference_against_it() {
-    let mut graded = a_grade();
-    graded.previous = Some("fedcba9876543210fedcba9876543210fedcba98".into());
-    use purlis_skills::grade::Arm;
-    let mut test = graded.report.triggers[0].clone();
-    test.arm = Arm::Previous;
-    graded.report.triggers.push(test);
-    let mut arm = graded.report.arms[0].clone();
-    arm.arm = Arm::Previous;
-    arm.pass_rate = arm.pass_rate.map(|stat| purlis_skills::grade::Stat {
-        mean: 0.75,
-        min: 0.75,
-        max: 0.75,
-        ..stat
-    });
-    graded.report.arms.push(arm);
-    graded.report.delta = Some(0.25);
-    graded.spent.chats = 9;
-    let blocks = grades_blocks(&[graded], "deploy");
-    let [Block::Note { text, .. }, Block::Table(table)] = blocks.as_slice() else {
-        panic!("{blocks:?}");
-    };
-    assert!(text.contains("previous version"), "{text}");
-    let column = |name: &str| table.columns.iter().position(|one| one == name).unwrap();
-    let cells = &table.rows[0].cells;
-    assert_eq!(cells[column("Previous version")], "75% · fedcba987654");
-    assert_eq!(
-        cells[column("Difference")],
-        "+25 points against fedcba987654"
-    );
-}
-
-/// SK-58 (#3238): a grade a saved edit started says so.
-#[test]
-fn a_grade_a_saved_edit_started_says_so() {
-    let mut graded = a_grade();
-    graded.after_edit = true;
-    let blocks = grades_blocks(&[graded], "deploy");
-    let [_, Block::Table(table)] = blocks.as_slice() else {
-        panic!("{blocks:?}");
-    };
-    assert_eq!(
-        table.rows[0].cells[0],
-        "2026-10-25 10:00 UTC · after an edit"
-    );
-}
-
 /// SK-60 (#3240): each grade says the model its chats ran on, beside the program.
 #[test]
 fn a_grades_row_says_the_model_its_chats_ran_on() {
     let mut graded = a_grade();
+    assert_eq!(ran_on_said(&graded), "Claude Code");
     graded.model = Some("claude-sonnet-4-5".into());
-    let blocks = grades_blocks(&[graded], "deploy");
-    let [_, Block::Table(table)] = blocks.as_slice() else {
-        panic!("{blocks:?}");
-    };
-    assert_eq!(table.rows[0].cells[2], "Claude Code · claude-sonnet-4-5");
+    assert_eq!(ran_on_said(&graded), "Claude Code · claude-sonnet-4-5");
+    assert_eq!(version_said(&graded), "0123456789ab");
 }
 
 #[test]
-fn a_skill_with_no_grades_says_so_and_how_one_is_made() {
-    let blocks = grades_blocks(&[], "deploy");
-    let [Block::Table(table)] = blocks.as_slice() else {
-        panic!("{blocks:?}");
-    };
-    assert_eq!(table.empty.headline, "No grades of deploy yet");
-    assert!(table.empty.body.as_deref().unwrap().contains("Grade"));
-}
-
-#[test]
-fn purlis_s_own_panels_are_its_grades_then_its_runs() {
+fn purlis_s_own_panel_is_its_runs_and_its_grades_are_no_panel() {
+    // The Grades tab reads a copy's grades whole (`skill_grades`, S6): no panel is built for
+    // them on a skill's page read (#3928).
     let plane = tempfile::tempdir().expect("a project");
-    let keys: Vec<PanelKey> = own_panels(plane.path(), "deploy", None)
+    let keys: Vec<PanelKey> = own_panels(plane.path(), "deploy")
         .into_iter()
         .map(|panel| panel.key)
         .collect();
-    assert_eq!(keys, [PanelKey::Grades, PanelKey::Runs]);
+    assert_eq!(keys, [PanelKey::Runs]);
 }
 
-/// #3353 (L4), #3275: same-named copies at two levels are two skills, so the Grades panel reads
-/// the rows of the copy it shows alone, and with no level named, of the copy the tab shows first.
+/// #3353 (L4), #3275: same-named copies at two levels are two skills, so a copy's grades are the
+/// rows of that copy alone.
 #[test]
-fn the_grades_panel_shows_one_copys_grades_alone() {
+fn a_copys_grades_are_its_own_alone() {
     let plane = tempfile::tempdir().expect("a project");
     let root = plane.path();
     for folder in ["skills/deploy", "skills.local/deploy"] {
@@ -360,62 +275,22 @@ fn the_grades_panel_shows_one_copys_grades_alone() {
         format!("{}\n", row("shared-one", &shared)),
     )
     .unwrap();
-    let mine = crate::plane::state_dir(root).join(super::super::grades::LOCAL_DIR);
+    let mine = crate::appstate::made(root)
+        .unwrap()
+        .join(super::super::grades::LOCAL_DIR);
     std::fs::create_dir_all(&mine).unwrap();
     std::fs::write(
         mine.join("2026-10.jsonl"),
         format!("{}\n", row("local-one", &local)),
     )
     .unwrap();
-    let keys = |level: Option<&Level>| -> Vec<String> {
-        let blocks = GradesPanel { plane: root, level }.blocks("deploy").unwrap();
-        let table = blocks
-            .iter()
-            .find_map(|block| match block {
-                Block::Table(table) => Some(table),
-                _ => None,
-            })
-            .expect("a table");
-        table.rows.iter().map(|row| row.key.clone()).collect()
+    let keys = |level: &Level| -> Vec<String> {
+        super::super::grades::read(root, "deploy", Some(level))
+            .grades
+            .into_iter()
+            .map(|graded| graded.grade)
+            .collect()
     };
-    assert_eq!(keys(Some(&shared)), ["shared-one"]);
-    assert_eq!(keys(Some(&local)), ["local-one"]);
-    // The one order a skill's tab shows its copies in (#3443): the window shows the first.
-    let (first, _) = Level::copies_of(root, "deploy").next().unwrap();
-    assert_eq!(first, shared, "the project's copy first");
-    assert_eq!(
-        keys(None),
-        keys(Some(&first)),
-        "the copy the tab shows first"
-    );
-}
-
-/// #3273: the Grades panel says what the record left out, as trouble, under its table.
-#[test]
-fn the_grades_panel_says_what_the_record_left_out() {
-    let plane = tempfile::tempdir().expect("a project");
-    let dir = plane.path().join("personas/_grades");
-    std::fs::create_dir_all(&dir).unwrap();
-    let mut forged = a_grade();
-    forged.spent.chats = 1;
-    std::fs::write(
-        dir.join("2026-10.desk.jsonl"),
-        format!("{}\n", serde_json::to_string(&forged).unwrap()),
-    )
-    .unwrap();
-    let level = Level::project();
-    let blocks = GradesPanel {
-        plane: plane.path(),
-        level: Some(&level),
-    }
-    .blocks("deploy")
-    .unwrap();
-    let Some(Block::Note { text, tone }) = blocks.last() else {
-        panic!("{blocks:?}");
-    };
-    assert_eq!(*tone, Tone::Trouble);
-    assert!(
-        text.starts_with("A row of the grade record was skipped"),
-        "{text}"
-    );
+    assert_eq!(keys(&shared), ["shared-one"]);
+    assert_eq!(keys(&local), ["local-one"]);
 }

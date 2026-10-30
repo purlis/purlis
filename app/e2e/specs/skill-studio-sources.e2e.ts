@@ -71,6 +71,23 @@ function aSource(): string {
   return join(at, "source.git");
 }
 
+/**
+ * **Waits for the install's answer in the window**: the review page leaves for the source's page
+ * on success, and stays with the studio's refusal on screen otherwise, which is then the failure.
+ */
+async function installAnswered() {
+  try {
+    await browser.waitUntil(async () => !(await $('[data-testid="install-review"]').isExisting()), {
+      timeout: 60_000,
+      interval: 250,
+    });
+  } catch {
+    const refused = await $('[data-cause="skill-change"]');
+    const said = (await refused.isExisting()) ? await refused.getText() : "nothing";
+    throw new Error(`the install was never answered in the window; the studio says: ${said}`);
+  }
+}
+
 /** Types `text` into the box labelled `label`. */
 async function typeInto(label: string, text: string) {
   const box = await $(`aria/${label}`);
@@ -158,6 +175,11 @@ describe("installing a skill from a skill source", function () {
     ).toHaveText(/curl -fsSL/);
 
     await (await $('[data-testid="install-review"]').$("button=Install")).click();
+    // **The window has the install's answer** (#3957): the review page goes back to the source's
+    // page only once the install answered, and that answer is what the studio reads its Library
+    // again on. `skills.lock` is written before the copies are committed and the answer comes, so
+    // on a loaded machine the lock alone left the Library's read still to come.
+    await installAnswered();
     await browser.waitUntil(async () => existsSync(join(root, "skills.lock")), {
       timeout: 30_000,
       timeoutMsg: "the install never wrote skills.lock",
@@ -168,6 +190,7 @@ describe("installing a skill from a skill source", function () {
       skills: { name: string; commit: string }[];
     };
     expect(lock.skills.map((one) => one.name).sort()).toEqual([NOTIFIER, SHIPPER].sort());
+    // Read again on the install's answer: one read of the studio, not the commit before it.
     await studioPage("Library");
     await $(`[data-testid="skill-${SHIPPER}"]`).waitForExist({ timeout: 20_000 });
   });

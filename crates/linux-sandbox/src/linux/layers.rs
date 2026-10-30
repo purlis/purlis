@@ -55,8 +55,11 @@ fn fully(status: RulesetStatus) -> Result<(), String> {
 }
 
 /// The supervisor's own layer: it reads everything, writes only what `reach` names, makes no
-/// device, and connects over TCP only to `reach`'s ports (anywhere, at the floor).
-pub(super) fn supervisor(reach: &Reach) -> Result<(), String> {
+/// device, and connects over TCP only to `reach`'s ports (anywhere, at the floor), and binds
+/// and connects to the ports picked for the chat's test servers (`picked`, #3396). Landlock names
+/// ports and no address, so this layer allows those on any host; the supervisor's own code binds
+/// and reaches them on 127.0.0.1 alone. The chat's own layer ([`chat`]) allows no port.
+pub(super) fn supervisor(reach: &Reach, picked: &[u16]) -> Result<(), String> {
     let all = AccessFs::from_all(AT);
     let read = AccessFs::from_read(AT);
     let write = AccessFs::from_write(AT) & !(AccessFs::MakeChar | AccessFs::MakeBlock);
@@ -111,6 +114,14 @@ pub(super) fn supervisor(reach: &Reach) -> Result<(), String> {
         for port in &reach.ports {
             created = created
                 .add_rule(NetPort::new(*port, AccessNet::ConnectTcp))
+                .map_err(|why| why.to_string())?;
+        }
+        for port in picked {
+            created = created
+                .add_rule(NetPort::new(
+                    *port,
+                    AccessNet::BindTcp | AccessNet::ConnectTcp,
+                ))
                 .map_err(|why| why.to_string())?;
         }
     }

@@ -353,6 +353,12 @@ fn a_chat_never_writes_charters_integrity_state() {
         // The folder chats' servers listen in (#2019).
         door::root_in(None),
     ];
+    // The app's own state of every project (#3718), and the folders that hold it: the app-state
+    // folder is held twice, below it and itself (`app_state_held`).
+    for data in Homes::data_homes(&machine(Os::Linux)) {
+        let app_state = data.join(crate::appstate::DIR);
+        held.extend([app_state.clone(), app_state, data]);
+    }
     // The Skill studio's records (SK-9, SK-16, SK-58, SK-59), under both names.
     for state in [".purlis", ".charter"] {
         held.extend(SKILL_STUDIO_RECORDS.map(|record| plane.path().join(state).join(record)));
@@ -1635,12 +1641,15 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             std::path::PathBuf::from("/home/op/.config/purlis/runners.json"),
             // When each of them ran (#3492).
             std::path::PathBuf::from("/home/op/.config/purlis/runner-hours.jsonl"),
+            // Each cluster pool's own copy of its kubeconfig's context (#3292).
+            std::path::PathBuf::from("/home/op/.config/purlis/cluster-kubeconfigs"),
             std::path::PathBuf::from("/home/op/.config/purlis/forge-etags"),
             std::path::PathBuf::from("/home/op/.config/charter/purlisd"),
             std::path::PathBuf::from("/home/op/.config/charter/charterd"),
             std::path::PathBuf::from("/home/op/.config/charter/peers.json"),
             std::path::PathBuf::from("/home/op/.config/charter/runners.json"),
             std::path::PathBuf::from("/home/op/.config/charter/runner-hours.jsonl"),
+            std::path::PathBuf::from("/home/op/.config/charter/cluster-kubeconfigs"),
             std::path::PathBuf::from("/home/op/.config/charter/forge-etags"),
             // This machine's profiles' folders (#2034).
             Homes::charter_data(&machine(Os::Linux))
@@ -2233,6 +2242,7 @@ fn a_path_denied_to_read_is_denied_to_the_sandbox_and_to_claude_codes_own_tools(
         services: vec![],
         unread: None,
         untold: None,
+        git_folder_pins: vec![],
     };
     let settings = claude::settings(&compiled(denied, Os::Linux)).expect("compiles");
     assert_eq!(
@@ -2260,6 +2270,7 @@ fn a_path_denied_to_write_stays_readable() {
         services: vec![],
         unread: None,
         untold: None,
+        git_folder_pins: vec![],
     };
     let settings = claude::settings(&compiled(denied, Os::Linux)).expect("compiles");
     assert_eq!(
@@ -2337,6 +2348,7 @@ fn on_macos_the_store_holds_the_credential_store_so_a_claude_code_chat_compiles(
         services: vec![Service::CredentialStore],
         unread: None,
         untold: None,
+        git_folder_pins: vec![],
     };
     claude::settings(&compiled(denied, Os::MacOs)).expect("compiles on macOS");
 }
@@ -2350,6 +2362,7 @@ fn on_linux_claude_code_cannot_hold_the_credential_store_so_the_chat_does_not_st
         services: vec![Service::CredentialStore],
         unread: None,
         untold: None,
+        git_folder_pins: vec![],
     };
     let refused = claude::settings(&compiled(denied, Os::Linux)).expect_err("refused");
     assert_eq!(refused.class(), Some(Class::Vaults));
@@ -6160,22 +6173,22 @@ fn a_chat_in_a_clone_writing_a_brokered_file_directly_is_refused_on_every_harnes
         (
             "workspace memory",
             "workspaces/alpha/memory/a-note.md".to_owned(),
-            Some("`purlis workspace remember"),
+            Some("`purlis workspace remember -w <workspace>"),
         ),
         (
             "workspace memory's index",
             "workspaces/alpha/memory/MEMORY.md".to_owned(),
-            Some("`purlis workspace remember"),
+            Some("`purlis workspace remember -w <workspace>"),
         ),
         (
             "persona memory",
             "personas/steward/memory/a-note.md".to_owned(),
-            Some("`purlis persona remember`"),
+            Some("`purlis persona remember <persona>"),
         ),
         (
             "shared memory",
             format!("personas/{shared}/memory/a-note.md"),
-            Some("`--shared`"),
+            Some("(shared for shared memory)"),
         ),
         (
             "a todo",
@@ -7361,4 +7374,591 @@ fn the_state_folder_is_held_whole_in_purlis_s_wrap() {
         }
     }
     assert_eq!(wrapped_harnesses, 2);
+}
+
+/// #3718: the app's state of every project, in the data home, is purlis's own and read back to
+/// decide. No chat writes it, nor renames or replaces it or the data home that holds it, in what
+/// every harness is compiled; every chat reads it (a Try it's chat reads its laid-out skill there).
+#[test]
+fn every_harness_denies_a_chat_writing_the_app_state_and_lets_it_read_it() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let on = machine(Os::MacOs);
+    let data = Homes::charter_data(&on).expect("a data home");
+    let app_state = data.join(crate::appstate::DIR);
+    let denied = Denied::of(plane.path(), &on);
+    let held = |path: &std::path::Path, reach: Reach| {
+        denied.paths.iter().any(|it| {
+            it.path == path
+                && it.reach == reach
+                && it.access == Access::Write
+                && it.class == Class::Integrity
+                && it.any_case
+        })
+    };
+    assert!(held(&app_state, Reach::AndBelow), "{:?}", denied.paths);
+    assert!(held(&app_state, Reach::Itself), "{:?}", denied.paths);
+    assert!(held(&data, Reach::Itself), "{:?}", denied.paths);
+    assert!(
+        !denied
+            .paths
+            .iter()
+            .any(|it| it.access == Access::ReadWrite && app_state.starts_with(&it.path)),
+        "the app state is denied to reads: {:?}",
+        denied.paths
+    );
+
+    let named = super::real(&app_state).display().to_string();
+    let mut compiled_harnesses = 0;
+    for harness in Harness::ALL {
+        if compiler(harness).is_none() {
+            continue;
+        }
+        compiled_harnesses += 1;
+        let applied = applied_for(
+            harness,
+            &policy_of(&[], false),
+            &Plane::of(None),
+            plane.path(),
+            &on,
+        )
+        .expect("compiles");
+        match applied.form() {
+            // Claude Code: its own sandbox's write denials, and its file tools', and no read
+            // denial of it.
+            Form::ClaudeCode(settings) => {
+                let listed = |key: &str| -> Vec<String> {
+                    settings.sandbox["filesystem"][key]
+                        .as_array()
+                        .map(|all| {
+                            all.iter()
+                                .filter_map(serde_json::Value::as_str)
+                                .map(str::to_owned)
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                };
+                let deny_write = listed("denyWrite");
+                assert!(deny_write.contains(&named), "{named}: {deny_write:?}");
+                assert!(
+                    deny_write.contains(&claude::either_case(&named)),
+                    "{named} in either case: {deny_write:?}"
+                );
+                assert!(
+                    settings.deny.contains(&format!("Edit(/{named})")),
+                    "{named}: {:?}",
+                    settings.deny
+                );
+                assert!(
+                    !listed("denyRead")
+                        .iter()
+                        .any(|denied| named.starts_with(denied.as_str())),
+                    "{named} is denied to reads"
+                );
+                assert!(
+                    !settings
+                        .deny
+                        .iter()
+                        .any(|rule| rule.starts_with("Read(") && rule.contains("app-state")),
+                    "{:?}",
+                    settings.deny
+                );
+            }
+            // Codex and opencode: purlis's own wrap, which holds the folder and the data home as
+            // entries too.
+            Form::Codex(_) | Form::Opencode(_) => {
+                let wrapped = applied.form().denied().expect("a wrap");
+                let profile = seatbelt::profile(
+                    wrapped,
+                    &seatbelt::Own::default(),
+                    plane.path(),
+                    std::path::Path::new("/private/tmp/chat"),
+                    &[4040],
+                    None,
+                )
+                .expect("a profile");
+                for denial in app_state_held(&data) {
+                    assert!(wrapped.contains(&denial), "{harness:?}: {denial:?}");
+                    for rule in seatbelt::denial_rules(&denial).expect("rules") {
+                        assert!(profile.contains(&rule), "{harness:?}: {rule} missing");
+                    }
+                }
+                assert!(
+                    !profile
+                        .lines()
+                        .any(|line| line.contains("file-read*") && line.contains("[aA][pP][pP]-")),
+                    "{harness:?}: the app state is denied to reads"
+                );
+            }
+        }
+    }
+    assert_eq!(compiled_harnesses, 3, "Claude Code, Codex and opencode");
+}
+
+#[test]
+fn every_spelling_of_the_data_home_is_held() {
+    // #3718: each folder the data home could be, there or not, under either name.
+    let on = machine(Os::Linux);
+    let share = on.home.as_ref().expect("a home").join(".local/share");
+    let denied = Denied::of(tempfile::tempdir().expect("a plane").path(), &on);
+    for name in ["purlis", "charter"] {
+        let data = share.join(name);
+        assert!(!data.exists());
+        for (path, reach) in [
+            (data.join(crate::appstate::DIR), Reach::AndBelow),
+            (data.join(crate::appstate::DIR), Reach::Itself),
+            (data.clone(), Reach::Itself),
+        ] {
+            assert!(
+                denied.paths.iter().any(|it| it.path == path
+                    && it.reach == reach
+                    && it.access == Access::Write
+                    && it.class == Class::Integrity),
+                "{path:?} {reach:?}: {:?}",
+                denied.paths
+            );
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------
+// A repository's git folder, held as a whole
+// -------------------------------------------------------------------------------------
+
+/// A plane that turned the sandbox on, with a repository at its top, a nested one with a
+/// submodule, a linked worktree of the nested one five folders down (as a workspace keeps its
+/// branch folders), and a folder outside it, listed as one chats may be granted, that holds
+/// another. Each path as the test lays it out.
+struct Repositories {
+    plane: tempfile::TempDir,
+    granted: tempfile::TempDir,
+}
+
+impl Repositories {
+    fn laid_out() -> Self {
+        let plane = plane_saying(ON);
+        let granted = tempfile::tempdir().expect("a folder chats may be granted");
+        let repository = |at: &std::path::Path| {
+            for dir in [
+                "objects/pack",
+                "refs/heads",
+                "logs/refs/heads",
+                "hooks",
+                "info",
+            ] {
+                std::fs::create_dir_all(at.join(".git").join(dir)).expect("a git folder");
+            }
+            std::fs::write(at.join(".git/HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+            std::fs::write(at.join(".git/config"), "[core]\n\tbare = false\n").expect("config");
+        };
+        repository(plane.path());
+        let nested = plane.path().join("ws/app/repo");
+        repository(&nested);
+        std::fs::create_dir_all(nested.join(".git/modules/x")).expect("a submodule's git folder");
+        std::fs::write(nested.join(".git/modules/x/HEAD"), "ref: refs/heads/main\n")
+            .expect("its HEAD");
+        std::fs::create_dir_all(nested.join(".git/worktrees/b")).expect("a worktree record");
+        std::fs::write(nested.join(".git/worktrees/b/HEAD"), "ref: refs/heads/b\n").expect("HEAD");
+        std::fs::write(nested.join(".git/worktrees/b/commondir"), "../..\n").expect("commondir");
+        let branch = plane.path().join("workspaces/w/.worktrees/repo/b");
+        std::fs::create_dir_all(&branch).expect("a branch folder");
+        std::fs::write(
+            branch.join(".git"),
+            format!("gitdir: {}\n", nested.join(".git/worktrees/b").display()),
+        )
+        .expect("its .git file");
+        repository(&granted.path().join("other"));
+        local::list_grantable(plane.path(), granted.path()).expect("listed");
+        Self { plane, granted }
+    }
+
+    fn at(&self, rel: &str) -> std::path::PathBuf {
+        self.plane.path().join(rel)
+    }
+
+    /// The path whose denial holds each git folder.
+    fn pins(&self) -> Vec<std::path::PathBuf> {
+        vec![
+            self.at(".git/config"),
+            self.at("ws/app/repo/.git/config"),
+            self.at("ws/app/repo/.git/modules/x/config"),
+            self.at("workspaces/w/.worktrees/repo/b/.git"),
+            self.granted.path().join("other/.git/config"),
+        ]
+    }
+
+    /// The repositories with a `.git` directory.
+    fn clones(&self) -> Vec<std::path::PathBuf> {
+        vec![
+            self.plane.path().to_path_buf(),
+            self.at("ws/app/repo"),
+            self.granted.path().join("other"),
+        ]
+    }
+
+    /// The settings a Claude Code chat in the plane starts with, compiled as a start compiles
+    /// them, at the full sandbox; and at the floor, from the same denials.
+    fn claude_settings(&self) -> Vec<(Level, claude::Settings)> {
+        let machine = machine(Os::MacOs);
+        let applied =
+            compiled_anyway(Harness::ClaudeCode, self.plane.path(), &machine).expect("compiles");
+        let Form::ClaudeCode(full) = applied.form_in(Some(self.plane.path())) else {
+            panic!("not Claude Code's settings");
+        };
+        let mut floor = compiled(
+            Denied {
+                git_folder_pins: git_folder_pins_of(self.plane.path()),
+                ..Denied::of(self.plane.path(), &machine)
+            },
+            Os::MacOs,
+        );
+        floor.level = Level::Floor;
+        let floor = claude::settings(&floor).expect("compiles");
+        vec![(Level::Full, full), (Level::Floor, floor)]
+    }
+}
+
+/// What Claude Code's `denyWrite` `entry` holds, as its profile builder reads one, as
+/// `tools/seatbelt-case.sh` describes it: `**/` any folders or none, `**` anything, `*` and `?`
+/// within one name, a `[...]` class kept, and what is below the entry held with it. A relative
+/// entry is read as matching at any depth, which holds at least as much as Claude Code does.
+fn claude_entry_pattern(entry: &str) -> regex::Regex {
+    let (mut pattern, body) = match entry.strip_prefix('/') {
+        Some(_) => (String::from("^"), entry),
+        None => (
+            String::from("^/(.*/)?"),
+            entry.strip_prefix("**/").unwrap_or(entry),
+        ),
+    };
+    let chars: Vec<char> = body.chars().collect();
+    let mut at = 0;
+    while at < chars.len() {
+        let rest: String = chars[at..].iter().collect();
+        if rest.starts_with("**/") {
+            pattern.push_str("(.*/)?");
+            at += 3;
+        } else if rest.starts_with("**") {
+            pattern.push_str(".*");
+            at += 2;
+        } else if chars[at] == '*' {
+            pattern.push_str("[^/]*");
+            at += 1;
+        } else if chars[at] == '?' {
+            pattern.push_str("[^/]");
+            at += 1;
+        } else if chars[at] == '[' {
+            let end = chars[at..]
+                .iter()
+                .position(|c| *c == ']')
+                .map_or(chars.len(), |end| at + end + 1);
+            pattern.extend(&chars[at..end]);
+            at = end;
+        } else {
+            pattern.push_str(&regex::escape(&chars[at].to_string()));
+            at += 1;
+        }
+    }
+    pattern.push_str("(/.*)?$");
+    regex::Regex::new(&pattern).expect("a pattern")
+}
+
+/// Claude Code's `denyWrite`, each entry as written.
+fn deny_write_as_written(settings: &claude::Settings) -> Vec<String> {
+    settings.sandbox["filesystem"]["denyWrite"]
+        .as_array()
+        .expect("a list")
+        .iter()
+        .map(|it| it.as_str().expect("a path").to_owned())
+        .collect()
+}
+
+#[test]
+fn every_repository_s_git_folder_is_found_as_a_chat_starts() {
+    let repositories = Repositories::laid_out();
+    let pins = git_folder_pins_of(repositories.plane.path());
+    for pin in repositories.pins() {
+        assert!(pins.contains(&pin), "{pin:?} not in {pins:?}");
+    }
+    // A `.git` directory is never itself a pin: what is below it is git's to write. Nor is a
+    // linked worktree's own record, which `.git/worktrees` holds by name.
+    for clone in repositories.clones() {
+        assert!(!pins.contains(&clone.join(".git")), "{clone:?}");
+    }
+    assert!(
+        !pins.contains(&repositories.at("ws/app/repo/.git/worktrees/b/config")),
+        "{pins:?}"
+    );
+    // Found for a start alone, never with the denials every caller reads.
+    assert_eq!(
+        Denied::of(repositories.plane.path(), &machine(Os::MacOs)).git_folder_pins,
+        Vec::<std::path::PathBuf>::new()
+    );
+}
+
+/// Measured where it ships by `claude_codes_own_sandbox_holds_the_settings_purlis_writes`
+/// (`tools/seatbelt-case.sh --here`): the git folders stay where they are, and git still works.
+#[test]
+fn a_claude_code_chat_denies_a_path_in_each_repository_s_git_folder() {
+    let repositories = Repositories::laid_out();
+    for (level, settings) in repositories.claude_settings() {
+        let deny_write = deny_write_as_written(&settings);
+        for pin in repositories.pins() {
+            // As a plain path, never a glob: Claude Code pins every folder above a denied path,
+            // so the git folder and the folders that hold it stay where they are.
+            for name in [pin.clone(), super::real(&pin)] {
+                let name = name.display().to_string();
+                assert!(deny_write.contains(&name), "{level:?}: {name} not denied");
+                for rule in [format!("Edit(/{name})"), format!("Edit(/{name}/**)")] {
+                    assert!(settings.deny.contains(&rule), "{level:?}: {rule}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn git_still_writes_what_is_inside_a_held_git_folder() {
+    // Claude Code's `denyWrite` holds a path and what is below it, so no entry may hold a git
+    // folder, or what git writes in it, in ordinary work: a commit, a branch, a checkout, a
+    // fetch, a gc, a submodule's update.
+    let repositories = Repositories::laid_out();
+    for (level, settings) in repositories.claude_settings() {
+        let deny_write: Vec<(String, regex::Regex)> = deny_write_as_written(&settings)
+            .into_iter()
+            .map(|entry| {
+                let pattern = claude_entry_pattern(&entry);
+                (entry, pattern)
+            })
+            .collect();
+        let holding = |path: &std::path::Path| -> Vec<String> {
+            let mut out = Vec::new();
+            for name in [path.to_path_buf(), super::real(path)] {
+                let name = name.display().to_string();
+                out.extend(
+                    deny_write
+                        .iter()
+                        .filter(|(_, pattern)| pattern.is_match(&name))
+                        .map(|(entry, _)| entry.clone()),
+                );
+            }
+            out
+        };
+        for repo in repositories.clones() {
+            // The control: what git does not write in ordinary work is held, as read here.
+            for kept in [".git/config", ".git/hooks/pre-commit"] {
+                let path = repo.join(kept);
+                assert!(!holding(&path).is_empty(), "{level:?}: {path:?} not held");
+            }
+            for written in [
+                ".git",
+                ".git/objects",
+                ".git/objects/ab/cdef",
+                ".git/objects/pack/pack-1.pack",
+                ".git/refs/heads/main",
+                ".git/refs/remotes/origin/main",
+                ".git/index",
+                ".git/index.lock",
+                ".git/HEAD",
+                ".git/ORIG_HEAD",
+                ".git/FETCH_HEAD",
+                ".git/COMMIT_EDITMSG",
+                ".git/packed-refs",
+                ".git/logs/HEAD",
+                ".git/logs/refs/heads/main",
+                ".git/modules/x/objects/ab/cdef",
+                ".git/modules/x/refs/heads/main",
+                ".git/modules/x/index",
+                ".git/modules/x/HEAD",
+            ] {
+                let path = repo.join(written);
+                let held = holding(&path);
+                assert!(held.is_empty(), "{level:?}: {path:?} held by {held:?}");
+            }
+            // A new linked worktree's record is held by the name `.git/worktrees` alone, as it was:
+            // no path in a git folder adds to it.
+            let record = repo.join(".git/worktrees/new/HEAD");
+            for entry in holding(&record) {
+                assert!(
+                    claude::uncased(&entry).ends_with(".git/worktrees"),
+                    "{level:?}: {record:?} held by {entry}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_wrapped_chat_is_compiled_as_before_whatever_git_folders_are_found() {
+    // Codex and opencode run in purlis's own wrap, which holds every `.git` by itself already
+    // (`Reach::Itself`): what it compiles does not change with the git folders found.
+    let repositories = Repositories::laid_out();
+    let without = Denied::of(repositories.plane.path(), &machine(Os::MacOs));
+    let with = Denied {
+        git_folder_pins: git_folder_pins_of(repositories.plane.path()),
+        ..without.clone()
+    };
+    assert!(!with.git_folder_pins.is_empty());
+    for os in [Os::MacOs, Os::Linux] {
+        assert_eq!(
+            codex::wrap(&compiled(with.clone(), os)),
+            codex::wrap(&compiled(without.clone(), os)),
+            "{os:?}"
+        );
+        assert_eq!(
+            opencode::wrap(&compiled(with.clone(), os)),
+            opencode::wrap(&compiled(without.clone(), os)),
+            "{os:?}"
+        );
+    }
+}
+
+#[test]
+fn a_plane_with_no_repository_has_no_git_folder_pins() {
+    let plane = plane_saying(ON);
+    assert_eq!(
+        git_folder_pins_of(plane.path()),
+        Vec::<std::path::PathBuf>::new()
+    );
+}
+
+#[test]
+fn a_block_on_a_git_folder_or_a_folder_above_one_is_known_as_kept_in_place() {
+    let repositories = Repositories::laid_out();
+    let root = repositories.plane.path();
+    for path in [
+        repositories.at("ws/app/repo/.git"),
+        repositories.at("ws/app/repo/.GIT"),
+        repositories.at("ws/app/repo"),
+        repositories.at("ws/app"),
+        repositories.at("workspaces/w/.worktrees/repo/b/.git"),
+        repositories.at("workspaces/w/.worktrees/repo/b"),
+        repositories.at("ws/app/repo/.git/modules"),
+        repositories.granted.path().join("other/.git"),
+        super::real(&repositories.at("ws/app/repo")),
+    ] {
+        assert!(grant::keeps_git_folder(&path, root, true), "{path:?}");
+    }
+    for path in [
+        repositories.at("ws/app/repo/.git/index"),
+        repositories.at("ws/app/repo/src"),
+        repositories.at("ws/app/beside"),
+        repositories.at("ws/app/repo/.git/worktrees/new"),
+    ] {
+        assert!(!grant::keeps_git_folder(&path, root, true), "{path:?}");
+    }
+    // A spelling in another case is the same folder only where names are folded.
+    assert!(!grant::keeps_git_folder(
+        &repositories.at("ws/app/repo/.GIT"),
+        root,
+        false
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_chat_writes_none_of_the_programs_a_cluster_pools_kubectl_runs_nor_their_package() {
+    // A machine whose config home holds one cluster pool, its kubectl a link into a keg.
+    let config = tempfile::tempdir().expect("a config home");
+    let keg = config.path().join("Cellar/kubernetes-cli/1.36.0/bin");
+    std::fs::create_dir_all(&keg).expect("a keg");
+    std::fs::write(keg.join("kubectl"), "#!/bin/sh\n").expect("kubectl");
+    let bin = config.path().join("bin");
+    std::fs::create_dir_all(&bin).expect("a bin");
+    std::os::unix::fs::symlink(keg.join("kubectl"), bin.join("kubectl")).expect("a link");
+    let named = bin.join("kubectl");
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
+    let file = serde_json::json!({ "version": 1, "runners": [], "pools": [{
+        "name": "team", "kind": "cluster", "kubeconfig": "/home/op/.kube/config",
+        "context": "team", "pool": "default", "namespace": "ada",
+        "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
+        "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
+        "holds": [named.display().to_string(), super::real(&keg.join("kubectl")).display().to_string()],
+    }]});
+    folder
+        .replace_file(crate::machine::RUNNERS_FILE, file.to_string().as_bytes())
+        .unwrap();
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
+        home: Some(std::path::PathBuf::from("/home/op")),
+        os: Os::Linux,
+    };
+    let plane = tempfile::tempdir().expect("a plane");
+    let denied = Denied::of(plane.path(), &machine);
+    let held = |path: &std::path::Path, reach: Reach| {
+        denied.paths.iter().any(|it| {
+            it.class == Class::LaterCode
+                && it.access == Access::Write
+                && it.path == path
+                && it.reach == reach
+        })
+    };
+    assert!(held(&named, Reach::Itself), "{:?}", denied.paths);
+    assert!(
+        held(&super::real(&keg.join("kubectl")), Reach::Itself),
+        "{:?}",
+        denied.paths
+    );
+    assert!(
+        held(
+            &super::real(&config.path().join("Cellar/kubernetes-cli")),
+            Reach::AndBelow
+        ),
+        "{:?}",
+        denied.paths
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_cluster_pools_program_whose_package_would_be_the_home_or_above_it_is_held_alone() {
+    // A pool an earlier purlis added, its plugins straight in the home and in the folder above
+    // it: their packages would be the home itself and a folder above it.
+    let config = tempfile::tempdir().expect("a config home");
+    let above = super::real(config.path());
+    let home = above.join("op");
+    std::fs::create_dir_all(&home).expect("a home");
+    let in_home = home.join("plugin");
+    let above_home = above.join("plugin");
+    for program in [&in_home, &above_home] {
+        std::fs::write(program, "#!/bin/sh\n").expect("a plugin");
+    }
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
+    let file = serde_json::json!({ "version": 1, "runners": [], "pools": [{
+        "name": "team", "kind": "cluster", "kubeconfig": "/home/op/.kube/config",
+        "context": "team", "pool": "default", "namespace": "ada",
+        "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
+        "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
+        "holds": [in_home.display().to_string(), above_home.display().to_string()],
+    }]});
+    folder
+        .replace_file(crate::machine::RUNNERS_FILE, file.to_string().as_bytes())
+        .unwrap();
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
+        home: Some(home.clone()),
+        os: Os::Linux,
+    };
+    let plane = tempfile::tempdir().expect("a plane");
+    let denied = Denied::of(plane.path(), &machine);
+    let held = |path: &std::path::Path, reach: Reach| {
+        denied.paths.iter().any(|it| {
+            it.class == Class::LaterCode
+                && it.access == Access::Write
+                && it.path == path
+                && it.reach == reach
+        })
+    };
+    assert!(held(&in_home, Reach::Itself), "{:?}", denied.paths);
+    assert!(held(&above_home, Reach::Itself), "{:?}", denied.paths);
+    for wide in [&home, &above] {
+        assert!(
+            !denied.paths.iter().any(|it| it.class == Class::LaterCode
+                && it.path == *wide
+                && it.reach == Reach::AndBelow),
+            "{} held with all below it: {:?}",
+            wide.display(),
+            denied.paths
+        );
+    }
 }

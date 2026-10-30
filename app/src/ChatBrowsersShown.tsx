@@ -270,7 +270,12 @@ function BrowserRow({
           )}
           {/* Who drives it, where its agent does not (#2300). */}
           {driver !== null && (
-            <span className="chat-browser-driver ui-text-meta" data-driver={driver}>
+            // The person's own hand is the one that matters: strong, as a meta word that counts
+            // is (#3917). Primary at the meta's size is no rank of the scale.
+            <span
+              className={`chat-browser-driver ui-text-meta${driver === "person" ? " ui-text-strong" : ""}`}
+              data-driver={driver}
+            >
               {DRIVEN[driver].mark}
             </span>
           )}

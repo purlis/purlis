@@ -384,6 +384,9 @@ pub const PAIRS: &[Pair] = &[
     // - A warning's dot (#3649): the waiting amber, told apart from the same ground; its
     //   triangle on it is `surface.base` on `state.waiting`, held among the marks above.
     p("state.waiting", "surface.deep", 3.0),
+    // - A needs-you dot (#3652): the failed red, told apart from the same ground; its hand on it
+    //   is `surface.base` on `state.failed`, held among the marks below.
+    p("state.failed", "surface.deep", 3.0),
     // - The update pill's words in the accent's words on the accent's surface (#3177).
     p("accent.text", "accent.surface", TEXT),
     // - What an extension runs as you, said inside its approval dialog on the danger wash.
@@ -438,6 +441,13 @@ pub const PAIRS: &[Pair] = &[
     p("text.primary", "border.subtle", TEXT),
     // - A list's load-more row under the pointer: words in the accent on the hover surface.
     p("accent.base", "surface.hover", TEXT),
+    // - A pressed card's pick (#3885, `card-button.root.pick`): its words in the accent, on each
+    //   ground it stands on, at rest; under the pointer and pressed on the hover surface, above.
+    //   A door's words are the primary and its line the secondary tier on the control's ground,
+    //   and its mark the accent on it, all held among the tiers and the Allow's edge.
+    p("accent.base", "surface.base", TEXT),
+    p("accent.base", "surface.raised", TEXT),
+    p("accent.base", "surface.overlay", TEXT),
     // - A panel's view button under the pointer: secondary words on the control's hover.
     p("text.secondary", "control.hover", TEXT),
     // - A vault's eye under the pointer: a muted mark on the control's hover, held as muted
@@ -784,6 +794,9 @@ pub const PAIRS: &[Pair] = &[
     // A warning's notice dot (#3649): its triangle in the window's colour on the waiting amber, a
     // mark held to 3:1.
     p("surface.base", "state.waiting", 3.0),
+    // A needs-you dot (#3652): its hand in the window's colour on the failed red, a mark held to
+    // 3:1.
+    p("surface.base", "state.failed", 3.0),
 ];
 
 /// The floor the sixteen ANSI colours clear on the terminal's own background.

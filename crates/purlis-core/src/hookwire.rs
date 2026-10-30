@@ -1578,13 +1578,20 @@ pub struct DispatchAsk {
     /// here, or has not approved, is a refusal and never another profile in its place.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
-    /// Where the new chat is to work (`--in`, #1453): `worktree`, or `workspace:<name>`.
+    /// Where the new chat is to work (`--in`, #1453): `worktree`, `worktree:<repo>` (#3903),
+    /// or `workspace:<name>`.
     /// `None` is the persona's own default, else the asking chat's folder. **A word, never a
     /// place**: which repo a worktree is cut from, and what its folder and branch are called,
     /// are the app's ([`crate::dispatchplace`]), and a workspace is looked up among the
     /// project's own. There is no field for a folder or a branch.
     #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
     pub place: Option<String>,
+    /// **A long-running task** (`--long`, #3905): its notes are its heartbeat, and purlis never
+    /// asks it for a report nor makes one from its last message. It ends when it reports
+    /// `done` or `failed`, or is cancelled. Absent, and `false`, for a task that is one job
+    /// with one answer.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub long: bool,
     /// See [`OpenChat`]. Minted by the app, spent once, never written down.
     pub ticket: String,
 }
@@ -5336,6 +5343,7 @@ mod tests {
             profile: None,
             place: None,
             ticket: "t".repeat(64),
+            long: false,
         }))
     }
 
@@ -5392,6 +5400,7 @@ mod tests {
                 profile: Some("prod".to_owned()),
                 place: None,
                 ticket: "t".to_owned(),
+                long: false,
             }
         );
     }
@@ -5419,6 +5428,7 @@ mod tests {
                 profile: None,
                 place: Some("worktree".to_owned()),
                 ticket: "t".to_owned(),
+                long: false,
             }
         );
         // And it is written back as that one word.
@@ -7414,6 +7424,7 @@ mod tests {
                 profile: None,
                 place: None,
                 ticket: ticket.to_owned(),
+                long: false,
             }))
         });
     }

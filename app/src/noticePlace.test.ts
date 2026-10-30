@@ -5,10 +5,12 @@ import { describe, expect, it } from "vitest";
 import { OUTSIDE } from "./actions";
 import { reposCloned, reposCloning, reposNotCloned, workspaceMade } from "./actionResult";
 import type { Said } from "./actions";
+import type { Shown } from "./bindings";
 import {
   aboutOf,
   chipsOf,
   kindOf,
+  needsOn,
   placeOf,
   type About,
   type Chip,
@@ -26,6 +28,8 @@ const ROOT: Chip = { workspace: OUTSIDE, look: "root" };
 const ABOUT_GAMMA: About = { workspace: "gamma" };
 const A_PROJECT_RESULT: About = { project: true };
 const A_CHAT: About = { pane: 3 };
+/** Chat 3 asking for gamma's removal: a consent, answered on its band (#3652). */
+const ASKS_TO_REMOVE_GAMMA: About = { pane: 3, removes: "gamma" };
 
 describe("where a notice is drawn (spec #3647, the one test seam)", () => {
   const table: [string, About, readonly Chip[], Place][] = [
@@ -100,6 +104,42 @@ describe("where a notice is drawn (spec #3647, the one test seam)", () => {
       { at: "centre", open: "gamma" },
     ],
     [
+      "a chat asking to remove a pinned workspace: its band, and a needs-you dot on the chip (#3652)",
+      ASKS_TO_REMOVE_GAMMA,
+      [ANOTHER, PINNED],
+      { at: "pane", pane: 3, needs: "gamma" },
+    ],
+    [
+      "a chat asking to remove the current, unpinned workspace: the dot on its dashed chip",
+      ASKS_TO_REMOVE_GAMMA,
+      [ANOTHER, DASHED],
+      { at: "pane", pane: 3, needs: "gamma" },
+    ],
+    [
+      "a chat asking to remove a dormant workspace: the dot on its dormant chip",
+      ASKS_TO_REMOVE_GAMMA,
+      [DORMANT],
+      { at: "pane", pane: 3, needs: "gamma" },
+    ],
+    [
+      "a chat asking to remove a pinned workspace while the plane root is in front: its chip's dot",
+      ASKS_TO_REMOVE_GAMMA,
+      [ROOT, PINNED],
+      { at: "pane", pane: 3, needs: "gamma" },
+    ],
+    [
+      "a chat asking to remove the plane root, which the core refuses: no dot on the house",
+      { pane: 3, removes: OUTSIDE },
+      [ROOT, PINNED],
+      { at: "pane", pane: 3 },
+    ],
+    [
+      "a chat asking to remove a workspace with no chip: its band alone, no dot over the wrong chip",
+      ASKS_TO_REMOVE_GAMMA,
+      [ROOT, ANOTHER],
+      { at: "pane", pane: 3 },
+    ],
+    [
       "about the plane root: its house chip's card, outside the strip (the dispatcher's ruling)",
       { workspace: OUTSIDE },
       [ROOT, ANOTHER],
@@ -164,6 +204,39 @@ describe("where each line of a new workspace's setup is drawn, and its kind (#36
   it.each(lines)("%s", (_, said, chips, place, kind) => {
     expect(placeOf(aboutOf(said), chips)).toEqual(place);
     expect(kindOf(said)).toBe(kind);
+  });
+});
+
+/** Chat `session`'s ask, as the registry lists it, to remove `workspace` (qw356). */
+const removal = (workspace: string, session: number): Shown => ({
+  session,
+  ask: `removal:${session}:${workspace}`,
+  says: `Removing workspace ${workspace}`,
+  options: [
+    { id: "remove", label: "Remove…", allows: true },
+    { id: "keep", label: "Keep", allows: false },
+  ],
+  source: "workspace-removal",
+  chain: [`Safe remove · ${workspace}`],
+  answer: { via: "workspace-removal", workspace, memories: 0, todos: 0 },
+});
+
+describe("the chips a chat's removal question puts a needs-you dot on (#3652)", () => {
+  it("is each asked workspace that has a chip, with the chat asking first", () => {
+    const asks = [removal("gamma", 4), removal("beta", 5), removal("gamma", 6)];
+    expect([...needsOn(asks, [ROOT, ANOTHER, PINNED])]).toEqual([
+      ["gamma", 4],
+      ["beta", 5],
+    ]);
+  });
+
+  it("is none for a workspace with no chip, nor for any other kind of ask", () => {
+    const other: Shown = {
+      ...removal("beta", 7),
+      source: "proposed-change",
+      answer: { via: "proposed-change", id: 1, path: "beta" },
+    };
+    expect([...needsOn([removal("gamma", 4), other], [ROOT, ANOTHER])]).toEqual([]);
   });
 });
 

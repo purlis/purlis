@@ -8,7 +8,7 @@
  * faked at its command boundary.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { chooseMore, forgetStudio, renderStudioAt } from "./SkillStudioTab.testkit";
@@ -296,26 +296,60 @@ describe("a skill's page", () => {
     );
   });
 
-  it("opens a grade's scorecard from Grades, in one click", async () => {
+  it("opens Grade as the plan page, and a grade's scorecard from Grades, in the studio's tab", async () => {
+    const row = {
+      grade: "01GRADE",
+      graded: "2026-10-28 10:00 UTC",
+      version: "0123456789ab",
+      ran_on: "Claude Code · sonnet",
+      ended: "Finished",
+      outcome: "graded",
+      arms: { with: 86, without: 68, previous: null },
+      spent: { chats: 12, tokens: 90000, cost_usd: 1.92, limit_usd: 3 },
+      after_edit: false,
+    };
     core([DEPLOY], {
-      skill_panels: () => [
-        {
-          key: { kind: "grades" },
-          title: "Grades",
-          by: null,
-          refused: null,
-          blocks: [
-            {
-              kind: "table",
-              caption: "Grades of deploy",
-              columns: ["Graded", "Version"],
-              rows: [{ key: "01GRADE", cells: ["2026-10-28 10:00 UTC", "0123456789ab"] }],
-              empty: { headline: "No grades of deploy yet", body: null, offer: null },
-            },
-          ],
-        },
-        runsPanel([]),
-      ],
+      skill_grade_plan: () => ({
+        tests: [{ query: "ship it", should_trigger: true, hides: false }],
+        chats: 6,
+        runs: 3,
+        tests_refused: null,
+        left_out: [],
+        outcome_evals: 0,
+        outcomes_refused: null,
+        estimate: null,
+        record_said: null,
+        running: null,
+        token_cap: 200000,
+        cap_set_here: false,
+        cost_cap_usd: 3,
+        priced: { usd_per_million: 15, of_the_model: true, model: "sonnet" },
+        chat_minutes: 5,
+        profile: "work",
+        models: [],
+        model: null,
+        sandbox: null,
+        refused: null,
+        consent: "c0ffee",
+        previous: null,
+        previous_refused: null,
+      }),
+      skill_grades: () => ({
+        grades: [row],
+        said: null,
+        tests: 1,
+        tests_refused: null,
+        running: null,
+      }),
+      skill_grade_scorecard: () => ({
+        ...row,
+        skill: "deploy",
+        delta: 18,
+        against: null,
+        delta_without: null,
+        asked: 0,
+        tests: [],
+      }),
     });
     const onOpenView = vi.fn();
     const user = userEvent.setup();
@@ -323,12 +357,72 @@ describe("a skill's page", () => {
 
     await page();
     await user.click(screen.getByRole("button", { name: "Grade deploy" }));
-    expect(tab(/Grades/)).toHaveAttribute("aria-selected", "true");
-    fireEvent.click(await screen.findByRole("button", { name: "Open scorecard" }));
-    expect(onOpenView).toHaveBeenCalledWith(
-      { from: null, view: "skill-grade", key: "deploy@01GRADE" },
-      "Grade · deploy",
+    expect(await screen.findByTestId("skill-grade-plan")).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Path" })).toHaveTextContent("New grade");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(tab(/Grades/)).toHaveAttribute("aria-selected", "true"));
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Scorecard of the grade of 2026-10-28 10:00 UTC",
+      }),
     );
+    expect(await screen.findByTestId("grade-scorecard")).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Path" })).toHaveTextContent("Scorecard");
+    // Nothing opens a tab of its own: the scorecard tab is retired (S6).
+    expect(onOpenView).not.toHaveBeenCalled();
+  });
+
+  it("offers a skill with no trigger tests to write them, and opens their file once started", async () => {
+    const asked = core([DEPLOY], {
+      skill_grades: () => ({
+        grades: [],
+        said: null,
+        tests: 0,
+        tests_refused: null,
+        running: null,
+      }),
+      skill_trigger_tests_start: () => ({ notes: [] }),
+    });
+    const onOpenView = vi.fn();
+    const user = userEvent.setup();
+    renderStudioAt(at(DEPLOY, AT_THE_ROOT, { tab: "grades" }), { onOpenView });
+
+    const none = await screen.findByTestId("skill-grades-no-tests");
+    await user.click(within(none).getByRole("button", { name: "Write trigger tests" }));
+    await waitFor(() =>
+      expect(onOpenView).toHaveBeenCalledWith(
+        { from: null, view: "plane-file", key: "skills/deploy/evals/triggers.json" },
+        "triggers.json · Plane root",
+      ),
+    );
+    expect(asked.find((one) => one.cmd === "skill_trigger_tests_start")?.args).toMatchObject({
+      name: "deploy",
+      level: { at: "project", local: false },
+    });
+  });
+
+  it("says why trigger tests were not started, and opens nothing", async () => {
+    core([DEPLOY], {
+      skill_grades: () => ({
+        grades: [],
+        said: null,
+        tests: 0,
+        tests_refused: null,
+        running: null,
+      }),
+      skill_trigger_tests_start: () => {
+        throw "This project is read-only here, so nothing was written.";
+      },
+    });
+    const onOpenView = vi.fn();
+    const user = userEvent.setup();
+    renderStudioAt(at(DEPLOY, AT_THE_ROOT, { tab: "grades" }), { onOpenView });
+
+    const none = await screen.findByTestId("skill-grades-no-tests");
+    await user.click(within(none).getByRole("button", { name: "Write trigger tests" }));
+    await screen.findByText("This project is read-only here, so nothing was written.");
+    expect(onOpenView).not.toHaveBeenCalled();
   });
 
   it("draws an extension's panel on Overview, under its title and the extension's name", async () => {

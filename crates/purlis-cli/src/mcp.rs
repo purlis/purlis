@@ -399,7 +399,7 @@ fn persona_remember(args: &serde_json::Map<String, serde_json::Value>) -> Result
         }
         Forwarded::NotTaken(not) if !not.may_write_outside() => Err(format!(
             "nothing was written: {}",
-            not.refusal("purlis persona remember")
+            not.refusal("purlis persona remember <persona> \"<fact>\"")
         )),
         Forwarded::NotTaken(_) => {
             let here = crate::Here::read()?;
@@ -501,6 +501,7 @@ fn dispatch(args: &serde_json::Map<String, serde_json::Value>) -> Result<String,
     let profile = chattools::dispatch_profile(args)?;
     let waits = chattools::dispatch_waits(args)?;
     let place = chattools::dispatch_place(args)?;
+    let long = chattools::dispatch_long(args)?;
     let here = crate::Here::read()?;
     crate::dispatch::send(
         &here,
@@ -510,6 +511,7 @@ fn dispatch(args: &serde_json::Map<String, serde_json::Value>) -> Result<String,
         &crate::dispatch::Options {
             profile: profile.as_deref(),
             place: place.as_deref(),
+            long,
         },
         waits,
     )

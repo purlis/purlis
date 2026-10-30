@@ -52,19 +52,26 @@ pub fn branch(run: u8) -> String {
 ///
 /// Small enough for any repo and any harness, and real: it reads the repo, changes one file,
 /// and leaves a fact the next chat can use. The last step is the one the month-two moment
-/// rests on, so it names the command a chat records a lesson with, and the persona is the
-/// chat's own (`charter persona remember` with one argument resolves it).
+/// rests on, so it names how a chat records a lesson in its own persona's memory: the
+/// `persona_remember` tool first, then the command with `persona` written in, the spelling a
+/// chat runs without a prompt (#3880, ADR 0064 as amended for #3829). A chat on no persona is
+/// taught the tool alone, which writes to whichever persona it runs as.
 ///
 /// **One line, and short**, because it is typed as one paste and a harness draws a long or
 /// many-line paste as a placeholder the operator cannot read before pressing Enter (ADR 0061,
 /// amended 2026-09-27; [`crate::harness::Harness::why_drawn_as_a_placeholder`]).
-pub fn prompt() -> String {
-    "purlis's first task, on this chat's own branch: check the memory in your briefing for \
-     what an earlier chat learned about this repo, find out how its tests or checks are run, \
-     and write that down in a short \"How to check a change\" section of the README (make one \
-     if there is none). Change nothing else, and push or publish nothing. Then record the one \
-     thing the next chat here should know with `purlis persona remember \"<the fact>\"`."
-        .to_owned()
+pub fn prompt(persona: Option<&str>) -> String {
+    let command = persona
+        .map(|name| format!(" (or `purlis persona remember {name} \"<the fact>\"`)"))
+        .unwrap_or_default();
+    format!(
+        "purlis's first task, on this chat's own branch: check the memory in your briefing for \
+         what an earlier chat learned about this repo, find out how its tests or checks are \
+         run, and write that down in a short \"How to check a change\" section of the README \
+         (make one if there is none). Change nothing else, and push or publish nothing. Then \
+         record the one thing the next chat here should know with the `persona_remember` \
+         tool{command}."
+    )
 }
 
 /// The commit the branch in `tree` was cut from: its `HEAD`, asked right after the cut, before
@@ -138,17 +145,27 @@ mod tests {
 
     #[test]
     fn the_task_asks_for_the_lesson_and_for_nothing_to_leave_the_machine() {
-        let task = prompt();
+        let task = prompt(Some("steward"));
+        assert!(task.contains("the `persona_remember` tool"), "{task}");
         assert!(
-            task.contains("`purlis persona remember \"<the fact>\"`"),
+            task.contains("`purlis persona remember steward \"<the fact>\"`"),
             "{task}"
         );
         assert!(task.contains("push or publish nothing"), "{task}");
     }
 
+    /// #3880: the unnamed spelling stops on the harness's prompt, so a chat on no persona is
+    /// taught the tool alone.
+    #[test]
+    fn a_chat_on_no_persona_is_taught_the_tool_and_no_unnamed_command() {
+        let task = prompt(None);
+        assert!(task.contains("the `persona_remember` tool."), "{task}");
+        assert!(!task.contains("persona remember"), "{task}");
+    }
+
     #[test]
     fn the_task_is_drawn_whole_by_every_harness_charter_types_into() {
-        let pasted = crate::curation::pasted(&prompt());
+        let pasted = crate::curation::pasted(&prompt(Some("a-persona-with-a-long-name")));
         for harness in crate::harness::Harness::ALL {
             if harness.ready_to_type().is_none() {
                 continue;

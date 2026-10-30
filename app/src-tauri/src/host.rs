@@ -276,6 +276,14 @@ pub trait SessionHost: Send + Sync {
         None
     }
 
+    /// **Whether Move here brings back a clone the runner chat `id` runs on made** (#3811): its
+    /// runner names the clones it holds (session protocol 1.51). False for a chat here, and for
+    /// one on a runner before 1.51, or one this window has no link to now.
+    fn clones_come_back(&self, id: u32) -> bool {
+        let _ = id;
+        false
+    }
+
     /// Each pool's runner log the project's chats read, by the pool (#3393): none where they
     /// all run here.
     fn runner_logs(&self) -> Vec<(String, crate::runnerlog::RunnerLogNow)> {

@@ -338,6 +338,14 @@ fn runs_here_names_what_a_local_tool_runs_or_reads_as_its_settings() {
         "Makefile",
         ".husky/pre-commit",
         "build.rs",
+        ".cargo/config.toml",
+        "rust-toolchain.toml",
+        "crates/core/Cargo.toml",
+        ".yarnrc.yml",
+        ".github/workflows/ci.yml",
+        ".gitattributes",
+        "pyproject.toml",
+        "gradlew",
     ] {
         assert!(runs_here(path), "{path}");
     }
@@ -374,5 +382,150 @@ fn a_clone_only_here_stays_as_it_is_at_a_move_here_and_reaches_the_runner_at_the
     assert_eq!(
         read(&world.runner, "new.txt").as_deref(),
         Some("brand new\n")
+    );
+}
+
+/// A runner holding a clone this machine has none of: `World`'s desktop clone moved there, and
+/// the desktop's copy removed, as if the runner chat had cloned it (#3811). Answers where the
+/// desktop's clone would be.
+fn a_clone_made_on_the_runner(world: &World) -> PathBuf {
+    world.move_to_runner().unwrap();
+    std::fs::remove_dir_all(&world.desktop).unwrap();
+    world.desktop.clone()
+}
+
+/// The runner gives its work and the desktop makes the clone fresh from it, as Move here does
+/// for a clone the runner chat made (#3811).
+fn come_back_fresh(world: &World) -> Result<Vec<String>, Refused> {
+    let into = world.scratch("fresh").join("work.bundle");
+    let (heads, bundled) = give_work(&world.runner, &world.scratch("givefresh"), &[], &into)?;
+    let bundle = (bundled == Bundled::Wrote).then_some(into.as_path());
+    take_work_fresh(&world.desktop, "builds", bundle, &heads)
+}
+
+/// A clone the runner chat made comes back with Move here (#3811): made here fresh, on its
+/// branch, with its commits and its uncommitted work, the runner's branches kept as a fetch
+/// keeps them, and the next move to the runner taking its work tree over.
+#[test]
+fn a_clone_the_runner_made_comes_back_fresh_with_its_branch_commits_and_uncommitted_work() {
+    let world = World::new();
+    let here = a_clone_made_on_the_runner(&world);
+    let committed = commit_all(&world.runner, "on the runner");
+    std::fs::write(world.runner.join("fix.txt"), "fixed on the runner\n").unwrap();
+    std::fs::write(world.runner.join("later.txt"), "later\n").unwrap();
+
+    let watch = come_back_fresh(&world).expect("the clone comes back");
+    assert_eq!(watch, Vec::<String>::new(), "nothing a tool here runs came");
+    assert_eq!(git(&here, &["branch", "--show-current"]), "fix");
+    assert_eq!(git(&here, &["rev-parse", "fix"]), committed);
+    assert_eq!(
+        read(&here, "fix.txt").as_deref(),
+        Some("fixed on the runner\n")
+    );
+    assert_eq!(
+        status(&here),
+        " M fix.txt\n?? later.txt",
+        "what was uncommitted there is uncommitted here"
+    );
+    assert_eq!(
+        git(&here, &["rev-parse", "refs/remotes/builds/fix"]),
+        committed
+    );
+    assert_eq!(git(&here, &["for-each-ref", "refs/purlis/incoming/"]), "");
+    assert_eq!(
+        git(&here, &["remote"]),
+        "",
+        "no remote of the runner's comes"
+    );
+
+    std::fs::write(here.join("later.txt"), "later, here\n").unwrap();
+    world.move_to_runner().expect("the work moves again");
+    assert_eq!(
+        read(&world.runner, "later.txt").as_deref(),
+        Some("later, here\n")
+    );
+}
+
+/// What came back in a fresh clone that a tool here runs or reads, and every link, is named
+/// (the person's ruling of 2026-10-27), as for a clone that was here.
+#[test]
+fn a_clone_the_runner_made_names_what_a_local_tool_runs_and_every_link() {
+    let world = World::new();
+    a_clone_made_on_the_runner(&world);
+    std::fs::write(world.runner.join(".envrc"), "export A=1\n").unwrap();
+    std::fs::create_dir_all(world.runner.join(".vscode")).unwrap();
+    std::fs::write(world.runner.join(".vscode/tasks.json"), "{}\n").unwrap();
+    commit_all(&world.runner, "settings");
+    std::fs::write(world.runner.join("Makefile"), "all:\n").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("/etc", world.runner.join("outside")).unwrap();
+
+    let mut watch = come_back_fresh(&world).unwrap();
+    watch.sort();
+    let mut wanted = vec![".envrc", ".vscode/tasks.json", "Makefile"];
+    if cfg!(unix) {
+        wanted.push("outside");
+    }
+    wanted.sort_unstable();
+    assert_eq!(
+        watch, wanted,
+        "committed and uncommitted alike, and README not"
+    );
+}
+
+/// A fresh clone is made only where nothing is: a folder here of that name is never written
+/// into, and a refused one leaves nothing behind.
+#[test]
+fn a_clone_the_runner_made_is_never_made_over_a_folder_here() {
+    let world = World::new();
+    let here = a_clone_made_on_the_runner(&world);
+    std::fs::create_dir_all(&here).unwrap();
+    std::fs::write(here.join("mine.txt"), "mine\n").unwrap();
+
+    let came = come_back_fresh(&world);
+    assert!(matches!(came, Err(Refused::NotAllowed(_))), "{came:?}");
+    assert_eq!(read(&here, "mine.txt").as_deref(), Some("mine\n"));
+    assert!(!here.join(".git").exists());
+
+    // Nor at a name the workspace keeps for its own, whatever the runner's work.
+    let into = world.scratch("own").join("work.bundle");
+    let (heads, _) = give_work(&world.runner, &world.scratch("giveown"), &[], &into).unwrap();
+    let own = here.with_file_name("memory");
+    let refused = take_work_fresh(&own, "builds", Some(&into), &heads);
+    assert!(
+        matches!(refused, Err(Refused::NotAllowed(_))),
+        "{refused:?}"
+    );
+    assert!(
+        !own.exists(),
+        "no memory folder is made from the runner's work"
+    );
+
+    // And where the runner's work does not come, no folder is left: here, commits nothing
+    // carried.
+    std::fs::remove_dir_all(&here).unwrap();
+    let missing = "1".repeat(40);
+    let refused = take_work_fresh(
+        &here,
+        "builds",
+        None,
+        &[
+            Ref {
+                name: "refs/heads/fix".into(),
+                oid: missing.clone(),
+            },
+            Ref {
+                name: "refs/purlis/snapshots/fix".into(),
+                oid: missing,
+            },
+        ],
+    );
+    assert!(
+        matches!(refused, Err(Refused::NotAllowed(_))),
+        "{refused:?}"
+    );
+    assert!(
+        !here.exists(),
+        "nothing is left of a clone that did not come"
     );
 }

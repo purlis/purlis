@@ -122,6 +122,7 @@ import { slideTowards } from "./workspaceSlide";
 import { pinsChanged } from "./workspacePins";
 import type { Needing, Quiet } from "./NeedsYou";
 import { useAsks } from "./asks";
+import { giveKeyboardTo } from "./paneKeyboard";
 import { landsOn, useNotificationLanding, type Landing } from "./askNotices";
 import { aQuestionIsUp, useCloseHanded } from "./closeHanded";
 import { useAwayRefusals } from "./dispatchAway";
@@ -1394,9 +1395,31 @@ function App() {
       layoutBusy,
     ],
   );
+  /** **Every ask the registry derives, in every project** (#1690): what the hand's number
+   *  counts, and where it opens the Inbox. */
+  const registry = useAsks(planes);
+  /** **Brings chat `session` of the project in front forward** (#3652): a ✋ dot's press, whose
+   *  chat answers its question on its own band. The same `showChat` a Go of the Inbox runs. */
+  const bringChat = useCallback((session: number) => {
+    const plane = inFrontNow.current;
+    if (plane === undefined) return;
+    setShowing({ at: "plane", plane });
+    void reportsNow.current[plane]?.run({
+      id: `needs.show:${session}`,
+      title: "Show the chat that asks",
+      available: true,
+      reason: "",
+      does: { verb: "showChat", session },
+    });
+    // The asking chat types next even where it was in front already: `showChat` hands the
+    // keyboard over only when its pane changes, and the press was on the ✋ (#3652's review).
+    giveKeyboardTo(plane, session);
+  }, []);
   /** The notices hung from those chips: a view onto the kept results, so a dismissal in either
-   *  place is one (#3648). */
+   *  place is one (#3648); and the ✋ of a chat asking to remove a chip's workspace (#3652). */
   const chipNotices = useChipNotices({
+    asks: inFront === undefined ? undefined : registry.held[inFront],
+    bring: bringChat,
     said,
     kept: keptResults,
     plane: inFront,
@@ -1911,9 +1934,6 @@ function App() {
     [planes, reports],
   );
 
-  /** **Every ask the registry derives, in every project** (#1690): what the hand's number
-   *  counts, and where it opens the Inbox. */
-  const registry = useAsks(planes);
   /**
    * **The ✋ opens the Inbox** (#1692, I-2): the project in front's, where something waits there,
    * and otherwise the first project along the strip with something waiting, brought to the

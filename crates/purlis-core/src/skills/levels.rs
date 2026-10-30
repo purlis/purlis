@@ -9,8 +9,8 @@
 //! have made it. That skill is left out with a reason that says so.
 //!
 //! - **The host notes each sandboxed chat's start** ([`note`]): `skill-levels/<chat id>.json`
-//!   in this machine's state, holding the workspace and persona folders there at that moment.
-//!   A chat cannot write the state folder.
+//!   in this machine's app state of the project (`crate::appstate`), holding the workspace and
+//!   persona folders there at that moment. A chat cannot write the app state.
 //! - **A record counts until the app sweeps it**, each time it writes its record of open chats
 //!   (`reopen`), for a chat no longer on it ([`sweep`]). The sweep moves every folder that chat
 //!   could have made to the folders not accepted yet, which stay left out until the person
@@ -21,7 +21,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-/// The folder of this machine's state the records are kept in.
+/// The folder of this machine's app state of the project the records are kept in.
 pub const DIR: &str = "skill-levels";
 
 /// The file in [`DIR`] that keeps the folders a chat that has closed could have made, until the
@@ -63,6 +63,11 @@ fn owners(root: &Path) -> BTreeSet<String> {
     out
 }
 
+/// Whether the plane at `root` has any workspace or persona folder.
+pub(crate) fn has_owners(root: &Path) -> bool {
+    !owners(root).is_empty()
+}
+
 /// Whether `id` can name a record's file: a ULID, as every chat id is.
 fn an_id(id: &str) -> bool {
     crate::reopen::a_ulid(id).is_some()
@@ -72,12 +77,27 @@ fn rel_of(id: &str) -> String {
     format!("{DIR}/{id}.json")
 }
 
-fn unaccepted(state: &Path) -> Unaccepted {
-    crate::proposed::read_pinned(state, Path::new(&format!("{DIR}/{UNACCEPTED}")))
-        .ok()
-        .flatten()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
+/// The folders not accepted yet, or `Err` where the file is there and cannot be read.
+fn unaccepted_read(state: &Path) -> Result<Unaccepted, ()> {
+    // No folder of records yet: nothing waits.
+    if std::fs::symlink_metadata(state.join(DIR))
+        .is_err_and(|why| why.kind() == std::io::ErrorKind::NotFound)
+    {
+        return Ok(Unaccepted::default());
+    }
+    match crate::proposed::read_pinned(state, Path::new(&format!("{DIR}/{UNACCEPTED}"))) {
+        Ok(None) => Ok(Unaccepted::default()),
+        Ok(Some(bytes)) => serde_json::from_slice(&bytes).map_err(|_| ()),
+        Err(_) => Err(()),
+    }
+}
+
+/// The folders not accepted yet, or, where they cannot be read, every workspace and persona folder
+/// of the plane at `root`: what cannot be read is never taken as accepted.
+fn unaccepted_or_all(state: &Path, root: &Path) -> Unaccepted {
+    unaccepted_read(state).unwrap_or_else(|()| Unaccepted {
+        levels: owners(root),
+    })
 }
 
 /// Writes `now` as the folders not accepted yet, over the file as it was just read. The app is
@@ -127,12 +147,67 @@ fn write(state: &Path, id: &str, was: Option<&Record>, now: &Record) -> Result<(
 /// the chat (a restart) is kept as it is, so a folder made during its earlier run stays one it
 /// could have made.
 pub fn note(root: &Path, id: &str, name: &str) -> Result<(), String> {
+    note_on_disk(root, id, name)
+}
+
+/// The record kept where a sandboxed chat's start could not be noted under its own id
+/// ([`note_or_hold`]): an open record no sweep removes, so every folder made since stays left out
+/// until the person accepts it, which adds it to this record as to every other ([`vouch`]).
+const UNNOTED: &str = "unnoted";
+
+/// **[`note`], or, where it cannot be noted, a record no sweep removes** ([`UNNOTED`]), so no
+/// folder made after the start reaches a chat unasked, and the person's Accept in the Skill
+/// studio lets each go as usual. `Ok(None)` where it was noted, `Ok(Some(why))` where it was not
+/// and the record holds, and `Err` where neither could be written: such a chat is not started.
+pub fn note_or_hold(root: &Path, id: &str, name: &str) -> Result<Option<String>, String> {
+    let Err(why) = note(root, id, name) else {
+        return Ok(None);
+    };
+    let held = crate::appstate::made(root).and_then(|state| {
+        if read(&state, UNNOTED).is_some() {
+            return Ok(());
+        }
+        write(
+            &state,
+            UNNOTED,
+            None,
+            &Record {
+                name: name.to_owned(),
+                levels: owners(root),
+            },
+        )
+    });
+    held.map_err(|also| {
+        format!(
+            "this sandboxed chat was not started: purlis could not keep the record of its \
+             project's folders ({why}; {also})"
+        )
+    })?;
+    Ok(Some(why))
+}
+
+/// **Why a sandboxed chat in the plane at `root` is not started**, where this machine keeps no app
+/// state of it (`crate::appstate::dir`): no record of the folders there at its start could be kept,
+/// so a folder it made could not be told apart. `None` where there is app state.
+pub fn refusal_for_a_sandboxed_start(root: &Path) -> Option<String> {
+    refusal_with(crate::appstate::kept_here(root))
+}
+
+/// [`refusal_for_a_sandboxed_start`], with `kept` whether the machine can keep its app state.
+fn refusal_with(kept: bool) -> Option<String> {
+    (!kept).then(|| {
+        format!(
+            "this sandboxed chat was not started: {}",
+            crate::appstate::NO_DATA_HOME
+        )
+    })
+}
+
+fn note_on_disk(root: &Path, id: &str, name: &str) -> Result<(), String> {
     if !an_id(id) {
         return Err("a chat with no id of its own is not noted".to_owned());
     }
-    let state = crate::plane::state_dir(root);
-    std::fs::create_dir_all(&state).map_err(|why| why.to_string())?;
-    crate::profiletrust::private_dir(&state).map_err(|why| why.to_string())?;
+    let state = crate::appstate::made(root)?;
     if read(&state, id).is_some() {
         return Ok(());
     }
@@ -149,27 +224,52 @@ pub fn note(root: &Path, id: &str, name: &str) -> Result<(), String> {
 
 /// The records of the chats the app lists as open in the plane at `root`.
 fn open_records(root: &Path) -> Vec<(String, Record)> {
+    match crate::appstate::dir(root) {
+        Some(state) => records_in(&state).unwrap_or_default(),
+        None => Vec::new(),
+    }
+}
+
+/// The records in the app state `state`, or `Err` where the folder or a record in it cannot be
+/// read.
+fn records_in(state: &Path) -> Result<Vec<(String, Record)>, ()> {
     // Every record there is, whether or not its chat is still on the app's record: one whose chat
     // closed holds until the app's sweep moves what it could have made to the folders not
     // accepted yet ([`sweep`]), so no moment between the two lets such a folder through.
-    let state = crate::plane::state_dir(root);
-    let Ok(entries) = std::fs::read_dir(state.join(DIR)) else {
-        return Vec::new();
+    let entries = match std::fs::read_dir(state.join(DIR)) {
+        Ok(entries) => entries,
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(_) => return Err(()),
     };
-    let mut out: Vec<(String, Record)> = entries
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            entry
-                .file_name()
-                .to_str()
-                .and_then(|name| name.strip_suffix(".json"))
-                .filter(|id| an_id(id))
-                .map(str::to_owned)
-        })
-        .filter_map(|id| read(&state, &id).map(|one| (id, one)))
-        .collect();
+    let mut out: Vec<(String, Record)> = Vec::new();
+    // The record of starts that could not be noted, where there is one ([`UNNOTED`]).
+    match read(state, UNNOTED) {
+        Some(record) => out.push((UNNOTED.to_owned(), record)),
+        None if std::fs::symlink_metadata(state.join(rel_of(UNNOTED)))
+            .is_err_and(|why| why.kind() == std::io::ErrorKind::NotFound) => {}
+        None => return Err(()),
+    }
+    for entry in entries {
+        let entry = entry.map_err(|_| ())?;
+        let Some(id) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.strip_suffix(".json"))
+            .filter(|id| an_id(id))
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        match read(state, &id) {
+            Some(record) => out.push((id, record)),
+            // One removed while the folder was listed is no record.
+            None if std::fs::symlink_metadata(state.join(rel_of(&id)))
+                .is_err_and(|why| why.kind() == std::io::ErrorKind::NotFound) => {}
+            None => return Err(()),
+        }
+    }
     out.sort_by(|a, b| a.0.cmp(&b.0));
-    out
+    Ok(out)
 }
 
 /// **Why the skills of the workspace or persona folder `owner` (absolute, in the plane at
@@ -182,11 +282,64 @@ pub type MadeSince = Box<dyn Fn(&Path) -> Option<String> + Sync>;
 /// stays left out until the person accepts it in the Skill studio ([`accept`]), whether or not
 /// the chat has closed.
 pub fn made_since(root: &Path) -> MadeSince {
-    let records = open_records(root);
-    let held = unaccepted(&crate::plane::state_dir(root));
+    made_since_in(root, crate::appstate::dir(root))
+}
+
+/// [`made_since`], read from the app state `state`: a test's seam for a data home of its own.
+#[cfg(test)]
+pub(crate) fn made_since_in_for(root: &Path, state: &Path) -> MadeSince {
+    made_since_in(root, Some(state.to_path_buf()))
+}
+
+/// What a skill of a level is left out with where which folders were accepted cannot be read.
+const UNREAD: &str = "purlis could not read which of this project's folders you accepted: \
+     accept it in the Skill studio";
+
+/// What every workspace and persona folder is left out with where purlis cannot confirm which of
+/// them the person accepted ([`confirmed`]).
+pub const UNCONFIRMED: &str = "purlis can't confirm which of this project's folders you accepted \
+     before: open the project once in the purlis app and press Accept the folders in the Skill \
+     studio's Needs you";
+
+/// [`made_since`], with `state` the project's app state, or `None` where there is none. **Held by
+/// default**: unless `state` holds levels records this purlis confirmed for this project
+/// (`crate::appstate::levels_confirmed`), every workspace and persona folder is left out until the
+/// person accepts them again ([`confirm`]); so is every one where a record or the folders not
+/// accepted yet cannot be read.
+fn made_since_in(root: &Path, state: Option<PathBuf>) -> MadeSince {
+    let mut records = Vec::new();
+    let mut held = Unaccepted::default();
+    let mut unread = false;
+    let unconfirmed = match state.as_deref() {
+        Some(state) => !crate::appstate::levels_confirmed(state, root),
+        // A project purlis has never kept state for starts confirmed at its first write.
+        None => !crate::appstate::never_kept(root),
+    };
+    let mut accepted = Unaccepted::default();
+    if let Some(state) = &state {
+        match records_in(state) {
+            Ok(found) => records.extend(found),
+            Err(()) => unread = true,
+        }
+        match unaccepted_read(state) {
+            Ok(found) => held = found,
+            Err(()) => unread = true,
+        }
+        if unconfirmed {
+            accepted = accepted_one_by_one(state);
+        }
+    }
+    let on_disk = owners(root);
+    let known = std::sync::OnceLock::new();
     let root = root.to_path_buf();
     Box::new(move |owner: &Path| {
-        let rel = rel_in(&root, owner)?;
+        let identity = |rel: &str| folder_identity(&root, rel);
+        let rel = as_the_disk_spells(&on_disk, rel_in(&root, owner)?, &identity, &known);
+        if unread && an_owner(&rel) {
+            return Some(UNREAD.to_owned());
+        }
+        // A chat's own reason first: no Accept of the project as a whole lets a folder through
+        // that a running chat could have made.
         if let Some((_, record)) = records
             .iter()
             .find(|(_, record)| !record.levels.contains(&rel))
@@ -197,10 +350,63 @@ pub fn made_since(root: &Path) -> MadeSince {
                 record.name
             ));
         }
+        if unconfirmed && an_owner(&rel) && !accepted.levels.contains(&rel) {
+            return Some(UNCONFIRMED.to_owned());
+        }
         held.levels
             .contains(&rel)
             .then(|| format!("its folder was made by a chat: {ACCEPT_IT}"))
     })
+}
+
+/// A folder's identity on its disk: its device and inode.
+type Identity = (u64, u64);
+
+/// **`rel` as the disk spells it**: the workspace or persona folder among `on_disk` that is the
+/// folder `rel` opens, where `rel` names it only in another spelling (a disk that folds case, or
+/// one spelling of a letter, opens both names as one folder). Matched by the folders' `identity`,
+/// never by folding the name; `known` keeps `on_disk`'s identities once read. `rel` itself where
+/// it is one of them, or opens none.
+fn as_the_disk_spells(
+    on_disk: &BTreeSet<String>,
+    rel: String,
+    identity: &dyn Fn(&str) -> Option<Identity>,
+    known: &std::sync::OnceLock<std::collections::BTreeMap<Identity, String>>,
+) -> String {
+    if on_disk.contains(&rel) || !an_owner(&rel) {
+        return rel;
+    }
+    // No port reads a folder's identity there yet: the name is folded instead.
+    #[cfg(not(unix))]
+    {
+        let lower = rel.to_lowercase();
+        if let Some(folder) = on_disk.iter().find(|folder| folder.to_lowercase() == lower) {
+            return folder.clone();
+        }
+    }
+    let Some(asked) = identity(&rel) else {
+        return rel;
+    };
+    known
+        .get_or_init(|| {
+            on_disk
+                .iter()
+                .filter_map(|folder| identity(folder).map(|id| (id, folder.clone())))
+                .collect()
+        })
+        .get(&asked)
+        .cloned()
+        .unwrap_or(rel)
+}
+
+/// The identity of the folder `rel` of the plane at `root`, following no link: a link is a folder
+/// of its own, never the one it points at.
+fn folder_identity(root: &Path, rel: &str) -> Option<Identity> {
+    let path = root.join(rel);
+    std::fs::symlink_metadata(&path)
+        .is_ok_and(|meta| meta.is_dir())
+        .then(|| crate::pypath::link_identity(&path))
+        .flatten()
 }
 
 /// `owner` relative to the plane at `root`, `/` between the parts.
@@ -253,9 +459,22 @@ pub fn accept(root: &Path, owner: &str) -> Result<(), String> {
     if !an_owner(owner) || !root.join(owner).is_dir() {
         return Err("that folder is no workspace or persona of this project".to_owned());
     }
+    if !confirmed(root) {
+        // That folder alone, while the rest wait for the project's one Accept.
+        let state = crate::appstate::made(root)?;
+        repaired(&state)?;
+        let mut now = accepted_one_by_one(&state);
+        if now.levels.insert(owner.to_owned()) {
+            write_list(&state, ACCEPTED, &now)?;
+        }
+    } else if let Some(state) = crate::appstate::dir(root) {
+        repaired(&state)?;
+    }
     vouch(root, owner);
-    let state = crate::plane::state_dir(root);
-    let was = unaccepted(&state);
+    let Some(state) = crate::appstate::dir(root) else {
+        return Ok(());
+    };
+    let was = unaccepted_or_all(&state, root);
     if !was.levels.contains(owner) {
         return Ok(());
     }
@@ -275,7 +494,9 @@ pub fn to_accept(plane: &Path, folder: &Path) -> Option<String> {
 /// made it. A chat cannot write the records, so its own `purlis workspace create` vouches for
 /// nothing.
 pub fn vouch(root: &Path, owner: &str) {
-    let state = crate::plane::state_dir(root);
+    let Some(state) = crate::appstate::dir(root) else {
+        return;
+    };
     for (id, was) in open_records(root) {
         let mut now = was.clone();
         if now.levels.insert(owner.to_owned())
@@ -291,7 +512,9 @@ pub fn vouch(root: &Path, owner: &str) {
 /// noting a start and the chat being on that record): the app's, each time it writes that record,
 /// so a closed chat's goes, and at a launch every one a quit or a crash left.
 pub fn sweep(root: &Path, open: &[String]) {
-    let state = crate::plane::state_dir(root);
+    let Some(state) = crate::appstate::dir(root) else {
+        return;
+    };
     let Ok(entries) = std::fs::read_dir(state.join(DIR)) else {
         return;
     };
@@ -313,18 +536,222 @@ pub fn sweep(root: &Path, open: &[String]) {
             .is_some_and(|age| age < super::verbs::drafts::SWEEP_GRACE);
         if an_id(&id) && !open.contains(&id) && !young {
             // What it could have made stays left out until the person accepts it.
-            if let Some(record) = read(&state, &id) {
-                let was = unaccepted(&state);
-                let mut now = was.clone();
-                now.levels
-                    .extend(owners(root).difference(&record.levels).cloned());
-                if now != was && write_unaccepted(&state, &now).is_err() {
-                    continue;
-                }
+            // A record that cannot be read could have named any of them: every one is held. One
+            // removed meanwhile is no record.
+            let read_now = read(&state, &id);
+            if read_now.is_none()
+                && std::fs::symlink_metadata(state.join(rel_of(&id)))
+                    .is_err_and(|why| why.kind() == std::io::ErrorKind::NotFound)
+            {
+                continue;
+            }
+            let levels = read_now.map(|record| record.levels).unwrap_or_default();
+            let was = unaccepted_or_all(&state, root);
+            let mut now = was.clone();
+            now.levels.extend(owners(root).difference(&levels).cloned());
+            if now != was && write_unaccepted(&state, &now).is_err() {
+                continue;
             }
             remove(&state, &id);
         }
     }
+}
+
+/// **Each chat on the plane at `root`'s record of open chats noted in the app state `state`**, its
+/// levels the workspace and persona folders there now, where it has no record there yet: what the
+/// move of an older purlis's records out of the plane does, so a chat that started before the
+/// upgrade and runs on holds every folder it makes after it, as a chat noted at its start does.
+/// Nothing of the plane's own records is read. Where the record of open chats is there and cannot
+/// be read, or names a running chat with no id of its own, one record no sweep removes holds them
+/// all ([`UNNOTED`]).
+pub(crate) fn noted_again(state: &Path, root: &Path) -> Result<(), String> {
+    noted_again_with(state, root, &owners(root))
+}
+
+/// [`noted_again`], each new record holding `now`, every workspace and persona folder as the
+/// caller listed them: so [`confirm`]'s records and its folders not accepted yet are of one
+/// listing, and a folder made after it is held by each new record.
+fn noted_again_with(state: &Path, root: &Path, now: &BTreeSet<String>) -> Result<(), String> {
+    let unnoted = || (UNNOTED.to_owned(), "a chat".to_owned());
+    let chats: Vec<(String, String)> = match crate::reopen::read_strictly(root) {
+        Ok(None) => Vec::new(),
+        Ok(Some(record)) => record
+            .chats
+            .iter()
+            .filter_map(|chat| {
+                match chat.identity.id.clone().filter(|id| an_id(id)) {
+                    Some(id) => Some((id, chat.name.clone())),
+                    // A running chat with no id of its own is held by one record for all.
+                    None if chat.pid.is_some_and(crate::process::alive) => Some(unnoted()),
+                    None => None,
+                }
+            })
+            .collect(),
+        // A record this purlis cannot read could name any chat: one record holds them all.
+        Err(_) => vec![unnoted()],
+    };
+    for (id, name) in chats {
+        if read(state, &id).is_some() {
+            continue;
+        }
+        write(
+            state,
+            &id,
+            None,
+            &Record {
+                name,
+                levels: now.clone(),
+            },
+        )?;
+    }
+    Ok(())
+}
+
+/// **Every workspace and persona folder of the project at `root` is held until the person
+/// accepts it again** in the Skill studio ([`accept`]): what the move of an older purlis's records
+/// out of the plane's state does (`crate::appstate`), with `state` the project's app state. Those
+/// records are not carried forward, so no folder is taken as vouched for on their word.
+pub(crate) fn ask_again_in(state: &Path, root: &Path) -> Result<(), String> {
+    let was = unaccepted_or_all(state, root);
+    let mut now = was.clone();
+    now.levels.extend(owners(root));
+    if now == was {
+        return Ok(());
+    }
+    write_unaccepted(state, &now)
+}
+
+/// **Whether purlis can confirm which of the plane at `root`'s folders the person accepted**: its
+/// app state holds levels records this purlis confirmed for it.
+pub fn confirmed(root: &Path) -> bool {
+    match crate::appstate::dir(root) {
+        Some(state) => crate::appstate::levels_confirmed(&state, root),
+        None => crate::appstate::never_kept(root),
+    }
+}
+
+/// **What the studio asks the person once for the plane at `root`**, where purlis cannot confirm
+/// which of its folders they accepted and it has some: the sentence ([`UNCONFIRMED`]) and the
+/// folders its Accept accepts, each there now and not accepted one by one yet. `None` otherwise.
+pub fn to_confirm(root: &Path) -> Option<(&'static str, Vec<String>)> {
+    if confirmed(root) {
+        return None;
+    }
+    let accepted = crate::appstate::dir(root)
+        .map(|state| accepted_one_by_one(&state))
+        .unwrap_or_default();
+    let folders: Vec<String> = owners(root)
+        .into_iter()
+        .filter(|folder| !accepted.levels.contains(folder))
+        .collect();
+    (!folders.is_empty()).then_some((UNCONFIRMED, folders))
+}
+
+/// The file in [`DIR`] that keeps the folders the person accepted one by one while purlis could
+/// not confirm the rest ([`accept`]): taken up into the project's one Accept ([`confirm`]).
+const ACCEPTED: &str = "accepted.json";
+
+/// The folders accepted one by one while unconfirmed; none where the file cannot be read.
+fn accepted_one_by_one(state: &Path) -> Unaccepted {
+    crate::proposed::read_pinned(state, Path::new(&format!("{DIR}/{ACCEPTED}")))
+        .ok()
+        .flatten()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+/// `now` written as `name` in [`DIR`], beside it first and renamed into its place.
+fn write_list(state: &Path, name: &str, now: &Unaccepted) -> Result<(), String> {
+    let folder = state.join(DIR);
+    crate::profiletrust::private_dir(&folder).map_err(|why| why.to_string())?;
+    let text = serde_json::to_string(now).map_err(|why| why.to_string())?;
+    crate::rewrite::replace(
+        &folder,
+        &folder.join(name),
+        text.as_bytes(),
+        crate::rewrite::Mode::Private,
+    )
+    .map_err(|why| why.to_string())
+}
+
+/// **The person's one Accept for the plane at `root`** (#3718), of the folders `folders` the
+/// studio listed ([`to_confirm`]): its levels records are written bound to it, every record that
+/// cannot be read is replaced, and each listed folder there now is taken off the folders not
+/// accepted yet; every other folder there now goes on them. No chat's record is changed, so a
+/// folder a running chat could have made stays left out for that reason.
+pub fn confirm(root: &Path, folders: &[String]) -> Result<(), String> {
+    let state = crate::appstate::made(root)?;
+    std::fs::create_dir_all(state.join(DIR)).map_err(|why| why.to_string())?;
+    repaired(&state)?;
+    let now = owners(root);
+    // The listed folders, and those the person accepted one by one before.
+    let listed: BTreeSet<String> = folders
+        .iter()
+        .cloned()
+        .chain(accepted_one_by_one(&state).levels)
+        .filter(|folder| now.contains(folder))
+        .collect();
+    let was = unaccepted_or_all(&state, root);
+    let mut kept: BTreeSet<String> = was.levels.difference(&listed).cloned().collect();
+    kept.extend(now.difference(&listed).cloned());
+    let kept = Unaccepted { levels: kept };
+    if kept != was || unaccepted_read(&state).is_err() {
+        write_unaccepted(&state, &kept)?;
+    }
+    // Every chat on the record of open chats keeps its own record through the Accept, holding
+    // every folder of the one listing above.
+    noted_again_with(&state, root, &now)?;
+    crate::appstate::mark_levels_confirmed(&state, root)?;
+    // Emptied last: where a step above fails, the folders accepted one by one stay accepted. Once
+    // the mark is written the Accept is done, and the list is read only while the project is
+    // unconfirmed, so one left behind is said and not taken as the Accept failing.
+    if let Err(why) = write_list(&state, ACCEPTED, &Unaccepted::default()) {
+        tracing::warn!(
+            target: "purlis::skills",
+            "the folders accepted one by one were not emptied ({why})"
+        );
+    }
+    Ok(())
+}
+
+/// **Every record in the app state `state` that is there and cannot be read, replaced by one that
+/// still holds every folder**: a record naming no folder, so each is left out until the person
+/// accepts it, and Accept can then let them go one by one ([`vouch`]).
+fn repaired(state: &Path) -> Result<(), String> {
+    let Ok(entries) = std::fs::read_dir(state.join(DIR)) else {
+        return Ok(());
+    };
+    let ids: Vec<String> = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.strip_suffix(".json"))
+                .filter(|id| *id == UNNOTED || an_id(id))
+                .map(str::to_owned)
+        })
+        .collect();
+    for id in ids {
+        if read(state, &id).is_some() {
+            continue;
+        }
+        // The new record is written beside the old and renamed over it: it is never gone first.
+        let text = serde_json::to_string(&Record {
+            name: "a chat".to_owned(),
+            levels: BTreeSet::new(),
+        })
+        .map_err(|why| why.to_string())?;
+        let folder = state.join(DIR);
+        crate::rewrite::replace(
+            &folder,
+            &state.join(rel_of(&id)),
+            text.as_bytes(),
+            crate::rewrite::Mode::Private,
+        )
+        .map_err(|why| why.to_string())?;
+    }
+    Ok(())
 }
 
 /// Removes the record of `id` from `state`, through its folder's handle: a name this module made.

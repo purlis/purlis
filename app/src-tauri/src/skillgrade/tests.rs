@@ -183,8 +183,10 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
             Running {
                 plane: plane.clone(),
                 skill: "deploy".into(),
+                level: None,
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
+                step: None,
             },
         );
         let failed = std::cell::Cell::new(false);
@@ -415,6 +417,64 @@ fn a_scorecard_against_the_previous_version_shows_three_arms_and_both_difference
         test.arms.iter().map(|arm| arm.arm).collect::<Vec<_>>(),
         [ScoredArm::With, ScoredArm::Without, ScoredArm::Previous]
     );
+    // Its totals (S6): each arm's pass rate in points, and how it ended.
+    let arms = GradeArms {
+        with: Some(100.0),
+        without: Some(25.0),
+        previous: Some(75.0),
+    };
+    assert_eq!(card.arms, arms);
+    assert_eq!(card.outcome, GradeOutcome::Graded);
+
+    // Its row on the Grades tab says the same, with what it spent and the limit it was held to.
+    let spent = Graded {
+        spent: Spent {
+            chats: 9,
+            tokens: Some(90_000),
+            cost_usd: Some(1.92),
+        },
+        report: GradeReport {
+            ended: GradeEnd::OverLimit,
+            cost_cap_usd: Some(3.0),
+            ..graded.report.clone()
+        },
+        ..graded
+    };
+    let row = GradeRow::of(&spent);
+    assert_eq!(row.grade, "01GRADE");
+    assert_eq!(row.arms, arms);
+    assert_eq!(row.outcome, GradeOutcome::AtLimit);
+    assert_eq!(row.ended, "Stopped at its dollar limit");
+    assert_eq!(
+        row.spent,
+        GradeSpent {
+            chats: 9,
+            tokens: Some(90_000.0),
+            cost_usd: Some(1.92),
+            limit_usd: Some(3.0),
+        }
+    );
+    assert!(row.after_edit);
+}
+
+/// S6: a grade's list marks each end as one of four: graded, stopped by the person, stopped at its
+/// limit, or interrupted.
+#[test]
+fn a_grade_ends_graded_stopped_at_its_limit_or_interrupted() {
+    use purlis_core::skills::grade::GradeEnd;
+    let outcome = GradeOutcome::from;
+    assert_eq!(outcome(GradeEnd::Whole), GradeOutcome::Graded);
+    assert_eq!(outcome(GradeEnd::Cancelled), GradeOutcome::Stopped);
+    for end in [
+        GradeEnd::OverCap,
+        GradeEnd::OverLimit,
+        GradeEnd::SpendNotReported,
+    ] {
+        assert_eq!(outcome(end), GradeOutcome::AtLimit, "{end:?}");
+    }
+    for end in [GradeEnd::ChatsDidNotStart, GradeEnd::Interrupted] {
+        assert_eq!(outcome(end), GradeOutcome::Interrupted, "{end:?}");
+    }
 }
 
 /// #3582: what a grade's marker is told its chats spent is what they said, and no more: every
@@ -498,4 +558,94 @@ fn a_press_on_a_plan_that_changed_is_refused() {
         assert!(refused.contains("changed since it was shown"), "{refused}");
         assert!(refused.contains("nothing was started"), "{refused}");
     }
+}
+
+/// #3928: the Grades tab learns from its one read whether the skill has trigger tests, and the
+/// grade of that copy running now at its latest step, so it asks no plan; a grade of another
+/// skill, of the same name's copy at another level, or in another project, is not this one's.
+/// A copy whose tests cannot be counted keeps its grades, and says why.
+#[test]
+fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
+    let plane: PlaneId = serde_json::from_value(serde_json::json!("plane-of-grades-3928")).unwrap();
+    let elsewhere: PlaneId =
+        serde_json::from_value(serde_json::json!("plane-elsewhere-3928")).unwrap();
+    let shared = Level::project();
+    let local = Level::project().local(true);
+    let tests = || {
+        Ok(grades::TriggerTests {
+            runs: 2,
+            refused: None,
+        })
+    };
+    let none = SkillGrades::of(
+        &grades::Read::default(),
+        tests(),
+        &plane,
+        &shared,
+        "ship-3928",
+    );
+    assert_eq!(none.tests, 2);
+    assert_eq!(none.tests_refused, None);
+    assert_eq!(none.running, None, "no grade runs");
+    let lost = SkillGrades::of(
+        &grades::Read::default(),
+        Err("no project skill is named \"ship-3928\"".to_owned()),
+        &plane,
+        &shared,
+        "ship-3928",
+    );
+    assert_eq!(lost.tests, 0);
+    assert!(lost.tests_refused.is_some());
+
+    let step = |plane: &PlaneId, skill: &str, grade: &str| SkillGradeStep {
+        plane: plane.clone(),
+        skill: skill.to_owned(),
+        grade: grade.to_owned(),
+        ran: 3,
+        of: 12,
+        tokens: Some(1_000.0),
+        cost_usd: Some(0.25),
+        limit_usd: Some(2.0),
+        cap: 500_000.0,
+        asked: 0,
+        ended: None,
+        said: None,
+    };
+    let grades_running = [
+        ("g-3928-other-skill", &plane, "other-3928", &shared),
+        ("g-3928-elsewhere", &elsewhere, "ship-3928", &shared),
+        ("g-3928-local", &plane, "ship-3928", &local),
+    ];
+    for (grade, at, skill, level) in grades_running {
+        running().insert(
+            grade.to_owned(),
+            Running {
+                plane: at.clone(),
+                skill: skill.to_owned(),
+                level: Some(level.clone()),
+                stop: Arc::new(AtomicBool::new(false)),
+                after_edit: None,
+                step: Some(step(at, skill, grade)),
+            },
+        );
+    }
+    let now = |level: &Level| {
+        SkillGrades::of(
+            &grades::Read::default(),
+            tests(),
+            &plane,
+            level,
+            "ship-3928",
+        )
+        .running
+    };
+    let (shared_now, local_now) = (now(&shared), now(&local));
+    for (grade, ..) in grades_running {
+        running().remove(grade);
+    }
+    assert_eq!(
+        shared_now, None,
+        "the local copy's grade is not the shared copy's"
+    );
+    assert_eq!(local_now, Some(step(&plane, "ship-3928", "g-3928-local")));
 }

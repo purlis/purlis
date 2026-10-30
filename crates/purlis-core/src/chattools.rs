@@ -662,16 +662,26 @@ pub static TOOLS: [Tool; 26] = [
                         "description": "Where it works: `workspace:<name>` for another \
                                         workspace of the project, or `worktree` for a new \
                                         worktree of the repo this chat works in, on a new \
-                                        branch purlis names, which only the person merges. A \
-                                        sandboxed chat commits there with `purlis worktree \
-                                        commit`. Leave it out for \
-                                        this chat's folder.",
+                                        branch purlis names, which only the person merges. \
+                                        From a workspace's own folder, `worktree` is cut from \
+                                        its one clone, and `worktree:<repo>` names which \
+                                        clone where it holds several. A sandboxed chat \
+                                        commits there with `purlis worktree commit`. Leave it \
+                                        out for this chat's folder.",
                     },
                     "wait": {
                         "type": "boolean",
                         "description": "Wait for the task's report and answer with it, \
                                         instead of carrying on. A wait that runs out says the \
                                         task is still running.",
+                    },
+                    "long": {
+                        "type": "boolean",
+                        "description": "A long-running task, which works through many \
+                                        pieces and sends dispatch_note as it goes: its notes \
+                                        are its heartbeat, purlis never asks it for a report, \
+                                        and it ends when it reports done or failed, or is \
+                                        cancelled. Leave it out for one job with one answer.",
                     },
                     "wait_seconds": {
                         "type": "integer",
@@ -735,8 +745,9 @@ pub static TOOLS: [Tool; 26] = [
         name: DISPATCH_TELL,
         description: "Send a follow-up to a task this chat dispatched that is still working, \
                       quoted as data from this chat. A task at rest is started on it at once; \
-                      one mid-turn reads it when that turn ends. Refused, with the task's \
-                      state, once the task has finished.",
+                      one mid-turn reads it when that turn ends. A task that reported while \
+                      its program still runs is told too. Refused, with the task's state, once \
+                      its program has ended.",
         schema: || {
             json!({
                 "type": "object",
@@ -778,7 +789,8 @@ pub static TOOLS: [Tool; 26] = [
         name: DISPATCH_CANCEL,
         description: "Cancel a task this chat dispatched: its turn is ended and it is asked for \
                       one short report of what it did, which arrives with the outcome \
-                      `cancelled`. Refused for a task the person has typed in: that one is \
+                      `cancelled`. A task that reported while its program still runs can be \
+                      cancelled too. Refused for a task the person has typed in: that one is \
                       theirs.",
         schema: || {
             json!({
@@ -1238,13 +1250,23 @@ pub fn dispatch_profile(args: &Map<String, Value>) -> Result<Option<String>, Str
 }
 
 /// The `dispatch` tool's `in`: where the new chat works, where that is asked for (#1453). One
-/// of two words and nothing more: the app reads it ([`crate::dispatchplace::asked`]).
+/// of three words and nothing more: the app reads it ([`crate::dispatchplace::asked`]).
 pub fn dispatch_place(args: &Map<String, Value>) -> Result<Option<String>, String> {
     match args.get("in") {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(place)) if !place.trim().is_empty() => Ok(Some(place.trim().to_owned())),
         Some(Value::String(_)) => Ok(None),
-        Some(_) => Err("`in` is `worktree` or `workspace:<name>`".to_owned()),
+        Some(_) => Err("`in` is `worktree`, `worktree:<repo>` or `workspace:<name>`".to_owned()),
+    }
+}
+
+/// The `dispatch` tool's `long` (#3905): whether the task is a long-running one, `false` where
+/// it is left out.
+pub fn dispatch_long(args: &Map<String, Value>) -> Result<bool, String> {
+    match args.get("long") {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(long)) => Ok(*long),
+        Some(_) => Err("`long` is true or false".to_owned()),
     }
 }
 

@@ -261,7 +261,7 @@ fn glab_has_its_own_and_both_refuse_api_against_another_host() {
     ] {
         assert!(runs(&glab, words).is_err(), "{words:?}");
     }
-    assert!(runs(&glab, &["api", "projects/1"]).is_ok());
+    assert!(runs(&glab, &["api", "projects/1/issues"]).is_ok());
     assert!(runs(&glab, &["mr", "list"]).is_ok());
     let gh = ready(tool_with("gh", None), "/opt/homebrew/bin/gh");
     assert!(runs(&gh, &["api", "--hostname", "evil.example", "user"]).is_err());
@@ -287,4 +287,248 @@ fn the_refusals_follow_the_program_not_only_the_tool_s_name() {
     assert!(runs(&exe, &["auth", "token"]).is_err());
     let other = ready(tool_with("kubectl", None), "/usr/bin/kubectl");
     assert!(runs(&other, &["auth", "can-i", "get", "pods"]).is_ok());
+}
+
+// ---- the audit of each forge's whole command set (#3894) ----------------------------------------
+
+#[test]
+fn commands_that_show_or_change_stored_secrets_never_run() {
+    let gh = ready(tool_with("gh", None), "/opt/homebrew/bin/gh");
+    for words in [
+        &["secret", "list"][..],
+        &["secret", "set", "TOKEN", "--body", "x"],
+        &["repo", "set-default", "a/b"],
+    ] {
+        assert!(runs(&gh, words).is_err(), "{words:?}");
+    }
+    assert!(runs(&gh, &["variable", "list"]).is_ok());
+    let glab = ready(tool_with("glab", None), "/usr/local/bin/glab");
+    for words in [
+        &["variable", "get", "TOKEN"][..],
+        &["variable", "export"],
+        &["securefile", "download", "1"],
+        &["duo", "cli"],
+        &["opentofu", "init", "production"],
+        &["cluster", "agent", "get-token", "--agent", "1"],
+        &["cluster", "agent", "token", "create"],
+        &["cluster", "agent", "token-cache", "list"],
+        &["cluster", "agent", "bootstrap", "a"],
+        &["cluster", "agent", "update-kubeconfig"],
+        &["runner-controller", "token", "create"],
+    ] {
+        assert!(runs(&glab, words).is_err(), "{words:?}");
+    }
+    // glab's aliases, which no help page names, are refused as the commands they stand for.
+    for words in [
+        &["var", "get", "TOKEN"][..],
+        &["conf", "get", "token"],
+        &["tf", "init", "s"],
+        &["terraform", "state", "download", "s"],
+        &["rc", "token", "create", "1"],
+        &["mcp", "serve"],
+        &["ci", "get", "--with-variables"],
+        &["pipe", "get", "--with-variables=true"],
+        &["repo", "view", "-F", "json"],
+        &["project", "view", "--output=json"],
+        &["repo", "view", "-Fjson"],
+    ] {
+        assert!(runs(&glab, words).is_err(), "{words:?}");
+    }
+    assert!(runs(&glab, &["-v"]).is_ok());
+    assert!(runs(&glab, &["repo", "view"]).is_ok());
+    assert!(runs(&glab, &["ci", "get"]).is_ok());
+    assert!(runs(&glab, &["cluster", "agent", "list"]).is_ok());
+    assert!(runs(&glab, &["opentofu", "state", "list"]).is_ok());
+    assert!(runs(&glab, &["runner", "list"]).is_ok());
+}
+
+#[test]
+fn api_never_reaches_a_route_that_does_what_a_refused_command_does() {
+    let gh = ready(tool_with("gh", None), "/opt/homebrew/bin/gh");
+    for words in [
+        &["api", "user/keys"][..],
+        &["api", "/user/keys/12", "-X", "DELETE"],
+        &[
+            "api",
+            "-X",
+            "POST",
+            "user/gpg_keys",
+            "-f",
+            "armored_public_key=x",
+        ],
+        &["api", "user/ssh_signing_keys"],
+        &["api", "repos/{owner}/{repo}/keys"],
+        &["api", "repos/a/b/actions/secrets/X"],
+        &["api", "repos/a/b/environments/prod/secrets"],
+        &["api", "orgs/a/dependabot/secrets"],
+        &["api", "user/codespaces/secrets"],
+        &[
+            "api",
+            "repos/a/b/actions/runners/registration-token",
+            "-X",
+            "POST",
+        ],
+        &["api", "orgs/a/actions/runners/generate-jitconfig"],
+        &["api", "orgs/a/personal-access-tokens"],
+        &["api", "repositories/12/keys"],
+        &["api", "organizations/9/actions/secrets"],
+        // Spelled otherwise: case, a query, doubled and trailing slashes, an escaped letter.
+        &["api", "USER/Keys"],
+        &["api", "user/keys?per_page=1"],
+        &["api", "user//keys/"],
+        &["api", "user/%6beys"],
+        &["api", "api/v3/user/keys"],
+        // Read as a server resolves its dot segments.
+        &["api", "repos/a/b/../../../user/keys"],
+        &["api", "orgs/a/credential-authorizations"],
+        &["api", "installation/token", "-X", "DELETE"],
+        &["api", "app-manifests/c/conversions"],
+    ] {
+        assert!(runs(&gh, words).is_err(), "{words:?}");
+    }
+    for words in [
+        &["api", "repos/a/b/pulls"][..],
+        &["api", "repos/keys/secrets/issues"],
+        &["api", "user"],
+        &["api", "search/issues?q=a%20b"],
+        &["api", "repos/a/b/actions/variables"],
+        &["api", "users/a/keys"],
+        &["api", "repos/a/b/./pulls"],
+        &["api", "user", "--jq", "."],
+        &[
+            "api",
+            "repos/a/b/issues",
+            "--input",
+            "./body.json",
+            "-X",
+            "POST",
+        ],
+    ] {
+        assert!(runs(&gh, words).is_ok(), "{words:?}");
+    }
+    let glab = ready(tool_with("glab", None), "/usr/local/bin/glab");
+    for words in [
+        &["api", "user/keys"][..],
+        &["api", "user/gpg_keys"],
+        &["api", "projects/:id/deploy_keys"],
+        &["api", "projects/a%2Fb/deploy_tokens"],
+        &["api", "groups/1/deploy_tokens"],
+        &["api", "personal_access_tokens/self/rotate", "-X", "POST"],
+        &["api", "users/2/impersonation_tokens"],
+        &["api", "projects/1/access_tokens"],
+        &["api", "groups/1/access_tokens"],
+        &["api", "projects/1/variables/TOKEN"],
+        &["api", "groups/1/variables"],
+        &["api", "admin/ci/variables"],
+        &["api", "projects/1/pipeline_schedules/3/variables"],
+        &["api", "projects/1/secure_files/2/download"],
+        &["api", "projects/1/triggers"],
+        &["api", "projects/1/cluster_agents/2/tokens"],
+        &["api", "runners/reset_registration_token"],
+        &["api", "runners/5/reset_authentication_token"],
+        &["api", "user/runners"],
+        &["api", "applications"],
+        &["api", "api/v4/projects/1/variables"],
+        // Grape routes a format after a dot.
+        &["api", "projects/1/variables.json"],
+        &["api", "-X", "POST", "user/keys.json", "-f", "title=x"],
+        &["api", "projects/1/pipelines/2/variables"],
+        &["api", "projects/1/pipeline_schedules/3"],
+        &["api", "projects/1/terraform/state/prod"],
+        &["api", "runners/reset_authentication_token"],
+        &["api", "application/settings"],
+        // A project's and a group's own page carry a runner token for a maintainer.
+        &["api", "projects/:id"],
+        &["api", "groups/7.json"],
+    ] {
+        assert!(runs(&glab, words).is_err(), "{words:?}");
+    }
+    for words in [
+        &["api", "projects/1/issues"][..],
+        &["api", "projects/a%2Fb/merge_requests"],
+    ] {
+        assert!(runs(&glab, words).is_ok(), "{words:?}");
+    }
+}
+
+#[test]
+fn graphql_never_asks_for_a_credential_and_glab_s_never_runs() {
+    let gh = ready(tool_with("gh", None), "/opt/homebrew/bin/gh");
+    for words in [
+        &[
+            "api",
+            "graphql",
+            "-f",
+            "query={repository(owner:\"a\",name:\"b\"){tempCloneToken}}",
+        ][..],
+        &[
+            "api",
+            "graphql",
+            "-f",
+            "query={enterprise(slug:\"a\"){ownerInfo{samlIdentityProvider{RecoveryCodes}}}}",
+        ],
+        &[
+            "api",
+            "graphql",
+            "-f",
+            "query=mutation{regenerateVerifiableDomainToken(input:{id:\"x\"}){verificationToken}}",
+        ],
+        // A query read from a file or stdin is never seen, so it never runs.
+        &["api", "graphql", "-F", "query=@q.graphql"],
+        &["api", "graphql", "--input", "q.json"],
+        &["api", "graphql", "--input=-"],
+    ] {
+        assert!(runs(&gh, words).is_err(), "{words:?}");
+    }
+    assert!(runs(&gh, &["api", "graphql", "-f", "query={viewer{login}}"]).is_ok());
+    let glab = ready(tool_with("glab", None), "/usr/local/bin/glab");
+    assert!(
+        runs(
+            &glab,
+            &["api", "graphql", "-f", "query={currentUser{username}}"]
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn what_follows_a_double_dash_goes_to_another_program_so_it_never_runs() {
+    let gh = ready(tool_with("gh", None), "/opt/homebrew/bin/gh");
+    assert!(runs(&gh, &["repo", "clone", "o/r", "--", "--template=./t"]).is_err());
+    let glab = ready(tool_with("glab", None), "/usr/local/bin/glab");
+    assert!(runs(&glab, &["repo", "clone", "g/p", "--", "--depth=1"]).is_err());
+    assert!(runs(&gh, &["repo", "clone", "o/r"]).is_ok());
+}
+
+#[test]
+fn the_re_review_s_forms_never_run_and_lists_still_do() {
+    let glab = ready(tool_with("glab", None), "/usr/local/bin/glab");
+    for words in [
+        &["api", "../v4/projects/1/variables"][..],
+        &["api", "../v4/user/keys"],
+        &["api", "../../api/graphql", "-f", "query={x}"],
+        &["api", "projects/:namespace/variables"],
+        &["schedule", "create", "--variable", "K:v"],
+        &["sched", "update", "1", "--variable=K:v"],
+        &["orbit", "local", "x"],
+        &["repo", "view", "-wFjson"],
+    ] {
+        assert!(runs(&glab, words).is_err(), "{words:?}");
+    }
+    for words in [
+        &["repo", "list", "-F", "json"][..],
+        &["project", "list", "--jq", ".[]"],
+        &["schedule", "list"],
+    ] {
+        assert!(runs(&glab, words).is_ok(), "{words:?}");
+    }
+    let gh = ready(tool_with("gh", None), "/opt/homebrew/bin/gh");
+    for words in [
+        &["api", "{branch}"][..],
+        &["api", "repos/{owner}/{repo}/git/refs/heads/{branch}"],
+        &["api", "../v3/user/keys"],
+    ] {
+        assert!(runs(&gh, words).is_err(), "{words:?}");
+    }
+    assert!(runs(&gh, &["api", "repos/{owner}/{repo}/pulls"]).is_ok());
 }

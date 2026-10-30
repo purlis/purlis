@@ -258,6 +258,7 @@ fn a_task_is_dispatched_on_one_ticket_and_the_request_says_only_what_the_agent_c
         profile,
         place,
         ticket,
+        long: _,
     } = the_dispatch(&asked);
     assert_eq!(profile, None, "no profile asked for");
     assert_eq!(place, None, "no place asked for: the asking chat's folder");
@@ -327,13 +328,21 @@ fn a_place_that_is_neither_word_is_refused_before_the_app_is_asked() {
     for (place, said) in [
         (
             "beta",
-            "✗ purlis dispatch: --in is `worktree` or `workspace:<name>`, not 'beta'. Leave it \
-             out and the new chat works in this chat's folder. Nothing was started.\n",
+            "✗ purlis dispatch: --in is `worktree`, `worktree:<repo>` or `workspace:<name>`, \
+             not 'beta'. Leave it out and the new chat works in this chat's folder. Nothing was \
+             started.\n",
         ),
         (
-            "worktree:main",
-            "✗ purlis dispatch: --in is `worktree` or `workspace:<name>`, not 'worktree:main'. \
-             Leave it out and the new chat works in this chat's folder. Nothing was started.\n",
+            "worktree=main",
+            "✗ purlis dispatch: --in is `worktree`, `worktree:<repo>` or `workspace:<name>`, \
+             not 'worktree=main'. Leave it out and the new chat works in this chat's folder. \
+             Nothing was started.\n",
+        ),
+        (
+            "worktree:../api",
+            "✗ purlis dispatch: '../api' cannot name a repo, so nothing is cut. A repo is named \
+             by its clone's folder in the workspace, and by nothing else. Nothing was \
+             started.\n",
         ),
         (
             "workspace:../beta",
@@ -1185,6 +1194,7 @@ impl StandIn {
                 root: asked.root,
                 above: None,
                 by_person: false,
+                long: false,
             }),
             ..Default::default()
         };
@@ -1330,6 +1340,7 @@ fn a_task_goes_end_to_end() {
             root: None,
             above: None,
             by_person: false,
+            long: false,
         })
     );
     // In the asking chat's folder, on its profile, as its persona.
@@ -1472,6 +1483,7 @@ fn a_dispatch_as_another_chat_is_never_heard_by_the_app() {
         profile: None,
         place: None,
         ticket: "0".repeat(64),
+        long: false,
     }));
     let answered = purlis_core::hookwire::Asking::on(&app.socket, Some(app.token(ASKING).clone()))
         .expect("connected")
@@ -1705,7 +1717,11 @@ fn the_list_prints_each_task_s_persona_name_place_state_and_age() {
                 by_person: false,
                 branch: None,
                 branch_stands: None,
+                long: false,
+                last_note: None,
+                noted_secs: None,
                 finished: false,
+                liveness: None,
             }],
         }))
     });
@@ -2100,7 +2116,11 @@ fn the_list_marks_a_task_the_person_asked_for_as_theirs() {
         by_person,
         branch: None,
         branch_stands: None,
+        long: false,
+        last_note: None,
+        noted_secs: None,
         finished: false,
+        liveness: None,
     };
     let (app, _reading, _asked) = an_app_answering_tasks(&tmp, move |_| {
         Answer::Task(Box::new(Answered::Listed {

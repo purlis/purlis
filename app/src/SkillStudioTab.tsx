@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { MessageSquarePlus, Plus, RotateCw, Search, Sparkle, Sparkles } from "lucide-react";
 import {
   commands,
@@ -14,14 +14,15 @@ import {
   type SkillTemplateId,
   type SkillUsers,
   type SkillDraft,
+  type SkillPinner,
   type Studio,
-  type StudioRouter,
   type StudioSkill,
 } from "./bindings";
 import { BUILT_IN_FIXED, MAKE_MY_OWN_COPY, SkillCopy } from "./SkillCopy";
 import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
-import { SkillStudioHarnesses } from "./SkillStudioHarnesses";
+import { HarnessItem, HarnessList, harnessGroups, harnessRowAt } from "./SkillStudioHarnesses";
+import { RoutedChatItem, RoutedChats, RoutingFacts } from "./SkillStudioRouting";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Badge } from "./ui/badge/Badge";
 import { TextField } from "./ui/field/Field";
@@ -33,7 +34,7 @@ import { ViewBar, type Crumb } from "./ui/panel/ViewBar";
 import { useViewHistory } from "./ui/panel/viewHistory";
 import { NEEDS_YOU_LEAD, NeedsYouItem, NeedsYouList, needShown } from "./SkillStudioNeedsYou";
 import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
-import { RouterGrade } from "./RouterGrade";
+import { GradingPage, gradingCrumbTo, gradingPath, type GradingGo } from "./SkillGrades";
 import { Notice } from "./Notice";
 import { DraftPage, DraftsList } from "./SkillStudioDrafts";
 import { DeletedList, DeletedPage } from "./SkillStudioDeleted";
@@ -61,6 +62,9 @@ import {
   STUDIO_PAGE_NAMES,
   STUDIO_START,
   inWorkspace,
+  harnessSkillNamed,
+  pinnerOf,
+  routedChatId,
   sameScope,
   scopeChat,
   scopeKey,
@@ -81,14 +85,11 @@ import { PINNABLE } from "./skillsListing";
 import type { ViewRef } from "./tabs";
 import type { Offer } from "./actions";
 import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
-
-/** The light editor, its own chunk (`tools/main-chunk-has-no-codemirror.mjs`). */
-const SkillEditor = lazy(() => import("./SkillEditor"));
+import { useSkillEditInPlace } from "./SkillEditInPlace";
 
 /** A change in progress: New skill, or one on the skill chosen, drawn in the item pane. */
 type Doing =
   | { what: "new" }
-  | { what: "edit"; skill: StudioSkill; level: SkillLevel; was: string }
   | { what: "rename"; skill: StudioSkill; level: SkillLevel }
   | { what: "moving"; skill: StudioSkill; from: SkillLevel }
   | { what: "move"; skill: StudioSkill; from: SkillLevel; to: SkillLevel }
@@ -108,7 +109,6 @@ function sourcesPath(at: SourcesAt): Crumb[] {
 /** What a change in progress is called in the path. */
 const DOING_NAMES: Record<Doing["what"], string> = {
   new: NEW_SKILL,
-  edit: "Edit",
   rename: "Rename",
   moving: "Move",
   move: "Move",
@@ -246,16 +246,9 @@ export function SkillStudioTab({
   /** Narrow or wide whatever the width: for a story or a test. Measured when left out. */
   narrow?: boolean;
 }) {
-  const history = useViewHistory<StudioPlace>(
-    studioHistoryOf(plane, { ...SKILL_STUDIO_VIEW, key: tab }),
-    STUDIO_START,
-  );
-  const at = history.at;
-  // Where the tab is now, for an answer that comes back after the person may have moved on.
-  const placeNow = useRef(at);
-  useEffect(() => {
-    placeNow.current = at;
-  });
+  const historyId = studioHistoryOf(plane, { ...SKILL_STUDIO_VIEW, key: tab });
+  const walked = useViewHistory<StudioPlace>(historyId, STUDIO_START);
+  const at = walked.at;
   const scope = at.scope;
   const [read, setRead] = useState<{ key: string; studio?: Studio; refused?: string }>();
   const [asked, setAsked] = useState(0);
@@ -274,6 +267,17 @@ export function SkillStudioTab({
       ? inHand.doing
       : undefined;
   const [busy, setBusy] = useState(false);
+  // Edit in place (#3683): the editor on a skill's page, and every way out of it asked first.
+  const edits = useSkillEditInPlace({
+    plane,
+    tab: historyId,
+    walked,
+    busy,
+    setBusy,
+    say: setSaid,
+    onSaved: () => setDone((n) => n + 1),
+  });
+  const history = edits.history;
   const [deleted, setDeleted] = useState<readonly DeletedSkill[]>([]);
   const [switched, setSwitched] = useState(0);
   // The item of Needs you chosen, by its id: on a wide tab the first is shown until one is.
@@ -296,10 +300,12 @@ export function SkillStudioTab({
   const drafts = draftsRead ?? [];
   // A start the Skills view asked this studio to open on (#3266): the New skill form.
   // Make my own copy, asked from the Skills view's folded built-in skills (#3693).
-  useStudioStart(tab, on, (start) => {
-    if (start === "copy") setCopying({});
-    else setDoing({ what: "new" });
-  });
+  useStudioStart(tab, on, (start) =>
+    edits.leave(() => {
+      if (start === "copy") setCopying({});
+      else setDoing({ what: "new" });
+    }),
+  );
   useEffect(() => {
     let live = true;
     void commands.skillStudio(plane, workspace, persona).then((answer) => {
@@ -365,10 +371,22 @@ export function SkillStudioTab({
 
   /** Goes to `place`, a step of the tab's history; a change in progress is left, as is the item
    *  of Needs you chosen. */
-  const go = (place: StudioPlace) => {
-    setDoing(undefined);
-    setNeed(undefined);
-    history.go(place);
+  const go = (place: StudioPlace) =>
+    edits.leaveFor(place, () => {
+      setDoing(undefined);
+      setNeed(undefined);
+      walked.go(place);
+    });
+
+  /** Goes to a grading page under the chosen skill (S6), or back to its Grades tab. */
+  const grading: GradingGo = (to, how) => {
+    const next: StudioPlace = { ...at, tab: "grades" };
+    if (to === undefined) delete next.grading;
+    else next.grading = to;
+    if (how === "go") go(next);
+    // Back where the way here was a step (a chat's scorecard), so walking never piles up steps.
+    else if (how === "back" && history.canGoBack) history.back();
+    else history.replace(next);
   };
 
   const change: Change = (label, run, then) => {
@@ -392,19 +410,6 @@ export function SkillStudioTab({
         setBusy(false);
         setDone((n) => n + 1);
       });
-  };
-  const open = (skill: StudioSkill, level: SkillLevel) => {
-    const asked = at;
-    void commands.skillText(plane, level, skill.name).then((answer) => {
-      if (answer.status === "error")
-        setSaid({ tone: "trouble", label: "The skill could not be opened", text: answer.error });
-      // The person went elsewhere while the text was read: the editor is not opened there.
-      else if (samePlace(placeNow.current, asked)) {
-        setDoing({ what: "edit", skill, level, was: answer.data });
-        // The editor is the Text tab's, in place (#3682; Skills design 04).
-        history.replace({ ...placeNow.current, tab: "text" });
-      }
-    });
   };
   const askDelete = (skill: StudioSkill, level: SkillLevel) => {
     void commands.skillUsers(plane, level, skill.name).then((answer) => {
@@ -432,9 +437,10 @@ export function SkillStudioTab({
         why === undefined ? { status: "ok", data: { notes: [] } } : { status: "error", error: why },
       ),
     );
-  /** Bring back (S2's split of Restore): the deleted skill `id` names, back at its level. */
-  const bringBack = (id: string) =>
-    change("The skill was not brought back", () => commands.skillRestore(plane, id));
+  /** Bring back (S2's split of Restore): the deleted skill `id` names, back at its level, `under`
+   *  a new name where its own is a built-in skill's now (#3729). */
+  const bringBack = (id: string, under: string | null = null) =>
+    change("The skill was not brought back", () => commands.skillRestore(plane, id, under));
   /** After a delete: Bring it back on the Notice, for the copy just deleted. */
   const restoreOffered = async (name: string, level: SkillLevel): Promise<Said | undefined> => {
     const answer = await commands.skillsDeleted(plane);
@@ -533,6 +539,11 @@ export function SkillStudioTab({
       case "accept":
         change("The change was not accepted", () => commands.skillLevelAccept(plane, fix.folder));
         return;
+      case "accept-folders":
+        change("The folders were not accepted", () =>
+          commands.skillLevelsConfirm(plane, fix.folders),
+        );
+        return;
       case "rename": {
         const skill = (studio?.skills ?? []).find(
           (row) =>
@@ -547,8 +558,40 @@ export function SkillStudioTab({
         if (level !== null) setDoing({ what: "rename", skill, level });
         return;
       }
-      case "harness":
-        return go({ page: "harness", scope });
+      case "open-text": {
+        // The plane's own skill whose lint Needs you holds (#3780): its Text tab, in Edit.
+        const skill = (studio?.skills ?? []).find(
+          (row) =>
+            row.name === fix.name &&
+            row.level === fix.level &&
+            row.local === fix.local &&
+            row.owner === null,
+        );
+        if (skill === undefined) return go({ page: "library", scope });
+        const place: StudioPlace = {
+          page: "library",
+          scope,
+          skill: skillRowId(skill),
+          tab: "text",
+        };
+        go(place);
+        const level = levelOf(skill, scope);
+        if (level !== null) edits.open(skill, level, place);
+        return;
+      }
+      case "harness": {
+        // The program's own skill the item is about, chosen beside the list with its switch.
+        const program = (studio?.harnesses ?? []).find((harness) =>
+          harness.skills.some((skill) => skill.name === one.title),
+        );
+        return go({
+          page: "harness",
+          scope,
+          ...(program === undefined
+            ? {}
+            : { skill: harnessSkillNamed(program.harness, one.title) }),
+        });
+      }
       case "library":
         return go({ page: "library", scope });
       case "unpin":
@@ -659,10 +702,12 @@ export function SkillStudioTab({
         size="sm"
         icon={<Plus aria-hidden="true" />}
         isDisabled={studio === undefined || doing?.what === "new"}
-        onPress={() => {
-          if (page !== "library" || at.skill !== undefined) history.go({ page: "library", scope });
-          setDoing({ what: "new" });
-        }}
+        onPress={() =>
+          edits.leave(() => {
+            if (page !== "library" || at.skill !== undefined) walked.go({ page: "library", scope });
+            setDoing({ what: "new" });
+          })
+        }
       >
         {`${NEW_SKILL}…`}
       </Button>
@@ -680,15 +725,40 @@ export function SkillStudioTab({
       {DRAFT_WITH_A_CHAT}
     </Button>
   );
+  // What is chosen on Harness skills (#3692): a program's own skill, by its place's id.
+  const groups =
+    page === "harness" ? harnessGroups(studio?.harnesses ?? [], studio?.not_supported ?? []) : [];
+  const harnessRow = page === "harness" ? harnessRowAt(groups, at.skill) : undefined;
+  // What is chosen on Routing: a chat's start, by its number.
+  const routedChat =
+    page === "routing"
+      ? studio?.router?.chats.find((one) => routedChatId(one.session) === at.skill)
+      : undefined;
+  const itemName =
+    harnessRow !== undefined
+      ? harnessRow.kind === "not-supported"
+        ? harnessRow.one.title
+        : harnessRow.kind === "none"
+          ? harnessRow.title
+          : harnessRow.skill.name
+      : routedChat === undefined
+        ? undefined
+        : `Chat ${routedChat.session}`;
   const inSources = page === "sources" ? at.sources : undefined;
   const path: Crumb[] = [
     { id: page, label: STUDIO_PAGE_NAMES[page] },
     ...(chosen === undefined ? [] : [{ id: "skill", label: chosen.name }]),
+    ...(itemName === undefined ? [] : [{ id: "item", label: itemName }]),
     ...(chosen !== undefined && at.tab !== undefined && at.tab !== "overview"
       ? [{ id: "tab", label: SKILL_PAGE_TAB_NAMES[at.tab] }]
       : []),
+    ...(chosen !== undefined && at.grading !== undefined ? gradingPath(at.grading) : []),
     ...(inSources === undefined ? [] : sourcesPath(inSources)),
-    ...(doing === undefined ? [] : [{ id: "doing", label: DOING_NAMES[doing.what] }]),
+    ...(doing !== undefined
+      ? [{ id: "doing", label: DOING_NAMES[doing.what] }]
+      : edits.editing !== undefined
+        ? [{ id: "doing", label: "Edit" }]
+        : []),
   ];
   const restoring = said?.restore;
   const notice = said !== undefined && (
@@ -713,20 +783,29 @@ export function SkillStudioTab({
         path={path}
         onGo={(crumb, step) => {
           if (step === 0) go({ page, scope });
-          else if (crumb.id === "skill") {
-            setDoing(undefined);
-            history.replace({
-              page,
-              scope,
-              ...(at.skill === undefined ? {} : { skill: at.skill }),
+          else if (crumb.id === "skill")
+            edits.leave(() => {
+              setDoing(undefined);
+              walked.replace({
+                page,
+                scope,
+                ...(at.skill === undefined ? {} : { skill: at.skill }),
+              });
             });
-          } else if (crumb.id === "tab") setDoing(undefined);
-          else if (crumb.id === "source" && inSources !== undefined)
+          else if (crumb.id === "tab") {
+            setDoing(undefined);
+            edits.stop();
+            if (at.grading !== undefined) grading(undefined, "go");
+          } else if (crumb.id === "source" && inSources !== undefined)
             go({
               page,
               scope,
               sources: { at: "source", source: inSources.source, label: inSources.label },
             });
+          else if (at.grading !== undefined) {
+            const to = gradingCrumbTo(at.grading, crumb.id);
+            if (to !== undefined) grading(to, "back");
+          }
         }}
       >
         {controls}
@@ -962,11 +1041,25 @@ export function SkillStudioTab({
           onMoveTo={moveTo}
         />
       ) : undefined;
+    // A grading page under the chosen skill (S6) is the page of a skill this studio can grade.
+    const gradingLevel =
+      chosen !== undefined && at.grading !== undefined ? levelOf(chosen, scope) : null;
     item =
       doing?.what === "new" && panel !== undefined ? (
         <div className="skill-studio-item" data-testid="skill-studio-doing">
           {panel}
         </div>
+      ) : chosen !== undefined && at.grading !== undefined && gradingLevel !== null ? (
+        <GradingPage
+          // A page of each kind and grade: walking a grade's chats keeps its scorecard read.
+          key={`${skillRowId(chosen)}:${at.grading.at}:${"grade" in at.grading ? at.grading.grade : ""}`}
+          plane={plane}
+          name={chosen.name}
+          level={gradingLevel}
+          grading={at.grading}
+          changed={changed + done}
+          onGrading={grading}
+        />
       ) : chosen !== undefined && studio !== undefined ? (
         <SkillPage
           key={skillRowId(chosen)}
@@ -981,21 +1074,36 @@ export function SkillStudioTab({
           changed={changed + done}
           change={change}
           doing={
-            doing === undefined || doing.what === "new" || panel === undefined
-              ? undefined
-              : { what: doing.what === "moving" ? "move" : doing.what, drawn: panel }
+            edits.editor !== undefined
+              ? { what: "edit", drawn: edits.editor }
+              : doing === undefined || doing.what === "new" || panel === undefined
+                ? undefined
+                : { what: doing.what === "moving" ? "move" : doing.what, drawn: panel }
           }
+          unsaved={edits.unsaved}
           onTab={(tab) => history.replace({ ...at, tab })}
           onGo={(to, item) => go({ page: to, scope, ...(item === undefined ? {} : { item }) })}
-          onEdit={(level) => open(chosen, level)}
-          onRename={(level) => setDoing({ what: "rename", skill: chosen, level })}
-          onMove={(level) => setDoing({ what: "moving", skill: chosen, from: level })}
-          onDelete={(level) => askDelete(chosen, level)}
+          onEdit={(level) =>
+            edits.leave(() => {
+              // Edit takes the place of a change in progress (Rename, Move, Delete).
+              setDoing(undefined);
+              edits.open(chosen, level);
+            })
+          }
+          onStopEditing={edits.stop}
+          onRename={(level) =>
+            edits.leave(() => setDoing({ what: "rename", skill: chosen, level }))
+          }
+          onMove={(level) =>
+            edits.leave(() => setDoing({ what: "moving", skill: chosen, from: level }))
+          }
+          onDelete={(level) => edits.leave(() => askDelete(chosen, level))}
           onPersona={personaSkill}
           onCopy={() => setCopying({ from: chosen.name })}
           offerFor={offerFor}
           onPress={onPress}
           onOpenView={onOpenView}
+          onGrading={grading}
         />
       ) : (
         <EmptyState
@@ -1142,8 +1250,9 @@ export function SkillStudioTab({
           key={one.id}
           plane={plane}
           deleted={one}
+          builtIns={skills.filter((skill) => skill.level === "built-in").map((skill) => skill.name)}
           busy={busy}
-          onBringBack={(it) => bringBack(it.id)}
+          onBringBack={(it, under) => bringBack(it.id, under ?? null)}
         />
       ) : deleted.length === 0 ? undefined : (
         <EmptyState
@@ -1153,39 +1262,64 @@ export function SkillStudioTab({
         />
       );
   } else if (page === "harness") {
+    const row = harnessRow;
     list = pageList(
-      "The skills each chat program brings on its own, which purlis lists and never edits.",
-      held(() =>
-        studio === undefined ? null : (
-          <SkillStudioHarnesses
-            plane={plane}
-            workspace={workspace}
-            harnesses={studio.harnesses}
-            notSupported={studio.not_supported}
-            onSwitched={() => setSwitched((n) => n + 1)}
-          />
-        ),
-      ),
+      "The skills each program finds itself: your own, a repo's and a plugin's. You can switch your own and a repo's for these chats; a plugin's come and go with the plugin, which its program turns on or off.",
+      held(() => (
+        <HarnessList
+          groups={groups}
+          chosen={row}
+          onChoose={(id) => go({ page: "harness", scope, skill: id })}
+        />
+      )),
     );
+    item =
+      studio === undefined ? undefined : (
+        <HarnessItem
+          key={row?.id}
+          plane={plane}
+          workspace={workspace}
+          row={row}
+          onSwitched={() => setSwitched((n) => n + 1)}
+        />
+      );
   } else {
     const router = studio?.router ?? null;
+    const chats = router?.chats ?? [];
+    const chat = routedChat;
+    const by: SkillPinner | null = pinnerOf(scope);
     list = pageList(
-      "Which router picks the skills a chat is shown, and how it did at each chat's start.",
+      "When a chat's list of skills is over its budget, a router decides which it sees. The router is asked once, at a chat's start.",
       held(() =>
-        router === null || (router.extension === null && !router.problem) ? (
-          <EmptyState
-            headline="These chats use purlis's own router"
-            body="An extension's router chosen for a workspace or a persona is shown here, with how it did at each chat's start."
-            testid="skill-routing-built-in"
-          />
-        ) : (
-          <StudioRouterLine
-            router={router}
-            grading={{ plane, workspace, persona, onGraded: () => setDone((was) => was + 1) }}
-          />
+        router === null ? null : (
+          <>
+            <RoutingFacts
+              plane={plane}
+              router={router}
+              by={by}
+              workspace={workspace}
+              persona={persona}
+              busy={busy}
+              onChoose={(whose, chosen, text) =>
+                change(
+                  "The router was not changed",
+                  () => commands.skillRouterChoose(plane, whose, chosen),
+                  () => Promise.resolve({ tone: "news", label: "Router changed", text }),
+                )
+              }
+              onGraded={() => setDone((was) => was + 1)}
+            />
+            <ViewListHead title="How it did at each chat's start" />
+            <RoutedChats
+              chats={chats}
+              chosen={chat}
+              onChoose={(id) => go({ page: "routing", scope, skill: id })}
+            />
+          </>
         ),
       ),
     );
+    item = studio === undefined || chats.length === 0 ? undefined : <RoutedChatItem chat={chat} />;
   }
 
   const builtInNames = [
@@ -1210,6 +1344,7 @@ export function SkillStudioTab({
           onCancel={() => setCopying(undefined)}
         />
       )}
+      {edits.question}
       <ViewFrame
         label="Skill studio pages"
         pages={pages}
@@ -1220,6 +1355,7 @@ export function SkillStudioTab({
         opened={
           chosen !== undefined ||
           doing !== undefined ||
+          itemName !== undefined ||
           itemChosen ||
           (page === "needs" && need !== undefined && needs.some((one) => one.id === need))
         }
@@ -1232,7 +1368,7 @@ export function SkillStudioTab({
   );
 }
 
-/** The panel under the toolbar for the change in progress: New skill, the editor, Rename, the
+/** The panel under the toolbar for the change in progress: New skill, Rename, the
  *  grant a move into the project asks for, and Delete's who-uses-it. */
 function ChangePanel({
   plane,
@@ -1276,30 +1412,6 @@ function ChangePanel({
             )
           }
         />
-      );
-    case "edit":
-      return (
-        <Suspense
-          fallback={
-            <p className="pending" aria-busy="true">
-              Opening the editor…
-            </p>
-          }
-        >
-          <SkillEditor
-            plane={plane}
-            level={doing.level}
-            name={doing.skill.name}
-            was={doing.was}
-            saving={busy}
-            onClose={onCancel}
-            onSave={(now) =>
-              change("The skill was not saved", () =>
-                commands.skillSave(plane, doing.level, doing.skill.name, doing.was, now),
-              )
-            }
-          />
-        </Suspense>
       );
     case "rename":
       return (
@@ -1596,59 +1708,5 @@ function GrantPrompt({
         <Button onPress={onCancel}>Cancel</Button>
       </ButtonRow>
     </section>
-  );
-}
-
-/**
- * **Which router this studio's chats are routed by** (SK-15b, ADR 0102 §5, §6), where it is an
- * extension's or the choice names none, and how the router did at the start of each such chat
- * open now: its timing, or why it fell back on the built-in router. Nothing for the built-in
- * router, which every chat has unless a workspace or persona chooses another.
- */
-export function StudioRouterLine({
-  router,
-  grading,
-}: {
-  router: StudioRouter;
-  /** Where the studio is, to grade the router chosen there (SK-15e): none offers no Grade. */
-  grading?: {
-    plane: string;
-    workspace: string | null;
-    persona: string | null;
-    onGraded: () => void;
-  };
-}) {
-  if (router.extension === null && !router.problem) return null;
-  return (
-    <div
-      className={router.problem ? "honest use-skill-over" : "honest"}
-      data-testid="skill-studio-router"
-    >
-      <p>{router.said}</p>
-      {router.extension !== null && (
-        <p data-testid="skill-studio-router-grade">
-          {router.grade ??
-            "This router has not been graded on this library yet: a grade runs the library's trigger tests with it and with the built-in router."}
-        </p>
-      )}
-      {router.extension !== null && grading !== undefined && (
-        <RouterGrade
-          plane={grading.plane}
-          router={router.extension}
-          workspace={grading.workspace}
-          persona={grading.persona}
-          onGraded={grading.onGraded}
-        />
-      )}
-      {router.chats.length > 0 && (
-        <ul className="skill-studio-routed">
-          {router.chats.map((one) => (
-            <li key={one.session} data-fell-back={one.routing.fell_back}>
-              {`Chat ${one.session}: ${one.routing.said}`}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
   );
 }

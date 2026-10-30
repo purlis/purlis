@@ -603,9 +603,15 @@ enum Command {
         timeout: Option<u32>,
         /// Where the new chat works: `workspace:<name>` for another workspace, or `worktree`
         /// for a new worktree on its own branch (default: this chat's folder, or a worktree
-        /// where the persona's definition says `dispatch-isolation: worktree`).
+        /// where the persona's definition says `dispatch-isolation: worktree`). From a
+        /// workspace whose folder holds several clones, `worktree:<repo>` names the clone.
         #[arg(long = "in", value_name = "WHERE")]
         place: Option<String>,
+        /// A long-running task, which works through many pieces and sends `purlis dispatch
+        /// note` as it goes: its notes are its heartbeat, purlis never asks it for a report,
+        /// and it ends when it reports done or failed, or is cancelled (#3905).
+        #[arg(long)]
+        long: bool,
         #[command(subcommand)]
         command: Option<dispatch::DispatchCommand>,
     },
@@ -1217,7 +1223,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Skill(
             skill::SkillCommand::List { .. }
             | skill::SkillCommand::Show { .. }
-            | skill::SkillCommand::Restore { name: None },
+            | skill::SkillCommand::Restore { name: None, .. },
         )
         | Command::Change(change::ChangeCommand::List { .. })
         | Command::Session(session::SessionCommand::List { .. })
@@ -4742,6 +4748,7 @@ fn main() -> ExitCode {
         wait,
         timeout,
         place,
+        long,
         command,
     } = &cli.command
     {
@@ -4763,6 +4770,7 @@ fn main() -> ExitCode {
             &dispatch::Options {
                 profile: profile.as_deref(),
                 place: place.as_deref(),
+                long: *long,
             },
             waits,
         );

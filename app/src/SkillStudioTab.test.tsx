@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { StudioRouterLine } from "./SkillStudioTab";
 import { forgetStudio, openSkill, renderStudio } from "./SkillStudioTab.testkit";
 import {
   AT_THE_ROOT,
@@ -36,27 +35,6 @@ function answering(studio: unknown) {
 }
 
 describe("the Skill studio", () => {
-  it("says in one line why a declared harness's chats get no skills (SK-30)", async () => {
-    const said =
-      "Skills are not supported on Goose: it has no skill format purlis can hand skills by, and its declaration does not say it takes MCP servers, so its chats get no skills.";
-    answering({
-      on: true,
-      workspace: null,
-      first: { starts: false, unmoved: null },
-      workspaces: [],
-      levels: [],
-      harnesses: [],
-      clashes: [],
-      skills: [],
-      pins_refused: null,
-      not_supported: [{ name: "goose", title: "Goose", said }],
-    });
-    renderStudio(AT_THE_ROOT, "harness");
-    const line = await screen.findByTestId("skill-studio-not-supported-goose");
-    expect(line).toHaveTextContent("Goose");
-    expect(line).toHaveTextContent(said);
-  });
-
   it("lists each skill with its level, and why one is left out", async () => {
     answering({
       on: true,
@@ -751,28 +729,6 @@ function withClaudeCode(offLangfuse: boolean) {
 }
 
 describe("each program's own skills in the Skill studio (SK-6)", () => {
-  it("lists them with whose each is, and shows a plugin's skills read-only, naming the plugin", async () => {
-    answering(withClaudeCode(false));
-    renderStudio(AT_THE_ROOT, "harness");
-
-    const claude = await screen.findByTestId("skill-studio-claude");
-    expect(within(claude).getByRole("heading", { name: "Claude Code" })).toBeInTheDocument();
-    const own = within(claude).getByTestId("found-claude-langfuse");
-    expect(within(own).getByText("You")).toBeInTheDocument();
-    expect(within(own).getByRole("button", { name: "Turn off" })).toBeInTheDocument();
-    const plugin = within(claude).getByTestId("found-claude-figma:frame");
-    expect(within(plugin).queryByRole("button")).toBeNull();
-    expect(within(plugin).getByText("Plugin figma")).toBeInTheDocument();
-    expect(
-      within(plugin).getByText(/it comes with the plugin figma, which Claude Code turns on or off/),
-    ).toBeInTheDocument();
-    expect(
-      within(within(claude).getByTestId("found-claude-review")).getByText("Repo api"),
-    ).toBeInTheDocument();
-    // #3467: no plugin of a program's is listed to switch, purlis's own included.
-    expect(within(claude).queryByRole("table", { name: "Claude Code plugins" })).toBeNull();
-  });
-
   it("marks a project skill a repo also has, and says a built-in skill is always on", async () => {
     answering(withClaudeCode(false));
     renderStudio();
@@ -785,49 +741,6 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
     expect(
       within(await openSkill("skill-secrets", user)).getByTestId("skill-built-in"),
     ).toHaveTextContent(/can't be edited, moved or turned off/);
-  });
-
-  it("turns one off through the core and reads the project again", async () => {
-    let off = false;
-    const asked: unknown[] = [];
-    mockIPC((cmd, args) => {
-      if (cmd === "skill_studio_switch") {
-        asked.push(args);
-        off = true;
-        return null;
-      }
-      if (cmd === "skill_studio") return withClaudeCode(off);
-      throw new Error(`unexpected ${cmd}`);
-    });
-    renderStudio(AT_THE_ROOT, "harness");
-
-    const row = await screen.findByTestId("found-claude-langfuse");
-    within(row).getByRole("button", { name: "Turn off" }).click();
-
-    await waitFor(() =>
-      expect(
-        within(screen.getByTestId("found-claude-langfuse")).getByText(
-          "Left out: turned off for this project's chats",
-        ),
-      ).toBeInTheDocument(),
-    );
-    expect(asked).toEqual([
-      { plane: "p", workspace: null, harness: "claude", id: "langfuse", on: false },
-    ]);
-  });
-
-  it("says what the core refused, and changes nothing", async () => {
-    mockIPC((cmd) => {
-      if (cmd === "skill_studio_switch") throw "Claude Code turns it off only with its plugin";
-      if (cmd === "skill_studio") return withClaudeCode(false);
-      throw new Error(`unexpected ${cmd}`);
-    });
-    renderStudio(AT_THE_ROOT, "harness");
-    const own = await screen.findByTestId("found-claude-langfuse");
-    within(own).getByRole("button", { name: "Turn off" }).click();
-    expect(
-      await screen.findByText("Claude Code turns it off only with its plugin"),
-    ).toBeInTheDocument();
   });
 
   it("marks no clash on a copy left out, which no chat gets (SK-46)", async () => {
@@ -868,40 +781,6 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
     );
   });
 
-  it("lists under a program each project skill a repo leaves out of its chats, with why (SK-53)", async () => {
-    const studio = withClaudeCode(false);
-    const opencode = {
-      ...studio.harnesses[1],
-      repo_left_out: [
-        {
-          ...ROW,
-          name: "ship",
-          level: "workspace" as const,
-          label: "workspace",
-          on: false,
-          left_out:
-            "purlis could not read the skills folder of web whole, so a copy of this skill may be there, and a chat in that repo would get that one",
-          folder: "workspaces/alpha/skills/ship",
-        },
-      ],
-    };
-    answering({ ...studio, harnesses: [studio.harnesses[0], opencode] });
-    renderStudio(AT_THE_ROOT, "harness");
-
-    const section = await screen.findByTestId("skill-studio-opencode");
-    expect(
-      within(section).getByText(
-        "opencode chats in a repo here start without 1 skill of this project's:",
-      ),
-    ).toBeInTheDocument();
-    const row = within(section).getByTestId("repo-left-out-opencode-ship");
-    expect(row).toHaveTextContent("workspace");
-    expect(row).toHaveTextContent("Left out: purlis could not read the skills folder of web whole");
-    expect(
-      within(screen.getByTestId("skill-studio-claude")).queryByText(/start without/),
-    ).toBeNull();
-  });
-
   it("renames the project's copy from the clash mark, through the studio's own Rename", async () => {
     const asked: unknown[] = [];
     mockIPC((cmd, args) => {
@@ -920,99 +799,5 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
     screen.getByRole("button", { name: "Rename the project's copy" }).click();
     const form = await screen.findByRole("form", { name: "Rename review" });
     expect(within(form).getByLabelText("New name")).toBeInTheDocument();
-  });
-});
-
-describe("the router a studio's chats are routed by (SK-15b)", () => {
-  afterEach(cleanup);
-
-  it("says nothing of the built-in router, and names an extension's with each chat's timing", () => {
-    const { container } = render(
-      <StudioRouterLine
-        router={{ said: "built-in", problem: false, extension: null, chats: [], grade: null }}
-      />,
-    );
-    expect(container.textContent).toBe("");
-    cleanup();
-    render(
-      <StudioRouterLine
-        router={{
-          said: "Chats here are routed by the router relevance.",
-          problem: false,
-          extension: "relevance",
-          grade: null,
-          chats: [
-            {
-              session: 3,
-              routing: {
-                router: "relevance",
-                ms: 34,
-                fell_back: false,
-                said: "Routed by the router relevance in 34 ms.",
-              },
-            },
-            {
-              session: 4,
-              routing: {
-                router: "relevance",
-                ms: 100,
-                fell_back: true,
-                said: "The router relevance did not answer within 100 ms, so this chat lists what the built-in router shows.",
-              },
-            },
-          ],
-        }}
-      />,
-    );
-    const line = screen.getByTestId("skill-studio-router");
-    expect(line.textContent).toMatch(/routed by the router relevance/);
-    const chats = within(line).getAllByRole("listitem");
-    expect(chats.map((one) => one.textContent)).toEqual([
-      "Chat 3: Routed by the router relevance in 34 ms.",
-      "Chat 4: The router relevance did not answer within 100 ms, so this chat lists what the built-in router shows.",
-    ]);
-    expect(chats[1].getAttribute("data-fell-back")).toBe("true");
-    expect(screen.getByTestId("skill-studio-router-grade").textContent).toMatch(
-      /has not been graded on this library yet/,
-    );
-    // No Grade where the line is drawn with nothing to grade from.
-    expect(screen.queryByTestId("router-grade")).toBeNull();
-  });
-
-  it("says the router's newest grade beside the library's commit (SK-15e)", () => {
-    render(
-      <StudioRouterLine
-        router={{
-          said: "Chats here are routed by the router relevance.",
-          problem: false,
-          extension: "relevance",
-          chats: [],
-          grade:
-            "Graded on the library at aaaaaaaaaaaa, 2026-10-02: 1 of 2 trigger tests pass with the router relevance, and 2 of 2 with the built-in router.",
-        }}
-        grading={{ plane: "p", workspace: "ops", persona: null, onGraded: () => undefined }}
-      />,
-    );
-    expect(screen.getByTestId("skill-studio-router-grade").textContent).toBe(
-      "Graded on the library at aaaaaaaaaaaa, 2026-10-02: 1 of 2 trigger tests pass with the router relevance, and 2 of 2 with the built-in router.",
-    );
-    expect(screen.getByRole("button", { name: "Grade the router…" })).toBeInTheDocument();
-  });
-
-  it("says why a choice that names no router is the built-in one", () => {
-    render(
-      <StudioRouterLine
-        router={{
-          said: 'the workspace ops chooses "x/y" as its router, which is neither built-in nor an extension\'s id, so its chats are routed by the built-in router.',
-          problem: true,
-          extension: null,
-          chats: [],
-          grade: null,
-        }}
-      />,
-    );
-    const line = screen.getByTestId("skill-studio-router");
-    expect(line.className).toContain("use-skill-over");
-    expect(line.textContent).toMatch(/routed by the built-in router/);
   });
 });

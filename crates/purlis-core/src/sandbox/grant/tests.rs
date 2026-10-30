@@ -939,3 +939,104 @@ fn a_claude_code_chat_is_given_nothing_for_a_grant_to_serve_on_a_port() {
     assert!(confines.widened.listens.is_empty());
     assert!(confines.reach.withdrew(port));
 }
+
+// ---- the app's state in the data home (#3718) ------------------------------------------------
+
+#[test]
+fn the_app_state_and_the_data_home_that_holds_it_are_never_a_grant() {
+    let mut m = Disk::new();
+    let data = m.at.join("home/.local/share/purlis");
+    std::fs::create_dir_all(data.join("app-state/0123456789abcdef")).expect("made");
+    m.denied.extend(crate::sandbox::app_state_held(&data));
+    let here = m.place();
+    for typed in [
+        "home/.local/share/purlis/app-state",
+        "home/.local/share/purlis/app-state/0123456789abcdef",
+        "home/.local/share/purlis/app-state/0123456789abcdef/skill-tries",
+        "home/.local/share/purlis",
+    ] {
+        match write(&m.path(typed), &here) {
+            Err(Refused::Never(why)) => {
+                assert!(why.contains("purlis keeps its own state"), "{typed}: {why}");
+            }
+            other => panic!("{typed}: {other:?}"),
+        }
+    }
+    // A folder of the data home beside it is judged as any other.
+    assert!(!matches!(
+        write(&m.path("home/.local/share/purlis/other"), &here),
+        Err(Refused::Never(_))
+    ));
+}
+
+#[test]
+fn a_grant_above_the_data_home_leaves_the_app_state_denied_to_writes() {
+    let project = project();
+    // A data home below a folder a chat may be granted: the grant holds it, and the app state.
+    let above = project.root.join("workspaces/beta/out");
+    let data = above.join("data");
+    let named_data = data.display().to_string();
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[("PURLIS_DATA_HOME", named_data.as_str())]),
+        home: Some(project.home.clone()),
+        os: Os::MacOs,
+    };
+    assert_eq!(
+        crate::sandbox::Homes::charter_data(&machine),
+        Some(data.clone())
+    );
+    let app_state = data.join(crate::appstate::DIR);
+    let mut chat = Grants::default();
+    chat.add(&What::Write(above.clone()));
+    super::TEST_HARNESS_TEMP.with(|roots| roots.set(&[]));
+    let plane = Plane::of(Some(ON));
+    let policy = plane.said().policy.expect("on");
+    let compiled = Compiled::granted(&policy, &plane, &project.root, &machine, None, &chat);
+
+    // Claude Code holds a denial over an allow.
+    let settings = claude::settings(&compiled).expect("compiles");
+    assert_eq!(
+        settings.sandbox["filesystem"]["allowWrite"],
+        serde_json::json!([above.display().to_string()])
+    );
+    let named = crate::sandbox::real(&app_state).display().to_string();
+    assert!(
+        settings.sandbox["filesystem"]["denyWrite"]
+            .as_array()
+            .is_some_and(|all| all.iter().any(|one| one == named.as_str())),
+        "{named}: {}",
+        settings.sandbox["filesystem"]["denyWrite"]
+    );
+
+    // A wrapped chat: every denial is written after the grant, and Seatbelt takes the last rule.
+    let cwd = project.root.join("workspaces/alpha");
+    let tmp = project.home.join("tmp");
+    let quoted = format!("(subpath \"{}\")", above.display());
+    let opencode = opencode::profile(
+        &opencode::wrap(&compiled).expect("wraps"),
+        &cwd,
+        &tmp,
+        &[4000],
+        None,
+    )
+    .expect("a profile");
+    let codex = codex::profile(
+        &codex::wrap(&compiled).expect("wraps"),
+        &cwd,
+        &tmp,
+        &[4000],
+        None,
+    )
+    .expect("a profile");
+    for profile in [opencode, codex] {
+        let allowed = profile.find(&quoted).expect("the grant is written");
+        for denial in crate::sandbox::app_state_held(&data) {
+            for rule in crate::sandbox::seatbelt::denial_rules(&denial).expect("rules") {
+                let at = profile
+                    .find(&rule)
+                    .unwrap_or_else(|| panic!("{rule} missing"));
+                assert!(allowed < at, "{rule} comes before the grant");
+            }
+        }
+    }
+}

@@ -118,6 +118,35 @@ describe("Needs you", () => {
     );
   });
 
+  it("accepts the project's folders it lists, as one item", async () => {
+    const asked = core(
+      studio([DEPLOY], {
+        needs: [
+          need("review:project-folders", {
+            title: "The project's folders",
+            tag: null,
+            reason:
+              "Purlis can't confirm which of this project's folders you accepted before. It accepts workspaces/ops, personas/steward.",
+            fix: { kind: "accept-folders", folders: ["workspaces/ops", "personas/steward"] },
+            fix_label: "Accept the folders",
+            fix_does: "Their skills reach chats from then on.",
+          }),
+        ],
+      }),
+    );
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "needs");
+
+    await user.click(await screen.findByRole("button", { name: "Accept the folders" }));
+
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_levels_confirm")?.args).toEqual({
+        plane: "p",
+        folders: ["workspaces/ops", "personas/steward"],
+      }),
+    );
+  });
+
   it("renames a clash's copy from its page, with Rename open", async () => {
     core(studio([DEPLOY], { needs: [NEEDS[1]] }));
     const user = userEvent.setup();
@@ -132,6 +161,43 @@ describe("Needs you", () => {
     const page = screen.getByTestId("skill-studio-skill");
     expect(within(page).getByRole("tablist", { name: "deploy's sections" })).toBeInTheDocument();
     expect(within(page).getByRole("form", { name: "Rename deploy" })).toBeInTheDocument();
+  });
+
+  it("opens a problem in the plane's own skill on its Text tab, in Edit", async () => {
+    // #3780: the prototype's deploy, whose step names a script it never shipped.
+    const asked = core(
+      studio([DEPLOY], {
+        needs: [
+          need("problem:project:deploy", {
+            kind: "problem",
+            title: "deploy",
+            reason: "It names scripts/tag.sh, which its folder doesn't have.",
+            fix: { kind: "open-text", name: "deploy", level: "project", local: false },
+            fix_label: "Open its text",
+            fix_does: "Opens deploy › Text in Edit.",
+          }),
+        ],
+      }),
+      { skill_text: () => "---\nname: deploy\ndescription: Deploys.\n---\n", skill_lint: () => [] },
+    );
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "needs");
+
+    await user.click(await screen.findByRole("button", { name: "Open its text" }));
+
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_text")?.args).toMatchObject({
+        name: "deploy",
+      }),
+    );
+    const page = await screen.findByTestId("skill-studio-skill");
+    await waitFor(() =>
+      expect(within(page).getByRole("tab", { name: /Text/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
+    expect(await screen.findByRole("button", { name: "Save" })).toBeInTheDocument();
   });
 
   it("moves the skills only some programs read, and says what the move said", async () => {

@@ -426,11 +426,10 @@ fn dir(root: &Path) -> PathBuf {
     root.join("personas").join(super::DIR_NAME).join(DIR)
 }
 
-/// This machine's folder of routers' grades of a library with a copy of its own.
-fn local_dir(root: &Path) -> PathBuf {
-    crate::plane::state_dir(root)
-        .join(super::LOCAL_DIR)
-        .join(DIR)
+/// This machine's folder of routers' grades of a library with a copy of its own, in its app state
+/// of the project (`crate::appstate`): `None` where this machine has no data home.
+fn local_dir(root: &Path) -> Option<PathBuf> {
+    Some(crate::appstate::dir(root)?.join(super::LOCAL_DIR).join(DIR))
 }
 
 /// **Appends `graded` to this month's file** of the project at `root`: the committed record, or,
@@ -445,7 +444,8 @@ pub fn record(
     let row = serde_json::to_value(graded).ok()?;
     let now = chrono::Utc::now();
     if copies.iter().any(|one| is_local(root, &one.level)) {
-        let path = local_dir(root).join(format!("{}.jsonl", now.format("%Y-%m")));
+        crate::appstate::made(root).ok()?;
+        let path = local_dir(root)?.join(format!("{}.jsonl", now.format("%Y-%m")));
         return super::append_local(&path, &row).ok();
     }
     if crate::compat::read_only(root).is_some() {
@@ -475,7 +475,9 @@ fn grades_at(
     now: chrono::DateTime<chrono::Utc>,
 ) -> Vec<RouterGraded> {
     let mut files = record_files(&dir(root));
-    files.extend(record_files(&local_dir(root)));
+    if let Some(local) = local_dir(root) {
+        files.extend(record_files(&local));
+    }
     files.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
     let mut out: Vec<RouterGraded> = Vec::new();
     for file in files {

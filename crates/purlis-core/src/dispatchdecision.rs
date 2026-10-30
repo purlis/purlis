@@ -961,17 +961,31 @@ impl Standing {
 /// told its number and state, and what to do with it instead. **Exact name only**, never a
 /// likeness of words or briefs: a near name is the chat's own choice to make. A task that has
 /// reported or ended under that name is no bar: a new task is a new task.
+///
+/// **A live task is named live** (#3900): where the app says its liveness (its program
+/// running, what it last did, and how it stands across a restart), the refusal says it, so a
+/// task that came back after a restart is not taken for a dead one and dispatched again.
 pub fn same_name_open<'a>(
     name: &str,
-    tasks: impl IntoIterator<Item = (u32, &'a str, Standing)>,
+    tasks: impl IntoIterator<
+        Item = (
+            u32,
+            &'a str,
+            Standing,
+            Option<&'a crate::dispatchliveness::Liveness>,
+        ),
+    >,
 ) -> Option<String> {
-    let (chat, standing) = tasks
+    let (chat, standing, live) = tasks
         .into_iter()
-        .find(|(_, its, standing)| *its == name && standing.in_flight())
-        .map(|(chat, _, standing)| (chat, standing))?;
+        .find(|(_, its, standing, _)| *its == name && standing.in_flight())
+        .map(|(chat, _, standing, live)| (chat, standing, live))?;
     let name = crate::personas::one_line(name);
+    let live = live
+        .map(|live| format!("; {}", live.said()))
+        .unwrap_or_default();
     Some(format!(
-        "this chat already has an open task named '{name}' (chat {chat}, {}; the name is \
+        "this chat already has an open task named '{name}' (chat {chat}, {}{live}; the name is \
          quoted as data), so nothing was dispatched. Wait for its report with `{}`, tell it \
          more with `{}` or cancel it with `{}`, naming chat {chat}. To run a second task on \
          purpose, give it a name of its own.",
@@ -1050,10 +1064,10 @@ mod tests {
     #[test]
     fn a_dispatch_named_as_an_open_task_of_the_chat_is_refused_and_one_of_a_finished_is_not() {
         let tasks = [
-            (12, "check prod", Standing::Reported),
-            (14, "check prod", Standing::Ended),
-            (15, "lint", Standing::WaitingOnOperator),
-            (16, "fix ci", Standing::Running),
+            (12, "check prod", Standing::Reported, None),
+            (14, "check prod", Standing::Ended, None),
+            (15, "lint", Standing::WaitingOnOperator, None),
+            (16, "fix ci", Standing::Running, None),
         ];
         // Finished under that name, and other names: a new task is a new task.
         assert_eq!(same_name_open("check prod", tasks), None);
@@ -1074,6 +1088,26 @@ mod tests {
         let said = same_name_open("lint", tasks).expect("refused");
         assert!(
             said.contains("(chat 15, waiting on the person; the name is quoted as data)"),
+            "{said}"
+        );
+    }
+
+    #[test]
+    fn a_task_that_came_back_after_a_restart_is_named_live_in_the_refusal() {
+        // #3900: the coordinator took a task brought back by the restart for a dead one.
+        let live = crate::dispatchliveness::Liveness {
+            running: true,
+            heard_secs: Some(30),
+            did: Some(crate::dispatchliveness::Did::RanACommand),
+            restart: crate::dispatchliveness::Restart::KeptRunning,
+        };
+        let said = same_name_open("forms", [(77, "forms", Standing::Running, Some(&live))])
+            .expect("refused");
+        assert!(
+            said.contains(
+                "(chat 77, running; its program is running, last ran a command 30s ago, it kept \
+                 running across purlis's restart; the name is quoted as data)"
+            ),
             "{said}"
         );
     }
@@ -1142,6 +1176,7 @@ mod tests {
                 root: None,
                 above: None,
                 by_person: false,
+                long: false,
             }),
             ..chat(persona)
         }
