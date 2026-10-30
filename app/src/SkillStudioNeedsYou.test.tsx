@@ -154,13 +154,19 @@ describe("Needs you", () => {
 
     await user.click(await screen.findByRole("button", { name: "Rename it…" }));
 
-    expect(await screen.findByTestId("skill-studio-doing")).toBeInTheDocument();
-    const path = within(screen.getByRole("list", { name: "Path" })).getAllByRole("listitem");
+    const dialog = await screen.findByRole("dialog", { name: "Rename deploy" });
+    expect(within(dialog).getByLabelText("New name")).toBeInTheDocument();
+    // It lands on the skill's own page (#3682), with the Rename dialog over it (#3685): the
+    // page is behind the modal, so it is read hidden.
+    const path = within(screen.getByRole("list", { name: "Path", hidden: true })).getAllByRole(
+      "listitem",
+      { hidden: true },
+    );
     expect(path[0]).toHaveTextContent("Library");
-    // It lands on the skill's own page (#3682), with Rename open under its header.
     const page = screen.getByTestId("skill-studio-skill");
-    expect(within(page).getByRole("tablist", { name: "deploy's sections" })).toBeInTheDocument();
-    expect(within(page).getByRole("form", { name: "Rename deploy" })).toBeInTheDocument();
+    expect(
+      within(page).getByRole("tablist", { name: "deploy's sections", hidden: true }),
+    ).toBeInTheDocument();
   });
 
   it("opens a problem in the plane's own skill on its Text tab, in Edit", async () => {

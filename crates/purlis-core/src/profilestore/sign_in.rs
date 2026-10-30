@@ -77,6 +77,14 @@ pub trait Look {
     fn status(&self, program: &str, args: &[&str], env: &[(String, String)]) -> Option<i32>;
     /// Whether something is at `path`, by its name, without opening it.
     fn is_there(&self, path: &Path) -> bool;
+    /// **The program of the version `record` is pinned to, where this machine installs it**
+    /// (#3446, #4007): on a runner keeping it for its desktop with a pin, that version once it
+    /// is installed, which a status is asked of in place of a harness on `PATH`. `None` for
+    /// every other profile and machine, and while the version is still being fetched.
+    fn pinned_program(&self, record: &MachineProfile) -> Option<PathBuf> {
+        let _ = record;
+        None
+    }
 }
 
 /// This machine: programs run for real, and names looked for on its disk.
@@ -112,6 +120,10 @@ impl Look for ThisMachine {
 
     fn is_there(&self, path: &Path) -> bool {
         std::fs::symlink_metadata(path).is_ok()
+    }
+
+    fn pinned_program(&self, record: &MachineProfile) -> Option<PathBuf> {
+        super::installs::for_a_look(record)
     }
 }
 
@@ -507,9 +519,15 @@ fn login_for(profile: &Profile, program: &str, provider: Option<&str>) -> Result
 }
 
 /// **The sign-in of `record`**, one of this machine's profiles: its harness's own, in its
-/// folder. Refused for a folder adopted in place, which is signed in by the person's own
-/// sign-in, and for a profile whose harness purlis cannot find.
-pub fn login_of(record: &MachineProfile, provider: Option<&str>) -> Result<Login, String> {
+/// folder, run by `pinned` where this machine installed the version it is pinned to (a runner's,
+/// [`super::installs::on_this_runner`], #4007), else by the harness found on `PATH`. Refused for
+/// a folder adopted in place, which is signed in by the person's own sign-in, and for a profile
+/// whose harness purlis cannot find.
+pub fn login_of(
+    record: &MachineProfile,
+    provider: Option<&str>,
+    pinned: Option<&Path>,
+) -> Result<Login, String> {
     let name = crate::shown::short(&record.name);
     if record.adopted.is_some() && record.kept_for.is_none() {
         return Err(format!(
@@ -524,13 +542,18 @@ pub fn login_of(record: &MachineProfile, provider: Option<&str>) -> Result<Login
         .ok_or_else(|| {
             format!("purlis cannot sign the profile '{name}' in: it runs no harness purlis ships.")
         })?;
-    let home = crate::profiles::home().unwrap_or_default();
-    let argv = crate::profiles::expanded_command(&profile, &home);
-    let program = crate::programs::resolve_argv(&argv)
-        .map_err(|gone| format!("{} Nothing was signed in.", gone.said()))?
-        .into_iter()
-        .next()
-        .ok_or_else(|| format!("the profile '{name}' names no program."))?;
+    let program = match pinned {
+        Some(program) => program.display().to_string(),
+        None => {
+            let home = crate::profiles::home().unwrap_or_default();
+            let argv = crate::profiles::expanded_command(&profile, &home);
+            crate::programs::resolve_argv(&argv)
+                .map_err(|gone| format!("{} Nothing was signed in.", gone.said()))?
+                .into_iter()
+                .next()
+                .ok_or_else(|| format!("the profile '{name}' names no program."))?
+        }
+    };
     login_for(&profile, &program, provider)
 }
 
@@ -559,7 +582,21 @@ pub fn profile_of(record: &MachineProfile) -> Option<Profile> {
 /// the window and `purlis profile sign-in --check` say. `None` for a folder adopted in place,
 /// which is signed in by the person's own sign-in and never asked.
 pub fn standing_of(record: &MachineProfile, look: &dyn Look) -> Option<Standing> {
-    profile_of(record).map(|profile| standing_remembered(&profile, look))
+    asked_of(record, look).map(|profile| standing_remembered(&profile, look))
+}
+
+/// **The profile whether `record` is signed in is asked of, through `look`**: [`profile_of`],
+/// its program the pinned version `look` installed for it where it has one (#4007).
+pub(super) fn asked_of(record: &MachineProfile, look: &dyn Look) -> Option<Profile> {
+    let mut profile = profile_of(record)?;
+    if let Some(program) = look.pinned_program(record) {
+        let program = program.display().to_string();
+        match profile.command.first_mut() {
+            Some(first) => *first = program,
+            None => profile.command.push(program),
+        }
+    }
+    Some(profile)
 }
 
 #[cfg(test)]

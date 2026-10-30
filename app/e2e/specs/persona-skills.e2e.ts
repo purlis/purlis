@@ -102,7 +102,7 @@ describe("a persona's skills", function () {
     expect(readFileSync(file, "utf8")).toMatch(new RegExp(`skills: ${NAMED}, ${ADDED}`));
 
     await studioSkill(ADDED);
-    const remove = await $(`${studio} button[aria-label="Remove ${ADDED} from ${PERSONA}"]`);
+    const remove = await $(`${studio} button[aria-label="Take ${ADDED} out of ${PERSONA}"]`);
     await remove.waitForClickable({ timeout: 20_000 });
     await remove.click();
     await browser.waitUntil(async () => !readFileSync(file, "utf8").includes(ADDED), {

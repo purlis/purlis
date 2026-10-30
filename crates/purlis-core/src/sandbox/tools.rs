@@ -80,6 +80,7 @@ use crate::settings::Refusal;
 
 pub mod args;
 pub mod login;
+pub mod mint;
 
 /// The key in a persona's table that holds its tools.
 pub const KEY: &str = "tools";
@@ -88,8 +89,9 @@ pub const KEY: &str = "tools";
 pub const VALUES_KEY: &str = "values";
 
 /// The keys one tool's table holds: `as` and `key`, or `values`, for a program's; `browser` and
-/// `user` for a browser login's ([`login`]); `args` for any program's ([`args`]).
-const TOOL_KEYS: [&str; 7] = [
+/// `user` for a browser login's ([`login`]); `args` for any program's ([`args`]); `mint` and
+/// `app` for a GitHub App's token's ([`mint`]).
+const TOOL_KEYS: [&str; 9] = [
     "vault",
     "as",
     "key",
@@ -97,6 +99,8 @@ const TOOL_KEYS: [&str; 7] = [
     login::KEY,
     login::USER_KEY,
     args::KEY,
+    mint::KEY,
+    mint::APP_KEY,
 ];
 
 /// The keys one of a tool's `values` holds.
@@ -169,6 +173,9 @@ pub struct Tool {
     /// **The arguments its program runs with** ([`args`], #3421): each a pattern for one whole
     /// argument. None runs it with any; the built-in refusals apply either way.
     pub args: Option<Vec<String>>,
+    /// Where the tool's token is minted by a GitHub App ([`mint`], #2053): the App. Its key is
+    /// the tool's one value, handed in [`mint::VAR`] as the token minted from it.
+    pub mint: Option<mint::Mint>,
 }
 
 impl Tool {
@@ -184,6 +191,7 @@ impl Tool {
             }],
             login: None,
             args: None,
+            mint: None,
         }
     }
 
@@ -242,6 +250,12 @@ impl Tool {
                 login.url,
                 self.key_in(login::PASS_VAR).unwrap_or_default(),
                 self.vault
+            );
+        }
+        if let (Some(mint), [one]) = (&self.mint, self.values.as_slice()) {
+            return format!(
+                "{} with a token GitHub App {} mints from {:?} in vault {} as {} env",
+                self.name, mint.app, one.key, self.vault, one.var
             );
         }
         if let [one] = self.values.as_slice() {
@@ -775,9 +789,16 @@ pub fn keyed(
             continue;
         }
         if let Some(values) = tool.get(VALUES_KEY) {
-            if let Some(single) = ["key", "as", login::KEY, login::USER_KEY]
-                .into_iter()
-                .find(|key| tool.contains_key(*key))
+            if let Some(single) = [
+                "key",
+                "as",
+                login::KEY,
+                login::USER_KEY,
+                mint::KEY,
+                mint::APP_KEY,
+            ]
+            .into_iter()
+            .find(|key| tool.contains_key(*key))
             {
                 fault(format!(
                     "it has both values and {single} — a tool names its values either with key \
@@ -792,6 +813,7 @@ pub fn keyed(
                     values,
                     login: None,
                     args: None,
+                    mint: None,
                 }),
                 Err(why) => fault(why),
             }
@@ -801,6 +823,17 @@ pub fn keyed(
             fault("it names no key of the vault".to_owned());
             continue;
         };
+        if tool.contains_key(mint::KEY) || tool.contains_key(mint::APP_KEY) {
+            // The token minted from the key is handed in GH_TOKEN, never the key (#2053).
+            match mint::of(tool, &text) {
+                Ok(mint) => tools.push(Tool {
+                    mint: Some(mint),
+                    ..Tool::one(name, &vault, mint::VAR, Handed::Env, &key)
+                }),
+                Err(why) => fault(why),
+            }
+            continue;
+        }
         if tool.contains_key(login::KEY) {
             match login_of(tool, &text) {
                 // Its keys are handed as any tool's values are: the password's file, then the
@@ -823,6 +856,7 @@ pub fn keyed(
                         values,
                         login: Some(login),
                         args: None,
+                        mint: None,
                     });
                 }
                 Err(why) => fault(why),
@@ -1740,3 +1774,6 @@ mod login_tests;
 
 #[cfg(test)]
 mod args_tests;
+
+#[cfg(test)]
+mod mint_tests;

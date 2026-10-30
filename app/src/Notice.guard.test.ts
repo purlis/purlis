@@ -448,6 +448,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "a copy the clipboard refused, said beside the read-only screen it was asked of (#3676)",
   },
   "SearchTab.tsx": { count: 1, why: "the search's progress, a live value" },
+  "SkillChangeDialogs.tsx": {
+    count: 2,
+    why:
+      "Rename, Move and Delete's checks and the core's refusals (#3685), beside the fields the " +
+      "person is still filling, in the dialog that stays open",
+  },
   "SkillCopy.tsx": {
     count: 3,
     why:

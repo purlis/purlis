@@ -38,14 +38,15 @@ export function keep(
   let kept = keptBefore;
   let next = first;
   if (said === undefined || passing(said) || kept.some((one) => one.said === said)) return kept;
-  if (said.progress === true && said.track !== undefined && dropped.has(trackOf(said, plane)))
-    return kept;
-  // The line said just before it, which no render may have drawn, is kept first (#3649).
+  // The line said just before it, which no render may have drawn, is kept first (#3649), even
+  // where the line that brings it is on a track put away (#3898): the two are separate notices.
   const after = said.after;
   if (after !== undefined && !passing(after) && !kept.some((one) => one.said === after)) {
     kept = [{ id: next, said: after, plane }, ...kept];
     next += 1;
   }
+  if (said.progress === true && said.track !== undefined && dropped.has(trackOf(said, plane)))
+    return kept.slice(0, KEPT_RESULTS);
   // A line on a track takes the place of the one kept before it there, keeping its id and its
   // place in the order: one notice that changes, never a second (#3649).
   const before =
