@@ -23,6 +23,11 @@
 //! ([`of_its_own_harness`]). Unlike [`crate::dispatchunattended::Mark`] this goes both ways:
 //! the person may switch a chat out of auto, and its next task then asks.
 //!
+//! **And only from its armed hook** (#3822): a report's mode is believed where the line carries
+//! the key the app armed the chat's hook with ([`crate::hookwire::armed`]); any other line's
+//! mode reads as [`Reported::Asks`], so a line that cannot prove where it came from may lower
+//! a task's level and never raise it.
+//!
 //! **A profile's own mode wins**, as decision 20 treats profiles: where its command names
 //! `--permission-mode` (`dontAsk` included, which is stricter than the default), nothing is
 //! added. A profile that switches the prompts off is still refused for a task

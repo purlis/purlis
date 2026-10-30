@@ -293,6 +293,19 @@ impl HarnessAdapter for Codex {
         true
     }
 
+    /// **Nothing** (#3787, #3822): Codex names `bypassPermissions` for every chat and documents no classifier-backed mode, so no word of
+    /// its is read as a mode. Nor could a report of its prove one: its hooks run inside the
+    /// wrap, which denies them the spool their armed key is in ([`crate::hookwire::armed`]), so
+    /// a line of theirs proves no more than the chat's token, and any mode it named would read
+    /// as asking.
+    fn reported_mode(
+        &self,
+        permission_mode: Option<&str>,
+    ) -> Option<crate::dispatchmode::Reported> {
+        let _ = permission_mode;
+        None
+    }
+
     /// No grade runs here until purlis can hold its chats to the grade's limits and read their
     /// spend on this harness (#3272). Its plugins could be turned off for one chat (`-c
     /// plugins."<id>".enabled=false`), so that is not the reason.

@@ -214,6 +214,19 @@ impl HarnessAdapter for Opencode {
         true
     }
 
+    /// **Nothing** (#3787, #3822): opencode documents no classifier-backed mode, so no word of
+    /// its is read as a mode. Nor could a report of its prove one: its hooks run inside the
+    /// wrap, which denies them the spool their armed key is in ([`crate::hookwire::armed`]), so
+    /// a line of theirs proves no more than the chat's token, and any mode it named would read
+    /// as asking.
+    fn reported_mode(
+        &self,
+        permission_mode: Option<&str>,
+    ) -> Option<crate::dispatchmode::Reported> {
+        let _ = permission_mode;
+        None
+    }
+
     /// Never, by the operator's ruling P8 of 2026-10-27 (#3468): opencode's plugins are code it
     /// loads into its own process, and it has no switch that turns one off for a single chat,
     /// so a grade's chat here would run with the person's plugins and not measure the skill
