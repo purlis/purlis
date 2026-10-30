@@ -19,7 +19,9 @@
 //!   directions.
 //! - `workspace.json`'s `name`, and the first line of the four files charter scaffolded with
 //!   the name in it (`workspace.md`, `memory/MEMORY.md`, `todos/MEMORY.md`, `refs/README.md`),
-//!   when that line is still the one charter wrote.
+//!   when that line is still the one charter wrote; and the `-w <name>` line purlis wrote
+//!   below it in `workspace.md`'s Log and `memory/MEMORY.md`'s header (#3965), where that line
+//!   is still exactly purlis's. A person's own lines are never rewritten.
 //! - the LIVE block in the plane's `.gitignore`.
 //! - the pointers that select a workspace: `workspaces/.default`, every session's
 //!   `.charter/sessions/<sid>.workspace` and `.lock`, every terminal's
@@ -934,8 +936,11 @@ fn rename_manifest(root: &Path, new: &str) -> std::io::Result<()> {
 /// A scaffolded file's first line, for a workspace's name.
 type Heading = fn(&str) -> String;
 
-/// The first line of each file charter scaffolded with the workspace's name in it, where it is
-/// still the line charter wrote. A heading the operator rewrote is theirs and is left.
+/// The first line of each file charter scaffolded with the workspace's name in it, and the
+/// line below it where purlis's template names the workspace for a command to run (`-w <name>`,
+/// #3965), each where it is still the line purlis wrote. A heading the operator rewrote is
+/// theirs and is left, and so is every other line: a person's own words that spell the old
+/// name are never rewritten.
 fn rename_headings(root: &Path, old: &str, new: &str) -> Vec<String> {
     let dir = root.join("workspaces").join(new);
     let headings: [(&str, Heading); 4] = [
@@ -944,6 +949,8 @@ fn rename_headings(root: &Path, old: &str, new: &str) -> Vec<String> {
         ("todos/MEMORY.md", |n| format!("# Todos — workspace `{n}`")),
         ("refs/README.md", |n| format!("# {n} — task references")),
     ];
+    let was = crate::workspaces::lines_naming(root, old);
+    let now = crate::workspaces::lines_naming(root, new);
     let mut left = Vec::new();
     for (rel, heading) in headings {
         let path = dir.join(rel);
@@ -953,11 +960,14 @@ fn rename_headings(root: &Path, old: &str, new: &str) -> Vec<String> {
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
-        let (first, rest) = text.split_once('\n').unwrap_or((&text, ""));
-        if first != heading(old) {
+        let named = was
+            .iter()
+            .zip(&now)
+            .find(|((file, _), _)| *file == rel)
+            .map(|((_, was), (_, now))| (was.as_str(), now.as_str()));
+        let Some(next) = renamed_text(&text, &heading(old), &heading(new), named) else {
             continue;
-        }
-        let next = format!("{}\n{rest}", heading(new));
+        };
         if let Err(why) =
             crate::rewrite::replace(root, &path, next.as_bytes(), crate::rewrite::Mode::Kept)
         {
@@ -967,6 +977,30 @@ fn rename_headings(root: &Path, old: &str, new: &str) -> Vec<String> {
         }
     }
     left
+}
+
+/// `text` with its first line `was_heading` made `new_heading`, and the first whole line equal
+/// to `named`'s old line made its new one: only the lines purlis wrote, each only while it is
+/// exactly what purlis wrote. `None` when neither is there, so nothing is written.
+fn renamed_text(
+    text: &str,
+    was_heading: &str,
+    new_heading: &str,
+    named: Option<(&str, &str)>,
+) -> Option<String> {
+    let mut lines: Vec<&str> = text.split('\n').collect();
+    let mut changed = false;
+    if lines.first() == Some(&was_heading) {
+        lines[0] = new_heading;
+        changed = true;
+    }
+    if let Some((was, now)) = named
+        && let Some(line) = lines.iter_mut().skip(1).find(|line| **line == was)
+    {
+        *line = now;
+        changed = true;
+    }
+    changed.then(|| lines.join("\n"))
 }
 
 /// Every pointer that selects `old`, pointed at `new`. Answers what could not be.

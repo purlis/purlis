@@ -48,6 +48,25 @@ pub(crate) fn ws_memory_header(plane: &Path, name: &str) -> String {
     in_plane(WS_MEMORY_HEADER, plane).replace("{name}", name)
 }
 
+/// The lines below the heading where purlis's own templates name the workspace for a command
+/// to run (`-w {name}`, #3880): `workspace.md`'s Log line and `memory/MEMORY.md`'s header, as
+/// the plane at `plane` writes them for `name`, each beside the file it is in. Taken from the
+/// templates themselves, so `workspace rename` rewrites exactly the line purlis wrote and
+/// nothing a person did (#3965).
+pub(crate) fn lines_naming(plane: &Path, name: &str) -> [(&'static str, String); 2] {
+    let line = |template: &str| {
+        let line = template
+            .lines()
+            .find(|line| line.contains("-w {name}"))
+            .expect("the template names the workspace with -w");
+        in_plane(line, plane).replace("{name}", name)
+    };
+    [
+        ("workspace.md", line(CHARTER_TEMPLATE)),
+        ("memory/MEMORY.md", line(WS_MEMORY_HEADER)),
+    ]
+}
+
 /// The header `todos/MEMORY.md` is created with, `{name}` to fill.
 pub(crate) const TODOS_HEADER: &str = "# Todos — workspace `{name}`\n\nOne line per todo; each links a file holding one thing this task still means to do.\nOpen or done — and done removes it, leaving its trace in the journal instead.\n";
 

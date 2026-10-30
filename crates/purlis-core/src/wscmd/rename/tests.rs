@@ -1066,3 +1066,37 @@ fn a_workspace_renamed_back_says_its_todo_links_stay_under_the_name_it_left() {
     assert!(folded.cycles().is_empty());
     assert_eq!(folded.chats_on(&todo), [chat]);
 }
+
+/// #3965: the `-w <name>` purlis wrote into `memory/MEMORY.md`'s header and `workspace.md`'s
+/// Log line names the new workspace, so a chat that follows it reaches one. A line a person
+/// wrote that spells the old name is theirs and is kept, word for word.
+#[test]
+fn the_name_purlis_wrote_into_the_memory_header_and_log_line_follows_and_a_persons_line_is_kept() {
+    let plane = a_plane();
+    let ws = plane.root.join("workspaces/alpha");
+    let theirs = "- I used to run `charter workspace remember -w alpha \"…\"` by hand.\n";
+    for rel in ["workspace.md", "memory/MEMORY.md"] {
+        let path = ws.join(rel);
+        let mut text = read(&path);
+        text.push_str(theirs);
+        std::fs::write(&path, text).unwrap();
+    }
+
+    assert_eq!(run(&plane, "alpha", "beta").0, 0);
+
+    let ws = plane.root.join("workspaces/beta");
+    let memory = read(&ws.join("memory/MEMORY.md"));
+    assert!(
+        memory.contains("or `charter workspace remember -w beta \"…\"`, search with"),
+        "{memory}"
+    );
+    let charter = read(&ws.join("workspace.md"));
+    assert!(
+        charter.contains("\n(append with `charter workspace note -w beta \"…\"`).\n"),
+        "{charter}"
+    );
+    for text in [&memory, &charter] {
+        assert!(text.ends_with(theirs), "{text}");
+        assert_eq!(text.matches("-w alpha").count(), 1, "{text}");
+    }
+}
