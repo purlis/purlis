@@ -11,8 +11,8 @@
 //! device: no sign-in is copied between devices.
 //!
 //! **Only a runner purlis can show is the person's own is sent a profile or signed in**
-//! ([`owned`], the check browser logins and tools use, D-2050-4): until a pool can be marked
-//! owned (#2561), a Docker pool whose engine is a local socket on this machine. To any other
+//! ([`owned`], D-2050-4): a Docker pool whose engine is a local socket on this machine; a cluster
+//! pool's mark (#4071) is for values and tokens alone. To any other
 //! pool nothing is sent, and its chats start on the profiles its runner has of its own; its
 //! profiles are not offered for sign-in. A runner of a purlis before 1.43 is sent nothing either.
 //!
@@ -160,8 +160,9 @@ fn keep_on_as(
     if owned.is_err() {
         return Ok(None);
     }
-    // A cluster pool's runner is a team's cluster's, never shown to be the person's own: no
-    // profile of this machine's is sent there, and its chats start on its own (#3292).
+    // A cluster pool's runner is a team's cluster's: its mark (#4071) is for values and tokens
+    // alone, so no profile of this machine's is sent there, and its chats start on its own
+    // (#3292).
     if purlis_core::runners::cluster_runner_for(config, pool)
         .map_err(|why| why.to_string())?
         .is_some()
@@ -189,7 +190,8 @@ pub struct PoolProfileRow {
     /// The harness as people call it: `Claude Code`.
     pub harness: String,
     /// Whether its harness says it is signed in on the runner: `signed-in`, `signed-out` or
-    /// `cannot-tell`. Null where it is not kept there.
+    /// `cannot-tell`, or `fetching` while the runner fetches the version it pins (#4008), which
+    /// the window asks again after. Null where it is not kept there.
     pub standing: Option<String>,
     /// Why it is not kept on the runner, in words, where it is not.
     pub not_kept: Option<String>,
@@ -521,6 +523,8 @@ pub fn sign_in_line(pool: &str, name: &str, provider: Option<&str>) -> Result<St
 pub enum PoolSignInStep {
     /// Open this page in the browser here: the harness vendor's own.
     Open { url: String },
+    /// Show this code to enter on the vendor's own page `url`, before that page is opened.
+    Device { url: String, code: String },
     /// Ask for the code the page shows.
     Code,
     /// The harness refused the code, in its words.
@@ -541,6 +545,7 @@ impl From<driven::Event> for PoolSignInStep {
     fn from(event: driven::Event) -> Self {
         match event {
             driven::Event::Open { url } => Self::Open { url },
+            driven::Event::DeviceCode { url, code } => Self::Device { url, code },
             driven::Event::AskCode => Self::Code,
             driven::Event::Refused { said } => Self::Refused { said },
             driven::Event::Checking => Self::Checking,
@@ -607,7 +612,12 @@ pub async fn pool_sign_in_start(
                 _ => Standing::CannotTell,
             }
         };
-        let driving = Arc::new(driven::drive(&login, &record.harness, check)?);
+        let driving = Arc::new(driven::drive_with(
+            &login,
+            &record.harness,
+            provider.as_deref(),
+            check,
+        )?);
         // One of the same profile on the same pool is let go and ended, after the lock.
         let before: Vec<SignIn> = {
             let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -769,6 +779,7 @@ fn watching(pool: &str, name: &str, told: impl FnOnce()) {
     let ends = std::time::Instant::now() + WATCHED_FOR;
     while std::time::Instant::now() < ends {
         std::thread::sleep(WATCHED_EVERY);
+        // A runner still fetching its harness cannot tell yet, so it is asked again (#4008).
         if matches!(
             keep_on(&config, pool, &kept),
             Ok(Some(Standing::SignedIn | Standing::CannotTell))

@@ -1258,6 +1258,7 @@ fn stated(harness: Harness, plane: &Path, cwd: &Path, machine: &Machine) -> Stat
         )
         .expect("starts");
     match applied.form() {
+        Form::ClaudeWrapped(_) => unreachable!("wrapped only on a runner"),
         Form::ClaudeCode(settings) => {
             let list = |key: &str| -> Vec<String> {
                 settings.sandbox["filesystem"][key]

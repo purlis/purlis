@@ -5,7 +5,7 @@ import { useContext, useEffect, useState } from "react";
 import { commands, type PlaneId, type SkillsMissing } from "./bindings";
 import { counted } from "./dispatches";
 import { Notice, NoticeOf } from "./Notice";
-import { SHOW_IN_SKILLS, askChatSkills } from "./chatSkillsAsk";
+import { SHOW_IN_SKILLS, askChatSkills, skillsMissingPutAway } from "./chatSkillsAsk";
 
 /**
  * **The skills a chat started without, on its tab** (SK-5, #2768; SK-8, #2771; spec decision
@@ -17,7 +17,7 @@ import { SHOW_IN_SKILLS, askChatSkills } from "./chatSkillsAsk";
  *
  * - **Show in Skills** (S8, #3694): the sidebar Skills view on this chat, where what it started
  *   without sits in Needs you with its fix;
- * - **Dismiss**: puts it away for this run of the chat.
+ * - **Dismiss**: puts it away for this run of the chat, off the Skills chip on its pane too.
  */
 export function SkillsMissingNotice({ plane, session }: { plane: PlaneId; session: number }) {
   const [said, setSaid] = useState<SkillsMissing | null>(null);
@@ -38,6 +38,7 @@ export function SkillsMissingNotice({ plane, session }: { plane: PlaneId; sessio
   const chat = offScreen ? "That chat" : "This chat";
   const putAway = () => {
     setSaid(null);
+    skillsMissingPutAway(plane, session);
     void commands.putAwayChatSkillsMissing(plane, session).catch(() => {});
   };
   return (

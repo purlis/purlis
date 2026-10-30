@@ -10,6 +10,8 @@ use std::time::Duration;
 use super::*;
 use purlis_core::poollogins::Unbound;
 
+use crate::host::MadeHere;
+
 /// Moves whose every stage is heard on the channel answered.
 fn heard() -> (Arc<Moves>, mpsc::Receiver<ChatMove>) {
     let moves = Arc::new(Moves::default());
@@ -170,18 +172,84 @@ fn work_comes_back_only_from_a_runner_shown_to_be_the_persons_own_and_says_why_n
 
 #[test]
 fn a_tab_names_what_came_back_that_a_local_tool_runs_and_nothing_when_none_did() {
-    assert_eq!(came_back_said(Some("builds"), &[]), None);
+    assert_eq!(came_back_said(Some("builds"), &CameBack::default()), None);
     let said = came_back_said(
         Some("builds"),
-        &[
-            "workspaces/app/web/.envrc".into(),
-            "workspaces/app/web/package.json".into(),
-        ],
+        &CameBack {
+            watch: vec![
+                "workspaces/app/web/.envrc".into(),
+                "workspaces/app/web/package.json".into(),
+            ],
+            made: Vec::new(),
+        },
     )
     .unwrap();
     assert!(said.contains("pool builds"), "{said}");
     assert!(
         said.contains("workspaces/app/web/.envrc, workspaces/app/web/package.json"),
+        "{said}"
+    );
+    assert!(!said.contains("made there"), "{said}");
+}
+
+/// A clone the runner's chat made is said to be whole from the runner (#3990): every file of
+/// it was made there, not only the ones named.
+#[test]
+fn a_tab_says_a_clone_made_fresh_is_whole_from_the_runner() {
+    let said = came_back_said(
+        Some("builds"),
+        &CameBack {
+            watch: vec!["workspaces/app/api/CLAUDE.md".into()],
+            made: vec![MadeHere {
+                clone: "workspaces/app/api".into(),
+                remote: Ok("https://github.com/owner/api.git".into()),
+            }],
+        },
+    )
+    .unwrap();
+    assert!(
+        said.contains("workspaces/app/api was cloned on pool builds"),
+        "{said}"
+    );
+    assert!(said.contains("all of it was made there"), "{said}");
+    assert!(said.contains("workspaces/app/api/CLAUDE.md"), "{said}");
+}
+
+/// The runner's remote is offered with the command that adds it, so the person gives it, and
+/// one with none says why and how to give it one (#3985).
+#[test]
+fn a_tab_offers_the_runners_remote_for_a_fresh_clone_or_says_why_none_is() {
+    let said = came_back_said(
+        None,
+        &CameBack {
+            watch: Vec::new(),
+            made: vec![
+                MadeHere {
+                    clone: "workspaces/app/api".into(),
+                    remote: Ok("git@github.com:owner/api.git".into()),
+                },
+                MadeHere {
+                    clone: "workspaces/app/web".into(),
+                    remote: Err("the runner named no origin a forge reaches for it".into()),
+                },
+            ],
+        },
+    )
+    .unwrap();
+    assert!(
+        said.contains("run `git remote add origin 'git@github.com:owner/api.git'` in it"),
+        "{said}"
+    );
+    assert!(
+        said.contains("workspaces/app/web was cloned on a runner"),
+        "{said}"
+    );
+    assert!(
+        said.contains("It has no remote here (the runner named no origin a forge reaches for it)"),
+        "{said}"
+    );
+    assert!(
+        said.contains("`git remote add origin <URL>` in it"),
         "{said}"
     );
 }

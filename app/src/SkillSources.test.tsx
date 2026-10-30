@@ -9,7 +9,7 @@
  * the foot and hands back exactly what the review answered. What each command does is the core's
  * seam test (`skills/source/tests.rs`).
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
@@ -300,15 +300,41 @@ describe("the Sources page", () => {
   });
 });
 
-describe("what each source's last check found (#3840)", () => {
+/**
+ * **The clock the ages are read against** (#4110), pinned, at moments of the day where a second is
+ * about to turn. While the core answers, the clock moves on, as a read takes time on a runner. An
+ * age the test works out when the answer comes, instead of when the window was drawn, then reads
+ * a day short ("4 days" for 5).
+ */
+const MOMENTS = [
+  "2026-10-30T00:00:00.000Z",
+  "2026-10-30T09:41:59.999Z",
+  "2026-10-30T23:59:59.999Z",
+];
+
+describe.each(MOMENTS)("what each source's last check found (#3840), at %s", (moment) => {
   const nowSecs = () => Math.floor(Date.now() / 1000);
+  /** The moment the window was drawn, which the ages it shows are counted from. */
+  const drawnSecs = Math.floor(Date.parse(moment) / 1000);
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.parse(moment));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  /** The core's read takes a moment: the clock moves on before it answers. */
+  const aMomentLater = () => vi.setSystemTime(Date.now() + 1);
 
   it("says its skills, how many are installed and when it was checked on its row, asking no source", async () => {
     const asked = core({
       answers: {
-        skill_sources_checked: () => [
-          { remote: SOURCE.remote, at: nowSecs() - 3 * 3600 - 30, skills: 14, installed: 2 },
-        ],
+        skill_sources_checked: () => {
+          aMomentLater();
+          return [
+            { remote: SOURCE.remote, at: drawnSecs - 3 * 3600 - 30, skills: 14, installed: 2 },
+          ];
+        },
         // The updates check has not answered: the row does not wait for it.
         skill_updates: () => new Promise(() => undefined),
       },
@@ -343,9 +369,10 @@ describe("what each source's last check found (#3840)", () => {
   it("says when its page read it in the page's lead", async () => {
     core({
       answers: {
-        skill_sources_checked: () => [
-          { remote: SOURCE.remote, at: nowSecs() - 5 * 86_400, skills: 2, installed: 0 },
-        ],
+        skill_sources_checked: () => {
+          aMomentLater();
+          return [{ remote: SOURCE.remote, at: drawnSecs - 5 * 86_400, skills: 2, installed: 0 }];
+        },
         skill_source_browse: () => ({ ...BROWSE, checked: nowSecs() }),
       },
     });
@@ -387,7 +414,6 @@ describe("what each source's last check found (#3840)", () => {
     expect(checkedAgo(7200, now)).toBe("checked 2 hours ago");
     expect(checkedAgo(86_400, now)).toBe("checked 1 day ago");
     expect(checkedAgo(29 * 86_400, now)).toBe("checked 29 days ago");
-    expect(checkedAgo(60 * 86_400, now)).toBe("checked 31 Aug 2026");
     const remote = SOURCE.remote;
     expect(checkedSaid(undefined, now)).toBeNull();
     expect(checkedSaid({ remote, at: null, skills: null, installed: 0 }, now)).toBeNull();
@@ -395,6 +421,40 @@ describe("what each source's last check found (#3840)", () => {
       "1 skill, 0 installed",
     );
   });
+});
+
+/** Runs `run` with the process's time zone set to `zone`, then puts it back. */
+function inZone(zone: string, run: () => void) {
+  const was = process.env.TZ;
+  process.env.TZ = zone;
+  try {
+    run();
+  } finally {
+    if (was === undefined) delete process.env.TZ;
+    else process.env.TZ = was;
+  }
+}
+
+/**
+ * **An age is the same in every time zone; a date is the day where the person is** (#4110). A
+ * check 60 days before 12:00 UTC on 30 Oct was made at 12:00 UTC on 31 Aug, which is already
+ * 1 Sep in Kiritimati (UTC+14).
+ */
+describe("a source's last check in any time zone (#4110)", () => {
+  const now = new Date(Date.UTC(2026, 9, 30, 12));
+
+  it.each([
+    ["UTC", "checked 31 Aug 2026"],
+    ["Pacific/Pago_Pago", "checked 31 Aug 2026"],
+    ["America/Los_Angeles", "checked 31 Aug 2026"],
+    ["Asia/Tokyo", "checked 31 Aug 2026"],
+    ["Pacific/Kiritimati", "checked 1 Sept 2026"],
+  ])("says the same age, and the day it was there, in %s", (zone, date) =>
+    inZone(zone, () => {
+      expect(checkedAgo(5 * 86_400, now)).toBe("checked 5 days ago");
+      expect(checkedAgo(60 * 86_400, now)).toBe(date);
+    }),
+  );
 });
 
 describe("Add source…", () => {

@@ -518,3 +518,70 @@ fn after_a_rename_each_version_from_before_keeps_the_runs_of_its_name() {
     assert_eq!(history.versions[2].subject, "make deploy");
     assert_eq!(history.versions[1].name, "deploy");
 }
+
+#[test]
+fn one_folders_versions_are_split_by_the_name_each_gave() {
+    let version = |tree: &str| Version {
+        commit: "c".repeat(40),
+        at: 0,
+        author: String::new(),
+        subject: String::new(),
+        tree: tree.into(),
+        runs: Totals::default(),
+        grade: None,
+        folder: "skills/bar".into(),
+        name: "bar".into(),
+        before: None,
+    };
+    let mut versions = vec![version("t1"), version("t2"), version("t3"), version("t4")];
+    let said = [
+        Some("bar".to_owned()),
+        Some("foo".to_owned()),
+        None,
+        Some("foo".to_owned()),
+    ];
+
+    let names = named_by("bar", &mut versions, &said);
+
+    assert_eq!(
+        names,
+        [
+            ("bar".to_owned(), vec!["t1".to_owned()]),
+            (
+                "foo".to_owned(),
+                vec!["t2".to_owned(), "t3".to_owned(), "t4".to_owned()]
+            ),
+        ]
+    );
+    let named: Vec<&str> = versions.iter().map(|one| one.name.as_str()).collect();
+    assert_eq!(
+        named,
+        ["bar", "foo", "foo", "foo"],
+        "a version that names none keeps the name after it"
+    );
+
+    // Versions committed before a rename that is not committed yet keep the name they had: the
+    // place's own holds none of them.
+    let mut versions = vec![version("t1"), version("t2")];
+    let said = [Some("foo".to_owned()), None];
+    assert_eq!(
+        named_by("bar", &mut versions, &said),
+        [
+            ("bar".to_owned(), Vec::new()),
+            ("foo".to_owned(), vec!["t1".to_owned(), "t2".to_owned()])
+        ]
+    );
+}
+
+#[test]
+fn a_batch_answer_is_read_object_by_object() {
+    let out = b"aaa blob 5\nhello\nbbb missing\nccc tree 3\nxyz\nddd blob 2\nhi\n";
+    assert_eq!(
+        batch_texts(out),
+        [Some("hello".to_owned()), None, None, Some("hi".to_owned())]
+    );
+    assert_eq!(
+        batch_texts(b"aaa blob 50\nshort\n"),
+        [] as [Option<String>; 0]
+    );
+}

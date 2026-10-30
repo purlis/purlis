@@ -48,6 +48,7 @@ import { PLANE_ROOT, pieceFileView } from "./pieceViews";
 import type { ViewRef } from "./tabs";
 import { useListFilter } from "./ui/list/ListFilter";
 import { chatNeedsOf, chatSetSaid, type ChatNeed, type ChatSkillsSaid } from "./chatSkillNeeds";
+import { SKILLS_MISSING_PUT_AWAY, type ChatSkillsAsk } from "./chatSkillsAsk";
 
 /** The chat in front, as the Skills view reads its set: its session, its name, where it works,
  *  and the persona it runs as. */
@@ -120,11 +121,10 @@ async function readSkills(
   }
   // And what its set says as a whole (S8): its "started without" notice's, and what changed
   // since it started, read with the rest so the view is drawn once.
-  const [base, personas, set, missing, updated] = await Promise.all([
+  const [base, personas, set, updated] = await Promise.all([
     answered(commands.skillStudio(plane, chat.workspace ?? null, chat.persona)),
     answered(commands.skillPersonaSkills(plane, chat.workspace ?? null)),
     answered(commands.chatSkills(plane, chat.session)),
-    answered(commands.chatSkillsMissing(plane, chat.session)),
     updatedSinceStart(),
   ]);
   if ("refused" in base) return base;
@@ -134,7 +134,8 @@ async function readSkills(
   const said: ChatSkillsSaid = {
     budget: "ok" in set ? set.ok.budget : null,
     routing: "ok" in set ? set.ok.routing : null,
-    missing: "ok" in missing ? missing.ok : null,
+    // What it started without, from the same answer the Skills chip reads it from (#3953).
+    missing: "ok" in set ? set.ok.missing : null,
     changed: updated.find((one) => one.session === chat.session && one.skills) ?? null,
   };
   return {
@@ -230,6 +231,23 @@ export function SkillsView({
     // The name is not read by: it only says whose set it is.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plane, place, session, chatWorkspace, persona, harness, changed, instructions, restarted]);
+
+  // Its "started without" notice put away is put away in the core: its card goes as the Skills
+  // chip's warning does (#3953), with no read again.
+  useEffect(() => {
+    if (session === undefined) return;
+    const hear = (event: Event) => {
+      const { detail } = event as CustomEvent<ChatSkillsAsk>;
+      if (detail.plane !== plane || detail.session !== session) return;
+      setRead((was) =>
+        was === undefined || !("rows" in was.read) || was.read.said === undefined
+          ? was
+          : { ...was, read: { ...was.read, said: { ...was.read.said, missing: null } } },
+      );
+    };
+    window.addEventListener(SKILLS_MISSING_PUT_AWAY, hear);
+    return () => window.removeEventListener(SKILLS_MISSING_PUT_AWAY, hear);
+  }, [plane, session]);
 
   const rows = read !== undefined && "rows" in read.read ? read.read.rows : NO_ROWS;
   const nameOf = useCallback((row: ListedSkill) => row.skill.name, []);

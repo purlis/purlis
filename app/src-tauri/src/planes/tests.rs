@@ -5746,6 +5746,79 @@ fn a_chat_is_mid_turn_in_the_workspace_it_works_in_from_its_prompt_to_its_stop()
     assert_eq!(becomes(&[]), Vec::<String>::new(), "the turn ended");
 }
 
+#[cfg(unix)]
+#[test]
+fn a_chat_waiting_on_its_own_work_is_mid_turn_to_a_save_until_that_work_wakes_it_and_ends() {
+    // #3887: its monitors and background shells may be writing the clone; the board says
+    // `waiting`, and a save made then would cut them off.
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane(&dir.path().join("plane"));
+    let alpha = root.join("workspaces/alpha");
+    std::fs::create_dir_all(&alpha).unwrap();
+    let (planes, _told) = planes_telling();
+    let plane = planes.open(&root);
+    let held = planes.held(&plane).expect("it is held");
+    let session = a_chat_mid_turn_in(&held, &alpha, "alpha.1");
+    let becomes = |wanted: &[&str]| {
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let now = held.mid_turn_in("alpha");
+            if now == wanted || std::time::Instant::now() > until {
+                return now;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    };
+    let stop = |own_work: purlis_core::ownwork::Said| {
+        purlis_core::hookwire::send(
+            held.hooks().socket().expect("the plane is listening"),
+            Some(&held.hooks().token_for(session)),
+            &purlis_core::hookwire::Report {
+                chat: session,
+                event: purlis_core::state::Event::Stop,
+                conversation: purlis_core::hookwire::Conversation::Unknown,
+                pid: None,
+                agent: None,
+                detail: purlis_core::state::Detail {
+                    own_work,
+                    ..purlis_core::state::Detail::default()
+                },
+            },
+        )
+        .expect("the hook reaches the plane");
+    };
+
+    stop(purlis_core::ownwork::Said {
+        monitors: 1,
+        ..purlis_core::ownwork::Said::default()
+    });
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while held.hooks().now(session).state != "waiting" {
+        assert!(
+            std::time::Instant::now() < until,
+            "the stop never reached the board"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(
+        held.mid_turn_in("alpha"),
+        ["alpha.1"],
+        "it waits on its own work"
+    );
+
+    // Its work woke it, and that turn ended with nothing in flight.
+    a_prompt_to(&held, session);
+    while held.hooks().now(session).state != "running" {
+        assert!(
+            std::time::Instant::now() < until,
+            "the prompt never reached the board"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    stop(purlis_core::ownwork::Said::default());
+    assert_eq!(becomes(&[]), Vec::<String>::new(), "the turn ended");
+}
+
 /// git for a fixture, never through the developer's own config or signer.
 fn fixture_git(dir: &Path, args: &[&str]) {
     let mut command = std::process::Command::new("git");

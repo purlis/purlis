@@ -17,6 +17,7 @@
 mod acp;
 #[cfg(unix)]
 mod mcp;
+mod model;
 mod net;
 mod synthetic;
 
@@ -158,6 +159,15 @@ struct Args {
     #[arg(long, requires = "project", value_name = "PORT")]
     grant_port: Option<u16>,
 
+    /// Be a stand-in for the Messages API on a port of this machine's loopback, saying the
+    /// port, whose one tool call runs this command, and nothing else (`model.rs`).
+    #[arg(long, requires = "model_said", value_name = "COMMAND")]
+    model: Option<String>,
+
+    /// With `--model`: the file what its tool call said is written to.
+    #[arg(long, requires = "model", value_name = "FILE")]
+    model_said: Option<PathBuf>,
+
     /// With `--grant-port`: the project, as this machine holds it.
     #[arg(long = "in", requires = "grant_port", value_name = "PROJECT")]
     project: Option<PathBuf>,
@@ -192,6 +202,9 @@ fn run(args: &Args) -> Result<(), String> {
     if let (Some(port), Some(project)) = (args.grant_port, &args.project) {
         return purlis_core::sandbox::local::grant_port(project, port)
             .map_err(|err| format!("cannot grant port {port}: {err}"));
+    }
+    if let (Some(command), Some(said)) = (&args.model, &args.model_said) {
+        return model::serve(command, said);
     }
     if args.serve {
         return net::serve();

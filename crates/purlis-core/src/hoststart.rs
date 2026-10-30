@@ -698,13 +698,7 @@ pub fn compose_ready(
     };
     // The run this start begins, written before its program can send a line (ADR 0066), and the
     // new chat counted towards this machine's opt-out rate (ADR 0067 §7, ruling V78 d).
-    if let Err(why) = begun(
-        starting,
-        &ready,
-        persona.as_deref(),
-        sandbox.is_some(),
-        beside,
-    ) {
+    if let Err(why) = begun(starting, &ready, persona.as_deref(), sandbox, beside) {
         tracing::warn!("purlis: a composed chat's run was not written ({why})");
     }
     // Its routing record, under the run just begun, where its arming asked a router extension
@@ -827,7 +821,7 @@ fn begun(
     starting: &Starting<'_>,
     ready: &crate::start::Ready,
     persona: Option<&str>,
-    sandboxed: bool,
+    sandbox: Option<&crate::sandbox::Applied>,
     beside: &dyn Beside,
 ) -> Result<(), String> {
     use crate::eventlog::{Attributes, Began, Entry, NONE};
@@ -848,13 +842,7 @@ fn begun(
             .map(|sign_in| sign_in.kind.word().to_owned()),
         provider: None,
         model: None,
-        sandbox: if sandboxed {
-            crate::sandbox::Os::this()
-                .backend_word(ready.harness)
-                .map(str::to_owned)
-        } else {
-            none()
-        },
+        sandbox: sandbox.map_or_else(none, |applied| applied.backend_word().map(str::to_owned)),
         conversation: ready.session.as_ref().map(ToString::to_string),
         started_by: Some(starting.started_by.to_owned()),
     };

@@ -1635,8 +1635,9 @@ impl Held {
     /// The chats working in `workspace` that are mid-turn, by the names the window shows —
     /// what a save of that workspace's repos waits for (charter-app#299, ADR 0051).
     ///
-    /// **Mid-turn is the hook state `running`**, and nothing else: charter never reads a
-    /// harness's output to decide (ADR 0018).
+    /// **Mid-turn is the hook state `running`, or a turn that ended waiting on work of its
+    /// own** (#3878, #3887: its monitors and background shells may be writing the clone), and
+    /// nothing else: charter never reads a harness's output to decide (ADR 0018).
     ///
     /// **Who could be writing the clone is wider than who is filed under the workspace.** A
     /// chat counts when it works in the workspace, in a worktree of one of its clones wherever
@@ -1654,9 +1655,7 @@ impl Held {
                     .and_then(|cwd| workspace_working_in(&on_disk, cwd))
                     .is_none_or(|there| there == workspace)
             })
-            .filter(|open| {
-                self.board().glance(open.session).state == purlis_core::state::State::Running
-            })
+            .filter(|open| self.board().glance(open.session).in_its_turn())
             .map(|open| open.label.clone().unwrap_or(open.name))
             .collect()
     }
@@ -3239,6 +3238,17 @@ impl Planes {
                             &block,
                             crate::sandboxing::now_secs(),
                         );
+                    }
+                    // A block that is the chat's own to retry (#3861): its hook told it the
+                    // command to retry with, and the person has nothing to answer, so it is
+                    // kept in the record above and raises no Notice, and the chat waits on
+                    // nobody for it.
+                    let chat_dir = strong
+                        .chats()
+                        .chat_at(block.line.chat)
+                        .and_then(|chat| chat.cwd);
+                    if hooks::its_own_to_retry(&block, chat_dir.as_deref()) {
+                        return;
                     }
                     crate::taskblocks::heard(strong.chats(), &told);
                     // The chat now waits on the person for this Notice, until its turn moves

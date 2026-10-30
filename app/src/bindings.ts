@@ -2958,6 +2958,13 @@ export const commands = {
 	 */
 	addClusterPool: (adding: ClusterPoolAdding) => typedError<ClusterPoolRow, string>(__TAURI_INVOKE("add_cluster_pool", { adding })),
 	/**
+	 *  **The person marks the cluster pool `name` as their own, or takes the mark back** (#4071, the
+	 *  person's ruling of 2026-10-30). The window's alone (`ui::WINDOW_ONLY`): no chat, Pool or
+	 *  operator reaches it. Taken back, every login opted in on the pool is forgotten, so a later
+	 *  mark asks about each again.
+	 */
+	setClusterPoolOwned: (name: string, owned: boolean) => typedError<null, string>(__TAURI_INVOKE("set_cluster_pool_owned", { name, owned })),
+	/**
 	 *  **The profiles chosen for pool `pool`, kept on its runner** (#2049, #4047), as the runner
 	 *  stands with each, and this machine's others Add a profile… offers: the ones its `profiles`
 	 *  names, or, where it names none, the profile a new chat in the open project `plane` gets. What
@@ -2996,6 +3003,8 @@ export const commands = {
 	poolSignInNext: (flow: number) => typedError<
 /**  Open this page in the browser here: the harness vendor's own. */
 { at: "open"; url: string } | 
+/**  Show this code to enter on the vendor's own page `url`, before that page is opened. */
+{ at: "device"; url: string; code: string } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
 /**  The harness refused the code, in its words. */
@@ -5649,6 +5658,12 @@ export type ChatSkills = {
 	 *  built-in router, which is asked nothing.
 	 */
 	routing: SkillRouting | null,
+	/**
+	 *  The skills its persona names that it started without, as its tab's Notice says them
+	 *  (SK-5), until that is put away: null for a chat that has every one. Held from its start,
+	 *  so the chip on its pane says every need of the chat's own with no read of its own (#3953).
+	 */
+	missing: SkillsMissing | null,
 };
 
 /**  One step of one chat's stop, as the window is told it. */
@@ -5821,6 +5836,8 @@ export type ClusterPoolRow = {
 	namespace: string,
 	/**  The cluster operator key pinned as it was added, spelled `ed25519:<64 hex>`. */
 	operator_key: string,
+	/**  Whether the person marked it as their own (#4071). */
+	owned: boolean,
 };
 
 /**  What a palette command does. */
@@ -8686,8 +8703,8 @@ export type Need =
 /**  Its report has nowhere to go: the chat that asked for it, `asker`, has gone. */
 { kind: "report_undelivered"; asker: string } | 
 /**
- *  purlis refused it a git command that would rewrite the project's root from another
- *  commit, so bringing the remote's commits in is the person's, with Update (qw348).
+ *  purlis could not update the project's root for it, for a reason no chat can settle,
+ *  so bringing the remote's commits in is the person's, with Update (qw348, #3877).
  */
 { kind: "root_update_refused" } | 
 /**
@@ -10163,7 +10180,8 @@ export type PoolProfileRow = {
 	harness: string,
 	/**
 	 *  Whether its harness says it is signed in on the runner: `signed-in`, `signed-out` or
-	 *  `cannot-tell`. Null where it is not kept there.
+	 *  `cannot-tell`, or `fetching` while the runner fetches the version it pins (#4008), which
+	 *  the window asks again after. Null where it is not kept there.
 	 */
 	standing: string | null,
 	/**  Why it is not kept on the runner, in words, where it is not. */
@@ -10220,6 +10238,8 @@ export type PoolRow = {
 export type PoolSignInStep = 
 /**  Open this page in the browser here: the harness vendor's own. */
 { at: "open"; url: string } | 
+/**  Show this code to enter on the vendor's own page `url`, before that page is opened. */
+{ at: "device"; url: string; code: string } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
 /**  The harness refused the code, in its words. */
@@ -13039,6 +13059,15 @@ export type SkillVersion = {
 	/**  What the runs that started on it add up to, as a skill's totals row says them (SK-20). */
 	runs: StatsRow,
 	grade: SkillGrade | null,
+	/**  Where it is from before a rename or a move (#4017): null for a version of its place now. */
+	before: SkillVersionBefore | null,
+};
+
+/**  The name and the folder a skill had at a version from before a rename or a move (#4017). */
+export type SkillVersionBefore = {
+	name: string,
+	/**  Its folder then, relative to the project. */
+	folder: string,
 };
 
 /**
@@ -14208,8 +14237,8 @@ export type UpdateKind =
 /**  purlis's `pre-commit` refused a commit a chat made (#1694). */
 "commit-refused" | 
 /**
- *  purlis refused a chat a git command that would rewrite the project's root from another
- *  commit, so bringing the remote's commits in is the person's (qw348).
+ *  purlis could not update the project's root for a chat, for a reason no chat can settle,
+ *  so bringing the remote's commits in is the person's (qw348, #3877).
  */
 "root-update-refused" | 
 /**  A chat asked the person to take its browser over, and the browser ended first (#2015). */

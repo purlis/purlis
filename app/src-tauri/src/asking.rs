@@ -1150,7 +1150,19 @@ pub const POOL_LOGIN_ALLOW: &str = "allow";
 pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
     let pool = &waits.bound.pool;
     let (login, persona, engine) = (&waits.login, &waits.persona, &waits.bound.engine);
-    let says = if waits.changed {
+    // A cluster's words come last, so a long context cuts nothing of what Allow does.
+    let says = if waits.bound.on_a_cluster() {
+        format!(
+            "{}Wants its browser logged in with {login} on pool {pool}. Allow on pool {pool} \
+             fills {persona}'s {login} there from your vault; the runner is told to keep none. \
+             It runs on {engine}",
+            if waits.changed {
+                "Pool {pool} changed since you answered. ".replace("{pool}", pool)
+            } else {
+                String::new()
+            }
+        )
+    } else if waits.changed {
         format!(
             "Pool {pool} changed since you answered. Wants its browser logged in with {login} \
              there, on {engine}. Allow on pool {pool} fills it from your vault; the runner keeps \
@@ -1210,11 +1222,20 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
     } else {
         ""
     };
-    let says = format!(
-        "{away}Wants to run {tool} on pool {pool}, which runs on {engine}, with {persona}'s \
-         values from vault {vault}. Allow this run sends them from your vault for this run \
-         alone; the runner keeps none"
-    );
+    // A cluster's words come last, so a long context cuts nothing of what Allow does.
+    let says = if waits.bound.on_a_cluster() {
+        format!(
+            "{away}Wants to run {tool} on pool {pool} with {persona}'s values from vault {vault}. \
+             Allow this run sends them from your vault for this run alone; the runner is told \
+             to keep none. It runs on {engine}"
+        )
+    } else {
+        format!(
+            "{away}Wants to run {tool} on pool {pool}, which runs on {engine}, with {persona}'s \
+             values from vault {vault}. Allow this run sends them from your vault for this run \
+             alone; the runner keeps none"
+        )
+    };
     Shown {
         session: waits.session,
         ask: pool_tool_key(waits.session, waits.run),

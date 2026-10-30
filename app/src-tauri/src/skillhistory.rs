@@ -71,6 +71,16 @@ pub struct SkillVersion {
     /// What the runs that started on it add up to, as a skill's totals row says them (SK-20).
     pub runs: StatsRow,
     pub grade: Option<SkillGrade>,
+    /// Where it is from before a rename or a move (#4017): null for a version of its place now.
+    pub before: Option<SkillVersionBefore>,
+}
+
+/// The name and the folder a skill had at a version from before a rename or a move (#4017).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillVersionBefore {
+    pub name: String,
+    /// Its folder then, relative to the project.
+    pub folder: String,
 }
 
 /// One copy of a skill's name, at one level of the project.
@@ -155,6 +165,10 @@ fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
                     grade: version.grade.map(|grade| SkillGrade {
                         passed: grade.passed,
                         fixtures: grade.fixtures,
+                    }),
+                    before: version.before.map(|before| SkillVersionBefore {
+                        name: before.name,
+                        folder: before.folder,
                     }),
                 })
                 .collect();

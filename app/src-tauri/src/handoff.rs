@@ -291,11 +291,17 @@ pub fn answer(
                 || no(format!("chat {} is not one this app has open", asks.chat)),
                 |working| {
                     // Whether each of its tasks is alive, and the ones orphaned by a restart
-                    // (#3900): only a turn's answer carries a roster.
+                    // (#3900): the ones a launch could not start again, and the ones only
+                    // their dispatch records know (#3932). Only a turn's answer carries a
+                    // roster.
                     let working = match asks.tell {
                         purlis_core::awareness::Tell::Turn => working
                             .with_liveness(|task| Some(crate::dispatched::liveness(held, task)))
-                            .with_orphans(crate::unstarted::orphans_of(held, asks.chat)),
+                            .with_orphans(
+                                crate::unstarted::orphans_of(held, asks.chat)
+                                    .into_iter()
+                                    .chain(crate::finished::orphans_of(held, asks.chat)),
+                            ),
                         _ => working,
                     };
                     Answer::Working(Box::new(working))

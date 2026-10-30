@@ -65,6 +65,11 @@ pub const CHAT_ID_ENV: &str = "PURLIS_CHAT_ULID";
 /// either on to the chats it starts.
 pub const SANDBOXED_ENV: &str = "PURLIS_SANDBOXED";
 
+/// Set to `1` on a chat purlis wraps whole although its harness has a sandbox of its own: a
+/// Claude Code chat on a runner (#4083). Read for how a refusal is worded alone
+/// ([`crate::sandbox::wrapped_whole_in`]).
+pub const WRAPPED_ENV: &str = "PURLIS_CHAT_WRAPPED";
+
 /// Where Claude Code puts the conversation a hook is running in.
 ///
 /// ADR 0024, C7, measured again on claude 2.1.276: it always equals the payload's
@@ -114,6 +119,7 @@ pub const NOT_INHERITED: &[&str] = &[
     TOKEN_ENV,
     crate::noterminal::RELAUNCHED_ENV,
     SANDBOXED_ENV,
+    WRAPPED_ENV,
     crate::sandboxblock::CHAT_DIR_ENV,
     CHAT_ID_ENV,
 ];
@@ -2550,13 +2556,6 @@ pub struct SkillStarted {
 }
 
 impl ToolCall {
-    /// **Whether purlis's guard refused this call a git command that would update the
-    /// project's root** (arm A3c, [`crate::rootupdate`]): a needs-you item on its chat, in the
-    /// app's own words (qw348).
-    pub fn refused_a_root_update(&self) -> bool {
-        self.decision == Decision::Deny && self.rule.as_deref() == Some(crate::rootupdate::REASON)
-    }
-
     /// The line as it may be kept on disk: the same call without its argument digest (#977).
     /// The digest is unkeyed, so anyone who reads it can match it against a guess at the
     /// arguments; only the host keys it ([`crate::eventlog::ArgsKey`]) before anything is

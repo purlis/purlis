@@ -388,6 +388,13 @@ jobs:
           parity="$RUNNER_TEMP/parity"
           mkdir -p "$parity"
           cp target/debug/purlis target/debug/fake-harness "$parity/"
+          # The Claude Code purlis supports, this runner's build of it from npm with no install
+          # scripts run, for the behaviour that runs it inside the wrap (#4083). No model is
+          # called, and no credential is used.
+          version=$(sed 's/ .*//' tests/fixtures/harness-versions/claude.txt)
+          package="@anthropic-ai/claude-code-linux-x64"
+          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/claude-code" "$package@$version"
+          cp "$RUNNER_TEMP/claude-code/node_modules/$package/claude" "$parity/claude-code"
           docker build --file tests/parity/runner.Dockerfile \
             --build-arg RUNNER=purlis-runner:parity --build-arg "AT=$PWD/target/debug" \
             --tag localhost:5000/purlis-runner-parity:candidate "$parity"
@@ -1404,16 +1411,28 @@ jobs:
         if: runner.os == 'macOS'
         with:
           version: v0.18.0
+      # A cache that does not answer is a slower job, never a failed one: the storage behind
+      # the Actions cache refuses reads once the account's egress is over its limit
+      # ("ServerBusy"), and sccache then failed `rustc -vV` and the whole job with it
+      # (2026-10-30, three merge-queue drops). The server is started here; only one that comes
+      # up is put in front of rustc, and SCCACHE_IGNORE_SERVER_IO_ERROR has a later failure
+      # compile without it.
       - name: Compile through sccache
         if: runner.os == 'macOS'
         env:
           MODE: ${{ github.ref == 'refs/heads/main' && 'READ_WRITE' || 'READ_ONLY' }}
         run: |
-          {
-            echo "RUSTC_WRAPPER=sccache"
-            echo "SCCACHE_GHA_ENABLED=true"
-            echo "SCCACHE_GHA_RW_MODE=$MODE"
-          } >> "$GITHUB_ENV"
+          export SCCACHE_GHA_ENABLED=true SCCACHE_GHA_RW_MODE="$MODE"
+          if sccache --start-server >/dev/null 2>&1 && sccache --show-stats >/dev/null 2>&1; then
+            {
+              echo "RUSTC_WRAPPER=sccache"
+              echo "SCCACHE_GHA_ENABLED=true"
+              echo "SCCACHE_GHA_RW_MODE=$MODE"
+              echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
+            } >> "$GITHUB_ENV"
+          else
+            echo "::warning title=sccache::the build cache did not answer, so this job compiles without it"
+          fi
       # Whether macOS's sandbox matches a name as typed or as it is on disk, measured; that the
       # case-classed rules purlis writes for Claude Code hold every spelling (#2071, #2107); and
       # the profiles a wrapped chat starts under, at the full sandbox and at the floor, built by

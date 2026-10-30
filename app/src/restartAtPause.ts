@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import type { State } from "./chatState";
+import { atAPause, stateOf, type ChatStates } from "./chatState";
 
 /**
  * **When a chat owed a restart restarts** (#1986, ruling Q63): at its next pause between turns,
@@ -10,9 +10,12 @@ import type { State } from "./chatState";
  * A pause is what the chat's harness already tells purlis: its turn ended or it handed control
  * back (`waiting`, from its Stop and Notification hooks). Nothing new is read to learn it. While
  * it is mid-turn the restart waits; a harness that says nothing of its turns is never restarted
- * behind the person's back. A chat that reads as ended (`done`, `failed`) is restarted by
- * nothing: what was allowed reaches it at its next start, and once its program has ended it is
- * owed nothing ({@link owedAfterEnded}).
+ * behind the person's back. **A chat waiting on its own work** (#3878, #3887) is not at a pause
+ * ({@link atAPause}): its monitors and background shells run, and a restart would cut them off,
+ * so the restart waits for that work to wake it and its turn to end with nothing in flight. A
+ * chat that reads as ended (`done`, `failed`) is restarted by nothing: what was allowed reaches
+ * it at its next start, and once its program has ended it is owed nothing
+ * ({@link owedAfterEnded}).
  *
  * **Restart now** is the person's own: it restarts the chat at once, mid-turn or not, unless
  * its program has ended.
@@ -23,15 +26,15 @@ import type { State } from "./chatState";
  */
 export function restartsDue(
   owed: readonly number[],
-  stateOf: (session: number) => State,
+  states: ChatStates,
   pressed?: { now: number },
 ): { restart: number[]; ended: number[] } {
   const restart: number[] = [];
   const ended: number[] = [];
   for (const session of owed) {
-    const state = stateOf(session);
+    const state = stateOf(states, session);
     if (state === "done" || state === "failed") ended.push(session);
-    else if (state === "waiting" || pressed?.now === session) restart.push(session);
+    else if (atAPause(states, session) || pressed?.now === session) restart.push(session);
   }
   return { restart, ended };
 }

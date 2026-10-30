@@ -76,6 +76,22 @@ fn a_changed_image_definition_or_runner_asks_again() {
 }
 
 #[test]
+fn a_pools_answers_are_forgotten_with_its_mark() {
+    let opt_ins = OptIns::default();
+    opt_ins.allow("steward", "id-shop", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", bound("tests", "d1", "i1"));
+    opt_ins.forget_pool("builds");
+    assert_eq!(
+        opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked
+    );
+    assert_eq!(
+        opt_ins.standing("steward", "id-shop", &bound("tests", "d1", "i1")),
+        Standing::Allowed
+    );
+}
+
+#[test]
 fn kept_off_stands_until_the_pool_changes() {
     let opt_ins = OptIns::default();
     opt_ins.keep_off("steward", "id-shop", bound("builds", "d1", "i1"));

@@ -89,6 +89,19 @@ fn a_run_that_passes_every_check_is_the_personas_tool_on_the_pool_as_it_is_now()
 }
 
 #[test]
+fn a_cluster_pool_not_marked_is_refused_saying_how_and_nobody_is_asked() {
+    let ask = kubectl_asked();
+    let not_marked = |_: &Path, pool: &str| Err(purlis_core::poollogins::not_marked_said(pool));
+    let gate = Gate {
+        owned: &not_marked,
+        ..a_gate(&ask)
+    };
+    let refused = refused(&gate);
+    assert!(refused.contains("kubectl was sent no value"), "{refused}");
+    assert!(refused.contains("This is my own"), "{refused}");
+}
+
+#[test]
 fn a_chat_this_window_does_not_have_open_is_sent_nothing() {
     let ask = kubectl_asked();
     let gate = Gate {
@@ -429,6 +442,49 @@ fn a_pool_that_changed_while_the_person_was_asked_is_sent_nothing() {
             .contains("changed while the person was asked")
     );
     assert_eq!(*reads.lock().unwrap(), 0);
+}
+
+#[test]
+fn a_pool_that_changed_while_its_vault_was_read_is_sent_nothing() {
+    let tools = Arc::new(PoolTools::default());
+    let gone = Arc::new(AtomicBool::new(false));
+    let owned = Arc::new(Mutex::new(builds("a")));
+    let (done, decided) = mpsc::channel();
+    {
+        let (tools, gone, owned) = (Arc::clone(&tools), gone, owned);
+        std::thread::spawn(move || {
+            let ask = kubectl_asked();
+            let shown = Arc::clone(&owned);
+            let now = move |_: &Path, _: &str| Ok(shown.lock().unwrap().clone());
+            let gate = Gate {
+                owned: &now,
+                ..a_gate(&ask)
+            };
+            let read = move |tool: &Tool| {
+                *owned.lock().unwrap() = builds("b");
+                Ok(vec![(
+                    tool.values[0].key.clone(),
+                    Zeroizing::new("v-kubeconfig".to_owned()),
+                )])
+            };
+            let checked = checked(&gate).expect("passes the gate");
+            let mut said = Vec::new();
+            let _ = done.send(answered(
+                &gate,
+                checked,
+                &waiting(&tools, &gone, &read, Duration::from_secs(60)),
+                &mut said,
+            ));
+        });
+    }
+    let asked = the_run_asked(&tools);
+    tools.answer(6, asked.run, true);
+    let refused = decided.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert!(
+        refused
+            .expect_err("changed")
+            .contains("changed while the person was asked")
+    );
 }
 
 #[test]

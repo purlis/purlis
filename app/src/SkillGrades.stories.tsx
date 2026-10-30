@@ -12,22 +12,17 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { SkillStudioTab } from "./SkillStudioTab";
-import { Panel } from "./ui/panel/Panel";
 import {
-  SKILL_STUDIO_VIEW,
-  inWorkspace,
-  skillRowId,
-  studioHistoryOf,
-  type GradingAt,
-} from "./skillStudio";
+  STORY_HISTORY as HISTORY,
+  STORY_PLANE as PLANE,
+  StudioInPanel,
+} from "./skillStudioStory.testkit";
+import { inWorkspace, skillRowId, type GradingAt } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
 import type { GradeRow, GradeScorecard, SkillGradePlan } from "./bindings";
 
-const PLANE = "/home/dev/plane";
-const HISTORY = studioHistoryOf(PLANE, SKILL_STUDIO_VIEW);
 const SCOPE = inWorkspace("smart-ide");
 
 const DEPLOY = skill("deploy", {
@@ -167,15 +162,7 @@ function Tab({
   grades: GradeRow[];
   card: GradeScorecard;
 }) {
-  return (
-    // In the content panel, as a view tab is drawn (`PlaneView`): its fill is the ground the
-    // page header is drawn on while the page scrolls under it (#3944).
-    <Panel variant="content">
-      <div className="view-body" style={{ inlineSize: width, blockSize: 620, display: "flex" }}>
-        <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} onOpenView={() => undefined} />
-      </div>
-    </Panel>
-  );
+  return <StudioInPanel width={width} height={620} narrow={narrow} onOpenView={() => undefined} />;
 }
 
 const meta = {

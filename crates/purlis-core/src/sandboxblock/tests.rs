@@ -2572,3 +2572,112 @@ fn a_lookup_that_names_no_host_is_one_with_any_lookup_of_its_chat_in_the_window(
     assert!(throttle.lets_on(3, &host, None, now));
     assert!(throttle.lets_on(3, &host, Some("api.example.com:443"), now));
 }
+
+/// A workspace's clones and branch folders on disk, as git lays a linked worktree out: each
+/// folder's `.git` is a file naming its record in its clone's `.git/worktrees/<name>`, whose
+/// `gitdir` names that `.git` back.
+struct Folders {
+    _dir: tempfile::TempDir,
+    ws: std::path::PathBuf,
+}
+
+impl Folders {
+    fn new() -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = std::fs::canonicalize(dir.path())
+            .unwrap()
+            .join("workspaces/a");
+        for (repo, piece) in [("repo", "fix"), ("repo", "other"), ("api", "fix")] {
+            let record = ws.join(repo).join(".git/worktrees").join(piece);
+            let folder = ws.join(".worktrees").join(repo).join(piece);
+            std::fs::create_dir_all(&record).unwrap();
+            std::fs::create_dir_all(folder.join("src")).unwrap();
+            std::fs::write(
+                folder.join(".git"),
+                format!("gitdir: {}\n", record.display()),
+            )
+            .unwrap();
+            std::fs::write(
+                record.join("gitdir"),
+                format!("{}\n", folder.join(".git").display()),
+            )
+            .unwrap();
+        }
+        Self { _dir: dir, ws }
+    }
+
+    fn folder(&self, repo: &str, piece: &str) -> std::path::PathBuf {
+        self.ws.join(".worktrees").join(repo).join(piece)
+    }
+
+    fn lock(&self, repo: &str, piece: &str) -> String {
+        let record = self.ws.join(repo).join(".git/worktrees").join(piece);
+        record.join("index.lock").display().to_string()
+    }
+}
+
+/// #3861: a write the sandbox refused in the git record of the chat's own branch folder is the
+/// chat's own to fix (a line the guard could not place, `cd -`, ran `git commit` there). It is
+/// told to the chat alone, with the shape to retry. Another branch folder's record, of the same
+/// clone or another, keeps its Notice, and so does purlis's own block and every other.
+#[test]
+fn a_block_in_the_chats_own_branch_folders_git_record_is_its_own_to_retry() {
+    let at = Folders::new();
+    let own = block(Operation::Write, Kind::ProtectedFile, false);
+    let mine = at.lock("repo", "fix");
+    for chat in [
+        at.folder("repo", "fix"),
+        at.folder("repo", "fix").join("src"),
+    ] {
+        assert!(its_own_to_retry(&own, Some(&mine), Some(&chat)), "{chat:?}");
+        assert!(its_own_to_retry(
+            &block(Operation::File, Kind::ProtectedFile, false),
+            Some(&mine),
+            Some(&chat)
+        ));
+    }
+    let chat = at.folder("repo", "fix");
+    let chat = Some(chat.as_path());
+    let clone = at.ws.join("repo");
+
+    for (other, target, from) in [
+        // Another chat's branch folder of the same clone.
+        (own, at.lock("repo", "other"), chat),
+        // A branch folder of another clone, of the same name.
+        (own, at.lock("api", "fix"), chat),
+        // A chat in the clone itself, or with no folder on record.
+        (own, mine.clone(), Some(clone.as_path())),
+        (own, mine.clone(), None),
+        // purlis's own write there is a purlis bug, reported by the person.
+        (
+            block(Operation::Write, Kind::ProtectedFile, true),
+            mine.clone(),
+            chat,
+        ),
+        (
+            block(Operation::Read, Kind::ProtectedFile, false),
+            mine.clone(),
+            chat,
+        ),
+        (
+            block(Operation::Write, Kind::ProjectFiles, false),
+            mine.clone(),
+            chat,
+        ),
+        // A protected file that is no branch folder's record, or a path not absolute.
+        (own, clone.join(".git/config").display().to_string(), chat),
+        (own, "repo/.git/worktrees/fix/index.lock".to_owned(), chat),
+    ] {
+        assert!(
+            !its_own_to_retry(&other, Some(&target), from),
+            "{other:?} {target} {from:?}"
+        );
+    }
+    assert!(!its_own_to_retry(&own, None, chat));
+
+    let told = told_the_chat_to_retry();
+    assert!(told.contains("`purlis worktree commit"), "{told}");
+    for never in ["Notice", "Nobody", "wait"] {
+        assert!(!told.contains(never), "{never}: {told}");
+    }
+}

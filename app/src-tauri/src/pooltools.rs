@@ -20,9 +20,10 @@
 //!   this machine;
 //! - **the runner is shown to be the person's own**
 //!   (`purlis_core::poollogins::Bound::over_the_link`, the one check browser logins use,
-//!   D-2050-4): until a pool can be marked owned (#2561), a Docker pool whose engine is a local
-//!   socket on this machine. A runner not shown to be owned is never sent a value, and neither is
-//!   a hosted one. The runner is the one the chat's link reached, as the desktop's host said it
+//!   D-2050-4): a Docker pool whose engine is a local socket on this machine, or a cluster pool
+//!   the person marked whose claim is vouched for now, at this gate and again after Allow
+//!   (#4071). A runner not shown to be owned is never sent a value, and neither is a hosted one.
+//!   The runner is the one the chat's link reached, as the desktop's host said it
 //!   (1.48, #3417): a draining one for a chat that stayed on it, judged by its pool and that
 //!   runner as they are kept.
 //!
@@ -411,14 +412,21 @@ pub fn answered(
         return Err(format!("the command of {} went", checked.tool.name));
     }
     // The pool and its runner as the person was shown them, still.
-    let now = gate
-        .pools_in
-        .as_deref()
-        .map(|config| (gate.owned)(config, gate.pool));
-    if !matches!(&now, Some(Ok(bound)) if *bound == checked.bound) {
-        return Err(changed_said(&checked.tool.name, gate.pool));
-    }
+    let as_shown = || {
+        let now = gate
+            .pools_in
+            .as_deref()
+            .map(|config| (gate.owned)(config, gate.pool));
+        if matches!(&now, Some(Ok(bound)) if *bound == checked.bound) {
+            Ok(())
+        } else {
+            Err(changed_said(&checked.tool.name, gate.pool))
+        }
+    };
+    as_shown()?;
     let values = (waiting.read)(&checked.tool)?;
+    // And once they are read: a vault may wait on a sign-in for as long as it takes (#4071).
+    as_shown()?;
     Ok(Approved {
         handed: Handed::of(ask.chat, &checked.tool.name, &checked.run, values),
         checked,

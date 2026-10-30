@@ -185,6 +185,43 @@ impl Left {
         !matches!(self, Self::NotPutBack { .. })
     }
 
+    /// **Whether only the person can settle this reason**, where a chat asked for the update
+    /// (#3877). Then the chat's ask raises a needs-you item that names the window's Update, so
+    /// no chat's loop is left waiting on something nobody was told of.
+    ///
+    /// The person's: a file the chat's sandbox denies, a move the app will not make for a chat,
+    /// a conflict or a stopped merge, a project not put back whole, a branch to choose, a
+    /// signer, a file purlis may not write, and the root's own files and locks: unsaved
+    /// changes, an ignored file in the way, the index another git command holds. And **every
+    /// fetch that did not go through**: a sign-in that is missing or expired, a remote that is
+    /// not the recorded one or on no forge purlis knows, or git's own words, which do not say
+    /// reliably whether the network or the sign-in failed, so none of it is left to a retry.
+    ///
+    /// The chat's to retry, told in its answer alone: a save running beside it, commits that
+    /// wait on an open request, a replay that ran out of time, and a git failure the project
+    /// was put back from. Every reason is judged here by name, so a new one is judged when it
+    /// is added.
+    pub fn needs_the_person(&self) -> bool {
+        match self {
+            Self::HeldFromChats(_)
+            | Self::NotForAChat(_)
+            | Self::Conflict(_)
+            | Self::Stopped(_)
+            | Self::NotPutBack { .. }
+            | Self::Unwritable(_)
+            | Self::OffTarget { .. }
+            | Self::NoBranch
+            | Self::Unsigned(_)
+            | Self::NotFetched(_)
+            | Self::IndexLocked
+            | Self::Unsaved(_)
+            | Self::InTheWay(_) => true,
+            Self::Busy | Self::WaitsOnRequest { .. } | Self::OutOfTime(_) | Self::Failed(_) => {
+                false
+            }
+        }
+    }
+
     /// The reason, as sentences for the person. `request` is what the project's forge calls a
     /// request (`pull request`, `merge request`).
     pub fn said(&self, request: &str) -> String {

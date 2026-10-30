@@ -3,7 +3,13 @@
 
 import { useEffect, useState } from "react";
 import type { PoolProfileRow, PoolProfiles as PoolProfilesAnswered } from "../bindings";
-import { addProfileToPool, askProfiles, removeProfileFromPool, usePools } from "../pools";
+import {
+  ASK_AGAIN_WHILE_FETCHING_MS,
+  addProfileToPool,
+  askProfiles,
+  removeProfileFromPool,
+  usePools,
+} from "../pools";
 import { Button } from "../ui/button/Button";
 import { Menu, MenuItem, MenuTrigger } from "../ui/menu/Menu";
 import { askProfileSignIn } from "./links";
@@ -11,6 +17,10 @@ import { PoolSignIn } from "./PoolSignIn";
 
 /** The harnesses whose sign-in purlis drives in place, with no terminal (#4042). */
 const DRIVEN = new Set(["claude"]);
+
+/** Whether the sign-in of `row` to the plan `plan` is driven in place: opencode's Copilot (#4045). */
+const drivenPlan = (row: PoolProfileRow, plan: string) =>
+  row.kind === "opencode" && plan === "github-copilot";
 
 /** What a profile's row on a pool says of it (#2049). */
 export function standingOnPool(pool: string, row: PoolProfileRow): string {
@@ -20,6 +30,8 @@ export function standingOnPool(pool: string, row: PoolProfileRow): string {
       return `Signed in on pool ${pool}.`;
     case "signed-out":
       return `Not signed in on pool ${pool}: a chat on it does not start there until it is.`;
+    case "fetching":
+      return `Fetching ${row.harness} for this runner…`;
     default:
       return `${row.harness} cannot say whether it is signed in on pool ${pool}.`;
   }
@@ -31,16 +43,19 @@ export function standingOnPool(pool: string, row: PoolProfileRow): string {
  * a folder of the runner's own with nothing of this machine's in it, and whether it is signed
  * in there. Add a profile… adds another of this machine's, and Remove, asked first, takes one
  * off, its sign-in there with it; neither is offered while a sign-in runs on the pool.
- * Sign in on a Claude Code profile opens its line in place into a sign-in strip that drives the
- * harness's own login with no terminal ({@link PoolSignIn}, #4042). Another harness's opens a
- * shell tab in the project `plane`'s window, where the core types the runner's own sign-in, which
- * the person drives; with no project open, it says how to sign in from a terminal instead.
+ * Sign in on a Claude Code profile, or an opencode profile's Copilot plan, opens its line in place
+ * into a sign-in strip that drives the harness's own login with no terminal ({@link PoolSignIn},
+ * #4042, #4045). Another opens a shell tab in the project `plane`'s window, where the core types
+ * the runner's own sign-in, which the person drives; with no project open, it says how to sign in
+ * from a terminal instead.
  * Nothing of this machine's sign-in goes to the runner.
  */
 export function PoolProfiles({ pool, plane }: { pool: string; plane: string | undefined }) {
   const now = usePools();
   const asked = now.profiles[pool];
   const [signing, setSigning] = useState<string>();
+  // The plan it signs in to, for a harness that serves several.
+  const [plan, setPlan] = useState<string>();
   // The rows a sign-in was opened from: asked again meanwhile, they stay drawn, so its strip stays
   // and its login with it.
   const [heldRows, setHeldRows] = useState<PoolProfilesAnswered>();
@@ -50,6 +65,20 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   useEffect(() => {
     if (asked === undefined) void askProfiles(pool, plane);
   }, [pool, plane, asked]);
+  // A runner fetching a profile's harness answers once it is fetched: asked again until then,
+  // keeping the rows shown (#4008).
+  const fetching =
+    typeof asked === "object" &&
+    "kept" in asked &&
+    asked.kept.some((row) => row.standing === "fetching");
+  useEffect(() => {
+    if (!fetching) return;
+    const timer = setTimeout(
+      () => void askProfiles(pool, plane, { quietly: true }),
+      ASK_AGAIN_WHILE_FETCHING_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [pool, plane, asked, fetching]);
   const rows = signing !== undefined && heldRows !== undefined ? heldRows : asked;
   if (rows === undefined || rows === "asking") {
     return <p className="ui-setting-help">Asking the runner about this machine&apos;s profiles…</p>;
@@ -71,6 +100,12 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   }
   const signIn = (row: PoolProfileRow, provider?: string) => {
     if (plane !== undefined) askProfileSignIn(plane, row.name, provider, pool);
+  };
+  const open = (row: PoolProfileRow, provider?: string) => {
+    setRemoving(undefined);
+    setHeldRows(rows);
+    setPlan(provider);
+    setSigning(row.name);
   };
   const ended = (signedIn: boolean) => {
     setSigning(undefined);
@@ -135,13 +170,14 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
                 pool={pool}
                 profile={row.name}
                 harness={row.harness}
+                provider={plan}
                 onEnd={ended}
                 onTerminal={
                   plane === undefined
                     ? undefined
                     : () => {
                         ended(false);
-                        signIn(row);
+                        signIn(row, plan);
                       }
                 }
               />
@@ -151,30 +187,37 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
               (DRIVEN.has(row.kind) ? (
                 <Button
                   aria-label={`Sign ${row.name} in on pool ${pool}`}
-                  onPress={() => {
-                    setRemoving(undefined);
-                    setHeldRows(rows);
-                    setSigning(row.name);
-                  }}
+                  onPress={() => open(row)}
                   className="ui-setting-reset"
                 >
                   Sign in
                 </Button>
-              ) : plane === undefined ? (
+              ) : plane === undefined && !row.plans.some((one) => drivenPlan(row, one.id)) ? (
                 <span className="ui-setting-help">
                   Open a project to sign it in from its window.
                 </span>
               ) : row.plans.length > 0 ? (
-                row.plans.map((plan) => (
-                  <Button
-                    key={plan.id}
-                    aria-label={`Sign ${row.name} in to ${plan.title} on pool ${pool}`}
-                    onPress={() => signIn(row, plan.id)}
-                    className="ui-setting-reset"
-                  >
-                    {`Sign in to ${plan.title}`}
-                  </Button>
-                ))
+                <>
+                  {row.plans
+                    .filter((one) => plane !== undefined || drivenPlan(row, one.id))
+                    .map((one) => (
+                      <Button
+                        key={one.id}
+                        aria-label={`Sign ${row.name} in to ${one.title} on pool ${pool}`}
+                        onPress={() =>
+                          drivenPlan(row, one.id) ? open(row, one.id) : signIn(row, one.id)
+                        }
+                        className="ui-setting-reset"
+                      >
+                        {`Sign in to ${one.title}`}
+                      </Button>
+                    ))}
+                  {plane === undefined && (
+                    <span className="ui-setting-help">
+                      Open a project to sign its other plans in from its window.
+                    </span>
+                  )}
+                </>
               ) : (
                 <Button
                   aria-label={`Sign ${row.name} in on pool ${pool}`}

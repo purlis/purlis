@@ -1066,3 +1066,107 @@ fn a_workspace_renamed_back_says_its_todo_links_stay_under_the_name_it_left() {
     assert!(folded.cycles().is_empty());
     assert_eq!(folded.chats_on(&todo), [chat]);
 }
+
+/// #3965: the `-w <name>` purlis wrote into `memory/MEMORY.md`'s header and `workspace.md`'s
+/// Log line names the new workspace, so a chat that follows it reaches one. A line a person
+/// wrote that spells the old name is theirs and is kept, word for word.
+#[test]
+fn the_name_purlis_wrote_into_the_memory_header_and_log_line_follows_and_a_persons_line_is_kept() {
+    let plane = a_plane();
+    let ws = plane.root.join("workspaces/alpha");
+    let theirs = "- I used to run `charter workspace remember -w alpha \"…\"` by hand.\n";
+    for rel in ["workspace.md", "memory/MEMORY.md"] {
+        let path = ws.join(rel);
+        let mut text = read(&path);
+        text.push_str(theirs);
+        std::fs::write(&path, text).unwrap();
+    }
+
+    assert_eq!(run(&plane, "alpha", "beta").0, 0);
+
+    let ws = plane.root.join("workspaces/beta");
+    let memory = read(&ws.join("memory/MEMORY.md"));
+    assert!(
+        memory.contains("or `charter workspace remember -w beta \"…\"`, search with"),
+        "{memory}"
+    );
+    let charter = read(&ws.join("workspace.md"));
+    assert!(
+        charter.contains("\n(append with `charter workspace note -w beta \"…\"`).\n"),
+        "{charter}"
+    );
+    for text in [&memory, &charter] {
+        assert!(text.ends_with(theirs), "{text}");
+        assert_eq!(text.matches("-w alpha").count(), 1, "{text}");
+    }
+}
+
+/// #3965: a workspace made before its plane was migrated has `charter workspace note -w alpha`
+/// in its Log line. Once the plane is purlis's, that line is still the one purlis wrote, so the
+/// rename rewrites it, in the spelling the plane writes now.
+#[test]
+fn a_line_purlis_wrote_before_the_plane_was_migrated_follows_in_the_spelling_it_writes_now() {
+    let plane = a_plane();
+    let ws = plane.root.join("workspaces/alpha");
+    assert!(read(&ws.join("workspace.md")).contains("`charter workspace note -w alpha"));
+    std::fs::rename(
+        plane.root.join("charter.toml"),
+        plane.root.join("purlis.toml"),
+    )
+    .unwrap();
+    assert!(crate::names::plane_migrated(&plane.root));
+
+    assert_eq!(run(&plane, "alpha", "beta").0, 0);
+
+    let ws = plane.root.join("workspaces/beta");
+    let charter = read(&ws.join("workspace.md"));
+    assert!(
+        charter.contains("\n(append with `purlis workspace note -w beta \"…\"`).\n"),
+        "{charter}"
+    );
+    let memory = read(&ws.join("memory/MEMORY.md"));
+    assert!(
+        memory.contains("or `purlis workspace remember -w beta \"…\"`, search with"),
+        "{memory}"
+    );
+    for text in [&charter, &memory] {
+        assert!(!text.contains("-w alpha"), "{text}");
+    }
+}
+
+/// #3965: a person who retitled `workspace.md` owns the title, but the Log line below it is
+/// still the one purlis wrote, so that line follows the rename and the title stays theirs.
+#[test]
+fn a_retitled_workspace_md_keeps_its_title_and_its_log_line_follows() {
+    let plane = a_plane();
+    let path = plane.root.join("workspaces/alpha/workspace.md");
+    let text = read(&path).replacen("# alpha\n", "# My own title\n", 1);
+    std::fs::write(&path, text).unwrap();
+
+    assert_eq!(run(&plane, "alpha", "beta").0, 0);
+
+    let charter = read(&plane.root.join("workspaces/beta/workspace.md"));
+    assert!(charter.starts_with("# My own title\n"), "{charter}");
+    assert!(
+        charter.contains("\n(append with `charter workspace note -w beta \"…\"`).\n"),
+        "{charter}"
+    );
+    assert!(!charter.contains("-w alpha"), "{charter}");
+}
+
+/// #3965: the lines purlis wrote are rewritten once. Running the rename again, which finds no
+/// `alpha`, leaves every file it rewrote byte for byte as the first run left it.
+#[test]
+fn running_the_rename_again_leaves_the_lines_purlis_wrote_as_they_are() {
+    let plane = a_plane();
+    assert_eq!(run(&plane, "alpha", "beta").0, 0);
+    let ws = plane.root.join("workspaces/beta");
+    let files = ["workspace.md", "memory/MEMORY.md", "todos/MEMORY.md"];
+    let first: Vec<String> = files.iter().map(|rel| read(&ws.join(rel))).collect();
+
+    assert_eq!(run(&plane, "alpha", "beta").0, 1);
+
+    let again: Vec<String> = files.iter().map(|rel| read(&ws.join(rel))).collect();
+    assert_eq!(again, first);
+    assert!(first[0].contains("note -w beta"), "{}", first[0]);
+}

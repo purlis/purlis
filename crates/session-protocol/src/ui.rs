@@ -730,6 +730,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "cluster_contexts",
     "cluster_pool_key",
     "add_cluster_pool",
+    // The person's mark that a cluster pool is their own (#4071): half of what lets its runner
+    // receive vault values and tokens, so only their own press in their window sets it.
+    "set_cluster_pool_owned",
     // This machine's profiles on a pool's runner (#2049): keeping one there sends its name to a
     // runner, so only the person's own look in their window does.
     "pool_profiles",

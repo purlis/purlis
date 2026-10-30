@@ -119,12 +119,12 @@ import {
   type Referenced,
 } from "./references";
 import {
-  SkillBudgetsHere,
+  ChatSkillSetsHere,
   UseSkill,
   UseSkillOpener,
-  useChatSkillBudgets,
+  useChatSkillSets,
+  type ChatSkillSets,
   type OpenUseSkill,
-  type SkillBudgets,
 } from "./UseSkill";
 import { Explorer, type SearchKeyHere, type Spot } from "./Explorer";
 import {
@@ -475,12 +475,14 @@ import { DoingsHere, useDoings, type DoingsOf } from "./chatDoing";
 import {
   ChatsHere,
   backSaid,
+  inItsTurn,
   isShell,
   movedAt,
   quietChats,
   sameList,
   sameQuiet,
   stateOf,
+  turnStateOf,
   useChats,
   useChatsHere,
   useChatsSelect,
@@ -1046,8 +1048,12 @@ export const PlaneView = memo(function PlaneView({
    *  definition or its folder moving is one of them. */
   const personaMarks = usePersonaMarks(plane, sidebarChanges);
   /** The chats running on instructions the plane has changed since they started (charter#369),
-   *  each marked on its tab. */
-  const planeUpdates = usePlaneUpdated(plane, instructionsChanges);
+   *  each marked on its tab, and those whose skills changed since (#2770), for their Skills
+   *  chip (#3953). */
+  const { files: planeUpdates, skills: skillsChanged } = usePlaneUpdated(
+    plane,
+    instructionsChanges,
+  );
   // The plane root is watched, so an edit to `charter.toml` or `charter.local.toml` — in an
   // editor, from a `git pull` — is one of these, and what this project has on may have moved
   // with it (charter-app#253). Not at the mount: `useExtensionsOn` asks then.
@@ -1082,8 +1088,13 @@ export const PlaneView = memo(function PlaneView({
     () => [...new Set(tabs.order.flatMap((id) => panesOf(tabs, id).map((pane) => pane.session)))],
     [tabs],
   );
-  /** Each open chat's skill budget (#2775): the chip on its pane and its tab's menu row. */
-  const [skillBudgets, setSkillBudget] = useChatSkillBudgets(plane, chatSessions, studioOn);
+  /** Each open chat's skill set as a whole (#2775, #3953): the chip on its pane. */
+  const [chatSkillSets, setChatSkills] = useChatSkillSets(
+    plane,
+    chatSessions,
+    studioOn,
+    skillsChanged,
+  );
   const reloadVaults = vaults.reload;
   /** Whether the vault picker is up. */
   const [pickingVault, setPickingVault] = useState(false);
@@ -5893,7 +5904,7 @@ export const PlaneView = memo(function PlaneView({
     if (owedRestarts.length === 0) return;
     const drive = () => {
       const states = chats.store.statesFor(chats.plane);
-      const due = restartsDue(owedRestarts, (session) => stateOf(states, session));
+      const due = restartsDue(owedRestarts, states);
       for (const session of due.restart) restartOwed(session);
       // Dropped only once the core, which hears the program itself end, owes it nothing: a
       // hook can say the session ended while its program runs on ({@link owedAfterEnded}).
@@ -5923,7 +5934,10 @@ export const PlaneView = memo(function PlaneView({
   const owedStates = useChatsSelect(
     chats,
     (states): OwedStates =>
-      Object.fromEntries(owedRestarts.map((session) => [session, stateOf(states, session)])),
+      Object.fromEntries(
+        // Waiting on its own work is mid-turn to a restart (#3887): it waits, and says so.
+        owedRestarts.map((session) => [session, turnStateOf(states, session)]),
+      ),
     sameStates,
   );
   /**
@@ -5972,7 +5986,8 @@ export const PlaneView = memo(function PlaneView({
       }
       setRestartTrouble((was) => withoutKey(was, session));
       oweRestart(session);
-      if (stateOf(chats.store.statesFor(chats.plane), session) !== "running") restartOwed(session);
+      // Mid-turn, or waiting on its own work (#3887), it waits for the turn to end.
+      if (!inItsTurn(chats.store.statesFor(chats.plane), session)) restartOwed(session);
     },
     [chats, oweRestart, plane, restartOwed],
   );
@@ -5986,7 +6001,7 @@ export const PlaneView = memo(function PlaneView({
       // unless the chat's program has ended meanwhile (#1986).
       if (act === "mid-turn") {
         const states = chats.store.statesFor(chats.plane);
-        const due = restartsDue([session], (one) => stateOf(states, one), { now: session });
+        const due = restartsDue([session], states, { now: session });
         if (due.restart.includes(session)) restartOwed(session);
       }
     },
@@ -6092,7 +6107,7 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     const drive = () => {
       const states = chats.store.statesFor(chats.plane);
-      for (const session of movesDue(chatMovesOf(plane), (one) => stateOf(states, one))) {
+      for (const session of movesDue(chatMovesOf(plane), states)) {
         if (movingNow.current.has(session)) continue;
         movingNow.current.add(session);
         const moving = chatMovesOf(plane)[session];
@@ -6573,7 +6588,7 @@ export const PlaneView = memo(function PlaneView({
         .chatSkills(plane, session)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
         .then((said) => {
-          if (said.status === "ok") setSkillBudget(session, said.data.budget);
+          if (said.status === "ok") setChatSkills(session, said.data);
           setUsingSkill((was) =>
             was?.session !== session
               ? was
@@ -6583,7 +6598,7 @@ export const PlaneView = memo(function PlaneView({
           );
         });
     },
-    [plane, setSkillBudget],
+    [plane, setChatSkills],
   );
   /** Use skill…, from a chat tab's menu or the palette. */
   const useSkill = useCallback(
@@ -7664,7 +7679,6 @@ export const PlaneView = memo(function PlaneView({
             profiles: profileNames,
             screenReader,
             skillStudio: studioOn,
-            skillBudgets,
             readOnly: readOnlySaid,
             places,
           }),
@@ -7727,7 +7741,6 @@ export const PlaneView = memo(function PlaneView({
       memoryStores,
       profileNames,
       studioOn,
-      skillBudgets,
       screenReader,
     ],
   );
@@ -8269,6 +8282,32 @@ export const PlaneView = memo(function PlaneView({
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
   }, [by, inFront, press]);
+
+  /**
+   * **Use skill…'s key** (#3954, the key registry's `chat.useSkill`): Use skill… on the chat in
+   * front, as the Use skill… row of its tab opens it. In a split tab that is the pane that has
+   * the keyboard (`focusedChat`), else the tab's chat in front (`chatInFrontOf`, a view's tab
+   * included). Claimed on the window, capture-phase, by the project in front, as the shell's key
+   * is; never under a modal. With the Skill studio off, a shell or no chat in front, there is no
+   * Use skill… to open, and the key goes on.
+   */
+  useEffect(() => {
+    if (!inFront || !studioOn) return;
+    const key = (e: KeyboardEvent) => {
+      if (pressed(e, ["chat.useSkill"]) === undefined) return;
+      const tabs = now.current;
+      const session =
+        focusedChat(tabs) ??
+        (tabs.inFront === undefined ? undefined : chatInFrontOf(tabs, tabs.inFront));
+      if (session === undefined || shells.has(session)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat) return;
+      openUseSkill(session);
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, [inFront, studioOn, shells, openUseSkill]);
 
   /**
    * **Focus mode's key and the keyboard shortcuts' key** (#2921, `keys/ownKeys.ts`): each presses
@@ -9257,7 +9296,7 @@ export const PlaneView = memo(function PlaneView({
         personas={personaMarks}
         askPersona={openAskPersona}
         useSkill={openUseSkill}
-        skillBudgets={skillBudgets}
+        chatSkillSets={chatSkillSets}
         brief={openBrief}
         answer={openAnswer}
       >
@@ -10369,7 +10408,7 @@ function Lent({
   personas,
   askPersona,
   useSkill,
-  skillBudgets,
+  chatSkillSets,
   brief,
   answer,
   children,
@@ -10395,8 +10434,8 @@ function Lent({
   askPersona: OpenAskPersona;
   /** Opens Use skill… for a chat (`useOpenUseSkill`, #2775). */
   useSkill: OpenUseSkill;
-  /** Each open chat's skill budget, for the chip on its pane (#2775). */
-  skillBudgets: SkillBudgets;
+  /** Each open chat's skill set as a whole, for the chip on its pane (#2775, #3953). */
+  chatSkillSets: ChatSkillSets;
   /** Opens the Brief panel for a task (`useOpenBrief`, #1494). */
   brief: OpenBrief;
   /** Opens the Answer dialog for a task's question (`useOpenAnswer`, #1551). */
@@ -10416,11 +10455,11 @@ function Lent({
                       <ReloadPersonaMarks.Provider value={personas.reload}>
                         <AskPersonaOpener value={askPersona}>
                           <UseSkillOpener value={useSkill}>
-                            <SkillBudgetsHere.Provider value={skillBudgets}>
+                            <ChatSkillSetsHere.Provider value={chatSkillSets}>
                               <BriefOpener value={brief}>
                                 <AnswerOpener value={answer}>{children}</AnswerOpener>
                               </BriefOpener>
-                            </SkillBudgetsHere.Provider>
+                            </ChatSkillSetsHere.Provider>
                           </UseSkillOpener>
                         </AskPersonaOpener>
                       </ReloadPersonaMarks.Provider>

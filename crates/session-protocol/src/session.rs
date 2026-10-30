@@ -343,9 +343,22 @@ use crate::view::{Limits, Views};
 /// runner forget a profile it keeps for that desktop, with its folder and so its sign-in there,
 /// answered `done`. A profile the runner keeps of its own, or for another desktop, is refused. A
 /// host before 1.52 refuses it `unknown_command`, and the profile stays kept there.
+///
+/// 1.53 added a profile whose harness its runner is still fetching (#4008, spec #4023):
+/// `profile_kept` may answer [`ProfileStanding::Fetching`] while the runner fetches the harness
+/// version the profile pins, which a look started, so the window says so and asks again once the
+/// fetch has ended. A desktop before 1.53 reads it as `cannot_tell`, as it reads any word a later
+/// minor adds.
+///
+/// 1.54 added where each such clone came from (#3985, spec #2041): `clones` may carry `origins`,
+/// the `origin` URL of each clone's own configuration there, by its folder name, as the
+/// runner's git keeps it and only where it is a forge's HTTPS or SSH address with no sign-in in
+/// it. A runner sends it only to a link of 1.54 or later; one before 1.54 sends none, and a
+/// window before it ignores the field. The window holds every URL to its own rules again and
+/// gives a clone it makes fresh that remote.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 52,
+    minor: 54,
 };
 
 /// The version that first answers `relay_to` with the runner the link reached (#3417).
@@ -387,6 +400,13 @@ pub const KNOWS_PROFILE_SETTINGS: Version = Version {
 pub const KNOWS_CLONES_OF: Version = Version {
     major: 1,
     minor: 51,
+};
+
+/// The version that first says where each clone it holds came from (#3985): a host sends
+/// [`Answer::Clones`]'s `origins` only to a link of this version or later.
+pub const KNOWS_CLONE_ORIGINS: Version = Version {
+    major: 1,
+    minor: 54,
 };
 
 /// The version that first forgets a desktop's profile on a runner (#4047): the desktop asks no
@@ -1142,6 +1162,9 @@ pub enum ProfileStanding {
     SignedIn,
     /// The harness says it is not: a chat on it does not start there until it is.
     SignedOut,
+    /// The runner is fetching the harness version the profile pins, so its harness cannot say
+    /// yet (1.53, #4008): asked again once the fetch has ended, it answers.
+    Fetching,
     /// The harness did not say, or has no way to; and a word a later minor adds.
     #[serde(other)]
     CannotTell,
@@ -1432,8 +1455,14 @@ pub enum Answer {
     /// [`Command::GiveConversation`].
     Conversation { file: String },
     /// The folder name of each clone a host holds in a workspace (1.51):
-    /// [`Command::ClonesOf`].
-    Clones { repos: Vec<String> },
+    /// [`Command::ClonesOf`]. And the `origin` URL of each that has one a forge reaches, by its
+    /// folder name (1.54, [`KNOWS_CLONE_ORIGINS`]): the host's own word, which the window holds
+    /// to its own rules before it uses any.
+    Clones {
+        repos: Vec<String>,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        origins: BTreeMap<String, String>,
+    },
     /// Whether the profile a runner keeps is signed in there, as its harness says:
     /// [`Command::KeepProfile`] (1.43).
     ProfileKept { standing: ProfileStanding },
@@ -3147,12 +3176,12 @@ impl Client {
     }
 
     /// **The clones the host holds in `workspace`** of `project` (1.51, #3811), by their folder
-    /// names.
+    /// names, and the `origin` URL the host names for each it can (1.54, #3985).
     pub async fn clones_of(
         &self,
         project: &str,
         workspace: &str,
-    ) -> Result<Vec<String>, CallError> {
+    ) -> Result<(Vec<String>, BTreeMap<String, String>), CallError> {
         match self
             .call(Command::ClonesOf {
                 project: project.to_owned(),
@@ -3160,7 +3189,7 @@ impl Client {
             })
             .await?
         {
-            Answer::Clones { repos } => Ok(repos),
+            Answer::Clones { repos, origins } => Ok((repos, origins)),
             other => Err(unexpected(&other)),
         }
     }
