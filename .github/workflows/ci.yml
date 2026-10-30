@@ -215,7 +215,7 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
             cargo nextest run --workspace --locked --profile ci --no-capture \
-            -E 'package(purlis-core) & test(/^claude_codes_own_sandbox_holds_the_settings_purlis_writes::/)'
+            -E 'package(purlis-core) & binary(it) & test(/^claude_codes_own_sandbox_holds_the_settings_purlis_writes::/)'
       # The theme schema only grows within a format (#2524). `Run the tests` holds the engine's
       # schema to the committed `docs/schema/theme.v2.schema.json`; this step holds it to the
       # file the last release's tag holds, fetched with git, so an edit of the committed file

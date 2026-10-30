@@ -1865,3 +1865,16 @@ fn the_homes_git_config_is_made_empty_only_where_there_is_none() {
         );
     }
 }
+
+/// What the floor makes is a later-code name it holds, the home's among them.
+#[test]
+fn the_homes_git_config_made_is_one_the_floor_holds() {
+    assert!(
+        PLANTED
+            .iter()
+            .any(|planted| planted.path == claude::HOME_GIT_CONFIG
+                && planted.reach == Reach::AndBelow),
+        "{} is not held",
+        claude::HOME_GIT_CONFIG
+    );
+}

@@ -7,8 +7,9 @@
 //! names, and every script a harness's project config runs. Each is denied writing from the
 //! chat's start, resolved then.
 //!
-//! The search is bounded ([`DEPTH`], [`LOOKED_AT`]) and follows no link. Something added after
-//! the start, or beyond the bound, is not resolved: the config that would name it is itself
+//! The search follows no link. The places purlis itself runs git are read whole
+//! ([`clones_purlis_works_in`]); the rest of the plane is searched within a bound ([`DEPTH`],
+//! [`LOOKED_AT`]). Something added after the start, or beyond the bound, is not resolved: the config that would name it is itself
 //! never written by the chat, so only a config a person writes later can name something new.
 
 use std::path::{Path, PathBuf};
@@ -124,8 +125,11 @@ pub fn git_folder_pins(folders: &[PathBuf]) -> Vec<PathBuf> {
 /// level is read whole and no link is followed, so nothing else in the plane, however much it
 /// holds, keeps one of these from being found.
 pub fn clones_purlis_works_in(folder: &Path) -> Vec<PathBuf> {
-    // The directories in `dir`, never a link to one.
+    // The directories in `dir`, never a link to one; none where `dir` is itself a link.
     let folders_in = |dir: &Path| -> Vec<PathBuf> {
+        if !std::fs::symlink_metadata(dir).is_ok_and(|meta| meta.is_dir()) {
+            return Vec::new();
+        }
         let Ok(entries) = std::fs::read_dir(dir) else {
             return Vec::new();
         };
