@@ -229,18 +229,6 @@ fn refused_fell(parts: Value, family: &str) -> Vec<String> {
         .collect()
 }
 
-/// Whether the stylesheet draws `family`'s refused edge in the danger colour after every rule
-/// of the theme's own: the last rule keyed on the refused state alone.
-fn danger_edge_drawn(parts: Value, family: &str) -> bool {
-    let loaded = load(&with_parts(parts));
-    let sheet = parts::stylesheet(loaded.theme.first());
-    let refused = format!("[data-scope=\"{family}\"][data-part=\"root\"][data-invalid]) {{");
-    sheet
-        .lines()
-        .rfind(|line| line.contains(&refused))
-        .is_some_and(|line| line.contains("border-color: var(--danger-base)"))
-}
-
 #[test]
 fn a_transparent_refused_edge_falls_back() {
     for (family, _) in REFUSED {
@@ -279,17 +267,26 @@ fn a_refused_box_keeps_its_edge_s_width() {
 #[test]
 fn an_edge_at_rest_that_reaches_the_refused_box_falls_back() {
     for (family, _) in REFUSED {
-        // The rest edge reaches every state, so refused would look as valid: the refused state
-        // falls back, or, where the box's rest falls itself, the rest's fallback draws the
-        // refused state's own danger edge back after it (#4040), and it is not hidden.
+        // The rest edge reaches every state, so refused would look as valid. A strong edge on
+        // the box's own fill breaks its rest first, and the rest's fallback draws the refused
+        // state's danger edge back after it (#4040): the refused state no longer falls on its
+        // own, and the refusal shows.
         let parts = one(
             format!("{family}.root.border-colour"),
             json!("border.strong"),
         );
-        let fell = refused_fell(parts.clone(), family);
+        let loaded = load(&with_parts(parts.clone()));
+        let theme = loaded.theme.first();
+        let all: Vec<String> = parts::fallen(theme)
+            .into_iter()
+            .map(|one| one.part)
+            .collect();
+        let refused = refused_fell(parts, family);
+        let rest_fell = all.contains(&format!("{family}.root"));
+        assert!(rest_fell && refused.is_empty(), "{family}: {all:?}");
         assert!(
-            fell.contains(&format!("{family}.root.invalid")) || danger_edge_drawn(parts, family),
-            "{family}: {fell:?}"
+            parts::refusal_shown(theme, family, &[State::Invalid]),
+            "{family}: {all:?}"
         );
         // And so does a hover's or a focus's, with the state it holds at once.
         let fell = refused_fell(

@@ -72,9 +72,10 @@ fn reaches(compound: &str, marks: &[String]) -> bool {
     wanted.iter().all(has) && !refused.iter().any(has)
 }
 
-/// The colours the parts layer draws on an element marked `marks`: the last declaration of each
-/// property among the rules that reach it, in the stylesheet's order.
-fn resolved(sheet: &str, marks: &[String]) -> BTreeMap<String, String> {
+/// The colours the parts layer draws on an element marked `marks`, or on a part marked `inner`
+/// inside it: the last declaration of each property among the rules that reach it, in the
+/// stylesheet's order.
+fn resolved(sheet: &str, marks: &[String], inner: Option<&[String]>) -> BTreeMap<String, String> {
     let mut drawn = BTreeMap::new();
     for line in sheet.lines().map(str::trim) {
         let Some(rest) = line.strip_prefix(":where(") else {
@@ -83,13 +84,16 @@ fn resolved(sheet: &str, marks: &[String]) -> BTreeMap<String, String> {
         let Some((selector, body)) = rest.split_once(") {") else {
             continue;
         };
-        if selector.contains(' ') && !selector.contains(", ") {
-            continue;
-        }
-        if !selector
+        let hit = selector
             .split(", ")
-            .any(|one| !one.contains(' ') && reaches(one, marks))
-        {
+            .any(|one| match (one.split_once(' '), inner) {
+                (None, None) => reaches(one, marks),
+                (Some((outer, part)), Some(inner)) => {
+                    !part.contains(' ') && reaches(outer, marks) && reaches(part, inner)
+                }
+                _ => false,
+            });
+        if !hit {
             continue;
         }
         for declaration in body.trim_end_matches('}').split(';') {
@@ -118,48 +122,87 @@ fn marks_of(family: &Family, variant: &str, states: &[State]) -> Vec<String> {
     marks
 }
 
+/// The sets of states a family's look is read in after a fall at rest: each state, each set the
+/// hold measures, and each of them while unavailable.
+fn sets_of(family: &Family) -> Vec<Vec<State>> {
+    let enabled: Vec<Vec<State>> = family
+        .states
+        .iter()
+        .filter(|one| **one != State::Disabled)
+        .map(|one| vec![*one])
+        .chain(combined(family))
+        .collect();
+    let mut sets = enabled.clone();
+    if family.states.contains(&State::Disabled) {
+        sets.push(vec![State::Disabled]);
+        sets.extend(enabled.iter().map(|set| {
+            let mut with = set.clone();
+            with.push(State::Disabled);
+            with
+        }));
+    }
+    sets
+}
+
+/// The families no fall at rest is read in, each with why.
+const NOT_READ: &[(&str, &str)] = &[
+    // Drawn in marks and read on its track: they fall by their own rules (D-4040-4).
+    ("panel-separator", "drawn in marks: its rest never falls"),
+    ("meter", "read on its track, with no state"),
+];
+
 #[test]
 fn every_family_s_states_keep_their_own_looks_after_a_fall_at_rest() {
     let mut tested = Vec::new();
     let mut wrong = Vec::new();
     for family in MANIFEST {
-        // A family drawn in marks or read on its track falls by its own rules (D-4040-4).
-        if marked(family).is_some() || tracked(family).is_some() {
-            continue;
-        }
-        if !family.parts[0].properties.contains(&Prop::Text) {
+        if NOT_READ.iter().any(|(name, _)| *name == family.name) {
+            assert!(
+                marked(family).is_some() || tracked(family).is_some(),
+                "{} is read by its own rules",
+                family.name
+            );
             continue;
         }
         for variant in family.looks() {
             let rest = root_colours(family, variant, &[]);
-            // The states and the sets of them that draw a look of their own.
-            let sets: Vec<Vec<State>> = family
-                .states
-                .iter()
-                .map(|one| vec![*one])
-                .chain(combined(family))
+            let sets: Vec<Vec<State>> = sets_of(family)
+                .into_iter()
                 .filter(|set| family.draws(variant, set))
-                .filter(|set| root_colours(family, variant, set) != rest)
+                .filter(|set| {
+                    root_colours(family, variant, set) != rest
+                        || (family.defaults)(variant, set).text
+                            != (family.defaults)(variant, &[]).text
+                })
                 .collect();
             if sets.is_empty() {
                 continue;
             }
-            // Words that vanish at rest: the rest's own fill, or the family's first ground.
+            // A rest that falls: words in the rest's own fill or the family's first ground, or,
+            // for a root that takes no words, a fill in its own words' colour.
             let fill = rest.get(&Prop::Fill).copied().unwrap_or(TRANSPARENT);
-            let words = if fill == TRANSPARENT {
-                family.grounds.first().copied().unwrap_or("surface.base")
-            } else {
-                fill
+            let root = family.parts[0].name;
+            let at = |property: &str| {
+                if variant.is_empty() {
+                    format!("{}.{root}.{property}", family.name)
+                } else {
+                    format!("{}.{root}.{variant}.{property}", family.name)
+                }
             };
-            let key = if variant.is_empty() {
-                format!("{}.{}.text", family.name, family.parts[0].name)
+            let (key, value) = if family.parts[0].properties.contains(&Prop::Text) {
+                let words = if fill == TRANSPARENT {
+                    family.grounds.first().copied().unwrap_or("surface.base")
+                } else {
+                    fill
+                };
+                (at("text"), words)
             } else {
-                format!("{}.{}.{variant}.text", family.name, family.parts[0].name)
+                (at("fill"), (family.defaults)(variant, &[]).text)
             };
             let loaded = load(&json!({
                 "name": "Shaped",
                 "extends": "purlis",
-                "parts": { key.clone(): words },
+                "parts": { key.clone(): value },
                 "tint": { "on": false },
             }));
             let theme = loaded.theme.first();
@@ -167,17 +210,30 @@ fn every_family_s_states_keep_their_own_looks_after_a_fall_at_rest() {
                 .iter()
                 .any(|one| one.part == named(family, variant, &[]))
             {
+                wrong.push(format!("{key}: {value} did not make the rest fall"));
                 continue;
             }
-            tested.push(format!("{}.{variant}", family.name));
+            tested.push(family.name);
             let sheet = stylesheet(theme);
             for set in sets {
-                let drawn = resolved(&sheet, &marks_of(family, variant, &set));
-                for (property, token) in root_colours(family, variant, &set) {
+                let marks = marks_of(family, variant, &set);
+                // An unavailable control is never under the pointer or pressed: those keys are
+                // `:not([data-disabled])`.
+                let drawn_in: Vec<State> = if set.contains(&State::Disabled) {
+                    set.iter()
+                        .copied()
+                        .filter(|one| !matches!(one, State::Hover | State::Pressed))
+                        .collect()
+                } else {
+                    set.clone()
+                };
+                let look = (family.defaults)(variant, &drawn_in);
+                let drawn = resolved(&sheet, &marks, None);
+                for (property, token) in root_colours(family, variant, &drawn_in) {
                     // What the theme itself sets in one of these states is the theme's.
                     let own = theme.parts.keys().any(|one| {
                         one.family == family.name
-                            && one.part == family.parts[0].name
+                            && one.part == root
                             && one.property == property
                             && one.variant.is_none_or(|v| v == variant)
                             && one.state.is_some_and(|state| set.contains(&state))
@@ -191,36 +247,130 @@ fn every_family_s_states_keep_their_own_looks_after_a_fall_at_rest() {
                     if own || pill {
                         continue;
                     }
-                    let want = written(token);
                     let got = drawn.get(css_of(property)).cloned().unwrap_or_default();
-                    if got != want {
+                    if got != written(token) {
                         wrong.push(format!(
-                            "{key} {set:?} {}: {got} where the family draws {want}",
-                            css_of(property)
+                            "{key} {set:?} {}: {got} where the family draws {}",
+                            css_of(property),
+                            written(token)
+                        ));
+                    }
+                }
+                // The words of each part that follows the root's.
+                for (at, part) in family.parts.iter().enumerate().skip(1) {
+                    if !part.properties.contains(&Prop::Text)
+                        || family.own_words(at).is_some()
+                        || drawn_apart(family, part.name).is_some()
+                    {
+                        continue;
+                    }
+                    let inner = vec![
+                        format!("data-scope={}", family.name),
+                        format!("data-part={}", part.name),
+                    ];
+                    let drawn = resolved(&sheet, &marks, Some(&inner));
+                    let got = drawn.get("color").cloned().unwrap_or_default();
+                    if got != written(look.text) {
+                        wrong.push(format!(
+                            "{key} {set:?} {}'s words: {got} where the family draws {}",
+                            part.name,
+                            written(look.text)
                         ));
                     }
                 }
             }
         }
     }
-    assert!(tested.len() >= 10, "too few families fell: {tested:?}");
-    // The tab's pill under the pointer is drawn back on the pill.
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    // Every family with a look a state changes was read.
+    let mut read: Vec<&str> = tested.clone();
+    read.dedup();
+    assert!(read.len() >= 20, "{read:?}");
+    // The tab's pill under the pointer is drawn back on the pill, in every kind of tab.
+    let tabs = family("tabs").expect("the tabs");
+    for variant in tabs.looks() {
+        let loaded = load(&json!({
+            "name": "Shaped",
+            "extends": "purlis",
+            "parts": { format!("tabs.tab.{variant}.text"): "surface.deep" },
+            "tint": { "on": false },
+        }));
+        let sheet = stylesheet(loaded.theme.first());
+        let hover = (tabs.defaults)(variant, &[State::Hover]).fill;
+        assert!(
+            sheet.lines().any(
+                |line| line.contains(&format!("[data-variant=\"{variant}\"]"))
+                    && line.contains("::before")
+                    && line.contains(&format!("background-color: {}", written(hover)))
+            ),
+            "{variant}: {sheet}"
+        );
+    }
+}
+
+#[test]
+fn a_theme_s_own_state_colour_wins_in_every_set_that_holds_it() {
+    // The dispatcher's ruling on #4180's review: a theme that fills a quiet button under the
+    // pointer keeps that fill on one that is on and under the pointer, after its rest falls; the
+    // family's own colour fills only what the theme leaves unset.
+    let button = family("button").expect("the button");
     let loaded = load(&json!({
         "name": "Shaped",
         "extends": "purlis",
-        "parts": { "tabs.tab.chat.text": "surface.deep" },
+        "parts": {
+            "button.root.ghost.text": "surface.base",
+            "button.root.ghost.hover.fill": "control.base",
+        },
         "tint": { "on": false },
     }));
-    let sheet = stylesheet(loaded.theme.first());
-    assert!(
-        sheet
-            .lines()
-            .any(|line| line.contains("[data-variant=\"chat\"]")
-                && line.contains("::before")
-                && line.contains("background-color: var(--surface-overlay)")),
+    let theme = loaded.theme.first();
+    assert_eq!(
+        fallen(theme)
+            .iter()
+            .map(|one| one.part.as_str())
+            .collect::<Vec<_>>(),
+        ["button.root.ghost"]
+    );
+    let sheet = stylesheet(theme);
+    let fill = |states: &[State]| {
+        resolved(&sheet, &marks_of(button, "ghost", states), None)
+            .get("background-color")
+            .cloned()
+            .unwrap_or_default()
+    };
+    assert_eq!(fill(&[State::Hover]), "var(--control-base)", "{sheet}");
+    assert_eq!(
+        fill(&[State::Hover, State::Selected]),
+        "var(--control-base)",
         "{sheet}"
     );
-    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    assert_eq!(
+        fill(&[State::Selected]),
+        written((button.defaults)("ghost", &[State::Selected]).fill),
+        "{sheet}"
+    );
+}
+
+#[test]
+fn a_refused_change_comes_after_every_set_of_states_without_it() {
+    // D-4040-2: a box under the pointer, focused and refused draws its danger edge, whatever a
+    // set of states written back without the refusal draws.
+    let family = family("text-input").expect("a box");
+    let set = Rule {
+        family,
+        part: 0,
+        variant: None,
+        state: Some(State::Hover),
+        also: vec![State::Focused],
+        values: BTreeMap::new(),
+        fallback: true,
+    };
+    let refused = Rule {
+        state: Some(State::Invalid),
+        also: Vec::new(),
+        ..set.clone()
+    };
+    assert!(refused.order() > set.order());
 }
 
 #[test]
