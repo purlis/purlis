@@ -779,8 +779,8 @@ fn a_profile_is_signed_in_on_the_runner_by_its_own_sign_in_in_the_container_it_p
     );
 }
 
-/// **A sign-in purlis drives runs with pipes, never a terminal** (#4042): the same runner's own
-/// `purlis profile sign-in`, as the same user in the same container, with `-i` alone.
+/// **A runner's sign-in check is read by the words `--check` writes** (#4046): signed in, not, or
+/// that its harness cannot tell; anything else is the runner's own words.
 #[test]
 fn a_runners_sign_in_check_is_read_by_its_own_words() {
     use crate::profilestore::sign_in::Standing;
@@ -813,7 +813,8 @@ fn a_runners_sign_in_check_is_read_by_its_own_words() {
     assert!(standing_said("work", "'workshop' is signed in on r\n").is_err());
 }
 
-/// The sign-in the window drives runs the same one a terminal does, with pipes.
+/// **A sign-in purlis drives runs with pipes, never a terminal** (#4042): the same runner's own
+/// `purlis profile sign-in`, as the same user in the same container, with `-i` alone.
 #[test]
 fn a_driven_sign_in_runs_the_same_sign_in_with_pipes() {
     let driven = made().sign_in_args_by(Typed::Driven, "work", None);

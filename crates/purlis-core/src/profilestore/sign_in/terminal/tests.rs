@@ -175,7 +175,7 @@ fn a_failed_sign_in_says_why() {
     assert_eq!(
         ended,
         Err(
-            "'work' did not sign in on pool builds: the vendor is down. Run this again to try \
+            "'work' did not sign in on pool builds: the runner said: the vendor is down. Run this again to try \
              once more."
                 .to_owned()
         )

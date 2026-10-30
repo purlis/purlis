@@ -293,5 +293,11 @@ fn a_missing_profile_or_plan_says_what_to_do() {
     assert!(!no_plan.status.success());
     let said = String::from_utf8_lossy(&no_plan.stderr);
     assert!(said.contains("github-copilot"), "{said}");
+
+    machine.said(&["profile", "create", "fast", "--harness", "codex"]);
+    let codex = machine.purlis(&["profile", "sign-in", "fast", "--pool", "builds"]);
+    assert!(!codex.status.success());
+    let said = String::from_utf8_lossy(&codex.stderr);
+    assert!(said.contains("follows only"), "{said}");
     assert_eq!(machine.ran(), None);
 }

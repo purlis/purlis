@@ -4262,6 +4262,15 @@ fn pool_sign_in(
             named.join(" or ")
         ));
     }
+    if sign_in::driven::Driven::of_plan(&record.harness, provider, std::time::Instant::now())
+        .is_none()
+    {
+        return Err(format!(
+            "purlis follows only Claude Code's and opencode's Copilot sign-in on a pool so far. \
+             Sign '{}' in with Open in terminal on its line in Settings › Pools.",
+            record.name
+        ));
+    }
     // Nothing reaches a runner, nor is read of one, before its engine is shown to be yours.
     let engine = Docker::engine_on_this_machine();
     purlis_core::poollogins::owned(engine.clone())?;
@@ -4280,6 +4289,7 @@ fn pool_sign_in(
     let path = purlis_core::envvar::var("PATH");
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
     let docker = Docker::on_this_machine(path.as_deref(), home.as_deref()).map_err(|why| why.0)?;
+    eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
     docker
         .standing_on_runner(&runner.made, &engine, name)
         .map_err(|why| {

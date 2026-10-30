@@ -45,7 +45,12 @@ pub fn follow(
                     terminal.say(&format!("Enter this code on the page: {code}"));
                     terminal.say(&format!("The page: {url}"));
                     terminal.open(&url);
-                    terminal.say("Waiting for you to approve it there…");
+                    terminal.say(
+                        "GitHub should ask only to read your profile, for opencode's Copilot \
+                         sign-in. If it names another app, or asks for your repositories or \
+                         organisations, cancel there and here (Ctrl-C).",
+                    );
+                    terminal.say("Waiting for GitHub…");
                 }
                 Event::AskCode => {
                     terminal.say("Paste the code the page shows, then press Return:");

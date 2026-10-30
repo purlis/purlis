@@ -638,6 +638,12 @@ pub fn check_on(
     checked_on(inspected, made, engine, true)
 }
 
+/// The most kept of what a runner's sign-in check prints, on each of its outputs.
+const STANDING_MOST: u64 = 64 * 1024;
+
+/// How long a runner's sign-in check is waited for.
+const STANDING_WITHIN: std::time::Duration = std::time::Duration::from_secs(180);
+
 /// **What `purlis profile sign-in <name> --check` said of `name`, in `printed`**: signed in, not
 /// signed in, or that its harness cannot tell, each by the words that command writes. `Err`, in
 /// the runner's own words cut short, for anything else, such as a profile it does not keep.
@@ -2188,17 +2194,29 @@ impl Docker {
         command
             .args(&login.args)
             .arg("--check")
-            .envs(login.env.iter().map(|(n, v)| (n, v)))
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped());
+            .envs(login.env.iter().map(|(n, v)| (n, v)));
         for name in &login.cleared {
             command.env_remove(name);
         }
-        let printed = crate::forklock::spawn(&mut command)
-            .and_then(std::process::Child::wait_with_output)
-            .map_err(|e| format!("{} could not be run: {e}", login.program))?;
-        standing_said(name, &String::from_utf8_lossy(&printed.stderr))
+        // Bounded, in time and in what is kept of it: the runner's answer is its own. A runner
+        // that fetches the harness first (#4007) is given the time a fetch takes.
+        let ran = crate::boundedrun::run_within(
+            &mut command,
+            None,
+            STANDING_MOST,
+            STANDING_MOST,
+            Some(STANDING_WITHIN),
+        )
+        .map_err(|why| match why {
+            crate::boundedrun::Unanswered::NotStarted(e) => {
+                format!("{} could not be run: {e}", login.program)
+            }
+            crate::boundedrun::Unanswered::PrintedTooMuch => {
+                "it printed more than a status check does".to_owned()
+            }
+            crate::boundedrun::Unanswered::NotFinished(_) => "it did not answer in time".to_owned(),
+        })?;
+        standing_said(name, &String::from_utf8_lossy(&ran.said))
     }
 
     fn checked_sign_in(
