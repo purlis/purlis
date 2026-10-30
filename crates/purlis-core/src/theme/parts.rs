@@ -683,19 +683,26 @@ pub(super) struct ApartLook {
     pub(super) under: &'static [&'static str],
 }
 
-/// What each family's apart parts are drawn in, by family ([`ApartLook`]).
-type ApartLooks = fn(&str, Option<State>) -> ApartLook;
+/// What each family's apart parts are drawn in, by family, while a set of states holds
+/// ([`ApartLook`]).
+type ApartLooks = fn(&str, &[State]) -> ApartLook;
 
 /// The families with parts drawn apart, and what each part is drawn in.
 const APART_LOOKS: &[(&str, ApartLooks)] = &[("titlebar", shell::titlebar_apart_look)];
 
 /// What `part` of `family_name`, drawn apart from its root, is drawn in while `state` holds.
 pub(super) fn apart_look(family_name: &str, part: &str, state: Option<State>) -> ApartLook {
+    apart_look_in(family_name, part, state.as_slice())
+}
+
+/// What `part` of `family_name`, drawn apart from its root, is drawn in while `states` hold at
+/// once (#4000).
+pub(super) fn apart_look_in(family_name: &str, part: &str, states: &[State]) -> ApartLook {
     let (_, looks) = APART_LOOKS
         .iter()
         .find(|(name, _)| *name == family_name)
         .expect("a family with parts drawn apart");
-    looks(part, state)
+    looks(part, states)
 }
 
 /// **The version the manifest says which parts are drawn apart in** (#3656): its `apart` on each
@@ -722,6 +729,44 @@ fn apart_in_nothing(
     drawn_apart(family, part).is_some_and(|carried| {
         variant.is_some() || state.is_some_and(|one| !carried.contains(&one))
     })
+}
+
+/// **What a part drawn apart is drawn in**, by family and part (#4000): a switcher row's count
+/// is drawn in its row, so a fill a theme gives the row is under it too.
+const APART_IN: &[(&str, &str, &str)] = &[("titlebar", "row-count", "row")];
+
+/// The part `part` of `family` is drawn in, where it is drawn in another ([`APART_IN`]).
+fn holder_of(family: &Family, part: &str) -> Option<usize> {
+    let (_, _, holder) = APART_IN
+        .iter()
+        .find(|(name, one, _)| *name == family.name && *one == part)?;
+    family.parts.iter().position(|one| one.name == *holder)
+}
+
+/// **What a part drawn apart takes no key of**, by family and part (#4000): an unavailable
+/// switcher row stays in the faint tier `titlebar.css` draws it in, which the check holds on the
+/// popover as a mark (`text.faint` on `surface.overlay`), so a theme's row keys never reach it.
+const APART_EXCEPT: &[(&str, &str, &str)] = &[("titlebar", "row", ":not([data-unavailable])")];
+
+/// The sets of states a part drawn apart is measured in: at rest, each of its own states but
+/// disabled alone, and under the pointer with each other state it is in at once (#4000): a
+/// pinned pin under the pointer, the row Enter would go to under the pointer.
+fn apart_sets(carried: &[State]) -> Vec<Vec<State>> {
+    let own: Vec<State> = carried
+        .iter()
+        .copied()
+        .filter(|one| *one != State::Disabled)
+        .collect();
+    let mut sets = vec![Vec::new()];
+    sets.extend(own.iter().map(|one| vec![*one]));
+    if own.contains(&State::Hover) {
+        sets.extend(
+            own.iter()
+                .filter(|one| matches!(one, State::Selected))
+                .map(|one| vec![State::Hover, *one]),
+        );
+    }
+    sets
 }
 
 /// **The grounds a part's words are read on, where they are fewer than its family's** (#3254), by
@@ -2222,14 +2267,14 @@ fn part_fill(
         })
 }
 
-/// The colour `rules` set `property` of part `at` in, while `state` holds and in no variant, as
+/// The colour `rules` set `property` of part `at` in, while `states` hold and in no variant, as
 /// the stylesheet's order resolves them; `None` when nothing sets it. A rule at rest reaches the
 /// part in every state.
 fn set_colour(
     rules: &[Rule],
     family: &Family,
     at: usize,
-    state: Option<State>,
+    states: &[State],
     property: Prop,
 ) -> Option<&'static str> {
     let mut ordered: Vec<&Rule> = rules
@@ -2238,7 +2283,7 @@ fn set_colour(
             std::ptr::eq(rule.family, family)
                 && rule.part == at
                 && rule.variant.is_none()
-                && rule.state.is_none_or(|one| Some(one) == state)
+                && rule.state.is_none_or(|one| states.contains(&one))
         })
         .collect();
     ordered.sort_by_key(|rule| rule.order());
@@ -3085,8 +3130,76 @@ fn held_on_surfaces(
                 break;
             }
         }
+        // The parts drawn apart from their root that stand on the surface's default (a
+        // switcher's rows and pins on the popover, #4000), as they are drawn, on the fill set.
+        if fell
+            .iter()
+            .any(|one| one.part == named(surface, variant, &[]))
+        {
+            continue;
+        }
+        if let Some((family, floor, ratio)) = apart_broken_on(theme, rules, default, set) {
+            Held {
+                family: surface,
+                rules: &mut *rules,
+                fell: &mut *fell,
+            }
+            .fall(
+                variant,
+                &[],
+                format!("what a {} draws on it: {floor}", family.name),
+                Some(ratio),
+            );
+        }
     }
     fell.len() > before
+}
+
+/// [`apart_broken_on`] with the defaults alone, for the tests: the family, the floor and the
+/// contrast.
+#[cfg(test)]
+pub(super) fn apart_breaks_on(
+    theme: &ResolvedTheme,
+    default: &str,
+    set: &'static str,
+) -> Option<(&'static str, String, f64)> {
+    apart_broken_on(theme, &[], default, set)
+        .map(|(family, floor, ratio)| (family.name, floor, ratio))
+}
+
+/// **What a part drawn apart from its root, standing on `default`, breaks on `set`**, a
+/// surface's fill a theme sets in its place (#4000): its words and fill as drawn, at rest and in
+/// each of its own states, held to their floor on that fill.
+fn apart_broken_on(
+    theme: &ResolvedTheme,
+    rules: &[Rule],
+    default: &str,
+    set: &'static str,
+) -> Option<(&'static Family, String, f64)> {
+    let on = laid(theme, &[set]);
+    for (name, part, carried) in APART {
+        let family = family(name)?;
+        let at = family.parts.iter().position(|one| one.name == *part)?;
+        for states in apart_sets(carried) {
+            let own = apart_look_in(name, part, &states);
+            if !own.under.contains(&default) {
+                continue;
+            }
+            let fill = set_colour(rules, family, at, &states, Prop::Fill).unwrap_or(own.fill);
+            let words = set_colour(rules, family, at, &states, Prop::Text).unwrap_or(own.words);
+            let floor = theme.least.floor(floor_of(family, &family.parts[at]));
+            if let Some(ratio) = lowest(theme, &on, fill, words)
+                && ratio < floor
+            {
+                return Some((
+                    family,
+                    format!("the {part}'s words contrast {floor}:1 with its fill"),
+                    ratio,
+                ));
+            }
+        }
+    }
+    None
 }
 
 /// The states `family` names but disabled, in the order the stylesheet writes them.
@@ -3241,52 +3354,67 @@ impl Held<'_> {
             let Some(carried) = drawn_apart(family, part.name) else {
                 continue;
             };
-            let states = std::iter::once(None).chain(
-                carried
-                    .iter()
-                    .copied()
-                    .filter(|one| *one != State::Disabled)
-                    .map(Some),
-            );
-            for state in states {
-                let set = |property| set_colour(self.rules, family, at, state, property);
+            for states in apart_sets(carried) {
+                let set = |property| set_colour(self.rules, family, at, &states, property);
                 let (fill, words) = (set(Prop::Fill), set(Prop::Text));
-                if fill.is_none() && words.is_none() {
-                    continue;
-                }
-                let own = apart_look(family.name, part.name, state);
-                let on = laid(theme, own.under);
+                let own = apart_look_in(family.name, part.name, &states);
                 let floor = theme.least.floor(floor_of(family, part));
-                let Some(ratio) = lowest(
-                    theme,
-                    &on,
-                    fill.unwrap_or(own.fill),
-                    words.unwrap_or(own.words),
-                ) else {
+                // On what it stands on by default, where the theme colours it.
+                if fill.is_some() || words.is_some() {
+                    let on = laid(theme, own.under);
+                    if let Some(ratio) = lowest(
+                        theme,
+                        &on,
+                        fill.unwrap_or(own.fill),
+                        words.unwrap_or(own.words),
+                    ) && ratio < floor
+                    {
+                        self.fall_apart(at, &states, floor, ratio);
+                        continue;
+                    }
+                }
+                // And on the fills a theme gives what holds it (#4000): a row's count on the
+                // row. Where even its default cannot be read there, what holds it falls.
+                let Some(holder) = holder_of(family, part.name) else {
                     continue;
                 };
-                if ratio < floor {
-                    self.fall_apart(at, state, own, floor, ratio);
+                for held_in in
+                    apart_sets(drawn_apart(family, family.parts[holder].name).unwrap_or_default())
+                {
+                    let Some(under) = set_colour(self.rules, family, holder, &held_in, Prop::Fill)
+                        .filter(|one| *one != TRANSPARENT)
+                    else {
+                        continue;
+                    };
+                    let on = laid(theme, &[under]);
+                    let read = |fill: &str, words: &str| lowest(theme, &on, fill, words);
+                    let drawn = read(fill.unwrap_or(own.fill), words.unwrap_or(own.words));
+                    if drawn.is_none_or(|ratio| ratio >= floor) {
+                        continue;
+                    }
+                    let by_default = read(own.fill, own.words);
+                    if (fill.is_some() || words.is_some())
+                        && by_default.is_none_or(|ratio| ratio >= floor)
+                    {
+                        self.fall_apart(at, &states, floor, drawn.unwrap_or_default());
+                    } else {
+                        self.fall_apart(holder, &held_in, floor, drawn.unwrap_or_default());
+                    }
+                    break;
                 }
             }
         }
     }
 
-    /// Part `at`, drawn apart from the root, draws its own default back while `state` holds,
-    /// said once in a [`Fell`] that names it (`titlebar.crumb.hover`).
-    fn fall_apart(
-        &mut self,
-        at: usize,
-        state: Option<State>,
-        own: ApartLook,
-        floor: f64,
-        ratio: f64,
-    ) {
+    /// Part `at`, drawn apart from the root, draws its own default back while `states` hold,
+    /// said once in a [`Fell`] that names it (`titlebar.crumb.hover`, `titlebar.pin.hover+selected`).
+    fn fall_apart(&mut self, at: usize, states: &[State], floor: f64, ratio: f64) {
         let family = self.family;
         let part = &family.parts[at];
         let mut named = format!("{}.{}", family.name, part.name);
-        if let Some(state) = state {
-            let _ = write!(named, ".{}", state.name());
+        if !states.is_empty() {
+            let names: Vec<&str> = states.iter().map(|one| one.name()).collect();
+            let _ = write!(named, ".{}", names.join("+"));
         }
         if self.fell.iter().any(|one| one.part == named) {
             return;
@@ -3304,49 +3432,61 @@ impl Held<'_> {
             ),
             ratio: Some(ratio),
         });
-        let drawn_back = |state: Option<State>, own: ApartLook| Rule {
+        let drawn_back = |state: Option<State>| Rule {
             family,
             part: at,
             variant: None,
             state,
-            values: [(Prop::Fill, own.fill), (Prop::Text, own.words)]
-                .into_iter()
-                .filter(|(property, _)| part.properties.contains(property))
-                .map(|(property, token)| (property, PartValue::Colour(token)))
-                .collect(),
+            values: {
+                let own = apart_look(family.name, part.name, state);
+                [(Prop::Fill, own.fill), (Prop::Text, own.words)]
+                    .into_iter()
+                    .filter(|(property, _)| part.properties.contains(property))
+                    .map(|(property, token)| (property, PartValue::Colour(token)))
+                    .collect()
+            },
             fallback: true,
         };
-        self.rules.push(drawn_back(state, own));
+        let written = |rules: &[Rule], state: Option<State>| {
+            rules.iter().any(|rule| {
+                std::ptr::eq(rule.family, family)
+                    && rule.fallback
+                    && rule.part == at
+                    && rule.state == state
+            })
+        };
+        if !states.is_empty() {
+            // A set of states draws each of its states' defaults back: a stylesheet rule names
+            // one state, and these fell together (#4000).
+            for one in states {
+                if !written(self.rules, Some(*one)) {
+                    self.rules.push(drawn_back(Some(*one)));
+                }
+            }
+            return;
+        }
+        self.rules.push(drawn_back(None));
         // At rest the default reaches every state, and would draw its none over a state's own
         // fill (the row Enter would go to, an open crumb): each state's default is drawn back
         // after it, so every state looks as it does by default (#3997's review).
-        if state.is_none() {
-            for one in drawn_apart(family, part.name).unwrap_or_default() {
-                let written = self.rules.iter().any(|rule| {
+        for one in drawn_apart(family, part.name).unwrap_or_default() {
+            if written(self.rules, Some(*one)) {
+                continue;
+            }
+            // What the theme sets in that state itself is kept: only the rest rule fell.
+            let mut back = drawn_back(Some(*one));
+            back.values.retain(|property, _| {
+                !self.rules.iter().any(|rule| {
                     std::ptr::eq(rule.family, family)
-                        && rule.fallback
+                        && !rule.fallback
                         && rule.part == at
+                        && rule.variant.is_none()
                         && rule.state == Some(*one)
-                });
-                if written {
-                    continue;
-                }
-                // What the theme sets in that state itself is kept: only the rest rule fell.
-                let mut back =
-                    drawn_back(Some(*one), apart_look(family.name, part.name, Some(*one)));
-                back.values.retain(|property, _| {
-                    !self.rules.iter().any(|rule| {
-                        std::ptr::eq(rule.family, family)
-                            && !rule.fallback
-                            && rule.part == at
-                            && rule.variant.is_none()
-                            && rule.state == Some(*one)
-                            && rule.values.contains_key(property)
-                    })
-                });
-                if !back.values.is_empty() {
-                    self.rules.push(back);
-                }
+                        && rule.values.contains_key(property)
+                })
+            });
+            if !back.values.is_empty() {
+                self.rules.push(back);
             }
         }
     }
@@ -3390,8 +3530,51 @@ impl Held<'_> {
         if !written {
             self.rules.extend(fallback(family, variant, state));
         }
+        // At rest the root's default reaches every state, and would draw its rest fill over the
+        // fill its own stylesheet gives a state (a chip under the pointer, the current one): each
+        // state's own default is drawn back after it, keeping what the theme sets in that state
+        // itself (#4000, as #3997 did for a part drawn apart). Only where #4000 found it: every
+        // other family's states already fall with their rest, as their tests hold.
+        if state.is_none() && REST_KEEPS_STATES.contains(&family.name) {
+            for one in states_of(family) {
+                let already = self.rules.iter().any(|rule| {
+                    std::ptr::eq(rule.family, family)
+                        && rule.fallback
+                        && rule.part == 0
+                        && rule.variant == reached
+                        && rule.state == Some(one)
+                });
+                if already {
+                    continue;
+                }
+                let Some(mut back) = fallback(family, variant, Some(one))
+                    .into_iter()
+                    .find(|rule| rule.part == 0)
+                else {
+                    continue;
+                };
+                back.values.retain(|property, _| {
+                    !self.rules.iter().any(|rule| {
+                        std::ptr::eq(rule.family, family)
+                            && !rule.fallback
+                            && rule.part == 0
+                            && rule.variant.is_none_or(|v| Some(v) == reached)
+                            && rule.state == Some(one)
+                            && rule.values.contains_key(property)
+                    })
+                });
+                if !back.values.is_empty() {
+                    self.rules.push(back);
+                }
+            }
+        }
     }
 }
+
+/// **The families whose root, falling at rest, draws its states' own defaults back after it**
+/// (#4000): a title-bar chip, whose stylesheet's fills under the pointer and while current a
+/// stateless rest fallback in the parts layer would otherwise cover.
+const REST_KEEPS_STATES: &[&str] = &["titlebar"];
 
 /// `<family>.<root>[.<variant>]`, with the states that hold joined by `+` (`hover+pressed`).
 fn named(family: &Family, variant: &str, states: &[State]) -> String {
@@ -3911,8 +4094,12 @@ fn selector(rule: &Rule, sized: bool) -> String {
             .state
             .map(|one| rule.family.attribute(one))
             .unwrap_or_default();
+        let except = APART_EXCEPT
+            .iter()
+            .find(|(name, one, _)| *name == rule.family.name && *one == part)
+            .map_or("", |(_, _, not)| *not);
         return format!(
-            ":where([data-scope=\"{}\"][data-part=\"{part}\"]{state})",
+            ":where([data-scope=\"{}\"][data-part=\"{part}\"]{state}{except})",
             rule.family.name
         );
     }
