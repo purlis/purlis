@@ -180,6 +180,12 @@ describe("installing a skill from a skill source", function () {
     // again on. `skills.lock` is written before the copies are committed and the answer comes, so
     // on a loaded machine the lock alone left the Library's read still to come.
     await installAnswered();
+    // And the app says the install ended: the source's page, the skill marked Installed (#3973).
+    await $('[data-testid="skill-source-page"]').waitForExist({ timeout: 30_000 });
+    await browser.waitUntil(
+      async () => /Installed/.test(await $(`[data-testid="offered-${SHIPPER}"]`).getText()),
+      { timeout: 30_000, timeoutMsg: `the source's page never marked ${SHIPPER} Installed` },
+    );
     await browser.waitUntil(async () => existsSync(join(root, "skills.lock")), {
       timeout: 30_000,
       timeoutMsg: "the install never wrote skills.lock",
