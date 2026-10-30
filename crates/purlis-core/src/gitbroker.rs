@@ -87,7 +87,12 @@ fn isolated_answer(
     // The guard's question before plain git writes a branch folder (#3931): no git runs, so
     // none of the checks below on where git would run is asked.
     if let GitWork::WorktreeClaim { repo, piece, act } = &ask.work {
-        return claim(root, asker, &ask.workspace, repo, piece, *act, now);
+        let folder = crate::worktree::Located {
+            workspace: ask.workspace.clone(),
+            repo: repo.clone(),
+            piece: piece.clone(),
+        };
+        return claim(root, asker, &folder, *act, now);
     }
     // A workspace the ask makes is one no chat works in yet: the chat need only stand in the
     // project. Every other ask writes a workspace the chat already writes.
@@ -261,10 +266,8 @@ fn isolated_answer(
                 (Ok(code), None) => code,
             }
         }
-        // Answered before anything above was asked ([`claim`]).
-        GitWork::WorktreeClaim { repo, piece, act } => {
-            return claim(root, asker, &ask.workspace, repo, piece, *act, now);
-        }
+        // Answered before anything above was asked ([`claim`]), and never reaches here.
+        GitWork::WorktreeClaim { .. } => unreachable!("a claim is answered before any check"),
         GitWork::RootUpdate {} => {
             // Placed at the root above, so its own folder is the root.
             let chat_dir = asker.cwd.as_deref().unwrap_or(root);
@@ -756,8 +759,8 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
     }
 }
 
-/// **Whether a chat's plain git may `act` in branch folder `<repo>/<piece>` of workspace `ws`**
-/// (#3931): the one-live-writer check a brokered write makes ([`crate::piececlaim::take`]),
+/// **Whether a chat's plain git may `act` in the branch folder `at`** (#3931): the
+/// one-live-writer check a brokered write makes ([`crate::piececlaim::take`]),
 /// asked by the Bash guard of a chat that runs git itself, so plain git in a folder another
 /// live chat holds is refused in the brokered refusal's words, and a chat that writes in a
 /// folder no live chat holds takes it. An empty `Said` with exit 0 where it may.
@@ -768,9 +771,7 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
 fn claim(
     root: &Path,
     asker: &Asker,
-    ws: &str,
-    repo: &str,
-    piece: &str,
+    at: &crate::worktree::Located,
     act: crate::hookwire::ClaimAct,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Answer {
@@ -781,32 +782,20 @@ fn claim(
     if !asker.harnessed {
         return may;
     }
-    if !crate::contain::workspace_name_ok(ws)
-        || !crate::contain::repo_name_ok(repo)
-        || !crate::worktree::name::piece_name_ok(piece)
+    if !crate::contain::workspace_name_ok(&at.workspace)
+        || !crate::contain::repo_name_ok(&at.repo)
+        || !crate::worktree::name::piece_name_ok(&at.piece)
     {
         return Answer::No {
             why: format!(
                 "'{}' · '{}' · '{}' cannot name a branch folder",
-                crate::shown::short(ws),
-                crate::shown::short(repo),
-                crate::shown::short(piece)
+                crate::shown::short(&at.workspace),
+                crate::shown::short(&at.repo),
+                crate::shown::short(&at.piece)
             ),
         };
     }
-    let folder = crate::worktree::Located {
-        workspace: ws.to_owned(),
-        repo: repo.to_owned(),
-        piece: piece.to_owned(),
-    };
-    match crate::piececlaim::take(
-        root,
-        &folder,
-        &who(asker),
-        asker.live.as_deref(),
-        act.act(),
-        now,
-    ) {
+    match crate::piececlaim::take(root, at, &who(asker), asker.live.as_deref(), act.act(), now) {
         Ok(()) => may,
         Err(why) => Answer::No { why },
     }
