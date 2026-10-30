@@ -158,52 +158,61 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
     crate::hooks::Answered::of(allowed.map_or(Answer::Nothing, Answer::Say))
 }
 
-/// How long the guard waits for the app to judge a branch folder's claim (#3931): a check and
-/// one appended line, well inside the hook's [`BUDGET`].
-const A_CLAIM_IS_ANSWERED_WITHIN: Duration = Duration::from_millis(1200);
+/// How long the guard waits, in all, for the app to judge a line's branch folder claims
+/// (#3931): each is a check and one appended line, and the whole wait stays well inside the
+/// hook's [`BUDGET`], whatever the arms before it took.
+const CLAIMS_ARE_ANSWERED_WITHIN: Duration = Duration::from_millis(900);
 
 /// **The one-writer guard on a chat's plain git** (#3931): the refusal of `command`, run in
-/// `cwd` in the project at `root` by a chat that runs git itself, where it commits, updates or
-/// pushes in a branch folder another live chat holds ([`purlis_core::piececlaim`]), in the
-/// brokered refusal's words; or `None`.
+/// `cwd` in the project at `root` by a chat that runs git itself, where any git on the line
+/// commits, updates or pushes in a branch folder another live chat holds
+/// ([`purlis_core::piececlaim`]), in the brokered refusal's words; or `None`.
 ///
 /// Asked only of a chat the app started (it has a chat number): the person's own terminal runs
-/// no hook, and a harness they start themselves is theirs. The app judges the claim against the
-/// chats it has, and the chat takes a folder no live chat holds. Where no app takes the ask, or
-/// it does not answer in time, the piece log alone decides, as `purlis worktree push` does
-/// with no app: a folder another chat holds is refused, since whether that chat lives cannot be
-/// told (fail closed), and the holder's own git runs.
+/// no hook, and a harness they start themselves is theirs. The app judges each write's claim
+/// against the chats it has, and the chat takes a folder no live chat holds.
+///
+/// **No answer lets the call through** (the review of #4129). This guards against accidents
+/// and is not a wall: where no app takes the ask (none, or one older than it), or none answers
+/// within [`CLAIMS_ARE_ANSWERED_WITHIN`], the git runs. A stale claim of a chat that has ended
+/// can then never stop another, and a slow app can never cost the hook its budget.
 fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate::Verdict> {
     use purlis_core::hookwire::{ClaimAct, GitWork};
-    let chat = crate::session::chat_number()?;
-    let (sub, act, folder) =
-        purlis_core::branchgit::branch_write(command, cwd, &root.display().to_string())?;
-    let at = purlis_core::worktree::locate(root, &folder)?;
-    let work = GitWork::WorktreeClaim {
-        repo: at.repo.clone(),
-        piece: at.piece.clone(),
-        act: ClaimAct::of(act)?,
-    };
-    let refused = match crate::gitask::forwarded(&at.workspace, work, A_CLAIM_IS_ANSWERED_WITHIN) {
-        crate::gitask::Forwarded::Said { code: 0, .. } => None,
-        crate::gitask::Forwarded::Refused(why) => Some(why),
-        crate::gitask::Forwarded::Said { .. }
-        | crate::gitask::Forwarded::NotTaken
-        | crate::gitask::Forwarded::Unsure(_) => {
-            let who = purlis_core::pieces::Who::here(
-                purlis_core::machine::config_root_if_there().as_deref(),
-                Some(chat.to_string()),
-                purlis_core::envvar::var(purlis_core::active::PERSONA_ENV),
-            )
-            .for_chat(purlis_core::envvar::var(purlis_core::hookwire::CHAT_ID_ENV));
-            purlis_core::piececlaim::take(root, &at, &who, None, act, chrono::Utc::now()).err()
+    crate::session::chat_number()?;
+    let ends = Instant::now() + CLAIMS_ARE_ANSWERED_WITHIN;
+    let mut asked = Vec::new();
+    for write in purlis_core::branchgit::branch_write(command, cwd, &root.display().to_string()) {
+        let Some(at) = purlis_core::worktree::locate(root, &write.folder) else {
+            continue;
+        };
+        let Some(act) = ClaimAct::of(write.what) else {
+            continue;
+        };
+        // One ask per folder and act: two commits in one folder on one line ask once.
+        if asked.contains(&(at.clone(), act)) {
+            continue;
         }
-    };
-    refused.map(|why| toolgate::Verdict {
-        reason: purlis_core::piececlaim::REASON.to_owned(),
-        shape: Some(sub),
-        denial: why,
-    })
+        asked.push((at.clone(), act));
+        let left = ends.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return None;
+        }
+        let work = GitWork::WorktreeClaim {
+            repo: at.repo.clone(),
+            piece: at.piece.clone(),
+            act,
+        };
+        if let crate::gitask::Forwarded::Refused(why) =
+            crate::gitask::forwarded(&at.workspace, work, left)
+        {
+            return Some(toolgate::Verdict {
+                reason: purlis_core::piececlaim::REASON.to_owned(),
+                shape: Some(write.sub),
+                denial: why,
+            });
+        }
+    }
+    None
 }
 
 /// The stack the guards run on: far more than any of them needs.

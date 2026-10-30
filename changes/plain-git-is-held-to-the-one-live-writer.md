@@ -4,6 +4,6 @@
   without the sandbox that runs `git commit`, `git push`, `git pull` or `git rebase` (or a merge,
   cherry-pick, revert or am) in a branch folder another live chat holds is refused before the
   command runs, naming the chat that holds it, in the words `purlis worktree commit`, `update` and
-  `push` are refused in. The first chat to write in a free folder takes it. When purlis can't
-  tell whether the holder is still running, it refuses. Your own terminal, and a harness you
-  start yourself, are never held to it (#3931).
+  `push` are refused in. The first chat to write in a free folder takes it. When the app
+  doesn't answer, the git runs. Your own terminal, and a harness you start yourself, are never
+  held to it (#3931).

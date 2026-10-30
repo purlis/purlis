@@ -1899,6 +1899,12 @@ pub enum GitWork {
 }
 
 /// What plain git would do in a branch folder, as a [`GitWork::WorktreeClaim`] names it.
+///
+/// **A wire enum of its own, not [`crate::piececlaim::Act`]**: that one also names a removal
+/// and a dispatch's warning, which no claim ask may carry, and its words are prose for a
+/// refusal. This holds the three a chat's git can ask about, in the stable snake-case spelling
+/// the socket's lines keep across app and command-line versions; [`ClaimAct::act`] and
+/// [`ClaimAct::of`] map between the two.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClaimAct {

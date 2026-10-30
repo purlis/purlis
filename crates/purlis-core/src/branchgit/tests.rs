@@ -12,6 +12,8 @@ struct Layout {
     root: PathBuf,
     clone: PathBuf,
     folder: PathBuf,
+    /// A second branch folder purlis made, `workspaces/ide/.worktrees/purlis/second`.
+    second: PathBuf,
     theirs: PathBuf,
 }
 
@@ -21,8 +23,13 @@ impl Layout {
         let root = std::fs::canonicalize(dir.path()).unwrap();
         let clone = root.join("workspaces/ide/purlis");
         let folder = root.join("workspaces/ide/.worktrees/purlis/guard-port");
+        let second = root.join("workspaces/ide/.worktrees/purlis/second");
         let theirs = root.join("workspaces/ide/scratch/side");
-        for (name, at) in [("guard-port", &folder), ("side", &theirs)] {
+        for (name, at) in [
+            ("guard-port", &folder),
+            ("second", &second),
+            ("side", &theirs),
+        ] {
             let record = clone.join(".git/worktrees").join(name);
             std::fs::create_dir_all(&record).unwrap();
             std::fs::create_dir_all(at.join("src")).unwrap();
@@ -38,6 +45,7 @@ impl Layout {
             root,
             clone,
             folder,
+            second,
             theirs,
         }
     }
@@ -145,15 +153,79 @@ fn a_move_it_cannot_place_is_left_to_the_sandbox() {
 }
 
 impl Layout {
-    fn write(&self, cmd: &str, cwd: &Path) -> Option<(String, crate::piececlaim::Act)> {
-        let (sub, act, folder) = branch_write(
+    /// Every write on the line, as `(subcommand, act, folder)`.
+    fn writes(&self, cmd: &str, cwd: &Path) -> Vec<(String, crate::piececlaim::Act, PathBuf)> {
+        branch_write(
             cmd,
             &cwd.display().to_string(),
             &self.root.display().to_string(),
-        )?;
+        )
+        .into_iter()
+        .map(|one| (one.sub, one.what, one.folder))
+        .collect()
+    }
+
+    /// The line's one write, which must be in [`Layout::folder`], or `None` for none.
+    fn write(&self, cmd: &str, cwd: &Path) -> Option<(String, crate::piececlaim::Act)> {
+        let mut writes = self.writes(cmd, cwd);
+        assert!(writes.len() <= 1, "{cmd}: {writes:?}");
+        let (sub, act, folder) = writes.pop()?;
         assert_eq!(folder, self.folder, "{cmd}");
         Some((sub, act))
     }
+}
+
+/// The review of #4129: every write on the line is judged, each in its own folder, not only
+/// the first.
+#[test]
+fn every_write_on_a_line_is_named_each_with_its_own_folder() {
+    use crate::piececlaim::Act;
+    let l = Layout::new();
+    let cmd = format!(
+        "git -C {} commit -m x && git -C {} push",
+        l.folder.display(),
+        l.second.display()
+    );
+    assert_eq!(
+        l.writes(&cmd, &l.clone),
+        vec![
+            ("commit".to_owned(), Act::Commit, l.folder.clone()),
+            ("push".to_owned(), Act::Push, l.second.clone()),
+        ]
+    );
+    // What was placed before a move that cannot be is kept; nothing after it is read.
+    let cmd = format!(
+        "git -C {} commit -m x && cd $ELSEWHERE && git push",
+        l.folder.display()
+    );
+    assert_eq!(
+        l.writes(&cmd, &l.clone),
+        vec![("commit".to_owned(), Act::Commit, l.folder.clone())]
+    );
+}
+
+/// The review of #4129: `env -C <folder> git …` moves that one command, so it is placed there,
+/// and the shell after it stays where it was.
+#[test]
+fn a_wrappers_own_move_to_a_literal_folder_places_that_one_command() {
+    use crate::piececlaim::Act;
+    let l = Layout::new();
+    let cmd = format!("env -C {} git push", l.second.display());
+    assert_eq!(
+        l.writes(&cmd, &l.clone),
+        vec![("push".to_owned(), Act::Push, l.second.clone())]
+    );
+    let cmd = format!("env -C {} git commit -m x; git push", l.folder.display());
+    assert_eq!(
+        l.writes(&cmd, &l.clone),
+        vec![("commit".to_owned(), Act::Commit, l.folder.clone())],
+        "the push runs in the clone"
+    );
+    // A move it cannot place leaves that command alone.
+    assert_eq!(l.writes("env -C $PIECE git push", &l.clone), Vec::new());
+    // And the sandboxed chat's arm places it the same way.
+    let cmd = format!("env -C {} git commit -m x", l.folder.display());
+    assert!(l.ask(&cmd, &l.clone).is_some(), "{cmd}");
 }
 
 /// #3931: what an unsandboxed chat's guard holds to the folder's one live writer.
