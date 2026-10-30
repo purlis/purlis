@@ -3912,6 +3912,9 @@ body {
   /* Held to the room the card is given (React Aria's max height on the surface, a flex column):
      shrunk to it, never its content's height, its notices scroll inside it, the point outside it
      left whole, and nothing of them runs past it into the page and lengthens it (#3653). */
+  /* The place of what its notices place absolutely (a status's words for a screen reader), so
+     that is clipped with the list too and never lengthens the page from far down it. */
+  position: relative;
   box-sizing: border-box;
   flex: 0 1 auto;
   min-block-size: 0;
