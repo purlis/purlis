@@ -21,6 +21,11 @@
 //! its host is refused without being repeated, and a host the plane does not manage is
 //! refused, so a tracked file cannot send a clone somewhere the forge's credential helper
 //! would then be asked about.
+//!
+//! # How it runs
+//!
+//! A clone that is not a chat's lands whole, with no total deadline ([`landing`]). A chat's
+//! brokered clone keeps [`git::NETWORK`] for now ([`brokered`]).
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;

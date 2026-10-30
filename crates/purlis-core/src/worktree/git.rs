@@ -115,9 +115,10 @@ pub(crate) use group::{lead, stop};
 /// while no longer calling a slow answer a broken repository.
 pub const READ: Duration = Duration::from_secs(30);
 
-/// The deadline for a call that crosses a network: `clone`, `fetch`, and `publish` when it
-/// lands. Only ever through [`run_network`], which is what holds such a call to the
-/// one-credential rule.
+/// The deadline for a call that crosses a network: a chat's brokered `clone`, `fetch`, and
+/// `publish` when it lands. Only ever through [`run_network`], which is what holds such a call
+/// to the one-credential rule. A clone that is not a chat's has a stall limit instead
+/// ([`spawn_network`], [`crate::cloning::STALL`]).
 pub const NETWORK: Duration = Duration::from_secs(120);
 
 /// Where to look for git when the inherited `PATH` is not to be trusted.
@@ -2036,7 +2037,8 @@ pub fn run_in_hook(dir: &Path, args: &[&str], timeout: Duration) -> Result<RawRu
 /// not manage gets: a token for one forge is never offered to another.
 ///
 /// The deadline is [`NETWORK`]. A `clone` killed at the deadline leaves a partial directory,
-/// which the caller reports rather than retrying into.
+/// which the caller reports rather than retrying into. That is a chat's brokered clone: any other
+/// lands whole ([`spawn_network`]).
 pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Run, GitUnavailable> {
     let mut config: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
     if let Some(helper) = helper {
