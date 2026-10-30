@@ -15,7 +15,7 @@ import { useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { AT_STATUS, type ChipNotice, type ChipNotices } from "./ChipNotices";
 import { StatusLine } from "./StatusLine";
-import { untilFocused } from "./stories.testkit";
+import { pictureNow, untilFocused } from "./stories.testkit";
 import { useFocusMode } from "./keys/focusMode";
 import { Button } from "./ui/button/Button";
 
@@ -148,7 +148,11 @@ export const PopsFromNotices: Story = {
     await userEvent.keyboard("{Enter}");
     const again = await waitFor(() => cardOf() as HTMLElement);
     await untilFocused(() => again, "the card the dot brought back");
-    // Tab walks its ways: the picture is the card with the keyboard on its ×.
+    // The picture is the card come back with the keyboard in it, taken before Tab: the ×'s
+    // tooltip that Tab brings up is placed a pixel apart from one run to the next (#3653's
+    // review, round 2).
+    await pictureNow();
+    // Tab walks its ways.
     await userEvent.tab();
     await expect(within(again).getByRole("button", { name: "Dismiss" })).toHaveFocus();
   },

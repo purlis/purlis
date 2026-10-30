@@ -275,10 +275,11 @@ footer[data-scope="status-bar"] {
    **A 24px target** (WCAG 2.5.8): unlike a chip's dot, it is a Tab stop of its own, and nothing
    else on the bar reaches it. Its box is 24px, the 16px dot drawn in its middle: a clear border
    of 4px around it, which the dot's fill is clipped inside, and its ring drawn inside that fill.
-   It stands inside the bar's padding, which clips what leaves it.
+   It stands inside the bar's padding, which clips what leaves it. Keyed on the dot's parts, never
+   on `data-kind`, which another status item carries too (the title bar's Updates pill).
    --------------------------------------------------------------------------------------------- */
 
-[data-kind][data-scope="status-item"] {
+[data-part^="dot"][data-scope="status-item"] {
   position: absolute;
   z-index: 1;
   inset-block-start: calc(var(--space-2) * -1);
@@ -309,17 +310,17 @@ footer[data-scope="status-bar"] {
 }
 
 /* Its shape, filled, in the middle of the dot: a disc 6px across for news, a triangle 8px. */
-[data-kind][data-scope="status-item"] svg {
+[data-part^="dot"][data-scope="status-item"] svg {
   inline-size: 6px;
   block-size: 6px;
 }
 
-[data-kind="warning"][data-scope="status-item"] svg {
+[data-part="dot-warning"][data-scope="status-item"] svg {
   inline-size: 8px;
   block-size: 8px;
 }
 
-[data-kind][data-scope="status-item"][data-focus-visible] {
+[data-part^="dot"][data-scope="status-item"][data-focus-visible] {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: calc(var(--focus-ring-width) * -1);
 }

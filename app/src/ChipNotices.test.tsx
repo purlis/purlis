@@ -341,6 +341,38 @@ describe("the status bar's card (#3653)", () => {
     expect(result.current.on.get(AT_STATUS)?.map((one) => one.id)).toEqual([1]);
   });
 
+  it("never comes up in another project reached through the opener (#3653's review, round 2)", () => {
+    const kept: KeptResult[] = [
+      { id: 1, said: refused, plane: A },
+      { id: 2, said: refused, plane: B },
+    ];
+    const { result, rerender } = renderHook(
+      ({ said, plane }: { said: Said | undefined; plane: string | undefined }) =>
+        useChipNotices({
+          said,
+          kept,
+          plane,
+          chips: CHIPS,
+          drop: () => undefined,
+          onSettings: () => undefined,
+        }),
+      {
+        initialProps: {
+          said: undefined as Said | undefined,
+          plane: A as string | undefined,
+        },
+      },
+    );
+    // A's refusal brings A's status card up.
+    rerender({ said: refused, plane: A });
+    expect(result.current.open).toBe(AT_STATUS);
+    // The opener, then B, with nothing said: B brings no card up.
+    rerender({ said: refused, plane: undefined });
+    rerender({ said: refused, plane: B });
+    expect(result.current.on.get(AT_STATUS)?.map((one) => one.id)).toEqual([2]);
+    expect(result.current.open).toBeUndefined();
+  });
+
   it("stays down on the first project when it was closed on the opener (#3653's review)", () => {
     const took: Said = { from: "open_repo", refused: false, words: "GitLab was added." };
     const kept: KeptResult[] = [{ id: 1, said: took, plane: undefined }];

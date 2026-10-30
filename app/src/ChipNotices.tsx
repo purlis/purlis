@@ -255,8 +255,10 @@ export function useChipNotices({
       open = "workspace" in about ? about.workspace : "project" in about ? AT_STATUS : undefined;
       openIn = plane;
       chipped = false;
-    } else if (up.in === undefined && plane !== undefined) {
+    } else if (up.in === undefined && up.on === undefined && plane !== undefined) {
       // The window's first project to the front: what the window said with none stays up on it.
+      // Only a card brought up with no project in front: one another project brought up stays
+      // that project's (#3653's review, round 2).
       openIn = plane;
     }
     // Another project in front: what it said while it was behind stays behind its dots.
