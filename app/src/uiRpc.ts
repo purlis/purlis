@@ -7038,6 +7038,11 @@ export type OpenHosts = {
 	hosts: string[],
 };
 
+/**  The open project a command is asked for: a type of its own, so its plane stays a `PlaneId`. */
+export type OpenProject = {
+	plane: PlaneId | null,
+};
+
 /**  A skill run open in a chat, as its tab's chip shows it. */
 export type OpenRun = {
 	/**  The skill, by the name its harness started it by. */
