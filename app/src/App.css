@@ -3947,8 +3947,21 @@ body {
 }
 
 .chip-card [data-f6-card] {
+  /* Held to the room the card is given (React Aria's max height on the surface), its notices
+     scroll inside it, the point outside it left whole (#3653). */
+  box-sizing: border-box;
+  max-block-size: inherit;
+  overflow-y: auto;
   border-radius: var(--radius-lg);
   outline: none;
+}
+
+/* **The status bar's Notices item and its dot** (`StatusLine.tsx`, #3653): the item's box, which
+   the dot stands over the leading corner of, so the dot coming or going moves nothing. */
+.status-notices {
+  position: relative;
+  display: inline-flex;
+  flex: none;
 }
 
 .chip-card [data-f6-card]:focus-visible {

@@ -209,7 +209,7 @@ import { useInboxOpenTold } from "./askNotices";
 import { useAnsweredWhenGone } from "./inboxRules";
 import { usePermissionAsks } from "./permissionAsks";
 import { useDismissals } from "./dismissals";
-import { dormantCause, dormantSays } from "./ChipNotices";
+import { dormantCause, dormantSays, type ChipNotices } from "./ChipNotices";
 import {
   ATTENTION_VIEWS,
   openView as viewOpenIn,
@@ -668,6 +668,7 @@ export const PlaneView = memo(function PlaneView({
   onReport,
   onSessionRows,
   alerts,
+  statusNotices,
   contributed: surveyedPanels = NONE,
   views: surveyedViews = NONE,
   commands: surveyedCommands = NONE,
@@ -717,6 +718,9 @@ export const PlaneView = memo(function PlaneView({
   /** Every open project's alerts, as the window reads them (#1695): this project's Inbox lists
    *  its own and this machine's as Notices, and names each other project that has some. */
   alerts?: WindowAlerts;
+  /** The notices that pop from the status line's Notices item (#3653): the window's, handed to
+   *  the project in front alone. */
+  statusNotices?: ChipNotices;
   /** What approved extensions contribute to the side region. The window's, for the same reason
    *  the alerts are: an extension is installed per machine and never travels in a plane
    *  (ADR 0041), so one survey serves every project this window holds — and this project keeps
@@ -9723,6 +9727,9 @@ export const PlaneView = memo(function PlaneView({
             onOpenSettings={(group) => openSettingsAt({ group })}
             pin={pin}
             alerts={noticesButton}
+            // Focus mode puts the status bar away, and its card with it: the notices wait in the
+            // Notices centre (#3653).
+            notices={focusMode ? undefined : statusNotices}
             badges={facts.badges}
             factNotes={facts.notes}
           />

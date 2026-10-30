@@ -22,7 +22,7 @@ const REFUSED = "purlis pins at most 12 workspaces in one project. Unpin one fir
 function TheWindow({ startOpen = true }: { startOpen?: boolean }) {
   const [open, setOpen] = useState<string | undefined>(startOpen ? AT_STATUS : undefined);
   const [kept, setKept] = useState<readonly ChipNotice[]>(() => [
-    { id: 1, kind: "info", said: { from: "workspace.pin", refused: true, words: REFUSED } },
+    { id: 1, kind: "warning", said: { from: "workspace.pin", refused: true, words: REFUSED } },
   ]);
   const notices: ChipNotices = {
     on: new Map(kept.length === 0 ? [] : [[AT_STATUS, kept]]),
@@ -113,7 +113,7 @@ export const PopsFromNotices: Story = {
       item.toJSON(),
     );
     // The dot, a Tab stop of its own, brings it back with the keyboard in it.
-    const dot = canvas.getByRole("button", { name: "Show the notice on the status bar" });
+    const dot = canvas.getByRole("button", { name: /^Show the notice on the status bar/ });
     dot.focus();
     await userEvent.keyboard("{Enter}");
     const again = await waitFor(() => cardOf() as HTMLElement);
@@ -142,7 +142,7 @@ export const DismissedByEsc: Story = {
 export const DotOnNotices: Story = {
   args: { startOpen: false },
   play: async ({ canvas }) => {
-    const dot = canvas.getByRole("button", { name: "Show the notice on the status bar" });
+    const dot = canvas.getByRole("button", { name: /^Show the notice on the status bar/ });
     await expect(dot.querySelector("svg")).not.toBeNull();
     const [d, i, b] = [
       dot,

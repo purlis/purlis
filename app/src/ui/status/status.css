@@ -269,7 +269,8 @@ footer[data-scope="status-bar"] {
    The Notices item's notice dot (#3653, spec #3647): the title-bar chip's dot (`titlebar.dot`),
    on the Notices item's leading corner while a project's or the app's result is hidden behind it.
    The same 16px shape, ringed in the bar's own ground, which is the title bar's, so its colour is
-   read on that one ground (`accent.base` on `surface.deep`, D-3648-6).
+   read on that one ground (D-3648-6): `dot` the accent for news, `dot-warning` the waiting amber
+   for a warning (#3649), each with its shape in the window's ground.
 
    **A 24px target** (WCAG 2.5.8): unlike a chip's dot, it is a Tab stop of its own, and nothing
    else on the bar reaches it. Its box is 24px, the 16px dot drawn in its middle: a clear border
@@ -277,7 +278,7 @@ footer[data-scope="status-bar"] {
    It stands inside the bar's padding, which clips what leaves it.
    --------------------------------------------------------------------------------------------- */
 
-[data-part="dot"][data-scope="status-item"] {
+[data-kind][data-scope="status-item"] {
   position: absolute;
   z-index: 1;
   inset-block-start: calc(var(--space-2) * -1);
@@ -290,21 +291,34 @@ footer[data-scope="status-bar"] {
   padding: 0;
   border: 4px solid transparent;
   border-radius: var(--radius-full);
-  color: var(--surface-base);
-  background-color: var(--accent-base);
   background-clip: padding-box;
   box-shadow: inset 0 0 0 2px var(--surface-deep);
   cursor: default;
   appearance: none;
 }
 
-/* Its shape, filled: a disc 6px across for news, in the middle of the dot. */
-[data-part="dot"][data-scope="status-item"] svg {
+[data-part="dot"][data-scope="status-item"] {
+  color: var(--surface-base);
+  background-color: var(--accent-base);
+}
+
+[data-part="dot-warning"][data-scope="status-item"] {
+  color: var(--surface-base);
+  background-color: var(--state-waiting);
+}
+
+/* Its shape, filled, in the middle of the dot: a disc 6px across for news, a triangle 8px. */
+[data-kind][data-scope="status-item"] svg {
   inline-size: 6px;
   block-size: 6px;
 }
 
-[data-part="dot"][data-scope="status-item"][data-focus-visible] {
+[data-kind="warning"][data-scope="status-item"] svg {
+  inline-size: 8px;
+  block-size: 8px;
+}
+
+[data-kind][data-scope="status-item"][data-focus-visible] {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: calc(var(--focus-ring-width) * -1);
 }

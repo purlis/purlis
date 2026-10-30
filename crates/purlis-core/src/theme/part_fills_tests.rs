@@ -127,6 +127,14 @@ const DRAWN: &[Drawn] = &[
         on: None,
     },
     Drawn {
+        family: "status-item",
+        part: "dot-warning",
+        css: include_str!("../../../../app/src/ui/status/status.css"),
+        own: &["[data-part=\"dot-warning\"][data-scope=\"status-item\"]"],
+        around: &[],
+        on: None,
+    },
+    Drawn {
         family: "popover",
         part: "footer",
         css: include_str!("../../../../app/src/ui/popover/popover.css"),

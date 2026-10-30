@@ -101,7 +101,7 @@ const findCard = () => screen.findByRole("region", { name: "Notices for one" });
 const queryCard = () => screen.queryByRole("region", { name: "Notices for one" });
 /** The dot a hidden result leaves on the Notices item. */
 const queryDot = () =>
-  within(line()).queryByRole("button", { name: "Show the notice on the status bar" });
+  within(line()).queryByRole("button", { name: /^Show the notice on the status bar/ });
 /** The Notices centre's Results, where every result is listed too. */
 const results = () => screen.findByRole("region", { name: "Results" });
 
