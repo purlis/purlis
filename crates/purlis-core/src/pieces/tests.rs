@@ -416,6 +416,7 @@ fn a_recorded_line_is_the_one_pythons_pieces_record_wrote() {
     let who = Who {
         session: Some("s-1".into()),
         persona: None,
+        chat: None,
         host: "box".into(),
         log: "box".into(),
     };
@@ -487,6 +488,7 @@ fn who_here_files_its_line_under_the_device_id_and_keeps_the_hostname_as_its_lab
         Who {
             session: Some("s-1".into()),
             persona: Some("ops".into()),
+            chat: None,
             host: host.clone(),
             log: id.clone(),
         }
@@ -520,6 +522,7 @@ fn a_log_that_is_a_link_is_not_written_through() {
     let who = Who {
         session: None,
         persona: None,
+        chat: None,
         host: "box".into(),
         log: "box".into(),
     };

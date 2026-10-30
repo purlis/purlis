@@ -59,6 +59,9 @@ pub(crate) struct Begun {
     records: Vec<dispatchrecord::Record>,
     launch: AtLaunch,
     coming: AskerComing,
+    /// The chats the session host still ran from before this window, by number: reattached,
+    /// so their programs kept running across the restart (#3900). Read before they are.
+    kept: Vec<u32>,
 }
 
 /// **Puts back `record` at a launch** (#1513), as `Chats::put_back_telling` does, with what is
@@ -83,12 +86,20 @@ pub(crate) fn begin(held: &Held, record: &Record) -> Begun {
         );
     }
     let coming = coming_back(held, &launch.back);
+    let kept = launch
+        .back
+        .chats
+        .iter()
+        .filter(|chat| held.chats().left_running(chat))
+        .filter_map(|chat| chat.number)
+        .collect();
     held.chats()
         .begin_put_back(&launch.back, &|chat| launch.told(chat));
     Begun {
         records,
         launch,
         coming,
+        kept,
     }
 }
 
@@ -107,6 +118,7 @@ pub(crate) fn finish(
         records,
         launch,
         coming,
+        kept,
     } = begun;
     let opened = held.chats().finish_put_back(size);
     // **A quit, or the project's close, that began while the chats were starting cut the
@@ -121,7 +133,8 @@ pub(crate) fn finish(
     // Only the chats that started: one waiting to start is marked if it starts (`retrying`).
     for open in &opened {
         // As old as its dispatch's record says, which the ledger did not see (#1463).
-        crate::dispatched::brought_back(held, open.session, &records);
+        // And how it came back across the restart (#3900).
+        crate::dispatched::brought_back(held, open.session, &records, kept.contains(&open.session));
         let told = launch
             .back
             .chats

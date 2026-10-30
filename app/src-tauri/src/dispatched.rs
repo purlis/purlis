@@ -683,6 +683,14 @@ fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, S
     }
     // Kept, so it counts on this task's dispatch record (#1452): a note as a question does.
     crate::dispatches::message(held, sender, &message);
+    // When it last sent a note, for its liveness (#3900).
+    if kind == Kind::Note {
+        held.tasks().ledger().heard_doing(
+            sender,
+            purlis_core::dispatchliveness::Did::SentANote,
+            SystemTime::now(),
+        );
+    }
     if kind == Kind::Question {
         // Its row says whom it is asking from now (#1484): no hook reports a question.
         held.rows_changed();
@@ -1138,6 +1146,8 @@ fn list(held: &Held, asker: u32) -> Vec<Row> {
             let being_stopped = held.stopping().is_stopping(listed.session);
             // purlis's stop at a limit says so, never "by the person" (#1512).
             let at_a_limit = held.stopping().limit_of(listed.session);
+            // Whether its program runs, by the board (#3900). Asked before the ledger is taken.
+            let running = !seen(held, listed.session).ended;
             let ledger = held.tasks().ledger();
             let own = dispatched::owned(asker, listed.session, Some(from)).is_ok();
             let state = match (own, listed.state) {
@@ -1182,13 +1192,23 @@ fn list(held: &Held, asker: u32) -> Vec<Row> {
                 long: from.long,
                 last_note: last_note.as_ref().map(|(text, _)| text.clone()),
                 noted_secs: last_note.map(|(_, ago)| ago.as_secs()),
+                liveness: Some(ledger.liveness(listed.session, running, now)),
             })
         })
         .collect();
     // Then the ones that have finished, whose programs purlis ended (#1485): from their
-    // dispatch records, until their rows are cleared or this chat closes.
+    // dispatch records, until their rows are cleared or this chat closes. With them the ones
+    // orphaned by a restart (#3900), marked so.
     rows.extend(crate::finished::listed_for(held, asker));
     rows
+}
+
+/// Task `task`'s liveness now (#3900), as its asking chat's list and roster say it.
+pub(crate) fn liveness(held: &Held, task: u32) -> purlis_core::dispatchliveness::Liveness {
+    let running = !seen(held, task).ended;
+    held.tasks()
+        .ledger()
+        .liveness(task, running, SystemTime::now())
 }
 
 /// Cancels task `of` for the chat that dispatched it: the cancel is recorded, and its turn is
@@ -1260,16 +1280,47 @@ pub fn started(held: &Held, task: u32) {
 }
 
 /// Chat `task` was put back by a launch (#1463): where it is a dispatch's running task among
-/// `records`, the ledger keeps the start its record says, so its row says its age again.
-pub fn brought_back(held: &Held, task: u32, records: &[purlis_core::dispatchrecord::Record]) {
+/// `records`, the ledger keeps the start its record says, so its row says its age again. And
+/// where it is a task, how it came back (#3900): `kept` that its program ran on in the session
+/// host and was reattached, else that the restart ended it and it was started again.
+pub fn brought_back(
+    held: &Held,
+    task: u32,
+    records: &[purlis_core::dispatchrecord::Record],
+    kept: bool,
+) {
+    use purlis_core::dispatchliveness::Restart;
+    let is_a_task = held
+        .chats()
+        .handed_from(task)
+        .is_some_and(|from| from.mode == Mode::Task);
     let Some(me) = crate::dispatches::chat_ref(held, task) else {
         return;
     };
     let record = records.iter().find(|record| {
         record.running() && purlis_core::dispatchrecord::same_chat(&record.worker.chat, &me)
     });
-    if let Some(record) = record {
-        held.tasks().ledger().brought_back(task, &record.started);
+    if record.is_none() && !is_a_task {
+        return;
+    }
+    let restart = if kept {
+        Restart::KeptRunning
+    } else {
+        Restart::StartedAgain
+    };
+    let mut ledger = held.tasks().ledger();
+    ledger.brought_back(task, record.map(|record| record.started.as_str()), restart);
+    // The last note it sent is on its record, which a restart keeps (#3900): it was heard from
+    // then, though not by this app. What it ran is kept in memory only.
+    if let Some(at) = record
+        .and_then(|record| record.last_note.as_deref())
+        .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
+    {
+        ledger.heard_doing(
+            task,
+            purlis_core::dispatchliveness::Did::SentANote,
+            SystemTime::from(at),
+        );
     }
 }
 
@@ -1692,7 +1743,14 @@ pub fn said(held: &Held, output: purlis_core::hookwire::TurnOutput) {
             failed,
         } => {
             let ran = dispatched::Ran::shown(&command, exit, failed);
-            held.tasks().ledger().ran(output.chat, ran);
+            let mut ledger = held.tasks().ledger();
+            ledger.ran(output.chat, ran);
+            // When it last ran a command, for its liveness (#3900).
+            ledger.heard_doing(
+                output.chat,
+                purlis_core::dispatchliveness::Did::RanACommand,
+                SystemTime::now(),
+            );
         }
     }
 }

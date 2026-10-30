@@ -177,3 +177,93 @@ describe("the Chats view's prototype details (#3484)", () => {
     expect(drawnAt(20_000).one).toBeNull();
   });
 });
+
+describe("the restarts' status beside the tree (#3886)", () => {
+  /** A task of chat 1's, with no tab, which a restart can say something of. */
+  const TASK: ListedChat = {
+    ...CHAT,
+    session: 2,
+    name: "devops 2",
+    persona: "devops",
+    parent: 1,
+    mode: "task",
+    tab: false,
+  };
+
+  const drawn = (restarts: Record<number, string>) => (
+    <ChatsHere.Provider value={fixedChats(nothingKnown)}>
+      <ChatsSection
+        rows={chatsTree([CHAT, TASK])}
+        front={1}
+        onOpen={() => {}}
+        restarts={restarts}
+      />
+    </ChatsHere.Provider>
+  );
+
+  it("is mounted before a restart says anything, and only its text changes", () => {
+    const { rerender } = render(drawn({}));
+    const region = screen.getByRole("status", { name: "Restarts" });
+    expect(region).toHaveTextContent(/^$/);
+    // Additions are announced, not every line again.
+    expect(region).toHaveAttribute("aria-atomic", "false");
+
+    rerender(drawn({ 2: "It is restarted when its turn ends." }));
+    expect(screen.getByRole("status", { name: "Restarts" })).toBe(region);
+    // Led by its chat, where the words do not name it.
+    expect(region).toHaveTextContent("Restart of devops 2. It is restarted when its turn ends.");
+
+    rerender(drawn({ 2: "Not restarted: devops 2 ended while the restart was asked." }));
+    expect(screen.getByRole("status", { name: "Restarts" })).toBe(region);
+    // Words that name it already are said as they are.
+    expect(region).toHaveTextContent(
+      /^Not restarted: devops 2 ended while the restart was asked\.$/,
+    );
+
+    rerender(drawn({}));
+    expect(screen.getByRole("status", { name: "Restarts" })).toBe(region);
+    expect(region).toHaveTextContent(/^$/);
+  });
+
+  // The review of #3935: a line built from the rows drawn came again as a fold, the filter or
+  // the scope drew its row again, and was announced again as if it were new.
+  it("keeps a restart's line as it is while its row is folded away, filtered away and back", async () => {
+    render(drawn({ 2: "It is restarted when its turn ends." }));
+    const region = screen.getByRole("status", { name: "Restarts" });
+    const line = region.querySelector("p");
+    expect(line).not.toBeNull();
+    const still = () => {
+      expect(region.querySelectorAll("p")).toHaveLength(1);
+      expect(region.querySelector("p")).toBe(line);
+    };
+    const tree = screen.getByRole("tree", { name: "Chats of this project" });
+    const steward = within(tree)
+      .getAllByRole("treeitem")
+      .find((one) => one.querySelector(".session")?.textContent === "steward 1") as HTMLElement;
+
+    // Folded, and opened again.
+    act(() => steward.focus());
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(within(tree).getAllByRole("treeitem")).toHaveLength(1);
+    still();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(within(tree).getAllByRole("treeitem")).toHaveLength(2);
+    still();
+
+    // Filtered away, and the filter cleared.
+    const filter = screen.getByRole("searchbox", { name: /^Filter chats/ });
+    await userEvent.type(filter, "steward");
+    still();
+    await userEvent.clear(filter);
+    still();
+  });
+
+  it("is still mounted while the scope lists no chat", () => {
+    render(
+      <ChatsHere.Provider value={fixedChats(nothingKnown)}>
+        <ChatsSection rows={[]} onOpen={() => {}} />
+      </ChatsHere.Provider>,
+    );
+    expect(screen.getByRole("status", { name: "Restarts" })).toHaveTextContent(/^$/);
+  });
+});
