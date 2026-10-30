@@ -1163,7 +1163,7 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
@@ -1179,6 +1179,11 @@ jobs:
       - name: The studio probe's names
         if: steps.scope.outputs.run == 'true'
         uses: ./.github/actions/studio-probe-names
+      # Node, for a Claude Code chat's server dialling in to its door (#3316).
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
       - name: The studio probe, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p studio-probe
@@ -1211,7 +1216,8 @@ jobs:
       fail-fast: false
       matrix:
         node: ["20", "22"]
-        kind: [plain, vite, next]
+        # `dial-` kinds: a Claude Code chat's server dials in to its door (#3316).
+        kind: [plain, vite, next, dial-plain, dial-express, dial-vite, dial-refused]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -31,6 +31,7 @@ import {
 import { onAMac } from "./tabKeys";
 import { landSettingsFocus } from "./settings/entering";
 import { theKeyboardIsBack, thePaletteIsUp } from "./keyboardBack";
+import { keepTheKeyboardOffWhatFocusModeHides } from "./keys/focusMode";
 import type { SettingsLink } from "./settings/links";
 import { SaidLink } from "./SaidLink";
 import { saidInPlainWords } from "./actionResult";
@@ -198,6 +199,8 @@ export function Palette({
   const giveTheKeyboardBack = useCallback(() => {
     const back = came.current;
     if (back instanceof HTMLElement && back.isConnected) back.focus();
+    // Not into a part focus mode hides, as Focus mode run from one leaves it (#4072).
+    keepTheKeyboardOffWhatFocusModeHides();
   }, []);
 
   /** Lists only the projects, from a fresh box: what was typed was typed at the other list. */
