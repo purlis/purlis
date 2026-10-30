@@ -415,12 +415,15 @@ export const RefusedSuggestions: Story = {
     }
     return <Box />;
   },
-  play: async ({ canvas, userEvent }) => {
+  play: async ({ canvas, canvasElement, userEvent }) => {
     const box = canvas.getByRole("combobox", { name: "Add a skill" });
     await expect(box).toHaveAttribute("aria-invalid", "true");
     await expect(box).toHaveAccessibleDescription("ops has no skill by that name.");
-    const line = canvas.getByRole("alert");
-    await expect(line).toHaveAttribute("data-part", "error");
+    const line = canvasElement.querySelector(
+      '[data-scope="field"][data-part="error"]:not([data-whole])',
+    ) as HTMLElement;
+    await expect(line).toHaveTextContent("ops has no skill by that name.");
+    await expect(line).toHaveAttribute("aria-live", "polite");
     const root = box.closest('[data-scope="combobox"][data-part="root"]') as HTMLElement;
     await expect(root).toHaveAttribute("data-invalid");
     const before = root.getBoundingClientRect();
