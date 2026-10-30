@@ -314,6 +314,8 @@ const MOMENTS = [
 
 describe.each(MOMENTS)("what each source's last check found (#3840), at %s", (moment) => {
   const nowSecs = () => Math.floor(Date.now() / 1000);
+  /** The moment the window was drawn, which the ages it shows are counted from. */
+  const drawnSecs = Math.floor(Date.parse(moment) / 1000);
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(Date.parse(moment));
@@ -330,7 +332,7 @@ describe.each(MOMENTS)("what each source's last check found (#3840), at %s", (mo
         skill_sources_checked: () => {
           aMomentLater();
           return [
-            { remote: SOURCE.remote, at: nowSecs() - 3 * 3600 - 30, skills: 14, installed: 2 },
+            { remote: SOURCE.remote, at: drawnSecs - 3 * 3600 - 30, skills: 14, installed: 2 },
           ];
         },
         // The updates check has not answered: the row does not wait for it.
@@ -369,7 +371,7 @@ describe.each(MOMENTS)("what each source's last check found (#3840), at %s", (mo
       answers: {
         skill_sources_checked: () => {
           aMomentLater();
-          return [{ remote: SOURCE.remote, at: nowSecs() - 5 * 86_400, skills: 2, installed: 0 }];
+          return [{ remote: SOURCE.remote, at: drawnSecs - 5 * 86_400, skills: 2, installed: 0 }];
         },
         skill_source_browse: () => ({ ...BROWSE, checked: nowSecs() }),
       },
@@ -433,16 +435,25 @@ function inZone(zone: string, run: () => void) {
   }
 }
 
+/**
+ * **An age is the same in every time zone; a date is the day where the person is** (#4110). A
+ * check 60 days before 12:00 UTC on 30 Oct was made at 12:00 UTC on 31 Aug, which is already
+ * 1 Sep in Kiritimati (UTC+14).
+ */
 describe("a source's last check in any time zone (#4110)", () => {
   const now = new Date(Date.UTC(2026, 9, 30, 12));
 
-  it.each(["UTC", "Pacific/Pago_Pago", "America/Los_Angeles", "Asia/Tokyo", "Pacific/Kiritimati"])(
-    "says the same age and date in %s",
-    (zone) =>
-      inZone(zone, () => {
-        expect(checkedAgo(5 * 86_400, now)).toBe("checked 5 days ago");
-        expect(checkedAgo(60 * 86_400, now)).toBe("checked 31 Aug 2026");
-      }),
+  it.each([
+    ["UTC", "checked 31 Aug 2026"],
+    ["Pacific/Pago_Pago", "checked 31 Aug 2026"],
+    ["America/Los_Angeles", "checked 31 Aug 2026"],
+    ["Asia/Tokyo", "checked 31 Aug 2026"],
+    ["Pacific/Kiritimati", "checked 1 Sept 2026"],
+  ])("says the same age, and the day it was there, in %s", (zone, date) =>
+    inZone(zone, () => {
+      expect(checkedAgo(5 * 86_400, now)).toBe("checked 5 days ago");
+      expect(checkedAgo(60 * 86_400, now)).toBe(date);
+    }),
   );
 });
 
