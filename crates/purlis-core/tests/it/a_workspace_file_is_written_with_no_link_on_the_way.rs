@@ -103,6 +103,7 @@ fn who() -> pieces::Who {
     pieces::Who {
         session: Some("s1".to_owned()),
         persona: None,
+        chat: None,
         host: "fixture".to_owned(),
         log: "fixture".to_owned(),
     }
