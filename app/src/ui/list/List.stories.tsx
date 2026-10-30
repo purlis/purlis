@@ -12,7 +12,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { CircleDashed, Star } from "lucide-react";
-import { expectFocusInSight, untilFocused } from "../../stories.testkit";
+import { expectFocusInSight, untilFocusInSight, untilFocused } from "../../stories.testkit";
 import { Button } from "../button/Button";
 import { Menu, MenuItem, MenuWords } from "../menu/Menu";
 import { List, ListBox, ListOption, ListRow, ListRowSection, type Selection } from "./List";
@@ -139,13 +139,13 @@ export const ToChooseFrom: Story = {
     const second = within(list).getByRole("option", { name: "web-dev" });
     await untilFocused(() => second, "To choose from: Down moves to web-dev");
     await expect(second).toHaveAttribute("aria-selected", "true");
-    expectFocusInSight();
+    await untilFocusInSight("To choose from: web-dev is in sight");
     await userEvent.keyboard("{End}");
     await untilFocused(
       () => within(list).getByRole("option", { name: "scribe" }),
       "To choose from: End moves to the last persona",
     );
-    expectFocusInSight();
+    await untilFocusInSight("To choose from: the last persona is scrolled into sight");
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(
       () => within(list).getByRole("option", { name: "scribe" }),
