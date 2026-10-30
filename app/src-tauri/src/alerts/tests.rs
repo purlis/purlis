@@ -274,12 +274,10 @@ fn a_save_blocked_by_a_secret_is_said_at_once() {
         ("bad", "save")
     );
     assert_eq!(row.way, AlertWay::Saving);
-    assert!(row.detail.contains("secret-shaped"), "{row:?}");
+    // Asserted without printing the row: its detail is about a file that holds a token.
+    assert!(row.detail.contains("secret-shaped"));
     // And it names the file and the line, so the person knows what to mend.
-    assert!(
-        row.detail.ends_with("in personas/…/m.md, line 1"),
-        "{row:?}"
-    );
+    assert!(row.detail.ends_with("in personas/…/m.md, line 1"));
 }
 
 #[test]
