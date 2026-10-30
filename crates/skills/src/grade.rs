@@ -27,7 +27,7 @@ pub mod routers;
 
 pub use fixtures::{
     EVALS_DIR, FixtureFile, Fixtures, MOST_PROMPT_BYTES, MOST_TRIGGER_TESTS, OutcomeEval, Read,
-    Refused, TriggerTest, Wrong, fixtures_of,
+    Refused, TriggerTest, Wrong, fixtures_of, triggers_path, triggers_template,
 };
 
 /// How many times each fixture runs in each arm: skill-creator's and `claude plugin eval`'s

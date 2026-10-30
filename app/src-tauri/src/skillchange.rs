@@ -453,6 +453,28 @@ pub(crate) async fn skill_save(
     .await
 }
 
+/// **Write trigger tests** (#3925): starts the skill's trigger tests file from a template where
+/// it has none, committed as one change ([`verbs::start_trigger_tests`]). The window then opens
+/// the file to write in.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_trigger_tests_start(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    level: SkillLevel,
+    name: String,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("starting the trigger tests", move || {
+        flag_on()?;
+        let level: Level = (&level).into();
+        heard(held.root(), |cx| {
+            verbs::start_trigger_tests(cx, &level, &name)
+        })
+    })
+    .await
+}
+
 /// **Renames a skill**, and every persona and skill that names it.
 #[tauri::command]
 #[specta::specta]
