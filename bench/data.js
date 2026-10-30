@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793392387947,
+  "lastUpdate": 1793394012629,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32130,6 +32130,48 @@ window.BENCHMARK_DATA = {
             "value": 101.20743099999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.740, 101.150, 101.207, 101.707, 102.229 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a754dd0e4122e5d465679ffbbfdf06ad35ad073f",
+          "message": "Grading: one-version skills accept the previous arm up front (#4035); local grades across a rename and a reused key (#4104) (#4158)\n\n* Grading after each edit: a one-version skill accepts its previous arm up front (#4035)\n\nThe plan that turns grading after each edit on now shows and keeps the\nchats with the previous version's arm counted, where a committed copy has\nnone yet, and says why. Its first saved edit no longer asks again; an\nopt-in kept on two arms still waits, and its reason names the previous\nversion. Cap and dollar limit are unchanged. ADR 0105 amended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: local grades across a rename, and a key another skill takes (#4104)\n\nA rename keeps the ids of the grades under way by the old name, and the\nearlier place lends their rows though they end after it. Each earlier\nplace keeps which folder took the key (inode and birth time) and lends\nonly to that folder; a draft's accept, an install and an update's brought\nskills drop the key's entry, and a Restore from git takes the folder it\nbrings back.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: earlier names doc says what the folder identity holds (#4104)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T20:34:55Z",
+          "tree_id": "a546e0796bb631c8580380567e9ef372f49186bb",
+          "url": "https://github.com/purlis/purlis/commit/a754dd0e4122e5d465679ffbbfdf06ad35ad073f"
+        },
+        "date": 1793394009253,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.328667,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.320, 0.327, 0.329, 0.330, 0.336 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5486855,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.157, 16.541, 16.549, 16.590, 16.656 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.070235,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.267, 100.880, 101.070, 101.097, 101.910 ms"
           }
         ]
       }
