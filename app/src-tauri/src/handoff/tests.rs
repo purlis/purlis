@@ -10433,7 +10433,7 @@ fn a_tell_queued_while_the_app_was_away_is_delivered_once_the_project_is_back() 
         return;
     };
 
-    crate::dispatched::deliver_all_queued(&held);
+    crate::dispatched::deliver_all_queued_now(&held);
 
     assert_eq!(dispatchtalk::take(held.root(), task).len(), 1);
 }

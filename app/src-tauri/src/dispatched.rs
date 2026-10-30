@@ -1162,7 +1162,35 @@ fn records(held: &Held, sender: u32) -> Vec<dispatchtalk::Record> {
 
 /// **Delivers what every chat queued**, once the project's chats and their tasks are back
 /// (#3902): what a chat queued while the app was away reaches its task with nobody acting.
+///
+/// **Off the launch path**: a thread of its own, started as the launch finishes, so nothing is
+/// added to the time the window takes to come up; [`deliver_all_queued_now`] is the drain.
 pub(crate) fn deliver_all_queued(held: &Held) {
+    let Some(socket) = held.hooks().socket() else {
+        return;
+    };
+    // Nothing queued, nothing started: one look at a folder.
+    if purlis_core::dispatchqueue::chats(socket).is_empty() {
+        return;
+    }
+    let weak = held.weak();
+    let spawned = std::thread::Builder::new()
+        .name("purlis-queue-at-open".into())
+        .spawn(move || {
+            if let Some(held) = weak.upgrade() {
+                deliver_all_queued_now(&held);
+            }
+        });
+    if let Err(why) = spawned {
+        tracing::warn!(
+            "purlis: what chats queued while the app was away is delivered when each is next \
+             heard from ({why})"
+        );
+    }
+}
+
+/// [`deliver_all_queued`], on this thread.
+pub(crate) fn deliver_all_queued_now(held: &Held) {
     let Some(socket) = held.hooks().socket() else {
         return;
     };
