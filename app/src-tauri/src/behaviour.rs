@@ -3562,9 +3562,9 @@ fn a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(target: &Targe
              until [ -s \"$TMPDIR/port\" ]; do sleep 0.1; done\n\
              export ANTHROPIC_BASE_URL=\"http://127.0.0.1:$(cat \"$TMPDIR/port\")\"\n\
              export ANTHROPIC_AUTH_TOKEN=stand-in NO_PROXY=127.0.0.1 no_proxy=127.0.0.1\n\
-             \"$real\" -p \"$@\" --output-format json > \"$TMPDIR/out\" 2> \"$TMPDIR/err\" < /dev/null\n\
+             \"$real\" -p \"$@\" --permission-mode default --output-format json > \"$TMPDIR/out\" 2> \"$TMPDIR/err\" < /dev/null\n\
              printf 'CLAUDE-CODE ended %s.\\n' \"$?\"\n\
-             cat \"$TMPDIR/said\" \"$TMPDIR/err\"; head -c 2000 \"$TMPDIR/out\"\n\
+             cat \"$TMPDIR/said\" \"$TMPDIR/err\"; ls -A \"$CLAUDE_CONFIG_DIR\"\n\
              printf '\\nTRIED.\\n'\n\
              read line\n",
             tries = past.tries(),

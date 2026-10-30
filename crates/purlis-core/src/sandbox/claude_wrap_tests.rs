@@ -327,6 +327,7 @@ fn its_config_folder_is_written_only_where_a_turn_writes_at_either_level() {
             "projects/-w/memory/MEMORY.md",
             "shell-snapshots/one.sh",
             "todos/one.json",
+            "plugins/data/purlis-inline/one",
             "history.jsonl",
             ".credentials.json",
         ] {

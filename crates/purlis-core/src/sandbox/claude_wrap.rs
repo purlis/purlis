@@ -79,7 +79,11 @@ pub struct Wrap {
 
 /// The folders in Claude Code's config folder a turn writes into, each everything under it and
 /// never itself: made by purlis before the wrap ([`prepare`]).
-pub const HOME_DIRS: [&str; 15] = [
+///
+/// `plugins/data` is the one place under `plugins` it writes: Claude Code makes a plugin's data
+/// folder there before it runs that plugin's hook, and a hook is not run where it cannot
+/// (measured on the parity job). A plugin's code is never below it.
+pub const HOME_DIRS: [&str; 16] = [
     "backups",
     "cache",
     "debug",
@@ -87,6 +91,7 @@ pub const HOME_DIRS: [&str; 15] = [
     "logs",
     "paste-cache",
     "plans",
+    "plugins/data",
     "projects",
     "session-env",
     "sessions",
@@ -288,6 +293,13 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
     for above in home.ancestors().filter(|above| above.parent().is_some()) {
         own.deny
             .push(format!("(deny file-write* (literal {}))", quote(above)?));
+    }
+    // The floor holds `.claude/plugins` by name wherever it is, which a home of that name is.
+    if wrap.level == super::Level::Floor {
+        own.after.push(format!(
+            "(allow file-write* (regex {}))",
+            string(&under(home, "plugins/data/.+"))?
+        ));
     }
     // No link made where a later Claude Code writes, which it would write through.
     own.deny.push(format!(
