@@ -38,7 +38,12 @@ const WORK: NeedsApproval = {
 };
 
 const TRY: SkillChatAsk = { plane: PLANE, kind: "try", id: "d1", profile: null };
-const DRAFT: SkillChatAsk = { plane: PLANE, kind: "draft", level: { at: "project", local: false } };
+const DRAFT: SkillChatAsk = {
+  plane: PLANE,
+  kind: "draft",
+  level: { at: "project", local: false },
+  what: "",
+};
 
 type Asked = { cmd: string; args: Record<string, unknown> }[];
 
