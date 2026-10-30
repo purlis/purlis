@@ -67,21 +67,29 @@ env -C .worktrees/<repo>/<piece> purlis worktree update   # rebase onto the base
 purlis worktree commit -m "<message>" .worktrees/<repo>/<piece>/<path> …   # or just .worktrees/<repo>/<piece> for every change in it
 env -C .worktrees/<repo>/<piece> purlis worktree push     # pushes the branch after purlis's scan of what it publishes
 env -C .worktrees/<repo>/<piece> purlis worktree done     # finished; or: … purlis worktree abandon "<why>"
+purlis worktree remove <repo> <piece>  # once merged: the app removes the folder if nothing would be lost
 ```
 
 - `add` takes `--base <branch>` to start from something other than the default branch. Exit 2
   means the piece name is already claimed, so pick another name. `add` and `list` work from
   anywhere in the workspace.
-- **`commit` goes by the folder the chat was started in.** The app makes the commit outside
-  the sandbox, and it reads where the chat stands from where the app started it, never from a
-  `cd`. So name the piece, or paths under it, relative to that folder:
-  `.worktrees/<repo>/<piece>/…` from the workspace folder, `workspaces/<ws>/.worktrees/<repo>/<piece>/…`
-  from the plane root. An absolute path is refused, and so is `--all` from above the piece;
-  naming the piece's own folder commits every change in it. A chat started inside the piece
-  passes `--all` or paths relative to the piece.
+- **`commit` takes paths as git does where it runs.** Run inside the piece
+  (`env -C .worktrees/<repo>/<piece> purlis worktree commit -m "<message>" <path> …`), paths
+  are relative to that folder, and `--all` commits every change to a tracked file. Run from
+  the folder the chat was started in, name the piece or paths under it from there:
+  `.worktrees/<repo>/<piece>/…` from the workspace folder,
+  `workspaces/<ws>/.worktrees/<repo>/<piece>/…` from the plane root; naming the piece's own
+  folder commits every change in it. Either way the piece must be the chat's own folder or one
+  below it. A message may start with `-`.
 - **`update`, `push`, `done` and `abandon` go by the current folder** of the command. Run them
   from inside the piece: `env -C <piece> purlis worktree …` does it in one command.
-- Run `commit` and `update` alone in their call: a `cd … &&` before them, a pipe or
+- **`remove` is for a finished piece**, from the workspace folder, never from inside it. The
+  app removes it only when it holds no uncommitted change and no commit that no other branch
+  reaches, or its branch landed by a squash merge; otherwise it names what would be lost and
+  removes nothing. A piece another live chat works in is not removed for you. `--force` is the
+  person's: ask them to remove it from the window. Where purlis's tools are offered, the
+  `worktree_remove` tool (`repo`, `piece`) does the same, and `worktree_update` updates.
+- Run `commit`, `update` and `remove` alone in their call: a `cd … &&` before them, a pipe or
   redirection, or a `$(…)` anywhere (a message from `$(cat msg)` too) is refused. Write the
   message out in the `-m` text.
 - `commit` only commits: no amend, reset, rebase or push, and the repo's own hooks don't run.
