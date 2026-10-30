@@ -110,8 +110,7 @@ export function checkedAgo(seconds: number, now: Date): string {
   if (seconds < 86_400)
     return `checked ${counted(Math.floor(seconds / 3600), "hour", "hours")} ago`;
   const days = Math.floor(seconds / 86_400);
-  if (days === 1) return "checked yesterday";
-  if (days < 30) return `checked ${days} days ago`;
+  if (days < 30) return `checked ${counted(days, "day", "days")} ago`;
   const at = new Date(now.getTime() - seconds * 1000);
   return `checked ${at.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
 }
@@ -134,10 +133,19 @@ export function checkedSaid(one: SourceChecked | undefined, now: Date): string |
   return said.length === 0 ? null : said.join(" · ");
 }
 
+/** Now, drawn again each minute, so an age said on screen keeps up with the clock. */
+function useMinute(): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const ticking = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(ticking);
+  }, []);
+  return now;
+}
+
 /** When a source was checked `at` (seconds since the epoch), as its page's lead says it. */
-function checkedWhen(at: number | null | undefined): string | null {
+function checkedWhen(at: number | null | undefined, now: Date): string | null {
   if (at === null || at === undefined) return null;
-  const now = new Date();
   return checkedAgo(now.getTime() / 1000 - at, now);
 }
 
@@ -157,35 +165,42 @@ function aboutSource(source: SkillSource, checked: string | null = null): string
 
 /** **What the Sources pages read**: the sources, the offered ones and the updates, read again
  *  each time something changed or Try again is pressed. */
-function useSourcesRead(plane: string, changed: number) {
+function useSourcesRead(plane: string, changed: number, onTheList: boolean) {
   const [asked, setAsked] = useState(0);
   const [sources, setSources] = useState<Read<readonly SkillSource[]>>();
   const [offered, setOffered] = useState<readonly OfferedSource[]>([]);
   const [updates, setUpdates] = useState<Read<SkillUpdates>>();
   const [checked, setChecked] = useState<readonly SourceChecked[]>([]);
+  // Bumped as the updates check answers, which records each source it asked.
+  const [answered, setAnswered] = useState(0);
   useEffect(() => {
     let live = true;
-    // What the last checks recorded (#3840): read with the list, and again once the updates
-    // check, which records each source it asked, has answered.
-    const readChecked = () =>
-      void reading(() => commands.skillSourcesChecked(plane)).then((read) => {
-        if (live && Array.isArray(read.data)) setChecked(read.data);
-      });
     void reading(() => commands.skillSources(plane)).then((read) => {
       if (live) setSources(read);
     });
     void reading(() => commands.skillSourcesOffered(plane)).then((read) => {
       if (live && read.data !== undefined) setOffered(read.data);
     });
-    readChecked();
     void reading(() => commands.skillUpdates(plane)).then((read) => {
       if (live) setUpdates(read);
-      readChecked();
+      if (live) setAnswered((n) => n + 1);
     });
     return () => {
       live = false;
     };
   }, [plane, changed, asked]);
+  // What the last checks recorded (#3840): read with the list, again once the updates check has
+  // answered, and again on coming back to the list, since a source's page browses its source.
+  useEffect(() => {
+    if (!onTheList) return;
+    let live = true;
+    void reading(() => commands.skillSourcesChecked(plane)).then((read) => {
+      if (live && Array.isArray(read.data)) setChecked(read.data);
+    });
+    return () => {
+      live = false;
+    };
+  }, [plane, changed, asked, answered, onTheList]);
   return { sources, offered, updates, checked, again: () => setAsked((n) => n + 1) };
 }
 
@@ -279,7 +294,7 @@ export function SkillSourcesPage({
   change: (label: string, run: () => Promise<Answer>) => void;
   changed: number;
 }) {
-  const read = useSourcesRead(plane, changed);
+  const read = useSourcesRead(plane, changed, at === undefined);
   const [adding, setAdding] = useState<{ offered?: OfferedSource }>();
   // Where the tab is now, for a change that ends after the person has gone somewhere else.
   const here = useRef(at);
@@ -429,7 +444,7 @@ function SourcesList({
 }) {
   const updates = read.updates?.data;
   const offers = updates?.offers ?? [];
-  const now = new Date();
+  const now = useMinute();
   const review = (offer: SkillUpdateOffer) =>
     onGo({
       at: "update",
@@ -761,6 +776,7 @@ function SourcePage({
     commands.skillSourceBrowse(plane, source),
   );
   const [removing, setRemoving] = useState(false);
+  const now = useMinute();
   const unconfirmed = updates?.unconfirmed.some((one) => sourceKey(one.remote) === key) === true;
   const at = (skill: string) => ({ source: key, label: source.label, skill });
   const offered = (skill: OfferedSkill) => offerFor(updates, key, skill.name);
@@ -776,7 +792,7 @@ function SourcePage({
         title={source.label}
         lead={
           <>
-            {aboutSource(source, checkedWhen(read?.data?.checked ?? checked))}
+            {aboutSource(source, checkedWhen(read?.data?.checked ?? checked, now))}
             {read?.data !== undefined && (
               <>
                 {" "}

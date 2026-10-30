@@ -159,9 +159,6 @@ pub fn updates(plane: &Path) -> Updates {
             Some((_, answer)) => answer.clone(),
             None => {
                 let answer = source_of(plane, one).and_then(|source| super::newest(plane, &source));
-                if answer.is_ok() {
-                    super::checked::asked(plane, &one.source);
-                }
                 asked.push((one.source.clone(), answer.clone()));
                 answer
             }
@@ -183,6 +180,11 @@ pub fn updates(plane: &Path) -> Updates {
             }),
         }
     }
+    let answered: Vec<Remote> = asked
+        .into_iter()
+        .filter_map(|(remote, answer)| answer.is_ok().then_some(remote))
+        .collect();
+    super::checked::asked(plane, &answered);
     out
 }
 

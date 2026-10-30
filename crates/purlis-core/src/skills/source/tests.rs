@@ -1854,3 +1854,21 @@ fn the_skills_installed_from_a_source_are_counted_from_the_lockfiles() {
     };
     assert_eq!(checked::installed_from(&locked, &other), 0);
 }
+
+#[test]
+fn a_record_of_long_urls_keeps_the_newest_that_fit_and_is_never_read_as_none() {
+    let tmp = plane();
+    let root = tmp.path();
+    let long = "x".repeat(1500);
+    for n in 0..300u64 {
+        let remote = Remote {
+            url: format!("https://example.com/{long}/{n}"),
+            branch: None,
+        };
+        checked::noted(root, &remote, 1000 + n, Some(1));
+    }
+    let read = checked::read(root);
+    assert!(!read.is_empty() && read.len() < 300, "{}", read.len());
+    assert_eq!(read[0].at, 1299, "the newest is kept");
+    assert!(std::fs::metadata(checked::path(root)).unwrap().len() <= 256 * 1024);
+}

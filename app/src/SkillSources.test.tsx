@@ -358,6 +358,26 @@ describe("what each source's last check found (#3840)", () => {
     expect(page).toHaveTextContent("folder skills · checked just now · The whole project");
   });
 
+  it("reads what was recorded again on coming back from a source's page, which browsed it", async () => {
+    let at: number | null = null;
+    core({
+      answers: {
+        skill_sources_checked: () => [{ remote: SOURCE.remote, at, skills: 2, installed: 0 }],
+        skill_source_browse: () => {
+          at = nowSecs();
+          return { ...BROWSE, checked: at };
+        },
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await within(page).findByTestId("offered-deploy");
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    const row = await screen.findByTestId("skill-source");
+    await waitFor(() => expect(row).toHaveTextContent("2 skills, 0 installed · checked just now"));
+  });
+
   it("says ages a person reads at a glance, and nothing where nothing is known", () => {
     const now = new Date(Date.UTC(2026, 9, 30, 12));
     expect(checkedAgo(-5, now)).toBe("checked just now");
@@ -365,7 +385,7 @@ describe("what each source's last check found (#3840)", () => {
     expect(checkedAgo(60, now)).toBe("checked 1 minute ago");
     expect(checkedAgo(3599, now)).toBe("checked 59 minutes ago");
     expect(checkedAgo(7200, now)).toBe("checked 2 hours ago");
-    expect(checkedAgo(86_400, now)).toBe("checked yesterday");
+    expect(checkedAgo(86_400, now)).toBe("checked 1 day ago");
     expect(checkedAgo(29 * 86_400, now)).toBe("checked 29 days ago");
     expect(checkedAgo(60 * 86_400, now)).toBe("checked 31 Aug 2026");
     const remote = SOURCE.remote;

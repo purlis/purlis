@@ -85,9 +85,14 @@ pub fn browsed(plane: &Path, remote: &Remote, skills: usize) -> u64 {
     at
 }
 
-/// **An updates check asked `remote`** now, and it answered.
-pub fn asked(plane: &Path, remote: &Remote) {
-    noted(plane, remote, now(), None);
+/// **An updates check asked each of `remotes`** now, and each answered: one write for them all.
+pub fn asked(plane: &Path, remotes: &[Remote]) {
+    if remotes.is_empty() {
+        return;
+    }
+    let at = now();
+    let noting: Vec<_> = remotes.iter().map(|remote| (remote, None)).collect();
+    noted_all(plane, &noting, at);
 }
 
 fn now() -> u64 {
@@ -96,32 +101,57 @@ fn now() -> u64 {
         .map_or(0, |since| since.as_secs())
 }
 
+/// One change of the record at a time in this process: a browse and an updates check run on
+/// threads of their own, and the second's read-change-write would undo the first's.
+static WRITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Records that `remote` was checked `at`, with the count a browse found (`None` keeps the one
 /// recorded before). Logged, never refused, where it cannot be written.
 pub(super) fn noted(plane: &Path, remote: &Remote, at: u64, skills: Option<u32>) {
+    noted_all(plane, &[(remote, skills)], at);
+}
+
+fn noted_all(plane: &Path, noting: &[(&Remote, Option<u32>)], at: u64) {
+    let _one_at_a_time = WRITING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut sources = read(plane);
-    let skills = skills.or_else(|| {
-        sources
-            .iter()
-            .find(|one| one.remote == *remote)
-            .and_then(|one| one.skills)
-    });
-    sources.retain(|one| one.remote != *remote);
-    sources.push(Checked {
-        remote: remote.clone(),
-        at,
-        skills,
-    });
+    for (remote, skills) in noting {
+        let skills = skills.or_else(|| {
+            sources
+                .iter()
+                .find(|one| one.remote == **remote)
+                .and_then(|one| one.skills)
+        });
+        sources.retain(|one| one.remote != **remote);
+        sources.push(Checked {
+            remote: (*remote).clone(),
+            at,
+            skills,
+        });
+    }
     sources.sort_by_key(|one| std::cmp::Reverse(one.at));
     sources.truncate(MOST_SOURCES);
-    if let Err(why) = write(plane, Record { v: V, sources }) {
+    if let Err(why) = write(plane, sources) {
         tracing::warn!("purlis: when a skill source was checked was not recorded ({why})");
     }
 }
 
-fn write(plane: &Path, record: Record) -> std::io::Result<()> {
+/// Writes `sources`, newest first, leaving out the oldest until the record fits what [`read`]
+/// reads, so a record of long URLs is never written past it and then read as none.
+fn write(plane: &Path, mut sources: Vec<Checked>) -> std::io::Result<()> {
     let file = path(plane);
-    let bytes = serde_json::to_vec(&record).map_err(std::io::Error::other)?;
+    let bytes = loop {
+        let bytes = serde_json::to_vec(&Record {
+            v: V,
+            sources: sources.clone(),
+        })
+        .map_err(std::io::Error::other)?;
+        if bytes.len() <= MOST_BYTES || sources.is_empty() {
+            break bytes;
+        }
+        sources.truncate(sources.len() - sources.len().div_ceil(8));
+    };
     if let Some(dir) = file.parent() {
         crate::rewrite::create_dir_all(dir)?;
     }
