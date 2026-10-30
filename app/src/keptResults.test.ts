@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import type { Said } from "./actions";
-import { KEPT_RESULTS, keep, resultsFor, useKeptResults } from "./keptResults";
+import { KEPT_RESULTS, keep, resultsFor, trackOf, useKeptResults } from "./keptResults";
 
 const said = (words: string) => ({ from: "x", refused: false, words });
 
@@ -159,5 +159,26 @@ describe("a track's lines, kept (#3649's review)", () => {
     let kept = keep([], cloned, "/p", 0);
     kept = keep(kept, { ...counting("Cloning…"), track: "clone:g:2" }, "/p", 1);
     expect(kept.map((one) => one.id)).toEqual([1, 0]);
+  });
+});
+
+describe("a dismissed track said on again (#3898)", () => {
+  it("still keeps the line said before it, though not the track's counting", () => {
+    const ready: Said = {
+      from: "workspace.create",
+      refused: false,
+      words: "Ready.",
+      workspace: "g",
+    };
+    const counting: Said = {
+      from: "workspace.clone",
+      refused: false,
+      words: "Cloning…",
+      progress: true,
+      track: "clone:g:1",
+    };
+    const dropped = new Set([trackOf(counting, "/p")]);
+    const kept = keep([], { ...counting, after: ready }, "/p", 0, dropped);
+    expect(kept.map((one) => one.said)).toEqual([ready]);
   });
 });

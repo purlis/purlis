@@ -54,3 +54,37 @@ describe("a repo already being cloned, asked for again", () => {
     expect(await again).toEqual([]);
   });
 });
+
+describe("a repo waited on that is not finished when the wait ends (#3898)", () => {
+  it("is a failure when a later call asked for it again while this one waited", async () => {
+    const { held } = heldCore();
+    const first = cloneRepos("/p", "gamma", ["api"]);
+    // Waits on api, and clones web of its own.
+    const waiting = cloneRepos("/p", "gamma", ["api", "web"]);
+    await expect.poll(() => held.length).toBe(1);
+    held[0].refuse("api: no access.");
+    await first;
+    // web is cloning now; api, failed, is asked for again by a third call.
+    await expect.poll(() => held.length).toBe(2);
+    const third = cloneRepos("/p", "gamma", ["api"]);
+    held[1].land();
+    expect(await waiting).toEqual([{ repo: "api", said: "api: no access." }]);
+    await expect.poll(() => held.length).toBe(3);
+    held[2].land();
+    expect(await third).toEqual([]);
+  });
+
+  it("is a failure when the call that was cloning it stopped part way", async () => {
+    const { held } = heldCore();
+    // The first call's listener throws after api, so web is left waiting, never cloned.
+    const first = cloneRepos("/p", "gamma", ["api", "web"], () => {
+      throw new Error("a listener broke");
+    });
+    const waiting = cloneRepos("/p", "gamma", ["web"]);
+    await expect.poll(() => held.length).toBe(1);
+    held[0].land();
+    await expect(first).rejects.toThrow("a listener broke");
+    const failed = await waiting;
+    expect(failed.map((one) => one.repo)).toEqual(["web"]);
+  });
+});
