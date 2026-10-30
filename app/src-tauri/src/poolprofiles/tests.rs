@@ -377,6 +377,8 @@ fn the_pools_whose_runner_keeps_a_removed_profile_are_named_in_one_sentence() {
             .unwrap()
             .starts_with("Pools builds, tests and gpu keep the profile 'work'")
     );
+}
+
 /// The cluster pool `team` and its runner, kept under `config`, as this machine reads them.
 #[cfg(unix)]
 fn a_cluster_pool(
