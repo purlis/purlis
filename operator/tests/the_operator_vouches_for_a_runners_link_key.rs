@@ -171,14 +171,7 @@ fn a_value_that_is_not_one_plain_line_makes_no_statement() {
 }
 
 fn pool() -> Pool {
-    Pool::new(
-        "team",
-        PoolSpec {
-            image: IMAGE.to_owned(),
-            kept_volume: Default::default(),
-            stopped: false,
-        },
-    )
+    Pool::new("team", PoolSpec::new(IMAGE))
 }
 
 /// A pod as upstream makes it from the operator's template for the pool, its first step ended
@@ -322,11 +315,9 @@ fn exec(command: &str) -> ExecAction {
 fn a_pod_differing_from_the_template_in_anything_that_decides_what_runs_is_never_vouched_for() {
     let another_image = Pool::new(
         "team",
-        PoolSpec {
-            image: "ghcr.io/purlis/purlis-runner@sha256:3333333333333333333333333333333333333333333333333333333333333333".into(),
-            kept_volume: Default::default(),
-            stopped: false,
-        },
+        PoolSpec::new(
+            "ghcr.io/purlis/purlis-runner@sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        ),
     );
     assert!(matches!(
         vouch::key_published(&pod(Some((0, KEY))), &template_of(&another_image)),

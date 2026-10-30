@@ -546,10 +546,7 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     let mut wanted = sandbox_claim_for(&claim, &pool.spec.kept_volume, &runner);
     let pool_object = upstream::name_for(&pool.name_any());
     let template_held = templates.get_opt(&pool_object).await?.map(meta);
-    let warm_full = warm_pools.get_opt(&pool_object).await?;
-    // None while the pool is stopped; otherwise as many as it holds (#2058).
-    let replicas = upstream::replicas_kept(&pool, warm_full.as_ref());
-    let warm_held = warm_full.map(meta);
+    let warm_held = warm_pools.get_opt(&pool_object).await?.map(meta);
     let claim_full = upstream_claims.get_opt(&name).await?;
     // The volume an upstream claim was made with stays as it is: upstream never changes it, and
     // refuses an apply that does (#2057).
@@ -568,9 +565,6 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     warm.metadata.resource_version = warm_held
         .as_ref()
         .and_then(|held| held.resource_version.clone());
-    // The runners it keeps warm stay as many as it holds (#2057), none while the pool is stopped
-    // (#2058).
-    warm.spec.replicas = replicas;
     let stopped = upstream::is_stopped(&claim, Some(&pool));
     let in_the_way = [
         (

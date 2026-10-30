@@ -9,11 +9,12 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::{Condition, Time};
 use kube::{CustomResource, KubeSchema};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 /// Where a team's runners come from. Cluster-wide, defined once for the team. Who may claim from
 /// it is the cluster's own access control: a Claim is admitted only for someone allowed to `use`
 /// the Pool (deploy/policy.yaml).
-#[derive(CustomResource, Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[derive(CustomResource, KubeSchema, Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[kube(
     group = "runners.purlis.dev",
     version = "v1alpha1",
@@ -24,6 +25,8 @@ use serde::{Deserialize, Serialize};
     printcolumn = r#"{"name":"Age","type":"date","jsonPath":".metadata.creationTimestamp"}"#
 )]
 #[serde(rename_all = "camelCase")]
+#[x_kube(validation = Rule::new("duration(self.noticeBeforeDelete) < duration(self.deleteSuspendedAfter)").message("noticeBeforeDelete must be shorter than deleteSuspendedAfter: the Update comes before the deletion."))]
+#[x_kube(validation = Rule::new("duration(self.idleAfter) >= duration('1m')").message("idleAfter is a minute at least."))]
 pub struct PoolSpec {
     /// The runner image, by digest (`<repository>@sha256:<digest>`), since a tag can move. Any
     /// image that keeps purlis's runner image contract (docs/runner-image.md).
@@ -40,6 +43,107 @@ pub struct PoolSpec {
     /// set.
     #[serde(default)]
     pub stopped: bool,
+    /// How long a runner of the pool is idle before it is suspended (#3737): no running chat, no
+    /// open stream, no forwarded request and no build (ADR 0089 §9); a runner a live chat owns,
+    /// or whose browser holds an Ask, is never idle. A whole number of `s`, `m` or `h`, a minute
+    /// at least. 30m unless the pool says otherwise.
+    #[serde(default = "thirty_minutes")]
+    #[schemars(regex(pattern = r"^[1-9][0-9]*[smh]$"))]
+    pub idle_after: String,
+    /// How long a kept Claim stays suspended before it is deleted, with its volume (#3737). A
+    /// whole number of `s`, `m` or `h`. 720h (30 days) unless the pool says otherwise.
+    #[serde(default = "thirty_days")]
+    #[schemars(regex(pattern = r"^[1-9][0-9]*[smh]$"))]
+    pub delete_suspended_after: String,
+    /// How long before that deletion its requester is sent an Update (#3737). A whole number of
+    /// `s`, `m` or `h`, shorter than `deleteSuspendedAfter`. 168h (7 days) unless the pool says
+    /// otherwise.
+    #[serde(default = "seven_days")]
+    #[schemars(regex(pattern = r"^[1-9][0-9]*[smh]$"))]
+    pub notice_before_delete: String,
+    /// A Claim's maximum age (#3737): past it, a kept Claim's runner starts again on the pool's
+    /// current image, and a fresh Claim's is made again. A whole number of `s`, `m` or `h`. 336h
+    /// (14 days) unless the pool says otherwise.
+    #[serde(default = "fourteen_days")]
+    #[schemars(regex(pattern = r"^[1-9][0-9]*[smh]$"))]
+    pub max_age: String,
+    /// How many runners are kept warm for fresh Claims (#3737), in each runner namespace the
+    /// pool has a Claim in; none while the pool is stopped. The operator keeps the warm pool at
+    /// this count. 0 unless the pool says otherwise.
+    #[serde(default)]
+    #[schemars(range(min = 0))]
+    pub warm_replicas: i32,
+}
+
+fn thirty_minutes() -> String {
+    "30m".to_owned()
+}
+
+fn thirty_days() -> String {
+    "720h".to_owned()
+}
+
+fn seven_days() -> String {
+    "168h".to_owned()
+}
+
+fn fourteen_days() -> String {
+    "336h".to_owned()
+}
+
+/// `spelled`, a whole number of `s`, `m` or `h` as the Pool's times are, as a duration; a value
+/// the API server would not have taken reads as `otherwise`.
+fn duration_of(spelled: &str, otherwise: &str) -> Duration {
+    let read = |spelled: &str| {
+        let unit = match spelled.chars().last()? {
+            's' => 1,
+            'm' => 60,
+            'h' => 60 * 60,
+            _ => return None,
+        };
+        let count: u64 = spelled[..spelled.len() - 1].parse().ok()?;
+        Some(Duration::from_secs(count.checked_mul(unit)?))
+    };
+    read(spelled)
+        .or_else(|| read(otherwise))
+        .unwrap_or_default()
+}
+
+impl PoolSpec {
+    /// A pool of runners of `image`, saying nothing else: what the API server makes of a Pool
+    /// that names only its image.
+    pub fn new(image: impl Into<String>) -> PoolSpec {
+        PoolSpec {
+            image: image.into(),
+            kept_volume: KeptVolume::default(),
+            stopped: false,
+            idle_after: thirty_minutes(),
+            delete_suspended_after: thirty_days(),
+            notice_before_delete: seven_days(),
+            max_age: fourteen_days(),
+            warm_replicas: 0,
+        }
+    }
+
+    /// [`PoolSpec::idle_after`], as a duration.
+    pub fn idle_after(&self) -> Duration {
+        duration_of(&self.idle_after, &thirty_minutes())
+    }
+
+    /// [`PoolSpec::delete_suspended_after`], as a duration.
+    pub fn delete_suspended_after(&self) -> Duration {
+        duration_of(&self.delete_suspended_after, &thirty_days())
+    }
+
+    /// [`PoolSpec::notice_before_delete`], as a duration.
+    pub fn notice_before_delete(&self) -> Duration {
+        duration_of(&self.notice_before_delete, &seven_days())
+    }
+
+    /// [`PoolSpec::max_age`], as a duration.
+    pub fn max_age(&self) -> Duration {
+        duration_of(&self.max_age, &fourteen_days())
+    }
 }
 
 /// The volume of a kept Claim's runner: one PersistentVolumeClaim per kept Claim, named

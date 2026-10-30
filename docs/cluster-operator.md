@@ -223,6 +223,11 @@ spec:
     size: 10Gi
     # storageClassName: fast   # the cluster's default class unless named
   stopped: false           # optional; true suspends every runner of the pool
+  warmReplicas: 0          # optional; runners kept warm for fresh claims, per person
+  idleAfter: 30m           # optional; these are the defaults (#3737)
+  deleteSuspendedAfter: 720h
+  noticeBeforeDelete: 168h
+  maxAge: 336h
 ---
 apiVersion: runners.purlis.dev/v1alpha1
 kind: Claim
@@ -245,6 +250,27 @@ spec:
   a fresh Claim's running runner made before it is no longer vouched for; make its Claim again.
   A runner kept warm from the earlier template is replaced by one of the new (#2058): upstream
   deletes it, and a fresh Claim never takes it.
+- **A Pool's warm count and times** (#3737). `warmReplicas` is how many runners the pool keeps
+  warm for fresh Claims, in each person's runner namespace where the pool has a Claim, 0 unless
+  set and none while the pool is `stopped`; the operator keeps each warm pool at it, so a warm
+  pool scaled by hand is brought back to it. The times are a whole number followed by `s`, `m`
+  or `h`, as a Docker pool's `suspendAfter` is (`1d` is refused; write `24h`):
+  - `idleAfter` (30m, a minute at least): how long a runner is idle before it is suspended, as
+    `stopped` suspends. Idle is no running chat, no open stream, no forwarded request and no
+    build; a runner a live chat owns, or whose browser holds an Ask, is never idle. It is a
+    different clock from a runner left without a link, which suspends itself after a day
+    (`suspendAfter` on a Docker pool).
+  - `deleteSuspendedAfter` (720h, 30 days): how long a kept Claim stays suspended before it is
+    deleted, with its volume.
+  - `noticeBeforeDelete` (168h, 7 days, shorter than `deleteSuspendedAfter`): how long before
+    that deletion its requester is sent an Update.
+  - `maxAge` (336h, 14 days): past it, a kept Claim's runner starts again on the pool's current
+    image, and a fresh Claim's is made again.
+
+  The cluster refuses any other spelling, a notice that is not shorter than the deletion, and a
+  negative warm count. **The four times are named, not yet acted on**: the operator suspends,
+  deletes and restarts on them once #3980 (idle), #3981 (retention and its Update) and #3982
+  (maximum age) are built.
 - **A Claim is kept or fresh** (#2057), and its `kept` never changes after it is made: the other
   kind is another Claim.
   - **A kept Claim** (`kept: true`) gets a runner of its own, started cold, whose home is a
@@ -298,8 +324,8 @@ spec:
   was, with the same key. A runner suspended by hand before it was stopped is left suspended,
   as far as the operator can tell: it goes by who last applied the sandbox's mode, which any
   client may name itself as, and a runner suspended by hand while it was already stopped runs
-  again with the rest. A stopped pool's warm pool keeps no runner warm after it runs again until
-  a team admin scales it again.
+  again with the rest. Once a stopped pool runs again, its warm pools keep its `warmReplicas`
+  warm again.
 - **A Claim stays in its namespace; its runner does not.** The runner, and everything the
   operator makes for it, is in the requester's own namespace, `purlis-runners-<hash>`
   ([below](#each-persons-namespace)).
@@ -504,7 +530,7 @@ then applies server-side:
 | Upstream object | Name | What it holds |
 |---|---|---|
 | `SandboxTemplate` | `purlis-pool-p` in `r` | the runner's pod: its first step, `link-key`, making the runner's home and its link key (above), then one container running the pool's image with its own entrypoint (`purlis serve`), both as a user who is not root, every capability dropped, no privilege escalation, the runtime's default seccomp profile, no Kubernetes credential mounted and no service addresses in their environment, each asking for the CPU and memory above. The runner's `HOME` is `/var/lib/purlis/home`, on the volume `purlis-kept` mounted at `/var/lib/purlis`: a folder of the node's in the template, which a kept Claim's own volume takes the place of. The pod's group (`fsGroup` 10001) may write that volume. A claim may add a volume of its own (`volumeClaimTemplatesPolicy: Allowed`) |
-| `SandboxWarmPool` | `purlis-pool-p` in `r` | no runner kept warm when it is made; after that, as many as it holds, so `kubectl scale sandboxwarmpool purlis-pool-p -n r --replicas=<n>` keeps `n` runners warm for that person's fresh Claims, none while the pool is `stopped`. Its update strategy is upstream's `Recreate`, so a warm runner made from an earlier template is deleted and made again, and never handed to a fresh Claim (#2058) |
+| `SandboxWarmPool` | `purlis-pool-p` in `r` | the Pool's `warmReplicas` runners kept warm for that person's fresh Claims, none while the pool is `stopped`; scaled by hand, it is brought back to that count (#3737). Its update strategy is upstream's `Recreate`, so a warm runner made from an earlier template is deleted and made again, and never handed to a fresh Claim (#2058) |
 | `SandboxClaim` | the Claim's own name in `r` | the claim on that warm pool, annotated `runners.purlis.dev/claim-uid` with the Claim's uid; a kept Claim's carries the volume `purlis-kept` its Pool's `keptVolume` asks for, so upstream makes its runner cold and its PersistentVolumeClaim `purlis-kept-<claim>` |
 
 Each of the three is controlled by the runner namespace, by its uid: a Kubernetes owner cannot be
