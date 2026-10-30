@@ -673,7 +673,7 @@ const APART: &[(&str, &str, &[State])] = &[
 
 /// The states `part` of `family` is marked in on its own element, when it is drawn apart from
 /// the family's root ([`APART`]).
-fn apart(family: &Family, part: &str) -> Option<&'static [State]> {
+fn drawn_apart(family: &Family, part: &str) -> Option<&'static [State]> {
     APART
         .iter()
         .find(|(name, one, _)| *name == family.name && *one == part)
@@ -688,7 +688,7 @@ fn apart_in_nothing(
     variant: Option<&str>,
     state: Option<State>,
 ) -> bool {
-    apart(family, part).is_some_and(|carried| {
+    drawn_apart(family, part).is_some_and(|carried| {
         variant.is_some() || state.is_some_and(|one| !carried.contains(&one))
     })
 }
@@ -1401,7 +1401,7 @@ fn key(raw: &str) -> Result<Key, String> {
     // A part drawn apart from the root is in no variant of it, and only in its own states
     // (#3656).
     if apart_in_nothing(family, part.name, variant, state) {
-        let mut carried: Vec<&str> = apart(family, part.name)
+        let mut carried: Vec<&str> = drawn_apart(family, part.name)
             .unwrap_or_default()
             .iter()
             .map(|one| one.name())
@@ -3234,7 +3234,7 @@ fn fallback(family: &'static Family, variant: &'static str, state: Option<State>
         // A part drawn apart from the root is drawn back where it is reached: in no variant of
         // the root, and in the state it is in only where its own element is marked in it
         // (#3656).
-        let (variant, state) = match apart(family, family.parts[part].name) {
+        let (variant, state) = match drawn_apart(family, family.parts[part].name) {
             Some(carried) => (None, state.filter(|one| carried.contains(one))),
             None => (variant, state),
         };
@@ -3707,7 +3707,7 @@ fn selector(rule: &Rule, sized: bool) -> String {
     }
     // A part drawn apart from the root is reached by its own attributes, in the state its own
     // element is marked in (#3656).
-    if apart(rule.family, part).is_some() {
+    if drawn_apart(rule.family, part).is_some() {
         let state = rule
             .state
             .map(|one| rule.family.attribute(one))
