@@ -54,13 +54,21 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** **The move waits on work's sign-in on builds**: its line, Cancel move, and the strip. */
+/** **The move waits on work's sign-in on builds**: its line, with Sign in and Cancel move. */
 export const WaitsOnASignIn: Story = {
   play: async ({ canvas }) => {
     await canvas.findByText(/Moves to pool builds once work is signed in there/);
+    await expect(canvas.getByRole("button", { name: "Sign in" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Cancel move" })).toBeVisible();
+  },
+};
+
+/** **Sign in pressed**: the strip under the move's line, at its first step. */
+export const SigningIn: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: "Sign in" }));
     await expect(
       await canvas.findByRole("group", { name: "Signing work in on builds" }),
     ).toBeInTheDocument();
-    await expect(canvas.getByRole("button", { name: "Cancel move" })).toBeVisible();
   },
 };

@@ -8581,7 +8581,6 @@ export type MoveNow = {
 	not_yet: string | null,
 };
 
-/**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */
 /**
  *  **The profile a move waits on to sign in on the runner it goes to** (#3477): what the
  *  window's sign-in strip under the move's notice signs in.
@@ -8594,6 +8593,7 @@ export type MoveSignIn = {
 	harness: string,
 };
 
+/**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */
 export type MoveTold = {
 	plane: PlaneId,
 	moving: ChatMove,

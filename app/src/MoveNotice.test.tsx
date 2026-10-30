@@ -58,12 +58,23 @@ async function notice(move: ChatMove) {
   return screen.findByText(/once work is signed in there/);
 }
 
+/** The notice, with its Sign in pressed: the strip under it. */
+async function strip(move: ChatMove = waiting()) {
+  await notice(move);
+  await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
+  return screen.findByRole("group", { name: "Signing work in on builds" });
+}
+
 describe("a move waiting on its profile's sign-in", () => {
-  it("says it waits while the chat keeps working here, with the strip under it", async () => {
+  it("says it waits while the chat keeps working here, and Sign in opens the strip under it", async () => {
     const said = await notice(waiting());
     expect(said).toHaveTextContent(
       "Moves to pool builds once work is signed in there. It keeps working here meanwhile.",
     );
+    // Nothing starts on the runner until Sign in is pressed (prototype Variant A).
+    expect(screen.queryByRole("group", { name: "Signing work in on builds" })).toBeNull();
+    expect(calls("pool_sign_in_start")).toEqual([]);
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(
       await screen.findByRole("group", { name: "Signing work in on builds" }),
     ).toBeInTheDocument();
@@ -75,7 +86,7 @@ describe("a move waiting on its profile's sign-in", () => {
   });
 
   it("tells the core once the strip says signed in, so the move goes ahead by itself", async () => {
-    await notice(waiting());
+    await strip();
     await waitFor(() => expect(answer).toBeDefined());
     act(() => answer?.({ at: "signed-in" }));
     await waitFor(() =>
@@ -88,9 +99,8 @@ describe("a move waiting on its profile's sign-in", () => {
   });
 
   it("Cancel in the strip cancels the move, and the chat stays here", async () => {
-    await notice(waiting());
-    const strip = await screen.findByRole("group", { name: "Signing work in on builds" });
-    await userEvent.click(within(strip).getByRole("button", { name: "Cancel" }));
+    const opened = await strip();
+    await userEvent.click(within(opened).getByRole("button", { name: "Cancel" }));
     await waitFor(() =>
       expect(calls("put_away_chat_move")).toEqual([{ plane: PLANE, session: 3 }]),
     );
@@ -106,13 +116,27 @@ describe("a move waiting on its profile's sign-in", () => {
     );
   });
 
-  it("a harness whose sign-in the window does not drive offers Sign in and Try the move", async () => {
+  it("a harness whose sign-in the window does not drive signs in in a terminal, then Try the move", async () => {
     await notice(waiting("codex"));
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(screen.queryByRole("group", { name: "Signing work in on builds" })).toBeNull();
+    expect(calls("pool_sign_in_start")).toEqual([]);
     await userEvent.click(screen.getByRole("button", { name: "Try the move" }));
     await waitFor(() =>
       expect(calls("chat_move_signed_in")).toEqual([{ plane: PLANE, session: 3 }]),
     );
-    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
+  });
+
+  it("a refused Try the move reads the core's moves back, never inventing a failure", async () => {
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      if (cmd === "chat_move_signed_in") throw "Its move waits on no sign-in.";
+      if (cmd === "chat_moves") return [{ ...waiting(), stage: "ready", sign_in: null }];
+      return null;
+    });
+    await notice(waiting());
+    await userEvent.click(screen.getByRole("button", { name: "Try the move" }));
+    expect(await screen.findByText("Moves to pool builds at its next pause.")).toBeInTheDocument();
+    expect(chatMovesOf(PLANE)[3]?.stage).toBe("ready");
   });
 });

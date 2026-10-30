@@ -158,17 +158,18 @@ export function putAwayMove(plane: PlaneId, session: number) {
 /**
  * **Chat `session`'s move waited on its profile's sign-in, which is done** (#3477): the core
  * prepares it again, asking the runner itself, so it goes ahead by itself once signed in there.
- * Why not, held as a failed move, which the pane says.
+ * Where the core refused, its moves are read back, so the pane says what the core holds (another
+ * tab of the move may have told it first).
  */
 export function signedInForMove(plane: PlaneId, session: number) {
   void commands
     .chatMoveSignedIn(plane, session)
-    .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
-    .then((said) => {
-      const one = chatMovesOf(plane)[session];
-      if (said.status === "error" && one !== undefined)
-        heardMove(plane, { ...one, stage: "failed", why: said.error, sign_in: null });
-    });
+    .then(async (said) => {
+      if (said.status === "ok") return;
+      const read = await commands.chatMoves(plane);
+      if (read.status === "ok") for (const one of read.data) heardMove(plane, one);
+    })
+    .catch(() => undefined);
 }
 
 /** Whether a move may still be cancelled: while it is prepared, waits on a sign-in or is ready,

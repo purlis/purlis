@@ -652,3 +652,70 @@ fn a_chat_that_began_a_turn_while_its_move_was_made_stops_it() {
     assert!(refused.starts_with("chat 4 began a turn"), "{refused}");
     assert!(refused.contains("none moved"), "{refused}");
 }
+
+/// **A move prepared again after a sign-in asks again whether the pool's runner is yours, and
+/// whether its chats are still open, before anything is kept or sent there** (#3477): it may run
+/// long after the move was asked for.
+#[test]
+fn a_preparation_run_again_asks_again_that_the_runner_is_yours_and_its_chats_are_open() {
+    let on_pools = Arc::new(ProfilesOnAPool::default());
+    let (chats, host) = chats_readying(&on_pools);
+    let profiles = ["work".to_owned()];
+
+    let not_yours = prepare_on_a_runner_of_yours(&chats, "builds", "app", &profiles, true, || {
+        Err(Unbound::NotYours("another engine".into()))
+    })
+    .unwrap_err();
+    assert!(
+        matches!(&not_yours, NotYet::Refused(why) if why.contains("does not move to pool builds")),
+        "{not_yours:?}"
+    );
+    let closed =
+        prepare_on_a_runner_of_yours(&chats, "builds", "app", &profiles, false, || Ok(bound()))
+            .unwrap_err();
+    assert!(matches!(closed, NotYet::Refused(_)), "{closed:?}");
+    assert!(
+        lock(&on_pools.asked).is_empty(),
+        "no profile was kept there"
+    );
+    assert!(host.moved().is_empty(), "nothing went ahead");
+
+    prepare_on_a_runner_of_yours(&chats, "builds", "app", &profiles, true, || Ok(bound())).unwrap();
+    assert_eq!(
+        host.moved(),
+        vec![("ahead", "builds".to_owned(), "app".to_owned())]
+    );
+}
+
+/// **A preparation of a move put away never says the stage of a new move of the same chats**
+/// (#3477): it finishes late, and the new move keeps its own stage.
+#[test]
+fn a_late_preparation_of_a_move_put_away_leaves_a_new_move_alone() {
+    let (moves, told) = heard();
+    let (go, gate) = mpsc::channel::<()>();
+    moves
+        .begin(alone(3), None, Some("a".into()), move || {
+            let _ = gate.recv();
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(next(&told).stage, "preparing");
+    moves.put_away(3).unwrap();
+    assert_eq!(next(&told).stage, "over");
+
+    moves
+        .begin(alone(3), None, Some("b".into()), || {
+            Err(NotYet::SignIn(work_on_builds()))
+        })
+        .unwrap();
+    assert_eq!(next(&told).stage, "preparing");
+    assert_eq!(next(&told).stage, "signing-in");
+
+    go.send(()).unwrap();
+    assert!(
+        told.recv_timeout(Duration::from_millis(300)).is_err(),
+        "the old preparation said nothing"
+    );
+    assert_eq!(moves.shown()[0].stage, "signing-in");
+    assert_eq!(moves.shown()[0].to.as_deref(), Some("b"));
+}

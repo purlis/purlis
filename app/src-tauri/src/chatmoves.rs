@@ -268,6 +268,7 @@ impl Moves {
         let Some(first) = group.first().map(|one| one.session) else {
             return Err("No chat was asked to move.".to_owned());
         };
+        let prepare: Prepare = Arc::new(Mutex::new(Box::new(prepare)));
         let one = {
             let mut all = lock(&self.by_chat);
             let moving: Vec<String> = group
@@ -295,18 +296,14 @@ impl Moves {
                 stage: Stage::Preparing,
                 group,
             };
+            // Held with the move, under the same lock, so a put away meanwhile takes both.
+            let mut prepares = lock(&self.prepares);
             for session in one.sessions() {
                 all.insert(session, one.clone());
+                prepares.insert(session, Arc::clone(&prepare));
             }
             one
         };
-        let prepare: Prepare = Arc::new(Mutex::new(Box::new(prepare)));
-        {
-            let mut prepares = lock(&self.prepares);
-            for session in one.sessions() {
-                prepares.insert(session, Arc::clone(&prepare));
-            }
-        }
         self.tell(&one);
         self.prepare(first, one.group, prepare);
         Ok(())
@@ -327,7 +324,7 @@ impl Moves {
                     Err(NotYet::SignIn(asked)) => Stage::SigningIn(asked),
                     Err(NotYet::Refused(why)) => Stage::Failed(why),
                 };
-                moves.reached_by(first, &group, stage);
+                moves.reached_from(first, &group, stage, &prepare);
             });
         if let Err(why) = spawned {
             self.reached(
@@ -342,7 +339,7 @@ impl Moves {
     /// so it goes ahead by itself once it is, or waits again. Refused for a move that waits on
     /// no sign-in.
     pub(crate) fn signed_in(self: &Arc<Self>, session: u32) -> Result<(), String> {
-        let (first, group) = {
+        let (group, prepare) = {
             let mut all = lock(&self.by_chat);
             let Some(one) = all.get(&session).cloned() else {
                 return Err("This chat is not moving.".to_owned());
@@ -350,6 +347,10 @@ impl Moves {
             if !matches!(one.stage, Stage::SigningIn(_)) {
                 return Err("Its move waits on no sign-in.".to_owned());
             }
+            // Its own preparation, taken under the move's lock, so it is never another move's.
+            let Some(prepare) = lock(&self.prepares).get(&session).cloned() else {
+                return Err("purlis no longer holds how to prepare the move.".to_owned());
+            };
             let preparing = Move {
                 stage: Stage::Preparing,
                 ..one
@@ -359,16 +360,9 @@ impl Moves {
             }
             drop(all);
             self.tell(&preparing);
-            (session, preparing.group)
+            (preparing.group, prepare)
         };
-        let Some(prepare) = lock(&self.prepares).get(&first).cloned() else {
-            self.reached(
-                first,
-                Stage::Failed("purlis no longer holds how to prepare the move.".to_owned()),
-            );
-            return Ok(());
-        };
-        self.prepare(first, group, prepare);
+        self.prepare(session, group, prepare);
         Ok(())
     }
 
@@ -382,14 +376,32 @@ impl Moves {
         self.reached_by(session, &group, stage);
     }
 
+    /// [`Self::reached_by`], from a run of `prepare`: only while it is still the move's own, so
+    /// a preparation of a move put away since never says the stage of a new one (#3477).
+    fn reached_from(&self, session: u32, group: &[Member], stage: Stage, prepare: &Prepare) {
+        self.reached_as(session, group, stage, Some(prepare));
+    }
+
     /// [`Self::reached`], for the move of `group`: a chat of it held under another move since
     /// is left alone.
     fn reached_by(&self, session: u32, group: &[Member], stage: Stage) {
+        self.reached_as(session, group, stage, None);
+    }
+
+    fn reached_as(&self, session: u32, group: &[Member], stage: Stage, from: Option<&Prepare>) {
         let one = {
             let mut all = lock(&self.by_chat);
             let Some(mut one) = all.get(&session).cloned().filter(|one| one.group == group) else {
                 return;
             };
+            if let Some(from) = from {
+                let ours = lock(&self.prepares)
+                    .get(&session)
+                    .is_some_and(|held| Arc::ptr_eq(held, from));
+                if !ours {
+                    return;
+                }
+            }
             // A preparation is run again only from a wait on a sign-in.
             if !matches!(stage, Stage::SigningIn(_) | Stage::Preparing) {
                 let mut prepares = lock(&self.prepares);
@@ -424,7 +436,8 @@ impl Moves {
             Stage::Preparing => Due::NotYet("Its move is still being prepared.".to_owned()),
             Stage::SigningIn(asked) => Due::NotYet(format!(
                 "It moves once {} is signed in on pool {}.",
-                asked.profile, asked.pool
+                purlis_core::shown::short(&asked.profile),
+                asked.pool
             )),
             Stage::Switching => Due::NotYet("Its move is being made.".to_owned()),
             Stage::Failed(_) => Due::NotMoving,
@@ -570,6 +583,25 @@ pub(crate) fn prepare_on_a_runner(
         chats.ready_profile_on(pool, profile)?;
     }
     Ok(chats.sessions().move_ahead(pool, workspace)?)
+}
+
+/// **[`prepare_on_a_runner`], each time it runs** (#3477): a move waiting on a sign-in is
+/// prepared again later, maybe much later, so the pool is asked again whether its runner is the
+/// person's own (`read`, as [`goes_to_a_runner_of_yours`]) and every chat of the move is still
+/// open (`all_open`), before anything is kept or sent there.
+pub(crate) fn prepare_on_a_runner_of_yours(
+    chats: &crate::chats::Chats,
+    pool: &str,
+    workspace: &str,
+    profiles: &[String],
+    all_open: bool,
+    read: impl FnOnce() -> Result<purlis_core::poollogins::Bound, Unbound>,
+) -> Result<(), NotYet> {
+    if !all_open {
+        return Err("A chat of the move was closed, so nothing moved.".into());
+    }
+    goes_to_a_runner_of_yours(pool, read)?;
+    prepare_on_a_runner(chats, pool, workspace, profiles)
 }
 
 /// **Moves `moving`, the chats of one workspace, to pool `pool`'s runner** (#2048, #2049,
@@ -842,11 +874,28 @@ impl crate::planes::Held {
                 let held = Arc::downgrade(self);
                 let (pool, workspace) = (pool.clone(), movers.workspace().to_owned());
                 let profiles = profiles_of(&movers.moving());
+                let members: Vec<u32> = movers.members().iter().map(|one| one.session).collect();
                 Box::new(move || {
                     let held = held
                         .upgrade()
                         .ok_or_else(|| "The project was closed, so nothing moved.".to_owned())?;
-                    prepare_on_a_runner(held.chats(), &pool, &workspace, &profiles)
+                    let config = held.chats().pools_in().ok_or_else(|| {
+                        "This machine keeps no pool, so the chat was not moved.".to_owned()
+                    })?;
+                    let open: Vec<u32> = held
+                        .chats()
+                        .open_now()
+                        .iter()
+                        .map(|one| one.session)
+                        .collect();
+                    prepare_on_a_runner_of_yours(
+                        held.chats(),
+                        &pool,
+                        &workspace,
+                        &profiles,
+                        members.iter().all(|one| open.contains(one)),
+                        || purlis_core::poollogins::Bound::read(&config, &pool),
+                    )
                 })
             }
             None => Box::new(|| Ok(())),
