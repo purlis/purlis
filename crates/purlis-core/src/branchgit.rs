@@ -56,6 +56,55 @@ pub fn said(sub: &str) -> String {
 /// The refusal for `cmd`, run in `cwd` by a chat the app gave a sandbox, in the project at
 /// `root`: `(subcommand, sentence)`, or `None`.
 pub fn refusal(cmd: &str, cwd: &str, root: &str) -> Option<(String, String)> {
+    let ((sub, ()), _) = found(cmd, cwd, root, |sub, post| {
+        writes_the_index(sub, post).then_some(())
+    })?;
+    let why = said(&sub);
+    Some((sub, why))
+}
+
+/// **Plain git that writes a branch folder's branch** (#3931): the first `git commit`, `merge`,
+/// `cherry-pick`, `revert` or `am` (a commit), `pull` or `rebase` (an update) or `push` on the
+/// line `cmd`, run in `cwd`, whose repository is a branch folder purlis made in the project at
+/// `root`, read and placed as [`refusal`] reads and places a line: `(subcommand, act, folder)`,
+/// where `folder` is the folder's top. What an unsandboxed chat's guard holds to the folder's
+/// one live writer ([`crate::piececlaim`]). A dry run, and a rebase, merge, cherry-pick, revert
+/// or am that only stops or shows one under way (`--abort`, `--quit`,
+/// `--show-current-patch`), writes nothing of its own and is let through.
+pub fn branch_write(
+    cmd: &str,
+    cwd: &str,
+    root: &str,
+) -> Option<(String, crate::piececlaim::Act, PathBuf)> {
+    let ((sub, act), folder) = found(cmd, cwd, root, writes_the_branch)?;
+    Some((sub, act, folder))
+}
+
+/// What `git <sub> <post…>` does to the branch it runs on, as a branch folder's claim names it
+/// ([`branch_write`]), or `None` for git that makes no commit and moves no branch.
+fn writes_the_branch(sub: &str, post: &[String]) -> Option<crate::piececlaim::Act> {
+    use crate::piececlaim::Act;
+    let has = |flag: &str| post.iter().any(|arg| arg == flag);
+    let only_stops = has("--abort") || has("--quit") || has("--show-current-patch");
+    match sub {
+        "commit" if !has("--dry-run") => Some(Act::Commit),
+        "merge" | "cherry-pick" | "revert" | "am" if !only_stops => Some(Act::Commit),
+        "rebase" if !only_stops => Some(Act::Update),
+        "pull" if !has("--dry-run") => Some(Act::Update),
+        "push" if !(has("-n") || has("--dry-run")) => Some(Act::Push),
+        _ => None,
+    }
+}
+
+/// The first `git` on the line `cmd`, run in `cwd`, that `wanted` names a `T` for and whose
+/// repository is the record of a branch folder purlis made in the project at `root`:
+/// `((subcommand, T), the folder's top)`, or `None`.
+fn found<T>(
+    cmd: &str,
+    cwd: &str,
+    root: &str,
+    wanted: impl Fn(&str, &[String]) -> Option<T>,
+) -> Option<((String, T), PathBuf)> {
     if !shellwrap::prefilter_text(cmd).contains("git") {
         return None;
     }
@@ -99,15 +148,15 @@ pub fn refusal(cmd: &str, cwd: &str, root: &str) -> Option<(String, String)> {
         let Some((sub, post)) = rest.split_first() else {
             continue;
         };
-        if !writes_the_index(sub, post) {
+        let Some(what) = wanted(sub, post) else {
             continue;
-        }
+        };
         let mut env = before.clone();
         env.extend(call.env.iter().cloned());
-        if projectgit::repository(&here, &pre, &env)
-            .is_some_and(|repo| purlis_made(&repo, Path::new(root)))
+        if let Some(folder) = projectgit::repository(&here, &pre, &env)
+            .and_then(|repo| purlis_made(&repo, Path::new(root)))
         {
-            return Some((sub.clone(), said(sub)));
+            return Some(((sub.clone(), what), folder));
         }
     }
     None
@@ -128,32 +177,22 @@ fn writes_the_index(sub: &str, post: &[String]) -> bool {
 /// Whether the git directory `repo` is the record of a branch folder purlis made in the
 /// project at `root`: a linked worktree's record (`.git/worktrees/<name>`), whose `gitdir`
 /// file (git's own pointer back to the folder's `.git`) names a folder at
-/// `workspaces/<ws>/.worktrees/<repo>/<piece>`.
-fn purlis_made(repo: &Path, root: &Path) -> bool {
+/// `workspaces/<ws>/.worktrees/<repo>/<piece>`: that folder, or `None`.
+fn purlis_made(repo: &Path, root: &Path) -> Option<PathBuf> {
     if !a_worktree_record(repo) {
-        return false;
+        return None;
     }
-    let Ok(pointer) = std::fs::read_to_string(repo.join("gitdir")) else {
-        return false;
-    };
-    let Some(folder) = Path::new(pointer.trim()).parent() else {
-        return false;
-    };
-    let (Ok(folder), Ok(workspaces)) = (
-        std::fs::canonicalize(folder),
-        std::fs::canonicalize(root.join("workspaces")),
-    ) else {
-        return false;
-    };
-    let Ok(within) = folder.strip_prefix(&workspaces) else {
-        return false;
-    };
+    let pointer = std::fs::read_to_string(repo.join("gitdir")).ok()?;
+    let folder = std::fs::canonicalize(Path::new(pointer.trim()).parent()?).ok()?;
+    let workspaces = std::fs::canonicalize(root.join("workspaces")).ok()?;
+    let within = folder.strip_prefix(&workspaces).ok()?;
     let parts: Vec<Component<'_>> = within.components().collect();
     matches!(
         parts.as_slice(),
         [Component::Normal(_), Component::Normal(worktrees), Component::Normal(_), Component::Normal(_)]
             if *worktrees == WORKTREES
     )
+    .then_some(folder)
 }
 
 /// Whether the git directory `repo` is a linked worktree's record in its clone's git directory
@@ -314,5 +353,69 @@ mod tests {
         ] {
             assert_eq!(l.ask(cmd, &l.clone), None, "{cmd}");
         }
+    }
+
+    impl Layout {
+        fn write(&self, cmd: &str, cwd: &Path) -> Option<(String, crate::piececlaim::Act)> {
+            let (sub, act, folder) = branch_write(
+                cmd,
+                &cwd.display().to_string(),
+                &self.root.display().to_string(),
+            )?;
+            assert_eq!(folder, self.folder, "{cmd}");
+            Some((sub, act))
+        }
+    }
+
+    /// #3931: what an unsandboxed chat's guard holds to the folder's one live writer.
+    #[test]
+    fn plain_git_that_commits_updates_or_pushes_in_a_branch_folder_is_named_with_its_folder() {
+        use crate::piececlaim::Act;
+        let l = Layout::new();
+        for (cmd, sub, act) in [
+            ("git commit -m x", "commit", Act::Commit),
+            ("git add . && git commit -am x", "commit", Act::Commit),
+            ("git merge origin/main", "merge", Act::Commit),
+            ("git cherry-pick abc123", "cherry-pick", Act::Commit),
+            ("git revert HEAD", "revert", Act::Commit),
+            ("git am < fix.patch", "am", Act::Commit),
+            ("git pull --rebase", "pull", Act::Update),
+            ("git rebase origin/main", "rebase", Act::Update),
+            ("git rebase --continue", "rebase", Act::Update),
+            ("git push", "push", Act::Push),
+            ("git push -u origin HEAD", "push", Act::Push),
+            ("git -C src push", "push", Act::Push),
+        ] {
+            assert_eq!(
+                l.write(cmd, &l.folder),
+                Some((sub.to_owned(), act)),
+                "{cmd}"
+            );
+        }
+        let cd = format!("cd {} && git push", l.folder.display());
+        assert_eq!(l.write(&cd, &l.clone), Some(("push".to_owned(), Act::Push)));
+    }
+
+    #[test]
+    fn git_that_writes_no_branch_or_runs_outside_a_branch_folder_is_not_named() {
+        let l = Layout::new();
+        for cmd in [
+            "git status",
+            "git add src/a.rs",
+            "git fetch",
+            "git log -1",
+            "git commit --dry-run -m x",
+            "git push --dry-run",
+            "git push -n",
+            "git rebase --abort",
+            "git merge --abort",
+            "git cherry-pick --quit",
+            "git am --show-current-patch",
+            "purlis worktree push",
+        ] {
+            assert_eq!(l.write(cmd, &l.folder), None, "{cmd}");
+        }
+        assert_eq!(l.write("git commit -m x", &l.clone), None);
+        assert_eq!(l.write("git push", &l.theirs), None);
     }
 }

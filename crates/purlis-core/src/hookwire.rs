@@ -1889,6 +1889,51 @@ pub enum GitWork {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         delete_branch: bool,
     },
+    /// **The guard's question before plain git writes a branch folder** (#3931): may this chat
+    /// `act` in the folder `<repo>/<piece>` of the ask's workspace? The app runs no git: it
+    /// judges the folder's claim against the chats it has, and takes the folder for the chat
+    /// where no live chat holds it, as a brokered write does ([`crate::piececlaim::take`]). It
+    /// answers an empty `Said` with exit 0 where the chat may write, and `No` with the refusal
+    /// where another live chat holds the folder. A kind of its own, so an app that does not
+    /// know it answers nothing and the asker judges by the piece log alone.
+    WorktreeClaim {
+        repo: String,
+        piece: String,
+        act: ClaimAct,
+    },
+}
+
+/// What plain git would do in a branch folder, as a [`GitWork::WorktreeClaim`] names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimAct {
+    /// A commit: `git commit`, `merge`, `cherry-pick`, `revert`, `am`.
+    Commit,
+    /// The branch rebased or pulled.
+    Update,
+    /// The branch pushed.
+    Push,
+}
+
+impl ClaimAct {
+    /// The act a branch folder's claim judges and its refusal names.
+    pub fn act(self) -> crate::piececlaim::Act {
+        match self {
+            Self::Commit => crate::piececlaim::Act::Commit,
+            Self::Update => crate::piececlaim::Act::Update,
+            Self::Push => crate::piececlaim::Act::Push,
+        }
+    }
+
+    /// The wire's word for `act`, or `None` for an act no plain git asks about.
+    pub fn of(act: crate::piececlaim::Act) -> Option<Self> {
+        match act {
+            crate::piececlaim::Act::Commit => Some(Self::Commit),
+            crate::piececlaim::Act::Update => Some(Self::Update),
+            crate::piececlaim::Act::Push => Some(Self::Push),
+            crate::piececlaim::Act::Remove | crate::piececlaim::Act::Write => None,
+        }
+    }
 }
 
 /// What a [`GitWork::WorktreeUpdate`] does.
