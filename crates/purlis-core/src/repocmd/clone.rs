@@ -24,11 +24,12 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use serde_json::Value;
 
 use super::{Say, Sink, banner, submodules};
+use crate::cloning::Stage;
 use crate::contain;
 use crate::counts::counted;
 use crate::forge::{self, Forge, py_str};
@@ -41,6 +42,8 @@ use crate::tui::Markup;
 use crate::workspaces::Plane;
 use crate::worktree::confine::{self, Outside};
 use crate::worktree::git;
+
+mod landing;
 
 /// How many clones run at once. Python's `CLONE_WORKERS`.
 pub const WORKERS: usize = 8;
@@ -58,6 +61,44 @@ pub struct Request<'a> {
     /// sandbox egress ([`crate::sandbox::hosts`]). A record whose URL names another host is
     /// refused before git runs. `None` is no such limit: the terminal's own command.
     pub hosts: Option<&'a [String]>,
+    /// The window watching this clone (#4079): `None` for the terminal's own command.
+    pub watch: Option<&'a Watch<'a>>,
+}
+
+/// A window watching a clone: what it is told as the clone runs, the person's Cancel, and what
+/// it is told afterwards that no line of the clone's says.
+pub struct Watch<'a> {
+    heard: &'a (dyn Fn(Stage, u8) + Sync),
+    called_off: &'a AtomicBool,
+    stopped: AtomicBool,
+    sign_in: Mutex<Option<String>>,
+    #[cfg(test)]
+    stand_in: landing::StandIn,
+}
+
+impl<'a> Watch<'a> {
+    /// `heard` hears each move of a clone's stage and its percent of the whole clone, which
+    /// never goes back. Raising `called_off` stops git and leaves nothing behind.
+    pub fn new(heard: &'a (dyn Fn(Stage, u8) + Sync), called_off: &'a AtomicBool) -> Self {
+        Self {
+            heard,
+            called_off,
+            stopped: AtomicBool::new(false),
+            sign_in: Mutex::new(None),
+            #[cfg(test)]
+            stand_in: landing::StandIn::default(),
+        }
+    }
+
+    /// Whether the person's Cancel stopped a clone before it landed.
+    pub fn was_stopped(&self) -> bool {
+        self.stopped.load(Ordering::SeqCst)
+    }
+
+    /// The server a clone needs the person to sign in to, where the forge refused them.
+    pub fn sign_in_to(&self) -> Option<String> {
+        self.sign_in.lock().ok().and_then(|held| held.clone())
+    }
 }
 
 /// What happened to one repo.
@@ -72,8 +113,10 @@ enum Outcome {
         forge: Forge,
         branch: String,
     },
-    /// git tried and failed, in its own words.
-    Failed { forge: Forge, said: String },
+    /// The person stopped it, and nothing of it is left.
+    Stopped,
+    /// git tried and failed: purlis's sentence, and then git's own words.
+    Failed { head: String, said: String },
 }
 
 /// Run `clone`. Returns the exit status.
@@ -147,12 +190,13 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
             .into(),
         ));
     }
-    let outcomes = clone_all(root, ws, &ws_dir, &targets, request.hosts);
+    let outcomes = clone_all(request, &ws_dir, &targets);
 
     // Printed here, from one thread, in the order the repos were asked for: eight workers
     // printing as they finish interleave into something nobody can scan for which failed.
     let mut failures = 0;
     let mut members: Vec<String> = Vec::new();
+    let window = forge::gitcredential::in_the_window();
     for (record, outcome) in targets.iter().zip(outcomes) {
         let name = py_str(record.get("name").unwrap_or(&Value::Null));
         let dest = match outcome {
@@ -187,21 +231,31 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
                     format!(
                         "{name} → {} ({shown} via {}, HTTPS)",
                         rel.display(),
-                        forge.kind.cli()
+                        if window {
+                            forge.kind.display()
+                        } else {
+                            forge.kind.cli()
+                        }
                     )
                     .into(),
                 ));
                 dest
             }
-            Outcome::Failed { forge, said } => {
+            Outcome::Stopped => {
+                say(Say::Info(
+                    format!("{name}: stopped, and nothing kept").into(),
+                ));
+                continue;
+            }
+            Outcome::Failed { head, said } if said.is_empty() => {
                 failures += 1;
-                let cli = forge.kind.cli();
+                say(Say::Fail(head.into()));
+                continue;
+            }
+            Outcome::Failed { head, said } => {
+                failures += 1;
                 // What git said is its own lines, each escaped: a line end in it starts a line of
                 // git's, never one that reads as purlis's.
-                let head = format!(
-                    "{name}: clone failed — no access, network, or {cli} isn't authed (`{cli} \
-                     auth status`). Skipping."
-                );
                 say(Say::Fail(Markup::lines([
                     head.into(),
                     Markup::lines_of(&said),
@@ -278,31 +332,30 @@ fn workspace_dir(request: &Request, say: Sink) -> Result<PathBuf, String> {
 }
 
 /// Clone every target, [`WORKERS`] at a time, answering in the order asked.
-fn clone_all(
-    root: &Path,
-    ws: &str,
-    ws_dir: &Path,
-    targets: &[Value],
-    hosts: Option<&[String]>,
-) -> Vec<Outcome> {
+fn clone_all(request: &Request, ws_dir: &Path, targets: &[Value]) -> Vec<Outcome> {
     let slots: Mutex<Vec<Option<Outcome>>> = Mutex::new((0..targets.len()).map(|_| None).collect());
     let next = AtomicUsize::new(0);
-    // A brokered clone's isolation is held per thread, so each worker takes it on (#1335).
+    // A brokered clone's isolation is held per thread, so each worker takes it on (#1335), and
+    // the window's own clone its credential scope (#4079): with neither, a worker's git would be
+    // the terminal's.
     let isolation = git::isolation();
+    let window = forge::gitcredential::held();
     std::thread::scope(|scope| {
         for _ in 0..WORKERS.min(targets.len()) {
             scope.spawn(|| {
-                git::within(isolation.as_ref(), || {
-                    loop {
-                        let i = next.fetch_add(1, Ordering::SeqCst);
-                        let Some(record) = targets.get(i) else {
-                            break;
-                        };
-                        let outcome = clone_one(root, ws, ws_dir, record, hosts);
-                        if let Ok(mut slots) = slots.lock() {
-                            slots[i] = Some(outcome);
+                forge::gitcredential::within(window.as_ref(), || {
+                    git::within(isolation.as_ref(), || {
+                        loop {
+                            let i = next.fetch_add(1, Ordering::SeqCst);
+                            let Some(record) = targets.get(i) else {
+                                break;
+                            };
+                            let outcome = clone_one(request, ws_dir, record);
+                            if let Ok(mut slots) = slots.lock() {
+                                slots[i] = Some(outcome);
+                            }
                         }
-                    }
+                    });
                 });
             });
         }
@@ -422,13 +475,8 @@ pub fn https_url(record: &Value, root: &Path) -> Result<String, String> {
 }
 
 /// Clone ONE repo. Prints nothing: [`clone`] renders every outcome afterwards, in order.
-fn clone_one(
-    root: &Path,
-    ws: &str,
-    ws_dir: &Path,
-    record: &Value,
-    hosts: Option<&[String]>,
-) -> Outcome {
+fn clone_one(request: &Request, ws_dir: &Path, record: &Value) -> Outcome {
+    let (root, ws) = (request.root, request.ws);
     let name = record
         .get("name")
         .and_then(Value::as_str)
@@ -443,50 +491,47 @@ fn clone_one(
                 "workspaces/{ws}/{name} is a symlink, and purlis will not clone through one"
             ));
         }
-        Ok(_) => return Outcome::Exists(dest),
-        Err(_) => {}
+        Ok(_) if git::isolation().is_some() || !landing::unfinished(&dest) => {
+            return Outcome::Exists(dest);
+        }
+        _ => {}
     }
     let url = match https_url(record, root) {
         Ok(url) => url,
         Err(why) => return Outcome::Refused(why),
     };
     let forge = Forge::for_clone(record, &url);
-    if let Some(why) = hosts.and_then(|hosts| unreachable_host(hosts, &url)) {
+    if let Some(why) = request
+        .hosts
+        .and_then(|hosts| unreachable_host(hosts, &url))
+    {
         return Outcome::Refused(why);
     }
-    let dest_arg = dest.display().to_string();
-    // No `--branch`: the remote's HEAD is its real default branch, where the inventory's
-    // field may be one `discover` assumed, or one the forge has since moved off.
-    let cloned = git::run_network(
-        ws_dir,
-        Some(&forge::helper_for(&forge)),
-        &["clone", "--", &url, &dest_arg],
-    );
-    let run = match cloned {
-        Ok(run) => run,
-        Err(why) => {
-            return Outcome::Failed {
-                forge,
-                said: why.to_string(),
-            };
+    let failed = if git::isolation().is_some() {
+        brokered(ws_dir, name, &dest, &url, &forge)
+    } else {
+        let route = landing::Route {
+            root,
+            ws,
+            ws_dir,
+            name,
+            dest: &dest,
+            url: &url,
+            forge: &forge,
+            watch: request.watch,
+        };
+        match landing::land(&route) {
+            landing::Landed::Cloned => None,
+            landing::Landed::Refused(why) => return Outcome::Refused(why),
+            landing::Landed::Stopped => return Outcome::Stopped,
+            landing::Landed::Failed { head, said } => Some(Outcome::Failed { head, said }),
         }
     };
-    if run.ok() {
-        // The remote the window cloned from is the one its saves push to (#752).
-        forge::gitcredential::record_push_remote(&dest, &url);
+    if let Some(failed) = failed {
+        return failed;
     }
-    if !run.ok() {
-        let mut said = failure(&run, &dest);
-        // A clone the app made for a chat read none of your git config (#1413): where it could
-        // not reach its host and yours would have changed its route, say which key (#1550).
-        if git::isolation().is_some()
-            && (run.code.is_none() || super::unread::reads_as_a_route_failure(&run.err))
-            && let Some(note) = super::unread::network_note(&super::unread::global_entries(), &url)
-        {
-            said = format!("{said}\n{note}");
-        }
-        return Outcome::Failed { said, forge };
-    }
+    // The remote the window cloned from is the one its saves push to (#752).
+    forge::gitcredential::record_push_remote(&dest, &url);
     crate::gitpolicy::apply(&dest, root);
     let branch = git::run(
         &dest,
@@ -502,6 +547,45 @@ fn clone_one(
         forge,
         branch,
     }
+}
+
+/// A clone the app runs for a sandboxed chat: to `dest` itself, under [`git::NETWORK`]'s deadline,
+/// which `gitask` bounds its wait on. What failed, or `None`.
+fn brokered(ws_dir: &Path, name: &str, dest: &Path, url: &str, forge: &Forge) -> Option<Outcome> {
+    let cli = forge.kind.cli();
+    let head = format!(
+        "{name}: clone failed — no access, network, or {cli} isn't authed (`{cli} auth status`). \
+         Skipping."
+    );
+    let dest_arg = dest.display().to_string();
+    // No `--branch`: the remote's HEAD is its real default branch, where the inventory's
+    // field may be one `discover` assumed, or one the forge has since moved off.
+    let cloned = git::run_network(
+        ws_dir,
+        Some(&forge::helper_for(forge)),
+        &["clone", "--", url, &dest_arg],
+    );
+    let run = match cloned {
+        Ok(run) => run,
+        Err(why) => {
+            return Some(Outcome::Failed {
+                head,
+                said: why.to_string(),
+            });
+        }
+    };
+    if run.ok() {
+        return None;
+    }
+    let mut said = failure(&run, dest);
+    // A clone the app made for a chat read none of your git config (#1413): where it could
+    // not reach its host and yours would have changed its route, say which key (#1550).
+    if (run.code.is_none() || super::unread::reads_as_a_route_failure(&run.err))
+        && let Some(note) = super::unread::network_note(&super::unread::global_entries(), url)
+    {
+        said = format!("{said}\n{note}");
+    }
+    Some(Outcome::Failed { head, said })
 }
 
 /// Why `url`'s host is not one `hosts` lets a sandboxed chat reach, or `None` when it is
@@ -530,12 +614,20 @@ fn failure(run: &git::Run, dest: &Path) -> String {
             git::NETWORK.as_secs(),
             dest.display()
         ),
-        Some(_) if said.contains("transport 'ssh' not allowed") => format!(
+        Some(_) => explained(said),
+    }
+}
+
+/// git's words, with why when the why is charter's rule.
+fn explained(said: String) -> String {
+    if said.contains("transport 'ssh' not allowed") {
+        format!(
             "{said}\ngit was told to use SSH for this URL — a `url.<base>.insteadOf` in your \
              git config rewrites it — and purlis clones over HTTPS with the forge CLI's token \
              only (docs/git-policy.md)"
-        ),
-        Some(_) => said,
+        )
+    } else {
+        said
     }
 }
 

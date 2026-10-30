@@ -273,6 +273,7 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
                 now,
                 author: &author,
                 hosts: None,
+                watch: None,
             },
             say,
         );

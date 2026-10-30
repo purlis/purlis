@@ -2096,6 +2096,41 @@ pub(crate) fn run_network_handing(
     Ok(run)
 }
 
+/// [`run_network`] as a child the caller reads as it runs, for its progress, and may stop with
+/// [`stop`] (#4079): the child, or the sentence that refuses the call. Under the one-credential
+/// rule, unlike [`spawn_persons_clone`]: the same [`NETWORK_RULE`], and `helper` the only
+/// helper git consults. `config` adds `-c` settings after them. **The caller owns the deadline**,
+/// and tells the network log how it went ([`network_call_ended`]).
+pub(crate) fn spawn_network(
+    dir: &Path,
+    helper: Option<&str>,
+    config: &[String],
+    args: &[&str],
+) -> Result<Result<Child, String>, GitUnavailable> {
+    let mut all: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
+    if let Some(helper) = helper {
+        all.push(format!("credential.helper={helper}"));
+    }
+    all.extend(config.iter().cloned());
+    let extra = Extra {
+        config: all,
+        credentials: true,
+        network: true,
+        ..Extra::default()
+    };
+    match held(dir, args, extra)? {
+        Ok(extra) => Ok(Ok(spawn_with(dir, args, &extra)?)),
+        Err(refused) => Ok(Err(as_text(refused).err)),
+    }
+}
+
+/// Lists a [`spawn_network`] call once git has run (#959), as [`run_network`] lists its own.
+pub(crate) fn network_call_ended(dir: &Path, args: &[&str], ok: bool, started: Instant) {
+    for (operation, remote) in destinations(dir, args) {
+        crate::netlog::git_call(operation, &remote, ok, started.elapsed());
+    }
+}
+
 /// The verbs that reach a remote the repository names, by its name or as its default.
 const BY_NAME: [&str; 4] = ["fetch", "pull", "push", "ls-remote"];
 

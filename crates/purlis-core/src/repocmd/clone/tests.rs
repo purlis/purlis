@@ -37,6 +37,7 @@ fn recording_a_clone_racing_another_writer_loses_neither_change() {
                     now: chrono::Utc::now(),
                     author: "tester",
                     hosts: None,
+                    watch: None,
                 },
                 &["widget".to_owned()],
                 &mut |line| said.push(line),
@@ -99,6 +100,7 @@ fn a_clone_for_a_sandboxed_chat_never_runs_git_against_a_host_it_may_not_reach()
             now: chrono::Utc::now(),
             author: "tester",
             hosts: Some(&["gitlab.com".to_owned()]),
+            watch: None,
         },
         &mut |line| said.push(line),
     );
@@ -144,6 +146,7 @@ fn clone_widget(root: &Path, ws: &str, hosts: Option<&[String]>) -> (u8, Vec<Say
             now: chrono::Utc::now(),
             author: "tester",
             hosts,
+            watch: None,
         },
         &mut |line| said.push(line),
     );
@@ -435,8 +438,13 @@ fn the_account_on_that_server_signs_the_clone_and_one_on_another_port_never_does
     assert!(helper.contains(HELPER_ARG), "{helper}");
 
     let on_another_port = account_on("gitlab.corp.example");
-    let helper = as_the_window(&HostScope::for_a_test(), exe, on_another_port.path(), || {
-        forge::helper_for(&forge)
-    });
+    let helper = as_the_window(
+        &HostScope::for_a_test(),
+        exe,
+        on_another_port.path(),
+        || forge::helper_for(&forge),
+    );
     assert!(!helper.contains(HELPER_ARG), "{helper}");
 }
+
+mod landing;

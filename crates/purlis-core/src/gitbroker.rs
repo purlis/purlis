@@ -143,6 +143,7 @@ fn isolated_answer(
                 now,
                 author: &crate::wscmd::ensure::author(),
                 hosts: hosts.as_deref(),
+                watch: None,
             },
             &mut say,
         ),

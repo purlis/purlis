@@ -16,7 +16,7 @@ fn stand_in(script: &str) -> Child {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     git::lead(&mut command);
-    command.spawn().unwrap()
+    crate::forklock::spawn(&mut command).unwrap()
 }
 
 fn at(stage: Stage, percent: u8) -> Progress {

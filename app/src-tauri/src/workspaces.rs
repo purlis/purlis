@@ -618,6 +618,7 @@ fn clone_into(root: &Path, workspace: &str, repo: &str) -> Result<Vec<String>, S
                 now: chrono::Utc::now(),
                 author: &author,
                 hosts: None,
+                watch: None,
             },
             &mut |line: Say| said.push(line),
         )
