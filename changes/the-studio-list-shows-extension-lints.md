@@ -6,4 +6,4 @@
   persona's Skills line counts them the same way. The list asks each extension about a skill's
   files once and keeps the answer while the app runs, asks new questions for at most 100 ms per
   list, and shows nothing from an extension that did not answer in time, asking it again after
-  five minutes. Opening a chat asks nothing (#3940).
+  30 seconds. Opening a chat asks nothing (#3940).

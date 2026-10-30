@@ -310,23 +310,17 @@ impl InTheList for ExtensionLint<'_> {
         &self.by
     }
 
-    fn key(&self, skill: &SkillFiles<'_>) -> [u8; 32] {
+    fn version(&self) -> [u8; 32] {
         use sha2::Digest as _;
         let mut hash = sha2::Sha256::new();
-        // Each part with its length, so no two lists of parts hash alike.
-        let mut part = |bytes: &[u8]| {
-            hash.update((bytes.len() as u64).to_le_bytes());
-            hash.update(bytes);
-        };
-        part(self.id.as_bytes());
-        part(self.approved.as_deref().unwrap_or_default().as_bytes());
-        // The project's choices, its settings for the extension among them, and its plane.
-        part(format!("{:?}", self.studio.project).as_bytes());
-        part(skill.name.as_bytes());
-        part(skill.text.as_bytes());
-        for (path, text) in skill.others {
-            part(path.as_bytes());
-            part(text.as_bytes());
+        for part in [
+            self.id.as_bytes(),
+            self.approved.as_deref().unwrap_or_default().as_bytes(),
+            // The project's choices, its settings for the extension among them, and its plane.
+            format!("{:?}", self.studio.project).as_bytes(),
+        ] {
+            hash.update((part.len() as u64).to_le_bytes());
+            hash.update(part);
         }
         hash.finalize().into()
     }
@@ -355,11 +349,40 @@ pub const LIST_LINT_DEADLINE: std::time::Duration = wire::ROUTER_DEADLINE;
 
 /// **How long a lint that did not answer in a list waits before a list asks it again** about the
 /// same files: a slow or failing extension costs a list one question at most this often, and the
-/// editor's live lint, which waits for it, says why.
-pub const ASK_AGAIN_AFTER: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+/// editor's live lint, which waits for it, says why. Short, as a question also goes unanswered
+/// while the extension's one slot is busy with another (the editor's live lint).
+pub const ASK_AGAIN_AFTER: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// The most answers kept: past it, every one is dropped and asked again.
+/// The most answers kept: past it, one is dropped for each one kept.
 const MOST_KEPT: usize = 4096;
+
+/// **What tells one skill's files from another's**: its name, its `SKILL.md` and every other
+/// file handed a lint, each part with its length so no two lists of parts hash alike. Hashed once
+/// per skill a list lints, however many lints ask about it.
+fn files_digest(skill: &SkillFiles<'_>) -> [u8; 32] {
+    use sha2::Digest as _;
+    let mut hash = sha2::Sha256::new();
+    let mut part = |bytes: &[u8]| {
+        hash.update((bytes.len() as u64).to_le_bytes());
+        hash.update(bytes);
+    };
+    part(skill.name.as_bytes());
+    part(skill.text.as_bytes());
+    for (path, text) in skill.others {
+        part(path.as_bytes());
+        part(text.as_bytes());
+    }
+    hash.finalize().into()
+}
+
+/// What `lint`'s answer about the files `files` hashed to is kept by.
+fn key_of(version: [u8; 32], files: [u8; 32]) -> [u8; 32] {
+    use sha2::Digest as _;
+    let mut hash = sha2::Sha256::new();
+    hash.update(version);
+    hash.update(files);
+    hash.finalize().into()
+}
 
 /// What each extension's lint said of a skill's files, in this process, by [`InTheList::key`].
 static KEPT: std::sync::Mutex<Kept> = std::sync::Mutex::new(Kept::new());
@@ -386,9 +409,9 @@ impl Kept {
 pub trait InTheList {
     /// What its findings are said under.
     fn by(&self) -> &str;
-    /// What its answer about `skill` is kept by: the lint, its version, the project's choices
-    /// and every file it is handed. Equal only for the same question.
-    fn key(&self, skill: &SkillFiles<'_>) -> [u8; 32];
+    /// What tells it from every other lint, and this version of it and the project's choices
+    /// from another: with the skill's files ([`files_digest`]), what its answer is kept by.
+    fn version(&self) -> [u8; 32];
     /// Its answer about `skill`, by `until`, or why there is none.
     fn ask(&self, skill: &SkillFiles<'_>, until: std::time::Instant)
     -> Result<Vec<String>, String>;
@@ -444,8 +467,8 @@ impl<L: InTheList> ListLints<L> {
 
     /// What `lint` says of `skill`: what it said of the same files, or its answer now, within
     /// the list's time.
-    fn said(&self, lint: &L, skill: &SkillFiles<'_>) -> Vec<String> {
-        let key = lint.key(skill);
+    fn said(&self, lint: &L, skill: &SkillFiles<'_>, files: [u8; 32]) -> Vec<String> {
+        let key = key_of(lint.version(), files);
         let now = (self.time.now)();
         let before = self
             .kept
@@ -475,8 +498,16 @@ impl<L: InTheList> ListLints<L> {
             .kept
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if kept.0.len() >= MOST_KEPT {
-            kept.0.clear();
+        // An answer another list kept meanwhile stands over a question this one could not ask:
+        // the extension's one slot may have been that list's.
+        if matches!(was, Was::Unanswered(_)) && matches!(kept.0.get(&key), Some(Was::Said(_))) {
+            return answer.unwrap_or_default();
+        }
+        if kept.0.len() >= MOST_KEPT
+            && let Some(any) = kept.0.keys().next().copied()
+        {
+            // The keys are hashes, so the first is any one: no list's answers are all dropped.
+            kept.0.remove(&any);
         }
         kept.0.insert(key, was);
         answer.unwrap_or_default()
@@ -485,9 +516,13 @@ impl<L: InTheList> ListLints<L> {
 
 impl<L: InTheList> SkillLint for ListLints<L> {
     fn findings(&self, skill: &SkillFiles<'_>) -> Vec<Finding> {
+        if self.lints.is_empty() {
+            return Vec::new();
+        }
+        let files = files_digest(skill);
         self.lints
             .iter()
-            .flat_map(|lint| said_by(lint.by(), self.said(lint, skill)))
+            .flat_map(|lint| said_by(lint.by(), self.said(lint, skill, files)))
             .collect()
     }
 }

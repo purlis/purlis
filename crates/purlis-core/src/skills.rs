@@ -2216,7 +2216,8 @@ struct Known {
     plane: std::collections::HashSet<String>,
     built_in: std::collections::HashSet<String>,
     /// The bytes of skills' other files the list may still read for its lints, of
-    /// [`purlis_skills::MOST_LIST_BYTES`]: each lint reads at most
+    /// [`purlis_skills::MOST_LIST_BYTES`], once for the skills from outside the plane and once
+    /// for the plane's own: each lint reads at most
     /// [`purlis_skills::MOST_LINT_BYTES`] of them, and spends them here.
     reads: std::cell::Cell<u64>,
 }
@@ -2422,7 +2423,8 @@ fn read_within(
         left = left.saturating_sub(read.read);
         match read.text {
             Ok(text) => others.push((said.clone(), text)),
-            // Larger than what is left, and no larger than any file is read: left for the budget.
+            // Larger than what is left: left for the budget, or one too large to read anyway,
+            // which the lint does not tell apart without reading it.
             Err(NotRead::TooLarge) if most < purlis_skills::MOST_BYTES => unread += 1,
             Err(_) => {}
         }
@@ -2712,6 +2714,10 @@ pub fn studio_list_for(
         &set, &set_on, plane, workspace, &names, &pins, env, &known, reading,
     );
     let mut rows = rows_of(&set, plane, &names, reading);
+    // The plane's own skills have a list's budget of their own (#3459): what the clones and the
+    // person's own folders hold never leaves them unread, and Needs you's problems in a skill are
+    // theirs.
+    known.reads.set(purlis_skills::MOST_LIST_BYTES);
     with_plane_lint(&mut rows, &set, &known, more);
     if reading == Reading::Whole {
         with_harness_badges(&mut rows, &harnesses, &known);

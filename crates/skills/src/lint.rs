@@ -84,7 +84,8 @@ pub const MOST_LINT_BYTES: u64 = 1 << 20;
 
 /// **The most bytes of skills' other files one list reads for every skill it lints** (#3459):
 /// the studio lints each skill of a clone, up to 2000 to a folder, so a clone of many skills
-/// costs no more than this.
+/// costs no more than this. The plane's own skills have as much again of their own, so what a
+/// clone holds never leaves them unread.
 pub const MOST_LIST_BYTES: u64 = 16 << 20;
 
 /// Which budget of bytes left a skill's files unread ([`Lint::FilesUnread`]).

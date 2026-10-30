@@ -347,9 +347,8 @@ impl InTheList for &Counting {
         "House style"
     }
 
-    fn key(&self, skill: &SkillFiles<'_>) -> [u8; 32] {
-        use sha2::Digest as _;
-        sha2::Sha256::digest(format!("{}\0{}", skill.name, skill.text)).into()
+    fn version(&self) -> [u8; 32] {
+        [7; 32]
     }
 
     fn ask(
@@ -429,6 +428,48 @@ fn a_list_asks_a_lint_once_about_the_same_files_and_again_once_they_change() {
         lint.asked(),
         ["deploy", "deploy"],
         "new text, a new question"
+    );
+}
+
+/// A lint whose question is refused while another list, asking the same, keeps its answer.
+struct Raced {
+    kept: &'static std::sync::Mutex<Kept>,
+}
+
+impl InTheList for Raced {
+    fn by(&self) -> &str {
+        "House style"
+    }
+
+    fn version(&self) -> [u8; 32] {
+        [9; 32]
+    }
+
+    fn ask(
+        &self,
+        skill: &SkillFiles<'_>,
+        _until: std::time::Instant,
+    ) -> Result<Vec<String>, String> {
+        self.kept.lock().unwrap().0.insert(
+            key_of(self.version(), files_digest(skill)),
+            Was::Said(vec!["deploy is long".to_owned()]),
+        );
+        Err("it was still answering the other list".to_owned())
+    }
+}
+
+#[test]
+fn an_answer_another_list_kept_stands_over_a_question_this_one_could_not_ask() {
+    let kept = kept();
+    let list = ListLints::new(vec![Raced { kept }], kept, ListTime::default());
+
+    assert_eq!(said(&list, "deploy", "v1"), Vec::<String>::new());
+
+    let again = ListLints::new(vec![Raced { kept }], kept, ListTime::default());
+    assert_eq!(
+        said(&again, "deploy", "v1"),
+        ["House style: deploy is long"],
+        "the other list's answer is kept"
     );
 }
 
