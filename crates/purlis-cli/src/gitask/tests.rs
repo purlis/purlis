@@ -204,8 +204,8 @@ fn the_command_has_no_spelling_for_a_reset_or_a_forced_push() {
 
 #[test]
 fn the_wait_is_longer_than_git_may_take() {
-    assert!(a_clone_takes_at_most(1) > git::NETWORK);
-    assert!(a_clone_takes_at_most(purlis_core::repocmd::clone::WORKERS + 1) > git::NETWORK * 2);
+    assert!(A_CLONE_IS_SILENT_AT_MOST > purlis_core::cloning::STALL);
+    assert!(A_CLONE_IS_SILENT_AT_MOST > purlis_core::hookwire::alive::EVERY * 2);
     assert!(A_WORKTREE_TAKES_AT_MOST > git::READ);
     assert!(A_COMMIT_TAKES_AT_MOST > broker::STAGING + broker::COMMITTING);
 }

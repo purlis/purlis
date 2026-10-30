@@ -30,14 +30,13 @@ pub enum Forwarded {
     Unsure(String),
 }
 
-/// How long the app may take to clone `repos` repos: git's own limit for each round of
-/// [`purlis_core::repocmd::clone::WORKERS`] clones at once, and one more for the wiring and the
-/// manifest after them (D-6). Above git's limit, so the asker never gives up on a clone git is
-/// still allowed to finish.
-pub fn a_clone_takes_at_most(repos: usize) -> Duration {
-    let rounds = repos.max(1).div_ceil(purlis_core::repocmd::clone::WORKERS);
-    git::NETWORK * u32::try_from(rounds + 1).unwrap_or(u32::MAX)
-}
+/// The longest a clone the app runs for this chat may show no life before this command stops
+/// waiting on it (#4080). Not a bound on the whole clone: the app says the clone is alive
+/// whenever git says something ([`hookwire::Answer::Alive`]), and stops a git that has said
+/// nothing for [`purlis_core::cloning::STALL`] itself. Above that, so the app's own sentence for
+/// a stalled clone reaches the chat, with git's network limit for the steps around a clone.
+pub const A_CLONE_IS_SILENT_AT_MOST: Duration =
+    Duration::from_secs(purlis_core::cloning::STALL.as_secs() + git::NETWORK.as_secs());
 
 /// How long the app may take to cut a worktree: several local git calls, each held to
 /// [`git::READ`] (D-6).
@@ -51,6 +50,8 @@ pub fn forwarded(workspace: &str, work: GitWork, within: Duration) -> Forwarded 
             hookwire::Ask::Git(Box::new(GitAsk {
                 chat,
                 workspace: workspace.to_owned(),
+                // A clone's wait follows its liveness (#4080).
+                alive: matches!(work, GitWork::Clone { .. } | GitWork::Create { .. }),
                 work,
             }))
         },

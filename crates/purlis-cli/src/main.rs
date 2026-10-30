@@ -2903,7 +2903,7 @@ fn repo_command(command: &Command) -> Option<ExitCode> {
                         purlis_core::hookwire::GitWork::Clone {
                             repos: repos.clone(),
                         },
-                        gitask::a_clone_takes_at_most(repos.len()),
+                        gitask::A_CLONE_IS_SILENT_AT_MOST,
                     ),
                     &mut say,
                 )
@@ -3149,7 +3149,7 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
                                 vision: vision.clone(),
                                 repos: repos.clone(),
                             },
-                            gitask::a_clone_takes_at_most(repos.len()),
+                            gitask::A_CLONE_IS_SILENT_AT_MOST,
                         ),
                         say,
                     )

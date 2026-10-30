@@ -49,8 +49,8 @@ fn each_stage_has_its_place_on_one_scale() {
             (Stage::Downloading, 35),
             (Stage::Downloading, 80),
             (Stage::Unpacking, 85),
+            (Stage::WritingFiles, 92),
             (Stage::WritingFiles, 95),
-            (Stage::WritingFiles, 100),
         ]
     );
 }
@@ -199,4 +199,26 @@ fn a_git_that_fails_keeps_its_last_words_and_not_its_progress() {
             said: vec!["fatal: early EOF".to_owned()]
         }
     );
+}
+
+#[test]
+fn git_lfs_fetching_large_files_is_the_last_stage_and_never_moves_the_percent_back() {
+    // #4102: what `git lfs pull` draws, after git's own checkout reached its end.
+    let lines = [
+        "Updating files: 100% (3/3), done.",
+        "Downloading LFS objects:   0% (0/2), 120 KB | 1 MB/s",
+        "Downloading LFS objects:  50% (1/2), 4.0 MB | 1 MB/s",
+        "Downloading LFS objects: 100% (2/2), 8.0 MB | 1 MB/s, done.",
+    ];
+    let mut climb = Climb::default();
+    let mut shown = vec![0];
+    for line in lines {
+        if let Some((_, percent)) = read_progress(line).and_then(|now| climb.heard(now)) {
+            shown.push(percent);
+        }
+    }
+    assert!(shown.is_sorted(), "{shown:?}");
+    assert_eq!(shown, [0, 95, 95, 97, 100]);
+    assert_eq!(climb.now(), (Stage::LargeFiles, 100));
+    assert_eq!(Stage::LargeFiles.words(), "Downloading large files");
 }

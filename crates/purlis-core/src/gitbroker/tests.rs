@@ -67,6 +67,7 @@ fn a_refused_workspace_is_answered_no_and_nothing_runs() {
         &GitAsk {
             chat: 4,
             workspace: "beta".to_owned(),
+            alive: false,
             work: GitWork::WorktreeAdd {
                 repo: "widget".to_owned(),
                 piece: "p1".to_owned(),
@@ -251,6 +252,7 @@ fn a_worktree_of(root: &Path, repo: &str) -> Answer {
         &GitAsk {
             chat: 4,
             workspace: "alpha".to_owned(),
+            alive: false,
             work: GitWork::WorktreeAdd {
                 repo: repo.to_owned(),
                 piece: "p1".to_owned(),
@@ -363,6 +365,7 @@ fn a_commondir_pointed_at_a_config_the_chat_wrote_is_refused_and_its_filter_neve
         &GitAsk {
             chat: 4,
             workspace: "alpha".to_owned(),
+            alive: false,
             work: GitWork::WorktreeAdd {
                 repo: "widget".to_owned(),
                 piece: "p1".to_owned(),
@@ -621,6 +624,7 @@ fn a_removal_for_a_chat_in_another_workspace_or_in_the_folder_is_answered_no() {
             &GitAsk {
                 chat: 4,
                 workspace: workspace.to_owned(),
+                alive: false,
                 work: GitWork::WorktreeRemove {
                     repo: "widget".to_owned(),
                     piece: "p1".to_owned(),
