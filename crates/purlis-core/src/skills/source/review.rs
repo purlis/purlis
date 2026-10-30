@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use super::fetch::{Fetched, Found, NotASkill, SourceFile, fetch};
 use super::{Commit, Source, lock};
+use crate::skills::Reserved;
 use crate::skills::verbs::Level;
 
 /// One file of a skill, as the review shows it.
@@ -432,17 +433,18 @@ impl Fetched {
     }
 
     /// **The review of installing `names` together** from this commit, or which of them fit one
-    /// read where all of them do not; `found` is what it offers, listed once, and `have` says
-    /// which skills the level they land in holds already. One named that the level holds is left
-    /// out and said to be there (#4153).
+    /// read where all of them do not; `found` is what it offers, listed once, `holds` says which
+    /// skills the level they land in holds, and `have` which references are met there already.
+    /// One named that the level holds is left out and said to be there (#4153).
     fn set_review(
         &self,
         found: &[Found],
         names: &[String],
+        holds: &dyn Fn(&str) -> bool,
         have: &dyn Fn(&str) -> bool,
     ) -> Result<SetReview, String> {
         let (there, names): (Vec<String>, Vec<String>) =
-            names.iter().cloned().partition(|name| have(name));
+            names.iter().cloned().partition(|name| holds(name));
         match reviewed_from(self, found, &names, have) {
             Ok(skills) => Ok(SetReview::Review {
                 review: Review {
@@ -458,36 +460,51 @@ impl Fetched {
     }
 }
 
-/// Whether `level` holds a skill named `name`, from a source or made there: one a skill refers to
-/// is not brought along into a level that holds it already (#4032), as the review and the install
-/// agree.
+/// Whether `level` holds a skill named `name`, from a source or made there: one named there is
+/// refused by an install, so a set review leaves it out (#4153).
 pub(super) fn has(plane: &Path, level: &Level, name: &str) -> bool {
     level.named(plane, name).is_some()
 }
 
-/// [`has`] for one review: each name looked up in the level once, however many skills refer to
-/// it.
-pub(super) fn held_at<'a>(plane: &'a Path, level: &'a Level) -> impl Fn(&str) -> bool + 'a {
+/// **Whether a skill installed at `level` that refers to `name` has it met already**, so the
+/// source's `name` is not brought along, as the review and the install agree (ADR 0100 as amended
+/// 2026-10-31): `name` belongs to a built-in skill, which every chat has and no plane skill may
+/// take (#4155), or `level` holds a skill of that name, from any source or made there (#4032).
+/// `reserved` is the built-in skills' names.
+pub(super) fn met(plane: &Path, reserved: &Reserved, level: &Level, name: &str) -> bool {
+    reserved.holds(name) || has(plane, level, name)
+}
+
+/// [`met`] for one review, with the built-in skills in `built_in`: their names read once, and each
+/// name looked up once, however many skills refer to it.
+pub(super) fn met_at<'a>(
+    plane: &'a Path,
+    built_in: Option<&Path>,
+    level: &'a Level,
+) -> impl Fn(&str) -> bool + 'a {
+    let reserved = Reserved::of(built_in);
     let seen = std::cell::RefCell::new(std::collections::HashMap::<String, bool>::new());
     move |name| {
         if let Some(known) = seen.borrow().get(name) {
             return *known;
         }
-        let held = has(plane, level, name);
+        let held = met(plane, &reserved, level, name);
         seen.borrow_mut().insert(name.to_owned(), held);
         held
     }
 }
 
-/// **The review of installing `names` from `source` at `level`**, at its newest commit: every
-/// skill they refer to that the source holds and `level` does not comes along.
+/// **The review of installing `names` from `source` at `level`**, at its newest commit, with the
+/// built-in skills in `built_in`: every skill they refer to that the source holds and is not met
+/// at `level` already ([`met`]) comes along.
 pub fn review(
     plane: &Path,
+    built_in: Option<&Path>,
     source: &Source,
     names: &[String],
     level: &Level,
 ) -> Result<Review, String> {
-    fetch(plane, source, None)?.review_with(names, &held_at(plane, level))
+    fetch(plane, source, None)?.review_with(names, &met_at(plane, built_in, level))
 }
 
 /// **The review of installing `names` from `source` together at `level`** (#4024), at its newest
@@ -496,20 +513,31 @@ pub fn review(
 /// window's list is ticked before the level is chosen.
 pub fn review_set(
     plane: &Path,
+    built_in: Option<&Path>,
     source: &Source,
     names: &[String],
     level: &Level,
 ) -> Result<SetReview, String> {
     let fetched = fetch(plane, source, None)?;
     let (found, _) = fetched.skills()?;
-    fetched.set_review(&found, names, &held_at(plane, level))
+    fetched.set_review(
+        &found,
+        names,
+        &|name| has(plane, level, name),
+        &met_at(plane, built_in, level),
+    )
 }
 
 /// **The review of installing every skill of `source` not installed from it yet** (#4024,
 /// `purlis skill install <source> --all`), at its newest commit, landing at `level`; one `level`
 /// holds already, from anywhere, is left out too and said to be there, as its install would be
 /// refused (#4032, #4153). A review of no skill where every one is.
-pub fn review_all(plane: &Path, source: &Source, level: &Level) -> Result<SetReview, String> {
+pub fn review_all(
+    plane: &Path,
+    built_in: Option<&Path>,
+    source: &Source,
+    level: &Level,
+) -> Result<SetReview, String> {
     let fetched = fetch(plane, source, None)?;
     let (found, _) = fetched.skills()?;
     let (locked, _) = lock::every(plane);
@@ -518,7 +546,12 @@ pub fn review_all(plane: &Path, source: &Source, level: &Level) -> Result<SetRev
         .filter(|skill| installed_at(&locked, source, &skill.name).is_empty())
         .map(|skill| skill.name.clone())
         .collect();
-    fetched.set_review(&found, &names, &held_at(plane, level))
+    fetched.set_review(
+        &found,
+        &names,
+        &|name| has(plane, level, name),
+        &met_at(plane, built_in, level),
+    )
 }
 
 /// The levels `name` is installed at from `source`, by the lockfiles' entries `locked`.

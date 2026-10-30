@@ -12247,13 +12247,6 @@ export type UpdateReview = {
 	local_edits: UpdateFile[],
 	skill: ReviewSkill,
 	brought: ReviewSkill[],
-	/**  Those of `brought` under a built-in skill's name (#3728). */
-	reserved: string[],
-	/**
-	 *  Why it cannot be taken as it is, said before Accept update: it brings along a skill under
-	 *  a built-in skill's name (#3728).
-	 */
-	refused: string | null,
 	accepted: Reviewed,
 };
 

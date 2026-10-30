@@ -256,8 +256,6 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
             files: [DEBUGGING.files[0]],
           },
           brought: [],
-          reserved: [],
-          refused: null,
           accepted: { commit: "8".repeat(40), skills: [] },
         };
       case "skill_deletes_cut_short":

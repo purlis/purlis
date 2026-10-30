@@ -24,7 +24,7 @@ use super::fetch::{SourceFile, fetch};
 use super::install::{level_parts, paths_fit};
 use super::lock::{self, Kept, Locked};
 use super::review::{
-    Accepted, SkillReview, digest_of, has, held_at, review_of, sha256, summary_of, wrote,
+    Accepted, SkillReview, digest_of, met, met_at, review_of, sha256, summary_of, wrote,
 };
 use super::{Commit, Remote, Source, listed, write};
 use crate::skills::verbs::{self, Ctx, Level};
@@ -296,12 +296,9 @@ pub struct UpdateReview {
     /// Those edits, as their diff from the pin: beside the source's change, never lost silently.
     pub local_edits: Vec<FileChange>,
     pub review: SkillReview,
-    /// The skills the newer commit refers to that this level does not have: they come along.
+    /// The skills the newer commit refers to that are not met at this level already: they come
+    /// along. Never one under a built-in skill's name, which a reference meets (#4155).
     pub brought: Vec<SkillReview>,
-    /// Those of [`Self::brought`] whose name belongs to a built-in skill (spec #3679 S12,
-    /// [`crate::skills::Reserved`]): while there is one, [`update`] refuses the update, and
-    /// [`Self::refused`] says so up front.
-    pub reserved: Vec<String>,
 }
 
 impl UpdateReview {
@@ -310,25 +307,6 @@ impl UpdateReview {
         let mut all = vec![self.review.clone()];
         all.extend(self.brought.iter().cloned());
         Accepted::of(&self.newer, &all)
-    }
-
-    /// **Why it cannot be taken as it is**, said before it is accepted: it brings along a skill
-    /// under a built-in skill's name ([`Self::reserved`]), which [`update`] refuses, until the
-    /// source renames it. `None` where it can be taken.
-    pub fn refused(&self) -> Option<String> {
-        let (last, rest) = self.reserved.split_last()?;
-        Some(if rest.is_empty() {
-            format!(
-                "This update brings along {last}, whose name belongs to a built-in skill, so it \
-                 can't be taken until the source renames it."
-            )
-        } else {
-            format!(
-                "This update brings along {} and {last}, whose names belong to built-in skills, \
-                 so it can't be taken until the source renames them.",
-                rest.join(", ")
-            )
-        })
     }
 }
 
@@ -354,9 +332,8 @@ fn locked_at(plane: &Path, level: &Level, name: &str) -> Result<(lock::Read, usi
 }
 
 /// **The review of updating the installed skill `name` at `level`** to its source's newest
-/// commit, each skill it brings along under a built-in skill's name (with the built-in skills in
-/// `built_in`) marked. Refused where the pin is the newest, or where this machine may not contact
-/// the source.
+/// commit, with the built-in skills in `built_in`, whose names a reference meets already (#4155).
+/// Refused where the pin is the newest, or where this machine may not contact the source.
 pub fn update_review(
     plane: &Path,
     built_in: Option<&Path>,
@@ -406,7 +383,8 @@ pub fn update_review(
         _ => Vec::new(),
     };
     let was = pinned.unwrap_or_else(|| here.clone());
-    let reviewed = fetched.review_with(&[name.to_owned()], &held_at(plane, level))?;
+    let reserved = crate::skills::Reserved::of(built_in);
+    let reviewed = fetched.review_with(&[name.to_owned()], &met_at(plane, built_in, level))?;
     let mut skills = reviewed.skills.into_iter();
     let review = skills.next().unwrap_or_else(|| {
         let held_names: Vec<String> = found.iter().map(|f| f.name.clone()).collect();
@@ -416,11 +394,10 @@ pub fn update_review(
             tree::left_in(&fetched.left, &one.dir),
             None,
             &held_names,
-            &|other| other != name && has(plane, level, other),
+            &|other| other != name && met(plane, &reserved, level, other),
         )
     });
     let brought: Vec<SkillReview> = skills.collect();
-    let reserved = crate::skills::Reserved::of(built_in);
     Ok(UpdateReview {
         name: name.to_owned(),
         level: level.clone(),
@@ -432,11 +409,6 @@ pub fn update_review(
         edited,
         local_edits,
         review,
-        reserved: brought
-            .iter()
-            .filter(|skill| reserved.holds(&skill.name))
-            .map(|skill| skill.name.clone())
-            .collect(),
         brought,
     })
 }
@@ -458,7 +430,7 @@ pub fn update(
     let locked = held.lock.skills[at].clone();
     let source = source_of(plane, &locked)?;
     let fetched = fetch(plane, &source, Some(&accepted.commit))?;
-    let reviewed = fetched.review_with(&[name.to_owned()], &held_at(plane, level))?;
+    let reviewed = fetched.review_with(&[name.to_owned()], &met_at(plane, cx.built_in, level))?;
     if !accepted.is(&reviewed.accepted()) || reviewed.skills.first().is_none_or(|s| s.name != name)
     {
         return Err(

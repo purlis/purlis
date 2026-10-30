@@ -176,8 +176,6 @@ const UPDATE = {
   local_edits: [{ path: "SKILL.md", change: "changed", diff: "+mine\n" }],
   skill: NOTIFY,
   brought: [],
-  reserved: [],
-  refused: null,
   accepted: { commit: "c".repeat(40), skills: [{ name: "notify", digest: "sha256:n1" }] },
 };
 
@@ -666,7 +664,7 @@ describe("the install review", () => {
     await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
     const review = await screen.findByTestId("install-review");
     expect(await within(review).findByTestId("already-deploy-notify")).toHaveTextContent(
-      "It refers to notify, which is installed there already: it is left as it is.",
+      "It refers to notify, which its chats there have already: it is left as it is.",
     );
     expect(within(review).queryByTestId("reviewed-notify")).toBeNull();
     expect(within(review).getByTestId("install-commit")).toHaveTextContent("1 skill");
@@ -1056,33 +1054,6 @@ describe("the update review", () => {
       skills: [{ name: "notify", digest: "sha256:n1" }],
     });
     expect(await screen.findByTestId("skill-sources")).toBeInTheDocument();
-  });
-
-  it("says up front that a skill it brings along has a built-in skill's name, and holds Accept update", async () => {
-    // #3728: accepting it would be refused, so the review says so before.
-    const refused =
-      "This update brings along secrets, whose name belongs to a built-in skill, so it can't be taken until the source renames it.";
-    const asked = core({
-      offers: [OFFER],
-      answers: {
-        skill_update_review: () => ({
-          ...UPDATE,
-          brought: [{ ...NOTIFY, name: "secrets", brought_by: "notify" }],
-          reserved: ["secrets"],
-          refused,
-        }),
-      },
-    });
-    const user = userEvent.setup();
-    renderStudio(AT_THE_ROOT, "sources");
-    await screen.findByTestId("skill-updates");
-    await user.click(screen.getByRole("button", { name: "Review update" }));
-    const review = await screen.findByTestId("update-review");
-    expect(await within(review).findByTestId("update-refused")).toHaveTextContent(refused);
-    const accept = within(review).getByRole("button", { name: "Accept update" });
-    expect(accept).toHaveAttribute("aria-disabled", "true");
-    await user.click(accept);
-    expect(did(asked, "skill_update")).toBe(false);
   });
 
   it("Not now leaves it as it is, and back walks the pages again", async () => {

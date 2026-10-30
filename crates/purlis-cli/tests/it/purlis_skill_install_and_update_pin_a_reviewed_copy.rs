@@ -239,10 +239,10 @@ fn update_lists_a_newer_commit_and_applies_it_only_when_asked() {
     assert!(now.contains("hooks.example.org"));
 }
 
-/// #3728: an update that would bring along a skill under a built-in skill's name says so in its
-/// review, and is never asked about, even with `--yes`.
+/// #4155: an update that newly refers to a built-in skill's name brings nothing along, as the
+/// built-in meets the reference, and goes ahead; the source's folder of that name is never copied.
 #[test]
-fn an_update_bringing_along_a_built_in_skills_name_says_so_and_asks_nothing() {
+fn an_update_referring_to_a_built_in_skills_name_brings_nothing_along() {
     let project = Project::new();
     let root = project.root();
     let url = project.url();
@@ -253,7 +253,6 @@ fn an_update_bringing_along_a_built_in_skills_name_says_so_and_asks_nothing() {
         "",
     );
     assert!(installed.status.success(), "{}", text(&installed));
-    let before = std::fs::read(root.join("skills.lock")).unwrap();
     project.publish(&[
         (
             "skills/notify/SKILL.md",
@@ -265,24 +264,14 @@ fn an_update_bringing_along_a_built_in_skills_name_says_so_and_asks_nothing() {
         ),
     ]);
 
-    let refused = project.run(&["skill", "update", "notify", "--yes"], "");
+    let updated = project.run(&["skill", "update", "notify", "--yes"], "");
 
-    let said = text(&refused);
-    assert_eq!(refused.status.code(), Some(1), "{said}");
-    assert!(
-        said.contains("Comes along: secrets (Stands in.), under a built-in skill's name"),
-        "{said}"
-    );
-    assert!(
-        said.contains(
-            "This update brings along secrets, whose name belongs to a built-in skill, so it \
-             can't be taken until the source renames it."
-        ),
-        "{said}"
-    );
-    assert!(!said.contains("Update notify to"), "{said}");
-    assert_eq!(std::fs::read(root.join("skills.lock")).unwrap(), before);
+    let said = text(&updated);
+    assert!(updated.status.success(), "{said}");
+    assert!(!said.contains("Comes along: secrets"), "{said}");
     assert!(!root.join("skills/secrets").exists());
+    let notify = std::fs::read_to_string(root.join("skills/notify/SKILL.md")).unwrap();
+    assert!(notify.contains("skills:secrets"), "{notify}");
 }
 
 #[test]

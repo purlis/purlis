@@ -1116,7 +1116,7 @@ function SkillReviewed({
       )}
       {skill.already.map((one) => (
         <p key={one} className="honest" data-testid={`already-${skill.name}-${one}`}>
-          It refers to <code>{one}</code>, which is installed there already: it is left as it is.
+          It refers to <code>{one}</code>, which its chats there have already: it is left as it is.
         </p>
       ))}
       <h4 className="ui-text-small ui-text-strong">What it adds</h4>
@@ -1717,8 +1717,9 @@ function UpdateReviewPage({
         ? "The review is being read."
         : review === undefined
           ? "The review could not be read."
-          : // It brings along a skill under a built-in skill's name, which accepting refuses (#3728).
-            (review.refused ?? (busy ? BUSY : undefined));
+          : busy
+            ? BUSY
+            : undefined;
   let body: ReactNode;
   if (offer === undefined)
     body = updatesRead ? (
@@ -1745,11 +1746,6 @@ function UpdateReviewPage({
                 <code>{data.newer.short}</code>
               </Fact>
             </Facts>
-            {data.refused !== null && (
-              <p className="honest" role="note" data-testid="update-refused">
-                {data.refused}
-              </p>
-            )}
             {!data.from_pin && (
               <p className="honest">
                 The pinned commit is no longer in the source, so this compares with the copy here.
