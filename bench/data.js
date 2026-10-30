@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793332538378,
+  "lastUpdate": 1793334071492,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30744,6 +30744,48 @@ window.BENCHMARK_DATA = {
             "value": 101.0387585,
             "unit": "ms",
             "extra": "median of 5 runs: 101.011, 101.022, 101.039, 101.667, 102.293 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6f3876517811e623041642c47a83a234019a246f",
+          "message": "Styles: every trouble line's words in danger.text; the views' muted sentence recorded (#3938) (#3976)\n\n* Styles: tests that every trouble line draws its words in danger.text (#3938)\n\nRed first: a panel's refusal, the Changes view's and a file tree's\nfolder that could not be read each drew their words in state.failed,\nwhich the roles table keeps for a state's mark.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Styles: every trouble line's words in danger.text; the views' muted sentence recorded as the one exception (#3938)\n\n- `.panels .trouble` and `.state-bar .trouble` no longer set\n  state.failed, so their words draw `.trouble`'s danger.text on\n  danger.surface, the pair the engine holds at 4.5:1.\n- A file tree's folder that could not be read: its words in\n  danger.text, its mark in state.failed.\n- `.view-body .none` and `.pending` stay muted, recorded in the roles\n  table as the one muted outside the meta until the view tabs wear the\n  roles, which is added to the order the surfaces move in.\n- The guard's two stale allowances go.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T03:45:45Z",
+          "tree_id": "09e8197fc0719ed2d4a63f3284ddced6a935f74d",
+          "url": "https://github.com/purlis/purlis/commit/6f3876517811e623041642c47a83a234019a246f"
+        },
+        "date": 1793334067779,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.35923700000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.338, 0.351, 0.359, 0.360, 0.372 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.613146,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.212, 16.222, 16.613, 16.634, 16.740 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4206525,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.150, 101.368, 101.421, 101.453, 101.693 ms"
           }
         ]
       }
