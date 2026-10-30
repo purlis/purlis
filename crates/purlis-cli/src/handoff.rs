@@ -409,6 +409,7 @@ fn as_a_task(
     let options = crate::dispatch::Options {
         profile: None,
         place: Some(&place),
+        long: false,
     };
     match crate::dispatch::send(here, persona, &task, brief, &options, None) {
         Ok(said) => {

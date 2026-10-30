@@ -142,6 +142,7 @@ fn a_plane() -> Plane {
         root: None,
         above: None,
         by_person: false,
+        long: false,
     });
     crate::reopen::write(
         &root,

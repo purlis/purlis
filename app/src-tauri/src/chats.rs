@@ -4658,6 +4658,8 @@ impl Chats {
                     reported: from.report.reported(),
                     mode: from.mode.into(),
                     owes: from.report == purlis_core::reopen::Owed::Due,
+                    report: from.report,
+                    long: from.long,
                 }),
                 asking: None,
             })
