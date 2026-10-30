@@ -267,14 +267,22 @@ export function SignInStrip(props: SignInStripProps) {
 }
 
 /** What went wrong at `step`, in one line, where anything did. */
-function troubleAt(step: StripStep, who: string, pool: string, pasteRefused?: string) {
+function troubleAt(
+  step: StripStep,
+  who: string,
+  pool: string,
+  pasteRefused?: string,
+  terminal = false,
+) {
   switch (step.at) {
     case "code":
       return pasteRefused;
     case "refused":
       return pasteRefused ?? `The sign-in refused that code: ${step.said}`;
     case "could-not-follow":
-      return "purlis could not follow this sign-in, so it ended it. Sign in with Open in terminal, where the harness asks you itself. It said:";
+      return terminal
+        ? "purlis could not follow this sign-in, so it ended it. Sign in with Open in terminal, where the harness asks you itself. It said:"
+        : "purlis could not follow this sign-in, so it ended it. Open a project to sign in from a terminal there, where the harness asks you itself. It said:";
     case "failed":
       return `${who} did not sign in on ${pool}: ${step.why}`;
     case "not-started":
@@ -286,7 +294,13 @@ function troubleAt(step: StripStep, who: string, pool: string, pasteRefused?: st
 
 /** The strip's body at `step`: what went wrong first, in one line, then the step's own. */
 function Body(props: SignInStripProps & { who: string }) {
-  const trouble = troubleAt(props.step, props.who, props.pool, props.pasteRefused);
+  const trouble = troubleAt(
+    props.step,
+    props.who,
+    props.pool,
+    props.pasteRefused,
+    props.onTerminal !== undefined,
+  );
   return (
     <>
       {trouble !== undefined && (
