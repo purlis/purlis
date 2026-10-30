@@ -52,7 +52,7 @@ jobs:
     name: baselines (commit to the pull request)
     if: github.event.label.name == 'update-baselines'
     runs-on: ubuntu-24.04
-    # Most of it waiting for the head's `stories` run, which takes up to 30 minutes.
+    # Most of it waiting for the head's `stories` run: its parts take up to 20 minutes, then its check.
     timeout-minutes: 45
     concurrency:
       group: stories-baselines-${{ github.event.pull_request.number }}

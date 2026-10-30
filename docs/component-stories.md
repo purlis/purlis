@@ -193,8 +193,10 @@ A baseline is a PNG at
 `app/src/<dir>/__screenshots__/<Component>.stories.tsx/<story id>_<theme>_<appearance>-<chromium|webkit>-linux.png`,
 one for each pictured cell of the matrix.
 Every baseline is drawn and compared in one image, Playwright's own Docker image for the
-Playwright version the lockfile names, by the `stories` workflow's one job
-(`.github/workflows/stories.yml`). It names the image by its tag and its digest,
+Playwright version the lockfile names, by the `stories` workflow's jobs
+(`.github/workflows/stories.yml`): each browser's stories run in three parts, a third of the
+story files each, in every cell, and one `stories` check after them names what failed in any
+part and keeps the baselines they drew. It names the image by its tag and its digest,
 `mcr.microsoft.com/playwright:v<version>-noble@sha256:<digest>`, so a tag pushed again never
 changes a picture; the `stories` check fails unless it names the lockfile's version
 (`tools/story-image.mjs`).

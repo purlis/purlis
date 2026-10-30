@@ -28,6 +28,16 @@ name: stories
 # label (`stories-baselines.yml`), which commits it with the workflow's token. Neither draws
 # again. `workflow_dispatch` is how that job starts this one on the commit it pushed: the
 # `pull_request` run that push starts waits for a maintainer's approval.
+#
+# **In parts, and one check** (#4038). The stories ran 28 minutes as one job, against its 30, and
+# grow, so each browser's stories run in three parts (`part`), each a third of the story files
+# (Vitest's `--shard`), in every cell: six jobs, well inside their 20 minutes. The `stories`
+# check is one job after them, as `web (types, lint, format, test)` is in `ci.yml`: it names
+# what failed in every part, holds the baselines to every part's report, and keeps the one
+# `story-baselines` artifact `stories-baselines.yml` and `tools/story-baselines-pull.mjs` take.
+# A part whose pictures are all that failed in it draws them again itself; the check keeps them
+# only when that is so in every part, so a baseline is still drawn only of a story that passes
+# everything else.
 
 on:
   pull_request:
@@ -65,12 +75,22 @@ jobs:
   # or tools-only pull request pulls no Playwright image. A push to main and a run by hand run it;
   # a `changes` that fails runs it too. This workflow has no merge-group run, so a scope rule that
   # skips a story wrongly first shows on main's push run, not in the queue.
-  stories:
-    name: stories (Chromium and WebKit, axe, keyboard, screenshots)
+  #
+  # Each part keeps what the check needs as its own `stories-part-<browser>-<part>` artifact: its
+  # report, and, when it drew them, the baselines it drew with `drawn-<browser>-<part>` beside them.
+  part:
+    name: stories (${{ matrix.browser }}, part ${{ matrix.part }} of 3)
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.stories != 'false' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each browser on its own, so each failure can say which browser it failed in; every
+        # cell of the matrix is a project of its own, `stories <cell> (<browser>)`.
+        browser: [chromium, webkit]
+        part: [1, 2, 3]
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
       # An init that reaps, and the host's IPC namespace, which Chromium wants for its shared
@@ -79,6 +99,8 @@ jobs:
     env:
       PURLIS_STORY_PICTURES: "1"
       HOME: /root
+      BROWSER: ${{ matrix.browser }}
+      PART: ${{ matrix.part }}
     defaults:
       run:
         working-directory: app
@@ -94,77 +116,156 @@ jobs:
       - run: npm ci
       - name: The image is the Playwright the lockfile names, by its tag and its digest
         run: node ../tools/story-image.mjs
-      # Each browser on its own, so each failure can say which browser it failed in; every cell
-      # of the matrix is a project of its own, `stories <cell> (<browser>)`. The
+      # A third of the story files, by Vitest's own hash of each file's path, in every cell. The
       # failures are kept by `tools/story-failures.mjs`'s reporter rather than Vitest's JSON
       # one, which keeps an error's stack alone: WebKit's does not repeat the message.
-      - name: The stories, in Chromium and in WebKit
+      - name: This part's stories
         id: stories
         run: |
-          failed=0
-          for browser in chromium webkit; do
-            PURLIS_STORY_REPORT="$RUNNER_TEMP/stories-$browser.json" \
-              npx vitest run --project "stories * ($browser)" \
-              --reporter=default --reporter=../tools/story-failures.mjs || failed=1
-          done
-          exit "$failed"
-      # Storybook's own index says which stories there are, and the run's reports which of them
-      # take no picture (`screenshot: false`, which no index has); a baseline of any other is
-      # obsolete. After the stories, whether they passed or not (not when they never ran).
-      - name: Every baseline was drawn in this image, of a story there is that takes a picture
-        if: ${{ !cancelled() && steps.stories.conclusion != 'skipped' }}
+          mkdir -p "$RUNNER_TEMP/part"
+          PURLIS_STORY_REPORT="$RUNNER_TEMP/part/stories-$BROWSER-$PART.json" \
+            npx vitest run --project "stories * ($BROWSER)" --shard="$PART/3" \
+            --reporter=default --reporter=../tools/story-failures.mjs
+      - name: The pictures that differ, kept
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: story-pictures-${{ matrix.browser }}-${{ matrix.part }}
+          path: app/.vitest/attachments/
+          if-no-files-found: ignore
+          retention-days: 7
+      # Drawn when a picture is all that failed in this part; the check keeps them only when that
+      # holds in every part. Each picture the drawing wrote is kept, under its path in `app/`.
+      - name: This part's baselines, drawn again
+        if: failure() && github.event_name == 'pull_request' && steps.stories.outcome == 'failure'
         run: |
-          npx storybook index --disable-telemetry --quiet -c .storybook \
-            -o "$RUNNER_TEMP/stories-index.json"
-          node ../tools/story-baselines.mjs check "$RUNNER_TEMP/stories-index.json" \
-            "$RUNNER_TEMP/stories-chromium.json" "$RUNNER_TEMP/stories-webkit.json"
+          if ! files=$(node ../tools/story-failures.mjs pictures-alone "$RUNNER_TEMP/part/stories-$BROWSER-$PART.json"); then
+            echo "a story in this part failed on more than its picture, so none are drawn"
+            exit 0
+          fi
+          touch "$RUNNER_TEMP/drawing-since"
+          # shellcheck disable=SC2086 # story files, with no space in any
+          # Its own report: the check reads the whole part's, which names every story that takes
+          # no picture.
+          if ! PURLIS_STORY_REPORT="$RUNNER_TEMP/drawing-$BROWSER-$PART.json" \
+            npx vitest run --project "stories * ($BROWSER)" --update --reporter=default \
+            --reporter=../tools/story-failures.mjs $files; then
+            echo "::notice::a story failed while its baselines were drawn in $BROWSER, part $PART, so none are kept"
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/part/app"
+          find src -path '*/__screenshots__/*' -name "*-$BROWSER-linux.png" -newer "$RUNNER_TEMP/drawing-since" -print0 \
+            | xargs -0 -r cp --parents -t "$RUNNER_TEMP/part/app"
+          touch "$RUNNER_TEMP/part/drawn-$BROWSER-$PART"
+      - name: This part's report and baselines, kept for the stories check
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: stories-part-${{ matrix.browser }}-${{ matrix.part }}
+          path: ${{ runner.temp }}/part/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # The one `stories` check, whatever the parts did: skipped with them when nothing it draws has
+  # changed, and red when any part is not green, ran out of time or wrote no report.
+  stories:
+    name: stories (Chromium and WebKit, axe, keyboard, screenshots)
+    needs: [changes, part]
+    if: ${{ !cancelled() && needs.changes.outputs.stories != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      # A part that kept nothing is named below as having written no report.
+      - name: Every part's report and baselines
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          pattern: stories-part-*
+          path: ${{ runner.temp }}/parts
+          merge-multiple: true
+      # Every part's report, by browser; one a part never wrote is named as such.
+      - name: The reports
+        id: reports
+        run: |
+          named="" all=""
+          for browser in chromium webkit; do
+            for part in 1 2 3; do
+              report="$RUNNER_TEMP/parts/stories-$browser-$part.json"
+              named="$named $browser $report"
+              all="$all $report"
+            done
+          done
+          echo "named=$named" >> "$GITHUB_OUTPUT"
+          echo "all=$all" >> "$GITHUB_OUTPUT"
       # One annotation per story that failed, the same in both browsers: its browser, its gate,
       # the first line of why and the axe rules it broke, put on the story file's line it failed
       # at (`GITHUB_WORKSPACE` is the root its path is relative to); a failure axe raises after
       # the story has no such line, and is on the check alone.
       - name: The stories that failed, named
-        if: failure()
+        if: needs.part.result != 'success'
+        env:
+          NAMED: ${{ steps.reports.outputs.named }}
         run: |
-          node ../tools/story-failures.mjs \
-            chromium "$RUNNER_TEMP/stories-chromium.json" webkit "$RUNNER_TEMP/stories-webkit.json"
-      - name: The pictures that differ, kept
-        if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: story-pictures
-          path: app/.vitest/attachments/
-          if-no-files-found: ignore
-          retention-days: 7
-      # The baselines this run would make, for the pull request to take on request (above). Drawn
-      # only when a picture is all that failed, so the other gates hold every baseline drawn; an
-      # obsolete baseline alone needs no drawing, and gathering leaves it out.
+          # shellcheck disable=SC2086 # browser and report pairs, with no space in any
+          node ../tools/story-failures.mjs $NAMED
+      # Storybook's own index says which stories there are, and the run's reports which of them
+      # take no picture (`screenshot: false`, which no index has); a baseline of any other is
+      # obsolete. A part's missing report is warned of, and fails the check below.
+      - name: Every baseline was drawn in this image, of a story there is that takes a picture
+        env:
+          ALL: ${{ steps.reports.outputs.all }}
+        run: |
+          npx storybook index --disable-telemetry --quiet -c .storybook \
+            -o "$RUNNER_TEMP/stories-index.json"
+          # shellcheck disable=SC2086 # report paths, with no space in any
+          node ../tools/story-baselines.mjs check "$RUNNER_TEMP/stories-index.json" $ALL
+      - name: Every part passed
+        if: ${{ !cancelled() }}
+        env:
+          RESULT: ${{ needs.part.result }}
+        run: test "$RESULT" = success
+      # The baselines this run would make, for the pull request to take on request (above). Kept
+      # only when a picture is all that failed in every part, and every part that failed drew
+      # its own, so the other gates hold every baseline drawn; an obsolete baseline alone needs
+      # no drawing, and gathering leaves it out.
       - name: The baselines, drawn in this run for the pull request to take
         id: drawn
-        if: failure() && github.event_name == 'pull_request' && steps.stories.conclusion != 'skipped'
+        if: failure() && github.event_name == 'pull_request' && steps.reports.outcome == 'success'
         env:
-          STORIES: ${{ steps.stories.outcome }}
+          RESULT: ${{ needs.part.result }}
+          ALL: ${{ steps.reports.outputs.all }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          reports="$RUNNER_TEMP/stories-chromium.json $RUNNER_TEMP/stories-webkit.json"
-          if [ "$STORIES" = failure ]; then
-            # The story files whose pictures failed, drawn again; every other baseline stands.
-            # shellcheck disable=SC2086 # two paths, with no space in either
-            if ! files=$(node ../tools/story-failures.mjs pictures-alone $reports); then
-              echo "::notice::a story failed on more than its picture, so no baselines are drawn: fix it, and the next run draws them"
+          parts="$RUNNER_TEMP/parts"
+          if [ "$RESULT" != success ]; then
+            # shellcheck disable=SC2086 # report paths, with no space in any
+            if ! node ../tools/story-failures.mjs pictures-alone $ALL > /dev/null; then
+              echo "::notice::no baselines are drawn: a story failed on more than its picture, or a part wrote no report (the first annotation names which); fix it, and the next run draws them"
               exit 0
             fi
-            for browser in chromium webkit; do
-              # shellcheck disable=SC2086 # story files, with no space in any
-              # Its own report: gathering reads the whole run's, which names every story that
-              # takes no picture.
-              if ! PURLIS_STORY_REPORT="$RUNNER_TEMP/drawing-$browser.json" \
-                npx vitest run --project "stories * ($browser)" --update --reporter=default \
-                --reporter=../tools/story-failures.mjs $files; then
-                echo "::notice::a story failed while its baselines were drawn in $browser, so none are kept"
+            for report in $ALL; do
+              name=$(basename "$report" .json)
+              if jq -e .failed "$report" > /dev/null && [ ! -f "$parts/drawn-${name#stories-}" ]; then
+                echo "::notice::a story failed while its baselines were drawn in ${name#stories-}, so none are kept"
                 exit 0
               fi
             done
+            # Each part's pictures over the checkout's: a story file is in one part, and a part
+            # keeps only its own browser's pictures.
+            if [ -d "$parts/app/src" ]; then cp -R "$parts/app/src/." src/; fi
           fi
           if [ ! -f "$RUNNER_TEMP/stories-index.json" ]; then
             npx storybook index --disable-telemetry --quiet -c .storybook \
@@ -173,7 +274,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/drawn/app"
           # shellcheck disable=SC2086
           node ../tools/story-baselines.mjs gather "$RUNNER_TEMP/stories-index.json" \
-            "$RUNNER_TEMP/drawn/app" $reports > "$RUNNER_TEMP/gathered.txt"
+            "$RUNNER_TEMP/drawn/app" $ALL > "$RUNNER_TEMP/gathered.txt"
           printf '{"head":"%s","base":"%s"}\n' "$HEAD_SHA" "$BASE_SHA" > "$RUNNER_TEMP/drawn/drawn.json"
           echo "$(grep -c . "$RUNNER_TEMP/gathered.txt" || true) baselines drawn; take them with node tools/story-baselines-pull.mjs ${{ github.event.pull_request.number }}, or the update-baselines label"
           echo "drawn=true" >> "$GITHUB_OUTPUT"
