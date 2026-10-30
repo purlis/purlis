@@ -138,16 +138,15 @@ pub fn update_clone(
     })
 }
 
-/// `purlis worktree push [--force-with-lease]`: the branch of `piece` pushed to its remote,
-/// over the remote's copy where purlis's own update rewrote it. `lease`, the flag typed, asks
-/// for nothing a plain push does not (#3895).
-pub fn push(piece: &Piece, lease: bool, reach: &Reach, say: &mut dyn FnMut(Say)) -> u8 {
+/// `purlis worktree push`: the branch of `piece` pushed to its remote, over the remote's copy
+/// where purlis's own update rewrote it (#3895).
+pub fn push(piece: &Piece, reach: &Reach, say: &mut dyn FnMut(Say)) -> u8 {
     let ran = Here::of(piece, true).and_then(|here| {
         let lock = broker::lock_of(&here.git_dir);
         let _held = lock
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        pushed(piece, &here, lease, reach, say)
+        pushed(piece, &here, reach, say)
     });
     ran.unwrap_or_else(|why| {
         say(Say::Fail(why.into()));
@@ -184,7 +183,16 @@ impl Here {
             ));
         }
         let clone = worktree::clone_dir(root, ws, repo).map_err(|e| e.to_string())?;
-        let git_dir = ran(&folder, &["rev-parse", "--absolute-git-dir"])?;
+        let git_dir = PathBuf::from(ran(&folder, &["rev-parse", "--absolute-git-dir"])?);
+        // purlis's notes of its own updates are kept in this directory and vouch for a push
+        // over the remote (#3895): it must be the clone's own record of this very folder.
+        if !own_record_of(&clone, &git_dir, &folder) {
+            return Err(format!(
+                "{repo} · {piece} keeps its git directory somewhere other than its clone's \
+                 `.git/worktrees`, so purlis does not update or push it for a chat: do it from \
+                 your own terminal"
+            ));
+        }
         let branch = ran(&folder, &["branch", "--show-current"])?;
         if branch.is_empty() && on_a_branch {
             return Err(format!(
@@ -195,7 +203,7 @@ impl Here {
         Ok(Self {
             folder,
             clone,
-            git_dir: PathBuf::from(git_dir),
+            git_dir,
             branch,
             label: format!("{repo} · {piece}"),
         })
@@ -231,6 +239,33 @@ impl Here {
             label: repo.to_owned(),
         })
     }
+}
+
+/// Whether `git_dir` is the record the clone at `clone` keeps of the linked worktree at
+/// `folder`: a directory right inside the clone's own `.git/worktrees`, whose `gitdir` names
+/// that folder's `.git`. Links are followed on both sides before they are compared.
+fn own_record_of(clone: &Path, git_dir: &Path, folder: &Path) -> bool {
+    let canon = |path: &Path| std::fs::canonicalize(path).ok();
+    if !worktree::is_own_git_dir(&clone.join(".git")) {
+        return false;
+    }
+    let (Some(records), Some(record), Some(folder)) = (
+        canon(&clone.join(".git").join("worktrees")),
+        canon(git_dir),
+        canon(folder),
+    ) else {
+        return false;
+    };
+    if record.parent() != Some(records.as_path()) {
+        return false;
+    }
+    let Ok(pointer) = std::fs::read_to_string(record.join("gitdir")) else {
+        return false;
+    };
+    Path::new(pointer.trim())
+        .parent()
+        .and_then(canon)
+        .is_some_and(|named| named == folder)
 }
 
 /// What git printed for `args` in `dir`, trimmed, or why not.
@@ -749,12 +784,10 @@ impl Record {
         }
         let lease = match (lines.next(), lines.next()) {
             (None, None) => None,
-            (Some(remote), Some(at)) if name::branch_name_ok(remote).is_ok() && full_id(at) => {
-                Some(Lease {
-                    remote: remote.to_owned(),
-                    at: at.to_owned(),
-                })
-            }
+            (Some(remote), Some(at)) if remote_name_ok(remote) && full_id(at) => Some(Lease {
+                remote: remote.to_owned(),
+                at: at.to_owned(),
+            }),
             _ => return None,
         };
         Some(Self {
@@ -785,8 +818,9 @@ impl Record {
 
 /// What the remote the folder's branch is pushed to has of it now, as the update's fetch left
 /// it, where a push may later go over it (#3895): `None` where the remote has no such branch,
-/// or where its copy holds commits that `head` does not. That copy is someone's work the
-/// rebase never saw, so the update says so and vouches for nothing.
+/// or where its copy holds commits that `head` does not, unless an earlier update of purlis's,
+/// not pushed since, vouched for that very copy and `head` holds what it made. Otherwise that
+/// copy is someone's work the rebase never saw, so the update says so and vouches for nothing.
 fn lease_seen(here: &Here, head: &str, say: &mut dyn FnMut(Say)) -> Result<Option<Lease>, String> {
     let branch = &here.branch;
     let Some(remote) = remote_of(&here.clone, branch) else {
@@ -796,6 +830,20 @@ fn lease_seen(here: &Here, head: &str, say: &mut dyn FnMut(Say)) -> Result<Optio
         return Ok(None);
     };
     if !is_ancestor(&here.folder, &at, head)? {
+        // A second update before the first was pushed: the remote's copy is still the one the
+        // first update saw and vouched for, and the branch still holds what that update made.
+        if let Some(Record {
+            branch: noted,
+            head: made,
+            lease: Some(lease),
+        }) = Record::updated(&here.git_dir)
+            && noted == *branch
+            && lease.remote == remote
+            && lease.at == at
+            && is_ancestor(&here.folder, &made, head)?
+        {
+            return Ok(Some(lease));
+        }
         say(Say::Warn(
             format!(
                 "{remote}'s {branch} has commits that {} did not have, so purlis will not push \
@@ -807,6 +855,23 @@ fn lease_seen(here: &Here, head: &str, say: &mut dyn FnMut(Say)) -> Result<Optio
         return Ok(None);
     }
     Ok(Some(Lease { remote, at }))
+}
+
+/// Whether `remote` reads as a remote's name as `git remote add` takes one: not empty, not
+/// an option, and no space, control character, `:` or `..`, nor any character a ref may not
+/// hold, since git keeps its branches under `refs/remotes/<remote>/`.
+fn remote_name_ok(remote: &str) -> bool {
+    !remote.is_empty()
+        && !remote.starts_with(['-', '.', '/'])
+        && !remote.ends_with(['.', '/'])
+        && !remote.contains("..")
+        && !remote.contains("//")
+        && !remote.ends_with(".lock")
+        && !remote.chars().any(|c| {
+            c.is_whitespace()
+                || c.is_control()
+                || matches!(c, ':' | '~' | '^' | '?' | '*' | '[' | '\\' | '@')
+        })
 }
 
 /// Whether `id` is a full commit id as git prints one.
@@ -973,7 +1038,6 @@ const NOTHING: &str = "0000000000000000000000000000000000000000";
 fn pushed(
     piece: &Piece,
     here: &Here,
-    lease: bool,
     reach: &Reach,
     say: &mut dyn FnMut(Say),
 ) -> Result<u8, String> {
@@ -1007,9 +1071,7 @@ fn pushed(
     let ours =
         commit_of(&here.folder, "HEAD").ok_or_else(|| format!("{label} has no commit to push"))?;
     let theirs = commit_of(&here.clone, &format!("refs/remotes/{remote}/{branch}"));
-    // `--force-with-lease` asks for nothing a plain push does not (#3895): a push goes over the
-    // remote's copy only where purlis's own update rewrote it, whichever was typed.
-    let _ = lease;
+    // Over the remote's copy only where purlis's own update rewrote the branch (#3895).
     let over = match &theirs {
         Some(theirs) if !is_ancestor(&here.folder, theirs, &ours)? => Some(theirs.clone()),
         _ => None,
@@ -1055,7 +1117,18 @@ fn pushed(
     }
     if over.is_some() {
         // Spent: the remote has the rewrite now, and a later rewrite needs an update of its own.
-        let _ = std::fs::remove_file(here.git_dir.join(UPDATED));
+        let note = here.git_dir.join(UPDATED);
+        if let Err(why) = std::fs::remove_file(&note)
+            && why.kind() != std::io::ErrorKind::NotFound
+        {
+            say(Say::Warn(
+                format!(
+                    "purlis could not remove its note of the update it pushed ({}): {why}",
+                    note.display()
+                )
+                .into(),
+            ));
+        }
     }
     say(Say::Done(
         format!("{label}: {branch} pushed to {remote}").into(),

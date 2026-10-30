@@ -9,14 +9,17 @@ Both were decided in implementation. Neither adds a command word.
    without rebuilding the pull request on a new branch. Now `purlis worktree update` notes, in
    the folder's own git directory, which no chat writes, what the remote's copy of the branch
    was at when it rewrote the branch. It notes this only where the folder had every commit of
-   that copy. Where the remote's copy holds commits the folder never had, the update says so
+   that copy. A second update before the first was pushed carries the first one's note
+   forward, where the remote's copy is still the one it noted and the branch still holds what
+   it made. Where the remote's copy holds commits the folder never had, the update says so
    and notes nothing. `purlis worktree push` goes over the remote's copy only where that note
    names the branch, the commit the update left the branch at is in what is pushed (commits
    added since are fine), and the remote's copy is still at the noted commit. It then pushes
    with git's own lease on that commit, so a remote moved in between is refused by the remote
    itself. Anything else that does not fast-forward is refused: a remote someone else moved, a
    branch rewritten any other way, a note purlis cannot read or one an earlier purlis wrote.
-   The refusal names what to do. The note is spent by the push that uses it.
+   The refusal names what to do. The note is spent by the push that uses it, and is trusted
+   only in the clone's own `.git/worktrees/<piece>` record of that very folder.
 
    A plain push does all of this. `--force-with-lease` is still accepted and asks for nothing
    more, so a chat never needs a force push approved: the push is purlis's own operation on

@@ -154,9 +154,9 @@ fn isolated_answer(
                 GitWork::WorktreeUpdate { step, .. } => {
                     crate::pieceupdate::update(&at, step, &reach, &mut say)
                 }
-                GitWork::WorktreePush { lease, .. } => {
-                    crate::pieceupdate::push(&at, *lease, &reach, &mut say)
-                }
+                // `lease` is the `--force-with-lease` typed, which asks for nothing a plain
+                // push does not (#3895).
+                GitWork::WorktreePush { .. } => crate::pieceupdate::push(&at, &reach, &mut say),
                 _ => 1,
             });
             match ran {

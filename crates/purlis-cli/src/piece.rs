@@ -202,7 +202,6 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
             ran_by_the_app(at, work, say).unwrap_or_else(|| {
                 purlis_core::pieceupdate::push(
                     &piece_of(&root, at),
-                    force_with_lease,
                     &purlis_core::pieceupdate::Reach::default(),
                     say,
                 )
