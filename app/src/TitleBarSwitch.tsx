@@ -30,7 +30,7 @@ import {
   SwitcherMark,
   SwitcherRow,
 } from "./ui/titlebar/Switcher";
-import { ChipCard, type ChipNotices } from "./ChipNotices";
+import { AT_STATUS, ChipCard, type ChipNotices } from "./ChipNotices";
 import {
   AllWorkspaces,
   ChipSlot,
@@ -173,7 +173,8 @@ export function TitleBarSwitch({
   const tintOf = useProjectTints();
   // **The chip a card hangs from** (#3648): found in the strip as it is drawn, so a chip drawn
   // again, or scrolled, is still the one the card points at.
-  const cardOn = notices?.open;
+  // The status bar's card is the status bar's to draw (#3653).
+  const cardOn = notices?.open === AT_STATUS ? undefined : notices?.open;
   /** The chip whose dot was pressed: its card takes the keyboard as it comes (#3648's review). */
   const [handTo, setHandTo] = useState<string>();
   const anchor = useMemo(
