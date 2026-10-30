@@ -2210,10 +2210,15 @@ fn outside_rows(
 
 /// **What the built-in lints check a skill against** (SK-44, #3133): the names of the plane's
 /// skills, every level's, and of the built-in ones. Read once per list, never once per skill
-/// linted: a clone's skills cost one read of the plane, whatever their number.
+/// linted: a clone's skills cost one read of the plane, whatever their number. And what is left
+/// of the bytes the list reads of skills' files for its lints (#3459).
 struct Known {
     plane: std::collections::HashSet<String>,
     built_in: std::collections::HashSet<String>,
+    /// The bytes of skills' other files the list may still read for its lints, of
+    /// [`purlis_skills::MOST_LIST_BYTES`]: each lint reads at most
+    /// [`purlis_skills::MOST_LINT_BYTES`] of them, and spends them here.
+    reads: std::cell::Cell<u64>,
 }
 
 impl Known {
@@ -2229,6 +2234,7 @@ impl Known {
                 .map(|skill| skill.name)
                 .collect(),
             built_in: built_in_names(built_in).into_iter().collect(),
+            reads: std::cell::Cell::new(purlis_skills::MOST_LIST_BYTES),
         }
     }
 }
@@ -2302,8 +2308,9 @@ fn outside_lint(known: &Known, skill: &OutsideSkill, harness: Harness) -> Vec<St
 
 /// The built-in lints of the skill `name` from `origin`, whose `SKILL.md` says `text` and, where
 /// it is already there, lies at `skill_md`: checked against the `known` skills and this
-/// machine's programs, with its other files read, each of at most [`purlis_skills::MOST_BYTES`].
-/// `skill_md` is the root its folder is held from, and the path. `plugin` is the plugin a
+/// machine's programs, with its other files read as far as the budgets go ([`read_within`]),
+/// and a finding where any were left unread for them. `skill_md` is the root its folder is held
+/// from, and the path. `plugin` is the plugin a
 /// harness skill comes in ([`purlis_skills::SkillFiles::plugin`]), and `known_as` the names its
 /// program knows purlis's own skills by ([`purlis_skills::BuiltInLints::known_as`]).
 #[allow(clippy::too_many_arguments)]
@@ -2339,18 +2346,10 @@ fn linted(
             })
             .collect()
     });
-    let others: Vec<(String, String)> = folder
+    let (others, unread) = folder
         .as_ref()
         .zip(listed.as_ref())
-        .map(|(folder, listed)| {
-            listed
-                .iter()
-                .filter_map(|(rel, said)| {
-                    let text = folder.read(rel, purlis_skills::MOST_BYTES)?;
-                    Some((said.clone(), text))
-                })
-                .collect()
-        })
+        .map(|(folder, listed)| read_within(known, folder, listed, origin))
         .unwrap_or_default();
     // Only the plane's own skill is checked for the scripts it names: a chat is handed its folder,
     // so its `scripts/` is that folder's. A repo's or a harness's skill may mean the repo's own.
@@ -2383,10 +2382,62 @@ fn linted(
             _ => true,
         });
     }
+    findings.extend(unread);
     for lint in more {
         findings.extend(lint.findings(&files));
     }
     findings
+}
+
+/// **The text of each of `listed`, the files of a skill from `origin` in `folder`, as far as
+/// the budgets go** (#3459): each of at most [`purlis_skills::MOST_BYTES`], read with a hard
+/// link where its `SKILL.md` is ([`purlis_skills::held::HardLinks::of`]), and all of them at
+/// most [`purlis_skills::MOST_LINT_BYTES`] and what is left of the list's ([`Known::reads`]),
+/// which they spend. A file that is not text costs what was read of it too. The finding that
+/// says how many were left unread for a budget, where any were.
+fn read_within(
+    known: &Known,
+    folder: &purlis_skills::SkillFolder,
+    listed: &[(PathBuf, String)],
+    origin: Origin,
+) -> (Vec<(String, String)>, Option<Finding>) {
+    use purlis_skills::{MOST_LINT_BYTES, ReadBudget, held::NotRead};
+    let hard_links = purlis_skills::held::HardLinks::of(origin);
+    let had = known.reads.get();
+    let past = if MOST_LINT_BYTES <= had {
+        ReadBudget::Lint
+    } else {
+        ReadBudget::List
+    };
+    let mut left = MOST_LINT_BYTES.min(had);
+    let mut others = Vec::new();
+    let mut unread = 0;
+    for (rel, said) in listed {
+        if left == 0 {
+            unread += 1;
+            continue;
+        }
+        let most = purlis_skills::MOST_BYTES.min(left);
+        let read = folder.read_counted(rel, most, hard_links);
+        left = left.saturating_sub(read.read);
+        match read.text {
+            Ok(text) => others.push((said.clone(), text)),
+            // Larger than what is left, and no larger than any file is read: left for the budget.
+            Err(NotRead::TooLarge) if most < purlis_skills::MOST_BYTES => unread += 1,
+            Err(_) => {}
+        }
+    }
+    known
+        .reads
+        .set(had.saturating_sub(MOST_LINT_BYTES.min(had) - left));
+    let said = (unread > 0).then_some(Finding {
+        severity: purlis_skills::Severity::Warns,
+        lint: purlis_skills::Lint::FilesUnread {
+            files: unread,
+            past,
+        },
+    });
+    (others, said)
 }
 
 /// **A skill's compatibility badge on one harness** (SK-8, #2771): what the studio draws for it.
@@ -2440,8 +2491,9 @@ fn badges(
 /// **Whether `harness` keeps the skill from `origin` whose `SKILL.md` is at `path` under `root`
 /// out of its model's choice by a file of its own beside it** (SK-39): only a skill it finds
 /// itself, never one purlis hands it, which it does not read so. The file is read through the
-/// skill's folder held from its root, never through a link, and at most
-/// [`purlis_skills::MOST_BYTES`] of it: one that cannot be read so says nothing.
+/// skill's folder held from its root, never through a link, with a hard link where its
+/// `SKILL.md` is read so (#3459), and at most [`purlis_skills::MOST_BYTES`] of it: one that
+/// cannot be read so says nothing.
 fn kept_manual_beside(harness: Harness, (root, path): (&Path, &Path), origin: Origin) -> bool {
     let Some(beside) = harness.manual_beside() else {
         return false;
@@ -2451,7 +2503,9 @@ fn kept_manual_beside(harness: Harness, (root, path): (&Path, &Path), origin: Or
     }
     purlis_skills::SkillFolder::open(root, path)
         .ok()
-        .and_then(|folder| folder.read(Path::new(beside.file), purlis_skills::MOST_BYTES))
+        .and_then(|folder| {
+            folder.read_of(Path::new(beside.file), purlis_skills::MOST_BYTES, origin)
+        })
         .is_some_and(|text| (beside.says)(&text))
 }
 

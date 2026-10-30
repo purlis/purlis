@@ -69,7 +69,10 @@ pub use declared::{Argument, Declared, Given, declared};
 pub use grant::{Grant, grant_file, grant_of, set_grant};
 pub use handed::{Frontmatter, MOST_BYTES, Refusal, read_skill_md, read_skill_md_of};
 pub use lifecycle::{About, Deprecated, Lifecycle, about_of, set_lifecycle, set_owners};
-pub use lint::{BuiltInLints, Finding, Lint, Severity, SkillFiles, SkillLint};
+pub use lint::{
+    BuiltInLints, Finding, Lint, MOST_LINT_BYTES, MOST_LIST_BYTES, ReadBudget, Severity,
+    SkillFiles, SkillLint,
+};
 pub use load::{Entry, Loaded, Narrowing, POINTER, SkillFolder, by_name, find, load};
 pub use moving::{Unmoved, move_between, move_skill};
 pub use read::{
