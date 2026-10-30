@@ -10163,7 +10163,8 @@ export type PoolProfileRow = {
 	harness: string,
 	/**
 	 *  Whether its harness says it is signed in on the runner: `signed-in`, `signed-out` or
-	 *  `cannot-tell`. Null where it is not kept there.
+	 *  `cannot-tell`, or `fetching` while the runner fetches the version it pins (#4008), which
+	 *  the window asks again after. Null where it is not kept there.
 	 */
 	standing: string | null,
 	/**  Why it is not kept on the runner, in words, where it is not. */

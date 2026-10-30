@@ -551,3 +551,51 @@ fn a_look_at_a_profile_not_kept_with_a_pin_fetches_nothing() {
     std::thread::sleep(Duration::from_millis(100));
     assert!(!data.path().join("harnesses").exists());
 }
+
+/// A vendor's releases, served only once `open` is set: a fetch held running until a test lets
+/// it end.
+struct HeldUntilOpened {
+    served: &'static ServedFromAnywhere,
+    open: std::sync::atomic::AtomicBool,
+}
+
+impl Fetch for HeldUntilOpened {
+    fn fetch(&self, url: &str, most: u64, into: &mut dyn Write) -> Result<(), String> {
+        while !self.open.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        self.served.fetch(url, most, into)
+    }
+}
+
+/// **A look's fetch is told while it runs** (#4008): a runner says its profile is fetching from
+/// the look that starts the fetch until it ends, and not once its version is installed.
+#[test]
+fn a_looks_fetch_is_said_to_be_fetching_until_it_has_ended() {
+    let data = tempfile::tempdir().unwrap();
+    let fetch: &'static HeldUntilOpened = Box::leak(Box::new(HeldUntilOpened {
+        served: served_from_anywhere(claude_released(&sha(CLAUDE))),
+        open: std::sync::atomic::AtomicBool::new(false),
+    }));
+    let record = kept_pinned(Some("2.1.300"));
+    assert!(!fetching_at(&record, data.path()));
+
+    assert_eq!(
+        for_a_look_at(&record, data.path(), Some(Platform::X64), fetch),
+        None
+    );
+    assert!(fetching_at(&record, data.path()));
+    // A profile not kept with a pin is never fetching.
+    assert!(!fetching_at(&kept_pinned(None), data.path()));
+
+    fetch.open.store(true, std::sync::atomic::Ordering::SeqCst);
+    let until = std::time::Instant::now() + Duration::from_secs(10);
+    while fetching_at(&record, data.path()) {
+        assert!(std::time::Instant::now() < until, "the fetch did not end");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        for_a_look_at(&record, data.path(), Some(Platform::X64), fetch).is_some(),
+        "installed once the fetch has ended"
+    );
+}

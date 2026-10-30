@@ -55,6 +55,9 @@ pub enum Standing {
     SignedOut,
     /// The harness did not say, or has no way to: a chat on it starts.
     CannotTell,
+    /// The runner is fetching the harness version the profile pins (#4008), which a look
+    /// started, so its harness cannot say yet: a chat on it starts, as where it cannot tell.
+    Fetching,
 }
 
 impl Standing {
@@ -64,6 +67,7 @@ impl Standing {
             Self::SignedIn => "signed-in",
             Self::SignedOut => "signed-out",
             Self::CannotTell => "cannot-tell",
+            Self::Fetching => "fetching",
         }
     }
 }
@@ -85,6 +89,12 @@ pub trait Look {
     fn pinned_program(&self, record: &MachineProfile) -> Option<PathBuf> {
         let _ = record;
         None
+    }
+    /// **Whether the version `record` is pinned to is being fetched** (#4008) by a fetch a look
+    /// started ([`Look::pinned_program`]): what tells a runner's "fetching" from "cannot tell".
+    fn fetching(&self, record: &MachineProfile) -> bool {
+        let _ = record;
+        false
     }
 }
 
@@ -125,6 +135,10 @@ impl Look for ThisMachine {
 
     fn pinned_program(&self, record: &MachineProfile) -> Option<PathBuf> {
         super::installs::for_a_look(record)
+    }
+
+    fn fetching(&self, record: &MachineProfile) -> bool {
+        super::installs::fetching_for_a_look(record)
     }
 }
 

@@ -15,7 +15,7 @@ import type {
   PoolsShown,
   RunnerImageOffered,
 } from "../bindings";
-import { stopAddingAPool } from "../pools";
+import { doneWithTheAddedPool, stopAddingAPool } from "../pools";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 
@@ -69,6 +69,8 @@ let releaseImage: RunnerImageOffered | { trouble: string };
 /** The profiles chosen for each pool, by its name, and what Add and Remove asked (#4047). */
 let chosen: string[];
 let profileChanges: unknown[];
+/** What `pool_profiles` keeps, in turn, where a test says; the last again once the rest are. */
+let profileAnswers: PoolProfileRow[][] | undefined;
 
 const a_profile = (name: string, standing: string): PoolProfileRow => ({
   name,
@@ -105,6 +107,7 @@ beforeEach(() => {
   releaseImage = { state: "local_build" };
   chosen = ["work", "claude"];
   profileChanges = [];
+  profileAnswers = undefined;
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
@@ -140,6 +143,11 @@ beforeEach(() => {
       if (cmd === "projects_not_held") return structuredClone(notHeld);
       if (cmd === "pool_profiles") {
         profilesAsked.push(a.pool);
+        if (profileAnswers !== undefined)
+          return {
+            kept: profileAnswers.length > 1 ? profileAnswers.shift() : profileAnswers[0],
+            addable: [],
+          };
         const here = [a_profile("work", "signed-out"), a_profile("claude", "signed-in")];
         const home = { ...a_profile("home", "signed-out"), kind: "codex", harness: "Codex" };
         const all = [...here, home];
@@ -179,9 +187,11 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
-  // The dialog's open state is the window's, kept across renders: a test that leaves it open
-  // must not leave it over the next test's window.
+  // The dialogs' open state is the window's, kept across renders: a test that leaves the add
+  // dialog, or the sign-in that adding ends with, open must not leave it over the next test's
+  // window.
   stopAddingAPool();
+  doneWithTheAddedPool();
   clearMocks();
   Reflect.deleteProperty(globalThis, GLOBAL);
 });
@@ -336,6 +346,32 @@ describe("You › This machine › Pools", () => {
       ).toBeNull(),
     );
   });
+
+  it("says a profile's harness is being fetched, and asks again until it is (#4008)", async () => {
+    profileAnswers = [[a_profile("work", "fetching")], [a_profile("work", "signed-in")]];
+    render(<App />);
+    await palette("Add a pool…");
+    const dialog = await screen.findByRole("dialog", { name: "Add a pool" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Name" }), "builds");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Image" }), IMAGE);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add pool" }));
+
+    const signIn = await screen.findByRole("dialog", {
+      name: "Sign your profiles in on pool builds",
+    });
+    const list = await within(signIn).findByRole("list", { name: "Profiles on pool builds" });
+    expect(within(list).getByText("Fetching Claude Code for this runner…")).toBeInTheDocument();
+    expect(
+      await within(list).findByText("Signed in on pool builds.", {}, { timeout: 6000 }),
+    ).toBeInTheDocument();
+    expect(profilesAsked).toEqual(["builds", "builds"]);
+    await userEvent.click(within(signIn).getByRole("button", { name: "Done" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Sign your profiles in on pool builds" }),
+      ).toBeNull(),
+    );
+  }, 10000);
 
   it("adds a pool with its own time before its runner suspends, and its row says it (#3471)", async () => {
     render(<App />);
