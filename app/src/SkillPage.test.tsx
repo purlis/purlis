@@ -314,6 +314,7 @@ describe("a skill's page", () => {
         tests: [{ query: "ship it", should_trigger: true, hides: false }],
         chats: 6,
         runs: 3,
+        after_edit_chats: 9,
         tests_refused: null,
         left_out: [],
         outcome_evals: 0,

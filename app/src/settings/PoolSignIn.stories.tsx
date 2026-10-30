@@ -14,6 +14,9 @@ import { SignInStrip, type StripStep } from "./PoolSignIn";
 
 const PAGE = "https://claude.ai/oauth/authorize?code=true";
 
+const TERMINAL_SHOWS =
+  "Select login method:\r\n \x1b[36m❯\x1b[0m 1. Claude account with subscription\r\n   2. Anthropic Console account\r\n";
+
 function Strip({ step, onPaste }: { step: StripStep; onPaste: (code: string) => void }) {
   const [code, setCode] = useState("");
   return (
@@ -35,6 +38,11 @@ function Strip({ step, onPaste }: { step: StripStep; onPaste: (code: string) => 
         onTryAgain={() => undefined}
         onEnd={() => undefined}
         onTerminal={() => undefined}
+        terminal={
+          step.at === "could-not-follow"
+            ? { printer: (print) => print?.(TERMINAL_SHOWS), onType: () => undefined }
+            : undefined
+        }
       />
     </div>
   );
@@ -105,7 +113,10 @@ export const Checking: Story = { args: { step: { at: "checking" } } };
 /** The runner's status check says it is signed in: Close is all that is left. */
 export const SignedIn: Story = { args: { step: { at: "signed-in" } } };
 
-/** purlis could not follow the login: what it printed, and a terminal as the way out. */
+/**
+ * purlis could not follow the login: the runner's own terminal, in the strip, with the keyboard in
+ * it. Tab leaves it for Cancel, so it is no trap.
+ */
 export const CouldNotFollow: Story = {
   args: {
     step: {
@@ -113,9 +124,20 @@ export const CouldNotFollow: Story = {
       said: "Choose your sign-in method:\n  1. Claude account\n  2. Console account",
     },
   },
+  play: async ({ canvas, userEvent }) => {
+    await expect(
+      canvas.getByRole("group", { name: "The runner's terminal on builds" }),
+    ).toBeVisible();
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Cancel" }),
+      "Tab leaves the terminal for Cancel",
+    );
+    expectFocusInSight();
+  },
 };
 
-/** It did not sign in, and why; Try again starts it afresh, a Tab away from the strip. */
+/** It did not sign in, and why; Open the page again starts another, a Tab away from the strip. */
 export const Failed: Story = {
   args: { step: { at: "failed", why: "the code has expired" } },
   play: async ({ canvas, userEvent }) => {
@@ -126,8 +148,8 @@ export const Failed: Story = {
     );
     await userEvent.tab();
     await untilFocused(
-      () => canvas.getByRole("button", { name: "Try again" }),
-      "Tab moves to Try again",
+      () => canvas.getByRole("button", { name: "Open the page again" }),
+      "Tab moves to Open the page again",
     );
     expectFocusInSight();
   },

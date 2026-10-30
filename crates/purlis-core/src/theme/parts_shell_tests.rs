@@ -86,7 +86,14 @@ fn the_window_s_families_are_in_the_manifest_at_version_3() {
     assert_eq!(
         of("status-item"),
         (
-            vec!["root".into(), "icon".into(), "label".into(), "count".into()],
+            vec![
+                "root".into(),
+                "icon".into(),
+                "label".into(),
+                "count".into(),
+                "dot".into(),
+                "dot-warning".into()
+            ],
             vec![
                 "bar".into(),
                 "pill".into(),
@@ -984,4 +991,28 @@ fn the_manifest_says_which_parts_are_drawn_apart_from_the_next_version_on() {
     assert!(part(parts::VERSION, "crumb").get("apart").is_none());
     assert!(part(parts::VERSION + 1, "count").get("apart").is_none());
     assert!(parts::has_unreleased());
+}
+
+#[test]
+fn the_notices_item_s_dots_are_reached_by_their_own_attributes_not_inside_an_item() {
+    // The status bar's dots (#3653) are the Notices item's sibling over its corner, as a chip's
+    // are in its slot: drawn around the item, in no variant and no state of it.
+    for part in ["dot", "dot-warning"] {
+        let sheet = sheet_of(json!({ format!("status-item.{part}.fill"): "accent.base" }));
+        assert!(
+            sheet.contains(&format!(
+                ":where([data-scope=\"status-item\"][data-part=\"{part}\"]) {{ background-color: var(--accent-base); }}"
+            )),
+            "{part}: {sheet}"
+        );
+        let key = format!("status-item.{part}.bar.hover.fill");
+        let loaded = load(&with_parts(json!({ key.clone(): "accent.base" })));
+        assert!(
+            said(&loaded)
+                .iter()
+                .any(|one| one.contains(&format!("parts.{key} is not"))),
+            "{key}: {:?}",
+            said(&loaded)
+        );
+    }
 }

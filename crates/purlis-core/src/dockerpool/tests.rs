@@ -820,7 +820,45 @@ fn a_driven_sign_in_runs_the_same_sign_in_with_pipes() {
     let driven = made().sign_in_args_by(Typed::Driven, "work", None);
 
     assert_eq!(driven[1], "-i");
-    assert_eq!(driven[2..], made().sign_in_args("work", None)[2..]);
+    let (ends, same) = driven.split_last().expect("words");
+    assert_eq!(ends, "--until-input-ends");
+    assert_eq!(same[2..], made().sign_in_args("work", None)[2..]);
+}
+
+/// **A login the person drives in the window's terminal crosses pipes too** (#4043), so it ends
+/// with its input as a driven one does; a terminal `docker exec` makes would not end.
+#[test]
+fn a_terminal_in_the_window_is_the_runners_own_carried_over_pipes() {
+    let size = crate::engine::Size {
+        columns: 100,
+        rows: 30,
+    };
+    let terminal = made().sign_in_args_by(Typed::InOwnTerminal(size), "work", None);
+
+    assert_eq!(terminal[1], "-i");
+    assert_eq!(
+        terminal[terminal.len() - 2..],
+        ["--in-own-terminal", "100x30"]
+    );
+}
+
+/// **Open in terminal stays the harness's own login in a terminal the person drives** (#4043):
+/// nothing stands between, and no input closing ends it.
+#[test]
+fn a_sign_in_typed_into_a_shell_is_left_to_the_person() {
+    let typed = made().sign_in_args("work", None);
+
+    assert_eq!(typed[1], "-it");
+    assert!(!typed.iter().any(|word| word == "--until-input-ends"));
+}
+
+/// **Sign out is the runner's own**, as the same user in the same container.
+#[test]
+fn signing_out_runs_the_runners_own_sign_out() {
+    let args = made().sign_out_args("work");
+
+    assert_eq!(args[args.len() - 3..], ["profile", "sign-out", "work"]);
+    assert_eq!(args[1..4], made().version_args()[1..4]);
 }
 
 /// **The line a sign-in on a pool's runner types reads none of the person's Docker settings**

@@ -264,3 +264,63 @@ footer[data-scope="status-bar"] {
 [data-scope="status-item"][data-part="root"][data-arrived] {
   animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);
 }
+
+/* ---------------------------------------------------------------------------------------------
+   The Notices item's notice dot (#3653, spec #3647): the title-bar chip's dot (`titlebar.dot`),
+   on the Notices item's leading corner while a project's or the app's result is hidden behind it.
+   The same 16px shape, ringed in the bar's own ground, which is the title bar's, so its colour is
+   read on that one ground (D-3648-6): `dot` the accent for news, `dot-warning` the waiting amber
+   for a warning (#3649), each with its shape in the window's ground.
+
+   **A 24px target** (WCAG 2.5.8): unlike a chip's dot, it is a Tab stop of its own, and nothing
+   else on the bar reaches it. Its box is 24px, the 16px dot drawn in its middle: a clear border
+   of 4px around it, which the dot's fill is clipped inside, and its ring drawn inside that fill.
+   It stands inside the bar's padding, which clips what leaves it. Keyed on the dot's parts, never
+   on `data-kind`, which another status item carries too (the title bar's Updates pill).
+   --------------------------------------------------------------------------------------------- */
+
+[data-part^="dot"][data-scope="status-item"] {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: calc(var(--space-2) * -1);
+  /* No further out than the end's gap, so its clear border never covers the item before. */
+  inset-inline-start: calc(var(--space-1) * -1);
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  inline-size: 24px;
+  block-size: 24px;
+  padding: 0;
+  border: 4px solid transparent;
+  border-radius: var(--radius-full);
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 2px var(--surface-deep);
+  cursor: default;
+  appearance: none;
+}
+
+[data-part="dot"][data-scope="status-item"] {
+  color: var(--surface-base);
+  background-color: var(--accent-base);
+}
+
+[data-part="dot-warning"][data-scope="status-item"] {
+  color: var(--surface-base);
+  background-color: var(--state-waiting);
+}
+
+/* Its shape, filled, in the middle of the dot: a disc 6px across for news, a triangle 8px. */
+[data-part^="dot"][data-scope="status-item"] svg {
+  inline-size: 6px;
+  block-size: 6px;
+}
+
+[data-part="dot-warning"][data-scope="status-item"] svg {
+  inline-size: 8px;
+  block-size: 8px;
+}
+
+[data-part^="dot"][data-scope="status-item"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-width) * -1);
+}

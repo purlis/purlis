@@ -1,14 +1,43 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { PoolProfileRow, PoolSignInStep } from "../bindings";
 import { askProfiles } from "../pools";
 import { PoolProfiles } from "./PoolProfiles";
 import { PROFILE_SIGN_IN, type ProfileSignInAsk } from "./links";
+import type { Printer } from "./SignInTerminal";
+
+/** xterm draws on a page; here the strip's terminal is what it prints and one key typed. */
+vi.mock("./SignInTerminal", () => ({
+  SignInTerminal: function Stood({
+    label,
+    printer,
+    onType,
+    live,
+  }: {
+    label: string;
+    printer: Printer;
+    onType: (text: string) => void;
+    live: boolean;
+  }) {
+    const [printed, setPrinted] = useState("");
+    useEffect(() => {
+      printer((text) => setPrinted((before) => before + text));
+      return () => printer(undefined);
+    }, [printer]);
+    return (
+      <div role="group" aria-label={label}>
+        <pre>{printed}</pre>
+        <button onClick={() => live && onType("1\r")}>Type 1</button>
+      </div>
+    );
+  },
+}));
 
 /**
  * **A Claude Code profile signs in on a pool's runner from its line, with no terminal** (#4042,
@@ -23,13 +52,15 @@ const a_profile = (name: string, kind = "claude"): PoolProfileRow => ({
   name,
   kind,
   harness: kind === "claude" ? "Claude Code" : "Codex",
-  standing: "signed-out",
+  standing: signedIn ? "signed-in" : "signed-out",
   not_kept: null,
   plans: [],
 });
 
 let asked: { cmd: string; args: Record<string, unknown> }[];
 let profilesAsked: number;
+/** Whether the core says the profiles are signed in. */
+let signedIn = false;
 /** The steps the core has said and the window has not yet asked for. */
 let said: PoolSignInStep[];
 let waiting: ((step: PoolSignInStep) => void) | undefined;
@@ -96,7 +127,9 @@ async function strip(plane?: string) {
 describe("Signing a profile in on a pool's runner (#4042)", () => {
   it("opens the page here, takes the pasted code and ends signed in", async () => {
     const opened = await strip();
-    expect(calls("pool_sign_in_start")).toEqual([{ pool: "builds", name: "work", provider: null }]);
+    expect(calls("pool_sign_in_start")).toEqual([
+      { pool: "builds", name: "work", provider: null, terminal: null },
+    ]);
     expect(within(opened).getByText(/Step 1 of 3/)).toBeInTheDocument();
 
     says({ at: "open", url: PAGE });
@@ -185,36 +218,94 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     expect(screen.getByRole("button", { name: "Add a profile…" })).toBeVisible();
   });
 
-  it("says what the login printed when purlis cannot follow it, with a terminal the way out", async () => {
+  it("hands an unrecognised login over to the runner's terminal, then checks it (#4043)", async () => {
+    const opened = await strip();
+
+    says({ at: "could-not-follow", said: "Choose your sign-in method: [1] [2]" });
+
+    const terminal = await within(opened).findByRole("group", {
+      name: "The runner's terminal on builds",
+    });
+    expect(within(opened).getByRole("status")).toHaveTextContent(
+      "purlis could not follow this sign-in: the runner's own terminal is open below",
+    );
+    expect(await screen.findByText("Needs you in the terminal")).toBeVisible();
+    await waitFor(() =>
+      expect(calls("pool_sign_in_start")).toEqual([
+        { pool: "builds", name: "work", provider: null, terminal: null },
+        { pool: "builds", name: "work", provider: null, terminal: { columns: 80, rows: 16 } },
+      ]),
+    );
+
+    says({ at: "printed", text: "Which account? " });
+    expect(await within(terminal).findByText("Which account?")).toBeVisible();
+    await userEvent.click(within(terminal).getByRole("button", { name: "Type 1" }));
+    expect(calls("pool_sign_in_type")).toEqual([{ flow: 7, text: "1\r" }]);
+
+    says({ at: "checking" });
+    says({ at: "signed-in" });
+    expect(await within(opened).findByText("Signed in")).toBeInTheDocument();
+  });
+
+  it("offers the terminal's Cancel, which ends the login, and Open in terminal (#4043)", async () => {
     const heard: ProfileSignInAsk[] = [];
     const hear = (event: Event) => heard.push((event as CustomEvent<ProfileSignInAsk>).detail);
     window.addEventListener(PROFILE_SIGN_IN, hear);
     try {
       const opened = await strip("/home/op/project");
       says({ at: "could-not-follow", said: "Choose your sign-in method: [1] [2]" });
+      await within(opened).findByRole("group", { name: "The runner's terminal on builds" });
+      await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
 
-      expect(await within(opened).findByRole("alert")).toHaveTextContent(
-        "purlis could not follow this sign-in",
-      );
-      expect(within(opened).getByText("Choose your sign-in method: [1] [2]")).toBeVisible();
       await userEvent.click(within(opened).getByRole("button", { name: "Open in terminal" }));
 
       expect(heard).toEqual([
         { plane: "/home/op/project", profile: "work", provider: undefined, pool: "builds" },
       ]);
+      expect(calls("pool_sign_in_cancel")).toEqual([{ flow: 7 }]);
     } finally {
       window.removeEventListener(PROFILE_SIGN_IN, hear);
     }
   });
 
-  it("says why a sign-in failed, and tries again", async () => {
+  it("ends the login in the terminal on Cancel, and Try again stays in the terminal (#4043)", async () => {
     const opened = await strip();
+    says({ at: "could-not-follow", said: "Choose your sign-in method: [1] [2]" });
+    await within(opened).findByRole("group", { name: "The runner's terminal on builds" });
+    await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
+    says({ at: "failed", why: "the runner said: no" });
+
+    await userEvent.click(await within(opened).findByRole("button", { name: "Try again" }));
+
+    await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(3));
+    expect(calls("pool_sign_in_start")[2]).toEqual(
+      expect.objectContaining({ terminal: { columns: 80, rows: 16 } }),
+    );
+    // The terminal takes typing again, and the line says it needs the person.
+    expect(await screen.findByText("Needs you in the terminal")).toBeVisible();
+    await userEvent.click(within(opened).getByRole("button", { name: "Type 1" }));
+    expect(calls("pool_sign_in_type")).toEqual([{ flow: 7, text: "1\r" }]);
+    await userEvent.click(within(opened).getByRole("button", { name: "Cancel" }));
+    expect(calls("pool_sign_in_cancel")).toEqual([{ flow: 7 }]);
+  });
+
+  it("offers no Cancel while it is checked, as the login has ended (#4043)", async () => {
+    const opened = await strip();
+    says({ at: "checking" });
+
+    expect(await within(opened).findByText(/Step 3 of 3/)).toBeInTheDocument();
+    expect(within(opened).queryByRole("button", { name: "Cancel" })).toBeNull();
+  });
+
+  it("says why a sign-in failed and starts another by opening the page again (#4043)", async () => {
+    const opened = await strip();
+    says({ at: "open", url: PAGE });
     says({ at: "failed", why: "the code has expired" });
 
     expect(await within(opened).findByRole("alert")).toHaveTextContent(
       "work (Claude Code) did not sign in on builds: the code has expired",
     );
-    await userEvent.click(within(opened).getByRole("button", { name: "Try again" }));
+    await userEvent.click(within(opened).getByRole("button", { name: "Open the page again" }));
     await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
   });
 
@@ -234,7 +325,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
       );
       const opened = await screen.findByRole("group", { name: "Signing open in on builds" });
       expect(calls("pool_sign_in_start")).toEqual([
-        { pool: "builds", name: "open", provider: "github-copilot" },
+        { pool: "builds", name: "open", provider: "github-copilot", terminal: null },
       ]);
       // No page is said to open as it starts: the code comes first.
       expect(
@@ -294,6 +385,48 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
 
     expect(calls("pool_sign_in_start")).toEqual([]);
     expect(asks).toEqual([expect.objectContaining({ profile: "open", provider: "openai" })]);
+  });
+
+  it("offers Try again where no page was opened, and the line stays failed (#4043)", async () => {
+    const opened = await strip();
+    says({ at: "failed", why: "the runner stopped answering" });
+    await within(opened).findByRole("button", { name: "Try again" });
+
+    await userEvent.click(within(opened).getByRole("button", { name: "Close" }));
+
+    expect(await screen.findByText("Sign-in failed")).toBeVisible();
+  });
+
+  it("asks before Sign out, then runs it on the runner and asks where it stands (#4043)", async () => {
+    signedIn = true;
+    await act(() => askProfiles("builds"));
+    try {
+      render(<PoolProfiles pool="builds" plane={undefined} />);
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Sign out work on pool builds" }),
+      );
+
+      expect(screen.getByText(/^Sign work out on pool builds\?/)).toBeVisible();
+      await userEvent.click(
+        screen.getByRole("button", { name: "Keep work signed in on pool builds" }),
+      );
+      expect(calls("pool_sign_out")).toEqual([]);
+
+      await userEvent.click(screen.getByRole("button", { name: "Sign out work on pool builds" }));
+      const before = profilesAsked;
+      await userEvent.click(
+        screen.getByRole("button", { name: "Yes, sign out work on pool builds" }),
+      );
+
+      expect(calls("pool_sign_out")).toEqual([{ pool: "builds", name: "work" }]);
+      expect(await screen.findByText("work is signed out on pool builds.")).toBeVisible();
+      await waitFor(() => expect(profilesAsked).toBe(before + 1));
+      // Codex's own sign-out runs too; opencode's is its terminal's alone.
+      expect(screen.getByRole("button", { name: "Sign out fast on pool builds" })).toBeVisible();
+    } finally {
+      signedIn = false;
+      await act(() => askProfiles("builds"));
+    }
   });
 
   it("keeps another harness's sign-in in a shell tab", async () => {

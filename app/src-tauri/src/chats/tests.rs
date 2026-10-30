@@ -7262,16 +7262,38 @@ fn a_harness_chat_on_a_runner_is_started_by_its_names_and_a_shell_by_the_window_
 struct ProfilesOnAPool {
     asked: Mutex<Vec<(PathBuf, String, String)>>,
     refusing: Mutex<Option<String>>,
+    left_behind: Mutex<Option<String>>,
 }
 
 impl crate::poolprofiles::ProfilesOnPools for ProfilesOnAPool {
-    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<Option<String>, String> {
         lock(&self.asked).push((root.to_path_buf(), pool.to_owned(), profile.to_owned()));
         match lock(&self.refusing).clone() {
             Some(why) => Err(why),
-            None => Ok(()),
+            None => Ok(lock(&self.left_behind).clone()),
         }
     }
+}
+
+/// **Settings that stayed behind start the chat, and its tab says which** (#4081).
+#[test]
+fn a_chat_whose_settings_stayed_behind_starts_and_its_tab_says_so() {
+    let host = Pretend::default();
+    host.on_pool("builds");
+    let on_pools = Arc::new(ProfilesOnAPool::default());
+    *lock(&on_pools.left_behind) = Some("skills/large (65 MiB) stayed behind".to_owned());
+    let mut chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
+    chats.readying_profiles_on_pools(on_pools.clone());
+
+    let session = chats
+        .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+        .expect("it starts on the runner");
+
+    assert_eq!(host.named().len(), 1);
+    assert_eq!(
+        chats.start_notes(session),
+        vec!["skills/large (65 MiB) stayed behind".to_owned()]
+    );
 }
 
 /// **A chat on a pool is started there only once its profile is ready on the pool's runner**

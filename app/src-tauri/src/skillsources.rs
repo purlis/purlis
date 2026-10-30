@@ -408,6 +408,9 @@ pub struct ReviewSkill {
     pub description: String,
     pub folder: String,
     pub brought_by: Option<String>,
+    /// The skills it refers to that the level it lands in holds already (#4032): left as they
+    /// are, not brought along.
+    pub already: Vec<String>,
     pub summary: ReviewSummary,
     pub files: Vec<ReviewFile>,
     pub left_out: Vec<ReviewLeftOut>,
@@ -421,6 +424,7 @@ impl From<&source::SkillReview> for ReviewSkill {
             description: esc(&skill.description),
             folder: esc(&skill.folder),
             brought_by: skill.brought_by.as_deref().map(esc),
+            already: skill.already.iter().map(|one| esc(one)).collect(),
             summary: (&skill.summary).into(),
             files: skill
                 .files
@@ -857,7 +861,8 @@ pub(crate) async fn skill_source_browse(
     .await
 }
 
-/// **The install review** of `names` from a source, and the skills they refer to.
+/// **The install review** of `names` from a source into `level`, and the skills they refer to
+/// that `level` does not hold already.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_install_review(
@@ -865,18 +870,20 @@ pub(crate) async fn skill_install_review(
     plane: crate::planes::PlaneId,
     source: SkillSource,
     names: Vec<String>,
+    level: SkillLevel,
 ) -> Result<InstallReview, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reviewing the install", move || {
         flag_on()?;
-        let review = source::review(held.root(), &source.core(), &names)?;
+        let review = source::review(held.root(), &source.core(), &names, &(&level).into())?;
         Ok(InstallReview::from(&review))
     })
     .await
 }
 
 /// **The review of installing `names` from a source together** (#4024, Install all…): one review
-/// of the set and the skills they refer to, or which of them fit one read.
+/// of the set into `level` and the skills they refer to that it does not hold already, or which of
+/// them fit one read.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_install_set_review(
@@ -884,12 +891,13 @@ pub(crate) async fn skill_install_set_review(
     plane: crate::planes::PlaneId,
     source: SkillSource,
     names: Vec<String>,
+    level: SkillLevel,
 ) -> Result<InstallSetReview, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reviewing the install", move || {
         flag_on()?;
         Ok(
-            match source::review_set(held.root(), &source.core(), &names)? {
+            match source::review_set(held.root(), &source.core(), &names, &(&level).into())? {
                 source::SetReview::Review(review) => InstallSetReview::Review {
                     review: (&review).into(),
                 },

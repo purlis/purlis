@@ -527,3 +527,115 @@ fn a_local_copys_grades_follow_a_rename_and_a_share() {
         "and into the shared skills, which git holds from the share on"
     );
 }
+
+/// [`plane`] with `draft`, a skill only on this machine, graded once (`g1`), and the level it is
+/// at.
+fn a_local_draft_graded() -> (tempfile::TempDir, Level) {
+    let tmp = plane();
+    let root = tmp.path();
+    let local = Level::project().local(true);
+    std::fs::create_dir_all(root.join("skills.local/draft")).unwrap();
+    std::fs::write(
+        root.join("skills.local/draft/SKILL.md"),
+        SKILL.replace("name: deploy", "name: draft"),
+    )
+    .unwrap();
+    let row = Graded {
+        skill: "draft".into(),
+        level: local.rel(),
+        ..graded(root, "g1", "2026-10-25T10:00:00+00:00", Spent::default())
+    };
+    record(root, &local, &row, "laptop");
+    (tmp, local)
+}
+
+#[test]
+fn a_local_grade_under_way_across_a_rename_shows_under_the_new_name_4104() {
+    let (tmp, local) = a_local_draft_graded();
+    let root = tmp.path();
+    let row = Graded {
+        skill: "draft".into(),
+        level: local.rel(),
+        ..graded(root, "g2", "2026-10-25T11:00:00+00:00", Spent::default())
+    };
+    let marker = underway::began(root, &local, &row).unwrap();
+
+    did(root, |cx| {
+        crate::skills::verbs::rename(cx, &local, "draft", "sketch")
+    })
+    .unwrap();
+    // It ends after the rename, and is recorded by the name it began under, stamped then.
+    let ended = Graded {
+        ts: (chrono::Utc::now() + chrono::Duration::seconds(1)).to_rfc3339(),
+        ..row
+    };
+    record(root, &local, &ended, "laptop");
+    underway::ended(root, "g2");
+    drop(marker);
+
+    let ids =
+        |read: Read| -> Vec<String> { read.grades.into_iter().map(|one| one.grade).collect() };
+    assert_eq!(ids(read_followed(root, &local, "sketch")), ["g2", "g1"]);
+    assert_eq!(
+        grade_of(root, "sketch", "g2").map(|one| one.grade),
+        Some("g2".into())
+    );
+}
+
+#[test]
+fn a_skill_made_by_hand_at_a_renamed_skills_name_shows_none_of_its_grades_4104() {
+    let (tmp, local) = a_local_draft_graded();
+    let root = tmp.path();
+    did(root, |cx| {
+        crate::skills::verbs::rename(cx, &local, "draft", "sketch")
+    })
+    .unwrap();
+    let ids =
+        |read: Read| -> Vec<String> { read.grades.into_iter().map(|one| one.grade).collect() };
+    assert_eq!(ids(read_followed(root, &local, "sketch")), ["g1"]);
+
+    // `sketch` removed by hand, and another made at its name by hand.
+    std::fs::rename(
+        root.join("skills.local/sketch"),
+        root.join("skills.local/.gone"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("skills.local/sketch")).unwrap();
+    std::fs::write(
+        root.join("skills.local/sketch/SKILL.md"),
+        SKILL.replace("name: deploy", "name: sketch"),
+    )
+    .unwrap();
+    std::fs::remove_dir_all(root.join("skills.local/.gone")).unwrap();
+
+    if cfg!(unix) {
+        assert_eq!(
+            ids(read_followed(root, &local, "sketch")),
+            Vec::<String>::new()
+        );
+        assert_eq!(grade_of(root, "sketch", "g1"), None);
+    }
+}
+
+#[test]
+fn a_deleted_local_skill_restored_gets_its_grades_from_before_back_4104() {
+    let (tmp, local) = a_local_draft_graded();
+    let root = tmp.path();
+    did(root, |cx| {
+        crate::skills::verbs::rename(cx, &local, "draft", "sketch")
+    })
+    .unwrap();
+    did(root, |cx| {
+        crate::skills::verbs::delete(cx, &local, "sketch")
+    })
+    .unwrap();
+    let deleted = crate::skills::verbs::deleted(root)
+        .into_iter()
+        .find(|one| one.name == "sketch")
+        .unwrap();
+    did(root, |cx| crate::skills::verbs::restore(cx, &deleted, None)).unwrap();
+
+    let ids =
+        |read: Read| -> Vec<String> { read.grades.into_iter().map(|one| one.grade).collect() };
+    assert_eq!(ids(read_followed(root, &local, "sketch")), ["g1"]);
+}

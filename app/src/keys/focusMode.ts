@@ -41,6 +41,11 @@ export const HIDDEN_IN_FOCUS = [
   'footer[data-scope="status-bar"]',
 ].join(", ");
 
+/** **What goes with them**: the card that pops from the status bar's Notices item (`AT_STATUS`,
+ *  #3653), portaled over the window, no part of the footer, but drawn only while the footer is.
+ *  Not a part the window always draws, so it is kept apart from `HIDDEN_IN_FOCUS`. */
+const GOES_WITH_THEM = '[data-chip="status/bar/notices"]';
+
 /** **The window's focus mode**: whether it is on, whether its parts are coming back, and the
  *  toggle the key and the palette's row press. */
 export function useFocusMode() {
@@ -88,7 +93,11 @@ export function keepTheKeyboardOffWhatFocusModeHides(): void {
  */
 export function keepTheKeyboardOnTheWork(): void {
   const at = document.activeElement;
-  if (!(at instanceof Element) || at.closest(HIDDEN_IN_FOCUS) === null) return;
+  if (
+    !(at instanceof Element) ||
+    (at.closest(HIDDEN_IN_FOCUS) === null && at.closest(GOES_WITH_THEM) === null)
+  )
+    return;
   const work = document.querySelector(".region-centre");
   const to = work?.querySelector<HTMLElement>(
     '[data-chat-keyboard] textarea, [role="tab"][tabindex="0"], button:not([disabled]), [tabindex="0"]',

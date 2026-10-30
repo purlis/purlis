@@ -30,7 +30,10 @@ fn turning_it_on_accepts_what_the_plan_showed_and_nothing_else() {
     );
     assert_eq!(accepted.profile, "work");
     assert_eq!(accepted.model.as_deref(), Some("sonnet"));
-    assert_eq!(accepted.chats, planned.plan.unwrap().chats);
+    // The chats the plan shows for grading after each edit, its previous version's arm counted
+    // (#4035).
+    assert_eq!(Some(accepted.chats), planned.after_edit_chats);
+    assert!(accepted.chats > planned.plan.unwrap().chats);
     assert_eq!(accepted.token_cap, 50_000);
     assert_eq!(
         accepted.limit_usd,

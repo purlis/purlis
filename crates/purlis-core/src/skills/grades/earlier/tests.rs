@@ -3,6 +3,8 @@
 
 //! The earlier names and levels this machine keeps of a skill git cannot follow (#4018).
 
+use std::path::Path;
+
 use super::*;
 
 fn project() -> tempfile::TempDir {
@@ -40,6 +42,8 @@ fn a_local_rename_keeps_the_old_name_and_a_later_move_takes_it_along() {
             name: "deploy".into(),
             level: "skills.local".into(),
             until: "2026-10-30T10:00:00+00:00".into(),
+            grades: Vec::new(),
+            folder: None,
         }]
     );
 
@@ -142,4 +146,75 @@ fn a_move_out_of_git_keeps_the_places_git_followed_it_through() {
             ("ship".to_owned(), "skills".to_owned())
         ]
     );
+}
+
+/// A skill `name` only on this machine, made in the project at `root` as a folder holds it.
+fn made(root: &Path, name: &str) {
+    let folder = root.join("skills.local").join(name);
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: A skill.\n---\n\nStep one.\n"),
+    )
+    .unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_place_lends_nothing_to_another_folder_made_at_its_key_and_a_restore_takes_it_back_4104() {
+    let project = project();
+    let root = project.path();
+    let local = Level::project().local(true);
+    // `deploy` renamed `ship`: the folder that took the key is kept.
+    made(root, "ship");
+    moved(
+        root,
+        (&local, "deploy"),
+        (&local, "ship"),
+        &[],
+        at("2026-10-30T10:00:00Z"),
+    )
+    .unwrap();
+    assert_eq!(of(root, &local, "ship").len(), 1);
+    assert!(of(root, &local, "ship")[0].folder.is_some());
+
+    // `ship` removed by hand, and another made at its name, as an install or a draft's accept
+    // or a hand would: the old one is moved away first, so the new folder is surely another.
+    std::fs::rename(
+        root.join("skills.local/ship"),
+        root.join("skills.local/.gone"),
+    )
+    .unwrap();
+    made(root, "ship");
+    std::fs::remove_dir_all(root.join("skills.local/.gone")).unwrap();
+    assert_eq!(
+        of(root, &local, "ship"),
+        [],
+        "another skill's grades are none of its own"
+    );
+
+    // A Restore brings back the folder the places are kept for.
+    refound(root, &local, "ship").unwrap();
+    assert_eq!(of(root, &local, "ship").len(), 1);
+}
+
+#[test]
+fn an_entry_with_a_grade_or_a_folder_not_purlis_writes_is_left_out_4104() {
+    let project = project();
+    let root = project.path();
+    let dir = crate::appstate::made(root).unwrap();
+    std::fs::write(
+        dir.join(FILE),
+        r#"{"v":1,"skills":{"skills.local/ship":[
+            {"name":"a","level":"skills.local","until":"2026-10-30T10:00:00Z","grades":["../x"]},
+            {"name":"b","level":"skills.local","until":"2026-10-30T10:00:00Z","folder":"/etc"},
+            {"name":"c","level":"skills.local","until":"2026-10-30T10:00:00Z","grades":["g1"]}
+        ]}}"#,
+    )
+    .unwrap();
+
+    let kept = of(root, &Level::project().local(true), "ship");
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].name, "c");
+    assert_eq!(kept[0].grades, ["g1"]);
 }

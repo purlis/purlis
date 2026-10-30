@@ -243,6 +243,25 @@ fn the_help_names_the_pool_and_a_check_is_not_of_a_pool() {
     assert!(!out.status.success());
 }
 
+/// **`--pool` is not combined with the hidden runner modes** (#4043): those are a runner's own,
+/// for its desktop, and a sign-in on a pool is followed here.
+#[test]
+fn a_pool_sign_in_is_not_held_as_a_runner_s_own() {
+    let machine = Machine::new(0);
+    machine.said(&["profile", "create", "work", "--harness", "claude"]);
+
+    for held in [
+        &["--until-input-ends"][..],
+        &["--in-own-terminal", "80x16"][..],
+    ] {
+        let mut args = vec!["profile", "sign-in", "work", "--pool", "builds"];
+        args.extend_from_slice(held);
+        let out = machine.purlis(&args);
+        assert!(!out.status.success(), "{args:?}");
+    }
+    assert_eq!(machine.ran(), None);
+}
+
 /// **A pool's sign-in is the person's too**: a chat is refused it, and nothing is run.
 #[test]
 fn a_chat_may_not_sign_a_profile_in_on_a_pool() {
@@ -299,5 +318,28 @@ fn a_missing_profile_or_plan_says_what_to_do() {
     assert!(!codex.status.success());
     let said = String::from_utf8_lossy(&codex.stderr);
     assert!(said.contains("follows only"), "{said}");
+    assert_eq!(machine.ran(), None);
+}
+
+/// **Sign out and a sign-in held to its input are a runner's, for its desktop** (#4043): on a
+/// profile this device keeps for itself, they are refused in words, and no harness runs.
+#[test]
+fn signing_out_and_a_held_sign_in_are_only_for_a_profile_kept_for_a_desktop() {
+    let machine = Machine::new(0);
+    machine.said(&["profile", "create", "work", "--harness", "claude"]);
+
+    for args in [
+        &["profile", "sign-out", "work"][..],
+        &["profile", "sign-in", "work", "--until-input-ends"][..],
+        &["profile", "sign-in", "work", "--in-own-terminal", "80x16"][..],
+    ] {
+        let out = machine.purlis(args);
+
+        assert!(!out.status.success(), "{args:?}");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("not kept on this device for a desktop"),
+            "{out:?}"
+        );
+    }
     assert_eq!(machine.ran(), None);
 }

@@ -2406,6 +2406,8 @@ const MARK_WORDS: &[(&str, &str)] = &[
     ("titlebar", "dot"),
     ("titlebar", "dot-warning"),
     ("titlebar", "dot-needs"),
+    ("status-item", "dot"),
+    ("status-item", "dot-warning"),
     ("notice", "mark"),
 ];
 

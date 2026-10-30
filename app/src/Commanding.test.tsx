@@ -11,7 +11,8 @@ import { forgetExtensionsOn } from "./extensionsOn";
 import { forgetProjectThemes } from "./projectTheme";
 import { forgetScreenReaderMode, screenReaderMode } from "./screenReader";
 import App from "./App";
-import { sayingSomething, stripNamed } from "./test-strips";
+import { stripNamed } from "./test-strips";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * The palette against the whole window: every action it lists reaching what the window
@@ -350,9 +351,8 @@ describe("the palette reaching what the window can do", () => {
 
     await runFromPalette("merge this chat");
 
-    await waitFor(() =>
-      expect(sayingSomething()[0]).toHaveTextContent("charter/fix-it landed: abc1234 → def5678"),
-    );
+    // Said on the status bar's card (#3653), wherever that stands among the window's statuses.
+    expect(await findResult("charter/fix-it landed: abc1234 → def5678")).toBeInTheDocument();
     expect(asked.find(({ cmd }) => cmd === "worktree_merge")?.args).toMatchObject({
       plane: "/home/dev/plane",
       workspace: "alpha",

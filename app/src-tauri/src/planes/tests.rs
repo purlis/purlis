@@ -5016,6 +5016,7 @@ fn a_git_action_asked(
         &purlis_core::hookwire::Ask::Git(Box::new(purlis_core::hookwire::GitAsk {
             chat: session,
             workspace: "alpha".to_owned(),
+            alive: false,
             work,
         })),
         std::time::Duration::from_secs(120),

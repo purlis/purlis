@@ -24,11 +24,16 @@
 //! **A device code goes with its page.** Both are said together, once the login has printed both,
 //! for whoever drives it to show the code before any browser opens, the page on the vendor's own
 //! https host. The login then waits for the vendor by itself, with nothing passed back.
+//!
+//! **Where purlis cannot follow, the person drives** (#4043): [`in_a_terminal`] runs the login in
+//! a terminal of the runner's and says what it prints as [`Event::Printed`], read for nothing and
+//! kept nowhere, and what the person types goes back to it ([`Driving::typed`]). Its status is
+//! asked when it ends, however it ended.
 
 use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -60,6 +65,60 @@ const MOST_PARTIAL: usize = 16 * 1024;
 /// The most of what a login printed that is said back, in characters: its last.
 const MOST_SAID: usize = 4096;
 
+/// How long a login that showed its page has to ask for the code, and one that was given a code
+/// has to answer it, before purlis says it cannot follow it: past these, it asks something else.
+const NEXT_WITHIN: Duration = Duration::from_secs(60);
+
+/// The most typed into a terminal at once: a paste.
+const MOST_TYPED: usize = 64 * 1024;
+
+/// How many steps wait to be asked for before what the login prints is read no further: a login
+/// that prints faster than the window draws is held back, never kept without end.
+const MOST_WAITING: usize = 64;
+
+/// How long the last steps wait to be asked for before no one is taken to be asking any more.
+const UNHEARD_WITHIN: Duration = Duration::from_secs(60);
+
+/// **Where a login's steps are told**: held back while they wait to be asked for, and let go
+/// once no one asks any more, so no thread waits on a window that went away.
+#[derive(Clone)]
+struct Telling {
+    tell: SyncSender<Event>,
+    /// Set once the last steps went unasked for [`UNHEARD_WITHIN`].
+    unheard: Arc<AtomicBool>,
+}
+
+impl Telling {
+    /// Tells `event`, waiting while the steps before it are not yet asked for.
+    fn say(&self, event: Event) {
+        self.say_within(event, None);
+    }
+
+    /// [`Self::say`], giving up after `within` and saying no one asks any more.
+    fn say_within(&self, mut event: Event, within: Option<Duration>) {
+        let until = within.map(|within| Instant::now() + within);
+        loop {
+            match self.tell.try_send(event) {
+                Ok(()) | Err(TrySendError::Disconnected(_)) => return,
+                Err(TrySendError::Full(back)) => event = back,
+            }
+            if self.unheard.load(Ordering::SeqCst) {
+                return;
+            }
+            if until.is_some_and(|until| Instant::now() >= until) {
+                self.unheard.store(true, Ordering::SeqCst);
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// One of the last steps: told within [`UNHEARD_WITHIN`], or no one is asking.
+    fn say_last(&self, event: Event) {
+        self.say_within(event, Some(UNHEARD_WITHIN));
+    }
+}
+
 /// One step of a driven sign-in, as its driver says it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
@@ -69,6 +128,8 @@ pub enum Event {
     DeviceCode { url: String, code: String },
     /// Ask the person for the code the page shows.
     AskCode,
+    /// What a login in a terminal printed, escapes and all ([`in_a_terminal`]).
+    Printed { text: String },
     /// The harness refused the code, in its own words; another may be pasted.
     Refused { said: String },
     /// The login ended well: its harness's status check is asked.
@@ -192,6 +253,8 @@ enum At {
     Pasted,
     /// Its device code is shown, and it waits for the vendor by itself.
     Device,
+    /// In a terminal the person drives: nothing it prints is read.
+    Terminal,
     Over,
 }
 
@@ -201,7 +264,8 @@ enum At {
 pub struct Driven {
     words: &'static Words,
     at: At,
-    started: Instant,
+    /// When it came to where it is.
+    since: Instant,
     /// What was printed on each output since its last line break.
     partial: [String; 2],
     /// The last lines printed, without their escapes.
@@ -229,18 +293,33 @@ impl Driven {
         [&CLAUDE, &OPENCODE_COPILOT]
             .into_iter()
             .find(|words| words.kind == kind && words.plan == plan)
-            .map(|words| Self {
-                words,
-                at: At::Starting,
-                started: now,
-                partial: [String::new(), String::new()],
-                lines: Vec::new(),
-                failed: None,
-                device_page: None,
-                said_signed_in: false,
-                answered: false,
-                reply: None,
-            })
+            .map(|words| Self::at(words, At::Starting, now))
+    }
+
+    /// A login in a terminal the person drives, of any harness, started at `now`.
+    pub fn in_a_terminal(now: Instant) -> Self {
+        Self::at(&NO_WORDS, At::Terminal, now)
+    }
+
+    fn at(words: &'static Words, at: At, now: Instant) -> Self {
+        Self {
+            words,
+            at,
+            since: now,
+            partial: [String::new(), String::new()],
+            lines: Vec::new(),
+            failed: None,
+            device_page: None,
+            said_signed_in: false,
+            answered: false,
+            reply: None,
+        }
+    }
+
+    /// Comes to `at`, from now.
+    fn came_to(&mut self, at: At) {
+        self.at = at;
+        self.since = Instant::now();
     }
 
     /// **What the login printed next on its output**, in any piece: the steps it says.
@@ -250,6 +329,11 @@ impl Driven {
 
     /// [`Self::read`], of what it printed on `stream`. Once it is over, nothing more is kept.
     pub fn read_from(&mut self, stream: Stream, text: &str) -> Vec<Event> {
+        if self.at == At::Terminal {
+            return vec![Event::Printed {
+                text: text.to_owned(),
+            }];
+        }
         let mut said = Vec::new();
         let at = stream as usize;
         for (n, piece) in text.split('\n').enumerate() {
@@ -272,7 +356,7 @@ impl Driven {
             && plain(&self.partial[at]).contains(self.words.asks_code)
         {
             self.partial[at].clear();
-            self.at = At::Asking;
+            self.came_to(At::Asking);
             said.push(Event::AskCode);
         }
         said
@@ -328,7 +412,7 @@ impl Driven {
                             self.device_page.get_or_insert(page);
                         }
                         Some(url) => {
-                            self.at = At::Opened;
+                            self.came_to(At::Opened);
                             said.push(Event::Open { url });
                         }
                         None => self.lost(line, said),
@@ -338,11 +422,11 @@ impl Driven {
             At::Opened
                 if !self.words.asks_code.is_empty() && line.contains(self.words.asks_code) =>
             {
-                self.at = At::Asking;
+                self.came_to(At::Asking);
                 said.push(Event::AskCode);
             }
             At::Pasted if self.words.refuses.iter().any(|r| line.starts_with(r)) => {
-                self.at = At::Asking;
+                self.came_to(At::Asking);
                 said.push(Event::Refused {
                     said: cut(line, MOST_LINE),
                 });
@@ -365,7 +449,7 @@ impl Driven {
     fn device_code(&mut self, code: String, line: &str, said: &mut Vec<Event>) {
         match self.device_page.take() {
             Some(url) if shaped(&code, self.words.code_groups) => {
-                self.at = At::Device;
+                self.came_to(At::Device);
                 said.push(Event::DeviceCode { url, code });
             }
             _ => self.lost(line, said),
@@ -421,7 +505,7 @@ impl Driven {
         {
             return Err("that is not a code: paste the one the page shows, on its own".to_owned());
         }
-        self.at = At::Pasted;
+        self.came_to(At::Pasted);
         Ok(format!("{code}\n"))
     }
 
@@ -431,6 +515,10 @@ impl Driven {
     pub fn ended(&mut self, exit: Option<i32>) -> Vec<Event> {
         if self.at == At::Over {
             return Vec::new();
+        }
+        // Whatever the person did in it, its harness says how it ended.
+        if self.at == At::Terminal {
+            return vec![Event::Checking];
         }
         let mut said = self.read_from(Stream::Err, "\n");
         said.extend(self.read_from(Stream::Out, "\n"));
@@ -475,9 +563,15 @@ impl Driven {
     }
 
     /// **Whether the login waited too long at `now`**: one that shows no page within
-    /// [`PAGE_WITHIN`] cannot be followed. Said once.
+    /// [`PAGE_WITHIN`], asks for no code after it or does not answer a code within
+    /// [`NEXT_WITHIN`] cannot be followed. Said once. The person has their time at the page.
     pub fn waited(&mut self, now: Instant) -> Option<Event> {
-        if self.at != At::Starting || now.saturating_duration_since(self.started) < PAGE_WITHIN {
+        let within = match self.at {
+            At::Starting => PAGE_WITHIN,
+            At::Opened | At::Pasted => NEXT_WITHIN,
+            _ => return None,
+        };
+        if now.saturating_duration_since(self.since) < within {
             return None;
         }
         self.at = At::Over;
@@ -485,6 +579,11 @@ impl Driven {
         Some(Event::CouldNotFollow {
             said: self.said_with(&cut(&plain(&printed), MOST_LINE)),
         })
+    }
+
+    /// Whether what is typed goes to it: a login in a terminal, still running.
+    fn takes_typing(&self) -> bool {
+        self.at == At::Terminal
     }
 
     /// Whether nothing more is read of it.
@@ -610,6 +709,24 @@ pub fn drive_with(
             "purlis follows {kind}'s sign-in only in a terminal: sign it in with Open in terminal"
         )
     })?;
+    run(login, driven, check)
+}
+
+/// **Runs `login` in the runner's terminal it sets up itself, for the person to drive**
+/// (#4043): what it prints is said as [`Event::Printed`], what is typed goes to it
+/// ([`Driving::typed`]), and `check` is asked once it ends, however it ended.
+pub fn in_a_terminal(
+    login: &Login,
+    check: impl FnOnce() -> Standing + Send + 'static,
+) -> Result<Driving, String> {
+    run(login, Driven::in_a_terminal(Instant::now()), check)
+}
+
+fn run(
+    login: &Login,
+    driven: Driven,
+    check: impl FnOnce() -> Standing + Send + 'static,
+) -> Result<Driving, String> {
     let mut command = Command::new(&login.program);
     command
         .args(&login.args)
@@ -623,7 +740,11 @@ pub fn drive_with(
     let mut child = crate::forklock::spawn(&mut command)
         .map_err(|e| format!("{} could not be run: {e}", login.program))?;
     let input: Input = Arc::new(Mutex::new(child.stdin.take()));
-    let (tell, events) = std::sync::mpsc::channel();
+    let (tell, events) = std::sync::mpsc::sync_channel(MOST_WAITING);
+    let tell = Telling {
+        tell,
+        unheard: Arc::new(AtomicBool::new(false)),
+    };
     let driven = Arc::new(Mutex::new(driven));
     let readers: Vec<_> = [
         (
@@ -672,7 +793,7 @@ fn reading(
     mut from: Box<dyn Read + Send>,
     driven: Arc<Mutex<Driven>>,
     input: Input,
-    tell: Sender<Event>,
+    tell: Telling,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut buffer = [0u8; 4096];
@@ -695,7 +816,7 @@ fn reading(
                 (driven.read_from(stream, &text), driven.reply())
             };
             for event in said {
-                let _ = tell.send(event);
+                tell.say(event);
             }
             // A login that went away takes no answer, and says so as it ends.
             if let Some(reply) = reply
@@ -719,14 +840,14 @@ fn watching(
     readers: Vec<std::thread::JoinHandle<()>>,
     driven: &Mutex<Driven>,
     cancelled: &AtomicBool,
-    tell: &Sender<Event>,
+    tell: &Telling,
     check: impl FnOnce() -> Standing,
 ) {
     let started = Instant::now();
     let ended = loop {
         if cancelled.load(Ordering::SeqCst) {
             end(&mut child);
-            let _ = tell.send(Event::Cancelled);
+            tell.say_last(Event::Cancelled);
             return;
         }
         match child.try_wait() {
@@ -743,7 +864,7 @@ fn watching(
         };
         if let Some(event) = late {
             end(&mut child);
-            let _ = tell.send(event);
+            tell.say_last(event);
             return;
         }
         // It was said to be over while it ran (a page purlis does not open): nothing more is
@@ -754,7 +875,7 @@ fn watching(
         }
         if started.elapsed() > LONGEST {
             end(&mut child);
-            let _ = tell.send(Event::Failed {
+            tell.say_last(Event::Failed {
                 why: "the sign-in took too long, so purlis ended it".to_owned(),
             });
             return;
@@ -772,7 +893,7 @@ fn watching(
         .ended(ended);
     let checking = said.last() == Some(&Event::Checking);
     for event in said {
-        let _ = tell.send(event);
+        tell.say_last(event);
     }
     if checking {
         let standing = check();
@@ -780,7 +901,7 @@ fn watching(
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .checked(standing);
-        let _ = tell.send(event);
+        tell.say_last(event);
     }
 }
 
@@ -820,9 +941,32 @@ impl Driving {
             .map_err(|e| format!("the code could not be passed to the sign-in: {e}"))
     }
 
+    /// **Passes what the person typed to a login in a terminal**, as it is.
+    pub fn typed(&self, text: &str) -> Result<(), String> {
+        let takes = self
+            .driven
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .takes_typing();
+        if !takes {
+            return Err("the sign-in is not in a terminal now".to_owned());
+        }
+        if text.len() > MOST_TYPED {
+            return Err("that is too much to type into a sign-in at once".to_owned());
+        }
+        let mut input = self.input.lock().unwrap_or_else(PoisonError::into_inner);
+        let input = input
+            .as_mut()
+            .ok_or_else(|| "the sign-in takes no more input".to_owned())?;
+        input
+            .write_all(text.as_bytes())
+            .and_then(|()| input.flush())
+            .map_err(|e| format!("what was typed could not be passed to the sign-in: {e}"))
+    }
+
     /// **Ends the process that drives the login**: [`Event::Cancelled`] follows. A code being
     /// passed on meanwhile fails as it ends. Where that process only reaches the login, as
-    /// `docker exec` does, the login itself may run on until it stops by itself (#4043).
+    /// `docker exec` does, the login ends with its input, on the runner ([`super::held`]).
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
     }

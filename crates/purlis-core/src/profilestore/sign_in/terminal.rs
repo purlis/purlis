@@ -62,6 +62,8 @@ pub fn follow(
                     asked = true;
                 }
                 Event::Checking => terminal.say("Checking it is signed in on the runner…"),
+                // Said only by a login in the window's terminal (#4043), which this never follows.
+                Event::Printed { .. } => {}
                 Event::SignedIn => {
                     terminal.say(&format!("'{profile}' is signed in on pool {pool}"));
                     return Ok(());
