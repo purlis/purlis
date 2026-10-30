@@ -1067,6 +1067,25 @@ pub fn app_state_held(data: &Path) -> Vec<Denial> {
     .collect()
 }
 
+/// **The sign-ins a runner was carried, which no chat reads or writes** (#4055): `<data>/carried`
+/// and everything below it ([`crate::profilestore::CARRIED`]), under every spelling a
+/// case-folding disk takes for it. A drained runner's sign-ins wait there until the runner takes
+/// each into its profile, so a chat neither reads one nor puts one there for a profile to take.
+pub fn carried_held(data: &Path) -> Vec<Denial> {
+    let carried = data.join(crate::profilestore::CARRIED);
+    [(carried.clone(), Reach::AndBelow), (carried, Reach::Itself)]
+        .into_iter()
+        .map(|(path, reach)| Denial {
+            class: Class::Integrity,
+            path,
+            access: Access::ReadWrite,
+            named: None,
+            reach,
+            any_case: true,
+        })
+        .collect()
+}
+
 /// **A part of a denied path that stands for any one name** (SK-9): `workspaces/*/skills` holds
 /// the skills of every workspace, made now or later. Only [`skills_held`] writes one.
 pub const ANY_NAME: &str = "*";
@@ -2066,6 +2085,8 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     // the data home where only purlis writes it.
     for data in Homes::data_homes(machine) {
         paths.extend(app_state_held(&data));
+        // And the sign-ins a runner was carried, waiting to be taken in (#4055).
+        paths.extend(carried_held(&data));
     }
     // A vault's file is kept under the other names purlis finds for it in the project.
     let mut vaults: Vec<PathBuf> = Vec::new();

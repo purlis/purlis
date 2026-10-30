@@ -7977,3 +7977,25 @@ fn a_cluster_pools_program_whose_package_would_be_the_home_or_above_it_is_held_a
         );
     }
 }
+
+/// #4055: the sign-ins a drained runner carried wait in the data home until the runner takes
+/// each into its profile. No chat reads one there, nor puts one there for a profile to take.
+#[test]
+fn a_chat_is_denied_the_sign_ins_a_runner_was_carried() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let on = machine(Os::MacOs);
+    let data = Homes::charter_data(&on).expect("a data home");
+    let carried = data.join(crate::profilestore::CARRIED);
+    let denied = Denied::of(plane.path(), &on);
+    for reach in [Reach::AndBelow, Reach::Itself] {
+        assert!(
+            denied.paths.iter().any(|it| it.path == carried
+                && it.reach == reach
+                && it.access == Access::ReadWrite
+                && it.class == Class::Integrity
+                && it.any_case),
+            "{reach:?}: {:?}",
+            denied.paths
+        );
+    }
+}

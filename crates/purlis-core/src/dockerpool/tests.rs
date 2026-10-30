@@ -2809,3 +2809,30 @@ fn a_home_with_no_sign_in_or_one_unread_carries_nothing_and_ends_well() {
         String::from_utf8_lossy(&ran.stderr)
     );
 }
+
+/// **A carry takes nothing a folder linked out of the old home holds** (#4055): a profile's
+/// folder in the old home that is a link to the new home's own sign-in is passed over.
+#[cfg(unix)]
+#[test]
+fn a_carry_takes_nothing_through_a_link_out_of_the_old_home() {
+    let from = tempfile::tempdir().unwrap();
+    let to = tempfile::tempdir().unwrap();
+    let own = to.path().join(".claude");
+    std::fs::create_dir_all(&own).unwrap();
+    std::fs::write(own.join(".credentials.json"), "the new runner's own").unwrap();
+    let profile = from.path().join(".local/share/purlis/profiles/work");
+    std::fs::create_dir_all(&profile).unwrap();
+    std::os::unix::fs::symlink(&own, profile.join("config")).unwrap();
+
+    let ran = carried(from.path(), to.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+
+    let stage = to
+        .path()
+        .join(crate::profilestore::carried_under_a_runner_home());
+    assert_eq!(std::fs::read_dir(&stage).unwrap().count(), 0);
+}

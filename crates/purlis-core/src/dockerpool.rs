@@ -64,13 +64,15 @@ pub const PURLIS: &str = "/usr/local/bin/purlis";
 /// runs, so nothing is written where they could have put something first: the folder is walked
 /// to one folder at a time, never through a link, and held by its real path, and the files go
 /// into a batch folder of its own that no one knew the name of before it was made, each written
-/// only where nothing is (`set -C`). Only a plain file is carried, never a link. What it makes is
+/// only where nothing is (`set -C`) and put in place whole, by a link. Only a plain file inside
+/// the old home is carried, never a link or what a folder linked out of it holds. What it makes is
 /// the runner's user's alone. A file that cannot be carried is said and passed over: the profile
 /// is then signed in again, as before any was carried, and the drain goes on.
 pub const COPY_PROFILES: &str = r#"set -u
 umask 077
 from=$1 to=$2 stage=$3
 shift 3
+from=$(cd -P "$from" && pwd -P) || exit 1
 cd -P "$to" || exit 1
 here=$(pwd -P)
 set -f
@@ -95,6 +97,7 @@ for pair in "$@"; do
   for found in "$from"/$src; do
     rel=${found#"$from/"}
     [ -f "$found" ] && [ ! -L "$found" ] && [ -r "$found" ] || continue
+    case $(realpath -- "$found") in "$from"/*) ;; *) continue ;; esac
     out=$dst
     case $src in
       *'*'*)
@@ -104,8 +107,9 @@ for pair in "$@"; do
         out=${dst%%\**}$name${dst#*\*}
         ;;
     esac
-    { mkdir -p "${out%/*}" && [ ! -e "$out" ] && [ ! -L "$out" ] && cat "$found" > "$out"; } \
-      || echo "not carried: $rel" >&2
+    { mkdir -p "${out%/*}" && [ ! -e "$out" ] && [ ! -L "$out" ] && cat "$found" > "$out.part" \
+        && ln "$out.part" "$out"; } || echo "not carried: $rel" >&2
+    rm -f "$out.part"
   done
 done
 cd .. && rmdir "$batch" 2>/dev/null
