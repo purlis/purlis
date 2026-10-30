@@ -131,7 +131,8 @@ pub struct SandboxTemplateSpec {
     group = "extensions.agents.x-k8s.io",
     version = "v1beta1",
     kind = "SandboxWarmPool",
-    namespaced
+    namespaced,
+    status = "SandboxWarmPoolStatus"
 )]
 #[serde(rename_all = "camelCase")]
 pub struct SandboxWarmPoolSpec {
@@ -142,6 +143,15 @@ pub struct SandboxWarmPoolSpec {
     /// to a fresh claim, whose runner the operator would not vouch for (#2058).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub update_strategy: Option<UpdateStrategy>,
+}
+
+/// What upstream says about a warm pool: purlis reads how many of its runners are ready, for its
+/// metrics (#3737).
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SandboxWarmPoolStatus {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ready_replicas: Option<i32>,
 }
 
 /// A warm pool's update strategy.
@@ -627,6 +637,7 @@ pub fn warm_pool_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) 
                 type_: RECREATE.to_owned(),
             }),
         },
+        status: None,
     }
 }
 
