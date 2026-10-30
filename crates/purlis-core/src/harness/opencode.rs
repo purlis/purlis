@@ -12,6 +12,11 @@ use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
 /// opencode's adapter.
+///
+/// **What its reports can prove** (#3822): only the chat's token. Its shim's hooks run inside
+/// purlis's wrap, which denies them the spool their armed key is in
+/// ([`crate::hookwire::armed`]), so any mode a report named would read as asking. None is
+/// read (the trait's default `reported_mode`): opencode documents no classifier-backed mode.
 pub struct Opencode;
 
 /// The one opencode adapter.
@@ -212,19 +217,6 @@ impl HarnessAdapter for Opencode {
     /// Yes: the wrap is around the whole harness, so its plugin's hooks run inside it.
     fn sandbox_holds_what_it_starts(&self) -> bool {
         true
-    }
-
-    /// **Nothing** (#3787, #3822): opencode documents no classifier-backed mode, so no word of
-    /// its is read as a mode. Nor could a report of its prove one: its hooks run inside the
-    /// wrap, which denies them the spool their armed key is in ([`crate::hookwire::armed`]), so
-    /// a line of theirs proves no more than the chat's token, and any mode it named would read
-    /// as asking.
-    fn reported_mode(
-        &self,
-        permission_mode: Option<&str>,
-    ) -> Option<crate::dispatchmode::Reported> {
-        let _ = permission_mode;
-        None
     }
 
     /// Never, by the operator's ruling P8 of 2026-10-27 (#3468): opencode's plugins are code it

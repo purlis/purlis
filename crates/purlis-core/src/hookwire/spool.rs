@@ -1603,6 +1603,8 @@ fn forget(
         write_keys(dir, &keys)?;
     }
     tidy(dir, &keys, &ended);
+    // And the keys their hooks were armed with (#3822): no app holds an ended chat's.
+    super::armed::disarm_ended(dir, &ended);
     // And the dispatch messages an ended chat left queued (#3902): the app delivered or
     // reported them as the chat closed, so what is left checks under no key it keeps.
     if let Ok(entries) = std::fs::read_dir(dir.join(crate::dispatchqueue::DIR)) {

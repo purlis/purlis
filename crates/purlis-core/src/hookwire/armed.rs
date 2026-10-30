@@ -38,6 +38,14 @@ pub const DIR: &str = "armed";
 /// How many random bytes a key is.
 const A_KEY_IS: usize = 32;
 
+/// How many characters a key is written in: two hex digits a byte.
+const A_KEY_IS_WRITTEN_IN: usize = 2 * A_KEY_IS;
+
+/// Where chat `chat`'s key is in the spool `spool`.
+fn file(spool: &Path, chat: u32) -> std::path::PathBuf {
+    spool.join(DIR).join(chat.to_string())
+}
+
 /// One chat's armed key. **Its `Debug` never shows the value.**
 #[derive(Clone, PartialEq, Eq)]
 pub struct ArmedKey(String);
@@ -61,12 +69,12 @@ impl ArmedKey {
             return None;
         }
         let mut text = String::new();
-        std::fs::File::open(spool.join(DIR).join(chat.to_string()))
+        std::fs::File::open(file(&spool, chat))
             .ok()?
-            .take(2 * A_KEY_IS as u64 + 1)
+            .take(A_KEY_IS_WRITTEN_IN as u64 + 1)
             .read_to_string(&mut text)
             .ok()?;
-        let well_formed = text.len() == 2 * A_KEY_IS
+        let well_formed = text.len() == A_KEY_IS_WRITTEN_IN
             && text
                 .bytes()
                 .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'));
@@ -110,13 +118,29 @@ pub(crate) fn arm(spool: &Path, chat: u32, key: &ArmedKey) -> std::io::Result<()
 /// Removes chat `chat`'s key from `spool`, as its chat ends. Best effort: a key left behind is
 /// one the app no longer holds, so it proves nothing.
 pub(crate) fn disarm(spool: &Path, chat: u32) {
-    let _ = std::fs::remove_file(spool.join(DIR).join(chat.to_string()));
+    let _ = std::fs::remove_file(file(spool, chat));
 }
 
-/// Removes every chat's key from `spool`, as a listener binds: the keys a listener before it
-/// wrote are held by no app now. Best effort, as [`disarm`] is.
-pub(crate) fn disarm_all(spool: &Path) {
-    let _ = std::fs::remove_dir_all(spool.join(DIR));
+/// Removes from `spool` the key of every chat `ended` names, as a project's spool forgets the
+/// chats that are not coming back ([`super::spool::forget_all_but`]). Never a running chat's:
+/// only the listener that armed a chat, or a project's open that knows which chats come back,
+/// removes its key. A name that is not a chat's number, or is not a plain file, is left.
+pub(crate) fn disarm_ended(spool: &Path, ended: &dyn Fn(u32) -> bool) {
+    let Ok(entries) = std::fs::read_dir(spool.join(DIR)) else {
+        return;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let name = entry.file_name();
+        let Some(chat) = name
+            .to_str()
+            .and_then(|name| name.parse::<u32>().ok().filter(|n| n.to_string() == name))
+        else {
+            continue;
+        };
+        if ended(chat) && entry.file_type().is_ok_and(|kind| kind.is_file()) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
 }
 
 #[cfg(test)]

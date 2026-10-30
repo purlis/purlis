@@ -51,8 +51,13 @@ fn a_disarmed_chat_reads_no_key() {
     disarm(&spool, 4);
     assert_eq!(ArmedKey::read(&socket, 4), None);
 
-    disarm_all(&spool);
-    assert_eq!(ArmedKey::read(&socket, 6), None);
+    arm(&spool, 7, &ArmedKey::new().expect("a key")).expect("written");
+    disarm_ended(&spool, &|chat| chat == 6);
+    assert_eq!(ArmedKey::read(&socket, 6), None, "an ended chat's key goes");
+    assert!(
+        ArmedKey::read(&socket, 7).is_some(),
+        "a running chat's key stays"
+    );
 }
 
 #[test]
@@ -66,7 +71,7 @@ fn nothing_is_armed_beside_a_socket_a_sandboxed_chat_is_not_denied() {
     assert!(arm(&spool, 4, &ArmedKey::new().expect("a key")).is_err());
     assert!(!spool.join(DIR).exists());
     std::fs::create_dir_all(spool.join(DIR)).unwrap();
-    std::fs::write(spool.join(DIR).join("4"), "ab".repeat(A_KEY_IS)).unwrap();
+    std::fs::write(file(&spool, 4), "ab".repeat(A_KEY_IS)).unwrap();
     assert_eq!(ArmedKey::read(&socket, 4), None);
 }
 

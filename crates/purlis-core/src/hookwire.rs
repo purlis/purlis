@@ -3088,24 +3088,12 @@ pub fn deliver_report(
     token: Option<&ChatToken>,
     report: &Report,
 ) -> io::Result<Delivered> {
-    deliver_proven(
+    deliver_armed(
         path,
         token,
         armed::ArmedKey::read(path, report.chat).as_ref(),
         report,
     )
-}
-
-/// [`deliver_report`], with `armed` the key it carries: on the socket alone, never into the
-/// spool, whose lines prove no mode.
-#[cfg(unix)]
-pub fn deliver_proven(
-    path: &std::path::Path,
-    token: Option<&ChatToken>,
-    armed: Option<&armed::ArmedKey>,
-    report: &Report,
-) -> io::Result<Delivered> {
-    deliver_armed(path, token, armed.map(armed::ArmedKey::expose), report)
 }
 
 /// Delivers a tool call's line: taken by the host at `path`, or spooled beside it
@@ -3151,19 +3139,20 @@ pub fn deliver<L: SpoolLine>(
     deliver_armed(path, token, None, line)
 }
 
-/// [`deliver`], with `armed` beside the token on the socket ([`line_armed`]).
+/// [`deliver`], with `armed` beside the token on the socket ([`line_armed`]): on the socket
+/// alone, never into the spool, whose lines prove no mode (#3822).
 #[cfg(unix)]
-fn deliver_armed<L: SpoolLine>(
+pub fn deliver_armed<L: SpoolLine>(
     path: &std::path::Path,
     token: Option<&ChatToken>,
-    armed: Option<&str>,
+    armed: Option<&armed::ArmedKey>,
     line: &L,
 ) -> io::Result<Delivered> {
     use std::io::{BufRead, Read, Write};
 
     let delivery = Delivery::new();
     let delivered = with_delivery(line, delivery.as_ref())?;
-    let bytes = line_armed(token, armed, &delivered)?;
+    let bytes = line_armed(token, armed.map(armed::ArmedKey::expose), &delivered)?;
     let to = path.to_path_buf();
     let answered = within(A_NOTICE_TAKES_AT_MOST, move || {
         let socket = std::os::unix::net::UnixStream::connect(&to)?;
@@ -3475,8 +3464,6 @@ impl Listener {
         let spool = spool::dir_for(path);
         let tokens = if spool::covered(&spool) {
             private_directory(&spool)?;
-            // The armed keys a listener before this one wrote are held by no app now (#3822).
-            armed::disarm_all(&spool);
             ChatTokens::spooling_into(spool)
         } else {
             tracing::warn!(
@@ -4086,10 +4073,7 @@ fn serve(
                 // A mode is believed only from the chat's armed hook (#3822): one any other
                 // line names reads as asking, after the line's copy was told by what it said.
                 if !tokens.proves(chat, armed.as_deref()) {
-                    report.detail.mode = report
-                        .detail
-                        .mode
-                        .map(|_| crate::dispatchmode::Reported::Asks);
+                    report.mode_unproven();
                 }
                 recorded = Some((hearing.each)(report));
             }

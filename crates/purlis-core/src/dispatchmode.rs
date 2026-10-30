@@ -108,6 +108,15 @@ pub fn of_its_own_harness(report: &crate::hookwire::Report, now: Option<&str>) -
     report.detail.mode
 }
 
+impl crate::hookwire::Report {
+    /// **This report's mode, as one that cannot prove it came from the chat's armed hook**
+    /// (#3822): any mode it names reads as [`Reported::Asks`], and one naming none still names
+    /// none. What the hook channel makes of a report without its chat's armed key.
+    pub fn mode_unproven(&mut self) {
+        self.detail.mode = self.detail.mode.map(|_| Reported::Asks);
+    }
+}
+
 /// **The words a chat on `harness` is started with for `level`**, after its profile's own
 /// `command`: its adapter's ([`crate::harness::HarnessAdapter::task_mode_words`]), and none for
 /// a grade's chat (`graded`), whose mode its grade pins and which a flag would outrank.

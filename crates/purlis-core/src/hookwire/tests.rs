@@ -5017,7 +5017,7 @@ fn a_reported_mode_is_believed_only_from_the_chats_armed_hook() {
             .expect("the report was heard")
     };
 
-    deliver_proven(
+    deliver_armed(
         &path,
         Some(&seven),
         Some(&armed),
@@ -5030,7 +5030,7 @@ fn a_reported_mode_is_believed_only_from_the_chats_armed_hook() {
         "the armed hook's own word"
     );
 
-    deliver_proven(
+    deliver_armed(
         &path,
         Some(&seven),
         None,
@@ -5044,7 +5044,7 @@ fn a_reported_mode_is_believed_only_from_the_chats_armed_hook() {
     );
 
     let other = tokens.armed_key(8).expect("chat 8 is armed");
-    deliver_proven(
+    deliver_armed(
         &path,
         Some(&seven),
         Some(&other),
@@ -5057,7 +5057,7 @@ fn a_reported_mode_is_believed_only_from_the_chats_armed_hook() {
         "another chat's key proves nothing of this one"
     );
 
-    deliver_proven(
+    deliver_armed(
         &path,
         Some(&eight),
         Some(&armed),
@@ -5070,7 +5070,7 @@ fn a_reported_mode_is_believed_only_from_the_chats_armed_hook() {
         "nor this chat's key of another"
     );
 
-    deliver_proven(&path, Some(&seven), None, &a_stop(7)).expect("taken");
+    deliver_armed(&path, Some(&seven), None, &a_stop(7)).expect("taken");
     assert_eq!(
         heard(),
         None,
