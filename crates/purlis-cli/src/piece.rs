@@ -41,8 +41,13 @@ pub enum WorktreeCommand {
     /// commits: it never amends, resets, rebases, merges or pushes, and the repository's own
     /// hooks are not run. A chat that is not sandboxed uses `git commit`.
     Commit {
-        /// The commit message.
-        #[arg(short = 'm', long = "message", value_name = "MESSAGE")]
+        /// The commit message. One that starts with `-` is the message too (#3927).
+        #[arg(
+            short = 'm',
+            long = "message",
+            value_name = "MESSAGE",
+            allow_hyphen_values = true
+        )]
         message: Option<String>,
         /// Stage every change to a file git already tracks. A new file must be named.
         #[arg(short = 'a', long = "all")]
@@ -50,7 +55,8 @@ pub enum WorktreeCommand {
         /// Never done. Taken only so that it is refused in a sentence.
         #[arg(long, hide = true)]
         amend: bool,
-        /// Paths to stage, relative to where you stand, inside this folder.
+        /// Paths to stage, relative to where you stand in the branch folder (or with `env -C
+        /// <branch folder>`), or from a folder above it as `.worktrees/<repo>/<piece>/<path>`.
         #[arg(value_name = "PATH")]
         paths: Vec<String>,
     },
@@ -187,7 +193,17 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
             all,
             amend,
             paths,
-        } => crate::gitask::commit(message, all, amend, paths, &mut say),
+        } => crate::gitask::commit(
+            &crate::gitask::RunIn {
+                root: &root,
+                cwd: &here.cwd,
+            },
+            message,
+            all,
+            amend,
+            paths,
+            &mut say,
+        ),
         WorktreeCommand::Update { base, go_on, abort } => {
             let step = match (go_on, abort) {
                 (true, _) => purlis_core::hookwire::UpdateStep::Continue,

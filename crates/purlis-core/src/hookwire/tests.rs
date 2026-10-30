@@ -570,6 +570,7 @@ fn a_commit_ask_names_the_message_and_what_to_stage_and_nothing_else() {
         chat: 7,
         message: "one\n\ntwo".to_owned(),
         stage: Stage::Paths(vec!["src/a.rs".to_owned(), "-n".to_owned()]),
+        folder: None,
     }));
     let line = line_with(None, &ask).expect("a line");
     let text = std::str::from_utf8(&line).expect("text");

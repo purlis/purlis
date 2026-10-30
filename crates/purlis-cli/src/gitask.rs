@@ -10,11 +10,11 @@
 //! the chat's number), sandboxed or not, so a chat gets one behaviour (D-2). Outside a chat, or
 //! where no app takes the ask, the command runs here as it always has.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use purlis_core::gitbroker::commit as broker;
-use purlis_core::hookwire::{self, CommitAsk, GitAsk, GitWork, SOCKET_ENV, Stage};
+use purlis_core::hookwire::{self, CommitAsk, FolderName, GitAsk, GitWork, SOCKET_ENV, Stage};
 use purlis_core::repocmd::Say;
 use purlis_core::worktree::git;
 
@@ -119,16 +119,122 @@ pub fn commit_ask(
     Ok((message, stage))
 }
 
+/// Where `purlis worktree commit` runs (#3927): the project at `root` and the folder `cwd`.
+pub struct RunIn<'a> {
+    pub root: &'a Path,
+    pub cwd: &'a Path,
+}
+
+impl RunIn<'_> {
+    /// The branch folder the command runs in, by its names, and its top and where the command
+    /// stands, as the kernel names them; `None` outside one.
+    fn folder(&self) -> Option<(FolderName, PathBuf, PathBuf)> {
+        let at = purlis_core::worktree::locate(self.root, self.cwd)?;
+        let top = purlis_core::worktree::path_for(self.root, &at.workspace, &at.repo, &at.piece)
+            .ok()
+            .and_then(|top| std::fs::canonicalize(top).ok())?;
+        let here = std::fs::canonicalize(self.cwd).ok()?;
+        Some((
+            FolderName {
+                workspace: at.workspace,
+                repo: at.repo,
+                piece: at.piece,
+            },
+            top,
+            here,
+        ))
+    }
+}
+
+/// `paths`, named from `here` in the branch folder `named` whose top is `top`, as paths
+/// relative to that top, as git takes them there (#3927): `..` within the folder, a path
+/// written whole inside it, and one spelled from the workspace or the project
+/// (`.worktrees/<repo>/<piece>/…`, `workspaces/<ws>/.worktrees/<repo>/<piece>/…`) that names
+/// this very folder. A path that leaves the folder is refused, naming the spellings that work.
+pub fn relative_to_the_folder(
+    top: &Path,
+    here: &Path,
+    named: &FolderName,
+    paths: Vec<String>,
+) -> Result<Vec<String>, String> {
+    use std::path::Component;
+    let below = here.strip_prefix(top).unwrap_or(Path::new(""));
+    let from_workspace = Path::new(purlis_core::worktree::DIR_NAME)
+        .join(&named.repo)
+        .join(&named.piece);
+    let from_project = Path::new("workspaces")
+        .join(&named.workspace)
+        .join(&from_workspace);
+    let outside = |path: &str| {
+        format!(
+            "the path {path:?} is outside branch folder {} · {}: name paths relative to the \
+             branch folder, running the command inside it or with `env -C <branch folder>`, or \
+             from the workspace as `{}/<path>`. Nothing was committed",
+            purlis_core::shown::short(&named.repo),
+            purlis_core::shown::short(&named.piece),
+            from_workspace.display()
+        )
+    };
+    paths
+        .into_iter()
+        .map(|path| {
+            let given = Path::new(&path);
+            let from_top = if given.is_absolute() {
+                given
+                    .strip_prefix(top)
+                    .map_err(|_| outside(&path))?
+                    .to_path_buf()
+            } else if let Ok(rest) = given
+                .strip_prefix(&from_workspace)
+                .or_else(|_| given.strip_prefix(&from_project))
+            {
+                rest.to_path_buf()
+            } else {
+                below.join(given)
+            };
+            let mut parts: Vec<String> = Vec::new();
+            for part in from_top.components() {
+                match part {
+                    Component::Normal(name) => parts.push(name.to_string_lossy().into_owned()),
+                    Component::CurDir => {}
+                    Component::ParentDir => {
+                        parts.pop().ok_or_else(|| outside(&path))?;
+                    }
+                    Component::RootDir | Component::Prefix(_) => return Err(outside(&path)),
+                }
+            }
+            Ok(if parts.is_empty() {
+                ".".to_owned()
+            } else {
+                parts.join("/")
+            })
+        })
+        .collect()
+}
+
 /// `purlis worktree commit`: hands the commit to the app that started this sandboxed chat
 /// (#1055), prints what it answers, and answers the exit status. Nothing is committed by this
-/// process: a chat that is not sandboxed is told to use git.
+/// process: a chat that is not sandboxed is told to use git. Run inside a branch folder, its
+/// paths are taken from where it runs there and the ask names that folder (#3927).
 pub fn commit(
+    run_in: &RunIn<'_>,
     message: Option<String>,
     all: bool,
     amend: bool,
     paths: Vec<String>,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
+    let folder = run_in.folder();
+    let paths = match &folder {
+        Some((named, top, here)) => match relative_to_the_folder(top, here, named, paths) {
+            Ok(paths) => paths,
+            Err(why) => {
+                say(Say::Fail(why.into()));
+                return 2;
+            }
+        },
+        None => paths,
+    };
     let (message, stage) = match commit_ask(message, all, amend, paths) {
         Ok(ask) => ask,
         Err(why) => {
@@ -140,12 +246,14 @@ pub fn commit(
         say(Say::Fail(broker::PLAIN_GIT.into()));
         return 1;
     }
+    let folder = folder.map(|(named, _, _)| named);
     let forwarded = asked(
         |chat| {
             hookwire::Ask::Commit(Box::new(CommitAsk {
                 chat,
                 message,
                 stage,
+                folder,
             }))
         },
         A_COMMIT_TAKES_AT_MOST,
