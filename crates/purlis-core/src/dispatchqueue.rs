@@ -348,8 +348,8 @@ pub fn waiting(socket: &Path, chat: u32) -> Vec<Found> {
         .map(|(seq, _)| {
             let path = dir.join(name(seq, "json"));
             match read(socket, chat, seq, &path) {
-                Some(Read::Fresh(message)) => Found::Message(message),
-                Some(Read::Delivered) => Found::Delivered(path),
+                Some(Looked::Fresh(message)) => Found::Message(message),
+                Some(Looked::Delivered) => Found::Delivered(path),
                 None => Found::Unchecked(path),
             }
         })
@@ -357,13 +357,13 @@ pub fn waiting(socket: &Path, chat: u32) -> Vec<Found> {
 }
 
 /// What a message's file read as, where it checked.
-enum Read {
+enum Looked {
     Fresh(Waiting),
     /// At or below the floor: delivered already.
     Delivered,
 }
 
-fn read(socket: &Path, chat: u32, seq: u64, path: &Path) -> Option<Read> {
+fn read(socket: &Path, chat: u32, seq: u64, path: &Path) -> Option<Looked> {
     use std::io::Read;
     let mut bytes = Vec::new();
     std::fs::File::open(path)
@@ -382,10 +382,10 @@ fn read(socket: &Path, chat: u32, seq: u64, path: &Path) -> Option<Read> {
         return None;
     }
     if seq <= delivered_floor(socket, chat, &file.key) {
-        return Some(Read::Delivered);
+        return Some(Looked::Delivered);
     }
     let body: Body = serde_json::from_str(&file.body).ok()?;
-    Some(Read::Fresh(Waiting {
+    Some(Looked::Fresh(Waiting {
         seq,
         id: body.id,
         at: body.at,
