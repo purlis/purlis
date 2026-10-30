@@ -2287,6 +2287,14 @@ impl Chats {
             .unwrap_or_default()
     }
 
+    /// Whether open chat `session`'s server dials in to its doors (#3316).
+    pub fn dials_in(&self, session: u32) -> bool {
+        lock(&self.open)
+            .get(&session)
+            .and_then(|running| running.confinement.as_ref())
+            .is_some_and(purlis_core::sandbox::Confinement::dials_in)
+    }
+
     /// **Parks `slot`, a connection open chat `ask.chat`'s server dialled in, at its door on
     /// `ask.serve`** (#3316): whether it is the first that door was given. Refused, the slot told
     /// why and closed, where the chat is not open here, has no door on that port, or holds the
@@ -3948,10 +3956,31 @@ impl Chats {
         // its proxy runs, before its line is compiled: a socket for each, in its own folder. A
         // port it serves on none of is told, and withdrawn from its proxy where only its listen
         // grant gave it.
+        let claude_code = sandbox
+            .is_some_and(|applied| applied.harness() == purlis_core::harness::Harness::ClaudeCode);
+        // A Claude Code chat's server dials in instead (#3316): it can make no socket of its
+        // own, so its doors carry to connections it parks through its hook socket. macOS alone,
+        // where its hook socket is reachable from its sandbox.
         if let (Some(confinement), Some(confines)) = (confinement.as_mut(), confines.as_ref())
-            && sandbox.is_some_and(|applied| {
-                applied.harness() != purlis_core::harness::Harness::ClaudeCode
-            })
+            && claude_code
+            && cfg!(target_os = "macos")
+        {
+            let widened = &confines.widened;
+            let mut unserved = widened.unserved.clone();
+            match confinement.dial(widened) {
+                Ok(more) => unserved.extend(more),
+                Err(why) => {
+                    tracing::warn!("purlis: a chat's servers were not served ({why})");
+                    late.extend(purlis_core::sandbox::door::unservable_said(
+                        &widened.listens,
+                        &why.to_string(),
+                    ));
+                }
+            }
+            late.extend(purlis_core::sandbox::door::unserved_said(&unserved));
+        }
+        if let (Some(confinement), Some(confines)) = (confinement.as_mut(), confines.as_ref())
+            && !claude_code
         {
             let widened = &confines.widened;
             let mut unserved = widened.unserved.clone();
@@ -4077,6 +4106,17 @@ impl Chats {
             env.push((
                 purlis_core::sandbox::door::FOLDER_ENV.to_owned(),
                 folder.display().to_string(),
+            ));
+        }
+        // Or the hook socket its servers dial in to (#3316), for `purlis listen`'s shim.
+        if let Some(hook) = socket
+            .as_deref()
+            .filter(|_| confinement.as_ref().is_some_and(|it| it.dials_in()))
+        {
+            env.retain(|(key, _)| key != purlis_core::sandbox::door::DIAL_ENV);
+            env.push((
+                purlis_core::sandbox::door::DIAL_ENV.to_owned(),
+                hook.display().to_string(),
             ));
         }
         what_its_hooks_read(

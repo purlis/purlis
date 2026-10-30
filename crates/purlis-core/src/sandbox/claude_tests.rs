@@ -694,3 +694,30 @@ fn a_hook_socket_in_the_per_user_fallback_folder_is_never_the_chat_s_to_write() 
         json!([socket.display().to_string()])
     );
 }
+
+/// #3316: a Claude Code chat allowed to listen on a port compiles the very settings it would
+/// without the grant, `allowLocalBinding` off among them: its server dials in to its door
+/// through the hook socket it already reaches, and nothing of Claude Code's own sandbox changes.
+#[test]
+fn a_claude_code_chat_allowed_to_listen_compiles_the_same_settings_byte_for_byte() {
+    let root = tempfile::tempdir().expect("a project");
+    let before = compiled_at(root.path(), None, &Grants::default());
+    let before = claude::settings(&before).expect("compiles");
+    super::local::grant_listen(root.path(), 5173).expect("kept");
+    let granted = compiled_at(root.path(), None, &Grants::default());
+    assert!(
+        granted.confines().widened.listens.contains(&5173),
+        "the grant is in what it was compiled with"
+    );
+    let after = claude::settings(&granted).expect("compiles");
+    assert_eq!(after, before);
+    assert_eq!(
+        serde_json::to_string(&after.sandbox).expect("written"),
+        serde_json::to_string(&before.sandbox).expect("written")
+    );
+    assert_eq!(
+        after.through([41_000, 41_001]),
+        before.through([41_000, 41_001])
+    );
+    assert_eq!(after.sandbox["network"]["allowLocalBinding"], json!(false));
+}

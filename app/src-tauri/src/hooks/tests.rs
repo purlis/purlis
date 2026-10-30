@@ -2560,9 +2560,19 @@ fn a_port_to_listen_on_is_offered_as_that_port_and_claude_code_is_told_why_not()
         BlockOffer::Listen
     );
     let (offer, target, why) = for_its_harness(Some(Harness::ClaudeCode), named);
-    assert_eq!(offer, BlockOffer::Unsandboxed);
     assert_eq!(target.as_deref(), Some("5173"));
-    assert!(why.as_deref() == Some(CLAUDE_CODE_LISTEN_SAID));
+    if cfg!(target_os = "macos") {
+        // #3316: its server dials in to its door, so the port is offered as in any chat, with
+        // how to start it.
+        assert_eq!(offer, BlockOffer::Listen);
+        assert_eq!(why, Some(claude_code_listen_said("5173")));
+        assert!(claude_code_listen_said("5173").starts_with(
+            "In a Claude Code chat, start the server with `purlis listen 5173 -- npm run dev`."
+        ));
+    } else {
+        assert_eq!(offer, BlockOffer::Unsandboxed);
+        assert!(why.as_deref() == Some(CLAUDE_CODE_LISTEN_SAID));
+    }
     // What turning Claude Code's own setting on would open, said rather than offered.
     assert!(CLAUDE_CODE_LISTEN_SAID.contains("every port of this Mac"));
     assert!(CLAUDE_CODE_LISTEN_SAID.contains("every service on this Mac"));
@@ -2622,10 +2632,22 @@ fn a_server_that_did_not_start_on_no_port_to_allow_is_told_what_to_do() {
         let (offer, target, why) = for_its_harness(Some(Harness::ClaudeCode), refused);
         assert_eq!(offer, BlockOffer::Unsandboxed);
         assert_eq!(target, None);
-        assert_eq!(why.as_deref(), Some(CLAUDE_CODE_NO_PORT_SAID));
+        assert_eq!(why.as_deref(), Some(claude_code_no_port()));
     }
     assert!(CLAUDE_CODE_NO_PORT_SAID.contains("without the sandbox"));
     assert!(CLAUDE_CODE_NO_PORT_SAID.contains("Codex or opencode chat"));
+    // #3316: on macOS a Node server can be given a port of its own there.
+    assert!(CLAUDE_CODE_NO_PORT_DIAL_SAID.contains("purlis listen 3000 -- <command>"));
+    assert!(CLAUDE_CODE_NO_PORT_DIAL_SAID.contains("without the sandbox"));
+}
+
+/// What a Claude Code chat is told of a server on no port purlis could allow, here.
+fn claude_code_no_port() -> &'static str {
+    if cfg!(target_os = "macos") {
+        CLAUDE_CODE_NO_PORT_DIAL_SAID
+    } else {
+        CLAUDE_CODE_NO_PORT_SAID
+    }
 }
 
 /// #3440: a server whose socket purlis's Linux wrap could not take is told why it did not
@@ -2664,7 +2686,7 @@ fn a_server_whose_socket_could_not_be_taken_is_told_why_and_what_to_do() {
     let (offer, target, why) = for_its_harness(Some(Harness::ClaudeCode), untaken);
     assert_eq!(offer, BlockOffer::Unsandboxed);
     assert_eq!(target, None);
-    assert_eq!(why.as_deref(), Some(CLAUDE_CODE_NO_PORT_SAID));
+    assert_eq!(why.as_deref(), Some(claude_code_no_port()));
 }
 
 /// #2019: a port below 1024 is never one to serve on, and a port something on this Mac listens
@@ -2692,7 +2714,7 @@ fn a_port_to_serve_on_is_never_a_system_ones_or_one_in_use() {
         serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
     let told = blocked_on(&plane, 7, &refused, None, Some("5173"), false);
     assert_eq!(told.offer, BlockOffer::Listen);
-    let served = on_its_serving(told.clone(), &[5173]);
+    let served = on_its_serving(told.clone(), &[5173], false);
     assert_eq!(served.offer, BlockOffer::Brokered);
     assert!(served.levels.is_empty());
     assert!(
@@ -2701,13 +2723,27 @@ fn a_port_to_serve_on_is_never_a_system_ones_or_one_in_use() {
             .as_deref()
             .is_some_and(|route| route.contains("purlis listen 5173 --"))
     );
-    assert_eq!(on_its_serving(told, &[3000]).offer, BlockOffer::Listen);
+    assert_eq!(
+        on_its_serving(told.clone(), &[3000], false).offer,
+        BlockOffer::Listen
+    );
+    // #3316: where the chat's server dials in, one that bound the port itself is no Node server
+    // `purlis listen` started: told how one is, and offered Start without the sandbox.
+    let dialled = on_its_serving(told, &[5173], true);
+    assert_eq!(dialled.offer, BlockOffer::Unsandboxed);
+    assert!(dialled.levels.is_empty());
+    assert!(
+        dialled
+            .route
+            .as_deref()
+            .is_some_and(|route| route.contains("purlis listen 5173 -- npm run dev"))
+    );
     // A port the chat serves on has its door open, so it is in use as it is asked about: still
     // told how to start the server there, never offered as a service to connect to.
     let told = blocked_on(&plane, 7, &refused, None, Some(&port), false);
     assert_eq!(told.offer, BlockOffer::Port);
     let served_port: u16 = port.parse().expect("a port");
-    let served = on_its_serving(told, &[served_port]);
+    let served = on_its_serving(told, &[served_port], false);
     assert_eq!(served.offer, BlockOffer::Brokered);
     assert!(
         served

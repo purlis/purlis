@@ -13,7 +13,7 @@ fn named<'a>(env: &'a [(String, String)], name: &str) -> Option<&'a str> {
 fn a_server_in_a_chat_that_serves_is_handed_its_socket_its_port_and_the_shim() {
     let env = env(
         5173,
-        Some(Path::new("/data/serve/chat-1")),
+        Some(Serving::Socket(Path::new("/data/serve/chat-1"))),
         Some(Path::new("/tmp/chat/purlis-listen-shim.cjs")),
         Some("--max-old-space-size=4096"),
     );
@@ -42,11 +42,39 @@ fn a_server_in_a_chat_that_may_not_serve_yet_is_handed_its_port_alone() {
     );
 }
 
+/// #3316: a Claude Code chat's server dials in to the chat's hook socket, and is handed no
+/// socket of its own.
+#[test]
+fn a_server_in_a_chat_that_dials_in_is_handed_its_hook_socket_its_port_and_the_shim() {
+    let env = env(
+        5173,
+        Some(Serving::Dial("/plane/.purlis/app/hooks.sock")),
+        Some(Path::new("/tmp/chat/purlis-listen-shim.cjs")),
+        None,
+    );
+    assert_eq!(named(&env, "PORT"), Some("5173"));
+    assert_eq!(named(&env, "HOST"), Some("127.0.0.1"));
+    assert_eq!(named(&env, SOCKET_ENV), None);
+    assert_eq!(named(&env, DIAL_ENV), Some("/plane/.purlis/app/hooks.sock"));
+    assert_eq!(named(&env, PORT_ENV), Some("5173"));
+    assert_eq!(
+        named(&env, "NODE_OPTIONS"),
+        Some("--require \"/tmp/chat/purlis-listen-shim.cjs\"")
+    );
+}
+
+#[test]
+fn the_shim_dials_in_only_with_no_socket_and_the_chats_token() {
+    assert!(SHIM.contains("process.env.PURLIS_SERVE_DIAL"));
+    assert!(SHIM.contains("process.env.PURLIS_CHAT_TOKEN"));
+    assert!(SHIM.contains("if (socket) return onSocket(this, args);"));
+}
+
 #[test]
 fn a_shim_path_with_a_quote_is_quoted_for_node() {
     let env = env(
         3000,
-        Some(Path::new("/d")),
+        Some(Serving::Socket(Path::new("/d"))),
         Some(Path::new("/tmp/a \"b\"/s.cjs")),
         None,
     );

@@ -1183,9 +1183,15 @@ pub(crate) fn on_its_runner(mut told: ChatBlocked, runner: Option<&str>) -> Chat
 /// **What the window says of a refused server on a port chat `told.session` serves on
 /// already** (#2019): its server asked for the port itself, not through its socket, so allowing
 /// it again would change nothing and restart the chat for nothing. Its Notice says how to start
-/// it, with no Allow; `serving` are the ports the chat serves on. Any other block is as it was
-/// told.
-pub(crate) fn on_its_serving(mut told: ChatBlocked, serving: &[u16]) -> ChatBlocked {
+/// it, with no Allow; `serving` are the ports the chat serves on. Where its server dials in
+/// (`dials_in`, a Claude Code chat, #3316), a server that bound the port itself is not a Node
+/// server `purlis listen` started, so the Notice says how one is and offers Start without the
+/// sandbox. Any other block is as it was told.
+pub(crate) fn on_its_serving(
+    mut told: ChatBlocked,
+    serving: &[u16],
+    dials_in: bool,
+) -> ChatBlocked {
     // The door on a port it serves on listens there, so the refusal is offered as a service in
     // use (`offered_to`): a refused listen either way.
     if told.operation == purlis_core::sandboxblock::Operation::Listen.word()
@@ -1196,12 +1202,20 @@ pub(crate) fn on_its_serving(mut told: ChatBlocked, serving: &[u16]) -> ChatBloc
             .and_then(|port| port.parse::<u16>().ok())
         && serving.contains(&port)
     {
-        told.offer = BlockOffer::Brokered;
         told.levels = Vec::new();
-        told.route = Some(format!(
-            "Port {port} is allowed for this chat's server: {}.",
-            purlis_core::sandbox::localport::listen_said(port)
-        ));
+        if dials_in {
+            told.offer = BlockOffer::Unsandboxed;
+            told.route = Some(format!(
+                "Port {port} is allowed for this chat's server. {}",
+                claude_code_listen_said(&port.to_string())
+            ));
+        } else {
+            told.offer = BlockOffer::Brokered;
+            told.route = Some(format!(
+                "Port {port} is allowed for this chat's server: {}.",
+                purlis_core::sandbox::localport::listen_said(port)
+            ));
+        }
     }
     told
 }
@@ -1954,8 +1968,14 @@ fn for_its_harness(
         return (offer, target, why);
     }
     // A port to listen on (#2019): Claude Code's sandbox lets a command bind every loopback
-    // port or none, never one, so nothing purlis allows reaches it there.
+    // port or none, never one. On macOS its server dials in to its door instead (#3316), so the
+    // port is offered as in any chat, saying how to start the server; elsewhere nothing purlis
+    // allows reaches it there.
     if offer == BlockOffer::Listen && claude {
+        if cfg!(target_os = "macos") {
+            let said = claude_code_listen_said(target.as_deref().unwrap_or("<port>"));
+            return (offer, target, Some(said));
+        }
         let (offer, _, why) = without_the_sandbox(CLAUDE_CODE_LISTEN_SAID);
         return (offer, target, why);
     }
@@ -1968,7 +1988,12 @@ fn for_its_harness(
             Some(PICKED_PORT_SAID | NO_PORT_SAID | NOT_TAKEN_SAID)
         )
     {
-        return (offer, target, Some(CLAUDE_CODE_NO_PORT_SAID.to_owned()));
+        let said = if cfg!(target_os = "macos") {
+            CLAUDE_CODE_NO_PORT_DIAL_SAID
+        } else {
+            CLAUDE_CODE_NO_PORT_SAID
+        };
+        return (offer, target, Some(said.to_owned()));
     }
     // A service on this Mac (qw384b): Claude Code's sandbox takes no one port, so its chat is
     // carried the port by name through purlis's proxy, and the Notice says how it is reached.
@@ -1992,10 +2017,23 @@ pub const CLAUDE_CODE_PORT_SAID: &str = "In a Claude Code chat a command reaches
      its own copy of a context on this Mac. A program that uses no proxy, such as psql or \
      redis-cli, cannot reach it.";
 
-/// Why a Claude Code chat cannot be allowed to listen on one port (#2019): its sandbox's
-/// `allowLocalBinding` lets a command bind every port of this machine or none, never one, and
-/// turning it on also lets the chat connect to every service on this machine; purlis never
-/// allows every port.
+/// **How a Claude Code chat's server is reached on `port` once it is allowed** (#3316, the
+/// person's wording of 2026-10-30): through `purlis listen`, whose shim has a Node server dial in
+/// to the chat's door. Said on the Notice beside its Allow, and on the Notice of a server
+/// refused on a port the chat serves on already.
+pub fn claude_code_listen_said(port: &str) -> String {
+    format!(
+        "In a Claude Code chat, start the server with `purlis listen {port} -- npm run dev`. This \
+         works for Node servers such as Vite, Next.js and Express. Another kind of server cannot \
+         be given this one port here: start it without the sandbox, or in a Codex or opencode \
+         chat."
+    )
+}
+
+/// Why a Claude Code chat cannot be allowed to listen on one port off macOS (#2019, #3316): its
+/// sandbox's `allowLocalBinding` lets a command bind every port of this machine or none, never
+/// one, and turning it on also lets the chat connect to every service on this machine; purlis
+/// never allows every port. On macOS its server dials in instead ([`claude_code_listen_said`]).
 pub const CLAUDE_CODE_LISTEN_SAID: &str = "Claude Code's sandbox can let a command listen on \
      every port of this Mac or on none, never on one alone, and letting it listen on every port \
      also lets this chat reach every service on this Mac. So purlis cannot allow this one port \
@@ -2064,6 +2102,14 @@ fn parked_by(parking: &Arc<Mutex<Option<ParkSlots>>>) -> purlis_core::hookwire::
         }
     })
 }
+
+/// [`CLAUDE_CODE_NO_PORT_SAID`] on macOS (#3316), where a Claude Code chat's Node server can be
+/// allowed one port of its own through `purlis listen`.
+pub const CLAUDE_CODE_NO_PORT_DIAL_SAID: &str = "It asked for no one port purlis could allow. In a \
+     Claude Code chat, start the server on a port of its own, from 1024, with purlis listen 3000 \
+     -- <command>, to be asked about it: this works for Node servers such as Vite, Next.js and \
+     Express. Otherwise start this chat without the sandbox, or run the server, or the tests that \
+     start it, in a Codex or opencode chat.";
 
 /// Start without the sandbox, saying `why` nothing is allowed: the way out of a block no grant
 /// names (#1637), which an administrator's policy may still forbid ([`held`]).

@@ -3363,6 +3363,33 @@ impl Listener {
         self
     }
 
+    /// Hears `serve` lines alone, each handed to `serve`; every other line is heard as
+    /// [`Self::each`] hears it. For the tests of a server dialling in (#3316).
+    #[cfg(test)]
+    pub(crate) fn serving_only(self, serve: Serves) -> Reading {
+        let mut hearing = Hearing {
+            each: Box::new(|_| Ok(())),
+            answer: Box::new(|_, _| Answer::No {
+                why: NOTHING_ANSWERS.to_owned(),
+            }),
+            noticed: Box::new(|_| {}),
+            saved: Box::new(|_| {}),
+            refused: Box::new(|_| Ok(())),
+            tool: Box::new(|_| Ok(())),
+            permission: Box::new(|_| None),
+            blocked: Box::new(|_| {}),
+            doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
+            touching: Box::new(|_| {}),
+            secret_exec: Box::new(|_, _, writer| {
+                crate::secrets::brokered::not_answered(writer);
+            }),
+            serve: serve::refusing(),
+        };
+        hearing.serve = serve;
+        self.hear(hearing)
+    }
+
     /// The same listener, serving at most `per_peer` connections from one process and
     /// `at_most` from all at once. For the tests, whose every connection is one process's.
     #[cfg(test)]

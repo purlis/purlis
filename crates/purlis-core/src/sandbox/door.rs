@@ -488,6 +488,10 @@ pub fn root_in(runtime: Option<&OsStr>) -> PathBuf {
 /// reads (#2019).
 pub const FOLDER_ENV: &str = "PURLIS_SERVE_DIR";
 
+/// The variable a chat whose server dials in is handed its hook socket in, which `purlis listen`
+/// hands its shim (#3316): set where the chat's dialled door is open.
+pub const DIAL_ENV: &str = "PURLIS_SERVE_DIAL";
+
 /// What a chat is told of `ports` it was allowed to serve on that it does not serve on this
 /// run: something on this Mac holds each already, listening there or bound to it.
 pub fn unserved_said(ports: &[u16]) -> Option<String> {
