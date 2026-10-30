@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793338136476,
+  "lastUpdate": 1793340409112,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30870,6 +30870,48 @@ window.BENCHMARK_DATA = {
             "value": 101.1978805,
             "unit": "ms",
             "extra": "median of 5 runs: 101.034, 101.149, 101.198, 101.468, 102.498 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "abc1ff3fb2f0f1f67abd8b5bcb057849e9af20b3",
+          "message": "Runners: a cluster pool's programs held whole, never the home, and a removal that waits (#3987)\n\n* Runners: a cluster pool's programs held whole, never the home; a removal that waits (#3292)\n\nThe programs a cluster pool's kubectl runs are held as named, at every link\non the way and as their real file, with the package each real file belongs\nto held whole. An add whose program's package would be the home, / or a\nfolder above the home is refused. In a chat's sandbox such a package is\nnever held whole either, for a pool an earlier purlis kept, nor one that\nholds the chat's project. A removal waits for an add of the same pool still\nunder way, and one that cannot tell which claim is its own says so.\n\nCarries #3939's three commits onto main as one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65CEZFS8YRAQGCWVQW4T929\nPurlis-Persona: steward\n\n* Runners: review follow-ups for cluster pools (#3292)\n\nThe add compares a program's package with the home as the sandbox does,\nby its real path. A removal that cannot tell its own claim no longer\ninvites deleting a claim another desktop made. The add test holds a\nliteral chain rather than the function it tests. Comments say what is\nheld now.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65CEZFS8YRAQGCWVQW4T929\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T05:42:14Z",
+          "tree_id": "ff3a06cad1546461bd2aca08d6f8ee08f09cb1d8",
+          "url": "https://github.com/purlis/purlis/commit/abc1ff3fb2f0f1f67abd8b5bcb057849e9af20b3"
+        },
+        "date": 1793340406106,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.684151,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.673, 0.676, 0.684, 0.689, 0.699 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6277575,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.408, 16.601, 16.628, 16.665, 16.713 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.54878149999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.181, 101.530, 101.549, 101.918, 102.941 ms"
           }
         ]
       }
