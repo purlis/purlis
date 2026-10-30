@@ -888,6 +888,9 @@ pub struct Planned {
     /// it. And why a previous version is not compared, where it has one that did not read.
     pub previous: Option<ComparedWith>,
     pub previous_refused: Option<String>,
+    /// **The chats each grade after an edit may run** (#4035, [`after_edit::chats_to_accept`]):
+    /// with its previous version's arm counted where its first saved edit brings one.
+    pub after_edit_chats: Option<u32>,
     /// The copy the consent is a digest of, read once: what a grade started on this plan lays
     /// out every arm from, and records its version as. Never shown, so never sent.
     #[serde(skip)]
@@ -1084,6 +1087,8 @@ pub fn planned(
         consent,
         previous,
         previous_refused,
+        after_edit_chats: plan
+            .map(|plan| after_edit::chats_to_accept(&plan, !is_local(root, level))),
         copy,
     })
 }

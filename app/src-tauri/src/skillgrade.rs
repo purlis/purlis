@@ -122,6 +122,9 @@ pub struct SkillGradePlan {
     /// The chats it runs in all, each one turn, and how many times each test runs in each arm.
     pub chats: u32,
     pub runs: u32,
+    /// **The chats each grade after an edit may run** (#4035): with its previous version's arm
+    /// counted where its first saved edit brings one (`after_edit::chats_to_accept`).
+    pub after_edit_chats: u32,
     /// Why the trigger tests could not be read, where they were not.
     pub tests_refused: Option<String>,
     /// The trigger tests left out, each with why: a query no chat can be started on.
@@ -325,6 +328,7 @@ impl SkillGradePlan {
             tests,
             chats: planned.plan.map(|plan| plan.chats).unwrap_or_default(),
             runs: u32::from(grading::RUNS),
+            after_edit_chats: planned.after_edit_chats.unwrap_or_default(),
             tests_refused: planned
                 .fixtures
                 .triggers

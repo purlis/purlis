@@ -7967,7 +7967,8 @@ refuses a `<data>` under a project or inside any git work tree.
   `skills`, each copy the person turned **grading after each edit** on for, keyed by its level's
   folder and its name (`skills/deploy`, `workspaces/ops/skills/deploy`), holding what they
   accepted on the plan they turned it on from: `profile` and `model` (null for the profile's own)
-  the grades' chats run on; `chats`, the chats a grade ran then; `token_cap` and `limit_usd`, the
+  the grades' chats run on; `chats`, the chats the plan showed for a grade after an edit, its
+  previous version's arm counted where it had none yet (#4035); `token_cap` and `limit_usd`, the
   cap and the dollar limit it was held to (at most the largest cap at 1,000 dollars a million);
   `tests`, the SHA-256 of the trigger tests it ran; `previous`, the commit it compared with then
   (absent for none), kept as a record: a grade after an edit compares with the version before
