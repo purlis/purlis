@@ -391,7 +391,7 @@ const WHOLE: ChatSkillsSaid = {
  * it started without (Open in Skill studio) and what changed since it started (Restart). Tab
  * walks the header onto Needs you; ↓ reaches each need, and Enter goes where its fix goes, except
  * a restart, which is only ever its button. The picture is of the
- * view once the play is done: the changed card, its Restart pressed. */
+ * view as it opens. */
 export const TheChatsOwnNeeds: Story = {
   render: () => <Skills whole={WHOLE} />,
   play: async ({ canvas, userEvent }) => {
@@ -401,6 +401,8 @@ export const TheChatsOwnNeeds: Story = {
       "31 skills of 30 · 6,400 of 6,000 characters",
     );
     await expect(row(/^Needs you/)).toHaveAccessibleName(/^Needs you, 5/);
+    // Pictured as it opens, before the keyboard moves anything (a tooltip, a scroll).
+    await pictureNow();
     await userEvent.tab();
     await userEvent.tab();
     await userEvent.tab();

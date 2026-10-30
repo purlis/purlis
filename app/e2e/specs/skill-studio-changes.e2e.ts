@@ -9,6 +9,7 @@ import {
   closeTheViewTabsOpenedSince,
   focusWorkspace,
   runFromThePalette,
+  shownButton,
   tabNames,
 } from "../reach.js";
 import { studioPage, studioMore, studioSkill } from "../studio.js";
@@ -68,7 +69,7 @@ describe("making and changing a skill in the Skill studio", function () {
   it("makes a skill at the project's root, renames it, deletes it and restores it", async () => {
     await runFromThePalette("Open Skill studio", "skills.studio");
 
-    const make = await $("button=New skill…");
+    const make = await shownButton("New skill…");
     await make.waitForClickable({ timeout: 20_000 });
     await make.click();
     await expect($('[data-testid="skill-new-level"]')).toHaveText(
