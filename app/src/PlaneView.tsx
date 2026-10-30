@@ -5392,7 +5392,13 @@ export const PlaneView = memo(function PlaneView({
       }
       const starting =
         wanted.kind === "draft"
-          ? commands.skillDraftChat(plane, wanted.level, STARTING_SIZE.columns, STARTING_SIZE.rows)
+          ? commands.skillDraftChat(
+              plane,
+              wanted.level,
+              wanted.what,
+              STARTING_SIZE.columns,
+              STARTING_SIZE.rows,
+            )
           : wanted.kind === "triggers"
             ? commands.skillTriggerTestsChat(
                 plane,

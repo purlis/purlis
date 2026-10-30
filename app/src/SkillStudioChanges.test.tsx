@@ -117,12 +117,14 @@ describe("the Skill studio's changes", () => {
     renderStudio(inWorkspace("ops"));
 
     await user.click(await screen.findByRole("button", { name: "New skill…" }));
-    expect(screen.getByTestId("skill-new-level")).toHaveTextContent(
-      "It lands in the workspace ops skills.",
-    );
+    await user.click(await screen.findByRole("button", { name: "Write it yourself" }));
+    expect(screen.getByRole("radio", { name: /^workspace ops\b/ })).toBeChecked();
     await user.type(screen.getByLabelText("Name"), "triage");
-    await user.type(screen.getByLabelText("What it does and when to use it"), "Sorts issues.");
-    await user.click(screen.getByRole("button", { name: "Make it" }));
+    await user.type(
+      screen.getByLabelText("What it does, and when a chat should use it"),
+      "Sorts issues.",
+    );
+    await user.click(screen.getByRole("button", { name: "Make it and open its page" }));
 
     await waitFor(() => expect(asked.some((one) => one.cmd === "skill_new")).toBe(true));
     expect(asked.find((one) => one.cmd === "skill_new")?.args).toMatchObject({
@@ -718,9 +720,13 @@ describe("the Skill studio's changes", () => {
     renderStudio(asPersona("reviewer"));
 
     await user.click(await screen.findByRole("button", { name: "New skill…" }));
+    await user.click(await screen.findByRole("button", { name: "Write it yourself" }));
     await user.type(screen.getByLabelText("Name"), "triage");
-    await user.type(screen.getByLabelText("What it does and when to use it"), "Sorts issues.");
-    await user.click(screen.getByRole("button", { name: "Make it" }));
+    await user.type(
+      screen.getByLabelText("What it does, and when a chat should use it"),
+      "Sorts issues.",
+    );
+    await user.click(screen.getByRole("button", { name: "Make it and open its page" }));
 
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_new")?.args).toMatchObject({

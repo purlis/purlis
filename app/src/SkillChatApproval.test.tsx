@@ -24,7 +24,12 @@ const WORK: NeedsApproval = {
 };
 
 const TRY: SkillChatAsk = { plane: PLANE, kind: "try", id: "d1", profile: null };
-const DRAFT: SkillChatAsk = { plane: PLANE, kind: "draft", level: { at: "project", local: false } };
+const DRAFT: SkillChatAsk = {
+  plane: PLANE,
+  kind: "draft",
+  level: { at: "project", local: false },
+  what: "",
+};
 
 describe("a studio start refused for its profile's approval", () => {
   it("offers Approve and start…, which asks first and then starts the same chat again", () => {

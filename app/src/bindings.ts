@@ -2041,9 +2041,10 @@ export const commands = {
 	/**
 	 *  **"Ask a chat to draft a skill"** (decision 13): a chat where `level`'s skills are reached
 	 *  from (the project's root, or the workspace's folder), on the project's default profile, with
-	 *  the core's prompt typed and never sent.
+	 *  the core's prompt typed and never sent, ending with `what` the skill should do where New
+	 *  skill… asked it (S4, #3684).
 	 */
-	skillDraftChat: (plane: PlaneId, level: SkillLevel, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_draft_chat", { plane, level, columns, rows })),
+	skillDraftChat: (plane: PlaneId, level: SkillLevel, what: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_draft_chat", { plane, level, what, columns, rows })),
 	/**
 	 *  **"Ask a chat to write them"** (#3925): a chat where `level`'s skills are reached from, on the
 	 *  project's default profile, with the core's prompt for the trigger tests of the skill `name`
