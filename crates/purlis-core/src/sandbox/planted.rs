@@ -118,6 +118,35 @@ pub fn git_folder_pins(folders: &[PathBuf]) -> Vec<PathBuf> {
         .collect()
 }
 
+/// The folders below `folder` that purlis itself runs git in, read without a bound: `folder`
+/// itself, each clone of each workspace (`workspaces/<ws>/<clone>`, as [`crate::repos::clones`]
+/// lists them) and each branch folder (`workspaces/<ws>/.worktrees/<repo>/<piece>`). Each
+/// level is read whole and no link is followed, so nothing else in the plane, however much it
+/// holds, keeps one of these from being found.
+pub fn clones_purlis_works_in(folder: &Path) -> Vec<PathBuf> {
+    // The directories in `dir`, never a link to one.
+    let folders_in = |dir: &Path| -> Vec<PathBuf> {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
+        let mut found: Vec<PathBuf> = entries
+            .flatten()
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+            .map(|entry| entry.path())
+            .collect();
+        found.sort();
+        found
+    };
+    let mut found = vec![folder.to_path_buf()];
+    for workspace in folders_in(&folder.join(super::WORKSPACES)) {
+        found.extend(folders_in(&workspace));
+        for repo in folders_in(&workspace.join(".worktrees")) {
+            found.extend(folders_in(&repo));
+        }
+    }
+    clones(&found)
+}
+
 /// [`git_folder_pins`], each with the folder searched that it was found in.
 pub fn git_folders_kept(folders: &[PathBuf]) -> Vec<(PathBuf, PathBuf)> {
     let mut pins: Vec<(PathBuf, PathBuf)> = Vec::new();
@@ -130,7 +159,15 @@ pub fn git_folders_kept(folders: &[PathBuf]) -> Vec<(PathBuf, PathBuf)> {
                 pins.push((path, folder.clone()));
             }
         };
+        // The clones purlis works in first, found whatever the bounded walk reaches; then the
+        // rest the walk finds.
+        let mut found = clones_purlis_works_in(folder);
         for clone in clones(&directories_to(folder, CLONE_DEPTH)) {
+            if !found.contains(&clone) {
+                found.push(clone);
+            }
+        }
+        for clone in found {
             let dot_git = clone.join(".git");
             let Ok(kind) = std::fs::symlink_metadata(&dot_git) else {
                 continue;
@@ -2648,6 +2685,59 @@ mod tests {
                 word: "/abs/hooks".to_owned(),
             }]
         );
+    }
+
+    /// However much else the plane holds, each clone and branch folder purlis works in is held:
+    /// a folder of more entries than the walk looks at does not keep them from being found.
+    #[test]
+    fn the_clones_purlis_works_in_are_held_whatever_the_walk_reaches() {
+        let plane = tempfile::tempdir().expect("a plane");
+        let at = |rel: &str| plane.path().join(rel);
+        let git_dir = |rel: &str| {
+            std::fs::create_dir_all(at(rel)).expect("a git folder");
+            std::fs::write(at(rel).join("HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+        };
+        git_dir("workspaces/w/repo/.git");
+        git_dir("workspaces/w/repo/.git/worktrees/piece");
+        std::fs::create_dir_all(at("workspaces/w/.worktrees/repo/piece")).expect("a piece");
+        std::fs::write(
+            at("workspaces/w/.worktrees/repo/piece/.git"),
+            format!(
+                "gitdir: {}\n",
+                at("workspaces/w/repo/.git/worktrees/piece").display()
+            ),
+        )
+        .expect("its .git file");
+        // More entries than the walk looks at, in a folder beside the workspaces.
+        std::fs::create_dir_all(at("aaa")).expect("a full folder");
+        for n in 0..=LOOKED_AT {
+            std::fs::write(at("aaa").join(n.to_string()), "").expect("an entry");
+        }
+        let pins = git_folder_pins(&[plane.path().to_path_buf()]);
+        for pin in [
+            "workspaces/w/repo/.git/config",
+            "workspaces/w/.worktrees/repo/piece/.git",
+        ] {
+            assert!(pins.contains(&at(pin)), "{pin}: {pins:?}");
+        }
+        // A link in their place is never followed.
+        let elsewhere = tempfile::tempdir().expect("elsewhere");
+        git_dir_at(elsewhere.path());
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(elsewhere.path(), at("workspaces/w/linked")).expect("a link");
+        let pins = git_folder_pins(&[plane.path().to_path_buf()]);
+        assert!(
+            !pins
+                .iter()
+                .any(|pin| pin.starts_with(at("workspaces/w/linked"))),
+            "{pins:?}"
+        );
+    }
+
+    /// A clone at `dir`: a `.git` directory holding a `HEAD`.
+    fn git_dir_at(dir: &Path) {
+        std::fs::create_dir_all(dir.join(".git")).expect("a git folder");
+        std::fs::write(dir.join(".git/HEAD"), "ref: refs/heads/main\n").expect("HEAD");
     }
 
     #[test]
