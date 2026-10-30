@@ -348,6 +348,78 @@ fn a_cancelled_sign_in_ends_its_login() {
 }
 
 #[cfg(unix)]
+/// **What the person's terminal shows is passed on as it is printed** (#4043): escapes and all,
+/// read for nothing, and what it printed is kept nowhere.
+#[test]
+fn a_login_in_a_terminal_is_read_for_nothing_and_keeps_nothing() {
+    let mut login = Driven::in_a_terminal(Instant::now());
+    let printed = "\u{1b}[31mWhich account? visit: https://elsewhere.example/\r\n";
+
+    assert_eq!(
+        login.read(printed),
+        [Event::Printed {
+            text: printed.to_owned()
+        }]
+    );
+    assert!(login.lines.is_empty());
+    assert!(login.partial.iter().all(String::is_empty));
+}
+
+/// **A login in a terminal is checked however it ended**: the person may have signed in, and
+/// then pressed Ctrl-C.
+#[test]
+fn a_login_in_a_terminal_is_checked_however_it_ended() {
+    let mut login = Driven::in_a_terminal(Instant::now());
+
+    assert_eq!(login.ended(Some(130)), [Event::Checking]);
+    assert_eq!(login.checked(Standing::SignedIn), Event::SignedIn);
+}
+
+/// **A login that shows its page, then asks something else**, cannot be followed; nor can one
+/// that never answers the code it was given. The person's own time at the page is theirs.
+#[test]
+fn a_login_that_goes_quiet_after_its_page_or_its_code_cannot_be_followed() {
+    let now = Instant::now();
+    let mut quiet = claude();
+    quiet.read("Sign in at: https://claude.ai/oauth/authorize?code=true\n");
+    quiet.read("Which organisation?\n");
+
+    assert!(quiet.waited(now + NEXT_WITHIN / 2).is_none());
+    assert!(matches!(
+        quiet.waited(Instant::now() + NEXT_WITHIN),
+        Some(Event::CouldNotFollow { said }) if said.contains("Which organisation?")
+    ));
+
+    let mut pasted = asking();
+    pasted.paste("code#state").expect("asked");
+    assert!(matches!(
+        pasted.waited(Instant::now() + NEXT_WITHIN),
+        Some(Event::CouldNotFollow { .. })
+    ));
+}
+
+/// **What is typed goes only to a login in a terminal**, as it is typed.
+#[cfg(unix)]
+#[test]
+fn what_is_typed_reaches_a_login_in_a_terminal_alone() {
+    let out = tempfile::tempdir().expect("a folder");
+    let file = out.path().join("typed");
+    let login = stand_in(&format!("read line; printf '%s' \"$line\" > {}", file.display()));
+    let driving = in_a_terminal(&login, || Standing::SignedIn).expect("runs");
+
+    driving.typed("yes\r\n").expect("typed");
+
+    assert_eq!(next(&driving), Event::Checking);
+    assert_eq!(next(&driving), Event::SignedIn);
+    assert_eq!(
+        std::fs::read_to_string(&file).expect("written").trim_end(),
+        "yes"
+    );
+
+    let piped = drive(&stand_in("sleep 30"), "claude", || Standing::SignedIn).expect("runs");
+    assert!(piped.typed("yes\n").is_err());
+}
+
 fn stand_in(script: &str) -> Login {
     Login {
         program: "/bin/sh".to_owned(),

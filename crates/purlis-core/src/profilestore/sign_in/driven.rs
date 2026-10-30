@@ -19,6 +19,11 @@
 //! harness's words are here, beside its sign-in's own words (`FLOWS`): Claude Code's alone so far (2.1.314's
 //! `auth login`, which with its input a pipe prints its page and `Paste code here if prompted >`
 //! and reads `code#state` lines). [`drive`] runs a [`Login`] and feeds it to a [`Driven`].
+//!
+//! **Where purlis cannot follow, the person drives** (#4043): [`in_a_terminal`] runs the login in
+//! a terminal of the runner's and says what it prints as [`Event::Printed`], read for nothing and
+//! kept nowhere, and what the person types goes back to it ([`Driving::typed`]). Its status is
+//! asked when it ends, however it ended.
 
 use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -55,6 +60,13 @@ const MOST_PARTIAL: usize = 16 * 1024;
 /// The most of what a login printed that is said back, in characters: its last.
 const MOST_SAID: usize = 4096;
 
+/// How long a login that showed its page has to ask for the code, and one that was given a code
+/// has to answer it, before purlis says it cannot follow it: past these, it asks something else.
+const NEXT_WITHIN: Duration = Duration::from_secs(60);
+
+/// The most typed into a terminal at once: a paste.
+const MOST_TYPED: usize = 64 * 1024;
+
 /// One step of a driven sign-in, as its driver says it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
@@ -62,6 +74,8 @@ pub enum Event {
     Open { url: String },
     /// Ask the person for the code the page shows.
     AskCode,
+    /// What a login in a terminal printed, escapes and all ([`in_a_terminal`]).
+    Printed { text: String },
     /// The harness refused the code, in its own words; another may be pasted.
     Refused { said: String },
     /// The login ended well: its harness's status check is asked.
@@ -117,6 +131,16 @@ const CLAUDE: Words = Words {
     ],
 };
 
+/// The words of a login in a terminal, which are read for nothing.
+const NO_WORDS: Words = Words {
+    kind: "",
+    page_after: &[],
+    asks_code: "",
+    refuses: &[],
+    fails: "",
+    pages: &[],
+};
+
 /// Which of a login's outputs a piece was printed on: each is read in lines of its own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stream {
@@ -131,6 +155,8 @@ enum At {
     Opened,
     Asking,
     Pasted,
+    /// In a terminal the person drives: nothing it prints is read.
+    Terminal,
     Over,
 }
 
@@ -140,7 +166,8 @@ enum At {
 pub struct Driven {
     words: &'static Words,
     at: At,
-    started: Instant,
+    /// When it came to where it is.
+    since: Instant,
     /// What was printed on each output since its last line break.
     partial: [String; 2],
     /// The last lines printed, without their escapes.
@@ -155,14 +182,29 @@ impl Driven {
         [&CLAUDE]
             .into_iter()
             .find(|words| words.kind == kind)
-            .map(|words| Self {
-                words,
-                at: At::Starting,
-                started: now,
-                partial: [String::new(), String::new()],
-                lines: Vec::new(),
-                failed: None,
-            })
+            .map(|words| Self::at(words, At::Starting, now))
+    }
+
+    /// A login in a terminal the person drives, of any harness, started at `now`.
+    pub fn in_a_terminal(now: Instant) -> Self {
+        Self::at(&NO_WORDS, At::Terminal, now)
+    }
+
+    fn at(words: &'static Words, at: At, now: Instant) -> Self {
+        Self {
+            words,
+            at,
+            since: now,
+            partial: [String::new(), String::new()],
+            lines: Vec::new(),
+            failed: None,
+        }
+    }
+
+    /// Comes to `at`, from now.
+    fn came_to(&mut self, at: At) {
+        self.at = at;
+        self.since = Instant::now();
     }
 
     /// **What the login printed next on its output**, in any piece: the steps it says.
@@ -172,6 +214,11 @@ impl Driven {
 
     /// [`Self::read`], of what it printed on `stream`. Once it is over, nothing more is kept.
     pub fn read_from(&mut self, stream: Stream, text: &str) -> Vec<Event> {
+        if self.at == At::Terminal {
+            return vec![Event::Printed {
+                text: text.to_owned(),
+            }];
+        }
         let mut said = Vec::new();
         let at = stream as usize;
         for (n, piece) in text.split('\n').enumerate() {
@@ -191,7 +238,7 @@ impl Driven {
         // A prompt ends with no line break.
         if self.at == At::Opened && plain(&self.partial[at]).contains(self.words.asks_code) {
             self.partial[at].clear();
-            self.at = At::Asking;
+            self.came_to(At::Asking);
             said.push(Event::AskCode);
         }
         said
@@ -222,7 +269,7 @@ impl Driven {
                 if let Some(address) = self.page_on(line) {
                     match self.page(address) {
                         Some(url) => {
-                            self.at = At::Opened;
+                            self.came_to(At::Opened);
                             said.push(Event::Open { url });
                         }
                         None => {
@@ -235,11 +282,11 @@ impl Driven {
                 }
             }
             At::Opened if line.contains(self.words.asks_code) => {
-                self.at = At::Asking;
+                self.came_to(At::Asking);
                 said.push(Event::AskCode);
             }
             At::Pasted if self.words.refuses.iter().any(|r| line.starts_with(r)) => {
-                self.at = At::Asking;
+                self.came_to(At::Asking);
                 said.push(Event::Refused {
                     said: cut(line, MOST_LINE),
                 });
@@ -289,7 +336,7 @@ impl Driven {
         {
             return Err("that is not a code: paste the one the page shows, on its own".to_owned());
         }
-        self.at = At::Pasted;
+        self.came_to(At::Pasted);
         Ok(format!("{code}\n"))
     }
 
@@ -298,6 +345,10 @@ impl Driven {
     pub fn ended(&mut self, exit: Option<i32>) -> Vec<Event> {
         if self.at == At::Over {
             return Vec::new();
+        }
+        // Whatever the person did in it, its harness says how it ended.
+        if self.at == At::Terminal {
+            return vec![Event::Checking];
         }
         let mut said = self.read_from(Stream::Err, "\n");
         said.extend(self.read_from(Stream::Out, "\n"));
@@ -342,9 +393,15 @@ impl Driven {
     }
 
     /// **Whether the login waited too long at `now`**: one that shows no page within
-    /// [`PAGE_WITHIN`] cannot be followed. Said once.
+    /// [`PAGE_WITHIN`], asks for no code after it or does not answer a code within
+    /// [`NEXT_WITHIN`] cannot be followed. Said once. The person has their time at the page.
     pub fn waited(&mut self, now: Instant) -> Option<Event> {
-        if self.at != At::Starting || now.saturating_duration_since(self.started) < PAGE_WITHIN {
+        let within = match self.at {
+            At::Starting => PAGE_WITHIN,
+            At::Opened | At::Pasted => NEXT_WITHIN,
+            _ => return None,
+        };
+        if now.saturating_duration_since(self.since) < within {
             return None;
         }
         self.at = At::Over;
@@ -352,6 +409,11 @@ impl Driven {
         Some(Event::CouldNotFollow {
             said: self.said_with(&cut(&plain(&printed), MOST_LINE)),
         })
+    }
+
+    /// Whether what is typed goes to it: a login in a terminal, still running.
+    fn takes_typing(&self) -> bool {
+        self.at == At::Terminal
     }
 
     /// Whether nothing more is read of it.
@@ -442,6 +504,24 @@ pub fn drive(
             "purlis follows {kind}'s sign-in only in a terminal: sign it in with Open in terminal"
         )
     })?;
+    run(login, driven, check)
+}
+
+/// **Runs `login` in the runner's terminal it sets up itself, for the person to drive**
+/// (#4043): what it prints is said as [`Event::Printed`], what is typed goes to it
+/// ([`Driving::typed`]), and `check` is asked once it ends, however it ended.
+pub fn in_a_terminal(
+    login: &Login,
+    check: impl FnOnce() -> Standing + Send + 'static,
+) -> Result<Driving, String> {
+    run(login, Driven::in_a_terminal(Instant::now()), check)
+}
+
+fn run(
+    login: &Login,
+    driven: Driven,
+    check: impl FnOnce() -> Standing + Send + 'static,
+) -> Result<Driving, String> {
     let mut command = Command::new(&login.program);
     command
         .args(&login.args)
@@ -632,9 +712,32 @@ impl Driving {
             .map_err(|e| format!("the code could not be passed to the sign-in: {e}"))
     }
 
+    /// **Passes what the person typed to a login in a terminal**, as it is.
+    pub fn typed(&self, text: &str) -> Result<(), String> {
+        let takes = self
+            .driven
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .takes_typing();
+        if !takes {
+            return Err("the sign-in is not in a terminal now".to_owned());
+        }
+        if text.len() > MOST_TYPED {
+            return Err("that is too much to type into a sign-in at once".to_owned());
+        }
+        let mut input = self.input.lock().unwrap_or_else(PoisonError::into_inner);
+        let input = input
+            .as_mut()
+            .ok_or_else(|| "the sign-in takes no more input".to_owned())?;
+        input
+            .write_all(text.as_bytes())
+            .and_then(|()| input.flush())
+            .map_err(|e| format!("what was typed could not be passed to the sign-in: {e}"))
+    }
+
     /// **Ends the process that drives the login**: [`Event::Cancelled`] follows. A code being
     /// passed on meanwhile fails as it ends. Where that process only reaches the login, as
-    /// `docker exec` does, the login itself may run on until it stops by itself (#4043).
+    /// `docker exec` does, the login ends with its input, on the runner ([`super::held`]).
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
     }

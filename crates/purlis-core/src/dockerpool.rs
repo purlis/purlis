@@ -561,6 +561,8 @@ pub struct Made {
 pub enum Typed {
     InATerminal,
     Driven,
+    /// Driven by the person, in a terminal the runner's `purlis` makes of this size (#4043).
+    InOwnTerminal(crate::engine::Size),
 }
 
 impl Made {
@@ -650,13 +652,15 @@ impl Made {
     }
 
     /// [`Made::sign_in_args`], by `typed`: in a terminal the person drives (`-it`), or with its
-    /// input and output pipes purlis drives with no terminal (`-i`, #4042).
+    /// input and output pipes (`-i`, #4042), for purlis to drive or to carry a terminal the
+    /// runner's `purlis` makes. Over pipes the login ends with its input (#4043), since ending
+    /// `docker exec` ends nothing in the container.
     pub fn sign_in_args_by(&self, typed: Typed, name: &str, provider: Option<&str>) -> Vec<String> {
         let mut args: Vec<String> = [
             "exec",
             match typed {
                 Typed::InATerminal => "-it",
-                Typed::Driven => "-i",
+                Typed::Driven | Typed::InOwnTerminal(_) => "-i",
             },
             "--user",
             &self.runner.user.spelled(),
@@ -672,7 +676,20 @@ impl Made {
         if let Some(provider) = provider {
             args.extend(["--provider".to_owned(), provider.to_owned()]);
         }
+        match typed {
+            Typed::InATerminal => {}
+            Typed::Driven => args.push("--until-input-ends".to_owned()),
+            Typed::InOwnTerminal(size) => args.extend([
+                "--in-own-terminal".to_owned(),
+                format!("{}x{}", size.columns, size.rows),
+            ]),
+        }
         args
+    }
+
+    /// `docker`'s arguments that run the runner's own sign-out of its profile `name` (#4043).
+    pub fn sign_out_args(&self, name: &str) -> Vec<String> {
+        self.exec(&["profile", "sign-out", name])
     }
 
     fn exec(&self, words: &[&str]) -> Vec<String> {
@@ -2238,6 +2255,30 @@ impl Docker {
         self.checked_sign_in(made, engine, name, provider, Typed::Driven)
     }
 
+    /// **The runner's own sign-in of the profile `name`, in a terminal of `size` carried over
+    /// pipes** (#4043): [`Docker::driven_sign_in`]'s, for the person to drive in the window.
+    pub fn terminal_sign_in(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+        size: crate::engine::Size,
+    ) -> Result<crate::profilestore::sign_in::Login, String> {
+        self.checked_sign_in(made, engine, name, provider, Typed::InOwnTerminal(size))
+    }
+
+    /// **Runs the runner's own sign-out of the profile `name`** (#4043), the container checked
+    /// as it was made first. Its harness may be fetched for it, so it has [`SIGN_OUT_WITHIN`].
+    pub fn sign_out(&self, made: &Made, name: &str) -> Result<(), String> {
+        self.check(made).map_err(|why| why.0)?;
+        self.clone()
+            .within(SIGN_OUT_WITHIN)
+            .run(&made.sign_out_args(name), None, MOST_SAID)
+            .map(drop)
+            .map_err(|why| why.0)
+    }
+
     fn checked_sign_in(
         &self,
         made: &Made,
@@ -2723,6 +2764,9 @@ const MOST_INSPECTED: u64 = 4 * 1024 * 1024;
 /// How long an image's `purlis` is given to answer whether it holds what it starts from
 /// namespaces (D-2050-26): its image is already here, and the answer is a start and an exit.
 const PROBE_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How long a runner's own sign-out has: long enough to fetch the version its profile pins.
+const SIGN_OUT_WITHIN: std::time::Duration = std::time::Duration::from_secs(180);
 
 /// The most of what `docker` says on standard error that purlis keeps to show.
 const MOST_SAID: u64 = 64 * 1024;

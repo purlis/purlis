@@ -541,6 +541,34 @@ fn a_runners_sign_in_runs_the_pinned_version_it_installed() {
     );
 }
 
+/// **Signing out is the harness's own** (#4043), by the version it signed in with, in the
+/// profile's folder.
+#[test]
+fn a_runners_sign_out_is_its_harnesss_own_by_the_pinned_version() {
+    let installed = PathBuf::from("/runner/data/harnesses/claude/2.1.300/claude");
+
+    let claude = logout_of(&kept_pinned("claude"), Some(&installed)).expect("a sign-out");
+    let codex = logout_of(&kept_pinned("codex"), Some(&installed)).expect("a sign-out");
+
+    assert_eq!(claude.program, installed.display().to_string());
+    assert_eq!(claude.args, ["auth", "logout"]);
+    assert_eq!(codex.args, ["logout"]);
+    assert!(
+        claude.env.iter().any(|(n, _)| n == "CLAUDE_CONFIG_DIR"),
+        "{:?}",
+        claude.env
+    );
+}
+
+/// **opencode's sign-out asks which in its own terminal**, so purlis runs none.
+#[test]
+fn a_harness_with_no_plain_sign_out_is_refused_in_words() {
+    let why = logout_of(&kept_pinned("opencode"), Some(Path::new("/bin/opencode")))
+        .expect_err("no sign-out");
+
+    assert!(why.contains("signed nothing out"), "{why}");
+}
+
 /// A machine that answers every status with 0, and installs `pinned` as a runner's pinned
 /// version: the program each status was asked of, in order.
 struct WithPinned {

@@ -159,6 +159,9 @@ struct Flow {
     kind: &'static str,
     /// The words after its program that sign it in, in its own terminal flow.
     login: &'static [&'static str],
+    /// The words after its program that sign it out, its own; none where it asks which in a
+    /// terminal, as opencode's does.
+    logout: Option<&'static [&'static str]>,
     /// The flag that names the provider, followed by one of [`providers`]' ids, for a harness
     /// whose declaration lists plans. Empty for one that serves its own vendor's plan alone.
     provider_flag: &'static str,
@@ -173,18 +176,21 @@ const FLOWS: [Flow; 3] = [
     Flow {
         kind: "claude",
         login: &["auth", "login"],
+        logout: Some(&["auth", "logout"]),
         provider_flag: "",
         status: Status::Command(&["auth", "status"]),
     },
     Flow {
         kind: "codex",
         login: &["login"],
+        logout: Some(&["logout"]),
         provider_flag: "",
         status: Status::Command(&["login", "status"]),
     },
     Flow {
         kind: "opencode",
         login: &["auth", "login"],
+        logout: None,
         // opencode 1.18.33's `auth login --provider`: provider selection skipped.
         provider_flag: "--provider",
         status: Status::Named {
@@ -543,6 +549,15 @@ pub fn login_of(
     provider: Option<&str>,
     pinned: Option<&Path>,
 ) -> Result<Login, String> {
+    let (profile, program) = program_of(record, pinned)?;
+    login_for(&profile, &program, provider)
+}
+
+/// The profile of `record` and the program its harness runs by, as [`login_of`] finds them.
+fn program_of(
+    record: &MachineProfile,
+    pinned: Option<&Path>,
+) -> Result<(Profile, String), String> {
     let name = crate::shown::short(&record.name);
     if record.adopted.is_some() && record.kept_for.is_none() {
         return Err(format!(
@@ -569,7 +584,29 @@ pub fn login_of(
                 .ok_or_else(|| format!("the profile '{name}' names no program."))?
         }
     };
-    login_for(&profile, &program, provider)
+    Ok((profile, program))
+}
+
+/// **The sign-out of `record`**, one of this machine's profiles (#4043): its harness's own, as
+/// [`login_of`]'s, in its folder. Refused for a folder adopted in place and for a harness whose
+/// sign-out is only its own terminal's.
+pub fn logout_of(record: &MachineProfile, pinned: Option<&Path>) -> Result<Login, String> {
+    let name = crate::shown::short(&record.name);
+    let (profile, program) = program_of(record, pinned)?;
+    let words = flow(&profile.kind)
+        .and_then(|flow| flow.logout)
+        .ok_or_else(|| {
+            format!(
+                "{} signs '{name}' out only in its own terminal, so purlis signed nothing out.",
+                record.title
+            )
+        })?;
+    Ok(Login {
+        program,
+        args: words.iter().map(|w| (*w).to_owned()).collect(),
+        env: profile.env.clone(),
+        cleared: Vec::new(),
+    })
 }
 
 /// Forgets what the harness of `record`, one of this machine's profiles, said of it, so it is
@@ -615,6 +652,8 @@ pub(super) fn asked_of(record: &MachineProfile, look: &dyn Look) -> Option<Profi
 }
 
 pub mod driven;
+#[cfg(unix)]
+pub mod held;
 
 #[cfg(test)]
 mod tests;
