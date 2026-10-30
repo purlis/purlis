@@ -236,11 +236,23 @@ fn init_in_an_empty_directory_leaves_exactly_the_plane_the_python_charter_leaves
     let new = routing(include_str!(
         "../../../purlis-core/src/scaffold/testdata/front-door.md"
     ));
+    // And its memory line teaches the persona_remember tool first (#3880), the way a chat
+    // records a fact without a permission prompt.
+    let remember = "Record durable facts with `charter persona remember steward \"<fact>\"`, \
+                    and `--shared` for\nanything every persona needs.";
+    assert!(text.contains(remember), "{text}");
     want.insert(
         front_door,
         Node::File(
             text.replacen("\nrouting: advise\n", "\n", 1)
                 .replacen(&old, &new, 1)
+                .replacen(
+                    remember,
+                    "Record durable facts with the `persona_remember` tool, or\n`charter \
+                     persona remember steward \"<fact>\"`; `shared` (`--shared`) for anything \
+                     every persona\nneeds.",
+                    1,
+                )
                 .into_bytes(),
         ),
     );
