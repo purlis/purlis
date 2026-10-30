@@ -102,65 +102,72 @@ fn a_login_listening() -> std::thread::JoinHandle<String> {
     })
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn a_browsers_answer_reaches_the_login_on_its_runner_and_nothing_comes_back() {
+#[test]
+fn a_browsers_answer_reaches_the_login_on_its_runner_and_nothing_comes_back() {
     purlis_core::unsteered!();
-    let dir = tempfile::tempdir().unwrap();
-    let place = place_in(dir.path());
-    let (runner, desktop) = (
-        identity("01JB0RUNNER0000000000000000"),
-        identity("01JA0DESKT0P00000000000000"),
-    );
-    let runner_pinned = pinned_of(&runner);
-    let _stop = a_runner(&place, runner, pinned_of(&desktop)).await;
-    let stream = UnixStream::connect(place.link()).await.unwrap();
-    let link = hostlink::connect(
-        stream,
-        Handshake::THIS_BUILD,
-        &desktop,
-        &runner_pinned,
-        Liveness::default(),
-    )
-    .await
-    .expect("the paired desktop is linked");
-    let client = Client::new(link).0;
-    let login = a_login_listening();
-    let here = tokio::runtime::Handle::current();
-    let carry: Carry = Arc::new(move |target: &str| {
-        here.block_on(client.sign_in_redirect(target))
-            .map_err(|why| why.to_string())
-    });
-
-    let forward = Forward::open(0, STATE, carry, |_| ()).expect("this machine listens");
-    let port = forward.port();
-    let answered = tokio::task::spawn_blocking(move || {
-        let mut browser = TcpStream::connect(("127.0.0.1", port)).unwrap();
-        write!(
-            browser,
-            "GET /auth/callback?code=c&state={STATE} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"
-        )
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
         .unwrap();
-        browser
-            .set_read_timeout(Some(Duration::from_secs(30)))
-            .unwrap();
-        let mut answered = String::new();
-        let _ = browser.read_to_string(&mut answered);
-        answered
-    })
-    .await
-    .unwrap();
+    runtime.block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let place = place_in(dir.path());
+        let (runner, desktop) = (
+            identity("01JB0RUNNER0000000000000000"),
+            identity("01JA0DESKT0P00000000000000"),
+        );
+        let runner_pinned = pinned_of(&runner);
+        let _stop = a_runner(&place, runner, pinned_of(&desktop)).await;
+        let stream = UnixStream::connect(place.link()).await.unwrap();
+        let link = hostlink::connect(
+            stream,
+            Handshake::THIS_BUILD,
+            &desktop,
+            &runner_pinned,
+            Liveness::default(),
+        )
+        .await
+        .expect("the paired desktop is linked");
+        let client = Client::new(link).0;
+        let login = a_login_listening();
+        let here = tokio::runtime::Handle::current();
+        let carry: Carry = Arc::new(move |target: &str| {
+            here.block_on(client.sign_in_redirect(target))
+                .map_err(|why| why.to_string())
+        });
 
-    assert!(answered.starts_with("HTTP/1.1 200"), "{answered}");
-    assert!(!answered.contains("the login's own page"), "{answered}");
-    let heard = login.join().unwrap();
-    assert!(
-        heard.starts_with(&format!(
-            "GET /auth/callback?code=c&state={STATE} HTTP/1.1\r\n"
-        )),
-        "{heard}"
-    );
-    assert!(
-        TcpStream::connect(("127.0.0.1", port)).is_err(),
-        "this machine's port is closed once it is carried"
-    );
+        let forward = Forward::open(0, STATE, carry, |_| ()).expect("this machine listens");
+        let port = forward.port();
+        let answered = tokio::task::spawn_blocking(move || {
+            let mut browser = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            write!(
+                browser,
+                "GET /auth/callback?code=c&state={STATE} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"
+            )
+            .unwrap();
+            browser
+                .set_read_timeout(Some(Duration::from_secs(30)))
+                .unwrap();
+            let mut answered = String::new();
+            let _ = browser.read_to_string(&mut answered);
+            answered
+        })
+        .await
+        .unwrap();
+
+        assert!(answered.starts_with("HTTP/1.1 200"), "{answered}");
+        assert!(!answered.contains("the login's own page"), "{answered}");
+        let heard = login.join().unwrap();
+        assert!(
+            heard.starts_with(&format!(
+                "GET /auth/callback?code=c&state={STATE} HTTP/1.1\r\n"
+            )),
+            "{heard}"
+        );
+        assert!(
+            TcpStream::connect(("127.0.0.1", port)).is_err(),
+            "this machine's port is closed once it is carried"
+        );
+    });
 }

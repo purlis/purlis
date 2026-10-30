@@ -852,7 +852,8 @@ fn what_is_typed_reaches_a_login_in_a_terminal_alone() {
     assert!(piped.typed("yes\n").is_err());
 }
 
-/// A stand-in that prints a login's page and waits, as Codex's does, until `gate` exists.
+/// A stand-in that prints a login's page and waits, as Codex's does, until `gate` exists; it
+/// leaves `gate` with `.ended` added as its last act, where it ends by itself.
 #[cfg(unix)]
 fn waiting_login(gate: &std::path::Path) -> Login {
     Login {
@@ -860,7 +861,7 @@ fn waiting_login(gate: &std::path::Path) -> Login {
         args: vec![
             "-c".to_owned(),
             "printf '%s' \"$PRINTED\"; while [ ! -e \"$GATE\" ]; do sleep 0.05; done; \
-             echo 'Successfully logged in'"
+             echo 'Successfully logged in'; : > \"$GATE.ended\""
                 .to_owned(),
         ],
         env: vec![
@@ -947,16 +948,20 @@ fn a_cancelled_sign_in_closes_the_port() {
 #[test]
 fn a_taken_port_is_said_and_no_page_opens() {
     let dir = tempfile::tempdir().unwrap();
+    let gate = dir.path().join("gate");
     let held = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let port = held.local_addr().unwrap().port();
-    let driving = driving_on(
-        port,
-        &waiting_login(&dir.path().join("never")),
-        Arc::new(|_: &str| Ok(())),
-    );
+    let driving = driving_on(port, &waiting_login(&gate), Arc::new(|_: &str| Ok(())));
 
     assert_eq!(next(&driving), Event::PortTaken { port: 1455 });
     drop(held);
+    // The stand-in is let go, and the test waits for it to end, so none outlives this binary
+    // where the watcher has not ended it yet.
+    std::fs::write(&gate, "").unwrap();
+    let until = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < until && !dir.path().join("gate.ended").exists() {
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 /// **A sign-in no one asks after any more is ended, and its port with it**: a window that went
