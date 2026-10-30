@@ -1476,19 +1476,8 @@ export const commands = {
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **The Docker pools whose runner was removed outside purlis** (#4149): Docker has no
-	 *  container of its id. What a refused start's Notice offers to make again; a pool whose Docker
-	 *  does not answer is not among them.
-	 */
-	dockerPoolsRemoved: () => typedError<PoolRemoved[], string>(__TAURI_INVOKE("docker_pools_removed")),
-	/**
-	 *  **Make the runner again** (#4149): the pool `name`'s runner, removed outside purlis, made
-	 *  again from the pool's own image and limits, with the sign-ins of its home where that is still
-	 *  there, and paired. The window then has it keep the pool's profiles, as after Add a pool. Refused for
-	 *  a runner Docker still has, which resumes as it is.
-	 */
-	dockerPoolMakeAgain: (name: string) => typedError<MadeAgain, string>(__TAURI_INVOKE("docker_pool_make_again", { name })),
+	dockerPoolsRemoved: __WINDOW_ONLY_RESULT,
+	dockerPoolMakeAgain: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
 	runnerImageOfThisVersion: __WINDOW_ONLY_RESULT,
 	clusterContexts: __WINDOW_ONLY_RESULT,
