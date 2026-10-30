@@ -1096,7 +1096,10 @@ mod cluster {
     #[test]
     fn a_name_no_cluster_pool_has_is_left_to_the_docker_pools() {
         let config = tempfile::tempdir().unwrap();
-        assert_eq!(gate(config.path()), Ok(None));
+        assert_eq!(
+            Bound::of_a_cluster_pool(config.path(), "team", None, &vouches),
+            Ok(None)
+        );
     }
 
     #[test]
