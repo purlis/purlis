@@ -1625,6 +1625,7 @@ fn an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts(t
 /// A chat named by the profile `work` and the persona `steward`, told `first_message`.
 fn named(first_message: &str, without_sandbox: bool) -> crate::host::Named {
     crate::host::Named {
+        tools_allowed: None,
         chat: None,
         run: None,
         profile: Some("work".to_owned()),

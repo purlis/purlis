@@ -540,7 +540,10 @@ pub fn compose(starting: &Starting<'_>, kit: &Kit, beside: &dyn Beside) -> Resul
             resuming: None,
             without_sandbox: start.without_sandbox.then(crate::sandbox::OptOut::default),
             held: None,
-            grants: crate::sandbox::grant::Grants::default(),
+            grants: crate::sandbox::grant::Grants {
+                tools_allowed_by_desktop: what_its_desktop_allowed(starting),
+                ..Default::default()
+            },
             made: crate::sandbox::Made::Unnamed,
         },
         root,
@@ -554,6 +557,15 @@ pub fn compose(starting: &Starting<'_>, kit: &Kit, beside: &dyn Beside) -> Resul
         return Err(NOT_HANDED.into());
     }
     compose_ready(starting, ready, kit, beside)
+}
+
+/// **What a start from this runner's desktop says its person allowed of the chat's persona**
+/// (#4071): a runner has nobody to allow it. Only a link's start says so: a start of this
+/// machine's is held to this machine's Allow.
+fn what_its_desktop_allowed(starting: &Starting<'_>) -> Option<String> {
+    (starting.started_by == purlis_session_protocol::auth::Scope::RemoteLink.word())
+        .then(|| starting.start.tools_allowed.clone())
+        .flatten()
 }
 
 /// [`compose`] from what [`crate::start::ready`] decided for it: the seam a test hands a sandbox

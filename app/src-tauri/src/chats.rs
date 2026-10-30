@@ -4224,6 +4224,15 @@ impl Chats {
                         // A person's own opt-out, which a runner takes from no link but its own
                         // window's: such a start is refused there, never run sandboxed silently.
                         without_sandbox: runner_without_sandbox,
+                        // A chat held from its persona's grants is armed with none of them.
+                        tools_allowed: runs_as.as_deref().filter(|_| chat.held.is_none()).and_then(
+                            |persona| {
+                                purlis_core::sandbox::tools::allowed_digest_here(
+                                    &self.project,
+                                    persona,
+                                )
+                            },
+                        ),
                         alone,
                         size,
                     },

@@ -178,3 +178,30 @@ fn a_start_with_no_data_folder_for_its_long_settings_is_refused() {
         words(short)
     );
 }
+
+#[test]
+fn only_a_links_start_says_what_its_desktop_allowed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = plane_in(&tmp);
+    let start = purlis_session_protocol::session::StartProgram {
+        persona: Some("devops".into()),
+        tools_allowed: Some("d1".into()),
+        ..purlis_session_protocol::session::StartProgram::of(
+            "01J9PRJCT00000000000000000",
+            purlis_session_protocol::session::ProgramKind::Harness,
+        )
+    };
+    let said = |by: &str| {
+        what_its_desktop_allowed(&Starting {
+            root: &root,
+            number: 1,
+            start: &start,
+            reporting: None,
+            started_by: by,
+        })
+    };
+    for own in ["local-ui", "terminal", "fleet-mcp", "approval", "editor"] {
+        assert_eq!(said(own), None, "{own}");
+    }
+    assert_eq!(said("remote-link").as_deref(), Some("d1"));
+}
