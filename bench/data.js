@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793341750255,
+  "lastUpdate": 1793343177260,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30954,6 +30954,48 @@ window.BENCHMARK_DATA = {
             "value": 101.3232055,
             "unit": "ms",
             "extra": "median of 5 runs: 100.612, 101.213, 101.323, 101.443, 101.580 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "da332ceeffbf089d1dd270e070b9958e6e184740",
+          "message": "A dispatch's worktree is cut from a workspace whose clone sits in a subfolder (#3903) (#3996)\n\n* A dispatch's worktree is cut from a workspace whose clone sits in a subfolder (#3903)\n\nFrom a workspace's own folder, --in worktree cuts from its one clone; with\nseveral, it is refused naming them and --in worktree:<repo> picks one. The\ntask's branch folder is cut as purlis worktree add cuts and claimed, so it\nuses worktree commit/update/push. The no file locks warning names\nworktree:<repo>; a dispatch line opening with --in is pre-allowed for Claude\nCode beside --long (ADR 0064 amendment); the persona skill, the dispatch\ntool and the CLI help teach it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Move dispatchplace, dispatchguard and taskchanges tests to <module>/tests.rs\n\nA move alone, per CONTRIBUTING's Where tests live: no test's name or body\nchanged. The two tests lifted from inline modules carry the licence header.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* A workspace-folder task is cut by worktree add's own call, and says a HEAD fallback (#3903)\n\nReview fixes: piececmd::default_base is the one base choice for purlis\nworktree add and the dispatch, and the cut is worktree::add_based through\nchatpiece::cut_based, asked over the task's egress hosts\n(gitbroker::sandboxed_hosts). A cut from HEAD and bring_up's notes are said\nto the asking chat (Note::FromHead, Note::Fresh). A persona's default\nworktree gets the worktree's wait in purlis dispatch. Tests for a linked\nclone folder, a .git file and the no-remote fallback; docs say the base\nmoves up from the last sync.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T06:11:57Z",
+          "tree_id": "a7e5da6fc64f424f3a06d56220f118985e69196e",
+          "url": "https://github.com/purlis/purlis/commit/da332ceeffbf089d1dd270e070b9958e6e184740"
+        },
+        "date": 1793343173702,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.520696,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.507, 0.519, 0.521, 0.521, 0.522 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2358595,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.113, 16.217, 16.236, 16.368, 16.395 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.954696,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.770, 103.552, 103.955, 104.182, 104.633 ms"
           }
         ]
       }
