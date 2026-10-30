@@ -899,10 +899,7 @@ fn drawn_of(held: &planes::Held, open: chats::Open) -> OpenChat {
     let id = held.chats().chat_at(open.session).and_then(|at| at.id);
     let browser_sites = browser_sites_of(held, open.session);
     let pool = held.chats().pool_of(open.session);
-    let clones_come_back = pool
-        .is_some()
-        .then(|| held.chats().clones_come_back(open.session))
-        .filter(|back| *back);
+    let clones_come_back = held.chats().clones_come_back(open.session).then_some(true);
     OpenChat {
         id,
         browser_sites,

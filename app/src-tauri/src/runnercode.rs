@@ -258,6 +258,11 @@ pub(crate) fn move_workspace_back(
     let here = clones_of(root, workspace);
     // Asked first, so a runner that cannot say changes nothing here.
     let only_there = made_there(link, project, workspace, &here)?;
+    // And each fresh one is checked to have room here before any clone here is taken over, so
+    // one refused changes nothing.
+    for rel in &only_there {
+        room_for(root, rel)?;
+    }
     let mut watch = Vec::new();
     for rel in here {
         let repo = root.join(&rel);
@@ -313,6 +318,26 @@ pub(crate) fn move_workspace_back(
         }
     }
     Ok(watch)
+}
+
+/// **Whether a fresh clone at `rel` can be made here** (#3811): its folder in the project is
+/// reached through no link and holds nothing of that name yet. [`codelink::take_work_fresh`]
+/// holds it to that again as it makes it.
+fn room_for(root: &Path, rel: &str) -> Result<(), String> {
+    let refused = |why: &str| {
+        format!("{rel}, which the runner's chat cloned, did not come back from the runner: {why}")
+    };
+    let repo = codelink::repo_in(root, rel).map_err(|why| refused(&why.to_string()))?;
+    if std::fs::symlink_metadata(&repo).is_ok() {
+        return Err(refused("something of that name is here already"));
+    }
+    if !repo
+        .parent()
+        .is_some_and(|parent| std::fs::symlink_metadata(parent).is_ok_and(|meta| meta.is_dir()))
+    {
+        return Err(refused("its workspace's folder is not here"));
+    }
+    Ok(())
 }
 
 /// **The clones of `workspace` the runner holds and this machine has none of** (#3811), by

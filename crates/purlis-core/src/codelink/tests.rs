@@ -478,13 +478,22 @@ fn a_runner_names_the_clones_it_holds_in_a_workspace_and_none_through_a_link() {
     let project = dir.path().canonicalize().unwrap().join("project");
     let workspace = project.join("workspaces/app");
     assert_eq!(clones_in(&project, "app").unwrap(), Vec::<String>::new());
-    for repo in ["web", "api", "notes", ".hidden", "memory", "Todos"] {
+    for repo in [
+        "web", "api", "notes", ".hidden", "memory", "Todos", "unborn", "detached",
+    ] {
         std::fs::create_dir_all(workspace.join(repo)).unwrap();
     }
-    // A repository at a name the workspace keeps for its own is never a clone.
-    for repo in ["web", "api", ".hidden", "memory", "Todos"] {
-        std::fs::create_dir_all(workspace.join(repo).join(".git")).unwrap();
+    // A repository at a name the workspace keeps for its own is never a clone, nor one whose
+    // work a move cannot give: on no branch, or with no commit yet.
+    for repo in [
+        "web", "api", ".hidden", "memory", "Todos", "unborn", "detached",
+    ] {
+        git(&workspace.join(repo), &["init", "-q", "-b", "main"]);
     }
+    for repo in ["web", "api", ".hidden", "memory", "Todos", "detached"] {
+        commit(&workspace.join(repo), "README", repo);
+    }
+    git(&workspace.join("detached"), &["checkout", "-q", "--detach"]);
     std::fs::write(workspace.join("README"), "a file\n").unwrap();
     let elsewhere = dir.path().join("elsewhere");
     std::fs::create_dir_all(elsewhere.join(".git")).unwrap();
@@ -499,7 +508,8 @@ fn a_runner_names_the_clones_it_holds_in_a_workspace_and_none_through_a_link() {
     }
 
     // A workspace reached through a link is not listed.
-    std::fs::create_dir_all(elsewhere.join("web/.git")).unwrap();
+    std::fs::create_dir_all(elsewhere.join("web")).unwrap();
+    git(&elsewhere.join("web"), &["init", "-q", "-b", "main"]);
     std::os::unix::fs::symlink(&elsewhere, project.join("workspaces/other")).unwrap();
     assert!(matches!(
         clones_in(&project, "other"),

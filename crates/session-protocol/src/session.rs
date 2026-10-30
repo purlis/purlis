@@ -1901,6 +1901,7 @@ wire_words!(Answer {
     TakenBack => "taken_back",
     Code => "code",
     Conversation => "conversation",
+    Clones => "clones",
     ProfileKept => "profile_kept",
     Subscribed => "subscribed",
     LogEnd => "log_end",

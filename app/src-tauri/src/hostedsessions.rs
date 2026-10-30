@@ -3290,8 +3290,6 @@ impl SessionHost for HostedSessions {
         }
     }
 
-    /// The project held on the pool's runner, and each clone of `workspace` sent ahead
-    /// (#2048). Only where the runner keeps the project and moves chats.
     /// Only of a link already open: a tab drawn never opens one to the runner.
     fn clones_come_back(&self, _id: u32) -> bool {
         self.kept_on_the_runner
@@ -3301,6 +3299,8 @@ impl SessionHost for HostedSessions {
                 .is_ok_and(|link| link.names_its_clones())
     }
 
+    /// The project held on the pool's runner, and each clone of `workspace` sent ahead
+    /// (#2048). Only where the runner keeps the project and moves chats.
     fn move_ahead(&self, _pool: &str, workspace: &str) -> Result<(), String> {
         let (link, project) = self.moving_link()?;
         crate::runnercode::send_ahead(&link, &project, &self.root, workspace, &self.sent)

@@ -223,7 +223,7 @@ pub fn repo_in(project: &Path, repo: &str) -> Result<PathBuf, Refused> {
 /// **The clones `project` holds in `workspace`** (1.51, #3811): the folder name of each
 /// repository in the workspace's folder, sorted. Only a folder reached through no link, with a
 /// name a repository's folder may have ([`repo_in`]) and not one the workspace keeps for its own
-/// ([`crate::contain::workspace_keeps`]), that is a repository. None where the
+/// ([`crate::contain::workspace_keeps`]), that is a repository on a branch with a commit. None where the
 /// workspace has no folder. Refused for a name no workspace has, and for a workspace reached
 /// through a link.
 pub fn clones_in(project: &Path, workspace: &str) -> Result<Vec<String>, Refused> {
@@ -264,6 +264,9 @@ pub fn clones_in(project: &Path, workspace: &str) -> Result<Vec<String>, Refused
         .filter(|name| crate::contain::repo_name_ok(name))
         .filter(|name| !crate::contain::workspace_keeps(name))
         .filter(|name| a_repository(&folder.join(name)))
+        // Only one whose work a move can give: on a branch with a commit ([`work_of`]). One
+        // on no branch, or none yet, stays where it is, as before 1.51.
+        .filter(|name| current_branch(&folder.join(name)).is_some())
         .collect();
     clones.sort();
     Ok(clones)
