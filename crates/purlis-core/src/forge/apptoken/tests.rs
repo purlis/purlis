@@ -356,6 +356,28 @@ fn a_clone(root: &Path, name: &str, url: &str) -> PathBuf {
     clone
 }
 
+/// The record of the window's clones (`push-remotes.json`) as purlis would have written it for
+/// every clone of workspace `ws` under `root` now, each at its `origin`.
+fn recorded_now(root: &Path) -> std::collections::BTreeMap<String, String> {
+    let mut out = std::collections::BTreeMap::new();
+    let Ok(clones) = crate::repos::clones(root, "ws") else {
+        return out;
+    };
+    for repo in clones.repos {
+        let url = crate::worktree::git::run(
+            &repo.path,
+            &["config", "--local", "remote.origin.url"],
+            crate::worktree::git::READ,
+        )
+        .unwrap();
+        let url = url.out.trim().to_owned();
+        if let Some(place) = crate::forge::gitcredential::place_of(&url) {
+            out.insert(crate::sandbox::local::clone_key(&repo.path), place);
+        }
+    }
+    out
+}
+
 #[test]
 fn only_clones_whose_git_directory_no_chat_writes_name_the_chat_s_repos() {
     let dir = tempfile::tempdir().unwrap();
@@ -382,8 +404,14 @@ fn only_clones_whose_git_directory_no_chat_writes_name_the_chat_s_repos() {
     );
     assert_eq!(held_from_chats(repos, &[]).len(), 2);
 
-    let remotes =
-        remotes_of_workspace(root, Some(&root.join("workspaces/ws")), &[granted], None).unwrap();
+    let remotes = remotes_of_workspace(
+        root,
+        Some(&root.join("workspaces/ws")),
+        &[granted],
+        None,
+        &recorded_now(root),
+    )
+    .unwrap();
     assert_eq!(
         remotes
             .iter()
@@ -408,7 +436,14 @@ fn a_clone_s_remotes_are_read_from_its_own_config_and_never_an_included_one() {
         &clone,
         &["config", "include.path", included.to_str().unwrap()],
     );
-    let remotes = remotes_of_workspace(root, Some(&root.join("workspaces/ws")), &[], None).unwrap();
+    let remotes = remotes_of_workspace(
+        root,
+        Some(&root.join("workspaces/ws")),
+        &[],
+        None,
+        &recorded_now(root),
+    )
+    .unwrap();
     assert_eq!(
         remotes
             .iter()
@@ -441,6 +476,8 @@ fn a_run_in_a_clone_on_another_host_is_refused_naming_it_and_nothing_is_read() {
             "app-key",
         )
     };
+    let config = tempfile::tempdir().unwrap();
+    crate::forge::gitcredential::write_push_remotes(config.path(), &recorded_now(root)).unwrap();
     let said = token_for(
         &For {
             root,
@@ -450,6 +487,7 @@ fn a_run_in_a_clone_on_another_host_is_refused_naming_it_and_nothing_is_read() {
             writes: &[],
             started: None,
             on_a_runner: false,
+            config_root: Some(config.path()),
         },
         &gh,
         &|| panic!("the key is read only to mint"),
@@ -465,9 +503,10 @@ fn a_chat_s_tokens_cover_the_clones_its_workspace_had_when_it_started() {
     let api = a_clone(root, "api", "https://github.com/acme/api.git");
     a_clone(root, "web", "https://github.com/acme/web.git");
     let started = clones_now(root);
+    let recorded = recorded_now(root);
     let ws = root.join("workspaces/ws");
     let names = |started: &[super::Started]| -> Vec<String> {
-        remotes_of_workspace(root, Some(&ws), &[], Some(started))
+        remotes_of_workspace(root, Some(&ws), &[], Some(started), &recorded)
             .unwrap()
             .into_iter()
             .map(|remote| remote.name)
@@ -498,4 +537,45 @@ fn a_chat_s_tokens_cover_the_clones_its_workspace_had_when_it_started() {
     let swapped = a_clone(root, "api", "https://github.com/acme/other.git");
     assert_eq!(swapped, api);
     assert_eq!(names(&started), ["web"]);
+}
+
+#[test]
+fn only_a_clone_purlis_cloned_or_the_window_saved_names_the_chat_s_repos() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let ws = root.join("workspaces/ws");
+    let api = a_clone(root, "api", "https://github.com/acme/api.git");
+    let recorded = recorded_now(root);
+    // A git folder put in place by anything else, there before the chat started or not.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let put = elsewhere.path().join("put");
+    std::fs::create_dir_all(&put).unwrap();
+    git(&put, &["init", "-q"]);
+    git(
+        &put,
+        &["remote", "add", "origin", "https://github.com/acme/put.git"],
+    );
+    std::fs::create_dir_all(ws.join("x")).unwrap();
+    std::fs::rename(put.join(".git"), ws.join("x/.git")).unwrap();
+    let names = |recorded: &std::collections::BTreeMap<String, String>| -> Vec<String> {
+        remotes_of_workspace(root, Some(&ws), &[], Some(&clones_now(root)), recorded)
+            .unwrap()
+            .into_iter()
+            .map(|remote| remote.name)
+            .collect()
+    };
+    assert_eq!(names(&recorded), ["api"]);
+
+    // A remote added to a recorded clone is not the one recorded for it.
+    git(
+        &api,
+        &["remote", "add", "more", "https://github.com/acme/more.git"],
+    );
+    assert_eq!(names(&recorded), ["api"]);
+
+    // With no record, no clone counts.
+    assert_eq!(
+        names(&std::collections::BTreeMap::new()),
+        Vec::<String>::new()
+    );
 }

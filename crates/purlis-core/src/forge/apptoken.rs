@@ -45,6 +45,11 @@ pub const SEVERAL_INSTALLATIONS: &str = "this chat's repos are on several instal
 /// comes later.
 pub const HOST: &str = "github.com";
 
+/// What a chat whose workspace has no clone a token may cover is told.
+pub const NO_RECORDED_CLONE: &str = "no clone in this chat's workspace that purlis cloned, or \
+    that you saved from the window, has a github.com remote, so no GitHub App token was minted: \
+    save a clone you made yourself once from the window, and start the chat again";
+
 /// The most repos one token is limited to: GitHub refuses a longer `repositories` list.
 pub const MOST_REPOS: usize = 500;
 
@@ -73,6 +78,14 @@ pub struct Remote {
     pub name: String,
     /// The clone it is a remote of.
     pub clone: PathBuf,
+}
+
+impl Remote {
+    /// `<host>/<owner>/<repo>`, lowercased: how the record of a clone's remote spells it
+    /// ([`super::gitcredential::PUSH_REMOTES`]).
+    fn place(&self) -> String {
+        format!("{}/{}/{}", self.host, self.owner, self.name).to_ascii_lowercase()
+    }
 }
 
 /// Whether `part`, an owner's or a repo's name, is one GitHub would give: so it goes into an API
@@ -217,12 +230,17 @@ pub fn there_at_start(
 /// the chat's folder, is in, in the project at `root`, read now from each clone's own config
 /// (`git config --local --no-includes`), of the clones [`held_from_chats`] keeps against
 /// `writes`, the chat's grants, and, where `started` is given, of those the workspace had when
-/// the chat started ([`there_at_start`]). Refused for a chat in no workspace.
+/// the chat started ([`there_at_start`]). **Only a clone purlis cloned or the person saved from
+/// the window counts**, and only at the remote recorded for it then: `recorded` is that record
+/// ([`super::gitcredential::PUSH_REMOTES`], in the config home no chat writes), keyed by the
+/// clone's path and its `.git`'s identity, so a git folder put in place by anything else names
+/// no repo. Refused for a chat in no workspace.
 pub fn remotes_of_workspace(
     root: &Path,
     folder: Option<&Path>,
     writes: &[PathBuf],
     started: Option<&[Started]>,
+    recorded: &std::collections::BTreeMap<String, String>,
 ) -> Result<Vec<Remote>, String> {
     let plane = crate::workspaces::Plane::open(root.to_path_buf());
     let Some(workspace) = folder.and_then(|folder| plane.workspace_of(folder)) else {
@@ -241,6 +259,9 @@ pub fn remotes_of_workspace(
         None => clones.repos,
     };
     for repo in held_from_chats(repos, &grantable_beside(root, writes)) {
+        let Some(place) = recorded.get(&crate::sandbox::local::clone_key(&repo.path)) else {
+            continue;
+        };
         let Ok(run) = crate::worktree::git::run(
             &repo.path,
             &[
@@ -254,7 +275,11 @@ pub fn remotes_of_workspace(
         ) else {
             continue;
         };
-        out.extend(remotes_in(&repo.path, &run.out, &forge_of));
+        out.extend(
+            remotes_in(&repo.path, &run.out, &forge_of)
+                .into_iter()
+                .filter(|remote| remote.place() == *place),
+        );
     }
     out.sort();
     out.dedup();
@@ -509,6 +534,9 @@ pub struct For<'a> {
     pub writes: &'a [PathBuf],
     pub started: Option<&'a [Started]>,
     pub on_a_runner: bool,
+    /// The config home, whose record of the clones purlis cloned or the window saved
+    /// ([`remotes_of_workspace`]) is read. None: no clone counts.
+    pub config_root: Option<&'a Path>,
 }
 
 /// What a kept token was minted for: none of it is a secret.
@@ -558,7 +586,11 @@ pub fn token_for(
     let (Some(mint), [value]) = (&tool.mint, tool.values.as_slice()) else {
         return Err(format!("{} mints no GitHub App token", tool.name));
     };
-    let all = remotes_of_workspace(chat.root, chat.folder, chat.writes, chat.started)?;
+    let recorded = chat
+        .config_root
+        .map(super::gitcredential::read_push_remotes)
+        .unwrap_or_default();
+    let all = remotes_of_workspace(chat.root, chat.folder, chat.writes, chat.started, &recorded)?;
     // github.com alone for now: a run in a clone on another host is refused, naming it.
     if let Some(clone) = clone_of(&all, chat.here)
         && let Some(other) = all
@@ -575,9 +607,7 @@ pub fn token_for(
     if remotes.is_empty() {
         return Err(match all.first() {
             Some(other) => not_minted_on(&other.host),
-            None => "no clone in this chat's workspace has a github.com remote, so no GitHub \
-                     App token was minted"
-                .to_owned(),
+            None => NO_RECORDED_CLONE.to_owned(),
         });
     }
     let clone = clone_of(&remotes, chat.here);

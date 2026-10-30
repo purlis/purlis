@@ -594,6 +594,7 @@ fn a_github_app_tool_on_a_runner_is_sent_the_token_minted_for_it_as_its_key_s_va
         writes: &[],
         started: Some(&started),
         on_a_runner: true,
+        config_root: None,
     };
     let sent: Vec<(String, String)> = minted(&ctx, &gh, &chat, &minted_for_chat_6)
         .unwrap()
@@ -637,6 +638,7 @@ fn a_runner_chat_with_no_recorded_start_is_minted_nothing() {
         writes: &[],
         started: None,
         on_a_runner: true,
+        config_root: None,
     };
     assert_eq!(
         minted(&ctx, &gh, &chat, &never_minted).map(|sent| sent.len()),

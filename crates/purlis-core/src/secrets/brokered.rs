@@ -2214,6 +2214,8 @@ pub(crate) fn serve_recorded(
             if let Some(caches) = &confines.widened.caches {
                 grants.extend(caches.trees.iter().chain(caches.bare.iter()).cloned());
             }
+            // And only those purlis cloned or the person saved from the window.
+            let config_root = crate::machine::config_root();
             let token = match crate::forge::apptoken::token_from_vault(
                 &ctx,
                 &crate::forge::apptoken::For {
@@ -2224,6 +2226,7 @@ pub(crate) fn serve_recorded(
                     writes: &grants,
                     started: Some(&confines.clones),
                     on_a_runner: false,
+                    config_root: config_root.as_deref(),
                 },
                 tool,
             ) {
