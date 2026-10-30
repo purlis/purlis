@@ -232,8 +232,8 @@ fn a_path_is_read_from_where_the_chat_stands() {
 
 #[test]
 fn a_command_run_in_the_folder_names_it_and_its_paths_are_the_folders_for_a_chat_above_it() {
-    // #3927: the chat stands in its workspace; the command ran in the branch folder.
     purlis_core::unsteered!();
+    // #3927: the chat stands in its workspace; the command ran in the branch folder.
     let p = project();
     std::fs::write(p.piece.join("b.txt"), "b\n").unwrap();
     let workspace = p.f.plane.join("workspaces").join(&p.f.ws);
