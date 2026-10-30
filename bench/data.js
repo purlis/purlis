@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793350124186,
+  "lastUpdate": 1793351529378,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31206,6 +31206,48 @@ window.BENCHMARK_DATA = {
             "value": 101.938873,
             "unit": "ms",
             "extra": "median of 5 runs: 101.033, 101.035, 101.939, 102.109, 102.657 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ebd84944a2317ff74a06283b86212b116d3c60ee",
+          "message": "Skills design 15: a chat's skill surfaces route to one answer (#3694) (#3955)\n\n* Skills design 15: a chat's skill surfaces route to one answer (#3694)\n\nThe chat's \"N skills\" chip shows this chat's skills in the sidebar Skills\nview, warning-coloured when its set needs the person; it no longer opens\nUse skill. Use skill becomes a quick picker: only the chat's set, built-in\nskills last, its box taking the keys, Enter taking the first match, and\narguments in a second step. Its budget, routing and pins lines move to the\nSkills view: the budget and routing under whose set it is, and the budget,\npins, a fallen-back router, what the chat started without and what changed\nsince it started as the chat's own Needs you cards, each with one fix.\n\nThe run chip shows the tokens the chat spent since the run opened, live,\nfrom the same usage record the event log counts a run's tokens from, and\nnothing where the harness says no usage (folds in #2872). The core says\nthe run's skill level, so a persona's own skill opens the studio on that\npersona's chats.\n\nThe notices get one action each: Show in Skills, Open the draft, and\nRestart beside a new What changed. The core names what changed in a\nchat's skills since it started (Stamp::changed_to), for the view.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills design 15: review fixes (#3694)\n\n- A chat need's card press restarts nothing: Restart is only its button.\n- The Skills view reads again after a restart from it, and shares the\n  chats' plane-updated answer per change instead of asking its own.\n- A run first seen before any usage counts from the first figure; the run\n  told after the token read is the one open then, never a stale one.\n- A budget past its most is fixed where its sentence says (pinner's\n  studio, Harness skills, else Routing); a repo's copy of a built-in skill\n  is not counted as started without.\n- A changelog fragment; the e2e state spec keeps its expect.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills design 15: a parameter named apart from its answer (#3694)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills design 15: CI fixes (#3694)\n\n- A run's tokens are a u32: specta exports no u64.\n- The Notice guard counts Use skill's one line left; Open routing in\n  sentence case.\n- The compat scenario presses Show in Skills and finds the need card.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills design 15: specs put the sidebar back, and the new stories' baselines (#3694)\n\nShow in Skills and the chip leave the Skills view open; the specs that\npress them put the left side back on Chats, as the next spec expects.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills design 15: specs press the button on screen; the needs story pictured as it opens (#3694)\n\nThe Skills view, once shown, stays drawn behind the view shown, so its\nNew skill… and Open Skill studio share labels with the studio's and\nSettings'. The studio specs press the one displayed (shownButton).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills design 15: the needs story's baselines, as it opens (#3694)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T08:33:01Z",
+          "tree_id": "b2e240d59530120ea85b29f659ef0636e5445100",
+          "url": "https://github.com/purlis/purlis/commit/ebd84944a2317ff74a06283b86212b116d3c60ee"
+        },
+        "date": 1793351526225,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6811755,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.672, 0.680, 0.681, 0.695, 0.704 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6454715,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.400, 16.431, 16.645, 16.695, 16.869 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.689302,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.944, 102.313, 102.689, 103.068, 103.296 ms"
           }
         ]
       }
