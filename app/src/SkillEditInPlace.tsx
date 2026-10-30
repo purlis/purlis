@@ -78,8 +78,9 @@ type Leaving = { then: () => void; back?: StudioPlace };
 
 /**
  * **The studio's editor in place, and its guard** for the studio tab whose history is `tab`
- * (`studioHistoryOf`) and whose view is `view`, walked by `walked`. Its `history` is `walked` with every step that leaves
- * the editor's page asked about first; `leave` does the same for anything else that leaves it.
+ * (`studioHistoryOf`) and whose view is `view`, walked by `walked`. Its `history` is `walked`
+ * with every step that leaves the editor's page asked about first; `leave` does the same for
+ * anything else that leaves it.
  */
 export function useSkillEditInPlace({
   plane,
