@@ -141,7 +141,9 @@ pub fn still_working(
     seen: crate::dispatched::Seen,
     state: &str,
 ) -> Result<(), String> {
-    if from.report == Owed::Due || crate::dispatched::still_running_after_report(from, seen) {
+    if from.report == Owed::Due
+        || crate::dispatched::still_running_after_report(from.report, seen.ended)
+    {
         return Ok(());
     }
     Err(format!(

@@ -1874,6 +1874,13 @@ impl Wanted {
         }
     }
 
+    /// **Whether this dispatch starts a long-running task** (#3905): a chat's own task that
+    /// asked for `--long`. A handoff's work moved and owes nothing, and the person's dialog
+    /// asks for none. What its lineage record keeps and its stamp says, read once.
+    fn long_task(&self) -> bool {
+        self.long && self.moved.is_none() && self.by == dispatchdecision::By::Chat
+    }
+
     /// Which mode this dispatch is.
     fn mode(&self) -> Mode {
         match self.moved {
@@ -2543,7 +2550,7 @@ fn dispatch_noting(
     }
     // A long-running task is told what is different about its report (#3905), in purlis's
     // own line under its stamp.
-    if wanted.long && wanted.moved.is_none() && wanted.by == By::Chat {
+    if wanted.long_task() {
         on_a_branch.push(handoff::LONG_RUNNING_NOTE.to_owned());
     }
     // Who asked is the one thing the first message says differently on the roads: a chat's
@@ -2888,9 +2895,8 @@ fn dispatch_noting(
             // Who is above it, from this app's record of the asking chat (#1521).
             above: asked.above,
             by_person: wanted.by == By::Person,
-            // A chat's own task, as it asked (#3905): a handoff owes nothing, and the person's
-            // dialog asks for none.
-            long: wanted.long && wanted.moved.is_none() && wanted.by == By::Chat,
+            // A chat's own task, as it asked (#3905).
+            long: wanted.long_task(),
         };
         // Its number is dealt here, so the slot is the chat it is about to be.
         let number = held.chats().sessions().deal();

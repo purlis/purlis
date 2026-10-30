@@ -104,10 +104,9 @@ pub struct Asker {
     pub mode: Mode,
     /// Whether this chat still owes it a report.
     pub owes: bool,
-    /// Whether this chat reported and may report once more (`Owed::Again`, #1768): purlis made
-    /// its report from its last message, or it came out blocked. While its program runs it is
-    /// [`Doing::ReportedStillRunning`] (#3899).
-    pub again: bool,
+    /// Where its report stands, by its record: what [`Doing::ReportedStillRunning`] (#3899) is
+    /// read from, by [`crate::dispatched::still_running_after_report`].
+    pub report: crate::reopen::Owed,
     /// Whether it was dispatched as a long-running task (#3905): notes are its heartbeat, and
     /// purlis never asks it for a report.
     pub long: bool,
@@ -163,10 +162,11 @@ impl Doing {
         match known.state {
             State::Done => Self::Ended,
             State::Failed => Self::Failed,
-            _ if known
-                .from
-                .as_ref()
-                .is_some_and(|from| from.reported && from.again) =>
+            // The one rule a follow-up and a cancel read (#3899). Its program has not ended:
+            // that was asked above.
+            _ if known.from.as_ref().is_some_and(|from| {
+                crate::dispatched::still_running_after_report(from.report, false)
+            }) =>
             {
                 Self::ReportedStillRunning
             }
@@ -186,7 +186,7 @@ impl Doing {
             Self::Waiting => "waiting",
             Self::WaitingOnItsOwnWork => crate::dispatched::WAITING_ON_ITS_OWN_WORK,
             Self::Reported => "reported",
-            Self::ReportedStillRunning => "reported, still running",
+            Self::ReportedStillRunning => crate::dispatched::REPORTED_STILL_RUNNING,
             Self::Ended => "ended",
             Self::Failed => "failed",
         }

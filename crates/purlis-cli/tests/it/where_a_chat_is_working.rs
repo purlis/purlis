@@ -47,7 +47,7 @@ fn a_task_of(chat: u32, name: &str) -> Option<Asker> {
         reported: false,
         mode: awareness::Mode::Task,
         owes: true,
-        again: false,
+        report: purlis_core::reopen::Owed::Due,
         long: false,
     })
 }

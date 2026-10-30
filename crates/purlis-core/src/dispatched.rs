@@ -463,20 +463,34 @@ pub enum State {
     Ended,
 }
 
+/// The words for a task that has reported while its program still runs (#3899), as a literal
+/// so the constants below are built from one spelling.
+macro_rules! still_running {
+    () => {
+        "still running"
+    };
+}
+
 /// What a task that has reported is said to be while its program still runs (#3899), after
 /// its report: its list row, and the roster of its asking chat ([`crate::awareness`]).
-pub const STILL_RUNNING: &str = "still running";
+pub const STILL_RUNNING: &str = still_running!();
+
+/// [`STILL_RUNNING`] after a report whose outcome is not known: its list row and the roster's
+/// word ([`crate::awareness::Doing::ReportedStillRunning`]).
+pub const REPORTED_STILL_RUNNING: &str = concat!("reported, ", still_running!());
 
 /// **Whether a task that has reported is still running, and so still reachable** (#3899, the
 /// operator's ruling of 2026-10-29: "reported" does not mean "unreachable" while the task's
-/// program runs). Its record says it reported and may report once more (`Owed::Again`: purlis
-/// made its report from its last message, it came out blocked, or the person took it up again
-/// after it), and its program has not ended. A task whose one report was sent (`Owed::Sent`)
-/// is ending at it (#1485), and is not.
+/// program runs). Its record says it reported and may report once more (`report` is
+/// `Owed::Again`: purlis made its report from its last message, it came out blocked, or the
+/// person took it up again after it), and its program has not `ended`. A task whose one report
+/// was sent (`Owed::Sent`) is ending at it (#1485), and is not.
 ///
-/// The one rule a follow-up, a cancel, the list and the roster read, so they cannot disagree.
-pub fn still_running_after_report(from: &HandedFrom, seen: Seen) -> bool {
-    from.report == Owed::Again && !seen.ended
+/// **The one rule** a follow-up, a cancel and its end, the stop machine's facts, the list and
+/// the roster read, so they cannot disagree. It takes the record's word and whether the
+/// program has ended, which each caller has in its own shape.
+pub fn still_running_after_report(report: Owed, ended: bool) -> bool {
+    report == Owed::Again && !ended
 }
 
 /// **Whether a task is asked for its report as its turn ends, and then has one made from its
@@ -517,7 +531,7 @@ impl State {
             Self::ReportedStillRunning(Some(outcome)) => {
                 format!("reported: {}, {STILL_RUNNING}", outcome.word())
             }
-            Self::ReportedStillRunning(None) => format!("reported, {STILL_RUNNING}"),
+            Self::ReportedStillRunning(None) => REPORTED_STILL_RUNNING.to_owned(),
             Self::Ended => "ended without a report".to_owned(),
         }
     }
@@ -1817,11 +1831,10 @@ impl Ledger {
                 .and_then(|entry| entry.report.as_ref())
                 .and_then(|kept| kept.report.task.as_ref())
                 .map(|task| task.outcome);
-            return if still_running_after_report(from, seen)
-                && entry.is_some_and(|entry| entry.cancelling)
-            {
+            let still_running = still_running_after_report(from.report, seen.ended);
+            return if still_running && entry.is_some_and(|entry| entry.cancelling) {
                 State::Cancelling
-            } else if still_running_after_report(from, seen) {
+            } else if still_running {
                 State::ReportedStillRunning(outcome)
             } else {
                 State::Reported(outcome)
@@ -1876,7 +1889,7 @@ impl Ledger {
         from: &HandedFrom,
         seen: Seen,
     ) -> Result<bool, String> {
-        if from.report.reported() && !still_running_after_report(from, seen) {
+        if from.report.reported() && !still_running_after_report(from.report, seen.ended) {
             let state = self.state(task, from, seen);
             return Err(format!(
                 "'{name}' (chat {task}) has already {}, so there is nothing to cancel.",

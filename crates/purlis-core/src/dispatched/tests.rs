@@ -853,7 +853,7 @@ fn a_task_reported_whose_program_still_runs_is_reported_still_running_until_it_e
             ledger.state(TASK, &again, seen),
             State::ReportedStillRunning(Some(Outcome::LastMessage))
         );
-        assert!(still_running_after_report(&again, seen));
+        assert!(still_running_after_report(again.report, seen.ended));
     }
     assert_eq!(
         State::ReportedStillRunning(Some(Outcome::LastMessage)).say(),
@@ -868,15 +868,18 @@ fn a_task_reported_whose_program_still_runs_is_reported_still_running_until_it_e
         ledger.state(TASK, &again, ENDED),
         State::Reported(Some(Outcome::LastMessage))
     );
-    assert!(!still_running_after_report(&again, ENDED));
+    assert!(!still_running_after_report(again.report, ENDED.ended));
     // A task that sent its one report is ending at it: never reachable this way.
     let sent = HandedFrom {
         report: Owed::Sent,
         ..dispatched_by(ASKER)
     };
-    assert!(!still_running_after_report(&sent, RUNNING));
+    assert!(!still_running_after_report(sent.report, RUNNING.ended));
     // Nor is one that still owes its report: it is simply working.
-    assert!(!still_running_after_report(&dispatched_by(ASKER), RUNNING));
+    assert!(!still_running_after_report(
+        dispatched_by(ASKER).report,
+        RUNNING.ended
+    ));
 }
 
 #[test]

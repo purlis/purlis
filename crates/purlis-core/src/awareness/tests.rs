@@ -39,7 +39,7 @@ fn asked_by(mut known: Known, chat: u32, name: &str) -> Known {
         reported: false,
         mode: Mode::Handoff,
         owes: false,
-        again: false,
+        report: crate::reopen::Owed::Nothing,
         long: false,
     });
     known
@@ -862,14 +862,14 @@ fn every_turn_a_chat_with_open_tasks_is_shown_them_and_one_with_none_is_shown_no
         let from = known[1].from.as_mut().expect("asked");
         from.reported = true;
         from.owes = false;
-        from.again = true;
+        from.report = crate::reopen::Owed::Again;
     }
     let said = turn(&known, 1, &mut told).expect("lines");
     assert!(
         said.contains("chat 4 'check prod' reported, still running;"),
         "{said}"
     );
-    known[1].from.as_mut().expect("asked").again = false;
+    known[1].from.as_mut().expect("asked").report = crate::reopen::Owed::Sent;
 
     // A long-running task says so beside its state (#3905).
     known[1].from.as_mut().expect("asked").reported = false;

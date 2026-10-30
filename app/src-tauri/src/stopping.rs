@@ -1140,10 +1140,12 @@ fn facts_of(held: &Held, session: u32) -> Facts {
             // while its program still runs** (#3899) asks it for its one more report, which it
             // may send (`Owed::Again`), so it is given the cancel's turn.
             let cancelling = held.stopping().is_cancelling(session);
+            let ended = matches!(board.state, State::Done | State::Failed);
             let settled = task
                 && open.from.as_ref().is_some_and(|from| {
                     from.report != purlis_core::reopen::Owed::Due
-                        && !(cancelling && from.report == purlis_core::reopen::Owed::Again)
+                        && !(cancelling
+                            && dispatched::still_running_after_report(from.report, ended))
                 });
             let harness = held.chats().harness(session);
             let measured = dispatched::told_by_a_line(harness);

@@ -1236,12 +1236,14 @@ fn cancel(held: &Held, asker: u32, of: u32) -> Result<Answer, String> {
 /// report, once that turn has settled, on a thread of this module's own ([`end_look_after`]).
 /// Nothing for a task that is not such a one.
 pub(crate) fn cancelled_without_a_report(held: &Held, task: u32) {
-    // Only while its record still says it may send one more: one that reported in the cancel's
-    // turn is ending at that report already.
+    // Only while it is still running after a report, by the one rule (#3899): one that
+    // reported in the cancel's turn is ending at that report already, and one whose program
+    // has ended has nothing left to end.
+    let ended = seen(held, task).ended;
     let reported_before = held
         .chats()
         .handed_from(task)
-        .is_some_and(|from| from.report == Owed::Again);
+        .is_some_and(|from| dispatched::still_running_after_report(from.report, ended));
     if reported_before && held.tasks().ledger().cancelled_without_a_report(task) {
         end_look_after(
             held,

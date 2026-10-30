@@ -1172,6 +1172,41 @@ fn read_brief() -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    /// **A `--long`-first line reaches no subcommand** (#3905): `Bash(purlis dispatch --long *)`
+    /// is pre-allowed for Claude Code, and it allows the task and nothing else only because the
+    /// command's arguments and its subcommands exclude each other
+    /// (`args_conflicts_with_subcommands`). So a subcommand after `--long` is no command at all,
+    /// and `--long` is a task's flag, never a subcommand's.
+    #[test]
+    fn a_long_first_line_reaches_no_subcommand() {
+        for words in [
+            vec!["purlis", "dispatch", "--long", "cancel", "9"],
+            vec!["purlis", "dispatch", "--long", "close", "9"],
+            vec![
+                "purlis",
+                "dispatch",
+                "--long",
+                "report",
+                "--outcome",
+                "done",
+                "x",
+            ],
+            vec!["purlis", "dispatch", "--long", "tell", "9", "x"],
+            vec!["purlis", "dispatch", "cancel", "9", "--long"],
+        ] {
+            assert!(crate::Cli::try_parse_from(&words).is_err(), "{words:?}");
+        }
+        for words in [
+            vec!["purlis", "dispatch", "--long", "--name", "x"],
+            vec!["purlis", "dispatch", "--name", "x", "--long"],
+            vec![
+                "purlis", "dispatch", "--long", "--to", "devops", "--name", "x",
+            ],
+        ] {
+            assert!(crate::Cli::try_parse_from(&words).is_ok(), "{words:?}");
+        }
+    }
+
     use super::*;
 
     #[test]
