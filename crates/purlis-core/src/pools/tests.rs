@@ -1054,6 +1054,14 @@ mod cluster {
         cluster.calls().contains("delete claims.runners.purlis.dev")
     }
 
+    /// The runner kept for `team` under `config`, as a gate judged it.
+    fn judged(config: &Path) -> runners::ClusterKept {
+        runners::cluster_runner_for(config, "team")
+            .unwrap()
+            .expect("a cluster pool")
+            .1
+    }
+
     use crate::clusterpool::Refused as NotVouched;
     use crate::poollogins::Bound;
 
@@ -1087,6 +1095,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             "team",
+            &judged(config.path()),
             "work",
             None,
             crate::dockerpool::Typed::Driven,
@@ -1125,6 +1134,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             "team",
+            &judged(config.path()),
             "work",
             Some("github-copilot"),
             crate::dockerpool::Typed::InATerminal,
@@ -1145,6 +1155,7 @@ mod cluster {
                 config.path(),
                 &cluster.kubectl(),
                 "team",
+                &judged(config.path()),
                 "work",
                 None,
                 crate::dockerpool::Typed::Driven,
@@ -1161,20 +1172,57 @@ mod cluster {
         added(config.path(), &cluster);
         cluster.write("paired.txt", "purlis 0.4.2 (release profile)\n");
         assert_eq!(
-            cluster_runner_version(config.path(), &cluster.kubectl(), "team"),
+            cluster_runner_version(
+                config.path(),
+                &cluster.kubectl(),
+                "team",
+                &judged(config.path())
+            ),
             Ok("0.4.2".to_owned())
         );
         assert!(cluster.calls().contains("/usr/local/bin/purlis --version"));
-        cluster_sign_out(config.path(), &cluster.kubectl(), "team", "work").unwrap();
+        cluster_sign_out(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            &judged(config.path()),
+            "work",
+        )
+        .unwrap();
         assert!(
             cluster
                 .calls()
                 .contains("/usr/local/bin/purlis profile sign-out work")
         );
+        // A runner other than the one the gate judged: nothing runs there.
+        let mut other = judged(config.path());
+        other.pod = "another".into();
+        let ran = cluster.calls().len();
+        assert!(
+            cluster_sign_out(config.path(), &cluster.kubectl(), "team", &other, "work").is_err()
+        );
+        assert!(!cluster.calls()[ran..].contains("sign-out"));
         cluster.write("paired.txt", "not a version\n");
-        assert!(cluster_runner_version(config.path(), &cluster.kubectl(), "team").is_err());
+        assert!(
+            cluster_runner_version(
+                config.path(),
+                &cluster.kubectl(),
+                "team",
+                &judged(config.path())
+            )
+            .is_err()
+        );
         cluster.write("claim.json", "{}");
-        assert!(cluster_sign_out(config.path(), &cluster.kubectl(), "team", "work").is_err());
+        assert!(
+            cluster_sign_out(
+                config.path(),
+                &cluster.kubectl(),
+                "team",
+                &judged(config.path()),
+                "work"
+            )
+            .is_err()
+        );
     }
 
     /// **A cluster runner's claim says whether its home outlives its pod** (#3819): a kept claim's

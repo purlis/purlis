@@ -701,21 +701,18 @@ pub fn vouched_now(config_root: &Path, name: &str) -> Result<(), crate::clusterp
 /// (#3819), to `provider`'s plan where one is named, by `typed`: through `kubectl` pointed at
 /// the pool's context, into the pod its pairing named, in its requester's runner namespace, as
 /// every link to it is ([`Kubectl::connect_args`]), checked first as every link is
-/// ([`before_cluster_link`]). Refused, with nothing to run, where that check fails.
+/// ([`before_cluster_link`]), and only to `judged`, the runner the caller's gate judged.
+/// Refused, with nothing to run, where either fails.
 pub fn cluster_sign_in(
     config_root: &Path,
     kubectl: &crate::clusterpool::Kubectl,
     name: &str,
+    judged: &runners::ClusterKept,
     profile: &str,
     provider: Option<&str>,
     typed: crate::dockerpool::Typed,
 ) -> Result<crate::profilestore::sign_in::Login, String> {
-    before_cluster_link(config_root, kubectl, name, runners::now())
-        .map_err(|why| why.to_string())?;
-    let (pool, kept) = runners::cluster_runner_for(config_root, name)
-        .map_err(|why| why.to_string())?
-        .ok_or_else(|| format!("no cluster pool named {name} is on this machine"))?;
-    let kubectl = pool.kubectl(kubectl);
+    let (kubectl, namespace, pod) = checked_runner(config_root, kubectl, name, judged)?;
     let (env, cleared) = kubectl.environment();
     let text = |value: std::ffi::OsString| {
         value
@@ -724,13 +721,7 @@ pub fn cluster_sign_in(
     };
     Ok(crate::profilestore::sign_in::Login {
         program: text(kubectl.program().as_os_str().to_owned())?,
-        args: kubectl.sign_in_args(
-            &crate::clusterpool::runner_namespace(&kept.claimed.requester),
-            &kept.pod,
-            typed,
-            profile,
-            provider,
-        ),
+        args: kubectl.sign_in_args(&namespace, &pod, typed, profile, provider),
         env: env
             .into_iter()
             .map(|(name, value)| Ok((text(name)?, text(value)?)))
@@ -740,17 +731,24 @@ pub fn cluster_sign_in(
 }
 
 /// The cluster pool `name`'s kubectl, pointed at its context, and its runner's namespace and pod,
-/// once the check every link makes has passed ([`before_cluster_link`]).
+/// once the check every link makes has passed ([`before_cluster_link`]), and only where the
+/// runner it keeps now is `judged` (#3819): nothing is built from a runner kept since.
 fn checked_runner(
     config_root: &Path,
     kubectl: &crate::clusterpool::Kubectl,
     name: &str,
+    judged: &runners::ClusterKept,
 ) -> Result<(crate::clusterpool::Kubectl, String, String), String> {
     before_cluster_link(config_root, kubectl, name, runners::now())
         .map_err(|why| why.to_string())?;
     let (pool, kept) = runners::cluster_runner_for(config_root, name)
         .map_err(|why| why.to_string())?
         .ok_or_else(|| format!("no cluster pool named {name} is on this machine"))?;
+    if kept != *judged {
+        return Err(format!(
+            "pool {name}'s runner changed since purlis confirmed it as yours, so nothing ran there"
+        ));
+    }
     Ok((
         pool.kubectl(kubectl),
         crate::clusterpool::runner_namespace(&kept.claimed.requester),
@@ -765,8 +763,9 @@ pub fn cluster_runner_version(
     config_root: &Path,
     kubectl: &crate::clusterpool::Kubectl,
     name: &str,
+    judged: &runners::ClusterKept,
 ) -> Result<String, String> {
-    let (kubectl, namespace, pod) = checked_runner(config_root, kubectl, name)?;
+    let (kubectl, namespace, pod) = checked_runner(config_root, kubectl, name, judged)?;
     let args = kubectl.purlis_args(&namespace, &pod, &["--version"]);
     let said = kubectl
         .within(VOUCHED_NOW_WITHIN)
@@ -783,9 +782,10 @@ pub fn cluster_sign_out(
     config_root: &Path,
     kubectl: &crate::clusterpool::Kubectl,
     name: &str,
+    judged: &runners::ClusterKept,
     profile: &str,
 ) -> Result<(), String> {
-    let (kubectl, namespace, pod) = checked_runner(config_root, kubectl, name)?;
+    let (kubectl, namespace, pod) = checked_runner(config_root, kubectl, name, judged)?;
     let args = kubectl.purlis_args(&namespace, &pod, &["profile", "sign-out", profile]);
     kubectl
         .within(crate::dockerpool::SIGN_OUT_WITHIN)
