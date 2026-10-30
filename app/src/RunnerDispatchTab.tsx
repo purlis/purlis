@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { commands, type PlaneId, type RunnerDispatchWhole } from "./bindings";
-import { asksMoved } from "./asks";
+import { asksMoved, onAsksMoved } from "./asks";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { LoaderCircle, Server } from "lucide-react";
 import { Button, ButtonRow } from "./ui/button/Button";
@@ -21,15 +21,21 @@ export function RunnerDispatchTab({ plane, id }: { plane: PlaneId; id: number })
   const [done, setDone] = useState<string>();
   useEffect(() => {
     let live = true;
-    void commands
-      .runnerDispatch(plane, id)
-      .then((answer) => {
-        if (!live) return;
-        setRead(answer.status === "ok" ? answer.data : { gone: answer.error });
-      })
-      .catch((err: unknown) => live && setRead({ gone: String(err) }));
+    // Read again whenever the window answers an ask of this project: one refused from its row
+    // or gone with its chat says so here, rather than offering an Approve that starts nothing.
+    const read = () =>
+      void commands
+        .runnerDispatch(plane, id)
+        .then((answer) => {
+          if (!live) return;
+          setRead(answer.status === "ok" ? answer.data : { gone: answer.error });
+        })
+        .catch((err: unknown) => live && setRead({ gone: String(err) }));
+    read();
+    const off = onAsksMoved((moved) => moved === plane && read());
     return () => {
       live = false;
+      off();
     };
   }, [plane, id]);
   if (done !== undefined)
@@ -69,22 +75,16 @@ export function RunnerDispatchTab({ plane, id }: { plane: PlaneId; id: number })
       <dl className="runner-dispatch-facts" data-testid="runner-dispatch-facts">
         <dt>Runs as</dt>
         <dd>{persona}</dd>
-        <dt>{read.handoff ? "Moves to" : "Task"}</dt>
-        <dd>{read.handoff ? (read.place ?? read.name) : read.name}</dd>
-        {!read.handoff && read.place !== null && (
+        {read.name !== "" && (
           <>
-            <dt>Works in</dt>
-            <dd>{read.place}</dd>
+            <dt>Task</dt>
+            <dd>{read.name}</dd>
           </>
         )}
+        <dt>Works in</dt>
+        <dd>{read.works}</dd>
         <dt>Profile</dt>
         <dd>{read.profile ?? "none this machine offers"}</dd>
-        {read.creates && (
-          <>
-            <dt>Creates</dt>
-            <dd>a new workspace</dd>
-          </>
-        )}
         {read.long && (
           <>
             <dt>Runs</dt>

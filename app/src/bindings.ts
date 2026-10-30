@@ -11545,8 +11545,9 @@ export type RunnerBranch = {
 };
 
 /**
- *  **A held open or dispatch whole, as its own tab draws it**: everything Approve would start,
- *  the brief whole, and what the chat could do with it after. Approve is pressed only there.
+ *  **A held open or dispatch whole, as its own tab draws it**: what Approve would start, read
+ *  as the decision reads it ([`crate::handoff::would_start`]), the brief whole, and what the chat
+ *  could do with it after. Approve is pressed only there.
  */
 export type RunnerDispatchWhole = {
 	/**  The chat that asked, by its number and as its tab names it. */
@@ -11558,13 +11559,11 @@ export type RunnerDispatchWhole = {
 	persona: string | null,
 	/**  Whether it hands the chat's work off, rather than asking for a task that reports back. */
 	handoff: boolean,
-	/**  The task's name, or for a handoff the workspace its work moves to. */
+	/**  The task's name; a handoff's may be empty. */
 	name: string,
-	/**  Where the new chat would work, as the ask says it: `--in`, or a handoff's workspace. */
-	place: string | null,
-	/**  Whether a handoff would create the workspace it moves to. */
-	creates: boolean,
-	/**  The profile it would start on, as this app would choose it now. */
+	/**  Where the new chat would work, in words. */
+	works: string,
+	/**  The profile it would start on, none where none is offered. */
 	profile: string | null,
 	/**  Whether it asks for a long-running task. */
 	long: boolean,

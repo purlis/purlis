@@ -62,6 +62,14 @@ export function asksMoved(plane: string): void {
   for (const reader of moved) reader(plane);
 }
 
+/** Calls `reader` each time the window moved a source ([`asksMoved`]); answers its unsubscribe. */
+export function onAsksMoved(reader: (plane: string) => void): () => void {
+  moved.add(reader);
+  return () => {
+    moved.delete(reader);
+  };
+}
+
 /** Each project's asks, by its id: the last whole list the core derived for it. */
 export function useAsks(planes: readonly string[]): {
   held: Record<string, readonly Shown[]>;

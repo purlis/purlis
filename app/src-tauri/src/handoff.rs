@@ -207,6 +207,9 @@ pub fn answer(
             // **Heard from a pool, it waits for the person**, whatever the persona
             // (`crate::runnerdispatches`).
             if let Some(pool) = crate::runnerdispatches::heard_from_a_pool(held, wanted.chat) {
+                if let Err(why) = would_start(held, &wanted) {
+                    return no(why);
+                }
                 return crate::runnerdispatches::hold(held, &pool, wanted);
             }
             match dispatch_it(held, plane, &wanted, STARTING) {
@@ -249,7 +252,9 @@ pub fn answer(
             // Heard from a pool, it waits for the person, as an open does: a name purlis would
             // not draw is refused first, so nothing the person could not start waits on them.
             if let Some(pool) = crate::runnerdispatches::heard_from_a_pool(held, wanted.chat) {
-                if let Err(why) = dispatchdecision::task_name(&wanted.name) {
+                if let Err(why) = dispatchdecision::task_name(&wanted.name)
+                    .and_then(|_| would_start(held, &wanted).map(|_| ()))
+                {
                     return no(why);
                 }
                 return crate::runnerdispatches::hold(held, &pool, wanted);
@@ -3495,6 +3500,68 @@ pub(crate) fn start_approved(
             not.why
         }
     }
+}
+
+/// **What Approve on a held dispatch from a pool would start, as it stands now**, read as
+/// [`dispatch_noting`] reads it: the persona by [`dispatchdecision::pair_of`], where it works
+/// by [`purlis_core::dispatchplace::ground`] (a persona's own worktree included), and the
+/// profile by [`profile_for`]. What its tab shows, so what the person reads is what starts. A
+/// place or a handoff's workspace that would be refused is refused here, before it is held.
+pub(crate) struct WouldStart {
+    /// The persona the chat would run as, none for a chat on no persona.
+    pub to: Option<String>,
+    /// The profile it would start on, none where none is offered.
+    pub profile: Option<String>,
+    /// Where it would work, in words.
+    pub works: String,
+}
+
+/// [`WouldStart`] of `wanted`, in project `held`, or why it would be refused.
+pub(crate) fn would_start(held: &Held, wanted: &Wanted) -> Result<WouldStart, String> {
+    use purlis_core::dispatchplace::{self, Ground};
+    let root = held.root();
+    let asking = held
+        .chats()
+        .recorded_chat(wanted.chat)
+        .ok_or_else(|| format!("chat {} is not one this app has open", wanted.chat))?;
+    let default = purlis_core::start::persona_for_a_new_chat(root);
+    let pair = dispatchdecision::pair_of(&asking, wanted.to.as_deref(), default.as_deref());
+    let works = match &wanted.moved {
+        Some(moved) => {
+            moving(root, wanted.chat, moved)?;
+            match moved.create_vision {
+                Some(_) => format!("workspace {}, which it creates", moved.workspace),
+                None => format!("workspace {}", moved.workspace),
+            }
+        }
+        None => match dispatchplace::asked(wanted.place.as_deref())
+            .and_then(|asked| {
+                dispatchplace::ground(root, asked, pair.to.as_deref(), asking.cwd.as_deref())
+            })
+            .map_err(|refused| refused.say())?
+        {
+            Ground::Asker { fell_back: false } => "the asking chat's folder".to_owned(),
+            Ground::Asker { fell_back: true } => {
+                "the asking chat's folder (the persona's own worktree gives way)".to_owned()
+            }
+            Ground::Workspace { name, .. } => format!("workspace {name}"),
+            Ground::Worktree(repo) => format!("a new worktree and branch of {}", repo.repo),
+        },
+    };
+    let profile = profile_for(
+        root,
+        asking.profile.as_deref(),
+        pair.to.as_deref(),
+        wanted.profile.as_deref(),
+    )
+    .chosen
+    .ok()
+    .map(|chosen| chosen.profile);
+    Ok(WouldStart {
+        to: pair.to,
+        profile,
+        works,
+    })
 }
 
 /// **A dispatch heard from a pool, which the person refused**: its asking chat is told `why`

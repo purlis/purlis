@@ -28,8 +28,7 @@ const whole = (more: Partial<RunnerDispatchWhole> = {}): RunnerDispatchWhole => 
   persona: "devops",
   handoff: false,
   name: "check prod",
-  place: null,
-  creates: false,
+  works: "a new worktree and branch of api",
   profile: "work",
   long: false,
   brief,
@@ -59,6 +58,7 @@ describe("a runner chat's dispatch in its own tab", () => {
     const facts = screen.getByTestId("runner-dispatch-facts");
     expect(facts).toHaveTextContent("devops");
     expect(facts).toHaveTextContent("check prod");
+    expect(facts).toHaveTextContent("a new worktree and branch of api");
     expect(facts).toHaveTextContent("work");
     expect(screen.getByText(/can send it more instructions/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Approve" }));
@@ -67,9 +67,11 @@ describe("a runner chat's dispatch in its own tab", () => {
   });
 
   it("refuses it, and starts nothing", async () => {
-    const sent = core(whole({ handoff: true, place: "alpha", creates: true }));
+    const sent = core(whole({ handoff: true, works: "workspace alpha, which it creates" }));
     render(<RunnerDispatchTab plane={PLANE} id={2} />);
-    expect(await screen.findByTestId("runner-dispatch-facts")).toHaveTextContent("a new workspace");
+    expect(await screen.findByTestId("runner-dispatch-facts")).toHaveTextContent(
+      "workspace alpha, which it creates",
+    );
     await userEvent.click(screen.getByRole("button", { name: "Refuse" }));
     await waitFor(() => expect(screen.getByTestId("runner-dispatch-answered")).toBeInTheDocument());
     expect(sent("refuse_runner_dispatch")).toEqual([{ plane: PLANE, id: 2 }]);

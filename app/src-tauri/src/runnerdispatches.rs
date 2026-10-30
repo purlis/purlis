@@ -169,8 +169,9 @@ pub fn hold(held: &Held, pool: &str, wanted: Wanted) -> Answer {
     }
 }
 
-/// **A held open or dispatch whole, as its own tab draws it**: everything Approve would start,
-/// the brief whole, and what the chat could do with it after. Approve is pressed only there.
+/// **A held open or dispatch whole, as its own tab draws it**: what Approve would start, read
+/// as the decision reads it ([`crate::handoff::would_start`]), the brief whole, and what the chat
+/// could do with it after. Approve is pressed only there.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct RunnerDispatchWhole {
     /// The chat that asked, by its number and as its tab names it.
@@ -182,13 +183,11 @@ pub struct RunnerDispatchWhole {
     pub persona: Option<String>,
     /// Whether it hands the chat's work off, rather than asking for a task that reports back.
     pub handoff: bool,
-    /// The task's name, or for a handoff the workspace its work moves to.
+    /// The task's name; a handoff's may be empty.
     pub name: String,
-    /// Where the new chat would work, as the ask says it: `--in`, or a handoff's workspace.
-    pub place: Option<String>,
-    /// Whether a handoff would create the workspace it moves to.
-    pub creates: bool,
-    /// The profile it would start on, as this app would choose it now.
+    /// Where the new chat would work, in words.
+    pub works: String,
+    /// The profile it would start on, none where none is offered.
     pub profile: Option<String>,
     /// Whether it asks for a long-running task.
     pub long: bool,
@@ -196,20 +195,11 @@ pub struct RunnerDispatchWhole {
     pub brief: String,
 }
 
-/// `one` as its own tab draws it, in project `held`.
-pub fn whole_of(held: &Held, one: &HeldDispatch) -> RunnerDispatchWhole {
+/// `one` as its own tab draws it, in project `held`, or why it would be refused now.
+pub fn whole_of(held: &Held, one: &HeldDispatch) -> Result<RunnerDispatchWhole, String> {
     let inert = purlis_core::dispatchgrant::inert;
-    let asking = held.chats().recorded_chat(one.session);
-    let profile = one.to().and_then(|to| {
-        crate::handoff::profile_now(
-            held.root(),
-            asking.as_ref().and_then(|chat| chat.profile.as_deref()),
-            to,
-            one.wanted.profile.as_deref(),
-        )
-    });
-    let moved = one.wanted.moved.as_ref();
-    RunnerDispatchWhole {
+    let would = crate::handoff::would_start(held, &one.wanted)?;
+    Ok(RunnerDispatchWhole {
         session: one.session,
         chat: inert(
             &held
@@ -218,18 +208,14 @@ pub fn whole_of(held: &Held, one: &HeldDispatch) -> RunnerDispatchWhole {
                 .unwrap_or_else(|| one.session.to_string()),
         ),
         pool: inert(&one.pool),
-        persona: one.to().map(inert),
-        handoff: moved.is_some(),
+        persona: would.to.as_deref().map(inert),
+        handoff: one.wanted.moved.is_some(),
         name: inert(&one.wanted.name),
-        place: moved
-            .map(|moved| moved.workspace.clone())
-            .or_else(|| one.wanted.place.clone())
-            .map(|place| inert(&place)),
-        creates: moved.is_some_and(|moved| moved.create_vision.is_some()),
-        profile: profile.map(|profile| inert(&profile)),
+        works: inert(&would.works),
+        profile: would.profile.as_deref().map(inert),
         long: one.wanted.long,
         brief: inert(&one.wanted.brief),
-    }
+    })
 }
 
 /// **Held dispatch `id` whole, for its own tab**. Window-only: what a runner chat asks to start
@@ -247,8 +233,8 @@ pub async fn runner_dispatch(
             .every()
             .into_iter()
             .find(|one| one.id == id)
-            .map(|one| whole_of(&held, &one))
             .ok_or_else(|| WAITS_NO_MORE.to_owned())
+            .and_then(|one| whole_of(&held, &one))
     })
     .await
 }
@@ -295,7 +281,11 @@ pub fn approved(
         .take(id)
         .ok_or_else(|| WAITS_NO_MORE.to_owned())?;
     held.chats().asks_may_have_moved();
-    let to = one.to().map(str::to_owned);
+    // The persona as the decision resolves it, for a failed row.
+    let to = crate::handoff::would_start(held, &one.wanted)
+        .ok()
+        .and_then(|would| would.to)
+        .or_else(|| one.to().map(str::to_owned));
     Ok(crate::handoff::start_approved(
         held,
         plane,
