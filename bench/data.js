@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793346286167,
+  "lastUpdate": 1793347551614,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31080,6 +31080,48 @@ window.BENCHMARK_DATA = {
             "value": 102.39006900000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.901, 102.003, 102.390, 102.641, 102.663 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "39c47ea5bec44b664f00fe498e0e7a9c607acc1a",
+          "message": "Runners: a chat's gh is handed a token its GitHub App mints (#2053, part 1) (#3809)\n\n* Docs: a GitHub App's token as a persona tool, and ADR 0077 amended (#2053)\n\nThe plane format documents mint = \"github-app\" and app beside key, the\nmark that keeps the App's key from every raw hand-over, and glab with a\nproject or group token for SD-7b. ADR 0077 §7 and §8 are amended as the\nperson ruled on 2026-10-29 (E1 to E5).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\nAssisted-by: claude-code\n\n* A chat's gh is handed a token its GitHub App mints, never the App's key (#2053)\n\nA persona's tool declared with mint = \"github-app\", app and key is handed,\nat each run, an installation token the organisation's own GitHub App mints\nfor the chat: the JWT is signed in the app's process with ring, each repo's\ninstallation is asked for, and the token is limited to the GitHub remotes of\nthe clones in the chat's workspace (E1, E3). A runner chat is sent the token\nits desktop mints. One token per chat is kept in memory until ten minutes\nbefore it expires.\n\nThe key a mint line names is refused to every raw read (get_value and all\nbuilt on it: secret exec, get, cp, other tools, browser logins, profile\ncredentials, the Vaults tab), and only the mint reads it (E2). The mint is\ntested against recorded exchanges taken from GitHub's REST documentation.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Fix the build: one name for the provider's read, NoAnswer's words (#2053)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* Clippy: no explicit deref (#2053)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* The mint says its count with counted, and is a native transport the guard knows (#2053)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* A GitHub App's token: github.com only, clones' own config, a cache per clone (#2053)\n\n- The chat's repos are read with git config --local --no-includes, from\n  clones whose git directory is in no folder a chat may be granted.\n- The mint runs on github.com alone; a run in a clone on another GitHub\n  host is refused naming it. GitHub Enterprise Server comes later (#3882).\n- The App's JWT travels on one small transport, forge/apptoken/\n  jwt_transport.rs, which the native-transport guard names.\n- A token is kept per chat and clone; at most 500 repos per token.\n- While the project file does not parse, no PEM private key is handed\n  over raw.\n- A runner chat's mint has its own sentence where the clones are on\n  several installations; the desktop remembers the token it sends.\n- Tests for the brokered hand-over and the runner's, each behind a seam.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* A clone counts unless a chat's grant holds its git directory; clippy (#2053)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* A chat's tokens cover the clones its workspace had when it started (#2053)\n\n- A chat's sandbox records, as it starts, each workspace clone and its\n  .git's identity; a mint counts only those, as they still are.\n- A rename is refused while the project file cannot be read, as a raw\n  read of a private key is.\n- mint::refused_raw is gone; get_value and the tests use mint::raw.\n- The runner sentence keys on a shared const; the 500-repo cap says why\n  it counts every installation; long lines wrapped.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* A runner chat's tokens cover the clones its session started with (#2053)\n\nThe desktop records a runner chat's workspace clones, and each .git's\nidentity, as it starts the chat's session; the mint it sends counts only\nthose. A runner chat it only reattached has no record, and is refused\nwith a sentence asking for a restart.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HB0KTP9A70FM0VNGHVE6Q\nPurlis-Persona: steward\n\n* A mint tool's args are tested; a runner's desktop judges a tool's args too (#2053)\n\nThe desktop's gate for a runner chat's tool now holds the run to the\ntool's args and the forge's built-in refusals before anything is read\nor minted, as the runner's host already does. A test pins that a\nGitHub App's token tool takes args and refuses gh auth, and the\nplane-format row says its line takes them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65CESVZ9326G4PEEFCQKKMB\nPurlis-Persona: steward\n\n* A token covers the clones purlis cloned for the workspace or the person saved (#2053)\n\nA chat's GitHub App token now covers only the workspace clones in the\nconfig home's record of clones purlis cloned or the person saved from\nthe window, keyed by the clone's path and its .git's identity, and only\nat the remote recorded for each then. A clone made in the person's own\nterminal is left out until they save it once from the window; the\nrefusal says so. Both the local and the runner mint read the record.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65CESVZ9326G4PEEFCQKKMB\nPurlis-Persona: steward\n\n* docs: a clone the window cloned mid-chat joins at the next start (#2053)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65CESVZ9326G4PEEFCQKKMB\nPurlis-Persona: steward\n\n* A mint reads no config home in a fenced build (#2053)\n\nThe record of the window's clones is read through apptoken::record_root,\nwhich names none in a fenced build, whose window records none either, so\na test's gate no longer reaches past its fence.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65CESVZ9326G4PEEFCQKKMB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T07:31:07Z",
+          "tree_id": "90b8947cf6a1a673b7b567d1bc7ec522a4cf3158",
+          "url": "https://github.com/purlis/purlis/commit/39c47ea5bec44b664f00fe498e0e7a9c607acc1a"
+        },
+        "date": 1793347548335,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.67772,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.628, 0.656, 0.678, 0.682, 0.696 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.535568,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.503, 16.513, 16.536, 16.686, 16.775 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.347218,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.176, 102.295, 102.347, 102.374, 102.853 ms"
           }
         ]
       }
