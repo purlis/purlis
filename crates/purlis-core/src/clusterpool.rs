@@ -903,7 +903,7 @@ impl Kubectl {
             &format!("pod/{pod}"),
             "--",
         ]);
-        args.extend(crate::dockerpool::sign_in_words(typed, name, provider));
+        args.extend(crate::dockerpool::sign_in_words(name, provider));
         args
     }
 

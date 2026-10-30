@@ -259,7 +259,7 @@ function KeyChangedNotice({
 
 /** What marking a cluster pool as the person's own means (#4071): who else can read its runner. */
 const MY_OWN_SAID =
-  "Your cluster's admins, whoever holds the node or its storage, and anyone else allowed into this runner's pod can read what it holds, the vault values, tokens and logins purlis sends it among them. Turn this on only if you accept that. It stays off until you do, and purlis sends this runner nothing while it is off. Each run still asks you, and the cluster must vouch for the runner at that moment.";
+  "Your cluster's admins, whoever holds the node or its storage, and anyone else allowed into this runner's pod can read what it holds, the vault values, tokens and logins purlis sends it among them. Turn this on only if you accept that. It stays off until you do, and purlis sends this runner nothing while it is off. Each vault value or token still asks you when it is sent. Your profiles, with their settings, go to it and sign in there while this is on. Either needs the cluster to vouch for the runner at that moment.";
 
 /** What an unmarked cluster pool's row says of profiles (#3819): none goes there until it is marked. */
 export const notMarkedSaid = (pool: string) =>
