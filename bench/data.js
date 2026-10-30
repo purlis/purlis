@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793391160029,
+  "lastUpdate": 1793392387947,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32088,6 +32088,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4218755,
             "unit": "ms",
             "extra": "median of 5 runs: 100.386, 101.237, 101.422, 101.759, 102.013 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "973d0202ee5d8b8185b2c688f26e3edc8e3dd896",
+          "message": "Stories: the hung card follows a scroll in WebKit, and SkillPage types once its editor's grammar is in (#4026) (#4036)\n\n* Popover test: a hung card is placed though nothing is drawn between its frames (#4026)\n\nRed first: in WebKit on a loaded runner the frame that finds the chip at rest\ncan run before React draws the placement the frame before asked for, and the\ncard is never moved (ChipNotices > In A Strip Too Long To Show, 40 px off).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Hung card: each placement drawn in the frame that asks for it (#4026)\n\nThe card follows a scroll by a nudge React Aria places it again for, and goes\nback to no nudge at rest. Left to React's own time, the frame at rest could run\nbefore the placement was drawn (WebKit on a loaded runner): it asked for no\nnudge, the value last drawn, so React drew nothing and the card stayed 40 px\nfrom its chip. flushSync draws each ask in its own frame.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SkillPage story: type once the editor's grammar is in (#4026)\n\nThe grammar chunk landing between two keys drew the typed line again under\nuser-event's caret, and WebKit put the caret back at the line's start, so the\npicture read \" Tag the release.5.\". The story now waits for the grammar and\nits parse of the whole text before it types.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Review notes for #4026: changelog fragment, a sturdier frame driver, the text found again\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* List story: wait for the last persona to be scrolled into sight (#4026)\n\nReact Aria scrolls a collection's focused item in on the frame after the\nkeyboard moves to it. The story checked the focus was in sight at once, and\nWebKit in a busy run had not drawn that frame yet: \"the focus is on the option\nscribe, and none of it is in sight\" (#4015, #4031). untilFocusInSight waits\nfor the same check, up to the 3 s the keyboard may take to land.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Stories testkit: untilFocusInSight keeps the check's error as its cause (#4026)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Stories testkit: untilFocusInSight says the step outside its catch (#4026)\n\nThe lib is ES2020, which has no Error cause, and the lint asks for one on an\nerror thrown inside a catch: the error is thrown after it instead.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T20:03:39Z",
+          "tree_id": "c29ec6409a63e320dfe7fe1a77cb26b274c514b5",
+          "url": "https://github.com/purlis/purlis/commit/973d0202ee5d8b8185b2c688f26e3edc8e3dd896"
+        },
+        "date": 1793392382418,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.324971,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.313, 0.316, 0.325, 0.325, 0.326 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5082545,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.470, 16.485, 16.508, 16.535, 16.573 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.20743099999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.740, 101.150, 101.207, 101.707, 102.229 ms"
           }
         ]
       }
