@@ -3566,6 +3566,17 @@ impl Held<'_> {
                 if !own.is_empty() {
                     self.rules.push(rule(Some(*one), None, own));
                 }
+                // Each pair that holds it draws its own look after it, which the state's rule
+                // alone would cover: a pinned pin under the pointer keeps the accent
+                // (#4039's second review).
+                let carried = drawn_apart(family, part.name).unwrap_or_default();
+                for pair in apart_sets(carried)
+                    .into_iter()
+                    .filter(|pair| pair.len() == 2 && pair.contains(one))
+                {
+                    self.rules
+                        .push(rule(Some(pair[0]), Some(pair[1]), look_of(&pair)));
+                }
             }
             [first, second, ..] => {
                 self.rules
@@ -3621,7 +3632,74 @@ impl Held<'_> {
                 && !rule.values.contains_key(&Prop::BorderWidth)
                 && root_colours.iter().all(|one| rule.values.contains_key(one))
         });
-        if !written {
+        // A title-bar chip's state draws back only what its default changes from the rest, and
+        // what the theme set in it, and each pair that holds it draws its own look after it: a
+        // focus ring changes no colour, and a current chip under the pointer keeps the stronger
+        // wash (#4039's second review).
+        let keeps_states = REST_KEEPS_STATES.contains(&family.name)
+            && state.is_some_and(|one| one != State::Invalid);
+        if !written && keeps_states {
+            let one = state.unwrap_or(State::Hover);
+            self.rules
+                .extend(drawn_back.into_iter().filter(|rule| rule.part != 0));
+            let rest = (family.defaults)(variant, &[]);
+            let own = (family.defaults)(variant, &[one]);
+            let values: BTreeMap<Prop, PartValue> = [
+                (Prop::Fill, own.fill, rest.fill),
+                (Prop::Text, own.text, rest.text),
+                (Prop::BorderColour, own.border, rest.border),
+            ]
+            .into_iter()
+            .filter(|(property, _, _)| family.parts[0].properties.contains(property))
+            .filter(|(property, token, at_rest)| {
+                token != at_rest
+                    || self.rules.iter().any(|rule| {
+                        std::ptr::eq(rule.family, family)
+                            && !rule.fallback
+                            && rule.part == 0
+                            && rule.variant.is_none_or(|v| Some(v) == reached)
+                            && rule.state == Some(one)
+                            && rule.values.contains_key(property)
+                    })
+            })
+            .map(|(property, token, _)| (property, PartValue::Colour(token)))
+            .collect();
+            if !values.is_empty() {
+                self.rules.push(Rule {
+                    family,
+                    part: 0,
+                    variant: reached,
+                    state: Some(one),
+                    also: None,
+                    values,
+                    fallback: true,
+                });
+            }
+            for pair in combined(family)
+                .into_iter()
+                .filter(|pair| pair.len() == 2 && pair.contains(&one))
+            {
+                let look = (family.defaults)(variant, &pair);
+                let values: BTreeMap<Prop, PartValue> = [
+                    (Prop::Fill, look.fill),
+                    (Prop::Text, look.text),
+                    (Prop::BorderColour, look.border),
+                ]
+                .into_iter()
+                .filter(|(property, _)| family.parts[0].properties.contains(property))
+                .map(|(property, token)| (property, PartValue::Colour(token)))
+                .collect();
+                self.rules.push(Rule {
+                    family,
+                    part: 0,
+                    variant: reached,
+                    state: Some(pair[0]),
+                    also: Some(pair[1]),
+                    values,
+                    fallback: true,
+                });
+            }
+        } else if !written {
             self.rules.extend(drawn_back);
         }
         // At rest the root's default reaches every state, and would draw its rest fill over the

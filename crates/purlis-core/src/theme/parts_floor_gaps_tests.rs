@@ -89,19 +89,12 @@ fn a_selected_row_under_the_pointer_is_measured_on_what_both_draw() {
         "titlebar.row.hover.text": "surface.base",
         "titlebar.row.selected.text": "text.primary",
     }));
-    let fallen = fell(&theme);
-    assert!(
-        fallen.contains(&"titlebar.row.hover+selected".to_owned()),
-        "{fallen:?}"
+    // The pair falls, and the accent under the pointer is too bright for a row's amber count,
+    // which the row draws its fill back for under the pointer.
+    assert_eq!(
+        fell(&theme),
+        ["titlebar.row.hover+selected", "titlebar.row.hover"]
     );
-    // The selected row alone, and the row under the pointer alone, hold their words; the
-    // accent under the pointer is too bright for a row's amber count, which the row draws back
-    // its fill for.
-    assert!(
-        !fallen.contains(&"titlebar.row.selected".to_owned()),
-        "{fallen:?}"
-    );
-    assert!(fallen.iter().all(|one| one.starts_with("titlebar.row.hover")), "{fallen:?}");
 }
 
 // ---------------------------------------------------------------------------------------
@@ -323,3 +316,134 @@ fn a_state_that_falls_after_its_rest_did_draws_its_whole_default_back() {
 }
 
 
+
+// ---------------------------------------------------------------------------------------
+// 6. What a pair of states draws after one of them falls (#4039's second review)
+// ---------------------------------------------------------------------------------------
+
+/// The colours the parts layer draws on an element of the title bar: the last declaration of
+/// each property among the rules whose selector its attributes match, as the stylesheet orders
+/// them. `None` where no rule of the layer sets it, so `titlebar.css` draws it.
+fn drawn_on(sheet: &str, part: &str, attributes: &[&str]) -> std::collections::BTreeMap<String, String> {
+    let mut drawn = std::collections::BTreeMap::new();
+    let has = |token: &str| -> bool {
+        let name = token.split('=').next().unwrap_or(token);
+        match token.split_once('=') {
+            Some(_) => attributes.contains(&token),
+            None => attributes.iter().any(|one| one.split('=').next() == Some(name)),
+        }
+    };
+    for line in sheet.lines().map(str::trim) {
+        let Some(rest) = line.strip_prefix(":where(") else {
+            continue;
+        };
+        let Some((selector, body)) = rest.split_once(") {") else {
+            continue;
+        };
+        if selector.contains(' ') || selector.contains(',') {
+            continue;
+        }
+        if !selector.starts_with(&format!("[data-scope=\"titlebar\"][data-part=\"{part}\"]")) {
+            continue;
+        }
+        let mut matched = true;
+        let mut at = 0;
+        while let Some(open) = selector[at..].find('[') {
+            let start = at + open;
+            let end = start + selector[start..].find(']').unwrap();
+            let token = &selector[start + 1..end];
+            let negated = selector[..start].ends_with(":not(");
+            if !token.starts_with("data-scope") && !token.starts_with("data-part=") {
+                let wanted = token.replace('"', "");
+                if has(&wanted) == negated {
+                    matched = false;
+                }
+            }
+            at = end + 1;
+        }
+        if !matched {
+            continue;
+        }
+        for declaration in body.trim_end_matches('}').split(';') {
+            if let Some((property, value)) = declaration.trim().split_once(": ") {
+                drawn.insert(property.to_owned(), value.to_owned());
+            }
+        }
+    }
+    drawn
+}
+
+fn fill_of(drawn: &std::collections::BTreeMap<String, String>) -> Option<&str> {
+    drawn.get("background-color").map(String::as_str)
+}
+
+fn words_of(drawn: &std::collections::BTreeMap<String, String>) -> Option<&str> {
+    drawn.get("color").map(String::as_str)
+}
+
+const PIN_PAIR: &[&str] = &["data-hovered", "data-selected"];
+
+#[test]
+fn a_pinned_pin_under_the_pointer_keeps_its_accent_after_its_hover_falls() {
+    for parts in [
+        json!({ "titlebar.pin.hover.fill": "state.waiting" }),
+        json!({ "titlebar.pin.text": "surface.base", "titlebar.pin.hover.fill": "state.waiting" }),
+    ] {
+        let theme = purlis_dark(parts.clone());
+        let sheet = parts::stylesheet(&theme);
+        let drawn = drawn_on(&sheet, "pin", PIN_PAIR);
+        assert_eq!(fill_of(&drawn), Some("var(--surface-overlay)"), "{parts}: {sheet}");
+        assert_eq!(words_of(&drawn), Some("var(--accent-base)"), "{parts}: {sheet}");
+    }
+}
+
+#[test]
+fn a_current_chip_under_the_pointer_keeps_the_stronger_wash_after_its_hover_falls() {
+    let theme = purlis_dark(json!({ "titlebar.workspace.hover.fill": "state.waiting" }));
+    let sheet = parts::stylesheet(&theme);
+    let drawn = drawn_on(
+        &sheet,
+        "workspace",
+        &["data-variant=pinned", "data-hovered", "data-selected"],
+    );
+    assert_eq!(fill_of(&drawn), Some("var(--accent-wash-hover)"), "{sheet}");
+    assert_eq!(words_of(&drawn), Some("var(--text-primary)"), "{sheet}");
+}
+
+#[test]
+fn the_row_enter_would_go_to_keeps_its_fill_after_the_row_s_hover_falls() {
+    let theme = purlis_dark(json!({ "titlebar.row.hover.fill": "text.primary" }));
+    assert!(
+        fell(&theme).contains(&"titlebar.row.hover".to_owned()),
+        "{:?}",
+        fell(&theme)
+    );
+    let sheet = parts::stylesheet(&theme);
+    let drawn = drawn_on(&sheet, "row", &["data-hovered", "data-selected"]);
+    assert_eq!(fill_of(&drawn), Some("var(--list-selected)"), "{sheet}");
+    assert_eq!(words_of(&drawn), Some("var(--text-primary)"), "{sheet}");
+}
+
+#[test]
+fn a_current_chip_reached_from_the_keyboard_keeps_its_wash_after_its_focus_falls() {
+    let theme = purlis_dark(json!({ "titlebar.workspace.focused.text": "surface.deep" }));
+    assert!(
+        fell(&theme).iter().any(|one| one.ends_with(".focused")),
+        "{:?}",
+        fell(&theme)
+    );
+    let sheet = parts::stylesheet(&theme);
+    let current = drawn_on(
+        &sheet,
+        "workspace",
+        &["data-variant=pinned", "data-focus-visible", "data-selected"],
+    );
+    assert_eq!(fill_of(&current), Some("var(--accent-wash)"), "{sheet}");
+    assert_eq!(words_of(&current), Some("var(--text-primary)"), "{sheet}");
+    // A chip at rest reached from the keyboard draws no fill of its own.
+    let other = drawn_on(&sheet, "workspace", &["data-variant=pinned", "data-focus-visible"]);
+    assert!(
+        fill_of(&other).is_none_or(|fill| fill == "transparent"),
+        "{sheet}"
+    );
+}
