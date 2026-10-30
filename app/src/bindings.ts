@@ -1976,9 +1976,10 @@ export const commands = {
 	skillDeletedText: (plane: PlaneId, id: string) => typedError<string, string>(__TAURI_INVOKE("skill_deleted_text", { plane, id })),
 	/**
 	 *  **Restores** the deleted skill `id` names: the core's record of it, as [`skills_deleted`]
-	 *  handed it out.
+	 *  handed it out. `under` a new name where one is given (#3729): one whose own name belongs to
+	 *  a built-in skill now comes back only so.
 	 */
-	skillRestore: (plane: PlaneId, id: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_restore", { plane, id })),
+	skillRestore: (plane: PlaneId, id: string, under: string | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_restore", { plane, id, under })),
 	/**  **Sets where the project skill `name` reaches.** */
 	skillGrant: (plane: PlaneId, name: string, grant: SkillGrant) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_grant", { plane, name, grant })),
 	/**
@@ -5836,6 +5837,11 @@ export type DeletedSkill = {
 	 *  after its days, for `purlis skill restore`; else this machine keeps it, and removes it then.
 	 */
 	in_history: boolean,
+	/**
+	 *  Whether its name belongs to a built-in skill now (a newer purlis ships one of that name),
+	 *  so it comes back only under a new name (#3729).
+	 */
+	reserved: boolean,
 };
 
 /**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */
@@ -13915,6 +13921,13 @@ export type UpdateReview = {
 	local_edits: UpdateFile[],
 	skill: ReviewSkill,
 	brought: ReviewSkill[],
+	/**  Those of `brought` under a built-in skill's name (#3728). */
+	reserved: string[],
+	/**
+	 *  Why it cannot be taken as it is, said before Accept update: it brings along a skill under
+	 *  a built-in skill's name (#3728).
+	 */
+	refused: string | null,
 	accepted: Reviewed,
 };
 

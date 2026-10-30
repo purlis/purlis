@@ -13,6 +13,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
 import { AT_THE_ROOT } from "./skillStudio";
+import { skill } from "./skillsListing.testkit";
 
 afterEach(() => {
   cleanup();
@@ -27,11 +28,21 @@ const gone = (name: string, over: Record<string, unknown> = {}) => ({
   label: "project",
   days_left: 27,
   in_history: true,
+  reserved: false,
   ...over,
 });
 
+/** The built-in skills the studio lists, whose names a skill cannot come back under. */
+const BUILT_INS = ["browser", "secrets"].map((name) =>
+  skill(name, { level: "built-in", label: "built-in", grant: null, granted: null }),
+);
+
 /** A core with `deleted` listed, answering `text` for a last text, recording every ask. */
-function core(deleted: unknown[], text: () => unknown = () => "---\nname: x\n---\n\nbody\n") {
+function core(
+  deleted: unknown[],
+  text: () => unknown = () => "---\nname: x\n---\n\nbody\n",
+  skills: unknown[] = [],
+) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   mockIPC((cmd, args) => {
     const given = (args ?? {}) as Record<string, unknown>;
@@ -46,7 +57,7 @@ function core(deleted: unknown[], text: () => unknown = () => "---\nname: x\n---
         levels: [{ level: { at: "project", local: false }, label: "project" }],
         harnesses: [],
         clashes: [],
-        skills: [],
+        skills,
       };
     if (cmd === "skill_studio_on") return true;
     if (cmd === "skills_deleted") return deleted;
@@ -89,6 +100,40 @@ describe("the Deleted page", () => {
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_restore")?.args).toMatchObject({
         id: "browser-old-id",
+      }),
+    );
+  });
+
+  it("brings back one whose name a built-in skill took under a new name, never a built-in's", async () => {
+    // #3729: a newer purlis ships a built-in skill of its name.
+    const asked = core([gone("secrets", { reserved: true })], undefined, BUILT_INS);
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "deleted");
+    const page = await openDeleted("secrets", user);
+    expect(within(page).getByTestId("deleted-name-taken")).toHaveTextContent(
+      "Its name belongs to a built-in skill now, so it comes back under a new name.",
+    );
+    const box = within(page).getByRole("textbox", { name: "New name" });
+    expect(box).toHaveValue("my-secrets");
+    await user.clear(box);
+    await user.type(box, "browser");
+    expect(within(page).getByTestId("deleted-name-reserved")).toHaveTextContent(
+      "That name belongs to a built-in skill; pick another, or make a copy.",
+    );
+    const back = within(page).getByRole("button", { name: "Bring back secrets as browser" });
+    expect(back).toBeDisabled();
+    await user.click(back);
+    expect(asked.some((one) => one.cmd === "skill_restore")).toBe(false);
+    await user.clear(box);
+    await user.type(box, "vault-keys");
+    expect(within(page).queryByTestId("deleted-name-reserved")).toBeNull();
+    await user.click(
+      within(page).getByRole("button", { name: "Bring back secrets as vault-keys" }),
+    );
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_restore")?.args).toMatchObject({
+        id: "secrets-id",
+        under: "vault-keys",
       }),
     );
   });

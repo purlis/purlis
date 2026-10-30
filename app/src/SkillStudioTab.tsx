@@ -435,9 +435,10 @@ export function SkillStudioTab({
         why === undefined ? { status: "ok", data: { notes: [] } } : { status: "error", error: why },
       ),
     );
-  /** Bring back (S2's split of Restore): the deleted skill `id` names, back at its level. */
-  const bringBack = (id: string) =>
-    change("The skill was not brought back", () => commands.skillRestore(plane, id));
+  /** Bring back (S2's split of Restore): the deleted skill `id` names, back at its level, `under`
+   *  a new name where its own is a built-in skill's now (#3729). */
+  const bringBack = (id: string, under: string | null = null) =>
+    change("The skill was not brought back", () => commands.skillRestore(plane, id, under));
   /** After a delete: Bring it back on the Notice, for the copy just deleted. */
   const restoreOffered = async (name: string, level: SkillLevel): Promise<Said | undefined> => {
     const answer = await commands.skillsDeleted(plane);
@@ -1181,8 +1182,9 @@ export function SkillStudioTab({
           key={one.id}
           plane={plane}
           deleted={one}
+          builtIns={skills.filter((skill) => skill.level === "built-in").map((skill) => skill.name)}
           busy={busy}
-          onBringBack={(it) => bringBack(it.id)}
+          onBringBack={(it, under) => bringBack(it.id, under ?? null)}
         />
       ) : deleted.length === 0 ? undefined : (
         <EmptyState
