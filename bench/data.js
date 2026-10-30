@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793399520408,
+  "lastUpdate": 1793401706862,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32340,6 +32340,48 @@ window.BENCHMARK_DATA = {
             "value": 101.63958149999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.402, 101.479, 101.640, 102.125, 102.834 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "355a28e3fea7aebbc9254742ac3f5c52efae5b7d",
+          "message": "Skill sources: what an install brings along, and what it leaves as it is (#4153, #4155, #4154) (#4171)\n\n* Skill sources: leave a referred skill the level holds already as it is (#4032)\n\nThe install review brought along every skill a chosen one refers to, even\nwhere the level it lands in held that skill already, and the install then\nrefused. The review now takes the level: a referred skill the level holds\nis listed on the referring skill as `already` and not brought along, and\nthe install's re-review uses the same rule, so it goes ahead. The window\nreads the review again when \"Lands in\" changes; the CLI reviews for its\n--level.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill sources: review findings for #4032\n\n--all leaves out a skill the level holds already from anywhere; a skill\nnamed as well as referred to is never said to be left as it is; an update's\nreview never says so of the skill being updated; the level is looked up\nonce per name in a review; the install's refusal names the level as well as\nthe source; the window keys its reads on the whole level.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Stories: the install review with Lands in at the top and a referred skill already there (#4032)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill sources: Install all… leaves a ticked skill already there as it is (#4153)\n\nInstall all… ticks its list before the level is chosen, so a skill the\nchosen level held already, by hand or from another source, was ticked and\nthe install refused. The set review now leaves out each named skill the\nlevel holds and answers it as `there`; the window shows it under \"There\nalready\", unticked and out of reach, and installs the rest. `--all`\nshares the same split.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill sources: a reference to a built-in skill's name brings nothing along (#4155)\n\nA skill referring to `skills:secrets`, in a source that also held a\n`secrets` folder, brought that folder along and the install refused (S12).\nEvery chat has the built-in and no plane skill may take its name, so the\nreference is met already: the review, the install and the update now take\nthe built-in skills (`met`, `met_at`) and leave such a reference as it is.\nThe update review's list of brought-along skills under a built-in's name,\nand the refusal it led to (#3728), can no longer fill, so they go from the\ncore, the CLI and the window; the install's and the update's own checks\nstay as the guard.\n\nThe review's line for a reference met already now reads \"which its chats\nthere have already\", as it is no longer always a copy at the level.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill sources: a reference is met where the skill's chats resolve it (#4154)\n\nA referred skill was left out only where the level held that name on the\nsame side. A workspace install still copied one a granted project skill\nalready gave its chats, and the copy hid the project's. `met` now follows\nhow a chat resolves its skills: at a workspace, a project skill granted to\nit and not turned off there; at a persona, a project skill its `skills:`\nlist names. A local install also relies on the level's shared skills; a\nshared install on shared skills alone, as a teammate has no one else's\nlocal skills. Recorded as an amendment to ADR 0100.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill sources: review findings for #4153, #4155 and #4154\n\n- A built-in skill's name ticked in Install all…, or offered to `--all`,\n  is there already (`taken`), not reviewed and then refused.\n- Past one read, the answer keeps `there`, and the first part keeps\n  those names, so they are never listed as left out to tick.\n- `met` asks the rules `skill_set` uses itself:\n  `purlis_skills::reaches_workspace` and `Reference::names_plane`, now\n  public, so the two cannot drift.\n- An extension source's review meets a built-in's name too.\n- `--all` names each skill it leaves as it is.\n- The review heading says \"Nothing to install\" when every ticked skill is\n  there, and \"There already\" no longer says only the level's skills.\n- The update's S12 check is marked as the guard it now is.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Stories: the install review's line for a reference met already, and Install all… scrolled to There already\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Stories: baselines for Install all… with a skill there already (#4153)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T22:42:36Z",
+          "tree_id": "245e02b73108493f620acca322f48ecdc07690fd",
+          "url": "https://github.com/purlis/purlis/commit/355a28e3fea7aebbc9254742ac3f5c52efae5b7d"
+        },
+        "date": 1793401700447,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6694425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.655, 0.656, 0.669, 0.688, 0.693 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5214265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.314, 16.385, 16.521, 16.540, 16.625 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0336475,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.887, 101.916, 102.034, 102.373, 102.658 ms"
           }
         ]
       }
