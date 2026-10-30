@@ -246,6 +246,37 @@ describe("a scorecard put back at the project's root (#3978)", () => {
     expect(screen.getByTestId("grade-chat")).toBeInTheDocument();
   });
 
+  it("opens on the row of the copy it graded, never a same-named one", async () => {
+    const local = skill("deploy", { local: true, folder: "skills.local/deploy" });
+    core([DEPLOY, local], [], { at: "project", local: true });
+    renderStudioAt({
+      page: "library",
+      scope: AT_THE_ROOT,
+      skill: skillRowNamed("deploy"),
+      tab: "grades",
+      grading: { at: "scorecard", grade: "01G" },
+    });
+
+    await screen.findByTestId("grade-scorecard");
+    await waitFor(() => expect(walked().at.skill).toBe(skillRowId(local)));
+    expect(walked().at.scope).toEqual(AT_THE_ROOT);
+  });
+
+  it("stays at the root for a workspace the project no longer has", async () => {
+    core([], [], { at: "workspace", name: "gone", local: false });
+    renderStudioAt({
+      page: "library",
+      scope: AT_THE_ROOT,
+      skill: skillRowNamed("deploy"),
+      tab: "grades",
+      grading: { at: "scorecard", grade: "01G" },
+    });
+
+    await screen.findByTestId("grade-scorecard");
+    await new Promise((done) => setTimeout(done, 50));
+    expect(walked().at.scope).toEqual(AT_THE_ROOT);
+  });
+
   it("stays where it is for the project's own copy", async () => {
     core([DEPLOY], [], { at: "project", local: false });
     renderStudioAt({

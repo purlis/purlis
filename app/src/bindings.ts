@@ -12560,9 +12560,9 @@ export type SkillGradeStep = {
 	skill: string,
 	/**
 	 *  The copy it grades, by its level (#3978): a same-named copy at another level is another
-	 *  skill, whose tab a step of this one moves nothing on. `None` for a router's grade.
+	 *  skill, whose tab a step of this one moves nothing on.
 	 */
-	level: SkillLevel | null,
+	level: SkillLevel,
 	grade: string,
 	ran: number,
 	of: number,

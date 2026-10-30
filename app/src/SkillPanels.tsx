@@ -97,6 +97,7 @@ export function NotRead({
   onAgain,
   testid,
   variant = "panel",
+  size,
 }: {
   /** What was read, as the sentence names it: "the grades of deploy". */
   what: string;
@@ -105,6 +106,8 @@ export function NotRead({
   testid: string;
   /** A panel inside a page, or the page's whole list. */
   variant?: "panel" | "page";
+  /** Its Try again's size, where the page's rows are compact. */
+  size?: "sm";
 }) {
   return (
     <EmptyState
@@ -114,7 +117,7 @@ export function NotRead({
       role="status"
       testid={testid}
       action={
-        <Button icon={<RotateCw aria-hidden="true" />} onPress={onAgain}>
+        <Button size={size} icon={<RotateCw aria-hidden="true" />} onPress={onAgain}>
           Try again
         </Button>
       }

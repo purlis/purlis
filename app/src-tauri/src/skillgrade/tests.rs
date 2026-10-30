@@ -618,7 +618,7 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
     let step = |plane: &PlaneId, skill: &str, grade: &str| SkillGradeStep {
         plane: plane.clone(),
         skill: skill.to_owned(),
-        level: None,
+        level: (&shared).into(),
         grade: grade.to_owned(),
         ran: 3,
         of: 12,

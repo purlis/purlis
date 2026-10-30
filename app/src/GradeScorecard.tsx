@@ -201,6 +201,7 @@ export function GradeScorecardPage({
   onGradedAt?: (level: SkillLevel) => void;
 }) {
   const [again, setAgain] = useState(0);
+  const [endPutAway, setEndPutAway] = useState(false);
   const card = useRead(
     () => commands.skillGradeScorecard(plane, name, grade),
     [plane, name, grade, again],
@@ -233,12 +234,7 @@ export function GradeScorecardPage({
       aria-label={`Scorecard of ${name}`}
     >
       <GradingHeading name={`Grade of ${name} · ${it.graded}`} />
-      {onGradeAgain === undefined ? (
-        // A copy no scope here can grade (one deleted since): what it was, with nothing to press.
-        <p className="honest" role="note">
-          {about}
-        </p>
-      ) : (
+      {onGradeAgain !== undefined ? (
         <Notice
           cause={`skill-grade-end:${grade}`}
           tone={end.tone}
@@ -247,6 +243,19 @@ export function GradeScorecardPage({
         >
           {about}
         </Notice>
+      ) : (
+        // A copy this studio cannot grade from here (one deleted since): its end, put away
+        // once read.
+        !endPutAway && (
+          <Notice
+            cause={`skill-grade-end:${grade}`}
+            tone={end.tone}
+            label={end.said}
+            onDismiss={() => setEndPutAway(true)}
+          >
+            {about}
+          </Notice>
+        )
       )}
       {it.asked > 0 && (
         <p className="honest" data-testid="grade-scorecard-asked">

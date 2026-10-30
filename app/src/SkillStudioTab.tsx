@@ -358,6 +358,33 @@ export function SkillStudioTab({
     };
   }, [plane, opened, changed, done]);
 
+  // **The copy a scorecard or a grade's chat says it graded** (#3978), by the grade open: the
+  // studio goes to the scope that lists that copy (a retired tab comes back at the project's
+  // root), to a workspace only while the project has it, and then to the row of that copy, so
+  // a same-named copy at another level is never the one the page's ways act on.
+  const [graded, setGraded] = useState<{ grade: string; level: SkillLevel }>();
+  useEffect(() => {
+    const open = at.grading;
+    if (graded === undefined || open === undefined || studio === undefined) return;
+    if (open.at !== "scorecard" && open.at !== "chat") return;
+    if (open.grade !== graded.grade || at.skill === undefined) return;
+    const there = scopeOfLevel(graded.level, at.scope);
+    if (!sameScope(there, at.scope)) {
+      if (there.at === "workspace" && !studio.workspaces.includes(there.name)) return;
+      history.replace({ ...at, scope: there });
+      return;
+    }
+    const name = skillOfRowId(at.skill);
+    const row = studio.skills.find((one) => {
+      const its = one.name === name ? levelOf(one, at.scope) : null;
+      return its !== null && sameLevel(its, graded.level);
+    });
+    if (row !== undefined && skillRowId(row) !== at.skill)
+      history.replace({ ...at, skill: skillRowId(row) });
+    // The history's steps are the tab's own: `at` and the studio read say all it acts on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graded, at, studio]);
+
   if (studio !== undefined && !studio.on)
     return (
       <EmptyState
@@ -389,14 +416,10 @@ export function SkillStudioTab({
     else history.replace(next);
   };
 
-  /** **The copy a scorecard or a grade's chat says it graded** (#3978): one this scope lists no
-   *  row of at that level (a retired tab comes back at the project's root) goes to the scope
-   *  that does, on the same page. */
+  /** Told the level of the copy a scorecard or a grade's chat is of, once read (#3978). */
   const gradedAt = (level: SkillLevel) => {
-    const now = placeNow.current;
-    const there = scopeOfLevel(level, now.scope);
-    if (sameScope(there, now.scope)) return;
-    history.replace({ ...now, scope: there });
+    const open = placeNow.current.grading;
+    if (open !== undefined && "grade" in open) setGraded({ grade: open.grade, level });
   };
 
   const change: Change = (label, run, then, refusedIn) => {
@@ -1154,8 +1177,9 @@ export function SkillStudioTab({
         </div>
       ) : gradingDrawn && at.grading !== undefined && gradingName !== undefined ? (
         <GradingPage
-          // A page of each kind and grade: walking a grade's chats keeps its scorecard read.
-          key={`${chosen === undefined ? skillRowNamed(gradingName) : skillRowId(chosen)}:${at.grading.at}:${"grade" in at.grading ? at.grading.grade : ""}`}
+          // A page of each kind and grade, by the skill's name: a row found or pinned once the
+          // studio is read reads nothing anew.
+          key={`${gradingName}:${at.grading.at}:${"grade" in at.grading ? at.grading.grade : ""}`}
           plane={plane}
           name={gradingName}
           level={gradingLevel}

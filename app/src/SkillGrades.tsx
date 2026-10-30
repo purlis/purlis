@@ -177,11 +177,8 @@ export function GradesTab({
     ours.current = level;
   });
   useEffect(() => {
-    const isOurs = (now: { plane: string; skill: string; level: SkillLevel | null }) =>
-      now.plane === plane &&
-      now.skill === name &&
-      now.level !== null &&
-      sameLevel(now.level, ours.current);
+    const isOurs = (now: { plane: string; skill: string; level: SkillLevel }) =>
+      now.plane === plane && now.skill === name && sameLevel(now.level, ours.current);
     const ended = listen<SkillGradeStep>(SKILL_GRADE, (event) => {
       const now = event.payload;
       if (!isOurs(now)) return;

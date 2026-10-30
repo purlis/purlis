@@ -423,8 +423,8 @@ pub struct SkillGradeStep {
     pub plane: PlaneId,
     pub skill: String,
     /// The copy it grades, by its level (#3978): a same-named copy at another level is another
-    /// skill, whose tab a step of this one moves nothing on. `None` for a router's grade.
-    pub level: Option<SkillLevel>,
+    /// skill, whose tab a step of this one moves nothing on.
+    pub level: SkillLevel,
     pub grade: String,
     pub ran: u32,
     pub of: u32,
@@ -656,7 +656,7 @@ pub(crate) fn begin(
             SkillGradeStep {
                 plane: plane.clone(),
                 skill: skill.clone(),
-                level: Some(copy_level.clone()),
+                level: copy_level.clone(),
                 grade: grade.clone(),
                 ran: spent.chats,
                 of,

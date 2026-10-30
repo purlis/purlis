@@ -150,7 +150,15 @@ function Held<T>({
 }) {
   if (read === undefined) return <ReadingRows what={what} testid="skill-sources-reading" />;
   if (read.refused !== undefined)
-    return <NotRead what={what} why={read.refused} onAgain={again} testid="skill-sources-unread" />;
+    return (
+      <NotRead
+        what={what}
+        why={read.refused}
+        onAgain={again}
+        testid="skill-sources-unread"
+        size="sm"
+      />
+    );
   return <>{children(read.data)}</>;
 }
 
