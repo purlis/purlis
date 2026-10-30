@@ -1391,7 +1391,9 @@ enum ProfileCommand {
     },
     /// Sign a profile of this machine's in on this device, through its harness's own sign-in,
     /// run here in this terminal with the profile's folder set. The harness keeps what it
-    /// signs in with in that folder; purlis reads none of it.
+    /// signs in with in that folder; purlis reads none of it. With --pool, on that pool's
+    /// runner instead: purlis follows the sign-in there, as the window does, and says each step
+    /// here.
     #[command(name = "sign-in")]
     Authenticate {
         /// The profile's name.
@@ -1403,6 +1405,10 @@ enum ProfileCommand {
         /// github-copilot. A Claude plan is never signed in through opencode.
         #[arg(long)]
         provider: Option<String>,
+        /// Sign it in on this pool's runner: it opens the sign-in page in your browser, reads
+        /// the code it shows, and exits non-zero if it did not sign in.
+        #[arg(long, value_name = "POOL", conflicts_with = "check")]
+        pool: Option<String>,
     },
 }
 
@@ -4117,8 +4123,15 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
             name,
             check,
             provider,
+            pool,
         } => {
-            return profile_sign_in(&store, name, *check, provider.as_deref());
+            return match pool {
+                Some(pool) => match pool_sign_in(&store, name, pool, provider.as_deref()) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(why) => refused(&why),
+                },
+                None => profile_sign_in(&store, name, *check, provider.as_deref()),
+            };
         }
         ProfileCommand::List => unreachable!("listed in run"),
     };
@@ -4220,6 +4233,135 @@ fn profile_sign_in(
             ExitCode::FAILURE
         }
         Err(e) => refused(&format!("{} could not be run: {e}", login.program)),
+    }
+}
+
+/// `purlis profile sign-in <name> --pool <pool>` (#4046, spec #4023): the sign-in the window's
+/// strip drives ([`sign_in::driven`]), run on pool `pool`'s runner through this machine's `docker`
+/// and followed here ([`sign_in::terminal`]), for a profile the runner already keeps. Only a pool
+/// shown to be the person's own is signed in on, as the window's is. Nothing of this machine's
+/// sign-in goes to the runner (ADR 0095).
+///
+/// [`sign_in::driven`]: purlis_core::profilestore::sign_in::driven
+/// [`sign_in::terminal`]: purlis_core::profilestore::sign_in::terminal
+fn pool_sign_in(
+    store: &purlis_core::profilestore::Homes,
+    name: &str,
+    pool: &str,
+    provider: Option<&str>,
+) -> Result<(), String> {
+    use purlis_core::dockerpool::Docker;
+    use purlis_core::profilestore::{self, sign_in};
+    use purlis_core::runners;
+    let config = store.config_root();
+    let record = profilestore::list(config)?
+        .into_iter()
+        .find(|p| p.name == name)
+        .ok_or_else(|| {
+            format!(
+                "this machine has no profile named '{}'. purlis profile list names the ones it \
+                 has.",
+                shown::short(name)
+            )
+        })?;
+    sign_in::plan_named(&record.harness, provider)?;
+    let plans = sign_in::providers(&record.harness);
+    if provider.is_none() && !plans.is_empty() {
+        let named: Vec<String> = plans
+            .iter()
+            .map(|p| format!("--provider {} ({})", p.provider, p.title))
+            .collect();
+        return Err(format!(
+            "'{}' signs in to the plan you name: add {}.",
+            record.name,
+            named.join(" or ")
+        ));
+    }
+    if sign_in::driven::Driven::of_plan(&record.harness, provider, std::time::Instant::now())
+        .is_none()
+    {
+        return Err(format!(
+            "purlis follows only Claude Code's and opencode's Copilot sign-in on a pool so far. \
+             Sign '{}' in from its line in Settings › Pools, with a project open: its Sign in \
+             opens a shell tab on the runner.",
+            record.name
+        ));
+    }
+    // Nothing reaches a runner, nor is read of one, before its engine is shown to be yours.
+    let engine = Docker::engine_on_this_machine();
+    purlis_core::poollogins::owned(engine.clone())?;
+    let engine = engine?;
+    if runners::cluster_runner_for(config, pool)
+        .map_err(|why| why.to_string())?
+        .is_some()
+    {
+        return Err(format!(
+            "pool {pool} is a cluster pool, and purlis signs a profile in only on a Docker \
+             pool's runner so far."
+        ));
+    }
+    let runner = runners::runner_for(config, pool)
+        .map_err(|why| format!("{why}. Settings › Pools lists this machine's pools."))?;
+    let path = purlis_core::envvar::var("PATH");
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let docker = Docker::on_this_machine(path.as_deref(), home.as_deref()).map_err(|why| why.0)?;
+    eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
+    docker
+        .standing_on_runner(&runner.made, &engine, name)
+        .map_err(|why| {
+            format!(
+                "pool {pool}'s runner could not say whether '{name}' is signed in there, so \
+                 nothing was started: {why}. A profile goes on a pool from its row in Settings \
+                 › Pools."
+            )
+        })?;
+    let login = docker.driven_sign_in(&runner.made, &engine, name, provider)?;
+    let check = {
+        let (docker, made, engine, name) = (
+            docker.clone(),
+            runner.made.clone(),
+            engine.clone(),
+            name.to_owned(),
+        );
+        move || {
+            docker
+                .standing_on_runner(&made, &engine, &name)
+                .unwrap_or(sign_in::Standing::CannotTell)
+        }
+    };
+    let driving = sign_in::driven::drive_with(&login, &record.harness, provider, check)?;
+    let (typed, lines) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lines().map_while(Result::ok) {
+            if typed.send(line).is_err() {
+                return;
+            }
+        }
+    });
+    sign_in::terminal::follow(&driving, &lines, &mut ThisTerminal, name, pool)
+}
+
+/// This command's terminal, as a sign-in on a pool's runner says its steps there.
+struct ThisTerminal;
+
+impl purlis_core::profilestore::sign_in::terminal::Terminal for ThisTerminal {
+    fn say(&mut self, line: &str) {
+        eprintln!("{line}");
+    }
+
+    /// The browser, where this system opens one. Where it does not, the page was said.
+    fn open(&mut self, url: &str) {
+        let program = if cfg!(target_os = "macos") {
+            "/usr/bin/open"
+        } else {
+            "xdg-open"
+        };
+        let _ = std::process::Command::new(program)
+            .arg(url)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
     }
 }
 

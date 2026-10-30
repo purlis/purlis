@@ -72,6 +72,18 @@ export const PasteCode: Story = {
   },
 };
 
+/** Step 2 of a device code's sign-in (#4045): the code, large, and its page only on Open page. */
+export const DeviceCode: Story = {
+  args: { step: { at: "device", url: "https://github.com/login/device", code: "WDJB-MJHT" } },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByLabelText("The code to enter on the page")).toHaveTextContent(
+      "WDJB-MJHT",
+    );
+    await expect(canvas.getByRole("button", { name: "Open page" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Copy code" })).toBeVisible();
+  },
+};
+
 /** The harness refused the code, in its words; another may be pasted, from the field. */
 export const CodeRefused: Story = {
   args: {
