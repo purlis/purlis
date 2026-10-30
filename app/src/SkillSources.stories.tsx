@@ -432,6 +432,8 @@ export const InstallAllThere: Story = {
     const there = await within(review).findByTestId("there-writing-plans");
     await expect(within(there).getByRole("checkbox")).not.toBeChecked();
     await expect(within(review).getByRole("button", { name: "Install" })).toBeVisible();
+    // The picture shows the section, below the skill being installed.
+    there.scrollIntoView({ block: "end" });
   },
 };
 
