@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793373197941,
+  "lastUpdate": 1793375423366,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31710,6 +31710,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1599065,
             "unit": "ms",
             "extra": "median of 5 runs: 101.651, 101.879, 102.160, 102.418, 102.980 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "04bedbb155d2e877462e5d69c3cd164e183ed0f8",
+          "message": "stories: the keyboard has landed once the frame that scrolls it into sight is drawn (#4103) (#4109)\n\nReact Aria's collections move the focus at once and scroll the row it moved to into sight in a\nrequestAnimationFrame. untilFocused returned as soon as the focus moved, so expectFocusInSight\nright after it could see the list before it scrolled: List's To Choose From, on End, saw scribe\nbelow the window in WebKit. untilFocused and untilFocusWithin now wait for the next frame, whose\ncallback runs after the one the collection asked for.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T14:59:23Z",
+          "tree_id": "3f8a23cb75de702c01011e9e341fc4d2c97cb9d7",
+          "url": "https://github.com/purlis/purlis/commit/04bedbb155d2e877462e5d69c3cd164e183ed0f8"
+        },
+        "date": 1793375419807,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.67455,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.652, 0.669, 0.675, 0.680, 0.682 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.714413,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.487, 16.646, 16.714, 16.717, 16.777 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.760086,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.941, 103.424, 103.760, 103.763, 104.075 ms"
           }
         ]
       }
