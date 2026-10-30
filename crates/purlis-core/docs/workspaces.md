@@ -373,8 +373,11 @@ piece, these run in the app for a chat (and here from a terminal):
   sandbox denies (an editor's tasks, a hook, an agent's settings) does not start, and names it.
 - `purlis worktree push` pushes the piece's own branch to its remote under its own name, after
   purlis's scan of what it would publish, never the branch the remote names its default.
-  `--force-with-lease` pushes over the remote's copy, only while the branch is where purlis's
-  own last `update` left it, and only if the remote still has what was fetched just before.
+  Where purlis's own `update` rewrote a branch that was already pushed, the push goes over the
+  remote's copy, leased to the exact commit the update saw there, also with commits added on
+  top since. It is refused where the remote moved since (someone else pushed), where the
+  branch was rewritten any other way, or where the remote's copy had commits the folder never
+  had, and it says what to do. `--force-with-lease` asks for nothing more than a plain push.
   Which branch is the remote's default is asked of the remote itself.
 
 Every checkout purlis runs for these reads each commit once, by its id, and runs git on the

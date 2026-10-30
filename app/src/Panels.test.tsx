@@ -12,7 +12,7 @@ import { HeadActions } from "./viewHead";
 import { ChatsHere, fixedChats, nothingKnown, type State } from "./chatState";
 import { drawnWith } from "./cascade.testkit";
 import { ReadOnlySaid } from "./ReadOnlyLine";
-import { wears } from "./textRoles.testkit";
+import { inherited, wears } from "./textRoles.testkit";
 import { CATALOGUE, type ViewId } from "./regions";
 import { catalogue, catalogued, type Catalogued, type Offer } from "./actions";
 import { noTabs } from "./tabs";
@@ -369,6 +369,10 @@ describe("the right-hand region", () => {
     const alerts = screen.getAllByRole("alert");
     expect(alerts.length).toBeGreaterThan(0);
     for (const alert of alerts) expect(alert).toHaveTextContent("no workspace 'alpha'");
+    // Words that say something is wrong are `danger.text` (#3938, `docs/ui-primitives.md`);
+    // `state.failed` is a state's mark.
+    const line = screen.getByTestId("panels").querySelector("p.trouble");
+    expect(line && inherited(line, "color")).toBe("var(--danger-text)");
   });
 
   it("says the plane is still being read rather than saying there is nothing to do", () => {
@@ -863,6 +867,12 @@ describe("a todo's box and a done todo (R131, ADR 0106)", () => {
     const panel = within(screen.getByTestId("panel-todos"));
     const done = panel.getByTestId("panel-row-done/20260301-090000-ship");
     expect(done).toHaveClass("is-checked");
+    // Its words step back to the quiet tier, the meta's, by their class (#3917): a colour App.css
+    // set on them lost to the body role's later layer, and only the strike drew.
+    wears(done.querySelector(".row-text"), "meta", "a done todo's words");
+    expect(drawnWith(done.querySelector(".row-text") as Element, "text-decoration")).toBe(
+      "line-through",
+    );
     expect(panel.getByTestId("panel-row-20260302-091400-review")).not.toHaveClass("is-checked");
     // Under a group of its own, after the days the open ones are under.
     const groups = panel.getAllByRole("rowgroup");
@@ -1223,7 +1233,8 @@ describe("a panel's words, each on its text role (#1920)", () => {
 
     const [empty] = screen.getAllByText("No workspace focused.");
     wears(empty, "secondary", "the empty sentence");
-    expect(drawnWith(empty, "opacity")).toBe("1");
+    // The role's colour is what makes it quiet: no rule fades it (#3790).
+    expect(drawnWith(empty, "opacity")).toBeUndefined();
   });
 });
 

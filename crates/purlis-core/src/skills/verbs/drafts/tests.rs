@@ -500,7 +500,7 @@ fn a_try_left_behind_is_swept_once_old_and_one_a_chat_stands_in_is_kept() {
     );
     let kept = try_out(root, &id).unwrap();
     let left = try_out(root, &id).unwrap();
-    let state = crate::plane::state_dir(root);
+    let state = crate::appstate::dir(root).unwrap();
     // Just laid out: its chat may not be on the app's record yet.
     sweep_tries(root, &[]);
     assert!(left.piece.is_dir());
@@ -707,6 +707,27 @@ fn use_skill_offers_a_try_its_draft_alone_as_its_arming_hands_it() {
     );
 }
 
+#[test]
+fn drafts_and_tries_in_the_plane_s_state_folder_are_never_read() {
+    // #3718: the drafts and the tries are read from this machine's app state alone.
+    let tmp = plane();
+    let root = tmp.path();
+    let id = drafted(
+        root,
+        "skills/triage/SKILL.md",
+        &whole(&skill_text("triage", "Sorts issues.")),
+    );
+    let laid = try_out(root, &id).unwrap();
+    assert!(tried(root, &laid.piece).is_some());
+    crate::appstate::put_in_the_plane(root, TRIES_DIR);
+    crate::appstate::put_in_the_plane(root, DRAFTS_DIR);
+    assert!(list(root).is_empty());
+    assert!(one(root, &id).is_err());
+    assert_eq!(tried(root, &laid.piece), None);
+    assert!(tries(root).is_empty());
+    assert!(!graded_piece(root, &laid.piece));
+}
+
 /// Spec #3679 S12: a chat's new skill under a built-in skill's name is never accepted, at any
 /// level, even where no bundle is found beside this binary.
 #[test]
@@ -726,6 +747,20 @@ fn a_drafted_new_skill_with_a_built_in_skills_name_is_not_accepted() {
         assert_eq!(refused.unwrap_err(), crate::skills::NAME_RESERVED, "{rel}");
         assert!(!root.join(rel).exists(), "{rel}");
     }
+}
+
+#[test]
+fn a_throwaway_piece_an_open_chat_stands_in_is_kept_though_its_try_is_gone() {
+    // A Try it's chat put back after its try was not carried: its folder is its chat's still.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    let piece = root.join("workspaces/.throwaway/purlis-try-0123456789abcdef");
+    std::fs::create_dir_all(&piece).unwrap();
+    sweep_tries(root, std::slice::from_ref(&piece));
+    assert!(piece.is_dir());
+    sweep_tries(root, &[]);
+    assert!(!piece.exists(), "one no chat stands in goes");
 }
 
 #[test]

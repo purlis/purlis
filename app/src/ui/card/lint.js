@@ -12,7 +12,8 @@ import { moved } from "../familyLint.js";
 
 const cardFamily = moved({
   description: "A box one step off its surface is the shared Card family",
-  scopes: ["card"],
+  // A pressed card is a family of its own (#3885), drawn by its wrapper in this folder too.
+  scopes: ["card", "card-button"],
   classes: ["ui-inline-surface", "ui-inline-surface-*"],
   message: 'a card: draw it as `<Card>` (an ask as `variant="ask"`) from `ui/card/Card` (#2912).',
 });
@@ -20,14 +21,4 @@ const cardFamily = moved({
 /** This folder's rules, by name: `purlis/<name>` in `eslint.config.js`, an error. */
 export const rules = {
   "card-family": cardFamily,
-};
-
-/**
- * **This family's controls still drawn as a raw `<button>`** (D-2904-9, #3523): a card pressed
- * whole (the welcome's doors, a repo to get), by the family's one class (`ui-card-control`),
- * never by a word a view picked (`welcome-door`, `repo-card`): the button family's rule lets it
- * through until the family has a pressable card for them to move onto (#3655).
- */
-export const rawButtons = {
-  classes: ["ui-card-control"],
 };

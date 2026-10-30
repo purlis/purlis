@@ -4367,8 +4367,11 @@ impl Chats {
             }
             let_go.insert(session, LetGo::of(&gone.chat));
         }
+        // A chat still to start keeps its place in front (#3114: one whose start returned into
+        // a quit is ended, and is still to start under the same number).
+        let still_coming = lock(&self.coming).iter().any(|one| one.number == session);
         let mut front = lock(&self.front);
-        if *front == Some(session) {
+        if *front == Some(session) && !still_coming {
             *front = None;
         }
         drop(front);
@@ -4655,6 +4658,8 @@ impl Chats {
                     reported: from.report.reported(),
                     mode: from.mode.into(),
                     owes: from.report == purlis_core::reopen::Owed::Due,
+                    report: from.report,
+                    long: from.long,
                 }),
                 asking: None,
             })
@@ -5826,15 +5831,39 @@ impl Chats {
             };
             // Out of the ones still to start only now, when it is open or among the ones that
             // would not start: a record written at any moment holds it once.
-            let left = {
+            //
+            // **Unless the quit has begun and it started** (#3114): it is ended below, so it would
+            // be in neither list, and the quit's record, built at any moment from here, would
+            // lose it for good. It stays one still to start, as the record put back had it.
+            // Asked once, under the lock the record reads the ones still to start under: seen not
+            // begun, the chat stays open until the quit's record is written, and is ended with
+            // the rest.
+            let (left, quitting) = {
                 let mut coming = lock(&self.coming);
-                coming.retain(|one| one.number != next.number);
-                coming.len()
+                let quitting = self.ending.load(Ordering::SeqCst);
+                if !quitting || session.is_none() {
+                    coming.retain(|one| one.number != next.number);
+                }
+                (coming.len(), quitting)
             };
             // A quit that began while it started ends it with the rest.
             if let Some(session) = session
-                && self.ending.load(Ordering::SeqCst)
+                && quitting
             {
+                // Back under the number it is still to start as, in its place on the strip and
+                // in front where it was, before it is ended: a record built meanwhile finds it
+                // there, and not at the strip's end or with no chat in front.
+                if session != next.number {
+                    for placed in lock(&self.order).iter_mut() {
+                        if *placed == session {
+                            *placed = next.number;
+                        }
+                    }
+                    let mut front = lock(&self.front);
+                    if *front == Some(session) {
+                        *front = Some(next.number);
+                    }
+                }
                 // As any chat is closed, so nothing of it is left held; nothing is written,
                 // since the quit's record is the last.
                 let _ = self.close(session);
@@ -6018,6 +6047,23 @@ impl Chats {
     /// The chats a launch could not start as the record holds them, each with why and the
     /// approval its profile needs: what says whose task one was (#1497, `crate::unstarted`).
     /// The window's list is [`Self::would_not_start`].
+    /// **The chats that have not come back since the launch** (#3900, #3901), by their ids
+    /// (ADR 0066) and the numbers their tabs are drawn under: still restoring, or waiting to
+    /// start again. No program of theirs runs here yet, and each may yet: whether one still
+    /// works is not something this app can say of it.
+    pub(crate) fn not_back(&self) -> Vec<(String, Option<u32>)> {
+        let coming: Vec<(String, Option<u32>)> = lock(&self.coming)
+            .iter()
+            .filter_map(|one| Some((one.chat.identity.id.clone()?, Some(one.number))))
+            .collect();
+        // One waiting to start has the number its record kept, where it kept one.
+        let waiting = lock(&self.would_not_start)
+            .iter()
+            .filter_map(|one| Some((one.chat.identity.id.clone()?, one.chat.number)))
+            .collect::<Vec<_>>();
+        coming.into_iter().chain(waiting).collect()
+    }
+
     pub(crate) fn waiting_to_start(&self) -> Vec<WaitingChat> {
         lock(&self.would_not_start)
             .iter()

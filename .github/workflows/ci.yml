@@ -1312,7 +1312,7 @@ jobs:
   # counts files: its four parts would have taken 4.6, 10.8, 6.3 and 8.2 minutes of specs, the
   # cut ones 7.7, 7.7, 6.9 and 7.6. Runners do not queue (Enterprise runners, 2026-10-13), so a
   # part costs runner minutes, not wait. Every part is a run of neighbours in name order, as
-  # before, and the Skill studio's specs keep the predecessors they pass after (#3562).
+  # before.
   #
   # macOS's own sandbox checks are a leg of their own too (`sandbox`): they compile the core's
   # tests and build no app, 4.2 minutes on average that made the single-app leg the next longest.

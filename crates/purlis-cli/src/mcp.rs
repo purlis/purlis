@@ -501,6 +501,7 @@ fn dispatch(args: &serde_json::Map<String, serde_json::Value>) -> Result<String,
     let profile = chattools::dispatch_profile(args)?;
     let waits = chattools::dispatch_waits(args)?;
     let place = chattools::dispatch_place(args)?;
+    let long = chattools::dispatch_long(args)?;
     let here = crate::Here::read()?;
     crate::dispatch::send(
         &here,
@@ -510,6 +511,7 @@ fn dispatch(args: &serde_json::Map<String, serde_json::Value>) -> Result<String,
         &crate::dispatch::Options {
             profile: profile.as_deref(),
             place: place.as_deref(),
+            long,
         },
         waits,
     )

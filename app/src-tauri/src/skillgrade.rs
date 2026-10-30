@@ -427,6 +427,11 @@ pub struct SkillGradeStep {
     pub of: u32,
     /// What its chats have spent so far, where they said, and the cap it is held to.
     pub tokens: Option<f64>,
+    /// What its chats have cost so far, in dollars, where they said (S6): the running page's
+    /// spend against the grade's dollar limit.
+    pub cost_usd: Option<f64>,
+    /// The dollar limit it is held to, where it has one.
+    pub limit_usd: Option<f64>,
     pub cap: f64,
     /// How many of its chats asked the person something and were ended there (SK-59, #3239):
     /// said in the grade, as none of them is a run.
@@ -693,28 +698,27 @@ pub(crate) fn begin(
         .name("purlis-grade".to_owned())
         .spawn(move || {
             let marker = std::cell::RefCell::new(marker);
-            let tell = |ran: u32,
-                        tokens: Option<u64>,
-                        asked: u32,
-                        ended: Option<GradeEnded>,
-                        said: Option<String>| {
-                let _ = app.emit(
-                    EVENT,
-                    SkillGradeStep {
-                        plane: plane.clone(),
-                        skill: skill.clone(),
-                        grade: grade.clone(),
-                        ran,
-                        of,
-                        tokens: tokens.map(|tokens| tokens as f64),
-                        cap: cap as f64,
-                        asked,
-                        ended,
-                        said,
-                    },
-                );
-            };
-            tell(0, None, 0, None, None);
+            let tell =
+                |spent: Spent, asked: u32, ended: Option<GradeEnded>, said: Option<String>| {
+                    let _ = app.emit(
+                        EVENT,
+                        SkillGradeStep {
+                            plane: plane.clone(),
+                            skill: skill.clone(),
+                            grade: grade.clone(),
+                            ran: spent.chats,
+                            of,
+                            tokens: spent.tokens.map(|tokens| tokens as f64),
+                            cost_usd: spent.cost_usd,
+                            limit_usd: limits.cost_usd,
+                            cap: cap as f64,
+                            asked,
+                            ended,
+                            said,
+                        },
+                    );
+                };
+            tell(Spent::default(), 0, None, None);
             let run = || {
                 // The arm's copy: the skill as read for the grade, as its previous version's
                 // commit holds it (SK-57, read from git, never from the folder), or none.
@@ -743,7 +747,7 @@ pub(crate) fn begin(
                     profile: &profile,
                     stop: &stop,
                     spent: Spent::default(),
-                    tell: &|ran, tokens, asked| tell(ran, tokens, asked, None, None),
+                    tell: &|spent, asked| tell(spent, asked, None, None),
                     on_spent: &|spent| {
                         if let Some(marker) = marker.borrow_mut().as_mut()
                             && let Err(why) = marker.spent(spent)
@@ -801,8 +805,10 @@ pub(crate) fn begin(
                     (None, Some(_)) => None,
                 };
                 tell(
-                    graded.spent.chats,
-                    graded.report.spent_tokens,
+                    Spent {
+                        tokens: graded.report.spent_tokens,
+                        ..graded.spent
+                    },
                     graded.report.asked(),
                     Some(graded.report.ended.into()),
                     said,
@@ -817,7 +823,12 @@ pub(crate) fn begin(
                 } else {
                     FAILED_ONCE_RECORDED
                 };
-                tell(0, None, 0, Some(GradeEnded::Failed), Some(said.to_owned()));
+                tell(
+                    Spent::default(),
+                    0,
+                    Some(GradeEnded::Failed),
+                    Some(said.to_owned()),
+                );
             });
         })
         .map_err(|why| {
@@ -957,6 +968,145 @@ pub struct GradeScorecard {
     /// How many of its chats asked the person something and were ended there.
     pub asked: u32,
     pub tests: Vec<ScoredTest>,
+    /// How it ended, its arms' pass rates and what it spent (S6): its end banner and totals.
+    pub outcome: GradeOutcome,
+    pub arms: GradeArms,
+    pub spent: GradeSpent,
+}
+
+/// **How a grade ended, as its list marks it** (S6): graded whole, stopped by the person, stopped
+/// at its limit (its token cap, its dollar limit, or a chat that did not say what it spent), or
+/// interrupted (purlis stopped under it, or its chats did not start).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum GradeOutcome {
+    Graded,
+    Stopped,
+    AtLimit,
+    Interrupted,
+}
+
+impl From<GradeEnd> for GradeOutcome {
+    fn from(end: GradeEnd) -> GradeOutcome {
+        match end {
+            GradeEnd::Whole => GradeOutcome::Graded,
+            GradeEnd::Cancelled => GradeOutcome::Stopped,
+            GradeEnd::OverCap | GradeEnd::OverLimit | GradeEnd::SpendNotReported => {
+                GradeOutcome::AtLimit
+            }
+            GradeEnd::ChatsDidNotStart | GradeEnd::Interrupted => GradeOutcome::Interrupted,
+        }
+    }
+}
+
+/// **Each arm's pass rate**, in points from 0 to 100, where the arm ran: the Grades tab's bars
+/// and a scorecard's totals.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Type)]
+pub struct GradeArms {
+    pub with: Option<f64>,
+    pub without: Option<f64>,
+    pub previous: Option<f64>,
+}
+
+/// **What a grade spent**: the chats that ran, their tokens and their cost where they said them,
+/// and the dollar limit it was held to.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Type)]
+pub struct GradeSpent {
+    pub chats: u32,
+    pub tokens: Option<f64>,
+    pub cost_usd: Option<f64>,
+    pub limit_usd: Option<f64>,
+}
+
+impl GradeArms {
+    fn of(graded: &Graded) -> GradeArms {
+        let points = |arm: Arm| {
+            graded
+                .report
+                .arm(arm)
+                .and_then(|score| score.pass_rate)
+                .map(|stat| (stat.mean * 100.0).round())
+        };
+        GradeArms {
+            with: points(Arm::With),
+            without: points(Arm::Without),
+            previous: points(Arm::Previous),
+        }
+    }
+}
+
+impl GradeSpent {
+    fn of(graded: &Graded) -> GradeSpent {
+        GradeSpent {
+            chats: graded.spent.chats,
+            tokens: graded.spent.tokens.map(|tokens| tokens as f64),
+            cost_usd: graded.spent.cost_usd,
+            limit_usd: graded.report.cost_cap_usd,
+        }
+    }
+}
+
+/// **One grade in a skill's Grades tab** (S6): when it ran, the version, what it ran on, how it
+/// ended, each arm's pass rate and what it spent; its id opens its scorecard.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct GradeRow {
+    pub grade: String,
+    pub graded: String,
+    pub version: String,
+    pub ran_on: String,
+    /// How it ended, in the record's words, and as its mark says it.
+    pub ended: String,
+    pub outcome: GradeOutcome,
+    pub arms: GradeArms,
+    pub spent: GradeSpent,
+    pub after_edit: bool,
+}
+
+impl GradeRow {
+    fn of(graded: &Graded) -> GradeRow {
+        use purlis_core::skills::studio;
+        GradeRow {
+            grade: graded.grade.clone(),
+            graded: studio::said_at(&graded.ts),
+            version: studio::version_said(graded),
+            ran_on: studio::ran_on_said(graded),
+            ended: grades::ended_said(graded.report.ended).to_owned(),
+            outcome: graded.report.ended.into(),
+            arms: GradeArms::of(graded),
+            spent: GradeSpent::of(graded),
+            after_edit: graded.after_edit,
+        }
+    }
+}
+
+/// **A copy's grades, newest first** (S6), and what the record left out as it was read.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct SkillGrades {
+    pub grades: Vec<GradeRow>,
+    pub said: Option<String>,
+}
+
+/// **The grades of the copy of `skill` at `level`** (S6), as the eval record holds them: what the
+/// skill's Grades tab draws its bars and its list from.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_grades(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    level: SkillLevel,
+    skill: String,
+) -> Result<SkillGrades, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading a skill's grades", move || {
+        flag_on()?;
+        let level = Level::from(&level);
+        let read = grades::read(held.root(), &skill, Some(&level));
+        Ok(SkillGrades {
+            grades: read.grades.iter().map(GradeRow::of).collect(),
+            said: read.said(),
+        })
+    })
+    .await
 }
 
 impl GradeScorecard {
@@ -1024,6 +1174,9 @@ impl GradeScorecard {
             after_edit: graded.after_edit,
             asked: graded.report.asked(),
             tests,
+            outcome: graded.report.ended.into(),
+            arms: GradeArms::of(graded),
+            spent: GradeSpent::of(graded),
         }
     }
 }
@@ -1108,7 +1261,8 @@ pub(crate) struct InChats<'a> {
     pub(crate) stop: &'a AtomicBool,
     /// What the chats that ran so far spent, and who is told each, with how many asked.
     pub(crate) spent: Spent,
-    pub(crate) tell: &'a dyn Fn(u32, Option<u64>, u32),
+    /// Told what the chats that ran so far spent, and how many asked, as each one ends.
+    pub(crate) tell: &'a dyn Fn(Spent, u32),
     /// Who is told what the chats spent so far, each time a chat's end changes it: the grade's
     /// marker (#3582).
     pub(crate) on_spent: &'a dyn Fn(Spent),
@@ -1161,7 +1315,7 @@ impl Chats for InChats<'_> {
             self.asked += 1;
         }
         if matches!(ran.end, ChatEnd::Turn | ChatEnd::TimedOut | ChatEnd::Asked) {
-            (self.tell)(self.spent.chats, self.spent.tokens, self.asked);
+            (self.tell)(self.spent, self.asked);
         }
         ran
     }

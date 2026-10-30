@@ -29,8 +29,13 @@ export function ActionResultNotice({
   cause,
   kept = false,
   escape = true,
+  opens,
   refocus,
 }: {
+  /** **A way to the workspace it is about**, where that workspace has no chip to hang it from
+   *  (#3651, D-3648-16): "Open X", drawn as its link, so it is never a notice about a workspace
+   *  that offers no way there. */
+  opens?: NoticeAction;
   /** Where the keyboard goes when the way it was on goes from under it (a Retry whose notice
    *  turns into its progress, #3649's review): a chip's card hands its region. Else the
    *  notice's own line takes it. */
@@ -72,10 +77,13 @@ export function ActionResultNotice({
       disclosure: true,
     });
   const settings = said.settings;
-  const link =
+  const toSettings =
     settings === undefined
       ? undefined
       : { label: settings.label, onPress: () => onSettings(settings.link) };
+  // A notice has one link: the setting that puts a refusal right keeps it, and Open is a way on.
+  const link = toSettings ?? opens;
+  if (toSettings !== undefined && opens !== undefined) fixes.unshift(opens);
   // **The keyboard never falls to the page** (WCAG 2.4.3, #3649's review): when the way it was
   // on is drawn no more (Retry, once its notice turns into its progress), it goes to the
   // notice's line, or where `refocus` says, rather than to `<body>`. A browser may say nothing
@@ -164,7 +172,10 @@ export function ResultsGroup({
   into,
   onDrop,
   onSettings,
+  openOf,
 }: {
+  /** The way to the workspace a result is about, where it has no chip (#3651). */
+  openOf?: (said: Said) => NoticeAction | undefined;
   kept: readonly { id: number; said: Said }[];
   into: Element;
   onDrop: (id: number) => void;
@@ -180,6 +191,7 @@ export function ResultsGroup({
           said={one.said}
           onClose={() => onDrop(one.id)}
           onSettings={onSettings}
+          opens={openOf?.(one.said)}
         />
       ))}
     </NoticeList>

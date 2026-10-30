@@ -17,12 +17,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "StripMarks.tsx": [
     "<button className={clsx(\"ui-tabs-control closer\", { keeps: closesOnly(offer.does), minimise })}>",
   ],
-  "Welcome.tsx": [
-    "<button className=\"ui-card-control welcome-door\">",
-  ],
-  "YourRepos.tsx": [
-    "<button className=\"ui-card-control welcome-link repo-card\">",
-  ],
   "settings/RawToml.tsx": [
     "<button className=\"ui-settings-raw-file\">",
   ],

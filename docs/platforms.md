@@ -37,5 +37,9 @@ What the table does not promise:
   and warns when a label has moved off the version its row names. When macOS 27 becomes
   `macos-latest`, the second macOS entry in `ci.yml` becomes `macos-26`, so CI keeps covering
   both majors.
+- **A pull request runs only what its change touches.** `tools/ci-scope.mjs` reads which
+  paths changed and says which builds and tests they need (#3505). A change to the docs alone
+  builds no app and runs no Rust, web or scenario test, and each required check still reports
+  as passed, saying nothing it covers has changed. A push to `main` runs every scope.
 - **Windows** is not supported until the port lands. Until then the `windows` job reports what
   breaks, and its result blocks nothing ([ADR 0031](adr/0031-windows-gets-charters-guards-or-it-gets-no-charter.md)).

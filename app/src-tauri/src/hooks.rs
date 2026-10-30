@@ -1081,8 +1081,9 @@ pub(crate) fn blocked_on(
     has_check: bool,
 ) -> ChatBlocked {
     let locks = purlis_core::sandbox::policy::Locks::of(plane.root());
-    let (first, named, why) =
-        for_its_harness(harness, offered_to(plane.root(), block, target, has_check));
+    let offered = kept_in_place(harness, plane.root(), block, target)
+        .unwrap_or_else(|| offered_to(plane.root(), block, target, has_check));
+    let (first, named, why) = for_its_harness(harness, offered);
     // Chosen by the person where nothing was named (#1884): said in place of "nothing to
     // allow". A socket named and refused keeps its own sentence, and may be chosen again.
     let choose = choosable(&locks, block, first);
@@ -1561,6 +1562,39 @@ fn offered(
     offered_to(root, block, target, false)
 }
 
+/// **A refused write that keeps a repository's git folder where it is**, in a Claude Code chat
+/// ([`purlis_core::sandbox::grant::keeps_git_folder`]): its sandbox denies a path in each git
+/// folder there as it started, which holds that git folder and every folder above it, and no
+/// grant lifts that. The way that works, and no Allow. `None` for any other block, or harness.
+fn kept_in_place(
+    harness: Option<purlis_core::harness::Harness>,
+    root: &Path,
+    block: &purlis_core::sandboxblock::Block,
+    target: Option<&str>,
+) -> Option<(BlockOffer, Option<String>, Option<String>)> {
+    use purlis_core::sandbox::{Os, grant};
+    use purlis_core::sandboxblock::{Kind, Operation};
+    if block.ours || harness != Some(purlis_core::harness::Harness::ClaudeCode) {
+        return None;
+    }
+    let (
+        Operation::Write | Operation::File,
+        Kind::ProjectFiles | Kind::ProtectedFile | Kind::Home | Kind::ToolchainCache | Kind::System,
+    ) = (block.operation, block.kind)
+    else {
+        return None;
+    };
+    let path = Path::new(target?);
+    let folded = purlis_core::sandbox::Machine::this().os == Os::MacOs;
+    (path.is_absolute() && grant::keeps_git_folder(path, root, folded)).then(|| {
+        (
+            BlockOffer::Brokered,
+            None,
+            Some(grant::GIT_FOLDER_KEPT.to_owned()),
+        )
+    })
+}
+
 /// [`offered`] to a chat whose sandbox was compiled with the system's certificate check
 /// (`has_check`) or without it: all that differs is what a refused check is told
 /// ([`certificate_check_refused`]).
@@ -1944,14 +1978,17 @@ pub const CLAUDE_CODE_LISTEN_SAID: &str = "Claude Code's sandbox can let a comma
      for this chat. Start it without the sandbox, or start the server in a Codex or opencode \
      chat, which can be allowed its one port.";
 
-/// Why a server on a port the system picks cannot be allowed (#3396): a test suite's servers
-/// (`listen(0)`) take whatever port is free, so there is no one port to allow, and purlis
-/// allows a chat's server only on one port of its own, behind its door. What to do instead.
+/// Why a server on a port the system picks was refused (#3396): on macOS, and on Linux on any
+/// address but 127.0.0.1 (ruled 2026-10-30). A test suite's servers (`listen(0)`) take whatever
+/// port is free, so there is no one port to allow, and purlis allows a chat's server only on one
+/// port of its own, behind its door. Says what to do: on Linux, start it on 127.0.0.1;
+/// elsewhere, start it on a port of its own or start the chat without the sandbox.
 pub const PICKED_PORT_SAID: &str = "It asked for a port the system picks, as a test suite's \
-     servers often do, so there is no one port to allow: purlis lets a chat's server listen only \
-     on a port of its own, from 1024. Start the server on such a port (PORT=3000, or purlis \
-     listen 3000 -- <command>) to be asked about it, or start this chat without the sandbox to \
-     run tests that pick their own ports.";
+     servers often do, so there is no one port to allow. On Linux, purlis's sandbox gives such a \
+     server a port on 127.0.0.1: start it there rather than on every interface. Otherwise, start \
+     the server on a port of its own, from 1024 (PORT=3000, or purlis listen 3000 -- <command>), \
+     to be asked about it, or start this chat without the sandbox to run tests that pick their \
+     own ports.";
 
 /// Why a server refused on no port purlis could allow cannot be allowed (#3440): what reached the
 /// Notice named none, which is so of another machine's address, and of a runner that could not

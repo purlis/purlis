@@ -2327,6 +2327,7 @@ fn older_chat_back(root: &Path, owed: crate::reopen::Owed) {
                 root: None,
                 above: None,
                 by_person: false,
+                long: false,
             }),
             ..Default::default()
         }],
@@ -2837,4 +2838,56 @@ fn a_long_brief_drawn_again_is_drawn_the_same() {
     let drawn = masked(&brief);
     assert_eq!(drawn, brief, "nothing in it is a secret");
     assert_eq!(masked(&brief), drawn);
+}
+
+#[test]
+fn a_task_s_last_note_is_dated_on_its_record_whether_or_not_its_words_are_kept() {
+    // #3900: after a restart, a task with notes on its record is not said to be unheard from.
+    let (_d, root) = project();
+    let opened = open(&root, a_handoff(), at("2026-10-07T12:00:00Z")).unwrap();
+    assert_eq!(read(&root, &opened.id).unwrap().last_note, None);
+
+    said(
+        &root,
+        &opened.id,
+        crate::dispatchtalk::Kind::Note,
+        "halfway",
+        at("2026-10-07T12:10:00Z"),
+    )
+    .unwrap();
+    // A question is no note.
+    said(
+        &root,
+        &opened.id,
+        crate::dispatchtalk::Kind::Question,
+        "which cluster?",
+        at("2026-10-07T12:20:00Z"),
+    )
+    .unwrap();
+    assert_eq!(
+        read(&root, &opened.id).unwrap().last_note.as_deref(),
+        Some("2026-10-07T12:10:00+00:00")
+    );
+    // Past what a record keeps the words of, the date still moves.
+    let long = "x".repeat(MOST_SAID_BYTES);
+    said(
+        &root,
+        &opened.id,
+        crate::dispatchtalk::Kind::Note,
+        &long,
+        at("2026-10-07T12:30:00Z"),
+    )
+    .unwrap();
+    said(
+        &root,
+        &opened.id,
+        crate::dispatchtalk::Kind::Note,
+        "later",
+        at("2026-10-07T12:40:00Z"),
+    )
+    .unwrap();
+    assert_eq!(
+        read(&root, &opened.id).unwrap().last_note.as_deref(),
+        Some("2026-10-07T12:40:00+00:00")
+    );
 }

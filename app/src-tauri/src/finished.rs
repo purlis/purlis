@@ -286,14 +286,87 @@ pub(crate) fn listed_for(held: &Held, asker: u32) -> Vec<purlis_core::dispatched
                 .as_ref()
                 .and_then(|tree| tree.branch.clone()),
             branch_stands: None,
+            long: false,
+            last_note: None,
+            noted_secs: None,
             finished: true,
+            liveness: None,
         })
     })
     // And the ones a launch could not start again, by the number each had: waiting on the
     // person, and not somebody else's.
     .chain(crate::unstarted::listed_for(held, asker))
+    // And the ones nothing brought back at all (#3900).
+    .chain(orphaned_for(held, &me, &open))
     .collect()
 }
+
+/// **The tasks of the chat `me` orphaned by a restart** (#3900): their dispatch records still
+/// run, and no chat of theirs is open here, coming back, or waiting to start again. A launch
+/// that could not read the record of open chats ends none of these, so they would be listed
+/// nowhere; each is listed, by its record, and marked orphaned by restart. Its number is not
+/// known to be its own any more, so it is listed under 0.
+fn orphaned_for(
+    held: &Held,
+    me: &dispatchrecord::ChatRef,
+    open: &[crate::dispatches::OpenChat],
+) -> Vec<purlis_core::dispatched::Row> {
+    let not_back: Vec<String> = held
+        .chats()
+        .not_back()
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    let now = chrono::Utc::now();
+    dispatchrecord::list(held.root())
+        .iter()
+        .filter(|record| record.running() && dispatchrecord::asked_by(record, me))
+        .filter(|record| !open.iter().any(|one| is_open(&record.worker.chat, one)))
+        .filter(|record| {
+            record
+                .worker
+                .chat
+                .id
+                .as_ref()
+                .is_none_or(|id| !not_back.contains(id))
+        })
+        .map(|record| purlis_core::dispatched::Row {
+            chat: 0,
+            name: name_of(record),
+            persona: record.persona.clone(),
+            place: record
+                .place
+                .workspace
+                .clone()
+                .map_or(
+                    purlis_core::active::Place::PlaneRoot,
+                    purlis_core::active::Place::Workspace,
+                )
+                .word()
+                .to_owned(),
+            state: ITS_DISPATCH_STILL_RUNS.to_owned(),
+            age_secs: chrono::DateTime::parse_from_rfc3339(&record.started)
+                .ok()
+                .and_then(|started| (now - started.with_timezone(&chrono::Utc)).to_std().ok())
+                .map(|age| age.as_secs()),
+            by_person: record.asker.by_person,
+            branch: record
+                .place
+                .worktree
+                .as_ref()
+                .and_then(|tree| tree.branch.clone()),
+            branch_stands: None,
+            finished: false,
+            long: false,
+            last_note: None,
+            noted_secs: None,
+            liveness: Some(purlis_core::dispatchliveness::Liveness::orphaned()),
+        })
+        .collect()
+}
+
+/// The state an orphaned task's row says (#3900): its record's word, and nothing more.
+const ITS_DISPATCH_STILL_RUNS: &str = "its dispatch record says it still runs";
 
 /// Chat `session` is closing: the rows of the finished tasks it asked for go with it
 /// (V100-10), and what those tasks and it said to each other is forgotten (#1520), unless a
@@ -690,6 +763,7 @@ mod tests {
             needed_you: 0,
             messages: 0,
             talk: Vec::new(),
+            last_note: None,
             usage: None,
             conversation: Some("9f2c-the-conversation".to_owned()),
             cleared: false,

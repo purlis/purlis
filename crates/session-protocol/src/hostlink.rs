@@ -60,7 +60,7 @@ use crate::session;
 use crate::version::{self, Refused, Speaks, Version};
 
 pub use handshake::Handshake;
-pub use keep::{Connector, Down, Linked, Links, keep_linked};
+pub use keep::{Connector, Down, KeyNoLongerHeld, Linked, Links, keep_linked};
 /// What holds a link key's private half: wiped when dropped.
 pub use zeroize::Zeroizing;
 

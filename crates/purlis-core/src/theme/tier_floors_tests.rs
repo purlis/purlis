@@ -367,3 +367,40 @@ fn the_check_names_the_ground_off_the_window_s_own_surfaces() {
         "{lines:#?}"
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// The pane's header line, as drawn (#3637)
+// ---------------------------------------------------------------------------------------
+
+/// **A pane header's words keep a margin over the text floor** (#3637): the breadcrumb, where a
+/// chat came from, its work item and its gauge are drawn in the secondary, muted and quiet tiers
+/// on the terminal's fill, solid, so the quiet tier carries the quietness. At 0.92 opacity
+/// Purlis light's quiet words come to 4.35:1 there (5.12:1 solid), under the floor; the
+/// window's half of this, the stories' faded-words gate (`app/.storybook/faded.setup.ts`,
+/// #3790), fails on any fade that takes words under it, wherever the opacity is set.
+///
+/// **The margin, a twentieth, is chosen headroom, not a measured tolerance**: nothing in the
+/// engine produces it. It keeps every solid tier at least 4.725:1 on the pane's fill in every
+/// built-in appearance, so retuning the quiet tier cannot drift it back onto the floor; the
+/// tightest today are Purlis light's and Purlis dark's quiet words, at 5.12:1 and 5.15:1.
+#[test]
+fn a_pane_headers_words_keep_a_margin_over_the_text_floor_in_every_built_in() {
+    let floor = PAIRS
+        .iter()
+        .find(|pair| pair.front == "text.quiet" && pair.back == "terminal.background")
+        .expect("the quiet words are held on the terminal's fill")
+        .floor;
+    for theme in every_built_in() {
+        let theme = drawn(theme);
+        for tier in ["text.primary", "text.secondary", "text.muted", "text.quiet"] {
+            let ratio = contrast(theme.value(tier), theme.value("terminal.background"));
+            assert!(
+                ratio >= floor * 1.05,
+                "{} ({}): {tier} on terminal.background is {ratio:.2}:1, within a twentieth of \
+                 {floor}:1",
+                theme.name,
+                theme.id
+            );
+        }
+    }
+}

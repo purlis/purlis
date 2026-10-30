@@ -116,3 +116,13 @@ fn a_sweep_of_a_name_of_dots_takes_nothing() {
         "another skill's chats stay"
     );
 }
+
+#[test]
+fn a_kept_chat_in_the_plane_s_state_folder_is_never_read() {
+    // #3718: the kept chats are read from this machine's app state alone.
+    let plane = project();
+    let root = plane.path();
+    keep(root, "deploy", "01GRADE", "01CHAT", "screen").expect("kept");
+    crate::appstate::put_in_the_plane(root, DIR_NAME);
+    assert_eq!(kept(root, "deploy", "01GRADE", "01CHAT"), None);
+}

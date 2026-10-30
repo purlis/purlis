@@ -48,6 +48,18 @@ describe("where a notice is drawn (spec #3647, the one test seam)", () => {
       { at: "chip", workspace: "gamma" },
     ],
     [
+      "about a dormant workspace among live pins: its dormant chip's card, not another's",
+      ABOUT_GAMMA,
+      [ROOT, ANOTHER, DORMANT],
+      { at: "chip", workspace: "gamma" },
+    ],
+    [
+      "about the current, unpinned workspace once it is pinned: the same chip's card",
+      ABOUT_GAMMA,
+      [ROOT, ANOTHER, PINNED],
+      { at: "chip", workspace: "gamma" },
+    ],
+    [
       "about a workspace with no chip: the Notices centre, with Open",
       ABOUT_GAMMA,
       [ANOTHER],
@@ -155,6 +167,30 @@ describe("the title bar's chips", () => {
 
   it("draw a pinned current workspace once, as a pin", () => {
     expect(chipsOf({ pins: ["beta", "gamma"], focused: "gamma" })).toEqual([ROOT, ANOTHER, PINNED]);
+  });
+
+  it("draw a dormant pin as a dormant chip, after the live pins and before the dashed one", () => {
+    expect(chipsOf({ pins: ["beta"], dormant: ["gamma"], focused: "delta" })).toEqual([
+      ROOT,
+      ANOTHER,
+      DORMANT,
+      { workspace: "delta", look: "unpinned" },
+    ]);
+  });
+
+  it("draw a gone workspace in front once, dormant, and no dashed chip for it", () => {
+    expect(chipsOf({ pins: ["beta"], dormant: ["gamma"], focused: "gamma" })).toEqual([
+      ROOT,
+      ANOTHER,
+      DORMANT,
+    ]);
+  });
+
+  it("draw a name once, as a live pin, where the store names it both pinned and gone", () => {
+    expect(chipsOf({ pins: ["gamma"], dormant: ["gamma"], focused: "gamma" })).toEqual([
+      ROOT,
+      PINNED,
+    ]);
   });
 
   it("are the root's house and the pins while the root is in front, or nothing is", () => {

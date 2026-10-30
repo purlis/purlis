@@ -415,6 +415,64 @@ fn a_scorecard_against_the_previous_version_shows_three_arms_and_both_difference
         test.arms.iter().map(|arm| arm.arm).collect::<Vec<_>>(),
         [ScoredArm::With, ScoredArm::Without, ScoredArm::Previous]
     );
+    // Its totals (S6): each arm's pass rate in points, and how it ended.
+    let arms = GradeArms {
+        with: Some(100.0),
+        without: Some(25.0),
+        previous: Some(75.0),
+    };
+    assert_eq!(card.arms, arms);
+    assert_eq!(card.outcome, GradeOutcome::Graded);
+
+    // Its row on the Grades tab says the same, with what it spent and the limit it was held to.
+    let spent = Graded {
+        spent: Spent {
+            chats: 9,
+            tokens: Some(90_000),
+            cost_usd: Some(1.92),
+        },
+        report: GradeReport {
+            ended: GradeEnd::OverLimit,
+            cost_cap_usd: Some(3.0),
+            ..graded.report.clone()
+        },
+        ..graded
+    };
+    let row = GradeRow::of(&spent);
+    assert_eq!(row.grade, "01GRADE");
+    assert_eq!(row.arms, arms);
+    assert_eq!(row.outcome, GradeOutcome::AtLimit);
+    assert_eq!(row.ended, "Stopped at its dollar limit");
+    assert_eq!(
+        row.spent,
+        GradeSpent {
+            chats: 9,
+            tokens: Some(90_000.0),
+            cost_usd: Some(1.92),
+            limit_usd: Some(3.0),
+        }
+    );
+    assert!(row.after_edit);
+}
+
+/// S6: a grade's list marks each end as one of four: graded, stopped by the person, stopped at its
+/// limit, or interrupted.
+#[test]
+fn a_grade_ends_graded_stopped_at_its_limit_or_interrupted() {
+    use purlis_core::skills::grade::GradeEnd;
+    let outcome = GradeOutcome::from;
+    assert_eq!(outcome(GradeEnd::Whole), GradeOutcome::Graded);
+    assert_eq!(outcome(GradeEnd::Cancelled), GradeOutcome::Stopped);
+    for end in [
+        GradeEnd::OverCap,
+        GradeEnd::OverLimit,
+        GradeEnd::SpendNotReported,
+    ] {
+        assert_eq!(outcome(end), GradeOutcome::AtLimit, "{end:?}");
+    }
+    for end in [GradeEnd::ChatsDidNotStart, GradeEnd::Interrupted] {
+        assert_eq!(outcome(end), GradeOutcome::Interrupted, "{end:?}");
+    }
 }
 
 /// #3582: what a grade's marker is told its chats spent is what they said, and no more: every

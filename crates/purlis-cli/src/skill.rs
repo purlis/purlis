@@ -178,6 +178,10 @@ pub enum SkillCommand {
     Restore {
         /// The deleted skill's name.
         name: Option<String>,
+        /// Restore it under this new name instead: its `SKILL.md`'s `name:` and its folder are
+        /// renamed to match. A skill whose name belongs to a built-in skill now comes back only so.
+        #[arg(long = "as", value_name = "NEW_NAME", requires = "name")]
+        under: Option<String>,
     },
     /// Share a local skill: move it from `skills.local/` into `skills/` at its level, so the
     /// next save commits it and the team gets it. With `-w`, that workspace's local skill; with
@@ -412,7 +416,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             command,
             SkillCommand::List { .. }
                 | SkillCommand::Show { .. }
-                | SkillCommand::Restore { name: None }
+                | SkillCommand::Restore { name: None, .. }
                 | SkillCommand::Update {
                     name: None,
                     confirm: None,
@@ -692,18 +696,29 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             }
             done(verbs::delete(&mut cx, &level, &name))
         }
-        SkillCommand::Restore { name: None } => {
+        SkillCommand::Restore { name: None, .. } => {
             let deleted = verbs::deleted(root);
             if deleted.is_empty() {
                 println!("No deleted skill can be restored here.");
             }
             let now = std::time::SystemTime::now();
+            let reserved = purlis_core::skills::Reserved::of(built_in.as_deref());
             for one in deleted {
-                println!("{}", restorable(&one.name, &one.level, &one.stays(now)));
+                let line = restorable(&one.name, &one.level, &one.stays(now));
+                // Its name a built-in skill took (#3729): it comes back under a new one.
+                let line = if reserved.holds(&one.name) {
+                    line.own(" · its name belongs to a built-in skill now: restore it with --as <new-name>")
+                } else {
+                    line
+                };
+                println!("{line}");
             }
             Ok(0)
         }
-        SkillCommand::Restore { name: Some(name) } => {
+        SkillCommand::Restore {
+            name: Some(name),
+            under,
+        } => {
             let Some(one) = verbs::deleted(root)
                 .into_iter()
                 .find(|one| one.name == name)
@@ -713,7 +728,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 ));
                 return Ok(2);
             };
-            done(verbs::restore(&mut cx, &one))
+            done(verbs::restore(&mut cx, &one, under.as_deref()))
         }
         SkillCommand::Grant {
             name,
@@ -876,7 +891,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             ..
         } => {
             let level = at.level();
-            let update = match source::update_review(root, &level, &name) {
+            let update = match source::update_review(root, built_in.as_deref(), &level, &name) {
                 Ok(update) => update,
                 Err(why) => {
                     voice::err(esc(&why).to_string());
@@ -884,6 +899,12 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
             };
             print!("{}", update_text(&update));
+            // It brings along a skill under a built-in skill's name: said before anything is
+            // asked, since accepting it is refused (#3728).
+            if let Some(why) = update.refused() {
+                voice::err(esc(&why).to_string());
+                return Ok(1);
+            }
             if !yes
                 && !asked(&format!(
                     "Update {} to {}?",
@@ -1763,8 +1784,13 @@ fn update_text(update: &source::UpdateReview) -> String {
         changes(&update.local_edits, &mut out);
     }
     for skill in &update.brought {
+        let reserved = if update.reserved.contains(&skill.name) {
+            ", under a built-in skill's name"
+        } else {
+            ""
+        };
         out.push_str(&format!(
-            "\nComes along: {} ({})\n",
+            "\nComes along: {} ({}){reserved}\n",
             esc(&skill.name),
             esc(&skill.description)
         ));

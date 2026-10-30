@@ -11,6 +11,8 @@ fn asker(cwd: Option<&Path>) -> Asker {
         harnessed: true,
         unsandboxed: false,
         config: None,
+        id: None,
+        live: None,
     }
 }
 
