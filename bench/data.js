@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793363184058,
+  "lastUpdate": 1793364604906,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31500,6 +31500,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0458285,
             "unit": "ms",
             "extra": "median of 5 runs: 101.822, 101.897, 102.046, 102.481, 102.486 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "588728c113dd8e6f83df2e9b103c38092418b618",
+          "message": "Runners: revoke a chat's minted GitHub App tokens when it ends (#4063)\n\n* Runners: revoke a chat's minted GitHub App tokens when it ends (#3808)\n\nEach installation token minted for a chat is kept until GitHub lets it\ngo, and is revoked (DELETE /installation/token, sent with the token)\nwhen the chat closes, its program ends, or every chat ends. Revokes run\non a thread of their own; one refused or unanswered is logged, and the\ntoken expires within its hour.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M665V10JEXWKCK2G8NQMMM65\nPurlis-Persona: steward\n\n* Runners: revoke a token minted as its chat ended; wait at quit (#3808)\n\nA mint under way when its chat ends keeps nothing: the token is revoked\nas it arrives and the run is refused. Ends are recorded by the wall\nclock, and so are kept tokens, which a sleeping Mac keeps. Past the\nmost kept, a superseded token goes first and is revoked. A quit waits\nup to two seconds for the revokes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M665V10JEXWKCK2G8NQMMM65\nPurlis-Persona: steward\n\n* Runners: order a chat's end and its mint by a count, not a clock (#3808)\n\nA mint keeps nothing where its chat ended since the ends were counted:\nbefore the runner chat is found open, and as a local run is served. A\nclock set back can no longer keep a token for an ended chat, nor refuse\na live one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M665V10JEXWKCK2G8NQMMM65\nPurlis-Persona: steward\n\n* Runners: the revoke thread takes its own copy of whose (#3808)\n\nwhose was moved into the revoke thread and then read again in the warning\nfor a thread that could not start (E0382). The thread now takes a clone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65C93Q024FTVXW1XHK8E951\nPurlis-Persona: steward\n\n* Runners: name the Ended tuple, for clippy (#3808)\n\nclippy::type_complexity refuses the bare tuple in the ENDED static.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65C93Q024FTVXW1XHK8E951\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T12:16:27Z",
+          "tree_id": "4467b5b4fb31dd5bcd57f1eca975ce4c56f64416",
+          "url": "https://github.com/purlis/purlis/commit/588728c113dd8e6f83df2e9b103c38092418b618"
+        },
+        "date": 1793364602015,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6710715,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.644, 0.658, 0.671, 0.677, 0.678 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5386845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.478, 16.533, 16.539, 16.586, 16.703 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2142625,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.434, 101.623, 102.214, 102.716, 102.953 ms"
           }
         ]
       }
