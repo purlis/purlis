@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793355134014,
+  "lastUpdate": 1793357383968,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31332,6 +31332,48 @@ window.BENCHMARK_DATA = {
             "value": 101.92989850000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.905, 101.623, 101.930, 102.101, 102.471 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c74ae0056865565f17dacb513d5561b0ffe788f4",
+          "message": "stories: run in shards, so drawing baselines fits the time limit (#4014)\n\n* stories: run in shards, so drawing baselines fits the time limit\n\nThe stories job ran both browsers in one job, about 28 of its 30 minutes,\nand a pull request whose pictures changed then drew them again past the\nlimit, so the job was cancelled and kept no baselines to take (#4013).\n\nEach browser's story files now run in two Vitest shards, a job each; a\nshard names its own failures and draws again its own failed pictures. The\ncheck keeps its name: it reads every shard's report, checks the baselines,\nand keeps the one story-baselines artifact the pull tool and the\nupdate-baselines label take, so neither changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* stories: proof, eight baselines taken away for the shards to draw again\n\nTemporary: the next commit puts back what the pull tool takes from this\nrun's story-baselines, so the pull request changes no picture.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* stories: shards keep only their own cells, and the check counts them\n\nReview of the sharded stories job:\n- a shard draws again only the story files and cells whose pictures\n  failed in it, and keeps only those cells' pictures, so two shards\n  never keep the same picture (Vitest shards a file's cells apart);\n- each report is named by browser, part and how many parts, and\n  `story-failures.mjs shards` names a part that never reported or\n  failed without drawing, so the matrix and --shard cannot drift;\n- the report is kept before any drawing, so a shard that runs out of\n  time while drawing still reports;\n- a shard that fails before its stories still says it wrote no report;\n- each index is named by its shard; reports and drawings are kept a\n  week, so the check can be run again;\n- the label job waits up to 60 minutes for the shards and the check.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* stories: the shards' steps run in bash, as the drawing step needs\n\nIn a container a step runs in sh unless it names its shell.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* stories: the eight baselines back, as the sharded run drew them\n\nTaken with node tools/story-baselines-pull.mjs 4014 from run 41023572725;\neach is byte for byte the baseline the proof commit took away.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T09:44:10Z",
+          "tree_id": "07bc47b17a064cf72c0ec07fa5ae0d6db9bfba9e",
+          "url": "https://github.com/purlis/purlis/commit/c74ae0056865565f17dacb513d5561b0ffe788f4"
+        },
+        "date": 1793357380921,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.41876349999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.408, 0.415, 0.419, 0.444, 0.450 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.606610000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.519, 16.527, 16.607, 16.634, 16.896 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.02989199999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.759, 102.003, 102.030, 102.254, 102.555 ms"
           }
         ]
       }
