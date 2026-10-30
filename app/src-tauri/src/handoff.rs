@@ -1236,8 +1236,8 @@ pub struct PersonaChat {
 /// Why chat `asker`'s dispatch named `name` is refused as a task it already has open (#3788,
 /// [`dispatchdecision::same_name_open`]), from this app's record of its tasks; or `None`.
 ///
-/// **Decided under the lock a dispatch's slot is reserved under** (#3795, the `_deciding`
-/// hold): read from the records [`crate::chats::Chats::deciding_over`] hands a decision, the
+/// **Decided under the lock a dispatch's slot is reserved under** (#3795): `_under_lock` is
+/// never read, and is there to prove the caller holds [`crate::chats::Chats::deciding`]. Read from the records [`crate::chats::Chats::deciding_over`] hands a decision, the
 /// chats open and the ones let through and still starting, so two dispatches under one name
 /// arriving together cannot both be let past it. A task still starting is running, under the
 /// name its slot was reserved with.
@@ -1245,7 +1245,12 @@ pub struct PersonaChat {
 /// Each is named with its liveness (#3900): a task that came back after a restart is named
 /// live, never left to be taken for a dead one. A task still starting has no program to say
 /// anything of yet, and is named running alone.
-fn same_name_open(held: &Held, asker: u32, name: &str, _deciding: &Deciding<'_>) -> Option<String> {
+fn same_name_open(
+    held: &Held,
+    asker: u32,
+    name: &str,
+    _under_lock: &Deciding<'_>,
+) -> Option<String> {
     type Listed = (
         u32,
         String,
@@ -1254,18 +1259,16 @@ fn same_name_open(held: &Held, asker: u32, name: &str, _deciding: &Deciding<'_>)
     );
     // Read under the store's own locks, then let go of them before the board, the asks and
     // the ledger are read, which take their own.
-    let tasks: Vec<(u32, Chat, bool)> = held.chats().deciding_over(|records, starting| {
+    // By number, lowest first, as [`crate::chats::Chats::tasks_of`] lists them, so of two
+    // under one name the same one is named every time.
+    let mut tasks: Vec<(u32, Chat, bool)> = held.chats().deciding_over(|records, starting| {
         records
             .iter()
-            .filter(|(number, chat)| {
-                *number != asker
-                    && chat.from.as_ref().is_some_and(|from| {
-                        from.chat == asker && from.mode == purlis_core::reopen::Mode::Task
-                    })
-            })
+            .filter(|(number, chat)| crate::chats::task_of(asker, *number, chat).is_some())
             .map(|(number, chat)| (*number, (*chat).clone(), starting(*number)))
             .collect()
     });
+    tasks.sort_by_key(|(number, _, _)| *number);
     let tasks: Vec<Listed> = tasks
         .into_iter()
         .filter_map(|(session, chat, starting)| {
