@@ -2321,18 +2321,41 @@ fn grounds(theme: &ResolvedTheme, family: &Family) -> Vec<String> {
     laid(theme, family.grounds)
 }
 
-/// `fill` as it is drawn over each of the grounds `under` names: itself where it is opaque.
-fn laid_over(theme: &ResolvedTheme, fill: &str, under: &[&str]) -> Vec<String> {
+/// `fill` as it is drawn over each of the grounds `under` holds: itself where it is opaque.
+fn laid_over(theme: &ResolvedTheme, fill: &str, under: &[String]) -> Vec<String> {
     let Some(colour) = hex(theme, fill) else {
-        return laid(theme, under);
+        return under.to_vec();
     };
     if is_opaque(colour) {
         return vec![solid(colour)];
     }
-    laid(theme, under)
-        .iter()
-        .map(|below| onto(colour, below))
-        .collect()
+    under.iter().map(|below| onto(colour, below)).collect()
+}
+
+/// **What a part drawn apart from its root stands on, as drawn** (#4064): each ground it names,
+/// but where it stands in a surface a theme fills ([`APART_STANDS_ON`]), that fill as it is laid
+/// over the surface's own grounds in place of the surface's default.
+fn apart_grounds(
+    theme: &ResolvedTheme,
+    rules: &[Rule],
+    family: &Family,
+    under: &[&str],
+) -> Vec<String> {
+    let mut grounds = Vec::new();
+    for token in under {
+        let filled = APART_STANDS_ON
+            .iter()
+            .filter(|(_, _, name)| *name == family.name)
+            .find_map(|(surface, variant, _)| {
+                let surface = self::family(surface)?;
+                let default = (surface.defaults)(variant, &[]).fill;
+                let set = drawn(rules, surface, variant, &[]).fill;
+                (default == *token && set != default && set != TRANSPARENT)
+                    .then(|| surface_ground(theme, surface, set))
+            });
+        grounds.extend(filled.unwrap_or_else(|| laid(theme, &[token])));
+    }
+    grounds
 }
 
 /// [`grounds`] of a list of ground tokens: what a part drawn apart from its root stands on.
@@ -3400,7 +3423,7 @@ impl Held<'_> {
                 let floor = theme.least.floor(floor_of(family, part));
                 // On what it stands on by default, where the theme colours it.
                 if fill.is_some() || words.is_some() {
-                    let on = laid(theme, own.under);
+                    let on = apart_grounds(theme, self.rules, family, own.under);
                     if let Some(ratio) = lowest(
                         theme,
                         &on,
@@ -3428,7 +3451,11 @@ impl Held<'_> {
                     // The row's fill as drawn: laid over the popover it stands on.
                     let holder_on =
                         apart_look_in(family.name, family.parts[holder].name, &held_in).under;
-                    let on = laid_over(theme, under, holder_on);
+                    let on = laid_over(
+                        theme,
+                        under,
+                        &apart_grounds(theme, self.rules, family, holder_on),
+                    );
                     let read = |fill: &str, words: &str| lowest(theme, &on, fill, words);
                     let drawn = read(fill.unwrap_or(own.fill), words.unwrap_or(own.words));
                     if drawn.is_none_or(|ratio| ratio >= floor) {

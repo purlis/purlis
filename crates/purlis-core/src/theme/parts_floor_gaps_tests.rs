@@ -492,3 +492,32 @@ fn a_chip_s_failing_pair_leaves_a_plain_hovered_chip_the_theme_s_fill() {
     assert_eq!(fill_of(&both), Some("var(--accent-wash-hover)"), "{sheet}");
     assert_eq!(words_of(&both), Some("var(--text-primary)"), "{sheet}");
 }
+
+// ---------------------------------------------------------------------------------------
+// 8. A see-through row fill over a popover fill a theme sets (#4064)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_see_through_row_fill_is_measured_over_the_popover_fill_a_theme_sets() {
+    // In Purlis Classic light, `icon.pink` reads on `diff.inserted` laid over the popover's own
+    // surface (5.1:1), and not laid over `tab.active` (4:1), which the popover holds as its fill.
+    let rows = json!({
+        "titlebar.row.fill": "diff.inserted",
+        "titlebar.row.text": "icon.pink",
+    });
+    let theme = shaped("purlis-classic", "light", rows.clone());
+    assert!(
+        !fell(&theme).iter().any(|one| one.starts_with("titlebar.")),
+        "{:?}",
+        fell(&theme)
+    );
+    let mut both = rows;
+    both["popover.root.popover.fill"] = json!("tab.active");
+    let theme = shaped("purlis-classic", "light", both);
+    let fallen = fell(&theme);
+    assert!(fallen.contains(&"titlebar.row".to_owned()), "{fallen:?}");
+    assert!(
+        !fallen.iter().any(|one| one.starts_with("popover.")),
+        "{fallen:?}"
+    );
+}
