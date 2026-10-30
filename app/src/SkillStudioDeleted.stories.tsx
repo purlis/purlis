@@ -13,7 +13,6 @@ import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { DeletedSkill } from "./bindings";
 import { SkillStudioTab } from "./SkillStudioTab";
-import { Panel } from "./ui/panel/Panel";
 import { AT_THE_ROOT, SKILL_STUDIO_VIEW, studioHistoryOf } from "./skillStudio";
 import { studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
@@ -68,13 +67,9 @@ function Tab({
   item?: string;
 }) {
   return (
-    // In the content panel, as a view tab is drawn (`PlaneView`): its fill is the ground the
-    // page header is drawn on while the page scrolls under it (#3944).
-    <Panel variant="content">
-      <div className="view-body" style={{ inlineSize: width, blockSize: 520, display: "flex" }}>
-        <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
-      </div>
-    </Panel>
+    <div className="view-body" style={{ inlineSize: width, blockSize: 520, display: "flex" }}>
+      <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
+    </div>
   );
 }
 
