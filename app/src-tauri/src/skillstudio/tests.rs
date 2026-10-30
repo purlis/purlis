@@ -636,3 +636,51 @@ fn the_studio_says_which_router_its_chats_are_routed_by() {
     assert!(wrong.problem);
     assert!(wrong.said.contains("built-in router"), "{}", wrong.said);
 }
+
+#[test]
+fn the_studio_says_the_budget_and_what_its_scope_writes_as_its_router_3692() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
+    std::fs::create_dir_all(root.join("personas/reviewer")).unwrap();
+    std::fs::write(
+        root.join("personas/reviewer/persona.md"),
+        "---\nname: reviewer\nrole: Reviews.\nskill-router: built-in\n---\n\nReviews.\n",
+    )
+    .unwrap();
+    let router = |workspace: Option<&str>, persona: Option<&str>| {
+        studio(root, None, true, workspace, persona, &no_harness())
+            .router
+            .expect("a router while the studio is on")
+    };
+
+    let at_root = router(None, None);
+    assert_eq!(
+        at_root.written, None,
+        "the project's root chooses no router"
+    );
+    assert_eq!(
+        at_root.budget,
+        StudioBudget {
+            skills: 30,
+            chars: 6_000
+        }
+    );
+    assert_eq!(router(Some("alpha"), None).written, None);
+
+    std::fs::write(
+        root.join("workspaces/alpha/workspace.json"),
+        r#"{"settings": {"skills": {"router": "relevance"}}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        router(Some("alpha"), None).written.as_deref(),
+        Some("relevance")
+    );
+    assert_eq!(
+        router(None, Some("reviewer")).written.as_deref(),
+        Some("built-in"),
+        "a persona's own line"
+    );
+}

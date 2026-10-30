@@ -1018,6 +1018,14 @@ export const commands = {
 	skillTurn: __WINDOW_ONLY_RESULT,
 	skillPin: __WINDOW_ONLY_RESULT,
 	/**
+	 *  **The router extensions the Skill studio's Change… offers**, beside the built-in router
+	 *  (#3692): each approved here, on in the project, and declaring `skill-router`. Read when the
+	 *  dialog opens, never with the studio, so opening a chat or the studio asks no extension's
+	 *  manifest.
+	 */
+	skillRouters: (plane: PlaneId) => typedError<SkillRouterOffer[], string>(__TAURI_INVOKE("skill_routers", { plane })),
+	skillRouterChoose: __WINDOW_ONLY_RESULT,
+	/**
 	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
 	 *  owners, and the skills it names and that name it. Nothing while the flag is off.
 	 */
@@ -10605,6 +10613,17 @@ export type SkillRouter =
 { extension: string };
 
 /**
+ *  **A router the Skill studio's Change… offers** (SK-15b, #3692): an extension this machine
+ *  approved, the project has on, and that declares `skill-router`.
+ */
+export type SkillRouterOffer = {
+	/**  Its id, which a choice writes. */
+	id: string,
+	/**  Its name, as its manifest gives it. */
+	name: string,
+};
+
+/**
  *  **How a chat's router extension did at its start** (SK-15b, ADR 0102 §6): the core's routing
  *  record, as the chat's tab and the studio say it.
  */
@@ -11048,6 +11067,15 @@ export type Studio = {
 };
 
 /**
+ *  **A chat's skill budget**, as the Routing page says it: the most skills its list holds, and
+ *  the most characters of their descriptions together.
+ */
+export type StudioBudget = {
+	skills: number,
+	chars: number,
+};
+
+/**
  *  A harness or repo skill with the name of a skill purlis hands a chat (ADR 0099 §3): both
  *  load, so the studio marks purlis's copy.
  */
@@ -11126,6 +11154,11 @@ export type StudioNotSupported = {
 export type StudioRouted = {
 	session: number,
 	routing: SkillRouting,
+	/**
+	 *  **Every skill the routing hid at its start, by name** (#3692): the routing record's, so
+	 *  the Routing page says what a chat started without on its list.
+	 */
+	hidden: string[],
 };
 
 /**
@@ -11150,6 +11183,17 @@ export type StudioRouter = {
 	 *  graded on. Null where it has none, and for the built-in router.
 	 */
 	grade: string | null,
+	/**
+	 *  **What the scope's own choice writes** (#3692): the persona's `skill-router:` line, or
+	 *  else the workspace's `settings.skills.router`, as written. Null where it writes none,
+	 *  and at the project's root, which chooses no router. What Change… starts from.
+	 */
+	written: string | null,
+	/**
+	 *  **A chat's skill budget** (SK-12, ADR 0102 §1): past it the router decides what a chat's
+	 *  list shows. The same on every harness.
+	 */
+	budget: StudioBudget,
 };
 
 /**
