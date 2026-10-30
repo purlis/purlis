@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793366164149,
+  "lastUpdate": 1793368378854,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31584,6 +31584,48 @@ window.BENCHMARK_DATA = {
             "value": 101.40367599999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.473, 101.042, 101.404, 102.476, 102.988 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "63fe7f79be8f53d7de0f5bc1878743129d6428e4",
+          "message": "A Claude Code chat's server dials in to its door (#3316) (#4061)\n\n* door: carry to the chat's socket or to slots its server dialled in (#3316 S1)\n\nA door's backend is now the chat's own socket, as before, or slots a\nClaude Code chat's server dials in and parks. The door takes one slot a\nrequest, writes the go line on it, and carries the request over it as it\nwould over the socket. With no slot within a short wait it answers 502,\nand it never carries to any socket. Slots are capped, a gone one is\npassed over, and dropping the door closes every parked slot.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M664W7KDX9DRYSA13SA44RPZ\nPurlis-Persona: steward\n\n* hook socket: a chat's server dials in with a serve line, parked at its door (#3316 S2)\n\nA serve line is admitted as every hook line is (the chat's token, and a\nsender running inside the chat), then its connection is handed on whole.\nThe window parks it as a slot of the chat's dialled door on that port,\ntelling it it is parked, or refuses it, saying why, and closes it: a chat\nnot open here, a port with no door, or a door or chat holding its most\nslots. Where the session host owns the hook socket it hands each admitted\nslot on to the window over a socket of the window's own beside it, with\nthe descriptor passed alongside, on macOS alone.\n\nTaking a listen grant back now closes the chat's door there at once, so\na dialled door's parked slots close with it, and ending the chat does\nthe same. The first slot each door is given and every refusal are\naudited as trust.sandbox.serve with what = listen.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M664W7KDX9DRYSA13SA44RPZ\nPurlis-Persona: steward\n\n* listen shim: dial mode, a server reached through connections it dials in (#3316 S3)\n\nWhere PURLIS_SERVE_DIAL names the chat's hook socket and no socket is\ngiven, a Node server started on the chat's port listens on nothing. The\nshim keeps four connections dialled in, each asking with one serve line\n(the chat's number and token) to be parked at the chat's door. It emits\nlistening once one is parked, says it listens on the port, and on the\ndoor's go line hands the connection to the server, answers go, and dials\nanother. Only then does the door send the request, so nothing of it is\nread before the server reads it. A refusal before anything is parked\nfalls back to the real listen, which the sandbox refuses as it would\nwithout the shim. Every other port is left as it was.\n\nThe door now waits for the server's answer to go, and passes over a slot\nthat gives none within a second. The listen-shim CI job tries a plain\nserver, Express, Vite with hot reload's WebSocket, and a refusal.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M664W7KDX9DRYSA13SA44RPZ\nPurlis-Persona: steward\n\n* Claude Code chat: its server dials in to its door, and the Notice offers Allow (#3316 S4)\n\nA Claude Code chat with a listen grant now gets a dialled door on that\nport (macOS), and its environment names the hook socket its servers dial\nin to (PURLIS_SERVE_DIAL), which purlis listen hands its shim in place of\na socket. Claude Code's compiled settings are unchanged, allowLocalBinding\noff among them: a test compiles them with and without the grant and\nfinds them the same byte for byte.\n\nOn macOS the Notice for a refused listen in a Claude Code chat offers the\nsame Allow as any chat, with the ruled line on how to start the server\nthrough purlis listen. A server that binds a port the chat serves on\nitself is told that line and offered Start without the sandbox. Off macOS\nthe Notice is as it was.\n\nThe macOS confinement job runs a Node server through the shim under\nClaude Code's own rules for a chat: it is reached through its door on its\nport, and a listen on the next port and a direct bind of its own port are\nboth refused.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M664W7KDX9DRYSA13SA44RPZ\nPurlis-Persona: steward\n\n* records: a Claude Code chat's server dials in (#3316 S5)\n\nADR 0067 is amended for the dial-in route the person ruled on 2026-10-30:\nthe serve and go lines, where the session host hands a slot to the\nwindow, the fallback on a refusal, the audit, and the Notice's wording.\nThe 2026-10-26 amendment's items 4 and 6 and the 2026-10-29 amendment\npoint to it. The plane format describes the serve line on the hook\nsocket and the window's slots socket, purlis listen's help says the\nroute, and a changes note says what people will notice.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M664W7KDX9DRYSA13SA44RPZ\nPurlis-Persona: steward\n\n* dial-in: review fixes (#3316)\n\n- slots.sock reads only the process that holds the hook socket's\n  listener, the session host, checked from the kernel's tables; a\n  stopping window removes its own socket file alone, and the accept loop\n  waits on an error rather than spin.\n- A refused serve line from outside its chat is answered in the receipt\n  shape, as the shim reads it.\n- After the first slot is parked, the shim stops only where the window\n  says the chat's door is gone; a busy hook socket or an absent window is\n  dialled again with backoff.\n- Refusals are audited once a minute for each chat, port and reason.\n- Taking a grant back closes the door at once only where no other grant\n  still lets the chat listen there.\n- A Claude Code chat on a runner keeps its old listen Notice: it reaches\n  no door of this window.\n- The acceptance test's strings are escaped, and it checks the port is\n  bound on no other interface; the door tests' holder is a struct.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M664W7KDX9DRYSA13SA44RPZ\nPurlis-Persona: steward\n\n* dial-in: test compile fixes (#3316)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6684RBKMG6EKADQMB0ZS03E\nPurlis-Persona: steward\n\n* dial-in: serving_only is a macOS test helper (#3316)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6684RBKMG6EKADQMB0ZS03E\nPurlis-Persona: steward\n\n* dial-in: HookHolder::admitting, not new (clippy) (#3316)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6684RBKMG6EKADQMB0ZS03E\nPurlis-Persona: steward\n\n* dial-in: name the complex types (clippy) (#3316)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6684RBKMG6EKADQMB0ZS03E\nPurlis-Persona: steward\n\n* docs: app/slots.sock's tier says why it is transient (#3316)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6684RBKMG6EKADQMB0ZS03E\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T13:03:26Z",
+          "tree_id": "ecde53175b75f56d61458eb87d8a41514f99cc9c",
+          "url": "https://github.com/purlis/purlis/commit/63fe7f79be8f53d7de0f5bc1878743129d6428e4"
+        },
+        "date": 1793368373542,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6693155000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.656, 0.666, 0.669, 0.671, 0.673 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6129465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.528, 16.578, 16.613, 16.698, 16.896 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.319299,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.876, 102.170, 102.319, 102.495, 102.504 ms"
           }
         ]
       }
