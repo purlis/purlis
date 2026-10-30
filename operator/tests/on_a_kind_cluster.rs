@@ -3140,3 +3140,89 @@ async fn the_cluster_lets_the_operator_change_only_the_mode_of_a_claims_sandbox(
         .await;
     scratch.end().await;
 }
+
+/// The operator's metrics as its Service serves them (#3737), read through the API server's
+/// proxy to that Service; empty while it does not answer.
+async fn scraped(client: &Client) -> String {
+    let request = http::Request::get(
+        "/api/v1/namespaces/purlis-system/services/purlis-cluster-operator-metrics:metrics/proxy/metrics",
+    )
+    .body(Vec::new())
+    .expect("a request");
+    client.request_text(request).await.unwrap_or_default()
+}
+
+/// The value `text` gives the series `series` (a metric's name and its labels), if any.
+fn value_of(text: &str, series: &str) -> Option<u64> {
+    text.lines()
+        .find_map(|line| line.strip_prefix(series)?.strip_prefix(' ')?.parse().ok())
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn the_operators_metrics_count_a_claim_its_suspension_and_its_deletion_once() {
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-metrics").await;
+    let pools = small_pool(&client, "e2e-metrics").await;
+    let claims = claims_in(&client, &scratch.name);
+    let ready = r#"purlis_cluster_operator_claims{pool="e2e-metrics",namespace="e2e-metrics",state="Ready"}"#;
+    let suspended =
+        r#"purlis_cluster_operator_suspensions_total{pool="e2e-metrics",cause="stopped"}"#;
+    let deleted =
+        r#"purlis_cluster_operator_claims_deleted_total{pool="e2e-metrics",cause="requested"}"#;
+    let counts = |series: &'static str, wanted: u64| {
+        let client = client.clone();
+        async move {
+            eventually(
+                &format!("{series} {wanted}"),
+                Duration::from_secs(120),
+                || async {
+                    (value_of(&scraped(&client).await, series) == Some(wanted)).then_some(())
+                },
+            )
+            .await;
+        }
+    };
+
+    claims
+        .create(&PostParams::default(), &claim("metrics-1", "e2e-metrics"))
+        .await
+        .expect("a claim");
+    vouched_pod(&claims, "metrics-1").await;
+    counts(ready, 1).await;
+
+    claims
+        .patch(
+            "metrics-1",
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({ "spec": { "stopped": true } })),
+        )
+        .await
+        .expect("the claim stopped");
+    says_stopped(&claims, "metrics-1").await;
+    counts(suspended, 1).await;
+
+    claims
+        .delete("metrics-1", &DeleteParams::default())
+        .await
+        .expect("the claim deleted");
+    eventually("the claim is gone", Duration::from_secs(180), || async {
+        claims
+            .get_opt("metrics-1")
+            .await
+            .ok()?
+            .is_none()
+            .then_some(())
+    })
+    .await;
+    counts(deleted, 1).await;
+    // However often the operator looks at a Claim on its way out, it counts it once.
+    tokio::time::sleep(settled()).await;
+    let text = scraped(&client).await;
+    assert_eq!(value_of(&text, deleted), Some(1), "{text}");
+    assert_eq!(value_of(&text, suspended), Some(1), "{text}");
+    assert_eq!(value_of(&text, ready), None, "{text}");
+
+    let _ = pools.delete("e2e-metrics", &DeleteParams::default()).await;
+    scratch.end().await;
+}

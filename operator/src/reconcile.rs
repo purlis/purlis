@@ -769,8 +769,15 @@ async fn cleanup(claim: &Claim, context: &Context) -> Result<Action, Error> {
         .get_metadata_opt(&claim.name_any())
         .await?
         .map(|held| held.metadata);
-    if let Found::Ours { uid } = made_for_claim(held.as_ref(), &runner, claim) {
-        delete_by_uid(&upstream_claims, &claim.name_any(), uid).await?;
+    // Counted once, by the look that starts the runner's deletion (#3737): a Claim is looked at
+    // again while its upstream claim is still going.
+    let going = held
+        .as_ref()
+        .is_some_and(|held| held.deletion_timestamp.is_some());
+    if let Found::Ours { uid } = made_for_claim(held.as_ref(), &runner, claim)
+        && delete_by_uid(&upstream_claims, &claim.name_any(), uid).await?
+        && !going
+    {
         context.metrics.deleted(&claim.spec.pool, Cause::Requested);
     }
     // Every Claim known first, so one not read yet never lets the pool's objects go under it.
@@ -798,8 +805,9 @@ async fn cleanup(claim: &Claim, context: &Context) -> Result<Action, Error> {
     Ok(Action::await_change())
 }
 
-/// The object `name` deleted, only while it is the one of `uid`; one already gone is fine.
-async fn delete_by_uid<K>(api: &Api<K>, name: &str, uid: String) -> Result<(), Error>
+/// The object `name` deleted, only while it is the one of `uid`; one already gone is fine. Whether
+/// the API server took the deletion (`false` when it was gone).
+async fn delete_by_uid<K>(api: &Api<K>, name: &str, uid: String) -> Result<bool, Error>
 where
     K: Resource + Clone + DeserializeOwned + Debug,
 {
@@ -811,8 +819,8 @@ where
         ..DeleteParams::background()
     };
     match api.delete(name, &params).await {
-        Ok(_) => Ok(()),
-        Err(kube::Error::Api(status)) if status.code == 404 => Ok(()),
+        Ok(_) => Ok(true),
+        Err(kube::Error::Api(status)) if status.code == 404 => Ok(false),
         Err(error) => Err(error.into()),
     }
 }
