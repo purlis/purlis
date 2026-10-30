@@ -3,6 +3,7 @@
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { showView } from "../opening.js";
 import { $, browser, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
@@ -133,5 +134,7 @@ describe("a skill's compatibility and a skill that cannot be loaded", function (
     const need = await $('[data-testid="skills-need-missing"]');
     await need.waitForDisplayed({ timeout: 20_000 });
     await expect(need).toHaveText(/could not be loaded/);
+    // The left side back on Chats, as the next spec expects it (`showView`).
+    await showView("Chats");
   });
 });

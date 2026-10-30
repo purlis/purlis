@@ -390,9 +390,8 @@ const WHOLE: ChatSkillsSaid = {
  * its skills' own, what the chat needs as a whole: its set past the budget (Open routing), what
  * it started without (Open in Skill studio) and what changed since it started (Restart). Tab
  * walks the header onto Needs you; ↓ reaches each need, and Enter goes where its fix goes, except
- * a restart, which is only ever its button. The picture is
- * the groups as they start.
- */
+ * a restart, which is only ever its button. The picture is of the
+ * view once the play is done: the changed card, its Restart pressed. */
 export const TheChatsOwnNeeds: Story = {
   render: () => <Skills whole={WHOLE} />,
   play: async ({ canvas, userEvent }) => {

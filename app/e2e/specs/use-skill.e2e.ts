@@ -3,6 +3,7 @@
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { showView } from "../opening.js";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
@@ -193,5 +194,7 @@ describe("Use skill…", function () {
       /skills? of 30 · .* of 6,000 characters/,
     );
     await expect($('[data-testid="use-skill"]')).not.toBeDisplayed();
+    // The left side back on Chats, as the next spec expects it (`showView`).
+    await showView("Chats");
   });
 });
