@@ -128,7 +128,8 @@ describe("Use skill…'s key (#3954)", () => {
     });
     useSkillKey();
     const picker = await screen.findByRole("dialog", { name: "Use skill" });
-    expect(within(picker).getByText("deploy")).toBeTruthy();
+    // Its skills are read as it opens.
+    expect(await within(picker).findByText("deploy")).toBeTruthy();
   });
 
   it("is not taken under a modal", async () => {
