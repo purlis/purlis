@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793385642542,
+  "lastUpdate": 1793387063774,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31920,6 +31920,48 @@ window.BENCHMARK_DATA = {
             "value": 102.3317525,
             "unit": "ms",
             "extra": "median of 5 runs: 101.691, 102.309, 102.332, 102.589, 102.928 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6b2fb60c42f2ea73708f0b56aab40dd5a554ded4",
+          "message": "Runners: a cluster pool the person marks gets values and tokens (#4071) (#4074)\n\n* Runners: a cluster pool the person marks, vouched for now, gets values and tokens (#4071)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66B10WBAJPCCCSK6W9G8X2Y\nPurlis-Persona: steward\n\n* Runners: a cluster runner a chat ran on without the sandbox stays refused; review fixes (#4071)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66B10WBAJPCCCSK6W9G8X2Y\nPurlis-Persona: steward\n\n* Runners: a value goes only to the runner the gate judged, read again once its vault is read (#4071)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66B10WBAJPCCCSK6W9G8X2Y\nPurlis-Persona: steward\n\n* Runners: the host goes by a runner's name, and only the window reads the key its link reports (#4071)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66B10WBAJPCCCSK6W9G8X2Y\nPurlis-Persona: steward\n\n* Runners: relay_to always holds the name it reports (#4071)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66B10WBAJPCCCSK6W9G8X2Y\nPurlis-Persona: steward\n\n* Runners: the test of a name no cluster pool has asks for no runner (#4071)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66B10WBAJPCCCSK6W9G8X2Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T16:56:33Z",
+          "tree_id": "e3550cd1c929826bebe9f02c6527badcca4cd9bc",
+          "url": "https://github.com/purlis/purlis/commit/6b2fb60c42f2ea73708f0b56aab40dd5a554ded4"
+        },
+        "date": 1793387059390,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.42027400000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.391, 0.406, 0.420, 0.425, 0.433 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3369305,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.313, 16.323, 16.337, 16.342, 16.436 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.0766375,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.660, 100.782, 101.077, 101.109, 101.524 ms"
           }
         ]
       }
