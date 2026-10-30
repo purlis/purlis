@@ -159,7 +159,10 @@ export const RefusedInsideMore: Story = {
     expectFocusInSight();
     const alerts = page().getAllByRole("alert");
     await expect(alerts).toHaveLength(1);
-    await expect(alerts[0]).toHaveTextContent("A folder in the repository, without a leading /.");
+    // The form's one summary of the refused send (#3291); the words are the field's description.
+    await expect(alerts[0]).toHaveTextContent(
+      "Folder in the repository: A folder in the repository, without a leading /.",
+    );
     await expect(folder).toHaveAccessibleDescription(
       "A folder in the repository, without a leading /.",
     );

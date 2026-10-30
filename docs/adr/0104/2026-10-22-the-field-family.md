@@ -15,7 +15,9 @@ and `Text`, and a form they are sent from is the family's `Form`.
 - **It validates inline, on blur** (N26): `validate` says what is wrong, said under the box when
   it is left with words the person changed and followed from there until it is right; a refusal
   from elsewhere (`error`) is said at once. Either marks the box `aria-invalid` and describes it
-  by the words, an alert as every refusal in the window is. A field that can be refused keeps its
+  by the words, an alert as every refusal in the window is. _(Superseded by the amendment of
+  [2026-10-30, one signal per refusal](2026-10-30-one-signal-per-refusal.md): the line is a
+  polite live region, never an alert, and a refused send is its form's one alert summary.)_ A field that can be refused keeps its
   error's line, empty and unheard while it says nothing, so nothing moves when it does.
 - **A secret's box is never given its words**: `type="password"` with a `value` is a type
   error, and the box holds what is typed outside React's state and the page's markup.

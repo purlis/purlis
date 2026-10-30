@@ -331,8 +331,9 @@ describe("the select", () => {
     expect(field).toHaveClass("placed");
     expect(select).not.toHaveClass("placed");
     const line = field.querySelector('[data-scope="field"][data-part="error"]') as Element;
-    expect(line).toHaveAttribute("role", "alert");
-    expect(line).toHaveAttribute("aria-live", "assertive");
+    // One signal (#3291): a polite live region, never an alert as well.
+    expect(line).not.toHaveAttribute("role");
+    expect(line).toHaveAttribute("aria-live", "polite");
     expect(line).toHaveTextContent("A persona needs a harness to run.");
     expect(select).toHaveAttribute("aria-invalid", "true");
     expect(select).toHaveAttribute("data-invalid");
