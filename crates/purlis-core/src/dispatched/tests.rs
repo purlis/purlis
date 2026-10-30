@@ -1637,17 +1637,46 @@ const ON_ITS_OWN_WORK: Seen = Seen {
 };
 
 #[test]
-fn a_task_that_reported_while_its_own_work_runs_is_not_ended_under_it_until_its_bound() {
-    // #3921: `done` sent while its own helpers still run. Its turn is not over while they
-    // are: ending it would stop them.
+fn a_task_whose_own_work_outlives_its_bound_is_not_ended_until_that_work_ends_and_the_bound_passes()
+{
+    // #3921: `done` sent while its own monitors and background shells still run. Its turn
+    // is not over while they are, and its bound does not run then: one that outlives the
+    // bound is not cut off.
     let mut ledger = Ledger::default();
     ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
-
     assert_eq!(
         ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved),
         Ends::Hold
     );
-    // Its own work woke it, and that turn ended with nothing in flight: it settles and ends.
+    assert_eq!(
+        ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::WaitedOut),
+        Ends::Hold
+    );
+    let before = ledger.bound_epoch(TASK);
+
+    // Its own work ended and woke it: the bound runs from now.
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::Moved),
+        Ends::Bound
+    );
+    assert_ne!(
+        ledger.bound_epoch(TASK),
+        before,
+        "every earlier bound is stale"
+    );
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::WaitedOut),
+        Ends::End
+    );
+
+    // That turn ends with nothing in flight before its bound: it settles and ends.
+    let mut ledger = Ledger::default();
+    ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
+    ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved);
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::Moved),
+        Ends::Bound
+    );
     assert_eq!(
         ledger.end_step(TASK, WAITING, false, Looked::Moved),
         Ends::Settle
@@ -1657,52 +1686,74 @@ fn a_task_that_reported_while_its_own_work_runs_is_not_ended_under_it_until_its_
         ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Settled),
         Ends::Hold
     );
-
-    // The bound on the reporting turn still ends it, so own work never keeps a program for
-    // good.
-    let mut ledger = Ledger::default();
-    ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
-    assert_eq!(
-        ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved),
-        Ends::Hold
-    );
-    assert_eq!(
-        ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::WaitedOut),
-        Ends::End
-    );
 }
 
 #[test]
-fn the_turn_its_own_work_wakes_it_for_is_still_the_reporting_turn_and_ends_at_its_bound() {
-    // #3921: work of its own woke it, and its harness says a prompt began that turn. It is
-    // the reporting turn's own work going on, not a later turn, so the bound still ends it.
+fn own_work_that_ends_before_the_first_bound_passes_sets_the_bound_anew_from_its_end() {
+    // #3921: the bound set at the report is stale once its own work ends, so the turn that
+    // work wakes it for has the whole bound.
     let mut ledger = Ledger::default();
     ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
-    assert_eq!(
-        ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved),
-        Ends::Hold
-    );
-
-    ledger.turn_began(TASK);
+    let at_the_report = ledger.bound_epoch(TASK);
+    ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved);
 
     assert_eq!(
-        ledger.end_step(TASK, RUNNING, false, Looked::WaitedOut),
-        Ends::End
+        ledger.end_step(TASK, RUNNING, false, Looked::Moved),
+        Ends::Bound
     );
+    assert_ne!(ledger.bound_epoch(TASK), at_the_report);
 
-    // A turn begun with no wait on its own work before it is a later turn, as ever.
+    // Own work that lapsed with nothing to wake it ends the turn: it settles as ever.
     let mut ledger = Ledger::default();
     ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
-    assert_eq!(
-        ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved),
-        Ends::Hold
-    );
-    ledger.turn_began(TASK);
+    ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved);
     assert_eq!(
         ledger.end_step(TASK, WAITING, false, Looked::Moved),
         Ends::Settle
     );
+}
+
+#[test]
+fn a_prompt_while_it_waits_on_its_own_work_begins_a_later_turn_whose_end_is_waited_for() {
+    // #3921: the hook does not say whether a person or its own work began a turn, so every
+    // prompt is a later turn: the bound ends nothing, and that turn's own end is waited for.
+    let mut ledger = Ledger::default();
+    ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
+    ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved);
+
     ledger.turn_began(TASK);
+
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::Moved),
+        Ends::Hold
+    );
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::WaitedOut),
+        Ends::Hold
+    );
+    assert_eq!(
+        ledger.end_step(TASK, WAITING, false, Looked::Moved),
+        Ends::Settle
+    );
+}
+
+#[test]
+fn a_prompt_heard_before_any_look_at_its_end_is_a_later_turn_as_well() {
+    // #3921: whatever order the board's moves and the hook's prompt arrive in.
+    let mut ledger = Ledger::default();
+    ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
+
+    ledger.turn_began(TASK);
+
+    assert_eq!(
+        ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved),
+        Ends::Hold
+    );
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::Moved),
+        Ends::Hold,
+        "no bound is set for a later turn"
+    );
     assert_eq!(
         ledger.end_step(TASK, RUNNING, false, Looked::WaitedOut),
         Ends::Hold
@@ -1710,10 +1761,10 @@ fn the_turn_its_own_work_wakes_it_for_is_still_the_reporting_turn_and_ends_at_it
 }
 
 #[test]
-fn a_task_held_until_its_bound_passed_and_found_waiting_on_its_own_work_is_bounded_again() {
+fn a_task_held_and_then_found_waiting_on_its_own_work_has_its_bound_set_once_that_work_ends() {
     // #3921: held by a task of its own past its bound with its turn over, it went on to wait
-    // on work of its own. That wait is no later turn whose own end is waited for: a hold
-    // never keeps a program for good, so the bound is set again.
+    // on work of its own. Still the reporting turn: the bound is set again once that work
+    // has ended, so a hold never keeps a program for good.
     let mut ledger = Ledger::default();
     ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
     assert_eq!(
@@ -1727,11 +1778,27 @@ fn a_task_held_until_its_bound_passed_and_found_waiting_on_its_own_work_is_bound
 
     assert_eq!(
         ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved),
+        Ends::Hold
+    );
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::Moved),
         Ends::Bound
     );
     assert_eq!(
-        ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::WaitedOut),
+        ledger.end_step(TASK, RUNNING, false, Looked::WaitedOut),
         Ends::End
+    );
+}
+
+#[test]
+fn a_cancelled_task_is_ended_whatever_its_own_work() {
+    // #3921: the cancel is the word to stop that work too.
+    let mut ledger = cancelling();
+    ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
+
+    assert_eq!(
+        ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved),
+        Ends::Settle
     );
 }
 
