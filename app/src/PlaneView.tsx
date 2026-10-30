@@ -444,7 +444,9 @@ import {
   useSkillStudioSaid,
 } from "./skillStudio";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { askBeforeClosing, forgetSkillEdit, unsavedClosedBy } from "./skillEdit";
+import { forgetSkillEdit } from "./skillEdit";
+import { discardGone, discardRemoved, unsavedClosedBy, unsavedIn } from "./unsavedWork";
+import { UnsavedWorkQuestion, type UnsavedAsk } from "./UnsavedWorkQuestion";
 import { SkillRunsHere, aPersonasOwn, useSkillRuns, type RunsOf } from "./skillRuns";
 import { CHAT_SKILLS_ASKED, type ChatSkillsAsk } from "./chatSkillsAsk";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
@@ -1113,6 +1115,9 @@ export const PlaneView = memo(function PlaneView({
     refusal?: Refused;
     busy: boolean;
   }>();
+  /** **A close waiting on the person's answer about the unsaved work it would lose** (#3929,
+   *  `unsavedWork.ts`): a tab's, a pane's, or a workspace's removal. */
+  const [unsavedAsk, setUnsavedAsk] = useState<UnsavedAsk>();
   /** The workspace being renamed, while its dialog is up: whether charter is renaming it now,
    *  and why the last attempt renamed nothing, in the core's words (charter#367). */
   /** The workspace whose vision is being added (#3344), whether it is being saved, and why the
@@ -3927,6 +3932,8 @@ export const PlaneView = memo(function PlaneView({
       forgetViewHistory(studioHistoryOf(plane, gone));
       forgetSkillEdit(studioHistoryOf(plane, gone));
     }
+    // **And any view's unsaved work goes with its tab** (#3929), once it is asked about.
+    discardGone(plane, studiosBefore.current, tabs);
     studiosBefore.current = tabs;
   }, [tabs, plane]);
 
@@ -4822,7 +4829,7 @@ export const PlaneView = memo(function PlaneView({
    * against the disk at the moment of the delete — this is what the operator sees before they
    * press, not what decides.
    */
-  const removeWorkspace = useCallback(
+  const askToRemove = useCallback(
     (workspace: string) => {
       setRemoving({ workspace, busy: false });
       void commands
@@ -4845,6 +4852,16 @@ export const PlaneView = memo(function PlaneView({
         );
     },
     [plane],
+  );
+  /** **The unsaved work a save writes into the workspace is asked about first** (#3929): it goes
+   *  with the workspace. Then the removal's own question. */
+  const removeWorkspace = useCallback(
+    (workspace: string) => {
+      const work = unsavedIn(plane, workspace);
+      if (work.length === 0) return askToRemove(workspace);
+      setUnsavedAsk({ work, then: () => askToRemove(workspace) });
+    },
+    [askToRemove, plane],
   );
 
   // Remove… on a chat's question about a workspace opens this same dialog (qw356): the chat
@@ -4957,6 +4974,8 @@ export const PlaneView = memo(function PlaneView({
         return;
       }
       setRemoving(undefined);
+      // The unsaved work a save would have written into it goes with it (#3929).
+      discardRemoved(plane, workspace);
       setReport({
         from: `workspace.remove:${workspace}`,
         refused: false,
@@ -7725,17 +7744,26 @@ export const PlaneView = memo(function PlaneView({
    * was refused and nothing has happened yet. The palette reads this answer to say what a row
    * did, and "nothing to say" is the right thing to say about a question still on screen.
    */
-  // The close asked again once the Skill studio's question is answered with a leave (#3683).
-  const askAgain = useRef<(offer: Offer, fromALink: boolean) => Promise<Ran>>(undefined);
+  // The close asked again, counted, once the question about its unsaved work is answered with
+  // a leave (#3929).
+  const askAgain =
+    useRef<(offer: Offer, fromALink: boolean, unsavedAnswered: boolean) => Promise<Ran>>(undefined);
   const askToEndNow = useCallback(
-    async (offer: Offer, fromALink: boolean): Promise<Ran> => {
-      // **A Skill studio whose editor holds unsaved text asks first** (#3683): its tab comes to
-      // the front, where the studio asks Keep editing, Discard and leave, or Save and leave, and
-      // the close is carried out once it is answered with a leave.
-      const unsaved = offer.available ? unsavedClosedBy(plane, now.current, offer.does) : undefined;
+    async (offer: Offer, fromALink: boolean, unsavedAnswered = false): Promise<Ran> => {
+      // **A view with unsaved work asks first** (#3683, #3929; `unsavedWork.ts`): its tab comes
+      // to the front, the window asks Keep editing, Discard and leave, or Save and leave, and the
+      // close is asked again once it is answered with a leave, and goes on to what it ends. The
+      // work goes with its tab once the close is carried out (`discardGone`).
+      const unsaved =
+        offer.available && !unsavedAnswered
+          ? unsavedClosedBy(plane, now.current, offer.does)
+          : undefined;
       if (unsaved !== undefined) {
         if (now.current.inFront !== unsaved.tab) bringToFront(unsaved.tab);
-        askBeforeClosing(unsaved.history, () => void askAgain.current?.(offer, fromALink));
+        setUnsavedAsk({
+          work: unsaved.work,
+          then: () => void askAgain.current?.(offer, fromALink, true),
+        });
         return { ok: true };
       }
       if (offer.available && endsAChat(offer.does)) {
@@ -7838,25 +7866,30 @@ export const PlaneView = memo(function PlaneView({
     },
     [askedByNow, bringToFront, carryOut, plane, setEndingChat],
   );
-  useEffect(() => {
-    askAgain.current = askToEndNow;
-  }, [askToEndNow]);
   /**
    * **A close counts as a question up from its first step** (#2761), and the mark is cleared
-   * however it settles (#2845): `closeQuestion.ts`.
+   * however it settles (#2845): `closeQuestion.ts`. The question about a view's unsaved work is
+   * one too (#3929).
    */
   const { up: questionUp, counted } = useCloseQuestion(
     plane,
-    endingChat !== undefined || keptOnClose.length > 0,
+    endingChat !== undefined || keptOnClose.length > 0 || unsavedAsk !== undefined,
     onAsking,
   );
   const askToEnd = useCallback(
-    async (offer: Offer, fromALink: boolean): Promise<Ran> => {
-      if (!offer.available || !endsAChat(offer.does)) return askToEndNow(offer, fromALink);
-      return counted(() => askToEndNow(offer, fromALink));
+    async (offer: Offer, fromALink: boolean, unsavedAnswered = false): Promise<Ran> => {
+      const asks =
+        offer.available &&
+        (endsAChat(offer.does) ||
+          (!unsavedAnswered && unsavedClosedBy(plane, now.current, offer.does) !== undefined));
+      if (!asks) return askToEndNow(offer, fromALink, unsavedAnswered);
+      return counted(() => askToEndNow(offer, fromALink, unsavedAnswered));
     },
-    [askToEndNow, counted],
+    [askToEndNow, counted, plane],
   );
+  useEffect(() => {
+    askAgain.current = askToEnd;
+  }, [askToEnd]);
   const run = useCallback((offer: Offer) => askToEnd(offer, false), [askToEnd]);
 
   /**
@@ -10001,6 +10034,11 @@ export const PlaneView = memo(function PlaneView({
                 onRename={(name) => void doRename(renamingWs.workspace, name)}
                 onCancel={() => setRenamingWs(undefined)}
               />
+            )}
+
+            {/* The one question a close asks about a view's unsaved work (#3929). */}
+            {unsavedAsk && (
+              <UnsavedWorkQuestion asked={unsavedAsk} onAnswered={() => setUnsavedAsk(undefined)} />
             )}
 
             {removing && (
