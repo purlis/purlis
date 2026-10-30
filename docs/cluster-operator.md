@@ -571,10 +571,26 @@ Prometheus, or a `ServiceMonitor`, at it:
 | `purlis_cluster_operator_claims_deleted_total` | counter | `pool`, `cause` | the Claims whose runner the operator removed as they were deleted; `cause` is `requested` (someone deleted the Claim) |
 
 The counters count from the operator's start. The causes grow as the operator suspends idle
-runners (#3980) and deletes long-suspended Claims (#3981). The port answers anyone in the
-cluster who can reach it; a NetworkPolicy in the operator's namespace narrows that. It says
-how many Claims each pool and namespace has and their states, and nothing about what a runner
-does.
+runners (#3980) and deletes long-suspended Claims (#3981).
+
+**Nothing may scrape them until you say who may.** The metrics name every namespace that holds
+a Claim and every runner namespace (`purlis-runners-<hash>`, one per person), with their
+Claims' states, so they are not for everyone in the cluster. They say nothing about what a
+runner does. The NetworkPolicy `purlis-cluster-operator` lets nothing reach the operator's pod
+but the scrapers you name, on the metrics port. With the chart, name them as a NetworkPolicy's
+`from` peers:
+
+```sh
+helm upgrade purlis-cluster-operator operator/charts/purlis-cluster-operator \
+  --namespace purlis-system --reuse-values \
+  --set 'metrics.allowFrom[0].namespaceSelector.matchLabels.kubernetes\.io/metadata\.name=monitoring'
+```
+
+With the plain manifests, add a NetworkPolicy of your own in `purlis-system` that lets your
+Prometheus's pods reach the operator's pod (`app.kubernetes.io/name: purlis-cluster-operator`)
+on port `metrics`. NetworkPolicies add up, so it opens only what it names. The policy takes
+effect where the cluster's network plugin enforces NetworkPolicies. The port holds at most 32
+connections at once and closes one that has not sent its request within two seconds.
 
 ## Rolling the signing key
 

@@ -1,9 +1,11 @@
 # Copyright 2026 Purlis
 # SPDX-License-Identifier: Apache-2.0
 
-# purlis's cluster operator: its namespace, its service account, what it may do, and the one
-# pod that runs it. Applied after upstream agent-sandbox (vendor/agent-sandbox/), the policy
-# (policy.yaml) and purlis's definitions (crds.yaml); docs/cluster-operator.md says how.
+# purlis's cluster operator: its namespace, its service account, what it may do, the one pod
+# that runs it, its metrics Service and the NetworkPolicy that lets only the scrapers the chart's
+# values name reach that pod (none by default). Applied after upstream agent-sandbox
+# (vendor/agent-sandbox/), the policy (policy.yaml) and purlis's definitions (crds.yaml);
+# docs/cluster-operator.md says how.
 #
 # Rendered from the chart, charts/purlis-cluster-operator/, with its default values; never
 # edited by hand. Regenerate with
@@ -29,6 +31,25 @@ metadata:
   name: purlis-system
   labels:
     pod-security.kubernetes.io/enforce: restricted
+---
+# Source: purlis-cluster-operator/templates/networkpolicy.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: purlis-cluster-operator
+  namespace: purlis-system
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: purlis-cluster-operator
+  policyTypes:
+    - Ingress
+  ingress: []
 ---
 # Source: purlis-cluster-operator/templates/serviceaccount.yaml
 # Copyright 2026 Purlis

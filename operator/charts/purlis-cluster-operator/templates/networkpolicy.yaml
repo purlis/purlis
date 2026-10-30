@@ -1,0 +1,29 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+{{/*
+What may reach the operator's pod (#3737): only the scrapers .Values.metrics.allowFrom names,
+on its metrics port. The operator serves nothing else, so with none named nothing reaches it.
+*/ -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: purlis-cluster-operator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: purlis-cluster-operator
+  policyTypes:
+    - Ingress
+  {{- with .Values.metrics.allowFrom }}
+  ingress:
+    - from:
+        {{- toYaml . | nindent 8 }}
+      ports:
+        - port: metrics
+          protocol: TCP
+  {{- else }}
+  ingress: []
+  {{- end }}

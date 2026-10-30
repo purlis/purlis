@@ -181,3 +181,20 @@ fn the_port_answers_a_scrape_with_the_metrics_and_anything_else_with_404() {
         );
     }
 }
+
+#[tokio::test]
+async fn a_request_head_is_read_to_its_blank_line_and_no_further() {
+    let mut sent: &[u8] = b"GET /metrics HTTP/1.1\r\nHost: x\r\n\r\nleft unread";
+    let head = metrics::head_of(&mut sent).await.expect("the head");
+    assert!(head.starts_with("GET /metrics HTTP/1.1\r\n"), "{head:?}");
+    assert!(head.contains("\r\n\r\n"), "{head:?}");
+}
+
+#[tokio::test]
+async fn a_request_head_that_never_ends_is_cut_at_the_limit() {
+    let endless = vec![b'a'; 1024 * 1024];
+    let mut sent: &[u8] = &endless;
+    let head = metrics::head_of(&mut sent).await.expect("the head");
+    assert!(head.len() <= metrics::REQUEST_LIMIT, "{}", head.len());
+    assert!(!sent.is_empty(), "the rest is never read");
+}

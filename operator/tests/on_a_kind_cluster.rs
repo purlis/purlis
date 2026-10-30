@@ -3161,7 +3161,24 @@ fn value_of(text: &str, series: &str) -> Option<u64> {
 #[tokio::test]
 #[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
 async fn the_operators_metrics_count_a_claim_its_suspension_and_its_deletion_once() {
+    use k8s_openapi::api::networking::v1::NetworkPolicy;
     let client = Client::try_default().await.expect("the cluster");
+    // The installed policy lets nothing scrape the operator (#3737); one more lets the API
+    // server's proxy, as a cluster's Prometheus would be let in by `metrics.allowFrom`.
+    let policies = Api::<NetworkPolicy>::namespaced(client.clone(), "purlis-system");
+    let scrape: NetworkPolicy = serde_json::from_value(serde_json::json!({
+        "metadata": { "name": "e2e-metrics-scrape" },
+        "spec": {
+            "podSelector": { "matchLabels": { "app.kubernetes.io/name": "purlis-cluster-operator" } },
+            "policyTypes": ["Ingress"],
+            "ingress": [{ "ports": [{ "port": "metrics", "protocol": "TCP" }] }],
+        },
+    }))
+    .expect("a network policy");
+    policies
+        .create(&PostParams::default(), &scrape)
+        .await
+        .expect("the scrape let in");
     let scratch = Scratch::new(&client, "e2e-metrics").await;
     let pools = small_pool(&client, "e2e-metrics").await;
     let claims = claims_in(&client, &scratch.name);
@@ -3224,5 +3241,8 @@ async fn the_operators_metrics_count_a_claim_its_suspension_and_its_deletion_onc
     assert_eq!(value_of(&text, ready), None, "{text}");
 
     let _ = pools.delete("e2e-metrics", &DeleteParams::default()).await;
+    let _ = policies
+        .delete("e2e-metrics-scrape", &DeleteParams::default())
+        .await;
     scratch.end().await;
 }

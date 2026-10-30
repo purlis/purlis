@@ -28,8 +28,9 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
 
 /// The port the operator serves its metrics on, in its pod and on its metrics Service.
 pub const PORT: u16 = 8080;
@@ -194,10 +195,19 @@ impl Metrics {
 
 /// The most of a request the metrics port reads: a scrape's request line and headers fit well
 /// within it.
-const REQUEST_LIMIT: usize = 8 * 1024;
+pub const REQUEST_LIMIT: usize = 8 * 1024;
 
 /// How long the metrics port waits for a request, and for its answer to be taken.
-const ANSWER_WITHIN: Duration = Duration::from_secs(5);
+const ANSWER_WITHIN: Duration = Duration::from_secs(2);
+
+/// The most connections the metrics port holds open at once; one more is closed unanswered, so
+/// no number of connections spends more than these of the operator's memory. A scraper or two
+/// needs far fewer.
+const CONNECTIONS: usize = 32;
+
+/// How long the metrics port waits before accepting again after a connection could not be
+/// accepted (no file descriptor left, say), so it never spins.
+const ACCEPT_AGAIN_AFTER: Duration = Duration::from_millis(500);
 
 /// The answer to a request whose head is `head` (its request line and headers): the metrics,
 /// `rendered` only when it is `GET` [`PATH`]; 404 otherwise. Each connection is answered once
@@ -221,16 +231,23 @@ pub fn answer(head: &str, rendered: impl FnOnce() -> String) -> String {
     )
 }
 
-/// `stream`'s request head, read up to the blank line that ends it, [`REQUEST_LIMIT`] at most.
-async fn head_of(stream: &mut TcpStream) -> std::io::Result<String> {
+/// `stream`'s request head, read up to the blank line that ends it, [`REQUEST_LIMIT`] at most:
+/// nothing past the limit is read.
+pub async fn head_of(stream: &mut (impl AsyncRead + Unpin)) -> std::io::Result<String> {
     let mut read = Vec::new();
     let mut buffer = [0u8; 1024];
-    while !read.windows(4).any(|end| end == b"\r\n\r\n") && read.len() < REQUEST_LIMIT {
-        let n = stream.read(&mut buffer).await?;
+    while read.len() < REQUEST_LIMIT {
+        let room = buffer.len().min(REQUEST_LIMIT - read.len());
+        let n = stream.read(&mut buffer[..room]).await?;
         if n == 0 {
             break;
         }
+        // Only where the new bytes can end the head is looked at, never the whole head again.
+        let from = read.len().saturating_sub(3);
         read.extend_from_slice(&buffer[..n]);
+        if read[from..].windows(4).any(|end| end == b"\r\n\r\n") {
+            break;
+        }
     }
     Ok(String::from_utf8_lossy(&read).into_owned())
 }
@@ -253,7 +270,12 @@ pub async fn serve(client: kube::Client, metrics: Arc<Metrics>, claims: Store<Cl
         }
     });
     tokio::spawn(watched);
-    let listener = match TcpListener::bind(("0.0.0.0", PORT)).await {
+    // Every address, IPv6 and IPv4 alike where the pod has IPv6, IPv4's alone where it has not.
+    let bound = match TcpListener::bind(("::", PORT)).await {
+        Ok(listener) => Ok(listener),
+        Err(_) => TcpListener::bind(("0.0.0.0", PORT)).await,
+    };
+    let listener = match bound {
         Ok(listener) => listener,
         Err(error) => {
             tracing::error!(%error, port = PORT, "the metrics could not be served");
@@ -261,16 +283,23 @@ pub async fn serve(client: kube::Client, metrics: Arc<Metrics>, claims: Store<Cl
         }
     };
     tracing::info!(port = PORT, path = PATH, "serving metrics");
+    let open = Arc::new(Semaphore::new(CONNECTIONS));
     loop {
         let mut stream = match listener.accept().await {
             Ok((stream, _)) => stream,
             Err(error) => {
                 tracing::warn!(%error, "a metrics connection was not accepted");
+                tokio::time::sleep(ACCEPT_AGAIN_AFTER).await;
                 continue;
             }
         };
+        // Past the cap, the connection is dropped, which closes it.
+        let Ok(permit) = open.clone().try_acquire_owned() else {
+            continue;
+        };
         let (metrics, claims, warm_pools) = (metrics.clone(), claims.clone(), warm_pools.clone());
         tokio::spawn(async move {
+            let _permit = permit;
             let answered = tokio::time::timeout(ANSWER_WITHIN, async {
                 let head = head_of(&mut stream).await?;
                 let answer = answer(&head, || {
