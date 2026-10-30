@@ -539,6 +539,231 @@ mod sockets {
         assert!(answer.starts_with("HTTP/1.1 502 "), "{answer}");
     }
 
+    /// **The two backends a door carries to** (#3316): the chat's own socket, or slots its
+    /// server dialled in. Each test below is run against both.
+    enum Served {
+        Socket(tempfile::TempDir),
+        Dialled(Arc<Slots>),
+    }
+
+    /// A door on a free port to a server that answers with `answer`, through `backend`
+    /// (`"socket"` or `"dialled"`): the door, its port, and what it is served by.
+    fn door_to(
+        backend: &str,
+        answer: impl Fn(UnixStream) + Send + Sync + 'static,
+    ) -> (Door, u16, Served) {
+        let port = free_port();
+        let answer = Arc::new(answer);
+        if backend == "socket" {
+            let dir = tempfile::tempdir().expect("a folder");
+            let socket = dir.path().join(format!("{port}.sock"));
+            let listener = UnixListener::bind(&socket).expect("the server's socket");
+            std::thread::spawn(move || {
+                for stream in listener.incoming().flatten() {
+                    let answer = Arc::clone(&answer);
+                    std::thread::spawn(move || answer(stream));
+                }
+            });
+            let door = Door::open(port, &socket).expect("the door opens");
+            (door, port, Served::Socket(dir))
+        } else {
+            let (door, slots) = Door::dialled(port).expect("the door opens");
+            for _ in 0..4 {
+                dial(&slots, Arc::clone(&answer));
+            }
+            (door, port, Served::Dialled(slots))
+        }
+    }
+
+    /// As the shim does: one slot parked, which on its go is handed to `answer`, and another
+    /// dialled in its place.
+    fn dial(slots: &Arc<Slots>, answer: Arc<dyn Fn(UnixStream) + Send + Sync>) {
+        let (parked, mut server) = UnixStream::pair().expect("a pair");
+        if slots.park(parked).is_err() {
+            return;
+        }
+        let slots = Arc::clone(slots);
+        std::thread::spawn(move || {
+            let mut go = [0u8; GO.len()];
+            if server.read_exact(&mut go).is_err() || go != GO.as_bytes() {
+                return;
+            }
+            dial(&slots, Arc::clone(&answer));
+            answer(server);
+        });
+    }
+
+    /// Answers a request with what it was sent, and a cookie.
+    fn echo(mut stream: UnixStream) {
+        let mut buf = vec![0u8; 8192];
+        let n = stream.read(&mut buf).unwrap_or(0);
+        let said = String::from_utf8_lossy(&buf[..n]).into_owned();
+        let _ = write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nSet-Cookie: session=abc\r\nContent-Length: {}\r\n\r\n{said}",
+            said.len()
+        );
+    }
+
+    #[test]
+    fn both_backends_carry_their_own_request_and_refuse_another_sites() {
+        for backend in ["socket", "dialled"] {
+            let (door, port, _served) = door_to(backend, echo);
+            let host = format!("Host: 127.0.0.1:{port}");
+            let carried = ask(
+                port,
+                &["GET /hello HTTP/1.1", &host, "Cookie: grafana=secret"],
+            );
+            assert!(
+                carried.starts_with("HTTP/1.1 200 OK\r\n"),
+                "{backend}: {carried}"
+            );
+            assert!(
+                carried.contains("GET /hello HTTP/1.1"),
+                "{backend}: {carried}"
+            );
+            assert!(!carried.contains("grafana"), "{backend}: {carried}");
+            let refused = ask(port, &["GET / HTTP/1.1", "Host: evil.example"]);
+            assert!(refused.starts_with("HTTP/1.1 421 "), "{backend}: {refused}");
+            let other = ask(
+                port,
+                &["GET / HTTP/1.1", &host, "Origin: https://evil.example"],
+            );
+            assert!(other.starts_with("HTTP/1.1 403 "), "{backend}: {other}");
+            drop(door);
+        }
+    }
+
+    #[test]
+    fn both_backends_keep_the_servers_cookies_in_the_jar_and_hand_them_back() {
+        for backend in ["socket", "dialled"] {
+            let (_door, port, _served) = door_to(backend, echo);
+            let host = format!("Host: localhost:{port}");
+            let first = ask(port, &["GET / HTTP/1.1", &host]);
+            let token = first
+                .split(&format!("purlis-door-{port}="))
+                .nth(1)
+                .and_then(|rest| rest.get(..32))
+                .expect("the door's own cookie")
+                .to_owned();
+            let cookie = format!("Cookie: purlis-door-{port}={token}");
+            let second = ask(port, &["GET /again HTTP/1.1", &host, &cookie]);
+            assert!(
+                second.contains("Cookie: session=abc"),
+                "{backend}: {second}"
+            );
+            assert!(!second.contains("purlis-door-"), "{backend}: {second}");
+        }
+    }
+
+    #[test]
+    fn both_backends_carry_an_upgrade_both_ways() {
+        for backend in ["socket", "dialled"] {
+            let (_door, port, _served) = door_to(backend, |mut stream: UnixStream| {
+                let mut buf = vec![0u8; 8192];
+                let _ = stream.read(&mut buf);
+                let _ = stream.write_all(
+                    b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n",
+                );
+                let mut word = [0u8; 4];
+                if stream.read_exact(&mut word).is_ok() {
+                    let _ = stream.write_all(&word);
+                }
+            });
+            let mut client = TcpStream::connect(("127.0.0.1", port)).expect("the door answers");
+            let lines = [
+                "GET /hmr HTTP/1.1".to_owned(),
+                format!("Host: localhost:{port}"),
+                "Upgrade: websocket".to_owned(),
+                "Connection: Upgrade".to_owned(),
+            ];
+            client
+                .write_all(head(&lines.iter().map(String::as_str).collect::<Vec<_>>()).as_bytes())
+                .expect("sent");
+            let mut switched = vec![0u8; 4096];
+            let n = client.read(&mut switched).expect("switched");
+            let switched = String::from_utf8_lossy(&switched[..n]).into_owned();
+            assert!(
+                switched.starts_with("HTTP/1.1 101"),
+                "{backend}: {switched}"
+            );
+            client.write_all(b"ping").expect("sent up");
+            let mut back = [0u8; 4];
+            client.read_exact(&mut back).expect("sent back");
+            assert_eq!(&back, b"ping", "{backend}");
+        }
+    }
+
+    #[test]
+    fn both_backends_carry_one_request_a_connection() {
+        for backend in ["socket", "dialled"] {
+            let (_door, port, _served) = door_to(backend, echo);
+            let host = format!("Host: localhost:{port}");
+            let one = head(&["GET /one HTTP/1.1", &host]);
+            let two = head(&["GET /two HTTP/1.1", &host]);
+            let mut client = TcpStream::connect(("127.0.0.1", port)).expect("the door answers");
+            client
+                .write_all(format!("{one}{two}").as_bytes())
+                .expect("sent");
+            let mut answer = String::new();
+            let _ = client.read_to_string(&mut answer);
+            assert!(answer.contains("GET /one"), "{backend}: {answer}");
+            assert!(!answer.contains("GET /two"), "{backend}: {answer}");
+        }
+    }
+
+    #[test]
+    fn a_dialled_door_with_no_slot_parked_answers_502_within_its_wait() {
+        // A socket at the path a door to this port would carry to, which a dialled door never
+        // reaches: it has slots alone.
+        let dir = tempfile::tempdir().expect("a folder");
+        let port = free_port();
+        echo_on(&dir.path().join(format!("{port}.sock")));
+        let (_door, _slots) = Door::dialled(port).expect("the door opens");
+        let began = std::time::Instant::now();
+        let answer = ask(
+            port,
+            &["GET / HTTP/1.1", &format!("Host: localhost:{port}")],
+        );
+        assert!(answer.starts_with("HTTP/1.1 502 "), "{answer}");
+        assert!(began.elapsed() < SLOT_WITHIN + Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_dialled_door_passes_over_a_slot_whose_server_has_gone() {
+        let port = free_port();
+        let (_door, slots) = Door::dialled(port).expect("the door opens");
+        let (gone, server) = UnixStream::pair().expect("a pair");
+        slots.park(gone).expect("parked");
+        drop(server);
+        dial(&slots, Arc::new(echo));
+        let answer = ask(
+            port,
+            &["GET /live HTTP/1.1", &format!("Host: localhost:{port}")],
+        );
+        assert!(answer.starts_with("HTTP/1.1 200 OK"), "{answer}");
+    }
+
+    #[test]
+    fn a_dialled_door_dropped_closes_every_parked_slot() {
+        let port = free_port();
+        let (door, slots) = Door::dialled(port).expect("the door opens");
+        let (parked, mut server) = UnixStream::pair().expect("a pair");
+        slots.park(parked).expect("parked");
+        drop(door);
+        let mut buf = [0u8; 8];
+        assert_eq!(
+            server.read(&mut buf).expect("read"),
+            0,
+            "the slot was closed"
+        );
+        let (more, _server) = UnixStream::pair().expect("a pair");
+        assert!(
+            slots.park(more).is_err(),
+            "a closed door parks nothing more"
+        );
+    }
+
     #[test]
     fn a_door_says_so_where_the_chats_server_is_not_running() {
         let dir = tempfile::tempdir().expect("a folder");
@@ -549,5 +774,29 @@ mod sockets {
             &["GET / HTTP/1.1", &format!("Host: localhost:{port}")],
         );
         assert!(answer.starts_with("HTTP/1.1 502 "), "{answer}");
+    }
+}
+
+/// **Slots are capped** (#3316): one past [`SLOTS_MOST`] is handed back unparked, and a slot
+/// whose server has gone makes room for another.
+#[test]
+fn slots_are_capped_and_a_gone_one_makes_room() {
+    let slots = Slots::new(5173);
+    let mut servers = Vec::new();
+    for _ in 0..SLOTS_MOST {
+        let (parked, server) = UnixStream::pair().expect("a pair");
+        slots.park(parked).expect("parked under the cap");
+        servers.push(server);
+    }
+    let (over, _server) = UnixStream::pair().expect("a pair");
+    assert!(slots.park(over).is_err(), "a slot over the cap is refused");
+    assert_eq!(slots.parked(), SLOTS_MOST);
+    drop(servers.pop());
+    let (room, _server) = UnixStream::pair().expect("a pair");
+    assert!(slots.park(room).is_ok(), "a gone slot made room");
+    slots.close();
+    for mut server in servers {
+        let mut buf = [0u8; 8];
+        assert_eq!(server.read(&mut buf).expect("read"), 0, "closed");
     }
 }
