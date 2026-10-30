@@ -5,7 +5,7 @@
 //! the line an Allow is bound to, and which keys are marked so they are never handed over raw.
 
 use super::mint::{self, Mint};
-use super::{Asked, Handed, Ready, Tool, declared, keyed};
+use super::{Asked, Handed, Ready, Tool, allows, declared, keyed};
 
 fn read(text: &str) -> (Vec<Tool>, Vec<String>) {
     let value: toml::Value = toml::from_str(text).expect("TOML");
@@ -100,6 +100,47 @@ fn its_line_names_the_app_so_another_app_asks_again() {
         gh().whole(),
         Tool::one("gh", "forge", "GH_TOKEN", Handed::Env, "app-key").whole()
     );
+}
+
+#[test]
+fn its_args_are_held_to_as_any_program_s_and_the_forge_s_refusals_still_apply() {
+    let (tools, refused) = read(
+        r#"tools = { gh = { vault = "forge", mint = "github-app", app = "Iv23liExample", key = "app-key", args = ["pr", "view", "--web"] } }"#,
+    );
+    assert_eq!(refused, Vec::<String>::new());
+    let [tool] = tools.as_slice() else {
+        panic!("one tool: {tools:?}")
+    };
+    assert_eq!(tool.mint, gh().mint);
+    assert_eq!(
+        tool.whole(),
+        format!(
+            "{}, only with arguments matching \"pr\", \"view\", \"--web\"",
+            gh().whole()
+        )
+    );
+    let ready = Ready {
+        tool: tool.clone(),
+        program: "/usr/local/bin/gh".into(),
+    };
+    let said = |words: &[&str]| {
+        words
+            .iter()
+            .map(|one| (*one).to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(allows(&ready, &said(&["pr", "view", "--web"])), Ok(()));
+    assert!(allows(&ready, &said(&["issue", "list"])).is_err());
+    // Refused whatever its args say: it would print the minted token.
+    assert!(allows(&ready, &said(&["auth", "token"])).is_err());
+    assert!(allows(&gh_ready(), &said(&["auth", "token"])).is_err());
+}
+
+fn gh_ready() -> Ready {
+    Ready {
+        tool: gh(),
+        program: "/usr/local/bin/gh".into(),
+    }
 }
 
 #[test]

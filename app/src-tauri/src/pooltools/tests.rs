@@ -166,6 +166,35 @@ fn a_run_asking_for_another_vault_or_hand_over_is_sent_nothing() {
     }
 }
 
+/// The tool's `args` and the forge's built-in refusals (#3421) are judged here too, before
+/// anything is read or minted, and not only by the runner's host.
+#[test]
+fn a_run_with_arguments_the_tool_does_not_allow_is_sent_nothing() {
+    let only_get = |_: &Path, _: &str| {
+        let mut tool = kubectl();
+        tool.args = Some(vec!["get".into()]);
+        (vec![tool.clone()], vec![tool])
+    };
+    let ask = kubectl_asked();
+    let gate = Gate {
+        tools: &only_get,
+        ..a_gate(&ask)
+    };
+    assert!(refused(&gate).contains("pods"), "{}", refused(&gate));
+    let gh = || Tool::one("gh", "team", "GH_TOKEN", As::Env, "token");
+    let gh_tools = |_: &Path, _: &str| (vec![gh()], vec![gh()]);
+    let mut auth = kubectl_asked();
+    auth.runs_as = Some("gh".into());
+    auth.secret_exec.file = Vec::new();
+    auth.secret_exec.env = vec!["GH_TOKEN=token".into()];
+    auth.secret_exec.command = vec!["/opt/gh/gh".into(), "auth".into(), "token".into()];
+    let gate = Gate {
+        tools: &gh_tools,
+        ..a_gate(&auth)
+    };
+    assert!(refused(&gate).contains("auth"), "{}", refused(&gate));
+}
+
 #[test]
 fn a_vault_the_persona_may_not_use_here_is_sent_nothing() {
     let ask = kubectl_asked();

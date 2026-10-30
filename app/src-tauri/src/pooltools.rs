@@ -288,7 +288,8 @@ pub fn checked(gate: &Gate<'_>) -> Result<Checked, String> {
 /// **Tool `name` of `persona`, as this machine allows it**, where `wanted` asks for exactly its
 /// vault and hand-over: the persona's tools as the project declares them and this machine
 /// allowed them, read now (the runner armed the chat's tools, of which this window holds no
-/// record). Refused in the words a chat of this machine is refused in otherwise.
+/// record), run with arguments it allows. Refused in the words a chat of this machine is refused
+/// in otherwise.
 fn allowed_tool(
     gate: &Gate<'_>,
     persona: &str,
@@ -316,6 +317,16 @@ fn allowed_tool(
             program: name,
         },
     )?;
+    // Its arguments (#3421), judged here as well as on the runner's host, so nothing is read
+    // or minted for a run the tool's `args` or the forge's refusals would refuse.
+    let args: Vec<String> = wanted
+        .command
+        .iter()
+        .skip_while(|word| *word == "--")
+        .skip(1)
+        .cloned()
+        .collect();
+    tools::allows(ready, &args)?;
     Ok(ready.tool.clone())
 }
 
