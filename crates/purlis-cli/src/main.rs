@@ -603,7 +603,8 @@ enum Command {
         timeout: Option<u32>,
         /// Where the new chat works: `workspace:<name>` for another workspace, or `worktree`
         /// for a new worktree on its own branch (default: this chat's folder, or a worktree
-        /// where the persona's definition says `dispatch-isolation: worktree`).
+        /// where the persona's definition says `dispatch-isolation: worktree`). From a
+        /// workspace whose folder holds several clones, `worktree:<repo>` names the clone.
         #[arg(long = "in", value_name = "WHERE")]
         place: Option<String>,
         /// A long-running task, which works through many pieces and sends `purlis dispatch

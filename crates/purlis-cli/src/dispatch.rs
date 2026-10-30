@@ -233,7 +233,7 @@ fn refusal(why: String) -> Markup {
     }
 }
 
-/// `--in` as the app will read it, or the refusal: one of its two words, said before a brief
+/// `--in` as the app will read it, or the refusal: one of its three words, said before a brief
 /// is read. Whether the workspace is there, and whether this chat works in a repo a worktree
 /// can be cut from, are the app's to say, from its own record of this chat.
 fn placed(place: Option<&str>) -> Result<Option<String>, String> {
@@ -352,7 +352,7 @@ pub fn send(
     // longer than a start alone.
     let cuts_a_worktree = matches!(
         purlis_core::dispatchplace::asked(options.place),
-        Ok(Some(purlis_core::dispatchplace::Where::Worktree))
+        Ok(Some(purlis_core::dispatchplace::Where::Worktree(_)))
     );
     let within = if cuts_a_worktree {
         A_WORKTREE_TAKES_AT_MOST
