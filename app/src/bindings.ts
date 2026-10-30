@@ -2952,13 +2952,13 @@ export const commands = {
 	 *  adding a pool ends with, and what Settings › Pools shows. Refused, with nothing sent, for a
 	 *  pool not shown to be the person's own.
 	 */
-	poolProfiles: (pool: string, plane: string | null) => typedError<PoolProfiles, string>(__TAURI_INVOKE("pool_profiles", { pool, plane })),
+	poolProfiles: (pool: string, open: OpenProject) => typedError<PoolProfiles, string>(__TAURI_INVOKE("pool_profiles", { pool, open })),
 	/**
 	 *  **Adds this machine's profile `name` to pool `pool`** (#4047, Add a profile…): its record
 	 *  names it from now on, beside the open project `plane`'s default where it named none. Its
 	 *  runner keeps it the next time the pool's profiles are asked.
 	 */
-	poolProfileAdd: (pool: string, name: string, plane: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_profile_add", { pool, name, plane })),
+	poolProfileAdd: (pool: string, name: string, open: OpenProject) => typedError<null, string>(__TAURI_INVOKE("pool_profile_add", { pool, name, open })),
 	/**
 	 *  **Takes profile `name` off pool `pool`** (#4047): its runner forgets it first, its folder
 	 *  and its sign-in there with it, then the pool's record leaves it out, starting from the
@@ -2967,7 +2967,7 @@ export const commands = {
 	 *  chat's start wakes it, since what it keeps must go. `Some` note for a runner of a purlis
 	 *  before 1.52, which keeps the profile until it is made again.
 	 */
-	poolProfileRemove: (pool: string, name: string, plane: string | null) => typedError<string | null, string>(__TAURI_INVOKE("pool_profile_remove", { pool, name, plane })),
+	poolProfileRemove: (pool: string, name: string, open: OpenProject) => typedError<string | null, string>(__TAURI_INVOKE("pool_profile_remove", { pool, name, open })),
 	/**
 	 *  **Every device and what runs on it** (#2052): this machine and every runner it keeps, each
 	 *  with the chats and browsers the window has open there, and each pool's limits.
@@ -9065,6 +9065,11 @@ export type OpenHosts = {
 	title: string,
 	/**  Each host, spelled out. */
 	hosts: string[],
+};
+
+/**  The open project a command is asked for: a type of its own, so its plane stays a `PlaneId`. */
+export type OpenProject = {
+	plane: PlaneId | null,
 };
 
 /**  A skill run open in a chat, as its tab's chip shows it. */
