@@ -38,8 +38,8 @@ pub const DIR_NAME: &str = "pieces";
 /// is *what happened*, this is *the latest observation*.
 pub const SEEN_DIR: &str = "seen";
 
-/// The whole vocabulary, in `charter/pieces.py`'s order.
-pub const EVENTS: [&str; 3] = ["claimed", "done", "abandoned"];
+/// The whole vocabulary, in `charter/pieces.py`'s order, and `removed` after it (#3879).
+pub const EVENTS: [&str; 4] = ["claimed", "done", "abandoned", "removed"];
 
 /// The subset a worker declares about itself, as opposed to what charter observed.
 pub const DECLARATIONS: [&str; 2] = ["done", "abandoned"];
@@ -49,8 +49,8 @@ pub fn dir_for(plane: &Path, ws: &str) -> PathBuf {
     plane.join("workspaces").join(ws).join(DIR_NAME)
 }
 
-/// One of the three things the log can say — the closed vocabulary [`EVENTS`] spells, as a
-/// type, so a caller cannot invent a fourth. There is no `failed`: see the module's heading.
+/// One of the four things the log can say — the closed vocabulary [`EVENTS`] spells, as a
+/// type, so a caller cannot invent a fifth. There is no `failed`: see the module's heading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Event {
     /// charter cut the worktree. An observation, not a declaration.
@@ -59,6 +59,9 @@ pub enum Event {
     Done,
     /// The worker says it gave the piece up. Always carries a reason.
     Abandoned,
+    /// The piece's folder was removed (#3879): an observation, as a claim is. It ends any claim
+    /// on the folder, whoever held it: the folder is gone.
+    Removed,
 }
 
 impl Event {
@@ -68,6 +71,7 @@ impl Event {
             Event::Claimed => "claimed",
             Event::Done => "done",
             Event::Abandoned => "abandoned",
+            Event::Removed => "removed",
         }
     }
 }

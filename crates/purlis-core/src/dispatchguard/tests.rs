@@ -755,6 +755,37 @@ fn a_brokered_update_is_refused_where_it_shares_its_call() {
     );
 }
 
+#[test]
+fn a_brokered_removal_is_refused_where_it_shares_its_call() {
+    // #3879: `purlis worktree remove` is pre-allowed by its spelling, on the commit's terms.
+    assert_eq!(
+        refused("purlis worktree remove widget p1", the_chat()),
+        None
+    );
+    // Forced, it is refused here in the hook too, whatever the chat's environment says.
+    for cmd in [
+        "purlis worktree remove widget p1 --force",
+        "purlis worktree remove --force widget p1",
+        "env -C x purlis worktree remove widget p1 --force --delete-branch",
+    ] {
+        let said = refused(cmd, the_chat()).unwrap_or_else(|| panic!("{cmd:?} is refused"));
+        assert!(said.contains("only without --force"), "{said}");
+    }
+    assert_eq!(
+        refused("purlis worktree list --force-of-habit", the_chat()),
+        None
+    );
+    let said =
+        refused("purlis worktree remove widget p1 && rm -rf x", the_chat()).expect("refused");
+    assert_eq!(
+        said,
+        "this call runs `purlis worktree remove` beside another command (`rm -rf x`). \
+         purlis lets a removal the app makes for a chat run without your harness asking \
+         only alone in its call, so this call is refused, and nobody was asked. Run the \
+         removal in a call of its own, and the other command in another."
+    );
+}
+
 /// The hidden flag that pins a handoff's clock is for recorded tests, not for a chat: a
 /// handoff line that carries it is refused, though the allow covers the rest (#1471).
 #[test]
