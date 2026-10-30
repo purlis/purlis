@@ -1132,7 +1132,6 @@ pub fn resolve(
         search,
         writable,
         &temp_folders(),
-        from_desktop,
     )
 }
 
@@ -1159,6 +1158,7 @@ pub fn for_chat(
         search,
         writable,
         &temp_folders(),
+        from_desktop,
     )
 }
 
