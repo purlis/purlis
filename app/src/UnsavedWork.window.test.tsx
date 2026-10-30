@@ -91,11 +91,13 @@ function core(restore: string[], chats: Record<string, OpenChat[]> = {}) {
   return {
     sent: (cmd: string) => asked.filter((one) => one.cmd === cmd).map((one) => one.args),
     listening: (event: string) => (listeners.get(event) ?? []).length > 0,
-    /** What the core tells the window, as Tauri delivers it. */
+    /** What the core tells the window, as Tauri delivers it: to the listener registered last,
+     *  as Strict Mode's first one was let go of (which the mock does not record). */
     fire: (event: string, payload: unknown) =>
       act(() => {
-        for (const handler of listeners.get(event) ?? [])
-          window.__TAURI_INTERNALS__.runCallback(handler, { event, id: 1, payload });
+        const handler = (listeners.get(event) ?? []).at(-1);
+        if (handler === undefined) throw new Error(`the window is not listening for ${event}`);
+        window.__TAURI_INTERNALS__.runCallback(handler, { event, id: 1, payload });
       }),
   };
 }
@@ -219,6 +221,8 @@ describe("a view tab's close, with its unsaved work", () => {
   it("asks about the work first, and closes the tab on a leave", async () => {
     const { fire, listening } = core([ONE]);
     render(<App />);
+    // The project in front first: Settings opens as its tab.
+    await vi.waitFor(() => expect(projectTabs()).toEqual(["one"]));
     await vi.waitFor(() => expect(listening("settings-asked")).toBe(true));
     fire("settings-asked", null);
     const tabs = () =>
