@@ -737,9 +737,6 @@ pub fn rename(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> Result<P
         from.clone()
     };
     cx.done(format!("{old} is renamed {new}"));
-    // Its history and grades follow it by git (#3918); the chats this machine kept of its grades
-    // are kept by name, so they go with it.
-    super::grades::kept::renamed(plane, old, new);
     // So does grading after each edit, within what the person accepted (#3612).
     after_edit_follows(cx, level, old, level, new);
     let still = Level::every(plane)
@@ -753,6 +750,9 @@ pub fn rename(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> Result<P
         None => {
             let followed = references_renamed(cx, level, old, new);
             touched.extend(followed);
+            // Its history and grades follow it by git (#3918). The chats this machine kept of
+            // its grades are kept by name, so they go with it, where no other copy keeps the name.
+            super::grades::kept::renamed(plane, old, new);
         }
     }
     cx.commit(&touched, &format!("skill rename {old} {new}"));

@@ -272,3 +272,53 @@ fn grading_after_each_edit_follows_a_rename_and_a_move_and_goes_with_a_delete() 
     did(root, |cx| crate::skills::verbs::delete(cx, &ops, "ship")).unwrap();
     assert_eq!(after_edit::of(root, &ops, "ship"), None);
 }
+
+#[test]
+fn a_skill_that_takes_the_old_name_since_lends_none_of_its_grades() {
+    let tmp = graded_then_edited();
+    let root = tmp.path();
+    did(root, |cx| {
+        crate::skills::verbs::rename(cx, &Level::project(), "deploy", "ship")
+    })
+    .unwrap();
+    // Another skill takes the name `deploy` in the project's skills, and is graded.
+    std::fs::create_dir_all(root.join("skills/deploy/evals")).unwrap();
+    std::fs::write(
+        root.join("skills/deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Another skill.\n---\n\nSomething else.\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("skills/deploy/evals/triggers.json"), TRIGGERS).unwrap();
+    run(root, &["add", "-A"]);
+    run(
+        root,
+        &[
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            "another deploy",
+        ],
+    );
+    record(
+        root,
+        &Level::project(),
+        &graded(root, "g2", "2026-10-26T10:00:00+00:00", Spent::default()),
+        "laptop",
+    );
+
+    let grades = read_followed(root, &Level::project(), "ship").grades;
+    assert_eq!(
+        grades
+            .iter()
+            .map(|one| one.grade.as_str())
+            .collect::<Vec<_>>(),
+        ["g1"]
+    );
+    assert_eq!(grade_of(root, "ship", "g2"), None);
+    assert_eq!(
+        grade_of(root, "deploy", "g2").map(|one| one.grade),
+        Some("g2".into())
+    );
+}

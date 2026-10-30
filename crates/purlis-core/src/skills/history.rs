@@ -84,6 +84,9 @@ pub struct Was {
     pub folder: String,
     pub name: String,
     pub level: Option<Level>,
+    /// The trees its folder held at its versions: what a grade or a run of a place it had before
+    /// is matched by, since a skill that took the name there since is another.
+    pub trees: Vec<String>,
 }
 
 impl Was {
@@ -148,6 +151,7 @@ fn walked(plane: &Path, level: &Level, name: &str) -> Result<(Vec<Version>, Vec<
         folder: folder_rel,
         name: name.to_owned(),
         level: Some(level.clone()),
+        trees: Vec::new(),
     }];
     let mut versions: Vec<Version> = Vec::new();
     // Where the log of the place before starts: the parent of the commit that left it.
@@ -160,6 +164,9 @@ fn walked(plane: &Path, level: &Level, name: &str) -> Result<(Vec<Version>, Vec<
         trees(plane, &here.folder, &mut found);
         // A commit that took the folder away holds no tree of it: it is no version to go back to.
         found.retain(|version| !version.tree.is_empty());
+        if let Some(last) = was.last_mut() {
+            last.trees = found.iter().map(|version| version.tree.clone()).collect();
+        }
         versions.extend(found);
         let Some(oldest) = oldest.filter(|_| whole && was.len() <= MOST_MOVES) else {
             break;
@@ -168,7 +175,13 @@ fn walked(plane: &Path, level: &Level, name: &str) -> Result<(Vec<Version>, Vec<
             break;
         };
         let parent = format!("{oldest}^");
-        let name = name_at(plane, &parent, &folder).unwrap_or_else(|| here.name.clone());
+        // A folder whose `SKILL.md` gives no plain name there is taken by its folder's name.
+        let name = name_at(plane, &parent, &folder).unwrap_or_else(|| {
+            folder
+                .rsplit_once('/')
+                .map_or(folder.as_str(), |(_, last)| last)
+                .to_owned()
+        });
         let level = folder
             .rsplit_once('/')
             .and_then(|(level_rel, _)| Level::of_rel(level_rel));
@@ -176,6 +189,7 @@ fn walked(plane: &Path, level: &Level, name: &str) -> Result<(Vec<Version>, Vec<
             folder,
             name,
             level,
+            trees: Vec::new(),
         });
         before = Some(parent);
     }
@@ -290,22 +304,28 @@ fn name_at(plane: &Path, commit: &str, folder: &str) -> Option<String> {
 }
 
 /// Gives each of `versions` of the skill that had the places `was` its newest grade: the eval
-/// record's row of the place it had then whose folder held the version's tree.
+/// record's row of the place it had then whose folder held the version's tree, read once.
 fn join_grades(plane: &Path, was: &[Was], versions: &mut [Version]) {
     if versions.is_empty() {
         return;
     }
-    for place in was {
-        let grades = super::grades::read_of(plane, std::slice::from_ref(place)).grades;
-        for version in versions.iter_mut().filter(|version| place.holds(version)) {
-            version.grade = grades
-                .iter()
-                .find(|graded| graded.tree == version.tree)
-                .map(|graded| {
-                    let (passed, fixtures) = graded.report.passed_with();
-                    Grade { passed, fixtures }
-                });
-        }
+    let grades = super::grades::read_of(plane, was).grades;
+    for version in versions {
+        let Some(place) = was.iter().find(|place| place.holds(version)) else {
+            continue;
+        };
+        let level = place.level.as_ref().and_then(Level::rel);
+        version.grade = grades
+            .iter()
+            .find(|graded| {
+                graded.tree == version.tree
+                    && graded.skill == place.name
+                    && (graded.level.is_none() || graded.level == level)
+            })
+            .map(|graded| {
+                let (passed, fixtures) = graded.report.passed_with();
+                Grade { passed, fixtures }
+            });
     }
 }
 
@@ -344,32 +364,16 @@ fn trees(plane: &Path, folder_rel: &str, versions: &mut [Version]) {
 /// of its copy now on changes not committed. A run is of a place by the name and the copy it
 /// recorded.
 fn count_runs(plane: &Path, was: &[Was], history: &mut History) {
-    let runs = crate::skilluse::runs(plane);
-    for (at, place) in was.iter().enumerate() {
-        let Some(level) = &place.level else {
-            continue;
-        };
-        let copy = copy_of(level);
-        let ours: Vec<crate::skilluse::Run> = runs
-            .iter()
-            .filter(|run| {
-                run.is_of(&place.name)
-                    && run.copy.as_ref().is_some_and(|one| {
-                        // A persona's copy goes with it into every workspace: it is its persona's
-                        // runs, wherever they ran (SK-32).
-                        one.level == copy
-                            && match &level.at {
-                                super::verbs::Whose::Persona(persona) => {
-                                    run.persona.as_deref() == Some(persona.as_str())
-                                }
-                                _ => one.workspace.as_deref() == level.at.workspace(),
-                            }
-                    })
-            })
-            .cloned()
-            .collect();
+    // Each run goes to the first place it is of, read in one pass.
+    let mut ours: Vec<Vec<crate::skilluse::Run>> = vec![Vec::new(); was.len()];
+    for run in crate::skilluse::runs(plane) {
+        if let Some(at) = was.iter().position(|place| ran_at(&run, place)) {
+            ours[at].push(run);
+        }
+    }
+    for (at, (place, runs)) in was.iter().zip(&ours).enumerate() {
         let by_tree: std::collections::HashMap<Group, Totals> =
-            crate::skilluse::stats(&ours, By::Version)
+            crate::skilluse::stats(runs, By::Version)
                 .into_iter()
                 .map(|row| (row.group, row.totals))
                 .collect();
@@ -386,6 +390,25 @@ fn count_runs(plane: &Path, was: &[Was], history: &mut History) {
             history.uncommitted = by_tree.get(&Group::None).copied().unwrap_or_default();
         }
     }
+}
+
+/// Whether `run` is of the skill's copy at `place`: by the name and the copy it recorded.
+fn ran_at(run: &crate::skilluse::Run, place: &Was) -> bool {
+    let Some(level) = &place.level else {
+        return false;
+    };
+    run.is_of(&place.name)
+        && run.copy.as_ref().is_some_and(|one| {
+            // A persona's copy goes with it into every workspace: it is its persona's runs,
+            // wherever they ran (SK-32).
+            one.level == copy_of(level)
+                && match &level.at {
+                    super::verbs::Whose::Persona(persona) => {
+                        run.persona.as_deref() == Some(persona.as_str())
+                    }
+                    _ => one.workspace.as_deref() == level.at.workspace(),
+                }
+        })
 }
 
 /// One version's diff, as the tab and the command line show it.

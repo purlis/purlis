@@ -579,17 +579,27 @@ pub fn read(root: &Path, name: &str, level: Option<&Level>) -> Read {
 
 /// **The grades of the skill that had the places `was`** (#3918, [`super::history::places`]):
 /// [`read`]'s rows of each place's copy, by the name and level it had there, so the grades from
-/// before a rename or a move are read with the copy's own. A place no level's rule reads is
-/// left out.
+/// before a rename or a move are read with the copy's own. A row of a place it had before is
+/// taken only where its tree is one of that place's versions ([`super::history::Was::trees`]):
+/// a skill that took the old name there since is another, and its grades are none of these. A
+/// place no level's rule reads is left out.
 pub fn read_of(root: &Path, was: &[super::history::Was]) -> Read {
-    let copies: Vec<Wanted<'_>> = was
-        .iter()
-        .filter_map(|place| {
+    read_where(root, &wanted_of(was), None, chrono::Utc::now())
+}
+
+/// The copies [`read_of`] reads the rows of.
+fn wanted_of(was: &[super::history::Was]) -> Vec<Wanted<'_>> {
+    was.iter()
+        .enumerate()
+        .filter_map(|(at, place)| {
             let level = place.level.as_ref()?;
-            Some((place.name.as_str(), Some(level.rel())))
+            Some(Wanted {
+                name: place.name.as_str(),
+                level: Some(level.rel()),
+                trees: (at > 0).then_some(place.trees.as_slice()),
+            })
         })
-        .collect();
-    read_where(root, Some(copies.as_slice()), None, chrono::Utc::now())
+        .collect()
 }
 
 /// **The grades of the copy of `name` at `level`, and of the places it had before a rename or a
@@ -601,9 +611,26 @@ pub fn read_followed(root: &Path, level: &Level, name: &str) -> Read {
     }
 }
 
-/// A copy whose rows [`read_where`] reads: its skill's name, and, where it is `Some`, its
-/// level's folder (`None` in it for a copy no folder holds), or every copy of the name.
-type Wanted<'a> = (&'a str, Option<Option<String>>);
+/// A copy whose rows [`read_where`] reads: its skill's name; where `level` is `Some`, its
+/// level's folder (`None` in it for a copy no folder holds), else every copy of the name; and
+/// where `trees` is `Some`, only rows whose tree is one of them.
+struct Wanted<'a> {
+    name: &'a str,
+    level: Option<Option<String>>,
+    trees: Option<&'a [String]>,
+}
+
+impl Wanted<'_> {
+    /// Whether `row` is of this copy.
+    fn holds(&self, row: &Graded) -> bool {
+        row.skill == self.name
+            && match &self.level {
+                None => true,
+                Some(word) => row.level.is_none() || row.level == *word,
+            }
+            && self.trees.is_none_or(|trees| trees.contains(&row.tree))
+    }
+}
 
 /// [`read`], with this machine's clock at `now`.
 fn read_at(
@@ -612,21 +639,19 @@ fn read_at(
     level: Option<&Level>,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Read {
-    read_where(
-        root,
-        Some([(name, level.map(Level::rel))].as_slice()),
-        None,
-        now,
-    )
+    let wanted = Wanted {
+        name,
+        level: level.map(Level::rel),
+        trees: None,
+    };
+    read_where(root, std::slice::from_ref(&wanted), None, now)
 }
 
-/// The rows of the record of any of `copies`, each a skill's name and, where it is `Some`, its
-/// level's folder (`None` in it for a copy no folder holds), or of every skill where `copies` is
-/// `None`, and of the grade `grade` alone where it is `Some`, newest first, at most
-/// [`MOST_GRADES`].
+/// The rows of the record of any of `copies` ([`Wanted`]), and of the grade `grade` alone where
+/// it is `Some`, newest first, at most [`MOST_GRADES`].
 fn read_where(
     root: &Path,
-    copies: Option<&[Wanted<'_>]>,
+    copies: &[Wanted<'_>],
     grade: Option<&str>,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Read {
@@ -656,24 +681,14 @@ fn read_where(
                 .then(|| serde_json::from_str::<Graded>(line).ok())
                 .flatten();
             let Some(row) = row else {
-                if copies
-                    .is_none_or(|copies| copies.iter().any(|(name, _)| names_the_skill(line, name)))
-                {
+                if copies.iter().any(|one| names_the_skill(line, one.name)) {
                     out.skipped += 1;
                 }
                 continue;
             };
             let its = row.v <= VERSION
                 && grade.is_none_or(|grade| row.grade == grade)
-                && copies.is_none_or(|copies| {
-                    copies.iter().any(|(name, wanted)| {
-                        row.skill == *name
-                            && match wanted {
-                                None => true,
-                                Some(word) => row.level.is_none() || row.level == *word,
-                            }
-                    })
-                });
+                && copies.iter().any(|one| one.holds(&row));
             if !its {
                 continue;
             }
@@ -706,18 +721,29 @@ pub fn ended_said(end: grade::GradeEnd) -> &'static str {
 }
 
 /// **The grade `grade` of the skill `name`** in the project at `root`, as the eval record holds
-/// it (SK-59, #3239): what its scorecard is drawn from. A grade from before a rename (#3918) is
-/// recorded by the name the skill had then, so where no row of `name` is the grade, it is looked
-/// for by its id alone. `None` where no row of it is read.
+/// it (SK-59, #3239): what its scorecard is drawn from. A grade from before a rename or a move
+/// (#3918) is recorded by the name and level a copy of `name` had then, so where no row of `name`
+/// is the grade, the places each copy had before are looked in ([`read_of`]). `None` where no
+/// row of it is read.
 pub fn grade_of(root: &Path, name: &str, grade: &str) -> Option<Graded> {
     let now = chrono::Utc::now();
-    let of = |copies: Option<&[Wanted<'_>]>| {
+    let of = |copies: &[Wanted<'_>]| {
         read_where(root, copies, Some(grade), now)
             .grades
             .into_iter()
             .next()
     };
-    of(Some([(name, None)].as_slice())).or_else(|| of(None))
+    let named = Wanted {
+        name,
+        level: None,
+        trees: None,
+    };
+    of(std::slice::from_ref(&named)).or_else(|| {
+        Level::copies_of(root, name).find_map(|(level, _)| {
+            let was = super::history::places(root, &level, name).ok()?;
+            (was.len() > 1).then(|| of(&wanted_of(&was))).flatten()
+        })
+    })
 }
 
 /// **What a grade of a copy would cost**, from what a grade of it before spent per chat
