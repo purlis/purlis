@@ -729,6 +729,7 @@ mod tests {
                 root: None,
                 above: None,
                 by_person: false,
+                long: false,
             }),
             ..Chat::default()
         };

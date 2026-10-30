@@ -654,6 +654,7 @@ fn a_task_started_from_a_session_holding_a_grant_compiles_its_sandbox_without_it
             root: None,
             above: None,
             by_person: false,
+            long: false,
         }),
         ..plain.clone()
     };
@@ -934,6 +935,7 @@ fn a_start_is_made_as_the_record_says_and_a_dispatched_chat_names_its_asker() {
         root: None,
         above,
         by_person,
+        long: false,
     };
     let chat = |from| Chat {
         from,
@@ -4511,6 +4513,7 @@ fn one_dispatched_on_work(root: &std::path::Path) -> Record {
                 root: None,
                 above: None,
                 by_person: false,
+                long: false,
             }),
             ..record.chats[0].clone()
         }],
@@ -5317,6 +5320,7 @@ fn started_by(dir: &std::path::Path, name: &str, mode: purlis_core::reopen::Mode
             root: None,
             above: None,
             by_person: false,
+            long: false,
         }),
         ..chat(&a_claude(dir), name, None)
     }
@@ -6015,6 +6019,7 @@ fn a_dispatched_chat_started_again_in_its_own_place_keeps_its_lineage_and_its_ta
         root: Some(root.to_owned()),
         above: None,
         by_person: false,
+        long: false,
     };
     let task = Chat {
         from: Some(lineage.clone()),

@@ -5,7 +5,7 @@
 //!
 //! ```text
 //! purlis dispatch --name "<task>" [--to <persona>] [--profile <profile>]
-//!                 [--in workspace:<name> | --in worktree] <<'BRIEF'
+//!                 [--in workspace:<name> | --in worktree] [--long] <<'BRIEF'
 //! <the brief>
 //! BRIEF
 //!
@@ -138,14 +138,15 @@ pub enum DispatchCommand {
     /// Cancel a task this chat dispatched: its turn is ended and it is asked for one short
     /// report of what it did, which arrives with the outcome `cancelled`. Only a task this
     /// chat dispatched can be cancelled by it, and not one the person typed in: that one is
-    /// theirs.
+    /// theirs. A task that reported while its program still runs can be cancelled too.
     Cancel {
         /// The task's chat, by its number in `purlis dispatch list`.
         chat: u32,
     },
     /// Send a follow-up to a task this chat dispatched that is still working, quoted as data
     /// from this chat. A task at rest is started on it at once; one mid-turn reads it when that
-    /// turn ends. Refused, with the task's state, once the task has finished.
+    /// turn ends. A task that reported while its program still runs is told too. Refused,
+    /// with the task's state, once its program has ended.
     Tell {
         /// The task's chat, by its number in `purlis dispatch list`.
         chat: u32,
@@ -185,6 +186,9 @@ pub struct Options<'a> {
     pub profile: Option<&'a str>,
     /// `--in`: `worktree`, or `workspace:<name>` (#1453).
     pub place: Option<&'a str>,
+    /// `--long`: a long-running task (#3905), whose notes are its heartbeat and which purlis
+    /// never asks for a report.
+    pub long: bool,
 }
 
 /// `purlis dispatch --name <task> [--to <persona>] [--profile <profile>] [--in <where>]
@@ -342,6 +346,7 @@ pub fn send(
             .map(str::to_owned),
         place,
         ticket,
+        long: options.long,
     }));
     // A worktree is cut before the chat starts: a checkout, which on a large repo takes far
     // longer than a start alone.
@@ -1167,6 +1172,42 @@ fn read_brief() -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    /// **A `--long`-first line reaches no subcommand** (#3905): `Bash(purlis dispatch --long *)`
+    /// is pre-allowed for Claude Code, and it allows the task and nothing else only because the
+    /// command's arguments and its subcommands exclude each other
+    /// (`args_conflicts_with_subcommands`). So a subcommand after `--long` is no command at all,
+    /// and `--long` is a task's flag, never a subcommand's.
+    #[test]
+    fn a_long_first_line_reaches_no_subcommand() {
+        use clap::Parser as _;
+        for words in [
+            vec!["purlis", "dispatch", "--long", "cancel", "9"],
+            vec!["purlis", "dispatch", "--long", "close", "9"],
+            vec![
+                "purlis",
+                "dispatch",
+                "--long",
+                "report",
+                "--outcome",
+                "done",
+                "x",
+            ],
+            vec!["purlis", "dispatch", "--long", "tell", "9", "x"],
+            vec!["purlis", "dispatch", "cancel", "9", "--long"],
+        ] {
+            assert!(crate::Cli::try_parse_from(&words).is_err(), "{words:?}");
+        }
+        for words in [
+            vec!["purlis", "dispatch", "--long", "--name", "x"],
+            vec!["purlis", "dispatch", "--name", "x", "--long"],
+            vec![
+                "purlis", "dispatch", "--long", "--to", "devops", "--name", "x",
+            ],
+        ] {
+            assert!(crate::Cli::try_parse_from(&words).is_ok(), "{words:?}");
+        }
+    }
+
     use super::*;
 
     #[test]

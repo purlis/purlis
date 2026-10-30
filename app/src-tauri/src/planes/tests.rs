@@ -3592,6 +3592,7 @@ fn a_claude_stand_in(held: &Held, dir: &Path, sub: &str, asker: Option<u32>) -> 
         root: None,
         above: None,
         by_person: false,
+        long: false,
     });
     a_claude_stand_in_from(held, dir, sub, from)
 }

@@ -1829,6 +1829,8 @@ pub struct Wanted {
     pub by: dispatchdecision::By,
     /// What a handoff adds, or none for a task: the mode is which of the two this is.
     pub moved: Option<Moved>,
+    /// A long-running task (#3905, `--long`): only a chat's own task asks for one.
+    pub long: bool,
 }
 
 impl Wanted {
@@ -1843,6 +1845,7 @@ impl Wanted {
             place: ask.place.clone(),
             by: dispatchdecision::By::Chat,
             moved: None,
+            long: ask.long,
         }
     }
 
@@ -1866,7 +1869,16 @@ impl Wanted {
                 create_vision: open.create_vision.clone(),
                 message: open.message.clone(),
             }),
+            // A handoff's work moved: it owes no report, long or not.
+            long: false,
         }
+    }
+
+    /// **Whether this dispatch starts a long-running task** (#3905): a chat's own task that
+    /// asked for `--long`. A handoff's work moved and owes nothing, and the person's dialog
+    /// asks for none. What its lineage record keeps and its stamp says, read once.
+    fn long_task(&self) -> bool {
+        self.long && self.moved.is_none() && self.by == dispatchdecision::By::Chat
     }
 
     /// Which mode this dispatch is.
@@ -2536,6 +2548,11 @@ fn dispatch_noting(
             workspace.as_deref(),
         ));
     }
+    // A long-running task is told what is different about its report (#3905), in purlis's
+    // own line under its stamp.
+    if wanted.long_task() {
+        on_a_branch.push(handoff::LONG_RUNNING_NOTE.to_owned());
+    }
     // Who asked is the one thing the first message says differently on the roads: a chat's
     // brief is a request from that chat, and the person's is what they typed (#1438). A
     // handoff's is the command's own stamp, with the asking chat named the way the person
@@ -2878,6 +2895,8 @@ fn dispatch_noting(
             // Who is above it, from this app's record of the asking chat (#1521).
             above: asked.above,
             by_person: wanted.by == By::Person,
+            // A chat's own task, as it asked (#3905).
+            long: wanted.long_task(),
         };
         // Its number is dealt here, so the slot is the chat it is about to be.
         let number = held.chats().sessions().deal();
@@ -4014,6 +4033,7 @@ pub fn ask_persona(
         by: dispatchdecision::By::Person,
         // The person asks for a task; a handoff is a chat's own to make.
         moved: None,
+        long: false,
     };
     match dispatch_it(held, plane, &wanted, size)? {
         Dispatched::Started { it, .. } => Ok(*it),

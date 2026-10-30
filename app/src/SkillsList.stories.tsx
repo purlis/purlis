@@ -148,21 +148,14 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/**
- * Shift+F10 on the card that has the keyboard, and its menu, named `name`. Pressed again while
- * no menu has come: about one cell a run drops the first on a card of Left out (#3797).
- */
+/** Shift+F10 on the card that has the keyboard, and its menu, named `name`: one press opens it,
+ *  even straight after the keyboard's arrival scrolled the list to the card (#3797). */
 async function menuByTheKeys(
   userEvent: { keyboard: (keys: string) => Promise<void> },
   name: string,
 ): Promise<HTMLElement> {
-  return waitFor(
-    async () => {
-      if (screen.queryByRole("menu") === null) await userEvent.keyboard("{Shift>}{F10}{/Shift}");
-      return screen.getByRole("menu", { name });
-    },
-    { timeout: 3_000, interval: 500 },
-  );
+  await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+  return screen.findByRole("menu", { name }, { timeout: 3_000 });
 }
 
 /**
