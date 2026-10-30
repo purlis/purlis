@@ -417,7 +417,8 @@ fn plain(text: &str) -> String {
 /// **A driven login, running**: its steps, read with [`Self::next`], and the person's code
 /// and cancel going back to it.
 pub struct Driving {
-    events: Receiver<Event>,
+    /// Held, so one asks for the next step at a time.
+    events: Mutex<Receiver<Event>>,
     input: Mutex<Option<ChildStdin>>,
     driven: Arc<Mutex<Driven>>,
     cancelled: Arc<AtomicBool>,
@@ -473,7 +474,7 @@ pub fn drive(
         std::thread::spawn(move || watching(child, readers, &driven, &cancelled, &tell, check));
     }
     Ok(Driving {
-        events,
+        events: Mutex::new(events),
         input: Mutex::new(input),
         driven,
         cancelled,
@@ -592,7 +593,8 @@ impl Driving {
     /// **The next step**, waiting at most `within` for it; `None` while there is none yet.
     /// After the last step, a driver that stopped telling says it failed.
     pub fn next(&self, within: Duration) -> Option<Event> {
-        match self.events.recv_timeout(within) {
+        let events = self.events.lock().unwrap_or_else(PoisonError::into_inner);
+        match events.recv_timeout(within) {
             Ok(event) => Some(event),
             Err(RecvTimeoutError::Timeout) => None,
             Err(RecvTimeoutError::Disconnected) => Some(Event::Failed {
