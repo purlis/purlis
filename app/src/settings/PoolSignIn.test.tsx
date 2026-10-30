@@ -218,7 +218,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     expect(within(opened).getByRole("status")).toHaveTextContent(
       "purlis could not follow this sign-in: the runner's own terminal is open below",
     );
-    expect(screen.getByText("Needs you in the terminal")).toBeVisible();
+    expect(await screen.findByText("Needs you in the terminal")).toBeVisible();
     await waitFor(() =>
       expect(calls("pool_sign_in_start")).toEqual([
         { pool: "builds", name: "work", provider: null, terminal: null },
@@ -271,7 +271,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
       expect.objectContaining({ terminal: { columns: 80, rows: 16 } }),
     );
     // The terminal takes typing again, and the line says it needs the person.
-    expect(screen.getByText("Needs you in the terminal")).toBeVisible();
+    expect(await screen.findByText("Needs you in the terminal")).toBeVisible();
     await userEvent.click(within(opened).getByRole("button", { name: "Type 1" }));
     expect(calls("pool_sign_in_type")).toEqual([{ flow: 7, text: "1\r" }]);
     await userEvent.click(within(opened).getByRole("button", { name: "Cancel" }));
