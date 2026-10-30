@@ -326,6 +326,8 @@ macro_rules! app_commands {
                 skillchange::skill_grant,
                 skillchange::skill_turn,
                 skillchange::skill_pin,
+                skillchange::skill_routers,
+                skillchange::skill_router_choose,
                 skillhistory::skill_details,
                 skillhistory::skill_revert_widens,
                 skillhistory::skill_diff,
