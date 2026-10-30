@@ -779,6 +779,16 @@ fn a_profile_is_signed_in_on_the_runner_by_its_own_sign_in_in_the_container_it_p
     );
 }
 
+/// **A sign-in purlis drives runs with pipes, never a terminal** (#4042): the same runner's own
+/// `purlis profile sign-in`, as the same user in the same container, with `-i` alone.
+#[test]
+fn a_driven_sign_in_runs_the_same_sign_in_with_pipes() {
+    let driven = made().sign_in_args_by(Typed::Driven, "work", None);
+
+    assert_eq!(driven[1], "-i");
+    assert_eq!(driven[2..], made().sign_in_args("work", None)[2..]);
+}
+
 /// **The line a sign-in on a pool's runner types reads none of the person's Docker settings**
 /// (#2049): it runs `docker` by its path through `/usr/bin/env`, with Docker's settings a folder
 /// of purlis's own (`--config` and `DOCKER_CONFIG`), plugin hooks off, no context, the engine

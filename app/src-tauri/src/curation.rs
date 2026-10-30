@@ -191,7 +191,8 @@ pub async fn curation_offers(
 /// once its harness has started, and never sent.
 ///
 /// The harness is the project's default profile, as a new chat's is; the persona and the
-/// directory are the core's answer. A refusal comes back before anything starts.
+/// directory are the core's answer. A refusal comes back before anything starts, with the
+/// approval the profile needs where that is why (#3968).
 #[tauri::command]
 #[specta::specta]
 pub async fn curate(
@@ -201,9 +202,9 @@ pub async fn curate(
     action: String,
     columns: u16,
     rows: u16,
-) -> Result<Curating, String> {
+) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
-    crate::off_the_window("starting the curation chat", move || {
+    off_the_window_refused("starting the curation chat", move || {
         open(&held, &subject, &action, Size { columns, rows })
     })
     .await
@@ -370,7 +371,7 @@ fn tab_label(label: &str, subject: &str) -> String {
 
 /// Opens the chat. The prompt is held for it BEFORE it starts, because its harness can report
 /// its start before `start_ready` returns, and let go again when nothing started.
-fn open(held: &Arc<Held>, spec: &str, action: &str, size: Size) -> Result<Curating, String> {
+fn open(held: &Arc<Held>, spec: &str, action: &str, size: Size) -> Result<Curating, StartRefused> {
     let root = held.root().to_path_buf();
     let subject = Subject::parse(spec)?;
     let resolution = curation::resolve(&root, &subject)?;
@@ -394,21 +395,22 @@ fn open(held: &Arc<Held>, spec: &str, action: &str, size: Size) -> Result<Curati
 /// as `shown`: a curation action's, or Settings › Theme's New theme and Edit with a chat
 /// ([`crate::themegallery::theme_chat`], #2333). `starts_runs` is what starts the skill runs
 /// its prompt's turn opens: a curation action, and none for a theme chat, which is no curation
-/// action (decision 60), so its runs are the harness's own pick.
+/// action (decision 60), so its runs are the harness's own pick. A refused start says the
+/// approval its profile needs, where it needs one (#3968).
 pub(crate) fn open_chosen(
     held: &Arc<Held>,
     chosen: Resolved,
     shown: &str,
     size: Size,
     starts_runs: Option<purlis_core::skills::runs::StartedBy>,
-) -> Result<Curating, String> {
+) -> Result<Curating, StartRefused> {
     let root = held.root().to_path_buf();
     let profile = launch_profile(&root)?;
     let label = tab_label(&chosen.label, shown);
     let typed = start_typed(
         held,
         ChatTyped {
-            profile,
+            profile: profile.clone(),
             persona: chosen.runner.clone(),
             cwd: chosen.cwd.clone(),
             label: label.clone(),
@@ -425,7 +427,8 @@ pub(crate) fn open_chosen(
                  hold the steps."
             )
         },
-    )?;
+    )
+    .map_err(StartRefused::on(&profile, &root))?;
     let (session, name, ready) = (typed.session, typed.name, typed.ready);
     Ok(Curating {
         session,
@@ -2070,10 +2073,41 @@ mod tests {
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
 
-        let refused = open(&held, "workspace:alpha", "ops/gone", SIZE).unwrap_err();
+        let refused = open(&held, "workspace:alpha", "ops/gone", SIZE)
+            .unwrap_err()
+            .words;
 
         assert!(refused.contains("ops/gone"), "{refused}");
         assert!(held.chats().open_now().is_empty());
+    }
+
+    #[test]
+    fn an_action_on_a_profile_nobody_approved_says_the_line_to_approve_3968() {
+        // The default profile's command changed since it was approved: the start is refused, and
+        // the refusal carries what the window shows to approve, read of the profile it was
+        // refused on.
+        let plane = Plane::new("claude");
+        let local = plane.root.join(purlis_core::profiles::LOCAL_FILE);
+        let was = std::fs::read_to_string(&local).unwrap();
+        // The command's line alone ends in `"]`; the tables' headers end in `]` with no quote.
+        let changed = was.replace("\"]\n", "\", \"--changed\"]\n");
+        assert_ne!(changed, was, "the command's line is changed");
+        std::fs::write(&local, changed).unwrap();
+        let planes = planes();
+        let id = planes.open(&plane.root);
+        let held = planes.held(&id).expect("held");
+
+        let refused = open(&held, "workspace:alpha", "charter/safe-remove", SIZE).unwrap_err();
+
+        let approval = refused
+            .approval
+            .expect("the approval it waits for comes with it");
+        assert_eq!(approval.profile, "work");
+        assert!(approval.shown.contains("--changed"), "{}", approval.shown);
+        assert!(held.chats().open_now().is_empty());
+        // A refusal before any start was tried has nothing to approve.
+        let gone = open(&held, "workspace:alpha", "ops/gone", SIZE).unwrap_err();
+        assert_eq!(gone.approval, None);
     }
 
     /// Waits for `path` to hold at least `len` bytes, then a moment for anything after them.
@@ -2137,7 +2171,9 @@ mod tests {
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
 
-        let refused = open(&held, "workspace:alpha", "ops/tidy", SIZE).unwrap_err();
+        let refused = open(&held, "workspace:alpha", "ops/tidy", SIZE)
+            .unwrap_err()
+            .words;
         assert!(
             refused.contains("typed into only a prompt on one line"),
             "{refused}"
@@ -2161,7 +2197,9 @@ mod tests {
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
 
-        let refused = open(&held, "workspace:alpha", "charter/compact", SIZE).unwrap_err();
+        let refused = open(&held, "workspace:alpha", "charter/compact", SIZE)
+            .unwrap_err()
+            .words;
 
         // What opencode lacks, in its capability card's line (HP-19).
         assert!(refused.contains("finished starting"), "{refused}");
@@ -2212,7 +2250,9 @@ mod tests {
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
 
-        let refused = open(&held, "workspace:alpha", "ops/long", SIZE).unwrap_err();
+        let refused = open(&held, "workspace:alpha", "ops/long", SIZE)
+            .unwrap_err()
+            .words;
 
         assert!(
             refused.contains("1001") && refused.contains("1000"),
@@ -2229,7 +2269,9 @@ mod tests {
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
 
-        let refused = open(&held, "workspace:alpha", "ops/long", SIZE).unwrap_err();
+        let refused = open(&held, "workspace:alpha", "ops/long", SIZE)
+            .unwrap_err()
+            .words;
 
         assert!(
             refused.contains("Claude Code") && refused.contains("800") && refused.contains("1001"),

@@ -2963,6 +2963,40 @@ export const commands = {
 	 */
 	poolProfiles: (pool: string) => typedError<PoolProfileRow[], string>(__TAURI_INVOKE("pool_profiles", { pool })),
 	/**
+	 *  **Starts signing `name` in on pool `pool`'s runner with no terminal** (#4042, spec #4023):
+	 *  the runner's own `purlis profile sign-in`, kept there first and run there through this
+	 *  machine's `docker` as [`sign_in_line`]'s is, but with pipes, its output read for the steps
+	 *  [`pool_sign_in_next`] answers. Nothing of this machine's sign-in goes to the runner (ADR
+	 *  0095). A sign-in of the same profile on the same pool already running is cancelled. Answers
+	 *  the sign-in's number.
+	 */
+	poolSignInStart: (pool: string, name: string, provider: string | null) => typedError<number, string>(__TAURI_INVOKE("pool_sign_in_start", { pool, name, provider })),
+	/**
+	 *  **The next step of sign-in `flow`**, waiting a while for one; null while there is none yet.
+	 *  After its last step, the sign-in is let go; signed in, its waits on the pool are too.
+	 */
+	poolSignInNext: (flow: number) => typedError<
+/**  Open this page in the browser here: the harness vendor's own. */
+{ at: "open"; url: string } | 
+/**  Ask for the code the page shows. */
+{ at: "code" } | 
+/**  The harness refused the code, in its words. */
+{ at: "refused"; said: string } | 
+/**  The login ended well, and the runner is asked whether it is signed in. */
+{ at: "checking" } | 
+/**  The runner's own status check says it is signed in. */
+{ at: "signed-in" } | 
+/**  purlis could not follow the login: what it printed. */
+{ at: "could-not-follow"; said: string } | 
+/**  It did not sign in, and why. */
+{ at: "failed"; why: string } | 
+/**  It was cancelled, and its login ended. */
+{ at: "cancelled" } | null, string>(__TAURI_INVOKE("pool_sign_in_next", { flow })),
+	/**  **Passes the code the person pasted to sign-in `flow`**, as one line. */
+	poolSignInPaste: (flow: number, code: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_paste", { flow, code })),
+	/**  **Cancels sign-in `flow`**: what drives its login is ended, and it is let go. */
+	poolSignInCancel: (flow: number) => __TAURI_INVOKE<void>("pool_sign_in_cancel", { flow }),
+	/**
 	 *  **Every device and what runs on it** (#2052): this machine and every runner it keeps, each
 	 *  with the chats and browsers the window has open there, and each pool's limits.
 	 */
@@ -3343,9 +3377,10 @@ export const commands = {
 	 *  that names purlis's theme skill typed into it and never sent (ADR 0061), as the Curate menu's
 	 *  Create a theme opens one. With `theme`, the prompt names that card's theme, of the level
 	 *  `from`; the card is one this level's gallery shows, never a name the window made up. The
-	 *  machine's level has no project for a chat to work in, so it is never asked.
+	 *  machine's level has no project for a chat to work in, so it is never asked. A refused start
+	 *  says the approval its profile needs, where it needs one (#3968).
 	 */
-	themeChat: (at: ThemeAt, theme: string | null, from: string | null, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("theme_chat", { at, theme, from, columns, rows })),
+	themeChat: (at: ThemeAt, theme: string | null, from: string | null, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("theme_chat", { at, theme, from, columns, rows })),
 	/**
 	 *  The theme drafts of the chat `session`, as the window asks before it closes that chat: each
 	 *  draft, where Keep puts it. Empty for a chat with none. The window's alone: it names the chat
@@ -3621,9 +3656,10 @@ export const commands = {
 	 *  once its harness has started, and never sent.
 	 * 
 	 *  The harness is the project's default profile, as a new chat's is; the persona and the
-	 *  directory are the core's answer. A refusal comes back before anything starts.
+	 *  directory are the core's answer. A refusal comes back before anything starts, with the
+	 *  approval the profile needs where that is why (#3968).
 	 */
-	curate: (plane: PlaneId, subject: string, action: string, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("curate", { plane, subject, action, columns, rows })),
+	curate: (plane: PlaneId, subject: string, action: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("curate", { plane, subject, action, columns, rows })),
 	/**
 	 *  One file, folder or range of lines of a branch, typed into chat `session` as a reference in
 	 *  its harness's syntax, and never sent — or copied, with the reason, where it cannot be typed
@@ -3653,7 +3689,7 @@ export const commands = {
 	startChatHere: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string, lines: {
 	first: number,
 	last: number,
-} | null, columns: number, rows: number) => typedError<StartedHere, string>(__TAURI_INVOKE("start_chat_here", { plane, workspace, repo, piece, path, lines, columns, rows })),
+} | null, columns: number, rows: number) => typedError<StartedHere, StartRefused>(__TAURI_INVOKE("start_chat_here", { plane, workspace, repo, piece, path, lines, columns, rows })),
 	/**  Whether chat `session` is offered Smart close, and the answer the close dialog starts on. */
 	smartCloseOffer: (plane: PlaneId, session: number) => typedError<SmartCloseOffer, string>(__TAURI_INVOKE("smart_close_offer", { plane, session })),
 	/**
@@ -10137,6 +10173,28 @@ export type PoolRow = {
 	 */
 	suspend_after: string,
 };
+
+/**
+ *  **One step of a sign-in on a pool's runner** that purlis drives with no terminal (#4042), as
+ *  the window's sign-in strip shows it ([`driven::Event`]).
+ */
+export type PoolSignInStep = 
+/**  Open this page in the browser here: the harness vendor's own. */
+{ at: "open"; url: string } | 
+/**  Ask for the code the page shows. */
+{ at: "code" } | 
+/**  The harness refused the code, in its words. */
+{ at: "refused"; said: string } | 
+/**  The login ended well, and the runner is asked whether it is signed in. */
+{ at: "checking" } | 
+/**  The runner's own status check says it is signed in. */
+{ at: "signed-in" } | 
+/**  purlis could not follow the login: what it printed. */
+{ at: "could-not-follow"; said: string } | 
+/**  It did not sign in, and why. */
+{ at: "failed"; why: string } | 
+/**  It was cancelled, and its login ended. */
+{ at: "cancelled" };
 
 /**
  *  **How a pool's runner was made to suspend itself** (#3717), which its row says where it is
