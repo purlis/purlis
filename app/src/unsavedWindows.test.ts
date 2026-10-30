@@ -75,5 +75,7 @@ describe("the windows a quit asks in", () => {
     expect(record.holding(["main", "window-1", "window-2"])).toEqual(["window-1"]);
     record.mirrored("window-1", []);
     expect(record.holding(["main", "window-1", "window-3"])).toEqual(["window-3"]);
+    // Every one that said so, where which are open is not asked.
+    expect(record.holding()).toEqual(["window-3"]);
   });
 });

@@ -111,9 +111,11 @@ export class HandOver {
     return works;
   }
 
-  /** The split windows of `alive` that last said they hold work, in their order. */
-  holding(alive: readonly string[]): string[] {
-    return alive.filter((label) => label !== MAIN && (this.mirrors.get(label)?.length ?? 0) > 0);
+  /** The split windows that last said they hold work: of `alive` and in its order, where it is
+   *  given. */
+  holding(alive?: readonly string[]): string[] {
+    const labels = alive ?? [...this.mirrors.keys()];
+    return labels.filter((label) => label !== MAIN && (this.mirrors.get(label)?.length ?? 0) > 0);
   }
 }
 
@@ -324,10 +326,13 @@ export function useUnsavedAcrossWindows({
           kept: () => done(stay),
         });
       }
-      // Which windows there are is the core's. Not knowing is not a quit that loses nothing.
+      // No other window has said it holds work: nothing more to ask, and no one to ask.
+      if (handOver.holding().length === 0) return done(go);
+      // Which of them are still open is the core's. Not knowing is not a quit that loses nothing.
       const alive = await commands.charterWindows().catch(() => undefined);
       if (alive === undefined) return done(stay);
-      const there = handOver.holding(alive).find((label) => !askedThere.has(label));
+      const open = Array.isArray(alive) ? alive : [];
+      const there = handOver.holding(open).find((label) => !askedThere.has(label));
       if (there === undefined) return done(go);
       askedThere.add(there);
       if (await askedIn(there)) return next();
