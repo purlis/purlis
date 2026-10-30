@@ -91,7 +91,15 @@ shows who exists.
   gone quiet, is stopped on the person, is back at work, and when it reports or ends.
   `dispatch_close` closes a finished task of yours once you have read its report. Each has a
   `purlis dispatch` subcommand of the same name (`list`, `wait`, `tell`, `answer`, `cancel`,
-  `read`, `close`) for a terminal.
+  `read`, `close`) for a terminal. A task that has reported while its program still runs is
+  listed as "reported, still running", and you can still tell or cancel it.
+
+  **Work that goes on piece after piece** (a builder working through tickets) is a
+  long-running task: the `dispatch` tool with `long: true` (`purlis dispatch --long --name …`
+  in a terminal). It sends `dispatch_note` as it finishes each piece, since notes are its
+  heartbeat. purlis never asks it for a report and never makes one from its last message, and
+  it ends when it reports `done` or `failed`, or when you cancel it. `dispatch_list` shows it
+  as long-running, with its last note. Without `long`, a task is one job with one answer.
 
 - **When this chat is the task**, it owes the chat that dispatched it one report, and it can
   talk to that chat while it works, with `dispatch_note` (a note; nothing waits on it, so
@@ -109,7 +117,9 @@ shows who exists.
   wait runs out, end the turn, and the answer is handed to the next one. The report ends the
   task. A turn that ends without one is asked for it once; if the next turn ends without one
   too, purlis sends your last message in its place, marked as **a report purlis made from its
-  last message**. Send the report yourself.
+  last message**. Send the report yourself. **A long-running task** (its first message says
+  so) is never asked: send `dispatch_note` as you finish each piece, and report once, `done` or
+  `failed`, when all of the work is done.
 
 - **Partial or ambiguous match:** name the persona you would use and ask before dispatching.
 - **No persona fits:** say so. Offer to create one only when the domain is large enough to

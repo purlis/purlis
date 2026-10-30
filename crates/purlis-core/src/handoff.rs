@@ -407,6 +407,15 @@ that asks the person still asks them. When the work is done, write your session 
 report once with `purlis dispatch report --outcome done \"<what you did and found>\"`, or \
 `--outcome blocked` or `--outcome failed`. That chat reads the report on its next turn⟩";
 
+/// **The line purlis adds under a long-running task's stamp** (#3905, `purlis dispatch
+/// --long`): what is different about its report. Purlis's own words, one of the `whole` lines
+/// of [`task_message_telling`].
+pub const LONG_RUNNING_NOTE: &str = "this is a long-running task: send `dispatch_note` (`purlis \
+dispatch note \"<progress>\"`) as you finish each piece of work, since notes are its heartbeat. \
+purlis never asks this task for a report and never makes one from its last message. Report \
+once, with `--outcome done` or `--outcome failed`, when all of the work is done: that report \
+ends the task. The chat that asked can tell or cancel it at any time";
+
 /// The first message of a task: the stamp, the note, a blank line, the brief verbatim.
 ///
 /// `from` is the asking chat by the name the person sees it under, `place` where it works.

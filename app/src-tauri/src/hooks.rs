@@ -1081,8 +1081,9 @@ pub(crate) fn blocked_on(
     has_check: bool,
 ) -> ChatBlocked {
     let locks = purlis_core::sandbox::policy::Locks::of(plane.root());
-    let (first, named, why) =
-        for_its_harness(harness, offered_to(plane.root(), block, target, has_check));
+    let offered = kept_in_place(harness, plane.root(), block, target)
+        .unwrap_or_else(|| offered_to(plane.root(), block, target, has_check));
+    let (first, named, why) = for_its_harness(harness, offered);
     // Chosen by the person where nothing was named (#1884): said in place of "nothing to
     // allow". A socket named and refused keeps its own sentence, and may be chosen again.
     let choose = choosable(&locks, block, first);
@@ -1559,6 +1560,39 @@ fn offered(
     target: Option<&str>,
 ) -> (BlockOffer, Option<String>, Option<String>) {
     offered_to(root, block, target, false)
+}
+
+/// **A refused write that keeps a repository's git folder where it is**, in a Claude Code chat
+/// ([`purlis_core::sandbox::grant::keeps_git_folder`]): its sandbox denies a path in each git
+/// folder there as it started, which holds that git folder and every folder above it, and no
+/// grant lifts that. The way that works, and no Allow. `None` for any other block, or harness.
+fn kept_in_place(
+    harness: Option<purlis_core::harness::Harness>,
+    root: &Path,
+    block: &purlis_core::sandboxblock::Block,
+    target: Option<&str>,
+) -> Option<(BlockOffer, Option<String>, Option<String>)> {
+    use purlis_core::sandbox::{Os, grant};
+    use purlis_core::sandboxblock::{Kind, Operation};
+    if block.ours || harness != Some(purlis_core::harness::Harness::ClaudeCode) {
+        return None;
+    }
+    let (
+        Operation::Write | Operation::File,
+        Kind::ProjectFiles | Kind::ProtectedFile | Kind::Home | Kind::ToolchainCache | Kind::System,
+    ) = (block.operation, block.kind)
+    else {
+        return None;
+    };
+    let path = Path::new(target?);
+    let folded = purlis_core::sandbox::Machine::this().os == Os::MacOs;
+    (path.is_absolute() && grant::keeps_git_folder(path, root, folded)).then(|| {
+        (
+            BlockOffer::Brokered,
+            None,
+            Some(grant::GIT_FOLDER_KEPT.to_owned()),
+        )
+    })
 }
 
 /// [`offered`] to a chat whose sandbox was compiled with the system's certificate check

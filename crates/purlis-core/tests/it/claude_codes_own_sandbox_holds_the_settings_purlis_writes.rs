@@ -35,6 +35,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::support::git;
 use purlis_core::harness::Harness;
 use purlis_core::sandbox::{self, Decided, Form, Level, Machine, Os};
 use serde_json::{Value, json};
@@ -51,8 +52,9 @@ const SUPPORTED: &str = include_str!("../../../../tests/fixtures/harness-version
 /// The probes run as the stand-in's one Bash call.
 const SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/seatbelt-case.sh");
 
-/// The probes `--here` asserts, each one answer.
-const PROBES: usize = 8;
+/// The probes `--here` asserts, each one answer: the sample project's eight, and its
+/// repositories' twelve.
+const PROBES: usize = 20;
 
 /// The id of the stand-in's one Bash call.
 const CALL: &str = "toolu_seatbelt_case";
@@ -80,7 +82,8 @@ const PROJECT_SETTINGS: &str = r#"{
 }"#;
 
 /// A sample project at `root` with `manifest`: a vault, a folder of what macOS starts at login
-/// and one beside it, a file nothing holds, and Claude Code settings of its own.
+/// and one beside it, a file nothing holds, Claude Code settings of its own, and two clones and
+/// a linked worktree, there as the chat starts.
 fn lay_out(root: &Path, manifest: &str) {
     fs::create_dir_all(root.join(".claude")).expect("the project's .claude");
     fs::write(root.join(".claude/settings.json"), PROJECT_SETTINGS).expect("project settings");
@@ -90,6 +93,26 @@ fn lay_out(root: &Path, manifest: &str) {
     fs::write(root.join(".purlis/vaults/ops.json"), "{}\n").expect("a vault");
     fs::write(root.join("notes.json"), "{}\n").expect("a file nothing holds");
     fs::write(root.join("purlis.toml"), manifest).expect("the manifest");
+    // Two clones and a linked worktree, there as the chat starts: `repo`, where git works,
+    // `scratch`, where what is refused is tried, and `wt`, a worktree of `repo`.
+    for clone in ["repo", "scratch"] {
+        let at = root.join(clone);
+        fs::create_dir_all(&at).expect("a clone's folder");
+        git(&at, &["init", "-q", "-b", "main"]);
+        git(&at, &["commit", "-q", "--allow-empty", "-m", "start"]);
+    }
+    let worktree = root.join("wt");
+    git(
+        &root.join("repo"),
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "wt",
+            worktree.to_str().expect("a path"),
+        ],
+    );
 }
 
 /// The sandbox part of the `--settings` a Claude Code chat in the project at `root` starts with

@@ -1239,6 +1239,12 @@ mod tests {
                 "purlis dispatch --wait --in workspace:beta --name x <<'B'\nlook\nB",
                 true,
             ),
+            // A long-running task (#3905) opens with its own pre-allowed flag.
+            (
+                "purlis dispatch --long --name x --in worktree <<'B'\nlook\nB",
+                true,
+            ),
+            ("purlis dispatch --name x --long <<'B'\nlook\nB", true),
             // No rule opens with `--in`: these the harness asks about itself.
             (
                 "purlis dispatch --in worktree --name x <<'B'\nlook\nB",

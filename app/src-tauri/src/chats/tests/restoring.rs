@@ -358,6 +358,40 @@ fn a_quit_while_chats_come_back_keeps_the_ones_not_started_and_starts_no_more() 
     assert!(host.running().is_empty(), "and the one under way was ended");
 }
 
+/// #3114: a start that returns once the quit has begun is ended, and its chat is still one to
+/// start in any record written after, in front as it was. Taken out of the ones still to start
+/// and then ended, it was in no list a record reads: a quit's record built a moment later lost it
+/// for good (`planes::restoring_tests::a_quit_while_chats_come_back_leaves_every_chat_in_the_record`
+/// failed so once on CI, without chat 5).
+#[test]
+fn a_start_that_returns_into_a_quit_keeps_its_chat_in_every_record_after() {
+    let host = Pretend::default();
+    host.hangs_number(1);
+    let (chats, _project) = chats_on(&host, 1);
+    chats.begin_put_back(&a_record_of(2, 1), &|_| None);
+
+    std::thread::scope(|scope| {
+        let starting = scope.spawn(|| chats.finish_put_back(SIZE));
+        until("the first start is under way", || host.most_at_once() == 1);
+        // The quit begins: it writes its record, and nothing is written after it.
+        chats.write_last(|_| {});
+        host.lets_go(1);
+        starting.join().expect("it finishes");
+    });
+
+    assert!(
+        host.running().is_empty(),
+        "the start that returned into the quit was ended"
+    );
+    let record = chats.record();
+    assert_eq!(
+        names(&record.chats),
+        ["chat 1", "chat 2"],
+        "a chat whose start returned into the quit is still kept for the next launch"
+    );
+    assert!(record.chats[0].active, "and it is still the one in front");
+}
+
 /// The one test that listens for what the window is told, so no other hears another's.
 #[test]
 fn the_window_is_told_as_each_chat_starts_or_does_not() {

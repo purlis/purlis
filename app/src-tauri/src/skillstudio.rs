@@ -48,13 +48,36 @@ pub(crate) fn needing_here(
 ) -> usize {
     let built_in =
         crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
-    let mut studio = studio(
+    needing(
         root,
         built_in.as_deref(),
-        true,
+        waiting,
         workspace,
         persona,
         &purlis_core::harness_plugin::Env::of(&[]),
+    )
+}
+
+/// [`needing_here`], with the built-in skills in `built_in` and `env` read for where each
+/// harness keeps its own. The studio is read only for what its items are worked out from
+/// ([`purlis_core::skills::Reading::Needs`], #3781): no badge, no router, no list of the
+/// workspaces or levels, so a persona's page draws its count without the whole studio.
+pub(crate) fn needing(
+    root: &std::path::Path,
+    built_in: Option<&std::path::Path>,
+    waiting: &[String],
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    env: &purlis_core::harness_plugin::Env<'_>,
+) -> usize {
+    let mut studio = studio_read(
+        purlis_core::skills::Reading::Needs,
+        root,
+        built_in,
+        true,
+        workspace,
+        persona,
+        env,
     );
     with_the_projects_needs(&mut studio, root, waiting);
     studio.needs.len()
@@ -156,8 +179,8 @@ pub struct StudioSkill {
     /// for a skill a chat gets from purlis, its own for one from outside the plane, none for a
     /// skill left out.
     pub compat: Vec<SkillCompat>,
-    /// What the built-in lints say of a skill from outside the plane (SK-8): that it widens the
-    /// chat, and what else is worth knowing. Empty for the plane's and the built-in skills.
+    /// What the built-in lints say of a skill a chat gets, the plane's own too (SK-8, #3780): that
+    /// it widens the chat, and what else is worth knowing. Empty for the built-in skills.
     pub lint: Vec<String>,
     /// Each harness whose chats a router hid it from the list of, and why (SK-15), each by its
     /// own budget: the chat still has it, through the index skill. Empty where every one lists it.
@@ -750,6 +773,29 @@ pub(crate) fn studio(
     persona: Option<&str>,
     env: &purlis_core::harness_plugin::Env<'_>,
 ) -> Studio {
+    studio_read(
+        purlis_core::skills::Reading::Whole,
+        root,
+        built_in,
+        on,
+        workspace,
+        persona,
+        env,
+    )
+}
+
+/// [`studio`], read for `reading`: for Needs you's count alone (#3781), without the badges, the
+/// router, the workspaces or the levels, which no item reads. Its items are the whole studio's.
+fn studio_read(
+    reading: purlis_core::skills::Reading,
+    root: &std::path::Path,
+    built_in: Option<&std::path::Path>,
+    on: bool,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    env: &purlis_core::harness_plugin::Env<'_>,
+) -> Studio {
+    let whole = reading == purlis_core::skills::Reading::Whole;
     let workspace = workspace.map(str::to_owned);
     let persona = persona.map(str::to_owned);
     if !on {
@@ -784,7 +830,8 @@ pub(crate) fn studio(
         rows,
         harnesses: all,
         not_supported,
-    } = purlis_core::skills::studio_list(
+    } = purlis_core::skills::studio_list_for(
+        reading,
         built_in,
         root,
         workspace.as_deref(),
@@ -800,23 +847,31 @@ pub(crate) fn studio(
         })
         .collect();
     let (harnesses, clashes) = harnesses(&all);
-    let workspaces = purlis_core::workspaces::Plane::open(root)
-        .workspaces()
-        .unwrap_or_default();
-    let router = router_of(root, workspace.as_deref(), persona.as_deref());
+    let workspaces = if whole {
+        purlis_core::workspaces::Plane::open(root)
+            .workspaces()
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let router = whole.then(|| router_of(root, workspace.as_deref(), persona.as_deref()));
     let mut studio = Studio {
         on,
         workspace,
         persona,
         workspaces,
-        levels: crate::skillchange::levels(root),
+        levels: if whole {
+            crate::skillchange::levels(root)
+        } else {
+            Vec::new()
+        },
         skills,
         harnesses,
         clashes,
         first,
         pins_refused,
         not_supported: not_supported.into_iter().map(Into::into).collect(),
-        router: Some(router),
+        router,
         levels_to_confirm: purlis_core::skills::levels::to_confirm(root).map(|(said, folders)| {
             StudioLevelsToConfirm {
                 said: said.to_owned(),
