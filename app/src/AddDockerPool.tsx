@@ -96,7 +96,7 @@ function SignInOnTheAddedPool({ pool, plane }: { pool: string; plane: string | u
       subtitle="each once, through its harness's own sign-in on the runner; the runner keeps it, and nothing of this machine's sign-in goes there"
       main={{ children: "Done", onPress: doneWithTheAddedPool }}
     >
-      <ChooseProfiles pool={pool} plane={plane} />
+      <ChooseProfiles key={pool} pool={pool} plane={plane} />
     </Dialog>
   );
 }

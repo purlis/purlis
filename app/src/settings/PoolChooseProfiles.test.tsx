@@ -189,7 +189,9 @@ describe("choosing the profiles a new pool signs in", () => {
     await userEvent.click(within(group).getByRole("checkbox", { name: /personal/ }));
     await userEvent.click(within(group).getByRole("checkbox", { name: /work/ }));
     await userEvent.click(screen.getByRole("button", { name: "Sign in 1 profile" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/keeps the profile a new chat gets/);
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /keeps the profile a new chat gets/,
+    );
     expect(
       await screen.findByRole("list", { name: "Profiles on pool builds" }),
     ).toBeInTheDocument();

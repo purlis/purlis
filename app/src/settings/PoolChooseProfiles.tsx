@@ -12,6 +12,7 @@ import {
 import { Button } from "../ui/button/Button";
 import { Card } from "../ui/card/Card";
 import { Checkbox } from "../ui/choice/Checkbox";
+import { askProfileSignIn } from "./links";
 import { DRIVEN, PoolProfiles } from "./PoolProfiles";
 import { PoolSignIn } from "./PoolSignIn";
 
@@ -40,7 +41,8 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
   const asked = usePools().profiles[pool];
   const [at, setAt] = useState<At>({ at: "choose" });
   const [ticked, setTicked] = useState<ReadonlySet<string>>();
-  const [trouble, setTrouble] = useState<string>();
+  // What the core said of the changes: why one was refused, or a note on what it left.
+  const [said, setSaid] = useState<string>();
   // Asked afresh as the strip opens, and ticked only from that answer, which is what the pool
   // keeps: its default. What the window held of a pool of the same name before is not this one's.
   const [read, setRead] = useState(false);
@@ -60,9 +62,9 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
   const rows =
     read && asked !== undefined && asked !== "asking" && "kept" in asked ? asked : undefined;
 
-  const told = trouble !== undefined && (
-    <p className="ui-setting-help" role="alert">
-      {trouble}
+  const told = said !== undefined && (
+    <p className="ui-setting-help" role="status">
+      {said}
     </p>
   );
   if (at.at === "lines")
@@ -91,6 +93,11 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
           profile={one.name}
           harness={one.harness}
           onEnd={next}
+          onTerminal={
+            plane === undefined
+              ? undefined
+              : () => askProfileSignIn(plane, one.name, undefined, pool)
+          }
         />
       </>
     );
@@ -102,7 +109,8 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
   if (rows === undefined || ticked === undefined) {
     return <p className="ui-setting-help">Asking the runner about this machine&apos;s profiles…</p>;
   }
-  const kept = new Set(rows.kept.map((row) => row.name));
+  // On a pool just added, what it keeps is the project's default: one profile, or none.
+  const byDefault = rows.kept.length === 1 ? rows.kept[0]?.name : undefined;
   const all = [
     ...rows.kept.map((row) => ({ name: row.name, harness: row.harness, kept: true })),
     ...rows.addable.map((one) => ({ name: one.name, harness: one.harness, kept: false })),
@@ -115,16 +123,16 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
   };
   const signIn = async () => {
     setAt({ at: "recording" });
-    const refused: string[] = [];
+    const notes: string[] = [];
     for (const one of all.filter((one) => ticked.has(one.name) && !one.kept)) {
       const why = await addProfileToPool(pool, one.name, plane);
-      if (why !== undefined) refused.push(why);
+      if (why !== undefined) notes.push(why);
     }
     for (const one of all.filter((one) => !ticked.has(one.name) && one.kept)) {
       const why = await removeProfileFromPool(pool, one.name, plane);
-      if (why !== undefined) refused.push(why);
+      if (why !== undefined) notes.push(why);
     }
-    if (refused.length > 0) setTrouble(refused.join(" "));
+    if (notes.length > 0) setSaid(notes.join(" "));
     // The lines as the core keeps them now: only those it keeps and could sign in are walked.
     const now = profilesHeld(pool);
     const walked =
@@ -159,7 +167,7 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
           onChange={(on) => tick(one.name, on)}
           isDisabled={at.at === "recording"}
           description={
-            one.kept && kept.size > 0
+            one.name === byDefault
               ? `${one.harness}, the project's default: the profile a new chat in it gets`
               : one.harness
           }
