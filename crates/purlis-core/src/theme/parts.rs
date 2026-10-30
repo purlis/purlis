@@ -2067,9 +2067,10 @@ struct Rule {
     part: usize,
     variant: Option<&'static str>,
     state: Option<State>,
-    /// A second state that holds at once with `state`, for a fallback that draws a look two
-    /// states draw together (#4039's review): a current chip under the pointer.
-    also: Option<State>,
+    /// The further states that hold at once with `state`, for a fallback that draws a look two
+    /// or three states draw together (#4039's review, #4086): a current chip under the pointer,
+    /// and one reached from the keyboard as well.
+    also: Vec<State>,
     values: BTreeMap<Prop, PartValue>,
     /// Whether it draws a family default back, for a part that broke a floor.
     fallback: bool,
@@ -2079,12 +2080,12 @@ impl Rule {
     /// The order the stylesheet writes rules in: the later wins. A refused box's fallback comes
     /// after every other fallback, so its danger edge wins over a hover's or a focus's default
     /// written after it (#3382's review, B1).
-    fn order(&self) -> (bool, bool, bool, bool, bool, usize) {
+    fn order(&self) -> (bool, bool, bool, usize, bool, usize) {
         (
             self.state.is_some(),
             self.variant.is_some(),
             self.fallback,
-            self.also.is_some(),
+            self.also.len(),
             self.fallback && self.state == Some(State::Invalid),
             self.part,
         )
@@ -2094,7 +2095,7 @@ impl Rule {
     fn reaches(&self, variant: &str, states: &[State]) -> bool {
         self.variant.is_none_or(|v| v == variant)
             && self.state.is_none_or(|state| states.contains(&state))
-            && self.also.is_none_or(|state| states.contains(&state))
+            && self.also.iter().all(|state| states.contains(state))
     }
 }
 
@@ -2125,7 +2126,7 @@ fn rules(parts: &Parts) -> Vec<Rule> {
                 part,
                 variant: key.variant,
                 state: key.state,
-                also: None,
+                also: Vec::new(),
                 values: BTreeMap::new(),
                 fallback: false,
             })
@@ -2291,7 +2292,7 @@ fn set_colour(
                 && rule.part == at
                 && rule.variant.is_none()
                 && rule.state.is_none_or(|one| states.contains(&one))
-                && rule.also.is_none_or(|one| states.contains(&one))
+                && rule.also.iter().all(|one| states.contains(one))
         })
         .collect();
     ordered.sort_by_key(|rule| rule.order());
@@ -2824,7 +2825,7 @@ fn held_from(
                     part: 0,
                     variant: Some(variant.name),
                     state: None,
-                    also: None,
+                    also: Vec::new(),
                     values: BTreeMap::from([(
                         Prop::BorderWidth,
                         PartValue::Length(Length::Number(family.border_width)),
@@ -3533,7 +3534,7 @@ impl Held<'_> {
                     part: at,
                     variant: None,
                     state,
-                    also,
+                    also: also.into_iter().collect(),
                     values: values
                         .into_iter()
                         .map(|(property, token)| (property, PartValue::Colour(token)))
@@ -3657,7 +3658,7 @@ impl Held<'_> {
                 && rule.fallback
                 && rule.variant == reached
                 && rule.state == state
-                && rule.also.is_none()
+                && rule.also.is_empty()
                 && !rule.values.contains_key(&Prop::BorderWidth)
                 && root_props.iter().all(|one| rule.values.contains_key(one))
         });
@@ -3667,15 +3668,19 @@ impl Held<'_> {
         // wash (#4039's second review).
         let keeps_states = REST_KEEPS_STATES.contains(&family.name)
             && state.is_some_and(|one| one != State::Invalid);
-        // A pair that falls draws its own look back where both its states hold, and nowhere
-        // else: a chip under the pointer alone, or current alone, keeps the theme's (#4049).
-        if keeps_states && let [first, second] = states {
+        // A pair, or three states, that fall draw their own look back where they all hold, and
+        // nowhere else: a chip under the pointer alone, or current alone, or reached from the
+        // keyboard alone, keeps the theme's (#4049, #4086).
+        if keeps_states
+            && let [first, others @ ..] = states
+            && !others.is_empty()
+        {
             self.rules.push(Rule {
                 family,
                 part: 0,
                 variant: reached,
                 state: Some(*first),
-                also: Some(*second),
+                also: others.to_vec(),
                 values: colour_values(root_colours(family, variant, states)),
                 fallback: true,
             });
@@ -3686,7 +3691,7 @@ impl Held<'_> {
                     .into_iter()
                     .filter(|rule| rule.part != 0)
                     .map(|rule| Rule {
-                        also: Some(*second),
+                        also: others.to_vec(),
                         ..rule
                     }),
             );
@@ -3719,7 +3724,7 @@ impl Held<'_> {
                     part: 0,
                     variant: reached,
                     state: Some(one),
-                    also: None,
+                    also: Vec::new(),
                     values,
                     fallback: true,
                 });
@@ -3733,7 +3738,7 @@ impl Held<'_> {
                     part: 0,
                     variant: reached,
                     state: Some(pair[0]),
-                    also: Some(pair[1]),
+                    also: vec![pair[1]],
                     values: colour_values(root_colours(family, variant, &pair)),
                     fallback: true,
                 });
@@ -3768,7 +3773,7 @@ impl Held<'_> {
                         part: 0,
                         variant: reached,
                         state: Some(state),
-                        also,
+                        also: also.into_iter().collect(),
                         values: values
                             .into_iter()
                             .map(|(property, token)| (property, PartValue::Colour(token)))
@@ -3874,7 +3879,7 @@ fn fallback(family: &'static Family, variant: &'static str, state: Option<State>
             part: 0,
             variant,
             state,
-            also: None,
+            also: Vec::new(),
             values: root,
             fallback: true,
         });
@@ -3901,7 +3906,7 @@ fn fallback(family: &'static Family, variant: &'static str, state: Option<State>
                 part,
                 variant,
                 state,
-                also: None,
+                also: Vec::new(),
                 values: BTreeMap::from([(Prop::Fill, PartValue::Colour(fill))]),
                 fallback: true,
             });
@@ -3913,7 +3918,7 @@ fn fallback(family: &'static Family, variant: &'static str, state: Option<State>
                 part,
                 variant,
                 state,
-                also: None,
+                also: Vec::new(),
                 values: BTreeMap::from([(Prop::Text, PartValue::Colour(words))]),
                 fallback: true,
             });
@@ -4343,8 +4348,8 @@ fn root_selectors(rule: &Rule, sized: bool) -> Vec<String> {
     if let Some(state) = rule.state {
         data.push_str(family.attribute(state));
     }
-    if let Some(state) = rule.also {
-        data.push_str(family.attribute(state));
+    for state in &rule.also {
+        data.push_str(family.attribute(*state));
     }
     vec![data]
 }
@@ -4361,9 +4366,10 @@ fn selector(rule: &Rule, sized: bool) -> String {
     // A part drawn apart from the root is reached by its own attributes, in the state its own
     // element is marked in (#3656).
     if drawn_apart(rule.family, part).is_some() {
-        let state: String = [rule.state, rule.also]
+        let state: String = rule
+            .state
             .into_iter()
-            .flatten()
+            .chain(rule.also.iter().copied())
             .map(|one| rule.family.attribute(one))
             .collect();
         let except = APART_EXCEPT
