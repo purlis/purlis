@@ -509,8 +509,9 @@ the select family's (`purlis/select-family`, an error: [The select and combobox 
   words are the cue that is not colour. **A refused send is heard once**, as its `Form`'s one alert
   summary ("Name: A name is letters…", or "2 fields to fix: Name, Port."), for a screen reader
   alone; the lines are quiet while it shows, and each stays its field's description. A send the
-  core refuses is handed to the `Form`: `refused` by its owner, `useFormRefusal()` from inside it
-  (ADR 0104, amendment 2026-10-30). **A field that can be refused keeps its error's line** whether it
+  core refuses is handed to the `Form`: `refused` by its owner, with `answer` counting the core's
+  answers, or `useFormRefusal()` from inside it; a select's pick ends the summary as a change
+  does (ADR 0104, amendment 2026-10-30). **A field that can be refused keeps its error's line** whether it
   says anything or not, one line tall, empty and unheard until it does, so a refusal coming or
   going moves nothing; a long one is cut short on screen and read whole as the description.
 - **⌘⏎ sends a form's primary action** (Ctrl+Enter off macOS; N26), its first submit button, from

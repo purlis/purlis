@@ -40,7 +40,7 @@ import {
 import type { WorkspaceState } from "./workspaceState";
 import { isPanelView, panelKeyOf, panelView, type OwnViewId, type ViewId } from "./sideViews";
 import type { PanelTab } from "./ActivityBar";
-import { Form, TextField, type Refused } from "./ui/field/Field";
+import { Form, TextField } from "./ui/field/Field";
 import { Segment, SegmentedControl } from "./ui/choice/Radio";
 
 /**
@@ -711,8 +711,8 @@ function AddTodo({
 }) {
   const [text, setText] = useState("");
   const [trouble, setTrouble] = useState<string>();
-  /** The refused send, said once by the form (#3291): a new one for each refusal. */
-  const [refusedSend, setRefusedSend] = useState<Refused>();
+  /** How many sends were refused: each is a new answer, said once by the form (#3291). */
+  const [answers, setAnswers] = useState(0);
   const [busy, setBusy] = useState(false);
   /** Why the project is read-only, when it is (#826): a todo is committed, so the box is off,
    *  with the sentence as its tooltip. */
@@ -724,18 +724,18 @@ function AddTodo({
     const refused = await onAdd(workspace, words);
     setBusy(false);
     setTrouble(refused);
-    setRefusedSend(
-      refused === undefined
-        ? undefined
-        : { fields: [{ name: `New todo in ${workspace}`, why: refused }] },
-    );
+    if (refused !== undefined) setAnswers((n) => n + 1);
     if (refused === undefined) setText("");
   };
   return (
     <>
       <Form
         className="panel-search"
-        refused={refusedSend}
+        refused={
+          trouble === undefined
+            ? undefined
+            : { fields: [{ name: `New todo in ${workspace}`, why: trouble }], answer: answers }
+        }
         onSubmit={(event) => {
           event.preventDefault();
           void add();

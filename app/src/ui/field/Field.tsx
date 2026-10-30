@@ -204,16 +204,25 @@ const Checks = createContext<Set<Check> | null>(null);
  * live regions, so the refusal is heard once, as the summary, and not again from every line it
  * filled.
  */
-const Summary = createContext<{ quiet: boolean; say: (refused: Refused) => void } | null>(null);
+const Summary = createContext<{
+  quiet: boolean;
+  say: (refused: Refused) => void;
+  end: () => void;
+} | null>(null);
 
 /**
  * Whether what draws a refused field's words is inside a {@link Form} (`inForm`), and whether
  * that form's summary is saying the refusal now (`quiet`): a settings row's refusal line, which
- * is not an `ErrorLine`, follows the same rule.
+ * is not an `ErrorLine`, follows the same rule. `end` ends the summary, as the person's change
+ * does: a field whose change fires no native event (a select's or a combobox's pick) calls it.
  */
-export function useFormSummary(): { inForm: boolean; quiet: boolean } {
+export function useFormSummary(): { inForm: boolean; quiet: boolean; end: () => void } {
   const summary = useContext(Summary);
-  return { inForm: summary !== null, quiet: summary?.quiet ?? false };
+  return {
+    inForm: summary !== null,
+    quiet: summary?.quiet ?? false,
+    end: summary?.end ?? NOTHING_SAID,
+  };
 }
 
 /** **A send refused elsewhere** (the core's answer to it): the labels of the fields it refused,
@@ -222,6 +231,14 @@ export type Refused = {
   fields: readonly { name: string; why?: string }[];
   reasons?: readonly string[];
 };
+
+/**
+ * **The core's answer to a send, refused**, as its form's owner hands it to the {@link Form}:
+ * the refusal, and `answer`, a number the owner counts up for every answer it is given. A new
+ * `answer` is said once; the person's edits to the refusal it holds are not a new one, and a
+ * second refusal reading as the last did is heard again.
+ */
+export type RefusedAnswer = Refused & { answer: number };
 
 /**
  * **Says a send refused elsewhere through the form it was sent from** (#3291): what draws a
@@ -237,20 +254,29 @@ const NOTHING_SAID = () => undefined;
 /** The one sentence a refused send is heard as: what was said of the whole, then the fields. */
 export function summaryOf({ fields, reasons = [] }: Refused): string {
   const [one] = fields;
+  const names = fields.map((field) => field.name).join(", ");
   const which =
     fields.length === 0
       ? []
-      : fields.length === 1 && one.why !== undefined
-        ? [`${one.name}: ${one.why}`]
-        : [`${fields.length} fields to fix: ${fields.map((field) => field.name).join(", ")}.`];
+      : fields.length === 1
+        ? [one.why !== undefined ? `${one.name}: ${one.why}` : `1 field to fix: ${names}.`]
+        : [`${fields.length} fields to fix: ${names}.`];
   return [...reasons, ...which].join(" ");
 }
 
-/** A field's name, as its label gives it. */
-function nameOf(element: HTMLElement): string {
+/** A field's name, as its label gives it: what `aria-labelledby` names, the box's own
+ *  `aria-label` among them where it names the box itself (React Aria's way with both). */
+export function nameOf(element: HTMLElement): string {
+  const own = element.getAttribute("aria-label") ?? "";
   const by = (element.getAttribute("aria-labelledby") ?? "")
     .split(/\s+/)
-    .map((id) => (id === "" ? "" : (document.getElementById(id)?.textContent ?? "").trim()))
+    .map((id) =>
+      id === ""
+        ? ""
+        : id === element.id
+          ? own
+          : (document.getElementById(id)?.textContent ?? "").trim(),
+    )
     .filter((words) => words !== "")
     .join(" ");
   if (by !== "") return by;
@@ -290,9 +316,9 @@ export type FormProps = Omit<FormHTMLAttributes<HTMLFormElement>, "onSubmit" | "
   className?: string;
   ref?: Ref<HTMLFormElement>;
   children?: ReactNode;
-  /** The last send, refused elsewhere (the core): said once, as the form's summary, when a new
-   *  one arrives after a send. */
-  refused?: Refused;
+  /** The core's last answer to a send, refused: said once, as the form's summary, for each new
+   *  `answer`. */
+  refused?: RefusedAnswer;
 };
 
 /**
@@ -304,32 +330,43 @@ export type FormProps = Omit<FormHTMLAttributes<HTMLFormElement>, "onSubmit" | "
  * (`ui/reveal.ts`, #3675).
  *
  * **One signal per refusal** (#3291). A refused send, by the form's own checks or by the core
- * (`refused`, or `useFormRefusal` from inside it), is heard once: as the form's one alert
+ * (`refused`, counted by its owner's `answer`, or `useFormRefusal` from inside it), is heard
+ * once: as the form's one alert
  * summary, drawn for a screen reader alone, since every field shows its own words. One field
  * refused is its name and why ("Name: A name is letters…"); more are how many and which ("2
  * fields to fix: Name, Port."). The fields' lines are
  * polite live regions, quiet while the summary says it, so they do not speak over it, and each
  * stays its field's description, so the error is reachable from the field. The person's next
- * change ends the summary, and the lines are heard field by field again. A refusal again says the
- * summary anew.
+ * change ends the summary (a native change, or a select's pick, `useFormSummary().end`), and the
+ * lines are heard field by field again. A refusal again says the summary anew, whatever it says.
  */
 export function Form({ onSubmit, onKeyDown, onChange, refused, children, ...rest }: FormProps) {
   const [checks] = useState(() => new Set<Check>());
-  // Every send tried, and the summary said of the last refused one: `at` draws it anew, so a
+  // What the form said itself (its checks, or `useFormRefusal`); `key` draws it anew, so a
   // refusal that reads as the last one did is heard again.
-  const [sends, setSends] = useState(0);
-  const [heard, setHeard] = useState<{ said: string; at: number } | null>(null);
-  // Armed by a send with the refusal that stood then; the next refusal to arrive is that send's,
-  // said once, in the render it arrives in, so the lines it fills are quiet in that same render.
-  const [armed, setArmed] = useState<{ before: Refused | undefined } | null>(null);
-  if (armed !== null && refused !== undefined && refused !== armed.before) {
-    const said = summaryOf(refused);
-    setArmed(null);
-    setHeard(said === "" ? null : { said, at: sends });
-  }
+  const [own, setOwn] = useState<{ said: string; key: string } | null>(null);
+  const told = useRef(0);
+  const tell = useCallback((refusal: Refused) => {
+    const said = summaryOf(refusal);
+    told.current += 1;
+    setOwn(said === "" ? null : { said, key: `told-${told.current}` });
+  }, []);
+  // The core's answer, said for each new `answer` its owner counts, drawn from the props in the
+  // render it arrives in, so the lines it fills are quiet in that same render. It is said until
+  // the person changes something or the form says something since (`done`); one standing as the
+  // form is drawn was said before it.
+  const [done, setDone] = useState(refused?.answer);
+  const fromAnswer =
+    refused !== undefined && refused.answer !== done && summaryOf(refused) !== ""
+      ? { said: summaryOf(refused), key: `answer-${refused.answer}` }
+      : null;
+  const heard = own ?? fromAnswer;
+  /** Ends what is said: the person changed something, or the form sends or says anew. */
+  const end = useCallback(() => {
+    setOwn(null);
+    setDone(refused?.answer);
+  }, [refused?.answer]);
   const submit = (event: FormEvent<HTMLFormElement>) => {
-    const at = sends + 1;
-    setSends(at);
     const wrong = [...checks]
       .map((one) => ({ why: one.check(), element: one.element() }))
       .filter(
@@ -339,37 +376,30 @@ export function Form({ onSubmit, onKeyDown, onChange, refused, children, ...rest
       .sort((a, b) =>
         a.element.compareDocumentPosition(b.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
       );
+    end();
     if (wrong.length > 0) {
       event.preventDefault();
-      setArmed(null);
-      setHeard({
-        said: summaryOf({
-          fields: wrong.map((one) => ({ name: nameOf(one.element), why: one.why })),
-        }),
-        at,
-      });
+      tell({ fields: wrong.map((one) => ({ name: nameOf(one.element), why: one.why })) });
       // A field in a fold is brought out of it first, so the focus lands (#3675).
       reveal(wrong[0].element);
       wrong[0].element.focus();
       return;
     }
-    setHeard(null);
-    // What was refused before this send is not this send's refusal.
-    setArmed({ before: refused });
     onSubmit(event);
   };
   // Said by what draws the fields, in the handler that hands them their words.
-  const said = useRef(0);
-  const say = useCallback((refused: Refused) => {
-    const words = summaryOf(refused);
-    said.current += 1;
-    setHeard(words === "" ? null : { said: words, at: -said.current });
-  }, []);
+  const say = useCallback(
+    (refusal: Refused) => {
+      setDone(refused?.answer);
+      tell(refusal);
+    },
+    [refused?.answer, tell],
+  );
   const quiet = heard !== null;
-  const summary = useMemo(() => ({ quiet, say }), [quiet, say]);
+  const summary = useMemo(() => ({ quiet, say, end }), [quiet, say, end]);
   const changed = (event: ChangeEvent<HTMLFormElement>) => {
     onChange?.(event);
-    setHeard(null);
+    end();
   };
   const keys = (event: KeyboardEvent<HTMLFormElement>) => {
     onKeyDown?.(event);
@@ -391,7 +421,7 @@ export function Form({ onSubmit, onKeyDown, onChange, refused, children, ...rest
           {children}
           {heard !== null && (
             // For a screen reader alone (`hidden-words`): every field shows its own words.
-            <p key={heard.at} className="hidden-words" role="alert" data-form-summary="">
+            <p key={heard.key} className="hidden-words" role="alert" data-form-summary="">
               {heard.said}
             </p>
           )}
