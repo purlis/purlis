@@ -3303,19 +3303,51 @@ impl Held<'_> {
             ),
             ratio: Some(ratio),
         });
-        let values: BTreeMap<Prop, PartValue> = [(Prop::Fill, own.fill), (Prop::Text, own.words)]
-            .into_iter()
-            .filter(|(property, _)| part.properties.contains(property))
-            .map(|(property, token)| (property, PartValue::Colour(token)))
-            .collect();
-        self.rules.push(Rule {
+        let drawn_back = |state: Option<State>, own: ApartLook| Rule {
             family,
             part: at,
             variant: None,
             state,
-            values,
+            values: [(Prop::Fill, own.fill), (Prop::Text, own.words)]
+                .into_iter()
+                .filter(|(property, _)| part.properties.contains(property))
+                .map(|(property, token)| (property, PartValue::Colour(token)))
+                .collect(),
             fallback: true,
-        });
+        };
+        self.rules.push(drawn_back(state, own));
+        // At rest the default reaches every state, and would draw its none over a state's own
+        // fill (the row Enter would go to, an open crumb): each state's default is drawn back
+        // after it, so every state looks as it does by default (#3997's review).
+        if state.is_none() {
+            for one in drawn_apart(family, part.name).unwrap_or_default() {
+                let written = self.rules.iter().any(|rule| {
+                    std::ptr::eq(rule.family, family)
+                        && rule.fallback
+                        && rule.part == at
+                        && rule.state == Some(*one)
+                });
+                if written {
+                    continue;
+                }
+                // What the theme sets in that state itself is kept: only the rest rule fell.
+                let mut back =
+                    drawn_back(Some(*one), apart_look(family.name, part.name, Some(*one)));
+                back.values.retain(|property, _| {
+                    !self.rules.iter().any(|rule| {
+                        std::ptr::eq(rule.family, family)
+                            && !rule.fallback
+                            && rule.part == at
+                            && rule.variant.is_none()
+                            && rule.state == Some(*one)
+                            && rule.values.contains_key(property)
+                    })
+                });
+                if !back.values.is_empty() {
+                    self.rules.push(back);
+                }
+            }
+        }
     }
 
     /// `variant` draws its family default while `states` hold, said once in a [`Fell`] that names

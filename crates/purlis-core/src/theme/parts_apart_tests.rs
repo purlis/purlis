@@ -19,11 +19,11 @@ fn said(resolved: &Resolved) -> Vec<String> {
         .collect()
 }
 
-/// Purlis dark with `parts` set, as read.
-fn purlis_dark(parts: Value) -> ResolvedTheme {
+/// `base`'s appearance `id` with `parts` set, untinted, as read.
+fn shaped(base: &str, id: &str, parts: Value) -> ResolvedTheme {
     let loaded = load(&json!({
         "name": "Shaped",
-        "extends": "purlis",
+        "extends": base,
         "parts": parts,
         "tint": { "on": false },
     }));
@@ -32,9 +32,20 @@ fn purlis_dark(parts: Value) -> ResolvedTheme {
         .theme
         .appearances
         .iter()
-        .find(|one| one.id == "dark")
-        .expect("Purlis dark")
+        .find(|one| one.id == id)
+        .unwrap_or_else(|| panic!("{base} {id}"))
         .clone()
+}
+
+/// Purlis dark with `parts` set.
+fn purlis_dark(parts: Value) -> ResolvedTheme {
+    shaped("purlis", "dark", parts)
+}
+
+/// Purlis Classic light with `parts` set: its selected row and its popover, and its bar and its
+/// popover, are far enough apart that words read on one and not the other.
+fn classic_light(parts: Value) -> ResolvedTheme {
+    shaped("purlis-classic", "light", parts)
 }
 
 fn fell(theme: &ResolvedTheme) -> Vec<String> {
@@ -68,10 +79,14 @@ fn a_crumb_whose_words_vanish_under_the_pointer_falls_alone() {
 
 #[test]
 fn a_selected_row_is_measured_on_the_selected_fill_it_is_drawn_on() {
-    // The row Enter would go to is drawn on `list.selected`, not the popover's surface.
-    let theme = purlis_dark(json!({ "titlebar.row.selected.text": "list.selected" }));
+    // In Purlis Classic light, `syntax.keyword` reads on the popover (5:1) and not on the
+    // selected row's fill (4.1:1): measured on the popover, it would hold.
+    let theme = classic_light(json!({ "titlebar.row.selected.text": "syntax.keyword" }));
     assert_eq!(fell(&theme), ["titlebar.row.selected"]);
-    // And words that read there hold.
+    // At rest, on the popover, the same words hold.
+    let theme = classic_light(json!({ "titlebar.row.hover.text": "syntax.keyword" }));
+    assert!(fell(&theme).is_empty(), "{:?}", fell(&theme));
+    // And words that read on the selected fill hold there.
     let theme = purlis_dark(json!({ "titlebar.row.selected.text": "text.primary" }));
     assert!(fell(&theme).is_empty(), "{:?}", fell(&theme));
     let sheet = parts::stylesheet(&theme);
@@ -85,19 +100,41 @@ fn a_selected_row_is_measured_on_the_selected_fill_it_is_drawn_on() {
 
 #[test]
 fn an_open_crumb_is_measured_on_the_card_s_fill_not_the_chip_s() {
-    // Open, the crumb is drawn on `surface.overlay`; its words on that ground hold, whatever
-    // the chosen chip's accent wash would make of them.
-    let ground = |state: Option<parts::State>| parts::apart_look("titlebar", "crumb", state);
-    assert_eq!(ground(None).under, ["surface.deep"]);
-    assert_eq!(ground(Some(parts::State::Selected)).fill, "surface.overlay");
-    assert_eq!(ground(Some(parts::State::Hover)).fill, "surface.overlay");
-    assert_eq!(
-        parts::apart_look("titlebar", "row", Some(parts::State::Selected)).fill,
-        "list.selected"
-    );
+    // In Purlis Classic light, `icon.red` reads on the card's fill (5:1) and not on the bar
+    // (4:1): open, the crumb is drawn on the card's fill, so it holds there; at rest, on the
+    // bar, it falls, and only at rest.
+    let theme = classic_light(json!({ "titlebar.crumb.selected.text": "icon.red" }));
+    assert!(fell(&theme).is_empty(), "{:?}", fell(&theme));
+    let theme = classic_light(json!({ "titlebar.crumb.text": "icon.red" }));
+    assert_eq!(fell(&theme), ["titlebar.crumb"]);
     assert_eq!(
         parts::apart_look("titlebar", "pin", Some(parts::State::Selected)).words,
         "accent.base"
+    );
+}
+
+#[test]
+fn a_row_that_falls_at_rest_keeps_the_selected_row_s_fill() {
+    // #3997's review: a row's words too faint at rest draw the row's default back, and the row
+    // Enter would go to keeps its selected fill and words, so the keyboard sees where it is.
+    let theme = purlis_dark(json!({ "titlebar.row.text": "text.faint" }));
+    assert!(
+        fell(&theme).contains(&"titlebar.row".to_owned()),
+        "{:?}",
+        fell(&theme)
+    );
+    let sheet = parts::stylesheet(&theme);
+    assert!(
+        sheet.contains(&format!(
+            ":where({ROW}[data-selected]) {{ background-color: var(--list-selected); color: var(--text-primary); }}"
+        )),
+        "{sheet}"
+    );
+    assert!(
+        sheet.contains(&format!(
+            ":where({ROW}[data-hovered]:not([data-disabled])) {{ background-color: var(--surface-overlay); color: var(--text-secondary); }}"
+        )),
+        "{sheet}"
     );
 }
 
@@ -126,6 +163,15 @@ fn a_failing_chip_and_a_failing_crumb_each_fall_on_their_own() {
         )),
         "{sheet}"
     );
+    // Its states draw their own defaults back too: the rest rule's none would cover them.
+    for state in ["[data-hovered]:not([data-disabled])", "[data-selected]"] {
+        assert!(
+            sheet.contains(&format!(
+                ":where({CRUMB}{state}) {{ background-color: var(--surface-overlay); color: var(--text-secondary); }}"
+            )),
+            "{state}: {sheet}"
+        );
+    }
 }
 
 #[test]
@@ -233,4 +279,28 @@ fn a_row_s_count_is_held_on_its_wash_over_the_popover_and_the_selected_row() {
             "state.waiting on wash.warning over {under} is held"
         );
     }
+}
+
+#[test]
+fn a_part_that_falls_at_rest_keeps_what_the_theme_sets_in_a_state() {
+    // The open crumb's own words the theme gives it read on the card's fill, and stay; only
+    // its fill is drawn back with the rest.
+    let theme = purlis_dark(json!({
+        "titlebar.crumb.text": "surface.deep",
+        "titlebar.crumb.selected.text": "text.primary",
+    }));
+    assert_eq!(fell(&theme), ["titlebar.crumb"]);
+    let sheet = parts::stylesheet(&theme);
+    assert!(
+        sheet.contains(&format!(
+            ":where({CRUMB}[data-selected]) {{ background-color: var(--surface-overlay); }}"
+        )),
+        "{sheet}"
+    );
+    assert!(
+        !sheet.contains(&format!(
+            ":where({CRUMB}[data-selected]) {{ background-color: var(--surface-overlay); color:"
+        )),
+        "{sheet}"
+    );
 }
