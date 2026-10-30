@@ -10,7 +10,10 @@ import {
   discardGone,
   discardRemoved,
   discardUnsavedIn,
+  handedOver,
   keepUnsaved,
+  takeHanded,
+  takesHandedWork,
   unsavedClosedBy,
   unsavedIn,
   unsavedNow,
@@ -29,6 +32,8 @@ function work(key: string, over: Partial<UnsavedWork> = {}): UnsavedWork {
     name: key,
     save: () => Promise.resolve(undefined),
     discard: vi.fn(() => keepUnsaved(key, undefined)),
+    kind: "test",
+    handOver: () => null,
     ...over,
   };
   keepUnsaved(key, one);
@@ -148,5 +153,26 @@ describe("which close would lose it", () => {
     const tabs = openView(noTabs(), STUDIO, "Skill studio", "ops");
     work("deploy");
     expect(unsavedClosedBy("p", tabs, { verb: "closeProject", plane: "p" })).toBeUndefined();
+  });
+});
+
+describe("work carried to another window (#4028)", () => {
+  it("is its state as plain data, made again by its kind's taker under its own key", () => {
+    work("deploy", { kind: "carried", handOver: () => ({ text: "typed" }) });
+    work("review", { plane: "q" });
+    const carried = handedOver("p");
+    expect(carried).toEqual([
+      { kind: "carried", key: "deploy", plane: "p", name: "deploy", data: { text: "typed" } },
+    ]);
+
+    const took = vi.fn();
+    takesHandedWork("carried", took);
+    takeHanded(carried);
+    expect(took).toHaveBeenCalledWith("deploy", { text: "typed" });
+  });
+
+  it("is dropped where this window has no taker for its kind", () => {
+    takeHanded([{ kind: "unknown", key: "x", plane: "p", name: "x", data: null }]);
+    expect(unsavedNow()).toEqual([]);
   });
 });

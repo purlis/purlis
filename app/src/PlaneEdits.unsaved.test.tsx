@@ -54,6 +54,8 @@ function work(persona: string): UnsavedWork {
     name: "deploy",
     save: vi.fn(() => Promise.resolve(undefined)),
     discard: vi.fn(() => keepUnsaved(one.key, undefined)),
+    kind: "test",
+    handOver: () => null,
   };
   keepUnsaved(one.key, one);
   return one;

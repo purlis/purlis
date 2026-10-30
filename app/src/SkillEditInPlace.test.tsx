@@ -18,7 +18,7 @@ import { AT_THE_ROOT, SKILL_STUDIO_VIEW, skillRowId, type StudioPlace } from "./
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetSkillEdit, keepSkillEdit, skillEditIn } from "./skillEdit";
 import { typeIn } from "./editor/typing.testkit";
-import { unsavedIn, unsavedNow } from "./unsavedWork";
+import { handedOver, takeHanded, unsavedIn, unsavedNow } from "./unsavedWork";
 import type { SkillLintFinding, StudioSkill } from "./bindings";
 
 afterEach(() => {
@@ -333,6 +333,28 @@ describe("the editor's unsaved text, as the window's unsaved work (#3929)", () =
     expect(unsavedIn(PLANE, { workspace: "ops" }).map((one) => one.name)).toEqual(["deploy"]);
     unsavedIn(PLANE)[0].discard();
     expect(skillEditIn(STUDIO_HISTORY)).toBeUndefined();
+  });
+
+  it("is carried to another window as it is, and kept there under the same tab (#4028)", () => {
+    const edit = {
+      plane: PLANE,
+      view: SKILL_STUDIO_VIEW,
+      at: at(DEPLOY, { tab: "text" }),
+      skill: DEPLOY,
+      level: { at: "project", local: false },
+      was: TEXT,
+      now: `${TEXT}More.\n`,
+    } as const;
+    keepSkillEdit(STUDIO_HISTORY, edit);
+    // Carried out of this window, and let go of here, as a move does.
+    const carried = handedOver(PLANE);
+    keepSkillEdit(STUDIO_HISTORY, undefined);
+    expect(unsavedNow()).toEqual([]);
+    // Sent between windows as JSON.
+    takeHanded(JSON.parse(JSON.stringify(carried)) as typeof carried);
+
+    expect(skillEditIn(STUDIO_HISTORY)).toEqual(edit);
+    expect(unsavedIn(PLANE).map((one) => one.key)).toEqual([STUDIO_HISTORY]);
   });
 
   it("is a persona's where the skill is saved into one, so its removal asks too (#4029)", () => {

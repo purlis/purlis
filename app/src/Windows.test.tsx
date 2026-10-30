@@ -18,6 +18,14 @@ import type { OpenChat } from "./bindings";
 import type { WindowSaid } from "./windows";
 import { stripNamed } from "./test-strips";
 import { findResult } from "./actionResult.testkit";
+import {
+  keepUnsaved,
+  takesHandedWork,
+  unsavedNow,
+  type HandedWork,
+  type UnsavedWork,
+} from "./unsavedWork";
+import { forgetHandOver } from "./unsavedWindows";
 
 /**
  * A project tab split into an OS window of its own, and moved back (charter#126; ADR 0033,
@@ -490,5 +498,148 @@ describe("quitting with two windows", () => {
       fire("quit-asked", null);
       expect(sent("quit").length).toBeGreaterThan(0);
     });
+  });
+});
+
+describe("a view's unsaved work across windows (#4028)", () => {
+  afterEach(() => {
+    for (const one of unsavedNow()) keepUnsaved(one.key, undefined);
+    forgetHandOver();
+  });
+
+  /** A view's unsaved work in `plane`, as a view registers it: of a kind any window takes. */
+  function work(plane: string, data = "text as typed"): UnsavedWork {
+    const one: UnsavedWork = {
+      key: `${plane}\u0000deploy`,
+      plane,
+      view: { from: null, view: "skill-studio", key: "" },
+      name: "deploy",
+      kind: KIND,
+      handOver: () => data,
+      save: vi.fn(() => Promise.resolve(undefined)),
+      discard: vi.fn(() => keepUnsaved(one.key, undefined)),
+    };
+    keepUnsaved(one.key, one);
+    return one;
+  }
+  const KIND = "test-work";
+  takesHandedWork(KIND, (key, data) => void work(key.split("\u0000")[0], String(data)));
+  const handed = (plane: string, data = "text as typed"): HandedWork => ({
+    kind: KIND,
+    key: `${plane}\u0000deploy`,
+    plane,
+    name: "deploy",
+    data,
+  });
+  /** What this window sent to the window `label` on `event`. */
+  const sentTo = (sent: (cmd: string) => Record<string, unknown>[], label: string, event: string) =>
+    sent("plugin:event|emit_to")
+      .filter(
+        (one) =>
+          one.event === event && (one.target as { label?: string } | undefined)?.label === label,
+      )
+      .map((one) => one.payload);
+
+  it("goes with a project moved to another window, unasked", async () => {
+    const { fire, listening, sent } = core({
+      restore: { windows: [{ planes: [ONE, TWO], active: 0 }], dropped: [] },
+    });
+    render(<App />);
+    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
+    await vi.waitFor(() => expect(listening("unsaved-claim")).toBe(true));
+    work(TWO);
+
+    await fromTheMenu("two", "Move to a new window");
+
+    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(sent("move_projects")).toEqual([{ projects: [TWO], front: TWO, to: null }]);
+    // It is no longer this window's,
+    expect(unsavedNow()).toEqual([]);
+    // and is handed to the window the project went to, once that window holds it.
+    fire("unsaved-claim", { label: "window-1", plane: TWO });
+    expect(sentTo(sent, "window-1", "unsaved-handed")).toEqual([[handed(TWO)]]);
+  });
+
+  it("comes back to the main window with the projects of a split window closed", async () => {
+    const { fire, listening } = core({ launch: ONE });
+    render(<App />);
+    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await vi.waitFor(() => expect(listening("unsaved-mirror")).toBe(true));
+    // What the split window last said it holds: the page goes with the window.
+    fire("unsaved-mirror", { label: "window-1", works: [handed(TWO, "typed there")] });
+
+    fire("projects-arrived", { planes: [TWO], front: null });
+
+    await vi.waitFor(() =>
+      expect(unsavedNow().map((one) => [one.plane, one.handOver()])).toEqual([
+        [TWO, "typed there"],
+      ]),
+    );
+  });
+
+  it("is taken in by a split window, which tells the main window what it holds", async () => {
+    mockWindows("window-1");
+    const { fire, listening, sent } = core({ handed: { planes: [TWO], active: 0 } });
+    render(<App />);
+    await vi.waitFor(() => expect(projectTabs()).toEqual(["two*"]));
+    await vi.waitFor(() =>
+      expect(sentTo(sent, "main", "unsaved-claim")).toContainEqual({
+        label: "window-1",
+        plane: TWO,
+      }),
+    );
+    expect(listening("unsaved-handed")).toBe(true);
+
+    fire("unsaved-handed", [handed(TWO, "typed in main")]);
+
+    expect(unsavedNow().map((one) => one.handOver())).toEqual(["typed in main"]);
+    await vi.waitFor(() =>
+      expect(sentTo(sent, "main", "unsaved-mirror").pop()).toEqual({
+        label: "window-1",
+        works: [handed(TWO, "typed in main")],
+      }),
+    );
+  });
+
+  it("is asked about at a quit in the split window that holds it, where Keep editing stays", async () => {
+    const { fire, listening, sent } = core({ launch: ONE, windows: ["main", "window-1"] });
+    render(<App />);
+    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    await vi.waitFor(() => expect(listening("unsaved-mirror")).toBe(true));
+    fire("window-said", said("window-1"));
+    fire("unsaved-mirror", { label: "window-1", works: [handed(TWO)] });
+
+    fire("quit-asked", null);
+    await vi.waitFor(() => expect(sentTo(sent, "window-1", "unsaved-ask-at-quit")).toHaveLength(1));
+    await vi.waitFor(() => expect(listening("unsaved-answered-at-quit")).toBe(true));
+    fire("unsaved-answered-at-quit", { label: "window-1", go: false });
+    await vi.waitFor(() => expect(sent("quit_cancelled")).toHaveLength(1));
+    expect(sent("quit")).toEqual([]);
+
+    fire("quit-asked", null);
+    await vi.waitFor(() => expect(sentTo(sent, "window-1", "unsaved-ask-at-quit")).toHaveLength(2));
+    fire("unsaved-answered-at-quit", { label: "window-1", go: true });
+    await vi.waitFor(() => expect(sent("quit")).toHaveLength(1));
+  });
+
+  it("asks in the split window, in front, when the main window has it ask at a quit", async () => {
+    mockWindows("window-1");
+    const { fire, listening, sent } = core({ handed: { planes: [TWO], active: 0 } });
+    render(<App />);
+    await vi.waitFor(() => expect(projectTabs()).toEqual(["two*"]));
+    await vi.waitFor(() => expect(listening("unsaved-ask-at-quit")).toBe(true));
+    work(TWO);
+
+    fire("unsaved-ask-at-quit", null);
+    const asked = await screen.findByRole("alertdialog", { name: "Save your changes to deploy?" });
+    expect(sent("show_window_holding")).toContainEqual({ plane: TWO });
+    await userEvent.click(within(asked).getByRole("button", { name: "Keep editing" }));
+
+    await vi.waitFor(() =>
+      expect(sentTo(sent, "main", "unsaved-answered-at-quit")).toEqual([
+        { label: "window-1", go: false },
+      ]),
+    );
   });
 });

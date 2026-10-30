@@ -29,6 +29,8 @@ function work(name: string, refused: (string | undefined)[] = []): UnsavedWork {
       return Promise.resolve(said);
     }),
     discard: vi.fn(() => keepUnsaved(name, undefined)),
+    kind: "test",
+    handOver: () => null,
   };
   keepUnsaved(name, one);
   return one;

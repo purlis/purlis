@@ -29,6 +29,11 @@
  * is drawn only while its tab is in front, so what it registers outlives the view's render, and
  * a relaunch starts afresh. The registry never reads a view's state itself: what it holds is
  * what the view said last.
+ *
+ * **It goes where its project goes** (#4028): each work says how to carry it to another window
+ * (`handOver`), as plain data the window it arrives in makes the same work of again
+ * (`takesHandedWork`). A project moved to another window, or handed back to the main window by
+ * a split window's close, takes its work along, unasked: nothing is lost (`unsavedWindows.ts`).
  */
 import { useSyncExternalStore } from "react";
 import type { Offer } from "./actions";
@@ -48,6 +53,11 @@ export type UnsavedWork = {
   persona?: string;
   /** What it is, as the question names it (`deploy`). */
   name: string;
+  /** **What kind of work it is**, for the window it is carried to (#4028): the one
+   *  {@link takesHandedWork} names the kind that makes it again there. */
+  kind: string;
+  /** **Its state as plain data**, to carry it to another window (#4028). */
+  handOver: () => unknown;
   /** Saves it, and unregisters it once saved: `undefined`, or why it was not saved. */
   save: () => Promise<string | undefined>;
   /** Lets it go, and unregisters it. */
@@ -161,4 +171,38 @@ export function unsavedClosedBy(
   }
   const work = unsavedIn(plane).filter((one) => closing.has(viewKey(one.view)));
   return work.length === 0 ? undefined : { work, tab };
+}
+
+/** **A work carried to another window** (#4028): what it is, and its state as plain data. */
+export type HandedWork = {
+  kind: string;
+  key: string;
+  plane: string;
+  name: string;
+  data: unknown;
+};
+
+const takers = new Map<string, (key: string, data: unknown) => void>();
+
+/** **How a work of `kind` is made again** in the window it is carried to: `take` registers it
+ *  there, under its own key, from the data its `handOver` gave. */
+export function takesHandedWork(kind: string, take: (key: string, data: unknown) => void): void {
+  takers.set(kind, take);
+}
+
+/** The work of `plane`, or of the whole window, as it is carried to another. */
+export function handedOver(plane?: string): HandedWork[] {
+  return (plane === undefined ? now : unsavedIn(plane)).map((one) => ({
+    kind: one.kind,
+    key: one.key,
+    plane: one.plane,
+    name: one.name,
+    data: one.handOver(),
+  }));
+}
+
+/** **Work carried here from another window**: each is registered again, by its kind's taker.
+ *  A kind this window has no taker for is not one it can hold, and is dropped. */
+export function takeHanded(works: readonly HandedWork[]): void {
+  for (const one of works) takers.get(one.kind)?.(one.key, one.data);
 }
