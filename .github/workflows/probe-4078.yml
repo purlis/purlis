@@ -1,0 +1,52 @@
+# THROWAWAY (#4078): runs three story files many times in WebKit and counts what failed.
+name: probe-4078
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  probe:
+    name: probe (${{ matrix.file }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        file: [src/SkillPage.stories.tsx, src/SkillsList.stories.tsx, src/ui/list/List.stories.tsx]
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
+      options: --init --ipc=host
+    env:
+      PURLIS_STORY_PICTURES: "1"
+      HOME: /root
+      FILE: ${{ matrix.file }}
+    defaults:
+      run:
+        working-directory: app
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: Many runs
+        run: |
+          mkdir -p "$RUNNER_TEMP/r"
+          for i in $(seq 1 12); do
+            PURLIS_STORY_REPORT="$RUNNER_TEMP/r/$i.json" npx vitest run --project "stories * (webkit)" \
+              --reporter=dot --reporter=../tools/story-failures.mjs "$FILE" > /dev/null 2>&1 || true
+          done
+          node -e '
+            const fs=require("fs"),p=process.argv[1];const c={};let runs=0,failed=0;
+            for(const f of fs.readdirSync(p)){runs++;const r=JSON.parse(fs.readFileSync(p+"/"+f,"utf8"));if(r.failed)failed++;
+              for(const x of r.failures){const g=x.errors.map(e=>/toMatchScreenshot|screenshots\.setup/.test((e.message||"")+(e.stack||""))?"screenshot":"other").join("+");
+                const k=`${x.story} @ ${x.cell} [${g}] ${(x.errors[0]?.message||"").split("\n").find(l=>l.trim()&&!/Click to debug/.test(l))?.slice(0,120)}`;c[k]=(c[k]||0)+1;}
+              for(const e of r.errors) {const k="outside: "+(e.message||"").slice(0,120);c[k]=(c[k]||0)+1;}}
+            const lines=Object.entries(c).map(([k,v])=>v+"x "+k);
+            console.log(`::notice title=${process.env.FILE.replace(/[,:]/g,"_")}: ${failed} of ${runs} runs failed::`+(lines.join("%0A")||"nothing failed"));
+          ' "$RUNNER_TEMP/r"
