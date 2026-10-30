@@ -341,8 +341,10 @@ use crate::view::{Limits, Views};
 /// 1.52 added a desktop's profile taken off its runner (#4047, spec #4023): `forget_profile`,
 /// sent by the desktop on its own link to the runner as it takes a profile off the pool, has the
 /// runner forget a profile it keeps for that desktop, with its folder and so its sign-in there,
-/// answered `done`. A profile the runner keeps of its own, or for another desktop, is refused. A
-/// host before 1.52 refuses it `unknown_command`, and the profile stays kept there.
+/// answered `done`. A profile the runner keeps of its own, or for another desktop, stays as it
+/// is: from 1.59 that is answered `done` too, since nothing of this desktop's has the name
+/// (#4060), where a host from 1.52 to 1.58 refuses it. A host before 1.52 refuses it
+/// `unknown_command`, and the profile stays kept there.
 ///
 /// 1.53 added a profile whose harness its runner is still fetching (#4008, spec #4023):
 /// `profile_kept` may answer [`ProfileStanding::Fetching`] while the runner fetches the harness
@@ -794,8 +796,9 @@ pub enum Command {
     KeepProfile(ProfileToKeep),
     /// The desktop on this link has the runner forget its profile `name` (1.52, #4047): the
     /// runner's host forgets the profile it keeps for that desktop, with its folder and so its
-    /// sign-in there, and answers [`Answer::Done`]; one it does not keep is nothing. A profile
-    /// it keeps of its own, or for another desktop, is refused. Carried out and refused as
+    /// sign-in there, and answers [`Answer::Done`]; one it does not keep for that desktop,
+    /// one of its own or another desktop's included, is nothing and stays as it is (from 1.59,
+    /// #4060; refused before). Carried out and refused as
     /// [`Command::KeepProfile`] is ([`crate::grants::Power::KeepProfile`]).
     ForgetProfile { name: String },
     /// Part of a profile's settings, held on this link for the [`Command::KeepProfile`] that

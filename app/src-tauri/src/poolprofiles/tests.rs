@@ -201,63 +201,143 @@ fn names(names: &[&str]) -> Vec<String> {
     names.iter().map(|&n| n.to_owned()).collect()
 }
 
-/// **A runner keeps only the profiles chosen for its pool** (#4060, #3849): it is asked to keep
-/// the chosen ones this machine still has, and forgets the rest. One chosen that this machine no
-/// longer has is forgotten and leaves the pool's record; one the runner would not forget, under
-/// a running chat, is left to ask again.
+/// A runner of 1.59 that keeps `kept` for this machine and refuses to forget `busy`, under a
+/// chat running on it: what `forget_all_but` answers, by the predicate it is given.
+fn a_runner_keeping(
+    kept: &[&str],
+    busy: &[&str],
+) -> impl FnOnce(Keep) -> Result<Option<crate::runnerlinks::Listed>, String> {
+    let (kept, busy) = (names(kept), names(busy));
+    move |keep| {
+        let mut listed = crate::runnerlinks::Listed::default();
+        for name in kept {
+            if keep(&name) {
+                listed.kept.push(name);
+            } else {
+                let said = if busy.contains(&name) {
+                    Err("a chat on that profile runs".to_owned())
+                } else {
+                    Ok(())
+                };
+                listed.forgot.push((name, said));
+            }
+        }
+        Ok(Some(listed))
+    }
+}
+
+/// **A runner keeps only the profiles chosen for its pool** (#4060, #3849): of a pool that
+/// names its own, one not chosen is forgotten, and one chosen that this machine no longer has is
+/// forgotten and leaves the record. One the runner would not forget, under a running chat, is
+/// left to ask again.
 #[test]
 fn a_runner_forgets_what_is_no_longer_chosen_and_a_removed_profile_leaves_the_record() {
     let config = a_pool_naming(Some(&["work", "gone"]));
-    let records = vec![record("work", "claude"), record("home", "claude")];
+    let records = vec![
+        record("work", "claude"),
+        record("home", "claude"),
+        record("busy", "claude"),
+    ];
 
-    let forgotten = tidy(config.path(), "builds", &records, Some("home"), |keep| {
-        assert_eq!(keep, names(&["work"]), "only what is chosen and still here");
-        Ok(Some(vec![
-            ("home".to_owned(), Ok(())),
-            ("gone".to_owned(), Ok(())),
-            (
-                "busy".to_owned(),
-                Err("a chat on that profile runs".to_owned()),
-            ),
-        ]))
-    })
+    let tidied = tidy(
+        config.path(),
+        "builds",
+        &records,
+        Some("home"),
+        a_runner_keeping(&["work", "home", "gone", "busy"], &["busy"]),
+    )
     .unwrap();
 
-    assert_eq!(forgotten, Some(names(&["home", "gone"])));
+    assert_eq!(
+        tidied,
+        Tidied::Done {
+            forgotten: names(&["home", "gone"]),
+            refused: true
+        }
+    );
     assert_eq!(named(config.path()), Some(names(&["work"])));
 }
 
-/// **A pool that names none keeps the open project's default** (#4060), and once its runner
-/// forgets another, it names that default from now on, so a project opened next with another
-/// default does not have the runner forget this one.
+/// **A pool made before #4047, which names none, forgets only what this machine no longer
+/// has** (#4060): what its runner keeps of this machine's is named on the pool beside the open
+/// project's default, so its row shows each one, and no project opened next has the runner
+/// forget another's.
 #[test]
-fn a_pool_that_names_none_keeps_the_default_and_names_it_once_something_is_forgotten() {
+fn a_pool_that_names_none_names_what_its_runner_keeps_and_forgets_only_what_is_gone() {
     let config = a_pool_naming(None);
     let records = vec![record("work", "claude"), record("home", "claude")];
 
-    let forgotten = tidy(config.path(), "builds", &records, Some("work"), |keep| {
-        assert_eq!(keep, names(&["work"]));
-        Ok(Some(vec![("home".to_owned(), Ok(()))]))
-    })
+    let tidied = tidy(
+        config.path(),
+        "builds",
+        &records,
+        Some("work"),
+        a_runner_keeping(&["home", "work", "gone"], &[]),
+    )
     .unwrap();
 
-    assert_eq!(forgotten, Some(names(&["home"])));
-    assert_eq!(named(config.path()), Some(names(&["work"])));
+    assert_eq!(
+        tidied,
+        Tidied::Done {
+            forgotten: names(&["gone"]),
+            refused: false
+        }
+    );
+    assert_eq!(named(config.path()), Some(names(&["work", "home"])));
 }
 
-/// A runner with nothing to forget leaves a pool that names none as it is.
+/// A runner that keeps only the default leaves a pool that names none as it is.
 #[test]
-fn a_runner_with_nothing_to_forget_leaves_the_pools_record_as_it_is() {
+fn a_runner_that_keeps_only_the_default_leaves_the_pools_record_as_it_is() {
     let config = a_pool_naming(None);
     let records = vec![record("work", "claude")];
 
-    let forgotten = tidy(config.path(), "builds", &records, Some("work"), |_| {
-        Ok(Some(Vec::new()))
-    })
+    tidy(
+        config.path(),
+        "builds",
+        &records,
+        Some("work"),
+        a_runner_keeping(&["work"], &[]),
+    )
     .unwrap();
 
-    assert_eq!(forgotten, Some(Vec::new()));
     assert_eq!(named(config.path()), None);
+}
+
+/// **No tidy forgets this machine's adopted folder or a profile a chat's start readies**: the
+/// harness's own folder on the runner is used by a chat with no profile there too, and a
+/// readied profile is about to start a chat. Each is named on the pool instead.
+#[test]
+fn an_adopted_folder_and_a_profile_being_readied_are_never_forgotten_by_a_tidy() {
+    let config = a_pool_naming(Some(&["work"]));
+    let mut adopted = record("claude", "claude");
+    adopted.adopted = Some(profilestore::Adopted {
+        at: 1,
+        variables: Vec::new(),
+    });
+    let records = vec![record("work", "claude"), record("next", "claude"), adopted];
+    let _readying = Readying::of("builds", "next");
+
+    let tidied = tidy(
+        config.path(),
+        "builds",
+        &records,
+        None,
+        a_runner_keeping(&["work", "claude", "next"], &[]),
+    )
+    .unwrap();
+
+    assert_eq!(
+        tidied,
+        Tidied::Done {
+            forgotten: Vec::new(),
+            refused: false
+        }
+    );
+    assert_eq!(
+        named(config.path()),
+        Some(names(&["work", "claude", "next"]))
+    );
 }
 
 /// **Nothing is forgotten where nothing can be judged**: a pool that names none with no project
@@ -272,11 +352,11 @@ fn nothing_is_forgotten_with_no_default_to_judge_by_or_on_a_runner_before_1_59()
         panic!("a pool that names none, with no default, asks its runner nothing")
     })
     .unwrap();
-    assert_eq!(asked, None);
+    assert_eq!(asked, Tidied::NothingToJudge);
 
     let config = a_pool_naming(Some(&["gone"]));
     let older = tidy(config.path(), "builds", &records, None, |_| Ok(None)).unwrap();
-    assert_eq!(older, None);
+    assert_eq!(older, Tidied::Older);
     assert_eq!(
         named(config.path()),
         Some(names(&["gone"])),
@@ -284,12 +364,19 @@ fn nothing_is_forgotten_with_no_default_to_judge_by_or_on_a_runner_before_1_59()
     );
 }
 
-/// The pools whose runner keeps a removed profile are named as a sentence names them.
+/// The pools whose runner keeps a removed profile are named in one sentence, and none is said
+/// where there is none.
 #[test]
-fn the_pools_whose_runner_keeps_a_removed_profile_are_named_in_a_sentence() {
-    assert_eq!(pools_said(&names(&["builds"])), "Pool builds's runner");
+fn the_pools_whose_runner_keeps_a_removed_profile_are_named_in_one_sentence() {
+    assert_eq!(older_note(&[], "work"), None);
     assert_eq!(
-        pools_said(&names(&["builds", "tests", "gpu"])),
-        "Pools builds, tests and gpu's runners"
+        older_note(&names(&["builds"]), "work").unwrap(),
+        "Pool builds keeps the profile 'work' and its sign-in on its runner, which runs a \
+         purlis before 1.52, until the runner is made again."
+    );
+    assert!(
+        older_note(&names(&["builds", "tests", "gpu"]), "work")
+            .unwrap()
+            .starts_with("Pools builds, tests and gpu keep the profile 'work'")
     );
 }
