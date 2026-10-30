@@ -13,6 +13,7 @@ import StoryFailures, {
   annotations,
   cellOf,
   gateOf,
+  named,
   picturesAlone,
   placeOf,
   REPORT,
@@ -585,4 +586,98 @@ test("an error outside a story, a run that failed naming nothing, or no failure 
     ]),
     false,
   );
+});
+
+// What blocks the baselines comes first (#4050): GitHub keeps 10 error annotations a step, so a
+// story failing on more than its picture, the one thing that stops the run drawing, is named in
+// the first annotation, and in the step's summary, which is never capped, however many pictures
+// also failed.
+const pictures = (count, browser = "chromium") => ({
+  failed: true,
+  failures: Array.from({ length: count }, (_, at) => ({
+    file: `src/Picture${at}.stories.tsx`,
+    story: `Picture ${at}`,
+    cell: "purlis_dark",
+    errors: [failedAt("screenshot", browser)],
+  })),
+  errors: [],
+});
+
+test("a story failing on more than its picture is named first, past any number of pictures", () => {
+  const blocked = {
+    failed: true,
+    failures: [
+      ...pictures(12, "webkit").failures,
+      {
+        file: "src/Probe.stories.tsx",
+        story: "Probe K",
+        cell: "purlis_light",
+        errors: [failedAt("screenshot", "webkit"), failedAt("keyboard", "webkit")],
+      },
+    ],
+    errors: [],
+  };
+  const { annotations: lines } = named([
+    { browser: "chromium", report: pictures(12) },
+    { browser: "webkit", report: blocked },
+  ]);
+  // The headline, Probe K's own, and the 24 pictures'.
+  assert.equal(lines.length, 1 + 1 + 24);
+  assert.match(lines[0], /^::error title=No baselines drawn%3A 1 story failed on more than its picture::/);
+  assert.match(lines[0], /Probe K in webkit, purlis_light \(src\/Probe.stories.tsx\): keyboard/);
+  assert.doesNotMatch(lines[0], /Picture/);
+  // Then its own annotation, then the pictures'.
+  assert.match(lines[1], /title=Probe K in webkit/);
+  assert.ok(lines.slice(2).every((line) => /title=Picture \d+ in/.test(line)));
+});
+
+test("the first annotation names every story, error and report that blocks the baselines", () => {
+  const { annotations: lines } = named([
+    { browser: "chromium", report: reportOf("Probe A", failedAt("accessibility")) },
+    {
+      browser: "webkit",
+      report: { failed: true, failures: [], errors: [{ file: "src/Gone.stories.tsx", message: "would not load", stack: "" }] },
+    },
+    { browser: "webkit", report: { failed: true, failures: [], errors: [] } },
+    { browser: "chromium", report: undefined },
+  ]);
+  const [first] = lines;
+  assert.match(first, /4 stories failed on more than their picture/);
+  assert.match(first, /Probe A in chromium \(src\/Probe.stories.tsx\): accessibility/);
+  assert.match(first, /src\/Gone.stories.tsx in webkit: an error outside any story/);
+  assert.match(first, /stories in webkit: the run failed but named no story/);
+  assert.match(first, /stories in chromium: the run wrote no report/);
+});
+
+test("pictures alone need no headline: the baselines are drawn", () => {
+  const { annotations: lines, summary } = named([
+    { browser: "chromium", report: pictures(2) },
+    { browser: "webkit", report: { failed: false, failures: [], errors: [] } },
+  ]);
+  assert.equal(lines.length, 2);
+  assert.ok(lines.every((line) => /title=Picture \d+ in chromium/.test(line)));
+  assert.match(summary, /2 stories failed on their picture alone/);
+  assert.doesNotMatch(summary, /more than/);
+});
+
+test("the summary names what blocks the baselines first, then every picture that failed", () => {
+  const { summary } = named([
+    { browser: "chromium", report: pictures(30) },
+    { browser: "webkit", report: reportOf("Probe K", failedAt("keyboard", "webkit")) },
+  ]);
+  const blocking = summary.indexOf("Probe K in webkit");
+  assert.ok(blocking > 0);
+  assert.ok(summary.indexOf("failed on more than its picture") < blocking);
+  assert.ok(blocking < summary.indexOf("Picture 0 in chromium"));
+  assert.match(summary, /30 stories failed on their picture alone/);
+  assert.match(summary, /Picture 29 in chromium, purlis_dark/);
+  assert.match(summary, /- Probe K in webkit \(src\/Probe.stories.tsx\): keyboard: expect\(element\)/);
+});
+
+test("a run where nothing failed names nothing", () => {
+  const { annotations: lines, summary } = named([
+    { browser: "chromium", report: { failed: false, failures: [], errors: [] } },
+  ]);
+  assert.deepEqual(lines, []);
+  assert.equal(summary, "");
 });

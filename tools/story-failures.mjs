@@ -12,7 +12,9 @@
 //   stack (Vitest's JSON one) loses why a story failed in WebKit;
 //   It also names each story that takes no picture (`screenshot: false`), whose baselines
 //   `tools/story-baselines.mjs` then calls obsolete;
-// - run as a script, it reads those reports and prints one annotation per story that failed:
+// - run as a script, it reads those reports and prints one annotation per story that failed,
+//   those that stop the baselines being drawn first, after one that names all of them, and
+//   writes the same to the step's summary, which GitHub never caps (`named`, #4050):
 //
 //   node tools/story-failures.mjs <browser> <report> [<browser> <report> ...]
 //
@@ -27,7 +29,7 @@
 //
 // Every text an annotation carries is escaped as the runner reads a workflow command, so it
 // stays one annotation on one line.
-import { readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, relative } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -87,6 +89,12 @@ export function gateOf(error) {
   return "renders";
 }
 
+/** Whether a failed story stops its run drawing baselines: it failed on more than its picture,
+ *  or with no error at all to say which gate. */
+export function blocksBaselines({ errors }) {
+  return errors.length === 0 || errors.some((one) => gateOf(one) !== "screenshot");
+}
+
 /**
  * **Whether a picture is all that failed** in these reports, one per browser: a story failed,
  * every error of every story that failed is the screenshot gate's, no error is outside a story,
@@ -103,10 +111,7 @@ export function picturesAlone(reports) {
         (report.errors ?? []).length === 0 &&
         (!report.failed || (report.failures ?? []).length > 0),
     ) &&
-    failures.every(
-      ({ errors }) =>
-        errors.length > 0 && errors.every((one) => gateOf(one) === "screenshot"),
-    )
+    failures.every((failure) => !blocksBaselines(failure))
   );
 }
 
@@ -158,13 +163,36 @@ export function placeOf(error, root, own) {
 const error = (title, text, at) =>
   `::error ${at ? `file=${property(at.file)},line=${at.line},` : ""}title=${property(title)}::${data(text)}`;
 
-/** One `::error` line per failed story in one browser's report: the story's name and that
- *  browser, its file, its gate, why, and the axe rules it broke; one for each error outside any
- *  story; and, for a run that failed naming nothing, one that says so. The report does not say
- *  which browser ran it, so the job runs each browser on its own and says which report is whose. */
-export function annotations(report, browser, root) {
-  const failed = report.failures.map(({ file, story, cell, errors }) => {
-    const [first = { message: "" }] = errors;
+/**
+ * What failed in one browser's report, each as `{ blocks, line, named, why, listed? }`: its
+ * `::error` annotation (`line`), whether it stops the run drawing baselines (`blocks`), what
+ * names it in the first annotation, and why, which the summary says after it (a story's own
+ * line there is `listed`). One per failed story: the story's name and that browser, its cell,
+ * its file, its gate, why, and the axe rules it broke; one for each error outside any story;
+ * for a run that failed naming nothing, one that says so; and for a report the run never wrote
+ * (`report` undefined), one that says that. The report does not say which browser ran it, so the
+ * job runs each browser on its own and says which report is whose.
+ */
+export function failedIn(report, browser, root) {
+  if (!report) {
+    const why = "the run wrote no report";
+    return [
+      {
+        blocks: true,
+        line: error(`stories in ${browser}`, `${why}; the job's log says why`),
+        named: `stories in ${browser}: ${why}`,
+        why: "the job's log says why",
+      },
+    ];
+  }
+  const failed = report.failures.map((failure) => {
+    const { file, story, cell, errors } = failure;
+    const blocks = blocksBaselines(failure);
+    // The error that blocks the baselines is the one worth naming, when there is one.
+    const [first = { message: "" }] = [
+      ...errors.filter((one) => gateOf(one) !== "screenshot"),
+      ...errors,
+    ];
     const rules = [
       ...new Set(
         errors.flatMap((one) =>
@@ -173,27 +201,98 @@ export function annotations(report, browser, root) {
       ),
     ];
     const broke = rules.length > 0 ? ` [axe: ${rules.join(", ")}]` : "";
-    return error(
-      `${story} in ${browser}${cell ? `, ${cell}` : ""}`,
-      `${file}: ${gateOf(first)}: ${whyOf(first)}${broke}`,
-      root === undefined ? undefined : placeOf(first, root, file),
-    );
-  });
-  const outside = report.errors.map((one) =>
-    error(
-      `stories in ${browser}`,
-      `${one.file ? `${one.file}: ` : ""}an error outside any story: ${whyOf(one)}`,
-    ),
-  );
-  const named = [...failed, ...outside];
-  if (named.length === 0 && report.failed)
-    return [
-      error(
-        `stories in ${browser}`,
-        "the run failed but named no story; the job's log says why",
+    const title = `${story} in ${browser}${cell ? `, ${cell}` : ""}`;
+    const gates = [...new Set(errors.map(gateOf).filter((gate) => gate !== "screenshot"))];
+    const why = `${gateOf(first)}: ${whyOf(first)}${broke}`;
+    return {
+      blocks,
+      line: error(
+        title,
+        `${file}: ${why}`,
+        root === undefined ? undefined : placeOf(first, root, file),
       ),
+      named: `${title} (${file})${blocks ? `: ${gates.join(", ") || "renders"}` : ""}`,
+      why,
+      // The summary's line: its gate leads its why already.
+      listed: `${title} (${file}): ${why}`,
+    };
+  });
+  const outside = report.errors.map((one) => {
+    const why = whyOf(one);
+    return {
+      blocks: true,
+      line: error(
+        `stories in ${browser}`,
+        `${one.file ? `${one.file}: ` : ""}an error outside any story: ${why}`,
+      ),
+      named: `${one.file ? `${one.file} in ` : "stories in "}${browser}: an error outside any story`,
+      why,
+    };
+  });
+  const all = [...failed, ...outside];
+  if (all.length === 0 && report.failed) {
+    const why = "the run failed but named no story";
+    return [
+      {
+        blocks: true,
+        line: error(`stories in ${browser}`, `${why}; the job's log says why`),
+        named: `stories in ${browser}: ${why}`,
+        why: "the job's log says why",
+      },
     ];
-  return named;
+  }
+  return all;
+}
+
+/** One `::error` line per failed story in one browser's report (`failedIn`). */
+export function annotations(report, browser, root) {
+  return failedIn(report, browser, root).map(({ line }) => line);
+}
+
+/** `count` stories, said with `one` or `many` after it. */
+const stories = (count, one, many) =>
+  `${count} ${count === 1 ? `story ${one}` : `stories ${many}`}`;
+
+/** Text kept from breaking a Markdown list item or its code span. */
+const plain = (text) => String(text).replace(/[\r\n]+/g, " ").replace(/`/g, "'");
+
+/**
+ * **What failed across every report of a run, blocking first** (#4050): each `{ browser, report }`
+ * (a report the run never wrote is `undefined`). GitHub shows 10 error annotations of a step, so
+ * when anything stops the baselines being drawn (a story failing on more than its picture, an
+ * error outside any story, a run that failed naming nothing or wrote no report), the first
+ * annotation names every one of them, and their own annotations come before any picture's. The
+ * `summary`, Markdown for the step's summary, which GitHub never caps, names the same first and
+ * then every picture that failed alone.
+ */
+export function named(runs, root) {
+  const all = runs.flatMap(({ browser, report }) => failedIn(report, browser, root));
+  const blocking = all.filter(({ blocks }) => blocks);
+  const alone = all.filter(({ blocks }) => !blocks);
+  const lines = [...blocking, ...alone].map(({ line }) => line);
+  const sections = [];
+  if (blocking.length > 0) {
+    const said = stories(blocking.length, "failed on more than its picture", "failed on more than their picture");
+    lines.unshift(
+      error(`No baselines drawn: ${said}`, blocking.map(({ named: name }) => name).join("\n")),
+    );
+    sections.push(
+      `## ${said}`,
+      "",
+      "No baselines are drawn until these pass; then the next run draws them.",
+      "",
+      ...blocking.map(({ named: name, why, listed }) => `- ${plain(listed ?? `${name}: ${why}`)}`),
+      "",
+    );
+  }
+  if (alone.length > 0)
+    sections.push(
+      `## ${stories(alone.length, "failed on its picture alone", "failed on their picture alone")}`,
+      "",
+      ...alone.map(({ named: name }) => `- ${plain(name)}`),
+      "",
+    );
+  return { annotations: lines, summary: sections.join("\n") };
 }
 
 /** An error as the report keeps it: its message and its stack, apart, and the frames Vitest
@@ -294,23 +393,22 @@ if (
   );
   for (const file of files) console.log(file);
 } else if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  // `<browser> <report>`, once for each browser that ran.
+  // `<browser> <report>`, once for each report a browser's run wrote (one a shard).
   const given = process.argv.slice(2);
   // The repository, which an annotation's file is relative to.
   const root = process.env.GITHUB_WORKSPACE || process.cwd();
+  const runs = [];
   for (let at = 0; at + 1 < given.length; at += 2) {
     let report;
     try {
       report = JSON.parse(readFileSync(given[at + 1], "utf8"));
     } catch {
-      console.log(
-        error(
-          `stories in ${given[at]}`,
-          "the run wrote no report; the job's log says why",
-        ),
-      );
-      continue;
+      report = undefined;
     }
-    for (const line of annotations(report, given[at], root)) console.log(line);
+    runs.push({ browser: given[at], report });
   }
+  const { annotations: lines, summary } = named(runs, root);
+  for (const line of lines) console.log(line);
+  if (summary && process.env.GITHUB_STEP_SUMMARY)
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
 }
