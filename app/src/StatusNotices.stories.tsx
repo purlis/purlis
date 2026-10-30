@@ -17,6 +17,7 @@ import { AT_STATUS, type ChipNotice, type ChipNotices } from "./ChipNotices";
 import { StatusLine } from "./StatusLine";
 import { untilFocused } from "./stories.testkit";
 import { useFocusMode } from "./keys/focusMode";
+import { Button } from "./ui/button/Button";
 
 const REFUSED = "purlis pins at most 12 workspaces in one project. Unpin one first.";
 
@@ -68,10 +69,10 @@ function TheWindow({
         }}
       >
         <div className="region-centre" style={{ padding: "var(--space-4)" }}>
-          <button type="button">The work</button>{" "}
-          <button type="button" data-testid="focus-mode" onClick={focus.toggle}>
+          <Button>The work</Button>{" "}
+          <Button data-testid="focus-mode" onPress={focus.toggle}>
             Focus mode
-          </button>
+          </Button>
         </div>
         {/* Somewhere to press that no card is over, whatever a theme's metrics: the page's
             top end corner. */}
