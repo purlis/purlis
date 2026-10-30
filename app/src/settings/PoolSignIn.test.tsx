@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { PoolProfileRow, PoolSignInStep } from "../bindings";
@@ -50,13 +50,15 @@ const a_profile = (name: string, kind = "claude"): PoolProfileRow => ({
   name,
   kind,
   harness: kind === "claude" ? "Claude Code" : "Codex",
-  standing: "signed-out",
+  standing: signedIn ? "signed-in" : "signed-out",
   not_kept: null,
   plans: [],
 });
 
 let asked: { cmd: string; args: Record<string, unknown> }[];
 let profilesAsked: number;
+/** Whether the core says the profiles are signed in. */
+let signedIn = false;
 /** The steps the core has said and the window has not yet asked for. */
 let said: PoolSignInStep[];
 let waiting: ((step: PoolSignInStep) => void) | undefined;
@@ -298,6 +300,38 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     await userEvent.click(within(opened).getByRole("button", { name: "Close" }));
 
     expect(await screen.findByText("Sign-in failed")).toBeVisible();
+  });
+
+  it("asks before Sign out, then runs it on the runner and asks where it stands (#4043)", async () => {
+    signedIn = true;
+    await act(() => askProfiles("builds"));
+    try {
+      render(<PoolProfiles pool="builds" plane={undefined} />);
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Sign work out on pool builds" }),
+      );
+
+      expect(screen.getByText(/^Sign work out on pool builds\?/)).toBeVisible();
+      await userEvent.click(
+        screen.getByRole("button", { name: "Stay signed in as work on pool builds" }),
+      );
+      expect(calls("pool_sign_out")).toEqual([]);
+
+      await userEvent.click(screen.getByRole("button", { name: "Sign work out on pool builds" }));
+      const before = profilesAsked;
+      await userEvent.click(
+        screen.getByRole("button", { name: "Yes, sign work out on pool builds" }),
+      );
+
+      expect(calls("pool_sign_out")).toEqual([{ pool: "builds", name: "work" }]);
+      expect(await screen.findByText("work is signed out on pool builds.")).toBeVisible();
+      await waitFor(() => expect(profilesAsked).toBe(before + 1));
+      // Codex's own sign-out runs too; opencode's is its terminal's alone.
+      expect(screen.getByRole("button", { name: "Sign fast out on pool builds" })).toBeVisible();
+    } finally {
+      signedIn = false;
+      await act(() => askProfiles("builds"));
+    }
   });
 
   it("keeps another harness's sign-in in a shell tab", async () => {

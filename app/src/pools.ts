@@ -280,6 +280,18 @@ export async function removeProfileFromPool(
   return said.status === "error" ? said.error : (said.data ?? undefined);
 }
 
+/** **Signs profile `profile` out on pool `name`'s runner** (#4043): its harness's own sign-out,
+ *  run there, then the pool's profiles are asked again. Why it did not, in the core's words. */
+export async function signProfileOutOfPool(
+  name: string,
+  profile: string,
+  plane?: string,
+): Promise<string | undefined> {
+  const said = await caught(commands.poolSignOut(name, profile));
+  await askProfiles(name, plane);
+  return said.status === "error" ? said.error : undefined;
+}
+
 /** Closes what adding a pool ended with: its profiles to sign in there. */
 export function doneWithTheAddedPool() {
   set((was) => ({ ...was, added: undefined }));
