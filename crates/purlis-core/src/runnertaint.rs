@@ -36,6 +36,15 @@ pub fn refused_on(pool: &str) -> String {
     )
 }
 
+/// **What a chat on a marked pool's runner is told once a chat ran there without the sandbox**
+/// (#4071): the mark stands, and such a runner is sent no value or token either.
+pub fn sent_nothing_on(pool: &str) -> String {
+    format!(
+        "purlis sends pool {pool}'s runner no vault value and no token: a chat ran there without \
+         the sandbox, or may have. Remove the pool and add it again to make a new runner."
+    )
+}
+
 /// Whether a program of `kind` that its host says runs `sandboxed` makes its runner one a chat
 /// ran on without the sandbox: any program but a person's shell or a browser, unless it runs in
 /// a sandbox that holds its files (`landlock`, `bubblewrap`, `seatbelt`). A host that does not

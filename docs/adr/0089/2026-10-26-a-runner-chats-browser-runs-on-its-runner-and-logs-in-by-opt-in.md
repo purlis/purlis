@@ -34,7 +34,11 @@ keeps one label and never receives a vault value; an owned device receives one o
    behind its per-persona, per-pool opt-in, bound as item 4 says but for that runner: its pool's
    name, context, cluster uid, operator key, claim uid, pod, device and link key, with the Ask's
    engine naming the cluster and context, and no image digest. Any change asks again. A mark
-   taken back forgets the pool's opt-ins. A claim being deleted vouches for nothing.
+   taken back forgets the pool's opt-ins. A claim being deleted vouches for nothing. A link
+   reports the runner it reached with the key it was pinned with, and one that is not the runner
+   kept now is refused, so a value goes only to the runner the gate judged. A runner a chat ran
+   on without the sandbox is sent nothing, however it is marked. The pool is read again once the
+   vault has been read, before anything is sent.
 4. **The opt-in is the person's answer to an Ask** naming the login, the pool and its engine, for
    one persona's login on one pool, bound to the login as declared and allowed, to a digest of the
    pool's definition (as `runners.json` keeps it), its image digest, the receiving runner (device

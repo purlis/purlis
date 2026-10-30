@@ -3174,6 +3174,14 @@ fn pool_login_of(
     }
     let (login, identity) =
         purlis_core::secrets::brokered::login_and_identity_for(&asker, name, true)?;
+    // Again once it is read: a vault may wait on a sign-in for as long as it takes (#4071).
+    if purlis_core::poollogins::Bound::over_the_link(&config, pool, reached.as_deref()).as_ref()
+        != Ok(&bound)
+    {
+        return Err(format!(
+            "pool {pool} or its runner changed as login {name} was read, so nothing was filled"
+        ));
+    }
     Ok(LoginRead {
         login,
         opens: false,

@@ -1453,6 +1453,19 @@ pub struct ClusterKept {
     pub paired: u64,
 }
 
+impl ClusterKept {
+    /// **The name a link to this runner reports** (`relay_to`'s answer, #4071): `<pool>/<runner>`
+    /// with the link key it was pinned with, so a link made to a runner since forgotten never
+    /// reads as the one kept under its name now.
+    pub fn reached(&self) -> String {
+        format!(
+            "{name}/{name}@{key}",
+            name = self.name,
+            key = crate::runnerlink::hex_of(self.pinned.key.as_bytes())
+        )
+    }
+}
+
 /// **What a pool's name reaches** (#3292): a Docker pool's runner, or a cluster pool with its
 /// runner.
 #[derive(Debug, Clone, PartialEq, Eq)]

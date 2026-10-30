@@ -412,14 +412,21 @@ pub fn answered(
         return Err(format!("the command of {} went", checked.tool.name));
     }
     // The pool and its runner as the person was shown them, still.
-    let now = gate
-        .pools_in
-        .as_deref()
-        .map(|config| (gate.owned)(config, gate.pool));
-    if !matches!(&now, Some(Ok(bound)) if *bound == checked.bound) {
-        return Err(changed_said(&checked.tool.name, gate.pool));
-    }
+    let as_shown = || {
+        let now = gate
+            .pools_in
+            .as_deref()
+            .map(|config| (gate.owned)(config, gate.pool));
+        if matches!(&now, Some(Ok(bound)) if *bound == checked.bound) {
+            Ok(())
+        } else {
+            Err(changed_said(&checked.tool.name, gate.pool))
+        }
+    };
+    as_shown()?;
     let values = (waiting.read)(&checked.tool)?;
+    // And once they are read: a vault may wait on a sign-in for as long as it takes (#4071).
+    as_shown()?;
     Ok(Approved {
         handed: Handed::of(ask.chat, &checked.tool.name, &checked.run, values),
         checked,

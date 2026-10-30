@@ -126,11 +126,19 @@ impl Bound {
             runner_key: crate::runnerlink::hex_of(kept.pinned.key.as_bytes()),
             runner_image: String::new(),
             engine: format!(
-                "cluster {} through context {}",
-                pool.pin().map(|pin| pin.cluster).unwrap_or_default(),
-                pool.context()
+                "cluster {}, context \"{}\"",
+                pool.pin()
+                    .map(|pin| pin.cluster.chars().take(8).collect::<String>())
+                    .unwrap_or_default(),
+                shortened(pool.context())
             ),
         }
+    }
+
+    /// Whether this is a cluster runner: it has no image digest bound, and purlis cannot show
+    /// what it keeps.
+    pub fn on_a_cluster(&self) -> bool {
+        self.image.is_empty()
     }
 
     /// **The cluster pool `pool`, where one is called so, and may be sent a value now** (#4071,
@@ -154,15 +162,18 @@ impl Bound {
         let Some((held, kept)) = read().map_err(|why| why.to_string())? else {
             return Ok(None);
         };
-        if let Some(reached) = reached
-            && reached != format!("{pool}/{}", kept.name)
-        {
+        // The runner the values would go to is the link's: it must be the one judged here.
+        if reached != Some(kept.reached().as_str()) {
             return Err(format!(
-                "this chat's link reached {reached}, which is no runner of pool {pool}"
+                "this chat's link does not reach the runner pool {pool} keeps now, so purlis sent \
+                 it no vault value and no token: restart purlis, and start the chat again"
             ));
         }
         if !held.owned() {
             return Err(not_marked_said(pool));
+        }
+        if crate::runnertaint::pool_ran_unsandboxed(config_root, pool) {
+            return Err(crate::runnertaint::sent_nothing_on(pool));
         }
         if let Err(why) = vouch(config_root, pool) {
             tracing::info!("purlis: pool {pool}'s runner was not vouched for now: {why}");
@@ -255,6 +266,15 @@ impl Bound {
     }
 }
 
+/// `context` as an Ask names it: its words, at most 40 characters of them. Bound whole.
+fn shortened(context: &str) -> String {
+    let mut said: String = context.chars().take(40).collect();
+    if context.chars().count() > 40 {
+        said.push('…');
+    }
+    said
+}
+
 /// **Which way a pool is not ready for a new chat of it, or a move to or from it** (#3646):
 /// [`Bound::read`]'s refusal, each said in its own words by whoever asked.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -296,9 +316,8 @@ pub fn not_marked_said(pool: &str) -> String {
 /// What a marked cluster pool whose claim is not vouched for now is refused with (#4071).
 fn not_vouched_said(pool: &str) -> String {
     format!(
-        "purlis could not confirm with pool {pool}'s cluster that its operator still vouches for \
-         this runner, so it sent no vault value and no token. Check that the cluster answers, \
-         and that the pool's claim is still there"
+        "purlis could not confirm pool {pool}'s runner as yours just now, so it sent no vault \
+         value and no token. Try again; if it stays so, look at the pool in Settings, under Pools"
     )
 }
 

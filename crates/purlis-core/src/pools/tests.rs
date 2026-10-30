@@ -931,8 +931,18 @@ mod cluster {
         Ok(())
     }
 
+    /// What a link to the runner kept for `team` under `config` reports.
+    fn reached(config: &Path) -> String {
+        runners::cluster_runner_for(config, "team")
+            .unwrap()
+            .expect("a cluster pool")
+            .1
+            .reached()
+    }
+
     fn gate(config: &Path) -> Result<Option<Bound>, String> {
-        Bound::of_a_cluster_pool(config, "team", None, &vouches)
+        let reached = reached(config);
+        Bound::of_a_cluster_pool(config, "team", Some(reached.as_str()), &vouches)
     }
 
     #[test]
@@ -941,7 +951,8 @@ mod cluster {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
         added(config.path(), &cluster);
         let asked = std::cell::Cell::new(false);
-        let refused = Bound::of_a_cluster_pool(config.path(), "team", None, &|_, _| {
+        let link = reached(config.path());
+        let refused = Bound::of_a_cluster_pool(config.path(), "team", Some(&link), &|_, _| {
             asked.set(true);
             Ok(())
         })
@@ -964,11 +975,13 @@ mod cluster {
         assert_eq!(bound.runner, kept.pinned.device);
         assert_eq!(bound.definition, pool.bound_digest(&kept));
         assert!(bound.image.is_empty() && bound.runner_image.is_empty());
-        assert!(
-            bound.engine.contains(crate::clusterpool::tests::CLUSTER)
-                && bound.engine.contains("context team"),
-            "{}",
-            bound.engine
+        assert!(bound.on_a_cluster());
+        assert_eq!(
+            bound.engine,
+            format!(
+                "cluster {}, context \"team\"",
+                &crate::clusterpool::tests::CLUSTER[..8]
+            )
         );
     }
 
@@ -1024,7 +1037,8 @@ mod cluster {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
         added(config.path(), &cluster);
         runners::set_cluster_owned(config.path(), "team", true).unwrap();
-        let refused = Bound::of_a_cluster_pool(config.path(), "team", None, &|_, _| {
+        let link = reached(config.path());
+        let refused = Bound::of_a_cluster_pool(config.path(), "team", Some(&link), &|_, _| {
             Err(NotVouched::Other("kubectl said secret-host:6443".into()))
         })
         .unwrap_err();
@@ -1037,15 +1051,17 @@ mod cluster {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
         added(config.path(), &cluster);
         runners::set_cluster_owned(config.path(), "team", true).unwrap();
-        let refused = Bound::of_a_cluster_pool(config.path(), "team", None, &|config, name| {
-            runners::set_cluster_owned(config, name, false).unwrap();
-            Ok(())
-        })
-        .unwrap_err();
+        let link = reached(config.path());
+        let refused =
+            Bound::of_a_cluster_pool(config.path(), "team", Some(&link), &|config, name| {
+                runners::set_cluster_owned(config, name, false).unwrap();
+                Ok(())
+            })
+            .unwrap_err();
         assert!(refused.contains("not marked"), "{refused}");
 
         runners::set_cluster_owned(config.path(), "team", true).unwrap();
-        Bound::of_a_cluster_pool(config.path(), "team", None, &|config, name| {
+        Bound::of_a_cluster_pool(config.path(), "team", Some(&link), &|config, name| {
             remove_cluster(config, None, name, None, None).unwrap();
             Ok(())
         })
@@ -1053,16 +1069,28 @@ mod cluster {
     }
 
     #[test]
-    fn a_link_that_reached_no_runner_of_the_pool_is_refused() {
+    fn a_link_to_any_runner_but_the_one_kept_now_is_refused() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
         added(config.path(), &cluster);
         runners::set_cluster_owned(config.path(), "team", true).unwrap();
-        assert!(
-            Bound::of_a_cluster_pool(config.path(), "team", Some("team/team"), &vouches).is_ok()
-        );
-        for reached in ["team/other", "other/team", "team"] {
-            Bound::of_a_cluster_pool(config.path(), "team", Some(reached), &vouches).unwrap_err();
+        let link = reached(config.path());
+        assert!(Bound::of_a_cluster_pool(config.path(), "team", Some(&link), &vouches).is_ok());
+        // Under the pool's name and the runner's, a link pinned to another key is another runner.
+        let earlier = format!("team/team@{}", "ab".repeat(32));
+        for other in ["team/team", "team/other", "other/team", "team", &earlier] {
+            Bound::of_a_cluster_pool(config.path(), "team", Some(other), &vouches).unwrap_err();
         }
+        Bound::of_a_cluster_pool(config.path(), "team", None, &vouches).unwrap_err();
+    }
+
+    #[test]
+    fn a_marked_runner_a_chat_ran_on_without_the_sandbox_is_sent_nothing() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        crate::runnertaint::mark_pool(config.path(), "team").unwrap();
+        let refused = gate(config.path()).unwrap_err();
+        assert!(refused.contains("without the sandbox"), "{refused}");
     }
 
     #[test]
