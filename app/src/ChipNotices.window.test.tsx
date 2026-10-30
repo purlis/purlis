@@ -1075,3 +1075,42 @@ describe("the keyboard on a card whose lines go one by one (#3930's review, WCAG
     );
   });
 });
+
+/** alpha's repo `web`, on a remote the forge says moved (#1985, #2117). */
+const WEB_MOVED: StaleClone = {
+  workspace: "alpha",
+  repo: "web",
+  branch: null,
+  remote: {
+    origin: "github.com/acme/web",
+    now: "https://github.com/purlis/web.git",
+    pushes_follow: true,
+    pushes_kept: [],
+  },
+};
+
+describe("a workspace's repo on a moved remote, on its chip (#3930's review)", () => {
+  it("sets the address the card shows, from the card", async () => {
+    const { asked } = core({ stale: [WEB_MOVED] });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await userEvent.click(await alphaDot());
+    const card = await findCard("alpha");
+    expect(card).toHaveTextContent(
+      "and the forge says it moved to https://github.com/purlis/web.git",
+    );
+    await userEvent.click(within(card).getByRole("button", { name: "Use the new address" }));
+    await waitFor(() =>
+      expect(
+        asked.some(
+          (one) =>
+            one.cmd === "fix_stale_clone" &&
+            one.args.repo === "web" &&
+            one.args.fix === "remote" &&
+            one.args.shown === "https://github.com/purlis/web.git",
+        ),
+      ).toBe(true),
+    );
+    await waitFor(() => expect(linesSaying(/web in alpha fetches from/)).toHaveLength(0));
+  });
+});
