@@ -1576,17 +1576,17 @@ fn a_refused_write_of_a_brokered_file_names_the_command_that_writes_it() {
         ),
         (
             "workspaces/alpha/memory/a-note.md",
-            "`purlis workspace remember",
+            "`purlis workspace remember -w <workspace>",
         ),
-        (
-            "workspaces/alpha/memory/MEMORY.md",
-            "`purlis workspace remember",
-        ),
+        ("workspaces/alpha/memory/MEMORY.md", "the memory_add tool"),
         (
             "personas/steward/memory/a-note.md",
-            "`purlis persona remember`",
+            "`purlis persona remember <persona>",
         ),
-        ("personas/_shared/memory/a-note.md", "`--shared`"),
+        (
+            "personas/_shared/memory/a-note.md",
+            "(shared for shared memory)",
+        ),
         ("workspaces/alpha/todos/a-todo.md", "`purlis workspace todo"),
         ("workspaces/alpha/workspace.md", "`purlis workspace vision"),
     ] {

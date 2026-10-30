@@ -84,9 +84,11 @@ export type SkillChatAsk =
   | { plane: string; kind: "try"; id: string; profile: string | null }
   /** "Ask the chat to redo it" (S9): typed into `chat`, the chat that drafted it, where it is
    *  open; else (`chat` null, or no tab holds it) a chat opened afresh. */
-  | { plane: string; kind: "redo"; id: string; name: string; chat: number | null };
+  | { plane: string; kind: "redo"; id: string; name: string; chat: number | null }
+  /** "Ask a chat to write them" (#3925): the trigger tests of the skill `name` at `level`. */
+  | { plane: string; kind: "triggers"; level: SkillLevel; name: string };
 
-/** Asks the window of the project `ask.plane` to open a draft or a Try it chat. */
+/** Asks the window of the project `ask.plane` to open a draft, a Try it or a trigger tests chat. */
 export function askSkillChat(ask: SkillChatAsk): void {
   window.dispatchEvent(new CustomEvent<SkillChatAsk>(SKILL_CHAT, { detail: ask }));
 }

@@ -74,10 +74,12 @@ pub enum WorktreeCommand {
         abort: bool,
     },
     /// Push the branch of the folder you stand in to its remote, under its own name, after
-    /// purlis's scan of what it would publish. In a chat the app runs it.
+    /// purlis's scan of what it would publish. Where purlis's own `update` rewrote the branch,
+    /// it goes over the remote's copy the update saw, also with commits added since (#3895).
+    /// In a chat the app runs it.
     Push {
-        /// Push over the remote's copy of the branch, only right after `update` rewrote it, and
-        /// only if the remote still has what was last fetched.
+        /// Accepted and asks for nothing more: a plain push already goes over the remote's
+        /// copy where purlis's own update rewrote the branch, and only then.
         #[arg(long)]
         force_with_lease: bool,
     },
@@ -209,7 +211,6 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                 }
                 purlis_core::pieceupdate::push(
                     &piece_of(&root, at),
-                    force_with_lease,
                     &purlis_core::pieceupdate::Reach::default(),
                     say,
                 )

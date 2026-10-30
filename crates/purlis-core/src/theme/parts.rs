@@ -2245,6 +2245,7 @@ const MARK_WORDS: &[(&str, &str)] = &[
     ("titlebar", "pin"),
     ("titlebar", "dot"),
     ("titlebar", "dot-warning"),
+    ("titlebar", "dot-needs"),
 ];
 
 /// Whether `part` of `family` draws a mark rather than words: an icon, the chevron of a select
