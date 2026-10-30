@@ -16,7 +16,7 @@ import { askProfileSignIn } from "./links";
 import { PoolSignIn } from "./PoolSignIn";
 
 /** The harnesses whose sign-in purlis drives in place, with no terminal (#4042). */
-const DRIVEN = new Set(["claude"]);
+export const DRIVEN = new Set(["claude"]);
 
 /** What a profile's row on a pool says of it (#2049). */
 export function standingOnPool(pool: string, row: PoolProfileRow): string {

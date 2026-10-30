@@ -17,7 +17,7 @@ import {
   type PoolKind,
   type ReleaseImage,
 } from "./pools";
-import { PoolProfiles } from "./settings/PoolProfiles";
+import { ChooseProfiles } from "./settings/PoolChooseProfiles";
 import { Dialog } from "./ui/dialog/Dialog";
 
 /**
@@ -32,9 +32,10 @@ import { Dialog } from "./ui/dialog/Dialog";
  * to those limits, and pairs it with this machine, which takes a moment; a refusal stays in the
  * dialog, in the core's words, with what was typed.
  *
- * **Adding a pool ends with signing this machine's profiles in there** (#2049): once the pool
- * is added, the dialog lists each profile as its runner keeps it, with Sign in for each not
- * signed in there, from a shell tab in the project `plane`'s window. Done closes it.
+ * **Adding a pool ends with choosing the profiles that sign in there** (#2049, #4048): once the
+ * pool is added, a strip lists this machine's profiles with the project's default ticked; Sign in
+ * N profiles records them on the pool and signs each in, one after another, and Not now leaves
+ * each line offering Sign in ({@link ChooseProfiles}). Done closes it.
  *
  * **A cluster pool is added from the same dialog** (#3292): its Kind, first, is Docker or
  * Cluster ({@link KindRow}). A cluster pool takes a name, a kubeconfig (kubectl's own default
@@ -86,7 +87,7 @@ export function AddDockerPoolHost({ plane }: { plane?: string }) {
   );
 }
 
-/** What adding pool `pool` ends with: this machine's profiles, to sign in there (#2049). */
+/** What adding pool `pool` ends with: the profiles that sign in there, chosen (#2049, #4048). */
 function SignInOnTheAddedPool({ pool, plane }: { pool: string; plane: string | undefined }) {
   return (
     <Dialog
@@ -95,7 +96,7 @@ function SignInOnTheAddedPool({ pool, plane }: { pool: string; plane: string | u
       subtitle="each once, through its harness's own sign-in on the runner; the runner keeps it, and nothing of this machine's sign-in goes there"
       main={{ children: "Done", onPress: doneWithTheAddedPool }}
     >
-      <PoolProfiles pool={pool} plane={plane} />
+      <ChooseProfiles pool={pool} plane={plane} />
     </Dialog>
   );
 }
