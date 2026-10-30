@@ -79,8 +79,9 @@ fn a_page_in_a_terminals_link_is_the_same_page() {
     );
 }
 
-/// **A page on any host but the harness vendor's own is never opened**: purlis cannot follow
-/// the sign-in, and says what it printed.
+/// **Only the harness's own sign-in pages are opened**, by their host and path exactly: any
+/// other page, on any host, its vendor's own among them, and purlis cannot follow the sign-in,
+/// and says what it printed.
 #[test]
 fn a_page_on_another_host_is_never_opened() {
     // A user before the host: written apart, so it reads as no address anywhere.
@@ -93,6 +94,9 @@ fn a_page_on_another_host_is_never_opened() {
         with_a_user.as_str(),
         "https://claude.ai:8443/oauth/authorize",
         "https://CLAUDE.AI/oauth/authorize",
+        "https://claude.ai/public/artifacts/a-page-anyone-made",
+        "https://www.anthropic.com/oauth/authorize",
+        "https://claude.ai/oauth/authorize/../../public",
     ] {
         let mut driven = claude();
         let said = driven.read(&format!("If the browser didn't open, visit: {page}\n"));
@@ -200,9 +204,63 @@ fn a_sign_in_that_ends_early_says_the_last_thing_said() {
     assert_eq!(
         driven.ended(Some(1)),
         [Event::Failed {
-            why: "purlis: the harness could not be fetched. Nothing was signed in.".to_owned()
+            why:
+                "the runner said: purlis: the harness could not be fetched. Nothing was signed in."
+                    .to_owned()
         }]
     );
+}
+
+/// What the login prints on its error output is read in lines of its own: a warning printed in
+/// the middle of the page's line does not cut the page.
+#[test]
+fn the_two_outputs_are_read_in_lines_of_their_own() {
+    let mut driven = claude();
+    let (start, rest) = recorded().split_at(60);
+    let mut said = driven.read_from(Stream::Out, start);
+    said.extend(driven.read_from(Stream::Err, "warning: slow network\n"));
+    said.extend(driven.read_from(Stream::Out, rest));
+
+    assert_eq!(
+        said,
+        [
+            Event::Open {
+                url: PAGE.to_owned()
+            },
+            Event::AskCode
+        ]
+    );
+}
+
+/// **What the runner says reads as it is**: no direction marks or invisible characters reach
+/// the window, and what it says is said as the runner's.
+#[test]
+fn what_the_runner_says_carries_no_unseen_characters() {
+    let mut driven = claude();
+    driven.read("Login failed: \u{202e}evil\u{200b} text\u{1b}P1;2|payload\u{1b}\\\n");
+
+    assert_eq!(
+        driven.ended(Some(1)),
+        [Event::Failed {
+            why: "evil text".to_owned()
+        }]
+    );
+}
+
+/// **A login that prints without end is held to a bound**: a line is read once it is long
+/// enough, and what is said back is cut.
+#[test]
+fn a_login_that_prints_without_end_is_held_to_a_bound() {
+    let start = Instant::now();
+    let mut driven = Driven::of("claude", start).unwrap();
+    for _ in 0..1000 {
+        assert!(driven.read(&"x".repeat(4096)).is_empty());
+    }
+
+    let Some(Event::CouldNotFollow { said }) = driven.waited(start + PAGE_WITHIN) else {
+        panic!("it could be followed");
+    };
+    assert!(said.chars().count() <= 4096, "{}", said.len());
 }
 
 /// **What purlis does not recognise within its wait is never guessed at**: it cannot follow

@@ -96,8 +96,12 @@ export function PoolSignIn({
           if (!left) setStep({ at: "not-started", why: started.error });
           return;
         }
+        // A strip closed while it started: the sign-in it started is ended at once.
+        if (left) {
+          void commands.poolSignInCancel(started.data).catch(() => undefined);
+          return;
+        }
         flow.current = started.data;
-        if (left) return;
         return follow(started.data);
       });
     return () => {

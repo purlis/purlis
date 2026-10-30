@@ -10,7 +10,7 @@
 //! **"Signed in" is the harness's own status check's** ([`Driven::checked`]), never a guess
 //! from what it printed: a login that ends well is checked first.
 //!
-//! **Nothing is guessed.** A page is opened only on the harness vendor's own https hosts; what
+//! **Nothing is guessed.** A page is opened only where it is one of the harness's own sign-in pages; what
 //! purlis does not recognise within [`PAGE_WITHIN`] is [`Event::CouldNotFollow`], with what the
 //! login printed, and the person signs in in a terminal instead.
 //!
@@ -41,6 +41,15 @@ const MOST_CODE: usize = 2048;
 
 /// How many of the last lines a login printed are kept, to show when purlis cannot follow it.
 const KEPT_LINES: usize = 24;
+
+/// The most of one line kept, in characters: a longer one is cut there.
+const MOST_LINE: usize = 1024;
+
+/// The most a login prints with no line break before it is read as a line.
+const MOST_PARTIAL: usize = 16 * 1024;
+
+/// The most of what a login printed that is said back, in characters: its last.
+const MOST_SAID: usize = 4096;
 
 /// One step of a driven sign-in, as its driver says it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,21 +93,32 @@ struct Words {
     refuses: &'static [&'static str],
     /// The start of the line it fails with, before its reason.
     fails: &'static str,
-    /// The hosts its pages are on, and their subdomains.
-    hosts: &'static [&'static str],
+    /// Its sign-in pages: each a host and a path, exactly.
+    pages: &'static [(&'static str, &'static str)],
 }
 
 /// Claude Code 2.1.314's `auth login`, by its own code: `If the browser didn't open, visit:`
 /// or `Sign in at:` before the page, `Paste code here` for the code, its refusals of a pasted
-/// code, and `Login failed:`. Its pages are on claude.ai, claude.com and anthropic.com.
+/// code, and `Login failed:`. Its sign-in pages are its own code's three `authorize` pages.
 const CLAUDE: Words = Words {
     kind: "claude",
     page_after: &["visit: ", "Sign in at: "],
     asks_code: "Paste code here",
     refuses: &["Invalid code", "That code is not from this sign-in"],
     fails: "Login failed: ",
-    hosts: &["claude.ai", "claude.com", "anthropic.com"],
+    pages: &[
+        ("claude.ai", "/oauth/authorize"),
+        ("claude.com", "/cai/oauth/authorize"),
+        ("platform.claude.com", "/oauth/authorize"),
+    ],
 };
+
+/// Which of a login's outputs a piece was printed on: each is read in lines of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stream {
+    Out,
+    Err,
+}
 
 /// Where a driven login is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,8 +137,8 @@ pub struct Driven {
     words: &'static Words,
     at: At,
     started: Instant,
-    /// What was printed since the last line break.
-    partial: String,
+    /// What was printed on each output since its last line break.
+    partial: [String; 2],
     /// The last lines printed, without their escapes.
     lines: Vec<String>,
     /// The reason it said it failed with, where it did.
@@ -135,34 +155,54 @@ impl Driven {
                 words,
                 at: At::Starting,
                 started: now,
-                partial: String::new(),
+                partial: [String::new(), String::new()],
                 lines: Vec::new(),
                 failed: None,
             })
     }
 
-    /// **What the login printed next**, in any piece: the steps it says.
+    /// **What the login printed next on its output**, in any piece: the steps it says.
     pub fn read(&mut self, text: &str) -> Vec<Event> {
+        self.read_from(Stream::Out, text)
+    }
+
+    /// [`Self::read`], of what it printed on `stream`. Once it is over, nothing more is kept.
+    pub fn read_from(&mut self, stream: Stream, text: &str) -> Vec<Event> {
         let mut said = Vec::new();
-        self.partial.push_str(text);
-        while let Some(end) = self.partial.find('\n') {
-            let line: String = self.partial.drain(..=end).collect();
-            let line = plain(&line);
-            self.line(&line, &mut said);
-            if !line.is_empty() {
-                self.lines.push(line);
-                if self.lines.len() > KEPT_LINES {
-                    self.lines.remove(0);
-                }
+        let at = stream as usize;
+        for (n, piece) in text.split('\n').enumerate() {
+            if self.at == At::Over {
+                return said;
+            }
+            if n > 0 {
+                let line = std::mem::take(&mut self.partial[at]);
+                self.take(&line, &mut said);
+            }
+            self.partial[at].push_str(piece);
+            if self.partial[at].len() > MOST_PARTIAL {
+                let line = std::mem::take(&mut self.partial[at]);
+                self.take(&line, &mut said);
             }
         }
         // A prompt ends with no line break.
-        if self.at == At::Opened && plain(&self.partial).contains(self.words.asks_code) {
-            self.partial.clear();
+        if self.at == At::Opened && plain(&self.partial[at]).contains(self.words.asks_code) {
+            self.partial[at].clear();
             self.at = At::Asking;
             said.push(Event::AskCode);
         }
         said
+    }
+
+    /// One whole line the login printed: read for its step, and kept, cut to [`MOST_LINE`].
+    fn take(&mut self, line: &str, said: &mut Vec<Event>) {
+        let line = plain(line);
+        self.line(&line, said);
+        if !line.is_empty() {
+            self.lines.push(cut(&line, MOST_LINE));
+            if self.lines.len() > KEPT_LINES {
+                self.lines.remove(0);
+            }
+        }
     }
 
     fn line(&mut self, line: &str, said: &mut Vec<Event>) {
@@ -170,7 +210,7 @@ impl Driven {
             return;
         }
         if let Some(why) = line.strip_prefix(self.words.fails) {
-            self.failed = Some(why.trim().to_owned());
+            self.failed = Some(cut(why.trim(), MOST_LINE));
             return;
         }
         match self.at {
@@ -184,7 +224,7 @@ impl Driven {
                         None => {
                             self.at = At::Over;
                             said.push(Event::CouldNotFollow {
-                                said: self.said_with(line),
+                                said: self.said_with(&cut(line, MOST_LINE)),
                             });
                         }
                     }
@@ -197,7 +237,7 @@ impl Driven {
             At::Pasted if self.words.refuses.iter().any(|r| line.starts_with(r)) => {
                 self.at = At::Asking;
                 said.push(Event::Refused {
-                    said: line.to_owned(),
+                    said: cut(line, MOST_LINE),
                 });
             }
             _ => {}
@@ -212,26 +252,23 @@ impl Driven {
         })
     }
 
-    /// `address`, where it is an https page on one of the harness vendor's hosts, spelled
-    /// plainly: a lowercase host with no user or port before it, and only the characters an
+    /// `address`, where it is one of the harness's own sign-in pages ([`Words::pages`]), spelled
+    /// plainly: https, its host and path exactly, no user or port, and only the characters an
     /// address is written in, so no browser reads it as another.
     fn page(&self, address: &str) -> Option<String> {
         let rest = address.strip_prefix("https://")?;
         let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-        let host = &rest[..end];
-        let plain_host = !host.is_empty()
-            && host
-                .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-');
+        let (host, after) = rest.split_at(end);
+        let path = &after[..after.find(['?', '#']).unwrap_or(after.len())];
         let theirs = self
             .words
-            .hosts
+            .pages
             .iter()
-            .any(|own| host == *own || host.ends_with(&format!(".{own}")));
+            .any(|(own, at)| host == *own && path == *at);
         let written = address
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"-._~:/?#[]@!$&()*+,;=%".contains(&b));
-        (plain_host && theirs && written).then(|| address.to_owned())
+        (theirs && written).then(|| address.to_owned())
     }
 
     /// **The line the person's code is passed on as**: the code, trimmed, and a line break.
@@ -258,8 +295,8 @@ impl Driven {
         if self.at == At::Over {
             return Vec::new();
         }
-        let rest = std::mem::take(&mut self.partial);
-        let mut said = self.read(&format!("{rest}\n"));
+        let mut said = self.read_from(Stream::Err, "\n");
+        said.extend(self.read_from(Stream::Out, "\n"));
         if said.iter().any(Event::is_last) {
             return said;
         }
@@ -271,7 +308,11 @@ impl Driven {
         let why = self
             .failed
             .clone()
-            .or_else(|| self.lines.last().cloned())
+            .or_else(|| {
+                self.lines
+                    .last()
+                    .map(|line| format!("the runner said: {line}"))
+            })
             .unwrap_or_else(|| match exit {
                 Some(code) => format!("the sign-in ended with exit status {code}"),
                 None => "the sign-in was ended".to_owned(),
@@ -302,9 +343,15 @@ impl Driven {
             return None;
         }
         self.at = At::Over;
+        let printed = format!("{}{}", self.partial[0], self.partial[1]);
         Some(Event::CouldNotFollow {
-            said: self.said_with(&plain(&self.partial)),
+            said: self.said_with(&cut(&plain(&printed), MOST_LINE)),
         })
+    }
+
+    /// Whether nothing more is read of it.
+    pub fn is_over(&self) -> bool {
+        self.at == At::Over
     }
 
     /// The last lines the login printed, with `more` after them.
@@ -313,20 +360,37 @@ impl Driven {
         if !more.is_empty() && all.last().map(String::as_str) != Some(more) {
             all.push(more.to_owned());
         }
-        all.join("\n")
+        let all = all.join("\n");
+        let skip = all.chars().count().saturating_sub(MOST_SAID);
+        all.chars().skip(skip).collect()
     }
 }
 
+/// `line`, cut to its first `most` characters.
+fn cut(line: &str, most: usize) -> String {
+    match line.char_indices().nth(most) {
+        Some((at, _)) => format!("{}…", &line[..at]),
+        None => line.to_owned(),
+    }
+}
+
+/// Whether `c` changes how the words around it read without showing itself: a direction mark,
+/// an embedding or isolate, or a zero-width character.
+fn unseen(c: char) -> bool {
+    matches!(c, '\u{061c}' | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{2069}' | '\u{feff}')
+}
+
 /// `text` without its terminal escapes (a link's address is kept in its text, as a terminal
-/// that shows no links prints it), its control characters, or the spaces around it.
+/// that shows no links prints it), its control characters, the characters no one sees
+/// ([`unseen`]), or the spaces around it.
 fn plain(text: &str) -> String {
     let mut out = String::new();
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
         match c {
             '\u{1b}' => match chars.next() {
-                // OSC: up to BEL or ESC \.
-                Some(']') => {
+                // OSC, DCS, SOS, PM and APC: up to BEL or ESC \.
+                Some(']' | 'P' | 'X' | '^' | '_') => {
                     while let Some(c) = chars.next() {
                         if c == '\u{7}' || (c == '\u{1b}' && chars.next_if_eq(&'\\').is_some()) {
                             break;
@@ -343,7 +407,7 @@ fn plain(text: &str) -> String {
                 }
                 _ => {}
             },
-            c if c.is_control() => {}
+            c if c.is_control() || unseen(c) => {}
             c => out.push(c),
         }
     }
@@ -385,18 +449,23 @@ pub fn drive(
     let (tell, events) = std::sync::mpsc::channel();
     let driven = Arc::new(Mutex::new(driven));
     let readers: Vec<_> = [
-        child
-            .stdout
-            .take()
-            .map(|out| Box::new(out) as Box<dyn Read + Send>),
-        child
-            .stderr
-            .take()
-            .map(|err| Box::new(err) as Box<dyn Read + Send>),
+        (
+            Stream::Out,
+            child
+                .stdout
+                .take()
+                .map(|out| Box::new(out) as Box<dyn Read + Send>),
+        ),
+        (
+            Stream::Err,
+            child
+                .stderr
+                .take()
+                .map(|err| Box::new(err) as Box<dyn Read + Send>),
+        ),
     ]
     .into_iter()
-    .flatten()
-    .map(|from| reading(from, Arc::clone(&driven), tell.clone()))
+    .filter_map(|(stream, from)| Some(reading(stream, from?, Arc::clone(&driven), tell.clone())))
     .collect();
     let cancelled = Arc::new(AtomicBool::new(false));
     {
@@ -411,23 +480,34 @@ pub fn drive(
     })
 }
 
-/// Reads what the login prints on `from`, feeding it to `driven` and telling its steps.
+/// Reads what the login prints on `from`, its output `stream`, feeding it to `driven` and
+/// telling its steps. A character cut between two reads is read whole.
 fn reading(
+    stream: Stream,
     mut from: Box<dyn Read + Send>,
     driven: Arc<Mutex<Driven>>,
     tell: Sender<Event>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut buffer = [0u8; 4096];
+        let mut carried: Vec<u8> = Vec::new();
         while let Ok(read) = from.read(&mut buffer) {
             if read == 0 {
                 return;
             }
-            let text = String::from_utf8_lossy(&buffer[..read]);
+            carried.extend_from_slice(&buffer[..read]);
+            // What ends in the middle of a character waits for the rest of it.
+            let whole = match std::str::from_utf8(&carried) {
+                Ok(_) => carried.len(),
+                Err(e) if e.error_len().is_none() => e.valid_up_to(),
+                Err(_) => carried.len(),
+            };
+            let text = String::from_utf8_lossy(&carried[..whole]).into_owned();
+            carried.drain(..whole);
             let said = driven
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .read(&text);
+                .read_from(stream, &text);
             for event in said {
                 let _ = tell.send(event);
             }
@@ -457,13 +537,19 @@ fn watching(
             Ok(None) => {}
             Err(_) => break None,
         }
-        let late = driven
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .waited(Instant::now());
+        let (late, over) = {
+            let mut driven = driven.lock().unwrap_or_else(PoisonError::into_inner);
+            (driven.waited(Instant::now()), driven.is_over())
+        };
         if let Some(event) = late {
             end(&mut child);
             let _ = tell.send(event);
+            return;
+        }
+        // It was said to be over while it ran (a page purlis does not open): nothing more is
+        // asked of it.
+        if over {
+            end(&mut child);
             return;
         }
         if started.elapsed() > LONGEST {
@@ -532,13 +618,17 @@ impl Driving {
             .map_err(|e| format!("the code could not be passed to the sign-in: {e}"))
     }
 
-    /// **Ends the login**: [`Event::Cancelled`] follows.
+    /// **Ends the login**: [`Event::Cancelled`] follows. A code being passed on meanwhile
+    /// fails as the login ends.
     pub fn cancel(&self) {
-        self.input
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take();
         self.cancelled.store(true, Ordering::SeqCst);
+    }
+}
+
+/// A sign-in no one drives any more is ended.
+impl Drop for Driving {
+    fn drop(&mut self) {
+        self.cancel();
     }
 }
 

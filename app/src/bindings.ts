@@ -2967,7 +2967,7 @@ export const commands = {
 	poolSignInNext: (flow: number) => typedError<PoolSignInStep | null, string>(__TAURI_INVOKE("pool_sign_in_next", { flow })),
 	/**  **Passes the code the person pasted to sign-in `flow`**, as one line. */
 	poolSignInPaste: (flow: number, code: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_paste", { flow, code })),
-	/**  **Cancels sign-in `flow`**: its login on the runner is ended, and nothing changes there. */
+	/**  **Cancels sign-in `flow`**: its login is ended, and it is let go. */
 	poolSignInCancel: (flow: number) => __TAURI_INVOKE<void>("pool_sign_in_cancel", { flow }),
 	/**
 	 *  **Every device and what runs on it** (#2052): this machine and every runner it keeps, each

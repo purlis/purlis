@@ -354,20 +354,24 @@ pub async fn pool_sign_in_start(
         };
         let driving = Arc::new(driven::drive(&login, &record.harness, check)?);
         let flow = NEXT_SIGN_IN.fetch_add(1, Ordering::SeqCst);
-        let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
-        held.retain(|one| {
-            let same = one.pool == pool && one.name == name;
-            if same {
-                one.driving.cancel();
-            }
-            !same
-        });
-        held.push(SignIn {
-            flow,
-            pool,
-            name,
-            driving,
-        });
+        // One of the same profile on the same pool is let go and ended, after the lock.
+        let before: Vec<SignIn> = {
+            let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
+            let (same, others): (Vec<_>, Vec<_>) = std::mem::take(&mut *held)
+                .into_iter()
+                .partition(|one| one.pool == pool && one.name == name);
+            *held = others;
+            held.push(SignIn {
+                flow,
+                pool,
+                name,
+                driving,
+            });
+            same
+        };
+        for one in before {
+            one.driving.cancel();
+        }
         Ok(flow)
     })
     .await
@@ -398,16 +402,27 @@ pub async fn pool_sign_in_next(flow: u32) -> Result<Option<PoolSignInStep>, Stri
 /// **Passes the code the person pasted to sign-in `flow`**, as one line.
 #[tauri::command]
 #[specta::specta]
-pub fn pool_sign_in_paste(flow: u32, code: String) -> Result<(), String> {
-    driving(flow)?.paste(&code)
+pub async fn pool_sign_in_paste(flow: u32, code: String) -> Result<(), String> {
+    let driving = driving(flow)?;
+    tauri::async_runtime::spawn_blocking(move || driving.paste(&code))
+        .await
+        .map_err(|why| format!("the code was not passed on: {why}"))?
 }
 
-/// **Cancels sign-in `flow`**: its login on the runner is ended, and nothing changes there.
+/// **Cancels sign-in `flow`**: its login is ended, and it is let go.
 #[tauri::command]
 #[specta::specta]
 pub fn pool_sign_in_cancel(flow: u32) {
-    if let Ok(driving) = driving(flow) {
-        driving.cancel();
+    let gone: Vec<SignIn> = {
+        let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
+        let (gone, kept) = std::mem::take(&mut *held)
+            .into_iter()
+            .partition(|one| one.flow == flow);
+        *held = kept;
+        gone
+    };
+    for one in gone {
+        one.driving.cancel();
     }
 }
 
