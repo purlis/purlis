@@ -21,25 +21,38 @@ afterEach(cleanup);
 function OnACard({ layout }: { layout?: "card" }) {
   return (
     <div data-scope="notice" data-part="root" data-layout={layout} data-placement="alone">
-      <Button>Add a vision</Button>
+      <div data-scope="button-row">
+        <Button>Later</Button>
+      </div>
+      <div data-scope="notice" data-part="under">
+        <Button>Copy</Button>
+      </div>
     </div>
   );
 }
 
 describe("a secondary button on a notice card (#3478)", () => {
-  it("stands apart from the card's ground, at rest and under the pointer", () => {
+  it("is drawn a step toward the words on the card's row of ways, and a further step pointed at", () => {
     render(<OnACard layout="card" />);
-    const button = screen.getByRole("button", { name: "Add a vision" });
+    const button = screen.getByRole("button", { name: "Later" });
     expect(button).toHaveAttribute("data-variant", "secondary");
-    const rest = drawnWith(button, "background-color");
-    const hover = drawnWith(button, "background-color", { hover: true });
-    expect(rest).toBe("var(--control-hover)");
-    expect(hover).toBe("var(--control-aimed)");
+    expect(drawnWith(button, "background-color")).toBe(
+      "color-mix(in oklab, var(--control-base), var(--text-primary) 14%)",
+    );
+    expect(drawnWith(button, "background-color", { hover: true })).toBe(
+      "color-mix(in oklab, var(--control-base), var(--text-primary) 22%)",
+    );
   });
 
-  it("is the family's own elsewhere", () => {
+  it("is the family's own in what the card opens under its ways, and off a card", () => {
+    render(<OnACard layout="card" />);
+    expect(drawnWith(screen.getByRole("button", { name: "Copy" }), "background-color")).toBe(
+      "var(--control-base)",
+    );
+    cleanup();
     render(<OnACard />);
-    const button = screen.getByRole("button", { name: "Add a vision" });
-    expect(drawnWith(button, "background-color")).toBe("var(--control-base)");
+    expect(drawnWith(screen.getByRole("button", { name: "Later" }), "background-color")).toBe(
+      "var(--control-base)",
+    );
   });
 });
