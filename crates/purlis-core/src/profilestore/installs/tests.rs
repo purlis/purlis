@@ -461,20 +461,75 @@ fn a_look_whose_fetch_is_refused_installs_nothing() {
     let data = tempfile::tempdir().unwrap();
     let fetch = served_from_anywhere(claude_released(&sha(b"another build")));
     let record = kept_pinned(Some("2.1.300"));
+    let program = data.path().join("harnesses/claude/2.1.300/claude");
+    let refused = || {
+        LOOKS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .any(|(p, looked)| *p == program && matches!(looked, Looked::Refused(_)))
+    };
 
-    for _ in 0..50 {
+    let until = std::time::Instant::now() + Duration::from_secs(60);
+    while !refused() {
         assert_eq!(
             for_a_look_at(&record, data.path(), Some(Platform::X64), fetch),
             None
         );
+        assert!(
+            std::time::Instant::now() < until,
+            "the look's fetch was not refused within a minute"
+        );
         std::thread::sleep(Duration::from_millis(20));
     }
+    for _ in 0..10 {
+        assert_eq!(
+            for_a_look_at(&record, data.path(), Some(Platform::X64), fetch),
+            None
+        );
+    }
+
     assert!(!data.path().join("harnesses/claude/2.1.300").exists());
     assert_eq!(
         fetch.downloads.load(std::sync::atomic::Ordering::SeqCst),
         1,
         "downloaded once"
     );
+}
+
+/// **A look at a profile not kept for a desktop with a pin never finds a data home** (#4007):
+/// every look on a desktop is one, and none of them resolves, or fences, the data home.
+#[test]
+fn a_look_at_a_profile_not_kept_with_a_pin_finds_no_data_home() {
+    let fetch = served_from_anywhere(claude_released(&sha(CLAUDE)));
+    let asked = std::cell::Cell::new(0);
+    let data_home = || {
+        asked.set(asked.get() + 1);
+        None
+    };
+    let unkept = MachineProfile {
+        kept_for: None,
+        ..kept_pinned(Some("2.1.300"))
+    };
+
+    for record in [unkept, kept_pinned(None)] {
+        assert_eq!(
+            for_a_look_in(&record, &data_home, Some(Platform::X64), fetch),
+            None
+        );
+    }
+    assert_eq!(asked.get(), 0, "no data home was asked for");
+
+    assert_eq!(
+        for_a_look_in(
+            &kept_pinned(Some("2.1.300")),
+            &data_home,
+            Some(Platform::X64),
+            fetch
+        ),
+        None
+    );
+    assert_eq!(asked.get(), 1, "a kept, pinned profile's look asks for it");
 }
 
 /// A look at a profile no runner installs a version of fetches nothing.

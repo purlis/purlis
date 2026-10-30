@@ -578,12 +578,22 @@ pub fn for_a_look_at(
 
 /// [`for_a_look_at`] on this machine: its data home, its platform, over HTTPS.
 pub fn for_a_look(record: &MachineProfile) -> Option<PathBuf> {
-    for_a_look_at(
-        record,
-        &crate::datahome::root()?,
-        Platform::here(),
-        &OverHttps,
-    )
+    for_a_look_in(record, &crate::datahome::root, Platform::here(), &OverHttps)
+}
+
+/// [`for_a_look_at`], with the data home `data_home` finds: asked for only for a profile kept
+/// for a desktop with a pin, so a look at any other, every look on a desktop among them, never
+/// resolves (or fences) a data home.
+fn for_a_look_in(
+    record: &MachineProfile,
+    data_home: &dyn Fn() -> Option<PathBuf>,
+    platform: Option<Platform>,
+    fetch: &'static (dyn Fetch + Sync),
+) -> Option<PathBuf> {
+    if record.kept_for.is_none() || record.pinned.is_none() {
+        return None;
+    }
+    for_a_look_at(record, &data_home()?, platform, fetch)
 }
 
 #[cfg(test)]
