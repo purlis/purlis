@@ -1449,7 +1449,7 @@ impl Denied {
         // any sandbox before every link to its runner. Each as named and by its real path, and
         // the whole package its real file belongs to, with what it loads, as the floor holds the
         // programs a chat starts ([`Compiled::hold_programs`]).
-        paths.extend(cluster_programs_held(machine));
+        paths.extend(cluster_programs_held(root, machine));
         // …and what a protected config points at elsewhere, resolved now (V73d).
         let xdg_config = machine
             .env
@@ -1502,9 +1502,11 @@ impl Denied {
 }
 
 /// **The programs every cluster pool's kubectl runs, held for no chat to write** (#3292): each
-/// as named and by its real path, and the package its real file belongs to ([`package_root`])
-/// with all that is in it.
-fn cluster_programs_held(machine: &Machine) -> Vec<Denial> {
+/// as named, every link on the way and its real file, each with the folder it is in, and the
+/// package its real file belongs to ([`package_root`]) with all that is in it, but for a package
+/// that holds the project at `root` or is inside it, which the chat writes, as
+/// [`Compiled::hold_programs`] leaves it.
+fn cluster_programs_held(root: &Path, machine: &Machine) -> Vec<Denial> {
     let Some(config_root) = crate::machine::rooted(
         machine.env.get(crate::machine::HOME_VAR).map(Into::into),
         machine.env.get("XDG_CONFIG_HOME").map(Into::into),
@@ -1525,10 +1527,17 @@ fn cluster_programs_held(machine: &Machine) -> Vec<Denial> {
             });
         }
     };
+    let project = real(root);
     for program in crate::runners::cluster_holds(&config_root) {
         let package = package_root(&real(&program));
+        if let Some(folder) = program.parent().filter(|folder| folder.parent().is_some()) {
+            hold(folder.to_path_buf(), Reach::Itself);
+        }
         hold(program, Reach::Itself);
-        hold(package, Reach::AndBelow);
+        let around_project = project.starts_with(&package) || package.starts_with(&project);
+        if !around_project && package.parent().is_some() {
+            hold(package, Reach::AndBelow);
+        }
     }
     held
 }

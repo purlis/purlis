@@ -1136,6 +1136,56 @@ mod cluster {
     }
 
     #[test]
+    fn a_program_whose_package_would_be_the_home_or_above_it_refuses_the_add() {
+        let home = Path::new("/home/ada");
+        for wide in ["/home/ada/plugin", "/home/plugin", "/plugin"] {
+            let why = package_holdable(Path::new(wide), Some(home)).unwrap_err();
+            assert!(
+                why.to_string().contains("a folder of its own"),
+                "{wide}: {why}"
+            );
+        }
+        for held in [
+            "/home/ada/bin/plugin",
+            "/opt/homebrew/Cellar/kubernetes-cli/1.36.0/bin/kubectl",
+            "/usr/local/bin/aws",
+        ] {
+            assert_eq!(
+                package_holdable(Path::new(held), Some(home)),
+                Ok(()),
+                "{held}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_plugin_reached_through_links_is_held_at_every_link_on_the_way() {
+        let (_config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let place = tempfile::tempdir().unwrap();
+        let (real, middle, first) = (
+            place.path().join("keg/bin/plugin"),
+            place.path().join("opt/plugin"),
+            place.path().join("bin/plugin"),
+        );
+        for folder in ["keg/bin", "opt", "bin"] {
+            std::fs::create_dir_all(place.path().join(folder)).unwrap();
+        }
+        std::fs::write(&real, "#!/bin/sh\n").unwrap();
+        std::os::unix::fs::symlink(&real, &middle).unwrap();
+        std::os::unix::fs::symlink("../opt/plugin", &first).unwrap();
+        let context = serde_json::json!({"users": [
+            {"name": "ada", "user": {"exec": {"command": first.display().to_string()}}}
+        ]})
+        .to_string();
+        let held =
+            programs_run(&cluster.kubectl(), &context, Some(Path::new("/home/ada"))).unwrap();
+        for link in [&first, &place.path().join("bin/../opt/plugin"), &real] {
+            assert!(held.contains(link), "{} in {held:?}", link.display());
+        }
+        assert!(held.contains(&real.canonicalize().unwrap()), "{held:?}");
+    }
+
+    #[test]
     fn a_cluster_pools_name_is_never_a_docker_pools_and_never_reaches_one() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
         let claim = claim_name(OURS, "team");

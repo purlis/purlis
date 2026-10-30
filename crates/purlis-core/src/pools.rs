@@ -362,6 +362,7 @@ pub const ASKED_EVERY: std::time::Duration = std::time::Duration::from_secs(2);
 fn programs_run(
     kubectl: &crate::clusterpool::Kubectl,
     context: &str,
+    home: Option<&Path>,
 ) -> Result<Vec<std::path::PathBuf>, Refused> {
     let said = |why: crate::clusterpool::Refused| Refused::Other(why.to_string());
     let mut named = vec![kubectl.program().to_path_buf()];
@@ -376,13 +377,16 @@ fn programs_run(
     }
     let mut programs: Vec<std::path::PathBuf> = Vec::new();
     for program in named {
-        let real = program.canonicalize().map_err(|why| {
+        let chain = links_to(&program).map_err(|why| {
             Refused::Other(format!(
                 "{} could not be read as a program ({why}), so nothing was added",
                 program.display()
             ))
         })?;
-        for path in [program, real] {
+        if let Some(real) = chain.last() {
+            package_holdable(real, home)?;
+        }
+        for path in chain {
             if !programs.contains(&path) {
                 programs.push(path);
             }
@@ -392,6 +396,49 @@ fn programs_run(
         holdable(program)?;
     }
     Ok(programs)
+}
+
+/// **`program` and every link on the way to its file** (#3292): the name as given, each link it
+/// leads through, in order, and last the real file, links followed. At most 40 links, as a
+/// system follows them.
+fn links_to(program: &Path) -> std::io::Result<Vec<std::path::PathBuf>> {
+    let mut chain = vec![program.to_path_buf()];
+    let mut at = program.to_path_buf();
+    for _ in 0..40 {
+        let Ok(next) = std::fs::read_link(&at) else {
+            break;
+        };
+        let next = match at.parent() {
+            Some(folder) if next.is_relative() => folder.join(next),
+            _ => next,
+        };
+        chain.push(next.clone());
+        at = next;
+    }
+    let real = program.canonicalize()?;
+    if !chain.contains(&real) {
+        chain.push(real);
+    }
+    Ok(chain)
+}
+
+/// **Whether the package `real`, a program's real file, belongs to can be held whole** (#3292):
+/// never where it is the whole home folder, `/` or a folder above the home, which would keep
+/// every chat from writing anything there. Refused with a sentence that says what to do.
+fn package_holdable(real: &Path, home: Option<&Path>) -> Result<(), Refused> {
+    let package = crate::sandbox::package_root(real);
+    let too_wide =
+        package.parent().is_none() || home.is_some_and(|home| home.starts_with(&package));
+    if too_wide {
+        return Err(Refused::Other(format!(
+            "{} is in {}, which purlis would have to keep every chat from writing to hold it, \
+             so nothing was added; move it into a folder of its own and name it there in the \
+             kubeconfig",
+            real.display(),
+            package.display()
+        )));
+    }
+    Ok(())
 }
 
 /// **Whether `program` can be held for no chat to write** (#3292): a file, where it and the
@@ -469,7 +516,7 @@ pub fn add_cluster(
     let context = taken_from
         .context_kept()
         .map_err(|why| Refused::Other(why.to_string()))?;
-    let held = programs_run(&taken_from, &context)?;
+    let held = programs_run(&taken_from, &context, crate::profiles::home().as_deref())?;
     // Recorded pointing at its own copy, which is kept only once its name is the pool's.
     let pool = &pool
         .kept_at(&runners::kubeconfig_kept_at(config_root, pool.name()))
