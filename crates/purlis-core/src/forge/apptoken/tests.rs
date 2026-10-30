@@ -7,6 +7,7 @@
 //! ADR 0070 §7).
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use base64::Engine as _;
 use ring::signature::KeyPair as _;
@@ -297,7 +298,7 @@ fn a_token_is_kept_until_ten_minutes_before_it_expires_and_never_past_its_hour()
     let now = chrono::DateTime::parse_from_rfc3339("2026-10-29T14:00:00Z")
         .unwrap()
         .with_timezone(&chrono::Utc);
-    let minutes = |d: std::time::Duration| d.as_secs() / 60;
+    let minutes = |d: Duration| d.as_secs() / 60;
     assert_eq!(minutes(kept_for(Some("2026-10-29T15:00:00Z"), now)), 50);
     assert_eq!(minutes(kept_for(Some("2026-10-29T14:30:00Z"), now)), 20);
     assert_eq!(minutes(kept_for(Some("2026-10-29T14:05:00Z"), now)), 0);
@@ -311,7 +312,7 @@ fn a_token_lives_until_github_says_it_expires_and_never_past_its_hour() {
     let now = chrono::DateTime::parse_from_rfc3339("2026-10-29T14:00:00Z")
         .unwrap()
         .with_timezone(&chrono::Utc);
-    let minutes = |d: std::time::Duration| d.as_secs() / 60;
+    let minutes = |d: Duration| d.as_secs() / 60;
     assert_eq!(minutes(lives_for(Some("2026-10-29T15:00:00Z"), now)), 60);
     assert_eq!(minutes(lives_for(Some("2026-10-29T14:30:00Z"), now)), 30);
     assert_eq!(minutes(lives_for(Some("2026-10-29T13:00:00Z"), now)), 0);
@@ -336,25 +337,28 @@ fn a_revoke_github_refuses_says_github_s_words() {
 }
 
 /// Keeps `token` for `chat` of `root`, reused for `reused` from now and alive for `alive`.
-fn keep(root: &str, chat: u32, token: &str, reused: Duration, alive: Duration) {
-    let now = std::time::Instant::now();
+fn keep(root: &str, chat: u32, token: &str, reused: Duration, alive: Duration) -> bool {
+    let now = chrono::Utc::now();
     super::keep_one(
-        super::Asked {
-            root: PathBuf::from(root),
-            chat,
-            app: "Iv1.test".to_owned(),
-            vault: "forge".to_owned(),
-            key: "app-key".to_owned(),
-            remotes: Vec::new(),
-            clone: Some(PathBuf::from(format!("/w/{token}"))),
-        },
+        asked(root, chat, token),
+        now,
         zeroize::Zeroizing::new(token.to_owned()),
-        now + reused,
-        now + alive,
-    );
+        super::after(now, reused),
+        super::after(now, alive),
+    )
 }
 
-use std::time::Duration;
+fn asked(root: &str, chat: u32, token: &str) -> super::Asked {
+    super::Asked {
+        root: PathBuf::from(root),
+        chat,
+        app: "Iv1.test".to_owned(),
+        vault: "forge".to_owned(),
+        key: "app-key".to_owned(),
+        remotes: Vec::new(),
+        clone: Some(PathBuf::from(format!("/w/{token}"))),
+    }
+}
 
 fn taken(root: &str, chat: Option<u32>) -> Vec<String> {
     let mut tokens: Vec<String> = taken_at_end(Path::new(root), chat)
@@ -397,6 +401,33 @@ fn the_project_ending_takes_every_chat_s_tokens_of_that_project_alone() {
     keep("/projects/staying", 1, "s1", hour, hour);
     assert_eq!(taken("/projects/quitting", None), ["q1", "q7"]);
     assert_eq!(taken("/projects/staying", None), ["s1"]);
+}
+
+#[test]
+fn a_token_minted_while_its_chat_ended_is_kept_for_nobody() {
+    let hour = Duration::from_secs(3600);
+    let root = "/projects/racing";
+    let before = chrono::Utc::now() - chrono::Duration::seconds(5);
+    assert!(taken(root, Some(4)).is_empty(), "nothing kept yet");
+    let raced = super::keep_one(
+        asked(root, 4, "raced"),
+        before,
+        zeroize::Zeroizing::new("raced".to_owned()),
+        super::after(chrono::Utc::now(), hour),
+        super::after(chrono::Utc::now(), hour),
+    );
+    assert!(!raced, "asked before the chat ended: not kept");
+    assert!(keep(root, 4, "after", hour, hour), "asked after it: kept");
+    assert!(keep(root, 5, "other", hour, hour), "another chat's is kept");
+    assert_eq!(taken(root, Some(4)), ["after"]);
+}
+
+#[test]
+fn a_revoke_github_does_not_answer_says_so() {
+    let nobody =
+        crate::forge::recorded::Recorded::parse(r#"{"source": "none", "exchanges": []}"#).unwrap();
+    let said = revoke_over(&nobody, &github()).unwrap_err();
+    assert!(said.contains("could not be asked to revoke"), "{said}");
 }
 
 #[test]
@@ -597,6 +628,7 @@ fn a_run_in_a_clone_on_another_host_is_refused_naming_it_and_nothing_is_read() {
             started: None,
             on_a_runner: false,
             config_root: Some(config.path()),
+            seen_open: None,
         },
         &gh,
         &|| panic!("the key is read only to mint"),

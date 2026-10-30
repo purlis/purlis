@@ -22,14 +22,17 @@
 //! **One token per chat and clone is kept, in memory alone**, until ten minutes before GitHub
 //! says it expires ([`token_for`]): a chat runs `gh` many times an hour, and each run would
 //! otherwise cost three requests. Nothing here is ever written to disk. **When the chat ends,
-//! every token minted for it that GitHub has not yet let go is revoked** (#3808,
-//! [`chat_ended`]): sent with the token itself (`DELETE /installation/token`), so a token
-//! outlives its chat only where GitHub could not be reached, and then by its hour at most. The one native transport
-//! this builds, carrying the App's JWT to github.com alone, is [`jwt_transport`].
+//! every token minted for it that GitHub still takes is revoked** (#3808, [`chat_ended`]),
+//! sent with the token itself (`DELETE /installation/token`), and so is one whose mint was
+//! under way as it ended. A token outlives its chat only where GitHub could not be reached, or
+//! where purlis started again since it was minted, and then by its hour at most.
+//!
+//! The one native transport this builds, carrying the App's JWT, or a token being revoked, to
+//! github.com alone, is [`jwt_transport`].
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use base64::Engine as _;
 use zeroize::Zeroizing;
@@ -52,6 +55,11 @@ pub const HOST: &str = "github.com";
 pub const NO_RECORDED_CLONE: &str = "no clone in this chat's workspace that purlis cloned, or \
     that you saved from the window, has a github.com remote, so no GitHub App token was minted: \
     save a clone you made yourself once from the window, and start the chat again";
+
+/// What a run is refused with whose chat ended while its token was minted: the token was
+/// revoked.
+pub const CHAT_ENDED: &str = "this chat ended while its GitHub App token was minted, so the \
+                              token was revoked and none was handed over";
 
 /// The most repos one token is limited to: GitHub refuses a longer `repositories` list.
 pub const MOST_REPOS: usize = 500;
@@ -540,6 +548,9 @@ pub struct For<'a> {
     /// The config home, whose record of the clones purlis cloned or the window saved
     /// ([`remotes_of_workspace`]) is read. None: no clone counts.
     pub config_root: Option<&'a Path>,
+    /// When the app last saw the chat open, where it waited since (a runner chat's Allow): a
+    /// chat that ended after it keeps no token minted now (#3808). None: as the mint is asked.
+    pub seen_open: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// What a kept token was minted for: none of it is a secret.
@@ -560,14 +571,26 @@ struct Asked {
 struct Kept {
     asked: Asked,
     token: Zeroizing<String>,
-    /// Until when it is handed out again.
-    until: Instant,
+    /// Until when it is handed out again, by the wall clock, which a sleeping Mac keeps.
+    until: Wall,
     /// Until when GitHub takes it: till then, a chat ending revokes it.
-    alive: Instant,
+    alive: Wall,
+}
+
+/// A time by the wall clock.
+type Wall = chrono::DateTime<chrono::Utc>;
+
+/// `from` and `left` later.
+fn after(from: Wall, left: Duration) -> Wall {
+    from + chrono::Duration::from_std(left).unwrap_or(chrono::Duration::zero())
 }
 
 /// The tokens kept, over every chat.
 static KEPT: Mutex<Vec<Kept>> = Mutex::new(Vec::new());
+
+/// When each chat ended, by project and chat (`None`: every chat of the project), for an hour:
+/// a mint asked for before its chat ended keeps nothing. Written and read under [`KEPT`]'s lock.
+static ENDED: Mutex<Vec<(PathBuf, Option<u32>, Wall)>> = Mutex::new(Vec::new());
 
 /// How long a token minted now is kept: until [`MINTED_AGAIN_BEFORE`] before `expires_at`, and
 /// at most [`KEPT_AT_MOST`].
@@ -594,14 +617,43 @@ fn lives_for(expires_at: Option<&str>, now: chrono::DateTime<chrono::Utc>) -> Du
         })
 }
 
-/// Keeps `token`, minted for `asked`, handed out again until `until` and revoked at its chat's
-/// end until `alive`. A token kept before for the same `asked` stays, to be revoked with it.
-fn keep_one(asked: Asked, token: Zeroizing<String>, until: Instant, alive: Instant) {
+/// Keeps `token`, minted for `asked` from `asked_at`, handed out again until `until` and revoked
+/// at its chat's end until `alive`. A token kept before for the same `asked` stays, to be revoked
+/// with it. False, and nothing kept, where the chat ended after `asked_at`: the mint raced its
+/// end.
+fn keep_one(
+    asked: Asked,
+    asked_at: Wall,
+    token: Zeroizing<String>,
+    until: Wall,
+    alive: Wall,
+) -> bool {
     let mut kept = KEPT.lock().unwrap_or_else(|e| e.into_inner());
-    let now = Instant::now();
+    let ended_since =
+        ENDED
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .any(|(root, chat, at)| {
+                *root == asked.root && chat.is_none_or(|chat| chat == asked.chat) && *at >= asked_at
+            });
+    if ended_since {
+        return false;
+    }
+    let now = chrono::Utc::now();
     kept.retain(|one| one.alive > now);
+    // Past this many, one is let go and revoked: one no longer handed out first, else the
+    // oldest.
     if kept.len() >= MOST_KEPT {
-        kept.remove(0);
+        let at = kept.iter().position(|one| one.until <= now).unwrap_or(0);
+        let gone = kept.remove(at);
+        let _ = revoke_later(
+            vec![gone.token],
+            format!(
+                "chat {} (its oldest token, past {MOST_KEPT} kept)",
+                gone.asked.chat
+            ),
+        );
     }
     kept.push(Kept {
         asked,
@@ -609,13 +661,20 @@ fn keep_one(asked: Asked, token: Zeroizing<String>, until: Instant, alive: Insta
         until,
         alive,
     });
+    true
 }
 
 /// **The tokens kept for chat `chat` of project `root`**, or for every chat of it where `chat`
 /// is `None`, that GitHub still takes: taken out, so none is handed out again.
 fn taken_at_end(root: &Path, chat: Option<u32>) -> Vec<Zeroizing<String>> {
     let mut kept = KEPT.lock().unwrap_or_else(|e| e.into_inner());
-    let now = Instant::now();
+    let now = chrono::Utc::now();
+    {
+        let mut ended = ENDED.lock().unwrap_or_else(|e| e.into_inner());
+        // A mint takes a few minutes at most: an hour-old end can race none.
+        ended.retain(|(_, _, at)| after(*at, KEPT_AT_MOST + MINTED_AGAIN_BEFORE) > now);
+        ended.push((root.to_path_buf(), chat, now));
+    }
     let (ended, staying): (Vec<Kept>, Vec<Kept>) = std::mem::take(&mut *kept)
         .into_iter()
         .partition(|one| one.asked.root == root && chat.is_none_or(|chat| one.asked.chat == chat));
@@ -673,25 +732,35 @@ fn revoke_on_github(token: &str) -> Result<(), String> {
 }
 
 /// Revokes `tokens`, said to be `whose`, on a thread of their own, so nothing that ends waits
-/// on GitHub. A fenced build sends nothing.
-fn revoke_later(tokens: Vec<Zeroizing<String>>, whose: String) {
+/// on GitHub. What it answers is told once they all have been sent; nothing is where none is
+/// sent. A fenced build sends nothing.
+fn revoke_later(
+    tokens: Vec<Zeroizing<String>>,
+    whose: String,
+) -> Option<std::sync::mpsc::Receiver<()>> {
     if tokens.is_empty() || crate::fence::FENCED {
-        return;
+        return None;
     }
+    let (done, finished) = std::sync::mpsc::channel();
     let started = std::thread::Builder::new()
         .name("purlis-revoke-app-token".to_owned())
         .spawn(move || {
             let revoked = revoke_each(&tokens, &revoke_on_github);
             tracing::info!(
-                "purlis: {whose} ended, and {revoked} of its {} was revoked",
+                "purlis: {whose} ended: {revoked} of its {} revoked",
                 crate::counts::counted(tokens.len(), "GitHub App token", "GitHub App tokens")
             );
+            let _ = done.send(());
         });
-    if let Err(e) = started {
-        tracing::warn!(
-            "purlis: {whose} ended, and its GitHub App tokens were not revoked ({e}): they \
-             expire within the hour"
-        );
+    match started {
+        Ok(_) => Some(finished),
+        Err(e) => {
+            tracing::warn!(
+                "purlis: {whose} ended, and its GitHub App tokens were not revoked ({e}): they \
+                 expire within the hour"
+            );
+            None
+        }
     }
 }
 
@@ -699,20 +768,24 @@ fn revoke_later(tokens: Vec<Zeroizing<String>>, whose: String) {
 /// still takes is forgotten now and revoked in the background. A revoke that fails is logged,
 /// and the chat's end never waits on one.
 pub fn chat_ended(root: &Path, chat: u32) {
-    revoke_later(taken_at_end(root, Some(chat)), format!("chat {chat}"));
+    let _ = revoke_later(taken_at_end(root, Some(chat)), format!("chat {chat}"));
 }
 
 /// **Every chat of project `root` ended** (purlis letting the project go, or quitting): as
-/// [`chat_ended`] for each. A quit does not wait for the revokes either.
-pub fn project_ended(root: &Path) {
-    revoke_later(taken_at_end(root, None), "every chat".to_owned());
+/// [`chat_ended`] for each, waiting at most `within` for GitHub's answers, so a quit that
+/// follows does not cut them off. One still unanswered by then expires within its hour.
+pub fn project_ended(root: &Path, within: Duration) {
+    if let Some(finished) = revoke_later(taken_at_end(root, None), "every chat".to_owned()) {
+        let _ = finished.recv_timeout(within);
+    }
 }
 
 /// Keeps `token` for chat `chat` of project `root`, as a mint would, for an hour: a test's own,
 /// so what a chat's end does with it can be seen.
 #[cfg(feature = "test-support")]
 pub fn keep_for_a_test(root: &Path, chat: u32, token: &str) {
-    let hour = Instant::now() + KEPT_AT_MOST + MINTED_AGAIN_BEFORE;
+    let now = chrono::Utc::now();
+    let hour = after(now, KEPT_AT_MOST + MINTED_AGAIN_BEFORE);
     keep_one(
         Asked {
             root: root.to_path_buf(),
@@ -723,6 +796,7 @@ pub fn keep_for_a_test(root: &Path, chat: u32, token: &str) {
             remotes: Vec::new(),
             clone: None,
         },
+        now,
         Zeroizing::new(token.to_owned()),
         hour,
         hour,
@@ -748,6 +822,8 @@ pub fn token_for(
     tool: &crate::sandbox::tools::Tool,
     read_key: &dyn Fn() -> Result<Zeroizing<String>, String>,
 ) -> Result<Zeroizing<String>, String> {
+    // Before anything is minted: a chat that ends from here on keeps nothing minted now.
+    let asked_at = chat.seen_open.unwrap_or_else(chrono::Utc::now);
     let (Some(mint), [value]) = (&tool.mint, tool.values.as_slice()) else {
         return Err(format!("{} mints no GitHub App token", tool.name));
     };
@@ -787,7 +863,7 @@ pub fn token_for(
     };
     {
         let mut kept = KEPT.lock().unwrap_or_else(|e| e.into_inner());
-        let now = Instant::now();
+        let now = chrono::Utc::now();
         kept.retain(|one| one.alive > now);
         if let Some(one) = kept
             .iter()
@@ -815,13 +891,16 @@ pub fn token_for(
         crate::counts::counted(minted.repos.len(), "repo", "repos"),
         minted.installation
     );
-    let at = Instant::now();
-    keep_one(
+    if !keep_one(
         asked,
+        asked_at,
         minted.token.clone(),
-        at + kept_for(minted.expires_at.as_deref(), now),
-        at + lives_for(minted.expires_at.as_deref(), now),
-    );
+        after(now, kept_for(minted.expires_at.as_deref(), now)),
+        after(now, lives_for(minted.expires_at.as_deref(), now)),
+    ) {
+        let _ = revoke_later(vec![minted.token], format!("chat {}", chat.chat));
+        return Err(CHAT_ENDED.to_owned());
+    }
     Ok(minted.token)
 }
 

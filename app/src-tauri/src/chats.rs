@@ -6302,7 +6302,11 @@ impl Chats {
     pub fn end_all(&self) {
         self.ending.store(true, Ordering::SeqCst);
         self.sessions.end_all();
-        purlis_core::forge::apptoken::project_ended(&self.project);
+        // Waited on a little, so a quit right after does not cut the revokes off (#3808).
+        purlis_core::forge::apptoken::project_ended(
+            &self.project,
+            std::time::Duration::from_secs(2),
+        );
         lock(&self.open).clear();
         lock(&self.would_not_start).clear();
         lock(&self.coming).clear();

@@ -2275,6 +2275,7 @@ pub(crate) fn serve_recorded(
                     started: Some(&confines.clones),
                     on_a_runner: false,
                     config_root: config_root.as_deref(),
+                    seen_open: None,
                 },
                 tool,
             ) {

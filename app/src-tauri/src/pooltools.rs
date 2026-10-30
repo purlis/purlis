@@ -475,6 +475,8 @@ pub fn run_on_its_runner(
         .chats()
         .login_asker(root, session)
         .map(|(asker, _)| asker);
+    // Seen open now: the run may wait on the person's Allow before its token is minted (#3808).
+    let seen_open = chrono::Utc::now();
     let folder = asker.as_ref().and_then(|asker| asker.folder.clone());
     let grants: Vec<PathBuf> = asker
         .as_ref()
@@ -500,6 +502,7 @@ pub fn run_on_its_runner(
                 started: clones_at_start.as_deref(),
                 on_a_runner: true,
                 config_root: config_root.as_deref(),
+                seen_open: Some(seen_open),
             },
             &purlis_core::forge::apptoken::token_from_vault,
         ),

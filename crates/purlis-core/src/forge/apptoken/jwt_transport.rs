@@ -3,8 +3,8 @@
 
 //! **The one native transport a GitHub App's mint sends on** (#2053): to github.com's API alone,
 //! each request carrying the App's JWT as its bearer, or, to revoke a minted token (#3808), that
-//! token itself, and no sign-in token. Kept in a file of its
-//! own, so the guard that lets only the account resolver build a native transport
+//! token itself, and no sign-in token. Kept in a file of its own, so the guard that lets only
+//! the account resolver build a native transport
 //! (`tests/it/only_the_resolver_builds_the_native_transport.rs`) names this exception alone.
 
 use std::sync::Arc;
