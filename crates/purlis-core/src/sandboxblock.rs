@@ -1252,9 +1252,9 @@ fn target_of(block: &Block, named: &str, place: &Place<'_>) -> Option<String> {
         // take (#3440): named as such, so the Notice can say why no Allow names it. Anything
         // else refused there names nothing.
         (Operation::Listen, Kind::System) => {
-            use crate::sandbox::localport::{NOT_TAKEN, PICKED, picks_its_port};
-            if named == NOT_TAKEN {
-                return Some(NOT_TAKEN.to_owned());
+            use crate::sandbox::localport::{PICKED, SOCKET_NOT_TAKEN, picks_its_port};
+            if named == SOCKET_NOT_TAKEN {
+                return Some(SOCKET_NOT_TAKEN.to_owned());
             }
             (named == PICKED || picks_its_port(named)).then(|| PICKED.to_owned())
         }

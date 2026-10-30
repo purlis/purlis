@@ -2639,7 +2639,7 @@ fn a_server_whose_socket_could_not_be_taken_is_told_why_and_what_to_do() {
     let untaken = offered(
         &root,
         &refused,
-        Some(purlis_core::sandbox::localport::NOT_TAKEN),
+        Some(purlis_core::sandbox::localport::SOCKET_NOT_TAKEN),
     );
     assert_eq!(untaken.0, BlockOffer::Unsandboxed);
     assert_eq!(untaken.1, None);
@@ -2656,11 +2656,16 @@ fn a_server_whose_socket_could_not_be_taken_is_told_why_and_what_to_do() {
     assert!(said.contains("without the sandbox"), "{said}");
     // Not the words for a port to pick, which would send it round to the same Notice.
     assert!(!said.contains("purlis listen 3000"), "{said}");
-    // purlis's own wrap, the only one that tells it, keeps the words.
+    // purlis's own wrap, the only one that tells it, keeps the words; a Claude Code chat,
+    // whose sandbox purlis does not wrap, is never told of a runner's socket.
     assert_eq!(
         for_its_harness(Some(Harness::Codex), untaken.clone()),
         untaken
     );
+    let (offer, target, why) = for_its_harness(Some(Harness::ClaudeCode), untaken);
+    assert_eq!(offer, BlockOffer::Unsandboxed);
+    assert_eq!(target, None);
+    assert_eq!(why.as_deref(), Some(CLAUDE_CODE_NO_PORT_SAID));
 }
 
 /// #2019: a port below 1024 is never one to serve on, and a port something on this Mac listens

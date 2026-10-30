@@ -404,7 +404,7 @@ pub const PICKED: &str = "0";
 /// **What a block refused because the chat's socket could not be taken names** (#3440): the
 /// words purlis's Linux wrap tells it with, so its Notice can say why the server did not start
 /// and what to do. Never a port, so no Allow is ever drawn for it either.
-pub const NOT_TAKEN: &str = purlis_linux_sandbox::refusal::NOT_TAKEN;
+pub const SOCKET_NOT_TAKEN: &str = purlis_linux_sandbox::refusal::SOCKET_NOT_TAKEN;
 
 /// **Whether a server's own refusal to listen was on a port the system picks** (#3396): what
 /// [`listen_refused_in`] reads, at port 0 ([`picks_its_port`]). No Allow can name such a port.

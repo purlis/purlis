@@ -697,12 +697,12 @@ fn a_server_refused_a_port_the_system_picks_is_a_server_that_did_not_start() {
 /// its Notice can say why; anything else the wrap named there names nothing.
 #[test]
 fn a_listen_the_wrap_refused_with_no_port_to_allow_is_a_server_that_did_not_start() {
-    use crate::sandbox::localport::{NOT_TAKEN, PICKED};
+    use crate::sandbox::localport::{PICKED, SOCKET_NOT_TAKEN};
     for (target, named) in [
         ("*:0", Some(PICKED)),
         (
             "(the chat's socket could not be taken: pidfd_getfd was refused)",
-            Some(NOT_TAKEN),
+            Some(SOCKET_NOT_TAKEN),
         ),
         ("(something else)", None),
     ] {

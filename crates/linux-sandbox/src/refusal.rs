@@ -42,7 +42,8 @@ pub const DIALLED: &str = "network-outbound";
 /// container's runtime may refuse `pidfd_getfd` (a runner made before #3410, or a Kubernetes
 /// runner, #3413), and so may the system (Yama's `ptrace_scope` 3, a process that is not
 /// dumpable). The window reads it to say why the server did not start (#3440).
-pub const NOT_TAKEN: &str = "(the chat's socket could not be taken: pidfd_getfd was refused)";
+pub const SOCKET_NOT_TAKEN: &str =
+    "(the chat's socket could not be taken: pidfd_getfd was refused)";
 
 /// The most refusals waiting to be told.
 pub const QUEUED: usize = PER_WINDOW;

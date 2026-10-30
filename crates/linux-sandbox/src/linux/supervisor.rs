@@ -44,7 +44,7 @@ use nix::unistd::{Pid, UnlinkatFlags, linkat, symlinkat, unlinkat};
 use super::notify;
 use super::walk::{self, Chat, Found, World, named, named_in};
 use crate::profile::{FileOp, Kind, Op, Profile, Remote};
-use crate::refusal::Teller;
+use crate::refusal::{SOCKET_NOT_TAKEN, Teller};
 
 /// What a call is answered with.
 enum Answer {
@@ -85,9 +85,6 @@ const BIND: &str = "network-bind";
 /// What a listen on an internet socket the chat never bound is told as refused on: Seatbelt's
 /// name for a port the kernel picks, on every interface.
 const NEVER_BOUND: &str = "*:0";
-
-/// What a listen whose socket could not be taken is told as refused on.
-const NOT_TAKEN: &str = crate::refusal::NOT_TAKEN;
 
 /// The longest path a call may name, as the kernel's own limit.
 const PATH_MAX: usize = 4096;
@@ -1108,7 +1105,7 @@ impl Supervisor {
         if why == rustix::io::Errno::BADF {
             return Errno::EBADF;
         }
-        self.tell(chat, BIND, NOT_TAKEN.to_owned());
+        self.tell(chat, BIND, SOCKET_NOT_TAKEN.to_owned());
         REFUSED
     }
 }
