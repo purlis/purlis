@@ -437,7 +437,6 @@ import {
   skillStudioAt,
   studioOfSkillTab,
   type ChatToUse,
-  skillStudioView,
   type SkillStudioAsk,
   studioHistoryOf,
   studioOpening,
@@ -445,8 +444,11 @@ import {
   useSkillStudioSaid,
 } from "./skillStudio";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { askBeforeClosing, forgetSkillEdit, unsavedClosedBy } from "./skillEdit";
-import { SkillRunsHere, useSkillRuns, type RunsOf } from "./skillRuns";
+import { forgetSkillEdit } from "./skillEdit";
+import { discardGone, discardRemoved, unsavedClosedBy, unsavedIn } from "./unsavedWork";
+import { UnsavedWorkQuestion, type UnsavedAsk } from "./UnsavedWorkQuestion";
+import { SkillRunsHere, aPersonasOwn, useSkillRuns, type RunsOf } from "./skillRuns";
+import { CHAT_SKILLS_ASKED, type ChatSkillsAsk } from "./chatSkillsAsk";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
 import { handedFromNote } from "./handedFrom";
@@ -513,6 +515,7 @@ import {
   SETTINGS_ACTION,
   SETTINGS_LINK,
   THEME_CHAT,
+  askThemeChat,
   type ProfileSignInAsk,
   type SettingsActionAsk,
   type SettingsLink,
@@ -522,7 +525,14 @@ import {
 import { enterSettings, placeOfView } from "./settings/entering";
 import { onceTheKeyboardIsBack } from "./keyboardBack";
 import { SessionOffersLent } from "./sessionOffers";
-import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
+import { askSkillChat, SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
+import { skillChatRefused } from "./SkillChatApproval";
+import {
+  StartApproveAsk,
+  startRefused,
+  startRefusedRan,
+  type StartApproving,
+} from "./StartApproval";
 import { ChatStrip, NO_ENDED, NO_ROWS } from "./ChatStrip";
 import {
   type FirstChat,
@@ -1108,6 +1118,9 @@ export const PlaneView = memo(function PlaneView({
     refusal?: Refused;
     busy: boolean;
   }>();
+  /** **A close waiting on the person's answer about the unsaved work it would lose** (#3929,
+   *  `unsavedWork.ts`): a tab's, a pane's, or a workspace's removal. */
+  const [unsavedAsk, setUnsavedAsk] = useState<UnsavedAsk>();
   /** The workspace being renamed, while its dialog is up: whether charter is renaming it now,
    *  and why the last attempt renamed nothing, in the core's words (charter#367). */
   /** The workspace whose vision is being added (#3344), whether it is being saved, and why the
@@ -3922,6 +3935,8 @@ export const PlaneView = memo(function PlaneView({
       forgetViewHistory(studioHistoryOf(plane, gone));
       forgetSkillEdit(studioHistoryOf(plane, gone));
     }
+    // **And any view's unsaved work goes with its tab** (#3929), once it is asked about.
+    discardGone(plane, studiosBefore.current, tabs);
     studiosBefore.current = tabs;
   }, [tabs, plane]);
 
@@ -4817,7 +4832,7 @@ export const PlaneView = memo(function PlaneView({
    * against the disk at the moment of the delete — this is what the operator sees before they
    * press, not what decides.
    */
-  const removeWorkspace = useCallback(
+  const askToRemove = useCallback(
     (workspace: string) => {
       setRemoving({ workspace, busy: false });
       void commands
@@ -4840,6 +4855,16 @@ export const PlaneView = memo(function PlaneView({
         );
     },
     [plane],
+  );
+  /** **The unsaved work a save writes into the workspace is asked about first** (#3929): it goes
+   *  with the workspace. Then the removal's own question. */
+  const removeWorkspace = useCallback(
+    (workspace: string) => {
+      const work = unsavedIn(plane, workspace);
+      if (work.length === 0) return askToRemove(workspace);
+      setUnsavedAsk({ work, then: () => askToRemove(workspace) });
+    },
+    [askToRemove, plane],
   );
 
   // Remove… on a chat's question about a workspace opens this same dialog (qw356): the chat
@@ -4952,6 +4977,8 @@ export const PlaneView = memo(function PlaneView({
         return;
       }
       setRemoving(undefined);
+      // The unsaved work a save would have written into it goes with it (#3929).
+      discardRemoved(plane, workspace);
       setReport({
         from: `workspace.remove:${workspace}`,
         refused: false,
@@ -5230,33 +5257,59 @@ export const PlaneView = memo(function PlaneView({
     [ofWorkspace, plane],
   );
 
+  /** A start refused for its profile's approval, while Approve and start… asks (#3942, #3968). */
+  const [startApproving, setStartApproving] = useState<StartApproving>();
+  /** What a start run again after Approve and start… answered, said in the line of `from` where
+   *  it says anything: a quiet start leaves the notice as it is (#3968). */
+  const sayAgain = useCallback(
+    (from: string) => (ran: Ran) => {
+      const said = saidOf(from, ran);
+      if (said !== undefined) setReport(said);
+    },
+    [],
+  );
+
   /**
    * A curation action chosen from a "Curate ▸" menu or the palette (ADR 0061): the core opens
    * the chat — the default profile, the action's runner, where it runs — and holds its prompt
    * until the harness reports its start; this puts its tab on the strip it is filed under, in
    * front, named for the action and its subject. A refusal is the core's sentence, before
-   * anything started.
+   * anything started, with Approve and start… where its profile needs approving (#3968).
    */
   const curate = useCallback(
-    async (subject: string, action: string): Promise<Ran> => {
-      const started = await commands
-        .curate(plane, subject, action, STARTING_SIZE.columns, STARTING_SIZE.rows)
-        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      if (started.status === "error") return { ok: false, refused: started.error };
-      const chat = started.data;
-      setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
-      change((tabs) =>
-        openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label),
-      );
-      return { ok: true };
+    (subject: string, action: string, label: string): Promise<Ran> => {
+      const start = async (): Promise<Ran> => {
+        const started = await commands
+          .curate(plane, subject, action, STARTING_SIZE.columns, STARTING_SIZE.rows)
+          .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+        if (started.status === "error")
+          return startRefusedRan(
+            started.error,
+            {
+              named: `The curation action ${label}`,
+              typed: "its prompt",
+              // The same action again, said in the line of the row that asked.
+              again: () => void start().then(sayAgain(`curate:${subject}/${action}`)),
+            },
+            setStartApproving,
+          );
+        const chat = started.data;
+        setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
+        change((tabs) =>
+          openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label),
+        );
+        return { ok: true };
+      };
+      return start();
     },
-    [change, plane],
+    [change, plane, sayAgain],
   );
 
   /**
    * **Settings › Theme's New theme and Edit with a chat** (#2333): the core opens the chat at the
    * gallery's level with its prompt typed and never sent, as a curation chat is opened, and its
-   * tab goes on the strip it is filed under, in front. A refusal is the core's sentence.
+   * tab goes on the strip it is filed under, in front. A refusal is the core's sentence, with
+   * Approve and start… where its profile needs approving (#3968).
    */
   useEffect(() => {
     const asked = (event: Event) => {
@@ -5273,7 +5326,16 @@ export const PlaneView = memo(function PlaneView({
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
         .then((started) => {
           if (started.status === "error") {
-            setReport({ from: "theme-chat", refused: true, words: started.error });
+            const said = startRefused(
+              started.error,
+              {
+                named: wanted.theme === null ? "New theme" : "Edit with a chat",
+                typed: "its request",
+                again: () => askThemeChat(wanted),
+              },
+              setStartApproving,
+            );
+            setReport({ from: "theme-chat", refused: true, ...said });
             return;
           }
           const chat = started.data;
@@ -5292,7 +5354,8 @@ export const PlaneView = memo(function PlaneView({
    * write them"** (SK-9, #2772; S9, #3690; #3925): the core opens
    * the chat with its prompt typed and never sent (Try it's in a throwaway folder, with the
    * built-in skills and the draft alone), and its tab goes on the strip it is filed under, in
-   * front. A refusal is the core's sentence.
+   * front. A refusal is the core's sentence, with Approve and start… where its profile needs
+   * approving (#3942).
    */
   useEffect(() => {
     const asked = (event: Event) => {
@@ -5351,7 +5414,8 @@ export const PlaneView = memo(function PlaneView({
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
         .then((started) => {
           if (started.status === "error") {
-            setReport({ from: "skill-chat", refused: true, words: started.error });
+            // With Approve and start… where its profile needs approving (#3942).
+            setReport(skillChatRefused(wanted, started.error, setStartApproving, askSkillChat));
             return;
           }
           const chat = started.data;
@@ -5370,34 +5434,48 @@ export const PlaneView = memo(function PlaneView({
    * project's default profile in the branch's folder, with a reference to the row typed as its
    * first prompt once its harness has started, and never sent. Its tab goes on the strip it is
    * filed under, as a curation chat's does. Where the harness cannot be typed into, the core
-   * copies the reference, and the window says so.
+   * copies the reference, and the window says so. A refusal is the core's sentence, with Approve
+   * and start… where its profile needs approving (#3968).
    */
   const startChatHere = useCallback(
-    async (at: BranchPath, lines?: { first: number; last: number }): Promise<Ran> => {
-      const started = await commands
-        .startChatHere(
-          plane,
-          at.workspace,
-          at.repo,
-          at.piece,
-          at.path,
-          // The lines picked in a file's preview (#1151): the core types them in the reference.
-          lines ?? null,
-          STARTING_SIZE.columns,
-          STARTING_SIZE.rows,
-        )
-        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      if (started.status === "error") return { ok: false, refused: started.error };
-      const chat = started.data;
-      setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
-      change((tabs) =>
-        openTab(tabs, chat.session, chat.name, whoOf(null, chat.harness), chat.label),
-      );
-      if (chat.copied === null) return { ok: true };
-      const why = chat.copied.charAt(0).toUpperCase() + chat.copied.slice(1);
-      return { ok: true, said: `${why}: ${chat.text}` };
+    (at: BranchPath, lines?: { first: number; last: number }): Promise<Ran> => {
+      const start = async (): Promise<Ran> => {
+        const started = await commands
+          .startChatHere(
+            plane,
+            at.workspace,
+            at.repo,
+            at.piece,
+            at.path,
+            // The lines picked in a file's preview (#1151): the core types them in the reference.
+            lines ?? null,
+            STARTING_SIZE.columns,
+            STARTING_SIZE.rows,
+          )
+          .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+        if (started.status === "error")
+          return startRefusedRan(
+            started.error,
+            {
+              named: "Start a chat here",
+              typed: "its reference",
+              // The same start again, said as a file's start is.
+              again: () => void start().then(sayAgain("file.chat")),
+            },
+            setStartApproving,
+          );
+        const chat = started.data;
+        setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
+        change((tabs) =>
+          openTab(tabs, chat.session, chat.name, whoOf(null, chat.harness), chat.label),
+        );
+        if (chat.copied === null) return { ok: true };
+        const why = chat.copied.charAt(0).toUpperCase() + chat.copied.slice(1);
+        return { ok: true, said: `${why}: ${chat.text}` };
+      };
+      return start();
     },
-    [change, plane],
+    [change, plane, sayAgain],
   );
 
   /**
@@ -7716,17 +7794,26 @@ export const PlaneView = memo(function PlaneView({
    * was refused and nothing has happened yet. The palette reads this answer to say what a row
    * did, and "nothing to say" is the right thing to say about a question still on screen.
    */
-  // The close asked again once the Skill studio's question is answered with a leave (#3683).
-  const askAgain = useRef<(offer: Offer, fromALink: boolean) => Promise<Ran>>(undefined);
+  // The close asked again, counted, once the question about its unsaved work is answered with
+  // a leave (#3929).
+  const askAgain =
+    useRef<(offer: Offer, fromALink: boolean, unsavedAnswered: boolean) => Promise<Ran>>(undefined);
   const askToEndNow = useCallback(
-    async (offer: Offer, fromALink: boolean): Promise<Ran> => {
-      // **A Skill studio whose editor holds unsaved text asks first** (#3683): its tab comes to
-      // the front, where the studio asks Keep editing, Discard and leave, or Save and leave, and
-      // the close is carried out once it is answered with a leave.
-      const unsaved = offer.available ? unsavedClosedBy(plane, now.current, offer.does) : undefined;
+    async (offer: Offer, fromALink: boolean, unsavedAnswered = false): Promise<Ran> => {
+      // **A view with unsaved work asks first** (#3683, #3929; `unsavedWork.ts`): its tab comes
+      // to the front, the window asks Keep editing, Discard and leave, or Save and leave, and the
+      // close is asked again once it is answered with a leave, and goes on to what it ends. The
+      // work goes with its tab once the close is carried out (`discardGone`).
+      const unsaved =
+        offer.available && !unsavedAnswered
+          ? unsavedClosedBy(plane, now.current, offer.does)
+          : undefined;
       if (unsaved !== undefined) {
         if (now.current.inFront !== unsaved.tab) bringToFront(unsaved.tab);
-        askBeforeClosing(unsaved.history, () => void askAgain.current?.(offer, fromALink));
+        setUnsavedAsk({
+          work: unsaved.work,
+          then: () => void askAgain.current?.(offer, fromALink, true),
+        });
         return { ok: true };
       }
       if (offer.available && endsAChat(offer.does)) {
@@ -7829,25 +7916,30 @@ export const PlaneView = memo(function PlaneView({
     },
     [askedByNow, bringToFront, carryOut, plane, setEndingChat],
   );
-  useEffect(() => {
-    askAgain.current = askToEndNow;
-  }, [askToEndNow]);
   /**
    * **A close counts as a question up from its first step** (#2761), and the mark is cleared
-   * however it settles (#2845): `closeQuestion.ts`.
+   * however it settles (#2845): `closeQuestion.ts`. The question about a view's unsaved work is
+   * one too (#3929).
    */
   const { up: questionUp, counted } = useCloseQuestion(
     plane,
-    endingChat !== undefined || keptOnClose.length > 0,
+    endingChat !== undefined || keptOnClose.length > 0 || unsavedAsk !== undefined,
     onAsking,
   );
   const askToEnd = useCallback(
-    async (offer: Offer, fromALink: boolean): Promise<Ran> => {
-      if (!offer.available || !endsAChat(offer.does)) return askToEndNow(offer, fromALink);
-      return counted(() => askToEndNow(offer, fromALink));
+    async (offer: Offer, fromALink: boolean, unsavedAnswered = false): Promise<Ran> => {
+      const asks =
+        offer.available &&
+        (endsAChat(offer.does) ||
+          (!unsavedAnswered && unsavedClosedBy(plane, now.current, offer.does) !== undefined));
+      if (!asks) return askToEndNow(offer, fromALink, unsavedAnswered);
+      return counted(() => askToEndNow(offer, fromALink, unsavedAnswered));
     },
-    [askToEndNow, counted],
+    [askToEndNow, counted, plane],
   );
+  useEffect(() => {
+    askAgain.current = askToEnd;
+  }, [askToEnd]);
   const run = useCallback((offer: Offer) => askToEnd(offer, false), [askToEnd]);
 
   /**
@@ -8025,6 +8117,19 @@ export const PlaneView = memo(function PlaneView({
     window.addEventListener(SKILL_STUDIO_ASKED, asked);
     return () => window.removeEventListener(SKILL_STUDIO_ASKED, asked);
   }, [plane, showView]);
+  /** **A chat's "Show this chat's skills"** (S8, #3694: its skills chip, and its skills notices'
+   *  Show in Skills and What changed): that chat put in front, so the sidebar Skills view
+   *  follows it, and the view shown. The chips' own `showChatNow`, which reads the one current. */
+  useEffect(() => {
+    const asked = (event: Event) => {
+      const wanted = (event as CustomEvent<ChatSkillsAsk>).detail;
+      if (wanted.plane !== plane) return;
+      showChatNow.current(wanted.session);
+      showSideView("skills");
+    };
+    window.addEventListener(CHAT_SKILLS_ASKED, asked);
+    return () => window.removeEventListener(CHAT_SKILLS_ASKED, asked);
+  }, [plane, showSideView]);
   /** Stop all tasks of a session, for its tab chip's menu (#1498): the catalogue's row, read
    *  as the menu is drawn, and one function for the life of the view. */
   const stopAllOf = useCallback((session: number) => byNow.current(stopAllId(session)), []);
@@ -8063,17 +8168,21 @@ export const PlaneView = memo(function PlaneView({
   const activityFromChip = useCallback((session: number) => activityNow.current(session), []);
   /** Opens the Skill studio at skill `skill`'s Runs with run `run` marked, from the chip of the
    *  run open in chat `session`'s tab (SK-3, #3682): the skill by its own name, as the core
-   *  counts the run (#3385), on the chats of the place the chat is in. */
+   *  counts the run (#3385), on the chats of the place the chat is in; a persona's own skill on
+   *  that persona's chats, as the core says its level (#3694), since a workspace's scope does not
+   *  list it. */
   const openSkillRun = useCallback(
-    (skill: string, run: string, session: number) => {
+    (skill: string, run: string, session: number, level: string | null) => {
       const workspace = filedIn(session);
       const persona = personaOf(session);
       const scope =
-        workspace !== undefined && workspace !== OUTSIDE
-          ? inWorkspace(workspace)
-          : persona !== null
-            ? asPersona(persona)
-            : AT_THE_ROOT;
+        aPersonasOwn(level) && persona !== null
+          ? asPersona(persona)
+          : workspace !== undefined && workspace !== OUTSIDE
+            ? inWorkspace(workspace)
+            : persona !== null
+              ? asPersona(persona)
+              : AT_THE_ROOT;
       showView(skillRunsAt(scope, skill, run), SKILL_STUDIO_TITLE);
     },
     [filedIn, personaOf, showView],
@@ -8603,13 +8712,10 @@ export const PlaneView = memo(function PlaneView({
           { workspace: r.workspace, repo: r.repo, piece: r.piece, path: r.path },
           r.lines,
         ).then((ran) => {
-          // A chat that started says nothing more: its tab is in front.
+          // A chat that started says nothing more: its tab is in front. A refusal keeps its
+          // Approve and start… (#3968).
           if (ran.ok && ran.said === undefined) return;
-          setReport(
-            ran.ok
-              ? { from: "file.chat", refused: false, words: ran.said ?? "" }
-              : { from: "file.chat", refused: true, words: ran.refused },
-          );
+          setReport(saidOf("file.chat", ran));
         });
       },
     };
@@ -9315,6 +9421,7 @@ export const PlaneView = memo(function PlaneView({
                   onOpenView={showView}
                   onUseSkill={openUseSkill}
                   onShowInExplorer={revealInExplorer}
+                  onRestart={askRestart}
                 />
               ),
               // **Changes** (#1676, B-7): what the bottom region drew, the same content.
@@ -9889,10 +9996,6 @@ export const PlaneView = memo(function PlaneView({
                 busy={usingSkill.busy}
                 onUse={(skill, values) => void sendUseSkill(skill, values)}
                 onCancel={() => setUsingSkill(undefined)}
-                onOpenStudio={(scope) => {
-                  setUsingSkill(undefined);
-                  showView(skillStudioView(scope), SKILL_STUDIO_TITLE);
-                }}
               />
             )}
 
@@ -9980,6 +10083,11 @@ export const PlaneView = memo(function PlaneView({
               />
             )}
 
+            {/* The one question a close asks about a view's unsaved work (#3929). */}
+            {unsavedAsk && (
+              <UnsavedWorkQuestion asked={unsavedAsk} onAnswered={() => setUnsavedAsk(undefined)} />
+            )}
+
             {removing && (
               <DeleteWorkspace
                 workspace={removing.workspace}
@@ -10007,6 +10115,19 @@ export const PlaneView = memo(function PlaneView({
                 onAnswer={() => void forgetChat(forgetting.id, forgetting.name)}
                 onCancel={() => setForgetting(undefined)}
                 afterClose={afterForgetAsk}
+              />
+            )}
+            {startApproving && (
+              <StartApproveAsk
+                plane={plane}
+                asked={startApproving}
+                onCancel={() => setStartApproving(undefined)}
+                onApproved={() => {
+                  // The refusal it answered is put away; any other line stays.
+                  const answered = startApproving.way;
+                  setReport((was) => (was?.ways?.includes(answered) ? undefined : was));
+                  setStartApproving(undefined);
+                }}
               />
             )}
             {approving && (

@@ -659,6 +659,7 @@ fn a_chat_touches_a_file(run: &Path) {
     let (tx, heard) = mpsc::channel();
     let tx = Mutex::new(tx);
     let reading = listener.hear(Hearing {
+        serve: purlis_core::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, writer| purlis_core::secrets::brokered::not_answered(writer)),
         each: Box::new(|_| Ok(())),
         answer: Box::new(|_, _| panic!("no ask")),

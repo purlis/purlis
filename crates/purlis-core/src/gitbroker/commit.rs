@@ -67,7 +67,7 @@ use std::path::{Component, Path, PathBuf};
 
 use super::Asker;
 use crate::counts::counted;
-use crate::hookwire::{Answer, CommitAsk, Stage};
+use crate::hookwire::{Answer, CommitAsk, FolderName, Stage};
 use crate::planegit::ondisk;
 use crate::repocmd::Say;
 use crate::worktree::{self, git, link};
@@ -190,12 +190,17 @@ fn commit(
         paths_ok(paths)?;
     }
     let cwd = asker.cwd.as_deref().ok_or(NO_RECORD)?;
-    if let Stage::Paths(paths) = &ask.stage {
-        for path in paths {
-            through_no_link(cwd, path)?;
+    let (folder, stage) = match &ask.folder {
+        Some(named) => named_folder(root, cwd, named, &ask.stage)?,
+        None => {
+            if let Stage::Paths(paths) = &ask.stage {
+                for path in paths {
+                    through_no_link(cwd, path)?;
+                }
+            }
+            standing(root, cwd, &ask.stage)?
         }
-    }
-    let (folder, stage) = standing(root, cwd, &ask.stage)?;
+    };
     let ask = CommitAsk {
         stage,
         ..ask.clone()
@@ -266,8 +271,7 @@ fn standing(root: &Path, cwd: &Path, stage: &Stage) -> Result<(PathBuf, Stage), 
         let (its, rest) = branch_folder_of(&workspaces, &real, path).ok_or_else(|| {
             format!(
                 "{NOT_IN_A_BRANCH_FOLDER} The path {} is not inside a branch folder below it: \
-                 from a folder above branch folders, name paths as \
-                 `.worktrees/<repo>/<piece>/<path>`",
+                 {ACCEPTED}",
                 shown(path)
             )
         })?;
@@ -293,6 +297,62 @@ fn standing(root: &Path, cwd: &Path, stage: &Stage) -> Result<(PathBuf, Stage), 
         ));
     }
     Ok((folder, Stage::Paths(inside)))
+}
+
+/// Where the commit is made for a command that ran in branch folder `named` (#3927), for a chat
+/// whose recorded folder is `cwd`: that folder, with `stage`'s paths relative to its top.
+///
+/// The ask names the folder, so it is held to what a path naming it from where the chat stands
+/// would be held to ([`standing`]): one purlis cut, reached through no link, and the chat's own
+/// folder or one below it. A chat in another branch folder, or in another workspace, is refused.
+fn named_folder(
+    root: &Path,
+    cwd: &Path,
+    named: &FolderName,
+    stage: &Stage,
+) -> Result<(PathBuf, Stage), String> {
+    let (repo, piece) = (
+        crate::shown::short(&named.repo),
+        crate::shown::short(&named.piece),
+    );
+    let refused = |why: &str| {
+        format!(
+            "{why}, so the app will not commit in branch folder {repo} · {piece} for it: nothing was committed"
+        )
+    };
+    worktree::path_for(root, &named.workspace, &named.repo, &named.piece)
+        .map_err(|why| refused(&why.to_string()))?;
+    let workspaces = std::fs::canonicalize(root.join("workspaces"))
+        .map_err(|_| refused("the project has no workspaces folder"))?;
+    let folder = workspaces
+        .join(&named.workspace)
+        .join(worktree::DIR_NAME)
+        .join(&named.repo)
+        .join(&named.piece);
+    match std::fs::canonicalize(&folder) {
+        Ok(real) if real == folder => {}
+        Ok(_) => {
+            return Err(refused(
+                "that branch folder is reached through a link, and purlis commits in no folder \
+                 through a link",
+            ));
+        }
+        Err(_) => return Err(refused("that branch folder is not there")),
+    }
+    let here = std::fs::canonicalize(cwd)
+        .map_err(|_| refused("the app could not read where this chat stands"))?;
+    if !here.starts_with(&folder) && !folder.starts_with(&here) {
+        return Err(refused(&format!(
+            "this chat stands in {}, which is neither that folder nor above it",
+            here.strip_prefix(&workspaces).unwrap_or(&here).display()
+        )));
+    }
+    if let Stage::Paths(paths) = stage {
+        for path in paths {
+            through_no_link(&folder, path)?;
+        }
+    }
+    Ok((folder, stage.clone()))
 }
 
 /// The branch folder below `cwd` that `path`, named from `cwd`, is in, and the path inside it
@@ -640,12 +700,7 @@ pub fn paths_ok(paths: &[String]) -> Result<(), String> {
         if path.chars().any(char::is_control) {
             return Err(format!("the path {shown} holds a control character"));
         }
-        let outside = || {
-            format!(
-                "the path {shown} is not inside this chat's folder: name paths relative to \
-                 where the chat stands, with no `..`"
-            )
-        };
+        let outside = || format!("the path {shown} is not inside the branch folder: {ACCEPTED}");
         if Path::new(path).is_absolute() || path.starts_with(['/', '\\']) {
             return Err(outside());
         }
@@ -699,6 +754,11 @@ fn shown(path: &str) -> String {
         format!("{short:?}")
     }
 }
+
+/// How a path to commit is spelled, said wherever one is refused (#3927).
+const ACCEPTED: &str = "name paths relative to the branch folder, running the command inside \
+     it or with `env -C <branch folder>`, or from where the chat stands as \
+     `.worktrees/<repo>/<piece>/<path>`, with no `..`";
 
 /// What a chat that is in no branch folder purlis cut is told.
 const NOT_IN_A_BRANCH_FOLDER: &str = "this chat does not stand in a branch folder purlis cut \

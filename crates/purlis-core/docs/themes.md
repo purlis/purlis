@@ -337,7 +337,7 @@ says what each family, part and variant is):
 | `tabs` (since version 8) | `tab` (`fill`, `text`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`, `max-width`, `flare`, `inset`), `label` (`text`, `font-size`, `font-weight`), `closer` (`fill`, `text`, `corner-radius`), `count` (`fill`, `text`, `corner-radius`), `indicator` (`fill`, `height`, `corner-radius`, `position`), `strip` (`fill`, `border-colour`, `border-width`), `layout` (`attach`, `sizing`, `dividers`, `gap`) | `chat`, `view`, `file`, `background` | `hover`, `selected` |
 | `text-input` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `icon` (`text`) | none | `hover`, `focused`, `disabled`, `invalid` |
 | `textarea` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `font-size`) | none | `hover`, `focused`, `disabled`, `invalid` |
-| `titlebar` (since version 12) | `workspace` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `count` (`fill`, `text`), `crumb` (`fill`, `text`, `corner-radius`, drawn apart, in no variant: `hover`, `selected`, `focused`), `all` (`fill`, `text`, `corner-radius`, drawn apart, in no variant: `hover`, `selected`, `focused`), `pin` (`fill`, `text`, `corner-radius`, drawn apart, in no variant: `hover`, `selected`, `focused`), `row` (`fill`, `text`, `corner-radius`, drawn apart, in no variant: `hover`, `selected`), `dot` (`fill`, `text`) (since the next release), `dot-warning` (`fill`, `text`) (since the next release), `dot-needs` (`fill`, `text`) (since the next release) | `pinned`, `unpinned`, `root` (since the next release), `dormant` (since the next release) | `hover`, `selected`, `focused` |
+| `titlebar` (since version 12) | `workspace` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `count` (`fill`, `text`), `crumb` (`fill`, `text`, `corner-radius`, drawn apart, in no variant: `hover`, `selected`, `focused`), `all` (`fill`, `text`, `corner-radius`, drawn apart, in no variant: `hover`, `selected`, `focused`), `pin` (`fill`, `text`, `corner-radius`, drawn apart, in no variant: `hover`, `selected`, `focused`), `row` (`fill`, `text`, `corner-radius`, drawn apart, in no variant: `hover`, `selected`), `dot` (`fill`, `text`) (since the next release), `dot-warning` (`fill`, `text`) (since the next release), `dot-needs` (`fill`, `text`) (since the next release), `row-count` (`fill`, `text`, drawn apart, in no variant and no state) (since the next release) | `pinned`, `unpinned`, `root` (since the next release), `dormant` (since the next release) | `hover`, `selected`, `focused` |
 | `tooltip` (since version 5) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`), `detail` (`text`), `shortcut` (`text`, `font-size`) (since the next release) | none | none |
 | `tree` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `gap`, `font-size`, `font-weight`, `height`), `body` (`padding`, `gap`), `twist` (`text`), `lead` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `trail` (`text`, `gap`), `header` (`text`, `font-size`, `font-weight`) | none | `hover`, `focused`, `selected`, `disabled` |
 | `view-frame` (since the next release) | `root` (`fill`), `nav` (`fill`, `border-colour`, `border-width`, `padding`), `list` (`fill`, `border-colour`, `border-width`), `item` (`fill`), `head` (`padding`, `gap`), `header` (`fill`, `border-colour`, `border-width`, `padding`, `gap`), `name` (`text`, `font-size`, `font-weight`), `lead` (`text`, `font-size`), `bar` (`fill`, `border-colour`, `border-width`, `padding`, `gap`), `history` (`gap`), `path` (`text`, `font-size`), `crumb` (`text`, `font-weight`), `crumb-separator` (`text`) | none | none |
@@ -350,7 +350,18 @@ family's root. Each is reached by its own attributes, at rest and in the states 
 a pinned workspace's toggle, `titlebar.row.selected` the row Enter would go to. A row is never
 focused itself (the keyboard stays in the filter). None of them takes a chip's variant
 (`titlebar.crumb.pinned.fill` reaches nothing), and a chip that breaks a floor never takes their
-colours back.
+colours back. Each is held to its floor on the ground it is drawn on, in each of its states (the
+crumb and the ⌄ on the bar, and on the card's fill under the pointer and while open; a row and
+its pin on the switcher's popover, the row Enter would go to on the selected fill), and one that
+breaks it draws its own default back there and leaves the chip alone. A pinned pin and the row
+Enter would go to are measured under the pointer too, in what both states draw at once; a row's
+count is held on a fill the theme gives its row, and the row draws its own fill back where even
+the count's default cannot be read on it; a popover fill the theme sets that the switcher's rows
+and pins cannot be read on draws the popover's own back; and an unavailable row is reached by no
+row key, so it stays in the faint tier. A chip that breaks a floor at rest draws its states'
+own fills back after it, keeping what the theme sets in a state itself. A switcher row's count is
+`titlebar.row-count`, in no state, held on its amber wash over the popover and the selected row;
+`titlebar.count` is a chip's.
 
 A card pressed whole (the welcome's doors, the Get page's repo picks) is the `card-button`
 family, not a part of the card's: a theme's `card.title` reaches a card's own title and never a

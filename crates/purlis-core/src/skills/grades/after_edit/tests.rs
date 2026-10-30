@@ -6,6 +6,8 @@
 
 use super::*;
 
+mod across_edits;
+
 fn accepted() -> Accepted {
     Accepted {
         profile: "work".into(),
@@ -33,7 +35,6 @@ fn now(chats: u32, token_cap: u64, limit_usd: f64) -> Now {
         token_cap,
         limit_usd,
         tests: TESTS.into(),
-        previous: None,
         consent: CONSENT.into(),
     }
 }
@@ -165,19 +166,26 @@ fn what_an_edit_graded_and_why_it_waits_are_kept() {
 }
 
 #[test]
-fn other_trigger_tests_or_another_version_compared_with_wait_for_the_person() {
-    // The review of #3238: a chat can write a fixture or make a commit; neither runs unseen.
+fn other_trigger_tests_wait_for_the_person() {
+    // The review of #3238: a chat can write a fixture; it never runs unseen.
     let tests = Now {
         tests: CONSENT.into(),
         ..now(12, 200_000, 3.0)
     };
     assert!(matches!(next(&accepted(), &tests), Next::Waits(why) if why.contains("trigger tests")));
-    let version = Now {
+}
+
+#[test]
+fn the_version_compared_with_moves_with_each_edit_and_waits_for_nothing_4016() {
+    // Each saved edit is committed, so the version before it is another one each time: what the
+    // plan showed when it was turned on does not hold a grade back (`across_edits`).
+    let turned_on_against = Accepted {
         previous: Some("a".repeat(40)),
-        ..now(12, 200_000, 3.0)
+        ..accepted()
     };
-    assert!(
-        matches!(next(&accepted(), &version), Next::Waits(why) if why.contains("compares with"))
+    assert_eq!(
+        next(&turned_on_against, &now(12, 200_000, 3.0)),
+        Next::Grade
     );
 }
 
@@ -227,4 +235,42 @@ fn an_opt_in_in_the_plane_s_state_folder_is_never_read() {
     turn_on(root, &Level::project(), "deploy", accepted()).unwrap();
     crate::appstate::put_in_the_plane(root, FILE);
     assert_eq!(of(root, &Level::project(), "deploy"), None);
+}
+
+#[test]
+fn a_rename_or_a_move_carries_the_opt_in_and_a_delete_drops_it() {
+    let project = project();
+    let root = project.path();
+    let ops = Level::workspace("ops");
+    turn_on(root, &Level::project(), "deploy", accepted()).unwrap();
+
+    moved(root, &Level::project(), "deploy", &Level::project(), "ship").unwrap();
+    assert_eq!(of(root, &Level::project(), "deploy"), None);
+    assert_eq!(of(root, &Level::project(), "ship"), Some(accepted()));
+
+    moved(root, &Level::project(), "ship", &ops, "ship").unwrap();
+    assert_eq!(of(root, &Level::project(), "ship"), None);
+    assert_eq!(
+        of(root, &ops, "ship"),
+        Some(accepted()),
+        "what was accepted goes along unchanged, and `next` holds a grade to it"
+    );
+
+    dropped(root, &ops, "ship").unwrap();
+    assert_eq!(of(root, &ops, "ship"), None);
+}
+
+#[test]
+fn a_change_of_a_skill_never_graded_after_each_edit_keeps_no_state() {
+    let project = project();
+    let root = project.path();
+
+    moved(root, &Level::project(), "deploy", &Level::project(), "ship").unwrap();
+    dropped(root, &Level::project(), "deploy").unwrap();
+
+    assert!(
+        crate::appstate::dir(root).is_none_or(|dir| !dir.join(FILE).exists()),
+        "nothing written"
+    );
+    assert_eq!(of(root, &Level::project(), "ship"), None);
 }

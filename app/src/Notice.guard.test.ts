@@ -90,7 +90,7 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 2,
     why:
       ACTION +
-      ". Add a Docker pool's refusal (#2679), and a cluster pool's (#3292), each in the core's " +
+      ". Add a pool's refusal for a Docker pool (#2679), and for a cluster pool (#3292), each in the core's " +
       "words, under the form it refused; the form, kept as it was typed, and Add pool or Check " +
       "its key are the way on",
   },
@@ -448,6 +448,7 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "a copy the clipboard refused, said beside the read-only screen it was asked of (#3676)",
   },
   "SearchTab.tsx": { count: 1, why: "the search's progress, a live value" },
+  "UnsavedWorkQuestion.tsx": { count: 1, why: ACTION },
   "SkillChangeDialogs.tsx": {
     count: 2,
     why:
@@ -462,9 +463,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "as it is typed, and the core's sentence for the copy just asked for. Make the copy is " +
       "the retry",
   },
+  "SkillPanels.tsx": {
+    count: 2,
+    why: "every studio page's reads in place (S11, #3978): the line said after a second while rows are held, and a read that failed with Try again",
+  },
   "SkillSources.tsx": {
-    count: 3,
-    why: "the Sources pages' reads in place (#3687): the line said after a second while rows are held, a read that failed with Try again, and the updates still being read",
+    count: 1,
+    why: "the Sources page's updates still being read (#3687)",
   },
   "SkillStudioDeleted.tsx": {
     count: 1,
@@ -472,10 +477,6 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "Bring back's refusal of a built-in skill's name for a deleted skill whose own a built-in " +
       "took (#3729), said as it is typed beside the New name field, in the core's sentence. " +
       "Bring back is the retry",
-  },
-  "SkillStudioTab.tsx": {
-    count: 1,
-    why: "the Library's reading line (#3681): rows held in place while the skills are read, said after a second",
   },
   "SessionPane.tsx": {
     count: 1,
@@ -517,17 +518,11 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "it moved to: what the last press answered, not a standing line",
   },
   "UseSkill.tsx": {
-    count: 4,
+    count: 1,
     why:
       ACTION +
-      ", drawn once under the picker or the arguments form, one shown at a time (#2775). And the " +
-      "dialog's warning that the chat's set is past its skill budget, read as it opens: about " +
-      "the chat the dialog is for, gone with the dialog. And its line that the chat's workspace " +
-      "and persona pin past the most it reads together, with a way to each one's studio (#3391): " +
-      "about the same chat, read as the dialog opens and gone with it. And its line that the " +
-      "chat's router fell back on the built-in router at its start (SK-15b): what that start " +
-      "did, read as the dialog opens and gone with it, with nothing to press: the next chat " +
-      "started there asks the router again",
+      ", drawn once under the picker or the arguments form, one shown at a time (#2775). Its " +
+      "budget, pins and routing lines are the Skills view's now (S8, #3694)",
   },
   "VaultSignIn.tsx": {
     count: 5,
@@ -602,6 +597,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why:
       ACTION +
       ". A pool's profiles refusing (#2049), in the core's words: its Ask again is the way on",
+  },
+  "settings/PoolSignIn.tsx": {
+    count: 2,
+    why:
+      ACTION +
+      ". A profile's sign-in on a pool's runner (#4042), inside its strip: the step it is on, said " +
+      "as it changes, and the one line of what went wrong, in the core's or the runner's words; " +
+      "its Try again, Cancel and Open in terminal are the way out",
   },
   "settings/accounts.tsx": {
     count: 2,

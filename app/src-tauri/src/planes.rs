@@ -385,6 +385,13 @@ pub struct PlaneUpdated {
     /// Whether its skills changed since it started, in a way its harness does not take in by
     /// itself (#2770): its pane offers a restart on the same conversation.
     pub skills: bool,
+    /// The skills a chat started now would get that it lacks, by name (#3694): what its Skills
+    /// view marks as new, once its pane's What changed is pressed.
+    pub skills_added: Vec<String>,
+    /// The skills it has that a chat started now would not get, by name.
+    pub skills_gone: Vec<String>,
+    /// The skills it has that changed since it started, by name.
+    pub skills_edited: Vec<String>,
 }
 
 /// Why a task is not started fresh (#1489): what the window's question and the row say. Said
@@ -788,17 +795,22 @@ impl Held {
             .into_iter()
             .map(|open| (open.session, open.persona))
             .collect();
-        let skills = self.chats.skills_changed();
+        let skills: HashMap<u32, purlis_core::skills::SkillsChanged> =
+            self.chats.skills_changed().into_iter().collect();
         let mut updated: Vec<PlaneUpdated> = lock_started(&self.started_on)
             .iter()
             .filter_map(|(session, then)| {
                 let persona = personas.get(session).cloned().flatten();
                 let files = now.changed_since(then, persona.as_deref());
-                let skills = skills.contains(session);
-                (!files.is_empty() || skills).then_some(PlaneUpdated {
+                let changed = skills.get(session);
+                let changed_skills = changed.cloned().unwrap_or_default();
+                (!files.is_empty() || changed.is_some()).then_some(PlaneUpdated {
                     session: *session,
                     files,
-                    skills,
+                    skills: changed.is_some(),
+                    skills_added: changed_skills.added,
+                    skills_gone: changed_skills.gone,
+                    skills_edited: changed_skills.edited,
                 })
             })
             .collect();
@@ -3126,6 +3138,66 @@ impl Planes {
         held.hooks
             .skill_runs()
             .tell_to(Arc::clone(&self.skill_runs));
+        // And the tokens of its open run (SK-26, #3694): what its harness last said the chat
+        // spent, read from the same record a run's recorded tokens are. Weak for the handoff's
+        // reason.
+        held.hooks.skill_runs().count_tokens_by({
+            let held = Arc::downgrade(&held);
+            Arc::new(move |chat| {
+                let held = held.upgrade()?;
+                let id = held.chats().chat_at(chat)?.id?;
+                let spent = purlis_core::usage::spent(held.root(), &id)?;
+                (spent.input_tokens.is_some() || spent.output_tokens.is_some()).then(|| {
+                    spent
+                        .input_tokens
+                        .unwrap_or_default()
+                        .saturating_add(spent.output_tokens.unwrap_or_default())
+                })
+            })
+        });
+        // A connection a Claude Code chat's server dialled in (#3316): parked at the chat's
+        // door. The first each door is given, and every one refused, is audited: each request
+        // the door carries spends one, so a park after the first says nothing new. Weak for the
+        // handoff's reason.
+        #[cfg(unix)]
+        held.hooks.park_slots_with({
+            let held = Arc::downgrade(&held);
+            let plane = id.clone();
+            // A refusal is audited once a minute for each chat, port and reason at most: a
+            // server that keeps dialling is said once, never a row a dial.
+            const SERVE_REFUSALS_SAID_EVERY: std::time::Duration =
+                std::time::Duration::from_secs(60);
+            type Said = HashMap<(u32, u16, &'static str), std::time::Instant>;
+            let audited: Arc<Mutex<Said>> = Arc::default();
+            Arc::new(move |ask, slot| {
+                let Some(held) = held.upgrade() else {
+                    purlis_core::hookwire::serve::refused(
+                        slot,
+                        purlis_core::hookwire::serve::NOTHING_SERVES,
+                    );
+                    return;
+                };
+                let refused = match held.chats().park_slot(&ask, slot) {
+                    Ok(false) => return,
+                    Ok(true) => None,
+                    Err(why) => {
+                        let now = std::time::Instant::now();
+                        let mut said = audited.lock().unwrap_or_else(PoisonError::into_inner);
+                        said.retain(|_, at| now.duration_since(*at) < SERVE_REFUSALS_SAID_EVERY);
+                        if said.insert((ask.chat, ask.serve, why), now).is_some() {
+                            return;
+                        }
+                        Some(why)
+                    }
+                };
+                if let Err(why) =
+                    held.hooks
+                        .audit_serving(plane.root(), ask.chat, ask.serve, refused)
+                {
+                    tracing::warn!("purlis: a chat's server's connection was not audited ({why})");
+                }
+            })
+        });
         // A sandbox block a chat's hook found (#1338): kept in this machine's network record
         // with the chat it came from (#1662), then shown on the chat's tab. Of what the line
         // named, only a refused host is kept.
@@ -3151,8 +3223,11 @@ impl Planes {
                         strong.chats().runner_of(block.line.chat).as_deref(),
                     );
                     // A server asking for a port the chat serves on already (#2019).
-                    told =
-                        hooks::on_its_serving(told, &strong.chats().served_ports(block.line.chat));
+                    told = hooks::on_its_serving(
+                        told,
+                        &strong.chats().served_ports(block.line.chat),
+                        strong.chats().dials_in(block.line.chat),
+                    );
                     // Held while the person answers (#1666): the chat's own board says so,
                     // never anything the block's sender said.
                     told.held = strong.chats().asking(told.session, told.target.as_deref());

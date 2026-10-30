@@ -21,6 +21,47 @@ fn a_chat_whose_program_ended_is_owed_no_restart() {
     chats.unclaim(4);
 }
 
+/// #3808: the GitHub App tokens minted for a chat go when it ends, whether its program ended
+/// or the chat was closed, and every chat's when they all end; another chat's stay.
+#[test]
+fn a_chats_github_app_tokens_go_when_it_ends() {
+    use purlis_core::forge::apptoken::{keep_for_a_test, kept_by_a_test};
+    let size = Size {
+        columns: 80,
+        rows: 24,
+    };
+    // A project of its own: another test ending every chat of the shared one would take these.
+    let project = tempfile::tempdir().expect("a project");
+    std::fs::write(project.path().join(purlis_core::plane::MANIFEST), "").expect("a manifest");
+    let chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(Sessions::reporting_to(None)),
+        project.path().to_path_buf(),
+    );
+    let root = chats.project.clone();
+    let started = chats
+        .start(
+            &Chat {
+                program: "/bin/sleep".to_owned(),
+                args: vec!["5".to_owned()],
+                name: "gh".to_owned(),
+                ..Default::default()
+            },
+            size,
+        )
+        .expect("started");
+    keep_for_a_test(&root, started, "closed");
+    keep_for_a_test(&root, 9001, "program-ended");
+    keep_for_a_test(&root, 9002, "staying");
+    chats.close(started).expect("closed");
+    assert_eq!(kept_by_a_test(&root, started), 0, "gone as it closed");
+    chats.its_program_ended(9001);
+    assert_eq!(kept_by_a_test(&root, 9001), 0, "gone as its program ended");
+    assert_eq!(kept_by_a_test(&root, 9002), 1, "another chat's stays");
+    chats.end_all();
+    assert_eq!(kept_by_a_test(&root, 9002), 0, "gone as every chat ended");
+}
+
 /// #1353: past the hosts it names, a wrapped chat's proxy tells the count under the chat's
 /// number, as it grows, once the chat has one and only to a listener there is.
 #[test]
@@ -8379,7 +8420,14 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
             },
         );
     }
-    assert_eq!(chats.skills_changed_while_on(), [4], "the flag is on now");
+    let sessions = |chats: &Chats| -> Vec<u32> {
+        chats
+            .skills_changed_while_on()
+            .into_iter()
+            .map(|(session, _)| session)
+            .collect()
+    };
+    assert_eq!(sessions(&chats), [4], "the flag is on now");
     // Use skill… is told what its start read, never a constant.
     assert!(chats.skills_of(1).expect("open").plane_skills);
     assert!(!chats.skills_of(4).expect("open").plane_skills);
@@ -8387,10 +8435,19 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
     // A Codex chat reads the SKILL.md purlis wrote for it at its start (SK-8), so an edit to a
     // body waits for a restart there too.
     skill("deploy", "two");
-    assert_eq!(chats.skills_changed_while_on(), [1, 2, 4]);
+    assert_eq!(sessions(&chats), [1, 2, 4]);
 
     skill("triage", "one");
-    assert_eq!(chats.skills_changed_while_on(), [1, 2, 4]);
+    assert_eq!(sessions(&chats), [1, 2, 4]);
+    // And its Skills view is told what changed, by name (#3694).
+    let changed = chats.skills_changed_while_on();
+    let (_, first) = changed
+        .iter()
+        .find(|(session, _)| *session == 1)
+        .expect("1");
+    assert_eq!(first.added, ["triage"]);
+    assert_eq!(first.edited, ["deploy"]);
+    assert!(first.gone.is_empty());
 }
 
 /// #2019: a chat serving on a port is not told its sandbox is older once its own door listens
@@ -8450,11 +8507,14 @@ fn a_chat_serving_on_a_port_is_owed_a_restart_once_its_grant_is_taken_back() {
     };
     let session = chats.start_ready(&chat, &ready, SIZE).expect("starts");
     assert_eq!(
-        chats.owe_restart_serving(None, port.wrapping_add(1)),
+        chats.owe_restart_serving(None, port.wrapping_add(1), false),
         Vec::<u32>::new()
     );
-    assert_eq!(chats.owe_restart_serving(None, port), vec![session]);
+    assert_eq!(chats.served_ports(session), vec![port]);
+    assert_eq!(chats.owe_restart_serving(None, port, false), vec![session]);
     assert!(chats.owed_restarts().contains(&session));
+    // Its door there is closed at once (#3316): nothing reaches its server from now on.
+    assert_eq!(chats.served_ports(session), Vec::<u16>::new());
     chats.close(session).expect("closed");
 }
 
@@ -8530,4 +8590,23 @@ fn the_routing_a_chat_started_with_is_what_its_record_keeps_3578() {
     let session = chats.start(&put_back, SIZE).unwrap();
     assert_eq!(chats.record().chats[0].routing, Some(Kept::BuiltIn));
     let _ = chats.close(session);
+}
+
+#[test]
+fn a_profile_a_studio_start_was_refused_on_says_which_line_needs_approving() {
+    // #3942: the Skill studio's Approve and start reads the same approval a waiting chat's
+    // Notice offers, by the profile's name, and none once it is approved.
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_work(dir.path(), "");
+
+    let asked = NeedsApproval::of_profile("work", &root).expect("work asks");
+
+    assert_eq!(asked.approval, "new");
+    assert_eq!(
+        asked.shown,
+        purlis_core::profiletrust::shown(&root, &work_at(&root))
+    );
+    assert_eq!(NeedsApproval::of_profile("nobody", &root), None);
+    purlis_core::profiletrust::approve(&root, &work_at(&root), &asked.shown).expect("approved");
+    assert_eq!(NeedsApproval::of_profile("work", &root), None);
 }

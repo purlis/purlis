@@ -9,7 +9,8 @@ the steward decided on 2026-10-20.
    way to the first: a dialog asks the pool's name, its image by digest and its limits, each
    left empty for the default, and the pool is added at once, its runner made, checked and
    paired. Settings › This machine › Pools, and its row in the palette, are offered only while
-   this machine keeps a pool.
+   this machine keeps a pool. *Amended 2026-10-30 for Settings: the Pools group, and its row in
+   the palette, are always listed* ([the amendment](2026-10-30-the-pools-group-is-shown-before-the-first-pool.md)).
 2. **Removing a pool asks first, then unpairs its runner over a link of its own while it answers** (§3: the
    desktop's key is taken out of the runner's peers when the link is up), then removes its
    container, its home and the pool, and sets every workspace that ran its chats on it back to

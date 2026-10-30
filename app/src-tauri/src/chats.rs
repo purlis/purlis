@@ -594,7 +594,13 @@ impl NeedsApproval {
     /// launch's own read, as `approve_profile` reads it: a profile in a file the launch
     /// refuses has nothing a yes could buy.
     fn of(chat: &Chat, root: &std::path::Path) -> Option<Self> {
-        let name = chat.profile.as_deref()?;
+        Self::of_profile(chat.profile.as_deref()?, root)
+    }
+
+    /// What the profile `name` needs approved at `root` before a chat on it can start, read as
+    /// [`NeedsApproval::of`] reads a chat's: for a start the window asked for that the core
+    /// refused, such as the Skill studio's (#3942).
+    pub(crate) fn of_profile(name: &str, root: &std::path::Path) -> Option<Self> {
         let (set, _check) = purlis_core::profiles::for_launch(root);
         let profile = set.get(name)?;
         let needs = purlis_core::profiletrust::approval_needed(root, profile)?;
@@ -2283,16 +2289,53 @@ impl Chats {
         lock(&self.open)
             .get(&session)
             .and_then(|running| running.confinement.as_ref())
-            .and_then(purlis_core::sandbox::Confinement::served)
-            .map(|(_, ports)| ports)
+            .map(purlis_core::sandbox::Confinement::serving_ports)
             .unwrap_or_default()
     }
 
+    /// Whether open chat `session`'s server dials in to its doors (#3316).
+    pub fn dials_in(&self, session: u32) -> bool {
+        lock(&self.open)
+            .get(&session)
+            .and_then(|running| running.confinement.as_ref())
+            .is_some_and(purlis_core::sandbox::Confinement::dials_in)
+    }
+
+    /// **Parks `slot`, a connection open chat `ask.chat`'s server dialled in, at its door on
+    /// `ask.serve`** (#3316): whether it is the first that door was given. Refused, the slot told
+    /// why and closed, where the chat is not open here, has no door on that port, or holds the
+    /// most slots it may ([`purlis_core::sandbox::Confinement::park`]); the reason is answered.
+    #[cfg(unix)]
+    pub fn park_slot(
+        &self,
+        ask: &purlis_core::hookwire::serve::ServeAsk,
+        slot: purlis_core::hookwire::serve::Slot,
+    ) -> Result<bool, &'static str> {
+        let parked = match lock(&self.open)
+            .get(&ask.chat)
+            .and_then(|running| running.confinement.as_ref())
+        {
+            Some(confinement) => confinement.park(ask.serve, slot),
+            None => Err((slot, purlis_core::sandbox::door::NO_DOOR)),
+        };
+        parked.map_err(|(slot, why)| {
+            purlis_core::hookwire::serve::refused(slot, why);
+            why
+        })
+    }
+
     /// **Each open chat serving on `port` is owed a restart** (#2019): its server's grant was
-    /// taken back, and its door and its profile were fixed as it started, so until it restarts
-    /// it still serves there. `chat` names the one chat it was taken back from, by id; none,
-    /// every chat. The chats owed it, by number.
-    pub fn owe_restart_serving(&self, chat: Option<&str>, port: u16) -> Vec<u32> {
+    /// taken back, and its profile was fixed as it started, so it restarts without it. Where no
+    /// grant lets it listen there any more (`project_holds` says whether the project's own still
+    /// does; a chat's own is read here), its door there closes at once, so nothing reaches its
+    /// server on that port from now on (#3316). `chat` names the one chat it was taken back
+    /// from, by id; none, every chat. The chats owed it, by number.
+    pub fn owe_restart_serving(
+        &self,
+        chat: Option<&str>,
+        port: u16,
+        project_holds: bool,
+    ) -> Vec<u32> {
         let serving: Vec<u32> = lock(&self.open)
             .iter()
             .filter(|(_, running)| {
@@ -2300,11 +2343,40 @@ impl Chats {
                     && running
                         .confinement
                         .as_ref()
-                        .and_then(purlis_core::sandbox::Confinement::served)
-                        .is_some_and(|(_, ports)| ports.contains(&port))
+                        .is_some_and(|confinement| confinement.serving_ports().contains(&port))
             })
             .map(|(number, _)| *number)
             .collect();
+        // Its door closes at once where nothing lets it listen there any more (#3316): nothing
+        // reaches its server there from now on, and a server that dials in has its parked
+        // connections closed.
+        if !project_holds {
+            // The chats whose own grant still lets them listen there, read under the grants'
+            // hold alone, so no two holds are ever taken together here.
+            let held_by_their_own: Vec<String> = lock(&self.grants)
+                .iter()
+                .filter(|(_, made)| {
+                    made.iter()
+                        .any(|one| one.what == purlis_core::sandbox::grant::What::Listen(port))
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
+            let mut open = lock(&self.open);
+            for number in &serving {
+                let Some(running) = open.get_mut(number) else {
+                    continue;
+                };
+                let its_own = running
+                    .chat
+                    .identity
+                    .id
+                    .as_ref()
+                    .is_some_and(|id| held_by_their_own.contains(id));
+                if let Some(confinement) = running.confinement.as_mut().filter(|_| !its_own) {
+                    confinement.stop_serving(port);
+                }
+            }
+        }
         for number in &serving {
             self.owe_restart(
                 *number,
@@ -3100,8 +3172,9 @@ impl Chats {
     /// **The open chats whose skills changed since they started** (#2770, ADR 0099 §5), by
     /// session: the plane skills each would get now differ from those it started with, in a way
     /// its harness does not take in by itself ([`Harness::skills_reload`]). Its tab offers a
-    /// restart on the same conversation. Read from disk each time it is asked.
-    pub fn skills_changed(&self) -> Vec<u32> {
+    /// restart on the same conversation, and its Skills view names what changed (#3694). Read
+    /// from disk each time it is asked.
+    pub fn skills_changed(&self) -> Vec<(u32, purlis_core::skills::SkillsChanged)> {
         // Asked once, for every chat: where the project's skills reach no chat, none changed.
         if !purlis_core::skills::reach_chats_here(&self.project) {
             return Vec::new();
@@ -3110,7 +3183,7 @@ impl Chats {
     }
 
     /// [`Self::skills_changed`] while the `skill-studio` flag is on.
-    fn skills_changed_while_on(&self) -> Vec<u32> {
+    fn skills_changed_while_on(&self) -> Vec<(u32, purlis_core::skills::SkillsChanged)> {
         // Read out first: no lock is held while the plane's skill folders are read.
         type Started = (
             u32,
@@ -3134,22 +3207,22 @@ impl Chats {
             })
             .collect();
         let built_in = built_in_skills_here();
-        let mut changed: Vec<u32> = started
+        let mut changed: Vec<(u32, purlis_core::skills::SkillsChanged)> = started
             .into_iter()
-            .filter(|(_, workspace, persona, harness, start, then)| {
-                purlis_core::skills::stamp_of(&purlis_core::skills::Running {
+            .filter_map(|(session, workspace, persona, harness, start, then)| {
+                let now = purlis_core::skills::stamp_of(&purlis_core::skills::Running {
                     plane: &self.project,
                     workspace: workspace.as_deref(),
                     persona: persona.as_deref(),
-                    harness: *harness,
+                    harness,
                     built_in: built_in.as_deref(),
                     plane_skills: true,
-                    start: Some(start),
-                }) != *then
+                    start: Some(&start),
+                });
+                (now != then).then(|| (session, then.changed_to(&now)))
             })
-            .map(|(session, ..)| session)
             .collect();
-        changed.sort_unstable();
+        changed.sort_unstable_by_key(|(session, _)| *session);
         changed
     }
 
@@ -3172,6 +3245,8 @@ impl Chats {
             lock(&self.owed).remove(&session);
         }
         self.project_settings.forget(session);
+        // The GitHub App tokens minted for it go with its program (#3808).
+        purlis_core::forge::apptoken::chat_ended(&self.project, session);
     }
 
     /// Starts a chat, and remembers what it was started as.
@@ -3912,10 +3987,31 @@ impl Chats {
         // its proxy runs, before its line is compiled: a socket for each, in its own folder. A
         // port it serves on none of is told, and withdrawn from its proxy where only its listen
         // grant gave it.
+        let claude_code = sandbox
+            .is_some_and(|applied| applied.harness() == purlis_core::harness::Harness::ClaudeCode);
+        // A Claude Code chat's server dials in instead (#3316): it can make no socket of its
+        // own, so its doors carry to connections it parks through its hook socket. macOS alone,
+        // where its hook socket is reachable from its sandbox.
         if let (Some(confinement), Some(confines)) = (confinement.as_mut(), confines.as_ref())
-            && sandbox.is_some_and(|applied| {
-                applied.harness() != purlis_core::harness::Harness::ClaudeCode
-            })
+            && claude_code
+            && cfg!(target_os = "macos")
+        {
+            let widened = &confines.widened;
+            let mut unserved = widened.unserved.clone();
+            match confinement.dial(widened) {
+                Ok(more) => unserved.extend(more),
+                Err(why) => {
+                    tracing::warn!("purlis: a chat's servers were not served ({why})");
+                    late.extend(purlis_core::sandbox::door::unservable_said(
+                        &widened.listens,
+                        &why.to_string(),
+                    ));
+                }
+            }
+            late.extend(purlis_core::sandbox::door::unserved_said(&unserved));
+        }
+        if let (Some(confinement), Some(confines)) = (confinement.as_mut(), confines.as_ref())
+            && !claude_code
         {
             let widened = &confines.widened;
             let mut unserved = widened.unserved.clone();
@@ -4041,6 +4137,17 @@ impl Chats {
             env.push((
                 purlis_core::sandbox::door::FOLDER_ENV.to_owned(),
                 folder.display().to_string(),
+            ));
+        }
+        // Or the hook socket its servers dial in to (#3316), for `purlis listen`'s shim.
+        if let Some(hook) = socket
+            .as_deref()
+            .filter(|_| confinement.as_ref().is_some_and(|it| it.dials_in()))
+        {
+            env.retain(|(key, _)| key != purlis_core::sandbox::door::DIAL_ENV);
+            env.push((
+                purlis_core::sandbox::door::DIAL_ENV.to_owned(),
+                hook.display().to_string(),
             ));
         }
         what_its_hooks_read(
@@ -4358,6 +4465,8 @@ impl Chats {
         lock(&self.told).remove(&session);
         lock(&self.records).remove(&session);
         self.blocks.ended(session);
+        // The GitHub App tokens minted for it are revoked, in the background (#3808).
+        purlis_core::forge::apptoken::chat_ended(&self.project, session);
         if let Some(gone) = gone {
             // A chat's grants end with it (D-1348-1): kept only while a session of that chat is
             // open, which a restart for a grant is, since it starts before the old one ends.
@@ -6297,6 +6406,11 @@ impl Chats {
     pub fn end_all(&self) {
         self.ending.store(true, Ordering::SeqCst);
         self.sessions.end_all();
+        // Waited on a little, so a quit right after does not cut the revokes off (#3808).
+        purlis_core::forge::apptoken::project_ended(
+            &self.project,
+            std::time::Duration::from_secs(2),
+        );
         lock(&self.open).clear();
         lock(&self.would_not_start).clear();
         lock(&self.coming).clear();

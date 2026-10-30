@@ -119,9 +119,11 @@ fn is_policy(document: &Value) -> bool {
 const OPERATOR_HEADER: &str = "# Copyright 2026 Purlis
 # SPDX-License-Identifier: Apache-2.0
 
-# purlis's cluster operator: its namespace, its service account, what it may do, and the one
-# pod that runs it. Applied after upstream agent-sandbox (vendor/agent-sandbox/), the policy
-# (policy.yaml) and purlis's definitions (crds.yaml); docs/cluster-operator.md says how.
+# purlis's cluster operator: its namespace, its service account, what it may do, the one pod
+# that runs it, its metrics Service and the NetworkPolicy that lets only the scrapers the chart's
+# values name reach that pod (none by default). Applied after upstream agent-sandbox
+# (vendor/agent-sandbox/), the policy (policy.yaml) and purlis's definitions (crds.yaml);
+# docs/cluster-operator.md says how.
 #
 # Rendered from the chart, charts/purlis-cluster-operator/, with its default values; never
 # edited by hand. Regenerate with
@@ -409,7 +411,7 @@ fn everything_the_chart_makes_lives_in_the_release_namespace_or_the_cluster() {
     for document in rendered(&with_digest(&[])) {
         let namespaced = matches!(
             document["kind"].as_str(),
-            Some("ServiceAccount" | "Deployment")
+            Some("ServiceAccount" | "Deployment" | "Service" | "NetworkPolicy")
         );
         if namespaced {
             assert_eq!(
@@ -453,4 +455,75 @@ fn the_charts_app_version_is_the_operators() {
     .expect("YAML");
     assert_eq!(chart["appVersion"], env!("CARGO_PKG_VERSION"));
     assert_eq!(chart["name"], "purlis-cluster-operator");
+}
+
+#[test]
+fn the_operators_metrics_are_served_on_its_port_through_a_service_of_their_own() {
+    let documents = rendered(&with_digest(&[]));
+    let deployment = documents
+        .iter()
+        .find(|d| d["kind"] == "Deployment")
+        .expect("the operator's deployment");
+    let port = purlis_cluster_operator::metrics::PORT;
+    assert_eq!(
+        deployment["spec"]["template"]["spec"]["containers"][0]["ports"],
+        json!([{ "name": "metrics", "containerPort": port, "protocol": "TCP" }]),
+        "{deployment}"
+    );
+    let service = documents
+        .iter()
+        .find(|d| d["kind"] == "Service")
+        .expect("the metrics Service (#3737)");
+    assert_eq!(
+        service["metadata"]["name"],
+        "purlis-cluster-operator-metrics"
+    );
+    assert_eq!(
+        service["spec"]["selector"], deployment["spec"]["selector"]["matchLabels"],
+        "it selects the operator's pod"
+    );
+    assert_eq!(
+        service["spec"]["ports"],
+        json!([{ "name": "metrics", "port": port, "targetPort": "metrics", "protocol": "TCP" }]),
+        "{service}"
+    );
+}
+
+/// The NetworkPolicy in front of the operator's pod.
+fn network_policy(documents: &[Value]) -> Value {
+    documents
+        .iter()
+        .find(|d| d["kind"] == "NetworkPolicy")
+        .cloned()
+        .expect("the operator's NetworkPolicy (#3737)")
+}
+
+#[test]
+fn nothing_reaches_the_operators_pod_unless_the_values_name_who_scrapes_it() {
+    let documents = rendered(&with_digest(&[]));
+    let deployment = documents
+        .iter()
+        .find(|d| d["kind"] == "Deployment")
+        .expect("the operator's deployment");
+    let policy = network_policy(&documents);
+    assert_eq!(policy["metadata"]["name"], "purlis-cluster-operator");
+    assert_eq!(
+        policy["spec"]["podSelector"]["matchLabels"],
+        deployment["spec"]["selector"]["matchLabels"]
+    );
+    assert_eq!(policy["spec"]["policyTypes"], json!(["Ingress"]));
+    // No ingress rule at all: nothing may reach the pod.
+    assert!(policy["spec"].get("ingress").is_none(), "{policy}");
+
+    let scraped = network_policy(&rendered(&with_digest(&[
+        "metrics.allowFrom[0].namespaceSelector.matchLabels.team=monitoring",
+    ])));
+    assert_eq!(
+        scraped["spec"]["ingress"],
+        json!([{
+            "from": [{ "namespaceSelector": { "matchLabels": { "team": "monitoring" } } }],
+            "ports": [{ "port": "metrics", "protocol": "TCP" }],
+        }]),
+        "{scraped}"
+    );
 }

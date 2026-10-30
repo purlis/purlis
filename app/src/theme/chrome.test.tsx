@@ -80,7 +80,7 @@ import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
 import { DeprecateDialog, OwnersDialog } from "../SkillPage";
 import { DeleteDialog, MoveDialog, RenameDialog } from "../SkillChangeDialogs";
-import { LeaveQuestion } from "../SkillEditInPlace";
+import { LeaveQuestion } from "../UnsavedWorkQuestion";
 import { SkillCopy } from "../SkillCopy";
 import { RequestMerge } from "../SavingMerge";
 import { SavingView } from "../SavingView";
@@ -751,7 +751,6 @@ const DIALOGS: Opened[] = [
           busy={false}
           onUse={nothing}
           onCancel={nothing}
-          onOpenStudio={nothing}
         />,
       ),
   },
@@ -970,12 +969,12 @@ const DIALOGS: Opened[] = [
     open: async () => render(<RemovePool name="builds" onRemove={nothing} onCancel={nothing} />),
   },
   {
-    name: "adding a Docker pool",
+    name: "adding a pool",
     file: "AddDockerPool.tsx",
     open: async () => {
       startAddingAPool();
       render(<AddDockerPoolHost />);
-      await screen.findByRole("dialog", { name: "Add a Docker pool" });
+      await screen.findByRole("dialog", { name: "Add a pool" });
     },
   },
   {
@@ -1244,12 +1243,12 @@ const DIALOGS: Opened[] = [
       ),
   },
   {
-    name: "leaving a skill's editor with unsaved changes (#3683)",
-    file: "SkillEditInPlace.tsx",
+    name: "leaving a view's unsaved work (#3683, #3929)",
+    file: "UnsavedWorkQuestion.tsx",
     open: async () =>
       render(
         <LeaveQuestion
-          name="deploy"
+          names={["deploy"]}
           blocked={false}
           busy={false}
           onKeep={nothing}

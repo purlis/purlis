@@ -4427,11 +4427,15 @@ pub struct Confinement {
     serving: Option<Serving>,
 }
 
+/// The most slots one chat's server holds parked across all its doors (#3316).
+pub const CHAT_SLOTS_MOST: usize = 32;
+
 /// **Where a chat's servers listen, and the doors to them** (#2019, [`door`]).
 #[derive(Debug)]
 struct Serving {
-    /// The folder purlis made for this chat's sockets alone, `0700`.
-    folder: PathBuf,
+    /// The folder purlis made for this chat's sockets alone, `0700`; none where its server
+    /// dials in instead (#3316).
+    folder: Option<PathBuf>,
     /// A door for each port the chat serves on.
     doors: Vec<door::Door>,
 }
@@ -4900,10 +4904,91 @@ impl Confinement {
         }
         let (doors, unserved) = opened?;
         self.serving = Some(Serving {
-            folder: folder.to_path_buf(),
+            folder: Some(folder.to_path_buf()),
             doors,
         });
         Ok(unserved)
+    }
+
+    /// **Opens a dialled door for each port `widened` lets a Claude Code chat listen on**
+    /// (#3316): its server dials in to the hook socket and parks each connection as a slot of
+    /// the door ([`door::Door::dialled`], [`Self::park`]), so no socket is made for it and its
+    /// profile is left as it is. A port something on this Mac listens on already gets no door,
+    /// and is answered back, as [`Self::serve`] answers it. Once per confinement.
+    pub fn dial(&mut self, widened: &Widened) -> std::io::Result<Vec<u16>> {
+        if self.serving.is_some() || widened.listens.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut doors = Vec::new();
+        let mut unserved = Vec::new();
+        for port in &widened.listens {
+            match door::Door::dialled(*port) {
+                Ok((door, _)) => doors.push(door),
+                Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => unserved.push(*port),
+                Err(err) => return Err(err),
+            }
+        }
+        let open: Vec<u16> = doors.iter().map(door::Door::port).collect();
+        for port in widened
+            .listen_only
+            .iter()
+            .filter(|port| !open.contains(port))
+        {
+            if let Err(why) = self.withdraw_port(*port) {
+                tracing::warn!("purlis: port {port} could not be withdrawn ({why})");
+            }
+        }
+        self.serving = Some(Serving {
+            folder: None,
+            doors,
+        });
+        Ok(unserved)
+    }
+
+    /// **Parks `slot`, a connection this chat's server dialled in, as a slot of its door on
+    /// `port`** (#3316): whether it is the first that door was given. Handed back, with why, where
+    /// the chat has no dialled door on that port, or that door, or the chat, holds the most it
+    /// may ([`door::SLOTS_MOST`], [`CHAT_SLOTS_MOST`]).
+    #[cfg(unix)]
+    pub fn park(
+        &self,
+        port: u16,
+        slot: std::os::unix::net::UnixStream,
+    ) -> Result<bool, (std::os::unix::net::UnixStream, &'static str)> {
+        let doors = self
+            .serving
+            .as_ref()
+            .map(|serving| serving.doors.as_slice());
+        let Some(slots) = doors
+            .unwrap_or_default()
+            .iter()
+            .find(|door| door.port() == port)
+            .and_then(door::Door::slots)
+        else {
+            return Err((slot, door::NO_DOOR));
+        };
+        let held: usize = doors
+            .unwrap_or_default()
+            .iter()
+            .filter_map(door::Door::slots)
+            .map(|slots| slots.parked())
+            .sum();
+        if held >= CHAT_SLOTS_MOST {
+            return Err((slot, door::SLOTS_FULL));
+        }
+        slots.park(slot).map_err(|slot| (slot, door::SLOTS_FULL))
+    }
+
+    /// **Closes this chat's door on `port`** (#3316): its grant was taken back, so its server
+    /// is not reached there from now on, and a dialled door's parked slots are closed. Whether
+    /// there was one.
+    pub fn stop_serving(&mut self, port: u16) -> bool {
+        let Some(serving) = self.serving.as_mut() else {
+            return false;
+        };
+        let before = serving.doors.len();
+        serving.doors.retain(|door| door.port() != port);
+        serving.doors.len() != before
     }
 
     /// **Where this chat's servers listen, and the ports their doors are open on** (#2019):
@@ -4911,8 +4996,26 @@ impl Confinement {
     /// none.
     pub fn served(&self) -> Option<(&Path, Vec<u16>)> {
         let serving = self.serving.as_ref()?;
-        let ports: Vec<u16> = serving.doors.iter().map(door::Door::port).collect();
-        (!ports.is_empty()).then_some((serving.folder.as_path(), ports))
+        let ports = self.serving_ports();
+        let folder = serving.folder.as_deref()?;
+        (!ports.is_empty()).then_some((folder, ports))
+    }
+
+    /// **The ports this chat's doors are open on** (#2019, #3316), whether its servers listen on
+    /// sockets of their own or dial in. Empty before [`Self::serve`] or [`Self::dial`].
+    pub fn serving_ports(&self) -> Vec<u16> {
+        self.serving
+            .as_ref()
+            .map(|serving| serving.doors.iter().map(door::Door::port).collect())
+            .unwrap_or_default()
+    }
+
+    /// Whether this chat's server dials in to its doors (#3316) rather than listening on
+    /// sockets of its own.
+    pub fn dials_in(&self) -> bool {
+        self.serving
+            .as_ref()
+            .is_some_and(|serving| serving.folder.is_none() && !serving.doors.is_empty())
     }
 
     /// **`text` kept as `name` in this chat's own folder** (qw384b), for this chat alone and

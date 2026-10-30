@@ -20,7 +20,7 @@ const TRIGGERS: &str = r#"[
 ]"#;
 
 /// A plane whose project skill `deploy` has two trigger tests and one outcome eval, committed.
-fn plane() -> tempfile::TempDir {
+pub(in crate::skills::grades) fn plane() -> tempfile::TempDir {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     std::fs::write(
@@ -949,7 +949,7 @@ fn a_row_skipped_and_a_file_not_read_are_said() {
 }
 
 /// [`plane`], whose `deploy` has a second version committed over the first: `Step two.`.
-fn plane_of_two_versions() -> (tempfile::TempDir, String) {
+pub(in crate::skills::grades) fn plane_of_two_versions() -> (tempfile::TempDir, String) {
     let plane = plane();
     let root = plane.path();
     let first = run(root, &["rev-parse", "HEAD"]).line().to_owned();
@@ -1196,3 +1196,5 @@ fn a_plans_consent_covers_the_profile_model_and_limits_it_shows() {
     }
     assert_ne!(consent_on("abd", &terms), shown, "and what it grades");
 }
+
+mod follows;

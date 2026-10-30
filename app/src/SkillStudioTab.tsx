@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { MessageSquarePlus, Plus, RotateCw, Search, Sparkle, Sparkles } from "lucide-react";
+import { MessageSquarePlus, Plus, Search, Sparkle, Sparkles } from "lucide-react";
 import {
   commands,
   type DeletedSkill,
@@ -40,6 +40,7 @@ import { DeletedList, DeletedPage } from "./SkillStudioDeleted";
 import { DRAFT_WITH_A_CHAT, NEW_SKILL, SkillStarts, type SkillStart } from "./SkillStarts";
 import { askDraft, useSkillDraftsRead } from "./skillDraftAsks";
 import { SkillSourcesPage } from "./SkillSources";
+import { NotRead, ReadingRows } from "./SkillPanels";
 import { Select } from "./ui/select/Select";
 import { Choice, Field, SettingRow } from "./settings/components";
 import { labelOf, levelFrom, levelOf, levelsFor, sameLevel } from "./skillChanges";
@@ -59,6 +60,7 @@ import {
   SKILL_PAGE_TAB_NAMES,
   SKILL_STUDIO_VIEW,
   asPersona,
+  backIsTo,
   STUDIO_PAGE_NAMES,
   STUDIO_START,
   inWorkspace,
@@ -192,26 +194,6 @@ function resultOf(label: string, text: string, notes: readonly string[]): Said {
   return { tone: "news", label, text: [text, ...notes].join(" ") };
 }
 
-/** **Rows held while the skills are read** (S11): the layout stays, and after about a second a
- *  line says what is happening. */
-function Placeholders() {
-  const [late, setLate] = useState(false);
-  useEffect(() => {
-    const after = window.setTimeout(() => setLate(true), 1000);
-    return () => window.clearTimeout(after);
-  }, []);
-  return (
-    <div className="skill-studio-placeholders" aria-busy="true" data-testid="skill-studio-reading">
-      {[0, 1, 2, 3, 4].map((at) => (
-        <div key={at} className="skill-studio-placeholder" aria-hidden="true" />
-      ))}
-      <p role="status" className="honest">
-        {late ? "Reading the project's skills…" : ""}
-      </p>
-    </div>
-  );
-}
-
 /**
  * **The Skill studio's tab** (SK-2, #2765; spec #3679, the amendment's S2): one view tab per
  * project, laid out by the view frame (`ui/panel/ViewFrame.tsx`) as pages in a left navigation,
@@ -253,7 +235,8 @@ export function SkillStudioTab({
   /** Narrow or wide whatever the width: for a story or a test. Measured when left out. */
   narrow?: boolean;
 }) {
-  const historyId = studioHistoryOf(plane, { ...SKILL_STUDIO_VIEW, key: tab });
+  const view = { ...SKILL_STUDIO_VIEW, key: tab };
+  const historyId = studioHistoryOf(plane, view);
   const walked = useViewHistory<StudioPlace>(historyId, STUDIO_START);
   const at = walked.at;
   // Where the tab is now, for an answer that comes back after the person may have moved on.
@@ -288,6 +271,7 @@ export function SkillStudioTab({
   const edits = useSkillEditInPlace({
     plane,
     tab: historyId,
+    view,
     walked,
     busy,
     setBusy,
@@ -376,6 +360,33 @@ export function SkillStudioTab({
     };
   }, [plane, opened, changed, done]);
 
+  // **The copy a scorecard or a grade's chat says it graded** (#3978), by the grade open: the
+  // studio goes to the scope that lists that copy (a retired tab comes back at the project's
+  // root), to a workspace only while the project has it, and then to the row of that copy, so
+  // a same-named copy at another level is never the one the page's ways act on.
+  const [graded, setGraded] = useState<{ grade: string; level: SkillLevel }>();
+  useEffect(() => {
+    const open = at.grading;
+    if (graded === undefined || open === undefined || studio === undefined) return;
+    if (open.at !== "scorecard" && open.at !== "chat") return;
+    if (open.grade !== graded.grade || at.skill === undefined) return;
+    const there = scopeOfLevel(graded.level, at.scope);
+    if (!sameScope(there, at.scope)) {
+      if (there.at === "workspace" && !studio.workspaces.includes(there.name)) return;
+      history.replace({ ...at, scope: there });
+      return;
+    }
+    const name = skillOfRowId(at.skill);
+    const row = studio.skills.find((one) => {
+      const its = one.name === name ? levelOf(one, at.scope) : null;
+      return its !== null && sameLevel(its, graded.level);
+    });
+    if (row !== undefined && skillRowId(row) !== at.skill)
+      history.replace({ ...at, skill: skillRowId(row) });
+    // The history's steps are the tab's own: `at` and the studio read say all it acts on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graded, at, studio]);
+
   if (studio !== undefined && !studio.on)
     return (
       <EmptyState
@@ -401,9 +412,16 @@ export function SkillStudioTab({
     if (to === undefined) delete next.grading;
     else next.grading = to;
     if (how === "go") go(next);
-    // Back where the way here was a step (a chat's scorecard), so walking never piles up steps.
-    else if (how === "back" && history.canGoBack) history.back();
+    // Back where the step behind is where it goes (a chat's scorecard, a skill's grades), so
+    // walking never piles up steps; else said in place, so it lands where it names (#3978).
+    else if (how === "back" && backIsTo(history.behind, next)) history.back();
     else history.replace(next);
+  };
+
+  /** Told the level of the copy a scorecard or a grade's chat is of, once read (#3978). */
+  const gradedAt = (level: SkillLevel) => {
+    const open = placeNow.current.grading;
+    if (open !== undefined && "grade" in open) setGraded({ grade: open.grade, level });
   };
 
   const change: Change = (label, run, then, refusedIn) => {
@@ -761,6 +779,22 @@ export function SkillStudioTab({
         // A skill renamed, shared or moved has a new row: the one of its name is it.
         skills.find((skill) => skill.name === skillOfRowId(at.skill ?? "")))
       : undefined;
+  // A scorecard and a grade's chat read by the grade alone, so they draw for a copy this scope
+  // cannot grade, or lists no row of, too: they say its level, and the studio goes there
+  // (#3978).
+  const gradingName =
+    page !== "library" || at.grading === undefined
+      ? undefined
+      : (chosen?.name ?? (at.skill === undefined ? undefined : skillOfRowId(at.skill)));
+  // A grading page under the chosen skill (S6) that runs a grade is the page of a skill this
+  // studio can grade.
+  const gradingLevel =
+    chosen !== undefined && at.grading !== undefined ? levelOf(chosen, scope) : null;
+  const gradingDrawn =
+    at.grading !== undefined &&
+    gradingName !== undefined &&
+    gradingName !== "" &&
+    (gradingLevel !== null || at.grading.at === "scorecard" || at.grading.at === "chat");
   // The project's, each workspace's and the persona's this studio shows (SK-32).
   const levels = studio === undefined ? [] : levelsFor(studio.levels, scope);
   const start = levelFrom(scope, levels);
@@ -837,12 +871,18 @@ export function SkillStudioTab({
   const inSources = page === "sources" ? at.sources : undefined;
   const path: Crumb[] = [
     { id: page, label: STUDIO_PAGE_NAMES[page] },
-    ...(chosen === undefined ? [] : [{ id: "skill", label: chosen.name }]),
+    ...(chosen !== undefined
+      ? [{ id: "skill", label: chosen.name }]
+      : gradingDrawn && gradingName !== undefined
+        ? [{ id: "skill", label: gradingName }]
+        : []),
     ...(itemName === undefined ? [] : [{ id: "item", label: itemName }]),
-    ...(chosen !== undefined && at.tab !== undefined && at.tab !== "overview"
+    ...((chosen !== undefined || gradingDrawn) && at.tab !== undefined && at.tab !== "overview"
       ? [{ id: "tab", label: SKILL_PAGE_TAB_NAMES[at.tab] }]
       : []),
-    ...(chosen !== undefined && at.grading !== undefined ? gradingPath(at.grading) : []),
+    ...((chosen !== undefined || gradingDrawn) && at.grading !== undefined
+      ? gradingPath(at.grading)
+      : []),
     ...(inSources === undefined ? [] : sourcesPath(inSources)),
     ...(doing !== undefined && DOING_NAMES[doing.what] !== undefined
       ? [{ id: "doing", label: DOING_NAMES[doing.what] ?? "" }]
@@ -918,18 +958,21 @@ export function SkillStudioTab({
   );
   const reading = studio === undefined && refused === undefined;
   const notRead = refused !== undefined && (
-    <EmptyState
-      headline="purlis could not read this project's skills"
-      body={refused}
+    <NotRead
+      what="this project's skills"
+      why={refused}
+      onAgain={() => setAsked((n) => n + 1)}
       testid="skill-studio-refused"
-      action={
-        <Button icon={<RotateCw aria-hidden="true" />} onPress={() => setAsked((n) => n + 1)}>
-          Try again
-        </Button>
-      }
+      variant="page"
     />
   );
-  const held = (body: () => ReactNode) => notRead || (reading ? <Placeholders /> : body());
+  const held = (body: () => ReactNode) =>
+    notRead ||
+    (reading ? (
+      <ReadingRows what="the project's skills" rows={5} testid="skill-studio-reading" />
+    ) : (
+      body()
+    ));
 
   let list: ReactNode;
   let item: ReactNode;
@@ -1129,24 +1172,23 @@ export function SkillStudioTab({
           change={change}
         />
       ) : undefined;
-    // A grading page under the chosen skill (S6) is the page of a skill this studio can grade.
-    const gradingLevel =
-      chosen !== undefined && at.grading !== undefined ? levelOf(chosen, scope) : null;
     item =
       doing?.what === "new" && panel !== undefined ? (
         <div className="skill-studio-item" data-testid="skill-studio-doing">
           {panel}
         </div>
-      ) : chosen !== undefined && at.grading !== undefined && gradingLevel !== null ? (
+      ) : gradingDrawn && at.grading !== undefined && gradingName !== undefined ? (
         <GradingPage
-          // A page of each kind and grade: walking a grade's chats keeps its scorecard read.
-          key={`${skillRowId(chosen)}:${at.grading.at}:${"grade" in at.grading ? at.grading.grade : ""}`}
+          // A page of each kind and grade, by the skill's name: a row found or pinned once the
+          // studio is read reads nothing anew.
+          key={`${gradingName}:${at.grading.at}:${"grade" in at.grading ? at.grading.grade : ""}`}
           plane={plane}
-          name={chosen.name}
+          name={gradingName}
           level={gradingLevel}
           grading={at.grading}
           changed={changed + done}
           onGrading={grading}
+          onGradedAt={gradedAt}
         />
       ) : chosen !== undefined && studio !== undefined ? (
         <SkillPage
@@ -1220,7 +1262,9 @@ export function SkillStudioTab({
     list = pageList(
       "Skills a chat drafted for you. Try one, then accept it into the project or discard it.",
       draftsRead === undefined
-        ? held(() => <Placeholders />)
+        ? held(() => (
+            <ReadingRows what="the project's skills" rows={5} testid="skill-studio-reading" />
+          ))
         : held(() =>
             none ? (
               <EmptyState

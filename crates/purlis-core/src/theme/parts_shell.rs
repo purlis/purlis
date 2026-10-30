@@ -532,6 +532,13 @@ pub(super) const TITLEBAR: Family = Family {
                           in the bar's ground.",
             properties: &[Prop::Fill, Prop::Text],
         },
+        Part {
+            name: "row-count",
+            since: super::NEXT,
+            description: "How many things wait on the person in a switcher's row, after its \
+                          name: its wash and its digits (#3947).",
+            properties: &[Prop::Fill, Prop::Text],
+        },
     ],
     variants: &[
         Variant {
@@ -587,6 +594,8 @@ pub(super) const TITLEBAR: Family = Family {
         ("dot-warning", "surface.base"),
         // A needs-you dot (#3652): its hand, a mark, in the window's ground on the failed red.
         ("dot-needs", "surface.base"),
+        // A switcher row's count (#3947), in amber, as a chip's is.
+        ("row-count", "state.waiting"),
     ],
     corner_most: None,
     // A chip's notice dot is the chip's sibling in its slot (#3648), drawn around the chip.
@@ -598,6 +607,7 @@ pub(super) const TITLEBAR: Family = Family {
         ("dot", "accent.base"),
         ("dot-warning", "state.waiting"),
         ("dot-needs", "state.failed"),
+        ("row-count", "wash.warning"),
     ],
     // A switcher's row and its pin paint no ground at rest: they stand on the popover's surface
     // the switcher is drawn on, which their words are read on (#3099).
@@ -635,6 +645,71 @@ fn titlebar_look(variant: &str, states: &[State]) -> Look {
             "border.subtle"
         } else {
             TRANSPARENT
+        },
+    }
+}
+
+/// **What a part of the title bar drawn apart from every chip is drawn in** (#3949), at rest and
+/// in each state its own element is marked in, as `titlebar.css` draws it: its own fill (or
+/// none), its words, and the grounds it stands on. The crumb and the ⌄ stand on the bar and take
+/// the card's fill under the pointer and while open; a switcher's row and its pin stand on the
+/// popover, the row Enter would go to on the selected fill; a row's count is its amber wash, laid
+/// on the popover or on that selected row.
+pub(super) fn titlebar_apart_look(part: &str, states: &[State]) -> super::ApartLook {
+    use super::ApartLook;
+    const BAR: &[&str] = &["surface.deep"];
+    const POPOVER: &[&str] = &["surface.overlay"];
+    let hovered = states.contains(&State::Hover);
+    let selected = states.contains(&State::Selected);
+    let lit = hovered || selected;
+    match part {
+        "crumb" => ApartLook {
+            fill: if lit { "surface.overlay" } else { TRANSPARENT },
+            words: "text.secondary",
+            under: BAR,
+        },
+        "all" => ApartLook {
+            fill: if lit { "surface.overlay" } else { TRANSPARENT },
+            words: if lit { "text.primary" } else { "text.quiet" },
+            under: BAR,
+        },
+        // Pinned, the accent wins over the pointer's primary, on the pointer's fill (#4000).
+        "pin" => ApartLook {
+            fill: if hovered { "surface.overlay" } else { TRANSPARENT },
+            words: if selected {
+                "accent.base"
+            } else if hovered {
+                "text.primary"
+            } else {
+                "text.faint"
+            },
+            under: POPOVER,
+        },
+        // The row Enter would go to is drawn after the pointer's, so it wins over it.
+        "row" => ApartLook {
+            fill: if selected {
+                "list.selected"
+            } else if hovered {
+                "surface.overlay"
+            } else {
+                TRANSPARENT
+            },
+            words: if selected {
+                "text.primary"
+            } else {
+                "text.secondary"
+            },
+            under: POPOVER,
+        },
+        "row-count" => ApartLook {
+            fill: "wash.warning",
+            words: "state.waiting",
+            under: &["surface.overlay", "list.selected"],
+        },
+        _ => ApartLook {
+            fill: TRANSPARENT,
+            words: "text.secondary",
+            under: POPOVER,
         },
     }
 }

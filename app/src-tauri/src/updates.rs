@@ -112,7 +112,7 @@ pub fn set_channel(channel: Channel) -> Result<(), String> {
 /// Read from `app.config()` rather than from a constant, because the thing that must be
 /// checked is what **Tauri** will verify against — a constant beside it could agree with the
 /// source and disagree with the build.
-fn configured_pubkey<R: Runtime>(app: &tauri::AppHandle<R>) -> String {
+pub fn configured_pubkey<R: Runtime>(app: &tauri::AppHandle<R>) -> String {
     app.config()
         .plugins
         .0
@@ -409,6 +409,65 @@ pub fn watch<R: Runtime>(app: &tauri::AppHandle<R>) {
             tokio::time::sleep(purlis_core::updates::CHECK_EVERY).await;
         }
     });
+}
+
+/// **This version's update manifest, as the channel serves it** (#2749): read for the runner
+/// image a pool follows the desktop to (`crate::poolfollow`). None where the channel's manifest
+/// is of another version. One updater read, listed in the network log as every read is.
+#[cfg(unix)]
+pub async fn this_versions_manifest<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<Option<serde_json::Value>, String> {
+    read_manifest(app, &channel_now().endpoint(), true).await
+}
+
+/// **The update manifest a new pool's runner image is offered from** (the person's ruling of
+/// 2026-10-30, `crate::poolfollow::image_offered`): on the stable channel, this version's own
+/// release's ([`Channel::release_endpoint`]), so a machine with an update waiting still reads
+/// what its own version's release says; where that has none for this version, or on the dev
+/// channel, whose one manifest is always its newest build's, the channel's, of whichever
+/// version it is. Every image in it is checked by the caller, as this version's is.
+#[cfg(unix)]
+pub async fn manifest_for_a_new_pool<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<serde_json::Value, String> {
+    let channel = channel_now();
+    let ours = app.package_info().version.to_string();
+    if let Some(own) = channel.release_endpoint(&ours)
+        && let Ok(Some(manifest)) = read_manifest(app, &own, true).await
+    {
+        return Ok(manifest);
+    }
+    read_manifest(app, &channel.endpoint(), false)
+        .await?
+        .ok_or_else(|| "purlis's update channel answered with no manifest".to_owned())
+}
+
+/// **The update manifest at `endpoint`**, as the updater reads it: one read, listed in the
+/// network log as every read is. With `only_ours`, only a manifest of this very version is
+/// taken, and another is none; otherwise whichever version it is of.
+#[cfg(unix)]
+async fn read_manifest<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    endpoint: &str,
+    only_ours: bool,
+) -> Result<Option<serde_json::Value>, String> {
+    let url = endpoint
+        .parse()
+        .map_err(|why| format!("purlis's update endpoint is not a url: {why}"))?;
+    let updater = app
+        .updater_builder()
+        .endpoints(vec![url])
+        .map_err(|why| format!("purlis's update endpoint was refused: {why}"))?
+        .version_comparator(move |current, remote| !only_ours || remote.version == current)
+        .build()
+        .map_err(|why| format!("purlis's updater could not be built: {why}"))?;
+    let started = std::time::Instant::now();
+    let found = updater.check().await;
+    purlis_core::netlog::updater_read(endpoint, found.is_ok(), started.elapsed());
+    Ok(found
+        .map_err(|why| why.to_string())?
+        .map(|update| update.raw_json))
 }
 
 /// Which channel this machine takes charter from: `stable` or `dev`.

@@ -520,6 +520,14 @@ pub struct Made {
     pub runner: Runner,
 }
 
+/// How a runner's sign-in is run: in a terminal the person drives, or driven by purlis with no
+/// terminal (#4042).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Typed {
+    InATerminal,
+    Driven,
+}
+
 impl Made {
     /// `docker`'s arguments for the connector (ADR 0078 §2's container preset): the bridge to
     /// the runner's host, run in the container pinned by id, as the runner's user and group
@@ -543,9 +551,18 @@ impl Made {
     /// `name` (#2049), to `provider`'s plan where one is named, with a terminal the person drives:
     /// the harness's own sign-in, run on the runner in the runner's folder for that profile.
     pub fn sign_in_args(&self, name: &str, provider: Option<&str>) -> Vec<String> {
+        self.sign_in_args_by(Typed::InATerminal, name, provider)
+    }
+
+    /// [`Made::sign_in_args`], by `typed`: in a terminal the person drives (`-it`), or with its
+    /// input and output pipes purlis drives with no terminal (`-i`, #4042).
+    pub fn sign_in_args_by(&self, typed: Typed, name: &str, provider: Option<&str>) -> Vec<String> {
         let mut args: Vec<String> = [
             "exec",
-            "-it",
+            match typed {
+                Typed::InATerminal => "-it",
+                Typed::Driven => "-i",
+            },
             "--user",
             &self.runner.user.spelled(),
             self.container.as_str(),
@@ -2110,6 +2127,30 @@ impl Docker {
         name: &str,
         provider: Option<&str>,
     ) -> Result<String, String> {
+        self.checked_sign_in(made, engine, name, provider, Typed::InATerminal)?
+            .line()
+    }
+
+    /// **The runner's own sign-in of the profile `name`, for purlis to drive with no terminal**
+    /// (#4042): [`Docker::sign_in_line`]'s, checked the same way, its input and output pipes.
+    pub fn driven_sign_in(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Result<crate::profilestore::sign_in::Login, String> {
+        self.checked_sign_in(made, engine, name, provider, Typed::Driven)
+    }
+
+    fn checked_sign_in(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+        typed: Typed,
+    ) -> Result<crate::profilestore::sign_in::Login, String> {
         self.check(made).map_err(|why| why.0)?;
         let settings_in = match &self.settings_in {
             Some(folder) => folder.clone(),
@@ -2118,8 +2159,7 @@ impl Docker {
                 .join(settings::DIR),
         };
         let settings = settings::for_a_sign_in(&settings_in).map_err(|why| why.0)?;
-        self.sign_in_login(made, engine, &settings, name, provider)?
-            .line()
+        self.sign_in_login_by(typed, made, engine, &settings, name, provider)
     }
 
     /// **What the line [`Docker::sign_in_line`] types runs**: this `docker`, named by its path,
@@ -2129,6 +2169,19 @@ impl Docker {
     /// the shell's, or of the person's Docker, decides what runs.
     pub fn sign_in_login(
         &self,
+        made: &Made,
+        engine: &std::path::Path,
+        settings: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Result<crate::profilestore::sign_in::Login, String> {
+        self.sign_in_login_by(Typed::InATerminal, made, engine, settings, name, provider)
+    }
+
+    /// [`Docker::sign_in_login`], by `by` ([`Made::sign_in_args_by`]).
+    pub fn sign_in_login_by(
+        &self,
+        by: Typed,
         made: &Made,
         engine: &std::path::Path,
         settings: &std::path::Path,
@@ -2147,7 +2200,7 @@ impl Docker {
             "--host".to_owned(),
             format!("unix://{}", typed(engine, "the Docker engine's socket")?),
         ];
-        args.extend(made.sign_in_args(name, provider));
+        args.extend(made.sign_in_args_by(by, name, provider));
         Ok(crate::profilestore::sign_in::Login {
             program: typed(&self.program, "this machine's docker")?,
             args,

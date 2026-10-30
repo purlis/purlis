@@ -13,6 +13,7 @@ import {
   type SkillChanged,
   type SkillLevel,
   type SkillSource,
+  type SourceChecked,
   type SkillUpdateOffer,
   type SkillUpdates,
   type StudioLevel,
@@ -23,6 +24,7 @@ import { counted } from "./dispatches";
 import { Notice, type NoticeAction } from "./Notice";
 import { Choice, Field, SettingRow } from "./settings/components";
 import { labelOf, picking, sameLevel } from "./skillChanges";
+import { NotRead, ReadingRows } from "./SkillPanels";
 import { sourceKey, type SourcesAt } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
 import { Button, ButtonRow } from "./ui/button/Button";
@@ -45,7 +47,9 @@ import { ReviewPage } from "./ui/review-page/ReviewPage";
  *
  * - **Sources**: the updates waiting, then each source the project's record names that this
  *   machine has not confirmed (purlis asks it nothing until it is), then the person's sources as
- *   rows, then the offered sources as cards (SK-22, decision 42). Add source… is a short dialog:
+ *   rows, each with what its last check found ("14 skills, 2 installed · checked 3 hours ago",
+ *   #3840, read from what that check recorded and never by asking the source), then the offered
+ *   sources as cards (SK-22, decision 42). Add source… is a short dialog:
  *   the repository and who can browse it, with its branch, its folder and its sign-in under More.
  * - **A source's page**: its skills at its newest commit, each marked Installed, Update
  *   available, or with what its files do ("runs a script", "reaches 1 host"), with Check for
@@ -95,12 +99,64 @@ function offerFor(updates: SkillUpdates | undefined, key: string, name: string) 
   return updates?.offers.find((one) => sourceKey(one.remote) === key && one.name === name);
 }
 
-/** What a source's row and its page say of it under its name. */
-function aboutSource(source: SkillSource): string {
+/**
+ * **When a source was last checked** (#3840), `seconds` ago: an age, as the record of the last
+ * browse or updates check gives it, never a time nobody saw. A check after now (a clock that
+ * moved) is just now.
+ */
+export function checkedAgo(seconds: number, now: Date): string {
+  if (seconds < 60) return "checked just now";
+  if (seconds < 3600)
+    return `checked ${counted(Math.floor(seconds / 60), "minute", "minutes")} ago`;
+  if (seconds < 86_400)
+    return `checked ${counted(Math.floor(seconds / 3600), "hour", "hours")} ago`;
+  const days = Math.floor(seconds / 86_400);
+  if (days < 30) return `checked ${counted(days, "day", "days")} ago`;
+  const at = new Date(now.getTime() - seconds * 1000);
+  return `checked ${at.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+}
+
+/**
+ * **What the last check of a source found** (#3840): its skills and how many are installed from
+ * it, then when it was checked, read with the source list and never by asking the source. `null`
+ * where nothing is known: a source this machine never checked, with nothing installed from it.
+ */
+export function checkedSaid(one: SourceChecked | undefined, now: Date): string | null {
+  if (one === undefined) return null;
+  const counts =
+    one.skills !== null
+      ? `${counted(one.skills, "skill", "skills")}, ${one.installed} installed`
+      : one.installed > 0
+        ? `${one.installed} installed`
+        : null;
+  const when = one.at === null ? null : checkedAgo(now.getTime() / 1000 - one.at, now);
+  const said = [counts, when].filter((part) => part !== null);
+  return said.length === 0 ? null : said.join(" · ");
+}
+
+/** Now, drawn again each minute, so an age said on screen keeps up with the clock. */
+function useMinute(): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const ticking = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(ticking);
+  }, []);
+  return now;
+}
+
+/** When a source was checked `at` (seconds since the epoch), as its page's lead says it. */
+function checkedWhen(at: number | null | undefined, now: Date): string | null {
+  if (at === null || at === undefined) return null;
+  return checkedAgo(now.getTime() / 1000 - at, now);
+}
+
+/** What a source's row and its page say of it under its name, with what its last check found. */
+function aboutSource(source: SkillSource, checked: string | null = null): string {
   return [
     source.remote.url,
     source.folder === null ? null : `folder ${source.folder}`,
     source.remote.branch === null ? null : `branch ${source.remote.branch}`,
+    checked,
     WHO[source.kept],
     source.vault === null ? null : `signs in with ${source.vault}`,
   ]
@@ -110,11 +166,14 @@ function aboutSource(source: SkillSource): string {
 
 /** **What the Sources pages read**: the sources, the offered ones and the updates, read again
  *  each time something changed or Try again is pressed. */
-function useSourcesRead(plane: string, changed: number) {
+function useSourcesRead(plane: string, changed: number, onTheList: boolean) {
   const [asked, setAsked] = useState(0);
   const [sources, setSources] = useState<Read<readonly SkillSource[]>>();
   const [offered, setOffered] = useState<readonly OfferedSource[]>([]);
   const [updates, setUpdates] = useState<Read<SkillUpdates>>();
+  const [checked, setChecked] = useState<readonly SourceChecked[]>([]);
+  // Bumped as the updates check answers, which records each source it asked.
+  const [answered, setAnswered] = useState(0);
   useEffect(() => {
     let live = true;
     void reading(() => commands.skillSources(plane)).then((read) => {
@@ -125,32 +184,31 @@ function useSourcesRead(plane: string, changed: number) {
     });
     void reading(() => commands.skillUpdates(plane)).then((read) => {
       if (live) setUpdates(read);
+      if (live) setAnswered((n) => n + 1);
     });
     return () => {
       live = false;
     };
   }, [plane, changed, asked]);
-  return { sources, offered, updates, again: () => setAsked((n) => n + 1) };
+  // What the last checks recorded (#3840): read with the list, again once the updates check has
+  // answered, and again on coming back to the list, since a source's page browses its source.
+  useEffect(() => {
+    if (!onTheList) return;
+    let live = true;
+    void reading(() => commands.skillSourcesChecked(plane)).then((read) => {
+      if (live && Array.isArray(read.data)) setChecked(read.data);
+    });
+    return () => {
+      live = false;
+    };
+  }, [plane, changed, asked, answered, onTheList]);
+  return { sources, offered, updates, checked, again: () => setAsked((n) => n + 1) };
 }
 
-/** **Rows held while a read is asked** (S11): the layout stays, and after about a second a line
- *  says what is being read. */
-function Reading({ what }: { what: string }) {
-  const [late, setLate] = useState(false);
-  useEffect(() => {
-    const after = window.setTimeout(() => setLate(true), 1000);
-    return () => window.clearTimeout(after);
-  }, []);
-  return (
-    <div className="skill-studio-placeholders" aria-busy="true" data-testid="skill-sources-reading">
-      {[0, 1, 2].map((at) => (
-        <div key={at} className="skill-studio-placeholder" aria-hidden="true" />
-      ))}
-      <p role="status" className="honest">
-        {late ? `Reading ${what}…` : ""}
-      </p>
-    </div>
-  );
+/** What the last check of `source` recorded, among `checked`. */
+function checkedOf(checked: readonly SourceChecked[], source: SkillSource) {
+  const key = sourceKey(source.remote);
+  return checked.find((one) => sourceKey(one.remote) === key);
 }
 
 /** **A read in place**: rows held while it is asked, why it failed with Try again, or what it
@@ -167,20 +225,15 @@ function Held<T>({
   again: () => void;
   children: (data: T) => ReactNode;
 }) {
-  if (read === undefined) return <Reading what={what} />;
+  if (read === undefined) return <ReadingRows what={what} testid="skill-sources-reading" />;
   if (read.refused !== undefined)
     return (
-      <EmptyState
-        headline={`purlis could not read ${what}`}
-        body={read.refused}
-        variant="panel"
-        role="status"
+      <NotRead
+        what={what}
+        why={read.refused}
+        onAgain={again}
         testid="skill-sources-unread"
-        action={
-          <Button size="sm" icon={<RotateCw aria-hidden="true" />} onPress={again}>
-            Try again
-          </Button>
-        }
+        size="sm"
       />
     );
   return <>{children(read.data)}</>;
@@ -222,7 +275,7 @@ export function SkillSourcesPage({
   change: (label: string, run: () => Promise<Answer>) => void;
   changed: number;
 }) {
-  const read = useSourcesRead(plane, changed);
+  const read = useSourcesRead(plane, changed, at === undefined);
   const [adding, setAdding] = useState<{ offered?: OfferedSource }>();
   /** A change, and where the tab goes once it is made: only from the page it was made on, so a
    *  person who went on meanwhile is never pulled back. */
@@ -312,6 +365,7 @@ export function SkillSourcesPage({
         plane={plane}
         source={sourceAt}
         updates={updates}
+        checked={checkedOf(read.checked, sourceAt)?.at ?? null}
         busy={busy}
         changed={changed}
         onGo={onGo}
@@ -366,6 +420,7 @@ function SourcesList({
 }) {
   const updates = read.updates?.data;
   const offers = updates?.offers ?? [];
+  const now = useMinute();
   const review = (offer: SkillUpdateOffer) =>
     onGo({
       at: "update",
@@ -504,7 +559,9 @@ function SourcesList({
                             )}
                           </RowTrail>
                         )}
-                        <RowBelow clamp={1}>{aboutSource(source)}</RowBelow>
+                        <RowBelow clamp={1}>
+                          {aboutSource(source, checkedSaid(checkedOf(read.checked, source), now))}
+                        </RowBelow>
                       </ListRow>
                     );
                   })}
@@ -667,6 +724,7 @@ function SourcePage({
   plane,
   source,
   updates,
+  checked,
   busy,
   changed,
   onGo,
@@ -678,6 +736,8 @@ function SourcePage({
   plane: string;
   source: SkillSource;
   updates: SkillUpdates | undefined;
+  /** When the source was last checked, as recorded (#3840), until its browse here answers. */
+  checked: number | null;
   busy: boolean;
   changed: number;
   onGo: (to: SourcesAt) => void;
@@ -692,6 +752,7 @@ function SourcePage({
     commands.skillSourceBrowse(plane, source),
   );
   const [removing, setRemoving] = useState(false);
+  const now = useMinute();
   const unconfirmed = updates?.unconfirmed.some((one) => sourceKey(one.remote) === key) === true;
   const at = (skill: string) => ({ source: key, label: source.label, skill });
   const offered = (skill: OfferedSkill) => offerFor(updates, key, skill.name);
@@ -707,7 +768,7 @@ function SourcePage({
         title={source.label}
         lead={
           <>
-            {aboutSource(source)}
+            {aboutSource(source, checkedWhen(read?.data?.checked ?? checked, now))}
             {read?.data !== undefined && (
               <>
                 {" "}

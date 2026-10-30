@@ -58,8 +58,6 @@ import {
   useReadOnlySaid,
 } from "../ReadOnlyLine";
 import { LivesHere } from "../LivesHere";
-import { anyPoolKept, usePools } from "../pools";
-import { POOLS } from "./pools";
 import { ColorWell } from "../ui/choice/ColorWell";
 import { Button } from "../ui/button/Button";
 import { Menu, MenuItem, MenuSection, MenuTrigger, MenuWords } from "../ui/menu/Menu";
@@ -130,13 +128,9 @@ type Switcher = {
 };
 
 function YouLevel({ plane, levels, onLevelChange }: Switcher & { plane?: PlaneId }) {
-  // Nothing about pools shows while this machine keeps none (#2679).
-  const pools = usePools();
-  const anyPool = pools.read.state === "read" && anyPoolKept();
-  const groups = useMemo(
-    () => youGroups(plane).filter((group) => group.id !== POOLS || anyPool),
-    [plane, anyPool],
-  );
+  // The Pools group is listed with or without a pool (the person's ruling of 2026-10-30): it
+  // says what a pool is until one is added.
+  const groups = useMemo(() => youGroups(plane), [plane]);
   const where = atCreation().layout.path || "the layout file";
   return (
     <Shown

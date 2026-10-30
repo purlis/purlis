@@ -18,7 +18,7 @@ import {
   type TestsFile,
 } from "./SkillGrades";
 import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
-import type { GradeRow } from "./bindings";
+import type { GradeRow, SkillLevel } from "./bindings";
 
 afterEach(() => {
   cleanup();
@@ -60,10 +60,11 @@ const GRADES = [
   }),
 ];
 
-/** A step of the grade `grade` of deploy, running. */
-const step = (grade: string) => ({
+/** A step of the grade `grade` of deploy, running: of this copy, or of the copy at `level`. */
+const step = (grade: string, level: SkillLevel = LEVEL) => ({
   plane: "p",
   skill: "deploy",
+  level,
   grade,
   ran: 3,
   of: 12,
@@ -287,7 +288,12 @@ describe("a skill's Grades tab (S6)", () => {
     const onGrading = renderTab();
     await screen.findByText(/^Each edit you save grades this skill on work/);
     waits = "A grade of it now runs 18 chats, more than the 12 you accepted.";
-    await emit("skill-grade-after-edit", { plane: "p", skill: "deploy", said: waits });
+    await emit("skill-grade-after-edit", {
+      plane: "p",
+      skill: "deploy",
+      level: LEVEL,
+      said: waits,
+    });
     await screen.findByText(waits);
     await waitFor(() =>
       expect(screen.getByTestId("skill-grade-after-edit").textContent).toBe(
@@ -306,6 +312,31 @@ describe("a skill's Grades tab (S6)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show it" }));
     expect(onGrading).toHaveBeenCalledWith({ at: "running", grade: "01RUN" }, "go");
     expect(asked.some((one) => one.cmd === "skill_grade_plan")).toBe(false);
+  });
+
+  it("moves nothing for a grade of a same-named copy at another level (#3978)", async () => {
+    let started = false;
+    const asked = core({ skill_grades: () => grades(GRADES, 2, started ? "01NEW" : null) });
+    renderTab();
+    await screen.findByRole("group", { name: "The latest grade of deploy" });
+    const reads = () => asked.filter((one) => one.cmd === "skill_grades").length;
+    const before = reads();
+    // The workspace ops's deploy is another skill: its grade starts, ends and waits elsewhere.
+    const ops: SkillLevel = { at: "workspace", name: "ops", local: false };
+    started = true;
+    await emit("skill-grade", step("01NEW", ops));
+    await emit("skill-grade", { ...step("01NEW", ops), ended: "stopped", said: "It stopped." });
+    await emit("skill-grade-after-edit", {
+      plane: "p",
+      skill: "deploy",
+      level: ops,
+      said: "Your edit was not graded.",
+    });
+    await new Promise((done) => setTimeout(done, 50));
+    expect(reads()).toBe(before);
+    expect(screen.queryByTestId("skill-grades-running")).toBeNull();
+    expect(screen.queryByText("It stopped.")).toBeNull();
+    expect(screen.queryByText("Your edit was not graded.")).toBeNull();
   });
 
   it("shows a grade that starts while the tab is open", async () => {
