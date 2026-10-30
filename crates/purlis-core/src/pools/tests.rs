@@ -1110,7 +1110,7 @@ mod cluster {
                 "runner",
                 &pod,
                 "--",
-                "purlis",
+                crate::dockerpool::PURLIS,
                 "profile",
                 "sign-in",
                 "work",
