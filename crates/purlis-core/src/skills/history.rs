@@ -152,10 +152,7 @@ fn walked(plane: &Path, level: &Level, name: &str) -> Result<(Vec<Version>, Vec<
     let mut versions: Vec<Version> = Vec::new();
     // Where the log of the place before starts: the parent of the commit that left it.
     let mut before: Option<String> = None;
-    loop {
-        let Some(here) = was.last().cloned() else {
-            break;
-        };
+    while let Some(here) = was.last().cloned() {
         let left = MOST_VERSIONS - versions.len();
         let mut found = logged(plane, &here, before.as_deref(), left);
         let oldest = found.last().map(|version| version.commit.clone());

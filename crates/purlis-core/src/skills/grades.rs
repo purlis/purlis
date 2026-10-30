@@ -582,7 +582,7 @@ pub fn read(root: &Path, name: &str, level: Option<&Level>) -> Read {
 /// before a rename or a move are read with the copy's own. A place no level's rule reads is
 /// left out.
 pub fn read_of(root: &Path, was: &[super::history::Was]) -> Read {
-    let copies: Vec<(&str, Option<Option<String>>)> = was
+    let copies: Vec<Wanted<'_>> = was
         .iter()
         .filter_map(|place| {
             let level = place.level.as_ref()?;
@@ -600,6 +600,10 @@ pub fn read_followed(root: &Path, level: &Level, name: &str) -> Read {
         _ => read(root, name, Some(level)),
     }
 }
+
+/// A copy whose rows [`read_where`] reads: its skill's name, and, where it is `Some`, its
+/// level's folder (`None` in it for a copy no folder holds), or every copy of the name.
+type Wanted<'a> = (&'a str, Option<Option<String>>);
 
 /// [`read`], with this machine's clock at `now`.
 fn read_at(
@@ -622,7 +626,7 @@ fn read_at(
 /// [`MOST_GRADES`].
 fn read_where(
     root: &Path,
-    copies: Option<&[(&str, Option<Option<String>>)]>,
+    copies: Option<&[Wanted<'_>]>,
     grade: Option<&str>,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Read {
@@ -707,7 +711,7 @@ pub fn ended_said(end: grade::GradeEnd) -> &'static str {
 /// for by its id alone. `None` where no row of it is read.
 pub fn grade_of(root: &Path, name: &str, grade: &str) -> Option<Graded> {
     let now = chrono::Utc::now();
-    let of = |copies: Option<&[(&str, Option<Option<String>>)]>| {
+    let of = |copies: Option<&[Wanted<'_>]>| {
         read_where(root, copies, Some(grade), now)
             .grades
             .into_iter()
