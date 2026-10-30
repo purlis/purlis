@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793327002344,
+  "lastUpdate": 1793328280892,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30576,6 +30576,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7821055,
             "unit": "ms",
             "extra": "median of 5 runs: 101.181, 101.696, 101.782, 101.801, 102.157 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "0474acf685f62704a002ad5b04792c022a63e80f",
+          "message": "Skills design 09: grading pages in the Skill studio (#3688) (#3926)\n\n* Skill studio: grading pages (#3688)\n\nA skill's Grades tab shows its latest grade as bars (with it, without\nit, its previous version), every grade with how it ended (Graded,\nStopped, Stopped at its limit, Interrupted) and its Scorecard, and the\ngrade-after-each-edit row, which says what each edit may spend before\nit is turned on. A skill with no trigger tests says what they are and\nwhere they live.\n\nGrade opens the plan as a review page: its totals first (chats, the\nmost it may spend, the estimate, what it runs on), then what it runs,\nwhere and what it may spend, with Start fixed at the foot saying what\nit may spend of whose account. A plan that changed under the person\n(Start refused on it, or the skill changed on disk) is held: it is said\nin the attention tone and Start waits until they read the new one.\n\nA running grade shows its chats, its spend against its dollar limit and\nits tokens against its cap, with Stop. The scorecard is a page with an\nend banner in the tone of its end, its totals and a row per trigger\ntest, from which each kept chat opens read-only on a page of its own.\nThe scorecard and grade-chat tabs are retired: an older launch's tabs\nof theirs come back as these pages.\n\nThe core answers a copy's grades in one read (skill_grades): each\ngrade's arms' pass rates, what it spent and how it ended; a scorecard\nsays the same, and a grade's step says what its chats have cost and the\ndollar limit it is held to.\n\nCloses #3688\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grading pages: test steps say what they cost, and no unused import\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grading pages: review fixes\n\nThe running page listens before it asks whether the grade runs, so an\nend told before it was drawn is never missed, and it shows the chats\nand dollar limit of the plan it was started from until the first step.\nA stop the core refuses is said, and Stop can be pressed again. An end\nwith words to say (not recorded, chats that did not start) says them,\nin the trouble tone, with its scorecard and a way back to Grades.\n\nGrading after each edit that waits for a fresh yes offers its new plan\nto read and accept. Walking a grade's chats keeps its scorecard read,\nand the way back to the scorecard goes back rather than piling up\nsteps. The Grades panel's key the window no longer draws is gone, and\nthe change has its changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grading pages: the running page's labels in sentence case\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grades tab: a grade's open button is named by the words it shows\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grading pages: their headings stay in the page's flow\n\nA review page's body scrolls, and a heading held over it drew the\nplan's text and a saved chat's terminal under it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grading pages: story pictures\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T02:08:28Z",
+          "tree_id": "7b0d7d4713fdb6d7667182c87040e2b079969a86",
+          "url": "https://github.com/purlis/purlis/commit/0474acf685f62704a002ad5b04792c022a63e80f"
+        },
+        "date": 1793328277211,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.547373,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.535, 0.535, 0.547, 0.557, 0.561 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.482241,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.380, 16.458, 16.482, 16.490, 16.496 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.90555499999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.610, 101.135, 101.906, 102.327, 102.350 ms"
           }
         ]
       }
