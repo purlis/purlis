@@ -50,6 +50,7 @@ fn two_machines_with_the_same_hostname_write_separate_logs() {
         let who = pieces::Who {
             session: None,
             persona: None,
+            chat: None,
             host: "MacBook-Pro".into(),
             log: name.clone(),
         };
@@ -84,6 +85,7 @@ fn a_renamed_machine_keeps_one_log() {
         let who = pieces::Who {
             session: None,
             persona: None,
+            chat: None,
             host: host.into(),
             log: machine::log_name(Some(laptop.path()), host),
         };
@@ -119,6 +121,7 @@ fn the_hostname_stays_on_a_claim_as_its_label() {
     let who = pieces::Who {
         session: None,
         persona: None,
+        chat: None,
         host: "MacBook-Pro".into(),
         log: machine::log_name(Some(laptop.path()), "MacBook-Pro"),
     };
