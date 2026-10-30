@@ -2219,5 +2219,4 @@ pub fn tidy_at_open(root: &Path, at_open: &AtOpen, isolation: &git::Isolated) ->
 }
 
 #[cfg(test)]
-#[path = "dispatchplace_tests.rs"]
 mod tests;
