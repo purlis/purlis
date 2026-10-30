@@ -9,8 +9,8 @@ import { List, type RowMenu } from "./ui/list/List";
 import { ListCardRow } from "./ui/list/CardRow";
 import { ListFoldSection, ListRun } from "./ui/list/Fold";
 import { ListFilter, noMatchSaid, type Noun } from "./ui/list/ListFilter";
-import { Menu, MenuItem, MenuTrigger, MenuWords } from "./ui/menu/Menu";
-import { SKILL_STARTS, NEW_SKILL_MENU, SkillStarts, type SkillStart } from "./SkillStarts";
+import { Menu } from "./ui/menu/Menu";
+import { NEW_SKILL_MENU, SkillStarts } from "./SkillStarts";
 import { BUILT_IN_FIXED, MAKE_MY_OWN_COPY } from "./SkillCopy";
 import type { Offer } from "./actions";
 import { counted } from "./dispatches";
@@ -62,7 +62,7 @@ export function SkillsList({
   filtered,
   starts,
   busy,
-  onStart,
+  onNewSkill,
   onOpenStudio,
   onOpen,
   menuOf,
@@ -95,7 +95,8 @@ export function SkillsList({
   /** Whether the project has no skill of its own, so its three starts are offered (SK-22). */
   starts: boolean;
   busy: boolean;
-  onStart: (start: SkillStart) => void;
+  /** New skill…: the studio's own dialog, which asks how (#3684). */
+  onNewSkill: () => void;
   /** Opens the studio; `newTab` where ⌘ (Ctrl off a Mac) was held, for a tab of its own. */
   onOpenStudio: (newTab: boolean) => void;
   /** Opens the skill in the Skill studio, at Library › it. */
@@ -172,33 +173,18 @@ export function SkillsList({
         >
           {OPEN_SKILL_STUDIO}
         </Button>
-        <MenuTrigger>
-          <Button variant="ghost" icon={<Plus aria-hidden="true" />} isDisabled={busy}>
-            {NEW_SKILL_MENU}
-          </Button>
-          {/* From the button's end, and narrow, so it opens inside the view (#3308). */}
-          <Menu
-            align="end"
-            className="skills-view-starts"
-            aria-label="Ways to start a skill"
-            onAction={(key) => onStart(String(key) as SkillStart)}
-          >
-            {SKILL_STARTS.map(({ start, label, about }) => (
-              <MenuItem key={start} id={start} textValue={label}>
-                <MenuWords said={label} under={about} />
-              </MenuItem>
-            ))}
-          </Menu>
-        </MenuTrigger>
+        <Button
+          variant="ghost"
+          icon={<Plus aria-hidden="true" />}
+          isDisabled={busy}
+          onPress={onNewSkill}
+        >
+          {NEW_SKILL_MENU}
+        </Button>
       </ButtonRow>
       {notice}
       {starts && (
-        <SkillStarts
-          busy={busy}
-          onStart={onStart}
-          from={NEW_SKILL_MENU}
-          testid="skills-view-empty"
-        />
+        <SkillStarts testid="skills-view-empty" />
       )}
       {filtered && (
         <ListFilter

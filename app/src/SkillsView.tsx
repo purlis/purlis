@@ -12,8 +12,7 @@ import {
 } from "./bindings";
 import { Notice } from "./Notice";
 import { skillsIn, useViewChanged } from "./planeChanged";
-import { askDraft } from "./skillDraftAsks";
-import { SkillsNotRead, SkillsReading, type SkillStart } from "./SkillStarts";
+import { SkillsNotRead, SkillsReading } from "./SkillStarts";
 import {
   AT_THE_ROOT,
   SKILL_STUDIO_TITLE,
@@ -257,17 +256,9 @@ export function SkillsView({
           }),
       SKILL_STUDIO_TITLE,
     );
-  /** One of the studio's three starts (SK-22): a chat's draft here, the others in the studio. */
-  const startWith = (start: SkillStart) => {
-    if (start === "draft") {
-      askDraft(plane, scope, shown.levels);
-      return;
-    }
-    if (start === "sources") {
-      studioAt("sources");
-      return;
-    }
-    // The studio goes to its Library first, and the start opens there.
+  /** **New skill…** (#3684): the studio's own dialog, which asks how; the studio goes to its
+   *  Library first, and the dialog opens there. */
+  const newSkill = () => {
     openStudio();
     askStudioStart("", "new");
   };
@@ -331,7 +322,7 @@ export function SkillsView({
       filtered={filter.filtered}
       starts={shown.first.starts}
       busy={busy}
-      onStart={startWith}
+      onNewSkill={newSkill}
       onOpenStudio={openStudio}
       onOpen={openRow}
       usable={usable}

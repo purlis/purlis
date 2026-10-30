@@ -37,8 +37,9 @@ import { GradingPage, gradingCrumbTo, gradingPath, type GradingGo } from "./Skil
 import { Notice } from "./Notice";
 import { DraftPage, DraftsList } from "./SkillStudioDrafts";
 import { DeletedList, DeletedPage } from "./SkillStudioDeleted";
-import { DRAFT_WITH_A_CHAT, NEW_SKILL, SkillStarts, type SkillStart } from "./SkillStarts";
-import { askDraft, useSkillDraftsRead } from "./skillDraftAsks";
+import { DRAFT_WITH_A_CHAT, NEW_SKILL_MENU } from "./SkillStarts";
+import { NewSkillDialog } from "./NewSkillDialog";
+import { askDraft, askSkillChat, useSkillDraftsRead } from "./skillDraftAsks";
 import { SkillSourcesPage } from "./SkillSources";
 import { Select } from "./ui/select/Select";
 import { Choice, Field, SettingRow } from "./settings/components";
@@ -87,10 +88,10 @@ import type { Offer } from "./actions";
 import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
 import { useSkillEditInPlace } from "./SkillEditInPlace";
 
-/** A change in progress: New skill or the editor, drawn in the item pane; or Rename, Move or
- *  Delete, each a dialog (S4, #3685), with what the core refused the last time it was asked. */
+/** A change in progress: New skill… (#3684), Rename, Move or Delete, each a dialog (S4, #3685),
+ *  with what the core refused the last time it was asked. */
 type Doing =
-  | { what: "new" }
+  | { what: "new"; refused?: string }
   | { what: "rename"; skill: StudioSkill; level: SkillLevel; refused?: string }
   | { what: "move"; skill: StudioSkill; from: SkillLevel; refused?: string }
   | { what: "delete"; skill: StudioSkill; level: SkillLevel; refused?: string };
@@ -105,11 +106,6 @@ function sourcesPath(at: SourcesAt): Crumb[] {
     { id: at.at, label: `${at.at === "install" ? "Install" : "Update"} ${at.skill}` },
   ];
 }
-
-/** What a change in progress drawn in a pane is called in the path: a dialog is no place. */
-const DOING_NAMES: Partial<Record<Doing["what"], string>> = {
-  new: NEW_SKILL,
-};
 
 // --- The Library's list ------------------------------------------------------------------------
 
@@ -179,6 +175,14 @@ function scopeOfLevel(level: SkillLevel, shown: StudioScope): StudioScope {
   if (level.at === "workspace") return { at: "workspace", name: level.name };
   if (level.at === "persona") return asPersona(level.name);
   return shown;
+}
+
+/** **The scope whose Library lists a new skill made at `level`** (#3684): a workspace's or a
+ *  persona's own; a project skill starts granted to the project's root alone, so a workspace's
+ *  chats don't get it yet and the root's Library lists it. */
+function scopeOfNew(level: SkillLevel, shown: StudioScope): StudioScope {
+  if (level.at === "project") return shown.at === "workspace" ? AT_THE_ROOT : shown;
+  return scopeOfLevel(level, shown);
 }
 
 /** Whether `skill`, a row of the studio showing `scope`, is at `level`. */
@@ -304,6 +308,8 @@ export function SkillStudioTab({
   // Make my own copy (#3686): of the built-in `from`, or of one the person picks; and why the
   // core did not make the last one asked for.
   const [copying, setCopying] = useState<{ from?: string; refused?: string }>();
+  // A skill New skill… just made, whose page opens in Edit once the studio has read it (#3684).
+  const [toEdit, setToEdit] = useState<{ place: StudioPlace; level: SkillLevel }>();
   const { workspace, persona } = whoseChats(scope);
   const key = scopeKey(scope);
   // What was read for another scope is not this one's: placeholders until this one's is.
@@ -315,7 +321,7 @@ export function SkillStudioTab({
   if (on && !opened) setOpened(true);
   const draftsRead = useSkillDraftsRead(plane, changed + done);
   const drafts = draftsRead ?? [];
-  // A start the Skills view asked this studio to open on (#3266): the New skill form.
+  // A start the Skills view asked this studio to open on (#3266): New skill…'s dialog (#3684).
   // Make my own copy, asked from the Skills view's folded built-in skills (#3693).
   useStudioStart(tab, on, (start) =>
     edits.leave(() => {
@@ -375,6 +381,24 @@ export function SkillStudioTab({
       live = false;
     };
   }, [plane, opened, changed, done]);
+
+  // **A skill New skill… made opens in Edit** (#3684): once the studio has read it at the place
+  // it went to, its text opens in the editor on its page's Text tab. Gone elsewhere meanwhile,
+  // nothing opens.
+  useEffect(() => {
+    if (toEdit === undefined) return;
+    if (!samePlace(placeNow.current, toEdit.place)) {
+      setToEdit(undefined);
+      return;
+    }
+    const name = skillOfRowId(toEdit.place.skill ?? "");
+    const made = studio?.skills.find(
+      (one) => one.name === name && atLevel(one, toEdit.place.scope, toEdit.level),
+    );
+    if (made === undefined) return;
+    setToEdit(undefined);
+    edits.open(made, toEdit.level, toEdit.place);
+  }, [toEdit, studio, at, edits]);
 
   if (studio !== undefined && !studio.on)
     return (
@@ -440,7 +464,7 @@ export function SkillStudioTab({
     (why: string): void => {
       if (inHandNow.current?.doing === asked)
         setInHand((was) =>
-          was === undefined || was.doing !== asked || was.doing.what === "new"
+          was === undefined || was.doing !== asked
             ? was
             : { ...was, doing: { ...was.doing, refused: why } },
         );
@@ -449,7 +473,7 @@ export function SkillStudioTab({
   /** A field of the dialog in hand changed: the core's last refusal no longer stands. */
   const editedInDialog = () =>
     setInHand((was) =>
-      was === undefined || was.doing.what === "new" || was.doing.refused === undefined
+      was === undefined || was.doing.refused === undefined
         ? was
         : { ...was, doing: { ...was.doing, refused: undefined } },
     );
@@ -542,6 +566,38 @@ export function SkillStudioTab({
       restore: one.id,
     };
   };
+
+  /** **New skill…'s Write it yourself** (#3684, S4): made in one commit, then its page opens at
+   *  its Library with the Text tab in Edit, once the studio has read it; or the core's refusal,
+   *  said in the dialog. */
+  const make = (
+    asked: Doing,
+    level: SkillLevel,
+    name: string,
+    description: string,
+    template: SkillTemplateId,
+  ) =>
+    change(
+      "The skill was not made",
+      () => commands.skillNew(plane, level, name, description, template),
+      (notes) => {
+        const place: StudioPlace = {
+          page: "library",
+          scope: scopeOfNew(level, scope),
+          skill: skillRowNamed(name),
+        };
+        go(place);
+        setToEdit({ place, level });
+        return Promise.resolve(
+          resultOf(
+            "Skill made",
+            `${name} is made in the ${labelOf(levels, level)} skills. Its text is open to edit.`,
+            notes,
+          ),
+        );
+      },
+      refusedInDialog(asked, "The skill was not made"),
+    );
 
   /** **Make my own copy** (#3686): the copy made, said with its built-in still loading, and its
    *  page opened; or the core's refusal, said in the dialog. */
@@ -792,19 +848,14 @@ export function SkillStudioTab({
         size="sm"
         icon={<Plus aria-hidden="true" />}
         isDisabled={studio === undefined || doing?.what === "new"}
-        onPress={() =>
-          edits.leave(() => {
-            if (page !== "library" || at.skill !== undefined) walked.go({ page: "library", scope });
-            setDoing({ what: "new" });
-          })
-        }
+        onPress={() => edits.leave(() => setDoing({ what: "new" }))}
       >
-        {`${NEW_SKILL}…`}
+        {NEW_SKILL_MENU}
       </Button>
     </>
   );
-  /** A chat's draft, asked for where drafts are listed and where skills are: the Library's tools
-   *  and the Drafts page, not the bar, which keeps to the prototype's and fits a narrow tab. */
+  /** A chat's draft, asked for where drafts are listed: the Drafts page. The Library's is New
+   *  skill…'s Ask a chat to draft it (#3684), which asks what the skill should do first. */
   const draftAsk = (
     <Button
       size="sm"
@@ -844,11 +895,8 @@ export function SkillStudioTab({
       : []),
     ...(chosen !== undefined && at.grading !== undefined ? gradingPath(at.grading) : []),
     ...(inSources === undefined ? [] : sourcesPath(inSources)),
-    ...(doing !== undefined && DOING_NAMES[doing.what] !== undefined
-      ? [{ id: "doing", label: DOING_NAMES[doing.what] ?? "" }]
-      : edits.editing !== undefined
-        ? [{ id: "doing", label: "Edit" }]
-        : []),
+    // A change in progress is a dialog, which is no place; the editor is.
+    ...(edits.editing !== undefined ? [{ id: "doing", label: "Edit" }] : []),
   ];
   const restoring = said?.restore;
   const undoing = said?.undo;
@@ -937,18 +985,6 @@ export function SkillStudioTab({
   let itemChosen = false;
   if (page === "library") {
     const shown = skills.filter((skill) => chipsKeep(skill, chips) && searchKeeps(skill, query));
-    const starts =
-      studio?.first.starts === true && doing === undefined ? (
-        <SkillStarts
-          busy={busy}
-          onStart={(how: SkillStart) => {
-            if (how === "draft") {
-              if (studio !== undefined) askDraft(plane, scope, studio.levels);
-            } else if (how === "sources") go({ page: "sources", scope });
-            else setDoing({ what: "new" });
-          }}
-        />
-      ) : null;
     // The first row of a name is the copy the chat gets, or its only copy; each row after it is
     // a copy that one hides. Counted in the core's order, before the built-ins go to the end.
     const seen = new Map<string, number>();
@@ -1017,7 +1053,6 @@ export function SkillStudioTab({
                 })
               }
             />
-            {draftAsk}
             {persona !== null && studio !== undefined && (
               /* The persona's own skills list (#2768): every skill choice is the studio's. A name
                  the studio lists has Add on its page; this takes one it does not. */
@@ -1032,7 +1067,6 @@ export function SkillStudioTab({
         </ViewListHead>
         {held(() => (
           <>
-            {starts}
             {shown.length === 0 && skills.length > 0 ? (
               <EmptyState
                 headline={
@@ -1055,13 +1089,13 @@ export function SkillStudioTab({
                   )
                 }
               />
-            ) : skills.length === 0 && starts !== null ? null : skills.length === 0 ? (
+            ) : skills.length === 0 ? (
               <EmptyState
                 headline="No skill reaches these chats yet"
                 body="Every skill these chats can get is listed here, with why any other is left out."
                 testid="skill-library-empty"
                 action={
-                  <Button onPress={() => setDoing({ what: "new" })}>{`${NEW_SKILL}…`}</Button>
+                  <Button onPress={() => setDoing({ what: "new" })}>{NEW_SKILL_MENU}</Button>
                 }
               />
             ) : (
@@ -1118,26 +1152,11 @@ export function SkillStudioTab({
         ))}
       </>
     );
-    const panel =
-      doing?.what === "new" && studio !== undefined ? (
-        <ChangePanel
-          plane={plane}
-          scope={scope}
-          busy={busy}
-          levels={levels}
-          onCancel={() => setDoing(undefined)}
-          change={change}
-        />
-      ) : undefined;
     // A grading page under the chosen skill (S6) is the page of a skill this studio can grade.
     const gradingLevel =
       chosen !== undefined && at.grading !== undefined ? levelOf(chosen, scope) : null;
     item =
-      doing?.what === "new" && panel !== undefined ? (
-        <div className="skill-studio-item" data-testid="skill-studio-doing">
-          {panel}
-        </div>
-      ) : chosen !== undefined && at.grading !== undefined && gradingLevel !== null ? (
+      chosen !== undefined && at.grading !== undefined && gradingLevel !== null ? (
         <GradingPage
           // A page of each kind and grade: walking a grade's chats keeps its scorecard read.
           key={`${skillRowId(chosen)}:${at.grading.at}:${"grade" in at.grading ? at.grading.grade : ""}`}
@@ -1428,6 +1447,29 @@ export function SkillStudioTab({
           onCancel={() => setCopying(undefined)}
         />
       )}
+      {doing?.what === "new" && studio !== undefined && (
+        <NewSkillDialog
+          plane={plane}
+          levels={levels}
+          start={start}
+          takenAt={(level) =>
+            skills.filter((one) => atLevel(one, scope, level)).map((one) => one.name)
+          }
+          builtIns={builtInNames}
+          busy={busy}
+          refused={doing.refused}
+          onEdit={editedInDialog}
+          onMake={(level, name, description, template) =>
+            make(doing, level, name, description, template)
+          }
+          onDraft={(level, what) => {
+            setDoing(undefined);
+            askSkillChat({ plane, kind: "draft", level, what });
+          }}
+          onSources={() => go({ page: "sources", scope })}
+          onClose={() => setDoing(undefined)}
+        />
+      )}
       {doing?.what === "rename" && (
         <RenameDialog
           plane={plane}
@@ -1486,7 +1528,6 @@ export function SkillStudioTab({
         item={item}
         opened={
           chosen !== undefined ||
-          doing !== undefined ||
           itemName !== undefined ||
           itemChosen ||
           (page === "needs" && need !== undefined && needs.some((one) => one.id === need))
@@ -1500,128 +1541,3 @@ export function SkillStudioTab({
   );
 }
 
-/** The panel for the change in progress drawn in a pane: New skill. */
-function ChangePanel({
-  plane,
-  scope,
-  busy,
-  levels,
-  onCancel,
-  change,
-}: {
-  plane: string;
-  scope: StudioScope;
-  busy: boolean;
-  levels: readonly StudioLevel[];
-  onCancel: () => void;
-  change: Change;
-}) {
-  return (
-    <NewSkill
-      plane={plane}
-      scope={scope}
-      levels={levels}
-      busy={busy}
-      onCancel={onCancel}
-      onMake={(level, name, description, template) =>
-        change("The skill was not made", () =>
-          commands.skillNew(plane, level, name, description, template),
-        )
-      }
-    />
-  );
-}
-
-/** **New skill** (decisions 13 and 37): a name, a description and a template, at the level the
- *  person came from, said in one line they can change. */
-/** What the template picker holds a template by: its kind, or `<extension>/<template>`. */
-function templateKey(id: SkillTemplateId): string {
-  return id.kind === "extension" ? `${id.extension}/${id.template}` : id.kind;
-}
-
-function NewSkill({
-  plane,
-  scope,
-  levels,
-  busy,
-  onCancel,
-  onMake,
-}: {
-  plane: string;
-  scope: StudioScope;
-  levels: readonly StudioLevel[];
-  busy: boolean;
-  onCancel: () => void;
-  /** `template` is purlis's own, or one an extension offers (ADR 0101). */
-  onMake: (level: SkillLevel, name: string, description: string, template: SkillTemplateId) => void;
-}) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [templates, setTemplates] = useState<readonly SkillTemplate[]>([]);
-  const [template, setTemplate] = useState<SkillTemplateId>({ kind: "blank" });
-  const [level, setLevel] = useState<SkillLevel>(() => levelFrom(scope, levels));
-  useEffect(() => {
-    let live = true;
-    void commands
-      .skillTemplates(plane)
-      .then((all) => {
-        if (live && all.status === "ok") setTemplates(all.data);
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [plane]);
-  return (
-    <form
-      className="skill-change"
-      aria-label="New skill"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onMake(level, name.trim(), description.trim(), template);
-      }}
-    >
-      <SettingRow
-        label="Name"
-        help="Lowercase letters, digits and hyphens."
-        control={(ids) => (
-          <Field kind="text" ids={ids} value={name} placeholder="pr-review" onChange={setName} />
-        )}
-      />
-      <SettingRow
-        label="What it does and when to use it"
-        help="One line: a chat reads it to know when the skill applies."
-        control={(ids) => (
-          <Field kind="text" ids={ids} value={description} onChange={setDescription} />
-        )}
-      />
-      <Select
-        aria-label="Starts from"
-        value={templateKey(template)}
-        options={templates.map((one) => ({
-          value: templateKey(one.id),
-          label: one.label,
-          tooltip: one.about,
-        }))}
-        // One of the offered ids, or the blank template where the list does not name it.
-        onValueChange={(to) =>
-          setTemplate(templates.find((one) => templateKey(one.id) === to)?.id ?? { kind: "blank" })
-        }
-      />
-      <p className="honest" data-testid="skill-new-level">
-        It lands in the {labelOf(levels, level)} skills.{" "}
-        <LevelPicker label="Lands in" levels={levels} now={level} onPick={setLevel} />
-      </p>
-      <ButtonRow>
-        <Button
-          variant="primary"
-          type="submit"
-          isDisabled={busy || name.trim() === "" || description.trim() === ""}
-        >
-          Make it
-        </Button>
-        <Button onPress={onCancel}>Cancel</Button>
-      </ButtonRow>
-    </form>
-  );
-}

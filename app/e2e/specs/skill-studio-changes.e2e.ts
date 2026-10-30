@@ -11,7 +11,7 @@ import {
   runFromThePalette,
   tabNames,
 } from "../reach.js";
-import { studioPage, studioMore, studioSkill } from "../studio.js";
+import { studioPage, studioMore, studioSkill, studioTab } from "../studio.js";
 
 /**
  * **Making, renaming, deleting and restoring a skill in the Skill studio** (SK-7, #2770), in the
@@ -68,21 +68,26 @@ describe("making and changing a skill in the Skill studio", function () {
   it("makes a skill at the project's root, renames it, deletes it and restores it", async () => {
     await runFromThePalette("Open Skill studio", "skills.studio");
 
-    const make = await $("button=New skill…");
+    // New skill… asks how first; Write it yourself lands where the person came from (#3684).
+    const make = await $('[data-testid="skill-studio"]').$("button=New skill…");
     await make.waitForClickable({ timeout: 20_000 });
     await make.click();
-    await expect($('[data-testid="skill-new-level"]')).toHaveText(
-      /It lands in the project skills\./,
-    );
+    await press('[data-testid="skill-new"]', "Write it yourself");
     await typeInto("Name", MADE);
-    await typeInto("What it does and when to use it", "Probes making a skill.");
-    await (await $("button=Make it")).click();
+    await typeInto("What it does, and when a chat should use it", "Probes making a skill.");
+    await expect($('[data-testid="skill-new-write"]')).toHaveText(
+      new RegExp(`${MADE} is made in the project skills`),
+    );
+    await press('[data-testid="skill-new-write"]', "Make it and open its page");
 
     const made = await $(`[data-testid="skill-${MADE}"]`);
     await made.waitForExist({ timeout: 20_000 });
     await expect(made).toHaveText(/project/);
     expect(existsSync(join(root, "skills", MADE, "SKILL.md"))).toBe(true);
+    // Its page opens with its text in the editor; Overview says who gets it.
+    await $('[data-testid="skill-editor"]').waitForExist({ timeout: 20_000 });
     const item = await studioSkill(MADE);
+    await studioTab("Overview");
     await expect(item.$('[data-testid="skill-in-a-chat"]')).toHaveText(/^On/);
 
     await studioMore(MADE, "Rename");

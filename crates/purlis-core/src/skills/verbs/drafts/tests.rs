@@ -190,7 +190,7 @@ fn a_personas_skill_is_drafted_and_accepted_as_one_commit_of_its_files() {
     let (subject, paths) = last_commit(root);
     assert!(subject.ends_with("skill new lint"), "{subject}");
     assert_eq!(paths, ["personas/reviewer/skills/lint/SKILL.md"]);
-    assert!(asking(&Level::persona("reviewer")).contains("personas/reviewer/skills/<name>"));
+    assert!(asking(&Level::persona("reviewer"), "").contains("personas/reviewer/skills/<name>"));
 }
 
 #[cfg(unix)]
@@ -902,4 +902,19 @@ fn the_trigger_tests_prompt_names_the_file_a_draft_is_kept_for() {
     let file = draftable(root, &root.join("skills/deploy/evals/triggers.json")).expect("draftable");
     assert_eq!(file.inner, "evals/triggers.json");
     assert!(asking_for_trigger_tests(root, &Level::project(), "nowhere").is_err());
+}
+
+/// **New skill…'s Ask a chat to draft it** (#3684): what the person said the skill does ends the
+/// prompt, on one line, so nothing typed into the chat's terminal sends it or reaches it as a key;
+/// left empty, the prompt ends where the person says it.
+#[test]
+fn the_draft_prompt_ends_with_what_the_skill_does_on_one_line() {
+    let level = Level::project();
+    let said = asking(&level, "  Reviews a PR\nagainst REVIEW.md\r\u{1b}[A\tquickly ");
+    assert!(
+        said.ends_with("What the skill does: Reviews a PR against REVIEW.md [A quickly"),
+        "{said}"
+    );
+    assert!(!said.chars().any(char::is_control), "{said:?}");
+    assert!(asking(&level, " \n ").ends_with("The skill should "));
 }

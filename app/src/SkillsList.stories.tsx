@@ -6,7 +6,7 @@
  * whose skills it shows, its header, and the chat's skills as small cards in three groups that
  * fold (Needs you, In this chat with its built-in skills folded to one quiet line, Left out
  * folded), each card with its level, Use, its ⋯ menu, two lines or its reason, and its one fix;
- * the same with no chat in front, its middle group headed A new chat gets; then a project with no skill of its own, whose starts are New skill…'s. Each is walked by the
+ * the same with no chat in front, its middle group headed A new chat gets; then a project with no skill of its own, whose start is New skill…. Each is walked by the
  * keyboard from the header in, held to axe and pictured in every pictured cell of the theme
  * matrix, light and dark among them (`docs/component-stories.md`).
  */
@@ -96,7 +96,7 @@ function Skills({
         filtered={filter.filtered}
         starts={starts}
         busy={false}
-        onStart={(start) => setSaid(`Started ${start}`)}
+        onNewSkill={() => setSaid("Asked how to make a skill")}
         onOpenStudio={() => setSaid("Opened Skill studio")}
         onOpen={(row) => setSaid(`Opened ${row.skill.name}`)}
         usable={(row) => {
@@ -261,15 +261,10 @@ export const NoChatInFront: Story = {
 
 /**
  * **A project with no skill of its own**: the studio's claim over the skills its chats already
- * get, naming New skill…, whose menu holds the three starts. Tab reaches it past Open Skill
- * studio, Enter opens it on its first start, Enter starts one and closes it.
- *
- * The picture is of the menu open on its first start (#3414): taken once the menu has arrived,
- * its fade and its placement done, of the page, as a menu is drawn over the view. It opens from
- * the button's end, so it stays inside the view's width (#3308).
+ * get, naming New skill…, which opens the studio's own dialog that asks how (#3684). Tab reaches
+ * it past Open Skill studio, and Enter presses it.
  */
 export const NoSkillsOfItsOwn: Story = {
-  parameters: { screenshot: "page" },
   render: () => <Skills starts rows={OPS.filter((row) => row.skill.level === "built-in")} />,
   play: async ({ canvas, userEvent }) => {
     expect(canvas.getByTestId("skills-view-empty")).toHaveTextContent("from New skill…");
@@ -277,18 +272,11 @@ export const NoSkillsOfItsOwn: Story = {
     await userEvent.tab();
     const button = canvas.getByRole("button", { name: "New skill…" });
     await untilFocused(() => button, "Skills: Tab reaches New skill…");
-    await userEvent.keyboard("{Enter}");
-    const menu = await screen.findByRole("menu", { name: "Ways to start a skill" });
-    await untilFocused(
-      () => within(menu).getByRole("menuitem", { name: /Ask a chat/ }),
-      "Skills: the menu opens on its first start",
-    );
     expectFocusInSight();
-    await untilSettled(menu);
-    await pictureNow();
     await userEvent.keyboard("{Enter}");
-    await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Started draft"));
-    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
+    await waitFor(() =>
+      expect(canvas.getByRole("status")).toHaveTextContent("Asked how to make a skill"),
+    );
   },
 };
 
