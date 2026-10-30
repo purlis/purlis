@@ -577,6 +577,61 @@ pub fn read(root: &Path, name: &str, level: Option<&Level>) -> Read {
     read_at(root, name, level, chrono::Utc::now())
 }
 
+/// **The grades of the skill that had the places `was`** (#3918, [`super::history::places`]):
+/// [`read`]'s rows of each place's copy, by the name and level it had there, so the grades from
+/// before a rename or a move are read with the copy's own. A row of a place it had before is
+/// taken only where its tree is one of that place's versions ([`super::history::Was::trees`]):
+/// a skill that took the old name there since is another, and its grades are none of these. A
+/// place no level's rule reads is left out.
+pub fn read_of(root: &Path, was: &[super::history::Was]) -> Read {
+    read_where(root, &wanted_of(was), None, chrono::Utc::now())
+}
+
+/// The copies [`read_of`] reads the rows of.
+fn wanted_of(was: &[super::history::Was]) -> Vec<Wanted<'_>> {
+    was.iter()
+        .enumerate()
+        .filter_map(|(at, place)| {
+            let level = place.level.as_ref()?;
+            Some(Wanted {
+                name: place.name.as_str(),
+                level: Some(level.rel()),
+                trees: (at > 0).then_some(place.trees.as_slice()),
+            })
+        })
+        .collect()
+}
+
+/// **The grades of the copy of `name` at `level`, and of the places it had before a rename or a
+/// move** (#3918): what its Grades tab draws. Its own alone where its history is not read.
+pub fn read_followed(root: &Path, level: &Level, name: &str) -> Read {
+    match super::history::places(root, level, name) {
+        Ok(was) if was.len() > 1 => read_of(root, &was),
+        _ => read(root, name, Some(level)),
+    }
+}
+
+/// A copy whose rows [`read_where`] reads: its skill's name; where `level` is `Some`, its
+/// level's folder (`None` in it for a copy no folder holds), else every copy of the name; and
+/// where `trees` is `Some`, only rows whose tree is one of them.
+struct Wanted<'a> {
+    name: &'a str,
+    level: Option<Option<String>>,
+    trees: Option<&'a [String]>,
+}
+
+impl Wanted<'_> {
+    /// Whether `row` is of this copy.
+    fn holds(&self, row: &Graded) -> bool {
+        row.skill == self.name
+            && match &self.level {
+                None => true,
+                Some(word) => row.level.is_none() || row.level == *word,
+            }
+            && self.trees.is_none_or(|trees| trees.contains(&row.tree))
+    }
+}
+
 /// [`read`], with this machine's clock at `now`.
 fn read_at(
     root: &Path,
@@ -584,7 +639,22 @@ fn read_at(
     level: Option<&Level>,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Read {
-    let wanted = level.map(|level| level.rel());
+    let wanted = Wanted {
+        name,
+        level: level.map(Level::rel),
+        trees: None,
+    };
+    read_where(root, std::slice::from_ref(&wanted), None, now)
+}
+
+/// The rows of the record of any of `copies` ([`Wanted`]), and of the grade `grade` alone where
+/// it is `Some`, newest first, at most [`MOST_GRADES`].
+fn read_where(
+    root: &Path,
+    copies: &[Wanted<'_>],
+    grade: Option<&str>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Read {
     let mut files = record_files(&root.join("personas").join(DIR_NAME));
     if let Some(state) = crate::appstate::dir(root) {
         files.extend(record_files(&state.join(LOCAL_DIR)));
@@ -611,17 +681,14 @@ fn read_at(
                 .then(|| serde_json::from_str::<Graded>(line).ok())
                 .flatten();
             let Some(row) = row else {
-                if names_the_skill(line, name) {
+                if copies.iter().any(|one| names_the_skill(line, one.name)) {
                     out.skipped += 1;
                 }
                 continue;
             };
             let its = row.v <= VERSION
-                && row.skill == name
-                && match &wanted {
-                    None => true,
-                    Some(word) => row.level.is_none() || row.level == *word,
-                };
+                && grade.is_none_or(|grade| row.grade == grade)
+                && copies.iter().any(|one| one.holds(&row));
             if !its {
                 continue;
             }
@@ -654,11 +721,29 @@ pub fn ended_said(end: grade::GradeEnd) -> &'static str {
 }
 
 /// **The grade `grade` of the skill `name`** in the project at `root`, as the eval record holds
-/// it (SK-59, #3239): what its scorecard is drawn from. `None` where no row of it is read.
+/// it (SK-59, #3239): what its scorecard is drawn from. A grade from before a rename or a move
+/// (#3918) is recorded by the name and level a copy of `name` had then, so where no row of `name`
+/// is the grade, the places each copy had before are looked in ([`read_of`]). `None` where no
+/// row of it is read.
 pub fn grade_of(root: &Path, name: &str, grade: &str) -> Option<Graded> {
-    grades_of(root, name, None)
-        .into_iter()
-        .find(|one| one.grade == grade)
+    let now = chrono::Utc::now();
+    let of = |copies: &[Wanted<'_>]| {
+        read_where(root, copies, Some(grade), now)
+            .grades
+            .into_iter()
+            .next()
+    };
+    let named = Wanted {
+        name,
+        level: None,
+        trees: None,
+    };
+    of(std::slice::from_ref(&named)).or_else(|| {
+        Level::copies_of(root, name).find_map(|(level, _)| {
+            let was = super::history::places(root, &level, name).ok()?;
+            (was.len() > 1).then(|| of(&wanted_of(&was))).flatten()
+        })
+    })
 }
 
 /// **What a grade of a copy would cost**, from what a grade of it before spent per chat
@@ -831,12 +916,12 @@ fn copy_of(root: &Path, level: &Level, name: &str) -> Result<SkillCopy, String> 
     });
     let (previous, previous_refused) = match history
         .as_ref()
-        .and_then(|history| super::history::previous_of(history, tree))
+        .and_then(|history| super::history::previous_of(history, name, tree))
     {
         None => (None, None),
         Some(version) => {
-            match super::history::files_of_version(root, &rel(root, &folder), name, &version.commit)
-            {
+            // From before a move, it is read from the folder the skill had then (#3918).
+            match super::history::files_of_version(root, &version.folder, name, &version.commit) {
                 Ok(files) => (
                     Some(Previous {
                         commit: version.commit.clone(),

@@ -120,6 +120,54 @@ pub struct Curating {
     pub workspace: Option<String>,
 }
 
+/// **Why a start the window asked for did not start** (#3942, #3968): the core's sentence, and
+/// the approval the profile it started on needs, where its start was refused while that profile
+/// waits for one. The window then offers Approve and start…, which shows that line and approves
+/// it only on the person's answer (`approve_profile`), from this and never from the words. The
+/// Skill studio's starts, a curation action, a theme chat and Start a chat here refuse with it:
+/// the starts the core makes on a profile without the new-chat picker, which asks first itself.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct StartRefused {
+    pub words: String,
+    /// Read as the start was refused, of the profile it was refused on. Null for a refusal
+    /// before any start was tried, or on a profile with nothing to approve.
+    pub approval: Option<Box<crate::chats::NeedsApproval>>,
+}
+
+impl From<String> for StartRefused {
+    fn from(words: String) -> StartRefused {
+        StartRefused {
+            words,
+            approval: None,
+        }
+    }
+}
+
+impl StartRefused {
+    /// A start on `profile` at `root` refused in `words`, with the approval that profile needs
+    /// as it was refused, where it needs one: what a refused [`start_typed`] maps its sentence
+    /// through.
+    pub(crate) fn on<'a>(
+        profile: &'a str,
+        root: &'a Path,
+    ) -> impl FnOnce(String) -> StartRefused + 'a {
+        move |words| StartRefused {
+            approval: crate::chats::NeedsApproval::of_profile(profile, root).map(Box::new),
+            words,
+        }
+    }
+}
+
+/// `work` off the window's thread, its refusal kept whole.
+pub(crate) async fn off_the_window_refused<T: Send + 'static>(
+    what: &'static str,
+    work: impl FnOnce() -> Result<T, StartRefused> + Send + 'static,
+) -> Result<T, StartRefused> {
+    crate::off_the_window(what, move || Ok(work()))
+        .await
+        .map_err(StartRefused::from)?
+}
+
 /// What each subject the window names is offered (`subjects` in the core's spelling:
 /// `workspace:<name>`, `persona:<name>`, `plane`), in the order asked.
 // Its plane is a `PlaneId` the registry vouches for, like every other command's. Not a doc

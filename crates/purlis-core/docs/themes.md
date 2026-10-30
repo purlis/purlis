@@ -353,7 +353,13 @@ focused itself (the keyboard stays in the filter). None of them takes a chip's v
 colours back. Each is held to its floor on the ground it is drawn on, in each of its states (the
 crumb and the ⌄ on the bar, and on the card's fill under the pointer and while open; a row and
 its pin on the switcher's popover, the row Enter would go to on the selected fill), and one that
-breaks it draws its own default back there and leaves the chip alone. A switcher row's count is
+breaks it draws its own default back there and leaves the chip alone. A pinned pin and the row
+Enter would go to are measured under the pointer too, in what both states draw at once; a row's
+count is held on a fill the theme gives its row, and the row draws its own fill back where even
+the count's default cannot be read on it; a popover fill the theme sets that the switcher's rows
+and pins cannot be read on draws the popover's own back; and an unavailable row is reached by no
+row key, so it stays in the faint tier. A chip that breaks a floor at rest draws its states'
+own fills back after it, keeping what the theme sets in a state itself. A switcher row's count is
 `titlebar.row-count`, in no state, held on its amber wash over the popover and the selected row;
 `titlebar.count` is a chip's.
 

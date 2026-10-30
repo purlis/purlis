@@ -330,12 +330,15 @@ pub struct Browse {
     pub commit: Commit,
     pub skills: Vec<Offered>,
     pub not_skills: Vec<NotASkill>,
+    /// When it was read, in seconds since the epoch, as [`super::checked`] recorded it.
+    pub checked: u64,
 }
 
 /// **Browses `source`** at its newest commit.
 pub fn browse(plane: &Path, source: &Source) -> Result<Browse, String> {
     let fetched = fetch(plane, source, None)?;
     let (found, not_skills) = fetched.skills()?;
+    let checked = super::checked::browsed(plane, &source.remote, found.len());
     let (locked, _) = lock::every(plane);
     // Each skill's files are read for its marks until one read would take the fetch past what it
     // may read: the rest are left for their reviews, and the browse is not refused for them.
@@ -368,5 +371,6 @@ pub fn browse(plane: &Path, source: &Source) -> Result<Browse, String> {
             })
             .collect(),
         not_skills,
+        checked,
     })
 }

@@ -454,6 +454,7 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "a copy the clipboard refused, said beside the read-only screen it was asked of (#3676)",
   },
   "SearchTab.tsx": { count: 1, why: "the search's progress, a live value" },
+  "UnsavedWorkQuestion.tsx": { count: 1, why: ACTION },
   "SkillChangeDialogs.tsx": {
     count: 2,
     why:

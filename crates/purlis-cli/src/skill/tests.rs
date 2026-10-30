@@ -89,6 +89,8 @@ fn skill_versions_shows_a_commit_s_author_and_subject_escaped() {
             tree: String::new(),
             runs: Totals::default(),
             grade: None,
+            folder: "skills/deploy".into(),
+            name: "deploy".into(),
         }],
         uncommitted: Totals::default(),
     };

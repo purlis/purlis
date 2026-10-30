@@ -87,8 +87,10 @@ jobs:
         # `of` is how many parts `--shard` splits a browser's story files into, and `shard` lists
         # each part: the two change together. Each report is named by both, so the check finds a
         # part that never ran (`tools/story-failures.mjs shards`).
-        shard: [1, 2]
-        of: [2]
+        # Three, so the slower browser's part runs about 7 minutes and has room to draw its
+        # pictures again and for the stories to grow, well under 20 (#4038).
+        shard: [1, 2, 3]
+        of: [3]
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
       # An init that reaps, and the host's IPC namespace, which Chromium wants for its shared
@@ -149,7 +151,9 @@ jobs:
       # the axe rules it broke, put on the story file's line it failed at. The shard that ran the
       # story says it: the frames are of this container's paths, which `GITHUB_WORKSPACE` is the
       # root of. A failure axe raises after the story has no such line, and is on the check
-      # alone; a shard that failed before its stories ran says it wrote no report.
+      # alone; a shard that failed before its stories ran says it wrote no report. GitHub keeps
+      # 10 of a step's, so the stories that stop the baselines being drawn come first, and the
+      # step's summary, never capped, lists them all and then every picture (#4050).
       - name: The stories that failed, named
         if: failure()
         run: node ../tools/story-failures.mjs "$BROWSER" "$RUNNER_TEMP/report/report-$NAME.json"
@@ -305,3 +309,9 @@ jobs:
             echo "::error::a shard of the stories failed ($SHARDS_RESULT): the stories (<browser> <shard>) checks name each story and why"
             exit 1
           fi
+      # Last, so it is the check's newest annotation, which GitHub shows first: one that names
+      # every story that stops the baselines being drawn, in any shard, however many pictures
+      # failed, and every shard that wrote no report (#4050).
+      - name: What stops the baselines being drawn, named first
+        if: ${{ !cancelled() && needs.shard.result != 'success' }}
+        run: node tools/story-failures.mjs headline "$RUNNER_TEMP/reports"

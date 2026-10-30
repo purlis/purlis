@@ -8547,3 +8547,22 @@ fn the_routing_a_chat_started_with_is_what_its_record_keeps_3578() {
     assert_eq!(chats.record().chats[0].routing, Some(Kept::BuiltIn));
     let _ = chats.close(session);
 }
+
+#[test]
+fn a_profile_a_studio_start_was_refused_on_says_which_line_needs_approving() {
+    // #3942: the Skill studio's Approve and start reads the same approval a waiting chat's
+    // Notice offers, by the profile's name, and none once it is approved.
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_work(dir.path(), "");
+
+    let asked = NeedsApproval::of_profile("work", &root).expect("work asks");
+
+    assert_eq!(asked.approval, "new");
+    assert_eq!(
+        asked.shown,
+        purlis_core::profiletrust::shown(&root, &work_at(&root))
+    );
+    assert_eq!(NeedsApproval::of_profile("nobody", &root), None);
+    purlis_core::profiletrust::approve(&root, &work_at(&root), &asked.shown).expect("approved");
+    assert_eq!(NeedsApproval::of_profile("work", &root), None);
+}

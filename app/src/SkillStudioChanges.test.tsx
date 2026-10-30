@@ -17,7 +17,12 @@ import { need } from "./skillsListing.testkit";
 import { AT_THE_ROOT, asPersona, inWorkspace } from "./skillStudio";
 import { pickIn } from "./ui/select/select.testkit";
 import { levelFrom, PROJECT } from "./skillChanges";
-import { DELETED_FOR, HISTORY_RESTARTS } from "./SkillChangeDialogs";
+import {
+  DELETED_FOR,
+  HISTORY_MOVES,
+  HISTORY_RESTARTS_LOCAL,
+  historySaid,
+} from "./SkillChangeDialogs";
 import { NAME_RESERVED } from "./SkillCopy";
 
 afterEach(() => {
@@ -162,7 +167,7 @@ describe("the Skill studio's changes", () => {
     await waitFor(() => expect(reach).toHaveTextContent("1 persona that names it: steward"));
     expect(reach).toHaveTextContent("1 skill that names it: release");
     expect(reach).toHaveTextContent("Its pins, by workspace ops");
-    expect(dialog).toHaveTextContent(HISTORY_RESTARTS);
+    expect(dialog).toHaveTextContent(HISTORY_MOVES);
 
     const box = within(dialog).getByLabelText("New name");
     const rename = within(dialog).getByRole("button", { name: "Rename" });
@@ -750,5 +755,12 @@ describe("the Skill studio's changes", () => {
     const item = await openSkill("skill-secrets");
     expect(within(item).queryByRole("button", { name: "Edit secrets" })).toBeNull();
     expect(within(item).queryByLabelText("Move secrets to")).toBeNull();
+  });
+});
+
+describe("what a rename or a move says of a skill's history (#3918)", () => {
+  it("says it moves with a skill git holds, and starts again for one only on this machine", () => {
+    expect(historySaid(false)).toBe(HISTORY_MOVES);
+    expect(historySaid(true)).toBe(HISTORY_RESTARTS_LOCAL);
   });
 });
