@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793329491912,
+  "lastUpdate": 1793330794654,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30660,6 +30660,48 @@ window.BENCHMARK_DATA = {
             "value": 102.03608399999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.346, 101.495, 102.036, 102.171, 102.478 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7d629b60fc9adcf28e7fdd72fd6083bb07f69752",
+          "message": "Theme parts: the title bar's apart parts reach their elements, and CardButton is a family (#3656, #3885) (#3946)\n\n* theme: the title bar's crumb, ⌄, rows and pins are reached apart from every chip (#3656)\n\nA theme's titlebar.crumb, all, row and pin keys were written as parts\ninside a workspace chip, where none of them is drawn, so they reached\nnothing. Each is now reached by its own attributes, in the states its\nown element is marked in (parts::APART): under the pointer, open or\npinned, and the keyboard's focus; a switcher's row also marks the row\nEnter would go to as selected.\n\nA format only grows, so the keys that name one of them in a chip's\nvariant, or a row in the focused state, stay in the schema marked\ndeprecated, and the engine says them and leaves them out.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme: a card pressed whole is a theme-parts family of its own (#3885)\n\nCardButton, the welcome's doors and the Get page's repo picks, is the\ncard-button family: its box (root) with its door and pick variants, its\nmark, title and line, in the states its box says of its button (under\nthe pointer, pressed, the keyboard's focus, unavailable). The box now\nmarks data-focus-visible too, so a focused key reaches it.\n\nIt is its own scope, not the card's, so the order between them is\nexplicit: a theme's card.title never reaches a pressed card's title,\neven inside a Card (the clash #3834's review found). The pick's accent\nwords are held at the text floor on each ground it stands on.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme: name the apart-parts lookup drawn_apart, beside the colour distance apart (#3656)\n\nparts.rs already has an apart(theme, a, b), the OKLab distance between\ntwo drawn colours; the lookup of a part drawn apart from its root took\nthe same name, and the crate did not compile.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme: apart parts reach nothing in a chip's variant and never fall with a chip (#3656)\n\nThe review of #3946 and the dispatcher's ruling: no vX.Y.Z tag publishes\nformat 2 (v0.4.1 has no theme schema), so the 146 keys that named the\ncrumb, the all button, a row or a pin in a chip's variant, or a row in\nthe focused state, are dropped from the schema rather than deprecated.\nThe engine says each reaches nothing and leaves it out.\n\nA chip that broke a floor wrote its fallback for the apart parts too,\nwith no variant, which took a theme's valid crumb colours away from\nevery crumb; an apart part is now never in a look's fallback.\n\nThe key grammar in themes.md says what an apart part takes, the table\nnames each one's states, the manifest says them from the next version\non, and ADR 0103 has the amendment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme: the manifest says which parts are drawn apart from NEXT, which the release writes (#3656)\n\nRound 2 of #3946's review: the manifest's \"apart\" was gated on\nversion > VERSION, which the release step never rewrites, so no\nreleased contract would carry it and release prep would go red. It is\nnow APART_SINCE, NEXT, which the release step writes the number over,\nand has_unreleased counts it. A test holds it present at VERSION + 1\nand absent at VERSION.\n\nThe ADR amendment names #3949 for an apart part's own fallback and\nground, and card.css's pressed-card comment is wrapped to 100 columns.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T02:55:13Z",
+          "tree_id": "1540d223841da9ab4915494baafbf6778d154997",
+          "url": "https://github.com/purlis/purlis/commit/7d629b60fc9adcf28e7fdd72fd6083bb07f69752"
+        },
+        "date": 1793330789397,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6711609999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.660, 0.664, 0.671, 0.676, 0.693 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6286385,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.561, 16.573, 16.629, 16.701, 17.076 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2406895,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.380, 101.639, 102.241, 102.312, 102.465 ms"
           }
         ]
       }
