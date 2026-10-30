@@ -11,7 +11,14 @@ routes `api` reaches on the forge's own host. The person's `args` stay the main 
 has to be complete by its own test. Code: `crates/purlis-core/src/sandbox/tools/args.rs` (`Forge::refused`)
 and `args/api.rs` (the routes).
 
-A command refused "with" a word is refused where that word is any of the run's arguments.
+A command refused "with" a word is refused where that word is any of the run's arguments; an option word
+(`-F`, `--output`) also where its value is joined to it (`-Fjson`, `--output=json`).
+
+**Aliases.** A command is refused by every name its program takes for it. `gh` names its aliases in each
+help page; `glab` names none, so its aliases were found by trying names: `conf` (`config`), `var`
+(`variable`), `tf` and `terraform` (`opentofu`), `rc` (`runner-controller`), `pipe` and `pipeline` (`ci`),
+`project` (`repo`), `sched` (`schedule`) and `v` (`version`). An installed extension or an alias the person
+defined is never there: a run's home is its own (#3419), so none is installed for it.
 
 ## gh 2.83.2
 
@@ -36,18 +43,20 @@ A command refused "with" a word is refused where that word is any of the run's a
 | Command | Decision | Why |
 |---|---|---|
 | `auth` (all) | refused | shows or changes the sign-in, including `configure-docker`, `docker-helper` and `dpop-gen` |
-| `config` (all) | refused | glab's own settings |
+| `config` (`conf`, all) | refused | glab's own settings |
 | `alias` (all) | refused | glab's own settings |
 | `token` (all) | refused | makes, shows, rotates and revokes access tokens |
 | `ssh-key`, `gpg-key`, `deploy-key` (all) | refused | changes the account's or project's keys |
-| `variable` (all) | refused | `get`, `list` and `export` show CI/CD variables' values, which may be masked secrets |
+| `variable` (`var`, all) | refused | `get`, `list` and `export` show CI/CD variables' values, which may be masked secrets |
 | `securefile` (all) | refused | secure files are a project's secrets |
 | `duo` | refused | `duo cli` downloads and runs another program with the token |
-| `opentofu` with `init` | refused | runs a chosen program with the token and leaves it in the state backend's settings |
+| `mcp` | refused | `mcp serve` offers a tool for nearly every glab command, the refused ones among them, so a run through it is judged by none of this list |
+| `opentofu` (`tf`, `terraform`) with `init` or `download` | refused | `init` runs a chosen program with the token and leaves it in the state backend's settings; a downloaded state often holds secrets in plain text |
+| `ci` (`pipe`, `pipeline`) with `--with-variables` | refused | shows a pipeline's variables' values |
+| `repo` (`project`) with `-F`, `--output` or `--jq` | refused | the project as JSON carries its runner registration token for a maintainer |
 | `cluster` with `get-token`, `token`, `token-cache`, `bootstrap` or `update-kubeconfig` | refused | makes or shows an agent's token, or writes kubectl's settings |
-| `runner-controller` with `token` | refused | makes, shows and rotates runner controller tokens |
-| `opentofu state`, `cluster agent list`, `runner` | runs | a state is the project's data; runner commands show no token |
-| `mcp serve` | runs | its tools are issues, merge requests, projects and pipelines |
+| `runner-controller` (`rc`) with `token` | refused | makes, shows and rotates runner controller tokens |
+| `opentofu state list`, `lock`, `unlock`, `delete`; `cluster agent list`; `runner` | runs | none shows a credential |
 | `skills`, `orbit` | runs | write agent skills into the folder, as a chat can |
 | `attestation`, `changelog`, `check-update`, `ci`, `container-registry`, `incident`, `issue`, `iteration`, `job`, `label`, `milestone`, `mr`, `packages`, `release`, `repo`, `schedule`, `search`, `snippet`, `stack`, `todo`, `user`, `version`, `whatsnew`, `work-items` | runs | none shows a credential or changes credentials or settings |
 
@@ -57,8 +66,10 @@ A command refused "with" a word is refused where that word is any of the run's a
 endpoint under one of these routes is refused **whatever the method**, as the command it stands for is
 refused whole (`*` is any one segment). Before it is matched, an endpoint's query is cut, each segment is
 percent-decoded and lower-cased, empty segments drop, a leading `api/v3` or `api/v4` drops, and
-`repositories/<id>` and `organizations/<id>` read as `repos/…` and `orgs/…`. An endpoint with a `.` or
-`..` segment is refused, since a server may read it as another route.
+`repositories/<id>` and `organizations/<id>` read as `repos/…` and `orgs/…`. An endpoint is matched every
+way a server may read it: split at `/` (and `\`) before and after percent-decoding, with its `.` and `..`
+segments as written and as resolved. A segment matches a route's name with a format after a dot
+(`variables.json`), as GitLab routes it. A route ending in `$` is refused alone, not the paths under it.
 
 | Forge | Routes | Stands for |
 |---|---|---|
@@ -66,13 +77,15 @@ percent-decoded and lower-cased, empty segments drop, a leading `api/v3` or `api
 | GitHub | `repos/*/*/keys` | `repo deploy-key` |
 | GitHub | `repos/*/*/actions/secrets`, `…/actions/organization-secrets`, `…/environments/*/secrets`, `…/codespaces/secrets`, `…/codespaces/organization-secrets`, `…/dependabot/secrets`; `orgs/*/actions/secrets`, `…/codespaces/secrets`, `…/dependabot/secrets`, `orgs/*/private-registries`; `user/codespaces/secrets` | `secret` |
 | GitHub | `{repos/*/*,orgs/*,enterprises/*}/actions/runners/{registration-token,remove-token,generate-jitconfig}` | makes a runner's credential |
-| GitHub | `orgs/*/personal-access-tokens`, `orgs/*/personal-access-token-requests`, `authorizations`, `applications/*/token`, `applications/*/grant(s)`, `app/installations/*/access_tokens`, `credentials/revoke`, `admin/keys`, `admin/users/*/authorizations` | `auth`: shows, makes or revokes tokens |
+| GitHub | `orgs/*/personal-access-tokens`, `orgs/*/personal-access-token-requests`, `orgs/*/credential-authorizations`, `installation/token`, `app-manifests/*/conversions`, `authorizations`, `applications/*/token`, `applications/*/grant(s)`, `app/installations/*/access_tokens`, `credentials/revoke`, `admin/keys`, `admin/users/*/authorizations` | `auth`: shows, makes or revokes tokens |
 | GitLab | `user/keys`, `users/*/keys`, `user/gpg_keys`, `users/*/gpg_keys`, `deploy_keys`, `projects/*/deploy_keys` | `ssh-key`, `gpg-key`, `deploy-key` |
 | GitLab | `deploy_tokens`, `{projects,groups}/*/deploy_tokens`, `personal_access_tokens`, `user/personal_access_tokens`, `users/*/personal_access_tokens`, `users/*/impersonation_tokens`, `groups/*/service_accounts/*/personal_access_tokens`, `{projects,groups}/*/access_tokens` | `token` |
-| GitLab | `{projects,groups}/*/variables`, `admin/ci/variables`, `projects/*/pipeline_schedules/*/variables` | `variable` |
+| GitLab | `{projects,groups}/*/variables`, `admin/ci/variables`, `projects/*/pipeline_schedules`, `projects/*/pipelines/*/variables` | `variable`, `ci … --with-variables` |
+| GitLab | `projects/*/terraform/state` | `opentofu … download` |
+| GitLab | `projects/*$`, `groups/*$` (the project's or group's own page) | `repo view --output json`: a runner registration token |
 | GitLab | `projects/*/secure_files` | `securefile` |
-| GitLab | `projects/*/triggers`, `projects/*/cluster_agents/*/tokens`, `{,projects/*/,groups/*/}runners/reset_registration_token`, `runners/*/reset_authentication_token`, `user/runners` | shows or makes a trigger's, agent's or runner's token (`cluster … token`) |
-| GitLab | `applications`, `user/support_pin` | shows an application's secret or a support PIN |
+| GitLab | `projects/*/triggers`, `projects/*/cluster_agents/*/tokens`, `{,projects/*/,groups/*/}runners/reset_registration_token`, `runners/reset_authentication_token`, `runners/*/reset_authentication_token`, `user/runners` | shows or makes a trigger's, agent's or runner's token (`cluster … token`) |
+| GitLab | `applications`, `user/support_pin`, `application/settings` | shows an application's secret, a support PIN, or the instance's own keys |
 
 **GraphQL.** GitHub's schema has no mutation that adds or removes a key or a secret; four of its fields show
 or make a credential (`tempCloneToken`, `recoveryCodes` and its regenerating mutation,
@@ -83,6 +96,8 @@ since it is not seen. GitLab's schema shows CI/CD variables' values and makes ru
 
 **Not refused**, and why: GitHub's `users/*/keys` and `users/*/gpg_keys` show public keys anyone can read;
 GitHub and GitLab webhooks, integrations and mirrors keep their secrets write-only; a runner's
-registration (`runners`) needs a registration token the chat already holds.
+registration (`runners`) is sent the registration token in its body, which is refused wherever it is shown
+(above), so the chat holds none from the vault.
 
-When a new `gh` or `glab` release adds commands, this audit is done again for it.
+When a new `gh` or `glab` release adds commands or aliases, this audit is done again for it, aliases tried by
+name for `glab`.

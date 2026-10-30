@@ -174,40 +174,40 @@ impl Forge {
     }
 
     /// The commands that show or change the forge's credentials or secrets, or the program's
-    /// own settings: each with the words of which one among the run's arguments refuses it, or
-    /// none where it is refused whole. Drawn from each command line's whole command set
-    /// (`docs/forge-tool-refusals.md`, #3894).
-    fn refused(self) -> &'static [(&'static str, &'static [&'static str])] {
+    /// own settings: each by every name the program takes for it (glab's aliases are in no
+    /// help page), with the words of which one among the run's arguments refuses it, or none
+    /// where it is refused whole. A word that starts with `-` is an option, matched as written
+    /// and also with its value joined (`-Fjson`, `--output=json`); any other word is matched in
+    /// any case. Drawn from each command line's whole
+    /// command set (`docs/forge-tool-refusals.md`, #3894).
+    fn refused(self) -> &'static [(&'static [&'static str], &'static [&'static str])] {
         match self {
             Self::Gh => &[
-                ("auth", &[]),
-                ("config", &[]),
-                ("alias", &[]),
-                ("extension", &[]),
-                ("extensions", &[]),
-                ("ext", &[]),
-                ("ssh-key", &[]),
-                ("gpg-key", &[]),
-                ("secret", &[]),
-                ("repo", &["deploy-key", "set-default"]),
+                (&["auth"], &[]),
+                (&["config"], &[]),
+                (&["alias"], &[]),
+                (&["extension", "extensions", "ext"], &[]),
+                (&["ssh-key"], &[]),
+                (&["gpg-key"], &[]),
+                (&["secret"], &[]),
+                (&["repo"], &["deploy-key", "set-default"]),
             ],
             Self::Glab => &[
-                ("auth", &[]),
-                ("config", &[]),
-                ("alias", &[]),
-                ("extension", &[]),
-                ("extensions", &[]),
-                ("ext", &[]),
-                ("ssh-key", &[]),
-                ("gpg-key", &[]),
-                ("token", &[]),
-                ("deploy-key", &[]),
-                ("variable", &[]),
-                ("securefile", &[]),
-                ("duo", &[]),
-                ("opentofu", &["init"]),
+                (&["auth"], &[]),
+                (&["config", "conf"], &[]),
+                (&["alias"], &[]),
+                (&["extension", "extensions", "ext"], &[]),
+                (&["ssh-key"], &[]),
+                (&["gpg-key"], &[]),
+                (&["token"], &[]),
+                (&["deploy-key"], &[]),
+                (&["variable", "var"], &[]),
+                (&["securefile"], &[]),
+                (&["duo"], &[]),
+                (&["mcp"], &[]),
+                (&["opentofu", "tf", "terraform"], &["init", "download"]),
                 (
-                    "cluster",
+                    &["cluster"],
                     &[
                         "get-token",
                         "token",
@@ -216,7 +216,9 @@ impl Forge {
                         "update-kubeconfig",
                     ],
                 ),
-                ("runner-controller", &["token"]),
+                (&["runner-controller", "rc"], &["token"]),
+                (&["ci", "pipe", "pipeline"], &["--with-variables"]),
+                (&["repo", "project"], &["-F", "--output", "--jq"]),
             ],
         }
     }
@@ -224,21 +226,29 @@ impl Forge {
     /// The words a run of `command` with `args` is refused for, if it is: the command alone,
     /// or the command and the word among its arguments that makes it one of [`Self::refused`].
     fn refuses(self, command: &str, args: &[String]) -> Option<String> {
-        let (_, words) = self.refused().iter().find(|(one, _)| *one == command)?;
+        let (_, words) = self
+            .refused()
+            .iter()
+            .find(|(names, _)| names.contains(&command))?;
         if words.is_empty() {
             return Some(command.to_owned());
         }
-        let word = args
-            .iter()
-            .skip(1)
-            .map(|arg| arg.to_ascii_lowercase())
-            .find(|arg| words.contains(&arg.as_str()))?;
+        let word = args.iter().skip(1).find_map(|arg| {
+            words.iter().find(|word| {
+                if !word.starts_with('-') {
+                    return arg.eq_ignore_ascii_case(word);
+                }
+                arg == *word
+                    || arg.starts_with(&format!("{word}="))
+                    || (word.len() == 2 && arg.starts_with(**word))
+            })
+        })?;
         Some(format!("{command} {word}"))
     }
 }
 
 /// The options a forge's run may start with alone: each prints and runs nothing.
-const ONLY_PRINTS: &[&str] = &["--help", "-h", "--version"];
+const ONLY_PRINTS: &[&str] = &["--help", "-h", "--version", "-v"];
 
 /// **Why a run of a forge command line with `args` never runs with a vault's value**, if it
 /// does not: by `names`, the tool's name and its program's file names as found and as their

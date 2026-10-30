@@ -9,7 +9,8 @@
 use super::Forge;
 
 /// GitHub's REST routes, each a run of path segments that refuses the route and every path
-/// under it; `*` stands for any one segment. A path through `repositories/<id>` or
+/// under it, or the route alone where it ends with `$`; `*` stands for any one segment, and a
+/// segment matches a name with a format after a dot (`keys.json`). A path through `repositories/<id>` or
 /// `organizations/<id>` is read as `repos/…` or `orgs/…` first.
 const GH_ROUTES: &[&str] = &[
     "user/keys",
@@ -44,6 +45,9 @@ const GH_ROUTES: &[&str] = &[
     "applications/*/grants",
     "app/installations/*/access_tokens",
     "credentials/revoke",
+    "orgs/*/credential-authorizations",
+    "installation/token",
+    "app-manifests/*/conversions",
     "admin/keys",
     "admin/users/*/authorizations",
 ];
@@ -69,17 +73,24 @@ const GLAB_ROUTES: &[&str] = &[
     "projects/*/variables",
     "groups/*/variables",
     "admin/ci/variables",
-    "projects/*/pipeline_schedules/*/variables",
+    "projects/*/pipeline_schedules",
+    "projects/*/pipelines/*/variables",
+    "projects/*/terraform/state",
     "projects/*/secure_files",
     "projects/*/triggers",
     "projects/*/cluster_agents/*/tokens",
     "runners/reset_registration_token",
     "projects/*/runners/reset_registration_token",
     "groups/*/runners/reset_registration_token",
+    "runners/reset_authentication_token",
     "runners/*/reset_authentication_token",
     "user/runners",
     "applications",
     "user/support_pin",
+    "application/settings",
+    // A project's and a group's own page show its runner registration token to a maintainer.
+    "projects/*$",
+    "groups/*$",
 ];
 
 /// The fields of GitHub's GraphQL schema that show or make a credential: a query naming one
@@ -91,35 +102,53 @@ const GH_GRAPHQL_FIELDS: &[&str] = &[
     "verifiabledomaintoken",
 ];
 
-/// What a path reads as: its segments, or that one of them is a dot segment, which a server may
-/// resolve to a route other than the one written.
-enum Path {
-    Segments(Vec<String>),
-    Dotted,
-}
-
-/// **The path `arg` names, if it names one**: `None` for an argument that is no endpoint (an
-/// option, a field's `key=value`, a header). The query and fragment are cut, each segment is
-/// percent-decoded and lower-cased, empty segments drop, a leading `api/v3` or `api/v4` drops,
-/// and `repositories/<id>`, `organizations/<id>` read as `repos/<id>/<id>`, `orgs/<id>`.
-fn path_of(arg: &str) -> Option<Path> {
+/// **Each way a server may read the path `arg` names**, if it names one: none for an argument
+/// that is no endpoint (an option, a field's `key=value`, a header). The query and fragment are
+/// cut; the path is split at `/` and `\\` and then percent-decoded, and decoded and then split;
+/// each with its `.` and `..` segments as written and as resolved. Empty segments drop, every
+/// segment is lower-cased, a leading `api/v3` or `api/v4` drops, and `repositories/<id>`,
+/// `organizations/<id>` read as `repos/<id>/<id>`, `orgs/<id>`.
+fn readings(arg: &str) -> Vec<Vec<String>> {
     if arg.starts_with('-') {
-        return None;
+        return Vec::new();
     }
     let path = arg.split(['?', '#']).next().unwrap_or_default();
     if path.contains('=') || path.chars().any(char::is_whitespace) {
-        return None;
+        return Vec::new();
     }
-    let mut segments = Vec::new();
-    for raw in path.split(['/', '\\']).filter(|one| !one.is_empty()) {
-        let one = percent_encoding::percent_decode_str(raw)
+    let decode = |one: &str| {
+        percent_encoding::percent_decode_str(one)
             .decode_utf8_lossy()
-            .to_lowercase();
-        if one == "." || one == ".." {
-            return Some(Path::Dotted);
+            .to_lowercase()
+    };
+    let split_first: Vec<String> = path.split(['/', '\\']).map(decode).collect();
+    let decoded_first: Vec<String> = decode(path).split(['/', '\\']).map(str::to_owned).collect();
+    let mut out = Vec::new();
+    for segments in [split_first, decoded_first] {
+        let written: Vec<String> = segments
+            .iter()
+            .filter(|one| !one.is_empty())
+            .cloned()
+            .collect();
+        let mut resolved: Vec<String> = Vec::new();
+        for one in &written {
+            match one.as_str() {
+                "." => {}
+                ".." => {
+                    resolved.pop();
+                }
+                _ => resolved.push(one.clone()),
+            }
         }
-        segments.push(one);
+        out.push(read_as_routed(written));
+        out.push(read_as_routed(resolved));
     }
+    out
+}
+
+/// `segments` without a leading `api/v3` or `api/v4`, and with `repositories/<id>` and
+/// `organizations/<id>` read as the routes they stand for.
+fn read_as_routed(mut segments: Vec<String>) -> Vec<String> {
     if segments.len() >= 2 && segments[0] == "api" && (segments[1] == "v3" || segments[1] == "v4") {
         segments.drain(..2);
     }
@@ -131,21 +160,32 @@ fn path_of(arg: &str) -> Option<Path> {
         Some("organizations") => segments[0] = "orgs".to_owned(),
         _ => {}
     }
-    Some(Path::Segments(segments))
+    segments
 }
 
-/// Whether `route`'s segments lead `segments`.
+/// Whether `route`'s segments lead `segments`, or are all of them where it ends with `$`.
 fn under(route: &str, segments: &[String]) -> bool {
+    let (route, alone) = match route.strip_suffix('$') {
+        Some(route) => (route, true),
+        None => (route, false),
+    };
     let route: Vec<&str> = route.split('/').collect();
-    route.len() <= segments.len()
-        && route
-            .iter()
-            .zip(segments)
-            .all(|(want, one)| *want == "*" || *want == one)
+    let fits = if alone {
+        route.len() == segments.len()
+    } else {
+        route.len() <= segments.len()
+    };
+    fits && route.iter().zip(segments).all(|(want, one)| {
+        *want == "*"
+            || *want == one
+            || one
+                .strip_prefix(*want)
+                .is_some_and(|format| format.starts_with('.'))
+    })
 }
 
 /// **Why `forge`'s `api` run with `args` (its command first) never runs**, if it does not: an
-/// endpoint with a dot segment; one under a route of the forge's list; GitLab's GraphQL, which
+/// endpoint read, any way a server may read it, as one under a route of the forge's list; GitLab's GraphQL, which
 /// reaches its CI/CD variables' values and makes runner and agent tokens; or GitHub's, where the
 /// query names a credential's field or is read from a file or standard input, so is never seen.
 pub(super) fn refused(forge: Forge, args: &[String]) -> Option<String> {
@@ -155,23 +195,15 @@ pub(super) fn refused(forge: Forge, args: &[String]) -> Option<String> {
     };
     let mut graphql = false;
     for arg in args.iter().skip(1) {
-        match path_of(arg) {
-            Some(Path::Dotted) => {
+        for segments in readings(arg) {
+            if let Some(route) = routes.iter().find(|route| under(route, &segments)) {
+                let route = route.trim_end_matches('$');
                 return Some(format!(
-                    "the endpoint {arg:?} has a `.` or `..` segment, which a server may read as \
-                     another route"
+                    "{route} shows or changes the forge's credentials or secrets, as a refused \
+                     command does"
                 ));
             }
-            Some(Path::Segments(segments)) => {
-                if let Some(route) = routes.iter().find(|route| under(route, &segments)) {
-                    return Some(format!(
-                        "{route} shows or changes the forge's credentials or secrets, as a \
-                         refused command does"
-                    ));
-                }
-                graphql |= segments == ["graphql"];
-            }
-            None => {}
+            graphql |= segments == ["graphql"];
         }
     }
     if !graphql {

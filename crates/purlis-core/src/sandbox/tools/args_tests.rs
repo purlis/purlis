@@ -318,6 +318,25 @@ fn commands_that_show_or_change_stored_secrets_never_run() {
     ] {
         assert!(runs(&glab, words).is_err(), "{words:?}");
     }
+    // glab's aliases, which no help page names, are refused as the commands they stand for.
+    for words in [
+        &["var", "get", "TOKEN"][..],
+        &["conf", "get", "token"],
+        &["tf", "init", "s"],
+        &["terraform", "state", "download", "s"],
+        &["rc", "token", "create", "1"],
+        &["mcp", "serve"],
+        &["ci", "get", "--with-variables"],
+        &["pipe", "get", "--with-variables=true"],
+        &["repo", "view", "-F", "json"],
+        &["project", "view", "--output=json"],
+        &["repo", "view", "-Fjson"],
+    ] {
+        assert!(runs(&glab, words).is_err(), "{words:?}");
+    }
+    assert!(runs(&glab, &["-v"]).is_ok());
+    assert!(runs(&glab, &["repo", "view"]).is_ok());
+    assert!(runs(&glab, &["ci", "get"]).is_ok());
     assert!(runs(&glab, &["cluster", "agent", "list"]).is_ok());
     assert!(runs(&glab, &["opentofu", "state", "list"]).is_ok());
     assert!(runs(&glab, &["runner", "list"]).is_ok());
@@ -359,9 +378,11 @@ fn api_never_reaches_a_route_that_does_what_a_refused_command_does() {
         &["api", "user//keys/"],
         &["api", "user/%6beys"],
         &["api", "api/v3/user/keys"],
-        // A dot segment is never sent as written.
+        // Read as a server resolves its dot segments.
         &["api", "repos/a/b/../../../user/keys"],
-        &["api", "repos/a/b/./pulls"],
+        &["api", "orgs/a/credential-authorizations"],
+        &["api", "installation/token", "-X", "DELETE"],
+        &["api", "app-manifests/c/conversions"],
     ] {
         assert!(runs(&gh, words).is_err(), "{words:?}");
     }
@@ -372,6 +393,16 @@ fn api_never_reaches_a_route_that_does_what_a_refused_command_does() {
         &["api", "search/issues?q=a%20b"],
         &["api", "repos/a/b/actions/variables"],
         &["api", "users/a/keys"],
+        &["api", "repos/a/b/./pulls"],
+        &["api", "user", "--jq", "."],
+        &[
+            "api",
+            "repos/a/b/issues",
+            "--input",
+            "./body.json",
+            "-X",
+            "POST",
+        ],
     ] {
         assert!(runs(&gh, words).is_ok(), "{words:?}");
     }
@@ -398,6 +429,17 @@ fn api_never_reaches_a_route_that_does_what_a_refused_command_does() {
         &["api", "user/runners"],
         &["api", "applications"],
         &["api", "api/v4/projects/1/variables"],
+        // Grape routes a format after a dot.
+        &["api", "projects/1/variables.json"],
+        &["api", "-X", "POST", "user/keys.json", "-f", "title=x"],
+        &["api", "projects/1/pipelines/2/variables"],
+        &["api", "projects/1/pipeline_schedules/3"],
+        &["api", "projects/1/terraform/state/prod"],
+        &["api", "runners/reset_authentication_token"],
+        &["api", "application/settings"],
+        // A project's and a group's own page carry a runner token for a maintainer.
+        &["api", "projects/:id"],
+        &["api", "groups/7.json"],
     ] {
         assert!(runs(&glab, words).is_err(), "{words:?}");
     }
