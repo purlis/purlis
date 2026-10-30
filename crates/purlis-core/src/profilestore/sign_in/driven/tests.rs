@@ -328,15 +328,14 @@ fn device_code() -> Event {
 fn copilots_login_says_its_device_code_and_page_once() {
     let mut whole = copilot();
     assert_eq!(whole.read(COPILOT), [device_code()]);
-    assert_eq!(whole.reply(), Some("\n"));
+    assert_eq!(whole.reply(), Some("\r"));
     assert_eq!(whole.reply(), None);
 
     let mut cut = copilot();
     let mut said = Vec::new();
     let mut replies = 0;
-    let mut pieces = COPILOT.as_bytes().chunks(7).peekable();
     let mut held = Vec::new();
-    while let Some(piece) = pieces.next() {
+    for piece in COPILOT.as_bytes().chunks(7) {
         held.extend_from_slice(piece);
         // Cut between bytes, as a read may be: whole characters are fed, as `reading` feeds them.
         if let Ok(text) = std::str::from_utf8(&held) {
@@ -508,7 +507,7 @@ fn a_login_is_driven_end_to_end() {
 fn a_copilot_login_is_driven_end_to_end() {
     let mut login = stand_in(
         "printf '\\342\\227\\206  Select GitHub deployment type\\n\\342\\224\\202  \\342\\227\\217 \
-         GitHub.com (Public)\\n'; read answer; [ -z \"$answer\" ] || exit 3; \
+         GitHub.com (Public)\\n'; answer=$(head -c 1); [ \"$answer\" = \"$(printf '\\r')\" ] || exit 3; \
          echo 'Go to: https://github.com/login/device'; echo 'Enter code: WDJB-MJHT'; \
          echo 'Login successful'",
     );

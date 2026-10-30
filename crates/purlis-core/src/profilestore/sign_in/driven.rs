@@ -111,7 +111,7 @@ struct Words {
     /// What comes right before its device code on a line, for a login that shows one.
     code_after: &'static str,
     /// The line of its one question that shows the choice purlis takes already chosen: it is
-    /// answered with a line break, once, and no other question is.
+    /// answered with Return, once, and no other question is.
     chosen: &'static str,
     /// What it ends a line with once it signed in, for a login whose exit status does not say.
     signed_in: &'static str,
@@ -303,7 +303,8 @@ impl Driven {
             At::Starting => {
                 if !words.chosen.is_empty() && !self.answered && line.contains(words.chosen) {
                     self.answered = true;
-                    self.reply = Some("\n");
+                    // Its prompt takes Return as a terminal sends it: a line break is not read.
+                    self.reply = Some("\r");
                 } else if let Some(code) = self.code_on(line) {
                     let code = code.to_owned();
                     self.device_code(code, line, said);
