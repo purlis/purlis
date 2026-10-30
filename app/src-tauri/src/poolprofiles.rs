@@ -298,9 +298,9 @@ fn kept_on(config: &Path, pool: &str, default: Option<&str>) -> Result<Vec<Strin
 pub async fn pool_profiles(
     planes: tauri::State<'_, crate::planes::Planes>,
     pool: String,
-    plane: Option<crate::planes::PlaneId>,
+    open: OpenProject,
 ) -> Result<PoolProfiles, String> {
-    let root = root_of(&planes, plane.as_ref())?;
+    let root = root_of(&planes, open.plane.as_ref())?;
     tauri::async_runtime::spawn_blocking(move || {
         let config = config_root()?;
         owned()?;
@@ -369,9 +369,9 @@ pub async fn pool_profile_add(
     planes: tauri::State<'_, crate::planes::Planes>,
     pool: String,
     name: String,
-    plane: Option<crate::planes::PlaneId>,
+    open: OpenProject,
 ) -> Result<(), String> {
-    let root = root_of(&planes, plane.as_ref())?;
+    let root = root_of(&planes, open.plane.as_ref())?;
     tauri::async_runtime::spawn_blocking(move || {
         let config = config_root()?;
         owned()?;
@@ -404,9 +404,9 @@ pub async fn pool_profile_remove(
     planes: tauri::State<'_, crate::planes::Planes>,
     pool: String,
     name: String,
-    plane: Option<crate::planes::PlaneId>,
+    open: OpenProject,
 ) -> Result<Option<String>, String> {
-    let root = root_of(&planes, plane.as_ref())?;
+    let root = root_of(&planes, open.plane.as_ref())?;
     tauri::async_runtime::spawn_blocking(move || {
         let config = config_root()?;
         owned()?;
@@ -432,6 +432,12 @@ pub async fn pool_profile_remove(
     })
     .await
     .map_err(|why| format!("the profile was not removed: {why}"))?
+}
+
+/// The open project a command is asked for: a type of its own, so its plane stays a `PlaneId`.
+#[derive(Debug, serde::Deserialize, specta::Type)]
+pub struct OpenProject {
+    pub plane: Option<crate::planes::PlaneId>,
 }
 
 /// The root of the open project `plane`, whose default a pool that names no profiles keeps;
