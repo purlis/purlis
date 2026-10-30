@@ -56,7 +56,7 @@ function core(
           levels: LEVELS,
         });
       case "skill_new": {
-        const level = given.level as { at: string };
+        const level = given.level as { at: "project" | "workspace" | "persona" };
         made = skill(given.name as string, {
           level: level.at,
           label: level.at,

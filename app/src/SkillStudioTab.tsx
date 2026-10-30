@@ -20,7 +20,7 @@ import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { HarnessItem, HarnessList, harnessGroups, harnessRowAt } from "./SkillStudioHarnesses";
 import { RoutedChatItem, RoutedChats, RoutingFacts } from "./SkillStudioRouting";
-import { Button, ButtonRow } from "./ui/button/Button";
+import { Button } from "./ui/button/Button";
 import { Badge } from "./ui/badge/Badge";
 import { TextField } from "./ui/field/Field";
 import { List, ListRow, type Selection } from "./ui/list/List";
