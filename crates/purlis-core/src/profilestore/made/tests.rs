@@ -813,3 +813,43 @@ fn a_removal_that_cannot_mark_its_kept_logins_removes_nothing() {
     assert!(shown.folder.exists(), "its folder stays");
     assert!(removal(&machine.store, "work").is_ok(), "and its record");
 }
+
+/// **A swap that fails puts back every move it made** (#4081): the second listed folder cannot be
+/// moved aside, so the file moved before it comes back and its new one goes back to the stage.
+#[cfg(unix)]
+#[test]
+fn a_swap_that_fails_puts_back_every_move_it_made() {
+    use rustix::fs::{Mode, OFlags, open};
+    let dir = tempfile::tempdir().unwrap();
+    let (dest, new, old) = (
+        dir.path().join("dest"),
+        dir.path().join("new"),
+        dir.path().join("old"),
+    );
+    for (path, text) in [
+        (dest.join("settings.json"), "was"),
+        (dest.join("agents/a.md"), "was"),
+        (new.join("settings.json"), "new"),
+        (old.join("agents/in-the-way.md"), "in the way"),
+    ] {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    let opened = |at: &Path| open(at, OFlags::RDONLY | OFlags::DIRECTORY, Mode::empty()).unwrap();
+    let claude = ALLOWED.iter().find(|a| a.kind == "claude").unwrap();
+    let mut lost = false;
+
+    let swapped = swap_each(
+        claude,
+        &opened(&dest),
+        &opened(&new),
+        &opened(&old),
+        &mut lost,
+    );
+
+    swapped.unwrap_err();
+    assert!(!lost);
+    assert_eq!(std::fs::read(dest.join("settings.json")).unwrap(), b"was");
+    assert_eq!(std::fs::read(dest.join("agents/a.md")).unwrap(), b"was");
+    assert_eq!(std::fs::read(new.join("settings.json")).unwrap(), b"new");
+}

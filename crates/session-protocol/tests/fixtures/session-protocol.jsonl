@@ -184,3 +184,7 @@
 {"call":{"id":173,"command":"clones_of","project":"01J9PRJCT00000000000000000","workspace":"app"}}
 {"reply":{"re":173,"ok":{"clones":{"repos":["api","web"]}}}}
 {"call":{"id":174,"command":"forget_profile","name":"work"}}
+{"call":{"id":175,"command":"stage_profile_settings","profile":"work","pieces":[{"path":"settings.json","bytes":"eyJ0aGVtZSI6ImRhcmsifQ=="},{"path":"agents/review.md","bytes":"UmV2"},{"path":"agents/review.md","continues":true,"bytes":"aWV3Lg=="}]}}
+{"reply":{"re":175,"ok":"done"}}
+{"call":{"id":176,"command":"keep_profile","name":"work","harness":"claude","pinned":"2.1.300","settings_staged":2}}
+{"reply":{"re":176,"ok":{"profile_kept":{"standing":"signed_in"}}}}

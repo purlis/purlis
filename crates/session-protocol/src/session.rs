@@ -343,9 +343,17 @@ use crate::view::{Limits, Views};
 /// runner forget a profile it keeps for that desktop, with its folder and so its sign-in there,
 /// answered `done`. A profile the runner keeps of its own, or for another desktop, is refused. A
 /// host before 1.52 refuses it `unknown_command`, and the profile stays kept there.
+///
+/// 1.56 added a profile's settings in batches (#4081, spec #2041): `stage_profile_settings`
+/// carries part of them ([`SettingsBatch`], each within a control frame, a large file in several
+/// pieces), held on that link alone, and a `keep_profile` naming how many files were staged
+/// (`settings_staged`) keeps them all at once, or none. The paired desktop's alone, on its own
+/// link, as `keep_profile` is ([`crate::grants::Power::KeepProfile`]). A host before 1.56 refuses
+/// it `unknown_command`, so the desktop sends such a runner what one `keep_profile` carries, as
+/// it did.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 52,
+    minor: 56,
 };
 
 /// The version that first answers `relay_to` with the runner the link reached (#3417).
@@ -380,6 +388,13 @@ pub const KNOWS_KEEP_PROFILE: Version = Version {
 pub const KNOWS_PROFILE_SETTINGS: Version = Version {
     major: 1,
     minor: 50,
+};
+
+/// The version that first takes a profile's settings in batches (#4081): a runner before it is
+/// sent what one `keep_profile` carries, or refused in words.
+pub const KNOWS_SETTINGS_IN_BATCHES: Version = Version {
+    major: 1,
+    minor: 56,
 };
 
 /// The version that first answers the clones it holds in a workspace (#3811): the window asks
@@ -742,6 +757,10 @@ pub enum Command {
     /// it keeps of its own, or for another desktop, is refused. Carried out and refused as
     /// [`Command::KeepProfile`] is ([`crate::grants::Power::KeepProfile`]).
     ForgetProfile { name: String },
+    /// Part of a profile's settings, held on this link for the [`Command::KeepProfile`] that
+    /// keeps them all (1.56, #4081). Answers [`Answer::Done`]. As `keep_profile`, the paired
+    /// desktop's alone, on its own link.
+    StageProfileSettings(SettingsBatch),
     /// The person takes browser `program` over (1.14, #2014): an act in flight answers that it
     /// was interrupted, and every act is refused in words until [`Command::HandBack`]. The lease
     /// is the host's: it stays with the person whatever becomes of the link that took it, until
@@ -1112,6 +1131,11 @@ pub struct ProfileToKeep {
     /// it kept before: none left out is kept there. Left out, it leaves them as they are.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings: Option<Vec<SettingsFile>>,
+    /// How many settings files this link staged for it (1.56, #4081,
+    /// [`Command::StageProfileSettings`]), which the runner keeps as [`Self::settings`] says of
+    /// files sent here. It refuses a count that is not what it holds, and both fields at once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_staged: Option<u32>,
 }
 
 /// **One settings file of a profile** (1.50, #3448): its path under the harness's settings
@@ -1131,6 +1155,166 @@ impl std::fmt::Debug for SettingsFile {
             .field("path", &self.path)
             .field("bytes", &self.bytes.len())
             .finish()
+    }
+}
+
+/// **The most bytes of settings files a runner holds for one profile** (#4081, D-4081-1): more
+/// than twice the largest real profile measured (58 MiB of skills), and what a link holds in
+/// memory until they are kept.
+pub const MOST_PROFILE_SETTINGS_BYTES: usize = 128 * 1024 * 1024;
+
+/// **The most settings files a runner holds for one profile** (#4081, D-4081-2).
+pub const MOST_PROFILE_SETTINGS_FILES: usize = 8192;
+
+/// The longest path of a settings file a runner holds, the most a path names on Linux.
+const MOST_SETTINGS_PATH_BYTES: usize = 4096;
+
+/// The most a [`SettingsBatch`]'s pieces take on the wire, leaving a control frame room for the
+/// rest of the call and the profile's name.
+const MOST_BATCH_BYTES: usize = crate::link::MOST_CONTROL_FRAME_BYTES / 4 * 3;
+
+/// What frames one [`SettingsPiece`] on the wire beside its path and bytes.
+const PIECE_FRAMING: usize = 48;
+
+/// **Part of a profile's settings, staged on a link** (1.56, #4081): what
+/// [`Command::StageProfileSettings`] sends, each within a control frame.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsBatch {
+    /// The profile they are of, by the name [`ProfileToKeep`] then names.
+    pub profile: String,
+    pub pieces: Vec<SettingsPiece>,
+}
+
+/// **A settings file, or a piece of a large one** (1.56, #4081): its pieces follow one another,
+/// the first with no `continues`.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsPiece {
+    pub path: String,
+    /// More of the file the piece before this one began.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub continues: bool,
+    #[serde(with = "base64_bytes")]
+    pub bytes: Vec<u8>,
+}
+
+/// As [`SettingsFile`]'s: its bytes are never written to a log through `Debug`.
+impl std::fmt::Debug for SettingsPiece {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SettingsPiece")
+            .field("path", &self.path)
+            .field("continues", &self.continues)
+            .field("bytes", &self.bytes.len())
+            .finish()
+    }
+}
+
+/// **`files`, the settings of `profile`, as the batches that carry them** (1.56, #4081), in
+/// order, each one's pieces within a control frame, however large one file is.
+pub fn settings_in_batches(profile: &str, files: Vec<SettingsFile>) -> Vec<SettingsBatch> {
+    let mut batches = Vec::new();
+    let mut pieces = Vec::new();
+    let mut size = 0;
+    for file in files {
+        let framing = PIECE_FRAMING + serde_json::to_string(&file.path).map_or(0, |p| p.len());
+        let mut rest = file.bytes.as_slice();
+        let mut continues = false;
+        loop {
+            // Room for at least one byte, or the batch goes as it is.
+            if !pieces.is_empty() && size + framing + 4 > MOST_BATCH_BYTES {
+                batches.push(SettingsBatch {
+                    profile: profile.to_owned(),
+                    pieces: std::mem::take(&mut pieces),
+                });
+                size = 0;
+            }
+            // Their bytes cross as base64: 3 bytes in each 4.
+            let room = (MOST_BATCH_BYTES.saturating_sub(size + framing) / 4 * 3).max(3);
+            let (now, later) = rest.split_at(rest.len().min(room));
+            size += framing + now.len().div_ceil(3) * 4;
+            pieces.push(SettingsPiece {
+                path: file.path.clone(),
+                continues,
+                bytes: now.to_vec(),
+            });
+            rest = later;
+            continues = true;
+            if rest.is_empty() {
+                break;
+            }
+        }
+    }
+    if !pieces.is_empty() {
+        batches.push(SettingsBatch {
+            profile: profile.to_owned(),
+            pieces,
+        });
+    }
+    batches
+}
+
+/// **The settings a link has staged for one profile** (1.56, #4081): whole files, held in memory
+/// and only here, so a link that ends, or a batch refused, leaves nothing of them. Held to
+/// [`MOST_PROFILE_SETTINGS_BYTES`] and [`MOST_PROFILE_SETTINGS_FILES`] as they arrive. It judges
+/// the shape of what arrives and nothing of what it says: a runner checks the whole files as it
+/// checks files one `keep_profile` carries, once they are all here.
+#[derive(Debug, Default)]
+pub struct StagedSettings {
+    profile: Option<String>,
+    files: Vec<SettingsFile>,
+    paths: std::collections::HashSet<String>,
+    bytes: usize,
+}
+
+impl StagedSettings {
+    /// Takes `batch` in, or says why it is refused: for another profile than the batches before
+    /// it, a file twice, a piece of no file begun, or over a limit.
+    pub fn add(&mut self, batch: SettingsBatch) -> Result<(), String> {
+        let SettingsBatch { profile, pieces } = batch;
+        if self.profile.get_or_insert_with(|| profile.clone()) != &profile {
+            return Err("these settings are of another profile than the ones before".to_owned());
+        }
+        for piece in pieces {
+            self.bytes += piece.bytes.len();
+            if self.bytes > MOST_PROFILE_SETTINGS_BYTES {
+                return Err(format!(
+                    "these settings are over the {} MiB a runner holds for a profile",
+                    MOST_PROFILE_SETTINGS_BYTES / (1024 * 1024)
+                ));
+            }
+            if piece.path.len() > MOST_SETTINGS_PATH_BYTES {
+                return Err("a settings file's path is longer than a path can be".to_owned());
+            }
+            if piece.continues {
+                match self.files.last_mut() {
+                    Some(file) if file.path == piece.path => file.bytes.extend(piece.bytes),
+                    _ => return Err("a piece of a settings file came with no start".to_owned()),
+                }
+                continue;
+            }
+            if self.files.len() >= MOST_PROFILE_SETTINGS_FILES {
+                return Err(format!(
+                    "these settings are over the {MOST_PROFILE_SETTINGS_FILES} files a runner \
+                     holds for a profile"
+                ));
+            }
+            if !self.paths.insert(piece.path.clone()) {
+                return Err("a settings file came twice".to_owned());
+            }
+            self.files.push(SettingsFile {
+                path: piece.path,
+                bytes: piece.bytes,
+            });
+        }
+        Ok(())
+    }
+
+    /// The files staged, as `profile`'s, where they are the `files` its `keep_profile` counts.
+    pub fn finished(self, profile: &str, files: u32) -> Result<Vec<SettingsFile>, String> {
+        let same = self.profile.as_deref().is_none_or(|p| p == profile);
+        if !same || self.files.len() != files as usize {
+            return Err("the settings staged are not the ones this keep names".to_owned());
+        }
+        Ok(self.files)
     }
 }
 
@@ -1790,6 +1974,7 @@ wire_words!(Command {
     Unpair => "unpair",
     KeepProfile => "keep_profile",
     ForgetProfile => "forget_profile",
+    StageProfileSettings => "stage_profile_settings",
     RelayTo => "relay_to",
     TakeCode => "take_code",
     GiveCode => "give_code",
@@ -1847,7 +2032,9 @@ impl Command {
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,
             Command::Unpair => Power::Unpair,
-            Command::KeepProfile(_) | Command::ForgetProfile { .. } => Power::KeepProfile,
+            Command::KeepProfile(_)
+            | Command::ForgetProfile { .. }
+            | Command::StageProfileSettings(_) => Power::KeepProfile,
             Command::RelayTo { .. } => Power::RelayTo,
             Command::TakeCode { .. }
             | Command::GiveCode { .. }
@@ -2356,6 +2543,7 @@ impl Lane {
             | Command::Unpair
             | Command::KeepProfile(_)
             | Command::ForgetProfile { .. }
+            | Command::StageProfileSettings(_)
             | Command::RelayTo { .. }
             | Command::TakeCode { .. }
             | Command::GiveCode { .. }
@@ -3016,6 +3204,13 @@ impl Client {
             name: name.to_owned(),
         })
         .await
+    }
+
+    /// Stage `batch` of a profile's settings on this link (1.56, #4081), for a
+    /// [`Client::keep_profile`] to keep. Refused by every host but a runner's of 1.56 or later,
+    /// on its link from that desktop.
+    pub async fn stage_profile_settings(&self, batch: SettingsBatch) -> Result<(), CallError> {
+        self.done(Command::StageProfileSettings(batch)).await
     }
 
     /// Ask the desktop's host to relay this link to the runner it keeps as `runner` (1.33,
