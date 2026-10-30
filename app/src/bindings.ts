@@ -2190,13 +2190,17 @@ export const commands = {
 	skillSourceConfirm: (plane: PlaneId, remote: SourceRemote) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_source_confirm", { plane, remote })),
 	/**  **Browses a skill source** at its newest commit. */
 	skillSourceBrowse: (plane: PlaneId, source: SkillSource) => typedError<SourceBrowse, string>(__TAURI_INVOKE("skill_source_browse", { plane, source })),
-	/**  **The install review** of `names` from a source, and the skills they refer to. */
-	skillInstallReview: (plane: PlaneId, source: SkillSource, names: string[]) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_install_review", { plane, source, names })),
+	/**
+	 *  **The install review** of `names` from a source into `level`, and the skills they refer to
+	 *  that `level` does not hold already.
+	 */
+	skillInstallReview: (plane: PlaneId, source: SkillSource, names: string[], level: SkillLevel) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_install_review", { plane, source, names, level })),
 	/**
 	 *  **The review of installing `names` from a source together** (#4024, Install all…): one review
-	 *  of the set and the skills they refer to, or which of them fit one read.
+	 *  of the set into `level` and the skills they refer to that it does not hold already, or which of
+	 *  them fit one read.
 	 */
-	skillInstallSetReview: (plane: PlaneId, source: SkillSource, names: string[]) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_install_set_review", { plane, source, names })),
+	skillInstallSetReview: (plane: PlaneId, source: SkillSource, names: string[], level: SkillLevel) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_install_set_review", { plane, source, names, level })),
 	/**  **Installs what was reviewed** at `level`, with `grant` where it is a project skill. */
 	skillInstall: (plane: PlaneId, source: SkillSource, level: SkillLevel, reviewed: Reviewed, grant: 
 /**  Chats at the project's root alone. */
@@ -11384,6 +11388,11 @@ export type ReviewSkill = {
 	description: string,
 	folder: string,
 	brought_by: string | null,
+	/**
+	 *  The skills it refers to that the level it lands in holds already (#4032): left as they
+	 *  are, not brought along.
+	 */
+	already: string[],
 	summary: ReviewSummary,
 	files: ReviewFile[],
 	left_out: ReviewLeftOut[],

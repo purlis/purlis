@@ -9273,6 +9273,11 @@ export type ReviewSkill = {
 	description: string,
 	folder: string,
 	brought_by: string | null,
+	/**
+	 *  The skills it refers to that the level it lands in holds already (#4032): left as they
+	 *  are, not brought along.
+	 */
+	already: string[],
 	summary: ReviewSummary,
 	files: ReviewFile[],
 	left_out: ReviewLeftOut[],

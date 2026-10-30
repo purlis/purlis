@@ -376,7 +376,7 @@ fn install_all_reviews_every_skill_not_installed_yet_and_asks_once() {
     );
     assert!(again.status.success(), "{}", text(&again));
     assert!(
-        text(&again).contains("is installed from it already"),
+        text(&again).contains("is installed already"),
         "{}",
         text(&again)
     );
