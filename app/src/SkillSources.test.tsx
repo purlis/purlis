@@ -160,6 +160,24 @@ const ANTHROPIC = {
   },
 };
 
+/** The update review of notify: one file changed, and an edit made here since the install. */
+const UPDATE = {
+  name: "notify",
+  pinned: commit("b"),
+  newer: commit("c"),
+  from_pin: true,
+  added: SUMMARY,
+  removed: EMPTY,
+  files: [{ path: "SKILL.md", change: "changed", diff: "@@ -1,1 +1,1 @@\n-a\n+b\n" }],
+  edited: ["SKILL.md"],
+  local_edits: [{ path: "SKILL.md", change: "changed", diff: "+mine\n" }],
+  skill: NOTIFY,
+  brought: [],
+  reserved: [],
+  refused: null,
+  accepted: { commit: "c".repeat(40), skills: [{ name: "notify", digest: "sha256:n1" }] },
+};
+
 type Asked = { cmd: string; args: Record<string, unknown> }[];
 
 /** A core with one source, recording every ask; `answers` overrides a command's answer. */
@@ -201,20 +219,7 @@ function core({
       case "skill_install_review":
         return REVIEW;
       case "skill_update_review":
-        return {
-          name: "notify",
-          pinned: commit("b"),
-          newer: commit("c"),
-          from_pin: true,
-          added: SUMMARY,
-          removed: EMPTY,
-          files: [{ path: "SKILL.md", change: "changed", diff: "@@ -1,1 +1,1 @@\n-a\n+b\n" }],
-          edited: ["SKILL.md"],
-          local_edits: [{ path: "SKILL.md", change: "changed", diff: "+mine\n" }],
-          skill: NOTIFY,
-          brought: [],
-          accepted: { commit: "c".repeat(40), skills: [{ name: "notify", digest: "sha256:n1" }] },
-        };
+        return UPDATE;
       default:
         return { notes: [] };
     }
@@ -519,6 +524,33 @@ describe("the update review", () => {
       skills: [{ name: "notify", digest: "sha256:n1" }],
     });
     expect(await screen.findByTestId("skill-sources")).toBeInTheDocument();
+  });
+
+  it("says up front that a skill it brings along has a built-in skill's name, and holds Accept update", async () => {
+    // #3728: accepting it would be refused, so the review says so before.
+    const refused =
+      "This update brings along secrets, whose name belongs to a built-in skill, so it can't be taken until the source renames it.";
+    const asked = core({
+      offers: [OFFER],
+      answers: {
+        skill_update_review: () => ({
+          ...UPDATE,
+          brought: [{ ...NOTIFY, name: "secrets", brought_by: "notify" }],
+          reserved: ["secrets"],
+          refused,
+        }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    await screen.findByTestId("skill-updates");
+    await user.click(screen.getByRole("button", { name: "Review update" }));
+    const review = await screen.findByTestId("update-review");
+    expect(await within(review).findByTestId("update-refused")).toHaveTextContent(refused);
+    const accept = within(review).getByRole("button", { name: "Accept update" });
+    expect(accept).toHaveAttribute("aria-disabled", "true");
+    await user.click(accept);
+    expect(did(asked, "skill_update")).toBe(false);
   });
 
   it("Not now leaves it as it is, and back walks the pages again", async () => {

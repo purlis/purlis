@@ -12,7 +12,8 @@ import { moved } from "../familyLint.js";
 
 const cardFamily = moved({
   description: "A box one step off its surface is the shared Card family",
-  scopes: ["card"],
+  // A pressed card is a family of its own (#3885), drawn by its wrapper in this folder too.
+  scopes: ["card", "card-button"],
   classes: ["ui-inline-surface", "ui-inline-surface-*"],
   message: 'a card: draw it as `<Card>` (an ask as `variant="ask"`) from `ui/card/Card` (#2912).',
 });

@@ -289,7 +289,17 @@ pub fn answer(
             )
             .map_or_else(
                 || no(format!("chat {} is not one this app has open", asks.chat)),
-                |working| Answer::Working(Box::new(working)),
+                |working| {
+                    // Whether each of its tasks is alive, and the ones orphaned by a restart
+                    // (#3900): only a turn's answer carries a roster.
+                    let working = match asks.tell {
+                        purlis_core::awareness::Tell::Turn => working
+                            .with_liveness(|task| Some(crate::dispatched::liveness(held, task)))
+                            .with_orphans(crate::unstarted::orphans_of(held, asks.chat)),
+                        _ => working,
+                    };
+                    Answer::Working(Box::new(working))
+                },
             ),
         // An ask after a task this chat dispatched (#1441): no ticket, for the record's reason,
         // and whose task it names is the app's record of that chat.
@@ -1225,21 +1235,35 @@ pub struct PersonaChat {
 
 /// Why chat `asker`'s dispatch named `name` is refused as a task it already has open (#3788,
 /// [`dispatchdecision::same_name_open`]), from this app's record of its tasks; or `None`.
+///
+/// Each is named with its liveness (#3900): a task that came back after a restart is named
+/// live, never left to be taken for a dead one.
 fn same_name_open(held: &Held, asker: u32, name: &str) -> Option<String> {
-    let tasks: Vec<(u32, String, dispatchdecision::Standing)> = held
+    type Listed = (
+        u32,
+        String,
+        dispatchdecision::Standing,
+        purlis_core::dispatchliveness::Liveness,
+    );
+    let tasks: Vec<Listed> = held
         .chats()
         .tasks_of(asker)
         .into_iter()
         .filter_map(|(session, from)| {
             let named = held.chats().shown_name(session)?;
-            Some((session, named, standing_of(held, session, &from)))
+            Some((
+                session,
+                named,
+                standing_of(held, session, &from),
+                crate::dispatched::liveness(held, session),
+            ))
         })
         .collect();
     dispatchdecision::same_name_open(
         name,
-        tasks
-            .iter()
-            .map(|(session, named, standing)| (*session, named.as_str(), *standing)),
+        tasks.iter().map(|(session, named, standing, live)| {
+            (*session, named.as_str(), *standing, Some(live))
+        }),
     )
 }
 
@@ -1829,6 +1853,8 @@ pub struct Wanted {
     pub by: dispatchdecision::By,
     /// What a handoff adds, or none for a task: the mode is which of the two this is.
     pub moved: Option<Moved>,
+    /// A long-running task (#3905, `--long`): only a chat's own task asks for one.
+    pub long: bool,
 }
 
 impl Wanted {
@@ -1843,6 +1869,7 @@ impl Wanted {
             place: ask.place.clone(),
             by: dispatchdecision::By::Chat,
             moved: None,
+            long: ask.long,
         }
     }
 
@@ -1866,7 +1893,16 @@ impl Wanted {
                 create_vision: open.create_vision.clone(),
                 message: open.message.clone(),
             }),
+            // A handoff's work moved: it owes no report, long or not.
+            long: false,
         }
+    }
+
+    /// **Whether this dispatch starts a long-running task** (#3905): a chat's own task that
+    /// asked for `--long`. A handoff's work moved and owes nothing, and the person's dialog
+    /// asks for none. What its lineage record keeps and its stamp says, read once.
+    fn long_task(&self) -> bool {
+        self.long && self.moved.is_none() && self.by == dispatchdecision::By::Chat
     }
 
     /// Which mode this dispatch is.
@@ -2536,6 +2572,11 @@ fn dispatch_noting(
             workspace.as_deref(),
         ));
     }
+    // A long-running task is told what is different about its report (#3905), in purlis's
+    // own line under its stamp.
+    if wanted.long_task() {
+        on_a_branch.push(handoff::LONG_RUNNING_NOTE.to_owned());
+    }
     // Who asked is the one thing the first message says differently on the roads: a chat's
     // brief is a request from that chat, and the person's is what they typed (#1438). A
     // handoff's is the command's own stamp, with the asking chat named the way the person
@@ -2878,6 +2919,8 @@ fn dispatch_noting(
             // Who is above it, from this app's record of the asking chat (#1521).
             above: asked.above,
             by_person: wanted.by == By::Person,
+            // A chat's own task, as it asked (#3905).
+            long: wanted.long_task(),
         };
         // Its number is dealt here, so the slot is the chat it is about to be.
         let number = held.chats().sessions().deal();
@@ -3151,7 +3194,9 @@ fn dispatch_noting(
             held.config(),
             Some(arrived.session.to_string()),
             arrived.persona.clone(),
-        );
+        )
+        // By its stable id too: what its branch folder's one live writer is named by (#3901).
+        .for_chat(held.chats().id_of(arrived.session));
         if purlis_core::chatpiece::claim(root, cut, &who, chrono::Utc::now()).is_none() {
             tracing::warn!("purlis: a dispatch's worktree was not logged as claimed");
         }
@@ -3173,10 +3218,17 @@ fn dispatch_noting(
         (None, By::Chat) => crate::taskchanges::shares_a_folder(held, arrived.session, false),
         _ => None,
     };
+    // A branch folder another live chat holds (#3901): the task is told who, before its first
+    // commit there is refused.
+    let claimed = match (&wanted.moved, &cut) {
+        (None, None) => held_by_another(held, arrived.session),
+        _ => None,
+    };
     let noted: Vec<String> = note
         .into_iter()
         .chain(fell_back)
         .chain(sharing)
+        .chain(claimed)
         .chain(cut.iter().flat_map(|cut| {
             cut.notes
                 .iter()
@@ -3199,6 +3251,30 @@ fn dispatch_noting(
         note: (!noted.is_empty()).then(|| noted.join("; ")),
         works,
     })
+}
+
+/// **Where chat `task` was started in a branch folder another live chat holds** (#3901), what
+/// the dispatch warns of, naming the holder: purlis will refuse the task's commit, update and
+/// push there until that chat hands it over. `None` anywhere else.
+fn held_by_another(held: &Held, task: u32) -> Option<String> {
+    let at = held.chats().chat_at(task)?;
+    let cwd = at.cwd?;
+    let piece = purlis_core::worktree::locate(held.root(), &cwd)?;
+    let live = crate::gitbroker::live_chats(held);
+    match purlis_core::piececlaim::writer(
+        held.root(),
+        &piece,
+        at.id.as_deref(),
+        Some(&live),
+        purlis_core::piececlaim::Act::Write,
+    ) {
+        purlis_core::piececlaim::Writer::Refused(why) => Some(format!(
+            "the folder it works in is held by another chat, so its writes there will be \
+             refused: {}",
+            why.trim_end_matches(". Nothing was done")
+        )),
+        _ => None,
+    }
 }
 
 /// The todo a handoff the person allowed records in the workspace it moved to (#1471), as the
@@ -4014,6 +4090,7 @@ pub fn ask_persona(
         by: dispatchdecision::By::Person,
         // The person asks for a task; a handoff is a chat's own to make.
         moved: None,
+        long: false,
     };
     match dispatch_it(held, plane, &wanted, size)? {
         Dispatched::Started { it, .. } => Ok(*it),

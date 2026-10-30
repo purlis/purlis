@@ -1376,6 +1376,58 @@ mod tests {
         }
     }
 
+    /// #3865: A3 is asked of every chat, sandboxed or not, and its sentence is one recorded
+    /// sentence for both. It sends each to a branch folder, and says the commit and push
+    /// through purlis are a sandboxed chat's: a chat with no sandbox that ran `purlis worktree
+    /// commit` was told to use git, one call late.
+    #[test]
+    fn a_branch_move_in_the_root_says_which_chat_commits_through_purlis() {
+        let fix = Fixture::new();
+        let root = fix.root();
+        let git = |args: &[&str]| {
+            let mut full = vec!["-c", "user.name=t", "-c", "user.email=t@t"];
+            full.extend_from_slice(args);
+            let r = crate::testgit::run(fix.dir.path(), &full);
+            assert!(r.ok(), "git {args:?}: {}", r.err);
+        };
+        git(&["init", "-q", "-b", "main", "."]);
+        git(&["commit", "-q", "--allow-empty", "-m", "one"]);
+        git(&["branch", "feature"]);
+        let forges = forges();
+        let state = fix.state();
+        let ask = |sandboxed: bool| {
+            let plane = Plane {
+                root: &root,
+                forges: &forges,
+                session_dir: &root,
+                launched: Launched {
+                    sandboxed,
+                    chat_dir: Some(&root),
+                },
+            };
+            let call = Call {
+                command: "git checkout feature",
+                cwd: &root,
+                state_dir: &state,
+                caller: attended(),
+            };
+            verdict(&call, Some(&plane)).expect("refused")
+        };
+        for sandboxed in [true, false] {
+            let refused = ask(sandboxed);
+            assert_eq!(refused.reason, REASON_PLANE_ROOT_BRANCH, "{sandboxed}");
+            let said = refused.said();
+            assert!(
+                said.contains(
+                    "`purlis worktree add <repo> <piece>`, then commit and push from it: in a \
+                     sandboxed chat with `purlis worktree commit` and `purlis worktree push`, \
+                     in any other chat with plain `git commit` and `git push`."
+                ),
+                "{sandboxed}: {said}"
+            );
+        }
+    }
+
     #[test]
     fn the_emitted_json_is_pythons_bytes() {
         let v = Verdict::new("r", None, "a — b …");

@@ -53,6 +53,7 @@ fn a_record() -> Record {
         needed_you: 2,
         messages: 0,
         talk: Vec::new(),
+        last_note: None,
         usage: None,
         conversation: None,
         cleared: false,

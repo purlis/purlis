@@ -63,6 +63,7 @@ export function studio(skills: StudioSkill[], over: Partial<Studio> = {}): Studi
     first: { starts: false, unmoved: null },
     pins_refused: null,
     not_supported: [],
+    levels_to_confirm: null,
     router: null,
     needs: [],
     ...over,

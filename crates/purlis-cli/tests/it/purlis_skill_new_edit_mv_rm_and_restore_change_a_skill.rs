@@ -31,6 +31,9 @@ impl Project {
         .unwrap();
         std::fs::create_dir_all(at.join("home")).unwrap();
         std::fs::write(root.join("charter.toml"), "[plane]\n").unwrap();
+        // The project's app state, made before purlis was ever used there (#3718), in the data
+        // home every run below is given: nothing of it waits for an Accept.
+        purlis_core::appstate::made_in_for_tests(&at.join("data"), &root).unwrap();
         Project { _tmp: tmp, at }
     }
 
@@ -47,6 +50,7 @@ impl Project {
             .env("CHARTER_ROOT", &root)
             .env("HOME", self.at.join("home"))
             .env("PURLIS_CONFIG_HOME", self.at.join("home/config"))
+            .env("PURLIS_DATA_HOME", self.at.join("data"))
             .env("PURLIS_SKILL_STUDIO", "1")
             .env("NO_COLOR", "1")
             .env_remove("VISUAL")
@@ -355,4 +359,50 @@ fn skill_new_and_mv_refuse_a_built_in_skills_name() {
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     assert!(stderr(&out).contains(reserved), "{}", stderr(&out));
     assert_eq!(project.gets(Some("alpha")), ["deploy"]);
+}
+
+/// #3729: a deleted skill whose name belongs to a built-in skill now is listed so, refused under
+/// its own name, and comes back under the one `--as` gives, checked as a rename's is.
+#[test]
+fn skill_restore_as_brings_back_a_skill_whose_name_a_built_in_skill_took() {
+    let project = Project::new();
+    let folder = project.root().join("skills/secrets");
+    std::fs::create_dir_all(&folder).unwrap();
+    // Written by a purlis older than the built-in skill of that name.
+    std::fs::write(
+        folder.join("SKILL.md"),
+        "---\nname: secrets\ndescription: Mine.\n---\n\nbody\n",
+    )
+    .unwrap();
+    let out = project.run(&["skill", "rm", "secrets"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+
+    let out = project.run(&["skill", "restore"]);
+    let listed = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        listed.contains("its name belongs to a built-in skill now: restore it with --as"),
+        "{listed}"
+    );
+    let out = project.run(&["skill", "restore", "secrets"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("restore it under a new name"),
+        "{}",
+        stderr(&out)
+    );
+    let out = project.run(&["skill", "restore", "secrets", "--as", "browser"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out)
+            .contains("That name belongs to a built-in skill; pick another, or make a copy."),
+        "{}",
+        stderr(&out)
+    );
+    assert!(!folder.exists());
+
+    let out = project.run(&["skill", "restore", "secrets", "--as", "my-secrets"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(project.gets(None), ["my-secrets"]);
+    let text = std::fs::read_to_string(project.root().join("skills/my-secrets/SKILL.md")).unwrap();
+    assert!(text.contains("name: my-secrets\n"), "{text}");
 }

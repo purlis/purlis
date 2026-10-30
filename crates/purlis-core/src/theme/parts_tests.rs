@@ -1525,7 +1525,8 @@ fn the_schema_completes_every_part_key_and_no_size_inside_a_state() {
         assert!(
             !said(&loaded)
                 .iter()
-                .any(|one| one.contains("is not a component part")),
+                .any(|one| one.contains("is not a component part")
+                    || one.contains("reaches nothing")),
             "{key}"
         );
     }

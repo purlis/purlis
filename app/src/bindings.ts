@@ -1976,9 +1976,10 @@ export const commands = {
 	skillDeletedText: (plane: PlaneId, id: string) => typedError<string, string>(__TAURI_INVOKE("skill_deleted_text", { plane, id })),
 	/**
 	 *  **Restores** the deleted skill `id` names: the core's record of it, as [`skills_deleted`]
-	 *  handed it out.
+	 *  handed it out. `under` a new name where one is given (#3729): one whose own name belongs to
+	 *  a built-in skill now comes back only so.
 	 */
-	skillRestore: (plane: PlaneId, id: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_restore", { plane, id })),
+	skillRestore: (plane: PlaneId, id: string, under: string | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_restore", { plane, id, under })),
 	/**  **Sets where the project skill `name` reaches.** */
 	skillGrant: (plane: PlaneId, name: string, grant: SkillGrant) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_grant", { plane, name, grant })),
 	/**
@@ -1991,6 +1992,19 @@ export const commands = {
 	 *  hides it from them. One commit.
 	 */
 	skillPin: (plane: PlaneId, by: SkillPinner, name: string, on: boolean) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_pin", { plane, by, name, on })),
+	/**
+	 *  **The router extensions the Skill studio's Change… offers**, beside the built-in router
+	 *  (#3692): each approved here, on in the project, and declaring `skill-router`. Read when the
+	 *  dialog opens, never with the studio, so opening a chat or the studio asks no extension's
+	 *  manifest.
+	 */
+	skillRouters: (plane: PlaneId) => typedError<SkillRouterOffer[], string>(__TAURI_INVOKE("skill_routers", { plane })),
+	/**
+	 *  **Chooses the router a workspace's or a persona's chats are routed by**, or takes the choice
+	 *  out (`router` null), from the Skill studio's Routing page (#3692). One commit; chats started
+	 *  after it are routed by it.
+	 */
+	skillRouterChoose: (plane: PlaneId, by: SkillPinner, router: string | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_router_choose", { plane, by, router })),
 	/**
 	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
 	 *  owners, and the skills it names and that name it. Nothing while the flag is off.
@@ -2049,6 +2063,12 @@ export const commands = {
 	 *  chats from now on. The person's press in the studio, on a skill left out for it.
 	 */
 	skillLevelAccept: (plane: PlaneId, folder: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_level_accept", { plane, folder })),
+	/**
+	 *  **Accepts the workspace and persona folders `folders` the studio listed** (#3718), each there
+	 *  now: the person's one press where purlis cannot confirm which of them they accepted before
+	 *  (`levels::to_confirm`).
+	 */
+	skillLevelsConfirm: (plane: PlaneId, folders: string[]) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_levels_confirm", { plane, folders })),
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
 	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model })),
 	/**
@@ -2070,6 +2090,11 @@ export const commands = {
 	 *  and scrollback as the escape sequences that draw them, for a tab that shows it read-only.
 	 */
 	skillGradeChat: (plane: PlaneId, skill: string, grade: string, chat: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_chat", { plane, skill, grade, chat })),
+	/**
+	 *  **The grades of the copy of `skill` at `level`** (S6), as the eval record holds them: what the
+	 *  skill's Grades tab draws its bars and its list from.
+	 */
+	skillGrades: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<SkillGrades, string>(__TAURI_INVOKE("skill_grades", { plane, level, skill })),
 	/**
 	 *  **Sets the token cap a grade in the project is held to**, on this machine (#2779; the
 	 *  operator's ruling of 2026-10-26): the person who pays for the chats sets it, and the plan shows
@@ -2886,6 +2911,19 @@ export const commands = {
 	dockerPoolLink: (name: string) => typedError<PoolLink, string>(__TAURI_INVOKE("docker_pool_link", { name })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
+	/**  **The contexts of the kubeconfig `kubeconfig` names** (#3292), as kubectl lists them. */
+	clusterContexts: (kubeconfig: string | null) => typedError<ClusterContexts, string>(__TAURI_INVOKE("cluster_contexts", { kubeconfig })),
+	/**
+	 *  **Check its key**: the cluster operator key the cluster's Pool `pool` names, through
+	 *  `context` of `kubeconfig`, for the person to check before the pool is added (#3292).
+	 */
+	clusterPoolKey: (kubeconfig: string | null, context: string, pool: string) => typedError<ClusterPoolKey, string>(__TAURI_INVOKE("cluster_pool_key", { kubeconfig, context, pool })),
+	/**
+	 *  **Adds a cluster pool on this machine** (#3292): pins the key the person checked, claims a
+	 *  runner of the cluster's Pool, waits for its operator to vouch for it, pairs it and keeps it.
+	 *  What fails is taken back.
+	 */
+	addClusterPool: (adding: ClusterPoolAdding) => typedError<ClusterPoolRow, string>(__TAURI_INVOKE("add_cluster_pool", { adding })),
 	/**
 	 *  **Every profile of this machine's, kept on pool `pool`'s runner**, as the runner stands with
 	 *  each (#2049): what adding a pool ends with, and what Settings › Pools shows. Refused, with
@@ -5650,6 +5688,48 @@ export type ClosingChat = {
 	running: string[],
 };
 
+/**  The contexts of a kubeconfig, as the Add a pool dialog offers them. */
+export type ClusterContexts = {
+	/**  The kubeconfig read, by its absolute path. */
+	kubeconfig: string,
+	contexts: string[],
+	/**  The context it is on, where it names one. */
+	current: string | null,
+};
+
+/**  A cluster pool as the person typed it, with the key they checked. */
+export type ClusterPoolAdding = {
+	name: string,
+	/**  The kubeconfig, by its path; empty or none is kubectl's own default, `~/.kube/config`. */
+	kubeconfig: string | null,
+	context: string,
+	/**  The cluster's Pool. */
+	pool: string,
+	/**  The cluster operator key Check its key showed, spelled as it showed it. */
+	key: string,
+};
+
+/**  What Check its key read of a cluster's Pool. */
+export type ClusterPoolKey = {
+	/**  The cluster operator key the Pool's status names, spelled as it gives it. */
+	key: string,
+	/**  The namespace the context names, where the pool's claim would be made. */
+	namespace: string,
+};
+
+/**  One cluster pool, as its row draws it. */
+export type ClusterPoolRow = {
+	name: string,
+	/**  The kubeconfig's context its kubectl is pointed at. */
+	context: string,
+	/**  The cluster's Pool its runner is claimed from. */
+	pool: string,
+	/**  The namespace its claim is made in. */
+	namespace: string,
+	/**  The cluster operator key pinned as it was added, spelled `ed25519:<64 hex>`. */
+	operator_key: string,
+};
+
 /**  What a palette command does. */
 export type CommandDoes = 
 /**  Opens one of its views, as the view's own button does. */
@@ -5762,6 +5842,11 @@ export type DeletedSkill = {
 	 *  after its days, for `purlis skill restore`; else this machine keeps it, and removes it then.
 	 */
 	in_history: boolean,
+	/**
+	 *  Whether its name belongs to a built-in skill now (a newer purlis ships one of that name),
+	 *  so it comes back only under a new name (#3729).
+	 */
+	reserved: boolean,
 };
 
 /**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */
@@ -7367,6 +7452,16 @@ export type GoneProject = {
 	said: string,
 };
 
+/**
+ *  **Each arm's pass rate**, in points from 0 to 100, where the arm ran: the Grades tab's bars
+ *  and a scorecard's totals.
+ */
+export type GradeArms = {
+	with: number | null,
+	without: number | null,
+	previous: number | null,
+};
+
 /**  How a grade ended, as the window is told it. */
 export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" | 
 /**  It reached its token cap. */
@@ -7406,6 +7501,13 @@ export type GradeLeftOut = {
 	why: string,
 };
 
+/**
+ *  **How a grade ended, as its list marks it** (S6): graded whole, stopped by the person, stopped
+ *  at its limit (its token cap, its dollar limit, or a chat that did not say what it spent), or
+ *  interrupted (purlis stopped under it, or its chats did not start).
+ */
+export type GradeOutcome = "graded" | "stopped" | "at-limit" | "interrupted";
+
 /**  **The version a grade compares with, as its plan says it** (SK-57). */
 export type GradePrevious = {
 	commit: string,
@@ -7429,6 +7531,23 @@ export type GradeQuery = {
 	should_trigger: boolean,
 	/**  Whether it holds a character no reader would see. */
 	hides: boolean,
+};
+
+/**
+ *  **One grade in a skill's Grades tab** (S6): when it ran, the version, what it ran on, how it
+ *  ended, each arm's pass rate and what it spent; its id opens its scorecard.
+ */
+export type GradeRow = {
+	grade: string,
+	graded: string,
+	version: string,
+	ran_on: string,
+	/**  How it ended, in the record's words, and as its mark says it. */
+	ended: string,
+	outcome: GradeOutcome,
+	arms: GradeArms,
+	spent: GradeSpent,
+	after_edit: boolean,
 };
 
 /**
@@ -7463,6 +7582,21 @@ export type GradeScorecard = {
 	/**  How many of its chats asked the person something and were ended there. */
 	asked: number,
 	tests: ScoredTest[],
+	/**  How it ended, its arms' pass rates and what it spent (S6): its end banner and totals. */
+	outcome: GradeOutcome,
+	arms: GradeArms,
+	spent: GradeSpent,
+};
+
+/**
+ *  **What a grade spent**: the chats that ran, their tokens and their cost where they said them,
+ *  and the dollar limit it was held to.
+ */
+export type GradeSpent = {
+	chats: number,
+	tokens: number | null,
+	cost_usd: number | null,
+	limit_usd: number | null,
 };
 
 /**  Who a grant is for, as the window sends it ([`sandbox::grant::Level`]). */
@@ -8457,8 +8591,18 @@ export type Need =
 export type NeedFix = 
 /**  Accept the folder a chat made (`skill_level_accept`). */
 { kind: "accept"; folder: string } | 
+/**
+ *  Accept the project's folders it lists, where purlis cannot confirm which the person
+ *  accepted before (`skill_levels_confirm`, #3718).
+ */
+{ kind: "accept-folders"; folders: string[] } | 
 /**  Rename the plane's copy of a skill: its page in the Library, with Rename open. */
 { kind: "rename"; name: string; level: Level; local: boolean } | 
+/**
+ *  Open the text of the plane's own skill: its page in the Library, its Text tab in Edit
+ *  (#3780).
+ */
+{ kind: "open-text"; name: string; level: Level; local: boolean } | 
 /**  The Harness skills page, where the other copy's switch is. */
 { kind: "harness" } | 
 /**  Take the pin `name` out of `by`'s pins (`skill_pin`, off). */
@@ -9852,6 +9996,11 @@ export type PoolLink =
 { state: "linked" } | 
 /**  It answered with another key: it is refused, and the window offers to remove it. */
 { state: "key_changed" } | 
+/**
+ *  Its cluster's Pool names another cluster operator key than the one pinned as the pool was
+ *  added (#3292): its runner is refused, and the window offers to remove the pool.
+ */
+{ state: "operator_key_changed" } | 
 /**  It did not answer, and why. */
 { state: "down"; why: string } | 
 /**
@@ -9984,6 +10133,8 @@ export type PoolsShown = {
 	 *  by default (#3297).
 	 */
 	width?: number | null,
+	/**  This machine's cluster pools (#3292), each with its runner in a team's cluster. */
+	clusters?: ClusterPoolRow[] | null,
 };
 
 /**
@@ -12384,6 +12535,13 @@ export type SkillGradeStep = {
 	of: number,
 	/**  What its chats have spent so far, where they said, and the cap it is held to. */
 	tokens: number | null,
+	/**
+	 *  What its chats have cost so far, in dollars, where they said (S6): the running page's
+	 *  spend against the grade's dollar limit.
+	 */
+	cost_usd: number | null,
+	/**  The dollar limit it is held to, where it has one. */
+	limit_usd: number | null,
 	cap: number | null,
 	/**
 	 *  How many of its chats asked the person something and were ended there (SK-59, #3239):
@@ -12396,6 +12554,12 @@ export type SkillGradeStep = {
 	 *  What the window says of its end: why its chats did not start, or that it was not
 	 *  recorded.
 	 */
+	said: string | null,
+};
+
+/**  **A copy's grades, newest first** (S6), and what the record left out as it was read. */
+export type SkillGrades = {
+	grades: GradeRow[],
 	said: string | null,
 };
 
@@ -12527,6 +12691,17 @@ export type SkillRouter =
 "built-in" | 
 /**  An extension that declares `skill-router`, by its id (SK-15b). */
 { extension: string };
+
+/**
+ *  **A router the Skill studio's Change… offers** (SK-15b, #3692): an extension this machine
+ *  approved, the project has on, and that declares `skill-router`.
+ */
+export type SkillRouterOffer = {
+	/**  Its id, which a choice writes. */
+	id: string,
+	/**  Its name, as its manifest gives it. */
+	name: string,
+};
 
 /**
  *  **How a chat's router extension did at its start** (SK-15b, ADR 0102 §6): the core's routing
@@ -12965,10 +13140,25 @@ export type Studio = {
 	 */
 	router: StudioRouter | null,
 	/**
+	 *  Where purlis cannot confirm which of the project's workspace and persona folders the
+	 *  person accepted (#3718): the one item the studio shows for the project, whose Accept
+	 *  accepts the folders it lists (`skill_levels_confirm`). Null otherwise.
+	 */
+	levels_to_confirm: StudioLevelsToConfirm | null,
+	/**
 	 *  **What in these skills needs the person** (#3689): the Needs you page's items, by kind,
 	 *  each with why and one fix ([`needs`]). Empty while the studio is off.
 	 */
 	needs: NeedsYou[],
+};
+
+/**
+ *  **A chat's skill budget**, as the Routing page says it: the most skills its list holds, and
+ *  the most characters of their descriptions together.
+ */
+export type StudioBudget = {
+	skills: number,
+	chars: number,
 };
 
 /**
@@ -13035,6 +13225,15 @@ export type StudioLevel = {
 };
 
 /**
+ *  **The one item for the project's folders** (#3718): what it says, and the folders its Accept
+ *  accepts, relative to the project.
+ */
+export type StudioLevelsToConfirm = {
+	said: string,
+	folders: string[],
+};
+
+/**
  *  **A declared harness skills are not supported on** (SK-30, #2985): the core's
  *  `skills::NotSupported`.
  */
@@ -13050,6 +13249,11 @@ export type StudioNotSupported = {
 export type StudioRouted = {
 	session: number,
 	routing: SkillRouting,
+	/**
+	 *  **Every skill the routing hid at its start, by name** (#3692): the routing record's, so
+	 *  the Routing page says what a chat started without on its list.
+	 */
+	hidden: string[],
 };
 
 /**
@@ -13074,6 +13278,17 @@ export type StudioRouter = {
 	 *  graded on. Null where it has none, and for the built-in router.
 	 */
 	grade: string | null,
+	/**
+	 *  **What the scope's own choice writes** (#3692): the persona's `skill-router:` line, or
+	 *  else the workspace's `settings.skills.router`, as written. Null where it writes none,
+	 *  and at the project's root, which chooses no router. What Change… starts from.
+	 */
+	written: string | null,
+	/**
+	 *  **A chat's skill budget** (SK-12, ADR 0102 §1): past it the router decides what a chat's
+	 *  list shows. The same on every harness.
+	 */
+	budget: StudioBudget,
 };
 
 /**
@@ -13184,8 +13399,8 @@ export type StudioSkill = {
 	 */
 	compat: SkillCompat[],
 	/**
-	 *  What the built-in lints say of a skill from outside the plane (SK-8): that it widens the
-	 *  chat, and what else is worth knowing. Empty for the plane's and the built-in skills.
+	 *  What the built-in lints say of a skill a chat gets, the plane's own too (SK-8, #3780): that
+	 *  it widens the chat, and what else is worth knowing. Empty for the built-in skills.
 	 */
 	lint: string[],
 	/**
@@ -13778,6 +13993,13 @@ export type UpdateReview = {
 	local_edits: UpdateFile[],
 	skill: ReviewSkill,
 	brought: ReviewSkill[],
+	/**  Those of `brought` under a built-in skill's name (#3728). */
+	reserved: string[],
+	/**
+	 *  Why it cannot be taken as it is, said before Accept update: it brings along a skill under
+	 *  a built-in skill's name (#3728).
+	 */
+	refused: string | null,
 	accepted: Reviewed,
 };
 

@@ -54,6 +54,13 @@ pub struct Asker {
     /// The machine store the app holds, whose device id names the piece log (FD-25), as the
     /// window's own pieces are named (`worktrees::window`); `None` on a machine that keeps none.
     pub config: Option<PathBuf>,
+    /// The chat's stable id (ADR 0066), which a branch folder's claim names its one live writer
+    /// by (#3901); `None` for a chat that has none.
+    pub id: Option<String>,
+    /// The chats the app has, live or not yet back since a restart, as a branch folder's claim
+    /// is judged against them (#3901); `None` where no app said, and a folder another chat
+    /// holds is then refused.
+    pub live: Option<Vec<crate::piececlaim::Live>>,
 }
 
 /// Runs `ask` for `asker` in the project at `root`, every git call reading `isolation`'s
@@ -147,6 +154,22 @@ fn isolated_answer(
                 repo,
                 piece,
             };
+            // One live writer per branch folder (#3901): a second chat is refused, naming the
+            // chat that holds it; a chat writing in a folder nobody live holds takes it.
+            let act = match &ask.work {
+                GitWork::WorktreePush { .. } => crate::piececlaim::Act::Push,
+                _ => crate::piececlaim::Act::Update,
+            };
+            let folder = crate::worktree::Located {
+                workspace: ask.workspace.clone(),
+                repo: repo.clone(),
+                piece: piece.clone(),
+            };
+            if let Err(why) =
+                crate::piececlaim::take(root, &folder, &who(asker), asker.live.as_deref(), act, now)
+            {
+                return no(why);
+            }
             let held = git::isolation().unwrap_or_default();
             let ran = in_a_checked_folder(root, &ask.workspace, repo, piece, &held, || match &ask
                 .work
@@ -526,13 +549,15 @@ pub fn hosts(root: &Path, asker: &Asker) -> Result<Option<Vec<String>>, String> 
         .map(|policy| crate::sandbox::hosts(&locks.presets(&policy.egress), &plane, &locks)))
 }
 
-/// Who the piece log credits: the chat, by the app's number for it, and its persona (D-4).
+/// Who the piece log credits: the chat, by the app's number for it and its stable id (#3901),
+/// and its persona (D-4).
 pub fn who(asker: &Asker) -> Who {
     Who::here(
         asker.config.as_deref(),
         Some(asker.chat.to_string()),
         asker.persona.clone(),
     )
+    .for_chat(asker.id.clone())
 }
 
 /// The most an answer's lines may take as JSON, under the 64 KiB an asker reads one answer in

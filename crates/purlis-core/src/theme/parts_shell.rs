@@ -465,7 +465,9 @@ fn rail_look(variant: &str, states: &[State]) -> Look {
 /// (#3654): a house drawn as a pin is, outside the strip.
 ///
 /// The family's root is the chip (`titlebar.workspace.*`, as the prototype's part keys name it):
-/// the strip around the chips lays them out and scrolls, and is no part a theme keys.
+/// the strip around the chips lays them out and scrolls, and is no part a theme keys. The crumb,
+/// the ⌄, and a switcher's rows and pin toggles are drawn apart from every chip, each a control
+/// in its own states (`parts::APART`, #3656), and a notice's dot beside one (`around`).
 pub(super) const TITLEBAR: Family = Family {
     name: "titlebar",
     description: "The title bar's pinned workspaces: a chip per pin, and the chip that pins the current one.",

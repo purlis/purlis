@@ -21,6 +21,7 @@ import {
 import { browser } from "@wdio/globals";
 import { coveredIn, whatCovers } from "./covers.js";
 import { theWindowIsDrawn } from "./drawn.js";
+import { theProjectsFoldersAreAccepted } from "./acting.js";
 import { noDialogIsLeftUp } from "./opening.js";
 import { theWindowHoldsTheRail } from "./rail.js";
 import { LOGS, PANIC_LOG, collectEvidence } from "./processes.js";
@@ -174,6 +175,8 @@ export const config: WebdriverIO.Config = {
     // A dialog an earlier spec left up would cover every control of this one, and fifty specs
     // would fail for the one that left it (#1949's scenario stall).
     await noDialogIsLeftUp();
+    // The project's folders, accepted once, as the person does at its first open (#3718).
+    await theProjectsFoldersAreAccepted();
   },
 
   // The service reads `tauri:options`, which WebdriverIO's own capability type does not know.

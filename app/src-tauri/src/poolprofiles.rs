@@ -119,6 +119,14 @@ fn keep_on_as(
     if owned.is_err() {
         return Ok(None);
     }
+    // A cluster pool's runner is a team's cluster's, never shown to be the person's own: no
+    // profile of this machine's is sent there, and its chats start on its own (#3292).
+    if purlis_core::runners::cluster_runner_for(config, pool)
+        .map_err(|why| why.to_string())?
+        .is_some()
+    {
+        return Ok(None);
+    }
     // Its settings, where it carries them, are read only once the pool is shown to be owned
     // and its runner is one that keeps them (1.50, #3448), and sent to no other.
     let to = to_a_runner(config, pool, waking)?;

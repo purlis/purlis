@@ -642,6 +642,61 @@ const DRAWN_ONLY: &[(&str, State, &[&str])] = &[
     ("menu", State::Open, &["default"]),
 ];
 
+/// **The parts drawn apart from their family's root, each in its own states** (#3656), by family
+/// and part, with the states the part's own element marks. The title bar's crumb, its ⌄, and a
+/// switcher's rows and pin toggles are never drawn inside a workspace chip, so each is reached by
+/// its own attributes, as a part drawn around its root is ([`Family::around`]); but each is a
+/// control of its own, under the pointer, open or pinned, so a state key reaches the part marked
+/// in that state. A key that names one in a variant of the chip, or in a state it is never
+/// marked in, is not in the schema, and is said and left out: no release has published format 2
+/// yet (v0.4.1 has no theme schema), so the keys the chip's variants gave them are dropped.
+const APART: &[(&str, &str, &[State])] = &[
+    (
+        "titlebar",
+        "crumb",
+        &[State::Hover, State::Selected, State::Focused],
+    ),
+    (
+        "titlebar",
+        "all",
+        &[State::Hover, State::Selected, State::Focused],
+    ),
+    (
+        "titlebar",
+        "pin",
+        &[State::Hover, State::Selected, State::Focused],
+    ),
+    // A row is never focused itself: the keyboard stays in the filter, and the row Enter would
+    // go to is the selected one.
+    ("titlebar", "row", &[State::Hover, State::Selected]),
+];
+
+/// **The version the manifest says which parts are drawn apart in** (#3656): its `apart` on each
+/// such part. The release step writes the number over `NEXT`, as it does a part's `since`.
+const APART_SINCE: u32 = NEXT;
+
+/// The states `part` of `family` is marked in on its own element, when it is drawn apart from
+/// the family's root ([`APART`]).
+fn drawn_apart(family: &Family, part: &str) -> Option<&'static [State]> {
+    APART
+        .iter()
+        .find(|(name, one, _)| *name == family.name && *one == part)
+        .map(|(_, _, states)| *states)
+}
+
+/// Whether a rule or a key for `part` of `family` in `variant` and `state` reaches nothing: a
+/// part drawn apart from the root in a variant of the root, or in a state it is never marked in.
+fn apart_in_nothing(
+    family: &Family,
+    part: &str,
+    variant: Option<&str>,
+    state: Option<State>,
+) -> bool {
+    drawn_apart(family, part).is_some_and(|carried| {
+        variant.is_some() || state.is_some_and(|one| !carried.contains(&one))
+    })
+}
+
 /// **The grounds a part's words are read on, where they are fewer than its family's** (#3254), by
 /// family and part: what the window draws the part on, not every ground the family stands on.
 #[cfg(test)]
@@ -1345,6 +1400,26 @@ fn key(raw: &str) -> Result<Key, String> {
             "parts.{raw} is not a component part purlis has: {}.{} is drawn around every tab and \
              takes no variant or state, so it was left out",
             family.name, part.name
+        ));
+    }
+    // A part drawn apart from the root is in no variant of it, and only in its own states
+    // (#3656).
+    if apart_in_nothing(family, part.name, variant, state) {
+        let mut carried: Vec<&str> = drawn_apart(family, part.name)
+            .unwrap_or_default()
+            .iter()
+            .map(|one| one.name())
+            .collect();
+        let last = carried.pop().unwrap_or_default();
+        let states = if carried.is_empty() {
+            last.to_owned()
+        } else {
+            format!("{} or {last}", carried.join(", "))
+        };
+        return Err(format!(
+            "parts.{raw} reaches nothing purlis draws: {}.{} is drawn apart from every {}, in \
+             no variant of it, and its own states are {states}, so it was left out",
+            family.name, part.name, family.parts[0].name,
         ));
     }
     Ok(Key {
@@ -3161,6 +3236,12 @@ fn fallback(family: &'static Family, variant: &'static str, state: Option<State>
         });
     }
     for part in 1..family.parts.len() {
+        // A part drawn apart from the root never falls with a look of the root's (#3656): a
+        // chip that breaks a floor is no reason to take a crumb's colours away, and a rule with
+        // no variant would reach every crumb in the window.
+        if drawn_apart(family, family.parts[part].name).is_some() {
+            continue;
+        }
         // A part of a family drawn in marks draws its own fill back, for the state (#3143), and a
         // meter's fill its variant's (#3674).
         let by_state = marked(family)
@@ -3628,6 +3709,18 @@ fn selector(rule: &Rule, sized: bool) -> String {
             rule.family.name
         );
     }
+    // A part drawn apart from the root is reached by its own attributes, in the state its own
+    // element is marked in (#3656).
+    if drawn_apart(rule.family, part).is_some() {
+        let state = rule
+            .state
+            .map(|one| rule.family.attribute(one))
+            .unwrap_or_default();
+        return format!(
+            ":where([data-scope=\"{}\"][data-part=\"{part}\"]{state})",
+            rule.family.name
+        );
+    }
     let roots = root_selectors(rule, sized);
     let reached: Vec<String> = if rule.part == 0 {
         roots
@@ -3902,6 +3995,15 @@ pub fn manifest_as_of(version: u32) -> Value {
                     if family.around.contains(&part.name) {
                         said["around"] = Value::Bool(true);
                     }
+                    // Drawn apart from the root, in no variant of it and only in its own states
+                    // (#3656). Said from the next release on: what version 12 shipped keeps its
+                    // contract.
+                    if version >= APART_SINCE
+                        && let Some(carried) = drawn_apart(family, part.name)
+                    {
+                        let states: Vec<&str> = carried.iter().map(|one| one.name()).collect();
+                        said["apart"] = json!(states);
+                    }
                     if MARKS.contains(&(family.name, part.name)) {
                         said["mark_height"] = json!({
                             "least": 0,
@@ -3948,7 +4050,8 @@ pub fn manifest_as_of(version: u32) -> Value {
 /// **Whether the manifest holds anything no release has shipped yet**: a family, a part, a
 /// variant, a state or a property `since` [`NEXT`].
 pub fn has_unreleased() -> bool {
-    STATES.iter().any(|state| state.since() > VERSION)
+    APART_SINCE > VERSION
+        || STATES.iter().any(|state| state.since() > VERSION)
         || PROPERTIES.iter().any(|property| property.since() > VERSION)
         || MANIFEST.iter().any(|family| {
             family.since > VERSION
@@ -4013,6 +4116,10 @@ pub(super) fn schema() -> Value {
                         } else {
                             property.name().to_owned()
                         };
+                        // A key that reaches nothing is never completed (#3656).
+                        if apart_in_nothing(family, part.name, variant, state) {
+                            continue;
+                        }
                         keys.insert(
                             key.to_string(),
                             json!({ "$ref": format!("#/$defs/part-{def}") }),

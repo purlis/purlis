@@ -765,7 +765,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 
 | Family | Wrapper | Parts | Variants |
 | --- | --- | --- | --- |
-| Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`); `CardButton`, a card pressed whole (`CardButton.tsx`, #3655) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value`; `pressable`, `mark`, `press`, `more`, `line` | `raised`, `ask`; a pressed card's `door`, `pick` |
+| Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`); `CardButton`, a card pressed whole (`CardButton.tsx`, #3655), its own family `card-button` (#3885) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value`; a pressed card's `root`, `mark`, `press`, `title`, `more`, `line` | `raised`, `ask`; a pressed card's `door`, `pick` |
 | Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, and `under` (what a way out opened) | `news`, `trouble`, `attention` |
 | Badge | `Badge`, `HostStatus` (`ui/badge/Badge.tsx`) | `root` | `neutral`, `accent`, `waiting`, `ok` |
 | Count | `Count`, `CountGroup` (`ui/badge/Badge.tsx`) | `root`, `group` | `neutral`, `accent`, `waiting`, `hot` |
@@ -1535,7 +1535,9 @@ line is `ui-text-body ui-text-strong`**, not a second body class. `ui-text-code`
 monospace family alone, so a path under a name is `ui-text-secondary ui-text-code`.
 
 - **Colour follows the role.** Do not pick a colour to make a word quieter; give it the role it
-  has. **Muted is the meta's only**: a help line or a where line is secondary.
+  has. **Muted is the meta's only**: a help line or a where line is secondary. The one exception,
+  until the view tabs wear the roles, is a view's sentence with no role (`.view-body .none`,
+  `.pending`; `design-system.md`, #3938).
 - **Nothing is under 11px.**
 - **A word that says something is wrong is `danger.text`**, and that is the one colour a view
   still writes for words; `state.failed` is for a state's mark.

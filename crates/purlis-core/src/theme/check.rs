@@ -441,6 +441,13 @@ pub const PAIRS: &[Pair] = &[
     p("text.primary", "border.subtle", TEXT),
     // - A list's load-more row under the pointer: words in the accent on the hover surface.
     p("accent.base", "surface.hover", TEXT),
+    // - A pressed card's pick (#3885, `card-button.root.pick`): its words in the accent, on each
+    //   ground it stands on, at rest; under the pointer and pressed on the hover surface, above.
+    //   A door's words are the primary and its line the secondary tier on the control's ground,
+    //   and its mark the accent on it, all held among the tiers and the Allow's edge.
+    p("accent.base", "surface.base", TEXT),
+    p("accent.base", "surface.raised", TEXT),
+    p("accent.base", "surface.overlay", TEXT),
     // - A panel's view button under the pointer: secondary words on the control's hover.
     p("text.secondary", "control.hover", TEXT),
     // - A vault's eye under the pointer: a muted mark on the control's hover, held as muted
