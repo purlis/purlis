@@ -1897,7 +1897,9 @@ pub enum GitWork {
     /// [`CLAIM_HELD`] and the refusal as its one line where another live chat holds the folder:
     /// the one answer the asking guard refuses on. Any `No` (a chat the app does not have open,
     /// a name that cannot be a branch folder, a claim it could not judge) lets the git run, as
-    /// no answer does. A kind of its own, so an app that does not know it answers nothing.
+    /// no answer does. Asked with [`GitAsk::alive`] off: the guard's wait is bounded, and a
+    /// liveness line would only spend it. A kind of its own, so an app that does not know it
+    /// answers nothing.
     WorktreeClaim {
         repo: String,
         piece: String,

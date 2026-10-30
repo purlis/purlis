@@ -113,6 +113,8 @@ fn plain_git_s_claim_is_taken_by_the_first_live_chat_and_refused_to_a_second() {
     let ask = |act| GitAsk {
         chat: 0,
         workspace: "alpha".to_owned(),
+        // A claim is answered at once: it reads no liveness lines (#4080).
+        alive: false,
         work: GitWork::WorktreeClaim {
             repo: "widget".to_owned(),
             piece: "p1".to_owned(),
@@ -163,6 +165,8 @@ fn plain_git_s_claim_is_taken_by_the_first_live_chat_and_refused_to_a_second() {
     let odd = GitAsk {
         chat: 0,
         workspace: "../alpha".to_owned(),
+        // A claim is answered at once: it reads no liveness lines (#4080).
+        alive: false,
         work: GitWork::WorktreeClaim {
             repo: "widget".to_owned(),
             piece: "p1".to_owned(),
@@ -210,6 +214,8 @@ fn a_holder_not_back_since_a_restart_is_answered_no_and_not_held() {
             &GitAsk {
                 chat: 0,
                 workspace: "alpha".to_owned(),
+                // A claim is answered at once: it reads no liveness lines (#4080).
+                alive: false,
                 work: GitWork::WorktreeClaim {
                     repo: "widget".to_owned(),
                     piece: "p1".to_owned(),
