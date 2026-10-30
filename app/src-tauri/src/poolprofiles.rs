@@ -177,8 +177,9 @@ enum Tidied {
 ///   opened next has the runner forget another's default, sign-in and conversations with it.
 ///
 /// Never forgotten by a tidy: this machine's adopted folder (the harness's own folder on the
-/// runner, which a chat with no profile there uses too), and a profile a chat's start readies
-/// now ([`Readying`]). Nothing is asked of a pool that names none with no default (no project
+/// runner, which a chat with no profile there uses too), which a pool that names its own is not
+/// given back once the person took it off, and a profile a chat's start readies now
+/// ([`Readying`]), which the start names on the pool. Nothing is asked of a pool that names none with no default (no project
 /// open, or a default that is the runner's own).
 fn tidy(
     config: &Path,
@@ -204,7 +205,12 @@ fn tidy(
         .map(|r| r.name.clone())
         .collect();
     let keep: Keep = {
-        let (named, ours, pool) = (named.clone(), ours.clone(), pool.to_owned());
+        let (named, ours, adopted, pool) = (
+            named.clone(),
+            ours.clone(),
+            adopted.clone(),
+            pool.to_owned(),
+        );
         Box::new(move |name: &str| {
             let here = ours.iter().any(|one| one == name);
             let chosen = named
@@ -234,7 +240,7 @@ fn tidy(
             for name in listed
                 .kept
                 .iter()
-                .filter(|n| ours.contains(n) && !named.contains(n))
+                .filter(|n| ours.contains(n) && !named.contains(n) && !adopted.contains(n))
             {
                 purlis_core::runners::add_pool_profile(config, pool, name, default)
                     .map_err(|why| why.to_string())?;
@@ -324,7 +330,12 @@ static TIDIED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// this run: only a Docker pool shown to be the person's own, its runner woken as the start
 /// wakes it. What could not be done is logged, and the start goes on.
 fn tidy_once(config: &Path, root: &Path, pool: &str) {
-    if owned().is_err() {
+    if owned().is_err()
+        || !matches!(
+            purlis_core::runners::cluster_runner_for(config, pool),
+            Ok(None)
+        )
+    {
         return;
     }
     {
@@ -365,7 +376,8 @@ fn untidied(pool: &str) {
 /// folder and sign-in there with it, and takes it off each pool that named it: only a Docker
 /// pool shown to be the person's own, never woken for it, each asked at once. A runner that is
 /// away, or that could not forget it, is asked again at the next chat's start there or as its
-/// pool's profiles are shown ([`tidy`]), which a runner of 1.59 or later answers. `Some` note,
+/// pool's profiles are shown ([`tidy`]), which a runner of 1.59 or later answers; until then a
+/// pool that named it still does, so its row offers Remove. `Some` note,
 /// in words, naming the pools that kept it whose runner runs a purlis before 1.52, which keeps
 /// it.
 pub fn forget_off_the_pools(name: &str) -> Option<String> {
@@ -407,11 +419,13 @@ pub fn forget_off_the_pools(name: &str) -> Option<String> {
             }
             Ok(Some(())) => onrunner::let_go(None, pool_name, name),
             Err(why) => {
+                // Still named, so its row offers Remove until a tidy finds it gone there.
                 untidied(pool_name);
                 tracing::info!(
                     "purlis: pool {pool_name}'s runner is asked again to forget the profile \
                      {name}: {why}"
                 );
+                continue;
             }
         }
         if named == Some(true)

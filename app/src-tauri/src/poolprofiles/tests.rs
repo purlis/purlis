@@ -306,7 +306,8 @@ fn a_runner_that_keeps_only_the_default_leaves_the_pools_record_as_it_is() {
 
 /// **No tidy forgets this machine's adopted folder or a profile a chat's start readies**: the
 /// harness's own folder on the runner is used by a chat with no profile there too, and a
-/// readied profile is about to start a chat. Each is named on the pool instead.
+/// readied profile is about to start a chat, which names it on the pool. The adopted folder is
+/// not named back on a pool the person took it off.
 #[test]
 fn an_adopted_folder_and_a_profile_being_readied_are_never_forgotten_by_a_tidy() {
     let config = a_pool_naming(Some(&["work"]));
@@ -334,10 +335,7 @@ fn an_adopted_folder_and_a_profile_being_readied_are_never_forgotten_by_a_tidy()
             refused: false
         }
     );
-    assert_eq!(
-        named(config.path()),
-        Some(names(&["work", "claude", "next"]))
-    );
+    assert_eq!(named(config.path()), Some(names(&["work", "next"])));
 }
 
 /// **Nothing is forgotten where nothing can be judged**: a pool that names none with no project

@@ -680,7 +680,7 @@ pub fn forget_profile(to: &ToARunner, name: &str) -> Result<Option<()>, String> 
                 .map(Some)
                 .map_err(|why| match why.refusal() {
                     Some(refused) => said_by_the_runner(&refused.why),
-                    None => why.to_string(),
+                    None => purlis_core::shown::short(&why.to_string()),
                 })
         }
         Err(down) => Err(down.why),
