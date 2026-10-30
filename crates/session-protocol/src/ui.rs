@@ -631,6 +631,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A skill pinned or unpinned for a workspace's or a persona's chats (SK-15d, #3232): one
     // commit to the project, the person's own press in their window, as a turn-off is.
     "skill_pin",
+    // A router chosen for a workspace's or a persona's chats (#3692): one commit to the project,
+    // the person's own press in their window, as a pin is.
+    "skill_router_choose",
     // A skill's tab (#2782): reverting it to a version, deprecating, archiving or restoring it,
     // and naming its owners. Each is one commit to the project, the person's own press in their
     // window.
@@ -669,6 +672,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Accepting a workspace or persona folder a chat could have made (SK-9): its skills then
     // reach chats, so only the person's own press in their window does it.
     "skill_level_accept",
+    "skill_levels_confirm",
     // Skill sources (#2773): each reaches a git repository the person named, a private one with
     // a credential read from a vault, and an install or an update is one commit to the project.
     // The person's own press in their window, never a link's.
@@ -1122,6 +1126,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // Every persona's own skills, for the Skills view (#3266): read only.
     "skill_persona_skills",
     "skill_revert_widens",
+    // The router extensions Change… offers (#3692): read only.
+    "skill_routers",
     "skill_runs",
     "skill_stats",
     "skill_studio",

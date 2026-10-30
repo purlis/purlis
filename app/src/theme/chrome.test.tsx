@@ -92,6 +92,7 @@ import { PinItem, UpdateItem } from "../Updates";
 import { VaultTab } from "../VaultTab";
 import { OpenVault } from "../Vaults";
 import { AddToAChat } from "../AddToAChat";
+import { RouterChange } from "../SkillStudioRouting";
 import { KeepAsk } from "../ThemeDraftStrip";
 import { forgetThisLaunch } from "../regions";
 import { complaints } from "./complaints.testkit";
@@ -416,6 +417,8 @@ function dialogCore() {
           dropped: [],
           unreadable: null,
         };
+      case "skill_routers":
+        return [{ id: "relevance", name: "Relevance router" }];
       case "reachable_repos":
         return { repos: [{ name: "svc", path: "acme/svc", description: "" }], trouble: [] };
       case "forge_device_sign_in_start":
@@ -1483,6 +1486,20 @@ const DIALOGS: Opened[] = [
           offers={new Map()}
           onPress={nothing}
           onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "Change the router",
+    file: "SkillStudioRouting.tsx",
+    open: async () =>
+      render(
+        <RouterChange
+          plane={PLANE}
+          by={{ at: "persona", name: "reviewer" }}
+          written="relevance"
+          onClose={nothing}
+          onChoose={nothing}
         />,
       ),
   },

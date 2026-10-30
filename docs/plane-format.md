@@ -322,6 +322,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`frame/<chat>.transcript`](#framechattranscript)
   - [`frame/<frame-id>/` for a non-chat frame (e.g. the live plane's `probe-1`)](#frameframe-id-for-a-non-chat-frame-eg-the-live-planes-probe-1)
   - [`app/` — the desktop app's own state](#app--the-desktop-apps-own-state)
+  - [`app/app-state-id`](#appapp-state-id)
   - [`app/sandbox.json`](#appsandboxjson)
   - [`app/dispatch-never.json`](#appdispatch-neverjson)
   - [`app/sandbox-blocks.json`](#appsandbox-blocksjson)
@@ -343,14 +344,14 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`save-journal.jsonl`](#save-journaljsonl)
   - [`skills-deleted/<stamp>-<name>/`](#skills-deletedstamp-name)
   - [`skills-deleting/<stamp>-<folder>`](#skills-deletingstamp-folder)
-  - [`skill-drafts/<id>/`](#skill-draftsid)
-  - [`<state>/skill-grades/<YYYY-MM>.jsonl`](#stateskill-gradesyyyy-mmjsonl)
-  - [`<state>/skill-grades/routers/<YYYY-MM>.jsonl`](#stateskill-gradesroutersyyyy-mmjsonl)
-  - [`<state>/skill-grade-after-edit.json`](#stateskill-grade-after-editjson)
-  - [`<state>/grades-under-way/<grade>.json`](#stategrades-under-waygradejson)
-  - [`<state>/grades-under-way.lock`](#stategrades-under-waylock)
-  - [`skill-tries/<id>/`](#skill-triesid)
-  - [`skill-levels/<chat id>.json`](#skill-levelschat-idjson)
+  - [`skill-drafts/<id>/` (legacy)](#skill-draftsid)
+  - [`<state>/skill-grades/<YYYY-MM>.jsonl` (legacy)](#stateskill-gradesyyyy-mmjsonl)
+  - [`<state>/skill-grades/routers/<YYYY-MM>.jsonl` (legacy)](#stateskill-gradesroutersyyyy-mmjsonl)
+  - [`<state>/skill-grade-after-edit.json` (legacy)](#stateskill-grade-after-editjson)
+  - [`<state>/grades-under-way/<grade>.json` (legacy)](#stategrades-under-waygradejson)
+  - [`<state>/grades-under-way.lock` (legacy)](#stategrades-under-waylock)
+  - [`skill-tries/<id>/` (legacy)](#skill-triesid)
+  - [`skill-levels/<chat id>.json` (legacy)](#skill-levelschat-idjson)
   - [`chat-settings/<chat id>.<digest>.json`](#chat-settingschat-iddigestjson)
   - [`ws-edit-nudge/<sid>-<workspace>`](#ws-edit-nudgesid-workspace)
   - [`ws-autosave/<workspace>`](#ws-autosaveworkspace)
@@ -371,6 +372,16 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`index/<clone-key>/` — the project's search index](#indexclone-key--the-projects-search-index)
   - [`index/<clone-key>/writer.lock`](#indexclone-keywriterlock)
   - [State purlis keeps **outside** the plane](#state-purlis-keeps-outside-the-plane)
+  - [`<data>/app-state/<clone key>/` — the app's own state of a project](#dataapp-stateclone-key--the-apps-own-state-of-a-project)
+  - [`<data>/app-state/<clone key>/skill-drafts/<id>/`](#dataapp-stateclone-keyskill-draftsid)
+  - [`<data>/app-state/<clone key>/skill-grades/<YYYY-MM>.jsonl`](#dataapp-stateclone-keyskill-gradesyyyy-mmjsonl)
+  - [`<data>/app-state/<clone key>/skill-grades/routers/<YYYY-MM>.jsonl`](#dataapp-stateclone-keyskill-gradesroutersyyyy-mmjsonl)
+  - [`<data>/app-state/<clone key>/skill-grade-after-edit.json`](#dataapp-stateclone-keyskill-grade-after-editjson)
+  - [`<data>/app-state/<clone key>/grades-under-way/<grade>.json`](#dataapp-stateclone-keygrades-under-waygradejson)
+  - [`<data>/app-state/<clone key>/grades-under-way.lock`](#dataapp-stateclone-keygrades-under-waylock)
+  - [`<data>/app-state/<clone key>/skill-grade-chats/<skill>/<grade>/<chat>.screen`](#dataapp-stateclone-keyskill-grade-chatsskillgradechatscreen)
+  - [`<data>/app-state/<clone key>/skill-tries/<id>/`](#dataapp-stateclone-keyskill-triesid)
+  - [`<data>/app-state/<clone key>/skill-levels/<chat id>.json`](#dataapp-stateclone-keyskill-levelschat-idjson)
   - [Environment variables that move or key this state](#environment-variables-that-move-or-key-this-state)
   - [What the tmux frame and the status line read that a **hook** wrote](#what-the-tmux-frame-and-the-status-line-read-that-a-hook-wrote)
 - [Appendix: what this survey found in the code](#appendix-what-this-survey-found-in-the-code)
@@ -1402,7 +1413,7 @@ outside the project and removes it when the flow ends, so it adds none of them (
   sandboxed chat is denied writing every level's `skills/` and `skills.local/` (at the root, in
   each workspace and in each persona's folder, `sandbox::skills_held`), and a chat's `Write`,
   `Edit` or `MultiEdit` of a skill's file, or its `purlis propose` of one, is kept as a
-  [draft skill](#skill-draftsid) instead. Accept writes the draft's files here as one commit of
+  [draft skill](#dataapp-stateclone-keyskill-draftsid) instead. Accept writes the draft's files here as one commit of
   exactly those files.
 - **Read by:** `purlis-skills`' `skill_set` (`crates/skills/src/lib.rs`), the one place a
   chat's skills are worked out, for every chat purlis starts and for `purlis skill list` and
@@ -1619,7 +1630,7 @@ whole file in one sentence, and nothing installed changes.
   a persona's own skill into the project's `skills/` also adds its name to that persona's
   `skills:` list, which brings it into every workspace, and a move into a persona's `skills/`
   takes its name out of that persona's list; that persona definition is in the move's commit. A
-  chat's write to a persona's skill becomes a [draft skill](#skill-draftsid) (#3048).
+  chat's write to a persona's skill becomes a [draft skill](#dataapp-stateclone-keyskill-draftsid) (#3048).
 - **Read by:** `purlis_skills::skill_set`: a workspace's `skills/` and `skills.local/`, for a
   chat in that workspace and for the studio filtered to it. Its `skills.local/` is read under
   the same git rule as the plane root's. A persona's `skills/` and `skills.local/`, for every
@@ -1710,7 +1721,7 @@ Two rules hold for the whole area and are not repeated per file:
 
 - **Format:** a folder, made new and `0700`, holding whatever a Try it's scratch chat wrote
   (SK-9, #2772): the **throwaway piece** that chat starts in. `<id>` is its try's, in
-  [`skill-tries/<id>/`](#skill-triesid). Inside the project because a sandboxed chat starts
+  [`skill-tries/<id>/`](#dataapp-stateclone-keyskill-triesid). Inside the project because a sandboxed chat starts
   only in a folder of the project; a sandboxed scratch chat writes this folder alone. A dot-name
   below `workspaces/` is no workspace (`workspaces::Plane::workspaces` skips it).
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
@@ -1929,7 +1940,7 @@ next layer down answers.
 | any other key in `settings.theme`, or `settings.theme` that is not an object | — | Refused by the Workspace level's save, and ignored by the reader: a workspace's theme holds `use`, `appearance`, `icons` and `colour`. | `crates/purlis-core/src/extension/project/theme.rs` `refusals_in_workspace` |
 | `settings.skills.off` | list of str | **ADR 0099 §2, #2767; experimental** behind the `skill-studio` flag. The names of project skills this workspace's chats do not get, though their grant reaches it: each is left out "turned off in this workspace". It only narrows: a skill not granted here stays "not granted to this workspace", and a workspace skill, a built-in skill or a name of no skill is not affected. Written by `purlis skill grant <name> -w <ws> --off` and `--on`; `--on` for a skill not granted here is refused, saying the grant that would reach it. A workspace's setting only: `charter.toml` and `charter.local.toml` hold no `[skills]`. | `purlis_core::skills::turned_off`, through the Workspace settings layer, and handed to `purlis_skills::skill_set` as the chat's `turned_off`; written through `purlis_core::settings::workspace::save` |
 | `settings.skills.pinned` | list of str | **ADR 0102 §4, #2778; experimental** behind the `skill-studio` flag. The names of skills this workspace's chats always list: when a chat's set is past its skill budget, the built-in router hides every plane skill that is not pinned behind the index skill, and never one named here. A chat's pins are its workspace's and its persona's (`pinned-skills:`) together. A pin only keeps a skill of the chat's set listed: a name the set does not hold adds nothing. Written by `purlis skill pin <name> -w <ws>` and `--off`, and by the Skill studio's Pinned switch (#3232), both through `verbs::pin`, which refuses a name no skill has and a pin past the 64 a chat reads. A list a chat would not read (past 64, or an entry that is no skill's name) is named, with why, on the studio's rows and on the skill's page, where Remove it unpins a bad entry. A workspace's setting only. | `purlis_core::skills::pinned_in`, through the Workspace settings layer, and handed to `purlis_skills::SkillSet::routed` with the persona's pins; written through `purlis_core::settings::workspace::save` |
-| `settings.skills.router` | str | **ADR 0102 §5, #3230; experimental** behind the `skill-studio` flag. The router this workspace's chats are routed by: `built-in` (the default, as is an absent key) or the id of an extension this machine approved that declares `skill-router`. A chat whose persona names one (`skill-router:`) is routed by the persona's. A value that is neither `built-in` nor an extension's id (letters, digits, `-`, `_` and `.`, starting with a letter or a digit) is read as the built-in router, and the chat's routing record says why; an extension that is not approved here, is off in the project, or does not declare `skill-router` is not asked, and its chats fall back the same way. A workspace's setting only. | `purlis_core::skills::router::chosen`, through the Workspace settings layer |
+| `settings.skills.router` | str | **ADR 0102 §5, #3230; experimental** behind the `skill-studio` flag. The router this workspace's chats are routed by: `built-in` (the default, as is an absent key) or the id of an extension this machine approved that declares `skill-router`. A chat whose persona names one (`skill-router:`) is routed by the persona's. A value that is neither `built-in` nor an extension's id (letters, digits, `-`, `_` and `.`, starting with a letter or a digit) is read as the built-in router, and the chat's routing record says why; an extension that is not approved here, is off in the project, or does not declare `skill-router` is not asked, and its chats fall back the same way. A workspace's setting only. Written by the Skill studio's Routing page (Change…, #3692), one commit: the built-in router takes the key out. | `purlis_core::skills::router::chosen`, through the Workspace settings layer; written by `purlis_core::skills::verbs::route` |
 | any other key in `settings.skills`, or `settings.skills.off` or `settings.skills.pinned` that is not a list of strings, or `settings.skills.router` that is not a string | — | Refused by the Workspace level's save, and ignored by the reader, which then turns nothing off and pins nothing. | `crates/purlis-core/src/settings/workspace.rs` `skills_refused` |
 | `settings.runners.leave_out` | list of str | **#2046, the operator's ruling of 2026-10-25.** Files and folders, each relative to the top of a clone, whose uncommitted changes a send of this workspace's clones to a pool's runner leaves out, on top of everything a save to the forge refuses (ADR 0078 as amended 2026-10-20, item 6): each goes to the runner as it is committed, or not at all. At most 64, each at most 256 bytes, none absolute, none with an empty, `.` or `..` part, none with a control character. Set from the workspace's *Sent to runners* settings, shown once this machine keeps a pool; left out while it names none. | `purlis_core::settings::workspace::send_leaves_out`, read by the window's send (`runnercode::send`); written by `set_send_leaves_out` through `purlis_core::settings::workspace::save` |
 | any other key in `settings.runners`, or `settings.runners.leave_out` that is not such a list | — | Refused by the Workspace level's save, and ignored by the reader, which then leaves out nothing more. | `crates/purlis-core/src/settings/workspace.rs` `runners_refused` |
@@ -3241,7 +3252,7 @@ is a string; "type" below is how purlis interprets it.
 | `disallowed-tools` | CSV of the harness's own tool rules (`Write`, `Bash(git push:*)`) | absent | **Honoured for a persona chat on Claude Code** (#1451, D-1451-18): each entry is a deny rule of the chat's own `--settings`, which outranks every allow. Inherited along `extends`, child wins. **Fail closed elsewhere**: on Codex and opencode purlis cannot deny a chat a tool, so a chat as a persona that declares the key is not started there and a dispatch to it is refused, each with a sentence (`personaverbs::chatstart::unenforced`, asked by `start::ready` and `personaprofile::for_dispatch`). It was the generated sub-agent's `disallowedTools:` | stable | `crates/purlis-core/src/personaverbs/chatstart.rs`, `harness/claude.rs` `settings` |
 | `skills` | CSV of `[plugin:]skill` | absent | **The skills a chat as the persona loads** beside its own (`personas/<name>/skills/`), in any workspace, whatever the workspace was granted (ADR 0099 as amended 2026-10-21, #2768; **experimental** behind the `skill-studio` flag, and before it, or with the flag off, read only by `persona stats`). Each entry is `purlis:<name>` (a built-in skill; `charter:<name>` still means the same one until the migration, #2784), `<plugin>:<name>` (a skill of a harness plugin, which the harness loads), or `<name>` (the plane skill of that name the chat can reach, a project skill whatever its grant, else the harness's own skill of that name). A workspace's `settings.skills.off` does not reach a project skill the persona names. A named harness skill the chat's harness does not have on this machine, or a built-in skill purlis has none of, is left out, and the chat's tab raises a Notice naming it. Written by Add and Remove in the Skill studio filtered to the persona (`purlis_core::skills::persona::change`), which writes the one line, `purlis:` for a built-in skill, and drops it when it empties. `persona stats` compares the names, and the persona's own skills, with the skills it used. | experimental | `purlis_core::skills::names_of`, `purlis_skills::Reference`; `charter/persona.py:1957`, `charter/commands_persona.py:908` |
 | `pinned-skills` | CSV of skill names | absent | **purlis only** (ADR 0102 §4, #2778; **experimental** behind the `skill-studio` flag). **The skills a chat as the persona always lists**, which the router never hides behind the index skill when the chat's set is past its skill budget, in any workspace, beside the workspace's own `settings.skills.pinned`. A pin only keeps a skill of the chat's set listed: it brings none into the set (`skills:` does). The persona's own line, not inherited along `extends`. Written by `purlis skill pin <name> -p <persona>` and `--off`, and by the Skill studio's Pinned switch (#3232), which refuse a name no skill has and a pin past the 64 a chat reads, and drop the line when it empties. | experimental | `purlis_core::personaverbs::pinned_skills`, `purlis_core::skills::pins_of` |
-| `skill-router` | str | absent | **purlis only** (ADR 0102 §5, #3230; **experimental** behind the `skill-studio` flag). **The router a chat as the persona is routed by**, in any workspace, over its workspace's `settings.skills.router`: `built-in`, or the id of an approved extension that declares `skill-router`. The persona's own line, not inherited along `extends`. Read as the workspace's would be where it is no router's name, and the chat's routing record says why. | experimental | `purlis_core::skills::router::chosen` |
+| `skill-router` | str | absent | **purlis only** (ADR 0102 §5, #3230; **experimental** behind the `skill-studio` flag). **The router a chat as the persona is routed by**, in any workspace, over its workspace's `settings.skills.router`: `built-in`, or the id of an approved extension that declares `skill-router`. The persona's own line, not inherited along `extends`. Read as the workspace's would be where it is no router's name, and the chat's routing record says why. Written by the Skill studio's Routing page (Change…, #3692), one commit: `built-in` is written, and "Its workspace's router" takes the line out. | experimental | `purlis_core::skills::router::chosen`; written by `purlis_core::skills::verbs::route` |
 | `draft` | `true/yes/1/on` (case-insensitive) truthy set | absent = not a draft | While set, the charter is unfinished: `persona lint`, `persona stats` and the doctor say so, and no chat is dispatched to the persona. (Until #1451 it also meant no sub-agent was generated) | stable | `charter/persona.py:1843`, `:1846`, `charter/commands_persona.py:1150` |
 | `routing` | `off` \| `advise` \| `require` | absent/unknown → `off` | Drove the Python's UserPromptSubmit roster block. **Retired** in purlis (charter#369): read without error, acted on by nothing, and `purlis doctor` names the personas that still declare it. Work for another persona goes to a chat of its own, by dispatch (#1434) | retired | `charter/persona.py:936`, `:939`, `charter/hooks.py:8518` |
 | `routes-to` | CSV of persona names | absent | Priority order for the roster (never restricts). **Retired** with `routing` — there is no roster | retired | `charter/persona.py:962`, `:1001` |
@@ -3776,7 +3787,7 @@ An end row, never a pass or a fail:
 - **Status:** **experimental**, behind the `skill-studio` flag; written by the app when a grade
   ends, whole or stopped, or at the project's next start for a grade purlis stopped under before
   it was scored (`report.ended` `interrupted`, no chat scored, #3353,
-  [`<state>/grades-under-way/`](#stategrades-under-waygradejson)), and read by the Skill studio's
+  [`<state>/grades-under-way/`](#dataapp-stateclone-keygrades-under-waygradejson)), and read by the Skill studio's
   Grades panel (one copy's grades: the copy the skill's page shows, #3353), a skill's history and
   `purlis skill grade`.
 - **Tier:** Plane — committed, beside the skill log, so a teammate sees a skill's grades on the
@@ -3785,7 +3796,7 @@ An end row, never a pass or a fail:
   relative to the plane (`skills`, `workspaces/<ws>/skills`, `personas/<p>/skills`). A copy that
   is this machine's alone (a `skills.local/` copy, or one in a workspace that is this machine's
   alone) is never graded into this file: its grades go to
-  [`<state>/skill-grades/`](#stateskill-gradesyyyy-mmjsonl); `tree`, what the copy's folder held by content, as a skill run's start
+  [`<state>/skill-grades/`](#dataapp-stateclone-keyskill-gradesyyyy-mmjsonl); `tree`, what the copy's folder held by content, as a skill run's start
   records it (the tree git holds of it, or `uncommitted`); `commit`, the commit that tree is, or
   null; `harness` and `profile`, the plain names its chats ran on; `ts`; `runs`, each fixture's
   runs per arm; `report`, the grade report as ADR 0105 §1 spells it, with the token cap it was
@@ -3811,7 +3822,7 @@ An end row, never a pass or a fail:
   another tree, read from git's tree of that commit; SK-57, #3237, ADR 0105 as amended
   2026-10-28), absent in a row written before and for a skill with no other version; and
   `after_edit`, `true` for a grade a saved edit started under the person's opt-in (SK-58, #3238,
-  [`<state>/skill-grade-after-edit.json`](#stateskill-grade-after-editjson)), absent otherwise.
+  [`<state>/skill-grade-after-edit.json`](#dataapp-stateclone-keyskill-grade-after-editjson)), absent otherwise.
 - **Read:** the folder only where it is a folder of its own (no link) holding at most 600 names,
   newest month first, stopping once 200 grades are held; each file following no link and at most
   16 MiB, each line at most 1 MiB; a line that
@@ -5708,6 +5719,18 @@ plane, and because the two share a plane during the migration: an operator runni
 will see this directory, and whoever next changes the app should find its format written
 down rather than read off the code.
 
+### `app/app-state-id`
+- **Format:** 32 lowercase hex characters, the project's own random id (#3718), made with its
+  [app state](#dataapp-stateclone-key--the-apps-own-state-of-a-project) and written once, `0600`,
+  following no link (`appstate::made`). That folder's `owner` holds the same id, so a folder of
+  another project's at the same path is set aside and never read. A copy of the project gets an id
+  of its own at its first open (`appstate::follow_arrival`); a move keeps it.
+- **Status:** **internal**.
+- **Tier:** Clone state — this clone's name to its app state; losing it sets that state aside.
+- **Written by:** the app and the session host, never a chat: a chat's sandbox denies writing
+  `app/`.
+- **Git:** gitignored, under the state directory.
+
 ### `app/sandbox.json`
 - **Moved (ADR 0093):** this machine keeps these keys in
   [`~/.config/purlis/sandbox-grants/<clone key>.json`](#configpurlissandbox-grantsclone-keyjson-outside-the-plane)
@@ -7319,164 +7342,68 @@ rewritten.
 - **Git:** gitignored, under the state directory.
 
 ### `skill-drafts/<id>/`
-- **Format:** one folder per draft skill (SK-9, #2772): a chat's write to a skill's files, kept
-  for the person to try, accept or reject in the Skill studio. `<id>` is sixteen hex characters
-  of a SHA-256 over the level's folder and the skill's folder name, so a skill has one draft and a
-  second write adds to it. It holds `draft.json` (`level`: the level's folder relative to the
-  plane, `skills`, `workspaces/ops/skills.local` or `personas/reviewer/skills`; `folder`: the skill's folder name; `chat`: the
-  number of the chat that wrote it last; `bases`: each file the draft changed, below the skill's
-  folder, with the SHA-256 of what the project held there when the draft first changed it, `null`
-  for nothing) and `files/`, each drafted file at its path below the skill's folder. Folders are
-  private to the person, as the state directory is.
-- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
-- **Tier:** Clone state — this machine's. A draft is never committed: Accept writes its files into
-  the skill's folder and commits exactly those (a local skill's are only written), and Reject
-  deletes the folder.
-- **Written by:** the app, as `purlis_core::skills::verbs::drafts::take`, for a chat's `Write`,
-  `Edit` or `MultiEdit` of a plane skill's file (its `pretooluse-edit` hook) or its `purlis
-  propose` of one, which reach the app as a proposed change does. Never by a chat.
-- **Read by:** `drafts::list`, for the Skill studio's Draft skills and the chat's "Draft ready in
-  Skill studio". Deleted ⇒ the drafts are lost; nothing in the project changes. Every read, write
-  and removal goes through folders held open with `O_NOFOLLOW`.
+- **Format:** where an older purlis kept this store, in the plane's state folder, before
+  #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-drafts/<id>/`](#dataapp-stateclone-keyskill-draftsid).
+- **Tier:** Clone state, legacy — moved to the app state, its drafts carried, at the project's first open after the upgrade (`appstate::move_out_of_the_plane`); never read after that.
 - **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
   state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/skill-grades/<YYYY-MM>.jsonl`
-- **Format:** JSON Lines, append-only: the eval record's rows
-  ([`personas/_grades/`](#personas_gradesyyyy-mmdevicejsonl)) for a copy of a skill that is this
-  machine's alone, a `skills.local/` copy or one in a workspace that is this machine's alone
-  (SK-16, #2779, the review of #3229). Written `0600` through no link (`grades::record`), read
-  beside the committed record by `grades::grades_of`, held to the same limits.
-- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
-- **Tier:** Clone state — this machine's own; nothing rebuilds it.
+- **Format:** where an older purlis kept this store, in the plane's state folder, before
+  #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-grades/<YYYY-MM>.jsonl`](#dataapp-stateclone-keyskill-gradesyyyy-mmjsonl).
+- **Tier:** Clone state, legacy — moved to the app state, its rows carried, at the project's first open after the upgrade (`appstate::move_out_of_the_plane`); never read after that.
 - **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
   state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/skill-grades/routers/<YYYY-MM>.jsonl`
-- **Format:** JSON Lines, append-only: the rows of
-  [`personas/_grades/routers/`](#personas_gradesroutersyyyy-mmdevicejsonl) for a router's grade
-  whose library held a copy that is this machine's alone (SK-15e, #3233). Written `0600` through
-  no link (`grades::routers::record`), read beside the committed record, held to the same limits.
-- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
-- **Tier:** Clone state — this machine's own; nothing rebuilds it.
-- **Held:** with [`skill-grades/`](#stateskill-gradesyyyy-mmjsonl), which holds it.
+- **Format:** where an older purlis kept this store, in the plane's state folder, before
+  #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-grades/routers/<YYYY-MM>.jsonl`](#dataapp-stateclone-keyskill-gradesroutersyyyy-mmjsonl).
+- **Tier:** Clone state, legacy — moved to the app state with the rest of `skill-grades/`, its rows carried, at the project's first open after the upgrade (`appstate::move_out_of_the_plane`); never read after that.
+- **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
+  state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
+- **Git:** gitignored, under the state directory.
+
 ### `<state>/skill-grade-after-edit.json`
-- **Format:** one JSON object (SK-58, #3238; ADR 0105 as amended 2026-10-28): `v` (1) and
-  `skills`, each copy the person turned **grading after each edit** on for, keyed by its level's
-  folder and its name (`skills/deploy`, `workspaces/ops/skills/deploy`), holding what they
-  accepted on the plan they turned it on from: `profile` and `model` (null for the profile's own)
-  the grades' chats run on; `chats`, the chats a grade ran then; `token_cap` and `limit_usd`, the
-  cap and the dollar limit it was held to (at most the largest cap at 1,000 dollars a million);
-  `tests`, the SHA-256 of the trigger tests it ran; `previous`, the commit it compared with
-  (absent for none); `runs_on`, the model its chats ran on as the plan showed it (the one their
-  line names, else the one picked; absent for none, #3622); `at`, when it was turned on; `graded`, the consent
-  digest of the copy an edit last graded (absent before the first), so a save that changed nothing
-  since grades nothing; and `paused`, the sentence why it waits for the person (absent while it
-  does not). Written `0600`, whole or not at all, through no link, by the window alone: turning it
-  on (`skill_grade_after_edit_on`, from a plan whose consent it checks), turning it off, and a
-  grade after an edit (`grades::after_edit`). Read at each save of the skill in the Skill studio's
-  editor: a saved edit, once ten seconds pass with no other save of the skill, grades it on that
-  profile and model, held to the cap and dollar limit of a grade pressed by hand, only while a
-  grade of it runs on the same profile and model, runs no more chats, may spend no more, and runs
-  the same trigger tests against the same version as was accepted; a grade that would not
-  waits (`paused`), starts nothing, and the opt-in is turned on again from a plan that shows the
-  cost. A second save while such a grade runs stops it, and the next starts after it. Nothing
-  grades on a timer, and a save from the command line or a chat's change grades nothing. A file
-  that is a link, past 256 KiB, of another `v`, or holding more than 512 copies reads as off (each change holds the `flock` of
-  `skill-grade-after-edit.lock` beside it), and
-  so does a copy whose entry does not hold together (a name that is no plain name, no chats, a cap
-  out of its bounds, a limit that is no positive amount).
-- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
-- **Tier:** Clone state — this machine's own: the person who pays turns it on, on this machine;
-  a teammate's push never does. Losing it turns grading after each edit off.
+- **Format:** where an older purlis kept this store, in the plane's state folder, before
+  #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-grade-after-edit.json`](#dataapp-stateclone-keyskill-grade-after-editjson).
+- **Tier:** Clone state, legacy — removed at the project's first open after the upgrade and not carried: the person turns grading after each edit on again from a plan that shows the cost (`appstate::move_out_of_the_plane`); never read after that.
 - **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
   state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/grades-under-way/<grade>.json`
-- **Format:** one JSON object per grade running on this machine (#3353): `pid`, the process that
-  runs it; `local`, whether its copy is this machine's alone; `locked`, whether the grade holds the
-  file's lock (#3466, `false` where absent); and `graded`, its eval record row as
-  it would be recorded were it interrupted now (`report.ended` `interrupted`, no chat scored,
-  and what its chats spent so far: nothing as it starts, then, as each chat ends, its chats that
-  ran, its tokens and its cost as the chats said them, in `spent` and in the report's
-  `spent_tokens` and `spent_usd`, #3582). Written `0600` through no link when a grade starts
-  (`grades::underway::began`), written again as each chat ends (`grades::underway::Marker::spent`),
-  and removed when it ends (`grades::underway::ended`). Each write goes to
-  `.<grade>.json.partial` beside it, locked, and is renamed over it, so a reader finds the whole
-  file or none; a spend no sound row could hold is never written. A leftover `.partial` whose lock
-  no other holds is removed at the next start. The grade
-  holds the file's `flock` while it runs, taken before the file is in its place, so the lock goes
-  with its process however that ends (#3466). At the project's next start, each file whose lock no
-  other holds, of a grade that took it, is recorded as it is, interrupted, and removed (`grades::underway::interrupted`),
-  whatever process number it names; where the lock cannot be asked, one whose process no longer
-  runs is: so a crash, a fault or a quit never leaves a grade running or loses it. A file that is a link, larger than 64 KiB, named by another id or not a
-  sound row is removed unrecorded.
-- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
-- **Tier:** Clone state, transient — it lasts as long as its grade.
+- **Format:** where an older purlis kept this store, in the plane's state folder, before
+  #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/grades-under-way/<grade>.json`](#dataapp-stateclone-keygrades-under-waygradejson).
+- **Tier:** Clone state, legacy — removed at the project's first open after the upgrade and not carried (`appstate::move_out_of_the_plane`); never read after that.
 - **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
   state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/grades-under-way.lock`
-- **Format:** an empty file, `0600`, opened through no link, whose `flock` a start holds while it
-  records the [grades under way](#stategrades-under-waygradejson) no running purlis holds
-  (`grades::underway::interrupted`, #3443): two purlis processes, or two threads of one, that
-  record at once take turns, so a stale grade is recorded once.
-- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
-- **Tier:** Clone state, transient — a lock that holds nothing and is never read; losing it loses nothing.
+- **Format:** where an older purlis kept this store, in the plane's state folder, before
+  #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/grades-under-way.lock`](#dataapp-stateclone-keygrades-under-waylock).
+- **Tier:** Clone state, legacy — removed at the project's first open after the upgrade (`appstate::move_out_of_the_plane`); never read after that.
 - **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
   state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/skill-grade-chats/<skill>/<grade>/<chat>.screen`
-- **Format:** what one chat of a grade showed as the grade ended it (SK-59, #3239; ADR 0105 as
-  amended 2026-10-28): its screen and scrollback as the escape sequences that draw them into a
-  blank terminal (the session's snapshot, `purlis_core::engine`), at most 4 MiB, so a row of the
-  grade's scorecard opens the chat read-only in a tab. `<skill>`, `<grade>` (the grade's id, a
-  ULID) and `<chat>` (the chat's id, as the eval record's `report.triggers[].chats` names it) are
-  plain names. Each folder `0700` and never a link, each file `0600`, written and read through no
-  link (`grades::kept`). When a grade ends, the chats of every grade of its skill but the three
-  newest are removed (`grades::kept::sweep`).
-- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
-- **Tier:** Clone state, transient — what this machine's chats showed, kept for the skill's newest
-  grades; losing it loses only the read-only view of those chats. A teammate who pulls the eval
-  record sees the grade and not its chats, and its scorecard says they are kept where it ran.
+- **Format:** where an older purlis kept this store, in the plane's state folder, before
+  #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-grade-chats/<skill>/<grade>/<chat>.screen`](#dataapp-stateclone-keyskill-grade-chatsskillgradechatscreen).
+- **Tier:** Clone state, legacy — removed at the project's first open after the upgrade and not carried (`appstate::move_out_of_the_plane`); never read after that.
 - **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
   state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
 
 ### `skill-tries/<id>/`
-- **Format:** one folder per Try it of a draft skill (SK-9, #2772), `<id>` sixteen random hex
-  characters. `skills/<name>/` holds the skill as the draft makes it: the project's files of the
-  skill, with the draft's over them. `piece` names the try's **throwaway piece**: a folder
-  `workspaces/.throwaway/purlis-try-<id>` made new, `0700`, inside the project (a sandboxed chat
-  starts only in a folder of the project), which the scratch chat starts in. A dot-name below
-  `workspaces/` is no workspace, git ignores it with every LOCAL workspace's files
-  (`/workspaces/*/*`), and a save never stages it (`planegit::save_stages`).
-  A chat started in that folder is armed with the built-in skills and this one skill alone, as if
-  `skill-tries/<id>/` were a project of its own (`drafts::tried`).
-- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
-- **Tier:** Clone state, transient — it lasts as long as its chat.
-- **Written by:** `drafts::try_out`, from the studio's Try it; and `drafts::lay_out_arm`, for each
-  chat of a grade (SK-16, #2779): the skill as the grade read it once (`drafts::snapshot`),
-  without its `evals/` folder, or, for the arm without the skill, no `skills/` at all; and an
-  empty file `graded` beside `piece`, which arms the chat started there as a grade's chat
-  (`--strict-mcp-config`, purlis's server with `--graded`, ADR 0105 §3).
-  And `drafts::lay_out_library_arm`, for each chat of a router's grade (SK-15e, #3233): every
-  skill of the library as the grade read it once, each without its `evals/` folder, `graded`, and,
-  for the router's arm, a file `router` holding the router's extension id, which the chat's start
-  routes its set by in place of a workspace's or persona's choice (`drafts::arm_router`). The arm
-  of the built-in router has no `router`. Both arms hold `pins`, the pins of the workspace or persona that chose
-  the router, one name a line (absent for none), which the chat's set is routed with
-  (`drafts::pins_of_arm`).
-- **Removed by:** with its [throwaway piece](#workspacesthrowawaypurlis-try-id), the same way and
-  at the same moments. What is left is the skill run the chat recorded, under the skill's name.
+- **Format:** where an older purlis kept this store, in the plane's state folder, before
+  #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-tries/<id>/`](#dataapp-stateclone-keyskill-triesid).
+- **Tier:** Clone state, legacy — removed at the project's first open after the upgrade and not carried; the sweep then removes each throwaway piece with no try (`appstate::move_out_of_the_plane`); never read after that.
 - **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
   state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
-- **Git:** gitignored, under the state directory; the piece is ignored and never staged.
+- **Git:** gitignored, under the state directory.
 
 ### `chat-settings/<chat id>.<digest>.json`
 - **Format:** where earlier builds kept a Claude Code chat's long `--settings` file (SK-9, #2772),
@@ -7490,24 +7417,9 @@ rewritten.
   old or more, whatever its chat (`hoststart::sweep_settings`).
 - **Git:** gitignored, under the state directory.
 ### `skill-levels/<chat id>.json`
-- **Format:** JSON, one file per sandboxed chat that is running (SK-9, #2772): `name`, the chat's
-  number as its tab says it, and `levels`, the workspace and persona folders there when it
-  started, relative to the plane (`workspaces/ops`, `personas/steward`).
-- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
-- **Tier:** Clone state, transient — it lasts as long as its chat.
-- **Written by:** the session host as it starts a sandboxed chat (`skills::levels::note`); a
-  restart keeps the record it has. A workspace or persona the person makes, in the window or from
-  their own terminal, is added to every record (`skills::levels::vouch`); one the app makes on a
-  chat's request is not, and a sandboxed chat's own `purlis workspace create` writes no
-  record. `unaccepted.json` beside the records
-  (`levels`, folders relative to the plane) keeps every folder a swept record's chat could have
-  made, until the person accepts it in the Skill studio (`skills::levels::accept`).
-- **Read by:** every skill set: a workspace's or persona's skills whose folder is not in a record,
-  or is in `unaccepted.json`, reach no chat, with "accept it in the Skill studio", until the person
-  does.
-- **Removed by:** the app, each time it writes its record of open chats
-  ([`app/reopen.json`](#appreopenjson)), for a chat not on it, two minutes after it was written,
-  moving what it could have made to `unaccepted.json` first (`skills::levels::sweep`).
+- **Format:** where an older purlis kept this store, in the plane's state folder, before
+  #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-levels/<chat id>.json`](#dataapp-stateclone-keyskill-levelschat-idjson).
+- **Tier:** Clone state, legacy — removed at the project's first open after the upgrade and not carried: every workspace and persona folder of the project then waits for the person's Accept in the Skill studio again (`appstate::move_out_of_the_plane`); never read after that.
 - **Held:** as an integrity path: no sandboxed chat writes it, under either spelling of the
   state folder or where `$PURLIS_HOME` puts it (`skills::KEPT_IN_STATE`).
 - **Git:** gitignored, under the state directory.
@@ -7902,6 +7814,225 @@ refuses a `<data>` under a project or inside any git work tree.
 | `/etc/apparmor.d/purlis-engine-here` | Machine, device-bound | Written since #2835: the same profile for this machine's own engine path, wherever its data folder is, written by the command the Notice about the browser engine's sandbox offers, which the person runs (`sudo tee` and `apparmor_parser -r`); purlis never runs it, nor anything as root. Read as `/etc/apparmor.d/purlis-engine` is. A purge of the `.deb` unloads and removes it where it is still that profile (#2900); a remove keeps it, as a remove keeps a package's configuration | the person, with `purlis_core::browsers::sandboxing::install_command`'s command |
 | `<config>/telemetry.json` | Machine, device-bound | **decided, not yet written** (ADR 0083). Whether telemetry is collected, its retention and cap, each project's open content gates, and the export destinations: each one's name, OTLP/HTTP URL, signals and a pointer to its auth header in the keyring. No project file opens a gate or names a destination. Device-bound because of those pointers and consents. Denied to chats (ADR 0067 §5 class 2). Backed up by FR-10 | a `local-ui` caller only (the window, or `purlis` on that scope), through `purlisd` (OB-2, OB-9) |
 | keyring item for a telemetry export destination's auth header | Keyring | **decided, not yet written** (ADR 0083). The header value an export destination sends, such as a backend's API key. Denied to chats | OB-9 |
+
+### `<data>/app-state/<clone key>/` — the app's own state of a project
+- **Format:** one folder per project clone (#3718; ADR 0067 as amended 2026-10-28), named by its
+  clone key (`plane::CloneKey`), in the data home `<data>`, `0700`, as `<data>/app-state` is. It holds
+  what purlis reads back about the project to decide something: the Skill studio's drafts, tries,
+  local grade record, grades under way, grade-after-edit opt-ins, kept grade chats and records of
+  the levels a sandboxed chat could have made, each below. `root` names the project's root as the
+  kernel names it, and `owner` the project it belongs to, by the 32 hex characters of its state
+  folder's [`app/app-state-id`](#appapp-state-id), each written when the folder is
+  made. A folder whose `owner` is not the project's own (a new project made at an older one's path)
+  is renamed `<clone key>.foreign-<n>`, read no more, and a new one made, whose workspace and
+  persona folders wait for the person's Accept where the one set aside held levels records; until
+  then no reader sees it (`appstate::dir`). `moved-from-the-plane`, an
+  empty file, says an older purlis's copies of these stores were moved out of the plane's state
+  folder, once, at the project's open (`appstate::move_out_of_the_plane`): only the folder purlis
+  was reading (the spelling `names::state` picks) is looked at, and the other is left unread; a
+  state folder `$PURLIS_HOME` names may be shared by several clones, so its copies are left where
+  they are, read no more, and nothing is marked. Where a folder that is not moved holds levels
+  records, every workspace and persona folder waits for the person's Accept again, once
+  (`asked-again-<which>`), before anything is marked. Drafts, local grades and kept grade chats are
+  carried, and each store in the plane is then renamed beside itself as `<store>.moved-<n>`, read no
+  more. A store is set aside only once all of it is carried; a file is written beside its place and renamed in, and a line a grade file already
+  holds is never added again. A project that moved, as its [record of open chats](#appreopenjson)
+  says (V43), keeps its drafts, local grades and kept grade chats under its new clone key, where
+  the old key's `root` names the root the record names and its `owner` is the project's own, and
+  only once that root is no longer a project holding the same id (`appstate::follow_arrival`, at
+  the project's open); `moving-from-<old key>` marks a carry under way, taken up again at the
+  next open, and becomes `moved-from-<old key>` once it is whole; the old key's folder is removed
+  first, and only where its root is known gone (its folder above is there and it is not), so one on
+  a volume that is not mounted is never removed. Its opt-ins and levels records
+  are not carried, and every workspace and persona folder then waits for the person's Accept
+  again. A copy starts with none of it, and an id of its own. Where the machine has no data home, or one in a project or a git work tree, the
+  stores are unavailable and say so, none falls back to the plane, and a sandboxed chat is not
+  started, since no record of its start could be kept. A fenced (test) build whose environment names
+  no data home inside its fence keeps the folder in the project's own state folder, in
+  `.fenced-app-state/`, which no shipped build makes.
+- **Status:** **internal**.
+- **Tier:** Machine, device-bound — this machine's own record of the project.
+- **Written by:** purlis alone: the app and the session host. A chat's sandbox reads it and never
+  writes it, under every spelling a case-folding disk takes, and never renames or replaces it or
+  the data home itself (`sandbox::app_state_held`); no grant reaches it.
+- **Git:** outside every project, in the data home.
+
+### `<data>/app-state/<clone key>/skill-drafts/<id>/`
+- **Format:** one folder per draft skill (SK-9, #2772): a chat's write to a skill's files, kept
+  for the person to try, accept or reject in the Skill studio. `<id>` is sixteen hex characters
+  of a SHA-256 over the level's folder and the skill's folder name, so a skill has one draft and a
+  second write adds to it. It holds `draft.json` (`level`: the level's folder relative to the
+  plane, `skills`, `workspaces/ops/skills.local` or `personas/reviewer/skills`; `folder`: the skill's folder name; `chat`: the
+  number of the chat that wrote it last; `bases`: each file the draft changed, below the skill's
+  folder, with the SHA-256 of what the project held there when the draft first changed it, `null`
+  for nothing) and `files/`, each drafted file at its path below the skill's folder. Folders are
+  private to the person, as the app state is.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
+- **Tier:** Machine, device-bound — this machine's. A draft is never committed: Accept writes its files into
+  the skill's folder and commits exactly those (a local skill's are only written), and Reject
+  deletes the folder.
+- **Written by:** the app, as `purlis_core::skills::verbs::drafts::take`, for a chat's `Write`,
+  `Edit` or `MultiEdit` of a plane skill's file (its `pretooluse-edit` hook) or its `purlis
+  propose` of one, which reach the app as a proposed change does. Never by a chat.
+- **Read by:** `drafts::list`, for the Skill studio's Draft skills and the chat's "Draft ready in
+  Skill studio". Deleted ⇒ the drafts are lost; nothing in the project changes. Every read, write
+  and removal goes through folders held open with `O_NOFOLLOW`.
+- **Git:** outside every project, in the data home.
+
+### `<data>/app-state/<clone key>/skill-grades/<YYYY-MM>.jsonl`
+- **Format:** JSON Lines, append-only: the eval record's rows
+  ([`personas/_grades/`](#personas_gradesyyyy-mmdevicejsonl)) for a copy of a skill that is this
+  machine's alone, a `skills.local/` copy or one in a workspace that is this machine's alone
+  (SK-16, #2779, the review of #3229). Written `0600` through no link (`grades::record`), read
+  beside the committed record by `grades::grades_of`, held to the same limits.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Machine, device-bound — this machine's own; nothing rebuilds it.
+- **Git:** outside every project, in the data home.
+
+### `<data>/app-state/<clone key>/skill-grades/routers/<YYYY-MM>.jsonl`
+- **Format:** JSON Lines, append-only: the rows of
+  [`personas/_grades/routers/`](#personas_gradesroutersyyyy-mmdevicejsonl) for a router's grade
+  whose library held a copy that is this machine's alone (SK-15e, #3233). Written `0600` through
+  no link (`grades::routers::record`), read beside the committed record, held to the same limits.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Machine, device-bound — this machine's own; nothing rebuilds it.
+- **Git:** outside every project, in the data home.
+
+### `<data>/app-state/<clone key>/skill-grade-after-edit.json`
+- **Format:** one JSON object (SK-58, #3238; ADR 0105 as amended 2026-10-28): `v` (1) and
+  `skills`, each copy the person turned **grading after each edit** on for, keyed by its level's
+  folder and its name (`skills/deploy`, `workspaces/ops/skills/deploy`), holding what they
+  accepted on the plan they turned it on from: `profile` and `model` (null for the profile's own)
+  the grades' chats run on; `chats`, the chats a grade ran then; `token_cap` and `limit_usd`, the
+  cap and the dollar limit it was held to (at most the largest cap at 1,000 dollars a million);
+  `tests`, the SHA-256 of the trigger tests it ran; `previous`, the commit it compared with
+  (absent for none); `runs_on`, the model its chats ran on as the plan showed it (the one their
+  line names, else the one picked; absent for none, #3622); `at`, when it was turned on; `graded`, the consent
+  digest of the copy an edit last graded (absent before the first), so a save that changed nothing
+  since grades nothing; and `paused`, the sentence why it waits for the person (absent while it
+  does not). Written `0600`, whole or not at all, through no link, by the window alone: turning it
+  on (`skill_grade_after_edit_on`, from a plan whose consent it checks), turning it off, and a
+  grade after an edit (`grades::after_edit`). Read at each save of the skill in the Skill studio's
+  editor: a saved edit, once ten seconds pass with no other save of the skill, grades it on that
+  profile and model, held to the cap and dollar limit of a grade pressed by hand, only while a
+  grade of it runs on the same profile and model, runs no more chats, may spend no more, and runs
+  the same trigger tests against the same version as was accepted; a grade that would not
+  waits (`paused`), starts nothing, and the opt-in is turned on again from a plan that shows the
+  cost. A second save while such a grade runs stops it, and the next starts after it. Nothing
+  grades on a timer, and a save from the command line or a chat's change grades nothing. A file
+  that is a link, past 256 KiB, of another `v`, or holding more than 512 copies reads as off (each change holds the `flock` of
+  `skill-grade-after-edit.lock` beside it), and
+  so does a copy whose entry does not hold together (a name that is no plain name, no chats, a cap
+  out of its bounds, a limit that is no positive amount).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Machine, device-bound — this machine's own: the person who pays turns it on, on this machine;
+  a teammate's push never does. Losing it turns grading after each edit off.
+- **Git:** outside every project, in the data home.
+
+### `<data>/app-state/<clone key>/grades-under-way/<grade>.json`
+- **Format:** one JSON object per grade running on this machine (#3353): `pid`, the process that
+  runs it; `local`, whether its copy is this machine's alone; `locked`, whether the grade holds the
+  file's lock (#3466, `false` where absent); and `graded`, its eval record row as
+  it would be recorded were it interrupted now (`report.ended` `interrupted`, no chat scored,
+  and what its chats spent so far: nothing as it starts, then, as each chat ends, its chats that
+  ran, its tokens and its cost as the chats said them, in `spent` and in the report's
+  `spent_tokens` and `spent_usd`, #3582). Written `0600` through no link when a grade starts
+  (`grades::underway::began`), written again as each chat ends (`grades::underway::Marker::spent`),
+  and removed when it ends (`grades::underway::ended`). Each write goes to
+  `.<grade>.json.partial` beside it, locked, and is renamed over it, so a reader finds the whole
+  file or none; a spend no sound row could hold is never written. A leftover `.partial` whose lock
+  no other holds is removed at the next start. The grade
+  holds the file's `flock` while it runs, taken before the file is in its place, so the lock goes
+  with its process however that ends (#3466). At the project's next start, each file whose lock no
+  other holds, of a grade that took it, is recorded as it is, interrupted, and removed (`grades::underway::interrupted`),
+  whatever process number it names; where the lock cannot be asked, one whose process no longer
+  runs is: so a crash, a fault or a quit never leaves a grade running or loses it. A file that is a link, larger than 64 KiB, named by another id or not a
+  sound row is removed unrecorded.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Machine, device-bound, transient — it lasts as long as its grade.
+- **Git:** outside every project, in the data home.
+
+### `<data>/app-state/<clone key>/grades-under-way.lock`
+- **Format:** an empty file, `0600`, opened through no link, whose `flock` a start holds while it
+  records the [grades under way](#dataapp-stateclone-keygrades-under-waygradejson) no running purlis holds
+  (`grades::underway::interrupted`, #3443): two purlis processes, or two threads of one, that
+  record at once take turns, so a stale grade is recorded once.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Machine, device-bound, transient — a lock that holds nothing and is never read; losing it loses nothing.
+- **Git:** outside every project, in the data home.
+
+### `<data>/app-state/<clone key>/skill-grade-chats/<skill>/<grade>/<chat>.screen`
+- **Format:** what one chat of a grade showed as the grade ended it (SK-59, #3239; ADR 0105 as
+  amended 2026-10-28): its screen and scrollback as the escape sequences that draw them into a
+  blank terminal (the session's snapshot, `purlis_core::engine`), at most 4 MiB, so a row of the
+  grade's scorecard opens the chat read-only in a tab. `<skill>`, `<grade>` (the grade's id, a
+  ULID) and `<chat>` (the chat's id, as the eval record's `report.triggers[].chats` names it) are
+  plain names. Each folder `0700` and never a link, each file `0600`, written and read through no
+  link (`grades::kept`). When a grade ends, the chats of every grade of its skill but the three
+  newest are removed (`grades::kept::sweep`).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Machine, device-bound, transient — what this machine's chats showed, kept for the skill's newest
+  grades; losing it loses only the read-only view of those chats. A teammate who pulls the eval
+  record sees the grade and not its chats, and its scorecard says they are kept where it ran.
+- **Git:** outside every project, in the data home.
+
+### `<data>/app-state/<clone key>/skill-tries/<id>/`
+- **Format:** one folder per Try it of a draft skill (SK-9, #2772), `<id>` sixteen random hex
+  characters. `skills/<name>/` holds the skill as the draft makes it: the project's files of the
+  skill, with the draft's over them. `piece` names the try's **throwaway piece**: a folder
+  `workspaces/.throwaway/purlis-try-<id>` made new, `0700`, inside the project (a sandboxed chat
+  starts only in a folder of the project), which the scratch chat starts in. A dot-name below
+  `workspaces/` is no workspace, git ignores it with every LOCAL workspace's files
+  (`/workspaces/*/*`), and a save never stages it (`planegit::save_stages`).
+  A chat started in that folder is armed with the built-in skills and this one skill alone, as if
+  `skill-tries/<id>/` were a project of its own (`drafts::tried`).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
+- **Tier:** Machine, device-bound, transient — it lasts as long as its chat.
+- **Written by:** `drafts::try_out`, from the studio's Try it; and `drafts::lay_out_arm`, for each
+  chat of a grade (SK-16, #2779): the skill as the grade read it once (`drafts::snapshot`),
+  without its `evals/` folder, or, for the arm without the skill, no `skills/` at all; and an
+  empty file `graded` beside `piece`, which arms the chat started there as a grade's chat
+  (`--strict-mcp-config`, purlis's server with `--graded`, ADR 0105 §3).
+  And `drafts::lay_out_library_arm`, for each chat of a router's grade (SK-15e, #3233): every
+  skill of the library as the grade read it once, each without its `evals/` folder, `graded`, and,
+  for the router's arm, a file `router` holding the router's extension id, which the chat's start
+  routes its set by in place of a workspace's or persona's choice (`drafts::arm_router`). The arm
+  of the built-in router has no `router`. Both arms hold `pins`, the pins of the workspace or persona that chose
+  the router, one name a line (absent for none), which the chat's set is routed with
+  (`drafts::pins_of_arm`).
+- **Removed by:** with its [throwaway piece](#workspacesthrowawaypurlis-try-id), the same way and
+  at the same moments. What is left is the skill run the chat recorded, under the skill's name.
+- **Git:** outside every project, in the data home; the piece is ignored and never staged.
+
+### `<data>/app-state/<clone key>/skill-levels/<chat id>.json`
+- **Format:** JSON, one file per sandboxed chat that is running (SK-9, #2772): `name`, the chat's
+  number as its tab says it, and `levels`, the workspace and persona folders there when it
+  started, relative to the plane (`workspaces/ops`, `personas/steward`).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
+- **Tier:** Machine, device-bound, transient — it lasts as long as its chat.
+- **Written by:** the session host as it starts a sandboxed chat (`skills::levels::note`); a
+  restart keeps the record it has. A workspace or persona the person makes, in the window or from
+  their own terminal, is added to every record (`skills::levels::vouch`); one the app makes on a
+  chat's request is not. No chat writes the app state. `unaccepted.json` beside the records
+  (`levels`, folders relative to the plane) keeps every folder a swept record's chat could have
+  made, until the person accepts it in the Skill studio (`skills::levels::accept`).
+- **Read by:** every skill set: a workspace's or persona's skills whose folder is not in a record,
+  or is in `unaccepted.json`, reach no chat, with "accept it in the Skill studio", until the person
+  does. **Held by default:** the records are read only where `confirmed`, a file of this folder,
+  holds the project's [`app/app-state-id`](#appapp-state-id); purlis writes it when it makes the app
+  state of a project it was never used in (no state folder beside a workspace or persona folder,
+  no record of open chats, no levels records), and at the
+  person's one Accept for the project. Without it (a project chats ran in, at its first open,
+  another data home, a folder set aside, a move or copy, a link in its place), every workspace and
+  persona folder is held until accepted, behind one item in the Skill studio for the project that
+  lists the folders its Accept takes (`skills::levels::confirm`); `accepted.json` keeps those the
+  person accepts one by one meanwhile. A folder a running chat's record leaves out stays held for
+  that reason through either Accept, and each chat on the record of open chats at the move is
+  noted from the folders there then, at every open while the records are not confirmed.
+- **Removed by:** the app, each time it writes its record of open chats
+  ([`app/reopen.json`](#appreopenjson)), for a chat not on it, two minutes after it was written,
+  moving what it could have made to `unaccepted.json` first (`skills::levels::sweep`).
+- **Git:** outside every project, in the data home.
 
 ### Environment variables that move or key this state
 

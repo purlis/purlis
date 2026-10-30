@@ -30,6 +30,7 @@ const DELETED: DeletedSkill[] = [
     label: "project",
     days_left: 27,
     in_history: true,
+    reserved: false,
   },
   {
     id: "g2",
@@ -38,6 +39,7 @@ const DELETED: DeletedSkill[] = [
     label: "workspace smart-ide",
     days_left: 12,
     in_history: true,
+    reserved: false,
   },
   {
     id: "g3",
@@ -46,6 +48,7 @@ const DELETED: DeletedSkill[] = [
     label: "local",
     days_left: 3,
     in_history: false,
+    reserved: false,
   },
 ];
 

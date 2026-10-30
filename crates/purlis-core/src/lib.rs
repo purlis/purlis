@@ -9,6 +9,7 @@ pub mod activity;
 pub mod adopt;
 pub mod alerts;
 pub mod applog;
+pub mod appstate;
 pub mod askoutcome;
 pub mod autosave;
 pub mod awareness;
