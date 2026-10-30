@@ -58,6 +58,11 @@ export function RunnerGoneNotice({
     };
   }, [plane]);
   const pools = removed?.plane === plane ? removed.pools : [];
+  // A pool's Notice goes: put away, or its runner made again.
+  const putAway = (name: string) =>
+    setRemoved((was) =>
+      was === undefined ? was : { ...was, pools: was.pools.filter((one) => one.name !== name) },
+    );
   const makeAgain = (name: string) =>
     void makeRunnerAgain(name, plane).then((why) => {
       setSaid((was) => {
@@ -66,10 +71,7 @@ export function RunnerGoneNotice({
         else now[name] = why;
         return now;
       });
-      if (why === undefined)
-        setRemoved((was) =>
-          was === undefined ? was : { ...was, pools: was.pools.filter((one) => one.name !== name) },
-        );
+      if (why === undefined) putAway(name);
     });
   return pools.map((pool) => (
     <Notice
@@ -85,13 +87,7 @@ export function RunnerGoneNotice({
         },
       ]}
       link={{ label: "Open Pools settings", onPress: onOpenPools }}
-      onDismiss={() =>
-        setRemoved((was) =>
-          was === undefined
-            ? was
-            : { ...was, pools: was.pools.filter((one) => one.name !== pool.name) },
-        )
-      }
+      onDismiss={() => putAway(pool.name)}
     >
       {removedSaid(pool.name, pool.home_kept)}
       {said[pool.name] !== undefined && <> purlis could not make it again: {said[pool.name]}</>}
