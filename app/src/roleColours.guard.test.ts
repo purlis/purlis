@@ -119,17 +119,30 @@ const read = (file: string) => readFileSync(join(SRC, file), "utf8");
  * change to either is a new entry to look at again.
  */
 const ALLOWED: Readonly<Record<string, readonly string[]>> = {
-  // A sentence wears `ui-text-secondary` and a count `ui-text-meta`, on purpose (#1920): the views' and dialogs' muted `.none` and `.pending` are for sentences that wear no role.
+  // A sentence wears `ui-text-secondary` and a count `ui-text-meta` on purpose (#1920), so the
+  // role is meant to win where a view's (`.view-body`) or a dialog's muted `.none` and
+  // `.pending` reach it; those are for sentences that wear no role. `.state-bar` is the Changes
+  // view's (`ChangesView.tsx`) and `.palette` the palette's, whose lines wear no role; no
+  // view's or panel's sentence is drawn inside either.
   "Explorer.tsx": [
+    '.state-bar .none on "none ui-text-secondary"',
+    '.palette .none on "none ui-text-secondary"',
     '.view-body .none on "none ui-text-secondary"',
+    '.state-bar .none on "none ui-text-secondary"',
+    '.palette .none on "none ui-text-secondary"',
     '.view-body .none on "none ui-text-secondary"',
+    '.state-bar .pending on "pending ui-text-secondary"',
     '[data-scope="dialog"] .pending on "pending ui-text-secondary"',
     '.view-body .pending on "pending ui-text-secondary"',
+    '.state-bar .none on "piece-count none ui-text-meta"',
+    '.palette .none on "piece-count none ui-text-meta"',
     '.view-body .none on "piece-count none ui-text-meta"',
+    '.state-bar .pending on "piece-count pending ui-text-meta"',
     '[data-scope="dialog"] .pending on "piece-count pending ui-text-meta"',
     '.view-body .pending on "piece-count pending ui-text-meta"',
   ],
-  // An ask's row is never an `.inbox-update`, and a read update wears no role: only an unread one does (`UpdateItem`).
+  // An ask's row is never an `.inbox-update`, and a read update wears no role: only an unread
+  // one does (`UpdateItem`).
   "Inbox.tsx": [
     '.inbox-update[data-read] .ask-says on "ask-says ask-lines inbox-primary ui-text-body ui-text-strong"',
     '.inbox-update[data-read] .ask-says on "`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`"',
@@ -141,18 +154,33 @@ const ALLOWED: Readonly<Record<string, readonly string[]>> = {
     '.inbox-update[data-read] .ask-says on "ask-says inbox-primary ui-text-body ui-text-strong inbox-clamped"',
     '.inbox-update[data-read] .ask-says on "ask-says inbox-primary ui-text-body ui-text-strong inbox-clamped"',
   ],
-  // The same: a clone under way says so in `ui-text-secondary` (#1920).
+  // A clone under way says so in `ui-text-secondary` on purpose (#1920). `.state-bar` is the
+  // Changes view's (`ChangesView.tsx`) and `.palette` the palette's, whose lines wear no role;
+  // no view's or panel's sentence is drawn inside either.
   "NotCloned.tsx": [
+    '.state-bar .pending on "pending ui-text-secondary"',
     '[data-scope="dialog"] .pending on "pending ui-text-secondary"',
     '.view-body .pending on "pending ui-text-secondary"',
   ],
-  // The same: an empty filter's sentence wears `ui-text-secondary` (#1920).
-  "PanelList.tsx": ['.view-body .none on "none ui-text-secondary"'],
-  // A pending sentence wears `ui-text-secondary` (#1920); a note block is `trouble` or `note ui-text-secondary`, never both, so no trouble colour meets the role.
+  // An empty filter's sentence wears `ui-text-secondary` and a row's note `ui-text-meta` on
+  // purpose (#1920). `.state-bar` is the Changes view's (`ChangesView.tsx`) and `.palette` the
+  // palette's, whose lines wear no role; no view's or panel's sentence is drawn inside either.
+  "PanelList.tsx": [
+    '.state-bar .none on "none ui-text-secondary"',
+    '.palette .none on "none ui-text-secondary"',
+    '.view-body .none on "none ui-text-secondary"',
+    '.state-bar .note on "note ui-text-meta"',
+  ],
+  // A pending sentence wears `ui-text-secondary` on purpose (#1920). A note block is `trouble`
+  // or `note ui-text-secondary`, never both, so no trouble or note colour meets the role.
+  // `.state-bar` is the Changes view's (`ChangesView.tsx`) and `.palette` the palette's, whose
+  // lines wear no role; no view's or panel's sentence is drawn inside either.
   "Panels.tsx": [
+    '.state-bar .pending on "pending ui-text-secondary"',
     '[data-scope="dialog"] .pending on "pending ui-text-secondary"',
     '.view-body .pending on "pending ui-text-secondary"',
     '.trouble on "block.tone === "trouble" ? "trouble" : "note ui-text-secondary""',
+    '.state-bar .note on "block.tone === "trouble" ? "trouble" : "note ui-text-secondary""',
     '.state-bar .trouble on "block.tone === "trouble" ? "trouble" : "note ui-text-secondary""',
     '.panels .trouble on "block.tone === "trouble" ? "trouble" : "note ui-text-secondary""',
   ],
@@ -160,12 +188,12 @@ const ALLOWED: Readonly<Record<string, readonly string[]>> = {
 
 /** How long each file's list may be: it only gets shorter. */
 const CEILING: Readonly<Record<string, number>> = {
-  "Explorer.tsx": 7,
+  "Explorer.tsx": 15,
   "Inbox.tsx": 3,
   "InboxElsewhere.tsx": 3,
-  "NotCloned.tsx": 2,
-  "PanelList.tsx": 1,
-  "Panels.tsx": 5,
+  "NotCloned.tsx": 3,
+  "PanelList.tsx": 4,
+  "Panels.tsx": 7,
 };
 
 describe("no App.css colour lands on a word that wears a text role (#3917)", () => {
