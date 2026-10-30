@@ -2912,12 +2912,12 @@ export const commands = {
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
 	/**
-	 *  **The runner image this version's release names** (the person's ruling of 2026-10-30): what
-	 *  the Add a pool dialog's Image box shows, and what a pool added with the box empty is made
-	 *  from. None where this build names none: a development build, or a release whose runner image
-	 *  was not built. Refused, in the updater's words, where it could not be read.
+	 *  **The runner image a new pool is offered** (the person's ruling of 2026-10-30): what the Add
+	 *  a pool dialog's Image box shows, and what a pool added with the box empty is made from.
+	 *  Refused, in the updater's words, where it could not be read or was not signed as a release
+	 *  signs it.
 	 */
-	runnerImageOfThisVersion: () => typedError<string | null, string>(__TAURI_INVOKE("runner_image_of_this_version")),
+	runnerImageOfThisVersion: () => typedError<RunnerImageOffered, string>(__TAURI_INVOKE("runner_image_of_this_version")),
 	/**  **The contexts of the kubeconfig `kubeconfig` names** (#3292), as kubectl lists them. */
 	clusterContexts: (kubeconfig: string | null) => typedError<ClusterContexts, string>(__TAURI_INVOKE("cluster_contexts", { kubeconfig })),
 	/**
@@ -11355,6 +11355,26 @@ export type RunnerBranch = {
 	 */
 	ahead: number,
 };
+
+/**
+ *  **The runner image a new pool is offered** (the person's ruling of 2026-10-30), by the
+ *  release that names it.
+ */
+export type RunnerImageOffered = 
+/**  This version's own, as its release names it. */
+{ state: "ours"; image: string } | 
+/**
+ *  A newer version's, as the channel's newest release names it: an update of purlis to
+ *  `version` is waiting.
+ */
+{ state: "newer"; image: string; version: string } | 
+/**
+ *  None: this version's release names none, as a release whose runner image was not built
+ *  does.
+ */
+{ state: "none_named" } | 
+/**  None: a local build, with no update channel, names none. */
+{ state: "local_build" };
 
 /**  How the window reads what a runner records (#3393). */
 export type RunnerLogRead = 

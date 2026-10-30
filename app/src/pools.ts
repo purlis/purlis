@@ -12,6 +12,7 @@ import {
   type PoolProfileRow,
   type PoolVersion,
   type PoolsShown,
+  type RunnerImageOffered,
 } from "./bindings";
 
 /**
@@ -22,8 +23,9 @@ import {
  * other runner surfaces are offered only once one is ({@link anyPoolKept}). Add a pool…, in the
  * group and in the palette, is the way to the first.
  *
- * **A new pool's image is the one this version's release names** ({@link readReleaseImage}, the
- * person's ruling of 2026-10-30), asked as the dialog opens.
+ * **A new pool's image is the one this version's release names**, or a newer one's where an
+ * update is waiting ({@link readReleaseImage}, the person's ruling of 2026-10-30), asked as the
+ * dialog opens.
  *
  * **Each pool's runner is asked once whether it answers with the key pinned for it**
  * ({@link askLink}), as the group comes on screen: a runner whose key changed gets a Notice with
@@ -153,20 +155,24 @@ export function stopAddingAPool() {
   set((was) => ({ ...was, adding: false }));
 }
 
-/** The runner image this version's release names, as purlis said it: `null` where this build
- *  names none (a development build, or a release whose runner image was not built). */
-export type ReleaseImage = { image: string | null } | { trouble: string };
+/** The runner image a new pool is offered, as purlis said it, or why it could not say. */
+export type ReleaseImage = RunnerImageOffered | { state: "trouble"; trouble: string };
 
 /**
- * **The runner image this version's release names** (the person's ruling of 2026-10-30): the
- * Add a pool dialog's default image, which a pool added with the Image box empty is made from.
- * Asked as the dialog opens; the core keeps the image once read, so it is read from the
- * update server once.
+ * **The runner image a new pool is offered** (the person's ruling of 2026-10-30): the Add a
+ * pool dialog's default image, which a pool added with the Image box empty is made from. This
+ * version's own; on a machine with an update waiting on its channel, the newer version's, said
+ * so; none from a local build or a release that names none. Asked as the dialog opens; the core
+ * keeps this version's image once read.
  */
 export async function readReleaseImage(): Promise<ReleaseImage> {
   const said = await caught(commands.runnerImageOfThisVersion());
-  if (said.status === "error") return { trouble: said.error };
-  return { image: typeof said.data === "string" && said.data !== "" ? said.data : null };
+  if (said.status === "error") return { state: "trouble", trouble: said.error };
+  const offered = said.data as RunnerImageOffered | null;
+  // A core that answered nothing it knows (an older one, or none) names no image.
+  return typeof offered === "object" && offered !== null && typeof offered.state === "string"
+    ? offered
+    : { state: "none_named" };
 }
 
 /** Adds `adding` on this machine: `undefined` once it is added, else why not. */

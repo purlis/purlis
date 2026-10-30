@@ -686,6 +686,7 @@ describe("the one list of actions", () => {
       "Your settings: Notifications",
       "Your settings: This machine",
       "Your settings: Browsers",
+      "Your settings: Pools",
       "Your settings: Accounts",
       "Your settings: Profiles",
       "Your settings: Previews",

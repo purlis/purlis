@@ -9353,6 +9353,26 @@ export type RunnerBranch = {
 	ahead: number,
 };
 
+/**
+ *  **The runner image a new pool is offered** (the person's ruling of 2026-10-30), by the
+ *  release that names it.
+ */
+export type RunnerImageOffered = 
+/**  This version's own, as its release names it. */
+{ state: "ours"; image: string } | 
+/**
+ *  A newer version's, as the channel's newest release names it: an update of purlis to
+ *  `version` is waiting.
+ */
+{ state: "newer"; image: string; version: string } | 
+/**
+ *  None: this version's release names none, as a release whose runner image was not built
+ *  does.
+ */
+{ state: "none_named" } | 
+/**  None: a local build, with no update channel, names none. */
+{ state: "local_build" };
+
 /**  How the window reads what a runner records (#3393). */
 export type RunnerLogRead = 
 /**  Over the link, which is up. */

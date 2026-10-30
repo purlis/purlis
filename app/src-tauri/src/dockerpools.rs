@@ -87,6 +87,23 @@ pub struct PoolAdding {
     pub width: Option<u32>,
 }
 
+/// **The runner image a new pool is offered** (the person's ruling of 2026-10-30), by the
+/// release that names it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum RunnerImageOffered {
+    /// This version's own, as its release names it.
+    Ours { image: String },
+    /// A newer version's, as the channel's newest release names it: an update of purlis to
+    /// `version` is waiting.
+    Newer { image: String, version: String },
+    /// None: this version's release names none, as a release whose runner image was not built
+    /// does.
+    NoneNamed,
+    /// None: a local build, with no update channel, names none.
+    LocalBuild,
+}
+
 /// Where a pool's runner stands, as one link to it says.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(tag = "state", rename_all = "snake_case")]
@@ -427,18 +444,18 @@ pub async fn docker_pool_version(name: String) -> Result<PoolVersion, String> {
     }
 }
 
-/// **The runner image this version's release names** (the person's ruling of 2026-10-30): what
-/// the Add a pool dialog's Image box shows, and what a pool added with the box empty is made
-/// from. None where this build names none: a development build, or a release whose runner image
-/// was not built. Refused, in the updater's words, where it could not be read.
+/// **The runner image a new pool is offered** (the person's ruling of 2026-10-30): what the Add
+/// a pool dialog's Image box shows, and what a pool added with the box empty is made from.
+/// Refused, in the updater's words, where it could not be read or was not signed as a release
+/// signs it.
 #[tauri::command]
 #[specta::specta]
-pub async fn runner_image_of_this_version(app: tauri::AppHandle) -> Result<Option<String>, String> {
+pub async fn runner_image_of_this_version(
+    app: tauri::AppHandle,
+) -> Result<RunnerImageOffered, String> {
     #[cfg(unix)]
     {
-        crate::poolfollow::this_versions_image(&app)
-            .await
-            .map(|image| image.map(|image| image.as_str().to_owned()))
+        crate::poolfollow::image_offered(&app).await
     }
     #[cfg(not(unix))]
     {

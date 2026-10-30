@@ -4,7 +4,7 @@
 /**
  * **You › This machine › Pools, and Add a pool** (#2679; the person's ruling of 2026-10-30): the
  * group with no pool yet, saying what a pool is, with Add a pool…; the group with a pool; and the
- * Add a pool dialog with its Image box showing the runner image this version's release names.
+ * Add a pool dialog with its Image box showing the runner image it is offered.
  * Each is drawn, held to axe, walked by the keyboard, and pictured in every pictured theme cell
  * (`docs/component-stories.md`). The core is faked at its command boundary.
  */
@@ -53,7 +53,7 @@ function theCore(pools: PoolRow[]) {
           named: true,
           waiting: 0,
         };
-      if (cmd === "runner_image_of_this_version") return IMAGE;
+      if (cmd === "runner_image_of_this_version") return { state: "ours", image: IMAGE };
       return [];
     },
     { shouldMockEvents: true },
@@ -76,8 +76,7 @@ function Row({ setting }: { setting: LiveSetting }) {
 }
 
 /** The Pools group as Settings › You draws it, with the dialog its Add a pool… opens. */
-function Pools({ pools }: { pools: PoolRow[] }) {
-  void pools;
+function Pools() {
   const group = poolsGroup();
   return (
     <>
@@ -93,9 +92,9 @@ function Pools({ pools }: { pools: PoolRow[] }) {
 
 const meta = {
   component: Pools,
-  args: { pools: [] },
-  beforeEach: ({ args }) => {
-    theCore(args.pools);
+  // The pools the faked core keeps: a story's `parameters.pools`, none by default.
+  beforeEach: ({ parameters }) => {
+    theCore((parameters.pools as PoolRow[] | undefined) ?? []);
     return () => {
       stopAddingAPool();
       clearMocks();
@@ -120,7 +119,7 @@ export const NoPoolYet: Story = {
 
 /** **A pool kept**: its row, and Add a pool… after the list. */
 export const WithAPool: Story = {
-  args: { pools: [BUILDS] },
+  parameters: { pools: [BUILDS] },
   play: async ({ canvas }) => {
     const group = await canvas.findByRole("region", { name: "Pools" });
     await within(group).findByRole("button", { name: "Remove pool builds" });

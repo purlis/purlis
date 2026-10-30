@@ -13,6 +13,7 @@ import type {
   PoolRow,
   PoolVersion,
   PoolsShown,
+  RunnerImageOffered,
 } from "../bindings";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
@@ -21,10 +22,10 @@ import { GLOBAL } from "../windowprefs";
  * **Settings › You › This machine › Pools** (#2679), in the whole window: the group is always
  * listed (the person's ruling of 2026-10-30), and says what a pool is until one is added; Add a
  * pool…, there and in the palette, adds the first, with the limits typed and the defaults for the
- * rest, its image the one this version's release names; and a pool whose runner answered with
- * another key has a Notice whose Remove removes it. A runner of another version than this machine's says so, and
- * what follows (#2749). Adding a pool ends with this machine's profiles, each to sign in on its
- * runner (#2049).
+ * rest, its image the one this version's release names, or a newer one's where an update is
+ * waiting; and a pool whose runner answered with another key has a Notice whose Remove removes
+ * it. A runner of another version than this machine's says so, and what follows (#2749). Adding
+ * a pool ends with this machine's profiles, each to sign in on its runner (#2049).
  */
 
 vi.mock("../SessionPane", () => ({
@@ -62,8 +63,8 @@ let added: unknown[];
 let removed: unknown[];
 let notHeld: { root: string; name: string; why: string; pools: string[] }[];
 let profilesAsked: unknown[];
-/** The runner image this version's release names, or why it could not be read. */
-let releaseImage: { image: string | null } | { trouble: string };
+/** The runner image a new pool is offered, or why it could not be read. */
+let releaseImage: RunnerImageOffered | { trouble: string };
 
 const a_profile = (name: string, standing: string): PoolProfileRow => ({
   name,
@@ -97,13 +98,13 @@ beforeEach(() => {
   removed = [];
   notHeld = [];
   profilesAsked = [];
-  releaseImage = { image: null };
+  releaseImage = { state: "local_build" };
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
       if (cmd === "runner_image_of_this_version") {
         if ("trouble" in releaseImage) throw releaseImage.trouble;
-        return releaseImage.image;
+        return releaseImage;
       }
       if (cmd === "plane_at_launch") return { plane: null, from: null, why: "no plane here" };
       if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
@@ -334,7 +335,7 @@ describe("You › This machine › Pools", () => {
   });
 
   it("adds a pool of the runner image this version's release names when Image is left empty", async () => {
-    releaseImage = { image: IMAGE };
+    releaseImage = { state: "ours", image: IMAGE };
     render(<App />);
     await palette("Add a pool…");
     const dialog = await screen.findByRole("dialog", { name: "Add a pool" });
@@ -357,31 +358,76 @@ describe("You › This machine › Pools", () => {
     );
   });
 
-  it("says when this build names no runner image, and asks for one by its digest", async () => {
-    releaseImage = { image: null };
+  it("offers a newer release's runner image where an update of purlis is waiting, and says so", async () => {
+    // A dev machine is behind its channel after every merge: the channel's newest names a newer
+    // version's image, signed for that version.
+    releaseImage = { state: "newer", image: IMAGE, version: "0.4.3-dev.9" };
+    render(<App />);
+    await palette("Add a pool…");
+    const dialog = await screen.findByRole("dialog", { name: "Add a pool" });
+    const image = within(dialog).getByRole("textbox", { name: "Image" });
+    await waitFor(() => expect(image).toHaveAttribute("placeholder", IMAGE));
+    expect(image).toHaveAccessibleDescription(
+      /Empty is the default: the runner image of purlis 0\.4\.3-dev\.9, the newest release on your update channel\. An update of purlis to 0\.4\.3-dev\.9 is waiting: update first/,
+    );
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Name" }), "builds");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add pool" }));
+    await waitFor(() =>
+      expect(added).toEqual([expect.objectContaining({ name: "builds", image: IMAGE })]),
+    );
+    const signIn = await screen.findByRole("dialog", {
+      name: "Sign your profiles in on pool builds",
+    });
+    await userEvent.click(within(signIn).getByRole("button", { name: "Done" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Sign your profiles in on pool builds" }),
+      ).toBeNull(),
+    );
+  });
+
+  it("says a local build names no runner image, and asks for one by its digest", async () => {
+    releaseImage = { state: "local_build" };
     render(<App />);
     await palette("Add a pool…");
     const dialog = await screen.findByRole("dialog", { name: "Add a pool" });
     const image = within(dialog).getByRole("textbox", { name: "Image" });
     await waitFor(() =>
       expect(image).toHaveAccessibleDescription(
-        /This build of purlis names no runner image: a development build, or a release whose runner image was not built\. Name one by its digest/,
+        /This is a local build of purlis, with no update channel, so it names no runner image\. Name one by its digest/,
       ),
     );
     expect(image).toHaveAttribute("placeholder", "ghcr.io/purlis/purlis-runner@sha256:…");
   });
 
-  it("says why the runner image this version names could not be read", async () => {
-    releaseImage = { trouble: "the update server did not answer" };
+  it("says a release that names no runner image names none", async () => {
+    releaseImage = { state: "none_named" };
     render(<App />);
     await palette("Add a pool…");
     const dialog = await screen.findByRole("dialog", { name: "Add a pool" });
     const image = within(dialog).getByRole("textbox", { name: "Image" });
     await waitFor(() =>
       expect(image).toHaveAccessibleDescription(
-        /purlis could not read which runner image this version names, so name one by its digest: the update server did not answer/,
+        /This version's release names no runner image, as a release whose runner image was not built does\. Name one by its digest/,
       ),
     );
+    expect(image).toHaveAttribute("placeholder", "ghcr.io/purlis/purlis-runner@sha256:…");
+  });
+
+  it("says why the runner image to offer could not be read, and offers none", async () => {
+    releaseImage = {
+      trouble: "the runner image's signature is not the updater key's over its line",
+    };
+    render(<App />);
+    await palette("Add a pool…");
+    const dialog = await screen.findByRole("dialog", { name: "Add a pool" });
+    const image = within(dialog).getByRole("textbox", { name: "Image" });
+    await waitFor(() =>
+      expect(image).toHaveAccessibleDescription(
+        /purlis could not read which runner image to offer, so name one by its digest: the runner image's signature is not the updater key's over its line/,
+      ),
+    );
+    expect(image).toHaveAttribute("placeholder", "ghcr.io/purlis/purlis-runner@sha256:…");
   });
 
   it("says on each row how long its runner is left without a link before it suspends", async () => {

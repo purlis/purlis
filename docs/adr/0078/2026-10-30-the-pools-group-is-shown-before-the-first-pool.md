@@ -13,8 +13,14 @@ window), and spec #2041's story 6 as #2679 built it, **for Settings alone**:
    keeps a pool.
 3. **The palette's row and the dialog are named for what they add**: *Add a pool…*, whose
    dialog, *Add a pool*, starts with its Kind, Docker or Cluster (#3292).
-4. **A new pool's image defaults to the runner image this version's release names**, the image
-   the pools already follow after an update (the amendment of 2026-10-20 on following the
-   desktop's version), read the same way. A build that names none, a development build or a
-   release whose runner image was not built, says so under the Image box, which then needs an
-   image by its digest. The core still refuses an image not named by its digest.
+4. **A new pool's image defaults to the runner image its release names**, checked as the pools'
+   follow after an update checks it (the amendment of 2026-10-20 on following the desktop's
+   version): signed by the updater's key over its line, for the version the manifest names,
+   purlis's own image by digest. On the stable channel it is read from this version's own
+   release, so a machine with an update waiting still gets its own version's image. On the dev
+   channel, whose one manifest is always its newest build's, a machine behind it is offered that
+   newer version's image, and the dialog says whose it is and that an update of purlis to it is
+   waiting. A local build, with no update channel, or a release whose runner image was not
+   built, names none and says so under the Image box, which then needs an image by its digest;
+   so does an answer that could not be read or was refused. The core still refuses an image not
+   named by its digest.

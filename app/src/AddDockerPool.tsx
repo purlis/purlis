@@ -24,9 +24,10 @@ import { Dialog } from "./ui/dialog/Dialog";
  * **Add a pool…** (#2679, spec #2041: a Docker pool in one step): its Kind first, then its name,
  * the runner image by digest, its limits, and how long its runner is left without a link before
  * it suspends itself (#3471), each left empty for purlis's default, which its box shows. The
- * image's default is the runner image this version's release names (the person's ruling of
- * 2026-10-30, {@link readReleaseImage}); a build that names none (a development build, or a
- * release whose runner image was not built) says so under the box, which then needs a digest.
+ * image's default is the runner image this version's release names, or a newer version's where
+ * an update of purlis to it is waiting, said so (the person's ruling of 2026-10-30,
+ * {@link readReleaseImage}); a local build, or a release whose runner image was not built, says
+ * it names none under the box, which then needs a digest.
  * Add pool makes the pool's runner from the image on this machine's Docker, confined and held
  * to those limits, and pairs it with this machine, which takes a moment; a refusal stays in the
  * dialog, in the core's words, with what was typed.
@@ -151,16 +152,24 @@ function count(typed: string): number | null | undefined {
   return /^\d+$/.test(trimmed) ? Number(trimmed) : undefined;
 }
 
-/** What the Image box says under it, by what purlis said of this version's runner image. */
+/** What the Image box says under it, by what purlis said of the runner image a new pool is
+ *  offered. */
 function imageHelp(read: ReleaseImage | undefined): string {
   const named = "The runner image, named by its digest, so it cannot move under the pool.";
-  if (read === undefined) return named;
-  if ("trouble" in read) {
-    return `${named} purlis could not read which runner image this version names, so name one by its digest: ${read.trouble}`;
+  switch (read?.state) {
+    case undefined:
+      return named;
+    case "ours":
+      return `${named} Empty is the default: purlis's runner image of this version.`;
+    case "newer":
+      return `${named} Empty is the default: the runner image of purlis ${read.version}, the newest release on your update channel. An update of purlis to ${read.version} is waiting: update first, so this machine and the pool's runner run the same version.`;
+    case "none_named":
+      return `${named} This version's release names no runner image, as a release whose runner image was not built does. Name one by its digest.`;
+    case "local_build":
+      return `${named} This is a local build of purlis, with no update channel, so it names no runner image. Name one by its digest.`;
+    case "trouble":
+      return `${named} purlis could not read which runner image to offer, so name one by its digest: ${read.trouble}`;
   }
-  return read.image === null
-    ? `${named} This build of purlis names no runner image: a development build, or a release whose runner image was not built. Name one by its digest.`
-    : `${named} Empty is the default: purlis's runner image of this version.`;
 }
 
 function AddDockerPool({
@@ -169,7 +178,7 @@ function AddDockerPool({
   suspendAfter,
   linkFrames,
 }: {
-  /** The runner image this version's release names, once purlis said (the person's ruling of
+  /** The runner image a new pool is offered, once purlis said (the person's ruling of
    *  2026-10-30). */
   releaseImage: ReleaseImage | undefined;
   defaults: PoolLimitsShown | undefined;
@@ -190,8 +199,8 @@ function AddDockerPool({
   const [trouble, setTrouble] = useState<string | undefined>();
   const [adding, setAdding] = useState(false);
   const named =
-    releaseImage !== undefined && "image" in releaseImage
-      ? (releaseImage.image ?? undefined)
+    releaseImage?.state === "ours" || releaseImage?.state === "newer"
+      ? releaseImage.image
       : undefined;
 
   const add = async () => {
