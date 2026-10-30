@@ -4147,6 +4147,11 @@ impl Applied {
             .adapter()
             .sandboxed_line(&self.with(chain), words, at)
             .map_err(under)?;
+        // What a Claude Code chat's sandbox needs there before it starts (the home's git config
+        // on Linux at the floor): made here, outside the sandbox.
+        if let Form::ClaudeCode(settings) = &*self.form {
+            settings.make_empty();
+        }
         // ssh, and git over ssh, through the chat's SOCKS port (#1667): each harness wrapped
         // whole ([`Self::ssh_route`]).
         if let Some(route) = self.ssh_route(at.confinement) {
