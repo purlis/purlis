@@ -134,15 +134,14 @@ impl Routed {
                 .await
                 .unwrap_or_else(|why| Err(format!("the runner could not be looked up: {why}"))),
         };
-        let mut reported = None;
-        let relay = match relayed {
+        let (relay, reported) = match relayed {
             Ok((keep, resolved)) => {
                 let named = runner_named(&resolved).to_owned();
-                reported = Some(resolved);
                 *lock(&self.runner) = Some(named.clone());
-                Relay::kept(keep)
+                let relay = Relay::kept(keep)
                     .claiming(self.hosting.claimed())
-                    .stopping_first(self.hosting.stop_first(named))
+                    .stopping_first(self.hosting.stop_first(named));
+                (relay, resolved)
             }
             Err(why) => {
                 *lock(&self.route) = Route::Undecided;
@@ -171,11 +170,10 @@ impl Routed {
         }
         // The window is told which runner its link reached (1.48, #3417): a draining one is
         // kept as the link's own until it ends, apart from the pool's runner now.
-        Ok(match reported {
-            Some(runner) if peer.version() >= session::KNOWS_RELAYED_TO => {
-                Answer::RelayedTo { runner }
-            }
-            _ => Answer::Done,
+        Ok(if peer.version() >= session::KNOWS_RELAYED_TO {
+            Answer::RelayedTo { runner: reported }
+        } else {
+            Answer::Done
         })
     }
 }
