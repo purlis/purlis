@@ -167,7 +167,7 @@ function Tab({
 }) {
   return (
     <div className="view-body" style={{ inlineSize: width, blockSize: 620, display: "flex" }}>
-      <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
+      <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} onOpenView={() => undefined} />
     </div>
   );
 }
@@ -288,13 +288,19 @@ export const Grades: Story = {
   },
 };
 
-/** **A skill with no trigger tests**: the tab says what they are, and offers nothing to run. */
+/**
+ * **A skill with no trigger tests**: the tab says what they are, offers nothing to run, and offers
+ * to write them or to ask a chat to (#3925). Tab reaches both.
+ */
 export const NoTests: Story = {
   args: { plan: { ...PLAN, tests: [], chats: 0, estimate: null }, grades: [] },
   play: async ({ canvas }) => {
-    await expect(await canvas.findByTestId("skill-grades-no-tests")).toHaveTextContent(
-      "deploy has no trigger tests yet",
-    );
+    const none = await canvas.findByTestId("skill-grades-no-tests");
+    await expect(none).toHaveTextContent("deploy has no trigger tests yet");
+    await expect(within(none).getByRole("button", { name: "Write trigger tests" })).toBeVisible();
+    const ask = within(none).getByRole("button", { name: "Ask a chat to write them" });
+    await tabInto(() => ask);
+    expectFocusInSight();
   },
 };
 

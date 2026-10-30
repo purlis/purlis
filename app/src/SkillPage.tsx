@@ -60,7 +60,7 @@ import {
   runsSaid,
   UNREAD,
 } from "./SkillDetails";
-import { GradesTab, type GradingGo } from "./SkillGrades";
+import { GradesTab, TRIGGER_TESTS_FILE, type GradingGo } from "./SkillGrades";
 import { SkillPinSwitch, SkillPinnedBy } from "./SkillPins";
 import { GrantPicker } from "./SkillLevelPickers";
 import { SkillPanelSection, SkillTotals, keyOf, runsOf, useRead, type Read } from "./SkillPanels";
@@ -247,9 +247,11 @@ export function whoGetsIt(skill: StudioSkill, scope: StudioScope): string {
   return `On: ${chat} gets it.`;
 }
 
-/** **The file a skill's text is in**, as a tab opens it, or why there is none to open. */
+/** **The file a skill's text is in**, as a tab opens it, or why there is none to open; or, with
+ *  `inner`, another file in its folder (`evals/triggers.json`). */
 export function skillFileOf(
   skill: StudioSkill,
+  inner = "SKILL.md",
 ): { place: Place; path: string } | { reason: string } {
   const { folder } = skill;
   if (skill.level === "built-in")
@@ -266,9 +268,9 @@ export function skillFileOf(
     const [top, workspace, repo, ...rest] = folder.split("/");
     if (top !== "workspaces" || workspace === undefined || repo === undefined || rest.length === 0)
       return { reason: "Its file is outside the project." };
-    return { place: { workspace, repo, piece: null }, path: `${rest.join("/")}/SKILL.md` };
+    return { place: { workspace, repo, piece: null }, path: `${rest.join("/")}/${inner}` };
   }
-  return { place: PLANE_ROOT, path: `${folder}/SKILL.md` };
+  return { place: PLANE_ROOT, path: `${folder}/${inner}` };
 }
 
 /**
@@ -549,6 +551,8 @@ export function SkillPage({
   const deprecateSaid = state === "deprecated" ? "Undo deprecation" : "Deprecate…";
   const archiveSaid = state === "archived" ? "Unarchive" : "Archive…";
   const file = skillFileOf(skill);
+  // Its trigger tests' file, which Write trigger tests opens (#3925).
+  const tests = skillFileOf(skill, TRIGGER_TESTS_FILE);
   const cannotChange = cannotChangeSaid(skill);
 
   const actions = (
@@ -772,6 +776,27 @@ export function SkillPage({
                 changed={given}
                 onGrading={onGrading ?? (() => undefined)}
                 onGraded={() => setGraded((n) => n + 1)}
+                testsFile={
+                  "reason" in tests
+                    ? tests
+                    : onOpenView === undefined
+                      ? { reason: "This window cannot open a file." }
+                      : {
+                          write: () =>
+                            change(
+                              "The trigger tests were not started",
+                              () => commands.skillTriggerTestsStart(plane, level, name),
+                              () => {
+                                // Its file opens to write in, once the template is there.
+                                onOpenView(
+                                  pieceFileView(tests.place, tests.path),
+                                  pieceFileTitle(tests.place, tests.path),
+                                );
+                                return Promise.resolve(undefined);
+                              },
+                            ),
+                        }
+                }
               />
             )}
           </div>

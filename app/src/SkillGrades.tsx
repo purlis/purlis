@@ -8,7 +8,8 @@
  * - **The Grades tab** shows the latest grade as bars (with it, without it, its previous
  *   version), every grade with how it ended (Graded, Stopped, Stopped at its limit,
  *   Interrupted), and the grade-after-each-edit row, which says what each edit may spend before
- *   it is turned on. A skill with no trigger tests says what they are instead.
+ *   it is turned on. A skill with no trigger tests says what they are instead, and offers to
+ *   write them, from a template, or to ask a chat to (#3925).
  * - **Grade** opens the plan, a running grade shows its progress, and a grade's row opens its
  *   scorecard, from which each kept chat opens read-only: pages in the studio's history
  *   ({@link GradingAt}), with their own crumbs, never tabs of their own.
@@ -35,6 +36,7 @@ import {
   endedSaid,
 } from "./SkillGrade";
 import { useRead } from "./SkillPanels";
+import { askSkillChat } from "./skillDraftAsks";
 import type { GradingAt } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
 import { Button, ButtonRow } from "./ui/button/Button";
@@ -43,6 +45,13 @@ import { Meter, MeterGroup } from "./ui/meter/Meter";
 import { PanelSectionTitle } from "./ui/panel/Panel";
 import type { Crumb } from "./ui/panel/ViewBar";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
+
+/** A skill's trigger tests file, in its folder: skill-creator's, which a grade runs. */
+export const TRIGGER_TESTS_FILE = "evals/triggers.json";
+
+/** **Write trigger tests**, where the skill's page can: it starts the file from a template where
+ *  there is none, then opens it to write in. Else why it can't (a file outside the project). */
+export type TestsFile = { write: () => void } | { reason: string };
 
 /** How a grading page is gone to: a step of the studio's history, or said again in its place
  *  (a grade started from its plan, a scorecard once its grade ended). `undefined` is the skill's
@@ -131,6 +140,7 @@ export function GradesTab({
   changed,
   onGrading,
   onGraded,
+  testsFile,
 }: {
   plane: string;
   name: string;
@@ -139,6 +149,8 @@ export function GradesTab({
   onGrading: GradingGo;
   /** Told when a grade of this skill ends, so the page reads what it shows again. */
   onGraded?: () => void;
+  /** Write trigger tests, where the page offers it; none says nothing more. */
+  testsFile?: TestsFile;
 }) {
   const [again, setAgain] = useState(0);
   const graded = useRef(onGraded);
@@ -213,8 +225,29 @@ export function GradesTab({
         <EmptyState
           variant="panel"
           headline={`${name} has no trigger tests yet`}
-          body={`A grade has nothing to run until it has some. Trigger tests are prompts, each with whether ${name} should start for it, kept with the skill in evals/triggers.json; a grade runs each in chats with ${name} and without it, and counts the ones each chat got right.`}
+          body={`A grade has nothing to run until it has some. Trigger tests are prompts, each with whether ${name} should start for it, kept with the skill in ${TRIGGER_TESTS_FILE}; a grade runs each in chats with ${name} and without it, and counts the ones each chat got right.`}
           testid="skill-grades-no-tests"
+          action={
+            <ButtonRow>
+              <Button
+                variant="primary"
+                isDisabled={testsFile === undefined || "reason" in testsFile}
+                tooltip={
+                  testsFile !== undefined && "reason" in testsFile ? testsFile.reason : undefined
+                }
+                onPress={() => {
+                  if (testsFile !== undefined && "write" in testsFile) testsFile.write();
+                }}
+              >
+                Write trigger tests
+              </Button>
+              {/* A chat on the project's default profile, the core's prompt typed and not sent:
+                  as Ask a chat to draft a skill opens one, and its write comes back as a draft. */}
+              <Button onPress={() => askSkillChat({ plane, kind: "triggers", level, name })}>
+                Ask a chat to write them
+              </Button>
+            </ButtonRow>
+          }
         />
       )}
       {grades.refused !== undefined ? (

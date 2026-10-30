@@ -10,7 +10,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import { GradesTab, gradingCrumbTo, gradingPath, type GradingGo } from "./SkillGrades";
+import {
+  GradesTab,
+  gradingCrumbTo,
+  gradingPath,
+  type GradingGo,
+  type TestsFile,
+} from "./SkillGrades";
+import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
 import type { GradeRow } from "./bindings";
 
 afterEach(() => {
@@ -98,9 +105,18 @@ function core(answers: Record<string, unknown> = {}) {
 }
 
 /** The Grades tab of deploy, and where each press went. */
-function renderTab() {
+function renderTab(testsFile?: TestsFile) {
   const onGrading = vi.fn<GradingGo>();
-  render(<GradesTab plane="p" name="deploy" level={LEVEL} changed={0} onGrading={onGrading} />);
+  render(
+    <GradesTab
+      plane="p"
+      name="deploy"
+      level={LEVEL}
+      changed={0}
+      onGrading={onGrading}
+      testsFile={testsFile}
+    />,
+  );
   return onGrading;
 }
 
@@ -149,6 +165,34 @@ describe("a skill's Grades tab (S6)", () => {
     );
     // Its grades say it has none: no plan is asked (#3928).
     expect(asked.some((one) => one.cmd === "skill_grade_plan")).toBe(false);
+  });
+
+  it("offers a skill with no trigger tests to write them or to ask a chat to (#3925)", async () => {
+    core({ skill_grades: grades([], 0) });
+    const write = vi.fn();
+    renderTab({ write });
+    const none = await screen.findByTestId("skill-grades-no-tests");
+    fireEvent.click(within(none).getByRole("button", { name: "Write trigger tests" }));
+    expect(write).toHaveBeenCalledTimes(1);
+
+    const asks: SkillChatAsk[] = [];
+    const heard = (event: Event) => asks.push((event as CustomEvent<SkillChatAsk>).detail);
+    window.addEventListener(SKILL_CHAT, heard);
+    fireEvent.click(within(none).getByRole("button", { name: "Ask a chat to write them" }));
+    window.removeEventListener(SKILL_CHAT, heard);
+    expect(asks).toEqual([{ plane: "p", kind: "triggers", level: LEVEL, name: "deploy" }]);
+  });
+
+  it("holds Write trigger tests where the skill's file can't be opened, and says why", async () => {
+    core({ skill_grades: grades([], 0) });
+    renderTab({ reason: "Its file is outside the project." });
+    const none = await screen.findByTestId("skill-grades-no-tests");
+    const write = within(none).getByRole("button", { name: "Write trigger tests" });
+    expect(write.getAttribute("aria-disabled") === "true" || write.hasAttribute("disabled")).toBe(
+      true,
+    );
+    // A chat can still be asked: its write comes back as a draft.
+    expect(within(none).getByRole("button", { name: "Ask a chat to write them" })).toBeEnabled();
   });
 
   it("says why its trigger tests were not read, and does not call them missing", async () => {

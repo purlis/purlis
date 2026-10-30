@@ -373,6 +373,58 @@ describe("a skill's page", () => {
     expect(onOpenView).not.toHaveBeenCalled();
   });
 
+  it("offers a skill with no trigger tests to write them, and opens their file once started", async () => {
+    const asked = core([DEPLOY], {
+      skill_grades: () => ({
+        grades: [],
+        said: null,
+        tests: 0,
+        tests_refused: null,
+        running: null,
+      }),
+      skill_trigger_tests_start: () => ({ notes: [] }),
+    });
+    const onOpenView = vi.fn();
+    const user = userEvent.setup();
+    renderStudioAt(at(DEPLOY, AT_THE_ROOT, { tab: "grades" }), { onOpenView });
+
+    const none = await screen.findByTestId("skill-grades-no-tests");
+    await user.click(within(none).getByRole("button", { name: "Write trigger tests" }));
+    await waitFor(() =>
+      expect(onOpenView).toHaveBeenCalledWith(
+        { from: null, view: "plane-file", key: "skills/deploy/evals/triggers.json" },
+        "triggers.json · Plane root",
+      ),
+    );
+    expect(asked.find((one) => one.cmd === "skill_trigger_tests_start")?.args).toMatchObject({
+      name: "deploy",
+      level: { at: "project", local: false },
+    });
+  });
+
+  it("says why trigger tests were not started, and opens nothing", async () => {
+    core([DEPLOY], {
+      skill_grades: () => ({
+        grades: [],
+        said: null,
+        tests: 0,
+        tests_refused: null,
+        running: null,
+      }),
+      skill_trigger_tests_start: () => {
+        throw "This project is read-only here, so nothing was written.";
+      },
+    });
+    const onOpenView = vi.fn();
+    const user = userEvent.setup();
+    renderStudioAt(at(DEPLOY, AT_THE_ROOT, { tab: "grades" }), { onOpenView });
+
+    const none = await screen.findByTestId("skill-grades-no-tests");
+    await user.click(within(none).getByRole("button", { name: "Write trigger tests" }));
+    await screen.findByText("This project is read-only here, so nothing was written.");
+    expect(onOpenView).not.toHaveBeenCalled();
+  });
+
   it("draws an extension's panel on Overview, under its title and the extension's name", async () => {
     core([DEPLOY], {
       skill_panels: () => [

@@ -994,6 +994,12 @@ export const commands = {
 	/**  The text of a skill's `SKILL.md`, which the light editor opens. */
 	skillText: (plane: PlaneId, level: SkillLevel, name: string) => typedError<string, string>(__TAURI_INVOKE("skill_text", { plane, level, name })),
 	skillSave: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **Write trigger tests** (#3925): starts the skill's trigger tests file from a template where
+	 *  it has none, committed as one change ([`verbs::start_trigger_tests`]). The window then opens
+	 *  the file to write in.
+	 */
+	skillTriggerTestsStart: (plane: PlaneId, level: SkillLevel, name: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_trigger_tests_start", { plane, level, name })),
 	skillRename: __WINDOW_ONLY_RESULT,
 	skillCopy: __WINDOW_ONLY_RESULT,
 	/**  Whether moving a skill from `from` to `to` asks for a grant: it becomes a project skill. */
@@ -1044,6 +1050,13 @@ export const commands = {
 	skillDraftAccept: __WINDOW_ONLY_RESULT,
 	skillDraftReject: __WINDOW_ONLY_RESULT,
 	skillDraftChat: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **"Ask a chat to write them"** (#3925): a chat where `level`'s skills are reached from, on the
+	 *  project's default profile, with the core's prompt for the trigger tests of the skill `name`
+	 *  typed and never sent ([`drafts::asking_for_trigger_tests`]). It starts as "Ask a chat to draft
+	 *  a skill" does, through the same start; its write comes back as a draft.
+	 */
+	skillTriggerTestsChat: (plane: PlaneId, level: SkillLevel, name: string, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_trigger_tests_chat", { plane, level, name, columns, rows })),
 	skillDraftTry: __WINDOW_ONLY_RESULT,
 	skillDraftRedo: __WINDOW_ONLY_RESULT,
 	skillDraftRedoIn: __WINDOW_ONLY_RESULT,

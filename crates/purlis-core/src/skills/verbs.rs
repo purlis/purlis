@@ -642,6 +642,41 @@ pub fn edit(
     Ok(folder)
 }
 
+/// **Starts the trigger tests of the skill named `name` at `level`** (#3925): its
+/// `evals/triggers.json` from a short template ([`purlis_skills::grade::triggers_template`]: one
+/// query it should start on, one near miss it should leave alone), where it has none, committed
+/// alone. A file it has already, read or not, is left as it is, and that is said. The answer is
+/// the file, relative to the plane, for the person to write in.
+pub fn start_trigger_tests(cx: &mut Ctx<'_>, level: &Level, name: &str) -> Result<String, String> {
+    use purlis_skills::grade;
+    let plane = cx.plane;
+    crate::settings::writable(plane)?;
+    let folder = find(plane, level, name)?;
+    let folder_rel = rel(plane, &folder);
+    let file = format!("{folder_rel}/{}", grade::triggers_path());
+    let there = grade::fixtures_of(plane, Path::new(&folder_rel), name).triggers;
+    if !matches!(there, grade::Read::Absent) {
+        (cx.say)(Say::Info(
+            format!("{name} has a trigger tests file already, so it was left as it is.").into(),
+        ));
+        return Ok(file);
+    }
+    write(
+        plane,
+        &file,
+        &format!("{name}'s trigger tests"),
+        None,
+        &grade::triggers_template(name),
+        // Its `evals/` folder may be made, never the skill's own.
+        folder_rel.split('/').count() + 1,
+    )?;
+    cx.done(format!(
+        "{name}'s trigger tests are started in {file}, from a template"
+    ));
+    cx.commit(std::slice::from_ref(&file), &format!("skill tests {name}"));
+    Ok(file)
+}
+
 /// **Renames the skill named `old` at `level` to `new`** (#2770, decision 14): its `SKILL.md`'s
 /// `name`, its folder and the file beside it, and every place that names it: each persona's
 /// `skills:` list and each reference in a persona's or a skill's text (`skills:<name>`), and, for
