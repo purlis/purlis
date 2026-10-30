@@ -8379,7 +8379,14 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
             },
         );
     }
-    assert_eq!(chats.skills_changed_while_on(), [4], "the flag is on now");
+    let sessions = |chats: &Chats| -> Vec<u32> {
+        chats
+            .skills_changed_while_on()
+            .into_iter()
+            .map(|(session, _)| session)
+            .collect()
+    };
+    assert_eq!(sessions(&chats), [4], "the flag is on now");
     // Use skill… is told what its start read, never a constant.
     assert!(chats.skills_of(1).expect("open").plane_skills);
     assert!(!chats.skills_of(4).expect("open").plane_skills);
@@ -8387,10 +8394,19 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
     // A Codex chat reads the SKILL.md purlis wrote for it at its start (SK-8), so an edit to a
     // body waits for a restart there too.
     skill("deploy", "two");
-    assert_eq!(chats.skills_changed_while_on(), [1, 2, 4]);
+    assert_eq!(sessions(&chats), [1, 2, 4]);
 
     skill("triage", "one");
-    assert_eq!(chats.skills_changed_while_on(), [1, 2, 4]);
+    assert_eq!(sessions(&chats), [1, 2, 4]);
+    // And its Skills view is told what changed, by name (#3694).
+    let changed = chats.skills_changed_while_on();
+    let (_, first) = changed
+        .iter()
+        .find(|(session, _)| *session == 1)
+        .expect("1");
+    assert_eq!(first.added, ["triage"]);
+    assert_eq!(first.edited, ["deploy"]);
+    assert!(first.gone.is_empty());
 }
 
 /// #2019: a chat serving on a port is not told its sandbox is older once its own door listens

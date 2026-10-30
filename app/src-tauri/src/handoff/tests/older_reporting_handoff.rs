@@ -103,7 +103,7 @@ fn a_chat_an_older_build_handed_off_owing_a_report_is_its_askers_task_after_an_u
     let Answer::Task(listed) = asks(&held, &again, steward, What::List) else {
         panic!("a list")
     };
-    let Answered::Listed { rows } = *listed else {
+    let Answered::Listed { rows, .. } = *listed else {
         panic!("rows, not {listed:?}")
     };
     assert_eq!(

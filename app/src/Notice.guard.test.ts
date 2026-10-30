@@ -90,7 +90,7 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 2,
     why:
       ACTION +
-      ". Add a Docker pool's refusal (#2679), and a cluster pool's (#3292), each in the core's " +
+      ". Add a pool's refusal for a Docker pool (#2679), and for a cluster pool (#3292), each in the core's " +
       "words, under the form it refused; the form, kept as it was typed, and Add pool or Check " +
       "its key are the way on",
   },
@@ -517,17 +517,11 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "it moved to: what the last press answered, not a standing line",
   },
   "UseSkill.tsx": {
-    count: 4,
+    count: 1,
     why:
       ACTION +
-      ", drawn once under the picker or the arguments form, one shown at a time (#2775). And the " +
-      "dialog's warning that the chat's set is past its skill budget, read as it opens: about " +
-      "the chat the dialog is for, gone with the dialog. And its line that the chat's workspace " +
-      "and persona pin past the most it reads together, with a way to each one's studio (#3391): " +
-      "about the same chat, read as the dialog opens and gone with it. And its line that the " +
-      "chat's router fell back on the built-in router at its start (SK-15b): what that start " +
-      "did, read as the dialog opens and gone with it, with nothing to press: the next chat " +
-      "started there asks the router again",
+      ", drawn once under the picker or the arguments form, one shown at a time (#2775). Its " +
+      "budget, pins and routing lines are the Skills view's now (S8, #3694)",
   },
   "VaultSignIn.tsx": {
     count: 5,

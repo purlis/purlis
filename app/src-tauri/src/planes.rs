@@ -385,6 +385,13 @@ pub struct PlaneUpdated {
     /// Whether its skills changed since it started, in a way its harness does not take in by
     /// itself (#2770): its pane offers a restart on the same conversation.
     pub skills: bool,
+    /// The skills a chat started now would get that it lacks, by name (#3694): what its Skills
+    /// view marks as new, once its pane's What changed is pressed.
+    pub skills_added: Vec<String>,
+    /// The skills it has that a chat started now would not get, by name.
+    pub skills_gone: Vec<String>,
+    /// The skills it has that changed since it started, by name.
+    pub skills_edited: Vec<String>,
 }
 
 /// Why a task is not started fresh (#1489): what the window's question and the row say. Said
@@ -788,17 +795,22 @@ impl Held {
             .into_iter()
             .map(|open| (open.session, open.persona))
             .collect();
-        let skills = self.chats.skills_changed();
+        let skills: HashMap<u32, purlis_core::skills::SkillsChanged> =
+            self.chats.skills_changed().into_iter().collect();
         let mut updated: Vec<PlaneUpdated> = lock_started(&self.started_on)
             .iter()
             .filter_map(|(session, then)| {
                 let persona = personas.get(session).cloned().flatten();
                 let files = now.changed_since(then, persona.as_deref());
-                let skills = skills.contains(session);
-                (!files.is_empty() || skills).then_some(PlaneUpdated {
+                let changed = skills.get(session);
+                let changed_skills = changed.cloned().unwrap_or_default();
+                (!files.is_empty() || changed.is_some()).then_some(PlaneUpdated {
                     session: *session,
                     files,
-                    skills,
+                    skills: changed.is_some(),
+                    skills_added: changed_skills.added,
+                    skills_gone: changed_skills.gone,
+                    skills_edited: changed_skills.edited,
                 })
             })
             .collect();
@@ -1044,6 +1056,11 @@ impl Held {
             self.chats.owes(session, purlis_core::reopen::Owed::Failed);
         }
         let reported = handoff::reported_by(self, session);
+        // **What it queued while the app did not answer is delivered first** (#3902), while the
+        // app still knows the chat and its tasks; what cannot be is kept on the dispatch record
+        // it is about, and the spool clears its folder as it ends. A chat started again in its
+        // own place (`in_its_place`) goes on, and keeps its queue.
+        crate::dispatched::sender_ending(self, session);
         let closed = self.end_chat(session);
         if let Some(me) = self.me.get().and_then(std::sync::Weak::upgrade) {
             handoff::close_reported(&me, reported, deciding);
@@ -1298,6 +1315,7 @@ impl Held {
         // A chat the person is stopping is not started again (#1448): it is ended, as the stop
         // would have ended it.
         if self.stopping.is_stopping(session) {
+            crate::dispatched::sender_ending(self, session);
             if let Err(ended) = self.end_chat(session) {
                 tracing::warn!("purlis: chat {session} did not end cleanly ({ended})");
             }
@@ -1331,6 +1349,7 @@ impl Held {
                 // Kept with why among the chats that would not start, so a window that opens
                 // later still says so.
                 self.chats.keep_aside(session, &said);
+                crate::dispatched::sender_ending(self, session);
                 if let Err(ended) = self.end_chat(session) {
                     tracing::warn!("purlis: chat {session} did not end cleanly ({ended})");
                 }
@@ -3119,6 +3138,23 @@ impl Planes {
         held.hooks
             .skill_runs()
             .tell_to(Arc::clone(&self.skill_runs));
+        // And the tokens of its open run (SK-26, #3694): what its harness last said the chat
+        // spent, read from the same record a run's recorded tokens are. Weak for the handoff's
+        // reason.
+        held.hooks.skill_runs().count_tokens_by({
+            let held = Arc::downgrade(&held);
+            Arc::new(move |chat| {
+                let held = held.upgrade()?;
+                let id = held.chats().chat_at(chat)?.id?;
+                let spent = purlis_core::usage::spent(held.root(), &id)?;
+                (spent.input_tokens.is_some() || spent.output_tokens.is_some()).then(|| {
+                    spent
+                        .input_tokens
+                        .unwrap_or_default()
+                        .saturating_add(spent.output_tokens.unwrap_or_default())
+                })
+            })
+        });
         // A sandbox block a chat's hook found (#1338): kept in this machine's network record
         // with the chat it came from (#1662), then shown on the chat's tab. Of what the line
         // named, only a refused host is kept.

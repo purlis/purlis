@@ -397,6 +397,30 @@ fn another_command_in_the_same_call_is_a_rider_before_or_after_and_is_named() {
     }
 }
 
+/// `tell --all` and `note --ack <n>` (#3904) are spellings of the pre-allowed `tell` and
+/// `note`, and alone in their call carry no rider, as every other spelling of them.
+#[test]
+fn telling_every_task_and_acknowledging_are_pre_allowed_as_tell_and_note_are() {
+    let pre_allowed = crate::harness::claude::DISPATCH_TASK_ALLOW;
+    for cmd in [
+        "purlis dispatch tell --all \"no PRs from builders\"",
+        "purlis dispatch note --ack 7",
+        "purlis dispatch note --ack 7 \"read it; switching now\"",
+    ] {
+        assert!(
+            pre_allowed.iter().any(|rule| {
+                let glob = rule
+                    .strip_prefix("Bash(")
+                    .and_then(|rule| rule.strip_suffix(')'))
+                    .expect("a Bash rule");
+                crate::pypath::fnmatch(cmd, glob)
+            }),
+            "{cmd:?} is not pre-allowed"
+        );
+        assert_eq!(rider(cmd), None, "{cmd:?}");
+    }
+}
+
 /// What a chat asks after a task it dispatched is pre-allowed by name too
 /// (`harness::claude::DISPATCH_TASK_ALLOW`), so each is held to the same rule: alone in
 /// its call it has no rider, and beside another command one that writes is refused and one
@@ -728,6 +752,37 @@ fn a_brokered_update_is_refused_where_it_shares_its_call() {
          purlis lets an update the app makes for a chat run without your harness asking \
          only alone in its call, so this call is refused, and nobody was asked. Run the \
          update in a call of its own, and the other command in another."
+    );
+}
+
+#[test]
+fn a_brokered_removal_is_refused_where_it_shares_its_call() {
+    // #3879: `purlis worktree remove` is pre-allowed by its spelling, on the commit's terms.
+    assert_eq!(
+        refused("purlis worktree remove widget p1", the_chat()),
+        None
+    );
+    // Forced, it is refused here in the hook too, whatever the chat's environment says.
+    for cmd in [
+        "purlis worktree remove widget p1 --force",
+        "purlis worktree remove --force widget p1",
+        "env -C x purlis worktree remove widget p1 --force --delete-branch",
+    ] {
+        let said = refused(cmd, the_chat()).unwrap_or_else(|| panic!("{cmd:?} is refused"));
+        assert!(said.contains("only without --force"), "{said}");
+    }
+    assert_eq!(
+        refused("purlis worktree list --force-of-habit", the_chat()),
+        None
+    );
+    let said =
+        refused("purlis worktree remove widget p1 && rm -rf x", the_chat()).expect("refused");
+    assert_eq!(
+        said,
+        "this call runs `purlis worktree remove` beside another command (`rm -rf x`). \
+         purlis lets a removal the app makes for a chat run without your harness asking \
+         only alone in its call, so this call is refused, and nobody was asked. Run the \
+         removal in a call of its own, and the other command in another."
     );
 }
 

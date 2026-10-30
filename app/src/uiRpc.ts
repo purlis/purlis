@@ -1481,6 +1481,7 @@ export const commands = {
 	removeDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
+	runnerImageOfThisVersion: __WINDOW_ONLY_RESULT,
 	clusterContexts: __WINDOW_ONLY_RESULT,
 	clusterPoolKey: __WINDOW_ONLY_RESULT,
 	addClusterPool: __WINDOW_ONLY_RESULT,
@@ -7048,6 +7049,18 @@ export type OpenRun = {
 	id: string,
 	/**  Tool calls made inside it so far, each once. */
 	tool_calls: number,
+	/**
+	 *  The tokens the chat has spent since it opened, as its harness last said them (SK-26,
+	 *  #3694): what the eventlog records the run's tokens from, live. `None` where the harness
+	 *  says none, so the chip shows no zero. A `u32`, as the window reads it whole: a run past
+	 *  four billion tokens says the most it can.
+	 */
+	tokens: number | null,
+	/**
+	 *  The level of the copy it is of, as a person reads it (`persona`, `local workspace`), where
+	 *  its start knew it: the scope its chip opens the Skill studio at (#3694).
+	 */
+	level: string | null,
 };
 
 /**
@@ -7958,6 +7971,15 @@ export type PlaneUpdated = {
 	 *  itself (#2770): its pane offers a restart on the same conversation.
 	 */
 	skills: boolean,
+	/**
+	 *  The skills a chat started now would get that it lacks, by name (#3694): what its Skills
+	 *  view marks as new, once its pane's What changed is pressed.
+	 */
+	skills_added: string[],
+	/**  The skills it has that a chat started now would not get, by name. */
+	skills_gone: string[],
+	/**  The skills it has that changed since it started, by name. */
+	skills_edited: string[],
 };
 
 /**  A pool as the person typed it: each limit left empty takes the default. */
@@ -9366,6 +9388,26 @@ export type RunnerBranch = {
 	 */
 	ahead: number,
 };
+
+/**
+ *  **The runner image a new pool is offered** (the person's ruling of 2026-10-30), by the
+ *  release that names it.
+ */
+export type RunnerImageOffered = 
+/**  This version's own, as its release names it. */
+{ state: "ours"; image: string } | 
+/**
+ *  A newer version's, as the channel's newest release names it: an update of purlis to
+ *  `version` is waiting.
+ */
+{ state: "newer"; image: string; version: string } | 
+/**
+ *  None: this version's release names none, as a release whose runner image was not built
+ *  does.
+ */
+{ state: "none_named" } | 
+/**  None: a local build, with no update channel, names none. */
+{ state: "local_build" };
 
 /**  How the window reads what a runner records (#3393). */
 export type RunnerLogRead = 

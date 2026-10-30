@@ -22,13 +22,25 @@
 //
 //   node tools/story-failures.mjs pictures-alone <report> [<report> ...]
 //
+//   The stories run in shards (#4013), each a browser and a part of its story files. A shard
+//   whose pictures alone failed asks which to draw again: each story file and cell whose
+//   picture failed, `<file>\t<cell>` a line (`picturesToDraw`), and nothing, failing, otherwise:
+//
+//   node tools/story-failures.mjs pictures-to-draw <report>
+//
+//   And the check asks whether every shard reported (`shardProblems`) and, given the directory
+//   the shards' drawings were put in, whether each shard that failed drew (`undrawn`); it prints
+//   each problem and fails on any:
+//
+//   node tools/story-failures.mjs shards <reports> [<drawn>]
+//
 // A story's annotation names the line of the story file it failed at, from the frames Vitest
 // maps back to their sources, so it shows on the pull request's diff (`placeOf`).
 //
 // Every text an annotation carries is escaped as the runner reads a workflow command, so it
 // stays one annotation on one line.
-import { readFileSync, writeFileSync } from "node:fs";
-import { isAbsolute, relative } from "node:path";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
@@ -108,6 +120,64 @@ export function picturesAlone(reports) {
         errors.length > 0 && errors.every((one) => gateOf(one) === "screenshot"),
     )
   );
+}
+
+/** The browsers the stories run in, each in its shards (`stories.yml`). */
+export const BROWSERS = ["chromium", "webkit"];
+
+/**
+ * **The pictures a shard draws again**: each story file and cell whose picture failed in its
+ * `report`, once each, when a picture is all that failed there (`picturesAlone`); `undefined`
+ * otherwise, or when a failure names no cell. A story file's cells can fall in different shards
+ * (Vitest shards a file in each project apart), so a shard keeps only its own cells' pictures, and
+ * no two shards keep the same one.
+ */
+export function picturesToDraw(report) {
+  if (!picturesAlone([report])) return undefined;
+  const pairs = new Map();
+  for (const { file, cell } of report.failures) {
+    if (typeof cell !== "string" || cell === "") return undefined;
+    pairs.set(`${file}\n${cell}`, { file, cell });
+  }
+  return [...pairs.values()];
+}
+
+/** A shard's report's file name, `report-<browser>-<shard>-of-<shards>.json`, read; `undefined`
+ *  for any other name. */
+export function shardOf(fileName) {
+  const found = /^report-([a-z]+)-(\d+)-of-(\d+)\.json$/.exec(fileName);
+  if (!found) return undefined;
+  const [, browser, shard, of] = found;
+  if (Number(shard) < 1 || Number(shard) > Number(of)) return undefined;
+  return { browser, shard: Number(shard), of: Number(of), name: `${browser}-${shard}-of-${of}` };
+}
+
+/** What is missing of the shards' reports, by their file names: every browser in `BROWSERS`
+ *  wrote one from each shard, and its shards agree on how many there are. */
+export function shardProblems(fileNames) {
+  const shards = fileNames.map(shardOf).filter(Boolean);
+  return BROWSERS.flatMap((browser) => {
+    const its = shards.filter((one) => one.browser === browser);
+    if (its.length === 0) return [`${browser}: no shard wrote a report`];
+    const counts = [...new Set(its.map(({ of }) => of))].sort((a, b) => a - b);
+    if (counts.length > 1)
+      return [`${browser}: its shards disagree on how many there are (${counts.join(", ")})`];
+    const [of] = counts;
+    const have = new Set(its.map(({ shard }) => shard));
+    return Array.from({ length: of }, (_, at) => at + 1)
+      .filter((shard) => !have.has(shard))
+      .map((shard) => `${browser} ${shard} of ${of} wrote no report`);
+  });
+}
+
+/** The shards, each `{ name, report }`, whose stories did not pass and that left no
+ *  `drew-<name>` among `markers`: a report that does not say it passed counts as failed. */
+export function undrawn(shards, markers) {
+  const drew = new Set(markers);
+  return shards
+    .filter(({ report }) => report?.failed !== false)
+    .filter(({ name }) => !drew.has(`drew-${name}`))
+    .map(({ name }) => name);
 }
 
 /** The first line of why: the message's first line, and the line after a matcher's own. */
@@ -293,6 +363,44 @@ if (
     reports.flatMap((report) => report.failures.map(({ file }) => file)),
   );
   for (const file of files) console.log(file);
+} else if (
+  process.argv[1] === fileURLToPath(import.meta.url) &&
+  process.argv[2] === "pictures-to-draw"
+) {
+  let pairs;
+  try {
+    pairs = picturesToDraw(JSON.parse(readFileSync(process.argv[3], "utf8")));
+  } catch (error) {
+    console.error(`a stories report could not be read: ${error.message}`);
+    process.exit(1);
+  }
+  if (!pairs || pairs.length === 0) process.exit(1);
+  for (const { file, cell } of pairs) console.log(`${file}\t${cell}`);
+} else if (
+  process.argv[1] === fileURLToPath(import.meta.url) &&
+  process.argv[2] === "shards"
+) {
+  const [reports, drawn] = process.argv.slice(3);
+  const names = existsSync(reports) ? readdirSync(reports) : [];
+  const found = shardProblems(names);
+  if (drawn !== undefined && found.length === 0) {
+    const shards = names.flatMap((fileName) => {
+      const shard = shardOf(fileName);
+      if (!shard) return [];
+      let report;
+      try {
+        report = JSON.parse(readFileSync(join(reports, fileName), "utf8"));
+      } catch {
+        report = undefined;
+      }
+      return [{ name: shard.name, report }];
+    });
+    const markers = existsSync(drawn) ? readdirSync(drawn) : [];
+    for (const name of undrawn(shards, markers))
+      found.push(`${name} failed and drew no pictures`);
+  }
+  for (const line of found) console.log(line);
+  if (found.length > 0) process.exit(1);
 } else if (process.argv[1] === fileURLToPath(import.meta.url)) {
   // `<browser> <report>`, once for each browser that ran.
   const given = process.argv.slice(2);

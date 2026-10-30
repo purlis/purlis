@@ -9,6 +9,7 @@ import {
   closeTheViewTabsOpenedSince,
   focusWorkspace,
   runFromThePalette,
+  shownButton,
   tabNames,
 } from "../reach.js";
 import { studioSkill } from "../studio.js";
@@ -73,7 +74,7 @@ describe("a workspace's skills in the Skill studio", function () {
       timeoutMsg: "the Skills summary never counted the skill left out",
     });
 
-    const open = await $("button=Open Skill studio");
+    const open = await shownButton("Open Skill studio");
     await open.waitForClickable({ timeout: 10_000 });
     await open.click();
 

@@ -41,8 +41,27 @@ export function sameRun(one: OpenRun | undefined, other: OpenRun | undefined): b
       one.id === other.id &&
       one.skill === other.skill &&
       one.name === other.name &&
-      one.tool_calls === other.tool_calls)
+      one.tool_calls === other.tool_calls &&
+      one.tokens === other.tokens &&
+      one.level === other.level)
   );
+}
+
+/** **A run's tokens in a few characters** (SK-26, #3694), for its chip: `850`, `1.2k`, `12k`,
+ *  `1.4M`. */
+export function tokensShort(tokens: number): string {
+  const whole = Math.max(0, Math.round(tokens));
+  const trimmed = (n: number) => n.toFixed(1).replace(/\.0$/, "");
+  if (whole < 1000) return String(whole);
+  if (whole < 10_000) return `${trimmed(whole / 1000)}k`;
+  if (whole < 999_500) return `${Math.round(whole / 1000)}k`;
+  return `${trimmed(whole / 1_000_000)}M`;
+}
+
+/** **Whether a run's skill is a persona's own**, by the level the core says it is of (#3694):
+ *  the copy its chip opens on that persona's chats, which a workspace's scope does not list. */
+export function aPersonasOwn(level: string | null): boolean {
+  return level === "persona" || level === "local persona";
 }
 
 type Known = { readonly plane?: PlaneId; readonly runs: OpenRuns };

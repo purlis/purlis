@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { renderHook, waitFor } from "@testing-library/react";
 import {
+  SHOW_THIS_CHATS_SKILLS,
   SkillBudgetsHere,
   SkillsChip,
   UseSkill,
@@ -18,6 +19,7 @@ import {
   warnsSaid,
 } from "./UseSkill";
 import type { ChatSkill, ChatSkills, SkillBudget } from "./bindings";
+import { CHAT_SKILLS_ASKED, type ChatSkillsAsk } from "./chatSkillsAsk";
 
 afterEach(() => {
   cleanup();
@@ -82,22 +84,15 @@ function skills(listed: ChatSkill[], budget: SkillBudget | null = BUDGET): ChatS
   };
 }
 
-function opened(listed: ChatSkills | undefined, onUse = vi.fn(), onOpenStudio = vi.fn()) {
+function opened(listed: ChatSkills | undefined, onUse = vi.fn()) {
   render(
-    <UseSkill
-      chat="steward 3"
-      skills={listed}
-      busy={false}
-      onUse={onUse}
-      onCancel={vi.fn()}
-      onOpenStudio={onOpenStudio}
-    />,
+    <UseSkill chat="steward 3" skills={listed} busy={false} onUse={onUse} onCancel={vi.fn()} />,
   );
   return onUse;
 }
 
 describe("Use skill…", () => {
-  it("lists exactly the chat's skills, the manual-only ones marked, with its budget above", () => {
+  it("lists exactly the chat's skills, built-in ones last, the manual-only ones marked, and nothing above (S8)", () => {
     opened(
       skills([
         skill("deploy"),
@@ -108,19 +103,18 @@ describe("Use skill…", () => {
     const rows = screen.getAllByTestId("use-skill-row");
     expect(rows.map((row) => row.querySelector(".use-skill-name")?.textContent)).toEqual([
       "deploy",
-      "handoff",
       "release",
+      "handoff",
     ]);
-    expect(within(rows[2]).getByText("· manual only")).toBeTruthy();
+    expect(within(rows[1]).getByText("· manual only")).toBeTruthy();
     expect(within(rows[0]).queryByText("· manual only")).toBeNull();
     // Each skill is named by its name alone, and its level is its description (#2911).
     expect(screen.getByRole("option", { name: "deploy" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "release" })).toHaveAccessibleDescription(
       /manual only/,
     );
-    expect(screen.getByTestId("use-skill-budget").textContent).toBe(
-      "3 skills of 30 · 1,234 of 6,000 characters · 1 manual-only skill free",
-    );
+    // Its budget, routing and pins are the Skills view's now: none is said here.
+    expect(screen.queryByTestId("use-skill-budget")).toBeNull();
     expect(screen.queryByRole("status")).toBeNull();
   });
 
@@ -168,9 +162,22 @@ describe("Use skill…", () => {
     expect(screen.getByText("No skill is called “nothing like it”.")).toBeTruthy();
   });
 
-  it("draws no filter over a list of seven or fewer", () => {
-    opened(skills([skill("deploy"), skill("review")]));
-    expect(screen.queryByRole("searchbox")).toBeNull();
+  it("is a quick picker: its box takes the keys on any list, and Enter takes the first match", () => {
+    const onUse = opened(skills([skill("deploy"), skill("review"), skill("triage")]));
+    const filter = screen.getByRole("searchbox", { name: "Filter skills" });
+    expect(document.activeElement).toBe(filter);
+    fireEvent.change(filter, { target: { value: "rev" } });
+    expect(screen.getAllByTestId("use-skill-row")).toHaveLength(1);
+    fireEvent.keyDown(filter, { key: "Enter" });
+    expect(onUse).toHaveBeenCalledWith("review", []);
+  });
+
+  it("asks a skill's arguments in a second step when Enter takes it", () => {
+    const onUse = opened(skills([skill("review", { arguments: ["pr"] }), skill("deploy")]));
+    fireEvent.keyDown(screen.getByRole("searchbox", { name: "Filter skills" }), { key: "Enter" });
+    expect(onUse).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading").textContent).toBe("Use review");
+    expect(screen.getAllByRole("textbox")).toHaveLength(1);
   });
 
   it("warns of a set near or past the budget, saying which part", () => {
@@ -179,63 +186,34 @@ describe("Use skill…", () => {
       /This chat's skills are near or past purlis's skill budget/,
     );
     expect(warnsSaid({ ...BUDGET, warns: "chars" })).toMatch(/descriptions are near or past/);
-    opened(skills([skill("deploy")], { ...BUDGET, warns: "both" }));
-    expect(screen.getByRole("status").textContent).toMatch(
+    expect(warnsSaid({ ...BUDGET, warns: "both" })).toMatch(
       /This chat's skills and their descriptions are near or past/,
     );
+    // Said in the Skills view's Needs you (S8), not in the picker.
+    opened(skills([skill("deploy")], { ...BUDGET, warns: "both" }));
+    expect(screen.queryByRole("status")).toBeNull();
     expect(budgetSaid({ ...BUDGET, manual: 0 })).toBe("3 skills of 30 · 1,234 of 6,000 characters");
     expect(budgetShort(BUDGET)).toBe("3 of 30 skills");
     expect(budgetShort({ ...BUDGET, warns: "chars" })).toBe("3 of 30 skills, near the budget");
     expect(budgetShort({ ...BUDGET, skills: 1, most_skills: 1 })).toBe("1 of 1 skill");
   });
 
-  it("says a workspace's and a persona's pins pass 64 together, each studio one press away (#3391)", () => {
+  it("says a workspace's and a persona's pins pass 64 together, in the Skills view and not the picker (#3391)", () => {
     expect(pinsTogetherSaid(BUDGET)).toBeUndefined();
     expect(pinsTogetherSaid(TOGETHER)).toBe(
       "This chat reads none of its pins: workspace ops pins 40 skills and persona reviewer pins 30 skills, more than the 64 a chat reads together. Unpin some in Skill studio · ops or Skill studio · reviewer.",
     );
-    const openStudio = vi.fn();
-    opened(skills([skill("deploy")], TOGETHER), vi.fn(), openStudio);
-    const line = screen.getByTestId("use-skill-pins-together");
-    expect(line.getAttribute("role")).toBe("status");
-    expect(line.textContent).toMatch(
-      /workspace ops pins 40 skills and persona reviewer pins 30 skills/,
-    );
-    fireEvent.click(within(line).getByRole("button", { name: "Open Skill studio · reviewer" }));
-    expect(openStudio).toHaveBeenCalledWith({ at: "persona", name: "reviewer" });
-    fireEvent.click(within(line).getByRole("button", { name: "Open Skill studio · ops" }));
-    expect(openStudio).toHaveBeenLastCalledWith({ at: "workspace", name: "ops" });
+    opened(skills([skill("deploy")], TOGETHER));
+    expect(screen.queryByTestId("use-skill-pins-together")).toBeNull();
   });
 
-  it("says how the chat's router extension did at its start, and why it fell back (SK-15b)", () => {
+  it("says nothing of the chat's router: that is the Skills view's (S8)", () => {
     opened({
       ...skills([skill("deploy")]),
-      routing: {
-        router: "relevance",
-        ms: 34,
-        fell_back: false,
-        said: "Routed by the router relevance in 34 ms.",
-      },
+      routing: { router: "relevance", ms: 100, fell_back: true, said: "It fell back." },
     });
-    const taken = screen.getByTestId("use-skill-routing");
-    expect(taken.textContent).toBe("Routed by the router relevance in 34 ms.");
-    expect(taken.getAttribute("role")).toBeNull();
-    cleanup();
-    opened({
-      ...skills([skill("deploy")]),
-      routing: {
-        router: "relevance",
-        ms: 100,
-        fell_back: true,
-        said: "The router relevance did not answer within 100 ms, so this chat lists what the built-in router shows.",
-      },
-    });
-    const fell = screen.getByTestId("use-skill-routing");
-    expect(fell.getAttribute("role")).toBe("status");
-    expect(fell.textContent).toMatch(/did not answer within 100 ms/);
-    cleanup();
-    opened(skills([skill("deploy")]));
     expect(screen.queryByTestId("use-skill-routing")).toBeNull();
+    expect(screen.queryByText("It fell back.")).toBeNull();
   });
 
   it("says how many skills the router hid behind the index skill, and marks each (SK-15)", () => {
@@ -313,7 +291,7 @@ describe("Use skill…", () => {
     expect(screen.getByTestId("use-skill-none").textContent).toBe(goose);
     cleanup();
     opened(skills([]));
-    expect(screen.getByTestId("use-skill-none").textContent).toMatch(/Open Skill studio/);
+    expect(screen.getByTestId("use-skill-none").textContent).toMatch(/skills chip shows why/);
   });
 });
 
@@ -325,30 +303,39 @@ describe("the Skills chip on a chat's pane", () => {
     });
   }
 
-  it("shows the chat's skills at a glance and opens Use skill… for it", async () => {
+  it("shows the chat's skills at a glance and opens the Skills view on them, not Use skill… (S8)", async () => {
     studioOn();
     const open = vi.fn();
-    render(
-      <UseSkillOpener value={open}>
-        <SkillBudgetsHere.Provider value={{ 4: BUDGET }}>
-          <SkillsChip session={4} />
-          <SkillsChip session={5} />
-        </SkillBudgetsHere.Provider>
-      </UseSkillOpener>,
-    );
-    const chip = await screen.findByTestId("pane-skills");
-    expect(screen.getAllByTestId("pane-skills")).toHaveLength(1);
-    expect(chip.textContent).toBe("4 skills");
-    expect(chip.hasAttribute("data-over")).toBe(false);
-    fireEvent.click(chip);
-    expect(open).toHaveBeenCalledWith(4);
+    const ran: ChatSkillsAsk[] = [];
+    const hear = (event: Event) => ran.push((event as CustomEvent<ChatSkillsAsk>).detail);
+    window.addEventListener(CHAT_SKILLS_ASKED, hear);
+    try {
+      render(
+        <UseSkillOpener value={open}>
+          <SkillBudgetsHere.Provider value={{ 4: BUDGET }}>
+            <SkillsChip plane="p" session={4} />
+            <SkillsChip plane="p" session={5} />
+          </SkillBudgetsHere.Provider>
+        </UseSkillOpener>,
+      );
+      const chip = await screen.findByTestId("pane-skills");
+      expect(screen.getAllByTestId("pane-skills")).toHaveLength(1);
+      expect(chip.textContent).toBe("4 skills");
+      expect(chip.hasAttribute("data-over")).toBe(false);
+      expect(chip.getAttribute("aria-label")).toBe(`4 skills. ${SHOW_THIS_CHATS_SKILLS}.`);
+      fireEvent.click(chip);
+      expect(ran).toEqual([{ plane: "p", session: 4 }]);
+      expect(open).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(CHAT_SKILLS_ASKED, hear);
+    }
   });
 
   it("is in the warning look, saying why, for a set near or past the budget", async () => {
     studioOn();
     render(
       <SkillBudgetsHere.Provider value={{ 4: { ...BUDGET, warns: "chars" } }}>
-        <SkillsChip session={4} />
+        <SkillsChip plane="p" session={4} />
       </SkillBudgetsHere.Provider>,
     );
     const chip = await screen.findByTestId("pane-skills");
@@ -362,13 +349,13 @@ describe("the Skills chip on a chat's pane", () => {
     studioOn();
     render(
       <SkillBudgetsHere.Provider value={{ 4: TOGETHER }}>
-        <SkillsChip session={4} />
+        <SkillsChip plane="p" session={4} />
       </SkillBudgetsHere.Provider>,
     );
     const chip = await screen.findByTestId("pane-skills");
     expect(chip.hasAttribute("data-over")).toBe(true);
     expect(chip.getAttribute("aria-label")).toMatch(
-      /^This chat reads none of its pins: workspace ops pins 40 skills and persona reviewer pins 30/,
+      /^4 skills\. This chat reads none of its pins: workspace ops pins 40 skills and persona reviewer pins 30/,
     );
   });
 

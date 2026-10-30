@@ -11,17 +11,23 @@ import {
   choosePoolKind,
   doneWithTheAddedPool,
   readClusterContexts,
+  readReleaseImage,
   stopAddingAPool,
   usePools,
   type PoolKind,
+  type ReleaseImage,
 } from "./pools";
 import { PoolProfiles } from "./settings/PoolProfiles";
 import { Dialog } from "./ui/dialog/Dialog";
 
 /**
- * **Add a Docker pool…** (#2679, spec #2041: a Docker pool in one step): its name, the runner
- * image by digest, its limits, and how long its runner is left without a link before it
- * suspends itself (#3471), each left empty for purlis's default, which its box shows.
+ * **Add a pool…** (#2679, spec #2041: a Docker pool in one step): its Kind first, then its name,
+ * the runner image by digest, its limits, and how long its runner is left without a link before
+ * it suspends itself (#3471), each left empty for purlis's default, which its box shows. The
+ * image's default is the runner image this version's release names, or a newer version's where
+ * an update of purlis to it is waiting, said so (the person's ruling of 2026-10-30,
+ * {@link readReleaseImage}); a local build, or a release whose runner image was not built, says
+ * it names none under the box, which then needs a digest.
  * Add pool makes the pool's runner from the image on this machine's Docker, confined and held
  * to those limits, and pairs it with this machine, which takes a moment; a refusal stays in the
  * dialog, in the core's words, with what was typed.
@@ -46,6 +52,19 @@ export function AddDockerPoolHost({ plane }: { plane?: string }) {
   useEffect(() => {
     if (!pools.adding) drafts.clear();
   }, [pools.adding]);
+  // The image this version's release names, asked each time the dialog opens.
+  const [releaseImage, setReleaseImage] = useState<ReleaseImage | undefined>();
+  useEffect(() => {
+    if (!pools.adding) return;
+    let gone = false;
+    void readReleaseImage().then((read) => {
+      if (!gone) setReleaseImage(read);
+    });
+    return () => {
+      gone = true;
+      setReleaseImage(undefined);
+    };
+  }, [pools.adding]);
   if (pools.added !== undefined && !pools.adding) {
     return <SignInOnTheAddedPool pool={pools.added} plane={plane} />;
   }
@@ -56,6 +75,7 @@ export function AddDockerPoolHost({ plane }: { plane?: string }) {
   const linkFrames = pools.read.state === "read" ? pools.read.shown : undefined;
   return (
     <AddDockerPool
+      releaseImage={releaseImage}
       defaults={defaults}
       suspendAfter={suspendAfter}
       linkFrames={{
@@ -132,11 +152,35 @@ function count(typed: string): number | null | undefined {
   return /^\d+$/.test(trimmed) ? Number(trimmed) : undefined;
 }
 
+/** What the Image box says under it, by what purlis said of the runner image a new pool is
+ *  offered. */
+function imageHelp(read: ReleaseImage | undefined): string {
+  const named = "The runner image, named by its digest, so it cannot move under the pool.";
+  switch (read?.state) {
+    case undefined:
+      return named;
+    case "ours":
+      return `${named} Empty is the default: purlis's runner image of this version.`;
+    case "newer":
+      return `${named} Empty is the default: the runner image of purlis ${read.version}, the newest release on your update channel. An update of purlis to ${read.version} is waiting: update first, so this machine and the pool's runner run the same version.`;
+    case "none_named":
+      return `${named} This version's release names no runner image, as a release whose runner image was not built does. Name one by its digest.`;
+    case "local_build":
+      return `${named} This is a local build of purlis, with no update channel, so it names no runner image. Name one by its digest.`;
+    case "trouble":
+      return `${named} purlis could not read which runner image to offer, so name one by its digest: ${read.trouble}`;
+  }
+}
+
 function AddDockerPool({
+  releaseImage,
   defaults,
   suspendAfter,
   linkFrames,
 }: {
+  /** The runner image a new pool is offered, once purlis said (the person's ruling of
+   *  2026-10-30). */
+  releaseImage: ReleaseImage | undefined;
   defaults: PoolLimitsShown | undefined;
   /** How long a new pool's runner is left without a link before it suspends, by default. */
   suspendAfter: string | undefined;
@@ -154,6 +198,10 @@ function AddDockerPool({
   const [width, setWidth] = useDrafted("docker", "width");
   const [trouble, setTrouble] = useState<string | undefined>();
   const [adding, setAdding] = useState(false);
+  const named =
+    releaseImage?.state === "ours" || releaseImage?.state === "newer"
+      ? releaseImage.image
+      : undefined;
 
   const add = async () => {
     if (adding) return;
@@ -171,7 +219,7 @@ function AddDockerPool({
     }
     const asked: PoolAdding = {
       name,
-      image,
+      image: image.trim() === "" ? (named ?? image) : image,
       cpus: cpus.trim() === "" ? null : cpus,
       memory_mib: memoryMib,
       processes: processesCount,
@@ -220,7 +268,7 @@ function AddDockerPool({
         // Not while the runner is being made: the answer would land where nobody is looking.
         if (!adding) stopAddingAPool();
       }}
-      title="Add a Docker pool"
+      title="Add a pool"
       subtitle="on this machine; its runner is a container of the image, run on your Docker"
       cancel={{ isDisabled: adding, onPress: stopAddingAPool }}
       main={{
@@ -248,13 +296,13 @@ function AddDockerPool({
       />
       <SettingRow
         label="Image"
-        help="The runner image, named by its digest, so it cannot move under the pool."
+        help={imageHelp(releaseImage)}
         control={(ids) => (
           <Field
             kind="text"
             ids={ids}
             value={image}
-            placeholder="ghcr.io/purlis/purlis-runner@sha256:…"
+            placeholder={named ?? "ghcr.io/purlis/purlis-runner@sha256:…"}
             disabled={adding}
             onChange={setImage}
           />
@@ -328,8 +376,8 @@ function AddDockerPool({
 }
 
 /**
- * **Add a cluster pool** (#3292): Kind, Name, Kubeconfig, Context and Pool, then Check its key,
- * which shows the cluster operator key the Pool names, then Add pool, which pins it.
+ * **Add a pool, of Kind Cluster** (#3292): Kind, Name, Kubeconfig, Context and Pool, then Check
+ * its key, which shows the cluster operator key the Pool names, then Add pool, which pins it.
  */
 function AddClusterPool() {
   const [name, setName] = useDrafted("cluster", "name");
@@ -430,7 +478,7 @@ function AddClusterPool() {
         // Not while its runner is being claimed: the answer would land where nobody is looking.
         if (busy === undefined) stopAddingAPool();
       }}
-      title="Add a cluster pool"
+      title="Add a pool"
       subtitle="in your team's cluster; its runner is claimed from a pool of purlis's cluster operator, through your kubectl"
       cancel={{ isDisabled: busy !== undefined, onPress: stopAddingAPool }}
       main={{
