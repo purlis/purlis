@@ -653,6 +653,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // chat that drafted it as the person, or a chat started with it typed, as a draft chat is.
     "skill_draft_redo",
     "skill_draft_redo_in",
+    // A skill's trigger tests started from a template, or a chat opened to write them (#3925):
+    // the start is one commit to the project, and the chat starts a program as the person, as
+    // a draft chat does. The person's own press in their window.
+    "skill_trigger_tests_start",
+    "skill_trigger_tests_chat",
     // A grade of a skill started or stopped (SK-16, #2779): it runs chats on the person's
     // profile, each started on a trigger test's query, and records the grade in the project.
     // The person's own press in their window, after the plan showed what it costs.
@@ -714,6 +719,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "remove_docker_pool",
     "docker_pool_link",
     "docker_pool_version",
+    // The runner image this version's release names (2026-10-30): the Add a pool dialog's
+    // default image, read through the updater, for the person's own window.
+    "runner_image_of_this_version",
     // This machine's cluster pools (#3292): reading a kubeconfig's contexts and a cluster's
     // operator key runs this machine's kubectl with the person's credentials, and adding one
     // claims a runner as them and pins that key, so only their own press in their window does.

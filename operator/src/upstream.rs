@@ -131,7 +131,8 @@ pub struct SandboxTemplateSpec {
     group = "extensions.agents.x-k8s.io",
     version = "v1beta1",
     kind = "SandboxWarmPool",
-    namespaced
+    namespaced,
+    status = "SandboxWarmPoolStatus"
 )]
 #[serde(rename_all = "camelCase")]
 pub struct SandboxWarmPoolSpec {
@@ -142,6 +143,15 @@ pub struct SandboxWarmPoolSpec {
     /// to a fresh claim, whose runner the operator would not vouch for (#2058).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub update_strategy: Option<UpdateStrategy>,
+}
+
+/// What upstream says about a warm pool: purlis reads how many of its runners are ready, for its
+/// metrics (#3737).
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SandboxWarmPoolStatus {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ready_replicas: Option<i32>,
 }
 
 /// A warm pool's update strategy.
@@ -614,9 +624,7 @@ fn confined() -> SecurityContext {
 }
 
 /// A pool's warm pool in `namespace`, controlled by `owners` ([`runner_owner`]). It keeps no runner
-/// started ahead of a claim when the operator makes it; a warm pool it finds keeps the number
-/// it holds ([`replicas_held`]), so a team admin's `kubectl scale` stands until pools scale on
-/// their own (#2058).
+/// started ahead of a claim until the operator sets its count ([`replicas_kept`]).
 pub fn warm_pool_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -> SandboxWarmPool {
     SandboxWarmPool {
         metadata: owned_by(pool, namespace, owners),
@@ -629,6 +637,7 @@ pub fn warm_pool_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) 
                 type_: RECREATE.to_owned(),
             }),
         },
+        status: None,
     }
 }
 
@@ -644,20 +653,15 @@ pub fn keep_volumes_held(wanted: &mut SandboxClaim, held: Option<&SandboxClaim>)
     }
 }
 
-/// How many runners the warm pool `held` keeps warm, as the cluster holds it: none when there is
-/// no warm pool yet.
-pub fn replicas_held(held: Option<&SandboxWarmPool>) -> i32 {
-    held.map(|held| held.spec.replicas.max(0)).unwrap_or(0)
-}
-
-/// How many runners `pool`'s warm pool `held` is to keep warm: none while the pool is stopped
-/// (#2058), and otherwise as many as it holds ([`replicas_held`]). A stopped pool's warm pool
-/// keeps none once it runs again, until a team admin scales it again.
-pub fn replicas_kept(pool: &Pool, held: Option<&SandboxWarmPool>) -> i32 {
-    if pool.spec.stopped {
+/// How many runners `pool`'s warm pool in a requester's runner namespace is to keep warm: its
+/// `warmReplicas` (#3737) where the requester `wants` them ([`crate::warm_wanted`]), and none
+/// while the pool is stopped (#2058). The count is the operator's own: a warm pool scaled by
+/// hand is brought back to it at the next pass.
+pub fn replicas_kept(pool: &Pool, wants: bool) -> i32 {
+    if pool.spec.stopped || !wants {
         0
     } else {
-        replicas_held(held)
+        pool.spec.warm_replicas.max(0)
     }
 }
 

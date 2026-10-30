@@ -662,6 +662,18 @@ mod cluster {
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
     }
 
+    /// What an add holds of the fake cluster's kubectl, a plain file: the name it is found by
+    /// and, where a link on the way leads elsewhere (`/tmp` on macOS), its real file.
+    fn held_kubectl(cluster: &FakeCluster) -> Vec<std::path::PathBuf> {
+        let named = cluster.kubectl().program().to_path_buf();
+        let real = named.canonicalize().expect("kubectl's real file");
+        if real == named {
+            vec![named]
+        } else {
+            vec![named, real]
+        }
+    }
+
     #[test]
     fn a_cluster_pool_is_added_with_its_runner_claimed_vouched_for_and_paired() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
@@ -682,7 +694,7 @@ mod cluster {
             Reached::Cluster(pool, runner) => {
                 // Kept pointing at its own copy of the context.
                 let copy = runners::kubeconfig_kept_at(config.path(), "team");
-                let held = vec![cluster.kubectl().real_program().unwrap()];
+                let held = held_kubectl(&cluster);
                 assert_eq!(pool, team(&cluster).kept_at(&copy).holding(held).unwrap());
                 assert_eq!(runner, kept);
             }
@@ -701,7 +713,10 @@ mod cluster {
                 "namespace": "ada",
                 "operatorKey": cluster.operator.key().spelled(),
                 "cluster": crate::clusterpool::tests::CLUSTER,
-                "holds": [cluster.kubectl().real_program().unwrap().display().to_string()],
+                "holds": held_kubectl(&cluster)
+                    .iter()
+                    .map(|it| it.display().to_string())
+                    .collect::<Vec<_>>(),
             })
         );
         assert_eq!(file["runners"][0]["pool"], "cluster");
@@ -1084,11 +1099,109 @@ mod cluster {
         )
         .unwrap();
         let held = runners::cluster_holds(config.path());
+        assert!(held.contains(&plugin), "as named: {held:?}");
         assert!(held.contains(&plugin.canonicalize().unwrap()), "{held:?}");
         assert!(
             held.contains(&cluster.kubectl().real_program().unwrap()),
             "{held:?}"
         );
+    }
+
+    #[test]
+    fn a_removal_waits_for_an_add_of_the_pool_still_under_way() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        // An add of it under way holds this until it ends.
+        let under_way = adding(config.path(), "team");
+        let (done, finished) = std::sync::mpsc::channel();
+        let (root, kubectl) = (config.path().to_path_buf(), cluster.kubectl());
+        let removing = std::thread::spawn(move || {
+            let left = remove_cluster(&root, Some(&kubectl), "team", Some(OURS), None);
+            done.send(()).unwrap();
+            left
+        });
+        assert!(
+            finished.recv_timeout(Duration::from_millis(300)).is_err(),
+            "the removal did not wait for the add"
+        );
+        drop(under_way);
+        finished.recv_timeout(Duration::from_secs(30)).unwrap();
+        assert_eq!(removing.join().unwrap().unwrap(), None);
+        assert!(runners::pool_names(config.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_removal_that_cannot_tell_which_claim_is_its_own_says_what_may_be_left() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let pool = team(&cluster)
+            .kept_at(&runners::kubeconfig_kept_at(config.path(), "team"))
+            .holding(vec![cluster.kubectl().real_program().unwrap()])
+            .unwrap();
+        runners::record_cluster_pool_locked(config.path(), &pool, &runners::lock(config.path()))
+            .unwrap();
+        let left = remove_cluster(config.path(), Some(&cluster.kubectl()), "team", None, None)
+            .unwrap()
+            .expect("it says what may be left");
+        assert!(
+            left.contains("kubectl get claims.runners.purlis.dev"),
+            "{left}"
+        );
+        assert!(runners::pool_names(config.path()).unwrap().is_empty());
+        assert!(!deleted(&cluster));
+    }
+
+    #[test]
+    fn a_program_whose_package_would_be_the_home_or_above_it_refuses_the_add() {
+        let home = Path::new("/home/ada");
+        for wide in ["/home/ada/plugin", "/home/plugin", "/plugin"] {
+            let why = package_holdable(Path::new(wide), Some(home)).unwrap_err();
+            assert!(
+                why.to_string().contains("a folder of its own"),
+                "{wide}: {why}"
+            );
+        }
+        for held in [
+            "/home/ada/bin/plugin",
+            "/opt/homebrew/Cellar/kubernetes-cli/1.36.0/bin/kubectl",
+            "/usr/local/bin/aws",
+        ] {
+            assert_eq!(
+                package_holdable(Path::new(held), Some(home)),
+                Ok(()),
+                "{held}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_plugin_reached_through_links_is_held_at_every_link_on_the_way() {
+        let (_config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let place = tempfile::tempdir().unwrap();
+        let (real, middle, first) = (
+            place.path().join("keg/bin/plugin"),
+            place.path().join("opt/plugin"),
+            place.path().join("bin/plugin"),
+        );
+        for folder in ["keg/bin", "opt", "bin"] {
+            std::fs::create_dir_all(place.path().join(folder)).unwrap();
+        }
+        std::fs::write(&real, "#!/bin/sh\n").unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        std::os::unix::fs::symlink(&real, &middle).unwrap();
+        std::os::unix::fs::symlink("../opt/plugin", &first).unwrap();
+        let context = serde_json::json!({"users": [
+            {"name": "ada", "user": {"exec": {"command": first.display().to_string()}}}
+        ]})
+        .to_string();
+        let held =
+            programs_run(&cluster.kubectl(), &context, Some(Path::new("/home/ada"))).unwrap();
+        for link in [&first, &place.path().join("bin/../opt/plugin"), &real] {
+            assert!(held.contains(link), "{} in {held:?}", link.display());
+        }
+        assert!(held.contains(&real.canonicalize().unwrap()), "{held:?}");
     }
 
     #[test]

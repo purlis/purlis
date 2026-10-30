@@ -175,8 +175,8 @@ fn the_first_task_runs_twice_on_a_fresh_repo_and_the_second_run_starts_knowing_w
     );
 
     // The task asks its agent to record what it learned, by the command a chat has.
-    let task = firsttask::prompt();
-    assert!(task.contains("purlis persona remember"), "{task}");
+    let task = firsttask::prompt(Some("steward"));
+    assert!(task.contains("persona_remember"), "{task}");
 
     // Run 1's agent makes its change and records its lesson.
     std::fs::write(
@@ -185,7 +185,12 @@ fn the_first_task_runs_twice_on_a_fresh_repo_and_the_second_run_starts_knowing_w
     )
     .expect("run 1's change");
     let lesson = "shop's checks run with make test";
-    let recorded = charter_in_a_run(&runs[0].path, &home, &["persona", "remember", lesson], "");
+    let recorded = charter_in_a_run(
+        &runs[0].path,
+        &home,
+        &["persona", "remember", "steward", lesson],
+        "",
+    );
     assert!(recorded.status.success(), "{}", said(&recorded));
 
     // Run 2 starts on another harness. Its briefing is the one every harness's chat gets

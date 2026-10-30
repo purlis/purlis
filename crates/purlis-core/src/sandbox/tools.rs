@@ -79,7 +79,10 @@ use std::path::{Path, PathBuf};
 use crate::settings::Refusal;
 
 pub mod args;
+pub mod host;
 pub mod login;
+pub mod mint;
+pub mod repo;
 
 /// The key in a persona's table that holds its tools.
 pub const KEY: &str = "tools";
@@ -88,8 +91,9 @@ pub const KEY: &str = "tools";
 pub const VALUES_KEY: &str = "values";
 
 /// The keys one tool's table holds: `as` and `key`, or `values`, for a program's; `browser` and
-/// `user` for a browser login's ([`login`]); `args` for any program's ([`args`]).
-const TOOL_KEYS: [&str; 7] = [
+/// `user` for a browser login's ([`login`]); `args` for any program's ([`args`]); `mint` and
+/// `app` for a GitHub App's token's ([`mint`]); `host` for a forge's ([`host`]).
+const TOOL_KEYS: [&str; 10] = [
     "vault",
     "as",
     "key",
@@ -97,6 +101,9 @@ const TOOL_KEYS: [&str; 7] = [
     login::KEY,
     login::USER_KEY,
     args::KEY,
+    mint::KEY,
+    mint::APP_KEY,
+    host::KEY,
 ];
 
 /// The keys one of a tool's `values` holds.
@@ -169,6 +176,12 @@ pub struct Tool {
     /// **The arguments its program runs with** ([`args`], #3421): each a pattern for one whole
     /// argument. None runs it with any; the built-in refusals apply either way.
     pub args: Option<Vec<String>>,
+    /// Where the tool's token is minted by a GitHub App ([`mint`], #2053): the App. Its key is
+    /// the tool's one value, handed in [`mint::VAR`] as the token minted from it.
+    pub mint: Option<mint::Mint>,
+    /// **The forge host its run reaches** ([`host`], #3869), for a tool whose program is `gh`
+    /// or `glab`: none reaches `github.com` or `gitlab.com`.
+    pub host: Option<String>,
 }
 
 impl Tool {
@@ -184,6 +197,8 @@ impl Tool {
             }],
             login: None,
             args: None,
+            mint: None,
+            host: None,
         }
     }
 
@@ -223,8 +238,12 @@ impl Tool {
     /// "aws-secret-access-key" as AWS_SECRET_ACCESS_KEY env from vault cloud`.
     pub fn whole(&self) -> String {
         let line = self.declared_line();
-        match &self.args {
+        let line = match &self.args {
             Some(patterns) => format!("{line}{}", args::spelled(patterns)),
+            None => line,
+        };
+        match &self.host {
+            Some(host) => format!("{line}{}", host::spelled(host)),
             None => line,
         }
     }
@@ -242,6 +261,12 @@ impl Tool {
                 login.url,
                 self.key_in(login::PASS_VAR).unwrap_or_default(),
                 self.vault
+            );
+        }
+        if let (Some(mint), [one]) = (&self.mint, self.values.as_slice()) {
+            return format!(
+                "{} with a token GitHub App {} mints from {:?} in vault {} as {} env",
+                self.name, mint.app, one.key, self.vault, one.var
             );
         }
         if let [one] = self.values.as_slice() {
@@ -722,6 +747,7 @@ pub fn keyed(
         return (tools, refused);
     };
     let mut with_args: Vec<(String, Vec<String>)> = Vec::new();
+    let mut with_host: Vec<(String, String)> = Vec::new();
     for (name, tool) in table {
         let named = format!("{here}.tools.{name} in {file}");
         let mut fault =
@@ -759,6 +785,21 @@ pub fn keyed(
                 }
             },
         }
+        // Its forge `host` (#3869), set on the tool once it is read whole, below.
+        match tool.get(host::KEY) {
+            None => {}
+            Some(_) if tool.contains_key(login::KEY) => {
+                fault("a browser login reaches its declared page, so it takes no host".to_owned());
+                continue;
+            }
+            Some(value) => match host::of(value) {
+                Ok(host) => with_host.push((name.clone(), host)),
+                Err(why) => {
+                    fault(why);
+                    continue;
+                }
+            },
+        }
         let text = |key: &str| {
             tool.get(key)
                 .and_then(toml::Value::as_str)
@@ -775,9 +816,16 @@ pub fn keyed(
             continue;
         }
         if let Some(values) = tool.get(VALUES_KEY) {
-            if let Some(single) = ["key", "as", login::KEY, login::USER_KEY]
-                .into_iter()
-                .find(|key| tool.contains_key(*key))
+            if let Some(single) = [
+                "key",
+                "as",
+                login::KEY,
+                login::USER_KEY,
+                mint::KEY,
+                mint::APP_KEY,
+            ]
+            .into_iter()
+            .find(|key| tool.contains_key(*key))
             {
                 fault(format!(
                     "it has both values and {single} — a tool names its values either with key \
@@ -792,6 +840,8 @@ pub fn keyed(
                     values,
                     login: None,
                     args: None,
+                    mint: None,
+                    host: None,
                 }),
                 Err(why) => fault(why),
             }
@@ -801,6 +851,17 @@ pub fn keyed(
             fault("it names no key of the vault".to_owned());
             continue;
         };
+        if tool.contains_key(mint::KEY) || tool.contains_key(mint::APP_KEY) {
+            // The token minted from the key is handed in GH_TOKEN, never the key (#2053).
+            match mint::of(tool, &text) {
+                Ok(mint) => tools.push(Tool {
+                    mint: Some(mint),
+                    ..Tool::one(name, &vault, mint::VAR, Handed::Env, &key)
+                }),
+                Err(why) => fault(why),
+            }
+            continue;
+        }
         if tool.contains_key(login::KEY) {
             match login_of(tool, &text) {
                 // Its keys are handed as any tool's values are: the password's file, then the
@@ -823,6 +884,8 @@ pub fn keyed(
                         values,
                         login: Some(login),
                         args: None,
+                        mint: None,
+                        host: None,
                     });
                 }
                 Err(why) => fault(why),
@@ -862,6 +925,9 @@ pub fn keyed(
     for tool in &mut tools {
         if let Some((_, patterns)) = with_args.iter().find(|(name, _)| *name == tool.name) {
             tool.args = Some(patterns.clone());
+        }
+        if let Some((_, host)) = with_host.iter().find(|(name, _)| *name == tool.name) {
+            tool.host = Some(host.clone());
         }
     }
     (tools, refused)
@@ -1336,7 +1402,103 @@ pub fn allows(ready: &Ready, args: &[String]) -> Result<(), String> {
     if let Some(why) = args::refused_forge(&names, args) {
         return Err(why);
     }
+    // The forge host its run reaches (#3869).
+    match (forge_of(&names), &ready.tool.host) {
+        (None, Some(_)) => {
+            return Err(format!(
+                "{} names a forge host, and only a tool whose program is gh or glab takes one, \
+                 so nothing ran: take host out of the project's tools.{}",
+                ready.tool.name, ready.tool.name
+            ));
+        }
+        (Some(glab), host) => {
+            let host = host.as_deref().unwrap_or(host::default_of(glab));
+            let forge = if glab { "glab" } else { "gh" };
+            if let Some(why) = host::named_elsewhere(forge, glab, host, args) {
+                return Err(why);
+            }
+        }
+        (None, None) => {}
+    }
     args::permits(&ready.tool.name, ready.tool.args.as_deref(), args)
+}
+
+/// **Whether `ready`'s run with `args` in `folder` reads only repository configuration the
+/// person controls** (#3868, [`repo::held`]), for a project at `root` whose chat may write
+/// `writable`: the variables that hold its git to the repository judged ([`repo::Pin::env`]),
+/// or why it never runs. glab's own settings are judged where the tool's name or program is
+/// glab, and git's options that name another config, folder or program where it is git
+/// ([`repo::refused_git`]). Judged before any value is read for the run.
+pub fn reads_held_repository(
+    ready: &Ready,
+    args: &[String],
+    folder: &Path,
+    root: &Path,
+    writable: &[PathBuf],
+) -> Result<Vec<(String, String)>, String> {
+    let real = ready.program.canonicalize().ok();
+    let names: Vec<String> = [Path::new(&ready.tool.name), ready.program.as_path()]
+        .into_iter()
+        .chain(real.as_deref())
+        .map(file_name_of)
+        .collect();
+    if names.iter().any(|name| name == "git") {
+        // git's own options run programs in more ways than a list can hold, so a declared git
+        // runs only with the arguments its `args` let in.
+        if ready.tool.args.is_none() {
+            return Err(format!(
+                "{} is git, which runs with a vault's value only with the arguments its tool \
+                 allows, and it allows any, so nothing ran: list them in the project's \
+                 tools.{}.args and allow the persona's tools again on this machine.",
+                ready.tool.name, ready.tool.name
+            ));
+        }
+        if let Some(why) = repo::refused_git(args) {
+            return Err(why);
+        }
+    }
+    let glab = names.iter().any(|name| name == "glab");
+    let pin = repo::held(folder, root, writable, glab)?;
+    // A command that makes a new repository: `repo clone`, `gist clone`, `--clone` (and
+    // `gh repo create -c`).
+    let clones = args.get(1).is_some_and(|word| word == "clone")
+        || args
+            .iter()
+            .any(|arg| arg == "--clone" || arg.starts_with("--clone="))
+        || (args.first().is_some_and(|word| word == "repo")
+            && args.get(1).is_some_and(|word| word == "create")
+            && args.iter().any(|arg| arg == "-c"));
+    Ok(pin.env(clones))
+}
+
+/// Whether a tool with these `names` (its own name, then its program's) is a forge's, and
+/// glab's (`true`) or gh's (`false`): by its program, as its links resolve and as found,
+/// before the tool's own name.
+fn forge_of(names: &[&Path]) -> Option<bool> {
+    names
+        .iter()
+        .rev()
+        .find_map(|name| match file_name_of(name).as_str() {
+            "gh" => Some(false),
+            "glab" => Some(true),
+            _ => None,
+        })
+}
+
+/// **The variables a forge tool's run starts with** (#3869): its host, from its declaration
+/// or the forge's own, as the program reads it ([`host::env`]); none for any other program.
+pub fn forge_env(ready: &Ready) -> Vec<(String, String)> {
+    let real = ready.program.canonicalize().ok();
+    let names: Vec<&Path> = [Path::new(&ready.tool.name), ready.program.as_path()]
+        .into_iter()
+        .chain(real.as_deref())
+        .collect();
+    forge_of(&names)
+        .map(|glab| {
+            let host = ready.tool.host.as_deref().unwrap_or(host::default_of(glab));
+            vec![host::env(glab, host)]
+        })
+        .unwrap_or_default()
 }
 
 /// `path`, a `PATH` a brokered tool run starts from, without each folder in the project at
@@ -1740,3 +1902,10 @@ mod login_tests;
 
 #[cfg(test)]
 mod args_tests;
+
+#[cfg(test)]
+mod host_tests;
+#[cfg(test)]
+mod mint_tests;
+#[cfg(test)]
+mod repo_tests;

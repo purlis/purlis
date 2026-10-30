@@ -106,6 +106,51 @@ fn a_new_skill_from_a_template_lands_at_the_level_it_was_made_at() {
     assert!(text.contains("## Steps"), "{text}");
 }
 
+/// #3925: Write trigger tests starts a skill's `evals/triggers.json` from a template where it has
+/// none, which a grade then reads; a file it has already is never written over.
+#[test]
+fn trigger_tests_start_from_a_template_and_one_there_is_left_as_it_is() {
+    let tmp = plane();
+    let root = tmp.path();
+    let level = Level::workspace("ops");
+    skill(
+        root,
+        "workspaces/ops/skills/triage",
+        "triage",
+        "Sorts new issues.",
+    );
+
+    let (file, lines) = on(root, None, |cx| start_trigger_tests(cx, &level, "triage"));
+    let file = file.unwrap();
+    assert_eq!(file, "workspaces/ops/skills/triage/evals/triggers.json");
+    assert!(
+        said(&lines, |line| matches!(line, Say::Done(_))),
+        "{lines:?}"
+    );
+    let written = std::fs::read_to_string(root.join(&file)).unwrap();
+    assert_eq!(written, purlis_skills::grade::triggers_template("triage"));
+    let counted = crate::skills::grades::trigger_tests(root, &level, "triage").unwrap();
+    assert_eq!(counted.runs, 2, "a grade reads the template");
+
+    std::fs::write(root.join(&file), "[]").unwrap();
+    let (again, lines) = on(root, None, |cx| start_trigger_tests(cx, &level, "triage"));
+    assert_eq!(again.unwrap(), file);
+    assert!(
+        said(&lines, |line| matches!(line, Say::Info(_))),
+        "{lines:?}"
+    );
+    assert_eq!(std::fs::read_to_string(root.join(&file)).unwrap(), "[]");
+
+    std::fs::write(root.join(&file), vec![b' '; 300 * 1024]).unwrap();
+    let refused = did(root, |cx| start_trigger_tests(cx, &level, "triage")).unwrap_err();
+    assert!(
+        refused.starts_with("triage's trigger tests were left as they are"),
+        "{refused}"
+    );
+
+    assert!(did(root, |cx| start_trigger_tests(cx, &level, "nowhere")).is_err());
+}
+
 #[test]
 fn a_new_skill_is_refused_for_a_bad_name_a_taken_name_or_a_built_in_name() {
     let tmp = plane();
@@ -221,6 +266,52 @@ fn a_rename_follows_into_every_persona_skill_and_turn_off_that_names_it() {
         &lines,
         |line| matches!(line, Say::Info(text) if text.starts_with("Not saved"))
     ));
+}
+
+#[test]
+fn a_rename_takes_its_pins_with_it_in_their_place_and_who_uses_it_names_them() {
+    let tmp = plane();
+    let root = tmp.path();
+    skill(root, "skills/triage", "triage", "Sorts issues.");
+    let ops = crate::skills::PinnedBy::Workspace("ops".to_owned());
+    let steward = crate::skills::PinnedBy::Persona("steward".to_owned());
+    for (by, name) in [(&ops, "triage"), (&ops, "deploy"), (&steward, "deploy")] {
+        crate::skills::pin(root, by, name, true).unwrap();
+    }
+    assert_eq!(
+        users(root, &Level::project(), "deploy").unwrap().pinned_by,
+        [ops.clone(), steward.clone()]
+    );
+
+    let (renamed, lines) = on(root, None, |cx| {
+        rename(cx, &Level::project(), "deploy", "ship")
+    });
+
+    renamed.unwrap();
+    assert_eq!(crate::skills::pins_written(root, &ops), ["triage", "ship"]);
+    assert_eq!(crate::skills::pins_written(root, &steward), ["ship"]);
+    assert!(said(
+        &lines,
+        |line| matches!(line, Say::Done(text) if text == "workspace ops pins ship now")
+    ));
+    let followed = users(root, &Level::project(), "ship").unwrap();
+    assert_eq!(followed.pinned_by, [ops, steward]);
+}
+
+#[test]
+fn a_local_skills_rename_leaves_the_projects_pins_alone() {
+    let tmp = plane();
+    let root = tmp.path();
+    let local = Level::project().local(true);
+    let dir = local.dir(root).unwrap();
+    let folder = dir.strip_prefix(root).unwrap().join("notes");
+    skill(root, folder.to_str().unwrap(), "notes", "Keeps notes.");
+    let ops = crate::skills::PinnedBy::Workspace("ops".to_owned());
+    crate::skills::pin(root, &ops, "notes", true).unwrap();
+
+    did(root, |cx| rename(cx, &local, "notes", "jottings")).unwrap();
+
+    assert_eq!(crate::skills::pins_written(root, &ops), ["notes"]);
 }
 
 #[test]
@@ -366,6 +457,7 @@ fn delete_says_who_uses_it_and_a_skill_git_does_not_track_comes_back_on_restore(
             persona: None,
             personas: vec!["steward".to_owned()],
             skills: vec!["release".to_owned()],
+            pinned_by: Vec::new(),
         }
     );
 
@@ -1366,6 +1458,7 @@ fn a_personas_skill_says_who_uses_it_and_is_deleted_and_restored_from_git() {
             persona: Some("reviewer".to_owned()),
             personas: vec!["auditor".to_owned()],
             skills: vec!["release".to_owned()],
+            pinned_by: Vec::new(),
         }
     );
 

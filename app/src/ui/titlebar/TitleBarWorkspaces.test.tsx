@@ -145,7 +145,53 @@ describe("a dot's kind (#3649)", () => {
   it("ranks the kinds by urgency, news the least", () => {
     expect(mostUrgentOf([])).toBe("info");
     expect(mostUrgentOf(["info", "warning", "info"])).toBe("warning");
-    expect(NOTICE_KINDS.map(urgencyOf)).toEqual([0, 1]);
+    expect(NOTICE_KINDS.map(urgencyOf)).toEqual([0, 1, 2]);
+    // A chat asking to remove the workspace outranks every notice (#3652).
+    expect(mostUrgentOf(["warning", "needs", "info"])).toBe("needs");
+  });
+});
+
+describe("the needs-you dot (#3652)", () => {
+  it("draws a raised hand in its strokes, its own part, named for the chat it brings forward", () => {
+    render(<NoticeDot workspace="gamma" count={0} kind="needs" onPress={() => undefined} />);
+    const dot = screen.getByRole("button", { name: "Show the chat asking to remove gamma" });
+    expect(dot).toHaveAttribute("data-kind", "needs");
+    expect(dot).toHaveAttribute("data-part", "dot-needs");
+    const hand = dot.querySelector("svg.lucide-hand");
+    expect(hand).not.toBeNull();
+    // Stroked, never filled: a filled hand is a blob.
+    expect(hand).not.toHaveAttribute("fill", "currentColor");
+  });
+
+  it("says the workspace's own notices come with the chat, where it has some", () => {
+    render(<NoticeDot workspace="gamma" count={2} kind="needs" onPress={() => undefined} />);
+    expect(
+      screen.getByRole("button", {
+        name: "Show the chat asking to remove gamma, and its 2 notices",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("describes a chip with a ✋ alone by the question, never as 0 notices", () => {
+    render(
+      <ChipSlot>
+        <WorkspaceChip name="gamma" waiting={2} notices={{ count: 0, kind: "needs" }} />
+      </ChipSlot>,
+    );
+    expect(screen.getByRole("button", { name: "gamma" })).toHaveAccessibleDescription(
+      "2 waiting, a chat asks you to remove it",
+    );
+  });
+
+  it("puts the question after the count where the chip has notices too", () => {
+    render(
+      <ChipSlot>
+        <WorkspaceChip name="gamma" notices={{ count: 1, kind: "needs" }} />
+      </ChipSlot>,
+    );
+    expect(screen.getByRole("button", { name: "gamma" })).toHaveAccessibleDescription(
+      "1 notice, most urgent: a chat asks you to remove it",
+    );
   });
 });
 
@@ -278,6 +324,22 @@ describe("the crumb, the ⌄, a switcher's row and its pin (#3656)", () => {
     expect(reached("row", "[data-selected]")).toEqual([row]);
     expect(reached("pin", "[data-selected]")).toEqual([pin]);
     expect(reached("all", "[data-selected]")).toEqual([]);
+  });
+
+  it("draws a row's count as a part of its own, not a chip's count (#3947)", () => {
+    render(
+      <>
+        <WorkspaceChip name="alpha" waiting={2} />
+        <SwitcherRow id="r" name="beta" waiting={3} active={false} onPress={() => undefined} />
+      </>,
+    );
+    const row = screen.getByRole("option", { name: "beta" });
+    expect(reached("row-count")).toEqual([row.querySelector('[data-part="row-count"]')]);
+    expect(reached("row-count")[0]).toHaveTextContent("3");
+    // The chip's count is the chip's part, reached inside it.
+    const chip = screen.getByRole("button", { name: "alpha" });
+    expect(row.querySelector('[data-part="count"]')).toBeNull();
+    expect(chip.querySelector('[data-part="count"]')).toHaveTextContent("2");
   });
 
   it("marks the pointer on each, as its hover keys reach it", async () => {

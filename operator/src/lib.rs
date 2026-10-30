@@ -28,6 +28,9 @@
 //! it started, signed with the operator's own key into a statement on the Claim's status, which
 //! the desktop checks against its own pairing over `kubectl exec`.
 //!
+//! **It serves its metrics** ([`metrics`], #3737) on its own port: its Claims, its warm runners,
+//! the runners it suspended and the Claims it saw deleted.
+//!
 //! **What it may do** is `deploy/operator.yaml`'s ClusterRole and nothing else: read Pools and
 //! Claims, write a Pool's and a Claim's status and a Claim's finalizer, read the policies'
 //! bindings, read, create, patch and delete the three upstream objects, read a runner's pod by
@@ -40,6 +43,7 @@
 
 mod admission;
 pub mod doctor;
+pub mod metrics;
 pub mod person;
 mod reconcile;
 mod resources;
@@ -56,7 +60,7 @@ pub use reconcile::{
     retry_after_conflict, run, settled, status_of, status_of_a_deleted_pool,
     status_of_a_missing_pool, status_of_a_stopped_claim,
     status_of_a_suspended_runner_of_a_deleted_pool, status_of_an_object_in_the_way, status_patch,
-    status_withdrawn, suspending_again,
+    status_withdrawn, suspending_again, warm_wanted,
 };
 pub use resources::{
     Claim, ClaimSpec, ClaimStatus, KeptVolume, LinkKey, NextSigningKeyVouch, Pool, PoolSpec,

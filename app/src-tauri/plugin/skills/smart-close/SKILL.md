@@ -32,7 +32,8 @@ it belongs to:
 - a changed goal → `purlis workspace vision "<the goal>"`.
 
 Leave `## Sessions` alone; that line is purlis's. At the plane root there is no `workspace.md`; a
-lesson for every persona goes to `purlis persona remember <persona> --shared "<fact>"`. Done when
+lesson for every persona goes to the `persona_remember` tool with `shared`, or to
+`purlis persona remember <persona> --shared "<fact>"` with this chat's own persona. Done when
 each lasting decision, term or goal change is in its section, or there was none.
 
 ## 3. Write the record

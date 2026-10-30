@@ -4,11 +4,12 @@
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { projectRoot, stateOf } from "../acting.js";
+import { press, projectRoot, stateOf } from "../acting.js";
 import {
   closeTheViewTabsOpenedSince,
   focusWorkspace,
   runFromThePalette,
+  shownButton,
   tabNames,
 } from "../reach.js";
 import { studioPage, studioMore, studioSkill } from "../studio.js";
@@ -68,7 +69,7 @@ describe("making and changing a skill in the Skill studio", function () {
   it("makes a skill at the project's root, renames it, deletes it and restores it", async () => {
     await runFromThePalette("Open Skill studio", "skills.studio");
 
-    const make = await $("button=New skill…");
+    const make = await shownButton("New skill…");
     await make.waitForClickable({ timeout: 20_000 });
     await make.click();
     await expect($('[data-testid="skill-new-level"]')).toHaveText(
@@ -87,7 +88,8 @@ describe("making and changing a skill in the Skill studio", function () {
 
     await studioMore(MADE, "Rename");
     await typeInto("New name", RENAMED);
-    await (await $('form[aria-label^="Rename"] button[type="submit"]')).click();
+    // Rename is a dialog that says what changes with it (#3685).
+    await press('[data-testid="skill-rename"]', "Rename");
     const renamed = await $(`[data-testid="skill-${RENAMED}"]`);
     await renamed.waitForExist({ timeout: 20_000 });
     expect(existsSync(join(root, "skills", RENAMED, "SKILL.md"))).toBe(true);
@@ -97,10 +99,8 @@ describe("making and changing a skill in the Skill studio", function () {
     await studioMore(RENAMED, "Delete");
     const users = await $('[data-testid="skill-users"]');
     await users.waitForExist({ timeout: 20_000 });
-    await expect(users).toHaveText(/Used by chats at the project's root/);
-    await (
-      await $(`section[aria-label="Delete ${RENAMED}"] button[data-variant="danger"]`)
-    ).click();
+    await expect(users).toHaveText(/Chats at the project's root/);
+    await press('[data-testid="skill-delete"]', "Delete");
     await renamed.waitForExist({ reverse: true, timeout: 20_000 });
     expect(existsSync(join(root, "skills", RENAMED))).toBe(false);
 

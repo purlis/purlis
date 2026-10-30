@@ -946,12 +946,12 @@ export const commands = {
 	 */
 	skillStats: (plane: PlaneId, skill: string) => typedError<SkillStats, string>(__TAURI_INVOKE("skill_stats", { plane, skill })),
 	/**
-	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Grades panel, of the copy at
-	 *  `level` the tab shows (null: the copy it shows first, #3353), and its Runs panel, which lists
-	 *  every run of the skill, newest first, then each extension's. None while the flag is off. On a
-	 *  blocking thread, as it reads the project's skill log and asks each extension.
+	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
+	 *  run of the skill, newest first, then each extension's. A skill's grades are no panel: its
+	 *  Grades tab reads them whole ([`crate::skillgrade::skill_grades`]). None while the flag is off.
+	 *  On a blocking thread, as it reads the project's skill log and asks each extension.
 	 */
-	skillPanels: (plane: PlaneId, skill: string, level: { at: "project"; local: boolean } | { at: "workspace"; name: string; local: boolean } | { at: "persona"; name: string; local: boolean } | null) => typedError<SkillPanel[], string>(__TAURI_INVOKE("skill_panels", { plane, skill, level })),
+	skillPanels: (plane: PlaneId, skill: string) => typedError<SkillPanel[], string>(__TAURI_INVOKE("skill_panels", { plane, skill })),
 	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
 	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
 	setSkillStudioOn: __WINDOW_ONLY_RESULT,
@@ -994,6 +994,7 @@ export const commands = {
 	/**  The text of a skill's `SKILL.md`, which the light editor opens. */
 	skillText: (plane: PlaneId, level: SkillLevel, name: string) => typedError<string, string>(__TAURI_INVOKE("skill_text", { plane, level, name })),
 	skillSave: __WINDOW_ONLY_RESULT,
+	skillTriggerTestsStart: __WINDOW_ONLY_RESULT,
 	skillRename: __WINDOW_ONLY_RESULT,
 	skillCopy: __WINDOW_ONLY_RESULT,
 	/**  Whether moving a skill from `from` to `to` asks for a grant: it becomes a project skill. */
@@ -1044,6 +1045,7 @@ export const commands = {
 	skillDraftAccept: __WINDOW_ONLY_RESULT,
 	skillDraftReject: __WINDOW_ONLY_RESULT,
 	skillDraftChat: __WINDOW_ONLY_RESULT,
+	skillTriggerTestsChat: __WINDOW_ONLY_RESULT,
 	skillDraftTry: __WINDOW_ONLY_RESULT,
 	skillDraftRedo: __WINDOW_ONLY_RESULT,
 	skillDraftRedoIn: __WINDOW_ONLY_RESULT,
@@ -1062,7 +1064,8 @@ export const commands = {
 	skillGradeChat: (plane: PlaneId, skill: string, grade: string, chat: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_chat", { plane, skill, grade, chat })),
 	/**
 	 *  **The grades of the copy of `skill` at `level`** (S6), as the eval record holds them: what the
-	 *  skill's Grades tab draws its bars and its list from.
+	 *  skill's Grades tab draws its bars and its list from, with whether it has trigger tests and the
+	 *  grade of it running now (#3928), and what a running grade's page starts from.
 	 */
 	skillGrades: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<SkillGrades, string>(__TAURI_INVOKE("skill_grades", { plane, level, skill })),
 	skillGradeSetCap: __WINDOW_ONLY_RESULT,
@@ -1478,6 +1481,7 @@ export const commands = {
 	removeDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
+	runnerImageOfThisVersion: __WINDOW_ONLY_RESULT,
 	clusterContexts: __WINDOW_ONLY_RESULT,
 	clusterPoolKey: __WINDOW_ONLY_RESULT,
 	addClusterPool: __WINDOW_ONLY_RESULT,
@@ -6981,6 +6985,12 @@ export type OpenChat = {
 	 *  the other chats of its workspace, which move with it.
 	 */
 	workspace?: string | null,
+	/**
+	 *  Whether Move here brings back a clone its runner's chat made there (#3811): its runner
+	 *  names the clones it holds (session protocol 1.51). `null` for a chat here, and for one on
+	 *  a runner before 1.51, whose Move here row says such a clone stays there.
+	 */
+	clones_come_back?: boolean | null,
 	/**  The persona it adopted. */
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */
@@ -7033,6 +7043,18 @@ export type OpenRun = {
 	id: string,
 	/**  Tool calls made inside it so far, each once. */
 	tool_calls: number,
+	/**
+	 *  The tokens the chat has spent since it opened, as its harness last said them (SK-26,
+	 *  #3694): what the eventlog records the run's tokens from, live. `None` where the harness
+	 *  says none, so the chip shows no zero. A `u32`, as the window reads it whole: a run past
+	 *  four billion tokens says the most it can.
+	 */
+	tokens: number | null,
+	/**
+	 *  The level of the copy it is of, as a person reads it (`persona`, `local workspace`), where
+	 *  its start knew it: the scope its chip opens the Skill studio at (#3694).
+	 */
+	level: string | null,
 };
 
 /**
@@ -7943,6 +7965,15 @@ export type PlaneUpdated = {
 	 *  itself (#2770): its pane offers a restart on the same conversation.
 	 */
 	skills: boolean,
+	/**
+	 *  The skills a chat started now would get that it lacks, by name (#3694): what its Skills
+	 *  view marks as new, once its pane's What changed is pressed.
+	 */
+	skills_added: string[],
+	/**  The skills it has that a chat started now would not get, by name. */
+	skills_gone: string[],
+	/**  The skills it has that changed since it started, by name. */
+	skills_edited: string[],
 };
 
 /**  A pool as the person typed it: each limit left empty takes the default. */
@@ -9352,6 +9383,26 @@ export type RunnerBranch = {
 	ahead: number,
 };
 
+/**
+ *  **The runner image a new pool is offered** (the person's ruling of 2026-10-30), by the
+ *  release that names it.
+ */
+export type RunnerImageOffered = 
+/**  This version's own, as its release names it. */
+{ state: "ours"; image: string } | 
+/**
+ *  A newer version's, as the channel's newest release names it: an update of purlis to
+ *  `version` is waiting.
+ */
+{ state: "newer"; image: string; version: string } | 
+/**
+ *  None: this version's release names none, as a release whose runner image was not built
+ *  does.
+ */
+{ state: "none_named" } | 
+/**  None: a local build, with no update channel, names none. */
+{ state: "local_build" };
+
 /**  How the window reads what a runner records (#3393). */
 export type RunnerLogRead = 
 /**  Over the link, which is up. */
@@ -10560,10 +10611,17 @@ export type SkillGradeStep = {
 	said: string | null,
 };
 
-/**  **A copy's grades, newest first** (S6), and what the record left out as it was read. */
+/**
+ *  **A copy's grades, newest first** (S6), and what the record left out as it was read; and what
+ *  the Grades tab says besides, so it asks no plan (#3928): how many trigger tests a grade would
+ *  run, or why they were not read, and the grade of the skill running now, at its latest step.
+ */
 export type SkillGrades = {
 	grades: GradeRow[],
 	said: string | null,
+	tests: number,
+	tests_refused: string | null,
+	running: SkillGradeStep | null,
 };
 
 /**  Where a project skill reaches, as the studio sets it. */
@@ -10628,8 +10686,8 @@ export type SkillLintLevel =
 "warns";
 
 /**
- *  **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Grades and Runs
- *  panels, then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
+ *  **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,
+ *  then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
  *  or refused with the core's sentence.
  */
 export type SkillPanel = {
@@ -10646,7 +10704,7 @@ export type SkillPanel = {
  *  **Which panel on a skill's tab**, as the window holds it: purlis's Runs panel, or one an
  *  extension adds, by its id and the panel's.
  */
-export type SkillPanelKey = { kind: "grades" } | { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
+export type SkillPanelKey = { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
 
 /**
  *  **Whose pins a pin is** (SK-15d, #3232): a workspace's or a persona's, by name. The core's
@@ -10814,6 +10872,11 @@ export type SkillUsers = {
 	persona: string | null,
 	personas: string[],
 	skills: string[],
+	/**
+	 *  Every workspace and persona whose pins name it, the workspaces first: what a rename
+	 *  changes with it.
+	 */
+	pinned_by: SkillPinner[],
 };
 
 /**  One version of a skill: one commit that changed it. */

@@ -31,8 +31,6 @@ use crate::extension::project::Choices;
 use crate::extension::studio::{self as wire, Ask, HandedFile, SkillFile};
 use crate::panel::{Block, Empty, Table, TableRow, Tone};
 
-use super::verbs::Level;
-
 /// What the studio asks extensions with: the app's executor, this machine's record of
 /// extensions, and the project the question is asked in.
 #[derive(Clone, Copy)]
@@ -125,11 +123,11 @@ impl<'a> Studio<'a> {
             .collect()
     }
 
-    /// **The panels on `skill`'s tab**, in the project at `plane`: purlis's Grades and Runs panels
-    /// first, then each extension's, each answered or refused with a sentence. The Grades panel
-    /// is of the copy at `level` ([`GradesPanel`]).
-    pub fn panels(&self, plane: &Path, skill: &str, level: Option<&Level>) -> Vec<Answered> {
-        let mut out = own_panels(plane, skill, level);
+    /// **The panels on `skill`'s tab**, in the project at `plane`: purlis's Runs panel first,
+    /// then each extension's, each answered or refused with a sentence. A skill's grades are not
+    /// a panel: its Grades tab reads them whole (`skill_grades`, S6).
+    pub fn panels(&self, plane: &Path, skill: &str) -> Vec<Answered> {
+        let mut out = own_panels(plane, skill);
         let asked = self.declaring(Capability::StudioPanel);
         if asked.is_empty() {
             return out;
@@ -153,14 +151,10 @@ impl<'a> Studio<'a> {
     }
 }
 
-/// **purlis's own panels on `skill`'s tab**, in the project at `plane`: its Grades panel, of the
-/// copy at `level`, then its Runs panel. What every skill's tab draws first, with a studio or
-/// without one.
-pub fn own_panels(plane: &Path, skill: &str, level: Option<&Level>) -> Vec<Answered> {
-    vec![
-        Answered::of(&GradesPanel { plane, level }, skill),
-        Answered::of(&RunsPanel { plane }, skill),
-    ]
+/// **purlis's own panels on `skill`'s tab**, in the project at `plane`: its Runs panel. What
+/// every skill's tab draws first, with a studio or without one.
+pub fn own_panels(plane: &Path, skill: &str) -> Vec<Answered> {
+    vec![Answered::of(&RunsPanel { plane }, skill)]
 }
 
 // ---------------------------------------------------------------------------------------
@@ -297,7 +291,6 @@ pub trait StudioPanel {
 /// extension's id and the panel's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PanelKey {
-    Grades,
     Runs,
     Extension { extension: String, panel: String },
 }
@@ -324,73 +317,6 @@ impl Answered {
     }
 }
 
-/// **purlis's Grades panel** (SK-16, #2779), the built-in runner's scorecard: every grade of one
-/// copy of the skill the eval record holds, newest first, with the version it graded, what its
-/// chats ran on, each arm's pass rate and the difference the skill made. A pass or a fail comes
-/// from here alone, never from a run (decision 24).
-///
-/// **One copy's grades** (#3353, #3275): same-named copies at two levels are two skills, so the
-/// panel reads the rows of the copy at `level` alone, or, with none, of the copy the skill's tab
-/// shows first (the first of [`Level::copies_of`]).
-#[derive(Debug, Clone, Copy)]
-pub struct GradesPanel<'a> {
-    pub plane: &'a Path,
-    pub level: Option<&'a Level>,
-}
-
-impl StudioPanel for GradesPanel<'_> {
-    fn key(&self) -> PanelKey {
-        PanelKey::Grades
-    }
-
-    fn title(&self) -> String {
-        "Grades".to_owned()
-    }
-
-    fn by(&self) -> Option<String> {
-        None
-    }
-
-    fn blocks(&self, skill: &str) -> Result<Vec<Block>, String> {
-        let first = match self.level {
-            Some(_) => None,
-            None => Level::copies_of(self.plane, skill)
-                .next()
-                .map(|(level, _)| level),
-        };
-        let Some(level) = self.level.or(first.as_ref()) else {
-            return Ok(grades_blocks(&[], skill));
-        };
-        let read = super::grades::read(self.plane, skill, Some(level));
-        let mut blocks = grades_blocks(&read.grades, skill);
-        // What the record left out is said, never dropped unseen (#3273).
-        if let Some(said) = read.said() {
-            blocks.push(Block::Note {
-                text: said,
-                tone: Tone::Trouble,
-            });
-        }
-        Ok(blocks)
-    }
-}
-
-/// A share as a person reads it: `67%`.
-fn share_said(share: f64) -> String {
-    format!("{:.0}%", share * 100.0)
-}
-
-/// An arm's pass rate as its cell says it: the mean, and the spread over the runs where there is
-/// one (`67% ± 12`).
-fn arm_said(graded: &super::grades::Graded, arm: purlis_skills::grade::Arm) -> String {
-    match graded.report.arm(arm).and_then(|score| score.pass_rate) {
-        None => "Not run".to_owned(),
-        Some(stat) if stat.stddev > 0.0 => {
-            format!("{} ± {:.0}", share_said(stat.mean), stat.stddev * 100.0)
-        }
-        Some(stat) => share_said(stat.mean),
-    }
-}
-
 /// **The version a grade graded, as its row and its scorecard say it**: the commit, shortened,
 /// or that it held changes not saved.
 pub fn version_said(graded: &super::grades::Graded) -> String {
@@ -413,92 +339,6 @@ pub fn ran_on_said(graded: &super::grades::Graded) -> String {
         Some(model) => format!("{harness} · {model}"),
         None => harness,
     }
-}
-
-/// The Grades panel's blocks for `grades` of `skill`: a sentence on what a grade is, then the
-/// table, or the empty table's claim and its way on.
-fn grades_blocks(grades: &[super::grades::Graded], skill: &str) -> Vec<Block> {
-    use purlis_skills::grade::Arm;
-    let mut out = Vec::new();
-    if !grades.is_empty() {
-        out.push(Block::Note {
-            text: format!(
-                "Each grade ran the skill's trigger tests in chats with the skill and without \
-                 it, and with its previous version where it had one, {} each, and counts the \
-                 tests each chat got right. Its difference is against the previous version where \
-                 it compared one, else against no skill.",
-                crate::counts::counted(purlis_skills::grade::RUNS, "time", "times")
-            ),
-            tone: Tone::Plain,
-        });
-    }
-    let rows = grades
-        .iter()
-        .map(|graded| {
-            let (passed, of) = graded.report.passed_with();
-            // The version it compared with, where it compared one (SK-57).
-            let previous = graded.compared_with().map(super::history::short);
-            TableRow {
-                key: graded.grade.clone(),
-                cells: vec![
-                    // A grade a saved edit started says so (SK-58).
-                    if graded.after_edit {
-                        format!("{} · after an edit", said_at(&graded.ts))
-                    } else {
-                        said_at(&graded.ts)
-                    },
-                    version_said(graded),
-                    ran_on_said(graded),
-                    format!("{passed} of {of}"),
-                    arm_said(graded, Arm::With),
-                    arm_said(graded, Arm::Without),
-                    previous
-                        .map(|commit| format!("{} · {commit}", arm_said(graded, Arm::Previous)))
-                        .unwrap_or_default(),
-                    graded
-                        .report
-                        .delta
-                        .map(|delta| match previous {
-                            Some(commit) => {
-                                format!("{:+.0} points against {commit}", delta * 100.0)
-                            }
-                            None => format!("{:+.0} points", delta * 100.0),
-                        })
-                        .unwrap_or_default(),
-                    crate::counts::counted(u64::from(graded.spent.chats), "chat", "chats"),
-                    super::grades::ended_said(graded.report.ended).to_owned(),
-                ],
-            }
-        })
-        .collect();
-    out.push(Block::Table(Table {
-        caption: format!("Grades of {skill}"),
-        columns: [
-            "Graded",
-            "Version",
-            "Ran on",
-            "Tests passed",
-            "With the skill",
-            "Without it",
-            "Previous version",
-            "Difference",
-            "Chats",
-            "Ended",
-        ]
-        .map(str::to_owned)
-        .to_vec(),
-        rows,
-        empty: Empty {
-            headline: format!("No grades of {skill} yet"),
-            body: Some(
-                "Grade runs the skill's trigger tests in chats with the skill and without it, \
-                 once you have seen what it costs."
-                    .into(),
-            ),
-            offer: None,
-        },
-    }));
-    out
 }
 
 /// How many runs the Runs panel lists at most.

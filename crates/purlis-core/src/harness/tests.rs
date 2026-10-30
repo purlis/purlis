@@ -535,6 +535,7 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "Bash(purlis dispatch --to *)",
             "Bash(purlis dispatch --profile *)",
             "Bash(purlis dispatch --long *)",
+            "Bash(purlis dispatch --in *)",
             "Bash(purlis dispatch report *)",
             "Bash(purlis dispatch --wait *)",
             "Bash(purlis dispatch wait *)",
@@ -582,6 +583,7 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "Bash(purlis worktree abandon *)",
             "Bash(purlis worktree list)",
             "Bash(purlis worktree list *)",
+            "Bash(purlis worktree remove *)",
             "mcp__purlis__dispatch",
             "mcp__purlis__dispatch_report",
             "mcp__purlis__dispatch_tell",
@@ -614,6 +616,7 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "mcp__purlis__workspace_vision",
             "mcp__purlis__ask_operator",
             "mcp__purlis__worktree_update",
+            "mcp__purlis__worktree_remove",
             // And the browser tools, on the chat's browser Ask (#2245).
             "mcp__purlis__browser_open",
             "mcp__purlis__browser_navigate",
@@ -664,6 +667,7 @@ fn a_dispatch_is_pre_allowed_by_each_spelling_it_has_and_by_no_wildcard_over_the
             "Bash(purlis dispatch --to *)",
             "Bash(purlis dispatch --profile *)",
             "Bash(purlis dispatch --long *)",
+            "Bash(purlis dispatch --in *)",
             "Bash(purlis dispatch report *)",
             "Bash(purlis dispatch --wait *)",
             "Bash(purlis dispatch wait *)",
@@ -700,7 +704,7 @@ fn a_dispatch_is_pre_allowed_by_each_spelling_it_has_and_by_no_wildcard_over_the
         assert_ne!(first, "*", "{rule}");
         if first.starts_with("--") {
             assert!(
-                ["--name", "--to", "--profile", "--long", "--wait"].contains(&first),
+                ["--name", "--to", "--profile", "--long", "--in", "--wait"].contains(&first),
                 "{first}"
             );
         } else {
@@ -907,6 +911,8 @@ fn every_charter_tool_a_claude_code_chat_runs_without_asking_is_ruled_in_by_name
         "dispatch_report",
         // And the update the app makes for the chat in its clone or branch folder (#3831).
         "worktree_update",
+        // And the removal the app makes for the chat of its finished branch folder (#3879).
+        "worktree_remove",
         // And every other dispatch subcommand's tool (#3786): what a chat does with its own
         // tasks, and a task with its asker, is its own.
         "dispatch_wait",

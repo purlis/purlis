@@ -210,6 +210,23 @@ pub fn take_over(
     let from = agreed_tree(repo, scratch, leave_out, to_head)?;
     let to_tree = tree_of(repo, to_snapshot)?;
     let kept = IndexKept::of(repo, scratch)?;
+    move_tree(repo, &from, &to_tree, &to, to_head, || kept.put_back())?;
+    agree(repo, to_branch, to_snapshot, was.as_deref())?;
+    Ok(to_watch(repo, &from, &to_tree))
+}
+
+/// **Moves `repo`'s work tree from tree `from` to tree `to_tree`**, then branch `to` to `to_head`
+/// with the index at it, so what `to_tree` has beyond `to_head` is uncommitted work: git's own
+/// two-tree `read-tree -m -u`, with no attribute of the work tree read (so no filter it names
+/// runs), no submodule reached and no hook run. `undo` is called where the work tree did not move.
+fn move_tree(
+    repo: &Path,
+    from: &str,
+    to_tree: &str,
+    to: &str,
+    to_head: &str,
+    undo: impl Fn(),
+) -> Result<(), Refused> {
     let empty = empty_tree(repo)?;
     let attr = format!("--attr-source={empty}");
     let quiet = [
@@ -222,15 +239,15 @@ pub fn take_over(
         attr.as_str(),
     ];
     let steps: [Vec<&str>; 2] = [
-        vec!["read-tree", from.as_str()],
-        vec!["read-tree", "-m", "-u", from.as_str(), to_tree.as_str()],
+        vec!["read-tree", from],
+        vec!["read-tree", "-m", "-u", from, to_tree],
     ];
     for (at, step) in steps.into_iter().enumerate() {
         let mut args: Vec<&str> = quiet.to_vec();
         args.extend(step);
         let ran = run(repo, &args)?;
         if !ran.ok() {
-            kept.put_back();
+            undo();
             return Err(git_failed("move the work tree", &ran));
         }
         if at == 0 {
@@ -241,8 +258,8 @@ pub fn take_over(
     }
     let message = "purlis: the chat's work moved here";
     let moved = [
-        vec!["update-ref", "-m", message, to.as_str(), to_head],
-        vec!["symbolic-ref", "-m", message, "HEAD", to.as_str()],
+        vec!["update-ref", "-m", message, to, to_head],
+        vec!["symbolic-ref", "-m", message, "HEAD", to],
         vec!["read-tree", to_head],
     ];
     for step in moved {
@@ -251,29 +268,36 @@ pub fn take_over(
             return Err(git_failed("move the branch with its work", &ran));
         }
     }
-    agree(repo, to_branch, to_snapshot, was.as_deref())?;
-    Ok(to_watch(repo, &from, &to_tree))
+    Ok(())
 }
 
 /// **Files a tool on this machine runs or reads as its settings**, by their place in a clone:
 /// what a person looks at before running anything where a chat's work came back from another
 /// machine (the person's ruling of 2026-10-27). Direnv's `.envrc`, the harnesses' own folders and
 /// settings (`.claude/`, `.codex/`, `.cursor/`, `.mcp.json`, `opencode.json`), editors' workspace
-/// settings (`.vscode/`, `.idea/`), git hook managers (`.husky/`, `lefthook.yml`,
-/// `.pre-commit-config.yaml`), dev containers, and the files a build runs: `package.json` (its
-/// scripts), `Makefile`, `justfile`, `Taskfile.yml`, `build.rs`.
+/// settings (`.vscode/`, `.idea/`, `.zed/`, `.nvim.lua`), git hook managers (`.husky/`,
+/// `lefthook.yml`, `.pre-commit-config.yaml`), what git itself reads from the tree
+/// (`.gitattributes`, `.gitmodules`, `.lfsconfig`), dev containers and environments (`mise.toml`,
+/// `flake.nix`), CI workflows, and the files a build or a toolchain runs: `package.json` (its
+/// scripts), `.yarnrc.yml`, `Makefile`, `justfile`, `Taskfile.yml`, `Cargo.toml`, `build.rs`,
+/// `.cargo/`, `rust-toolchain.toml`, `pyproject.toml`, `setup.py`, Gradle's and Maven's.
 pub fn runs_here(path: &str) -> bool {
-    const FOLDERS: [&str; 8] = [
+    const FOLDERS: [&str; 13] = [
         ".claude/",
         ".codex/",
         ".cursor/",
         ".vscode/",
         ".idea/",
+        ".zed/",
         ".husky/",
         ".devcontainer/",
         ".githooks/",
+        ".cargo/",
+        ".mvn/",
+        ".gemini/",
+        ".github/workflows/",
     ];
-    const NAMES: [&str; 14] = [
+    const NAMES: [&str; 35] = [
         ".envrc",
         ".mcp.json",
         "opencode.json",
@@ -288,6 +312,27 @@ pub fn runs_here(path: &str) -> bool {
         "build.rs",
         ".npmrc",
         ".tool-versions",
+        "cargo.toml",
+        "rust-toolchain",
+        "rust-toolchain.toml",
+        ".yarnrc.yml",
+        ".pnpmfile.cjs",
+        "mise.toml",
+        ".mise.toml",
+        "flake.nix",
+        "shell.nix",
+        "pyproject.toml",
+        "setup.py",
+        "gradlew",
+        "build.gradle",
+        "build.gradle.kts",
+        "settings.gradle",
+        "settings.gradle.kts",
+        ".gitattributes",
+        ".gitmodules",
+        ".lfsconfig",
+        ".nvim.lua",
+        ".exrc",
     ];
     let lower = path.to_ascii_lowercase();
     let name = lower.rsplit('/').next().unwrap_or(&lower);
@@ -300,9 +345,11 @@ pub fn runs_here(path: &str) -> bool {
 /// **What came onto `repo`'s work tree, moving it from tree `from` to tree `to`, that the person
 /// is to look at** (the person's ruling of 2026-10-27): every changed or new file a local tool
 /// runs ([`runs_here`]), every one a save to the forge refuses
-/// ([`crate::reposave::refused_as`]), and every link, which may lead out of the clone. By path.
+/// ([`crate::reposave::refused_as`]), and every link, which may lead out of the clone. By path;
+/// the whole clone, an empty path, where what changed could not be listed, so nothing is ever
+/// left unnamed.
 fn to_watch(repo: &Path, from: &str, to: &str) -> Vec<String> {
-    let Ok(changed) = run(
+    let Some(changed) = run(
         repo,
         &[
             "diff-tree",
@@ -314,8 +361,10 @@ fn to_watch(repo: &Path, from: &str, to: &str) -> Vec<String> {
             from,
             to,
         ],
-    ) else {
-        return Vec::new();
+    )
+    .ok()
+    .filter(|ran| ran.ok()) else {
+        return vec![String::new()];
     };
     let mut watch = Vec::new();
     let mut fields = changed.out.split('\0');
@@ -538,6 +587,21 @@ pub fn take_work_back(
     if heads.is_empty() && bundle.is_none() {
         return Ok(Vec::new());
     }
+    let (branch, head, snapshot, branches) = work_named(heads)?;
+    let moved = fetch_incoming(repo, bundle, heads).and_then(|()| {
+        // The runner's branches, as a fetch keeps them, from what came.
+        super::take_back(repo, pool, None, &branches)?;
+        take_over(repo, scratch, leave_out, &branch, &head.oid, &snapshot.oid)
+    });
+    drop_incoming(repo);
+    moved
+}
+
+/// **What a runner gave of its work tree, as [`give_work`] names it**: exactly one snapshot,
+/// `refs/purlis/snapshots/<branch>`, with its branch among `heads`, every name one a move
+/// carries and every commit named in full. Answers the branch's short name, its head, its
+/// snapshot, and every branch.
+fn work_named(heads: &[Ref]) -> Result<(String, Ref, Ref, Vec<Ref>), Refused> {
     let snapshots: Vec<&Ref> = heads
         .iter()
         .filter(|one| one.name.starts_with(SNAPSHOTS))
@@ -560,11 +624,6 @@ pub fn take_work_back(
                 "the runner sent work for {branch} without the branch, so none was taken"
             ))
         })?;
-    let branches: Vec<Ref> = heads
-        .iter()
-        .filter(|one| one.name.starts_with(HEADS))
-        .cloned()
-        .collect();
     for one in heads {
         carried(&one.name)?;
         if !an_oid(&one.oid) {
@@ -574,13 +633,80 @@ pub fn take_work_back(
             )));
         }
     }
-    let moved = fetch_incoming(repo, bundle, heads).and_then(|()| {
-        // The runner's branches, as a fetch keeps them, from what came.
+    let branches: Vec<Ref> = heads
+        .iter()
+        .filter(|one| one.name.starts_with(HEADS))
+        .cloned()
+        .collect();
+    Ok((branch, head.clone(), (*snapshot).clone(), branches))
+}
+
+/// **The desktop makes a clone the runner chat made, fresh** (#3811): where this machine has
+/// nothing at `repo`, a repository is made there, the runner's branches kept under
+/// `refs/remotes/<pool>/` as a fetch keeps them, and its work tree checked out on the runner's
+/// work tree's branch with the work in it, as [`take_over`] moves one from nothing: no
+/// attribute read, no submodule reached, no hook run, and git writes no path through a link.
+/// What came is what both ends agree on after. Answers what came that the person is to look
+/// at, every file of it a local tool runs and every link ([`to_watch`] from the empty tree).
+/// Refused where anything is at `repo` already, which is never written into, where its folder
+/// is not a folder reached through no link, and at a name the workspace keeps for its own
+/// ([`crate::contain::workspace_keeps`]); a clone that does not come leaves nothing at `repo`.
+/// No remote of the runner's comes with it.
+pub fn take_work_fresh(
+    repo: &Path,
+    pool: &str,
+    bundle: Option<&Path>,
+    heads: &[Ref],
+) -> Result<Vec<String>, Refused> {
+    let (branch, head, snapshot, branches) = work_named(heads)?;
+    let not_made = |why: &str| {
+        not_allowed(format!(
+            "{} {why}, so the runner's clone of it was not made here",
+            repo.display()
+        ))
+    };
+    let name = repo
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    if !crate::contain::repo_name_ok(name) || crate::contain::workspace_keeps(name) {
+        return Err(not_made("is not a name a clone may have"));
+    }
+    let parent = repo.parent().ok_or_else(|| not_made("has no folder"))?;
+    if !std::fs::symlink_metadata(parent).is_ok_and(|meta| meta.is_dir()) {
+        return Err(not_made("is not in a folder here"));
+    }
+    // Made, or refused where anything is there already: the folder removed below is only ever
+    // the one made here.
+    if let Err(why) = std::fs::create_dir(repo) {
+        return Err(if why.kind() == std::io::ErrorKind::AlreadyExists {
+            not_made("is here already")
+        } else {
+            Refused::Git(format!("{} could not be made: {why}", repo.display()))
+        });
+    }
+    let made = super::made(repo).and_then(|()| {
+        fetch_incoming(repo, bundle, heads)?;
+        if commit_of(repo, &format!("{}^1", snapshot.oid))? != head.oid {
+            return Err(not_allowed(format!(
+                "the work that came for {branch} is not on its branch's commit, so it was not \
+                 taken"
+            )));
+        }
         super::take_back(repo, pool, None, &branches)?;
-        take_over(repo, scratch, leave_out, &branch, &head.oid, &snapshot.oid)
+        let empty = empty_tree(repo)?;
+        let to_tree = tree_of(repo, &snapshot.oid)?;
+        move_tree(repo, &empty, &to_tree, &head.name, &head.oid, || {})?;
+        agree(repo, &branch, &snapshot.oid, None)?;
+        Ok(to_watch(repo, &empty, &to_tree))
     });
-    drop_incoming(repo);
-    moved
+    if made.is_err() {
+        // Only what this made: nothing was at `repo` before it.
+        let _ = std::fs::remove_dir_all(repo);
+    } else {
+        drop_incoming(repo);
+    }
+    made
 }
 
 /// **The desktop bundles `work` of `repo` for a move** into `into`: the branch at its commit and

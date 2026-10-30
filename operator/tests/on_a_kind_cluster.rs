@@ -164,14 +164,7 @@ async fn a_pool_and_a_claim_yield_a_running_session_host_that_goes_with_the_clai
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-runs").await;
     let pools = Api::<Pool>::all(client.clone());
-    let pool = Pool::new(
-        "e2e-runs",
-        PoolSpec {
-            image: runner_image(),
-            kept_volume: Default::default(),
-            stopped: false,
-        },
-    );
+    let pool = Pool::new("e2e-runs", PoolSpec::new(runner_image()));
     pools
         .patch(
             "e2e-runs",
@@ -248,14 +241,7 @@ async fn a_runners_link_key_is_vouched_for_with_the_key_its_pool_names() {
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-vouch").await;
     let pools = Api::<Pool>::all(client.clone());
-    let pool = Pool::new(
-        "e2e-vouch",
-        PoolSpec {
-            image: runner_image(),
-            kept_volume: Default::default(),
-            stopped: false,
-        },
-    );
+    let pool = Pool::new("e2e-vouch", PoolSpec::new(runner_image()));
     pools
         .patch(
             "e2e-vouch",
@@ -531,17 +517,57 @@ async fn a_pool_names_its_image_by_digest_and_a_claim_keeps_its_pool() {
     let pools = Api::<Pool>::all(client.clone());
     let by_tag = Pool::new(
         "e2e-tag",
-        PoolSpec {
-            image: "ghcr.io/purlis/purlis-runner:main".into(),
-            kept_volume: Default::default(),
-            stopped: false,
-        },
+        PoolSpec::new("ghcr.io/purlis/purlis-runner:main"),
     );
     let refused = pools.create(&PostParams::default(), &by_tag).await;
     assert!(
         matches!(&refused, Err(kube::Error::Api(status)) if status.code == 422),
         "{refused:?}"
     );
+    // A Pool's times and warm count are only what purlis takes (#3737).
+    for (said, spec) in [
+        (
+            "a day spelled in days",
+            serde_json::json!({ "idleAfter": "1d" }),
+        ),
+        (
+            "idle for less than a minute",
+            serde_json::json!({ "idleAfter": "30s" }),
+        ),
+        ("no time at all", serde_json::json!({ "maxAge": "0h" })),
+        (
+            "the Update after the deletion",
+            serde_json::json!({ "deleteSuspendedAfter": "24h", "noticeBeforeDelete": "48h" }),
+        ),
+        (
+            "fewer than no runners warm",
+            serde_json::json!({ "warmReplicas": -1 }),
+        ),
+        (
+            "more runners warm than purlis keeps",
+            serde_json::json!({ "warmReplicas": 21 }),
+        ),
+        (
+            "a time too long to read",
+            serde_json::json!({ "maxAge": "99999999999h" }),
+        ),
+    ] {
+        let mut asked = serde_json::json!({
+            "apiVersion": "runners.purlis.dev/v1alpha1",
+            "kind": "Pool",
+            "metadata": { "name": "e2e-times" },
+            "spec": { "image": runner_image() },
+        });
+        for (key, value) in spec.as_object().expect("keys") {
+            asked["spec"][key] = value.clone();
+        }
+        let pool: Pool = serde_json::from_value(asked).expect("a pool");
+        let refused = pools.create(&PostParams::default(), &pool).await;
+        assert!(
+            matches!(&refused, Err(kube::Error::Api(status)) if status.code == 422),
+            "{said}: {refused:?}"
+        );
+    }
 
     let scratch = Scratch::new(&client, "e2e-keeps").await;
     let claims = Api::<Claim>::namespaced(client.clone(), &scratch.name);
@@ -570,14 +596,7 @@ async fn an_upstream_object_the_operator_did_not_make_is_left_as_it_is_until_it_
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-in-the-way").await;
     let pools = Api::<Pool>::all(client.clone());
-    let pool = Pool::new(
-        "e2e-in-the-way",
-        PoolSpec {
-            image: runner_image(),
-            kept_volume: Default::default(),
-            stopped: false,
-        },
-    );
+    let pool = Pool::new("e2e-in-the-way", PoolSpec::new(runner_image()));
     pools
         .patch(
             "e2e-in-the-way",
@@ -605,11 +624,7 @@ async fn an_upstream_object_the_operator_did_not_make_is_left_as_it_is_until_it_
                 &PatchParams::apply("e2e").force(),
                 &Patch::Apply(&Pool::new(
                     "e2e-in-the-way-seed",
-                    PoolSpec {
-                        image: runner_image(),
-                        kept_volume: Default::default(),
-                        stopped: false,
-                    },
+                    PoolSpec::new(runner_image()),
                 )),
             )
             .await
@@ -729,14 +744,7 @@ async fn a_claims_runner_keeps_running_when_its_pool_is_deleted_and_the_claim_sa
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-pool-gone").await;
     let pools = Api::<Pool>::all(client.clone());
-    let pool = Pool::new(
-        "e2e-pool-gone",
-        PoolSpec {
-            image: runner_image(),
-            kept_volume: Default::default(),
-            stopped: false,
-        },
-    );
+    let pool = Pool::new("e2e-pool-gone", PoolSpec::new(runner_image()));
     pools
         .patch(
             "e2e-pool-gone",
@@ -832,14 +840,7 @@ async fn a_pools_template_and_warm_pool_go_with_its_persons_last_claim_on_it() {
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-last-claim").await;
     let pools = Api::<Pool>::all(client.clone());
-    let pool = Pool::new(
-        "e2e-last-claim",
-        PoolSpec {
-            image: runner_image(),
-            kept_volume: Default::default(),
-            stopped: false,
-        },
-    );
+    let pool = Pool::new("e2e-last-claim", PoolSpec::new(runner_image()));
     pools
         .patch(
             "e2e-last-claim",
@@ -1027,14 +1028,7 @@ async fn a_runner_namespace_made_again_as_its_policys_binding_settles_waits_for_
         .patch(
             "e2e-settling",
             &PatchParams::apply("e2e").force(),
-            &Patch::Apply(&Pool::new(
-                "e2e-settling",
-                PoolSpec {
-                    image: runner_image(),
-                    kept_volume: Default::default(),
-                    stopped: false,
-                },
-            )),
+            &Patch::Apply(&Pool::new("e2e-settling", PoolSpec::new(runner_image()))),
         )
         .await
         .expect("the pool");
@@ -1157,14 +1151,7 @@ async fn a_runner_namespace_and_what_the_operator_binds_are_guarded_at_admission
         .patch(
             "e2e-guarded",
             &PatchParams::apply("e2e").force(),
-            &Patch::Apply(&Pool::new(
-                "e2e-guarded",
-                PoolSpec {
-                    image: runner_image(),
-                    kept_volume: Default::default(),
-                    stopped: false,
-                },
-            )),
+            &Patch::Apply(&Pool::new("e2e-guarded", PoolSpec::new(runner_image()))),
         )
         .await
         .expect("the pool");
@@ -1333,14 +1320,7 @@ async fn a_persons_runners_run_in_their_own_namespace_within_their_quota_and_go_
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-person").await;
     let pools = Api::<Pool>::all(client.clone());
-    let pool = Pool::new(
-        "e2e-person",
-        PoolSpec {
-            image: runner_image(),
-            kept_volume: Default::default(),
-            stopped: false,
-        },
-    );
+    let pool = Pool::new("e2e-person", PoolSpec::new(runner_image()));
     pools
         .patch(
             "e2e-person",
@@ -1637,14 +1617,7 @@ async fn a_claim_is_refused_to_someone_the_cluster_does_not_let_use_its_pool() {
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-use").await;
     let pools = Api::<Pool>::all(client.clone());
-    let pool = Pool::new(
-        "e2e-use",
-        PoolSpec {
-            image: runner_image(),
-            kept_volume: Default::default(),
-            stopped: false,
-        },
-    );
+    let pool = Pool::new("e2e-use", PoolSpec::new(runner_image()));
     pools
         .patch(
             "e2e-use",
@@ -1888,14 +1861,7 @@ async fn an_upstream_claim_on_a_purlis_pool_made_directly_is_refused() {
 
     // And what the operator made for a Claim cannot be moved off a purlis pool's objects.
     let pools = Api::<Pool>::all(client.clone());
-    let pool = Pool::new(
-        "e2e-direct",
-        PoolSpec {
-            image: runner_image(),
-            kept_volume: Default::default(),
-            stopped: false,
-        },
-    );
+    let pool = Pool::new("e2e-direct", PoolSpec::new(runner_image()));
     pools
         .patch(
             "e2e-direct",
@@ -2018,14 +1984,7 @@ async fn only_a_claim_made_while_the_policy_is_in_force_is_acted_on() {
     let outcome = std::panic::AssertUnwindSafe(async {
         let scratch = Scratch::new(&client, "e2e-policy").await;
         let pools = Api::<Pool>::all(client.clone());
-        let pool = Pool::new(
-            "e2e-policy",
-            PoolSpec {
-                image: runner_image(),
-                kept_volume: Default::default(),
-                stopped: false,
-            },
-        );
+        let pool = Pool::new("e2e-policy", PoolSpec::new(runner_image()));
         pools
             .patch(
                 "e2e-policy",
@@ -2113,14 +2072,7 @@ async fn a_refused_claims_running_runner_keeps_its_template_and_network_policy()
     let pools = Api::<Pool>::all(client.clone());
 
     let outcome = std::panic::AssertUnwindSafe(async {
-        let pool = Pool::new(
-            "e2e-refused-runs",
-            PoolSpec {
-                image: runner_image(),
-                kept_volume: Default::default(),
-                stopped: false,
-            },
-        );
+        let pool = Pool::new("e2e-refused-runs", PoolSpec::new(runner_image()));
         pools
             .patch(
                 "e2e-refused-runs",
@@ -2323,12 +2275,12 @@ async fn a_fresh_claim_takes_a_warm_runner_and_a_kept_one_starts_cold_saying_its
     let pool = Pool::new(
         "e2e-warm",
         PoolSpec {
-            image: runner_image(),
             kept_volume: purlis_cluster_operator::KeptVolume {
                 size: "1Gi".into(),
                 storage_class_name: None,
             },
             stopped: false,
+            ..PoolSpec::new(runner_image())
         },
     );
     pools
@@ -2358,12 +2310,12 @@ async fn a_fresh_claim_takes_a_warm_runner_and_a_kept_one_starts_cold_saying_its
         0,
         "no runner kept warm by default"
     );
-    // A team admin keeps one runner warm; the operator keeps the number it finds.
-    warm_pools
+    // A team admin keeps one runner warm with the pool's warmReplicas (#3737).
+    pools
         .patch(
-            &name,
+            "e2e-warm",
             &PatchParams::default(),
-            &Patch::Merge(serde_json::json!({ "spec": { "replicas": 1 } })),
+            &Patch::Merge(serde_json::json!({ "spec": { "warmReplicas": 1 } })),
         )
         .await
         .expect("one runner kept warm");
@@ -2401,8 +2353,23 @@ async fn a_fresh_claim_takes_a_warm_runner_and_a_kept_one_starts_cold_saying_its
             .spec
             .replicas,
         1,
-        "the operator kept the number the admin set"
+        "the operator kept the pool's warm count"
     );
+    // The count is the operator's own: a warm pool scaled by hand is brought back to it.
+    warm_pools
+        .patch(
+            &name,
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({ "spec": { "replicas": 3 } })),
+        )
+        .await
+        .expect("scaled by hand");
+    eventually(
+        "the warm pool brought back to its pool's count",
+        Duration::from_secs(60),
+        || async { (warm_pools.get(&name).await.ok()?.spec.replicas == 1).then_some(()) },
+    )
+    .await;
 
     // A kept claim starts a runner of its own, cold, saying its stages as it goes.
     let mut kept = claim("ada-kept", "e2e-warm");
@@ -2601,12 +2568,12 @@ async fn small_pool(client: &Client, name: &str) -> Api<Pool> {
     let pool = Pool::new(
         name,
         PoolSpec {
-            image: runner_image(),
             kept_volume: purlis_cluster_operator::KeptVolume {
                 size: "1Gi".into(),
                 storage_class_name: None,
             },
             stopped: false,
+            ..PoolSpec::new(runner_image())
         },
     );
     pools
@@ -2933,7 +2900,7 @@ async fn stopped_on_a_pool_or_a_claim_suspends_its_runners_and_never_destroys_th
 #[tokio::test]
 #[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
 async fn a_warm_runner_of_an_earlier_template_is_replaced_and_a_fresh_claim_takes_a_current_one() {
-    use purlis_cluster_operator::upstream::{Sandbox, SandboxWarmPool, name_for};
+    use purlis_cluster_operator::upstream::{Sandbox, name_for};
     use purlis_cluster_operator::vouch::pod_name_of;
     let client = Client::try_default().await.expect("the cluster");
     let scratch = Scratch::new(&client, "e2e-stale").await;
@@ -2941,17 +2908,17 @@ async fn a_warm_runner_of_an_earlier_template_is_replaced_and_a_fresh_claim_take
     let claims = claims_in(&client, &scratch.name);
     // Its runners are in the requester's runner namespace (#2055).
     let pods = Api::<Pod>::namespaced(client.clone(), &runners());
-    // The first claim makes the pool's warm pool; a team admin keeps one runner warm.
+    // The first claim makes the pool's warm pool; a team admin keeps one runner warm (#3737).
     claims
         .create(&PostParams::default(), &claim("stale-first", "e2e-stale"))
         .await
         .expect("the first claim");
     let (first, _) = vouched_pod(&claims, "stale-first").await;
-    Api::<SandboxWarmPool>::namespaced(client.clone(), &runners())
+    pools
         .patch(
-            &name_for("e2e-stale"),
+            "e2e-stale",
             &PatchParams::default(),
-            &Patch::Merge(serde_json::json!({ "spec": { "replicas": 1 } })),
+            &Patch::Merge(serde_json::json!({ "spec": { "warmReplicas": 1 } })),
         )
         .await
         .expect("one runner kept warm");
@@ -3170,6 +3137,125 @@ async fn the_cluster_lets_the_operator_change_only_the_mode_of_a_claims_sandbox(
     let _ = claims.delete("right-1", &DeleteParams::foreground()).await;
     let _ = pools
         .delete("e2e-sandbox-right", &DeleteParams::default())
+        .await;
+    scratch.end().await;
+}
+
+/// The operator's metrics as its Service serves them (#3737), read through the API server's
+/// proxy to that Service; empty while it does not answer.
+async fn scraped(client: &Client) -> String {
+    let request = http::Request::get(
+        "/api/v1/namespaces/purlis-system/services/purlis-cluster-operator-metrics:metrics/proxy/metrics",
+    )
+    .body(Vec::new())
+    .expect("a request");
+    client.request_text(request).await.unwrap_or_default()
+}
+
+/// The value `text` gives the series `series` (a metric's name and its labels), if any.
+fn value_of(text: &str, series: &str) -> Option<u64> {
+    text.lines()
+        .find_map(|line| line.strip_prefix(series)?.strip_prefix(' ')?.parse().ok())
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn the_operators_metrics_count_a_claim_its_suspension_and_its_deletion_once() {
+    use k8s_openapi::api::networking::v1::NetworkPolicy;
+    let client = Client::try_default().await.expect("the cluster");
+    // The installed policy lets nothing scrape the operator (#3737); one more lets the API
+    // server's proxy, as a cluster's Prometheus would be let in by `metrics.allowFrom`.
+    let policies = Api::<NetworkPolicy>::namespaced(client.clone(), "purlis-system");
+    let scrape: NetworkPolicy = serde_json::from_value(serde_json::json!({
+        "metadata": { "name": "e2e-metrics-scrape" },
+        "spec": {
+            "podSelector": { "matchLabels": { "app.kubernetes.io/name": "purlis-cluster-operator" } },
+            "policyTypes": ["Ingress"],
+            "ingress": [{ "ports": [{ "port": "metrics", "protocol": "TCP" }] }],
+        },
+    }))
+    .expect("a network policy");
+    // One a failed run left is taken away first.
+    let _ = policies
+        .delete("e2e-metrics-scrape", &DeleteParams::default())
+        .await;
+    eventually("no scrape policy left", Duration::from_secs(30), || async {
+        policies
+            .get_opt("e2e-metrics-scrape")
+            .await
+            .ok()?
+            .is_none()
+            .then_some(())
+    })
+    .await;
+    policies
+        .create(&PostParams::default(), &scrape)
+        .await
+        .expect("the scrape let in");
+    let scratch = Scratch::new(&client, "e2e-metrics").await;
+    let pools = small_pool(&client, "e2e-metrics").await;
+    let claims = claims_in(&client, &scratch.name);
+    let ready = r#"purlis_cluster_operator_claims{pool="e2e-metrics",namespace="e2e-metrics",state="Ready"}"#;
+    let suspended =
+        r#"purlis_cluster_operator_suspensions_total{pool="e2e-metrics",cause="stopped"}"#;
+    let deleted =
+        r#"purlis_cluster_operator_claims_deleted_total{pool="e2e-metrics",cause="requested"}"#;
+    let counts = |series: &'static str, wanted: u64| {
+        let client = client.clone();
+        async move {
+            eventually(
+                &format!("{series} {wanted}"),
+                Duration::from_secs(120),
+                || async {
+                    (value_of(&scraped(&client).await, series) == Some(wanted)).then_some(())
+                },
+            )
+            .await;
+        }
+    };
+
+    claims
+        .create(&PostParams::default(), &claim("metrics-1", "e2e-metrics"))
+        .await
+        .expect("a claim");
+    vouched_pod(&claims, "metrics-1").await;
+    counts(ready, 1).await;
+
+    claims
+        .patch(
+            "metrics-1",
+            &PatchParams::default(),
+            &Patch::Merge(serde_json::json!({ "spec": { "stopped": true } })),
+        )
+        .await
+        .expect("the claim stopped");
+    says_stopped(&claims, "metrics-1").await;
+    counts(suspended, 1).await;
+
+    claims
+        .delete("metrics-1", &DeleteParams::default())
+        .await
+        .expect("the claim deleted");
+    eventually("the claim is gone", Duration::from_secs(180), || async {
+        claims
+            .get_opt("metrics-1")
+            .await
+            .ok()?
+            .is_none()
+            .then_some(())
+    })
+    .await;
+    counts(deleted, 1).await;
+    // However often the operator looks at a Claim on its way out, it counts it once.
+    tokio::time::sleep(settled()).await;
+    let text = scraped(&client).await;
+    assert_eq!(value_of(&text, deleted), Some(1), "{text}");
+    assert_eq!(value_of(&text, suspended), Some(1), "{text}");
+    assert_eq!(value_of(&text, ready), None, "{text}");
+
+    let _ = pools.delete("e2e-metrics", &DeleteParams::default()).await;
+    let _ = policies
+        .delete("e2e-metrics-scrape", &DeleteParams::default())
         .await;
     scratch.end().await;
 }

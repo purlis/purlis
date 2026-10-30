@@ -1222,7 +1222,6 @@ pub(crate) async fn skill_runs(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum SkillPanelKey {
-    Grades,
     Runs,
     Extension { extension: String, panel: String },
 }
@@ -1234,7 +1233,6 @@ impl From<purlis_core::skills::studio::PanelKey> for SkillPanelKey {
     fn from(key: purlis_core::skills::studio::PanelKey) -> SkillPanelKey {
         use purlis_core::skills::studio::PanelKey;
         match key {
-            PanelKey::Grades => SkillPanelKey::Grades,
             PanelKey::Runs => SkillPanelKey::Runs,
             PanelKey::Extension { extension, panel } => {
                 SkillPanelKey::Extension { extension, panel }
@@ -1243,8 +1241,8 @@ impl From<purlis_core::skills::studio::PanelKey> for SkillPanelKey {
     }
 }
 
-/// **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Grades and Runs
-/// panels, then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
+/// **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,
+/// then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
 /// or refused with the core's sentence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct SkillPanel {
@@ -1257,17 +1255,15 @@ pub struct SkillPanel {
     pub refused: Option<String>,
 }
 
-/// The panels on skill `skill`'s tab in the project at `root`, asked with `studio`, the Grades
-/// panel of the copy at `level` (#3353).
+/// The panels on skill `skill`'s tab in the project at `root`, asked with `studio`.
 pub(crate) fn panels(
     root: &std::path::Path,
     skill: &str,
-    level: Option<&purlis_core::skills::verbs::Level>,
     studio: Option<purlis_core::skills::studio::Studio<'_>>,
 ) -> Vec<SkillPanel> {
     let answered = match studio {
-        Some(studio) => studio.panels(root, skill, level),
-        None => purlis_core::skills::studio::own_panels(root, skill, level),
+        Some(studio) => studio.panels(root, skill),
+        None => purlis_core::skills::studio::own_panels(root, skill),
     };
     answered
         .into_iter()
@@ -1290,10 +1286,10 @@ pub(crate) fn panels(
         .collect()
 }
 
-/// **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Grades panel, of the copy at
-/// `level` the tab shows (null: the copy it shows first, #3353), and its Runs panel, which lists
-/// every run of the skill, newest first, then each extension's. None while the flag is off. On a
-/// blocking thread, as it reads the project's skill log and asks each extension.
+/// **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
+/// run of the skill, newest first, then each extension's. A skill's grades are no panel: its
+/// Grades tab reads them whole ([`crate::skillgrade::skill_grades`]). None while the flag is off.
+/// On a blocking thread, as it reads the project's skill log and asks each extension.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_panels(
@@ -1301,7 +1297,6 @@ pub(crate) async fn skill_panels(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     skill: String,
-    level: Option<crate::skillchange::SkillLevel>,
 ) -> Result<Vec<SkillPanel>, String> {
     let held = planes.held(&plane)?;
     let executor = views.executor();
@@ -1312,10 +1307,7 @@ pub(crate) async fn skill_panels(
         Ok(purlis_core::skills::studio::with_studio(
             &executor,
             held.root(),
-            |studio| {
-                let level = level.as_ref().map(purlis_core::skills::verbs::Level::from);
-                panels(held.root(), &skill, level.as_ref(), studio)
-            },
+            |studio| panels(held.root(), &skill, studio),
         ))
     })
     .await

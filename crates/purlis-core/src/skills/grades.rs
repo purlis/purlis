@@ -953,6 +953,34 @@ pub fn planned(
     })
 }
 
+/// **The trigger tests a grade of the copy of `name` at `level` would run**, and why its file was
+/// not read where it was not: what a skill's Grades tab asks to know whether there is anything to
+/// grade (#3928), without the plan's history, estimate and models. A test no chat can be started
+/// on ([`left_out_why`]) is not one a grade runs, as [`planned`] leaves it out.
+pub fn trigger_tests(root: &Path, level: &Level, name: &str) -> Result<TriggerTests, String> {
+    let folder = find(root, level, name)?;
+    let fixtures = grade::fixtures_of(root, Path::new(&rel(root, &folder)), name);
+    let runs = fixtures.triggers.read().map_or(0, |tests| {
+        tests
+            .iter()
+            .filter(|test| left_out_why(&test.query).is_none())
+            .count()
+    });
+    Ok(TriggerTests {
+        runs,
+        refused: fixtures.triggers.refused().cloned(),
+    })
+}
+
+/// **A copy's trigger tests, counted** ([`trigger_tests`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TriggerTests {
+    /// How many a grade runs.
+    pub runs: usize,
+    /// Why the file could not be read, where it could not.
+    pub refused: Option<grade::Refused>,
+}
+
 /// **Why the query `query` is left out of a grade**, or `None` for one a chat is started on: one
 /// whose first character a chat program reads as its own ([`COMMAND_STARTS`]), or one no first
 /// message can carry ([`crate::handoff::bad_message`]).

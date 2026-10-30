@@ -53,6 +53,50 @@ pub fn of_this_version(
     Ok(Some(image))
 }
 
+/// **The runner image a new pool is offered** (the person's ruling of 2026-10-30).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Offered {
+    /// This version's own.
+    Ours(Image),
+    /// A newer version's, named by the manifest of the channel's newest release: an update of
+    /// purlis to `version` is waiting.
+    Newer { image: Image, version: String },
+    /// None: the manifest names none for its version, or is of an older version than this one.
+    None,
+}
+
+/// **The runner image the update manifest `manifest` offers a new pool of this version,
+/// `ours`**, checked with the updater's public key `pubkey`: this version's own, where the
+/// manifest is of this version; or, where it is of a newer one, that version's, checked
+/// exactly as [`of_this_version`] checks this version's, for the manifest's version. Refused
+/// where the manifest names no version, or an image that check refuses.
+pub fn offered(manifest: &serde_json::Value, pubkey: &str, ours: &str) -> Result<Offered, String> {
+    let version = manifest
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .ok_or("the update manifest names no version")?;
+    if version == ours {
+        return Ok(of_this_version(manifest, pubkey, ours)?.map_or(Offered::None, Offered::Ours));
+    }
+    let newer = match (
+        semver::Version::parse(version),
+        semver::Version::parse(ours),
+    ) {
+        (Ok(theirs), Ok(ours)) => theirs > ours,
+        _ => false,
+    };
+    if !newer {
+        return Ok(Offered::None);
+    }
+    Ok(match of_this_version(manifest, pubkey, version)? {
+        Some(image) => Offered::Newer {
+            image,
+            version: version.to_owned(),
+        },
+        None => Offered::None,
+    })
+}
+
 /// Whether `signature`, base64 of a minisign signature file, is the updater key `pubkey`'s
 /// over `signed`, for `version` by its trusted comment's `version:` field.
 fn verified(pubkey: &str, signature: &str, signed: &[u8], version: &str) -> Result<(), String> {

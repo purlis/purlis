@@ -137,7 +137,7 @@ impl Level {
 
     /// **Every copy of skill `name` in the plane at `plane`, in the order its tab shows them**
     /// (#3443): each level of [`Self::every`] that holds one, with its folder. The one place that
-    /// order is decided: the first is the copy the tab shows first, and the one its Grades panel
+    /// order is decided: the first is the copy the tab shows first, and the one its Grades tab
     /// reads until the tab names another.
     pub fn copies_of<'a>(
         plane: &'a Path,
@@ -642,6 +642,50 @@ pub fn edit(
     Ok(folder)
 }
 
+/// **Starts the trigger tests of the skill named `name` at `level`** (#3925): its
+/// `evals/triggers.json` from a short template ([`purlis_skills::grade::triggers_template`]: one
+/// query it should start on, one near miss it should leave alone), where it has none, committed
+/// alone. A file it has already is left as it is, and that is said; one purlis would not read is
+/// refused, with why. The answer is the file, relative to the plane, for the person to write in.
+pub fn start_trigger_tests(cx: &mut Ctx<'_>, level: &Level, name: &str) -> Result<String, String> {
+    use purlis_skills::grade;
+    let plane = cx.plane;
+    crate::settings::writable(plane)?;
+    let folder = find(plane, level, name)?;
+    let folder_rel = rel(plane, &folder);
+    let file = format!("{folder_rel}/{}", grade::triggers_path());
+    match grade::fixtures_of(plane, Path::new(&folder_rel), name).triggers {
+        grade::Read::Absent => {}
+        grade::Read::Read(_) => {
+            (cx.say)(Say::Info(
+                format!("{name} has a trigger tests file already, so it was left as it is.").into(),
+            ));
+            return Ok(file);
+        }
+        // One purlis would not read (a link, too large) is never opened to write in either.
+        grade::Read::Refused(why) => {
+            return Err(format!(
+                "{name}'s trigger tests were left as they are: {}",
+                why.in_window()
+            ));
+        }
+    }
+    write(
+        plane,
+        &file,
+        &format!("{name}'s trigger tests"),
+        None,
+        &grade::triggers_template(name),
+        // Its `evals/` folder may be made, never the skill's own.
+        folder_rel.split('/').count() + 1,
+    )?;
+    cx.done(format!(
+        "{name}'s trigger tests are started in {file}, from a template"
+    ));
+    cx.commit(std::slice::from_ref(&file), &format!("skill tests {name}"));
+    Ok(file)
+}
+
 /// **Renames the skill named `old` at `level` to `new`** (#2770, decision 14): its `SKILL.md`'s
 /// `name`, its folder and the file beside it, and every place that names it: each persona's
 /// `skills:` list and each reference in a persona's or a skill's text (`skills:<name>`), and, for
@@ -753,6 +797,56 @@ fn references_renamed(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> 
     }
     if level.at == Whose::Project {
         changed.extend(turned_off_renamed(cx, old, Some(new)));
+    }
+    // Pins are written in the project's files: a local skill's rename leaves them as they are,
+    // since a teammate's pin of the name means the skill they have.
+    if !level.local {
+        changed.extend(pins_renamed(cx, old, new));
+    }
+    changed
+}
+
+/// Each workspace's and persona's pins of `old` named `new`, in their place in the list (spec
+/// #3679 S4: a rename's pins follow it), and the files it changed. What could not be written is
+/// said, and the rest is still changed.
+fn pins_renamed(cx: &mut Ctx<'_>, old: &str, new: &str) -> Vec<String> {
+    use super::PinnedBy;
+    let plane = cx.plane;
+    let mut changed = Vec::new();
+    for by in super::pinners_of(plane, old) {
+        let pins: Vec<String> = super::pins_written(plane, &by)
+            .into_iter()
+            .map(|one| if one == old { new.to_owned() } else { one })
+            .fold(Vec::new(), |mut kept, one| {
+                if !kept.contains(&one) {
+                    kept.push(one);
+                }
+                kept
+            });
+        let (written, file, whose) = match &by {
+            PinnedBy::Workspace(ws) => (
+                super::set_names_in_settings(
+                    plane,
+                    ws,
+                    crate::settings::workspace::SKILLS_PINNED,
+                    pins,
+                ),
+                crate::settings::workspace::named(ws),
+                format!("workspace {ws}"),
+            ),
+            PinnedBy::Persona(persona) => (
+                super::persona::write_pins(plane, persona, &pins),
+                rel(plane, &crate::personas::def_path(plane, persona)),
+                format!("persona {persona}"),
+            ),
+        };
+        match written {
+            Ok(()) => {
+                cx.done(format!("{whose} pins {new} now"));
+                changed.push(file);
+            }
+            Err(why) => cx.warn(format!("{whose} still pins {old}: {why}")),
+        }
     }
     changed
 }
@@ -942,6 +1036,9 @@ pub struct Users {
     pub personas: Vec<String>,
     /// The other skills whose text names it.
     pub skills: Vec<String>,
+    /// Every workspace and persona whose pins name it, the workspaces first: what a rename
+    /// changes with it and a delete leaves pinning nothing.
+    pub pinned_by: Vec<super::PinnedBy>,
 }
 
 /// **Who uses the skill named `name` at `level`**: the chats it reaches, and the personas and
@@ -992,6 +1089,7 @@ pub fn users(plane: &Path, level: &Level, name: &str) -> Result<Users, String> {
             }
         }
     }
+    users.pinned_by = super::pinners_of(plane, name);
     Ok(users)
 }
 

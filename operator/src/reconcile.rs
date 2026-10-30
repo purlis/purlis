@@ -17,6 +17,7 @@
 //! nothing is written for the Claim until that object is gone.
 
 use crate::admission::{POLICY, RUNNER_NAMESPACES_POLICY, admission, in_force_since};
+use crate::metrics::{Cause, Metrics};
 use crate::person::{self, QUOTA, Quota, RunnerNamespace};
 use crate::resources::{Claim, ClaimStatus, Pool, PoolStatus, READY, condition};
 use crate::stage;
@@ -285,6 +286,8 @@ struct Context {
     uncounted: Mutex<HashMap<ObjectRef<Claim>, std::time::Instant>>,
     /// How many times in a row each stopped Claim's runner was found still being suspended.
     suspending: Mutex<HashMap<ObjectRef<Claim>, u32>>,
+    /// What the operator counts for its metrics (#3737).
+    metrics: Arc<Metrics>,
 }
 
 /// How long a Claim waits for its requester's quota to count before it says so.
@@ -481,7 +484,7 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
                 // Still stopped by its own claim (#2058).
                 let runner = held.namespace().unwrap_or_default();
                 let sandbox = sandbox_of(client, &runner, &held).await?;
-                set_operating_mode(client, &claim, None, &held, sandbox.as_ref()).await?;
+                set_operating_mode(context, &claim, None, &held, sandbox.as_ref()).await?;
                 if upstream::is_stopped(&claim, None) {
                     let (suspension, again) =
                         suspension_seen(context, &claim, upstream::suspension_of(sandbox.as_ref()));
@@ -546,10 +549,7 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     let mut wanted = sandbox_claim_for(&claim, &pool.spec.kept_volume, &runner);
     let pool_object = upstream::name_for(&pool.name_any());
     let template_held = templates.get_opt(&pool_object).await?.map(meta);
-    let warm_full = warm_pools.get_opt(&pool_object).await?;
-    // None while the pool is stopped; otherwise as many as it holds (#2058).
-    let replicas = upstream::replicas_kept(&pool, warm_full.as_ref());
-    let warm_held = warm_full.map(meta);
+    let warm_held = warm_pools.get_opt(&pool_object).await?.map(meta);
     let claim_full = upstream_claims.get_opt(&name).await?;
     // The volume an upstream claim was made with stays as it is: upstream never changes it, and
     // refuses an apply that does (#2057).
@@ -568,9 +568,10 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     warm.metadata.resource_version = warm_held
         .as_ref()
         .and_then(|held| held.resource_version.clone());
-    // The runners it keeps warm stay as many as it holds (#2057), none while the pool is stopped
-    // (#2058).
-    warm.spec.replicas = replicas;
+    // Runners are kept warm only for a requester who has a fresh Claim on the pool that runs:
+    // a kept or stopped Claim never takes one (#3737).
+    let wanted_warm = warm_wanted(&claim, &pool, context.claims.state());
+    warm.spec.replicas = upstream::replicas_kept(&pool, wanted_warm);
     let stopped = upstream::is_stopped(&claim, Some(&pool));
     let in_the_way = [
         (
@@ -588,7 +589,7 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
         // way of the rest (#2058).
         if let (Found::Ours { .. }, Some(held)) = (&claim_found, claim_full.as_ref()) {
             let sandbox = sandbox_of(client, &runner_name, held).await?;
-            set_operating_mode(client, &claim, Some(&pool), held, sandbox.as_ref()).await?;
+            set_operating_mode(context, &claim, Some(&pool), held, sandbox.as_ref()).await?;
         }
         tracing::warn!(
             claim = %name, %namespace, runner_namespace = %runner_name, %kind, %object,
@@ -606,8 +607,11 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
         write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
         return Ok(Action::await_change());
     }
-    // A runner not asked for yet is asked for only within its requester's quota (#2055).
-    if claim_found == Found::Nothing {
+    // A runner not asked for yet is asked for only within its requester's quota (#2055). A fresh
+    // Claim on a pool that keeps runners warm takes one already counted, so it asks for nothing
+    // more; one made cold instead is still held to the quota by the cluster (#3737).
+    let takes_a_warm_runner = !claim.spec.kept && warm.spec.replicas > 0;
+    if claim_found == Found::Nothing && !takes_a_warm_runner {
         let pod = template.spec.pod_template.spec.clone().unwrap_or_default();
         let storage = claim
             .spec
@@ -665,7 +669,7 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
         }
     };
     let sandbox = sandbox_of(client, &runner_name, &applied).await?;
-    set_operating_mode(client, &claim, Some(&pool), &applied, sandbox.as_ref()).await?;
+    set_operating_mode(context, &claim, Some(&pool), &applied, sandbox.as_ref()).await?;
     if stopped {
         let (suspension, again) =
             suspension_seen(context, &claim, upstream::suspension_of(sandbox.as_ref()));
@@ -722,6 +726,28 @@ pub fn pool_objects_go_with(claim: &Claim, watched: impl IntoIterator<Item = Arc
     })
 }
 
+/// Whether the requester of `claim` wants runners of `pool` kept warm (#3737): `claim` or another
+/// of theirs on `pool` among `watched`, not being deleted, is fresh and not stopped. A kept Claim
+/// starts cold and a stopped one gets no runner, so neither keeps one warm.
+pub fn warm_wanted(
+    claim: &Claim,
+    pool: &Pool,
+    watched: impl IntoIterator<Item = Arc<Claim>>,
+) -> bool {
+    let takes_one = |other: &Claim| {
+        other.metadata.deletion_timestamp.is_none()
+            && !other.spec.kept
+            && !upstream::is_stopped(other, Some(pool))
+    };
+    takes_one(claim)
+        || watched.into_iter().any(|other| {
+            other.uid() != claim.uid()
+                && other.spec.requester == claim.spec.requester
+                && other.spec.pool == claim.spec.pool
+                && takes_one(&other)
+        })
+}
+
 /// **What a deleted Claim's finalizer removes** (#2055): in its requester's runner namespace, the
 /// upstream claim the operator made for it, which takes its runner with it, and, when it is the
 /// last of theirs on its pool ([`pool_objects_go_with`]), the pool's template and warm pool there.
@@ -743,8 +769,16 @@ async fn cleanup(claim: &Claim, context: &Context) -> Result<Action, Error> {
         .get_metadata_opt(&claim.name_any())
         .await?
         .map(|held| held.metadata);
-    if let Found::Ours { uid } = made_for_claim(held.as_ref(), &runner, claim) {
-        delete_by_uid(&upstream_claims, &claim.name_any(), uid).await?;
+    // Counted once, by the look that starts the runner's deletion (#3737): a Claim is looked at
+    // again while its upstream claim is still going.
+    let going = held
+        .as_ref()
+        .is_some_and(|held| held.deletion_timestamp.is_some());
+    if let Found::Ours { uid } = made_for_claim(held.as_ref(), &runner, claim)
+        && delete_by_uid(&upstream_claims, &claim.name_any(), uid).await?
+        && !going
+    {
+        context.metrics.deleted(&claim.spec.pool, Cause::Requested);
     }
     // Every Claim known first, so one not read yet never lets the pool's objects go under it.
     let _ = context.claims.wait_until_ready().await;
@@ -771,8 +805,9 @@ async fn cleanup(claim: &Claim, context: &Context) -> Result<Action, Error> {
     Ok(Action::await_change())
 }
 
-/// The object `name` deleted, only while it is the one of `uid`; one already gone is fine.
-async fn delete_by_uid<K>(api: &Api<K>, name: &str, uid: String) -> Result<(), Error>
+/// The object `name` deleted, only while it is the one of `uid`; one already gone is fine. Whether
+/// the API server took the deletion (`false` when it was gone).
+async fn delete_by_uid<K>(api: &Api<K>, name: &str, uid: String) -> Result<bool, Error>
 where
     K: Resource + Clone + DeserializeOwned + Debug,
 {
@@ -784,8 +819,8 @@ where
         ..DeleteParams::background()
     };
     match api.delete(name, &params).await {
-        Ok(_) => Ok(()),
-        Err(kube::Error::Api(status)) if status.code == 404 => Ok(()),
+        Ok(_) => Ok(true),
+        Err(kube::Error::Api(status)) if status.code == 404 => Ok(false),
         Err(error) => Err(error.into()),
     }
 }
@@ -813,7 +848,7 @@ async fn sandbox_of(
 /// the one `upstream`, the claim's upstream claim, controls by uid. Its mode is the one field
 /// the operator writes on it.
 async fn set_operating_mode(
-    client: &Client,
+    context: &Context,
     claim: &Claim,
     pool: Option<&Pool>,
     upstream: &SandboxClaim,
@@ -835,13 +870,17 @@ async fn set_operating_mode(
     };
     let (name, namespace) = (sandbox.name_any(), sandbox.namespace().unwrap_or_default());
     tracing::info!(claim = %claim.name_any(), %namespace, sandbox = %name, %mode, "the runner's mode set");
-    Api::<Sandbox>::namespaced(client.clone(), &namespace)
+    Api::<Sandbox>::namespaced(context.client.clone(), &namespace)
         .patch(
             &name,
             &PatchParams::apply(FIELD_MANAGER).force(),
             &Patch::Apply(&upstream::sandbox_in_mode(sandbox, mode)),
         )
         .await?;
+    // The operator suspends a runner only for a stopped claim or pool (#2058).
+    if mode == upstream::SUSPENDED {
+        context.metrics.suspended(&claim.spec.pool, Cause::Stopped);
+    }
     Ok(())
 }
 
@@ -1126,8 +1165,9 @@ pub async fn cluster_of(client: &Client) -> Result<String, String> {
 /// Run the operator until the process is asked to stop (SIGTERM or Ctrl-C).
 pub async fn run(client: Client, keys: MountedKeys, cluster: String, quota: Quota) {
     let keys = Arc::new(keys);
+    let metrics = Arc::new(Metrics::default());
     tokio::select! {
-        () = run_claims(client.clone(), keys.clone(), cluster.clone(), quota) => {}
+        () = run_claims(client.clone(), keys.clone(), cluster.clone(), quota, metrics) => {}
         () = publish_pool_status(client, keys, cluster) => {}
     }
     tracing::info!("stopped; upstream {} is pinned", upstream::VERSION);
@@ -1205,7 +1245,13 @@ pub fn pool_status_patch(
     Some(serde_json::json!({ "status": status }))
 }
 
-async fn run_claims(client: Client, keys: Arc<MountedKeys>, cluster: String, quota: Quota) {
+async fn run_claims(
+    client: Client,
+    keys: Arc<MountedKeys>,
+    cluster: String,
+    quota: Quota,
+    metrics: Arc<Metrics>,
+) {
     let controller = Controller::new(
         Api::<Claim>::all(client.clone()),
         watcher::Config::default(),
@@ -1216,6 +1262,12 @@ async fn run_claims(client: Client, keys: Arc<MountedKeys>, cluster: String, quo
     let by_upstream_claim = controller.store();
     let by_template = controller.store();
     let by_warm_pool = controller.store();
+    // Served on the operator's own port, from the Claims this watch holds (#3737).
+    tokio::spawn(crate::metrics::serve(
+        client.clone(),
+        metrics.clone(),
+        controller.store(),
+    ));
     // Upstream's objects are watched by their metadata alone, whoever made them: each wakes the
     // Claims it is named for, so a Claim that still needs one it made makes it again at once,
     // and one an object was in the way of goes on as soon as it is gone. The API server sends
@@ -1275,6 +1327,7 @@ async fn run_claims(client: Client, keys: Arc<MountedKeys>, cluster: String, quo
                 conflicts: Mutex::new(HashMap::new()),
                 suspending: Mutex::new(HashMap::new()),
                 uncounted: Mutex::new(HashMap::new()),
+                metrics,
             }),
         )
         .for_each(|result| async move {

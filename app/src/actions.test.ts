@@ -686,6 +686,7 @@ describe("the one list of actions", () => {
       "Your settings: Notifications",
       "Your settings: This machine",
       "Your settings: Browsers",
+      "Your settings: Pools",
       "Your settings: Accounts",
       "Your settings: Profiles",
       "Your settings: Previews",
@@ -2307,9 +2308,10 @@ describe("the palette at fifty chats", () => {
       // `Search in files` (`search` has an `r`). One more under `r` since #2176: `New browser`.
       // One more under `r` since #2679: `Add a Docker pool…` (`Docker` has an `r`). One more
       // under `r` since #2921: `Keyboard shortcuts` (`keyboard` has an `r`). One more under `r`
-      // since #2027: `Open browsers` (`browsers` has an `r`).
+      // since #2027: `Open browsers` (`browsers` has an `r`). One fewer under `r` since the
+      // person's ruling of 2026-10-30: `Add a Docker pool…` is `Add a pool…`, with no `r`.
       expect(at("re", loaded())).toBe(8);
-      expect(at("r", loaded())).toBe(19);
+      expect(at("r", loaded())).toBe(18);
       expect(at("rem", loaded())).toBe(1);
     });
 
@@ -2447,12 +2449,13 @@ describe("the palette at fifty chats", () => {
     // 911 since #2326: Your settings: Density and fonts.
     // 914 since #2331: Settings › Theme at You, Project and Workspace. 915 since #2023: Your
     // settings: Browsers. 916 since #2176: New browser. 917 since #2679: Add a Docker pool….
-    // Your settings: Pools is offered only once this machine keeps a pool. 918 since #2765:
+    // 918 since #2765:
     // Your settings: Previews (Open Skill studio is offered only while its flag is on). 920
     // since #2925: Your settings: Motion and contrast, and Your colours. 922 since #2921: Focus
     // mode and Keyboard shortcuts, one row each. 920 since #3467: no Plugins group at the Project
-    // or the Workspace level. 921 since #2027: Open browsers.
-    expect(offers).toHaveLength(921);
+    // or the Workspace level. 921 since #2027: Open browsers. 922 since the person's ruling of
+    // 2026-10-30: Your settings: Pools is offered with or without a pool, as the group is.
+    expect(offers).toHaveLength(922);
   });
 
   /**
@@ -3259,6 +3262,11 @@ describe("Move to runner and Move here on a chat's tab (#2048)", () => {
       title: "Move chat one here",
       note: MOVE_HERE_NOTE,
     });
+    // Its runner names the clones it holds (1.51, #3811): a clone its chat made comes back too.
+    const back = catalogue(now({ tabs, movesTo: () => [null], clonesComeBack: () => true }));
+    expect(catalogued(back).get(`tab.move:${tab}:`)?.note).toBe(
+      "Its branch, uncommitted work and conversation come back to this machine at its next pause, with each repository it cloned on the runner.",
+    );
     const none = catalogue(now({ tabs, movesTo: () => [] }));
     expect([...catalogued(none).keys()].filter((id) => id.startsWith("tab.move:"))).toEqual([]);
   });

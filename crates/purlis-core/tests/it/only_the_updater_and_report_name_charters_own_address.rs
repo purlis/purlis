@@ -7,11 +7,11 @@
 //! The run halves (`every_third_party_call_is_listed_in_the_network_log.rs`, and the app's
 //! `updates::tests::the_real_check_lists_its_read_in_the_network_log`) show what one run listed.
 //! This shows no other feature could have listed more. Charter's address is reached three ways in
-//! code: its literal spelling, `report::UPSTREAM`, and the updater's `REPO`, `Channel::endpoint`
-//! and `Channel::weekly_endpoint` (OB-17). Each is named only in the files [`ALLOWED`] lists, each
-//! for a reason, and where a file is allowed one call site, only on that line. A feature that
-//! wants to reach Charter has to name one of them, so it fails here first, where its author has
-//! to say why it may (ADR 0083 §9). An allowance nothing uses any more fails too, so the list
+//! code: its literal spelling, `report::UPSTREAM`, and the updater's `REPO`, `Channel::endpoint`,
+//! `Channel::weekly_endpoint` (OB-17) and `Channel::release_endpoint` (2026-10-30). Each is named
+//! only in the files [`ALLOWED`] lists, each for a reason, and where a file is allowed one call
+//! site, only on that line. A feature that wants to reach Charter has to name one of them, so it
+//! fails here first, where its author has to say why it may (ADR 0083 §9). An allowance nothing uses any more fails too, so the list
 //! cannot grow stale.
 //!
 //! Comments are skipped (a doc may cite Charter's repository), and so are test files and a
@@ -28,6 +28,7 @@ const WAYS: &[&str] = &[
     ".endpoint()",
     "Channel::endpoint",
     "weekly_endpoint",
+    "release_endpoint",
 ];
 
 /// Where Charter's address may be named: a file, the one line of it when the file is allowed only
@@ -41,13 +42,8 @@ const ALLOWED: &[(&str, Option<&str>, &str)] = &[
     (
         "app/src-tauri/src/updates.rs",
         None,
-        "the signed updater: its manifest read and its bundle",
-    ),
-    (
-        "app/src-tauri/src/poolfollow.rs",
-        Some("let endpoint = crate::updates::channel_now().endpoint();"),
-        "the updater's own manifest, read for this version's runner image (#2749): the same \
-         read the updater makes, through it, listed in the network log",
+        "the signed updater: its manifest read and its bundle, and the manifest read for a \
+         runner image (#2749, 2026-10-30), through the updater, listed in the network log",
     ),
     (
         "crates/purlis-core/src/adopt.rs",

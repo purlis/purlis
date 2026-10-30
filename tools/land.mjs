@@ -15,11 +15,11 @@
 //   3. refuses while main is red: the newest finished `ci` run of a push to main failed. A pull
 //      request labelled `fixes-main` lands past a red main, and only it goes to the front of the
 //      queue (`jump`), since a jump restarts every group being built;
-//   4. reruns the runs of the head that wait on approval (`action_required`): gh counts those as
-//      failing checks, so they are rerun, and given a moment to start, before the checks are read;
+//   4. stops when any run of the head is held for approval (`action_required`), naming each by
+//      its name, id and link: the operator approves them, and it never reruns one (#3991). Exit 4;
 //   5. reads the required checks: their names from main's rulesets and branch protection, and
 //      their states from `gh pr checks --required`, which lists only the checks that have posted,
-//      so a required check not posted yet (a rerun's, just started) counts as pending. With
+//      so a required check not posted yet (a run's, just started) counts as pending. With
 //      `--watch` it waits until every one has posted and finished, and without it, it refuses
 //      while any is pending; either way it refuses while any failed, naming each. A wait that
 //      can only end in GitHub's refusal stops early: when the only checks left are required ones
@@ -40,7 +40,7 @@
 // downloads a log either: a check's annotations say why it failed.
 //
 // Exit status: 0 enqueued (merged, with `--watch`), 1 refused or failed, 2 usage, 3 dropped from
-// the queue. It needs `gh`, signed in.
+// the queue, 4 runs held for approval (the operator approves them). It needs `gh`, signed in.
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -216,6 +216,9 @@ const waitedFor = (s) => (s % 60 === 0 ? `${s / 60} minutes` : `${s} seconds`);
 const pause = (s) =>
   s > 0 && Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, s * 1000);
 
+/** The exit status when runs of the head are held for approval: the operator's to approve. */
+export const HELD = 4;
+
 /** Stops with `message` and `status`. */
 function stop(message, status = 1) {
   console.error(message);
@@ -303,15 +306,19 @@ function main(options) {
     "--jq",
     ".workflow_runs",
   ]);
-  for (const run of waiting ?? []) {
-    gh(["run", "rerun", String(run.id), "--repo", repo], false);
-    console.log(`reran ${run.name} (${run.html_url}), which waited on approval`);
-  }
-  // Until the rerun starts, gh still reads its old check as failed.
-  if ((waiting ?? []).length > 0) pause(SETTLE);
+  // A run held for approval is held so a person approves it: the tool never reruns one (#3991).
+  if ((waiting ?? []).length > 0)
+    stop(
+      [
+        `pull request #${options.pr} has runs held for approval:`,
+        ...waiting.map((run) => `  ${run.name} ${run.id} ${run.html_url}`),
+        "the operator approves them; land again once they have run.",
+      ].join("\n"),
+      HELD,
+    );
 
   // 5, 6. The required checks. Their names come from main's rules, since gh lists only the
-  // checks that have posted: right after a rerun, a required check can be missing altogether.
+  // checks that have posted: a required check whose run has not started can be missing.
   // The rules come a page at a time, 30 to a page: a required check can be on any page.
   const required = requiredNames(
     (gh(["api", `repos/${repo}/rules/branches/main`, "--paginate", "--slurp"]) ?? []).flat(),

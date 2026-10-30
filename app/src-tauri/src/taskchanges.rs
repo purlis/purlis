@@ -833,7 +833,7 @@ pub(crate) fn sharing_before_asking(
         Some(dispatchplace::Where::Workspace(name)) => {
             dispatchplace::workspace_folder(held.root(), &name).ok()?.1
         }
-        Some(dispatchplace::Where::Worktree) => return None,
+        Some(dispatchplace::Where::Worktree(_)) => return None,
     };
     let others = core::sharing(&folder, &working(open_tasks(held, None)));
     (!others.is_empty()).then(|| {

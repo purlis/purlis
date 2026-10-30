@@ -1125,7 +1125,8 @@ pub struct ClusterPool {
     namespace: String,
     operator: OperatorKey,
     cluster: Option<String>,
-    /// The programs its kubectl runs, by their real paths, as they were found when it was added:
+    /// The programs its kubectl runs, each as named, every link on the way and its real file, as
+    /// they were found when it was added:
     /// kubectl itself and each credential plugin its context names (#3292). A chat writes none of
     /// them ([`cluster_holds`]).
     holds: Vec<std::path::PathBuf>,
@@ -1207,8 +1208,8 @@ impl ClusterPool {
         })
     }
 
-    /// This pool, holding `holds`, the real paths of the programs its kubectl runs, for no chat
-    /// to write (#3292). Each is absolute.
+    /// This pool, holding `holds`, the programs its kubectl runs as named, every link on the way
+    /// and their real files, for no chat to write (#3292). Each is absolute.
     pub fn holding(self, holds: Vec<std::path::PathBuf>) -> Result<ClusterPool, Refused> {
         if let Some(relative) = holds.iter().find(|held| !held.is_absolute()) {
             return Err(Refused::Other(format!(
@@ -1458,19 +1459,15 @@ pub fn forget_cluster_runner_locked(
     Ok(())
 }
 
-/// **The programs every cluster pool's kubectl runs** (#3292), by their real paths, each with
-/// the folder it is in: what a chat's sandbox holds for no chat to write. None where the file
-/// cannot be read.
+/// **The programs every cluster pool's kubectl runs** (#3292), each as named and by its real
+/// path, once: what a chat's sandbox holds whole, with the package each belongs to, for no chat
+/// to write. None where the file cannot be read.
 pub fn cluster_holds(config_root: &Path) -> Vec<std::path::PathBuf> {
     let mut held: Vec<std::path::PathBuf> = Vec::new();
     for pool in cluster_pools(config_root).unwrap_or_default() {
         for program in pool.holds() {
-            for path in
-                std::iter::once(program.clone()).chain(program.parent().map(Path::to_path_buf))
-            {
-                if !held.contains(&path) {
-                    held.push(path);
-                }
+            if !held.contains(program) {
+                held.push(program.clone());
             }
         }
     }

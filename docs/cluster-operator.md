@@ -223,6 +223,11 @@ spec:
     size: 10Gi
     # storageClassName: fast   # the cluster's default class unless named
   stopped: false           # optional; true suspends every runner of the pool
+  warmReplicas: 0          # optional; runners kept warm for fresh claims, per person
+  idleAfter: 30m           # optional; these are the defaults (#3737)
+  deleteSuspendedAfter: 720h
+  noticeBeforeDelete: 168h
+  maxAge: 336h
 ---
 apiVersion: runners.purlis.dev/v1alpha1
 kind: Claim
@@ -245,6 +250,31 @@ spec:
   a fresh Claim's running runner made before it is no longer vouched for; make its Claim again.
   A runner kept warm from the earlier template is replaced by one of the new (#2058): upstream
   deletes it, and a fresh Claim never takes it.
+- **A Pool's warm count and times** (#3737). `warmReplicas` is how many runners the pool keeps
+  warm for fresh Claims, 0 unless set and 20 at most. It applies in each person's runner
+  namespace where that person has a fresh Claim on the pool that is not stopped, and never
+  while the pool is `stopped`. The operator keeps each warm pool at that count, so a warm pool
+  scaled by hand is brought back to it. **Warm runners count toward each person's quota**: set
+  `perPerson.quota` to hold them as well as the person's own runners. A fresh Claim on a pool
+  that keeps runners warm takes one already counted. A kept Claim is still refused once warm
+  runners fill the quota. The times are a whole number followed by `s`, `m`
+  or `h`, as a Docker pool's `suspendAfter` is (`1d` is refused; write `24h`):
+  - `idleAfter` (30m, a minute at least): how long a runner is idle before it is suspended, as
+    `stopped` suspends. Idle is no running chat, no open stream, no forwarded request and no
+    build; a runner a live chat owns, or whose browser holds an Ask, is never idle. It is a
+    different clock from a runner left without a link, which a Docker pool's runner suspends
+    itself after (its `suspendAfter`); a cluster pool's runner does not yet (#3703).
+  - `deleteSuspendedAfter` (720h, 30 days): how long a kept Claim stays suspended before it is
+    deleted, with its volume.
+  - `noticeBeforeDelete` (168h, 7 days, shorter than `deleteSuspendedAfter`): how long before
+    that deletion its requester is sent an Update.
+  - `maxAge` (336h, 14 days): past it, a kept Claim's runner starts again on the pool's current
+    image, and a fresh Claim's is made again.
+
+  The cluster refuses any other spelling, a time too long to read, a notice that is not shorter
+  than the deletion, and a warm count below 0 or above 20. **The four times are named, not yet acted on**: the operator suspends,
+  deletes and restarts on them once #3980 (idle), #3981 (retention and its Update) and #3982
+  (maximum age) are built.
 - **A Claim is kept or fresh** (#2057), and its `kept` never changes after it is made: the other
   kind is another Claim.
   - **A kept Claim** (`kept: true`) gets a runner of its own, started cold, whose home is a
@@ -298,8 +328,8 @@ spec:
   was, with the same key. A runner suspended by hand before it was stopped is left suspended,
   as far as the operator can tell: it goes by who last applied the sandbox's mode, which any
   client may name itself as, and a runner suspended by hand while it was already stopped runs
-  again with the rest. A stopped pool's warm pool keeps no runner warm after it runs again until
-  a team admin scales it again.
+  again with the rest. Once a stopped pool runs again, its warm pools keep its `warmReplicas`
+  warm again.
 - **A Claim stays in its namespace; its runner does not.** The runner, and everything the
   operator makes for it, is in the requester's own namespace, `purlis-runners-<hash>`
   ([below](#each-persons-namespace)).
@@ -504,7 +534,7 @@ then applies server-side:
 | Upstream object | Name | What it holds |
 |---|---|---|
 | `SandboxTemplate` | `purlis-pool-p` in `r` | the runner's pod: its first step, `link-key`, making the runner's home and its link key (above), then one container running the pool's image with its own entrypoint (`purlis serve`), both as a user who is not root, every capability dropped, no privilege escalation, the runtime's default seccomp profile, no Kubernetes credential mounted and no service addresses in their environment, each asking for the CPU and memory above. The runner's `HOME` is `/var/lib/purlis/home`, on the volume `purlis-kept` mounted at `/var/lib/purlis`: a folder of the node's in the template, which a kept Claim's own volume takes the place of. The pod's group (`fsGroup` 10001) may write that volume. A claim may add a volume of its own (`volumeClaimTemplatesPolicy: Allowed`) |
-| `SandboxWarmPool` | `purlis-pool-p` in `r` | no runner kept warm when it is made; after that, as many as it holds, so `kubectl scale sandboxwarmpool purlis-pool-p -n r --replicas=<n>` keeps `n` runners warm for that person's fresh Claims, none while the pool is `stopped`. Its update strategy is upstream's `Recreate`, so a warm runner made from an earlier template is deleted and made again, and never handed to a fresh Claim (#2058) |
+| `SandboxWarmPool` | `purlis-pool-p` in `r` | the Pool's `warmReplicas` runners kept warm for that person's fresh Claims, none while the pool is `stopped`; scaled by hand, it is brought back to that count (#3737). Its update strategy is upstream's `Recreate`, so a warm runner made from an earlier template is deleted and made again, and never handed to a fresh Claim (#2058) |
 | `SandboxClaim` | the Claim's own name in `r` | the claim on that warm pool, annotated `runners.purlis.dev/claim-uid` with the Claim's uid; a kept Claim's carries the volume `purlis-kept` its Pool's `keptVolume` asks for, so upstream makes its runner cold and its PersistentVolumeClaim `purlis-kept-<claim>` |
 
 Each of the three is controlled by the runner namespace, by its uid: a Kubernetes owner cannot be
@@ -525,6 +555,42 @@ runner it had in its own namespace, as well as getting a new one in its requeste
 namespace, which its desktop links to. The old runner is outside that namespace and outside the
 person's quota, and anyone with rights in the Claim's namespace can still reach it. Delete such
 Claims and make them again soon after upgrading: the old runner goes with the Claim.
+
+## Its metrics
+
+The operator serves its metrics in Prometheus's text format on its pod's port `metrics`
+(8080), at `/metrics`, and the chart and the plain manifests give that port a Service of its
+own, `purlis-cluster-operator-metrics` in the operator's namespace (#3737). Point your
+Prometheus, or a `ServiceMonitor`, at it:
+
+| Metric | Type | Labels | What it counts |
+|---|---|---|---|
+| `purlis_cluster_operator_claims` | gauge | `pool`, `namespace`, `state` | the Claims the operator watches; `state` is `Ready` when the runner is ready, otherwise the Claim's `Ready` reason (`Stopped`, `Starting`, `OverQuota`, …), and `Unknown` before the operator has said one |
+| `purlis_cluster_operator_warm_runners` | gauge | `pool`, `namespace` | the runners upstream says are warm and ready in each runner namespace |
+| `purlis_cluster_operator_suspensions_total` | counter | `pool`, `cause` | the runners the operator suspended; `cause` is `stopped` (the Claim's or its Pool's `stopped`) |
+| `purlis_cluster_operator_claims_deleted_total` | counter | `pool`, `cause` | the Claims whose runner the operator removed as they were deleted; `cause` is `requested` (someone deleted the Claim) |
+
+The counters count from the operator's start. The causes grow as the operator suspends idle
+runners (#3980) and deletes long-suspended Claims (#3981).
+
+**Nothing may scrape them until you say who may.** The metrics name every namespace that holds
+a Claim and every runner namespace (`purlis-runners-<hash>`, one per person), with their
+Claims' states, so they are not for everyone in the cluster. They say nothing about what a
+runner does. The NetworkPolicy `purlis-cluster-operator` lets nothing reach the operator's pod
+but the scrapers you name, on the metrics port. With the chart, name them as a NetworkPolicy's
+`from` peers:
+
+```sh
+helm upgrade purlis-cluster-operator operator/charts/purlis-cluster-operator \
+  --namespace purlis-system --reuse-values \
+  --set 'metrics.allowFrom[0].namespaceSelector.matchLabels.kubernetes\.io/metadata\.name=monitoring'
+```
+
+With the plain manifests, add a NetworkPolicy of your own in `purlis-system` that lets your
+Prometheus's pods reach the operator's pod (`app.kubernetes.io/name: purlis-cluster-operator`)
+on port `metrics`. NetworkPolicies add up, so it opens only what it names. The policy takes
+effect where the cluster's network plugin enforces NetworkPolicies. The port holds at most 32
+connections at once and closes one that has not sent its request within two seconds.
 
 ## Rolling the signing key
 

@@ -405,7 +405,9 @@ pub fn type_profile_sign_in(
                 purlis_core::shown::short(&name)
             )
         })?;
-    let line = sign_in::login_of(&record, provider.as_deref())?.line()?;
+    // This machine's own profile: its harness is the one on `PATH`. Only a runner fetches the
+    // version a profile pins (#4007), in its own `purlis profile sign-in`.
+    let line = sign_in::login_of(&record, provider.as_deref(), None)?.line()?;
     held.operator_input(session, line.as_bytes())?;
     sign_in::forget_of(&record);
     if let Some(profile) = purlis_core::profiles::of_record(&record) {

@@ -82,6 +82,8 @@ fn a_skill_started_puts_its_run_on_the_chats_tab_counting_its_tool_calls_until_t
             name: "deploy".to_owned(),
             id: RUN.to_owned(),
             tool_calls,
+            tokens: None,
+            level: None,
         })
     };
     assert_eq!(
@@ -157,6 +159,8 @@ fn a_skill_use_skill_typed_is_on_the_chats_tab_from_the_prompt_it_was_typed_into
             name: "deploy".to_owned(),
             id: RUN.to_owned(),
             tool_calls,
+            tokens: None,
+            level: None,
         })
     };
     assert_eq!(said, vec![open(0), open(1), None]);
@@ -245,4 +249,82 @@ fn a_grade_watching_a_chat_is_told_of_a_skill_loaded_through_skill_load() {
         watched.try_iter().collect::<Vec<_>>(),
         vec![Watched::Started("deploy".to_owned())],
     );
+}
+
+/// SK-26 (#3694): the chip counts the tokens the chat spent since its run opened, from what its
+/// harness says, as each tool call inside the run is heard; where the harness says none it shows
+/// none; and the run's level goes with it, for the studio's scope.
+#[test]
+fn an_open_runs_tokens_rise_from_its_start_and_its_level_goes_with_it() {
+    let (runs, told) = listening();
+    let spent = Arc::new(Mutex::new(Some(1_000_u64)));
+    runs.count_tokens_by({
+        let spent = Arc::clone(&spent);
+        Arc::new(move |chat| {
+            if chat == 4 {
+                *spent.lock().unwrap()
+            } else {
+                None
+            }
+        })
+    });
+
+    runs.heard(&call_of(4, "deploy", purlis_core::skills::Origin::Persona));
+    *spent.lock().unwrap() = Some(4_500);
+    runs.heard(&call(4, "toolu_2", None));
+    *spent.lock().unwrap() = Some(12_000);
+    runs.heard(&call(4, "toolu_3", None));
+    runs.reported(&report(4, Event::Stop));
+
+    let said: Vec<_> = told.try_iter().map(|t| t.run).collect();
+    let tokens: Vec<_> = said
+        .iter()
+        .map(|run| run.as_ref().map(|run| run.tokens))
+        .collect();
+    assert_eq!(
+        tokens,
+        vec![Some(Some(0)), Some(Some(3_500)), Some(Some(11_000)), None]
+    );
+    assert_eq!(
+        said[0]
+            .as_ref()
+            .and_then(|run| run.level.clone())
+            .as_deref(),
+        Some("persona")
+    );
+    assert_eq!(runs.now([4]), Vec::new(), "the turn's end closed it");
+
+    // A chat whose harness says no tokens shows none, never a zero.
+    runs.heard(&call(5, "toolu_9", Some("deploy")));
+    let five: Vec<_> = told.try_iter().map(|t| t.run).collect();
+    assert_eq!(five.len(), 1);
+    assert_eq!(five[0].as_ref().map(|run| run.tokens), Some(None));
+    assert_eq!(
+        runs.now([5])[0].run.as_ref().map(|run| run.tokens),
+        Some(None)
+    );
+}
+
+/// #3694 review: a run first seen before its harness said any usage counts from the first figure
+/// it says, rather than never.
+#[test]
+fn a_run_seen_before_any_usage_counts_from_the_first_figure() {
+    let (runs, told) = listening();
+    let spent = Arc::new(Mutex::new(None::<u64>));
+    runs.count_tokens_by({
+        let spent = Arc::clone(&spent);
+        Arc::new(move |_| *spent.lock().unwrap())
+    });
+
+    runs.heard(&call(4, "toolu_1", Some("deploy")));
+    *spent.lock().unwrap() = Some(2_000);
+    runs.heard(&call(4, "toolu_2", None));
+    *spent.lock().unwrap() = Some(2_600);
+    runs.heard(&call(4, "toolu_3", None));
+
+    let tokens: Vec<_> = told
+        .try_iter()
+        .map(|t| t.run.and_then(|run| run.tokens))
+        .collect();
+    assert_eq!(tokens, vec![None, Some(0), Some(600)]);
 }

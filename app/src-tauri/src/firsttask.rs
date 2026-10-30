@@ -122,7 +122,7 @@ pub fn start(
                     persona,
                     cwd: dir.unwrap_or_else(|| cut.path.clone()),
                     label: label.clone(),
-                    prompt: firsttask::prompt(),
+                    prompt: firsttask::prompt(runner.as_deref()),
                     then_a_space: false,
                     starts_runs: None,
                 },
