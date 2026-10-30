@@ -437,7 +437,6 @@ import {
   skillStudioAt,
   studioOfSkillTab,
   type ChatToUse,
-  skillStudioView,
   type SkillStudioAsk,
   studioHistoryOf,
   studioOpening,
@@ -446,7 +445,8 @@ import {
 } from "./skillStudio";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { askBeforeClosing, forgetSkillEdit, unsavedClosedBy } from "./skillEdit";
-import { SkillRunsHere, useSkillRuns, type RunsOf } from "./skillRuns";
+import { SkillRunsHere, aPersonasOwn, useSkillRuns, type RunsOf } from "./skillRuns";
+import { CHAT_SKILLS_ASKED, type ChatSkillsAsk } from "./chatSkillsAsk";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
 import { handedFromNote } from "./handedFrom";
@@ -8025,6 +8025,19 @@ export const PlaneView = memo(function PlaneView({
     window.addEventListener(SKILL_STUDIO_ASKED, asked);
     return () => window.removeEventListener(SKILL_STUDIO_ASKED, asked);
   }, [plane, showView]);
+  /** **A chat's "Show this chat's skills"** (S8, #3694: its skills chip, and its skills notices'
+   *  Show in Skills and What changed): that chat put in front, so the sidebar Skills view
+   *  follows it, and the view shown. The chips' own `showChatNow`, which reads the one current. */
+  useEffect(() => {
+    const asked = (event: Event) => {
+      const wanted = (event as CustomEvent<ChatSkillsAsk>).detail;
+      if (wanted.plane !== plane) return;
+      showChatNow.current(wanted.session);
+      showSideView("skills");
+    };
+    window.addEventListener(CHAT_SKILLS_ASKED, asked);
+    return () => window.removeEventListener(CHAT_SKILLS_ASKED, asked);
+  }, [plane, showSideView]);
   /** Stop all tasks of a session, for its tab chip's menu (#1498): the catalogue's row, read
    *  as the menu is drawn, and one function for the life of the view. */
   const stopAllOf = useCallback((session: number) => byNow.current(stopAllId(session)), []);
@@ -8063,17 +8076,21 @@ export const PlaneView = memo(function PlaneView({
   const activityFromChip = useCallback((session: number) => activityNow.current(session), []);
   /** Opens the Skill studio at skill `skill`'s Runs with run `run` marked, from the chip of the
    *  run open in chat `session`'s tab (SK-3, #3682): the skill by its own name, as the core
-   *  counts the run (#3385), on the chats of the place the chat is in. */
+   *  counts the run (#3385), on the chats of the place the chat is in; a persona's own skill on
+   *  that persona's chats, as the core says its level (#3694), since a workspace's scope does not
+   *  list it. */
   const openSkillRun = useCallback(
-    (skill: string, run: string, session: number) => {
+    (skill: string, run: string, session: number, level: string | null) => {
       const workspace = filedIn(session);
       const persona = personaOf(session);
       const scope =
-        workspace !== undefined && workspace !== OUTSIDE
-          ? inWorkspace(workspace)
-          : persona !== null
-            ? asPersona(persona)
-            : AT_THE_ROOT;
+        aPersonasOwn(level) && persona !== null
+          ? asPersona(persona)
+          : workspace !== undefined && workspace !== OUTSIDE
+            ? inWorkspace(workspace)
+            : persona !== null
+              ? asPersona(persona)
+              : AT_THE_ROOT;
       showView(skillRunsAt(scope, skill, run), SKILL_STUDIO_TITLE);
     },
     [filedIn, personaOf, showView],
@@ -9315,6 +9332,7 @@ export const PlaneView = memo(function PlaneView({
                   onOpenView={showView}
                   onUseSkill={openUseSkill}
                   onShowInExplorer={revealInExplorer}
+                  onRestart={askRestart}
                 />
               ),
               // **Changes** (#1676, B-7): what the bottom region drew, the same content.
@@ -9889,10 +9907,6 @@ export const PlaneView = memo(function PlaneView({
                 busy={usingSkill.busy}
                 onUse={(skill, values) => void sendUseSkill(skill, values)}
                 onCancel={() => setUsingSkill(undefined)}
-                onOpenStudio={(scope) => {
-                  setUsingSkill(undefined);
-                  showView(skillStudioView(scope), SKILL_STUDIO_TITLE);
-                }}
               />
             )}
 

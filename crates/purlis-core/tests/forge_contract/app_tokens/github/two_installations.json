@@ -1,0 +1,63 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/apps/apps (Get a repository installation for the authenticated app; Create an installation access token for an app)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/installation"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 42, \"account\": {\"login\": \"acme\", \"type\": \"Organization\"}, \"app_slug\": \"acme-agents\"}",
+        "err": "",
+        "status": 200
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/other/lib/installation"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 77, \"account\": {\"login\": \"other\", \"type\": \"Organization\"}, \"app_slug\": \"acme-agents\"}",
+        "err": "",
+        "status": 200
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "app/installations/77/access_tokens"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "repositories[]",
+              "lib"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"token\": \"minted-for-lib\", \"expires_at\": \"2026-10-29T15:00:00Z\", \"permissions\": {\"contents\": \"write\", \"pull_requests\": \"write\"}, \"repository_selection\": \"selected\"}",
+        "err": "",
+        "status": 201
+      }
+    }
+  ]
+}

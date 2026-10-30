@@ -214,7 +214,7 @@ fn only_an_adopted_folder_kept_for_a_desktop_is_signed_in_by_purlis() {
     let adopted = the_desktops_adopted_folder(dir.path());
 
     assert!(sign_in::profile_of(&adopted).is_none());
-    assert!(sign_in::login_of(&adopted, None).is_err());
+    assert!(sign_in::login_of(&adopted, None, None).is_err());
     assert_eq!(sign_in::standing_of(&adopted, &Answers(Some(1))), None);
 }
 
@@ -970,4 +970,61 @@ fn settings_a_runner_refuses_leave_its_record_as_it_was() {
         .find(|p| p.name == "work")
         .unwrap();
     assert_eq!(record.pinned, None, "the refused keep changed nothing");
+}
+
+/// A runner that answers every status with 0 and has installed `pinned` for each profile it
+/// keeps with a pin: the program each status was asked of.
+struct Installed {
+    pinned: PathBuf,
+    programs: std::cell::RefCell<Vec<String>>,
+}
+
+impl Look for Installed {
+    fn status(&self, program: &str, _: &[&str], _: &[(String, String)]) -> Option<i32> {
+        self.programs.borrow_mut().push(program.to_owned());
+        Some(0)
+    }
+    fn is_there(&self, _: &Path) -> bool {
+        false
+    }
+    fn pinned_program(&self, record: &MachineProfile) -> Option<PathBuf> {
+        (record.kept_for.is_some() && record.pinned.is_some()).then(|| self.pinned.clone())
+    }
+}
+
+/// **What a runner answers its desktop's keep is asked of the pinned version it installs**
+/// (#4007): a runner image carries no harness on `PATH`, so a profile's row says whether it is
+/// signed in there once its version is installed, not that its harness cannot say.
+#[test]
+fn a_kept_pinned_profiles_standing_is_asked_of_the_version_the_runner_installs() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut desktop = a_signed_in_desktop_profile(dir.path());
+    desktop.pinned = Some(crate::profilestore::pin::Pinned {
+        version: "2.1.300".to_owned(),
+        at: 3,
+    });
+    let runner = homes(dir.path(), "runner");
+    let installed = dir
+        .path()
+        .join("runner-data/harnesses/claude/2.1.300/claude");
+    let look = Installed {
+        pinned: installed.clone(),
+        programs: std::cell::RefCell::new(Vec::new()),
+    };
+
+    let said = kept_for_the_desktop(
+        &runner,
+        &runner_home(dir.path()),
+        DESKTOP,
+        &Kept::of(&desktop).unwrap().into(),
+        &look,
+        7,
+    )
+    .expect("kept");
+
+    assert_eq!(
+        said,
+        purlis_session_protocol::session::ProfileStanding::SignedIn
+    );
+    assert_eq!(*look.programs.borrow(), [installed.display().to_string()]);
 }
