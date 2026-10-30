@@ -617,22 +617,41 @@ test("a story failing on more than its picture is named first, past any number o
     ],
     errors: [],
   };
-  const { annotations: lines } = named([
+  const { headline, annotations: lines } = named([
     { browser: "chromium", report: pictures(12) },
     { browser: "webkit", report: blocked },
   ]);
-  // The headline, Probe K's own, and the 24 pictures'.
-  assert.equal(lines.length, 1 + 1 + 24);
-  assert.match(lines[0], /^::error title=No baselines drawn%3A 1 story failed on more than its picture::/);
-  assert.match(lines[0], /Probe K in webkit, purlis_light \(src\/Probe.stories.tsx\): keyboard/);
-  assert.doesNotMatch(lines[0], /Picture/);
-  // Then its own annotation, then the pictures'.
-  assert.match(lines[1], /title=Probe K in webkit/);
-  assert.ok(lines.slice(2).every((line) => /title=Picture \d+ in/.test(line)));
+  assert.match(headline, /^::error title=No baselines drawn%3A 1 story failed on more than its picture::/);
+  assert.match(headline, /Probe K \(src\/Probe.stories.tsx\): keyboard, in webkit \(purlis_light\)$/);
+  assert.doesNotMatch(headline, /Picture/);
+  // Probe K's own annotation, then the 24 pictures'.
+  assert.equal(lines.length, 1 + 24);
+  assert.match(lines[0], /title=Probe K in webkit/);
+  assert.ok(lines.slice(1).every((line) => /title=Picture \d+ in/.test(line)));
 });
 
-test("the first annotation names every story, error and report that blocks the baselines", () => {
-  const { annotations: lines } = named([
+test("the headline names each blocking story once, with the browsers and cells it failed in", () => {
+  const keyboard = (browser, cell) => ({
+    failed: true,
+    failures: [
+      { file: "src/Probe.stories.tsx", story: "Probe K", cell, errors: [failedAt("keyboard", browser)] },
+    ],
+    errors: [],
+  });
+  const { headline } = named([
+    { browser: "chromium", report: keyboard("chromium", "purlis_light") },
+    { browser: "chromium", report: keyboard("chromium", "purlis_dark") },
+    { browser: "webkit", report: keyboard("webkit", "purlis_dark") },
+  ]);
+  assert.match(headline, /title=No baselines drawn%3A 1 story failed/);
+  assert.match(
+    headline,
+    /::Probe K \(src\/Probe.stories.tsx\): keyboard, in chromium \(purlis_dark, purlis_light\) and webkit \(purlis_dark\)$/,
+  );
+});
+
+test("the headline names every story, error and report that blocks the baselines", () => {
+  const { headline } = named([
     { browser: "chromium", report: reportOf("Probe A", failedAt("accessibility")) },
     {
       browser: "webkit",
@@ -641,19 +660,19 @@ test("the first annotation names every story, error and report that blocks the b
     { browser: "webkit", report: { failed: true, failures: [], errors: [] } },
     { browser: "chromium", report: undefined },
   ]);
-  const [first] = lines;
-  assert.match(first, /4 stories failed on more than their picture/);
-  assert.match(first, /Probe A in chromium \(src\/Probe.stories.tsx\): accessibility/);
-  assert.match(first, /src\/Gone.stories.tsx in webkit: an error outside any story/);
-  assert.match(first, /stories in webkit: the run failed but named no story/);
-  assert.match(first, /stories in chromium: the run wrote no report/);
+  assert.match(headline, /4 stories failed on more than their picture/);
+  assert.match(headline, /Probe A \(src\/Probe.stories.tsx\): accessibility, in chromium/);
+  assert.match(headline, /src\/Gone.stories.tsx in webkit: an error outside any story/);
+  assert.match(headline, /stories in webkit: the run failed but named no story/);
+  assert.match(headline, /stories in chromium: the run wrote no report/);
 });
 
 test("pictures alone need no headline: the baselines are drawn", () => {
-  const { annotations: lines, summary } = named([
+  const { headline, annotations: lines, summary } = named([
     { browser: "chromium", report: pictures(2) },
     { browser: "webkit", report: { failed: false, failures: [], errors: [] } },
   ]);
+  assert.equal(headline, undefined);
   assert.equal(lines.length, 2);
   assert.ok(lines.every((line) => /title=Picture \d+ in chromium/.test(line)));
   assert.match(summary, /2 stories failed on their picture alone/);

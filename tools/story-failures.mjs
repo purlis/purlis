@@ -13,10 +13,11 @@
 //   It also names each story that takes no picture (`screenshot: false`), whose baselines
 //   `tools/story-baselines.mjs` then calls obsolete;
 // - run as a script, it reads those reports and prints one annotation per story that failed,
-//   those that stop the baselines being drawn first, after one that names all of them, and
-//   writes the same to the step's summary, which GitHub never caps (`named`, #4050):
+//   those that stop the baselines being drawn first, and writes the same to the step's summary,
+//   which GitHub never caps; or, with `headline`, the one annotation that names every story
+//   that stops them (`named`, #4050):
 //
-//   node tools/story-failures.mjs <browser> <report> [<browser> <report> ...]
+//   node tools/story-failures.mjs [headline] <browser> <report> [<browser> <report> ...]
 //
 //   Or, to ask whether a picture is all that failed in the reports (`picturesAlone`), which is
 //   when the stories job draws the baselines its pull request can take (`stories.yml`); it
@@ -215,6 +216,10 @@ export function failedIn(report, browser, root) {
       why,
       // The summary's line: its gate leads its why already.
       listed: `${title} (${file}): ${why}`,
+      // The headline names the story once, with the browsers and the cells it failed in.
+      once: `${story} (${file}): ${gates.join(", ") || "renders"}`,
+      browser,
+      cell,
     };
   });
   const outside = report.errors.map((one) => {
@@ -258,10 +263,12 @@ const plain = (text) => String(text).replace(/[\r\n]+/g, " ").replace(/`/g, "'")
 
 /**
  * **What failed across every report of a run, blocking first** (#4050): each `{ browser, report }`
- * (a report the run never wrote is `undefined`). GitHub shows 10 error annotations of a step, so
- * when anything stops the baselines being drawn (a story failing on more than its picture, an
- * error outside any story, a run that failed naming nothing or wrote no report), the first
- * annotation names every one of them, and their own annotations come before any picture's. The
+ * (a report the run never wrote is `undefined`). GitHub keeps the first 10 error annotations of
+ * a step, so the stories that stop the baselines being drawn (failing on more than their
+ * picture, and any error outside a story, run that failed naming nothing or report never
+ * written) are `annotations` before any picture's. The `headline` names every one of them in one
+ * annotation, each story once with the browsers and cells it failed in; the job prints it in a
+ * step of its own after every other, as GitHub shows a job's newest annotation first. The
  * `summary`, Markdown for the step's summary, which GitHub never caps, names the same first and
  * then every picture that failed alone.
  */
@@ -270,12 +277,35 @@ export function named(runs, root) {
   const blocking = all.filter(({ blocks }) => blocks);
   const alone = all.filter(({ blocks }) => !blocks);
   const lines = [...blocking, ...alone].map(({ line }) => line);
+  // Each blocking story once, with where it failed: browser, then its cells.
+  const grouped = new Map();
+  for (const { once, named: name, browser, cell } of blocking) {
+    const key = once ?? name;
+    if (!grouped.has(key)) grouped.set(key, new Map());
+    if (once) {
+      const browsers = grouped.get(key);
+      if (!browsers.has(browser)) browsers.set(browser, new Set());
+      if (cell) browsers.get(browser).add(cell);
+    }
+  }
+  const heads = [...grouped].map(([key, browsers]) =>
+    browsers.size === 0
+      ? key
+      : `${key}, in ${[...browsers]
+          .map(([browser, cells]) =>
+            cells.size === 0 ? browser : `${browser} (${[...cells].sort().join(", ")})`,
+          )
+          .join(" and ")}`,
+  );
+  const said = stories(
+    heads.length,
+    "failed on more than its picture",
+    "failed on more than their picture",
+  );
+  const headline =
+    blocking.length > 0 ? error(`No baselines drawn: ${said}`, heads.join("\n")) : undefined;
   const sections = [];
-  if (blocking.length > 0) {
-    const said = stories(blocking.length, "failed on more than its picture", "failed on more than their picture");
-    lines.unshift(
-      error(`No baselines drawn: ${said}`, blocking.map(({ named: name }) => name).join("\n")),
-    );
+  if (blocking.length > 0)
     sections.push(
       `## ${said}`,
       "",
@@ -284,7 +314,6 @@ export function named(runs, root) {
       ...blocking.map(({ named: name, why, listed }) => `- ${plain(listed ?? `${name}: ${why}`)}`),
       "",
     );
-  }
   if (alone.length > 0)
     sections.push(
       `## ${stories(alone.length, "failed on its picture alone", "failed on their picture alone")}`,
@@ -292,7 +321,7 @@ export function named(runs, root) {
       ...alone.map(({ named: name }) => `- ${plain(name)}`),
       "",
     );
-  return { annotations: lines, summary: sections.join("\n") };
+  return { headline, annotations: lines, summary: sections.join("\n") };
 }
 
 /** An error as the report keeps it: its message and its stack, apart, and the frames Vitest
@@ -393,8 +422,11 @@ if (
   );
   for (const file of files) console.log(file);
 } else if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  // `<browser> <report>`, once for each report a browser's run wrote (one a shard).
-  const given = process.argv.slice(2);
+  // `[headline] <browser> <report>`, the pair once for each report a browser's run wrote (one a
+  // part). With `headline`, the one annotation that names what blocks the baselines, if anything
+  // does; without, the annotations of every story that failed, and the step's summary.
+  const headlineOnly = process.argv[2] === "headline";
+  const given = process.argv.slice(headlineOnly ? 3 : 2);
   // The repository, which an annotation's file is relative to.
   const root = process.env.GITHUB_WORKSPACE || process.cwd();
   const runs = [];
@@ -407,8 +439,12 @@ if (
     }
     runs.push({ browser: given[at], report });
   }
-  const { annotations: lines, summary } = named(runs, root);
-  for (const line of lines) console.log(line);
-  if (summary && process.env.GITHUB_STEP_SUMMARY)
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
+  const { headline, annotations: lines, summary } = named(runs, root);
+  if (headlineOnly) {
+    if (headline) console.log(headline);
+  } else {
+    for (const line of lines) console.log(line);
+    if (summary && process.env.GITHUB_STEP_SUMMARY)
+      appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
+  }
 }
