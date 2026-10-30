@@ -572,7 +572,8 @@ export function HungPopover({
      * always told to the end by its scroll events (WebKit's last steps can land with none), so a
      * card placed only on them was left where the scroll's last event found its chip, short of
      * where the chip came to rest. It settles on the first frame that finds it where it was, and
-     * the scroll's end places it once more besides (`ended`), should a scroll pause a frame.
+     * the scroll's end places it once more besides (`ended`), should a scroll pause a frame. At
+     * rest it is always placed with no nudge.
      * **A trigger that never stops moving** (an endless animation of its box) would have it
      * placed on every frame for as long as it is up: hang it from something that holds still.
      */
@@ -587,7 +588,12 @@ export function HungPopover({
         }
         seen = seen || now;
         const at = where();
-        if (at === placedAt) return;
+        // At rest: placed with no nudge, so a card at rest is drawn at the one place whatever
+        // number of frames brought it there (a hundredth of a pixel moves its words' pixels).
+        if (at === placedAt) {
+          setNudge(0);
+          return;
+        }
         placedAt = at;
         setNudge((was) => (was === 0 ? 0.01 : 0));
         asked = requestAnimationFrame(place);
@@ -614,9 +620,12 @@ export function HungPopover({
       ending = requestAnimationFrame(() => {
         seen = seen || inSight();
         if (!seen) hide.current();
-        // A last placement where the scroll left it (#3896), in this frame of its own: the
-        // following frame (`asked`) is not touched.
-        else setNudge((was) => (was === 0 ? 0.01 : 0));
+        // A last placement where the scroll left it (#3896), in this frame of its own, and then
+        // at rest with no nudge: the following frame (`asked`) is not touched.
+        else {
+          setNudge((was) => (was === 0 ? 0.01 : 0));
+          ending = requestAnimationFrame(() => setNudge(0));
+        }
       });
     };
     window.addEventListener("scroll", scrolled, true);

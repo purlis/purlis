@@ -274,6 +274,8 @@ describe("a popover hung from what it is about (#3648)", () => {
     await aFrame();
     const atRest = placed();
     expect(atRest).not.toBe(onTheEvent);
+    // Where the chip came to rest, with no nudge: drawn at the one place however it got there.
+    expect(atRest).toBe(`${parseFloat(first) + 100}px`);
     // At rest, it is placed no more.
     await aFrame();
     await aFrame();
