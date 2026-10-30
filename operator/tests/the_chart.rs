@@ -512,7 +512,8 @@ fn nothing_reaches_the_operators_pod_unless_the_values_name_who_scrapes_it() {
         deployment["spec"]["selector"]["matchLabels"]
     );
     assert_eq!(policy["spec"]["policyTypes"], json!(["Ingress"]));
-    assert_eq!(policy["spec"]["ingress"], json!([]), "{policy}");
+    // No ingress rule at all: nothing may reach the pod.
+    assert!(policy["spec"].get("ingress").is_none(), "{policy}");
 
     let scraped = network_policy(&rendered(&with_digest(&[
         "metrics.allowFrom[0].namespaceSelector.matchLabels.team=monitoring",

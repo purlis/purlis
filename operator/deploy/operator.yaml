@@ -49,7 +49,6 @@ spec:
       app.kubernetes.io/name: purlis-cluster-operator
   policyTypes:
     - Ingress
-  ingress: []
 ---
 # Source: purlis-cluster-operator/templates/serviceaccount.yaml
 # Copyright 2026 Purlis
