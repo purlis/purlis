@@ -7,6 +7,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Explorer, type SearchKeyHere } from "./Explorer";
 import { cascadeOf } from "./cascade.testkit";
+import { inherited } from "./textRoles.testkit";
 import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
 import type { FileScope, FilesFound, FolderEntry, Panels, PlaneId } from "./bindings";
 import { forgetProjectThemes } from "./projectTheme";
@@ -58,11 +59,12 @@ const file = (name: string): FolderEntry => ({ name, kind: "file", ignored: fals
 
 /** The core: each repo's own folder holds `README.md`; `svc` changed two files; `find_files`
  *  answers one hit per branch the scope names. */
-function core() {
+function core(refused: string[] = [], unreadable?: string) {
   const finds: FileScope[] = [];
   mockIPC(
     (cmd, args) => {
       const a = args as Record<string, unknown>;
+      if (cmd === "branch_tree" && a.folder === unreadable) throw "permission denied";
       if (cmd === "branch_tree")
         return {
           entries:
@@ -102,7 +104,7 @@ function core() {
             matched: [4],
           })),
           branches: repos.length,
-          refused: [],
+          refused,
           partial: [],
         };
         return found;
@@ -242,6 +244,30 @@ describe("Explorer, repos as folders (#3343)", () => {
       { workspace: "alpha", repo: "svc", piece: null },
       "src/svc-main.rs",
     );
+  });
+
+  it("says a branch it could not look in, in the danger colour (#3917)", async () => {
+    const why = "web in workspace 'alpha' has no branch folder called 'gone'";
+    core([why]);
+    draw(["svc", "web"]);
+    await userEvent.type(screen.getByRole("searchbox", { name: "Filter files" }), "main");
+    const said = await screen.findByText(why);
+    expect(said).toHaveAttribute("role", "alert");
+    // No role of its own: a role's colour is in a later layer than App.css's and would draw it
+    // secondary. It takes the view's size, and the words that say something is wrong are
+    // `danger.text` (`docs/ui-primitives.md`), held on the trouble band's `danger.surface`.
+    expect(inherited(said, "color")).toBe("var(--danger-text)");
+  });
+
+  it("says a folder it could not read in the danger colour, its mark in the failed one (#3938)", async () => {
+    core([], "src");
+    draw(["svc"]);
+    await userEvent.click(await within(tree()).findByRole("row", { name: /^src/ }));
+    const said = await within(tree()).findByText(/permission denied/);
+    // Words that say something is wrong are `danger.text`; `state.failed` is the mark's.
+    expect(inherited(said, "color")).toBe("var(--danger-text)");
+    const mark = said.parentElement?.querySelector(".node-icon");
+    expect(mark && inherited(mark, "color")).toBe("var(--state-failed)");
   });
 
   it("opens Search on the filter's scope: Branch for the selected repo, Workspace for all", async () => {

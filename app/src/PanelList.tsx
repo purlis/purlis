@@ -576,7 +576,12 @@ function Row({
         </RowLead>
       )}
       <RowLabel
-        className={clsx("row-text ui-text-body", row.tone === "default" && "ui-text-strong")}
+        // A done todo's words step back to the quiet tier, the meta's (R131, #3917).
+        className={clsx(
+          "row-text",
+          check?.checked ? "ui-text-meta" : "ui-text-body",
+          row.tone === "default" && "ui-text-strong",
+        )}
       >
         {shortened}
       </RowLabel>

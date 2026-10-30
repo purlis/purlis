@@ -349,8 +349,8 @@
   box-sizing: border-box;
   min-block-size: 32px;
   padding-inline: var(--space-4);
-  /* 8 in Purlis, as a control's; a theme's parts cannot reach this part apart from a chip
-     yet, so it keeps Classic's 5 by its own sum. */
+  /* 8 in Purlis, as a control's, and Classic's 5, by its own sum; a theme's own corner for
+     it is its part's (`titlebar.<part>.corner-radius`, drawn apart from every chip, #3656). */
   border-radius: calc(var(--radius-md) + 1px);
   color: var(--text-secondary);
   cursor: default;
@@ -464,8 +464,8 @@
   padding-block: 0;
   padding-inline: var(--space-3) var(--space-2);
   border: 0;
-  /* 8 in Purlis, as a control's; a theme's parts cannot reach this part apart from a chip
-     yet, so it keeps Classic's 5 by its own sum. */
+  /* 8 in Purlis, as a control's, and Classic's 5, by its own sum; a theme's own corner for
+     it is its part's (`titlebar.<part>.corner-radius`, drawn apart from every chip, #3656). */
   border-radius: calc(var(--radius-md) + 1px);
   color: var(--text-secondary);
   background-color: transparent;
