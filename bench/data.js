@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793334071492,
+  "lastUpdate": 1793336756924,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30786,6 +30786,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4206525,
             "unit": "ms",
             "extra": "median of 5 runs: 101.150, 101.368, 101.421, 101.453, 101.693 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "308176e6b61333737a12aedb78fc186211c05eca",
+          "message": "Runners: a cluster pool's warm count is its own, and its times are named (#3737) (#3983)\n\n* Runners: a cluster pool's warm count is its own, and its times are named (#3737)\n\nA Pool takes warmReplicas (0), which the operator now keeps each warm pool at, and\nidleAfter (30m), deleteSuspendedAfter (720h), noticeBeforeDelete (168h) and maxAge (336h),\nspelled as suspendAfter is and refused by the API server otherwise, as the person ruled on\n2026-10-29. The four times are named, not acted on yet: #3980, #3981, #3982.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65CF4N52JH37CJW5M29HY4E\nPurlis-Persona: steward\n\n* Runners: warm runners only for a person who can take one; times bounded and marked not yet acted on (#3737)\n\nReview fixes. A pool keeps runners warm in a person's namespace only while they have a fresh\nClaim on it that is not stopped, and a fresh Claim that takes a warm runner skips the quota\npre-check that counted it twice. warmReplicas is 20 at most; each time is 12 characters at most\nand read by a duration() rule. Each time's description says it is not acted on yet, and a\ncluster Pool's suspendAfter stays #3703.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65CF4N52JH37CJW5M29HY4E\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T04:26:36Z",
+          "tree_id": "e339226dcda7c91b484f745c4d21fcba6732ae71",
+          "url": "https://github.com/purlis/purlis/commit/308176e6b61333737a12aedb78fc186211c05eca"
+        },
+        "date": 1793336752917,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.530707,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.517, 0.529, 0.531, 0.533, 0.533 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.404689,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.257, 16.394, 16.405, 16.435, 16.568 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.2163855,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.280, 100.088, 101.216, 101.596, 101.701 ms"
           }
         ]
       }
