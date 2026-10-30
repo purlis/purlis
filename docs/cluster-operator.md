@@ -383,6 +383,21 @@ gives the requester alone a right there ([below](#each-persons-namespace)); gran
 rights in `purlis-runners-*` namespaces, cluster-wide rights on pods included. Read access to
 Secrets in the operator's namespace is the power to vouch for any runner.
 
+**Adding the pool in a person's window** (#3292): the add pool dialog (the palette's Add a Docker
+pool…, or Add a pool… in Settings › This machine › Pools once one is kept), Kind Cluster, their
+kubeconfig's context for the cluster and the Pool's name. Check its key shows
+the operator key the Pool's status names; give your people that key to check it against, as
+
+```bash
+kubectl get pools.runners.purlis.dev <pool> --output jsonpath='{.status.signingKey}'
+```
+
+prints it. Add pool pins it and makes the person's one kept Claim, `<pool>-<a label of their
+desktop>`, marked `runners.purlis.dev/desktop: <that label>`, in the namespace their context
+names (`default` where it names none). Removing the pool deletes only that Claim. A Pool that
+later names another key refuses every link to that desktop's runner, and the window asks the
+person to check it and add the pool again.
+
 A runner is paired once, and **its pairing is its Claim's, not its pod's** (#2057, ruled
 2026-10-28). The pairing lives in the runner's home: a kept Claim's runner keeps it on its
 volume, and when its pod is made again the pod's first step finds it and publishes the key the

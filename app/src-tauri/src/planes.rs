@@ -394,6 +394,9 @@ pub const A_TASK_IS_NOT_STARTED_FRESH: &str = "This chat is a task, and a fresh 
 /// A project's reopen between its two halves ([`Held::begin_reopen`], [`Held::finish_reopen`]).
 pub(crate) struct Reopening {
     begun: crate::restored::Begun,
+    /// Where the record came from, where it was a move's or a copy's (V43), and the clone it
+    /// names: what the project's app state follows ([`Held::follow_arrival`]).
+    arrived: Option<(purlis_core::appstate::Arrived, reopen::CloneSeat)>,
     /// How many chats the record held.
     wanted: usize,
     /// Whether the record was read: only then does a dispatch nothing brings back end (#1513).
@@ -849,9 +852,17 @@ impl Held {
         // A record another clone or device wrote is a copy's or a move's (V43): a copy's chats
         // get ids of their own before any of them starts, and are written with them once
         // they are back, so no two clones ever hold one chat's id.
+        let mut arrived = None;
         let record = record.map(|record| {
+            let was = record.clone_seat.clone();
             let (arrival, record) =
                 reopen::arrive(record, &self.records.clone_seat, || self.records.known());
+            let kind = match arrival {
+                reopen::Arrival::Moved => Some(purlis_core::appstate::Arrived::Moved),
+                reopen::Arrival::Copied => Some(purlis_core::appstate::Arrived::Copied),
+                reopen::Arrival::Same | reopen::Arrival::Legacy => None,
+            };
+            arrived = kind.zip(was);
             if arrival == reopen::Arrival::Copied {
                 tracing::info!(
                     "purlis: plane {} is a copy of another clone; its chats get new ids",
@@ -893,6 +904,7 @@ impl Held {
         let begun = crate::restored::begin(self, &record);
         Reopening {
             begun,
+            arrived,
             wanted,
             read,
         }
@@ -904,9 +916,16 @@ impl Held {
     pub(crate) fn finish_reopen(&self, reopening: Reopening, size: Size) {
         let Reopening {
             begun,
+            arrived,
             wanted,
             read,
         } = reopening;
+        // The project's app state follows where its record came from (#3718), before any chat
+        // is put back, on this thread and outside the registry's lock: a move carries its
+        // drafts and grades, and a copy gets an id of its own and none of the original's.
+        if let Some((arrived, was)) = &arrived {
+            let _ = purlis_core::appstate::follow_arrival(&self.root, was, *arrived);
+        }
         let back = crate::restored::finish(self, begun, size, read).len();
         // What the session host still runs of this project from before this window and no
         // chat put back reattached ends now, so nothing runs with no tab (#2006).
@@ -2791,6 +2810,10 @@ impl Planes {
         let _opening = self.opening(&id);
         if !self.map().contains_key(&id) {
             (self.sweep)(&root);
+            // The app's own state an older purlis kept in the plane's state folder moves to the
+            // data home, once (#3718): before any chat is put back, so what arms them reads it
+            // there, and outside the registry's lock, as the sweep is.
+            let _ = purlis_core::appstate::move_out_of_the_plane(&root);
         }
 
         let mut open = self.map();

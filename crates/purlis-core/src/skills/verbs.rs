@@ -1819,6 +1819,41 @@ pub fn pin(cx: &mut Ctx<'_>, by: &super::PinnedBy, name: &str, on: bool) -> Resu
     Ok(changed)
 }
 
+/// **Chooses the router `router` for `by`'s chats, or takes the choice out** (`None`; SK-15b,
+/// ADR 0102 §5, #3692), committed. `Ok(false)` where it already was so, and nothing is written.
+/// Chats started after it are routed by it; a chat open now keeps the router its start asked.
+pub fn route(
+    cx: &mut Ctx<'_>,
+    by: &super::PinnedBy,
+    router: Option<&super::router::Chosen>,
+) -> Result<bool, String> {
+    use super::router::Chosen;
+    let changed = super::router::choose(cx.plane, by, router)?;
+    if changed {
+        let (whose, file) = match by {
+            super::PinnedBy::Workspace(ws) => (
+                format!("chats in {ws}"),
+                crate::settings::workspace::named(ws),
+            ),
+            super::PinnedBy::Persona(persona) => (
+                format!("chats as {persona}"),
+                rel(cx.plane, &crate::personas::def_path(cx.plane, persona)),
+            ),
+        };
+        let by_what = match (by, router) {
+            (super::PinnedBy::Persona(_), None) => "their workspace's router".to_owned(),
+            (_, None | Some(Chosen::BuiltIn)) => super::Router::BuiltIn.shown(),
+            (_, Some(Chosen::Extension(id))) => super::Router::Extension(id.clone()).shown(),
+        };
+        cx.done(format!(
+            "{} started from now are routed by {by_what}",
+            super::router::capitalised(&whose)
+        ));
+        cx.commit(&[file], &format!("skill router for {whose}: {by_what}"));
+    }
+    Ok(changed)
+}
+
 /// **Share** (#2767): the local skill `name` at the project's root, in a workspace or of a
 /// persona (`at`) moved into its level's `skills/`, committed (#2770).
 pub fn share(cx: &mut Ctx<'_>, at: &Whose, name: &str) -> Result<PathBuf, String> {

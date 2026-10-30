@@ -7,7 +7,8 @@
 //! screen and its scrollback as the escape sequences that draw them
 //! (`purlis_core::engine`'s snapshot). A row of the scorecard opens it read-only in a tab.
 //!
-//! - **Kept on this machine**, in `<state>/skill-grade-chats/<skill>/<grade>/<chat>.screen`:
+//! - **Kept on this machine**, in its app state of the project (`crate::appstate`),
+//!   `<data>/app-state/<clone key>/skill-grade-chats/<skill>/<grade>/<chat>.screen`:
 //!   the chat ran here, and what it showed is this machine's to keep. A teammate who pulls the
 //!   eval record sees the grade and not its chats, and the scorecard says so.
 //! - **Kept for a skill's newest grades** ([`KEPT_GRADES`]): once a grade of the skill ends,
@@ -17,7 +18,7 @@
 //!   (never a link), each file at most [`MOST_SCREEN_BYTES`] and opened following no link, so a
 //!   file put there by anything else is never shown.
 //!
-//! **Tier:** Clone state, transient, never committed: what this machine's chats showed.
+//! **Tier:** Machine, device-bound, transient, never committed: what this machine's chats showed.
 
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -28,7 +29,7 @@ fn named(word: &str) -> bool {
     super::plain(word) && !word.bytes().all(|b| b == b'.')
 }
 
-/// The folder of this machine's state the kept chats are in.
+/// The folder of this machine's app state of the project the kept chats are in.
 pub const DIR_NAME: &str = "skill-grade-chats";
 
 /// How many of a skill's grades keep their chats: the newest.
@@ -45,9 +46,12 @@ const MOST_GRADE_FOLDERS: usize = 600;
 const SCREEN: &str = "screen";
 
 /// The folder of `skill`'s kept chats in the project at `root`, or `None` for a name that is not
-/// a plain one.
+/// a plain one, or where this machine has no data home.
 fn skill_dir(root: &Path, skill: &str) -> Option<PathBuf> {
-    named(skill).then(|| crate::plane::state_dir(root).join(DIR_NAME).join(skill))
+    if !named(skill) {
+        return None;
+    }
+    Some(crate::appstate::dir(root)?.join(DIR_NAME).join(skill))
 }
 
 /// The file of `chat`'s screen in `skill`'s grade `grade`, or `None` where a name is not plain.
@@ -82,6 +86,7 @@ pub fn keep(
     chat: &str,
     screen: &str,
 ) -> std::io::Result<()> {
+    crate::appstate::made(root).map_err(std::io::Error::other)?;
     let path = screen_path(root, skill, grade, chat)
         .ok_or_else(|| std::io::Error::other("a name is not a plain one"))?;
     if screen.len() > MOST_SCREEN_BYTES {
@@ -113,7 +118,7 @@ pub fn keep(
 pub fn kept(root: &Path, skill: &str, grade: &str, chat: &str) -> Option<String> {
     let path = screen_path(root, skill, grade, chat)?;
     let folders = [
-        crate::plane::state_dir(root).join(DIR_NAME),
+        crate::appstate::dir(root)?.join(DIR_NAME),
         skill_dir(root, skill)?,
         path.parent()?.to_path_buf(),
     ];

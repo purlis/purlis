@@ -58,7 +58,7 @@ import {
   useReadOnlySaid,
 } from "../ReadOnlyLine";
 import { LivesHere } from "../LivesHere";
-import { usePools } from "../pools";
+import { anyPoolKept, usePools } from "../pools";
 import { POOLS } from "./pools";
 import { ColorWell } from "../ui/choice/ColorWell";
 import { Button } from "../ui/button/Button";
@@ -132,7 +132,7 @@ type Switcher = {
 function YouLevel({ plane, levels, onLevelChange }: Switcher & { plane?: PlaneId }) {
   // Nothing about pools shows while this machine keeps none (#2679).
   const pools = usePools();
-  const anyPool = pools.read.state === "read" && pools.read.shown.pools.length > 0;
+  const anyPool = pools.read.state === "read" && anyPoolKept();
   const groups = useMemo(
     () => youGroups(plane).filter((group) => group.id !== POOLS || anyPool),
     [plane, anyPool],
