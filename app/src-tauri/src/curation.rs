@@ -2089,7 +2089,10 @@ mod tests {
         let plane = Plane::new("claude");
         let local = plane.root.join(purlis_core::profiles::LOCAL_FILE);
         let was = std::fs::read_to_string(&local).unwrap();
-        std::fs::write(&local, was.replace("]\n", ", \"--changed\"]\n")).unwrap();
+        // The command's line alone ends in `"]`; the tables' headers end in `]` with no quote.
+        let changed = was.replace("\"]\n", "\", \"--changed\"]\n");
+        assert_ne!(changed, was, "the command's line is changed");
+        std::fs::write(&local, changed).unwrap();
         let planes = planes();
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
