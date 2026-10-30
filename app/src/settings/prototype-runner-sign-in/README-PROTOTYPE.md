@@ -60,3 +60,7 @@ the three signs in that way.
 Files: `VariantA.tsx`, `VariantB.tsx`, `VariantC.tsx`, the shared vendor step
 `SignInStep.tsx`, the host page `Frame.tsx`, the bar `PrototypeSwitcher.tsx`, stub data
 `data.ts`, and the story `../PROTOTYPE-RunnerSignIn.stories.tsx`.
+
+## Verdict (2026-10-30)
+
+The person chose **Variant A, Inline**: a profile's line on the pool row opens in place into a sign-in strip; choosing profiles is a strip at the end of Add a pool; Move to runner shows the same strip under the chat's move notice. B and C are kept here as the primary source only.
