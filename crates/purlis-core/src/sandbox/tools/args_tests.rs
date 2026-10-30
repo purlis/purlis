@@ -288,3 +288,163 @@ fn the_refusals_follow_the_program_not_only_the_tool_s_name() {
     let other = ready(tool_with("kubectl", None), "/usr/bin/kubectl");
     assert!(runs(&other, &["auth", "can-i", "get", "pods"]).is_ok());
 }
+
+// ---- the audit of each forge's whole command set (#3894) ----------------------------------------
+
+#[test]
+fn commands_that_show_or_change_stored_secrets_never_run() {
+    let gh = ready(tool_with("gh", None), "/opt/homebrew/bin/gh");
+    for words in [
+        &["secret", "list"][..],
+        &["secret", "set", "TOKEN", "--body", "x"],
+        &["repo", "set-default", "a/b"],
+    ] {
+        assert!(runs(&gh, words).is_err(), "{words:?}");
+    }
+    assert!(runs(&gh, &["variable", "list"]).is_ok());
+    let glab = ready(tool_with("glab", None), "/usr/local/bin/glab");
+    for words in [
+        &["variable", "get", "TOKEN"][..],
+        &["variable", "export"],
+        &["securefile", "download", "1"],
+        &["duo", "cli"],
+        &["opentofu", "init", "production"],
+        &["cluster", "agent", "get-token", "--agent", "1"],
+        &["cluster", "agent", "token", "create"],
+        &["cluster", "agent", "token-cache", "list"],
+        &["cluster", "agent", "bootstrap", "a"],
+        &["cluster", "agent", "update-kubeconfig"],
+        &["runner-controller", "token", "create"],
+    ] {
+        assert!(runs(&glab, words).is_err(), "{words:?}");
+    }
+    assert!(runs(&glab, &["cluster", "agent", "list"]).is_ok());
+    assert!(runs(&glab, &["opentofu", "state", "list"]).is_ok());
+    assert!(runs(&glab, &["runner", "list"]).is_ok());
+}
+
+#[test]
+fn api_never_reaches_a_route_that_does_what_a_refused_command_does() {
+    let gh = ready(tool_with("gh", None), "/opt/homebrew/bin/gh");
+    for words in [
+        &["api", "user/keys"][..],
+        &["api", "/user/keys/12", "-X", "DELETE"],
+        &[
+            "api",
+            "-X",
+            "POST",
+            "user/gpg_keys",
+            "-f",
+            "armored_public_key=x",
+        ],
+        &["api", "user/ssh_signing_keys"],
+        &["api", "repos/{owner}/{repo}/keys"],
+        &["api", "repos/a/b/actions/secrets/X"],
+        &["api", "repos/a/b/environments/prod/secrets"],
+        &["api", "orgs/a/dependabot/secrets"],
+        &["api", "user/codespaces/secrets"],
+        &[
+            "api",
+            "repos/a/b/actions/runners/registration-token",
+            "-X",
+            "POST",
+        ],
+        &["api", "orgs/a/actions/runners/generate-jitconfig"],
+        &["api", "orgs/a/personal-access-tokens"],
+        &["api", "repositories/12/keys"],
+        &["api", "organizations/9/actions/secrets"],
+        // Spelled otherwise: case, a query, doubled and trailing slashes, an escaped letter.
+        &["api", "USER/Keys"],
+        &["api", "user/keys?per_page=1"],
+        &["api", "user//keys/"],
+        &["api", "user/%6beys"],
+        &["api", "api/v3/user/keys"],
+        // A dot segment is never sent as written.
+        &["api", "repos/a/b/../../../user/keys"],
+        &["api", "repos/a/b/./pulls"],
+    ] {
+        assert!(runs(&gh, words).is_err(), "{words:?}");
+    }
+    for words in [
+        &["api", "repos/a/b/pulls"][..],
+        &["api", "repos/keys/secrets/issues"],
+        &["api", "user"],
+        &["api", "search/issues?q=a%20b"],
+        &["api", "repos/a/b/actions/variables"],
+        &["api", "users/a/keys"],
+    ] {
+        assert!(runs(&gh, words).is_ok(), "{words:?}");
+    }
+    let glab = ready(tool_with("glab", None), "/usr/local/bin/glab");
+    for words in [
+        &["api", "user/keys"][..],
+        &["api", "user/gpg_keys"],
+        &["api", "projects/:id/deploy_keys"],
+        &["api", "projects/a%2Fb/deploy_tokens"],
+        &["api", "groups/1/deploy_tokens"],
+        &["api", "personal_access_tokens/self/rotate", "-X", "POST"],
+        &["api", "users/2/impersonation_tokens"],
+        &["api", "projects/1/access_tokens"],
+        &["api", "groups/1/access_tokens"],
+        &["api", "projects/1/variables/TOKEN"],
+        &["api", "groups/1/variables"],
+        &["api", "admin/ci/variables"],
+        &["api", "projects/1/pipeline_schedules/3/variables"],
+        &["api", "projects/1/secure_files/2/download"],
+        &["api", "projects/1/triggers"],
+        &["api", "projects/1/cluster_agents/2/tokens"],
+        &["api", "runners/reset_registration_token"],
+        &["api", "runners/5/reset_authentication_token"],
+        &["api", "user/runners"],
+        &["api", "applications"],
+        &["api", "api/v4/projects/1/variables"],
+    ] {
+        assert!(runs(&glab, words).is_err(), "{words:?}");
+    }
+    for words in [
+        &["api", "projects/1/issues"][..],
+        &["api", "projects/a%2Fb/merge_requests"],
+    ] {
+        assert!(runs(&glab, words).is_ok(), "{words:?}");
+    }
+}
+
+#[test]
+fn graphql_never_asks_for_a_credential_and_glab_s_never_runs() {
+    let gh = ready(tool_with("gh", None), "/opt/homebrew/bin/gh");
+    for words in [
+        &[
+            "api",
+            "graphql",
+            "-f",
+            "query={repository(owner:\"a\",name:\"b\"){tempCloneToken}}",
+        ][..],
+        &[
+            "api",
+            "graphql",
+            "-f",
+            "query={enterprise(slug:\"a\"){ownerInfo{samlIdentityProvider{RecoveryCodes}}}}",
+        ],
+        &[
+            "api",
+            "graphql",
+            "-f",
+            "query=mutation{regenerateVerifiableDomainToken(input:{id:\"x\"}){verificationToken}}",
+        ],
+        // A query read from a file or stdin is never seen, so it never runs.
+        &["api", "graphql", "-F", "query=@q.graphql"],
+        &["api", "graphql", "--input", "q.json"],
+        &["api", "graphql", "--input=-"],
+    ] {
+        assert!(runs(&gh, words).is_err(), "{words:?}");
+    }
+    assert!(runs(&gh, &["api", "graphql", "-f", "query={viewer{login}}"]).is_ok());
+    let glab = ready(tool_with("glab", None), "/usr/local/bin/glab");
+    assert!(
+        runs(
+            &glab,
+            &["api", "graphql", "-f", "query={currentUser{username}}"]
+        )
+        .is_err()
+    );
+}

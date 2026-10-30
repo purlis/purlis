@@ -25,6 +25,8 @@
 
 use std::path::Path;
 
+mod api;
+
 /// The key of a tool's table that holds its patterns.
 pub const KEY: &str = "args";
 
@@ -171,21 +173,67 @@ impl Forge {
         }
     }
 
-    /// Whether `command` shows or changes the forge's credentials or the program's own
-    /// settings: never run with a vault's value from a chat.
-    fn refuses(self, command: &str) -> bool {
-        const BOTH: &[&str] = &[
-            "auth",
-            "config",
-            "alias",
-            "extension",
-            "extensions",
-            "ext",
-            "ssh-key",
-            "gpg-key",
-        ];
-        const GLAB: &[&str] = &["token", "deploy-key"];
-        BOTH.contains(&command) || (self == Self::Glab && GLAB.contains(&command))
+    /// The commands that show or change the forge's credentials or secrets, or the program's
+    /// own settings: each with the words of which one among the run's arguments refuses it, or
+    /// none where it is refused whole. Drawn from each command line's whole command set
+    /// (`docs/forge-tool-refusals.md`, #3894).
+    fn refused(self) -> &'static [(&'static str, &'static [&'static str])] {
+        match self {
+            Self::Gh => &[
+                ("auth", &[]),
+                ("config", &[]),
+                ("alias", &[]),
+                ("extension", &[]),
+                ("extensions", &[]),
+                ("ext", &[]),
+                ("ssh-key", &[]),
+                ("gpg-key", &[]),
+                ("secret", &[]),
+                ("repo", &["deploy-key", "set-default"]),
+            ],
+            Self::Glab => &[
+                ("auth", &[]),
+                ("config", &[]),
+                ("alias", &[]),
+                ("extension", &[]),
+                ("extensions", &[]),
+                ("ext", &[]),
+                ("ssh-key", &[]),
+                ("gpg-key", &[]),
+                ("token", &[]),
+                ("deploy-key", &[]),
+                ("variable", &[]),
+                ("securefile", &[]),
+                ("duo", &[]),
+                ("opentofu", &["init"]),
+                (
+                    "cluster",
+                    &[
+                        "get-token",
+                        "token",
+                        "token-cache",
+                        "bootstrap",
+                        "update-kubeconfig",
+                    ],
+                ),
+                ("runner-controller", &["token"]),
+            ],
+        }
+    }
+
+    /// The words a run of `command` with `args` is refused for, if it is: the command alone,
+    /// or the command and the word among its arguments that makes it one of [`Self::refused`].
+    fn refuses(self, command: &str, args: &[String]) -> Option<String> {
+        let (_, words) = self.refused().iter().find(|(one, _)| *one == command)?;
+        if words.is_empty() {
+            return Some(command.to_owned());
+        }
+        let word = args
+            .iter()
+            .skip(1)
+            .map(|arg| arg.to_ascii_lowercase())
+            .find(|arg| words.contains(&arg.as_str()))?;
+        Some(format!("{command} {word}"))
     }
 }
 
@@ -196,8 +244,9 @@ const ONLY_PRINTS: &[&str] = &["--help", "-h", "--version"];
 /// does not: by `names`, the tool's name and its program's file names as found and as their
 /// links resolve, where one is `gh` or `glab` (lower case, a `.exe` aside). The run must start
 /// with its command, not an option (only [`ONLY_PRINTS`] aside); and none of
-/// [`Forge::refuses`], `gh repo … deploy-key`, or `api` naming a host (`--hostname`) or an
-/// endpoint by a whole URL runs. Each applies with or without the tool's `args`.
+/// [`Forge::refused`], `api` naming a host (`--hostname`) or an endpoint by a whole URL, or
+/// `api` reaching a route that does what a refused command does (`api::refused`) runs. Each
+/// applies with or without the tool's `args`.
 pub fn refused_forge(names: &[&Path], args: &[String]) -> Option<String> {
     let forge = names
         .iter()
@@ -216,31 +265,27 @@ pub fn refused_forge(names: &[&Path], args: &[String]) -> Option<String> {
         ));
     }
     let command = first.to_ascii_lowercase();
-    let deploy_key = forge == Forge::Gh
-        && command == "repo"
-        && args
-            .iter()
-            .any(|arg| arg.eq_ignore_ascii_case("deploy-key"));
-    if forge.refuses(&command) || deploy_key {
-        let said = if deploy_key {
-            "repo deploy-key"
-        } else {
-            command.as_str()
-        };
+    if let Some(said) = forge.refuses(&command, args) {
         return Some(format!(
-            "{name} {said} shows or changes the forge's credentials or {name}'s own settings, so \
-             a chat never runs it with a vault's value; {terminal}."
+            "{name} {said} shows or changes the forge's credentials or secrets or {name}'s own \
+             settings, so a chat never runs it with a vault's value; {terminal}."
         ));
     }
-    if command == "api"
-        && args
+    if command == "api" {
+        if args
             .iter()
             .any(|arg| arg == "--hostname" || arg.starts_with("--hostname=") || arg.contains("://"))
-    {
-        return Some(format!(
-            "{name} api names another host here (--hostname, or an endpoint as a whole URL), \
-             and a chat runs it with a vault's value only against the forge's own; {terminal}."
-        ));
+        {
+            return Some(format!(
+                "{name} api names another host here (--hostname, or an endpoint as a whole URL), \
+                 and a chat runs it with a vault's value only against the forge's own; {terminal}."
+            ));
+        }
+        if let Some(why) = api::refused(forge, args) {
+            return Some(format!(
+                "{name} api never runs with a vault's value from a chat here: {why}; {terminal}."
+            ));
+        }
     }
     None
 }
