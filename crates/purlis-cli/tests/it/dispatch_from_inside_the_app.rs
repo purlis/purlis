@@ -1706,6 +1706,7 @@ fn the_list_prints_each_task_s_persona_name_place_state_and_age() {
                 branch: None,
                 branch_stands: None,
                 finished: false,
+                liveness: None,
             }],
         }))
     });
@@ -2101,6 +2102,7 @@ fn the_list_marks_a_task_the_person_asked_for_as_theirs() {
         branch: None,
         branch_stands: None,
         finished: false,
+        liveness: None,
     };
     let (app, _reading, _asked) = an_app_answering_tasks(&tmp, move |_| {
         Answer::Task(Box::new(Answered::Listed {
