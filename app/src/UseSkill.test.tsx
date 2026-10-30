@@ -2,23 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { renderHook, waitFor } from "@testing-library/react";
 import {
+  ChatSkillSetsHere,
   SHOW_THIS_CHATS_SKILLS,
-  SkillBudgetsHere,
   SkillsChip,
   UseSkill,
   UseSkillOpener,
   budgetSaid,
   pinsTogetherSaid,
   skillsMatching,
-  useChatSkillBudgets,
+  useChatSkillSets,
   warnsSaid,
 } from "./UseSkill";
-import type { ChatSkill, ChatSkills, SkillBudget } from "./bindings";
-import { CHAT_SKILLS_ASKED, type ChatSkillsAsk } from "./chatSkillsAsk";
+import type { ChatSkill, ChatSkills, PlaneUpdated, SkillBudget } from "./bindings";
+import { CHAT_SKILLS_ASKED, skillsMissingPutAway, type ChatSkillsAsk } from "./chatSkillsAsk";
+import type { ChatSkillsSaid } from "./chatSkillNeeds";
 
 afterEach(() => {
   cleanup();
@@ -80,6 +81,7 @@ function skills(listed: ChatSkill[], budget: SkillBudget | null = BUDGET): ChatS
     repos: [],
     not_supported: null,
     routing: null,
+    missing: null,
   };
 }
 
@@ -269,6 +271,7 @@ describe("Use skill…", () => {
       repos: [],
       not_supported: null,
       routing: null,
+      missing: null,
     });
     expect(screen.getByTestId("use-skill-none").textContent).toMatch(/runs no tool purlis knows/);
     cleanup();
@@ -283,6 +286,7 @@ describe("Use skill…", () => {
       repos: [],
       not_supported: goose,
       routing: null,
+      missing: null,
     });
     expect(screen.getByTestId("use-skill-none").textContent).toBe(goose);
     cleanup();
@@ -299,6 +303,26 @@ describe("the Skills chip on a chat's pane", () => {
     });
   }
 
+  /** A chat's set as the window holds it: well, unless `more` says otherwise. */
+  const held = (more: Partial<Omit<ChatSkillsSaid, "budget">> & { budget?: SkillBudget } = {}) => ({
+    budget: BUDGET,
+    routing: null,
+    missing: null,
+    changed: null,
+    ...more,
+  });
+
+  /** The chip of chat 4, its set `set`. */
+  async function chipOf(set: ReturnType<typeof held>) {
+    studioOn();
+    render(
+      <ChatSkillSetsHere.Provider value={{ 4: set }}>
+        <SkillsChip plane="p" session={4} />
+      </ChatSkillSetsHere.Provider>,
+    );
+    return screen.findByTestId("pane-skills");
+  }
+
   it("shows the chat's skills at a glance and opens the Skills view on them, not Use skill… (S8)", async () => {
     studioOn();
     const open = vi.fn();
@@ -308,10 +332,10 @@ describe("the Skills chip on a chat's pane", () => {
     try {
       render(
         <UseSkillOpener value={open}>
-          <SkillBudgetsHere.Provider value={{ 4: BUDGET }}>
+          <ChatSkillSetsHere.Provider value={{ 4: held() }}>
             <SkillsChip plane="p" session={4} />
             <SkillsChip plane="p" session={5} />
-          </SkillBudgetsHere.Provider>
+          </ChatSkillSetsHere.Provider>
         </UseSkillOpener>,
       );
       const chip = await screen.findByTestId("pane-skills");
@@ -327,49 +351,107 @@ describe("the Skills chip on a chat's pane", () => {
     }
   });
 
-  it("is in the warning look, saying why, for a set near or past the budget", async () => {
-    studioOn();
-    render(
-      <SkillBudgetsHere.Provider value={{ 4: { ...BUDGET, warns: "chars" } }}>
-        <SkillsChip plane="p" session={4} />
-      </SkillBudgetsHere.Provider>,
-    );
-    const chip = await screen.findByTestId("pane-skills");
+  it("is in the warning look, naming the need, for a set near or past the budget", async () => {
+    const chip = await chipOf(held({ budget: { ...BUDGET, warns: "chars" } }));
     expect(chip.hasAttribute("data-over")).toBe(true);
     // A manual-only skill is in the set's count, free in the listing's.
     expect(chip.textContent).toBe("4 skills");
-    expect(chip.getAttribute("aria-label")).toMatch(/descriptions are near or past/);
+    expect(chip.getAttribute("aria-label")).toBe(
+      `4 skills. Near the skill budget. ${SHOW_THIS_CHATS_SKILLS}.`,
+    );
   });
 
   it("is in the warning look for pins past 64 together, under the budget or not (#3391)", async () => {
-    studioOn();
-    render(
-      <SkillBudgetsHere.Provider value={{ 4: TOGETHER }}>
-        <SkillsChip plane="p" session={4} />
-      </SkillBudgetsHere.Provider>,
-    );
-    const chip = await screen.findByTestId("pane-skills");
+    const chip = await chipOf(held({ budget: TOGETHER }));
     expect(chip.hasAttribute("data-over")).toBe(true);
-    expect(chip.getAttribute("aria-label")).toMatch(
-      /^4 skills\. This chat reads none of its pins: workspace ops pins 40 skills and persona reviewer pins 30/,
+    expect(chip.getAttribute("aria-label")).toMatch(/^4 skills\. Its pins are not read\./);
+  });
+
+  it("is in the warning look for each other need of the chat's own the Skills view holds (#3953)", async () => {
+    const changed: PlaneUpdated = {
+      session: 4,
+      files: [],
+      skills: true,
+      skills_added: ["triage"],
+      skills_gone: [],
+      skills_edited: [],
+    };
+    const missing = {
+      persona: "reviewer",
+      missing: ["lint"],
+      no_built_in: [],
+      broken: [],
+      by_a_repo: [],
+      beside_a_built_in: [],
+    };
+    const fellBack = { router: "acme", ms: 9, fell_back: true, said: "acme fell back." };
+    for (const [set, title] of [
+      [held({ routing: fellBack }), "Its router fell back"],
+      [held({ missing }), "Started without 1 skill"],
+      [held({ changed }), "Changed since it started"],
+    ] as const) {
+      const chip = await chipOf(set);
+      expect(chip.hasAttribute("data-over"), title).toBe(true);
+      expect(chip.getAttribute("aria-label")).toBe(
+        `4 skills. ${title}. ${SHOW_THIS_CHATS_SKILLS}.`,
+      );
+      cleanup();
+    }
+    // A router that did not fall back needs nothing: the view's header says it.
+    const quiet = await chipOf(held({ routing: { ...fellBack, fell_back: false } }));
+    expect(quiet.hasAttribute("data-over")).toBe(false);
+    cleanup();
+    // Several, each named, in the view's order.
+    const many = await chipOf(
+      held({ budget: { ...BUDGET, warns: "both" }, routing: fellBack, changed }),
+    );
+    expect(many.getAttribute("aria-label")).toBe(
+      `4 skills. Near the skill budget · Its router fell back · Changed since it started. ${SHOW_THIS_CHATS_SKILLS}.`,
     );
   });
 
-  it("reads each open chat's budget once, for the chip and the tab's menu row alike", async () => {
-    const asked: number[] = [];
+  it("reads each open chat's set once, with what it started without, and no read of its own for what changed (#3953)", async () => {
+    const asked: string[] = [];
+    const missing = {
+      persona: null,
+      missing: ["lint"],
+      no_built_in: [],
+      broken: [],
+      by_a_repo: [],
+      beside_a_built_in: [],
+    };
     mockIPC((cmd, args) => {
-      if (cmd !== "chat_skills") throw new Error(`unexpected ${cmd}`);
       const session = (args as { session: number }).session;
-      asked.push(session);
-      return { on: true, known: true, skills: [], budget: { ...BUDGET, skills: session } };
+      asked.push(`${cmd}:${session}`);
+      if (cmd !== "chat_skills") throw new Error(`unexpected ${cmd}`);
+      return {
+        ...skills([], { ...BUDGET, skills: session }),
+        missing: session === 5 ? missing : null,
+      };
     });
+    const changed: PlaneUpdated = {
+      session: 6,
+      files: [],
+      skills: true,
+      skills_added: [],
+      skills_gone: ["old"],
+      skills_edited: [],
+    };
     const { result, rerender } = renderHook(
-      ({ sessions }) => useChatSkillBudgets("p", sessions, true),
-      { initialProps: { sessions: [4, 5] } },
+      ({ sessions, now }) => useChatSkillSets("p", sessions, true, now),
+      { initialProps: { sessions: [4, 5], now: {} as Record<number, PlaneUpdated> } },
     );
     await waitFor(() => expect(Object.keys(result.current[0])).toEqual(["4", "5"]));
-    rerender({ sessions: [4, 5, 6] });
-    await waitFor(() => expect(result.current[0][6]?.skills).toBe(6));
-    expect(asked.sort()).toEqual([4, 5, 6]);
+    expect(result.current[0][5]?.missing).toEqual(missing);
+    expect(result.current[0][4]?.changed).toBeNull();
+    rerender({ sessions: [4, 5, 6], now: { 6: changed } });
+    await waitFor(() => expect(result.current[0][6]?.budget.skills).toBe(6));
+    expect(result.current[0][6]?.changed).toEqual(changed);
+    expect(asked.sort()).toEqual(["chat_skills:4", "chat_skills:5", "chat_skills:6"]);
+    // Its notice put away, the chip says it no more; another project's is not this one's.
+    act(() => skillsMissingPutAway("q", 5));
+    expect(result.current[0][5]?.missing).toEqual(missing);
+    act(() => skillsMissingPutAway("p", 5));
+    expect(result.current[0][5]?.missing).toBeNull();
   });
 });

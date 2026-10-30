@@ -746,6 +746,7 @@ const DIALOGS: Opened[] = [
             repos: [],
             not_supported: null,
             routing: null,
+            missing: null,
           }}
           trouble="the chat is in the middle of a turn"
           busy={false}

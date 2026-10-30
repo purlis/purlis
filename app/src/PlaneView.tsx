@@ -120,12 +120,12 @@ import {
   type Referenced,
 } from "./references";
 import {
-  SkillBudgetsHere,
+  ChatSkillSetsHere,
   UseSkill,
   UseSkillOpener,
-  useChatSkillBudgets,
+  useChatSkillSets,
+  type ChatSkillSets,
   type OpenUseSkill,
-  type SkillBudgets,
 } from "./UseSkill";
 import { Explorer, type SearchKeyHere, type Spot } from "./Explorer";
 import {
@@ -1047,8 +1047,12 @@ export const PlaneView = memo(function PlaneView({
    *  definition or its folder moving is one of them. */
   const personaMarks = usePersonaMarks(plane, sidebarChanges);
   /** The chats running on instructions the plane has changed since they started (charter#369),
-   *  each marked on its tab. */
-  const planeUpdates = usePlaneUpdated(plane, instructionsChanges);
+   *  each marked on its tab, and those whose skills changed since (#2770), for their Skills
+   *  chip (#3953). */
+  const { files: planeUpdates, skills: skillsChanged } = usePlaneUpdated(
+    plane,
+    instructionsChanges,
+  );
   // The plane root is watched, so an edit to `charter.toml` or `charter.local.toml` — in an
   // editor, from a `git pull` — is one of these, and what this project has on may have moved
   // with it (charter-app#253). Not at the mount: `useExtensionsOn` asks then.
@@ -1083,8 +1087,13 @@ export const PlaneView = memo(function PlaneView({
     () => [...new Set(tabs.order.flatMap((id) => panesOf(tabs, id).map((pane) => pane.session)))],
     [tabs],
   );
-  /** Each open chat's skill budget (#2775): the chip on its pane. */
-  const [skillBudgets, setSkillBudget] = useChatSkillBudgets(plane, chatSessions, studioOn);
+  /** Each open chat's skill set as a whole (#2775, #3953): the chip on its pane. */
+  const [chatSkillSets, setChatSkills] = useChatSkillSets(
+    plane,
+    chatSessions,
+    studioOn,
+    skillsChanged,
+  );
   const reloadVaults = vaults.reload;
   /** Whether the vault picker is up. */
   const [pickingVault, setPickingVault] = useState(false);
@@ -6559,7 +6568,7 @@ export const PlaneView = memo(function PlaneView({
         .chatSkills(plane, session)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
         .then((said) => {
-          if (said.status === "ok") setSkillBudget(session, said.data.budget);
+          if (said.status === "ok") setChatSkills(session, said.data);
           setUsingSkill((was) =>
             was?.session !== session
               ? was
@@ -6569,7 +6578,7 @@ export const PlaneView = memo(function PlaneView({
           );
         });
     },
-    [plane, setSkillBudget],
+    [plane, setChatSkills],
   );
   /** Use skill…, from a chat tab's menu or the palette. */
   const useSkill = useCallback(
@@ -9263,7 +9272,7 @@ export const PlaneView = memo(function PlaneView({
         personas={personaMarks}
         askPersona={openAskPersona}
         useSkill={openUseSkill}
-        skillBudgets={skillBudgets}
+        chatSkillSets={chatSkillSets}
         brief={openBrief}
         answer={openAnswer}
       >
@@ -10375,7 +10384,7 @@ function Lent({
   personas,
   askPersona,
   useSkill,
-  skillBudgets,
+  chatSkillSets,
   brief,
   answer,
   children,
@@ -10401,8 +10410,8 @@ function Lent({
   askPersona: OpenAskPersona;
   /** Opens Use skill… for a chat (`useOpenUseSkill`, #2775). */
   useSkill: OpenUseSkill;
-  /** Each open chat's skill budget, for the chip on its pane (#2775). */
-  skillBudgets: SkillBudgets;
+  /** Each open chat's skill set as a whole, for the chip on its pane (#2775, #3953). */
+  chatSkillSets: ChatSkillSets;
   /** Opens the Brief panel for a task (`useOpenBrief`, #1494). */
   brief: OpenBrief;
   /** Opens the Answer dialog for a task's question (`useOpenAnswer`, #1551). */
@@ -10422,11 +10431,11 @@ function Lent({
                       <ReloadPersonaMarks.Provider value={personas.reload}>
                         <AskPersonaOpener value={askPersona}>
                           <UseSkillOpener value={useSkill}>
-                            <SkillBudgetsHere.Provider value={skillBudgets}>
+                            <ChatSkillSetsHere.Provider value={chatSkillSets}>
                               <BriefOpener value={brief}>
                                 <AnswerOpener value={answer}>{children}</AnswerOpener>
                               </BriefOpener>
-                            </SkillBudgetsHere.Provider>
+                            </ChatSkillSetsHere.Provider>
                           </UseSkillOpener>
                         </AskPersonaOpener>
                       </ReloadPersonaMarks.Provider>

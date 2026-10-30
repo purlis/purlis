@@ -77,6 +77,7 @@ const SKILLS: ChatSkills = {
   repos: [],
   not_supported: null,
   routing: null,
+  missing: null,
 };
 
 /** The core: one chat in alpha, the Skill studio on. What the window asked, by command. */
@@ -95,9 +96,7 @@ function core() {
           personas: [],
           persona: null,
           unfiled: [],
-          workspaces: [
-            { name: "alpha", path: ALPHA, vision: "", todos: [], chats: [{ ...CHAT }] },
-          ],
+          workspaces: [{ name: "alpha", path: ALPHA, vision: "", todos: [], chats: [{ ...CHAT }] }],
         };
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
