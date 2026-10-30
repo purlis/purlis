@@ -89,6 +89,19 @@ fn a_run_that_passes_every_check_is_the_personas_tool_on_the_pool_as_it_is_now()
 }
 
 #[test]
+fn a_cluster_pool_not_marked_is_refused_saying_how_and_nobody_is_asked() {
+    let ask = kubectl_asked();
+    let not_marked = |_: &Path, pool: &str| Err(purlis_core::poollogins::not_marked_said(pool));
+    let gate = Gate {
+        owned: &not_marked,
+        ..a_gate(&ask)
+    };
+    let refused = refused(&gate);
+    assert!(refused.contains("kubectl was sent no value"), "{refused}");
+    assert!(refused.contains("This is my own"), "{refused}");
+}
+
+#[test]
 fn a_chat_this_window_does_not_have_open_is_sent_nothing() {
     let ask = kubectl_asked();
     let gate = Gate {

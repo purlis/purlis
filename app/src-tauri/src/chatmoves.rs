@@ -501,8 +501,8 @@ fn profiles_of(moving: &[crate::host::Moving]) -> Vec<String> {
 /// 2026-10-28): only to a runner shown to be the person's own, by the check Move here is held to
 /// (the person's ruling of 2026-10-27) and browser logins and tools use (`read`,
 /// `poollogins::Bound::read`): a Docker pool on this machine's own engine (a cluster pool's mark,
-/// #4071, is for values alone). A chat's conversation and work go nowhere else. Refused, in a sentence
-/// that says the pool's own reason (#3646).
+/// #4071, is for values alone). A chat's conversation and work go nowhere else. Refused, in a
+/// sentence that says the pool's own reason (#3646).
 pub(crate) fn goes_to_a_runner_of_yours(
     pool: &str,
     read: impl FnOnce() -> Result<purlis_core::poollogins::Bound, Unbound>,

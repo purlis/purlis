@@ -22,8 +22,8 @@ device, through the harness's own flow) stands, and is what this applies to runn
      conversations resume. Only such a record, kept for a desktop, is signed in by purlis; a
      folder a person adopted on their own machine never is.
 2. **Only a runner shown to be the person's own is sent a profile or signed in**: a Docker pool
-   whose engine is a local socket on this machine, by the check browser logins and tools use,
-   until a pool can be marked owned (#2561). To any other pool nothing is sent, and its chats
+   whose engine is a local socket on this machine. A cluster pool's mark (#4071) is for values
+   and tokens alone, by the person's ruling of 2026-10-30. To any other pool nothing is sent, and its chats
    start on the profiles its runner has of its own; a runner of a purlis before 1.43 is sent
    nothing either. Signing in on a pool is offered for an owned pool alone.
 3. **A subscription is signed in on the runner through its harness's own flow, once per device.**

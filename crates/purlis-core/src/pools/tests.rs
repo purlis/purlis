@@ -1090,13 +1090,9 @@ mod cluster {
     fn the_mark_is_the_persons_row_key_true_alone_and_a_new_add_starts_without_it() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
         added(config.path(), &cluster);
-        let row = |config: &Path| -> serde_json::Value {
-            serde_json::from_str(&std::fs::read_to_string(config.join("runners.json")).unwrap())
-                .unwrap()
-        };
-        assert!(row(config.path())["pools"][0].get("owned").is_none());
+        assert!(file(config.path())["pools"][0].get("owned").is_none());
         runners::set_cluster_owned(config.path(), "team", true).unwrap();
-        assert_eq!(row(config.path())["pools"][0]["owned"], true);
+        assert_eq!(file(config.path())["pools"][0]["owned"], true);
         assert!(runners::cluster_pools(config.path()).unwrap()[0].owned());
         // A key roll keeps it: the pool is the same one.
         let pool = &runners::cluster_pools(config.path()).unwrap()[0];
@@ -1108,13 +1104,32 @@ mod cluster {
         assert!(runners::cluster_pools(config.path()).unwrap()[0].owned());
 
         runners::set_cluster_owned(config.path(), "team", false).unwrap();
-        assert!(row(config.path())["pools"][0].get("owned").is_none());
+        assert!(file(config.path())["pools"][0].get("owned").is_none());
         runners::set_cluster_owned(config.path(), "nobody", true).unwrap_err();
 
-        let mut spelled = row(config.path());
+        let mut spelled = file(config.path());
         spelled["pools"][0]["owned"] = false.into();
-        std::fs::write(config.path().join("runners.json"), spelled.to_string()).unwrap();
+        std::fs::write(
+            crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE),
+            spelled.to_string(),
+        )
+        .unwrap();
         runners::cluster_pools(config.path()).unwrap_err();
+    }
+
+    #[test]
+    fn a_chat_with_no_sandbox_on_a_cluster_runner_is_kept_across_a_restart_until_its_claim_goes() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        assert!(!crate::runnertaint::pool_ran_unsandboxed(
+            config.path(),
+            "team"
+        ));
+        crate::runnertaint::mark_pool(config.path(), "team").unwrap();
+        assert!(crate::runnertaint::pool_ran_unsandboxed(
+            config.path(),
+            "team"
+        ));
     }
 
     #[test]
