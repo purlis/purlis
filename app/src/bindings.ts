@@ -2964,7 +2964,23 @@ export const commands = {
 	 *  **The next step of sign-in `flow`**, waiting a while for one; null while there is none yet.
 	 *  After its last step, the sign-in is let go; signed in, its waits on the pool are too.
 	 */
-	poolSignInNext: (flow: number) => typedError<PoolSignInStep | null, string>(__TAURI_INVOKE("pool_sign_in_next", { flow })),
+	poolSignInNext: (flow: number) => typedError<
+/**  Open this page in the browser here: the harness vendor's own. */
+{ at: "open"; url: string } | 
+/**  Ask for the code the page shows. */
+{ at: "code" } | 
+/**  The harness refused the code, in its words. */
+{ at: "refused"; said: string } | 
+/**  The login ended well, and the runner is asked whether it is signed in. */
+{ at: "checking" } | 
+/**  The runner's own status check says it is signed in. */
+{ at: "signed-in" } | 
+/**  purlis could not follow the login: what it printed. */
+{ at: "could-not-follow"; said: string } | 
+/**  It did not sign in, and why. */
+{ at: "failed"; why: string } | 
+/**  It was cancelled, and its login ended. */
+{ at: "cancelled" } | null, string>(__TAURI_INVOKE("pool_sign_in_next", { flow })),
 	/**  **Passes the code the person pasted to sign-in `flow`**, as one line. */
 	poolSignInPaste: (flow: number, code: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_paste", { flow, code })),
 	/**  **Cancels sign-in `flow`**: its login is ended, and it is let go. */
