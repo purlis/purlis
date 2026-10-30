@@ -19,7 +19,8 @@
  */
 import { useSyncExternalStore } from "react";
 import { commands, type SkillLevel, type StudioSkill } from "./bindings";
-import type { StudioPlace } from "./skillStudio";
+import { samePlace, type StudioPlace } from "./skillStudio";
+import { openViewAt } from "./ui/panel/viewHistory";
 import type { ViewRef } from "./tabs";
 import { keepUnsaved, takesHandedWork } from "./unsavedWork";
 
@@ -113,9 +114,12 @@ function registered(tab: string, edit: SkillEdit | undefined): void {
 const SKILL_EDIT = "skill-edit";
 
 /** **An edit carried here from another window** with its project (#4028): the same editor,
- *  under the same tab's history id, which the window it arrived in draws the studio's tab at. */
+ *  under the same tab's history id, and the tab's history at the skill's page it was opened
+ *  on, so the studio's tab opens on the text and not on its library, away from it. */
 takesHandedWork(SKILL_EDIT, (tab, data) => {
-  if (isSkillEdit(data)) keepSkillEdit(tab, data);
+  if (!isSkillEdit(data)) return;
+  openViewAt(tab, data.at, samePlace);
+  keepSkillEdit(tab, data);
 });
 
 /** Whether `data` is an edit as {@link SkillEdit} holds it: what another window's `handOver`

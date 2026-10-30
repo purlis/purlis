@@ -82,6 +82,13 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+/** **Calls `listener` whenever the work registered changes**, outside drawing: what a window
+ *  tells another of it (#4028) is not a reason to draw it again. Answers the way to stop. */
+export function watchUnsaved(listener: () => void): () => void {
+  const stop = subscribe(listener);
+  return () => void stop();
+}
+
 /** **Registers `work` under `key`**, or takes it off (`undefined`) once it is saved or let go. */
 export function keepUnsaved(key: string, work: UnsavedWork | undefined): void {
   if (work === undefined ? !works.delete(key) : works.get(key) === work) return;

@@ -107,7 +107,7 @@ import { useJumpAsks, type Pending } from "./fileJump";
 import type { Place } from "./pieceViews";
 import { ClosingProject } from "./ClosingProject";
 import { discardUnsavedIn, unsavedIn } from "./unsavedWork";
-import { carryOut, useUnsavedAcrossWindows } from "./unsavedWindows";
+import { carriedBack, carryOut, useUnsavedAcrossWindows } from "./unsavedWindows";
 import { UnsavedWorkQuestion, type UnsavedAsk } from "./UnsavedWorkQuestion";
 import { QuitWarning, type Ending } from "./QuitWarning";
 import { RelaunchAsk } from "./RelaunchAsk";
@@ -738,18 +738,27 @@ function App() {
    * nothing shows the opener.
    */
   const moveProject = useCallback(
-    async (plane: string, to: string | null): Promise<Ran> => {
+    async (plane: string, to: string | null, unsavedAsked = false): Promise<Ran> => {
+      // **Its views' unsaved work goes with it** (#4028): carried out before the move, and
+      // registered again in the window it goes to. Where it cannot be carried, it is asked
+      // about first, as before (#3929): the move would lose it.
+      const work = unsavedAsked ? [] : unsavedIn(plane);
+      const carried = work.length === 0 || (await carryOut(plane));
+      if (!carried) {
+        askUnsaved({ work, then: () => void moveProject(plane, to, true) });
+        return { ok: true };
+      }
       const answer = await commands
         .moveProjects([plane], plane, to)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      if (answer.status === "error") return { ok: false, refused: answer.error };
-      // **Its views' unsaved work goes with it** (#4028): carried out before it is let go of
-      // here, which lets the work go, and registered again in the window it went to.
-      await carryOut(plane);
+      if (answer.status === "error") {
+        if (work.length > 0) carriedBack(plane);
+        return { ok: false, refused: answer.error };
+      }
       takeOut(plane);
       return { ok: true };
     },
-    [takeOut],
+    [askUnsaved, takeOut],
   );
 
   /** The project whose close is waiting on the operator's answer (`ClosingProject`). */

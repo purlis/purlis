@@ -19,19 +19,17 @@ const REVIEW = handed("review", "q");
 describe("a project moved to another window", () => {
   it("hands its work to the window that claims it, once", () => {
     const record = new HandOver();
-    record.claimed("main", "p");
-    expect(record.moving("main", "p", [DEPLOY])).toBeUndefined();
+    record.moving("main", "p", [DEPLOY]);
     expect(record.claimed("window-1", "p")).toEqual([DEPLOY]);
     // Nothing is handed twice.
     expect(record.claimed("window-1", "p")).toEqual([]);
   });
 
-  it("hands it at once where the window it went to claimed it first", () => {
+  it("hands nothing where the move was refused, and the work stayed", () => {
     const record = new HandOver();
-    record.claimed("main", "p");
-    record.claimed("window-1", "p");
-    expect(record.moving("main", "p", [DEPLOY])).toEqual({ to: "window-1", works: [DEPLOY] });
-    expect(record.claimed("window-1", "p")).toEqual([]);
+    record.moving("window-1", "p", [DEPLOY]);
+    record.moving("window-1", "p", null);
+    expect(record.claimed("window-2", "p")).toEqual([]);
   });
 
   it("is not handed back to the window it left", () => {
