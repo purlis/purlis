@@ -1904,8 +1904,8 @@ mod login_tests;
 mod args_tests;
 
 #[cfg(test)]
+mod host_tests;
+#[cfg(test)]
 mod mint_tests;
 #[cfg(test)]
 mod repo_tests;
-#[cfg(test)]
-mod host_tests;
