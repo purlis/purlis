@@ -32,7 +32,7 @@ const REFUSED =
 const WORK: NeedsApproval = {
   profile: "work",
   kind: "claude",
-  source: "charter.local.toml",
+  source: "purlis.local.toml",
   approval: "new",
   shown: "CLAUDE_CONFIG_DIR=~/.claude-work claude",
 };
