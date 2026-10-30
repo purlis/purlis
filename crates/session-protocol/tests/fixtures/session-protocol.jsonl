@@ -183,3 +183,4 @@
 {"call":{"id":172,"command":"keep_profile","name":"work","harness":"claude","pinned":"2.1.300","settings":[{"path":"settings.json","bytes":"eyJ0aGVtZSI6ImRhcmsifQ=="},{"path":"agents/review.md","bytes":"UmV2aWV3Lg=="}]}}
 {"call":{"id":173,"command":"clones_of","project":"01J9PRJCT00000000000000000","workspace":"app"}}
 {"reply":{"re":173,"ok":{"clones":{"repos":["api","web"]}}}}
+{"call":{"id":174,"command":"forget_profile","name":"work"}}

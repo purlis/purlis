@@ -91,7 +91,8 @@ Story Format 3. `app/src/settings/Choice.stories.tsx` is the first, and the one 
   `app/eslint.story-rules.js`) refuses it.
 - After each move, `expectFocusInSight()` from `app/src/stories.testkit.ts` checks that the focus
   is on screen and not under anything the page draws over it, such as a dialog's sticky footer
-  (WCAG 2.4.11).
+  (WCAG 2.4.11). `untilFocused` returns once the frame after the move is drawn, the frame a
+  collection scrolls the row it moved to into sight on (#4103), so check it straight after.
 - The story is drawn in every cell of the theme matrix (below): never pin a theme on a story.
 - The picture is of the story's frame. A story that draws outside it (a dialog, a menu, a
   popover) sets `parameters: { screenshot: "page" }`; one with nothing stable to draw sets

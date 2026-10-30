@@ -3154,6 +3154,49 @@ impl Planes {
                 })
             })
         });
+        // A connection a Claude Code chat's server dialled in (#3316): parked at the chat's
+        // door. The first each door is given, and every one refused, is audited: each request
+        // the door carries spends one, so a park after the first says nothing new. Weak for the
+        // handoff's reason.
+        #[cfg(unix)]
+        held.hooks.park_slots_with({
+            let held = Arc::downgrade(&held);
+            let plane = id.clone();
+            // A refusal is audited once a minute for each chat, port and reason at most: a
+            // server that keeps dialling is said once, never a row a dial.
+            const SERVE_REFUSALS_SAID_EVERY: std::time::Duration =
+                std::time::Duration::from_secs(60);
+            type Said = HashMap<(u32, u16, &'static str), std::time::Instant>;
+            let audited: Arc<Mutex<Said>> = Arc::default();
+            Arc::new(move |ask, slot| {
+                let Some(held) = held.upgrade() else {
+                    purlis_core::hookwire::serve::refused(
+                        slot,
+                        purlis_core::hookwire::serve::NOTHING_SERVES,
+                    );
+                    return;
+                };
+                let refused = match held.chats().park_slot(&ask, slot) {
+                    Ok(false) => return,
+                    Ok(true) => None,
+                    Err(why) => {
+                        let now = std::time::Instant::now();
+                        let mut said = audited.lock().unwrap_or_else(PoisonError::into_inner);
+                        said.retain(|_, at| now.duration_since(*at) < SERVE_REFUSALS_SAID_EVERY);
+                        if said.insert((ask.chat, ask.serve, why), now).is_some() {
+                            return;
+                        }
+                        Some(why)
+                    }
+                };
+                if let Err(why) =
+                    held.hooks
+                        .audit_serving(plane.root(), ask.chat, ask.serve, refused)
+                {
+                    tracing::warn!("purlis: a chat's server's connection was not audited ({why})");
+                }
+            })
+        });
         // A sandbox block a chat's hook found (#1338): kept in this machine's network record
         // with the chat it came from (#1662), then shown on the chat's tab. Of what the line
         // named, only a refused host is kept.
@@ -3179,8 +3222,11 @@ impl Planes {
                         strong.chats().runner_of(block.line.chat).as_deref(),
                     );
                     // A server asking for a port the chat serves on already (#2019).
-                    told =
-                        hooks::on_its_serving(told, &strong.chats().served_ports(block.line.chat));
+                    told = hooks::on_its_serving(
+                        told,
+                        &strong.chats().served_ports(block.line.chat),
+                        strong.chats().dials_in(block.line.chat),
+                    );
                     // Held while the person answers (#1666): the chat's own board says so,
                     // never anything the block's sender said.
                     told.held = strong.chats().asking(told.session, told.target.as_deref());

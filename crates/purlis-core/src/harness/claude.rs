@@ -326,6 +326,12 @@ impl HarnessAdapter for ClaudeCode {
     }
 
     /// Claude Code's own `permission_mode` ([`crate::dispatchmode::Reported::of_claude_code`]).
+    ///
+    /// **Believed from its armed hook alone** (#3822): Claude Code runs its hooks outside the
+    /// sandbox it gives its tools ([`Self::sandbox_holds_what_it_starts`]), so its hook reads the
+    /// chat's armed key from the spool a sandboxed chat's tools are denied, by its Bash sandbox
+    /// (`denyRead`) and by a `Read(...)` deny rule for its Read tool alike
+    /// ([`crate::sandbox::claude`]). In a chat with no sandbox the tools reach the key too.
     fn reported_mode(
         &self,
         permission_mode: Option<&str>,

@@ -331,6 +331,7 @@ mod tests {
     fn hearing(hooks: Arc<HookAsks>, until: Duration) -> Hearing {
         let held = held_in(hooks, Arc::new(|| {}));
         Hearing {
+            serve: crate::hookwire::serve::refusing(),
             secret_exec: Box::new(|_, _, writer| crate::secrets::brokered::not_answered(writer)),
             each: Box::new(|_| Ok(())),
             answer: Box::new(|_, _| super::super::Answer::No { why: String::new() }),

@@ -104,3 +104,23 @@ export async function studioMore(name: string, said: string) {
     { timeout: 20_000, interval: 250, timeoutMsg: `${name}'s menu has no ${said}` },
   );
 }
+
+/** **Shows the tab `name` of the skill page beside the list** (#3682): Overview, Text, History,
+ *  Grades or Runs, pressed again until it is the one shown. */
+export async function studioTab(name: string) {
+  await browser.waitUntil(
+    async () =>
+      browser.execute((said: string) => {
+        const tab = [
+          ...document.querySelectorAll<HTMLElement>(
+            '[data-testid="skill-studio-skill"] [role="tab"]',
+          ),
+        ].find((one) => (one.textContent ?? "").trim().startsWith(said));
+        if (tab === undefined) return false;
+        if (tab.getAttribute("aria-selected") === "true") return true;
+        tab.click();
+        return false;
+      }, name),
+    { timeout: 20_000, interval: 250, timeoutMsg: `the skill's ${name} tab never showed` },
+  );
+}

@@ -867,6 +867,7 @@ mod the_server_says_it {
         let (stall, held) = mpsc::channel::<()>();
         let held = Mutex::new(held);
         let reading = listener.hear(Hearing {
+            serve: purlis_core::hookwire::serve::refusing(),
             secret_exec: Box::new(|_, _, writer| {
                 purlis_core::secrets::brokered::not_answered(writer)
             }),

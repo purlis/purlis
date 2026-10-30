@@ -30,7 +30,7 @@ import { theDefaultProfileApproved } from "../started.js";
  * - **Try it** opens a scratch chat of its own in a throwaway folder, which is gone once that chat
  *   ends;
  * - **Accept** makes the other one a project skill, on disk, and the draft is gone;
- * - **Ask a chat to draft a skill** opens a chat.
+ * - **New skill…**'s **Ask a chat to draft it** opens a chat.
  *
  * That an accept is one commit, and that a try's chat gets the built-in skills and the draft
  * alone, are the core's seam tests. **It leaves the window and the project as it found them.**
@@ -162,9 +162,15 @@ describe("draft skills in the Skill studio", function () {
     // The chat Try it opened went, so the studio is brought to the front again.
     await focusWorkspace("alpha");
     await runFromThePalette("Open Skill studio", "skills.studio");
-    const ask = await $("button=Ask a chat to draft a skill");
-    await ask.waitForClickable({ timeout: 20_000 });
-    await ask.click();
+    // New skill… asks how first (#3684): a chat's draft says what the skill should do.
+    const make = await $('[data-testid="skill-studio"]').$("button=New skill…");
+    await make.waitForClickable({ timeout: 20_000 });
+    await make.click();
+    await (await $("button=Ask a chat to draft it")).click();
+    const what = await $("aria/What should it do?");
+    await what.waitForDisplayed({ timeout: 10_000 });
+    await what.addValue("Probes drafting a skill.");
+    await (await $("button=Open the chat")).click();
     await untilAChatStarts(plane, wereRunning, "Ask a chat to draft a skill started no chat");
     await endTheSessionsStartedSince(wereRunning);
   });
