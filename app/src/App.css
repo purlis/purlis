@@ -3261,7 +3261,6 @@ body {
   display: flex;
   gap: var(--space-3);
   align-items: flex-start;
-  color: var(--state-failed);
 }
 
 .explorer .trouble:where(:not([data-part="root"])) {
@@ -5156,9 +5155,10 @@ body {
 }
 
 /* **A done todo stays, struck through** (R131, ADR 0106): its box ticked, its words in the quiet
-   tier and crossed out. Nothing moves: the box takes the mark's place at the mark's size. */
+   tier and crossed out. Nothing moves: the box takes the mark's place at the mark's size. The
+   quiet tier is the meta role, which the row's words wear while done (`PanelList.tsx`, #3917):
+   a colour set here would lose to the body role's later layer. */
 .panel-row.is-checked .row-text {
-  color: var(--text-quiet);
   text-decoration: line-through;
 }
 

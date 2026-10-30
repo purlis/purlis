@@ -30,9 +30,11 @@ import {
  *
  * Read from the source, as the other guards are: each `App.css` rule that sets `color`, by the
  * last compound of each of its selectors (the element it lands on), against each element a
- * component draws with those classes and attributes and a role. What sits above the element in
- * the selector is not read, so a rule whose context never holds the element is allowed below,
- * each with why.
+ * component draws with those classes and attributes and a role, a component's tag as much as a
+ * DOM one (a row's slots hand their className to their span). What sits above the element in the
+ * selector, and which branch of a conditional className applies, are not read, so a rule whose
+ * context never holds the element, or whose role is meant to win, is allowed below, each with
+ * why.
  */
 
 /** The roles that set a colour; `ui-text-code` and `ui-text-strong` set none. */
@@ -92,7 +94,7 @@ function layeredOut(css: string, read: (file: string) => string): Map<string, st
   const found = new Map<string, string[]>();
   for (const file of sourceFiles(isView)) {
     const source = read(file);
-    for (const tag of openingTags(source, /^[a-z]/)) {
+    for (const tag of openingTags(source, /^[A-Za-z]/)) {
       const words = new Set(classWords(classNameOf(tag.text)));
       if (![...words].some((word) => COLOURED.test(word))) continue;
       for (const rule of rules) {
@@ -111,8 +113,10 @@ function layeredOut(css: string, read: (file: string) => string): Map<string, st
 const read = (file: string) => readFileSync(join(SRC, file), "utf8");
 
 /**
- * Rules whose context never holds the element named, each with why. An entry names the rule
- * and the element as written, so a change to either is a new entry to look at again.
+ * Rules allowed to land on an element with a role, each with why: either the rule's context
+ * never holds the element, or the rule does reach it and the role is meant to win (a sentence
+ * wears `ui-text-secondary`, #1920). An entry names the rule and the element as written, so a
+ * change to either is a new entry to look at again.
  */
 const ALLOWED: Readonly<Record<string, readonly string[]>> = {
   // A sentence wears `ui-text-secondary` and a count `ui-text-meta`, on purpose (#1920): the views' and dialogs' muted `.none` and `.pending` are for sentences that wear no role.
@@ -149,7 +153,6 @@ const ALLOWED: Readonly<Record<string, readonly string[]>> = {
     '[data-scope="dialog"] .pending on "pending ui-text-secondary"',
     '.view-body .pending on "pending ui-text-secondary"',
     '.trouble on "block.tone === "trouble" ? "trouble" : "note ui-text-secondary""',
-    '.explorer .trouble on "block.tone === "trouble" ? "trouble" : "note ui-text-secondary""',
     '.state-bar .trouble on "block.tone === "trouble" ? "trouble" : "note ui-text-secondary""',
     '.panels .trouble on "block.tone === "trouble" ? "trouble" : "note ui-text-secondary""',
   ],
@@ -162,7 +165,7 @@ const CEILING: Readonly<Record<string, number>> = {
   "InboxElsewhere.tsx": 3,
   "NotCloned.tsx": 2,
   "PanelList.tsx": 1,
-  "Panels.tsx": 6,
+  "Panels.tsx": 5,
 };
 
 describe("no App.css colour lands on a word that wears a text role (#3917)", () => {
