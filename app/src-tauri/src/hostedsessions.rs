@@ -877,6 +877,10 @@ struct Views {
     waiting: HashMap<u32, Reader>,
 }
 
+/// The folder name of each clone a host holds in a workspace, and the `origin` URL it names
+/// for each it can, by folder name (1.54, #3985).
+pub(crate) type ClonesHeld = (Vec<String>, BTreeMap<String, String>);
+
 impl HostLink {
     /// What this link holds of its runner's event log, and whether the link to it is down
     /// (#3393).
@@ -1210,7 +1214,7 @@ impl HostLink {
         &self,
         project: &str,
         workspace: &str,
-    ) -> Result<Option<(Vec<String>, BTreeMap<String, String>)>, String> {
+    ) -> Result<Option<ClonesHeld>, String> {
         if !self.names_its_clones() {
             return Ok(None);
         }
