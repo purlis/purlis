@@ -12,8 +12,8 @@ use base64::Engine as _;
 use ring::signature::KeyPair as _;
 
 use super::{
-    For, MOST_REPOS, Remote, clone_of, clones_now, held_from_chats, jwt, kept_for, mint_over,
-    remotes_in, remotes_of_workspace, token_for,
+    For, MOST_REPOS, Remote, clone_of, clones_now, held_from_chats, jwt, kept_for, lives_for,
+    mint_over, remotes_in, remotes_of_workspace, revoke_each, revoke_over, taken_at_end, token_for,
 };
 use crate::forge::recorded::Recorded;
 use crate::forge::{Forge, Kind};
@@ -304,6 +304,115 @@ fn a_token_is_kept_until_ten_minutes_before_it_expires_and_never_past_its_hour()
     assert_eq!(minutes(kept_for(Some("2026-10-30T14:00:00Z"), now)), 50);
     assert_eq!(minutes(kept_for(None, now)), 50);
     assert_eq!(minutes(kept_for(Some("tomorrow"), now)), 50);
+}
+
+#[test]
+fn a_token_lives_until_github_says_it_expires_and_never_past_its_hour() {
+    let now = chrono::DateTime::parse_from_rfc3339("2026-10-29T14:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let minutes = |d: std::time::Duration| d.as_secs() / 60;
+    assert_eq!(minutes(lives_for(Some("2026-10-29T15:00:00Z"), now)), 60);
+    assert_eq!(minutes(lives_for(Some("2026-10-29T14:30:00Z"), now)), 30);
+    assert_eq!(minutes(lives_for(Some("2026-10-29T13:00:00Z"), now)), 0);
+    assert_eq!(minutes(lives_for(Some("2026-10-30T14:00:00Z"), now)), 60);
+    assert_eq!(minutes(lives_for(None, now)), 60);
+}
+
+#[test]
+fn a_revoke_deletes_the_installation_token_sent_with_the_token_itself() {
+    let recorded = recording("revoked");
+    revoke_over(&recorded, &github()).unwrap();
+    assert!(recorded.unspent().is_empty());
+}
+
+#[test]
+fn a_revoke_github_refuses_says_github_s_words() {
+    let said = revoke_over(&recording("revoke_refused"), &github()).unwrap_err();
+    assert!(
+        said.contains("Bad credentials") && said.contains("HTTP 401"),
+        "{said}"
+    );
+}
+
+/// Keeps `token` for `chat` of `root`, reused for `reused` from now and alive for `alive`.
+fn keep(root: &str, chat: u32, token: &str, reused: Duration, alive: Duration) {
+    let now = std::time::Instant::now();
+    super::keep_one(
+        super::Asked {
+            root: PathBuf::from(root),
+            chat,
+            app: "Iv1.test".to_owned(),
+            vault: "forge".to_owned(),
+            key: "app-key".to_owned(),
+            remotes: Vec::new(),
+            clone: Some(PathBuf::from(format!("/w/{token}"))),
+        },
+        zeroize::Zeroizing::new(token.to_owned()),
+        now + reused,
+        now + alive,
+    );
+}
+
+use std::time::Duration;
+
+fn taken(root: &str, chat: Option<u32>) -> Vec<String> {
+    let mut tokens: Vec<String> = taken_at_end(Path::new(root), chat)
+        .iter()
+        .map(|token| token.as_str().to_owned())
+        .collect();
+    tokens.sort();
+    tokens
+}
+
+#[test]
+fn a_chat_ending_takes_every_live_token_kept_for_it_and_no_other_chat_s() {
+    let minute = Duration::from_secs(60);
+    let root = "/projects/ending-one";
+    keep(root, 1, "one-now", 50 * minute, 60 * minute);
+    // Past the time it is handed out again, though GitHub has not let it go yet.
+    keep(root, 1, "one-before", Duration::ZERO, 8 * minute);
+    // Past its hour: GitHub has let it go already, so there is nothing to revoke.
+    keep(root, 1, "one-gone", Duration::ZERO, Duration::ZERO);
+    keep(root, 2, "two", 50 * minute, 60 * minute);
+    keep(
+        "/projects/ending-other",
+        1,
+        "other",
+        50 * minute,
+        60 * minute,
+    );
+
+    assert_eq!(taken(root, Some(1)), ["one-before", "one-now"]);
+    assert!(taken(root, Some(1)).is_empty(), "taken once");
+    assert_eq!(taken(root, Some(2)), ["two"]);
+    assert_eq!(taken("/projects/ending-other", Some(1)), ["other"]);
+}
+
+#[test]
+fn the_project_ending_takes_every_chat_s_tokens_of_that_project_alone() {
+    let hour = Duration::from_secs(3600);
+    keep("/projects/quitting", 1, "q1", hour, hour);
+    keep("/projects/quitting", 7, "q7", hour, hour);
+    keep("/projects/staying", 1, "s1", hour, hour);
+    assert_eq!(taken("/projects/quitting", None), ["q1", "q7"]);
+    assert_eq!(taken("/projects/staying", None), ["s1"]);
+}
+
+#[test]
+fn each_token_is_revoked_and_one_refused_or_unreached_stops_none_of_the_others() {
+    let asked = std::cell::RefCell::new(Vec::new());
+    let tokens = ["a", "b", "c"].map(|t| zeroize::Zeroizing::new(t.to_owned()));
+    let revoked = revoke_each(&tokens, &|token: &str| {
+        asked.borrow_mut().push(token.to_owned());
+        match token {
+            "a" => Err("Bad credentials (HTTP 401)".to_owned()),
+            "b" => Err("no answer".to_owned()),
+            _ => Ok(()),
+        }
+    });
+    assert_eq!(*asked.borrow(), ["a", "b", "c"]);
+    assert_eq!(revoked, 1);
 }
 
 #[test]
