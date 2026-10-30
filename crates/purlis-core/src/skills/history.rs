@@ -138,15 +138,7 @@ pub struct History {
 /// with the runs and grades of the name and level they had. Empty for a skill git does not
 /// track, such as a local one; refused where there is no such skill.
 pub fn history(plane: &Path, level: &Level, name: &str) -> Result<History, String> {
-    let (mut versions, was) = walked(plane, level, name)?;
-    if let Some(now) = was.first() {
-        for version in versions.iter_mut().filter(|version| !now.holds(version)) {
-            version.before = Some(Before {
-                name: version.name.clone(),
-                folder: version.folder.clone(),
-            });
-        }
-    }
+    let (versions, was) = walked(plane, level, name)?;
     let mut history = History {
         versions,
         uncommitted: Totals::default(),
@@ -176,6 +168,8 @@ fn walked(plane: &Path, level: &Level, name: &str) -> Result<(Vec<Version>, Vec<
     let mut versions: Vec<Version> = Vec::new();
     // Where the log of the place before starts: the parent of the commit that left it.
     let mut before: Option<String> = None;
+    // The renames and moves followed: a name changed within a folder is none.
+    let mut moves = 0;
     while let Some(here) = was.last().cloned() {
         let left = MOST_VERSIONS - versions.len();
         let mut found = logged(plane, &here, before.as_deref(), left);
@@ -197,7 +191,7 @@ fn walked(plane: &Path, level: &Level, name: &str) -> Result<(Vec<Version>, Vec<
             trees,
         }));
         versions.extend(found);
-        let Some(oldest) = oldest.filter(|_| whole && was.len() <= MOST_MOVES) else {
+        let Some(oldest) = oldest.filter(|_| whole && moves < MOST_MOVES) else {
             break;
         };
         let Some(folder) = moved_from(plane, &oldest, &here.folder) else {
@@ -220,7 +214,16 @@ fn walked(plane: &Path, level: &Level, name: &str) -> Result<(Vec<Version>, Vec<
             level,
             trees: Vec::new(),
         });
+        moves += 1;
         before = Some(parent);
+    }
+    if let Some(now) = was.first() {
+        for version in versions.iter_mut().filter(|version| !now.holds(version)) {
+            version.before = Some(Before {
+                name: version.name.clone(),
+                folder: version.folder.clone(),
+            });
+        }
     }
     Ok((versions, was))
 }
@@ -351,16 +354,18 @@ fn named_apart(plane: &Path, name: &str, versions: &mut [Version]) -> Vec<(Strin
 }
 
 /// [`named_apart`], each of `versions` having said the name in `said` (`None` for none read), in
-/// order. The newest keep `name`, the place's: a version whose `SKILL.md` names the skill
-/// otherwise than the one after it starts the next, older name. A version whose `SKILL.md`
-/// gives no plain name keeps the name of the one after it.
+/// order. The first name is `name`, the place's: a version whose `SKILL.md` names the skill
+/// otherwise than the one after it (or, the newest, than the place) starts the next, older name,
+/// so versions committed before a rename that is not committed yet keep the name they had. That
+/// first name may then hold no version. A version whose `SKILL.md` gives no plain name keeps the
+/// name of the one after it.
 fn named_by(
     name: &str,
     versions: &mut [Version],
     said: &[Option<String>],
 ) -> Vec<(String, Vec<String>)> {
     let mut names: Vec<(String, Vec<String>)> = vec![(name.to_owned(), Vec::new())];
-    let mut last_said: Option<&str> = None;
+    let mut last_said: Option<&str> = Some(name);
     for (at, version) in versions.iter_mut().enumerate() {
         if let Some(read) = said.get(at).and_then(Option::as_deref) {
             if last_said.is_some_and(|last| last != read) {
@@ -576,8 +581,9 @@ fn version_of(plane: &Path, level: &Level, name: &str, commit: &str) -> Result<V
     if !whole_id(commit) {
         return Err(format!("{commit:?} is no version of {name}"));
     }
-    history(plane, level, name)?
-        .versions
+    // Its place alone is wanted, not its runs and grades.
+    walked(plane, level, name)?
+        .0
         .into_iter()
         .find(|version| version.commit == commit)
         .ok_or_else(|| format!("{name} has no version {}", short(commit)))
@@ -608,7 +614,7 @@ pub fn diff(plane: &Path, level: &Level, name: &str, commit: &str) -> Result<Dif
     if !whole_id(commit) {
         return Err(format!("{commit:?} is no version of {name}"));
     }
-    let versions = history(plane, level, name)?.versions;
+    let (versions, _) = walked(plane, level, name)?;
     let at = versions
         .iter()
         .position(|version| version.commit == commit)
@@ -806,25 +812,16 @@ pub fn revert(
              save them first"
         ));
     }
-    let (then, back) = instructions_of(plane, &version, name)?;
+    instructions_of(plane, &version, name)?;
     no_links_at(plane, &version.folder, name, commit)?;
     put_back(plane, &version, &folder_rel, name).inspect_err(|_| {
         as_committed(plane, &folder_rel);
     })?;
-    if back != then {
-        // From before a rename: its `name:` line says the name it has now.
-        let file = format!("{folder_rel}/SKILL.md");
-        super::verbs::write(
-            plane,
-            &file,
-            &format!("{name}'s instructions"),
-            Some(&then),
-            &back,
-            usize::MAX,
-        )
+    // From before a rename: its `name:` line says the name it has now, changed in the file as
+    // git wrote it out (line ends and filters applied), as a rename changes it.
+    named_now(plane, &folder, &folder_rel, name)
         .inspect_err(|_| as_committed(plane, &folder_rel))
         .map_err(|why| format!("{name} was not reverted: {why}"))?;
-    }
     if pending_in(plane, &[&folder_rel])?.is_empty() {
         (cx.say)(crate::repocmd::Say::Info(
             format!(
@@ -849,6 +846,19 @@ pub fn revert(
         &format!("skill revert {name} {}", short(commit)),
     );
     Ok(folder)
+}
+
+/// Changes the `name:` line of the instructions in `folder` to `name`, where they give another.
+fn named_now(plane: &Path, folder: &Path, folder_rel: &str, name: &str) -> Result<(), String> {
+    let what = format!("{name}'s instructions");
+    let file = format!("{folder_rel}/SKILL.md");
+    let text = super::verbs::text_at(plane, &folder.join("SKILL.md"), &what)?;
+    if name_in(&text).as_deref() == Some(name) {
+        return Ok(());
+    }
+    let named = purlis_skills::change::with_name(&text, name)
+        .ok_or_else(|| format!("{what} has no name: line to change"))?;
+    super::verbs::write(plane, &file, &what, Some(&text), &named, usize::MAX)
 }
 
 /// **Puts the folder at `folder_rel` back as `version` holds the skill's folder**: by
@@ -920,6 +930,17 @@ fn put_back_by_index(
         .filter(|path| !path.is_empty() && !then.contains(*path))
     {
         removed(plane, gone)?;
+        // A folder it leaves empty goes too, up to the skill's own, as a revert in place leaves
+        // none of the version's.
+        let mut up = Path::new(gone).parent();
+        while let Some(dir) =
+            up.filter(|dir| dir.starts_with(folder_rel) && *dir != Path::new(folder_rel))
+        {
+            if std::fs::remove_dir(plane.join(dir)).is_err() {
+                break;
+            }
+            up = dir.parent();
+        }
     }
     with(&["checkout-index", "-a", "-f"])?;
     Ok(())

@@ -11,7 +11,8 @@
 //! An earlier place lends only the rows recorded before it was left (`until`): a skill that
 //! takes the old name there since is another, and its grades are none of these. A rename or a
 //! move of the skill takes what it had along to its new place, so the list holds every earlier
-//! place it had on this machine, newest first, at most [`MOST_EARLIER`]. A delete drops it.
+//! place it had on this machine, newest first, at most [`MOST_EARLIER`]. A new skill made with
+//! its name at its level drops it; a delete keeps it, so a Restore brings the grades back.
 //!
 //! **Tier:** Machine, device-bound. It lives in this machine's app state of the project,
 //! `<data>/app-state/<clone key>/skill-earlier-names.json` ([`FILE`], `crate::appstate`), as the
@@ -177,12 +178,14 @@ pub fn of(root: &Path, level: &Level, name: &str) -> Vec<Earlier> {
 /// **Keeps that the copy of `old` at `from` is `new` at `to` now** (#4018), as of `now`: what a
 /// rename, a move between levels and a share do. Where either side is only on this machine
 /// (`skills.local/`), git cannot follow the change, so `old` at `from` is kept as an earlier
-/// place; the earlier places it had go along either way. Nothing is written where there is
-/// nothing to keep.
+/// place, and after it `followed`, the places git followed the copy through before (name and
+/// level's folder), which its history no longer reads once it leaves git. The earlier places it
+/// had go along either way. Nothing is written where there is nothing to keep.
 pub fn moved(
     root: &Path,
     (from, old): (&Level, &str),
     (to, new): (&Level, &str),
+    followed: &[(String, String)],
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<(), String> {
     let (Some(was), Some(is), Some(level)) = (
@@ -201,14 +204,15 @@ pub fn moved(
     let mut kept = read(root);
     let mut earlier = kept.skills.remove(&was).unwrap_or_default();
     if unfollowed {
-        earlier.insert(
-            0,
-            Earlier {
-                name: old.to_owned(),
+        let until = now.to_rfc3339();
+        let left = std::iter::once((old.to_owned(), level))
+            .chain(followed.iter().cloned())
+            .map(|(name, level)| Earlier {
+                name,
                 level,
-                until: now.to_rfc3339(),
-            },
-        );
+                until: until.clone(),
+            });
+        earlier.splice(0..0, left);
     }
     earlier.truncate(MOST_EARLIER);
     if !earlier.is_empty() {

@@ -200,12 +200,11 @@ fn text(root: &Path, rel: &str) -> String {
 /// What `git status` says of the skills' folders in the plane at `root`: empty where all of
 /// them is committed.
 fn status(root: &Path) -> String {
-    let out = std::process::Command::new("git")
-        .args(["status", "--porcelain", "--", "skills", "workspaces"])
-        .current_dir(root)
-        .output()
-        .unwrap();
-    String::from_utf8(out.stdout).unwrap()
+    run(
+        root,
+        &["status", "--porcelain", "--", "skills", "workspaces"],
+    )
+    .out
 }
 
 #[test]

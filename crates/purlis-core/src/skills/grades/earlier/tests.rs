@@ -28,6 +28,7 @@ fn a_local_rename_keeps_the_old_name_and_a_later_move_takes_it_along() {
         root,
         (&local, "deploy"),
         (&local, "ship"),
+        &[],
         at("2026-10-30T10:00:00Z"),
     )
     .unwrap();
@@ -47,6 +48,7 @@ fn a_local_rename_keeps_the_old_name_and_a_later_move_takes_it_along() {
         root,
         (&local, "ship"),
         (&Level::project(), "ship"),
+        &[],
         at("2026-10-30T11:00:00Z"),
     )
     .unwrap();
@@ -54,6 +56,7 @@ fn a_local_rename_keeps_the_old_name_and_a_later_move_takes_it_along() {
         root,
         (&Level::project(), "ship"),
         (&ops, "ship"),
+        &[],
         at("2026-10-30T12:00:00Z"),
     )
     .unwrap();
@@ -83,6 +86,7 @@ fn a_change_git_follows_of_a_skill_with_no_earlier_place_keeps_no_state() {
         root,
         (&Level::project(), "deploy"),
         (&Level::project(), "ship"),
+        &[],
         at("2026-10-30T10:00:00Z"),
     )
     .unwrap();
@@ -110,4 +114,32 @@ fn an_entry_that_does_not_hold_together_is_left_out() {
     let kept = of(root, &Level::project().local(true), "ship");
     assert_eq!(kept.len(), 1);
     assert_eq!(kept[0].name, "deploy");
+}
+
+#[test]
+fn a_move_out_of_git_keeps_the_places_git_followed_it_through() {
+    let project = project();
+    let root = project.path();
+    let local = Level::project().local(true);
+
+    moved(
+        root,
+        (&Level::project(), "deploy"),
+        (&local, "deploy"),
+        &[("ship".to_owned(), "skills".to_owned())],
+        at("2026-10-30T10:00:00Z"),
+    )
+    .unwrap();
+
+    let places: Vec<(String, String)> = of(root, &local, "deploy")
+        .into_iter()
+        .map(|one| (one.name, one.level))
+        .collect();
+    assert_eq!(
+        places,
+        [
+            ("deploy".to_owned(), "skills".to_owned()),
+            ("ship".to_owned(), "skills".to_owned())
+        ]
+    );
 }

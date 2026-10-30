@@ -7980,7 +7980,9 @@ refuses a `<data>` under a project or inside any git work tree.
   left it (RFC 3339). Written `0600`, whole or not at all, through no link, by the core's rename,
   move and share of a skill (`grades::earlier`): where either side is a skill only on this machine
   (`skills.local/`), the place it leaves is added, and the earlier places of any renamed or moved
-  skill go along to its new key. A delete drops its entry. Read by a skill's Grades tab and a
+  skill go along to its new key. A move from a shared level into `skills.local/` adds the places
+  git followed it through too, which its history no longer reads. A skill made with a name at a
+  level drops that key's entry; a delete keeps it, so a Restore brings the grades back. Read by a skill's Grades tab and a
   grade's scorecard, never as a chat opens: an earlier place lends the grades recorded under its
   name and level before `until`. A file that is a link, past 256 KiB, of another `v`, or holding
   more than 512 skills reads as empty (each change holds the `flock` of `skill-earlier-names.lock`

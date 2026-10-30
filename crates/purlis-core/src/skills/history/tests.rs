@@ -560,11 +560,17 @@ fn one_folders_versions_are_split_by_the_name_each_gave() {
         "a version that names none keeps the name after it"
     );
 
-    // A newest version that still names the skill as before (a rename not committed yet) keeps
-    // the place's name.
+    // Versions committed before a rename that is not committed yet keep the name they had: the
+    // place's own holds none of them.
     let mut versions = vec![version("t1"), version("t2")];
-    let said = [Some("foo".to_owned()), Some("foo".to_owned())];
-    assert_eq!(named_by("bar", &mut versions, &said).len(), 1);
+    let said = [Some("foo".to_owned()), None];
+    assert_eq!(
+        named_by("bar", &mut versions, &said),
+        [
+            ("bar".to_owned(), Vec::new()),
+            ("foo".to_owned(), vec!["t1".to_owned(), "t2".to_owned()])
+        ]
+    );
 }
 
 #[test]

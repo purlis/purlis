@@ -396,7 +396,7 @@ fn not_written(what: &str, why: crate::proposed::NotMade) -> String {
 
 /// The text of the file at `path` in the plane, read without following a link, or why not, as
 /// the end of a sentence about `what`.
-fn text_at(plane: &Path, path: &Path, what: &str) -> Result<String, String> {
+pub(super) fn text_at(plane: &Path, path: &Path, what: &str) -> Result<String, String> {
     let rel_path = path.strip_prefix(plane).unwrap_or(path);
     let bytes = crate::proposed::read_pinned(plane, rel_path)
         .map_err(|_| format!("{what} is not a plain file, so purlis does not read it"))?
@@ -476,6 +476,7 @@ pub fn create(
         &text,
         level.depth(),
     )?;
+    earlier_dropped(cx, level, name);
     cx.done(format!(
         "{name} is made, a {level} skill in {}",
         rel(plane, &folder)
@@ -560,6 +561,7 @@ pub fn copy_built_in(
         &copied,
         level.depth(),
     )?;
+    earlier_dropped(cx, level, to);
     cx.done(format!(
         "{to} is made, a {level} skill in {}, copied from the built-in skill {name}, which \
          chats still get",
@@ -738,7 +740,7 @@ pub fn rename(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> Result<P
     };
     cx.done(format!("{old} is renamed {new}"));
     // So does grading after each edit, within what the person accepted (#3612).
-    after_edit_follows(cx, level, old, level, new);
+    after_edit_follows(cx, (level, old), (level, new), &[]);
     let still = Level::every(plane)
         .into_iter()
         .find(|other| other.named(plane, old).is_some());
@@ -930,6 +932,18 @@ pub fn move_to(
     let folder = find(plane, from, name)?;
     let folder_is = folder_name(&folder);
     let dir = free_at(plane, to, name, &folder_is)?;
+    // Into this machine's skills alone, git follows it no more: the places git followed it
+    // through go along, read while it is still where git has it (#4018).
+    let followed: Vec<(String, String)> = if to.local && !from.local {
+        super::history::places(plane, from, name)
+            .unwrap_or_default()
+            .into_iter()
+            .skip(1)
+            .filter_map(|was| Some((was.name, was.level?.rel()?)))
+            .collect()
+    } else {
+        Vec::new()
+    };
     let moved = dir.join(&folder_is);
     move_skill(plane, &folder, plane, &moved, to.depth()).map_err(|unmoved| match unmoved {
         Unmoved::Nothing(why) => format!("{name} was not moved: {why}"),
@@ -960,7 +974,7 @@ pub fn move_to(
     if from.at.persona() != to.at.persona() {
         touched.extend(personas_followed(cx, from, name, to));
     }
-    after_edit_follows(cx, from, name, to, name);
+    after_edit_follows(cx, (from, name), (to, name), &followed);
     cx.done(format!(
         "{name} is a {to} skill now, in {}",
         rel(plane, &moved)
@@ -972,28 +986,44 @@ pub fn move_to(
 /// Grading after each edit of the copy of `old` at `from`, carried to `new` at `to` (#3612); where
 /// it could not be, that is said, and it stays off for the copy until it is turned on again. And
 /// its grades: where git cannot follow the change, the name and level it leaves are kept on this
-/// machine (#4018), and where they could not be, that is said.
-fn after_edit_follows(cx: &mut Ctx<'_>, from: &Level, old: &str, to: &Level, new: &str) {
+/// machine (#4018), with `followed`, the places git followed it through before (name, level's
+/// folder), and where they could not be, that is said.
+fn after_edit_follows(
+    cx: &mut Ctx<'_>,
+    (from, old): (&Level, &str),
+    (to, new): (&Level, &str),
+    followed: &[(String, String)],
+) {
     if let Err(why) = super::grades::after_edit::moved(cx.plane, from, old, to, new) {
         cx.warn(format!(
             "grading {new} after each edit is off until you turn it on again: {why}"
         ));
     }
-    if let Err(why) =
-        super::grades::earlier::moved(cx.plane, (from, old), (to, new), chrono::Utc::now())
-    {
+    if let Err(why) = super::grades::earlier::moved(
+        cx.plane,
+        (from, old),
+        (to, new),
+        followed,
+        chrono::Utc::now(),
+    ) {
         cx.warn(why);
     }
 }
 
-/// Grading after each edit of the copy of `name` at `level`, dropped with its delete (#3612), and
-/// the earlier names this machine kept of it (#4018).
+/// Grading after each edit of the copy of `name` at `level`, dropped with its delete (#3612). The
+/// earlier names this machine kept of it stay, so a Restore brings back its grades from before;
+/// a skill made with its name at its level drops them ([`earlier_dropped`]).
 fn after_edit_dropped(cx: &mut Ctx<'_>, level: &Level, name: &str) {
     if let Err(why) = super::grades::after_edit::dropped(cx.plane, level, name) {
         cx.warn(format!(
             "grading {name} after each edit is still kept as on: {why}"
         ));
     }
+}
+
+/// The earlier names this machine kept of a skill named `name` at `level` before (#4018),
+/// dropped as a new skill takes its place: the grades of the one before are none of its own.
+fn earlier_dropped(cx: &mut Ctx<'_>, level: &Level, name: &str) {
     if let Err(why) = super::grades::earlier::dropped(cx.plane, level, name) {
         cx.warn(why);
     }
@@ -2156,7 +2186,7 @@ pub fn share(cx: &mut Ctx<'_>, at: &Whose, name: &str) -> Result<PathBuf, String
         at: at.clone(),
         local: true,
     };
-    after_edit_follows(cx, &local, name, &local.clone().local(false), name);
+    after_edit_follows(cx, (&local, name), (&local.clone().local(false), name), &[]);
     cx.done(format!(
         "{name} is shared: it is in {} now",
         rel(plane, &folder)
