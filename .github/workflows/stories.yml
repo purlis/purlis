@@ -20,24 +20,15 @@ name: stories
 #
 # **A pull request's run draws the baselines it would need, in the same run.** When a pull
 # request's stories fail on their pictures alone (a story failing any other gate draws nothing),
-# or only an obsolete baseline is wrong, the job runs the stories again with `--update` and
-# keeps every live baseline as the `story-baselines` artifact, with `drawn.json` naming the head
+# or only an obsolete baseline is wrong, each shard that failed runs its stories again with
+# `--update`, and the `stories` check keeps every live baseline as the one `story-baselines`
+# artifact, with `drawn.json` naming the head
 # and the base it was merged with. The check stays red: a baseline is compared only once it is
 # committed. Two ways take the artifact into the branch, and only on request: the person's own
 # `node tools/story-baselines-pull.mjs <pull request>` and push, or the `update-baselines`
 # label (`stories-baselines.yml`), which commits it with the workflow's token. Neither draws
 # again. `workflow_dispatch` is how that job starts this one on the commit it pushed: the
 # `pull_request` run that push starts waits for a maintainer's approval.
-#
-# **In parts, and one check** (#4038). The stories ran 28 minutes as one job, against its 30, and
-# grow, so each browser's stories run in three parts (`part`), each a third of the story files
-# (Vitest's `--shard`), in every cell: six jobs, well inside their 20 minutes. The `stories`
-# check is one job after them, as `web (types, lint, format, test)` is in `ci.yml`: it names
-# what failed in every part, holds the baselines to every part's report, and keeps the one
-# `story-baselines` artifact `stories-baselines.yml` and `tools/story-baselines-pull.mjs` take.
-# A part whose pictures are all that failed in it draws them again itself; the check keeps them
-# only when that is so in every part, so a baseline is still drawn only of a story that passes
-# everything else.
 
 on:
   pull_request:
@@ -76,21 +67,30 @@ jobs:
   # a `changes` that fails runs it too. This workflow has no merge-group run, so a scope rule that
   # skips a story wrongly first shows on main's push run, not in the queue.
   #
-  # Each part keeps what the check needs as its own `stories-part-<browser>-<part>` artifact: its
-  # report, and, when it drew them, the baselines it drew with `drawn-<browser>-<part>` beside them.
-  part:
-    name: stories (${{ matrix.browser }}, part ${{ matrix.part }} of 3)
+  # **The stories run in shards** (#4013): each browser's story files split by Vitest's `--shard`,
+  # each shard a job of its own. All of them in one job took 28 minutes of its 30, and a pull
+  # request whose pictures changed then drew them again past the limit, so the job was cancelled
+  # and kept no baselines to take. A shard runs its stories, names what failed in them, and draws
+  # again the pictures that failed in it; `stories`, the check, then reads every shard's report
+  # and keeps the one `story-baselines` artifact the pull request takes.
+  shard:
+    name: stories (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.of }})
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.stories != 'false' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
+      # Every shard runs to its end, so every story that failed is named.
       fail-fast: false
       matrix:
-        # Each browser on its own, so each failure can say which browser it failed in; every
-        # cell of the matrix is a project of its own, `stories <cell> (<browser>)`.
         browser: [chromium, webkit]
-        part: [1, 2, 3]
+        # `of` is how many parts `--shard` splits a browser's story files into, and `shard` lists
+        # each part: the two change together. Each report is named by both, so the check finds a
+        # part that never ran (`tools/story-failures.mjs shards`).
+        # Three, so the slower browser's part runs about 7 minutes and has room to draw its
+        # pictures again and for the stories to grow, well under 20 (#4038).
+        shard: [1, 2, 3]
+        of: [3]
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
       # An init that reaps, and the host's IPC namespace, which Chromium wants for its shared
@@ -100,10 +100,14 @@ jobs:
       PURLIS_STORY_PICTURES: "1"
       HOME: /root
       BROWSER: ${{ matrix.browser }}
-      PART: ${{ matrix.part }}
+      SHARD: ${{ matrix.shard }}
+      OF: ${{ matrix.of }}
+      NAME: ${{ matrix.browser }}-${{ matrix.shard }}-of-${{ matrix.of }}
     defaults:
       run:
         working-directory: app
+        # A container's steps run in `sh` unless told otherwise; the drawing step reads arrays.
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -116,67 +120,106 @@ jobs:
       - run: npm ci
       - name: The image is the Playwright the lockfile names, by its tag and its digest
         run: node ../tools/story-image.mjs
-      # A third of the story files, by Vitest's own hash of each file's path, in every cell. The
-      # failures are kept by `tools/story-failures.mjs`'s reporter rather than Vitest's JSON
-      # one, which keeps an error's stack alone: WebKit's does not repeat the message.
-      - name: This part's stories
+      # One browser and one part of its story files; every cell of the matrix is a project of its
+      # own, `stories <cell> (<browser>)`. The failures are kept by `tools/story-failures.mjs`'s
+      # reporter rather than Vitest's JSON one, which keeps an error's stack alone: WebKit's does
+      # not repeat the message.
+      - name: The stories, in this shard of this browser
         id: stories
         run: |
-          mkdir -p "$RUNNER_TEMP/part"
-          PURLIS_STORY_REPORT="$RUNNER_TEMP/part/stories-$BROWSER-$PART.json" \
-            npx vitest run --project "stories * ($BROWSER)" --shard="$PART/3" \
+          mkdir -p "$RUNNER_TEMP/report"
+          PURLIS_STORY_REPORT="$RUNNER_TEMP/report/report-$NAME.json" \
+            npx vitest run --project "stories * ($BROWSER)" --shard="$SHARD/$OF" \
             --reporter=default --reporter=../tools/story-failures.mjs
+      # Storybook's own index of the stories, for the check to read the baselines against: the
+      # same in every shard, so any one shard's will do, and named by its shard so none is lost.
+      - name: The stories there are
+        if: ${{ !cancelled() && steps.stories.conclusion != 'skipped' }}
+        run: |
+          npx storybook index --disable-telemetry --quiet -c .storybook \
+            -o "$RUNNER_TEMP/report/index-$NAME.json"
+      # Kept before any drawing, so a shard that runs out of time while it draws still reports.
+      - name: The shard's report, kept for the check
+        if: ${{ !cancelled() && steps.stories.conclusion != 'skipped' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: story-report-${{ matrix.browser }}-${{ matrix.shard }}-of-${{ matrix.of }}
+          path: ${{ runner.temp }}/report/
+          if-no-files-found: warn
+          retention-days: 7
+      # One annotation per story that failed: its browser, its gate, the first line of why and
+      # the axe rules it broke, put on the story file's line it failed at. The shard that ran the
+      # story says it: the frames are of this container's paths, which `GITHUB_WORKSPACE` is the
+      # root of. A failure axe raises after the story has no such line, and is on the check
+      # alone; a shard that failed before its stories ran says it wrote no report. GitHub keeps
+      # 10 of a step's, so the stories that stop the baselines being drawn come first, and the
+      # step's summary, never capped, lists them all and then every picture (#4050).
+      - name: The stories that failed, named
+        if: failure()
+        run: node ../tools/story-failures.mjs "$BROWSER" "$RUNNER_TEMP/report/report-$NAME.json"
       - name: The pictures that differ, kept
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: story-pictures-${{ matrix.browser }}-${{ matrix.part }}
+          name: story-pictures-${{ matrix.browser }}-${{ matrix.shard }}-of-${{ matrix.of }}
           path: app/.vitest/attachments/
           if-no-files-found: ignore
           retention-days: 7
-      # Drawn when a picture is all that failed in this part; the check keeps them only when that
-      # holds in every part. Each picture the drawing wrote is kept, under its path in `app/`.
-      - name: This part's baselines, drawn again
+      # The pictures that failed in this shard, drawn again for the pull request to take (above):
+      # only when a picture is all that failed in it, so the other gates hold every baseline
+      # drawn. Each story file is drawn in the cells its picture failed in, and only those cells'
+      # pictures are kept: a file's other cells may be another shard's. `drew-<shard>` beside
+      # them says this shard drew all it had to; the check keeps them only when every shard that
+      # failed drew.
+      - name: The pictures that failed, drawn again
+        id: drawn
         if: failure() && github.event_name == 'pull_request' && steps.stories.outcome == 'failure'
         run: |
-          if ! files=$(node ../tools/story-failures.mjs pictures-alone "$RUNNER_TEMP/part/stories-$BROWSER-$PART.json"); then
-            echo "a story in this part failed on more than its picture, so none are drawn"
+          if ! node ../tools/story-failures.mjs pictures-to-draw "$RUNNER_TEMP/report/report-$NAME.json" > "$RUNNER_TEMP/to-draw.tsv"; then
+            echo "::notice::a story failed on more than its picture in $BROWSER $SHARD/$OF, so no baselines are drawn: fix it, and the next run draws them"
             exit 0
           fi
-          touch "$RUNNER_TEMP/drawing-since"
-          # shellcheck disable=SC2086 # story files, with no space in any
-          # Its own report: the check reads the whole part's, which names every story that takes
-          # no picture.
-          if ! PURLIS_STORY_REPORT="$RUNNER_TEMP/drawing-$BROWSER-$PART.json" \
-            npx vitest run --project "stories * ($BROWSER)" --update --reporter=default \
-            --reporter=../tools/story-failures.mjs $files; then
-            echo "::notice::a story failed while its baselines were drawn in $BROWSER, part $PART, so none are kept"
+          projects=()
+          while IFS= read -r cell; do projects+=(--project "stories $cell ($BROWSER)"); done \
+            < <(cut -f2 "$RUNNER_TEMP/to-draw.tsv" | sort -u)
+          mapfile -t files < <(cut -f1 "$RUNNER_TEMP/to-draw.tsv" | sort -u)
+          # Its own report: the check reads the whole run's, which names every story that takes no
+          # picture.
+          if ! PURLIS_STORY_REPORT="$RUNNER_TEMP/drawing.json" \
+            npx vitest run "${projects[@]}" --update --reporter=default \
+            --reporter=../tools/story-failures.mjs "${files[@]}"; then
+            echo "::notice::a story failed while its baselines were drawn in $BROWSER $SHARD/$OF, so none are kept"
             exit 0
           fi
-          mkdir -p "$RUNNER_TEMP/part/app"
-          find src -path '*/__screenshots__/*' -name "*-$BROWSER-linux.png" -newer "$RUNNER_TEMP/drawing-since" -print0 \
-            | xargs -0 -r cp --parents -t "$RUNNER_TEMP/part/app"
-          touch "$RUNNER_TEMP/part/drawn-$BROWSER-$PART"
-      - name: This part's report and baselines, kept for the stories check
-        if: ${{ !cancelled() }}
+          while IFS=$'\t' read -r file cell; do
+            pictures="$(dirname "$file")/__screenshots__/$(basename "$file")"
+            mkdir -p "$RUNNER_TEMP/drawn/app/$pictures"
+            find "$pictures" -maxdepth 1 -type f -name "*_$cell-$BROWSER-linux.png" \
+              -exec cp {} "$RUNNER_TEMP/drawn/app/$pictures/" \;
+          done < "$RUNNER_TEMP/to-draw.tsv"
+          touch "$RUNNER_TEMP/drawn/drew-$NAME"
+          echo "drawn=true" >> "$GITHUB_OUTPUT"
+      - name: The pictures drawn again, kept for the check
+        if: failure() && steps.drawn.outputs.drawn == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: stories-part-${{ matrix.browser }}-${{ matrix.part }}
-          path: ${{ runner.temp }}/part/
-          if-no-files-found: ignore
+          name: story-drawn-${{ matrix.browser }}-${{ matrix.shard }}-of-${{ matrix.of }}
+          path: ${{ runner.temp }}/drawn/
+          if-no-files-found: error
           retention-days: 7
 
-  # The one `stories` check, whatever the parts did: skipped with them when nothing it draws has
-  # changed, and red when any part is not green, ran out of time or wrote no report.
+  # **The check**, under the name it has always had: it fails when any shard failed, checks that
+  # every baseline is of a live story that takes a picture, and keeps the baselines a pull request
+  # takes as one `story-baselines` artifact, as `tools/story-baselines-pull.mjs` and
+  # `stories-baselines.yml` read it. It runs no story, so it needs no image and no `npm ci`: the
+  # baseline and report tools use Node's own modules alone. Each story's annotations are on the
+  # shard that ran it.
   stories:
     name: stories (Chromium and WebKit, axe, keyboard, screenshots)
-    needs: [changes, part]
+    needs: [changes, shard]
     if: ${{ !cancelled() && needs.changes.outputs.stories != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: app
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -184,116 +227,91 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: npm
-          cache-dependency-path: app/package-lock.json
-      - run: npm ci
-      # A part that kept nothing is named below as having written no report.
-      - name: Every part's report and baselines
+      # Each artifact's files are named by its shard, so they merge into one directory. A shard
+      # that never ran its stories kept none: the next step names it.
+      - name: Every shard's report
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        continue-on-error: true
         with:
-          pattern: stories-part-*
-          path: ${{ runner.temp }}/parts
+          pattern: story-report-*
+          path: ${{ runner.temp }}/reports
           merge-multiple: true
-      # Every part's report, by browser; one a part never wrote is named as such.
-      - name: The reports
-        id: reports
-        run: |
-          named="" all=""
-          for browser in chromium webkit; do
-            for part in 1 2 3; do
-              report="$RUNNER_TEMP/parts/stories-$browser-$part.json"
-              named="$named $browser $report"
-              all="$all $report"
-            done
-          done
-          echo "named=$named" >> "$GITHUB_OUTPUT"
-          echo "all=$all" >> "$GITHUB_OUTPUT"
-      # One annotation per story that failed, the same in both browsers: its browser, its gate,
-      # the first line of why and the axe rules it broke, put on the story file's line it failed
-      # at (`GITHUB_WORKSPACE` is the root its path is relative to); a failure axe raises after
-      # the story has no such line, and is on the check alone. GitHub keeps 10 of a step's, so
-      # the stories that stop the baselines being drawn come first, and the step's summary,
-      # never capped, lists them all and then every picture (#4050).
-      - name: The stories that failed, named
-        if: needs.part.result != 'success'
-        env:
-          NAMED: ${{ steps.reports.outputs.named }}
-        run: |
-          # shellcheck disable=SC2086 # browser and report pairs, with no space in any
-          node ../tools/story-failures.mjs $NAMED
-      # Storybook's own index says which stories there are, and the run's reports which of them
+      - name: Every shard's pictures, drawn again
+        if: ${{ github.event_name == 'pull_request' && needs.shard.result == 'failure' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: story-drawn-*
+          path: ${{ runner.temp }}/redrawn
+          merge-multiple: true
+      # Storybook's own index says which stories there are, and the shards' reports which of them
       # take no picture (`screenshot: false`, which no index has); a baseline of any other is
-      # obsolete. A part's missing report is warned of, and fails the check below.
+      # obsolete. After the stories, whether they passed or not.
       - name: Every baseline was drawn in this image, of a story there is that takes a picture
-        env:
-          ALL: ${{ steps.reports.outputs.all }}
+        id: check
         run: |
-          npx storybook index --disable-telemetry --quiet -c .storybook \
-            -o "$RUNNER_TEMP/stories-index.json"
-          # shellcheck disable=SC2086 # report paths, with no space in any
-          node ../tools/story-baselines.mjs check "$RUNNER_TEMP/stories-index.json" $ALL
-      - name: Every part passed
-        if: ${{ !cancelled() }}
-        env:
-          RESULT: ${{ needs.part.result }}
-        run: test "$RESULT" = success
-      # The baselines this run would make, for the pull request to take on request (above). Kept
-      # only when a picture is all that failed in every part, and every part that failed drew
-      # its own, so the other gates hold every baseline drawn; an obsolete baseline alone needs
-      # no drawing, and gathering leaves it out.
+          shopt -s nullglob
+          reports=("$RUNNER_TEMP"/reports/report-*.json)
+          indexes=("$RUNNER_TEMP"/reports/index-*.json)
+          if ! node tools/story-failures.mjs shards "$RUNNER_TEMP/reports" > "$RUNNER_TEMP/shards.txt"; then
+            while IFS= read -r line; do echo "::warning::$line: its stories are not checked for screenshot: false"; done < "$RUNNER_TEMP/shards.txt"
+          fi
+          if [ "${#indexes[@]}" -eq 0 ]; then
+            echo "::error::no shard's story index reached this job, so no baseline is checked: the shards' logs say why"
+            exit 1
+          fi
+          node tools/story-baselines.mjs check "${indexes[0]}" "${reports[@]}"
+      # The baselines this run would make, for the pull request to take on request (above): every
+      # shard's pictures drawn again, put over this checkout, and every live baseline gathered.
+      # Only when every shard reported, a picture is all that failed in any, and each shard that
+      # failed drew; an obsolete baseline alone needs no drawing, and gathering leaves it out.
       - name: The baselines, drawn in this run for the pull request to take
         id: drawn
-        if: failure() && github.event_name == 'pull_request' && steps.reports.outcome == 'success'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && (needs.shard.result == 'failure' || steps.check.outcome == 'failure') }}
         env:
-          RESULT: ${{ needs.part.result }}
-          ALL: ${{ steps.reports.outputs.all }}
+          SHARDS_RESULT: ${{ needs.shard.result }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          parts="$RUNNER_TEMP/parts"
-          if [ "$RESULT" != success ]; then
-            # shellcheck disable=SC2086 # report paths, with no space in any
-            if ! node ../tools/story-failures.mjs pictures-alone $ALL > /dev/null; then
-              echo "::notice::no baselines are drawn: a story failed on more than its picture, or a part wrote no report (the first annotation names which); fix it, and the next run draws them"
+          shopt -s nullglob
+          reports=("$RUNNER_TEMP"/reports/report-*.json)
+          indexes=("$RUNNER_TEMP"/reports/index-*.json)
+          if [ "${#indexes[@]}" -eq 0 ]; then exit 0; fi
+          if [ "$SHARDS_RESULT" != success ]; then
+            if ! node tools/story-failures.mjs pictures-alone "${reports[@]}" > /dev/null; then
+              echo "::notice::a story failed on more than its picture, so no baselines are drawn: fix it, and the next run draws them"
               exit 0
             fi
-            for report in $ALL; do
-              name=$(basename "$report" .json)
-              if jq -e .failed "$report" > /dev/null && [ ! -f "$parts/drawn-${name#stories-}" ]; then
-                echo "::notice::a story failed while its baselines were drawn in ${name#stories-}, so none are kept"
-                exit 0
-              fi
-            done
-            # Each part's pictures over the checkout's: a story file is in one part, and a part
-            # keeps only its own browser's pictures.
-            if [ -d "$parts/app/src" ]; then cp -R "$parts/app/src/." src/; fi
-          fi
-          if [ ! -f "$RUNNER_TEMP/stories-index.json" ]; then
-            npx storybook index --disable-telemetry --quiet -c .storybook \
-              -o "$RUNNER_TEMP/stories-index.json"
+            if ! node tools/story-failures.mjs shards "$RUNNER_TEMP/reports" "$RUNNER_TEMP/redrawn" > "$RUNNER_TEMP/undrawn.txt"; then
+              while IFS= read -r line; do echo "::notice::$line, so no baselines are kept: its log says why"; done < "$RUNNER_TEMP/undrawn.txt"
+              exit 0
+            fi
+            if [ -d "$RUNNER_TEMP/redrawn/app" ]; then cp -R "$RUNNER_TEMP/redrawn/app/." app/; fi
           fi
           mkdir -p "$RUNNER_TEMP/drawn/app"
-          # shellcheck disable=SC2086
-          node ../tools/story-baselines.mjs gather "$RUNNER_TEMP/stories-index.json" \
-            "$RUNNER_TEMP/drawn/app" $ALL > "$RUNNER_TEMP/gathered.txt"
+          node tools/story-baselines.mjs gather "${indexes[0]}" \
+            "$RUNNER_TEMP/drawn/app" "${reports[@]}" > "$RUNNER_TEMP/gathered.txt"
           printf '{"head":"%s","base":"%s"}\n' "$HEAD_SHA" "$BASE_SHA" > "$RUNNER_TEMP/drawn/drawn.json"
           echo "$(grep -c . "$RUNNER_TEMP/gathered.txt" || true) baselines drawn; take them with node tools/story-baselines-pull.mjs ${{ github.event.pull_request.number }}, or the update-baselines label"
           echo "drawn=true" >> "$GITHUB_OUTPUT"
       - name: The baselines drawn, kept for the pull request to take
-        if: failure() && steps.drawn.outputs.drawn == 'true'
+        if: ${{ !cancelled() && steps.drawn.outputs.drawn == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: story-baselines
           path: ${{ runner.temp }}/drawn/
           if-no-files-found: error
           retention-days: 7
-      # Last, so it is the newest annotation, which GitHub shows first: one that names every
-      # story that stops the baselines being drawn, however many pictures failed (#4050).
-      - name: What stops the baselines being drawn, named first
-        if: ${{ !cancelled() && needs.part.result != 'success' }}
+      - name: Every shard passed
+        if: ${{ !cancelled() }}
         env:
-          NAMED: ${{ steps.reports.outputs.named }}
+          SHARDS_RESULT: ${{ needs.shard.result }}
         run: |
-          # shellcheck disable=SC2086 # browser and report pairs, with no space in any
-          node ../tools/story-failures.mjs headline $NAMED
+          if [ "$SHARDS_RESULT" != success ]; then
+            echo "::error::a shard of the stories failed ($SHARDS_RESULT): the stories (<browser> <shard>) checks name each story and why"
+            exit 1
+          fi
+      # Last, so it is the check's newest annotation, which GitHub shows first: one that names
+      # every story that stops the baselines being drawn, in any shard, however many pictures
+      # failed, and every shard that wrote no report (#4050).
+      - name: What stops the baselines being drawn, named first
+        if: ${{ !cancelled() && needs.shard.result != 'success' }}
+        run: node tools/story-failures.mjs headline "$RUNNER_TEMP/reports"

@@ -15,9 +15,13 @@ import StoryFailures, {
   gateOf,
   named,
   picturesAlone,
+  picturesToDraw,
   placeOf,
   REPORT,
   reportPath,
+  shardOf,
+  shardProblems,
+  undrawn,
 } from "./story-failures.mjs";
 
 const DEPS = "http://localhost:1/node_modules/.cache/storybook/sb-vitest/deps";
@@ -588,6 +592,115 @@ test("an error outside a story, a run that failed naming nothing, or no failure 
   );
 });
 
+// The stories run in shards (#4013): a shard draws again only the pictures of its own story
+// files in its own cells, and the check counts every shard's report and drawing.
+const pictureFailure = (file, cell) => ({
+  file,
+  story: "Probe A",
+  cell,
+  errors: [failedAt("screenshot")],
+});
+
+test("a shard draws again each story file and cell whose picture failed, once each", () => {
+  assert.deepEqual(
+    picturesToDraw({
+      failed: true,
+      errors: [],
+      failures: [
+        pictureFailure("src/A.stories.tsx", "purlis_dark"),
+        pictureFailure("src/A.stories.tsx", "purlis_dark"),
+        pictureFailure("src/A.stories.tsx", "purlis-classic_light"),
+        pictureFailure("src/B.stories.tsx", "purlis_dark"),
+      ],
+    }),
+    [
+      { file: "src/A.stories.tsx", cell: "purlis_dark" },
+      { file: "src/A.stories.tsx", cell: "purlis-classic_light" },
+      { file: "src/B.stories.tsx", cell: "purlis_dark" },
+    ],
+  );
+});
+
+test("a shard draws nothing when more than a picture failed, or a failure names no cell", () => {
+  assert.equal(
+    picturesToDraw(reportOf("Probe A", failedAt("keyboard"))),
+    undefined,
+  );
+  assert.equal(
+    picturesToDraw({
+      failed: true,
+      errors: [],
+      failures: [pictureFailure("src/A.stories.tsx", undefined)],
+    }),
+    undefined,
+  );
+});
+
+test("a shard's name is its browser, its number and how many there are", () => {
+  assert.deepEqual(shardOf("report-webkit-2-of-3.json"), {
+    browser: "webkit",
+    shard: 2,
+    of: 3,
+    name: "webkit-2-of-3",
+  });
+  assert.equal(shardOf("index.json"), undefined);
+  assert.equal(shardOf("report-webkit-4-of-3.json"), undefined);
+});
+
+test("every shard of every browser reported, or the check names the one missing", () => {
+  const all = [
+    "report-chromium-1-of-2.json",
+    "report-chromium-2-of-2.json",
+    "report-webkit-1-of-2.json",
+    "report-webkit-2-of-2.json",
+  ];
+  assert.deepEqual(shardProblems(all), []);
+  assert.deepEqual(shardProblems(all.slice(1)), [
+    "chromium 1 of 2 wrote no report",
+  ]);
+  // A browser none of whose shards reported.
+  assert.deepEqual(shardProblems(all.slice(0, 2)), ["webkit: no shard wrote a report"]);
+  // A matrix that runs fewer shards than `--shard` splits the files into.
+  assert.deepEqual(
+    shardProblems([
+      "report-chromium-1-of-3.json",
+      "report-chromium-2-of-3.json",
+      "report-webkit-1-of-2.json",
+      "report-webkit-2-of-2.json",
+    ]),
+    ["chromium 3 of 3 wrote no report"],
+  );
+  // Shards that disagree on how many there are.
+  assert.deepEqual(
+    shardProblems([
+      "report-chromium-1-of-2.json",
+      "report-chromium-2-of-3.json",
+      "report-webkit-1-of-1.json",
+    ]),
+    ["chromium: its shards disagree on how many there are (2, 3)"],
+  );
+});
+
+test("each shard that failed drew its pictures, or the check names it", () => {
+  const passed = { failed: false, failures: [], errors: [] };
+  const failed = { failed: true, failures: [], errors: [] };
+  assert.deepEqual(
+    undrawn(
+      [
+        { name: "chromium-1-of-2", report: passed },
+        { name: "chromium-2-of-2", report: failed },
+        { name: "webkit-1-of-2", report: failed },
+      ],
+      ["drew-webkit-1-of-2"],
+    ),
+    ["chromium-2-of-2"],
+  );
+  // A report whose `failed` is not a boolean is not read as one that passed.
+  assert.deepEqual(undrawn([{ name: "webkit-2-of-2", report: {} }], []), [
+    "webkit-2-of-2",
+  ]);
+});
+
 // What blocks the baselines comes first (#4050): GitHub keeps 10 error annotations a step, so a
 // story failing on more than its picture, the one thing that stops the run drawing, is named in
 // the first annotation, and in the step's summary, which is never capped, however many pictures
@@ -699,4 +812,14 @@ test("a run where nothing failed names nothing", () => {
   ]);
   assert.deepEqual(lines, []);
   assert.equal(summary, "");
+});
+
+test("the headline names a shard that wrote no report", () => {
+  const { headline } = named(
+    [{ browser: "chromium", report: { failed: false, failures: [], errors: [] } }],
+    undefined,
+    ["webkit 2 of 3 wrote no report"],
+  );
+  assert.match(headline, /title=No baselines drawn%3A 1 story failed/);
+  assert.match(headline, /::webkit 2 of 3 wrote no report$/);
 });

@@ -147,6 +147,20 @@ impl Channel {
             ),
         }
     }
+
+    /// **The manifest of `version`'s own release** (the person's ruling of 2026-10-30): on the
+    /// stable channel, the one on the `v{version}` release, which stays what that version's
+    /// release says after a newer one comes out. `None` on the dev channel, whose one tag
+    /// moves with every build. `https`, as [`Channel::endpoint`] is.
+    pub fn release_endpoint(self, version: &str) -> Option<String> {
+        match self {
+            Channel::Stable => Some(format!(
+                "{REPO}/releases/download/v{version}/{}",
+                self.manifest()
+            )),
+            Channel::Dev => None,
+        }
+    }
 }
 
 /// The platform keys the manifest is written with, and the only ones charter publishes.
@@ -474,6 +488,19 @@ mod tests {
             dev.contains(&format!("/releases/download/{DEV_TAG}/")),
             "{dev}"
         );
+    }
+
+    /// **A stable version's own manifest is read from its own release** (2026-10-30): the
+    /// tag the release was cut from, never `latest`, so a machine behind its channel still
+    /// reads what its own version's release says. The dev channel's one tag moves, so it has
+    /// none.
+    #[test]
+    fn a_stable_versions_own_manifest_is_on_its_own_release() {
+        assert_eq!(
+            Channel::Stable.release_endpoint("0.4.2").as_deref(),
+            Some("https://github.com/purlis/purlis/releases/download/v0.4.2/latest.json")
+        );
+        assert_eq!(Channel::Dev.release_endpoint("0.4.2-dev.17"), None);
     }
 
     /// A real minisign public key file, as `tauri signer generate` writes it, base64'd whole.

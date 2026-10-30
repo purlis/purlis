@@ -347,13 +347,26 @@ pub fn landed(plane: &Path, ws: &str, repo: &str, piece: &str, branch: &str) -> 
         },
         // Not by its commits: squashed, rebased or picked into the base, which git cannot
         // see by ancestry. Asked of the files instead (#1472).
-        Ok(seen) if seen.code == Some(1) => match carried_in(&clone, branch, base) {
-            Some(true) => Landed::Carried {
+        Ok(seen) if seen.code == Some(1) => {
+            let carried = || Landed::Carried {
                 branch: branch.to_owned(),
                 base: (*base).to_owned(),
-            },
-            _ => Landed::No,
-        },
+            };
+            if carried_in(&clone, branch, base) == Some(true) {
+                return carried();
+            }
+            // Squashed into the base's remote branch, which the clone has fetched while its
+            // own base was left behind (#3879): a squash merge on the forge, its branch
+            // deleted there and pruned here, is carried as much as one in the base itself.
+            match super::fresh::upstream_of(&clone, base, &name::as_ref(base)) {
+                Ok(Some(upstream))
+                    if carried_in_refs(&clone, &name::as_ref(branch), &upstream) == Some(true) =>
+                {
+                    carried()
+                }
+                _ => Landed::No,
+            }
+        }
         _ => Landed::Unknown,
     }
 }
@@ -369,7 +382,12 @@ pub fn landed(plane: &Path, ws: &str, repo: &str, piece: &str, branch: &str) -> 
 /// **This lets a folder go, never a commit** ([`Landed::Carried`]): the folder is taken away
 /// and the branch stays, an ordinary branch of the repo, since git does not find it merged.
 pub(crate) fn carried_in(clone: &Path, branch: &str, base: &str) -> Option<bool> {
-    let (branch, base) = (name::as_ref(branch), name::as_ref(base));
+    carried_in_refs(clone, &name::as_ref(branch), &name::as_ref(base))
+}
+
+/// [`carried_in`], for two full refs: the base may be a remote-tracking branch (#3879).
+fn carried_in_refs(clone: &Path, branch: &str, base: &str) -> Option<bool> {
+    let (branch, base) = (branch.to_owned(), base.to_owned());
     let parted = git::run(clone, &["merge-base", &branch, &base], git::READ)
         .ok()
         .filter(git::Run::ok)?;

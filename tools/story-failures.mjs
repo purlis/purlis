@@ -14,10 +14,14 @@
 //   `tools/story-baselines.mjs` then calls obsolete;
 // - run as a script, it reads those reports and prints one annotation per story that failed,
 //   those that stop the baselines being drawn first, and writes the same to the step's summary,
-//   which GitHub never caps; or, with `headline`, the one annotation that names every story
-//   that stops them (`named`, #4050):
+//   which GitHub never caps (`named`, #4050):
 //
-//   node tools/story-failures.mjs [headline] <browser> <report> [<browser> <report> ...]
+//   node tools/story-failures.mjs <browser> <report> [<browser> <report> ...]
+//
+//   Or, for the check, the one annotation that names every story that stops them, and every
+//   shard that wrote no report, from the directory of every shard's report:
+//
+//   node tools/story-failures.mjs headline <reports>
 //
 //   Or, to ask whether a picture is all that failed in the reports (`picturesAlone`), which is
 //   when the stories job draws the baselines its pull request can take (`stories.yml`); it
@@ -25,13 +29,25 @@
 //
 //   node tools/story-failures.mjs pictures-alone <report> [<report> ...]
 //
+//   The stories run in shards (#4013), each a browser and a part of its story files. A shard
+//   whose pictures alone failed asks which to draw again: each story file and cell whose
+//   picture failed, `<file>\t<cell>` a line (`picturesToDraw`), and nothing, failing, otherwise:
+//
+//   node tools/story-failures.mjs pictures-to-draw <report>
+//
+//   And the check asks whether every shard reported (`shardProblems`) and, given the directory
+//   the shards' drawings were put in, whether each shard that failed drew (`undrawn`); it prints
+//   each problem and fails on any:
+//
+//   node tools/story-failures.mjs shards <reports> [<drawn>]
+//
 // A story's annotation names the line of the story file it failed at, from the frames Vitest
 // maps back to their sources, so it shows on the pull request's diff (`placeOf`).
 //
 // Every text an annotation carries is escaped as the runner reads a workflow command, so it
 // stays one annotation on one line.
-import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
-import { isAbsolute, relative } from "node:path";
+import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
@@ -114,6 +130,64 @@ export function picturesAlone(reports) {
     ) &&
     failures.every((failure) => !blocksBaselines(failure))
   );
+}
+
+/** The browsers the stories run in, each in its shards (`stories.yml`). */
+export const BROWSERS = ["chromium", "webkit"];
+
+/**
+ * **The pictures a shard draws again**: each story file and cell whose picture failed in its
+ * `report`, once each, when a picture is all that failed there (`picturesAlone`); `undefined`
+ * otherwise, or when a failure names no cell. A story file's cells can fall in different shards
+ * (Vitest shards a file in each project apart), so a shard keeps only its own cells' pictures, and
+ * no two shards keep the same one.
+ */
+export function picturesToDraw(report) {
+  if (!picturesAlone([report])) return undefined;
+  const pairs = new Map();
+  for (const { file, cell } of report.failures) {
+    if (typeof cell !== "string" || cell === "") return undefined;
+    pairs.set(`${file}\n${cell}`, { file, cell });
+  }
+  return [...pairs.values()];
+}
+
+/** A shard's report's file name, `report-<browser>-<shard>-of-<shards>.json`, read; `undefined`
+ *  for any other name. */
+export function shardOf(fileName) {
+  const found = /^report-([a-z]+)-(\d+)-of-(\d+)\.json$/.exec(fileName);
+  if (!found) return undefined;
+  const [, browser, shard, of] = found;
+  if (Number(shard) < 1 || Number(shard) > Number(of)) return undefined;
+  return { browser, shard: Number(shard), of: Number(of), name: `${browser}-${shard}-of-${of}` };
+}
+
+/** What is missing of the shards' reports, by their file names: every browser in `BROWSERS`
+ *  wrote one from each shard, and its shards agree on how many there are. */
+export function shardProblems(fileNames) {
+  const shards = fileNames.map(shardOf).filter(Boolean);
+  return BROWSERS.flatMap((browser) => {
+    const its = shards.filter((one) => one.browser === browser);
+    if (its.length === 0) return [`${browser}: no shard wrote a report`];
+    const counts = [...new Set(its.map(({ of }) => of))].sort((a, b) => a - b);
+    if (counts.length > 1)
+      return [`${browser}: its shards disagree on how many there are (${counts.join(", ")})`];
+    const [of] = counts;
+    const have = new Set(its.map(({ shard }) => shard));
+    return Array.from({ length: of }, (_, at) => at + 1)
+      .filter((shard) => !have.has(shard))
+      .map((shard) => `${browser} ${shard} of ${of} wrote no report`);
+  });
+}
+
+/** The shards, each `{ name, report }`, whose stories did not pass and that left no
+ *  `drew-<name>` among `markers`: a report that does not say it passed counts as failed. */
+export function undrawn(shards, markers) {
+  const drew = new Set(markers);
+  return shards
+    .filter(({ report }) => report?.failed !== false)
+    .filter(({ name }) => !drew.has(`drew-${name}`))
+    .map(({ name }) => name);
 }
 
 /** The first line of why: the message's first line, and the line after a matcher's own. */
@@ -263,7 +337,8 @@ const plain = (text) => String(text).replace(/[\r\n]+/g, " ").replace(/`/g, "'")
 
 /**
  * **What failed across every report of a run, blocking first** (#4050): each `{ browser, report }`
- * (a report the run never wrote is `undefined`). GitHub keeps the first 10 error annotations of
+ * (a report the run never wrote is `undefined`), and what is `missing` of the shards' reports
+ * (`shardProblems`), each said in a line. GitHub keeps the first 10 error annotations of
  * a step, so the stories that stop the baselines being drawn (failing on more than their
  * picture, and any error outside a story, run that failed naming nothing or report never
  * written) are `annotations` before any picture's. The `headline` names every one of them in one
@@ -272,8 +347,16 @@ const plain = (text) => String(text).replace(/[\r\n]+/g, " ").replace(/`/g, "'")
  * `summary`, Markdown for the step's summary, which GitHub never caps, names the same first and
  * then every picture that failed alone.
  */
-export function named(runs, root) {
-  const all = runs.flatMap(({ browser, report }) => failedIn(report, browser, root));
+export function named(runs, root, missing = []) {
+  const all = [
+    ...runs.flatMap(({ browser, report }) => failedIn(report, browser, root)),
+    ...missing.map((said) => ({
+      blocks: true,
+      line: error("stories", `${said}; its log says why`),
+      named: said,
+      why: "its log says why",
+    })),
+  ];
   const blocking = all.filter(({ blocks }) => blocks);
   const alone = all.filter(({ blocks }) => !blocks);
   const lines = [...blocking, ...alone].map(({ line }) => line);
@@ -421,12 +504,68 @@ if (
     reports.flatMap((report) => report.failures.map(({ file }) => file)),
   );
   for (const file of files) console.log(file);
+} else if (
+  process.argv[1] === fileURLToPath(import.meta.url) &&
+  process.argv[2] === "pictures-to-draw"
+) {
+  let pairs;
+  try {
+    pairs = picturesToDraw(JSON.parse(readFileSync(process.argv[3], "utf8")));
+  } catch (error) {
+    console.error(`a stories report could not be read: ${error.message}`);
+    process.exit(1);
+  }
+  if (!pairs || pairs.length === 0) process.exit(1);
+  for (const { file, cell } of pairs) console.log(`${file}\t${cell}`);
+} else if (
+  process.argv[1] === fileURLToPath(import.meta.url) &&
+  process.argv[2] === "shards"
+) {
+  const [reports, drawn] = process.argv.slice(3);
+  const names = existsSync(reports) ? readdirSync(reports) : [];
+  const found = shardProblems(names);
+  if (drawn !== undefined && found.length === 0) {
+    const shards = names.flatMap((fileName) => {
+      const shard = shardOf(fileName);
+      if (!shard) return [];
+      let report;
+      try {
+        report = JSON.parse(readFileSync(join(reports, fileName), "utf8"));
+      } catch {
+        report = undefined;
+      }
+      return [{ name: shard.name, report }];
+    });
+    const markers = existsSync(drawn) ? readdirSync(drawn) : [];
+    for (const name of undrawn(shards, markers))
+      found.push(`${name} failed and drew no pictures`);
+  }
+  for (const line of found) console.log(line);
+  if (found.length > 0) process.exit(1);
+} else if (
+  process.argv[1] === fileURLToPath(import.meta.url) &&
+  process.argv[2] === "headline"
+) {
+  // The check's: every shard's report in one directory, by its shard's name (`shardOf`).
+  const reports = process.argv[3];
+  const names = existsSync(reports) ? readdirSync(reports).sort() : [];
+  const runs = names.flatMap((fileName) => {
+    const shard = shardOf(fileName);
+    if (!shard) return [];
+    let report;
+    try {
+      report = JSON.parse(readFileSync(join(reports, fileName), "utf8"));
+    } catch {
+      report = undefined;
+    }
+    return [{ browser: shard.browser, report }];
+  });
+  const { headline } = named(runs, process.env.GITHUB_WORKSPACE || process.cwd(), shardProblems(names));
+  if (headline) console.log(headline);
 } else if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  // `[headline] <browser> <report>`, the pair once for each report a browser's run wrote (one a
-  // part). With `headline`, the one annotation that names what blocks the baselines, if anything
-  // does; without, the annotations of every story that failed, and the step's summary.
-  const headlineOnly = process.argv[2] === "headline";
-  const given = process.argv.slice(headlineOnly ? 3 : 2);
+  // `<browser> <report>`, once for each report a browser's shards wrote: the annotations of
+  // every story that failed, blocking first, and the step's summary.
+  const given = process.argv.slice(2);
   // The repository, which an annotation's file is relative to.
   const root = process.env.GITHUB_WORKSPACE || process.cwd();
   const runs = [];
@@ -439,12 +578,8 @@ if (
     }
     runs.push({ browser: given[at], report });
   }
-  const { headline, annotations: lines, summary } = named(runs, root);
-  if (headlineOnly) {
-    if (headline) console.log(headline);
-  } else {
-    for (const line of lines) console.log(line);
-    if (summary && process.env.GITHUB_STEP_SUMMARY)
-      appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
-  }
+  const { annotations: lines, summary } = named(runs, root);
+  for (const line of lines) console.log(line);
+  if (summary && process.env.GITHUB_STEP_SUMMARY)
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
 }

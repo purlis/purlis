@@ -384,11 +384,16 @@ const WORKTREE_COMMIT: &str = "worktree commit";
 /// pre-allowed by its spelling on the same terms.
 const WORKTREE_UPDATE: &str = "worktree update";
 
+/// And a finished branch folder's removal the app makes for a chat (#3879), pre-allowed by its
+/// spelling on the same terms.
+const WORKTREE_REMOVE: &str = "worktree remove";
+
 /// The command `own` names, for a sentence: `dispatch`, `handoff`, `commit` or `update`.
 fn called(own: &str) -> &str {
     match own {
         WORKTREE_COMMIT => "commit",
         WORKTREE_UPDATE => "update",
+        WORKTREE_REMOVE => "removal",
         _ => own,
     }
 }
@@ -398,6 +403,7 @@ fn let_run(own: &str) -> &'static str {
     match own {
         WORKTREE_COMMIT => "a commit the app makes for a chat",
         WORKTREE_UPDATE => "an update the app makes for a chat",
+        WORKTREE_REMOVE => "a removal the app makes for a chat",
         _ => "a dispatch or a handoff",
     }
 }
@@ -444,6 +450,7 @@ fn ours(toks: &[String]) -> Option<&'static str> {
         return match words.get(1).map(String::as_str) {
             Some("commit") => Some(WORKTREE_COMMIT),
             Some("update") => Some(WORKTREE_UPDATE),
+            Some("remove") => Some(WORKTREE_REMOVE),
             _ => None,
         };
     }
@@ -480,14 +487,20 @@ fn beside(cmd: &str) -> Option<(&'static str, String)> {
     let text = runs.join("\n");
     if shellseg::lex(&text).is_err() {
         let lower = text.to_lowercase();
-        return [WORD, HANDOFF, WORKTREE_COMMIT, WORKTREE_UPDATE]
-            .into_iter()
-            .find(|word| {
-                crate::cliname::INSTALLED
-                    .iter()
-                    .any(|name| lower.contains(&format!("{name} {word}")))
-            })
-            .map(|word| (word, UNREADABLE.to_owned()));
+        return [
+            WORD,
+            HANDOFF,
+            WORKTREE_COMMIT,
+            WORKTREE_UPDATE,
+            WORKTREE_REMOVE,
+        ]
+        .into_iter()
+        .find(|word| {
+            crate::cliname::INSTALLED
+                .iter()
+                .any(|name| lower.contains(&format!("{name} {word}")))
+        })
+        .map(|word| (word, UNREADABLE.to_owned()));
     }
     let segments = shellseg::segment_argv(&text);
     let (at, own) = segments
@@ -725,10 +738,40 @@ pub fn rider_refusal(cmd: &str, caller: Caller<'_>) -> Option<(&'static str, Str
     rider_said(cmd).map(|said| (REASON_RIDER, said))
 }
 
+/// What a chat is told where a removal it runs is forced (#3879).
+const FORCES_A_REMOVAL: &str = "this call runs `purlis worktree remove --force`, which discards \
+     the uncommitted changes and unique commits a plain removal names. That is the person's to \
+     decide, and purlis lets a removal run without your harness asking only without --force, \
+     so this call is refused, and nobody was asked. Run it without --force, and the app \
+     removes the folder where nothing would be lost; otherwise ask the person to remove it \
+     from the window.";
+
+/// Whether a removal the call runs is forced (#3879): read on the lines a shell would run, as
+/// [`pins_the_clock`] reads a handoff's, here in the hook, outside the chat's sandbox, so the
+/// refusal does not rest on the chat's environment.
+fn forces_a_removal(cmd: &str) -> bool {
+    if !cmd.contains("-f") {
+        return false;
+    }
+    let runs: Vec<String> = crate::leakguard::lines_a_command_could_run(cmd)
+        .into_iter()
+        .map(|(row, _)| row)
+        .collect();
+    shellseg::segment_argv(&runs.join("\n")).iter().any(|toks| {
+        ours(toks) == Some(WORKTREE_REMOVE)
+            && toks
+                .iter()
+                .any(|w| w == "--force" || w.starts_with("--force=") || w == "-f")
+    })
+}
+
 /// What [`rider_refusal`] says, or `None`.
 fn rider_said(cmd: &str) -> Option<String> {
     if pins_the_clock(cmd) {
         return Some(PINS_THE_CLOCK.to_owned());
+    }
+    if forces_a_removal(cmd) {
+        return Some(FORCES_A_REMOVAL.to_owned());
     }
     if let Some((own, other)) = beside(cmd) {
         let (word, what) = (called(own), let_run(own));
