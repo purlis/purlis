@@ -384,11 +384,16 @@ const WORKTREE_COMMIT: &str = "worktree commit";
 /// pre-allowed by its spelling on the same terms.
 const WORKTREE_UPDATE: &str = "worktree update";
 
+/// And a finished branch folder's removal the app makes for a chat (#3879), pre-allowed by its
+/// spelling on the same terms.
+const WORKTREE_REMOVE: &str = "worktree remove";
+
 /// The command `own` names, for a sentence: `dispatch`, `handoff`, `commit` or `update`.
 fn called(own: &str) -> &str {
     match own {
         WORKTREE_COMMIT => "commit",
         WORKTREE_UPDATE => "update",
+        WORKTREE_REMOVE => "removal",
         _ => own,
     }
 }
@@ -398,6 +403,7 @@ fn let_run(own: &str) -> &'static str {
     match own {
         WORKTREE_COMMIT => "a commit the app makes for a chat",
         WORKTREE_UPDATE => "an update the app makes for a chat",
+        WORKTREE_REMOVE => "a removal the app makes for a chat",
         _ => "a dispatch or a handoff",
     }
 }
@@ -444,6 +450,7 @@ fn ours(toks: &[String]) -> Option<&'static str> {
         return match words.get(1).map(String::as_str) {
             Some("commit") => Some(WORKTREE_COMMIT),
             Some("update") => Some(WORKTREE_UPDATE),
+            Some("remove") => Some(WORKTREE_REMOVE),
             _ => None,
         };
     }
@@ -480,14 +487,20 @@ fn beside(cmd: &str) -> Option<(&'static str, String)> {
     let text = runs.join("\n");
     if shellseg::lex(&text).is_err() {
         let lower = text.to_lowercase();
-        return [WORD, HANDOFF, WORKTREE_COMMIT, WORKTREE_UPDATE]
-            .into_iter()
-            .find(|word| {
-                crate::cliname::INSTALLED
-                    .iter()
-                    .any(|name| lower.contains(&format!("{name} {word}")))
-            })
-            .map(|word| (word, UNREADABLE.to_owned()));
+        return [
+            WORD,
+            HANDOFF,
+            WORKTREE_COMMIT,
+            WORKTREE_UPDATE,
+            WORKTREE_REMOVE,
+        ]
+        .into_iter()
+        .find(|word| {
+            crate::cliname::INSTALLED
+                .iter()
+                .any(|name| lower.contains(&format!("{name} {word}")))
+        })
+        .map(|word| (word, UNREADABLE.to_owned()));
     }
     let segments = shellseg::segment_argv(&text);
     let (at, own) = segments
@@ -1482,6 +1495,24 @@ mod tests {
              purlis lets an update the app makes for a chat run without your harness asking \
              only alone in its call, so this call is refused, and nobody was asked. Run the \
              update in a call of its own, and the other command in another."
+        );
+    }
+
+    #[test]
+    fn a_brokered_removal_is_refused_where_it_shares_its_call() {
+        // #3879: `purlis worktree remove` is pre-allowed by its spelling, on the commit's terms.
+        assert_eq!(
+            refused("purlis worktree remove widget p1", the_chat()),
+            None
+        );
+        let said =
+            refused("purlis worktree remove widget p1 && rm -rf x", the_chat()).expect("refused");
+        assert_eq!(
+            said,
+            "this call runs `purlis worktree remove` beside another command (`rm -rf x`). \
+             purlis lets a removal the app makes for a chat run without your harness asking \
+             only alone in its call, so this call is refused, and nobody was asked. Run the \
+             removal in a call of its own, and the other command in another."
         );
     }
 

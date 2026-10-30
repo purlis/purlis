@@ -67,6 +67,7 @@ env -C .worktrees/<repo>/<piece> purlis worktree update   # rebase onto the base
 purlis worktree commit -m "<message>" .worktrees/<repo>/<piece>/<path> …   # or just .worktrees/<repo>/<piece> for every change in it
 env -C .worktrees/<repo>/<piece> purlis worktree push     # pushes the branch after purlis's scan of what it publishes
 env -C .worktrees/<repo>/<piece> purlis worktree done     # finished; or: … purlis worktree abandon "<why>"
+purlis worktree remove <repo> <piece>  # once merged: the app removes the folder if nothing would be lost
 ```
 
 - `add` takes `--base <branch>` to start from something other than the default branch. Exit 2
@@ -82,7 +83,12 @@ env -C .worktrees/<repo>/<piece> purlis worktree done     # finished; or: … pu
   below it. A message may start with `-`.
 - **`update`, `push`, `done` and `abandon` go by the current folder** of the command. Run them
   from inside the piece: `env -C <piece> purlis worktree …` does it in one command.
-- Run `commit` and `update` alone in their call: a `cd … &&` before them, a pipe or
+- **`remove` is for a finished piece**, from the workspace folder, never from inside it. The
+  app removes it only when it holds no uncommitted change and no commit that no other branch
+  reaches; otherwise it names what would be lost and removes nothing. `--force` is the
+  person's: ask them to remove it from the window. Where purlis's tools are offered, the
+  `worktree_remove` tool (`repo`, `piece`) does the same, and `worktree_update` updates.
+- Run `commit`, `update` and `remove` alone in their call: a `cd … &&` before them, a pipe or
   redirection, or a `$(…)` anywhere (a message from `$(cat msg)` too) is refused. Write the
   message out in the `-m` text.
 - `commit` only commits: no amend, reset, rebase or push, and the repo's own hooks don't run.

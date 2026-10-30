@@ -117,7 +117,8 @@ pub enum WorktreeCommand {
     },
     /// Remove a piece with `git worktree remove`. Refused, naming what would be lost, while
     /// it holds uncommitted changes or commits no other ref reaches. A branch folder purlis
-    /// cut for a task is discarded from that task's Changes tab instead.
+    /// cut for a task is discarded from that task's Changes tab instead. In a chat the app
+    /// removes it, from a folder above it; `--force` there is the person's, from the window.
     Remove {
         repo: String,
         piece: String,
@@ -260,9 +261,36 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
             delete_branch,
             workspace,
         } => {
-            // Never from a chat the app started under the sandbox (#1408, D-qw322-1): refused
-            // before git is run, wherever the chat stands.
             let ws = here.active_workspace(workspace.as_deref());
+            // `--force` discards work, which stays the person's from any chat (#3879): refused
+            // before anything is asked or run, naming the window.
+            if force && crate::session::chat_number().is_some() {
+                say(purlis_core::repocmd::Say::Fail(
+                    crate::brokered::no_forced_piece_removal_in_a_chat(&repo, &piece).into(),
+                ));
+                return Ok(1);
+            }
+            // In a chat the app started, the app removes it where nothing would be lost
+            // (#3879), as it commits and updates for the chat.
+            if let Ok(ws) = &ws {
+                let asked = crate::gitask::told(
+                    crate::gitask::forwarded(
+                        ws,
+                        GitWork::WorktreeRemove {
+                            repo: repo.clone(),
+                            piece: piece.clone(),
+                            delete_branch,
+                        },
+                        crate::gitask::A_WORKTREE_TAKES_AT_MOST,
+                    ),
+                    &mut say,
+                );
+                if let Some(code) = asked {
+                    return Ok(code);
+                }
+            }
+            // No app took it: never from a chat the app started under the sandbox (#1408,
+            // D-qw322-1), refused before git is run, wherever the chat stands.
             let target = ws
                 .as_deref()
                 .ok()
@@ -399,25 +427,55 @@ pub fn update_by_the_app(
     here: &Here,
     step: &purlis_core::hookwire::UpdateStep,
 ) -> Result<String, String> {
-    use crate::gitask::Forwarded;
-    use purlis_core::repocmd::Say;
     let updated = Updated::of(here).ok_or_else(|| NOT_IN_A_FOLDER.to_owned())?;
     if matches!(updated, Updated::Root) && !root_takes(step) {
         return Err(AT_THE_ROOT.to_owned());
     }
     let (ws, work) = updated.work(step);
-    let (lines, code) =
-        match crate::gitask::forwarded(ws, work, crate::gitask::A_PIECE_UPDATE_TAKES_AT_MOST) {
-            Forwarded::Said { lines, code } => (lines, code),
-            Forwarded::Refused(why) | Forwarded::Unsure(why) => return Err(why),
-            Forwarded::NotTaken => {
-                return Err(
-                    "no app took the update, so nothing was run: run `purlis worktree \
-                            update` in the chat"
-                        .to_owned(),
-                );
-            }
-        };
+    answered_by_the_app(
+        crate::gitask::forwarded(ws, work, crate::gitask::A_PIECE_UPDATE_TAKES_AT_MOST),
+        "no app took the update, so nothing was run: run `purlis worktree update` in the chat",
+    )
+}
+
+/// The `worktree_remove` tool (#3879): `purlis worktree remove <repo> <piece>`, never forced,
+/// for a branch folder of the chat's own workspace, handed to the app that started it and
+/// answered with what it said. **Never run here**, for [`update_by_the_app`]'s reason.
+pub fn remove_by_the_app(
+    here: &Here,
+    repo: &str,
+    piece: &str,
+    delete_branch: bool,
+) -> Result<String, String> {
+    let ws = here.active_workspace(None)?;
+    answered_by_the_app(
+        crate::gitask::forwarded(
+            &ws,
+            GitWork::WorktreeRemove {
+                repo: repo.to_owned(),
+                piece: piece.to_owned(),
+                delete_branch,
+            },
+            crate::gitask::A_WORKTREE_TAKES_AT_MOST,
+        ),
+        "no app took the removal, so nothing was removed: run `purlis worktree remove \
+         <repo> <piece>` in the chat",
+    )
+}
+
+/// What a tool handed to the app answers: the lines it said, as text, an error where it failed
+/// or refused, and `not_taken` where no app took it.
+fn answered_by_the_app(
+    forwarded: crate::gitask::Forwarded,
+    not_taken: &str,
+) -> Result<String, String> {
+    use crate::gitask::Forwarded;
+    use purlis_core::repocmd::Say;
+    let (lines, code) = match forwarded {
+        Forwarded::Said { lines, code } => (lines, code),
+        Forwarded::Refused(why) | Forwarded::Unsure(why) => return Err(why),
+        Forwarded::NotTaken => return Err(not_taken.to_owned()),
+    };
     let text = lines
         .iter()
         .map(|line| match line {

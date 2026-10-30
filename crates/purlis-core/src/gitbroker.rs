@@ -8,7 +8,8 @@
 //! checkout carries (`.vscode/`, `.idea/`, `.claude/settings.json`), and `git clone` and
 //! `git worktree add` write all of them. A branch folder's own git directory is in its clone's
 //! `.git` too, so `purlis worktree update` and `push` are handed over the same way
-//! ([`crate::pieceupdate`], qw387), for a chat standing in that folder or above it. So `purlis clone` and `purlis worktree add`, run in a
+//! ([`crate::pieceupdate`], qw387), for a chat standing in that folder or above it, and so is
+//! `purlis worktree remove`, never forced, for a chat above the folder (#3879). So `purlis clone` and `purlis worktree add`, run in a
 //! chat the app started, hand the work to the app over the chat's hook socket
 //! ([`crate::hookwire::Ask::Git`]), and the app runs **the same core functions** the terminal's
 //! commands run — [`crate::repocmd::clone::clone`] and [`crate::piececmd::add`] — so git is
@@ -85,6 +86,12 @@ fn isolated_answer(
             bound(root, asker.cwd.as_deref(), &ask.workspace)
                 .and_then(|()| at_or_above(root, asker.cwd.as_deref(), repo, piece))
         }
+        // A branch folder of the chat's own workspace, from above it: never the one it stands
+        // in, whose removal would take the chat's own folder from under it (#3879).
+        GitWork::WorktreeRemove { repo, piece, .. } => {
+            bound(root, asker.cwd.as_deref(), &ask.workspace)
+                .and_then(|()| above(root, asker.cwd.as_deref(), repo, piece))
+        }
         // The project root: only for the chat whose place it is.
         GitWork::RootUpdate {} => at_the_root(root, asker.cwd.as_deref()),
         // A clone's own checkout: the chat stands in it, or above it in its workspace.
@@ -160,6 +167,31 @@ fn isolated_answer(
                 _ => 1,
             });
             match ran {
+                Ok(code) => code,
+                Err(NotRun::Repo(why)) => return no(why),
+                Err(NotRun::Folder(why)) => return no(why.to_string()),
+            }
+        }
+        GitWork::WorktreeRemove {
+            repo,
+            piece,
+            delete_branch,
+        } => {
+            // Never forced: the ask has no word for it. A folder holding an uncommitted change
+            // or a commit no other ref reaches is refused, naming what would be lost, and a
+            // folder purlis cut for a task is refused as it is from a terminal.
+            let held = git::isolation().unwrap_or_default();
+            match in_a_checked_folder(root, &ask.workspace, repo, piece, &held, || {
+                crate::piececmd::remove(
+                    root,
+                    &ask.workspace,
+                    repo,
+                    piece,
+                    false,
+                    *delete_branch,
+                    &mut say,
+                )
+            }) {
                 Ok(code) => code,
                 Err(NotRun::Repo(why)) => return no(why),
                 Err(NotRun::Folder(why)) => return no(why.to_string()),
@@ -413,6 +445,21 @@ pub fn at_or_above(root: &Path, cwd: Option<&Path>, repo: &str, piece: &str) -> 
     }
 }
 
+/// Whether a chat standing at `cwd` may ask for the branch folder `<repo>/<piece>` to be
+/// removed (#3879): [`at_or_above`], and never from inside that folder, which would go from
+/// under the chat. A place that cannot be read is refused.
+pub fn above(root: &Path, cwd: Option<&Path>, repo: &str, piece: &str) -> Result<(), String> {
+    at_or_above(root, cwd, repo, piece)?;
+    match cwd.and_then(|cwd| crate::worktree::locate(root, cwd)) {
+        Some(_) => Err(format!(
+            "this chat stands in branch folder {repo} · {piece}, so the app will not remove it \
+             for it: removing it would take the folder this chat works in. Run the command from \
+             the workspace, above the folder"
+        )),
+        None => Ok(()),
+    }
+}
+
 /// Whether a chat standing at `cwd` stands at the project root itself (#3831): the one chat
 /// whose place the root's working tree is. Anything else, or a place that cannot be read, is
 /// refused.
@@ -603,6 +650,7 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
         | GitWork::WorktreeCut { repo, .. }
         | GitWork::WorktreeUpdate { repo, .. }
         | GitWork::WorktreePush { repo, .. }
+        | GitWork::WorktreeRemove { repo, .. }
         | GitWork::CloneUpdate { repo, .. } => {
             if crate::contain::repo_name_ok(repo) && crate::contain::workspace_name_ok(ws) {
                 vec![root.join("workspaces").join(ws).join(repo)]

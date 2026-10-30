@@ -938,3 +938,94 @@ fn a_commit_run_in_a_branch_folder_takes_its_paths_from_there_for_a_chat_above_i
     );
     assert!(asked.recv_timeout(Duration::from_millis(200)).is_err());
 }
+
+const REMOVING: &str = "brokered_git::a_sandboxed_chats_finished_branch_folder_is_removed_by_the_app_when_nothing_would_be_lost";
+
+#[test]
+fn a_sandboxed_chats_finished_branch_folder_is_removed_by_the_app_when_nothing_would_be_lost() {
+    // #3879: the chat's own cleanup after a merge stopped on the person. The app removes the
+    // folder for it, never forced, and only where no change and no commit would be lost.
+    purlis_core::unsteered!();
+    let Some(base) = std::env::var_os(IN_THE_CHILD) else {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = std::fs::canonicalize(tmp.path()).unwrap().join("home");
+        purlis_core::testrun::rerun(
+            &[REMOVING],
+            &[
+                (IN_THE_CHILD, tmp.path().as_os_str()),
+                ("HOME", home.as_os_str()),
+            ],
+        );
+        return;
+    };
+    let world = World::at(Path::new(&base));
+    world.widget();
+    let root = world.plane("removing", "[\"forge\"]");
+    for args in [
+        &["clone", "widget", "-w", "alpha"][..],
+        &["worktree", "add", "widget", "done", "-w", "alpha"][..],
+        &["worktree", "add", "widget", "dirty", "-w", "alpha"][..],
+    ] {
+        let made = world.purlis(&root, args, &[]);
+        assert!(made.status.success(), "{args:?}: {}", err(&made));
+    }
+    let pieces = root.join("workspaces/alpha/.worktrees/widget");
+    std::fs::write(pieces.join("dirty/README.md"), "changed\n").unwrap();
+    let workspace = root.join("workspaces/alpha");
+    let (_reading, token, socket, asked) = an_app(
+        &world.base,
+        the_broker_at(root.clone(), workspace.clone(), &world.forge),
+    );
+    let remove = |from: &Path, args: &[&str]| {
+        support::purlis()
+            .args(args)
+            .current_dir(from)
+            .env_clear()
+            .env("CHARTER_ROOT", &root)
+            .env("HOME", &world.home)
+            .env("PATH", "/usr/bin:/bin")
+            .env("USER", "tester")
+            .env(SANDBOXED_ENV, "1")
+            .envs(chat_3(&socket, &token))
+            .output()
+            .expect("the binary runs")
+    };
+
+    // A clean folder holding no commit of its own: removed by the app.
+    let ran = remove(
+        &workspace,
+        &["worktree", "remove", "widget", "done", "-w", "alpha"],
+    );
+    assert!(ran.status.success(), "{}", err(&ran));
+    let Ok(Ask::Git(git)) = asked.recv_timeout(Duration::from_secs(5)) else {
+        panic!("the app was not asked to remove: {}", err(&ran));
+    };
+    assert_eq!(git.workspace, "alpha");
+    assert_eq!(
+        git.work,
+        GitWork::WorktreeRemove {
+            repo: "widget".to_owned(),
+            piece: "done".to_owned(),
+            delete_branch: false,
+        }
+    );
+    assert!(err(&ran).contains("Removed widget · done"), "{}", err(&ran));
+    assert!(!pieces.join("done").exists());
+
+    // An uncommitted change: refused by the app, naming it, and the folder stays.
+    let ran = remove(&workspace, &["worktree", "remove", "widget", "dirty"]);
+    assert_eq!(ran.status.code(), Some(1), "{}", err(&ran));
+    assert!(err(&ran).contains("README.md"), "{}", err(&ran));
+    assert!(asked.recv_timeout(Duration::from_secs(5)).is_ok());
+    assert!(pieces.join("dirty/README.md").is_file());
+
+    // Forced: the person's, from the window; nothing is asked of the app.
+    let ran = remove(
+        &workspace,
+        &["worktree", "remove", "widget", "dirty", "--force"],
+    );
+    assert_eq!(ran.status.code(), Some(1), "{}", err(&ran));
+    assert!(err(&ran).contains("from the window"), "{}", err(&ran));
+    assert!(asked.recv_timeout(Duration::from_millis(200)).is_err());
+    assert!(pieces.join("dirty/README.md").is_file());
+}

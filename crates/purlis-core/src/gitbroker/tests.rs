@@ -579,3 +579,63 @@ fn a_clones_own_checkout_is_updated_for_a_chat_in_it_or_above_it_and_no_other() 
     }
     assert!(at_or_above_clone(&root, Some(&ws), "nowhere", "widget").is_err());
 }
+
+#[test]
+fn a_branch_folder_is_removed_for_a_chat_above_it_and_never_one_in_it() {
+    // #3879: from the workspace or the project's top; never from inside the folder itself,
+    // which would go from under the chat, nor from another branch folder.
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let pieces = root.join("workspaces/alpha/.worktrees/widget");
+    for piece in ["p1", "p2"] {
+        std::fs::create_dir_all(pieces.join(piece).join("src")).unwrap();
+    }
+    let ws = root.join("workspaces/alpha");
+    assert_eq!(above(&root, Some(&ws), "widget", "p1"), Ok(()));
+    assert_eq!(above(&root, Some(&root), "widget", "p1"), Ok(()));
+    for inside in [pieces.join("p1"), pieces.join("p1/src")] {
+        let refused = above(&root, Some(&inside), "widget", "p1").unwrap_err();
+        assert!(
+            refused.contains("would take the folder this chat works in"),
+            "{refused}"
+        );
+    }
+    let refused = above(&root, Some(&pieces.join("p2")), "widget", "p1").unwrap_err();
+    assert!(refused.contains("widget · p2"), "{refused}");
+    assert!(above(&root, None, "widget", "p1").is_err());
+}
+
+#[test]
+fn a_removal_for_a_chat_in_another_workspace_or_in_the_folder_is_answered_no() {
+    let (_dir, root) = tree();
+    std::fs::create_dir_all(root.join("workspaces/alpha/.worktrees/widget/p1")).unwrap();
+    let remove = |cwd: PathBuf, workspace: &str| {
+        answer(
+            &root,
+            &asker(Some(&cwd)),
+            &GitAsk {
+                chat: 4,
+                workspace: workspace.to_owned(),
+                work: GitWork::WorktreeRemove {
+                    repo: "widget".to_owned(),
+                    piece: "p1".to_owned(),
+                    delete_branch: false,
+                },
+            },
+            &git::Isolated::default(),
+            chrono::Utc::now(),
+        )
+    };
+    for (cwd, workspace) in [
+        (root.join("workspaces/beta"), "alpha"),
+        (root.join("workspaces/alpha/.worktrees/widget/p1"), "alpha"),
+    ] {
+        let said = remove(cwd.clone(), workspace);
+        assert!(
+            matches!(said, Answer::No { .. }),
+            "{}: {said:?}",
+            cwd.display()
+        );
+    }
+    assert!(root.join("workspaces/alpha/.worktrees/widget/p1").is_dir());
+}
