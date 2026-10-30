@@ -809,8 +809,8 @@ pub fn workspace_recall(plane: &Plane, name: &str, query: Option<&str>) -> Resul
         match query {
             Some(q) => voice::info(format!("No memories in '{name}' match '{q}'.")),
             None => voice::info(format!(
-                "workspace '{name}' has no memories yet. Add one: purlis workspace remember \
-                 \"<text>\""
+                "workspace '{name}' has no memories yet. Add one: purlis workspace remember -w \
+                 {name} \"<text>\""
             )),
         }
         return Ok(0);

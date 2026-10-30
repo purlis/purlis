@@ -15,11 +15,12 @@ use crate::{manifest, mdsection, memstore};
 
 /// `workspace.md`'s template, with `{name}`, `{vision}` and `{sessions}` to fill. Taken from
 /// `charter/workspace.py:_CHARTER_TEMPLATE` verbatim — the file is committed and
-/// hand-edited, so a byte that differs is a diff in the operator's repository — with one
-/// declared difference: the `## Sessions` section before `## Log` (SI-8, ADR 0064), whose one
+/// hand-edited, so a byte that differs is a diff in the operator's repository — with two
+/// declared differences: the `## Sessions` section before `## Log` (SI-8, ADR 0064), whose one
 /// line charter keeps pointing at the workspace's session records
-/// ([`crate::sessionrecord::point`]).
-const CHARTER_TEMPLATE: &str = "# {name}\n\n> **Living charter** for this workspace — its north star and shared context.\n> Keep it current as the work evolves (edit this file, or `{program} workspace vision \"…\"`).\n> It's committed + shared for LIVE workspaces, and a fork inherits it — so anyone\n> can pick up the task with full context. Never put secrets here (vault only).\n\n## Vision\n\n{vision}\n\n## Context & decisions\n\n<!-- Key facts, constraints, and design/architecture decisions found while working —\n     the durable \"why\", not a chronological log. Grow this as you learn. -->\n\n_Nothing yet._\n\n## Glossary\n\n<!-- Task/domain vocabulary so a teammate or a fork isn't lost: `term` — definition. -->\n\n_Nothing yet._\n\n## Sessions\n\n{sessions}\n\n## Log\n\nChronological \"what was done\" lives in the task memo — `memory/notes.md`\n(append with `{program} workspace note \"…\"`).\n";
+/// ([`crate::sessionrecord::point`]); and the `workspace note` it teaches names the workspace
+/// with `-w`, the spelling a chat runs without a prompt (#3880, ADR 0064 as amended for #3829).
+const CHARTER_TEMPLATE: &str = "# {name}\n\n> **Living charter** for this workspace — its north star and shared context.\n> Keep it current as the work evolves (edit this file, or `{program} workspace vision \"…\"`).\n> It's committed + shared for LIVE workspaces, and a fork inherits it — so anyone\n> can pick up the task with full context. Never put secrets here (vault only).\n\n## Vision\n\n{vision}\n\n## Context & decisions\n\n<!-- Key facts, constraints, and design/architecture decisions found while working —\n     the durable \"why\", not a chronological log. Grow this as you learn. -->\n\n_Nothing yet._\n\n## Glossary\n\n<!-- Task/domain vocabulary so a teammate or a fork isn't lost: `term` — definition. -->\n\n_Nothing yet._\n\n## Sessions\n\n{sessions}\n\n## Log\n\nChronological \"what was done\" lives in the task memo — `memory/notes.md`\n(append with `{program} workspace note -w {name} \"…\"`).\n";
 
 /// What the template writes under a section nobody has written in yet: an entry added there
 /// takes its place ([`Workspace::add_to_section`]).
@@ -29,7 +30,7 @@ const NOTHING_YET: &str = "_Nothing yet._";
 pub const VISION_PLACEHOLDER: &str = "_Not set yet — describe the goal: what are we building or fixing, and why? Set it with `{program} workspace vision \"…\"` (or edit this file)._";
 
 /// The header `memory/MEMORY.md` is created with, `{name}` to fill.
-pub(crate) const WS_MEMORY_HEADER: &str = "# {name} — task memory\n\nOne file per memory — a small, programmatically-explorable DB, not a single log to\nmerge-conflict on. Files are timestamp-prefixed, so this index (and the directory) list chronologically. **Committed + shared** for LIVE workspaces. Write with `{program} workspace remember \"…\"`, search with `{program} workspace recall [--query …]`, drop one with `{program} workspace forget <slug>`. Never put secrets here (vault only).\n";
+pub(crate) const WS_MEMORY_HEADER: &str = "# {name} — task memory\n\nOne file per memory — a small, programmatically-explorable DB, not a single log to\nmerge-conflict on. Files are timestamp-prefixed, so this index (and the directory) list chronologically. **Committed + shared** for LIVE workspaces. Write with the `memory_add` tool or `{program} workspace remember -w {name} \"…\"`, search with `{program} workspace recall [--query …]`, drop one with `{program} workspace forget <slug>`. Never put secrets here (vault only).\n";
 
 /// A committed template with the program named as `plane` spells it: `charter` until the
 /// project is migrated, `purlis` after (D-RN11a-1, as the markers are, D-RN2b-9).

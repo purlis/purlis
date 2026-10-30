@@ -147,17 +147,19 @@ you access to it. Only an explicit `uses:` shares tools.
 
 ## Memory
 
-A persona remembers across sessions. Search rather than reading everything:
+A persona remembers across sessions. In a chat purlis started, record with the
+`persona_remember` tool: it writes to the persona this chat runs as (or, with `shared`, to every
+persona), runs without a prompt, and purlis writes it even where the chat's sandbox would not
+let it. The workspace's own memory takes the `memory_add` tool. On the command line, name this
+chat's own persona or workspace, which is the spelling that runs without a prompt; search
+rather than reading everything:
 
 ```bash
-purlis recall "<keywords>"                            # every base at once, labelled by source
-purlis persona remember <name> "<durable fact>"       # persistent, committed
-purlis persona remember <name> "<fact>" --shared      # for every persona
+purlis recall "<keywords>"                                  # every base at once, labelled by source
+purlis persona remember <name> "<durable fact>"             # persistent, committed
+purlis persona remember <name> "<fact>" --shared            # for every persona
+purlis workspace remember -w <workspace> "<durable fact>"   # the workspace's memory
 ```
-
-In a chat purlis started, the `persona_remember` tool does the same for the persona this chat
-runs as (or, with `shared`, for every persona), and purlis writes it even where the chat's
-sandbox would not let it.
 
 Record what the work *taught* you, such as a decision, a gotcha or a verified fact. Do not
 record what the repo already records. **Never put a secret in memory**; secrets belong in the
