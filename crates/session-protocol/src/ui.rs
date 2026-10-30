@@ -710,6 +710,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     "remove_docker_pool",
     "docker_pool_link",
     "docker_pool_version",
+    // This machine's cluster pools (#3292): reading a kubeconfig's contexts and a cluster's
+    // operator key runs this machine's kubectl with the person's credentials, and adding one
+    // claims a runner as them and pins that key, so only their own press in their window does.
+    "cluster_contexts",
+    "cluster_pool_key",
+    "add_cluster_pool",
     // This machine's profiles on a pool's runner (#2049): keeping one there sends its name to a
     // runner, so only the person's own look in their window does.
     "pool_profiles",
