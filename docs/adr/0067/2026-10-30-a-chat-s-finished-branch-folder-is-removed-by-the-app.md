@@ -29,6 +29,6 @@ person, while the standing rule tells it to clean up after every merge.
 Where no app takes the ask (an older app, or none), a sandboxed chat is refused as before and
 sent to the window; outside the sandbox the command runs here, never forced.
 
-**Not yet**: a folder another live chat holds (one live writer per branch folder, #3900) is
+**Not yet**: a folder another live chat holds (one live writer per branch folder, #3901, PR #3962) is
 not refused by this removal until that lands; the app's `git worktree remove` then refuses a
 folder whose files another process holds no more than git itself does.
