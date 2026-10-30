@@ -276,6 +276,22 @@ pub(super) const STATUS_ITEM: Family = Family {
             description: "Its count.",
             properties: &[Prop::Text],
         },
+        Part {
+            name: "dot",
+            since: super::NEXT,
+            description: "The dot a project's or the app's result leaves on the Notices item's \
+                          corner while its card is hidden, where the most urgent is news: its \
+                          disc and its fill, ringed in the bar's ground.",
+            properties: &[Prop::Fill, Prop::Text],
+        },
+        Part {
+            name: "dot-warning",
+            since: super::NEXT,
+            description: "The dot on the Notices item's corner where the most urgent of its \
+                          hidden results is a warning: its triangle and its fill, ringed in the \
+                          bar's ground.",
+            properties: &[Prop::Fill, Prop::Text],
+        },
     ],
     variants: &[
         Variant {
@@ -319,10 +335,13 @@ pub(super) const STATUS_ITEM: Family = Family {
         State::Disabled,
     ],
     focused: "[data-focus-visible]",
-    words: &[],
+    // The Notices item's dot (#3653): its shape, a mark, in the window's ground on the accent,
+    // or on the waiting amber for a warning, as a chip's dot is (#3649).
+    words: &[("dot", "surface.base"), ("dot-warning", "surface.base")],
     corner_most: None,
-    around: &[],
-    fills: &[],
+    // The dot is the item's sibling over its corner (#3653), drawn around the item.
+    around: &["dot", "dot-warning"],
+    fills: &[("dot", "accent.base"), ("dot-warning", "state.waiting")],
     under: &[],
 };
 

@@ -235,6 +235,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
                         unpairing,
                         keeping,
                         forgetting,
+                        staged: std::sync::Mutex::default(),
                         unpaired: Arc::clone(&unpaired),
                     };
                     let serving = session::serve(answered.link, paired, None);
@@ -256,7 +257,8 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
 
 /// The session protocol on a link from the desktop a runner is paired with: the host's own,
 /// `unpair` (1.25, #2525), which takes that desktop, the one the handshake proved, out of the
-/// runner's peers, `keep_profile` (1.43, #2049), which keeps one of its profiles here, and
+/// runner's peers, `keep_profile` (1.43, #2049), which keeps one of its profiles here, its
+/// settings staged on this link first (`stage_profile_settings`, 1.56, #4081), and
 /// `forget_profile` (1.52, #4047), which forgets one.
 struct PairedLink {
     hosting: Hosting,
@@ -264,6 +266,8 @@ struct PairedLink {
     unpairing: Unpairing,
     keeping: Keeping,
     forgetting: Forgetting,
+    /// The settings staged on this link: in memory, so they end with it.
+    staged: std::sync::Mutex<session::StagedSettings>,
     /// Told once the desktop is unpaired, so its link ends.
     unpaired: Arc<tokio::sync::Notify>,
 }
@@ -292,12 +296,55 @@ impl PairedLink {
         }
     }
 
+    /// What this link has staged, taken: a keep, or a refused batch, starts the next afresh.
+    fn staged(&self) -> session::StagedSettings {
+        std::mem::take(
+            &mut *self
+                .staged
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
+    /// `stage_profile_settings` (1.56, #4081): part of a profile's settings, held on this link.
+    /// A batch refused drops all of them, so nothing of them can be kept.
+    fn stage(&self, batch: session::SettingsBatch) -> Result<session::Answer, session::Refusal> {
+        let mut staged = self
+            .staged
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match staged.add(batch) {
+            Ok(()) => Ok(session::Answer::Done),
+            Err(why) => {
+                *staged = session::StagedSettings::default();
+                Err(session::Refusal {
+                    code: session::NOT_STARTED.into(),
+                    why,
+                })
+            }
+        }
+    }
+
     /// `keep_profile` (1.43, #2049): the desktop's profile kept here, off the runtime, since
-    /// its harness is asked whether it is signed in.
+    /// its harness is asked whether it is signed in. Settings staged for it (#4081) are kept as
+    /// the same settings sent with it are, checked whole.
     async fn keep(
         &self,
-        profile: session::ProfileToKeep,
+        mut profile: session::ProfileToKeep,
     ) -> Result<session::Answer, session::Refusal> {
+        let staged = self.staged();
+        if let Some(files) = profile.settings_staged.take() {
+            let refused = |why| session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            };
+            if profile.settings.is_some() {
+                return Err(refused(
+                    "a profile's settings came both staged and with it".to_owned(),
+                ));
+            }
+            profile.settings = Some(staged.finished(&profile.name, files).map_err(refused)?);
+        }
         let (keeping, desktop) = (Arc::clone(&self.keeping), self.desktop.clone());
         tokio::task::spawn_blocking(move || keeping(&desktop, &profile))
             .await
@@ -364,6 +411,7 @@ impl session::Host for PairedLink {
         match command {
             session::Command::KeepProfile(profile) => self.keep(profile).await,
             session::Command::ForgetProfile { name } => self.forget(name).await,
+            session::Command::StageProfileSettings(batch) => self.stage(batch),
             session::Command::Unpair => self.unpair().await,
             command => session::Host::call(&self.hosting, command, peer).await,
         }

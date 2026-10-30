@@ -3926,8 +3926,29 @@ body {
 }
 
 .chip-card [data-f6-card] {
+  /* Held to the room the card is given (React Aria's max height on the surface, a flex column):
+     shrunk to it, never its content's height, its notices scroll inside it, the point outside it
+     left whole, and nothing of them runs past it into the page (#3653). */
+  /* The place of what its notices place absolutely (a status's words for a screen reader), so
+     that is clipped with the list too and never lengthens the page from far down it. */
+  position: relative;
+  box-sizing: border-box;
+  flex: 0 1 auto;
+  min-block-size: 0;
+  /* At most a few notices tall, whatever the room: a card stays over the page until it is
+     hidden, so it covers no more of it than it must. */
+  max-block-size: min(28rem, 60vh);
+  overflow-y: auto;
   border-radius: var(--radius-lg);
   outline: none;
+}
+
+/* **The status bar's Notices item and its dot** (`StatusLine.tsx`, #3653): the item's box, which
+   the dot stands over the leading corner of, so the dot coming or going moves nothing. */
+.status-notices {
+  position: relative;
+  display: inline-flex;
+  flex: none;
 }
 
 .chip-card [data-f6-card]:focus-visible {
@@ -6940,6 +6961,13 @@ nav.piece-files-head {
   color: var(--text-muted);
 }
 
+/* A row's refusal line in a form, there from the start so its words are heard as they land
+   (#3291): empty, it takes no place in the row's grid, so nothing moves and no gap is added. It
+   stays in the accessibility tree. */
+.ui-setting-error:empty {
+  position: absolute;
+}
+
 /* A write the core refused (SE-17, V89e), said under the setting it was for. */
 .ui-setting-error p {
   margin: var(--space-1) 0 0;
@@ -7309,13 +7337,9 @@ nav.piece-files-head {
   align-items: baseline;
 }
 
-.pool-sign-in-said {
-  max-height: 12em;
-  overflow: auto;
-  margin: 0;
-  font-size: var(--font-size-xs);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+.pool-sign-in-terminal {
+  max-inline-size: 100%;
+  overflow-x: auto;
 }
 
 /* A form's buttons (SettingActions, V89j): the row a form ends in, under its rows or as a

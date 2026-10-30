@@ -669,6 +669,12 @@ export function HungPopover({
       align="center"
       offset={offset}
       crossOffset={nudge}
+      // **Never flipped** (#3653): a card on what stands at the window's foot (the status bar's
+      // Notices) that is taller than the room above it would flip below the window and lengthen
+      // the page, which then scrolls and takes a scrollbar's width from everything in it. It
+      // keeps its side, held to the room there (React Aria's max height), and its notices scroll
+      // inside it.
+      shouldFlip={false}
       isNonModal
       kind="notice"
       triggerRef={triggerRef}

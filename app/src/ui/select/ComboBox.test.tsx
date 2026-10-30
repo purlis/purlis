@@ -163,7 +163,7 @@ describe("the combobox", () => {
     const line = field.querySelector('[data-scope="field"][data-part="error"]') as Element;
     // The room is there before it says anything, a live region, so the words are heard as they
     // land and nothing moves.
-    expect(line).toHaveAttribute("aria-live", "assertive");
+    expect(line).toHaveAttribute("aria-live", "polite");
     expect(line).not.toHaveAttribute("role");
     expect(line).toBeEmptyDOMElement();
     expect(box()).not.toHaveAttribute("aria-invalid");
@@ -172,7 +172,7 @@ describe("the combobox", () => {
     await userEvent.type(box(), "zz");
     expect(box()).toHaveFocus();
     expect(field.querySelector('[data-part="error"]')).toBe(line);
-    expect(line).toHaveAttribute("role", "alert");
+    expect(line).not.toHaveAttribute("role");
     expect(line).toHaveTextContent("ops has no skill by that name.");
     expect(box()).toHaveAttribute("aria-invalid", "true");
     expect(box()).toHaveAccessibleDescription("ops has no skill by that name.");
