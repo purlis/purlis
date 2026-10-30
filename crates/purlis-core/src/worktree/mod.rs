@@ -404,6 +404,12 @@ pub enum Note {
     DirtUnknown { repo: String },
     /// The layer did not land, and why — a sentence naming the path and the repair.
     Unwired { why: String },
+    /// What bringing the base up to its remote found to say ([`fresh::Fresh::notes`]): the
+    /// base was behind it and left where it is, or had moved on from it (#3903).
+    Fresh(String),
+    /// No default branch of the remote could be read, or the clone has none of that name, so
+    /// the branch was cut from the clone's HEAD, as `purlis worktree add` does then (#3903).
+    FromHead { repo: String },
 }
 
 impl std::fmt::Display for Note {
@@ -421,6 +427,13 @@ impl std::fmt::Display for Note {
                 )
             }
             Self::Unwired { why } => f.write_str(&unwired_warning(why)),
+            Self::Fresh(said) => f.write_str(said),
+            Self::FromHead { repo } => write!(
+                f,
+                "purlis could not read which branch {repo}'s remote names its default, or the \
+                 clone has no branch of that name, so the new branch is cut from the clone's \
+                 current commit."
+            ),
         }
     }
 }
@@ -443,6 +456,11 @@ impl Note {
             Self::Unwired { .. } => "purlis could not write its layer into the new branch's \
                  folder. A chat started on it writes the layer, or says why it cannot."
                 .to_string(),
+            Self::Fresh(said) => said.clone(),
+            Self::FromHead { repo } => format!(
+                "purlis could not read which branch {repo}'s remote names its default, so the \
+                 new branch starts from the commit the clone is on."
+            ),
         }
     }
 }
