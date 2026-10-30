@@ -423,9 +423,9 @@ impl Moves {
 
 /// **Whether a chat's work may come back from pool `pool`'s runner onto this machine's clones**
 /// (the person's ruling of 2026-10-27): only from a runner shown to be the person's own, by the
-/// one check browser logins and tools use (`read`, `poollogins::Bound::read`): until a pool can
-/// be marked as yours (#2561), a Docker pool on this machine's own engine. Refused otherwise, in
-/// a sentence that says the pool's own reason (#3646).
+/// one check browser logins and tools use (`read`, `poollogins::Bound::read`): a Docker pool on
+/// this machine's own engine (a cluster pool's mark, #4071, is for values alone). Refused
+/// otherwise, in a sentence that says the pool's own reason (#3646).
 pub(crate) fn brings_work_back(
     pool: &str,
     read: impl FnOnce() -> Result<purlis_core::poollogins::Bound, Unbound>,
@@ -433,7 +433,7 @@ pub(crate) fn brings_work_back(
     read().map(|_| ()).map_err(|why| {
         let not_yours = "its runner is not known to be yours, and a runner's work comes onto \
                          this machine's clones only from a Docker pool on this machine's own \
-                         engine, until a pool can be marked as yours.";
+                         engine.";
         format!(
             "This chat's work does not come back from pool {pool}: {}",
             not_ready_said(&why, not_yours)
@@ -500,8 +500,8 @@ fn profiles_of(moving: &[crate::host::Moving]) -> Vec<String> {
 /// **Whether a chat may move to pool `pool`'s runner** (D-2048-13, the steward's decision of
 /// 2026-10-28): only to a runner shown to be the person's own, by the check Move here is held to
 /// (the person's ruling of 2026-10-27) and browser logins and tools use (`read`,
-/// `poollogins::Bound::read`): until a pool can be marked as yours (#2561), a Docker pool on this
-/// machine's own engine. A chat's conversation and work go nowhere else. Refused, in a sentence
+/// `poollogins::Bound::read`): a Docker pool on this machine's own engine (a cluster pool's mark,
+/// #4071, is for values alone). A chat's conversation and work go nowhere else. Refused, in a sentence
 /// that says the pool's own reason (#3646).
 pub(crate) fn goes_to_a_runner_of_yours(
     pool: &str,
@@ -509,8 +509,7 @@ pub(crate) fn goes_to_a_runner_of_yours(
 ) -> Result<(), String> {
     read().map(|_| ()).map_err(|why| {
         let not_yours = "its runner is not known to be yours, and a chat's conversation and \
-                         work go only to a Docker pool on this machine's own engine, until a \
-                         pool can be marked as yours.";
+                         work go only to a Docker pool on this machine's own engine.";
         format!(
             "This chat does not move to pool {pool}: {}",
             not_ready_said(&why, not_yours)

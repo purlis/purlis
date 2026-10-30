@@ -1487,6 +1487,7 @@ export const commands = {
 	clusterContexts: __WINDOW_ONLY_RESULT,
 	clusterPoolKey: __WINDOW_ONLY_RESULT,
 	addClusterPool: __WINDOW_ONLY_RESULT,
+	setClusterPoolOwned: __WINDOW_ONLY_RESULT,
 	poolProfiles: __WINDOW_ONLY_RESULT,
 	poolProfileAdd: __WINDOW_ONLY_RESULT,
 	poolProfileRemove: __WINDOW_ONLY_RESULT,
@@ -3750,6 +3751,8 @@ export type ClusterPoolRow = {
 	namespace: string,
 	/**  The cluster operator key pinned as it was added, spelled `ed25519:<64 hex>`. */
 	operator_key: string,
+	/**  Whether the person marked it as their own (#4071). */
+	owned: boolean,
 };
 
 /**  What a palette command does. */

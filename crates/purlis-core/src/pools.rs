@@ -624,6 +624,33 @@ pub fn before_cluster_link(
     checked
 }
 
+/// How long each kubectl run of the check before a value is sent waits (#4071).
+pub const VOUCHED_NOW_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// **This machine's `kubectl`, by its absolute path** (#3292,
+/// [`crate::clusterpool::Kubectl::on_this_machine`]): where its installers put it, else an
+/// absolute folder of the process's `PATH`; its caches kept in a folder of purlis's under
+/// `config_root` ([`runners::kubectl_cache`]).
+pub fn kubectl_here(config_root: &Path) -> Result<crate::clusterpool::Kubectl, String> {
+    let path = crate::envvar::var("PATH");
+    let home = crate::envvar::var_os("HOME").map(std::path::PathBuf::from);
+    let cache = runners::kubectl_cache(config_root).map_err(|why| why.to_string())?;
+    crate::clusterpool::Kubectl::on_this_machine(path.as_deref(), home.as_deref())
+        .map(|kubectl| kubectl.with_cache_dir(cache))
+        .map_err(|why| why.to_string())
+}
+
+/// **[`before_cluster_link`], now, on this machine's `kubectl`, held to a time** (#4071): what a
+/// cluster runner must pass, at the gate and again after Allow, before a value or a token goes
+/// to it. A kubectl that is missing, or a cluster that does not answer within
+/// [`VOUCHED_NOW_WITHIN`], is a refusal.
+pub fn vouched_now(config_root: &Path, name: &str) -> Result<(), crate::clusterpool::Refused> {
+    let kubectl = kubectl_here(config_root)
+        .map_err(crate::clusterpool::Refused::Other)?
+        .within(VOUCHED_NOW_WITHIN);
+    before_cluster_link(config_root, &kubectl, name, runners::now())
+}
+
 /// What a cluster runner's removal is handed to take this desktop out of its peers over its
 /// link, where that link is up.
 pub type UnpairCluster<'a> =

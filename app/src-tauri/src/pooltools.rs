@@ -20,9 +20,9 @@
 //!   this machine;
 //! - **the runner is shown to be the person's own**
 //!   (`purlis_core::poollogins::Bound::over_the_link`, the one check browser logins use,
-//!   D-2050-4): until a pool can be marked owned (#2561), a Docker pool whose engine is a local
-//!   socket on this machine. A runner not shown to be owned is never sent a value, and neither is
-//!   a hosted one. The runner is the one the chat's link reached, as the desktop's host said it
+//!   D-2050-4): a Docker pool whose engine is a local socket on this machine, or a cluster pool
+//!   the person marked whose claim is vouched for now, at this gate and again after Allow (#4071).
+//!   A runner not shown to be owned is never sent a value, and neither is a hosted one. The runner is the one the chat's link reached, as the desktop's host said it
 //!   (1.48, #3417): a draining one for a chat that stayed on it, judged by its pool and that
 //!   runner as they are kept.
 //!

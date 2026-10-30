@@ -5,12 +5,20 @@ import { useEffect, useId, useState, type ReactNode } from "react";
 import type { ClusterPoolRow, PoolLink, PoolRow, PoolVersion, ProjectNotHeld } from "../bindings";
 import { Notice } from "../Notice";
 import { useProjectsNotHeld } from "../notheld";
-import { askLink, askVersion, removePool, startAddingAPool, usePools } from "../pools";
+import {
+  askLink,
+  askVersion,
+  markPoolOwned,
+  removePool,
+  startAddingAPool,
+  usePools,
+} from "../pools";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { Button } from "../ui/button/Button";
 import { Tooltip } from "../ui/tooltip/Tooltip";
 import { AlertDialog } from "../ui/dialog/Dialog";
 import { Badge } from "../ui/badge/Badge";
+import { Switch } from "../ui/choice/Switch";
 import { PoolProfiles } from "./PoolProfiles";
 
 /**
@@ -41,7 +49,8 @@ import { PoolProfiles } from "./PoolProfiles";
  * **Every Remove asks first** ({@link RemovePool}): it says what goes and that there is no undo,
  * and Remove pool removes it.
  *
- * **A cluster pool has a row of its own** ({@link ClusterPoolEntry}, #3292): its cluster's pool,
+ * **A cluster pool has a row of its own** ({@link ClusterPoolEntry}, #3292, #4071): This is my own,
+ * off until the person turns it on, and its cluster's pool,
  * context and namespace, the cluster operator key pinned as it was added, and Remove, which
  * deletes its claim. A changed runner key and a changed cluster operator key get the same Notice
  * with Remove ({@link KeyChangedNotice}): either refuses every link to its runner.
@@ -248,6 +257,10 @@ function KeyChangedNotice({
   );
 }
 
+/** What marking a cluster pool as the person's own means (#4071): who else can read its runner. */
+const MY_OWN_SAID =
+  "Your cluster's admins, whoever holds the node or its storage, and anyone else allowed into this runner's pod can read what it holds, the vault values, tokens and logins purlis sends it among them. Turn this on only if you accept that. It stays off until you do, and purlis sends this runner nothing while it is off. Each run still asks you, and the cluster must vouch for the runner at that moment.";
+
 /** A cluster pool's row (#3292): its cluster's pool, where it is claimed, and Remove. */
 function ClusterPoolEntry({
   pool,
@@ -264,6 +277,8 @@ function ClusterPoolEntry({
   /** The marks of projects whose chats run on it, drawn on its row. */
   notHeld: ReactNode;
 }) {
+  const said = useId();
+  const [refused, setRefused] = useState<string | undefined>();
   return (
     <li className="ui-machine-entry">
       <span className="ui-machine-name">{pool.name}</span>
@@ -282,6 +297,23 @@ function ClusterPoolEntry({
       <p className="ui-setting-help">
         Cluster operator key <code>{pool.operator_key}</code>
       </p>
+      <Switch
+        isSelected={pool.owned}
+        aria-describedby={said}
+        onChange={(owned) => {
+          void markPoolOwned(pool.name, owned).then(setRefused);
+        }}
+      >
+        This is my own
+      </Switch>
+      <p className="ui-setting-help" id={said}>
+        {MY_OWN_SAID}
+      </p>
+      {refused !== undefined && (
+        <p className="ui-setting-help" role="alert">
+          {refused}
+        </p>
+      )}
       <KeyChangedNotice name={pool.name} link={link} removing={removing} onRemove={onAsk} />
       {typeof link === "object" && link.state === "down" && (
         <p className="ui-setting-help">{link.why}</p>

@@ -1243,6 +1243,10 @@ pub struct ClusterPool {
     /// kubectl itself and each credential plugin its context names (#3292). A chat writes none of
     /// them ([`cluster_holds`]).
     holds: Vec<std::path::PathBuf>,
+    /// **The person's mark that this pool is their own** (#4071): set only by their press in
+    /// their window ([`set_cluster_owned`]), never as it is added, and read from nothing a chat,
+    /// the Pool or the operator says.
+    owned: bool,
 }
 
 impl ClusterPool {
@@ -1318,6 +1322,7 @@ impl ClusterPool {
             operator,
             cluster,
             holds: Vec::new(),
+            owned: false,
         })
     }
 
@@ -1336,6 +1341,29 @@ impl ClusterPool {
     /// The real paths of the programs its kubectl runs ([`ClusterPool::holding`]).
     pub fn holds(&self) -> &[std::path::PathBuf] {
         &self.holds
+    }
+
+    /// Whether the person marked this pool as their own (#4071). Never enough alone: see
+    /// `poollogins::Bound::of_a_cluster_pool`.
+    pub fn owned(&self) -> bool {
+        self.owned
+    }
+
+    /// **What a cluster runner's values are bound to, as a digest** (#4071, the person's ruling
+    /// of 2026-10-30): SHA-256, in hex, of this pool's context, cluster and operator key and
+    /// `kept`'s claim uid and pod, so any change to one asks again. Its device and link key are
+    /// bound apart, as a Docker runner's are; no image digest is.
+    pub fn bound_digest(&self, kept: &ClusterKept) -> String {
+        use sha2::Digest as _;
+        let bound = serde_json::json!([
+            self.context,
+            self.cluster,
+            self.operator.spelled(),
+            kept.claimed.uid,
+            kept.pod,
+        ])
+        .to_string();
+        crate::runnerlink::hex_of(&sha2::Sha256::digest(bound.as_bytes()))
     }
 
     pub fn name(&self) -> &str {
@@ -1488,6 +1516,24 @@ pub fn pool_names(config_root: &Path) -> Result<Vec<String>, Refused> {
         .map(|pool| pool.name().to_owned())
         .chain(held.clusters.iter().map(|pool| pool.name().to_owned()))
         .collect())
+}
+
+/// **The person marks the cluster pool `name` as their own, or takes the mark back** (#4071):
+/// called only from their press in their window (`ui::WINDOW_ONLY`). Refused where no cluster
+/// pool is called `name`. Written only where it changes anything.
+pub fn set_cluster_owned(config_root: &Path, name: &str, owned: bool) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(at) = held.clusters.iter().position(|pool| pool.name() == name) else {
+        return Err(Refused::Other(format!(
+            "no cluster pool named {name} is on this machine"
+        )));
+    };
+    if held.clusters[at].owned == owned {
+        return Ok(());
+    }
+    held.clusters[at].owned = owned;
+    write(config_root, &held)
 }
 
 /// **Records the cluster pool `pool`, once** (#3292), under `_locked`: refused where a pool or
@@ -1662,8 +1708,9 @@ pub fn keep_cluster_pin(config_root: &Path, name: &str, pin: &PoolPin) -> Result
 }
 
 /// A cluster pool's row (#3292): `{"name", "kind": "cluster", "kubeconfig", "context", "pool",
-/// "namespace", "operatorKey", "cluster", "holds"}`, `cluster` left out only of a pool kept
-/// before its cluster was pinned (#3305).
+/// "namespace", "operatorKey", "cluster", "holds", "owned"}`, `cluster` left out only of a pool
+/// kept before its cluster was pinned (#3305), and `owned` `true` alone, left out otherwise
+/// (#4071).
 fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
     let mut row = serde_json::json!({
         "name": pool.name(),
@@ -1682,6 +1729,9 @@ fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
     if let Some(cluster) = &pool.cluster {
         row["cluster"] = cluster.as_str().into();
     }
+    if pool.owned {
+        row["owned"] = true.into();
+    }
     row
 }
 
@@ -1698,10 +1748,17 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         "operatorKey",
         "cluster",
         "holds",
+        "owned",
     ];
     if fields.keys().any(|key| !known.contains(&key.as_str())) {
         return None;
     }
+    // `true` alone: a mark spelled any other way is no mark, and the row is refused.
+    let owned = match fields.get("owned") {
+        None => false,
+        Some(serde_json::Value::Bool(true)) => true,
+        Some(_) => return None,
+    };
     let holds = fields
         .get("holds")?
         .as_array()?
@@ -1709,7 +1766,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         .map(|held| held.as_str().map(std::path::PathBuf::from))
         .collect::<Option<Vec<_>>>()?;
     let text = |key: &str| fields.get(key).and_then(serde_json::Value::as_str);
-    // Every key but `cluster` is there.
+    // Every key but `cluster` and `owned` is there.
     if known[..7].iter().any(|key| text(key).is_none()) {
         return None;
     }
@@ -1727,6 +1784,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         cluster,
     )
     .and_then(|pool| pool.holding(holds))
+    .map(|pool| ClusterPool { owned, ..pool })
     .ok()
 }
 

@@ -7,17 +7,21 @@
 //! vault's values there for the time the browser fills them. So a login on a runner needs, each
 //! checked by the window as it reads the values:
 //!
-//! - **A runner purlis can show is the person's own** ([`owned`]): until a pool can be marked
-//!   owned (#2561), that is a Docker pool whose engine is a local socket on this machine, so its
-//!   runner is this machine. A pool on any other engine (`tcp://`, `ssh://`), and every other kind
-//!   of pool, is refused in words. A runner not shown to be owned never receives a value.
+//! - **A runner purlis can show is the person's own**: a Docker pool whose engine is a local
+//!   socket on this machine ([`owned`]), so its runner is this machine, with no mark; or a
+//!   cluster pool the person marked and whose claim is vouched for now
+//!   ([`Bound::of_a_cluster_pool`], #4071, the person's ruling of 2026-10-30). A pool on any
+//!   other engine (`tcp://`, `ssh://`) is refused in words, and so is an unmarked cluster pool.
+//!   A runner not shown to be owned never receives a value.
 //! - **The desktop connected**: the window is the one reading the values, so it is.
 //! - **The person's opt-in for that persona's login on that pool**, standing for the pool and its
 //!   runner as they are now. It is bound ([`Bound`]) to a digest of what defines the pool (its
 //!   name, kind, image and limits, as `runners.json` keeps them), the pool's image digest, the
 //!   runner the chat's link reaches (its device id, pinned link key and its own image), the
 //!   engine it runs on, and the login's identity as declared and allowed. Any change asks again
-//!   ([`Standing::Changed`]).
+//!   ([`Standing::Changed`]). A cluster runner has no image digest bound: its opt-in is bound to
+//!   its pool's name, context, cluster, operator key, claim uid and pod, its device and link key,
+//!   and the engine the Ask names ([`Bound::of_cluster`]).
 //! - **It is kept in memory, for this run of the app**: a restart asks again. Nothing of it is
 //!   written, so no new store is made, and nothing of it reaches a runner. A lasting answer is
 //!   #3299.
@@ -29,7 +33,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Mutex, PoisonError};
 
-use crate::runners::{Kept, Pool};
+use crate::runners::{ClusterKept, ClusterPool, Kept, Pool};
 
 /// **What an opt-in is bound to**: the pool, the digest of how it is defined, its image's digest,
 /// the runner that receives the values, and the engine that runner runs on.
@@ -110,6 +114,72 @@ impl Bound {
         Ok(Bound::of(&kept, &runner, &engine))
     }
 
+    /// `pool`, its runner `kept`, as they are now (#4071): `definition` covers its context,
+    /// cluster, operator key, claim uid and pod ([`ClusterPool::bound_digest`]), its device and
+    /// key are bound as a Docker runner's are, and it has no image digest.
+    pub fn of_cluster(pool: &ClusterPool, kept: &ClusterKept) -> Bound {
+        Bound {
+            pool: pool.name().to_owned(),
+            definition: pool.bound_digest(kept),
+            image: String::new(),
+            runner: kept.pinned.device.clone(),
+            runner_key: crate::runnerlink::hex_of(kept.pinned.key.as_bytes()),
+            runner_image: String::new(),
+            engine: format!(
+                "cluster {} through context {}",
+                pool.pin().map(|pin| pin.cluster).unwrap_or_default(),
+                pool.context()
+            ),
+        }
+    }
+
+    /// **The cluster pool `pool`, where one is called so, and may be sent a value now** (#4071,
+    /// the person's ruling of 2026-10-30): `None` where no cluster pool is called `pool`. Both
+    /// must hold, else it is refused in words:
+    ///
+    /// - **the person's mark**, read from this machine's own row and nothing else;
+    /// - **`vouch`**, the operator vouching for its claim now, which asks the cluster, and is
+    ///   asked only of a marked pool. Its reasons stay in the log: a chat is told none of the
+    ///   cluster's words.
+    ///
+    /// Both are read again once `vouch` has answered: the runner must be the one it vouched
+    /// for and the mark must stand, and a pin `vouch` moved through a roll is what is bound.
+    pub fn of_a_cluster_pool(
+        config_root: &Path,
+        pool: &str,
+        reached: Option<&str>,
+        vouch: &dyn Fn(&Path, &str) -> Result<(), crate::clusterpool::Refused>,
+    ) -> Result<Option<Bound>, String> {
+        let read = || crate::runners::cluster_runner_for(config_root, pool);
+        let Some((held, kept)) = read().map_err(|why| why.to_string())? else {
+            return Ok(None);
+        };
+        if let Some(reached) = reached
+            && reached != format!("{pool}/{}", kept.name)
+        {
+            return Err(format!(
+                "this chat's link reached {reached}, which is no runner of pool {pool}"
+            ));
+        }
+        if !held.owned() {
+            return Err(not_marked_said(pool));
+        }
+        if let Err(why) = vouch(config_root, pool) {
+            tracing::info!("purlis: pool {pool}'s runner was not vouched for now: {why}");
+            return Err(not_vouched_said(pool));
+        }
+        let (now, runner) = read()
+            .map_err(|why| why.to_string())?
+            .ok_or_else(|| not_vouched_said(pool))?;
+        if runner != kept {
+            return Err(not_vouched_said(pool));
+        }
+        if !now.owned() {
+            return Err(not_marked_said(pool));
+        }
+        Ok(Some(Bound::of_cluster(&now, &runner)))
+    }
+
     /// **The pool and runner a runner chat's link reached, as this machine keeps them now**
     /// (#3417), where purlis can show that runner is the person's own ([`owned`]): what the
     /// window judges a chat already on a runner by. `reached` is the runner the desktop's host
@@ -118,12 +188,18 @@ impl Bound {
     /// 1.48 names none: then the pool's own runner is the one only while none of the pool's
     /// runners drains, since a link relayed before the pool moved on reaches the runner before,
     /// and with one draining it is refused, never judged by the pool's runner now. A new chat or
-    /// a move goes by [`Bound::read`], which reaches no draining runner.
+    /// a move goes by [`Bound::read`], which reaches no draining runner. A cluster pool goes by
+    /// [`Bound::of_a_cluster_pool`], which asks its cluster: this may take as long as that does.
     pub fn over_the_link(
         config_root: &Path,
         pool: &str,
         reached: Option<&str>,
     ) -> Result<Bound, String> {
+        if let Some(bound) =
+            Self::of_a_cluster_pool(config_root, pool, reached, &crate::pools::vouched_now)?
+        {
+            return Ok(bound);
+        }
         Self::over_the_link_with(
             crate::dockerpool::Docker::engine_on_this_machine(),
             config_root,
@@ -204,10 +280,26 @@ pub fn owned(engine: Result<std::path::PathBuf, String>) -> Result<String, Strin
         Ok(_) => Ok("this machine's Docker".to_owned()),
         Err(why) => Err(format!(
             "{why}, so its runners are not known to be yours, and purlis sends no vault value \
-             there, for a browser login or a tool, and signs no profile in there, until a pool \
-             can be marked as yours"
+             there, for a browser login or a tool, and signs no profile in there"
         )),
     }
+}
+
+/// What an unmarked cluster pool is refused with (#4071): how to mark it, and only the person can.
+pub fn not_marked_said(pool: &str) -> String {
+    format!(
+        "pool {pool} is not marked as your own, so purlis sends its runner no vault value and no \
+         token. Only you can mark it: in Settings, under Pools, turn on This is my own on its row"
+    )
+}
+
+/// What a marked cluster pool whose claim is not vouched for now is refused with (#4071).
+fn not_vouched_said(pool: &str) -> String {
+    format!(
+        "purlis could not confirm with pool {pool}'s cluster that its operator still vouches for \
+         this runner, so it sent no vault value and no token. Check that the cluster answers, \
+         and that the pool's claim is still there"
+    )
 }
 
 /// Where a persona's login stands on a pool as it is now.
@@ -251,6 +343,11 @@ impl OptIns {
     pub fn keep_off(&self, persona: &str, login: &str, bound: Bound) {
         self.held()
             .insert(Self::key(persona, login, &bound), (bound, false));
+    }
+
+    /// Every answer given about pool `pool`: its mark was taken back (#4071).
+    pub fn forget_pool(&self, pool: &str) {
+        self.held().retain(|(_, _, of), _| of != pool);
     }
 
     /// Where `persona`'s login `login` stands on the pool as `now` says it is.

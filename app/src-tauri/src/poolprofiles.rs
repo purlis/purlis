@@ -11,8 +11,8 @@
 //! device: no sign-in is copied between devices.
 //!
 //! **Only a runner purlis can show is the person's own is sent a profile or signed in**
-//! ([`owned`], the check browser logins and tools use, D-2050-4): until a pool can be marked
-//! owned (#2561), a Docker pool whose engine is a local socket on this machine. To any other
+//! ([`owned`], D-2050-4): a Docker pool whose engine is a local socket on this machine; a cluster
+//! pool's mark (#4071) is for values and tokens alone. To any other
 //! pool nothing is sent, and its chats start on the profiles its runner has of its own; its
 //! profiles are not offered for sign-in. A runner of a purlis before 1.43 is sent nothing either.
 //!
@@ -160,8 +160,9 @@ fn keep_on_as(
     if owned.is_err() {
         return Ok(None);
     }
-    // A cluster pool's runner is a team's cluster's, never shown to be the person's own: no
-    // profile of this machine's is sent there, and its chats start on its own (#3292).
+    // A cluster pool's runner is a team's cluster's: its mark (#4071) is for values and tokens
+    // alone, so no profile of this machine's is sent there, and its chats start on its own
+    // (#3292).
     if purlis_core::runners::cluster_runner_for(config, pool)
         .map_err(|why| why.to_string())?
         .is_some()

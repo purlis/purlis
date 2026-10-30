@@ -924,6 +924,214 @@ mod cluster {
         cluster.calls().contains("delete claims.runners.purlis.dev")
     }
 
+    use crate::clusterpool::Refused as NotVouched;
+    use crate::poollogins::Bound;
+
+    fn vouches(_: &Path, _: &str) -> Result<(), NotVouched> {
+        Ok(())
+    }
+
+    fn gate(config: &Path) -> Result<Option<Bound>, String> {
+        Bound::of_a_cluster_pool(config, "team", None, &vouches)
+    }
+
+    #[test]
+    fn a_cluster_pool_is_added_unmarked_so_its_runner_is_sent_nothing_and_nothing_asks_its_cluster()
+    {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let asked = std::cell::Cell::new(false);
+        let refused = Bound::of_a_cluster_pool(config.path(), "team", None, &|_, _| {
+            asked.set(true);
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(refused.contains("Only you can mark it"), "{refused}");
+        assert!(refused.contains("This is my own"), "{refused}");
+        assert!(!asked.get(), "an unmarked pool's cluster is never asked");
+    }
+
+    #[test]
+    fn a_marked_pool_with_its_claim_vouched_for_now_is_bound_to_the_runner_the_cluster_names() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        let bound = gate(config.path()).unwrap().expect("a cluster pool");
+        let (pool, kept) = runners::cluster_runner_for(config.path(), "team")
+            .unwrap()
+            .unwrap();
+        assert_eq!(bound.pool, "team");
+        assert_eq!(bound.runner, kept.pinned.device);
+        assert_eq!(bound.definition, pool.bound_digest(&kept));
+        assert!(bound.image.is_empty() && bound.runner_image.is_empty());
+        assert!(
+            bound.engine.contains(crate::clusterpool::tests::CLUSTER)
+                && bound.engine.contains("context team"),
+            "{}",
+            bound.engine
+        );
+    }
+
+    #[test]
+    fn a_change_to_anything_a_cluster_runner_is_bound_to_changes_what_is_bound() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let (pool, kept) = runners::cluster_runner_for(config.path(), "team")
+            .unwrap()
+            .unwrap();
+        let was = Bound::of_cluster(&pool, &kept);
+        let mut claim = kept.clone();
+        claim.claimed.uid = "another".into();
+        let mut pod = kept.clone();
+        pod.pod = "another".into();
+        let mut device = kept.clone();
+        device.pinned.device = "another".into();
+        let mut key = kept.clone();
+        key.pinned.key = LinkKey::generate().unwrap().public();
+        for changed in [claim, pod, device, key] {
+            assert_ne!(Bound::of_cluster(&pool, &changed), was, "{changed:?}");
+        }
+        let other = |context: &str, pin: crate::clusterpool::PoolPin| {
+            ClusterPool::new(
+                "team",
+                Path::new("/home/ada/.kube/config"),
+                context,
+                "default",
+                "ada",
+                pin,
+            )
+            .unwrap()
+        };
+        let pin = pool.pin().unwrap();
+        assert_ne!(
+            Bound::of_cluster(&other("elsewhere", pin.clone()), &kept),
+            was
+        );
+        let moved = crate::clusterpool::PoolPin {
+            cluster: "4e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b".into(),
+            ..pin.clone()
+        };
+        assert_ne!(Bound::of_cluster(&other("team", moved), &kept), was);
+        let rolled = crate::clusterpool::PoolPin {
+            key: crate::clusterpool::tests::Operator::new().key(),
+            ..pin
+        };
+        assert_ne!(Bound::of_cluster(&other("team", rolled), &kept), was);
+    }
+
+    #[test]
+    fn a_vouch_refused_or_unanswered_sends_nothing_and_tells_the_chat_none_of_the_clusters_words() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        let refused = Bound::of_a_cluster_pool(config.path(), "team", None, &|_, _| {
+            Err(NotVouched::Other("kubectl said secret-host:6443".into()))
+        })
+        .unwrap_err();
+        assert!(refused.contains("sent no vault value"), "{refused}");
+        assert!(!refused.contains("secret-host"), "{refused}");
+    }
+
+    #[test]
+    fn a_mark_taken_back_or_a_runner_changed_while_the_cluster_was_asked_sends_nothing() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        let refused = Bound::of_a_cluster_pool(config.path(), "team", None, &|config, name| {
+            runners::set_cluster_owned(config, name, false).unwrap();
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(refused.contains("not marked"), "{refused}");
+
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        Bound::of_a_cluster_pool(config.path(), "team", None, &|config, name| {
+            remove_cluster(config, None, name, None, None).unwrap();
+            Ok(())
+        })
+        .unwrap_err();
+    }
+
+    #[test]
+    fn a_link_that_reached_no_runner_of_the_pool_is_refused() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        assert!(
+            Bound::of_a_cluster_pool(config.path(), "team", Some("team/team"), &vouches).is_ok()
+        );
+        for reached in ["team/other", "other/team", "team"] {
+            Bound::of_a_cluster_pool(config.path(), "team", Some(reached), &vouches).unwrap_err();
+        }
+    }
+
+    #[test]
+    fn a_name_no_cluster_pool_has_is_left_to_the_docker_pools() {
+        let config = tempfile::tempdir().unwrap();
+        assert_eq!(gate(config.path()), Ok(None));
+    }
+
+    #[test]
+    fn a_claim_being_deleted_vouches_for_nothing_though_its_statement_is_still_there() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let at = cluster.dir.path().join("claim.json");
+        let mut claim: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&at).unwrap()).unwrap();
+        claim["metadata"]["deletionTimestamp"] = "2026-10-30T12:00:00Z".into();
+        std::fs::write(&at, claim.to_string()).unwrap();
+        assert!(matches!(
+            before_cluster_link(config.path(), &cluster.kubectl(), "team", runners::now()),
+            Err(NotVouched::NotVouched(_))
+        ));
+    }
+
+    #[test]
+    fn the_mark_is_the_persons_row_key_true_alone_and_a_new_add_starts_without_it() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let row = |config: &Path| -> serde_json::Value {
+            serde_json::from_str(&std::fs::read_to_string(config.join("runners.json")).unwrap())
+                .unwrap()
+        };
+        assert!(row(config.path())["pools"][0].get("owned").is_none());
+        runners::set_cluster_owned(config.path(), "team", true).unwrap();
+        assert_eq!(row(config.path())["pools"][0]["owned"], true);
+        assert!(runners::cluster_pools(config.path()).unwrap()[0].owned());
+        // A key roll keeps it: the pool is the same one.
+        let pool = &runners::cluster_pools(config.path()).unwrap()[0];
+        let rolled = crate::clusterpool::PoolPin {
+            key: crate::clusterpool::tests::Operator::new().key(),
+            ..pool.pin().unwrap()
+        };
+        runners::keep_cluster_pin(config.path(), "team", &rolled).unwrap();
+        assert!(runners::cluster_pools(config.path()).unwrap()[0].owned());
+
+        runners::set_cluster_owned(config.path(), "team", false).unwrap();
+        assert!(row(config.path())["pools"][0].get("owned").is_none());
+        runners::set_cluster_owned(config.path(), "nobody", true).unwrap_err();
+
+        let mut spelled = row(config.path());
+        spelled["pools"][0]["owned"] = false.into();
+        std::fs::write(config.path().join("runners.json"), spelled.to_string()).unwrap();
+        runners::cluster_pools(config.path()).unwrap_err();
+    }
+
+    #[test]
+    fn a_kubectl_that_does_not_answer_is_ended_and_refused_in_its_time() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let kubectl = dir.path().join("kubectl");
+        std::fs::write(&kubectl, "#!/bin/sh\nexec sleep 30\n").unwrap();
+        std::fs::set_permissions(&kubectl, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let began = std::time::Instant::now();
+        let refused = crate::clusterpool::Kubectl::at(&kubectl)
+            .within(Duration::from_millis(200))
+            .run(&["get".to_owned()], None, 1024);
+        assert!(matches!(refused, Err(NotVouched::Other(_))));
+        assert!(began.elapsed() < Duration::from_secs(10));
+    }
+
     #[test]
     fn a_removal_unpairs_before_it_locks_so_a_link_that_keeps_a_moved_pin_finishes() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
