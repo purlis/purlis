@@ -205,7 +205,7 @@ export function SwitcherRow({
         {name}
       </span>
       {waiting > 0 && (
-        <span data-scope="titlebar" data-part="count" aria-hidden="true">
+        <span data-scope="titlebar" data-part="row-count" aria-hidden="true">
           {waiting > 99 ? "99+" : String(waiting)}
         </span>
       )}

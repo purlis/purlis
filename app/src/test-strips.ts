@@ -266,7 +266,9 @@ export async function findTheWorkspaces(): Promise<HTMLElement> {
 
 /** What waits in a chip or a row, as its count says it: ` , 2 waiting`, or nothing. */
 const waitingSaid = (one: Element) => {
-  const count = one.querySelector('[data-part="count"]')?.textContent;
+  // A chip's count is the chip's part, a switcher row's its own (#3947).
+  const part = one.matches('[data-part="row"]') ? "row-count" : "count";
+  const count = one.querySelector(`[data-part="${part}"]`)?.textContent;
   return count ? `, ${count} waiting` : "";
 };
 
