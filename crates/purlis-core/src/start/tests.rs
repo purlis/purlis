@@ -72,7 +72,8 @@ fn a_persona_s_tools_go_first_in_front_of_charters_own_directory_and_a_declared_
 #[test]
 fn a_sandboxed_codex_chat_starts_only_on_a_sandbox_only_profile_and_says_the_way_out() {
     // #2037, ruled 2026-10-15.
-    let refused = profile_refusal(Some(Harness::Codex), "codex", false, true).expect("refused");
+    let refused =
+        profile_refusal(Some(Harness::Codex), "codex", false, true, false).expect("refused");
     assert!(
         refused.contains("Make or choose a sandbox-only Codex profile"),
         "{refused}"
@@ -82,25 +83,58 @@ fn a_sandboxed_codex_chat_starts_only_on_a_sandbox_only_profile_and_says_the_way
         "{refused}"
     );
     assert_eq!(
-        profile_refusal(Some(Harness::Codex), "codex-sandbox", true, true),
+        profile_refusal(Some(Harness::Codex), "codex-sandbox", true, true, false),
         None
     );
     // Without the sandbox, a Codex chat runs on the person's own profiles as before.
     assert_eq!(
-        profile_refusal(Some(Harness::Codex), "codex", false, false),
+        profile_refusal(Some(Harness::Codex), "codex", false, false, false),
         None
     );
     // Another harness is not held to it.
     assert_eq!(
-        profile_refusal(Some(Harness::ClaudeCode), "claude", false, true),
+        profile_refusal(Some(Harness::ClaudeCode), "claude", false, true, false),
         None
     );
 }
 
 #[test]
 fn a_sandbox_only_profile_never_starts_a_chat_without_the_sandbox() {
-    let refused =
-        profile_refusal(Some(Harness::Codex), "codex-sandbox", true, false).expect("refused");
+    let refused = profile_refusal(Some(Harness::Codex), "codex-sandbox", true, false, false)
+        .expect("refused");
     assert!(refused.contains("for sandboxed chats only"), "{refused}");
     assert!(refused.contains("Start it sandboxed"), "{refused}");
+}
+
+#[test]
+fn on_a_runner_a_claude_code_chat_starts_only_wrapped_and_says_so() {
+    // #4083, ruled 2026-10-30: a Claude Code profile on a runner is for wrapped chats only, as
+    // a sandboxed Codex chat's is (D-88q), so no unsandboxed chat loads what a wrapped one wrote.
+    let refused =
+        profile_refusal(Some(Harness::ClaudeCode), "claude", false, false, true).expect("refused");
+    assert!(refused.contains("on a runner"), "{refused}");
+    assert!(
+        refused.contains("only inside purlis's sandbox"),
+        "{refused}"
+    );
+    assert!(refused.contains("nothing was started"), "{refused}");
+    // Sandboxed, it starts; a profile for sandboxed chats only changes nothing there.
+    assert_eq!(
+        profile_refusal(Some(Harness::ClaudeCode), "claude", false, true, true),
+        None
+    );
+    // On a person's own machine it starts without the sandbox as before.
+    assert_eq!(
+        profile_refusal(Some(Harness::ClaudeCode), "claude", false, false, false),
+        None
+    );
+    // Codex and opencode on a runner keep their own rules.
+    assert_eq!(
+        profile_refusal(Some(Harness::Codex), "codex", false, false, true),
+        None
+    );
+    assert_eq!(
+        profile_refusal(Some(Harness::Opencode), "opencode", false, false, true),
+        None
+    );
 }

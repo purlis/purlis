@@ -31,6 +31,9 @@
 //!   ([`prepare`]), and Claude Code's own saves of it are refused.
 //! - **The residual** is Codex's (D-88s): every folder in [`HOME_DIRS`] is shared by the chats on
 //!   one profile, so one chat can leave a transcript or a project memory a later chat on it loads.
+//!   Only wrapped chats: on a runner a Claude Code chat never starts without the sandbox
+//!   ([`crate::start::profile_refusal`], ruled 2026-10-30), as a sandboxed Codex chat starts only
+//!   on a profile for sandboxed chats (D-88q).
 //! - **What only its own sandbox needed goes**: the pins that hold a git folder
 //!   ([`super::Denied::git_folder_pins`]), which a wrap holds by its own rules; the home's empty
 //!   `.gitconfig` (#4006), which only bubblewrap's handling of a missing path asked for; and
@@ -344,7 +347,9 @@ fn written_in(home: &Path) -> String {
 ///   this profile is past its first run, and that `cwd` is trusted, a folder the person moved
 ///   here themselves, whose project settings are screened all the same
 ///   ([`crate::harness::claude::project`]). What else the file holds stays as it is, and a file
-///   purlis cannot read is left alone, for Claude Code to say so.
+///   purlis cannot read is left alone, for Claude Code to say so. The mark is read only by the
+///   wrapped chats on this profile: on a runner no Claude Code chat starts without the sandbox
+///   ([`crate::start::profile_refusal`]).
 pub fn prepare(wrap: &Wrap, cwd: &Path) {
     let Some(home) = &wrap.home else { return };
     for dir in HOME_DIRS {

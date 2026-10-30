@@ -506,7 +506,13 @@ fn ready_given(
     // sandboxed Codex chat on a profile for every chat leaves one wait for the project, the Ask
     // that makes a sandbox-only one.
     let sandbox_only = profiles::sandbox_only(profile);
-    if let Some(why) = profile_refusal(harness, name, sandbox_only, sandbox.is_some()) {
+    if let Some(why) = profile_refusal(
+        harness,
+        name,
+        sandbox_only,
+        sandbox.is_some(),
+        machine.is_a_runner(),
+    ) {
         if sandbox.is_some() && !sandbox_only {
             crate::profilestore::sandbox_only::waits_on(root);
         }
@@ -747,22 +753,67 @@ fn on_pinned_version(
 pub const SANDBOX_ONLY_LOCK: &str =
     "This profile is for sandboxed chats only, so a chat on it starts only sandboxed.";
 
+/// Why the picker offers no "Start without the sandbox" for a Claude Code chat on a runner
+/// (#4083): the start refuses that chat ([`profile_refusal`]).
+pub const RUNNER_LOCK: &str =
+    "On a runner, a Claude Code chat starts only inside purlis's sandbox.";
+
+/// Why the picker offers no "Start without the sandbox" for a chat on `profile` on `machine`,
+/// where [`profile_refusal`] would refuse it: a profile for sandboxed chats only, or a Claude Code
+/// profile on a runner. `None` where the start lets it start without the sandbox.
+pub fn without_sandbox_lock(
+    profile: &Profile,
+    machine: &crate::sandbox::Machine,
+) -> Option<&'static str> {
+    let sandbox_only = profiles::sandbox_only(profile);
+    let harness = Harness::of_kind(&profile.kind);
+    profile_refusal(
+        harness,
+        &profile.name,
+        sandbox_only,
+        false,
+        machine.is_a_runner(),
+    )
+    .map(|_| {
+        if sandbox_only {
+            SANDBOX_ONLY_LOCK
+        } else {
+            RUNNER_LOCK
+        }
+    })
+}
+
 /// **Why a chat may not start on the profile `name`, sandboxed or not** (#2037, ruled
 /// 2026-10-15), or `None`: a profile for sandboxed chats only (`sandbox_only`) never starts a
 /// chat without the sandbox, and a sandboxed Codex chat starts on no other profile, so no
 /// sandboxed chat writes the Codex home an unsandboxed run uses, and no sign-in is copied for
 /// one (ADR 0067, D-88q, as amended 2026-10-15).
+///
+/// **On a runner (`on_a_runner`), a Claude Code profile is for wrapped chats only** (#4083, ruled
+/// 2026-10-30): a Claude Code chat there starts inside purlis's wrap or not at all, whether the
+/// person opted out, their own level is off, or the floor could not be applied. Its config folder
+/// is written by wrapped chats, and so read only by them: no unsandboxed chat loads a transcript,
+/// a memory or a trusted folder a wrapped one left ([`crate::sandbox::claude_wrap::prepare`]).
+/// A person's own machine is unchanged.
 pub fn profile_refusal(
     harness: Option<Harness>,
     name: &str,
     sandbox_only: bool,
     sandboxed: bool,
+    on_a_runner: bool,
 ) -> Option<String> {
     let name = crate::shown::short(name);
     if sandbox_only && !sandboxed {
         return Some(format!(
             "'{name}' is a profile for sandboxed chats only, and this chat would start without \
              the sandbox, so nothing was started. Start it sandboxed, or pick another profile."
+        ));
+    }
+    if harness == Some(Harness::ClaudeCode) && on_a_runner && !sandboxed {
+        return Some(format!(
+            "this chat would start without the sandbox, and on a runner a Claude Code chat runs \
+             only inside purlis's sandbox, so its profile '{name}' is never shared with a chat \
+             outside it; nothing was started. Start it sandboxed."
         ));
     }
     if harness == Some(Harness::Codex) && sandboxed && !sandbox_only {

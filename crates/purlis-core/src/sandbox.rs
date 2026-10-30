@@ -4204,6 +4204,13 @@ impl Applied {
                  so nothing was started."
             )));
         }
+        // The project's package caches (D-1337-6): made here, outside the sandbox, with any link
+        // a chat planted in them taken out; refused, naming the path, only where one stays. Before
+        // the adapter's line, which readies what a later chat reads (a wrapped Claude Code chat's
+        // config folder), so a chat refused here readies nothing.
+        if let Some(caches) = &self.caches {
+            caches.prepare().map_err(under)?;
+        }
         let mut line = self
             .harness
             .adapter()
@@ -4222,10 +4229,8 @@ impl Applied {
                 .retain(|(key, _)| !gained.iter().any(|(set, _)| set == key));
             line.env.extend(gained);
         }
-        // The project's package caches (D-1337-6): made here, outside the sandbox, with any link
-        // a chat planted in them taken out; refused, naming the path, only where one stays.
+        // The caches' environment, over what the line set.
         if let Some(caches) = &self.caches {
-            caches.prepare().map_err(under)?;
             line.env
                 .retain(|(key, _)| !caches.env.iter().any(|(set, _)| set == key));
             line.env.extend(caches.env.iter().cloned());
