@@ -252,15 +252,20 @@ pub fn in_batches(kept: &Kept) -> Result<ToKeep, String> {
         });
     };
     let most = wire::MOST_PROFILE_SETTINGS_BYTES - REWRITING_ROOM;
-    let wholes = super::made::settings_measured(&kept.harness, folder)?;
-    for (path, (bytes, _)) in &wholes {
-        if super::sent::rewritten(&kept.harness, path) && *bytes > MOST_SETTINGS_BYTES as u64 {
-            return Err(format!(
+    let too_large = |path: &str, bytes: usize| {
+        (super::sent::rewritten(&kept.harness, path) && bytes > MOST_SETTINGS_BYTES).then(|| {
+            format!(
                 "its settings file {} in {} is larger than a settings file can be ({} KiB)",
                 crate::shown::short(path),
                 folder.display(),
                 MOST_SETTINGS_BYTES / 1024
-            ));
+            )
+        })
+    };
+    let wholes = super::made::settings_measured(&kept.harness, folder)?;
+    for (path, (bytes, _)) in &wholes {
+        if let Some(why) = too_large(path, usize::try_from(*bytes).unwrap_or(usize::MAX)) {
+            return Err(why);
         }
     }
     let (going, mut behind) =
@@ -274,10 +279,16 @@ pub fn in_batches(kept: &Kept) -> Result<ToKeep, String> {
     )?;
     // What grew since it was measured stays behind whole too.
     for (path, bytes) in &read.left_behind {
+        if let Some(why) = too_large(path, usize::MAX) {
+            return Err(why);
+        }
         *behind.entry(whole_of(path).to_owned()).or_default() += bytes;
     }
     let mut sent = Vec::with_capacity(read.files.len());
     for (path, bytes) in read.files {
+        if let Some(why) = too_large(&path, bytes.len()) {
+            return Err(why);
+        }
         match behind.get_mut(whole_of(&path)) {
             Some(size) => *size += bytes.len() as u64,
             None => {

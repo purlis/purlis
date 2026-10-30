@@ -566,7 +566,7 @@ fn refused_by_the_runner(why: &purlis_session_protocol::session::CallError) -> S
 
 /// **`sending`, kept over `client`'s link** (#4081): its batches first, each answered before the
 /// next and each given [`ANSWER_WITHIN`], so a large profile is held to a runner that keeps
-/// answering and no total. The first refused stops them, and no keep is sent: what the link
+/// answering, within [`ALL_KEPT_WITHIN`]. The first refused stops them, and no keep is sent: what the link
 /// staged is dropped there, so nothing of it is kept.
 async fn keep_one(
     client: &purlis_session_protocol::session::Client,

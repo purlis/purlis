@@ -1146,7 +1146,8 @@ static SWAPPING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// can be a folder a chat writes in), and only then each listed name moved aside into it and its
 /// new one moved in, each move put back if a later one fails. Everything from `dest` down goes
 /// through descriptors, from one of `dest` opened with no link followed. Nothing is flushed: the
-/// next chat's start writes them all again. What a killed keep left is swept first.
+/// next chat's start writes them all again. What a killed keep left is swept first; the settings
+/// it left incomplete are replaced whole by the first keep that goes through.
 #[cfg(unix)]
 fn settings_swapped_in(
     homes: &Homes,
@@ -1170,6 +1171,16 @@ fn settings_swapped_in(
     let opened = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
     let dir = rustix::fs::open(dest, opened, Mode::empty())?;
     let parent = rustix::fs::open(&stages, opened, Mode::empty())?;
+    let apart = || {
+        io::Error::other(format!(
+            "{} and {} are on different disks, and a keep moves one into the other",
+            dest.display(),
+            stages.display()
+        ))
+    };
+    if rustix::fs::fstat(&dir)?.st_dev != rustix::fs::fstat(&parent)?.st_dev {
+        return Err(apart());
+    }
     let name = stage_at.file_name().unwrap_or_default();
     rustix::fs::mkdirat(&parent, name, Mode::RWXU)?;
     let mut lost = false;
@@ -1184,11 +1195,22 @@ fn settings_swapped_in(
         }
         swap_each(allowed, &dir, &new, &old, &mut lost)
     })();
-    // A move not put back leaves what it moved in the stage, for the next keep to replace.
-    if !lost {
-        let _ = std::fs::remove_dir_all(&stage_at);
+    // A move not put back leaves what it moved in the stage, and the settings incomplete until a
+    // keep that goes through replaces them all.
+    if lost {
+        return Err(io::Error::other(format!(
+            "some of the settings could not be put back, and what was moved is in {}",
+            stage_at.display()
+        )));
     }
-    swapped
+    let _ = std::fs::remove_dir_all(&stage_at);
+    swapped.map_err(|e| {
+        if e.raw_os_error() == Some(rustix::io::Errno::XDEV.raw_os_error()) {
+            apart()
+        } else {
+            e
+        }
+    })
 }
 
 /// `path`, `/`-separated, written new under the folder `root`, private, through no link.
@@ -1294,7 +1316,7 @@ fn settings_swapped_in(
 /// for it** (#3448), in place of the ones it kept: `files` are written, private, through no
 /// link, apart from the settings they replace, and only once they are all written does each listed
 /// file and folder go ([`settings_swapped_in`], #4081), so a keep that fails leaves the settings
-/// as they were. Only a made profile's own folder ([`own_folder`]) or an adopted record's
+/// as they were, or says that it could not. Only a made profile's own folder ([`own_folder`]) or an adopted record's
 /// settings folder is written. Every path is checked first ([`a_settings_path`]): one an import
 /// would not write refuses all of them, and nothing is written.
 pub fn settings_kept(
