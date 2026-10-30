@@ -164,9 +164,18 @@ fn walked(plane: &Path, level: &Level, name: &str) -> Result<(Vec<Version>, Vec<
         trees(plane, &here.folder, &mut found);
         // A commit that took the folder away holds no tree of it: it is no version to go back to.
         found.retain(|version| !version.tree.is_empty());
-        if let Some(last) = was.last_mut() {
-            last.trees = found.iter().map(|version| version.tree.clone()).collect();
+        // A rename that kept the folder changed only its `name:` (#4021): each name it had there
+        // is a place of its own, so its versions keep the name, runs and grades they had.
+        let mut named = named_apart(plane, &here.name, &mut found).into_iter();
+        if let (Some(last), Some((_, trees))) = (was.last_mut(), named.next()) {
+            last.trees = trees;
         }
+        was.extend(named.map(|(name, trees)| Was {
+            folder: here.folder.clone(),
+            name,
+            level: here.level.clone(),
+            trees,
+        }));
         versions.extend(found);
         let Some(oldest) = oldest.filter(|_| whole && was.len() <= MOST_MOVES) else {
             break;
@@ -296,11 +305,129 @@ fn moved_from_said(out: &str, folder: &str) -> Option<String> {
 /// The name the `SKILL.md` in `folder` at `commit` gives the skill, where it gives a plain one.
 fn name_at(plane: &Path, commit: &str, folder: &str) -> Option<String> {
     let text = git(plane, &["show", &format!("{commit}:{folder}/SKILL.md")]).ok()?;
-    purlis_skills::frontmatter(&text)
+    name_in(&text)
+}
+
+/// The name `text`, a `SKILL.md`, gives the skill, where it gives a plain one.
+fn name_in(text: &str) -> Option<String> {
+    purlis_skills::frontmatter(text)
         .into_iter()
         .find(|(key, _)| key == "name")
         .map(|(_, name)| name)
         .filter(|name| purlis_skills::change::name_problem(name).is_none())
+}
+
+/// **The names one folder's `versions` had, newest first** (#4021): each name with the trees of
+/// its versions, and each version given its name. Their `SKILL.md`s are read in one
+/// `git cat-file --batch`, by each version's tree ([`named_by`]).
+fn named_apart(plane: &Path, name: &str, versions: &mut [Version]) -> Vec<(String, Vec<String>)> {
+    let trees: Vec<&str> = versions
+        .iter()
+        .map(|version| version.tree.as_str())
+        .collect();
+    let said = names_of_trees(plane, &trees);
+    named_by(name, versions, &said)
+}
+
+/// [`named_apart`], each of `versions` having said the name in `said` (`None` for none read), in
+/// order. The newest keep `name`, the place's: a version whose `SKILL.md` names the skill
+/// otherwise than the one after it starts the next, older name. A version whose `SKILL.md`
+/// gives no plain name keeps the name of the one after it.
+fn named_by(
+    name: &str,
+    versions: &mut [Version],
+    said: &[Option<String>],
+) -> Vec<(String, Vec<String>)> {
+    let mut names: Vec<(String, Vec<String>)> = vec![(name.to_owned(), Vec::new())];
+    let mut last_said: Option<&str> = None;
+    for (at, version) in versions.iter_mut().enumerate() {
+        if let Some(read) = said.get(at).and_then(Option::as_deref) {
+            if last_said.is_some_and(|last| last != read) {
+                names.push((read.to_owned(), Vec::new()));
+            }
+            last_said = Some(read);
+        }
+        if let Some((name, trees)) = names.last_mut() {
+            version.name.clone_from(name);
+            trees.push(version.tree.clone());
+        }
+    }
+    names
+}
+
+/// The most bytes of a `SKILL.md` whose name is read: past this it gives none.
+const MOST_NAMED_BYTES: usize = 1024 * 1024;
+
+/// The name the `SKILL.md` of each of `trees` (a skill's folder) gives, in order, from one
+/// `git cat-file --batch`: `None` where it holds none, gives no plain name, or git answers
+/// nothing.
+fn names_of_trees(plane: &Path, trees: &[&str]) -> Vec<Option<String>> {
+    // Only a whole id is asked for, so a line is never one git could read as more.
+    let asked: Vec<&str> = trees
+        .iter()
+        .copied()
+        .filter(|tree| whole_id(tree))
+        .collect();
+    if asked.is_empty() {
+        return vec![None; trees.len()];
+    }
+    let input: String = asked
+        .iter()
+        .map(|tree| format!("{tree}:SKILL.md\n"))
+        .collect();
+    let mut texts = crate::worktree::git::run_with_input(
+        plane,
+        &["cat-file", "--batch"],
+        input.into_bytes(),
+        crate::worktree::git::READ,
+    )
+    .ok()
+    .filter(|run| run.code == Some(0))
+    .map(|run| batch_texts(&run.out))
+    .unwrap_or_default()
+    .into_iter();
+    trees
+        .iter()
+        .map(|tree| {
+            if !whole_id(tree) {
+                return None;
+            }
+            texts.next().flatten().as_deref().and_then(name_in)
+        })
+        .collect()
+}
+
+/// Each object `git cat-file --batch` answered with, in order, as text: `None` for one missing,
+/// not a file, not text, or past [`MOST_NAMED_BYTES`]. It stops at an answer that does not read.
+fn batch_texts(mut out: &[u8]) -> Vec<Option<String>> {
+    let mut texts = Vec::new();
+    while let Some(end) = out.iter().position(|&b| b == b'\n') {
+        let header = String::from_utf8_lossy(&out[..end]).into_owned();
+        out = &out[end + 1..];
+        let words: Vec<&str> = header.split(' ').collect();
+        let (kind, size) = match words.as_slice() {
+            [_, "missing" | "ambiguous"] => {
+                texts.push(None);
+                continue;
+            }
+            [_, kind, size] => match size.parse::<usize>() {
+                Ok(size) => (*kind, size),
+                Err(_) => break,
+            },
+            _ => break,
+        };
+        // The object's bytes, then a newline.
+        let Some(body) = out.get(..size) else {
+            break;
+        };
+        out = out.get(size + 1..).unwrap_or_default();
+        texts.push(
+            (kind == "blob" && size <= MOST_NAMED_BYTES)
+                .then(|| String::from_utf8(body.to_vec()).ok())
+                .flatten(),
+        );
+    }
+    texts
 }
 
 /// Gives each of `versions` of the skill that had the places `was` its newest grade: the eval

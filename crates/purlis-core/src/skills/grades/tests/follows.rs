@@ -324,3 +324,59 @@ fn a_skill_that_takes_the_old_name_since_lends_none_of_its_grades() {
         Some("g2".into())
     );
 }
+
+#[test]
+fn a_rename_that_keeps_the_folder_keeps_the_versions_from_before_under_their_name() {
+    // `deploy` in a folder named otherwise, `skills/ship`, graded there.
+    let tmp = plane();
+    let root = tmp.path();
+    run(root, &["mv", "skills/deploy", "skills/ship"]);
+    run(
+        root,
+        &[
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            "skill folder ship",
+        ],
+    );
+    let row = graded(root, "g1", "2026-10-25T10:00:00+00:00", Spent::default());
+    record(root, &Level::project(), &row, "laptop");
+
+    // A rename to the folder's name changes only its `name:` line.
+    did(root, |cx| {
+        crate::skills::verbs::rename(cx, &Level::project(), "deploy", "ship")
+    })
+    .unwrap();
+
+    let listed = history::history(root, &Level::project(), "ship").unwrap();
+    let named: Vec<(&str, &str)> = listed
+        .versions
+        .iter()
+        .map(|one| (one.name.as_str(), one.folder.as_str()))
+        .collect();
+    assert_eq!(
+        named,
+        [
+            ("ship", "skills/ship"),
+            ("deploy", "skills/ship"),
+            ("deploy", "skills/deploy")
+        ]
+    );
+    assert_eq!(listed.versions[1].grade, GRADED, "the grade from before");
+    assert_eq!(listed.versions[0].grade, None);
+    let grades = read_followed(root, &Level::project(), "ship").grades;
+    assert_eq!(
+        grades
+            .iter()
+            .map(|one| one.grade.as_str())
+            .collect::<Vec<_>>(),
+        ["g1"]
+    );
+    assert_eq!(
+        grade_of(root, "ship", "g1").map(|one| one.grade),
+        Some("g1".into())
+    );
+}
