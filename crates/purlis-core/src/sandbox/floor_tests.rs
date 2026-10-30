@@ -274,7 +274,7 @@ fn wrapped_floor(
     match compile(&compiled).expect("compiled") {
         Form::Codex(wrap) => codex::floor_profile(&wrap, ports, socket),
         Form::Opencode(wrap) => opencode::floor_profile(&wrap, ports, socket),
-        Form::ClaudeCode(_) => unreachable!(),
+        Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => unreachable!(),
     }
     .expect("a profile")
 }
@@ -971,7 +971,7 @@ fn wrapped_floor_of(harness: Harness, compiled: &Compiled, ports: &[u16]) -> Str
     match compile(compiled).expect("compiled") {
         Form::Codex(wrap) => codex::floor_profile(&wrap, ports, None),
         Form::Opencode(wrap) => opencode::floor_profile(&wrap, ports, None),
-        Form::ClaudeCode(_) => unreachable!(),
+        Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => unreachable!(),
     }
     .expect("a profile")
 }
@@ -1415,7 +1415,7 @@ fn the_floor_holds_the_plugin_and_git_hooks_a_chat_is_armed_with() {
                 let profile = match form {
                     Form::Codex(wrap) => codex::floor_profile(wrap, &[], None),
                     Form::Opencode(wrap) => opencode::floor_profile(wrap, &[], None),
-                    Form::ClaudeCode(_) => unreachable!(),
+                    Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => unreachable!(),
                 }
                 .expect("a profile");
                 assert!(writes(&profile, &root.join("notes.txt")), "{harness:?}");
@@ -1757,7 +1757,7 @@ fn a_wrapped_chat_at_the_floor_serves_on_its_own_socket_and_no_other() {
             Form::Opencode(wrap) => {
                 opencode::profile_serving(&wrap, &root, &tmp, &[4040], None, served)
             }
-            Form::ClaudeCode(_) => unreachable!(),
+            Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => unreachable!(),
         }
         .expect("a profile");
         assert!(

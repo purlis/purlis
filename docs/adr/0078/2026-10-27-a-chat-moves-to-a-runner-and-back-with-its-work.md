@@ -47,8 +47,9 @@ stands, with these additions.
    person on 2026-10-27). This amends §7's "the desktop takes only `refs/remotes/<pool>/*`" for
    Move here alone; every other fetch still takes branches only.
    - **Only from a runner shown to be the person's own**, by the one check browser logins and
-     tools use (ADR 0089, amended 2026-10-26, item 3): until a pool can be marked as yours
-     (#2561), a Docker pool on this machine's own engine. Any other pool's Move here is refused,
+     tools use (ADR 0089, amended 2026-10-26, item 3): a Docker pool on this machine's own
+     engine. A cluster pool's mark (#4071) is for values and tokens alone, by the person's ruling
+     of 2026-10-30. Any other pool's Move here is refused,
      in a sentence saying why, as it is asked and again at the switch.
    - **Nothing is written outside the clone**: git's own work-tree update writes no path through
      a link, and a test holds it to that for a link to `/etc` and one to a folder outside the

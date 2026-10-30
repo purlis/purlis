@@ -132,6 +132,8 @@ type Said = {
   /** What the line is about, stably: what a dismissal will be keyed by. */
   cause: string;
   tone?: NoticeTone;
+  /** Work still under way: its mark says so, rather than a done check (#4079). */
+  running?: boolean;
   /** The sentence (and anything else the line says before its ways out). */
   children: ReactNode;
   /** What a way out opened (a fix's form, #1250): drawn right after the line, outside its live
@@ -209,6 +211,7 @@ export function Notice(props: NoticeProps) {
   const {
     cause,
     tone = "news",
+    running = false,
     at = "inbox",
     label,
     persona,
@@ -246,7 +249,7 @@ export function Notice(props: NoticeProps) {
         asks={fixes !== undefined || link !== undefined}
         layout="card"
       >
-        <NoticeMark tone={tone} />
+        <NoticeMark tone={tone} running={running} />
         <NoticeMessage live={quiet !== true} cause={cause}>
           {/* A refusal is told by more than its mark and its colour (WCAG 1.3.1, #3344). */}
           {tone === "trouble" && <span className="sr-only">Not done: </span>}

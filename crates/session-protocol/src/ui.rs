@@ -523,6 +523,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // with the person's own git sign-in, so it is started and stopped from the window alone.
     "project_url_folder",
     "cancel_get_project",
+    // And of a repo cloned into a workspace (#4079), for the same reason.
+    "cancel_clone_repo",
     // Where the person is in the guided steps (#1817), read and kept for the next launch:
     // setting up this machine is the window's, never a link's.
     "onboarding_progress",
@@ -730,6 +732,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "cluster_contexts",
     "cluster_pool_key",
     "add_cluster_pool",
+    // The person's mark that a cluster pool is their own (#4071): half of what lets its runner
+    // receive vault values and tokens, so only their own press in their window sets it.
+    "set_cluster_pool_owned",
     // This machine's profiles on a pool's runner (#2049): keeping one there sends its name to a
     // runner, so only the person's own look in their window does.
     "pool_profiles",
@@ -762,6 +767,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "apply_runner_write",
     "dismiss_runner_write",
     "runner_write",
+    // A runner chat's held open or dispatch: only the person's press starts or refuses it, and
+    // the ask whole, for its own tab, is the person's to read.
+    "runner_dispatch",
+    "approve_runner_dispatch",
+    "refuse_runner_dispatch",
     // Taking a browser over, driving it and handing it back (#2014): what the person types into
     // a page is theirs, and only the window, where they see it, sends it.
     "take_over_browser",

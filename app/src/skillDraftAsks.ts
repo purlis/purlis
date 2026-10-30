@@ -95,9 +95,10 @@ export function askSkillChat(ask: SkillChatAsk): void {
 }
 
 /**
- * **Ask a chat to draft a skill** (decision 13), from where the person came: the studio's
- * toolbar and its start, and the Skills view's New skill… (#3266). The draft lands at the level
- * the scope's chats would get (decision 37), among the project's `levels`.
+ * **Ask a chat to draft a skill** (decision 13), from where the person came: the studio's Drafts
+ * page. New skill…'s Ask a chat to draft it (#3684) asks what the skill should do and where it
+ * lands first. The draft lands at the level the scope's chats would get (decision 37), among the
+ * project's `levels`.
  */
 export function askDraft(plane: string, scope: StudioScope, levels: readonly StudioLevel[]): void {
   askSkillChat({

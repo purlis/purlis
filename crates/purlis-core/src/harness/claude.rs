@@ -67,9 +67,15 @@ impl HarnessAdapter for ClaudeCode {
         // the chat runs in (its manifests, #1336). A form of another kind is not one, and the
         // chat is armed with nothing rather than started without it.
         let form = sandbox.applied().map(|applied| applied.form_in(cwd));
+        let wrapped;
         let sandbox = match &form {
             None => None,
             Some(crate::sandbox::Form::ClaudeCode(settings)) => Some(settings),
+            // Wrapped whole on a runner (#4083): its own sandbox off, its tools' rules as compiled.
+            Some(crate::sandbox::Form::ClaudeWrapped(wrap)) => {
+                wrapped = wrap.settings();
+                Some(&wrapped)
+            }
             Some(_) => return StateHooks::None,
         };
         // Read for a sandboxed chat alone: one that is not keeps loading what it always did.
@@ -326,6 +332,12 @@ impl HarnessAdapter for ClaudeCode {
     }
 
     /// Claude Code's own `permission_mode` ([`crate::dispatchmode::Reported::of_claude_code`]).
+    ///
+    /// **Believed from its armed hook alone** (#3822): Claude Code runs its hooks outside the
+    /// sandbox it gives its tools ([`Self::sandbox_holds_what_it_starts`]), so its hook reads the
+    /// chat's armed key from the spool a sandboxed chat's tools are denied, by its Bash sandbox
+    /// (`denyRead`) and by a `Read(...)` deny rule for its Read tool alike
+    /// ([`crate::sandbox::claude`]). In a chat with no sandbox the tools reach the key too.
     fn reported_mode(
         &self,
         permission_mode: Option<&str>,
@@ -415,7 +427,8 @@ impl HarnessAdapter for ClaudeCode {
     /// `armed`), beside the project settings its arming decided to load ([`project`], ADR 0067
     /// as amended 2026-10-15), and there it is allowed the chat's hook socket, which only the
     /// place the chat opens knows (`at`).
-    /// Its own flags are not asked about yet.
+    /// Its own flags are not asked about yet. On a runner the whole line runs in purlis's wrap
+    /// instead ([`wrapped_line`]).
     fn sandboxed_line(
         &self,
         form: &Form,
@@ -423,6 +436,7 @@ impl HarnessAdapter for ClaudeCode {
         at: &crate::sandbox::At<'_>,
     ) -> Result<crate::sandbox::Line, String> {
         match form {
+            Form::ClaudeWrapped(wrap) => wrapped_line(wrap, words, at),
             Form::ClaudeCode(compiled) => Ok(crate::sandbox::Line {
                 program: words.program,
                 args: [
@@ -441,6 +455,61 @@ impl HarnessAdapter for ClaudeCode {
             _ => Err(super::adapter::not_compiled_for(Harness::ClaudeCode)),
         }
     }
+}
+
+/// **A Claude Code chat's line inside purlis's wrap** (#4083): the wrap's program first, with the
+/// profile written for where the chat opens, then the chat's whole line, its traffic pointed at
+/// the chat's proxy, the only place the profile lets it connect, and its temp directory its own.
+///
+/// **Fail closed.** No directory, no proxy, no config folder, or a path a profile cannot state
+/// refuses the chat.
+fn wrapped_line(
+    wrap: &crate::sandbox::claude_wrap::Wrap,
+    words: crate::sandbox::Words,
+    at: &crate::sandbox::At<'_>,
+) -> Result<crate::sandbox::Line, String> {
+    use crate::sandbox::claude_wrap;
+    let lead = "this project runs every chat sandboxed, and";
+    let Some(cwd) = at.cwd else {
+        return Err(format!(
+            "{lead} a Claude Code chat with no directory of its own has nowhere the sandbox lets \
+             it write, so nothing was started."
+        ));
+    };
+    let Some((confinement, tmp)) = at
+        .confinement
+        .and_then(|confinement| Some((confinement, confinement.tmp()?)))
+    else {
+        return Err(format!(
+            "{lead} purlis's egress proxy was not started for this Claude Code chat, so nothing \
+             was started."
+        ));
+    };
+    if wrap.home.is_none() {
+        return Err(format!(
+            "{lead} this Claude Code chat's config folder is not one purlis can hold, so nothing \
+             was started."
+        ));
+    }
+    let profile = claude_wrap::profile(wrap, cwd, tmp, &confinement.proxy_ports(), at.hook_socket)
+        .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
+    let (program, args) = crate::sandbox::wrapper::line(
+        wrap.os,
+        at.purlis,
+        profile,
+        words.program,
+        [words.command, words.armed, words.charters].concat(),
+    )
+    .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
+    // Only now, with the line known to start: a refused chat readies nothing.
+    claude_wrap::prepare(wrap, cwd);
+    let mut env = crate::sandbox::seatbelt::env(&confinement.proxy_url(), tmp);
+    env.extend([
+        (claude_wrap::TMP_ENV.to_owned(), tmp.display().to_string()),
+        (claude_wrap::QUIET_ENV.to_owned(), "1".to_owned()),
+        (crate::hookwire::WRAPPED_ENV.to_owned(), "1".to_owned()),
+    ]);
+    Ok(crate::sandbox::Line { program, args, env })
 }
 
 /// `armed` with the sandbox and deny rules in its `--settings` allowed to reach `socket`
@@ -629,14 +698,16 @@ fn settings(
         allow.extend(OWN_SCOPE_ALLOW.iter().map(|rule| (*rule).to_owned()));
         allow.extend(own_scope_rules(own.0.as_deref(), own.1.as_deref()));
     }
+    // The dispatch tools from the one list every harness's adapter reads (#3794), then the
+    // other reads, each once.
     allow.extend(
-        crate::chattools::DISPATCH_TOOLS
-            .iter()
+        crate::chattools::run_on_the_dispatch_grant()
             .map(|tool| format!("mcp__{}__{tool}", crate::chattools::SERVER)),
     );
     allow.extend(
         crate::chattools::PRE_ALLOWED
             .iter()
+            .filter(|tool| !crate::chattools::run_on_the_dispatch_grant().any(|one| one == **tool))
             .map(|tool| format!("mcp__{}__{tool}", crate::chattools::SERVER)),
     );
     // And their twins among the tools, and the chat's question to the person, whose answer is
@@ -657,6 +728,13 @@ fn settings(
         crate::browsertools::run_on_the_browser_ask()
             .map(|tool| format!("mcp__{}__{tool}", crate::chattools::SERVER)),
     );
+    // **And its commands, where purlis's wrap holds them instead of its own sandbox** (#4083):
+    // with that sandbox on, Claude Code runs a command unasked (`autoAllowBashIfSandboxed`, on by
+    // default), and with it off every command would stop on a prompt in a tab on a runner. The
+    // wrap holds what the sandbox held, and a deny or an ask still outranks this.
+    if sandbox.is_some_and(crate::sandbox::claude::Settings::is_off) {
+        allow.push("Bash".to_owned());
+    }
     let mut permissions = serde_json::json!({ "allow": allow });
     // **The sandbox, where the plane turned it on** (ADR 0067), and the deny rules that keep
     // Claude Code's own Read and Edit tools out of what its sandbox denies a command
@@ -723,6 +801,22 @@ fn settings(
     settings.insert("permissions".to_owned(), permissions);
     settings.insert("hooks".to_owned(), permission_hook(binary));
     serde_json::Value::Object(settings).to_string()
+}
+
+/// [`settings`] for a chat holding `sandbox`, with nothing else asked of it.
+#[cfg(test)]
+pub(super) fn armed_settings_for_tests(sandbox: &crate::sandbox::claude::Settings) -> String {
+    settings(
+        std::path::Path::new("/bin/purlis"),
+        None,
+        false,
+        &crate::harness_plugin::Chosen::new(),
+        Some(sandbox),
+        &[],
+        None,
+        false,
+        &(None, None),
+    )
 }
 
 /// The servers a chat is started with, as `--mcp-config` takes them: purlis's own

@@ -13,6 +13,7 @@ import type { Said } from "./actions";
 import { resultOf } from "./actionResult";
 import { Notice, NoticeList, type NoticeAction } from "./Notice";
 import type { SettingsLink } from "./settings/links";
+import { ProgressBar } from "./ui/meter/Meter";
 
 /**
  * **What an action answered, as a closable notice** (#3344, the sidebar-views prototype's Q3 A):
@@ -142,6 +143,7 @@ export function ActionResultNotice({
       <Notice
         cause={cause}
         tone={said.refused ? "trouble" : "news"}
+        running={said.progress}
         title={title}
         // A kept copy is said by the notice that stood at the top already: never twice.
         quiet={kept}
@@ -149,7 +151,13 @@ export function ActionResultNotice({
         link={link}
         onDismiss={onClose}
         under={
-          open && details !== undefined ? (
+          said.meter !== undefined ? (
+            <ProgressBar
+              label={said.meter.label}
+              value={said.meter.percent}
+              className="action-result-meter"
+            />
+          ) : open && details !== undefined ? (
             <pre className="action-result-details" id={detailsId}>
               {details}
             </pre>

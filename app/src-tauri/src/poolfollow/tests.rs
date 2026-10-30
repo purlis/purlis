@@ -108,6 +108,10 @@ fn a_draining_runner_is_removed_once_no_chat_is_left_on_it_and_not_before() {
     follow_and_drain(&machine, None, &|_| Ok(2));
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
     assert_eq!(waiting_on(&machine.config, "first"), 2);
+    // Nor is a sign-in of it carried to the pool's runner while they run (#4055): a new chat
+    // there asks to sign in, and one runner holds each sign-in.
+    let log = std::fs::read_to_string(config.path().join("log")).unwrap_or_default();
+    assert!(!log.contains("-copy "), "{log}");
     // It does not answer: not known to be idle, so it stays.
     let said = follow_and_drain(&machine, None, &|_| Err("down".into()));
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
@@ -135,6 +139,14 @@ fn a_draining_runner_is_removed_once_no_chat_is_left_on_it_and_not_before() {
             "container rm --force --volumes {}",
             "a".repeat(64)
         )),
+        "{log}"
+    );
+    // Its sign-ins went to the pool's runner only now, with no chat left on it (#4055).
+    let carried = log
+        .find("--name purlis-runner-first-fedcba98-copy ")
+        .expect(&log);
+    assert!(
+        carried < log.find("container rm --force --volumes").unwrap(),
         "{log}"
     );
 }

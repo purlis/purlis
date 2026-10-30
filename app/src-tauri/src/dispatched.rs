@@ -139,6 +139,9 @@ pub struct Tasks {
     not_reopened: Mutex<HashMap<String, String>>,
     /// What is heard of each task, for its quiet notes (#1981).
     quiet: crate::silence::Quiet,
+    /// The project's running dispatch records, read again only once the store has changed
+    /// (#3932): what a turn's roster finds tasks orphaned by a restart in.
+    running: Mutex<purlis_core::dispatchrecord::Running>,
     /// Whether a reported task's end runs on the clock in a test ([`Tasks::on_the_clock`]).
     #[cfg(test)]
     clocked: std::sync::atomic::AtomicBool,
@@ -177,6 +180,26 @@ impl Tasks {
     /// What is heard of each task, for its quiet notes (#1981).
     pub(crate) fn quiet(&self) -> &crate::silence::Quiet {
         &self.quiet
+    }
+
+    /// What `each` makes of the running dispatch records of the project at `root` asked for by
+    /// `asker` whose chat is nowhere `here` (#3900, #3932): read from this project's copy of its
+    /// running records ([`purlis_core::dispatchrecord::Running`]), which reads the store again
+    /// only once it has changed, and kept slim. Under a lock of its own, taken and let go here,
+    /// and never while another is wanted.
+    pub(crate) fn orphaned<T>(
+        &self,
+        root: &std::path::Path,
+        asker: &purlis_core::dispatchrecord::ChatRef,
+        here: impl Fn(&purlis_core::dispatchrecord::ChatRef) -> bool,
+        each: impl Fn(&purlis_core::dispatchrecord::Record) -> T,
+    ) -> Vec<T> {
+        let mut running = self.running.lock().unwrap_or_else(PoisonError::into_inner);
+        running
+            .orphaned(root, asker, here)
+            .into_iter()
+            .map(each)
+            .collect()
     }
 
     fn reopens(&self) -> MutexGuard<'_, HashMap<String, Reopening>> {
@@ -1900,7 +1923,7 @@ fn list(held: &Held, asker: u32) -> Vec<Row> {
                     .say(),
                 (false, _) => listed.said.clone(),
             };
-            let last_note = ledger.last_note(listed.session, now);
+            let last_note = ledger.last_note(listed.session);
             Some(Row {
                 chat: listed.session,
                 name: listed.name,
@@ -1919,8 +1942,8 @@ fn list(held: &Held, asker: u32) -> Vec<Row> {
                 finished: false,
                 // A long-running task, and its last note (#3905).
                 long: from.long,
-                last_note: last_note.as_ref().map(|(text, _)| text.clone()),
-                noted_secs: last_note.map(|(_, ago)| ago.as_secs()),
+                last_note: last_note.and_then(|note| note.text.clone()),
+                noted_secs: last_note.map(|note| note.ago(now).as_secs()),
                 liveness: Some(ledger.liveness(listed.session, running, now)),
             })
         })
@@ -2040,16 +2063,12 @@ pub fn brought_back(
     let mut ledger = held.tasks().ledger();
     ledger.brought_back(task, record.map(|record| record.started.as_str()), restart);
     // The last note it sent is on its record, which a restart keeps (#3900): it was heard from
-    // then, though not by this app. What it ran is kept in memory only.
-    if let Some(at) = record
-        .and_then(|record| record.last_note.as_deref())
-        .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
-    {
-        ledger.heard_doing(
-            task,
-            purlis_core::dispatchliveness::Did::SentANote,
-            SystemTime::from(at),
-        );
+    // then, though not by this app. What it ran is kept in memory only. And its list row says
+    // that note again, with its words where the record kept them (#3956).
+    if let Some(note) = record.and_then(purlis_core::dispatchrecord::last_note_of) {
+        let at = SystemTime::from(note.at);
+        ledger.heard_doing(task, purlis_core::dispatchliveness::Did::SentANote, at);
+        ledger.noted_before(task, note);
     }
 }
 
@@ -2366,13 +2385,20 @@ fn end_look_after(held: &Held, task: u32, after: Duration, looked: Looked) {
     {
         return;
     }
+    // A bound set anew since this one, as the task's own work ended, makes this one stale
+    // (#3921): it looks at nothing.
+    let epoch = held.tasks().ledger().bound_epoch(task);
     let held = held.weak();
     let _ = std::thread::Builder::new()
         .name("purlis-task-end".into())
         .spawn(move || {
             std::thread::sleep(after);
             if let Some(held) = held.upgrade() {
-                end_look(&held, task, looked);
+                let stale =
+                    looked == Looked::WaitedOut && held.tasks().ledger().bound_epoch(task) != epoch;
+                if !stale {
+                    end_look(&held, task, looked);
+                }
             }
         });
 }

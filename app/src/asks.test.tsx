@@ -12,6 +12,7 @@ import { OPEN_BROWSER_ASK, type OpenBrowserAsk } from "./browserNeedsYou";
 import { OPEN_PROPOSAL_ASK } from "./proposedChangeOpen";
 import { REMOVE_WORKSPACE_ASK } from "./removeWorkspaceAsk";
 import { OPEN_RUNNER_WRITE_ASK } from "./runnerWriteOpen";
+import { OPEN_RUNNER_DISPATCH_ASK } from "./runnerDispatchOpen";
 import { PROFILE_SIGN_IN } from "./settings/links";
 import { useSandboxCommands } from "./sandboxAsked";
 
@@ -68,6 +69,20 @@ const RUNNER_WRITE: Shown = {
   source: "runner-write",
   chain: [],
   answer: { via: "runner-write", id: 3 },
+};
+
+/** A task a chat on a pool's runner asked to start on this machine. */
+const RUNNER_DISPATCH: Shown = {
+  session: 6,
+  ask: "runner-dispatch:2",
+  says: "Asks, from pool builds, to start the task 'check prod' as devops on this machine: look",
+  options: [
+    { id: "open", label: "Open", allows: false },
+    { id: "refuse", label: "Refuse", allows: false },
+  ],
+  source: "runner-dispatch",
+  chain: [],
+  answer: { via: "runner-dispatch", id: 2 },
 };
 
 const DISPATCH: Shown = {
@@ -593,6 +608,29 @@ describe("the list", () => {
     const { result } = renderHook(() => useAsks([PLANE]));
     await new Promise((settle) => setTimeout(settle, 20));
     expect(PLANE in result.current.held).toBe(false);
+  });
+});
+
+describe("a runner chat's open or dispatch", () => {
+  it("is refused through its own command, and opened in its tab to approve", async () => {
+    const calls = sent({ refuse_runner_dispatch: null });
+    const asked: unknown[] = [];
+    const heard = (event: Event) => asked.push((event as CustomEvent).detail);
+    window.addEventListener(OPEN_RUNNER_DISPATCH_ASK, heard);
+    expect(await answerTaken(PLANE, RUNNER_DISPATCH, "open")).toEqual({
+      refused: undefined,
+      live: false,
+      opened: true,
+    });
+    window.removeEventListener(OPEN_RUNNER_DISPATCH_ASK, heard);
+    expect(asked).toEqual([{ plane: PLANE, id: 2 }]);
+    expect(await answerTaken(PLANE, RUNNER_DISPATCH, "refuse")).toEqual({
+      refused: undefined,
+      live: false,
+    });
+    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
+      ["refuse_runner_dispatch", { plane: PLANE, id: 2 }],
+    ]);
   });
 });
 

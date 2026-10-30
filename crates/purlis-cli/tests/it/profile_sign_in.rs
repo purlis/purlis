@@ -49,6 +49,11 @@ impl Machine {
     }
 
     fn purlis(&self, args: &[&str]) -> Output {
+        self.purlis_with(&[], args)
+    }
+
+    /// [`Self::purlis`], with `env` set too.
+    fn purlis_with(&self, env: &[(&str, &str)], args: &[&str]) -> Output {
         let path = std::env::join_paths(std::iter::once(self.path("bin")).chain(
             std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
         ))
@@ -67,6 +72,7 @@ impl Machine {
             .env_remove("XDG_CONFIG_HOME")
             .env_remove("PURLIS_CHAT")
             .env_remove("CHARTER_CHAT")
+            .envs(env.iter().copied())
             .output()
             .expect("the binary runs")
     }
@@ -194,4 +200,104 @@ fn an_opencode_profile_signs_in_to_the_plan_named_and_never_without_one() {
         machine.ran().as_deref(),
         Some(format!("auth login --provider github-copilot\n{}\n", data.display()).as_str())
     );
+}
+
+/// **`--check` says what a sign-in on a pool's runner reads it by**: the words of each answer.
+#[test]
+fn a_runner_is_read_by_the_words_check_writes() {
+    use purlis_core::dockerpool::standing_said;
+    use purlis_core::profilestore::sign_in::Standing;
+    for (status, standing) in [(0, Standing::SignedIn), (1, Standing::SignedOut)] {
+        let machine = Machine::new(status);
+        machine.said(&["profile", "create", "work", "--harness", "claude"]);
+        let out = machine.purlis(&["profile", "sign-in", "work", "--check"]);
+        let said = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(standing_said("work", &said), Ok(standing), "{said}");
+    }
+
+    let machine = Machine::new(0);
+    machine.said(&["profile", "create", "oc", "--harness", "opencode"]);
+    let said = machine.said(&["profile", "sign-in", "oc", "--check"]);
+    assert_eq!(
+        standing_said("oc", &said),
+        Ok(Standing::CannotTell),
+        "{said}"
+    );
+
+    let out = machine.purlis(&["profile", "sign-in", "nobody", "--check"]);
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(standing_said("nobody", &said).is_err(), "{said}");
+}
+
+/// **`--pool` is in the help**, and asks nothing of whether a profile is signed in here.
+#[test]
+fn the_help_names_the_pool_and_a_check_is_not_of_a_pool() {
+    let machine = Machine::new(0);
+    machine.said(&["profile", "create", "work", "--harness", "claude"]);
+
+    let help = machine.purlis(&["profile", "sign-in", "--help"]);
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert!(help.contains("--pool <POOL>"), "{help}");
+
+    let out = machine.purlis(&["profile", "sign-in", "work", "--pool", "builds", "--check"]);
+    assert!(!out.status.success());
+}
+
+/// **A pool's sign-in is the person's too**: a chat is refused it, and nothing is run.
+#[test]
+fn a_chat_may_not_sign_a_profile_in_on_a_pool() {
+    let machine = Machine::new(1);
+    machine.said(&["profile", "create", "work", "--harness", "claude"]);
+
+    let out = machine.purlis_with(
+        &[("PURLIS_CHAT", "a-chat")],
+        &["profile", "sign-in", "work", "--pool", "builds"],
+    );
+
+    assert!(!out.status.success());
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(said.contains("a chat may not"), "{said}");
+}
+
+/// **Only a pool shown to be the person's own is signed in on**: an engine elsewhere is refused
+/// before anything else, and says why.
+#[test]
+fn an_engine_not_shown_to_be_on_this_machine_is_refused() {
+    let machine = Machine::new(1);
+    machine.said(&["profile", "create", "work", "--harness", "claude"]);
+
+    let out = machine.purlis_with(
+        &[("DOCKER_HOST", "tcp://10.0.0.1:2375")],
+        &["profile", "sign-in", "work", "--pool", "builds"],
+    );
+
+    assert!(!out.status.success());
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(said.contains("not known to be yours"), "{said}");
+    assert_eq!(machine.ran(), None);
+}
+
+/// **A profile this machine does not have, or an opencode profile with no plan, says what to
+/// do** before any engine is looked for, and exits non-zero.
+#[test]
+fn a_missing_profile_or_plan_says_what_to_do() {
+    let machine = Machine::new(1);
+    machine.said(&["profile", "create", "oc", "--harness", "opencode"]);
+
+    let nobody = machine.purlis(&["profile", "sign-in", "nobody", "--pool", "builds"]);
+    assert!(!nobody.status.success());
+    let said = String::from_utf8_lossy(&nobody.stderr);
+    assert!(said.contains("purlis profile list"), "{said}");
+
+    let no_plan = machine.purlis(&["profile", "sign-in", "oc", "--pool", "builds"]);
+    assert!(!no_plan.status.success());
+    let said = String::from_utf8_lossy(&no_plan.stderr);
+    assert!(said.contains("github-copilot"), "{said}");
+
+    machine.said(&["profile", "create", "fast", "--harness", "codex"]);
+    let codex = machine.purlis(&["profile", "sign-in", "fast", "--pool", "builds"]);
+    assert!(!codex.status.success());
+    let said = String::from_utf8_lossy(&codex.stderr);
+    assert!(said.contains("follows only"), "{said}");
+    assert_eq!(machine.ran(), None);
 }

@@ -8,6 +8,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -20,97 +21,17 @@ import { ListBox, ListOption } from "./ui/list/List";
 import { RowBelow, RowDescription, RowLabel } from "./ui/list/Row";
 import { Button } from "./ui/button/Button";
 import { counted } from "./dispatches";
-import {
-  pinnerSaid,
-  scopeOfPinner,
-  SKILL_STUDIO_TITLE,
-  skillStudioTitle,
-  useSkillStudioOn,
-} from "./skillStudio";
-import { askChatSkills } from "./chatSkillsAsk";
+import { AT_THE_ROOT, useSkillStudioOn } from "./skillStudio";
+import { SKILLS_MISSING_PUT_AWAY, askChatSkills, type ChatSkillsAsk } from "./chatSkillsAsk";
+import { chatNeedsOf, type ChatSkillsSaid } from "./chatSkillNeeds";
+import type { SkillsChangedHere } from "./PlaneUpdated";
 import {
   commands,
   type ChatSkill,
   type ChatSkills,
   type PlaneId,
   type SkillBudget,
-  type SkillPinner,
 } from "./bindings";
-
-/** The budget in a line: `12 skills of 30 · 3,400 of 6,000 characters`, and the manual-only
- *  skills, free on every chat (SK-8). */
-export function budgetSaid(budget: SkillBudget): string {
-  const chars = `${budget.chars.toLocaleString("en-US")} of ${budget.most_chars.toLocaleString("en-US")} characters`;
-  const skills = `${counted(budget.skills, "skill", "skills")} of ${budget.most_skills}`;
-  const manual = counted(budget.manual, "manual-only skill", "manual-only skills");
-  const free = budget.manual === 0 ? "" : ` · ${manual} free`;
-  const hidden =
-    budget.hidden === 0 ? "" : ` · ${counted(budget.hidden, "skill", "skills")} in the index skill`;
-  return `${skills} · ${chars}${free}${hidden}`;
-}
-
-/** The budget in a few words, for a chat tab's menu row: `12 of 30 skills`, and that it is near
- *  or past the budget where it warns. */
-export function budgetShort(budget: SkillBudget): string {
-  const short = `${budget.skills} of ${counted(budget.most_skills, "skill", "skills")}`;
-  return budget.warns === null ? short : `${short}, near the budget`;
-}
-
-/**
- * What the chat warns of where its set is at four fifths of the budget or past it, or nothing
- * below: which part, and what can be done.
- */
-export function warnsSaid(budget: SkillBudget): string | undefined {
-  const what =
-    budget.warns === "both"
-      ? "skills and their descriptions are"
-      : budget.warns === "skills"
-        ? "skills are"
-        : budget.warns === "chars"
-          ? "skills' descriptions are"
-          : undefined;
-  if (what === undefined) return undefined;
-  if (budget.still_over === "not-hideable")
-    return `purlis's own skills and the ones this chat's program and repos bring are past purlis's skill budget by themselves, so all of them are listed. Turn some of the program's or repos' skills off in the Skill studio.`;
-  if (budget.still_over === "pins")
-    return `This chat's pinned skills are past purlis's skill budget, so all of them are listed. Unpin some in ${unpinIn(budget)}, or make some manual-only.`;
-  if (budget.hidden > 0)
-    return `This chat's ${what} past purlis's skill budget, so ${counted(budget.hidden, "skill is", "skills are")} hidden behind the index skill, which the chat loads them from. Make some skills manual-only, or turn some off for this workspace.`;
-  return `This chat's ${what} near or past purlis's skill budget, past which some are hidden behind the index skill. Make some skills manual-only, or turn some off for this workspace.`;
-}
-
-/**
- * **A chat whose workspace's and persona's pins pass the most it reads only together** (#3391):
- * each list alone is accepted, so neither studio says anything is wrong, but the chat reads none
- * of either. Names both, how many each pins, and where to unpin; nothing where its pins are read.
- */
-export function pinsTogetherSaid(budget: SkillBudget): string | undefined {
-  const together = budget.pins_together;
-  if (together === null) return undefined;
-  const held = together.held
-    .map((one) => `${pinnerSaid(one.by)} pins ${counted(one.pins, "skill", "skills")}`)
-    .join(" and ");
-  const where = studiosOf(together.held.map((one) => one.by));
-  return `This chat reads none of its pins: ${held}, more than the ${together.most} a chat reads together. Unpin some in ${where}.`;
-}
-
-/** Everything the chat warns of about its skills, in one sentence or two: what its Skills chip
- *  says, or nothing where it warns of nothing. */
-export function chipWarning(budget: SkillBudget): string | undefined {
-  const said = [pinsTogetherSaid(budget), warnsSaid(budget)].filter((one) => one !== undefined);
-  return said.length === 0 ? undefined : said.join(" ");
-}
-
-/** Where a chat's pins are undone (SK-15d): the studio of each of its workspace and persona that
- *  pins a skill, by its tab's title, or the studio itself where the window was not told. */
-function unpinIn(budget: SkillBudget): string {
-  return budget.pinned_by.length === 0 ? SKILL_STUDIO_TITLE : studiosOf(budget.pinned_by);
-}
-
-/** Each pinner's studio, by its tab's title: `Skill studio · ops or Skill studio · reviewer`. */
-function studiosOf(pinners: readonly SkillPinner[]): string {
-  return pinners.map((by) => skillStudioTitle(scopeOfPinner(by))).join(" or ");
-}
 
 /** What the filter over a chat's skills calls them. */
 const SKILLS = { one: "skill", many: "skills" };
@@ -375,35 +296,53 @@ export function useOpenUseSkill(): OpenUseSkill {
   return useContext(Opener);
 }
 
-/** Each open chat's skill budget, by session: read once a chat is open, and again as Use skill…
- *  reads its skills. A session that is not here has none known yet. */
-export type SkillBudgets = Readonly<Record<number, SkillBudget>>;
+/** What the window holds of each open chat's skill set, by session (#2775, #3953): what the
+ *  Skills view's Needs you says of the chat as a whole, its budget known. A session that is not
+ *  here has none known yet. */
+export type ChatSkillSets = Readonly<Record<number, ChatSkillsSaid & { budget: SkillBudget }>>;
 
-/** The budgets of a project's chats, for the chip on each pane (`SkillsChip`). */
-export const SkillBudgetsHere = createContext<SkillBudgets>({});
+/** The sets of a project's chats, for the chip on each pane (`SkillsChip`). */
+export const ChatSkillSetsHere = createContext<ChatSkillSets>({});
 
 /** How many skills a chat's set holds, whatever its listing leaves out. */
 export const skillsInTheSet = (budget: SkillBudget) => budget.skills + budget.manual;
 
+/** What one `chat_skills` answer leaves the window holding of a chat's set: its budget, how its
+ *  router did at its start and what it started without. */
+type HeldSet = Omit<ChatSkillsSaid, "changed"> & { budget: SkillBudget };
+
 /**
- * **The skill budgets of chats `sessions` of `plane`** (#2775), read once each while the Skill
- * studio is on, and how to set one read elsewhere (Use skill… reads a chat's skills as it opens).
- * The one place a window holds them: the chip on each pane and each chat tab's menu row draw it.
+ * **The skill sets of chats `sessions` of `plane`** (#2775, #3953), read once each while the
+ * Skill studio is on, and how to set one read elsewhere (Use skill… reads a chat's skills as it
+ * opens). The one place a window holds them: the chip on each pane draws it.
+ *
+ * Each is the one `chat_skills` answer the chat's budget always came from, which says too how its
+ * router did at its start and what it started without, both held in the core from its start: no
+ * read is added to a chat's open. What changed since it started is `changed`, the window's own
+ * answer from `chats_plane_updated` (`usePlaneUpdated`), which its tab's mark reads too.
  */
-export function useChatSkillBudgets(
+export function useChatSkillSets(
   plane: PlaneId,
   sessions: readonly number[],
   on: boolean,
-): [SkillBudgets, (session: number, budget: SkillBudget | null) => void] {
-  const [budgets, setBudgets] = useState<SkillBudgets>({});
+  changed: SkillsChangedHere = NOTHING_CHANGED,
+): [ChatSkillSets, (session: number, said: ChatSkills | null) => void] {
+  const [held, setHeld] = useState<Readonly<Record<number, HeldSet>>>({});
   const asked = useRef(new Set<number>());
-  const set = useCallback((session: number, budget: SkillBudget | null) => {
-    setBudgets((was) => {
-      if (budget !== null) return { ...was, [session]: budget };
+  // The chats whose "started without" notice was put away: an answer read before that, landing
+  // after, does not bring it back.
+  const putAway = useRef(new Set<number>());
+  const set = useCallback((session: number, said: ChatSkills | null) => {
+    setHeld((was) => {
+      const budget = said?.budget ?? null;
+      if (said !== null && budget !== null) {
+        const missing = putAway.current.has(session) ? null : said.missing;
+        return { ...was, [session]: { budget, routing: said.routing, missing } };
+      }
       if (!(session in was)) return was;
       return Object.fromEntries(
         Object.entries(was).filter(([one]) => Number(one) !== session),
-      ) as SkillBudgets;
+      ) as Record<number, HeldSet>;
     });
   }, []);
   const key = sessions.join(",");
@@ -418,27 +357,57 @@ export function useChatSkillBudgets(
       asked.current.add(session);
       void commands
         .chatSkills(plane, session)
-        .then((said) => set(session, said.status === "ok" ? said.data.budget : null))
+        .then((said) => set(session, said.status === "ok" ? said.data : null))
         .catch(() => undefined);
     }
   }, [key, on, plane, set]);
-  return [on ? budgets : NO_BUDGETS, set];
+  // A "started without" notice put away is put away in the core too: the chip says it no more.
+  useEffect(() => {
+    const hear = (event: Event) => {
+      const { detail } = event as CustomEvent<ChatSkillsAsk>;
+      if (detail.plane !== plane) return;
+      putAway.current.add(detail.session);
+      setHeld((was) => {
+        const one = was[detail.session];
+        if (one === undefined || one.missing === null) return was;
+        return { ...was, [detail.session]: { ...one, missing: null } };
+      });
+    };
+    window.addEventListener(SKILLS_MISSING_PUT_AWAY, hear);
+    return () => window.removeEventListener(SKILLS_MISSING_PUT_AWAY, hear);
+  }, [plane]);
+  const sets = useMemo<ChatSkillSets>(
+    () =>
+      Object.fromEntries(
+        Object.entries(held).map(([session, one]) => [
+          session,
+          { ...one, changed: changed[Number(session)] ?? null },
+        ]),
+      ),
+    [held, changed],
+  );
+  return [on ? sets : NO_SETS, set];
 }
 
-/** No chat's budget known: what the window holds while the Skill studio is off. */
-const NO_BUDGETS: SkillBudgets = {};
+/** No chat's set known: what the window holds while the Skill studio is off. */
+const NO_SETS: ChatSkillSets = {};
+
+/** No chat's skills changed since it started. */
+const NOTHING_CHANGED: SkillsChangedHere = {};
 
 /** What the Skills chip's tooltip says it does (S8, #3694). */
 export const SHOW_THIS_CHATS_SKILLS = "Show this chat's skills";
 
 /**
- * **The Skills chip on a chat's pane** (#2775; spec #3679 S8, #3694), in its top line beside the
- * gauge: how many skills the chat's set holds, warning-coloured where something in it needs the
- * person (its set near or past the budget, or its pins read by none). Pressed, it shows this
- * chat's skills in the sidebar Skills view, the one answer to what the chat gets and why; it no
- * longer opens Use skill…. Its budget is the window's ({@link SkillBudgetsHere}). Nothing while
- * the Skill studio is off, or for a chat purlis knows no skills of; where the pane leaves the chip
- * out, the chat tab's menu row says the budget.
+ * **The Skills chip on a chat's pane** (#2775; spec #3679 S8, #3694, #3953), in its top line
+ * beside the gauge: how many skills the chat's set holds, warning-coloured whenever the Skills
+ * view's Needs you holds a card of the chat's own (`chatNeedsOf`, the view's own reckoning): its
+ * set near or past the budget, its pins read by none, its router fallen back at its start, skills
+ * it started without, or its skills changed since it started. Its tooltip names each. Pressed, it
+ * shows this chat's skills in the sidebar Skills view, the one answer to what the chat gets and
+ * why, where each need has its fix; it no longer opens Use skill…. Its set is the window's
+ * ({@link ChatSkillSetsHere}). Nothing while the Skill studio is off, or for a chat purlis knows
+ * no skills of; where the pane leaves the chip out, the Skills view says the budget (`⌘⇧X`).
  */
 export const SkillsChip = memo(function SkillsChip({
   plane,
@@ -448,11 +417,14 @@ export const SkillsChip = memo(function SkillsChip({
   session: number;
 }) {
   const on = useSkillStudioOn();
-  const budget = useContext(SkillBudgetsHere)[session];
-  if (!on || budget === undefined) return null;
-  const warning = chipWarning(budget);
-  const said =
-    warning === undefined ? `${SHOW_THIS_CHATS_SKILLS}.` : `${warning} ${SHOW_THIS_CHATS_SKILLS}.`;
+  const said = useContext(ChatSkillSetsHere)[session];
+  if (!on || said === undefined) return null;
+  // The scope only aims each need's fix, which the view offers and the chip does not.
+  const needs = chatNeedsOf(said, AT_THE_ROOT);
+  const warning = needs.length === 0 ? undefined : needs.map((one) => one.title).join(" · ");
+  const tip =
+    warning === undefined ? `${SHOW_THIS_CHATS_SKILLS}.` : `${warning}. ${SHOW_THIS_CHATS_SKILLS}.`;
+  const count = counted(skillsInTheSet(said.budget), "skill", "skills");
   return (
     <Button
       variant={warning === undefined ? "ghost" : "warning-soft"}
@@ -460,8 +432,8 @@ export const SkillsChip = memo(function SkillsChip({
       className="pane-skills"
       data-testid="pane-skills"
       data-over={warning === undefined ? undefined : ""}
-      tooltip={said}
-      aria-label={`${counted(skillsInTheSet(budget), "skill", "skills")}. ${said}`}
+      tooltip={tip}
+      aria-label={`${count}. ${tip}`}
       icon={
         warning === undefined ? (
           <Sparkles aria-hidden="true" />
@@ -471,7 +443,7 @@ export const SkillsChip = memo(function SkillsChip({
       }
       onPress={() => askChatSkills(plane, session)}
     >
-      {counted(skillsInTheSet(budget), "skill", "skills")}
+      {count}
     </Button>
   );
 });

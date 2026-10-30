@@ -90,6 +90,7 @@ pub mod geometry;
 mod hard;
 mod icons;
 mod import;
+pub(crate) use import::jsonc;
 mod least;
 pub mod levels;
 mod native;

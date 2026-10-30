@@ -952,16 +952,64 @@ fn a_long_running_task_is_never_asked_for_its_report_nor_has_one_made() {
     assert_eq!(ledger.nudge_step(TASK, WAITING), Vec::<Landed>::new());
 }
 
+/// What the ledger says of task [`TASK`]'s last note at `now`: its words and how long ago.
+fn last_note(ledger: &Ledger, now: SystemTime) -> Option<(Option<String>, Duration)> {
+    ledger
+        .last_note(TASK)
+        .map(|note| (note.text.clone(), note.ago(now)))
+}
+
+/// A note as a dispatch record keeps it, sent at `at`.
+fn on_its_record(text: Option<&str>, at: SystemTime) -> crate::dispatchrecord::LastNote {
+    crate::dispatchrecord::LastNote {
+        at: at.into(),
+        text: text.map(str::to_owned),
+    }
+}
+
 #[test]
 fn a_task_s_last_note_is_kept_latest_only_with_when_it_was_sent() {
     let mut ledger = Ledger::default();
     let at = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
-    assert_eq!(ledger.last_note(TASK, at), None);
+    assert_eq!(last_note(&ledger, at), None);
     ledger.noted(TASK, "ticket 1 merged", at);
     ledger.noted(TASK, "ticket 2 in review", at + Duration::from_secs(30));
     assert_eq!(
-        ledger.last_note(TASK, at + Duration::from_secs(270)),
-        Some(("ticket 2 in review".to_owned(), Duration::from_secs(240)))
+        last_note(&ledger, at + Duration::from_secs(270)),
+        Some((
+            Some("ticket 2 in review".to_owned()),
+            Duration::from_secs(240)
+        ))
+    );
+}
+
+#[test]
+fn a_task_s_last_note_on_its_record_is_taken_back_across_a_restart_never_over_a_later_one() {
+    // #3956: the ledger is in memory; a restart begins it empty, and the record's note is read.
+    let at = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
+    let mut restarted = Ledger::default();
+    restarted.noted_before(TASK, on_its_record(Some("ticket 2 in review"), at));
+    assert_eq!(
+        last_note(&restarted, at + Duration::from_secs(60)),
+        Some((
+            Some("ticket 2 in review".to_owned()),
+            Duration::from_secs(60)
+        ))
+    );
+    // Its words not kept on the record: the time alone.
+    let mut unkept = Ledger::default();
+    unkept.noted_before(TASK, on_its_record(None, at));
+    assert_eq!(
+        last_note(&unkept, at + Duration::from_secs(60)),
+        Some((None, Duration::from_secs(60)))
+    );
+    // A note heard by this app since is newer, and stays.
+    let mut heard = Ledger::default();
+    heard.noted(TASK, "ticket 3 merged", at + Duration::from_secs(30));
+    heard.noted_before(TASK, on_its_record(Some("ticket 2 in review"), at));
+    assert_eq!(
+        last_note(&heard, at + Duration::from_secs(60)),
+        Some((Some("ticket 3 merged".to_owned()), Duration::from_secs(30)))
     );
 }
 
@@ -994,6 +1042,12 @@ fn a_long_running_task_is_listed_as_that_with_its_last_note_quoted() {
     let listed = list_text(&[row(None, None)]);
     assert!(
         listed.contains(" · running · long-running, no note yet · "),
+        "{listed}"
+    );
+    // A note read back from its record after a restart whose words were not kept (#3956).
+    let listed = list_text(&[row(None, Some(240))]);
+    assert!(
+        listed.contains(" · running · long-running, last note 4m ago (its words were not kept) · "),
         "{listed}"
     );
     // Cut to what a row shows.
@@ -1625,6 +1679,180 @@ fn a_program_that_ended_after_its_report_is_closed_off_the_thread_that_heard_it(
             .and_then(|kept| kept.report.task.clone())
             .map(|task| task.outcome),
         Some(Outcome::Done)
+    );
+}
+
+/// Its turn ended waiting on work of its own, which wakes it (#3878): a monitor, a shell in
+/// the background, a timer.
+const ON_ITS_OWN_WORK: Seen = Seen {
+    waiting: true,
+    own_work: true,
+    ..KNOWN
+};
+
+#[test]
+fn a_task_whose_own_work_outlives_its_bound_is_not_ended_until_that_work_ends_and_the_bound_passes()
+{
+    // #3921: `done` sent while its own monitors and background shells still run. Its turn
+    // is not over while they are, and its bound does not run then: one that outlives the
+    // bound is not cut off.
+    let mut ledger = Ledger::default();
+    ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
+    assert_eq!(
+        ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved),
+        Ends::Hold
+    );
+    assert_eq!(
+        ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::WaitedOut),
+        Ends::Hold
+    );
+    let before = ledger.bound_epoch(TASK);
+
+    // Its own work ended and woke it: the bound runs from now.
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::Moved),
+        Ends::Bound
+    );
+    assert_ne!(
+        ledger.bound_epoch(TASK),
+        before,
+        "every earlier bound is stale"
+    );
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::WaitedOut),
+        Ends::End
+    );
+
+    // That turn ends with nothing in flight before its bound: it settles and ends.
+    let mut ledger = Ledger::default();
+    ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
+    ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved);
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::Moved),
+        Ends::Bound
+    );
+    assert_eq!(
+        ledger.end_step(TASK, WAITING, false, Looked::Moved),
+        Ends::Settle
+    );
+    // Work of its own that began in its moment to settle is waited for too.
+    assert_eq!(
+        ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Settled),
+        Ends::Hold
+    );
+}
+
+#[test]
+fn own_work_that_ends_before_the_first_bound_passes_sets_the_bound_anew_from_its_end() {
+    // #3921: the bound set at the report is stale once its own work ends, so the turn that
+    // work wakes it for has the whole bound.
+    let mut ledger = Ledger::default();
+    ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
+    let at_the_report = ledger.bound_epoch(TASK);
+    ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved);
+
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::Moved),
+        Ends::Bound
+    );
+    assert_ne!(ledger.bound_epoch(TASK), at_the_report);
+
+    // Own work that lapsed with nothing to wake it ends the turn: it settles as ever.
+    let mut ledger = Ledger::default();
+    ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
+    ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved);
+    assert_eq!(
+        ledger.end_step(TASK, WAITING, false, Looked::Moved),
+        Ends::Settle
+    );
+}
+
+#[test]
+fn a_prompt_while_it_waits_on_its_own_work_begins_a_later_turn_whose_end_is_waited_for() {
+    // #3921: the hook does not say whether a person or its own work began a turn, so every
+    // prompt is a later turn: the bound ends nothing, and that turn's own end is waited for.
+    let mut ledger = Ledger::default();
+    ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
+    ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved);
+
+    ledger.turn_began(TASK);
+
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::Moved),
+        Ends::Hold
+    );
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::WaitedOut),
+        Ends::Hold
+    );
+    assert_eq!(
+        ledger.end_step(TASK, WAITING, false, Looked::Moved),
+        Ends::Settle
+    );
+}
+
+#[test]
+fn a_prompt_heard_before_any_look_at_its_end_is_a_later_turn_as_well() {
+    // #3921: whatever order the board's moves and the hook's prompt arrive in.
+    let mut ledger = Ledger::default();
+    ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
+
+    ledger.turn_began(TASK);
+
+    assert_eq!(
+        ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved),
+        Ends::Hold
+    );
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::Moved),
+        Ends::Hold,
+        "no bound is set for a later turn"
+    );
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::WaitedOut),
+        Ends::Hold
+    );
+}
+
+#[test]
+fn a_task_held_and_then_found_waiting_on_its_own_work_has_its_bound_set_once_that_work_ends() {
+    // #3921: held by a task of its own past its bound with its turn over, it went on to wait
+    // on work of its own. Still the reporting turn: the bound is set again once that work
+    // has ended, so a hold never keeps a program for good.
+    let mut ledger = Ledger::default();
+    ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
+    assert_eq!(
+        ledger.end_step(TASK, WAITING, true, Looked::Moved),
+        Ends::Hold
+    );
+    assert_eq!(
+        ledger.end_step(TASK, WAITING, true, Looked::WaitedOut),
+        Ends::Hold
+    );
+
+    assert_eq!(
+        ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved),
+        Ends::Hold
+    );
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::Moved),
+        Ends::Bound
+    );
+    assert_eq!(
+        ledger.end_step(TASK, RUNNING, false, Looked::WaitedOut),
+        Ends::End
+    );
+}
+
+#[test]
+fn a_cancelled_task_is_ended_whatever_its_own_work() {
+    // #3921: the cancel is the word to stop that work too.
+    let mut ledger = cancelling();
+    ledger.reported(TASK, ASKER, a_report(Outcome::Done), Some("a.json".into()));
+
+    assert_eq!(
+        ledger.end_step(TASK, ON_ITS_OWN_WORK, false, Looked::Moved),
+        Ends::Settle
     );
 }
 

@@ -16,8 +16,13 @@ D-2047-8 in the pull request). §7's table row for secrets stands, read as below
    on this machine is refused, before the desktop is asked anything.
 2. **Only a runner shown to be the person's own is sent a value**, by the one check browser
    logins use (amendment of ADR 0089, 2026-10-26, item 3): a Docker pool whose engine is a local
-   socket on this machine, until a pool can be marked owned (#2561). A hosted runner is never
-   sent one.
+   socket on this machine, or, by the person's ruling of 2026-10-30 (built by #4071), a cluster
+   pool the person marked as their own whose claim the operator vouches for now, at the gate and
+   again after Allow, failing closed where the cluster does not answer. A GitHub App's minted
+   token goes by the same check. A hosted runner is never sent one. Allow is bound for a cluster
+   runner to its pool's name, context, cluster uid, operator key, claim uid, pod, device and link
+   key, and the Ask's engine names the cluster and context; there is no image digest, and any
+   change refuses the run, as item 3 says.
 3. **The desktop's gate is the window's, at each run, and each run asks the person.** The tool
    must be one the persona declares and this machine allowed, asked for with exactly its vault
    and hand-over; the vault one the persona may use here; the chat started in its sandbox, as a

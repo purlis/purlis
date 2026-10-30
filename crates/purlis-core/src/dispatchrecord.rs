@@ -77,6 +77,11 @@ pub const DIR_NAME: &str = "dispatches";
 pub const ENDED_WITHOUT_A_REPORT: &str = "ended without a report";
 
 /// The store of the project at `root`.
+///
+/// **Every write to a record goes through `write`** (and a removal through [`withdraw`]), which
+/// counts it for [`Running`] (`wrote`, #3932): a write made around it is only seen there once
+/// the folder's time has moved. Removals by [`crate::retention`] and the state folder's moves
+/// take only ended records, which [`Running`] does not keep.
 pub fn dir(root: &Path) -> PathBuf {
     crate::names::state(root).join("app").join(DIR_NAME)
 }
@@ -470,7 +475,9 @@ pub fn withdraw(root: &Path, id: &str) -> io::Result<bool> {
     let Some(path) = path_of(root, id) else {
         return Ok(false);
     };
-    match std::fs::remove_file(path) {
+    let removed = std::fs::remove_file(path);
+    wrote(root);
+    match removed {
         Ok(()) => Ok(true),
         Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(err) => Err(err),
@@ -876,6 +883,47 @@ pub fn said_by(
         true
     })?;
     Ok(taken)
+}
+
+/// A task's last progress note as its dispatch record keeps it (#3956): when it was sent, and
+/// its words where the record kept them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LastNote {
+    pub at: chrono::DateTime<chrono::Utc>,
+    /// `None` where the record did not keep this note's words: past what it keeps ([`cut`],
+    /// [`MOST_SAID_BYTES`]), left out as a secret ([`Said::left_out`]), or expired since.
+    pub text: Option<String>,
+}
+
+/// **The last note `record`'s task sent, as a restart finds it** (#3956): its time from
+/// [`Record::last_note`], which moves with every note, and its words from the last note its
+/// talk keeps, **only where its talk kept every message** (`messages` is its length) and that
+/// note is of that time. A stamp is whole seconds, and a newer note past the caps
+/// ([`MOST_SAID`], [`MOST_SAID_BYTES`]) is counted and not kept, so an older note's words
+/// are never read as the newer one's.
+pub fn last_note_of(record: &Record) -> Option<LastNote> {
+    let stamp = record.last_note.as_deref()?;
+    let at = chrono::DateTime::parse_from_rfc3339(stamp)
+        .ok()?
+        .with_timezone(&chrono::Utc);
+    let whole = usize::try_from(record.messages).is_ok_and(|sent| sent == record.talk.len());
+    let text = record
+        .talk
+        .iter()
+        .rev()
+        .find(|said| said.kind == crate::dispatchtalk::Kind::Note)
+        .filter(|said| whole && said.at == stamp)
+        .filter(|said| !said.left_out && !said.text.is_empty())
+        .map(|said| said.text.clone());
+    Some(LastNote { at, text })
+}
+
+impl LastNote {
+    /// How long before `now` it was sent; nothing for a note dated after `now`.
+    pub fn ago(&self, now: std::time::SystemTime) -> std::time::Duration {
+        now.duration_since(std::time::SystemTime::from(self.at))
+            .unwrap_or_default()
+    }
 }
 
 /// **The task of dispatch `id` ended before it was handed the person's answer** (#1496): the
@@ -2429,12 +2477,146 @@ fn write(root: &Path, record: &Record) -> io::Result<()> {
         )
     })?;
     let text = serde_json::to_string_pretty(record).map_err(io::Error::other)?;
-    crate::rewrite::replace(
+    let written = crate::rewrite::replace(
         root,
         &path,
         format!("{text}\n").as_bytes(),
         crate::rewrite::Mode::Private,
-    )
+    );
+    wrote(root);
+    written
+}
+
+/// How many times this process has written each store, by its folder (#3932): what tells
+/// [`Running`] its copy is stale without reading the store. Counted after the write, whether
+/// or not it held, so a write that may have landed is never missed.
+static WRITES: std::sync::Mutex<std::collections::BTreeMap<PathBuf, u64>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+fn wrote(root: &Path) {
+    let mut writes = WRITES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    *writes.entry(dir(root)).or_default() += 1;
+}
+
+/// The store as [`Running`] last saw it: which store, this process's writes to it, and its
+/// folder's time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Seen {
+    dir: PathBuf,
+    writes: u64,
+    /// The folder's modified time, which a record written in by another process moves: every
+    /// write is a new file renamed over the old one ([`crate::rewrite::replace`]). `None`
+    /// before the store exists.
+    modified: Option<std::time::SystemTime>,
+}
+
+impl Seen {
+    fn now(root: &Path) -> Self {
+        let dir = dir(root);
+        let writes = WRITES
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&dir)
+            .copied()
+            .unwrap_or_default();
+        let modified = std::fs::metadata(&dir)
+            .and_then(|meta| meta.modified())
+            .ok();
+        Self {
+            dir,
+            writes,
+            modified,
+        }
+    }
+
+    /// **Whether a read made with this look can be trusted until the look changes** (#3932,
+    /// git's "racy" rule): not where the folder's time is within [`A_FOLDER_TIME_SETTLES`] of
+    /// `now`, since another write in the same tick of the file system's clock would leave it
+    /// as it is. Such a read is made again at the next look.
+    fn settled(&self, now: std::time::SystemTime) -> bool {
+        self.modified.is_none_or(|modified| {
+            now.duration_since(modified)
+                .is_ok_and(|since| since >= A_FOLDER_TIME_SETTLES)
+        })
+    }
+}
+
+/// How long after the store's folder last changed its time is trusted to say whether it has
+/// changed again ([`Seen::settled`]): past the coarsest clock a file system keeps, a second.
+pub const A_FOLDER_TIME_SETTLES: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// **The store's running records, read again only once it has changed** (#3932): what the
+/// per-turn roster names a task orphaned by a restart from, without reading every record at
+/// every turn. A look is one folder's time and a counter; a read happens once after a launch,
+/// and after a record is written, here or by another process.
+///
+/// **Slim, and cheap to read again.** Each record is kept without its brief and its talk,
+/// which nothing here reads. A record once read as ended is not read again: a dispatch ends
+/// once, and never runs again ([`close`]).
+#[derive(Debug, Default)]
+pub struct Running {
+    seen: Option<Seen>,
+    running: Vec<Record>,
+    ended: std::collections::BTreeSet<String>,
+}
+
+impl Running {
+    /// **The tasks of `asker` orphaned by a restart** (#3900, #3932) in the project at
+    /// `root`: the running records it asked for (by its id, [`asked_by`]) whose chat is
+    /// nowhere `here`: not open, not coming back, not waiting to start again. What the task
+    /// list and a turn's roster both name. Newest first, slim ([`Running`]).
+    pub fn orphaned(
+        &mut self,
+        root: &Path,
+        asker: &ChatRef,
+        here: impl Fn(&ChatRef) -> bool,
+    ) -> Vec<&Record> {
+        self.orphaned_at(root, std::time::SystemTime::now(), asker, here)
+    }
+
+    /// [`Self::orphaned`], looked at `now`.
+    pub fn orphaned_at(
+        &mut self,
+        root: &Path,
+        now: std::time::SystemTime,
+        asker: &ChatRef,
+        here: impl Fn(&ChatRef) -> bool,
+    ) -> Vec<&Record> {
+        self.look(root, now);
+        self.running
+            .iter()
+            .filter(|record| asked_by(record, asker) && !here(&record.worker.chat))
+            .collect()
+    }
+
+    /// Reads the store again where it changed since the last look, or where that look could
+    /// not be trusted ([`Seen::settled`]). The look is taken before the read, so a write
+    /// during it is a change at the next look.
+    fn look(&mut self, root: &Path, now: std::time::SystemTime) {
+        let seen = Seen::now(root);
+        if self.seen.as_ref() == Some(&seen) {
+            return;
+        }
+        let ids = ids(root);
+        self.ended.retain(|id| ids.contains(id));
+        self.running.clear();
+        let unread: Vec<&String> = ids.iter().filter(|id| !self.ended.contains(*id)).collect();
+        for id in unread {
+            let Some(mut record) = read(root, id) else {
+                continue;
+            };
+            if record.running() {
+                record.brief.clear();
+                record.talk.clear();
+                self.running.push(record);
+            } else {
+                self.ended.insert(record.id);
+            }
+        }
+        self.seen = seen.settled(now).then_some(seen);
+    }
 }
 
 /// Reads record `id`, applies `edit`, and writes it back when `edit` says it changed, under

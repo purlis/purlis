@@ -92,6 +92,7 @@ pub fn ahead_of_each(
                 profile,
                 root,
                 purlis_core::start::may_check_program(profile, root),
+                purlis_core::start::without_sandbox_lock(profile, machine),
             )
         })
         .collect()
@@ -100,23 +101,22 @@ pub fn ahead_of_each(
 /// One row of [`ahead_of_each`], told whether the start's gate lets the program be checked:
 /// the start's own check ([`purlis_core::start::sandbox_ahead`]), asked through `asked`, which
 /// asks the same gate itself and runs the program only past it. `approved` only phrases the
-/// row.
+/// row; `lock` says why it is never started without the sandbox
+/// ([`purlis_core::start::without_sandbox_lock`]).
 fn ahead_with(
     asked: &purlis_core::start::AheadOnce<'_>,
     profile: &purlis_core::profiles::Profile,
     root: &std::path::Path,
     approved: bool,
+    lock: Option<&'static str>,
 ) -> Option<SandboxAhead> {
     let row = SandboxAhead::of(asked.of(profile)?)?;
     let row = SandboxAhead {
-        // Policy's lock first; a profile for sandboxed chats only is never started without it
-        // either (#2037).
+        // Policy's lock first; a profile for sandboxed chats only (#2037), and a Claude Code
+        // profile on a runner (#4083), is never started without it either.
         locked: sandbox::policy::Locks::of(root)
             .opt_out_refused()
-            .or_else(|| {
-                purlis_core::profiles::sandbox_only(profile)
-                    .then(|| purlis_core::start::SANDBOX_ONLY_LOCK.to_owned())
-            }),
+            .or_else(|| lock.map(str::to_owned)),
         ..row
     };
     Some(if !approved && row.state == "sandboxed" {

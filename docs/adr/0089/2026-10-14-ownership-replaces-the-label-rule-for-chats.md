@@ -19,4 +19,6 @@ accepted, and this note amends them. Where it disagrees with them, this note hol
 4. **To be confirmed:** where "owned" is set for a runner. §4 holds it per provider, as the
    operator's setting, with not owned as the default; whether a single runner may also be marked
    owned, and where that mark is kept and shown, is left to the runner placement spec (#2041),
-   and §4 stands until then.
+   and §4 stands until then. **Built for cluster pools by #4071** (the person's ruling of
+   2026-10-30): the mark is per pool, the person's alone, kept as `owned` in `runners.json`
+   (amendment of 2026-10-26, item 3).

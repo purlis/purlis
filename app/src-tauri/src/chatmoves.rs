@@ -28,6 +28,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use purlis_core::poollogins::Unbound;
 
+use crate::host::CameBack;
+
 /// Where a chat runs: a pool's runner by the pool's name, or this machine.
 pub(crate) type Place = Option<String>;
 
@@ -423,9 +425,9 @@ impl Moves {
 
 /// **Whether a chat's work may come back from pool `pool`'s runner onto this machine's clones**
 /// (the person's ruling of 2026-10-27): only from a runner shown to be the person's own, by the
-/// one check browser logins and tools use (`read`, `poollogins::Bound::read`): until a pool can
-/// be marked as yours (#2561), a Docker pool on this machine's own engine. Refused otherwise, in
-/// a sentence that says the pool's own reason (#3646).
+/// one check browser logins and tools use (`read`, `poollogins::Bound::read`): a Docker pool on
+/// this machine's own engine (a cluster pool's mark, #4071, is for values alone). Refused
+/// otherwise, in a sentence that says the pool's own reason (#3646).
 pub(crate) fn brings_work_back(
     pool: &str,
     read: impl FnOnce() -> Result<purlis_core::poollogins::Bound, Unbound>,
@@ -433,7 +435,7 @@ pub(crate) fn brings_work_back(
     read().map(|_| ()).map_err(|why| {
         let not_yours = "its runner is not known to be yours, and a runner's work comes onto \
                          this machine's clones only from a Docker pool on this machine's own \
-                         engine, until a pool can be marked as yours.";
+                         engine.";
         format!(
             "This chat's work does not come back from pool {pool}: {}",
             not_ready_said(&why, not_yours)
@@ -500,17 +502,16 @@ fn profiles_of(moving: &[crate::host::Moving]) -> Vec<String> {
 /// **Whether a chat may move to pool `pool`'s runner** (D-2048-13, the steward's decision of
 /// 2026-10-28): only to a runner shown to be the person's own, by the check Move here is held to
 /// (the person's ruling of 2026-10-27) and browser logins and tools use (`read`,
-/// `poollogins::Bound::read`): until a pool can be marked as yours (#2561), a Docker pool on this
-/// machine's own engine. A chat's conversation and work go nowhere else. Refused, in a sentence
-/// that says the pool's own reason (#3646).
+/// `poollogins::Bound::read`): a Docker pool on this machine's own engine (a cluster pool's mark,
+/// #4071, is for values alone). A chat's conversation and work go nowhere else. Refused, in a
+/// sentence that says the pool's own reason (#3646).
 pub(crate) fn goes_to_a_runner_of_yours(
     pool: &str,
     read: impl FnOnce() -> Result<purlis_core::poollogins::Bound, Unbound>,
 ) -> Result<(), String> {
     read().map(|_| ()).map_err(|why| {
         let not_yours = "its runner is not known to be yours, and a chat's conversation and \
-                         work go only to a Docker pool on this machine's own engine, until a \
-                         pool can be marked as yours.";
+                         work go only to a Docker pool on this machine's own engine.";
         format!(
             "This chat does not move to pool {pool}: {}",
             not_ready_said(&why, not_yours)
@@ -545,18 +546,44 @@ pub(crate) fn did_not_start_said(
 }
 
 /// **What a chat's tab says of what came back with it** (the person's ruling of 2026-10-27):
-/// every file a tool here runs or reads as its settings, every one a save would refuse, and
-/// every link, by its path in the project. None where nothing such came.
-pub(crate) fn came_back_said(from: Option<&str>, came: &[String]) -> Option<String> {
-    if came.is_empty() {
+/// each clone the runner's chat made, which is whole from the runner (#3990), with the remote
+/// the runner's clone had, offered, or why none is (#3985), and every file a
+/// tool here runs or reads as its settings, every one a save would refuse, and every link, by
+/// its path in the project. None where nothing such came.
+pub(crate) fn came_back_said(from: Option<&str>, came: &CameBack) -> Option<String> {
+    if came.watch.is_empty() && came.made.is_empty() {
         return None;
     }
     let from = from.map_or_else(|| "a runner".to_owned(), |pool| format!("pool {pool}"));
-    Some(format!(
-        "Its work came back from {from} with files a tool on this machine runs or reads, or \
-         links that may lead out of the project. Look at them before you run anything here: {}.",
-        came.join(", ")
-    ))
+    let mut said = Vec::new();
+    for made in &came.made {
+        let clone = &made.clone;
+        said.push(format!(
+            "{clone} was cloned on {from}: all of it was made there, so look at it as you would \
+             any repository you did not make."
+        ));
+        // The runner's word, held to this machine's rules (#3985), and only offered: the
+        // person gives the clone its remote, so no save pushes to one a runner named on its own.
+        said.push(match &made.remote {
+            Ok(url) => format!(
+                "It has no remote here. The runner's clone pushed to {url}: if that is where you \
+                 mean to push, run `git remote add origin '{url}'` in it."
+            ),
+            Err(why) => format!(
+                "It has no remote here ({why}): give it one, with `git remote add origin <URL>` \
+                 in it, before you push."
+            ),
+        });
+    }
+    if !came.watch.is_empty() {
+        said.push(format!(
+            "Its work came back from {from} with files a tool on this machine runs or reads, or \
+             links that may lead out of the project. Look at them before you run anything here: \
+             {}.",
+            came.watch.join(", ")
+        ));
+    }
+    Some(said.join(" "))
 }
 
 /// What the chats of a move are, for it: each one's workspace, profile and conversation, and
@@ -759,17 +786,21 @@ impl crate::planes::Held {
     /// is at a pause between turns** (#2048, #3453): their work and conversations go where they
     /// move, their workspace's chats run there from now on, and a new run of each starts there
     /// on its conversation in its place; the runs they leave then end. Not yet (`None`)
-    /// mid-turn, while one waits on the person, while the person stops one, or while the move is
-    /// prepared. A switch that fails leaves every one of them running where it was, and its move
-    /// says why. Answers each run left and the run that took its place.
+    /// mid-turn (waiting on work of its own is mid-turn, #3887), while one waits on the person,
+    /// while the person stops one, or while the move is prepared. A switch that fails leaves
+    /// every one of them running where it was, and its move says why. Answers each run left
+    /// and the run that took its place.
     pub(crate) fn move_chat_now(
         &self,
         session: u32,
         size: purlis_core::engine::Size,
     ) -> Result<Option<Vec<(u32, u32)>>, String> {
         let asks = self.asks();
+        // A chat waiting on its own work is in its turn (#3887): a move would cut it off.
         let at_a_pause = |one: u32| {
-            self.board().glance(one).state == purlis_core::state::State::Waiting
+            let glance = self.board().glance(one);
+            glance.state == purlis_core::state::State::Waiting
+                && !glance.in_its_turn()
                 && !asks.asks.iter().any(|ask| ask.session == one)
                 && !self.stopping().is_stopping(one)
         };
@@ -825,7 +856,7 @@ impl crate::planes::Held {
                     purlis_core::poollogins::Bound::read(&config, pool)
                 })?;
                 move_to_a_runner(self.chats(), pool, &moving)?;
-                Vec::new()
+                CameBack::default()
             }
             (Some(pool), None) => {
                 // Asked again at the switch: a pool may have changed since the move was asked.

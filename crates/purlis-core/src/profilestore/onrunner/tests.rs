@@ -1141,3 +1141,170 @@ fn forgetting_a_profile_the_runner_does_not_keep_is_nothing() {
         Ok(())
     );
 }
+
+/// A runner fetching the version each profile it keeps with a pin is pinned to: none is
+/// installed yet, and no harness on `PATH` answers.
+struct StillFetching;
+
+impl Look for StillFetching {
+    fn status(&self, _: &str, _: &[&str], _: &[(String, String)]) -> Option<i32> {
+        None
+    }
+    fn is_there(&self, _: &Path) -> bool {
+        false
+    }
+    fn fetching(&self, record: &MachineProfile) -> bool {
+        record.kept_for.is_some() && record.pinned.is_some()
+    }
+}
+
+/// **A runner fetching a profile's harness says so** (#4008): its desktop's keep answers
+/// `fetching`, not that the harness cannot tell, so the profile's row says the harness is being
+/// fetched and asks again once it is.
+#[test]
+fn a_kept_profile_whose_harness_is_being_fetched_is_said_to_be_fetching() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut desktop = a_signed_in_desktop_profile(dir.path());
+    desktop.pinned = Some(crate::profilestore::pin::Pinned {
+        version: "2.1.300".to_owned(),
+        at: 3,
+    });
+    let runner = homes(dir.path(), "runner");
+
+    let said = kept_for_the_desktop(
+        &runner,
+        &runner_home(dir.path()),
+        DESKTOP,
+        &Kept::of(&desktop).unwrap().into(),
+        &StillFetching,
+        7,
+    )
+    .expect("kept");
+
+    assert_eq!(
+        said,
+        purlis_session_protocol::session::ProfileStanding::Fetching
+    );
+    assert_eq!(standing_on_the_wire(said), Standing::Fetching);
+}
+
+/// **A runner takes in the sign-in carried to it as its pool's old runner drained** (#4011):
+/// keeping the desktop's profile moves the sign-in file that runner carried into the profile's
+/// new folder, and nothing else that was carried; what was carried for it is then gone.
+#[test]
+fn a_runner_keeping_a_profile_takes_in_the_sign_in_carried_to_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let carried = dir
+        .path()
+        .join("runner/data")
+        .join(crate::profilestore::CARRIED)
+        .join("Xb4tch01")
+        .join("work");
+    fs::create_dir_all(carried.join("config")).unwrap();
+    fs::write(
+        carried.join("config/.credentials.json"),
+        "the old runner's sign-in",
+    )
+    .unwrap();
+    fs::write(carried.join("config/settings.json"), "hooks").unwrap();
+
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&desktop).expect("it goes"),
+        DESKTOP,
+        7,
+    )
+    .expect("kept");
+
+    assert_eq!(
+        fs::read_to_string(kept.folders.config.join(".credentials.json")).unwrap(),
+        "the old runner's sign-in"
+    );
+    assert!(!kept.folders.config.join("settings.json").exists());
+    assert!(!carried.exists());
+}
+
+/// **A runner already keeping a profile takes in the sign-in carried to it later** (#4055): its
+/// pool's old runner carries its sign-ins only once its last chat has ended, after the profile
+/// was kept here for a chat, so the next keep takes the carried sign-in in. One the profile
+/// signed in here on its own stays, and the carried one goes.
+#[test]
+fn a_runner_keeping_a_profile_again_takes_in_a_sign_in_carried_since() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let sent = Kept::of(&desktop).expect("it goes");
+    let kept = keep(&runner, &runner_home(dir.path()), &sent, DESKTOP, 7).expect("kept");
+    assert!(!kept.folders.config.join(".credentials.json").exists());
+    let carry = |text: &str| {
+        let carried = dir
+            .path()
+            .join("runner/data")
+            .join(crate::profilestore::CARRIED)
+            .join("Xb4tch01")
+            .join("work");
+        fs::create_dir_all(carried.join("config")).unwrap();
+        fs::write(carried.join("config/.credentials.json"), text).unwrap();
+        carried
+    };
+
+    let carried = carry("the old runner's sign-in");
+    let again = keep(&runner, &runner_home(dir.path()), &sent, DESKTOP, 8).expect("kept");
+    assert_eq!(
+        fs::read_to_string(again.folders.config.join(".credentials.json")).unwrap(),
+        "the old runner's sign-in"
+    );
+    assert!(!carried.exists());
+
+    fs::write(
+        again.folders.config.join(".credentials.json"),
+        "signed in here",
+    )
+    .unwrap();
+    let carried = carry("an older runner's sign-in");
+    keep(&runner, &runner_home(dir.path()), &sent, DESKTOP, 9).expect("kept");
+    assert_eq!(
+        fs::read_to_string(again.folders.config.join(".credentials.json")).unwrap(),
+        "signed in here"
+    );
+    assert!(!carried.exists());
+}
+
+/// **The desktop's adopted folder takes in the sign-in carried to it too** (#4055): kept as
+/// Claude Code's default folder in the runner's home, it takes the default folder's sign-in a
+/// drained runner carried under the harness's name; one of another harness's is left out.
+#[test]
+fn the_desktops_adopted_folder_takes_in_the_sign_in_carried_to_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let adopted = the_desktops_adopted_folder(dir.path());
+    let carried = dir
+        .path()
+        .join("runner/data")
+        .join(crate::profilestore::CARRIED)
+        .join("Xb4tch01")
+        .join("claude");
+    fs::create_dir_all(carried.join("config")).unwrap();
+    fs::write(carried.join("config/.credentials.json"), "the old runner's").unwrap();
+    fs::write(carried.join("config/auth.json"), "another harness's").unwrap();
+
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&adopted).expect("it goes"),
+        DESKTOP,
+        7,
+    )
+    .expect("kept");
+
+    assert_eq!(kept.folders.config, runner_home(dir.path()).join(".claude"));
+    assert_eq!(
+        fs::read_to_string(kept.folders.config.join(".credentials.json")).unwrap(),
+        "the old runner's"
+    );
+    assert!(!kept.folders.config.join("auth.json").exists());
+    assert!(!carried.exists());
+}

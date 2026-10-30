@@ -592,15 +592,16 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "mcp__purlis__dispatch_close",
             "mcp__purlis__dispatch_note",
             "mcp__purlis__dispatch_ask",
+            // The three reads of a chat's own tasks, from the one dispatch list (#3794).
+            "mcp__purlis__dispatch_list",
+            "mcp__purlis__dispatch_read",
+            "mcp__purlis__dispatch_wait",
             "mcp__purlis__todo_list",
             "mcp__purlis__memory_search",
             "mcp__purlis__session_record_list",
             "mcp__purlis__session_record_read",
             "mcp__purlis__change_status",
             "mcp__purlis__persona_where",
-            "mcp__purlis__dispatch_list",
-            "mcp__purlis__dispatch_read",
-            "mcp__purlis__dispatch_wait",
             "mcp__purlis__theme_preview",
             // The chat's own skills, read or loaded (SK-13).
             "mcp__purlis__skill_list",
@@ -1029,6 +1030,34 @@ fn an_unsandboxed_codex_chat_is_handed_no_approval_or_sandbox_setting() {
         panic!("armed per session");
     };
     for arg in &args {
+        // Its approvals are of purlis's own server's tools, each by name, and the operator's own
+        // for that server carried over (#3794, which `codex::tests` holds); nothing
+        // session-wide.
+        let arg = match arg.strip_prefix("mcp_servers.purlis=") {
+            Some(server) => {
+                let mut server = format!("v = {server}")
+                    .parse::<toml::Table>()
+                    .expect("TOML")["v"]
+                    .as_table()
+                    .expect("a table")
+                    .clone();
+                server.remove("default_tools_approval_mode");
+                let tools = server
+                    .remove("tools")
+                    .unwrap_or_else(|| toml::Value::Table(toml::Table::new()));
+                assert!(
+                    tools
+                        .as_table()
+                        .expect("by name")
+                        .values()
+                        .all(|rule| rule.as_table().is_some_and(|rule| rule.len() == 1)
+                            && rule["approval_mode"].is_str()),
+                    "{tools}"
+                );
+                server.to_string()
+            }
+            None => arg.clone(),
+        };
         for setting in ["approval", "sandbox", "network", "rules", "permissions"] {
             assert!(!arg.contains(setting), "a Codex chat is handed {setting}");
         }
@@ -1122,6 +1151,26 @@ fn a_sandboxed_codex_chat_has_its_own_sandbox_off_only_inside_charters_wrap() {
         let loosened = loosened.replace(' ', "");
         assert!(!joined.contains(&loosened), "handed {loosened}: {args:?}");
     }
+}
+
+#[test]
+fn a_claude_code_chat_purlis_wraps_runs_its_commands_unasked_as_its_own_sandbox_did() {
+    // Off in `--settings`, never left out, so a person's own `enabled` cannot start it inside
+    // the wrap; and `Bash` allowed, which `autoAllowBashIfSandboxed` did while it was on (#4083).
+    let settings = crate::sandbox::claude::Settings {
+        sandbox: serde_json::json!({ "enabled": false }),
+        deny: vec!["WebFetch".to_owned()],
+        made_empty: Vec::new(),
+    };
+    let text = super::claude::armed_settings_for_tests(&settings);
+    let armed: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+    assert_eq!(armed["sandbox"], settings.sandbox);
+    assert_eq!(
+        armed["permissions"]["deny"],
+        serde_json::json!(["WebFetch"])
+    );
+    let allow = armed["permissions"]["allow"].as_array().expect("a list");
+    assert!(allow.iter().any(|rule| rule == "Bash"), "{allow:?}");
 }
 
 #[test]

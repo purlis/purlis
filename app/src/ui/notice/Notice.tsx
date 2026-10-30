@@ -24,7 +24,7 @@
  *   `data-scope="notice-row"`) stands above the terminal and takes the height it leaves. Both are
  *   layout, drawn here and themed through the Notices they hold.
  */
-import { CircleAlert, CircleCheck, CircleQuestionMark } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleQuestionMark, LoaderCircle } from "lucide-react";
 import type { ComponentPropsWithRef, ReactNode, Ref } from "react";
 
 /** The family's variants, in the order the manifest names them. */
@@ -98,12 +98,12 @@ export function NoticeMessage({
  *  a decision (#3678); decoration, its tone said in words inside the message. A card draws it at
  *  its start, and an attention line before its words, so attention is never told by its colour
  *  alone. */
-export function NoticeMark({ tone }: { tone: NoticeTone }) {
+export function NoticeMark({ tone, running = false }: { tone: NoticeTone; running?: boolean }) {
   const Mark =
     tone === "trouble" ? CircleAlert : tone === "attention" ? CircleQuestionMark : CircleCheck;
   return (
     <span data-scope="notice" data-part="mark" aria-hidden="true">
-      <Mark />
+      {running ? <LoaderCircle className="spinning" /> : <Mark />}
     </span>
   );
 }

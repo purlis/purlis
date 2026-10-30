@@ -592,11 +592,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "the reference picker saying it found no chat, inside its menu",
   },
   "settings/pools.tsx": {
-    count: 1,
+    count: 2,
     why:
       ACTION +
       ". The Pools group's read refusing (#2679), in the core's words: the group is read again " +
-      "as it comes on screen. A runner whose key changed has a Notice of its own",
+      "as it comes on screen, and This is my own refused on its row (#4071), which the switch " +
+      "pressed again retries. A runner whose key changed has a Notice of its own",
   },
   "settings/PoolProfiles.tsx": {
     count: 2,
@@ -606,12 +607,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       " and what adding or removing one of them said (#4047), beside the buttons that did it",
   },
   "settings/PoolSignIn.tsx": {
-    count: 2,
+    count: 3,
     why:
       ACTION +
       ". A profile's sign-in on a pool's runner (#4042), inside its strip: the step it is on, said " +
       "as it changes, and the one line of what went wrong, in the core's or the runner's words; " +
-      "its Try again, Cancel and Open in terminal are the way out",
+      "its Try again, Cancel and Open in terminal are the way out; and whether Copy code put the " +
+      "device code on the clipboard (#4045), beside the button",
   },
   "settings/accounts.tsx": {
     count: 2,

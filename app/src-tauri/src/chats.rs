@@ -4842,11 +4842,7 @@ impl Chats {
         let mut tasks: Vec<_> = lock(&self.open)
             .iter()
             .filter_map(|(number, one)| {
-                let from = one.chat.from.as_ref()?;
-                (from.chat == asker
-                    && *number != asker
-                    && from.mode == purlis_core::reopen::Mode::Task)
-                    .then(|| (*number, from.clone()))
+                task_of(asker, *number, &one.chat).map(|from| (*number, from.clone()))
             })
             .collect();
         tasks.sort_by_key(|(number, _)| *number);
@@ -6839,6 +6835,20 @@ fn ran_as_started(
         ),
         None => RunSandbox::Off,
     }
+}
+
+/// **Whether chat `number`, recorded as `chat`, is a task of chat `asker`**, and its lineage
+/// record where it is: dispatched by `asker` as a task, never `asker` itself, and never a
+/// handoff's chat (#1492). One reading for [`Chats::tasks_of`] and for the duplicate-name
+/// refusal, which reads the same records under the deciding lock (#3795).
+pub(crate) fn task_of(
+    asker: u32,
+    number: u32,
+    chat: &Chat,
+) -> Option<&purlis_core::reopen::HandedFrom> {
+    chat.from.as_ref().filter(|from| {
+        from.chat == asker && number != asker && from.mode == purlis_core::reopen::Mode::Task
+    })
 }
 
 /// The built-in skills of the bundle beside this app, which count against a chat's skill budget

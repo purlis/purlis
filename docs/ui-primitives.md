@@ -2722,6 +2722,15 @@ that is not contributed now). Its list is the list family's: one Tab stop, ↑ a
 groups' names, typing finds a skill, Enter opens its tab, and Shift+F10 or the menu key opens a
 row's menu.
 
+**Use skill…'s key is `⌘⇧S`** (#3954), and `Ctrl+Shift+S` off a Mac, `S` for skill: it opens Use
+skill… on the chat in front (in a split tab, the pane with the keyboard), as its palette row does,
+and is said on that row and on each chat
+tab's menu row (`chat.useSkill`, `tab.useskill:<tab>`). `Ctrl` with `Shift` and a letter is no
+byte, so it is the window's while a chat has the keyboard, as `Ctrl+Shift+T` is; an editor keeps
+it, and it is never taken under a modal dialog. With no chat in front, a shell in front or the
+Skill studio off there is no Use skill… to open, and the key goes on to whatever has the keyboard. The row says no budget: a chat's budget is the
+Skills view's to say (S8).
+
 **The Panel's key is `⌘J`** (#1737, P-6), VS Code's, and `Ctrl+J` off a Mac: it hides the whole
 Panel, every half of it, and shows it again on the views its halves had. It hides only a Panel
 that is drawn: a half holding only extensions' panels that no extension contributes now is not

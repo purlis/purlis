@@ -177,8 +177,8 @@ impl From<purlis_core::ownwork::OwnWork> for OwnWork {
 pub enum Need {
     /// Its report has nowhere to go: the chat that asked for it, `asker`, has gone.
     ReportUndelivered { asker: String },
-    /// purlis refused it a git command that would rewrite the project's root from another
-    /// commit, so bringing the remote's commits in is the person's, with Update (qw348).
+    /// purlis could not update the project's root for it, for a reason no chat can settle,
+    /// so bringing the remote's commits in is the person's, with Update (qw348, #3877).
     RootUpdateRefused,
     /// A task it asked for, `task`, came to nothing (#1491), and `why` says why in a few
     /// words, where anything does. `id` names this failure and no other: its dispatch
@@ -803,6 +803,19 @@ impl From<purlis_core::secrets::brokered::RunBlocked> for HeardBlock {
             vault: Some(run.vault),
         }
     }
+}
+
+/// **Whether `block` is its chat's own to retry** (#3861,
+/// [`purlis_core::sandboxblock::its_own_to_retry`]): a write in the git record of the branch
+/// folder the chat works in, `chat_dir` by the app's own record, which no Allow opens. Its hook
+/// already told the chat the command to retry with, so the app keeps it in the network record
+/// and raises no Notice for it.
+pub fn its_own_to_retry(block: &HeardBlock, chat_dir: Option<&Path>) -> bool {
+    purlis_core::sandboxblock::its_own_to_retry(
+        &block.line.sandbox_blocked,
+        block.line.target.as_deref(),
+        chat_dir,
+    )
 }
 
 /// What is told each sandbox block the app let through, as it heard it.
@@ -2722,18 +2735,11 @@ impl Hooks {
                             call: call.clone(),
                         },
                     );
-                    // **A chat refused an update of the project's root asks the person for
-                    // it** (qw348): the guard's own verdict (arm A3c) raises a needs-you item
-                    // on that chat, in the app's words, which names the window's Update. No
-                    // word of the chat's is in it, and it presses nothing.
-                    if call.refused_a_root_update() {
-                        let what = moving(&mut held_board(&board), &plane, call.chat, |board| {
-                            board.needs(call.chat, purlis_core::state::Need::RootUpdateRefused)
-                        });
-                        if let Some(what) = what {
-                            moved(what);
-                        }
-                    }
+                    // The guard's refusal of a git command that would update the project's
+                    // root (arm A3c) raises nothing for the person (#3877): it names `purlis
+                    // worktree update`, which the chat runs itself. Only that update, refused
+                    // for a reason the chat cannot settle, asks the person
+                    // (`gitbroker::answer`).
                     // A child agent's tool call shows it under its chat: a Codex child's
                     // first hook is one (FD-18). Built under the same hold as the change.
                     if let Some(agent) = &call.agent {

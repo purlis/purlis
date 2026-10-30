@@ -27,3 +27,14 @@ export function askChatSkills(plane: string, session: number): void {
 
 /** What the chat's surfaces call the way there. */
 export const SHOW_IN_SKILLS = "Show in Skills";
+
+/** The event a chat's "started without" notice says it was put away by (#3953): the core then
+ *  has nothing more to say of it, and the Skills chip on the chat's pane stops saying it too. */
+export const SKILLS_MISSING_PUT_AWAY = "purlis-skills-missing-put-away";
+
+/** **Says that chat `session` of `plane`'s "started without" notice was put away.** */
+export function skillsMissingPutAway(plane: string, session: number): void {
+  window.dispatchEvent(
+    new CustomEvent<ChatSkillsAsk>(SKILLS_MISSING_PUT_AWAY, { detail: { plane, session } }),
+  );
+}
