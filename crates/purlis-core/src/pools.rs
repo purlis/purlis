@@ -26,9 +26,9 @@
 //!
 //! - **A runner removed outside purlis is made again on the person's word** ([`make_again`],
 //!   #4149): Docker lists no container of its id, so no link to it comes back. Its pool's row
-//!   and a refused start offer Make the runner again, which makes a runner of the same name from
-//!   the pool's own image and limits, on its home volume where that is still there, pairs it and
-//!   keeps it in the old one's place.
+//!   and a refused start offer Make the runner again, which makes a runner beside it from the
+//!   pool's own image and limits, carries the sign-ins of its home where that is still there,
+//!   pairs it, keeps it as the pool's runner and removes the gone one.
 //!
 //! - **A cluster pool is added with its runner claimed and paired at once** ([`add_cluster`],
 //!   #3292): the pool is recorded with the cluster operator key the person checked, a kept
@@ -284,28 +284,46 @@ pub fn follow(
     }
 }
 
-/// **A runner made again** (#4149, [`make_again`]): the runner kept, and whether it took up its
-/// old home, whose sign-ins and kept work it has; where not, its profiles are signed in again.
+/// **A runner made again** (#4149, [`make_again`]): the runner kept, and whether the sign-ins
+/// of the one it replaces were carried to it; where not, its profiles are signed in again.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MadeAgain {
     pub kept: Kept,
-    pub home_kept: bool,
+    pub sign_ins_kept: bool,
 }
 
 /// **Makes the pool `name`'s runner again, once it was removed outside purlis** (#4149): Docker
-/// lists no container of its id ([`Docker::gone`]). A runner of the same name is made from the
-/// pool's own image, held to its limits and its time before it suspends, on its home volume
-/// where that is still there ([`Docker::make_again_for`]), checked, paired with `desktop`, and
-/// kept in the old one's place ([`runners::remade_locked`]). The profiles the pool keeps are
-/// kept on it again as after the pool was added: the window asks for them.
+/// lists no container of its id ([`Docker::gone`]). As after an update ([`follow`]), a runner is
+/// made beside it, under a name of its own ([`crate::dockerpool::remade_name`]), from the pool's
+/// own image, held to its limits and its time before it suspends, on a home of its own; the
+/// sign-ins of the gone runner's home are carried to it where that home is still there and is
+/// the one purlis made for it ([`Docker::copy_profiles`]); it is checked, paired with `desktop`
+/// and kept as the pool's runner. The gone runner is then removed, its home with it. The
+/// profiles the pool keeps are kept on it again as after the pool was added: the window asks for
+/// them.
+///
+/// A new home and a new pairing, never the old home taken up: the old home holds the gone
+/// runner's own link key and peers, which a runner is paired without, and Docker can say no more
+/// of a volume than its name and when it was made.
 ///
 /// Refused, with nothing made, for a runner Docker still lists, stopped or suspended among
-/// them: that one resumes. What fails takes back the container this made, never the home it
-/// took up.
+/// them: that one resumes. What fails takes back the runner this made; the pool stays as it was.
 pub fn make_again(
     config_root: &Path,
     docker: &Docker,
     name: &str,
+    desktop: &Pinned,
+) -> Result<MadeAgain, Refused> {
+    let again = crate::dockerpool::remade_name(name).map_err(|why| Refused::Other(why.0))?;
+    make_again_as(config_root, docker, name, &again, desktop)
+}
+
+/// [`make_again`], the runner made again called `again`.
+fn make_again_as(
+    config_root: &Path,
+    docker: &Docker,
+    name: &str,
+    again: &str,
     desktop: &Pinned,
 ) -> Result<MadeAgain, Refused> {
     let locked = runners::lock(config_root);
@@ -324,41 +342,111 @@ pub fn make_again(
             old.name()
         )));
     };
+    clear_leftovers_locked(config_root, docker, again, &locked)?;
     let made = docker
         .declared(pool.image())
-        .and_then(|(user, home)| Runner::new(old.name(), pool.image().clone(), user, &home))
+        .and_then(|(user, home)| Runner::new(again, pool.image().clone(), user, &home))
         .map(|runner| {
             runner
                 .limited(pool.limits())
                 .suspending_after(pool.suspend_after())
         })
-        .and_then(|runner| {
-            docker.make_again_for(&runner, Some(&runners::desktop_label(config_root)))
-        })
+        .and_then(|runner| docker.make_for(&runner, Some(&runners::desktop_label(config_root))))
         .map_err(|why| Refused::Other(own_time_said(&pool, why.0)))?;
+    let sign_ins_kept =
+        gone.home_kept && carried_from_its_own_home(config_root, docker, &old, &made, name);
     let kept = docker
         .pair(&made, desktop)
         .map_err(|why| Refused::Other(why.0))
         .and_then(|answered| {
-            runners::remade_locked(config_root, old.name(), &made, &answered, desktop, &locked)
+            runners::succeed_locked(config_root, name, &made, &answered, desktop, &locked)
         });
-    match kept {
-        Ok(kept) => Ok(MadeAgain {
-            kept,
-            home_kept: gone.home_kept,
-        }),
+    let kept = match kept {
+        Ok(kept) => kept,
         Err(why) => {
-            let removed = if gone.home_kept {
-                docker.remove_container(&made)
-            } else {
-                docker.remove(&made)
-            };
-            Err(match removed {
+            return Err(match docker.remove(&made) {
                 Ok(()) => why,
                 Err(left) => Refused::Other(format!(
-                    "{why}; and the runner made again could not all be removed ({left})"
+                    "{why}; and the runner made again could not all be removed ({left}): \
+                     remove the container {} and the volume {} with docker",
+                    made.container.as_str(),
+                    made.runner.volume()
                 )),
-            })
+            });
+        }
+    };
+    // The gone runner goes now, its home with it: nothing of it is linked to again.
+    match runners::remove_locked(config_root, docker, old.name(), None, &locked) {
+        Ok(removed) => {
+            if let Some(left) = removed.left() {
+                tracing::warn!(
+                    "purlis: runner {} of pool {name} was made again, and the one removed \
+                     outside purlis is not all removed: {left}",
+                    old.name()
+                );
+            }
+        }
+        Err(why) => tracing::warn!(
+            "purlis: runner {} of pool {name} was made again, and the one removed outside \
+             purlis was not removed: {why}",
+            old.name()
+        ),
+    }
+    Ok(MadeAgain {
+        kept,
+        sign_ins_kept,
+    })
+}
+
+/// **Carries the sign-ins of `old`'s home to `made`** (#4149), only where that home is the one
+/// purlis made for it: made no later than `old` was paired, so not one made of its name since
+/// its container went, and its runner's user the same. What is not carried is said in the log,
+/// and the profiles are signed in again.
+fn carried_from_its_own_home(
+    config_root: &Path,
+    docker: &Docker,
+    old: &Kept,
+    made: &crate::dockerpool::Made,
+    pool: &str,
+) -> bool {
+    let its_own = match docker.home_made_at(&old.made) {
+        Ok(Some(at)) => at <= old.paired,
+        Ok(None) => false,
+        Err(why) => {
+            tracing::warn!(
+                "purlis: runner {}'s home could not be read: {why}",
+                old.name()
+            );
+            false
+        }
+    };
+    if !its_own {
+        tracing::warn!(
+            "purlis: the home of runner {} was made after it was paired, or says not when, so \
+             its sign-ins were not carried; sign the profiles in again on pool {pool}",
+            old.name()
+        );
+        return false;
+    }
+    if old.made.runner.user() != made.runner.user() {
+        tracing::warn!(
+            "purlis: runner {} ran as {} and the runner made again as {}, so its sign-ins were \
+             not carried; sign the profiles in again on pool {pool}",
+            old.name(),
+            old.made.runner.user().spelled(),
+            made.runner.user().spelled()
+        );
+        return false;
+    }
+    match docker.copy_profiles(&old.made, made, &runners::desktop_label(config_root)) {
+        Ok(()) => true,
+        Err(why) => {
+            tracing::warn!(
+                "purlis: the sign-ins of runner {} were not carried to the runner made again \
+                 for pool {pool}, so its profiles are signed in again there: {why}",
+                old.name()
+            );
+            false
         }
     }
 }

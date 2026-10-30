@@ -340,8 +340,9 @@ enum Standing {
     /// No link is up, and why.
     Down(Down),
     /// No link is up and no more will come of the links being taken: the next command takes
-    /// links anew.
-    Over,
+    /// links anew. With the Down that ended them where the other host is gone for good
+    /// (#4149): a command that took links anew once and found it still gone is refused.
+    Over(Option<Down>),
 }
 
 /// What the relay keeps for one client link.
@@ -397,12 +398,19 @@ impl Relayed {
     /// sent is sent on.
     async fn up(&self, peer: &Peer) -> Result<Arc<Upstream>, Refusal> {
         let mut standing = self.standing.clone();
+        // Whether this command took links anew after a far end found gone (#4149): it does
+        // once, and is refused if it is gone still, so nothing loops on it.
+        let mut asked_again = false;
         loop {
             match standing.borrow_and_update().clone() {
                 Standing::Up(_) if peer.has_ended() => return Err(ended()),
                 Standing::Up(upstream) => return Ok(upstream),
                 Standing::Down(down) => return Err(not_linked(&down)),
-                Standing::Over => self.again.notify_one(),
+                Standing::Over(Some(gone)) if asked_again => return Err(not_linked(&gone)),
+                Standing::Over(gone) => {
+                    asked_again |= gone.is_some();
+                    self.again.notify_one();
+                }
                 Standing::Linking => {}
             }
             if standing.changed().await.is_err() {
@@ -470,6 +478,8 @@ async fn keep(
     let mut told = LinkTold::default();
     loop {
         let mut links = source();
+        // The far end was found gone for good, which ends the links (#4149).
+        let mut gone: Option<Down> = None;
         let mut up: Option<Arc<Upstream>> = None;
         // A link renewed ahead of its limit, which still answers what was sent on it.
         let mut retiring: Option<Arc<Upstream>> = None;
@@ -533,6 +543,7 @@ async fn keep(
                         up = None;
                         retiring = None;
                         told.down(&client, &down);
+                        gone = down.gone.then(|| down.clone());
                         tell.send_replace(Standing::Down(down));
                     }
                     None => no_more = true,
@@ -549,7 +560,7 @@ async fn keep(
                 }
             }
         }
-        tell.send_replace(Standing::Over);
+        tell.send_replace(Standing::Over(gone));
         again.notified().await;
         tell.send_replace(Standing::Linking);
     }
@@ -561,14 +572,24 @@ enum LinkTold {
     /// Nothing since the link was last up: it is up, as far as the client knows.
     #[default]
     Up,
-    /// That no link is up.
-    Down,
+    /// That no link is up, and whether the other host is gone for good (#4149).
+    Down { gone: bool },
 }
 
 impl LinkTold {
-    /// No link is up, for `why`: the client is told, unless it was told already.
+    /// No link is up, for `why`: the client is told, unless it was told already. A link that
+    /// went down and then finds the other host gone for good is told again, gone (#4149): the
+    /// container removed while a link was up first ends that link.
     fn down(&mut self, client: &ClientLink, down: &Down) {
-        if std::mem::replace(self, LinkTold::Down) == LinkTold::Up {
+        let tell = match *self {
+            LinkTold::Up => true,
+            LinkTold::Down { gone } => down.gone && !gone,
+        };
+        let was_gone = matches!(*self, LinkTold::Down { gone: true });
+        *self = LinkTold::Down {
+            gone: down.gone || was_gone,
+        };
+        if tell {
             client.tell_now(Pushed::LinkDown {
                 why: down.why.clone(),
                 key_changed: down.key_changed,
@@ -581,7 +602,7 @@ impl LinkTold {
     /// told it is back. One word for each outage, so it waits for room, on a task of its own,
     /// and never holds up the link.
     fn back(&mut self, client: &Arc<ClientLink>) {
-        if std::mem::replace(self, LinkTold::Up) == LinkTold::Down {
+        if matches!(std::mem::replace(self, LinkTold::Up), LinkTold::Down { .. }) {
             let client = Arc::clone(client);
             tokio::spawn(async move { client.tell(Pushed::LinkBack {}).await });
         }

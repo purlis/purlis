@@ -1484,8 +1484,8 @@ export const commands = {
 	dockerPoolsRemoved: () => typedError<PoolRemoved[], string>(__TAURI_INVOKE("docker_pools_removed")),
 	/**
 	 *  **Make the runner again** (#4149): the pool `name`'s runner, removed outside purlis, made
-	 *  again from the pool's own image and limits, on its home volume where that is still there,
-	 *  and paired. The window then has it keep the pool's profiles, as after Add a pool. Refused for
+	 *  again from the pool's own image and limits, with the sign-ins of its home where that is still
+	 *  there, and paired. The window then has it keep the pool's profiles, as after Add a pool. Refused for
 	 *  a runner Docker still has, which resumes as it is.
 	 */
 	dockerPoolMakeAgain: (name: string) => typedError<MadeAgain, string>(__TAURI_INVOKE("docker_pool_make_again", { name })),
@@ -6453,11 +6453,12 @@ export type MachineWorkspacePin = {
 };
 
 /**
- *  **What Make the runner again did** (#4149): whether the runner made again took up its old
- *  home, with its sign-ins; where not, its profiles are signed in again.
+ *  **What Make the runner again did** (#4149): whether the sign-ins of the runner removed
+ *  outside purlis were carried to the runner made again; where not, its profiles are signed in
+ *  again.
  */
 export type MadeAgain = {
-	home_kept: boolean,
+	sign_ins_kept: boolean,
 };
 
 /**  A persona's MCP server that could not start for a chat, as the Notice on its tab shows it. */
@@ -8160,8 +8161,8 @@ export type PoolLink =
 { state: "suspended" } | 
 /**
  *  It was removed outside purlis (#4149): Docker has no container of its id, so no link to
- *  it comes back, and the window offers Make the runner again. Whether its home volume,
- *  with its sign-ins and kept work, is still there for the runner made again.
+ *  it comes back, and the window offers Make the runner again. Whether its home volume, with
+ *  its sign-ins, is still there for the runner made again to take them from.
  */
 { state: "removed"; home_kept: boolean };
 
@@ -8199,7 +8200,7 @@ export type PoolProfiles = {
  */
 export type PoolRemoved = {
 	name: string,
-	/**  Its home volume, with its sign-ins and kept work, is still there. */
+	/**  Its home volume, with its sign-ins, is still there. */
 	home_kept: boolean,
 };
 

@@ -121,8 +121,8 @@ pub enum PoolLink {
     /// kept, and the window's next chat there starts it again. A check never wakes it.
     Suspended,
     /// It was removed outside purlis (#4149): Docker has no container of its id, so no link to
-    /// it comes back, and the window offers Make the runner again. Whether its home volume,
-    /// with its sign-ins and kept work, is still there for the runner made again.
+    /// it comes back, and the window offers Make the runner again. Whether its home volume, with
+    /// its sign-ins, is still there for the runner made again to take them from.
     Removed { home_kept: bool },
 }
 
@@ -131,15 +131,16 @@ pub enum PoolLink {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PoolRemoved {
     pub name: String,
-    /// Its home volume, with its sign-ins and kept work, is still there.
+    /// Its home volume, with its sign-ins, is still there.
     pub home_kept: bool,
 }
 
-/// **What Make the runner again did** (#4149): whether the runner made again took up its old
-/// home, with its sign-ins; where not, its profiles are signed in again.
+/// **What Make the runner again did** (#4149): whether the sign-ins of the runner removed
+/// outside purlis were carried to the runner made again; where not, its profiles are signed in
+/// again.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct MadeAgain {
-    pub home_kept: bool,
+    pub sign_ins_kept: bool,
 }
 
 /// **Which version a pool's runner runs, against this desktop's** (#2749): what its row says
@@ -493,8 +494,8 @@ pub fn removed_on(machine: &Machine) -> Result<Vec<PoolRemoved>, String> {
 }
 
 /// **Make the runner again** (#4149): the pool `name`'s runner, removed outside purlis, made
-/// again from the pool's own image and limits, on its home volume where that is still there,
-/// and paired. The window then has it keep the pool's profiles, as after Add a pool. Refused for
+/// again from the pool's own image and limits, with the sign-ins of its home where that is still
+/// there, and paired. The window then has it keep the pool's profiles, as after Add a pool. Refused for
 /// a runner Docker still has, which resumes as it is.
 #[tauri::command]
 #[specta::specta]
@@ -519,7 +520,7 @@ pub fn make_again_on(machine: &Machine, name: &str) -> Result<MadeAgain, String>
     let again = purlis_core::pools::make_again(&machine.config, &machine.docker, name, &desktop)
         .map_err(|why| refused_said(&why.to_string()))?;
     Ok(MadeAgain {
-        home_kept: again.home_kept,
+        sign_ins_kept: again.sign_ins_kept,
     })
 }
 

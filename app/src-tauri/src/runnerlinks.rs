@@ -244,9 +244,9 @@ impl ToARunner {
 /// volume, and with it its sign-ins and kept work, went too.
 pub fn gone_said(kept: &Kept, gone: purlis_core::dockerpool::Gone) -> String {
     let home = if gone.home_kept {
-        "its home volume is still there, and a runner made again takes it up"
+        "its home volume is still there, and a runner made again takes its sign-ins"
     } else {
-        "its home volume went too, and with it the sign-ins and work kept there"
+        "its home volume went too, and with it the sign-ins kept there"
     };
     format!(
         "pool {}'s runner {} was removed outside purlis: Docker has no container {}; {home}",
@@ -333,12 +333,17 @@ pub fn relaying(
         let to = ToARunner::of_kept_waking(&machine, &kept)?;
         Ok((
             Arc::new(move || {
-                // A runner made again since, after it was removed outside purlis (#4149), is
-                // linked to as it is kept now: the same name, a new container and pairing.
-                let again = purlis_core::runners::named(&machine.config, kept.name())
-                    .ok()
+                // A runner removed outside purlis and made again (#4149) is kept no more: the
+                // pool's runner made in its place is linked to. A runner still kept, a draining
+                // one too, is kept to, so a pool moved after an update leaves its chats where
+                // they run.
+                let forgotten = matches!(
+                    purlis_core::runners::named(&machine.config, kept.name()),
+                    Ok(None)
+                );
+                let again = (forgotten && !kept.draining)
+                    .then(|| purlis_core::runners::runner_for(&machine.config, kept.pool()).ok())
                     .flatten()
-                    .filter(|now| now.made != kept.made && !now.draining)
                     .and_then(|now| ToARunner::of_kept_waking(&machine, &now).ok());
                 again.as_ref().unwrap_or(&to).keep()
             }) as purlis_host::Keep,

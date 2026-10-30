@@ -155,9 +155,9 @@ export const RunnerRemoved: Story = {
   play: async ({ canvas, userEvent }) => {
     const group = await canvas.findByRole("region", { name: "Pools" });
     await within(group).findByText("removed outside purlis");
-    await within(group).findByText(/sign-ins and work kept there/);
+    await within(group).findByText(/sign-ins kept there/);
     const again = within(group).getByRole("button", { name: "Make the runner again" });
-    await userEvent.click(within(group).getByText(/sign-ins and work kept there/));
+    await userEvent.click(within(group).getByText(/sign-ins kept there/));
     for (let i = 0; i < 6 && document.activeElement !== again; i++) await userEvent.tab();
     await untilFocused(() => again, "Tab reaches Make the runner again");
     expectFocusInSight();

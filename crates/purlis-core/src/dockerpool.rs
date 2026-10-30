@@ -133,6 +133,17 @@ pub fn successor_name(pool: &str, image: &Image) -> String {
     format!("{pool}-{}", &image.digest()[..8])
 }
 
+/// **The name of a runner made again for `pool`** (#4149), after its runner was removed outside
+/// purlis: the pool's name, a dash and eight hex digits drawn at random, as long as a name made
+/// after an update ([`successor_name`]), so it fits wherever that one does.
+pub fn remade_name(pool: &str) -> Result<String, Refused> {
+    let mut drawn = [0u8; 4];
+    getrandom::fill(&mut drawn)
+        .map_err(|why| refused(format!("purlis could not draw a runner's name: {why}")))?;
+    let hex: String = drawn.iter().map(|byte| format!("{byte:02x}")).collect();
+    Ok(format!("{pool}-{hex}"))
+}
+
 /// Why a runner container was not made, checked or linked, in words a person reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Refused(pub String);
@@ -822,19 +833,10 @@ pub fn standing_said(
 }
 
 /// **A runner removed outside purlis** (#4149, [`Docker::gone`]): Docker lists no container
-/// of its id. Whether its home volume is still there, which a runner made again takes up.
+/// of its id. Whether its home volume is still there, whose sign-ins a runner made again takes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Gone {
     pub home_kept: bool,
-}
-
-/// Whether a runner's make takes up a home volume already there (#4149).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Home {
-    /// Made for it alone: one already there refuses the make.
-    New,
-    /// A runner made again takes up its home where it is still there.
-    KeptWhereThere,
 }
 
 /// What [`Docker::resumed`] did: what it read of the container first, and whether it started it.
@@ -1486,23 +1488,18 @@ const SECCOMP_DEFAULT_PODMAN: &str = "/usr/share/containers/seccomp.json";
 /// volume as Docker made it for the container: the `local` driver with no options, so its
 /// data is the volume's own and no folder of this machine.
 pub fn check_volume(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> {
-    check_volume_of(inspected, &made.runner)
-}
-
-/// [`check_volume`], of `runner`'s home before its container is made (#4149).
-fn check_volume_of(inspected: &serde_json::Value, runner: &Runner) -> Result<(), Refused> {
     let not = || {
         refused(format!(
             "runner {}'s home volume is not one of Docker's own, made with no options, so purlis \
              does not link to it; remove the runner and add it again",
-            runner.name
+            made.runner.name
         ))
     };
     let one = match inspected.as_array().map(Vec::as_slice) {
         Some([one]) => one,
         _ => return Err(not()),
     };
-    let named = one.get("Name").and_then(serde_json::Value::as_str) == Some(&runner.volume());
+    let named = one.get("Name").and_then(serde_json::Value::as_str) == Some(&made.runner.volume());
     let local = one.get("Driver").and_then(serde_json::Value::as_str) == Some("local");
     let no_options = match one.get("Options") {
         Some(serde_json::Value::Null) => true,
@@ -2155,18 +2152,6 @@ impl Docker {
 
     /// [`Docker::make`], the container labelled as made by `desktop` where one is named (#2869).
     pub fn make_for(&self, runner: &Runner, desktop: Option<&str>) -> Result<Made, Refused> {
-        self.making(runner, desktop, Home::New)
-    }
-
-    /// **[`Docker::make_for`], for a runner removed outside purlis** (#4149): its home volume is
-    /// taken up again where it is still there, once Docker says it is one of its own made with
-    /// no options ([`check_volume`]), and made anew where it went. A home taken up is never
-    /// removed by this: a make that fails removes only the container it made.
-    pub fn make_again_for(&self, runner: &Runner, desktop: Option<&str>) -> Result<Made, Refused> {
-        self.making(runner, desktop, Home::KeptWhereThere)
-    }
-
-    fn making(&self, runner: &Runner, desktop: Option<&str>, home: Home) -> Result<Made, Refused> {
         self.check_daemon()?;
         let volume = runner.volume();
         let listed = self.read(
@@ -2179,19 +2164,12 @@ impl Docker {
             ],
             MOST_INSPECTED,
         )?;
-        let there = listed.lines().any(|line| line.trim() == volume);
-        if there && home == Home::New {
+        if listed.lines().any(|line| line.trim() == volume) {
             return Err(refused(format!(
                 "a volume named {volume} is already there, and a runner's home is a volume made \
                  for it alone; remove that volume, or name the runner otherwise"
             )));
         }
-        if there {
-            let inspected = self.json(&["volume", "inspect", &volume], "docker volume inspect")?;
-            check_volume_of(&inspected, runner)?;
-        }
-        // What a make that fails removes: never a home it took up.
-        let made_here = (!there).then_some(volume.as_str());
         // Nor where a container of its name is: one a run that failed can leave is then
         // this runner's alone, and removed with its volume.
         let container = runner.container();
@@ -2241,7 +2219,7 @@ impl Docker {
         drop(prepared);
         let out = match made {
             Ok(out) => out,
-            Err(why) => return Err(self.and_removed(why, &container, made_here)),
+            Err(why) => return Err(self.and_removed(why, &container, &volume)),
         };
         let made = match ContainerId::new(out.trim()) {
             Ok(container) => Made {
@@ -2249,7 +2227,7 @@ impl Docker {
                 runner: runner.clone(),
             },
             Err(why) => {
-                return Err(self.and_removed(why, &runner.container(), made_here));
+                return Err(self.and_removed(why, &runner.container(), &volume));
             }
         };
         // A runner made now runs the profile chosen for it: the runtime's own default is taken
@@ -2267,9 +2245,9 @@ impl Docker {
                      purlis does not link to it",
                     made.runner.name
                 ));
-                Err(self.and_removed(why, made.container.as_str(), made_here))
+                Err(self.and_removed(why, made.container.as_str(), &volume))
             }
-            Err(why) => Err(self.and_removed(why, made.container.as_str(), made_here)),
+            Err(why) => Err(self.and_removed(why, made.container.as_str(), &volume)),
         }
     }
 
@@ -2328,16 +2306,7 @@ impl Docker {
 
     /// `why`, after removing the container `container` names and the volume `volume`; a
     /// removal that fails is said with it.
-    fn and_removed(&self, why: Refused, container: &str, volume: Option<&str>) -> Refused {
-        let Some(volume) = volume else {
-            return match self.remove_named_container(container) {
-                Ok(()) => why,
-                Err(left) => refused(format!(
-                    "{why}; and the container made could not be removed ({left}): remove the \
-                     container {container} with docker"
-                )),
-            };
-        };
+    fn and_removed(&self, why: Refused, container: &str, volume: &str) -> Refused {
         match self.remove_named(container, volume) {
             Ok(()) => why,
             Err(left) => refused(format!(
@@ -2587,7 +2556,7 @@ impl Docker {
     /// container of its id, stopped or running, so no link to it can come back. `None` where
     /// Docker still lists it (a runner only stopped or suspended); refused where Docker did not
     /// answer, which says nothing of the runner. A gone runner says whether its home volume, and
-    /// with it the sign-ins and work kept there, is still there.
+    /// with it the sign-ins kept there, is still there.
     pub fn gone(&self, made: &Made) -> Result<Option<Gone>, Refused> {
         let id = made.container.as_str();
         let listed = self.read(
@@ -2619,6 +2588,21 @@ impl Docker {
         Ok(Some(Gone {
             home_kept: volumes.lines().any(|line| line.trim() == volume),
         }))
+    }
+
+    /// **When `made`'s home volume was made**, in seconds since the epoch, as Docker says it
+    /// (#4149): a home made after its runner was paired is not the one purlis made for it, and
+    /// nothing of it is carried. `None` where Docker gives no time it reads.
+    pub fn home_made_at(&self, made: &Made) -> Result<Option<u64>, Refused> {
+        let inspected = self.json(
+            &["volume", "inspect", &made.runner.volume()],
+            "docker volume inspect",
+        )?;
+        Ok(inspected
+            .pointer("/0/CreatedAt")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
+            .and_then(|time| u64::try_from(time.timestamp()).ok()))
     }
 
     /// **[`MadeSuspending`] of `made`'s container** (#3717): `None` where its command is not a
@@ -2845,7 +2829,22 @@ impl Docker {
     /// whatever the other did. One that is already gone is removed; one that is still there
     /// after its removal failed is said with Docker's words and the command that removes it.
     pub fn remove_each(&self, made: &Made) -> (Result<(), Refused>, Result<(), Refused>) {
-        let container = self.remove_container(made);
+        let id = made.container.as_str();
+        let container = self.removed_or_gone(
+            &["container", "rm", "--force", "--volumes", id],
+            &[
+                "container",
+                "ls",
+                "--all",
+                "--quiet",
+                "--no-trunc",
+                "--filter",
+                &format!("id={id}"),
+            ],
+            id,
+            &format!("runner {}'s container {id}", made.runner.name()),
+            &format!("docker container rm --force {id}"),
+        );
         let volume = made.runner.volume();
         let volume_gone = self.removed_or_gone(
             &["volume", "rm", "--force", &volume],
@@ -2861,28 +2860,6 @@ impl Docker {
             &format!("docker volume rm --force {volume}"),
         );
         (container, volume_gone)
-    }
-
-    /// **Removes `made`'s container alone**, its home volume left as it is (#4149): what a
-    /// runner made again on the home it took up removes when it does not pair. One already gone
-    /// is removed.
-    pub fn remove_container(&self, made: &Made) -> Result<(), Refused> {
-        let id = made.container.as_str();
-        self.removed_or_gone(
-            &["container", "rm", "--force", "--volumes", id],
-            &[
-                "container",
-                "ls",
-                "--all",
-                "--quiet",
-                "--no-trunc",
-                "--filter",
-                &format!("id={id}"),
-            ],
-            id,
-            &format!("runner {}'s container {id}", made.runner.name()),
-            &format!("docker container rm --force {id}"),
-        )
     }
 
     /// Runs `removing`; when it fails, asks `listing` whether a line of exactly `listed` is
@@ -2910,20 +2887,6 @@ impl Docker {
                 "{what} could not be removed ({why}); remove it with `{how}`"
             ))),
         }
-    }
-
-    fn remove_named_container(&self, container: &str) -> Result<(), Refused> {
-        self.run(
-            &[
-                "container".into(),
-                "rm".into(),
-                "--force".into(),
-                container.into(),
-            ],
-            None,
-            MOST_INSPECTED,
-        )
-        .map(drop)
     }
 
     fn remove_named(&self, container: &str, volume: &str) -> Result<(), Refused> {

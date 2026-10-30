@@ -44,7 +44,7 @@ describe("a runner removed outside purlis", () => {
         if (cmd === "docker_pools_removed") return [{ name: "first", home_kept: false }];
         if (cmd === "docker_pool_make_again") {
           expect(args).toEqual({ name: "first" });
-          return { home_kept: false };
+          return { sign_ins_kept: false };
         }
         return null;
       },
@@ -58,7 +58,7 @@ describe("a runner removed outside purlis", () => {
     await told({});
     await waitFor(() => expect(notice()).not.toBeNull());
     expect(screen.getByText(/removed outside purlis/)).toBeTruthy();
-    expect(screen.getByText(/sign-ins and work kept there/)).toBeTruthy();
+    expect(screen.getByText(/sign-ins kept there/)).toBeTruthy();
 
     await userEvent.click(screen.getByRole("button", { name: "Make the runner again" }));
     await waitFor(() => expect(notice()).toBeNull());

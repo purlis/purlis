@@ -16,7 +16,7 @@ import { RECONNECTING } from "./reconnecting";
  * This machine's session host does not link to it again on its own and refuses each start there
  * in plain words; the core says so as `runner_gone` (`chats-reconnecting`). This asks which pools'
  * runners are gone and offers, for each, **Make the runner again**, which makes it from the
- * pool's own image and limits, on its home where that is still there, and keeps the pool's
+ * pool's own image and limits, with the sign-ins of its home where that is still there, and keeps the pool's
  * profiles there again; **Open Pools settings**; and **Dismiss**. It goes once the core says the
  * chats are reconnected, or once each pool's runner is made again.
  */
@@ -29,7 +29,8 @@ export function RunnerGoneNotice({
   onOpenPools: () => void;
 }) {
   const [removed, setRemoved] = useState<{ plane: PlaneId; pools: readonly PoolRemoved[] }>();
-  const [said, setSaid] = useState<string | undefined>();
+  // Why Make the runner again was refused, by the pool's name.
+  const [said, setSaid] = useState<Readonly<Record<string, string>>>({});
   const { remaking } = usePools();
   useEffect(() => {
     let gone = false;
@@ -58,8 +59,13 @@ export function RunnerGoneNotice({
   }, [plane]);
   const pools = removed?.plane === plane ? removed.pools : [];
   const makeAgain = (name: string) =>
-    void makeRunnerAgain(name).then((why) => {
-      setSaid(why);
+    void makeRunnerAgain(name, plane).then((why) => {
+      setSaid((was) => {
+        const now = { ...was };
+        if (why === undefined) Reflect.deleteProperty(now, name);
+        else now[name] = why;
+        return now;
+      });
       if (why === undefined)
         setRemoved((was) =>
           was === undefined ? was : { ...was, pools: was.pools.filter((one) => one.name !== name) },
@@ -88,7 +94,7 @@ export function RunnerGoneNotice({
       }
     >
       {removedSaid(pool.name, pool.home_kept)}
-      {said !== undefined && <> purlis could not make it again: {said}</>}
+      {said[pool.name] !== undefined && <> purlis could not make it again: {said[pool.name]}</>}
     </Notice>
   ));
 }

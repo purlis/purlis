@@ -382,20 +382,21 @@ export async function readRemovedPools(): Promise<readonly PoolRemoved[]> {
  *  there. */
 export function removedSaid(name: string, homeKept: boolean): string {
   return homeKept
-    ? `Pool ${name}'s runner was removed outside purlis, so purlis no longer links to it. Its home is still there: Make the runner again makes a runner from the pool's image and limits on it, with its sign-ins.`
-    : `Pool ${name}'s runner was removed outside purlis, so purlis no longer links to it. Its home went too, and with it the sign-ins and work kept there: Make the runner again makes a runner from the pool's image and limits, whose profiles you sign in again.`;
+    ? `Pool ${name}'s runner was removed outside purlis, so purlis no longer links to it. Its home is still there: Make the runner again makes a runner from the pool's image and limits, with the sign-ins kept there.`
+    : `Pool ${name}'s runner was removed outside purlis, so purlis no longer links to it. Its home went too, and with it the sign-ins kept there: Make the runner again makes a runner from the pool's image and limits, whose profiles you sign in again.`;
 }
 
-/** What a row says once its runner was made again, by whether it took up its old home. */
-export function madeAgainSaid(name: string, homeKept: boolean): string {
-  return homeKept
-    ? `Pool ${name}'s runner was made again on its home, so its sign-ins are kept.`
-    : `Pool ${name}'s runner was made again on a new home: sign its profiles in again there.`;
+/** What a row says once its runner was made again, by whether its sign-ins were carried. */
+export function madeAgainSaid(name: string, signInsKept: boolean): string {
+  return signInsKept
+    ? `Pool ${name}'s runner was made again, with its sign-ins.`
+    : `Pool ${name}'s runner was made again: sign its profiles in again there.`;
 }
 
 /**
  * **Make the runner again** (#4149): pool `name`'s runner, removed outside purlis, made again
- * from the pool's own image and limits, on its home where that is still there, and paired. Then
+ * from the pool's own image and limits, with the sign-ins of its home where that is still there,
+ * and paired. Then
  * its link and version are asked again and it keeps the pool's profiles again, as after Add a
  * pool, for the open project `plane`. `undefined` once it is made, else why not.
  */
@@ -407,7 +408,7 @@ export async function makeRunnerAgain(name: string, plane?: string): Promise<str
   const why = said.status === "error" ? said.error : undefined;
   set((was) => {
     const remade = { ...was.remade };
-    if (said.status === "ok") remade[name] = madeAgainSaid(name, said.data.home_kept);
+    if (said.status === "ok") remade[name] = madeAgainSaid(name, said.data.sign_ins_kept);
     else Reflect.deleteProperty(remade, name);
     return { ...was, remaking: undefined, remade };
   });

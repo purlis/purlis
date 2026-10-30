@@ -151,7 +151,7 @@ beforeEach(() => {
       if (cmd === "docker_pool_make_again") {
         madeAgain.push(a.name as string);
         link = { state: "linked" };
-        return { home_kept: true };
+        return { sign_ins_kept: true };
       }
       if (cmd === "docker_pool_version") return version;
       if (cmd === "projects_not_held") return structuredClone(notHeld);
@@ -671,7 +671,7 @@ describe("You › This machine › Pools", () => {
     await waitFor(() => expect(madeAgain).toEqual(["builds"]));
     await within(group).findByText("linked");
     expect(group.querySelector('[data-cause="pool-runner-removed:builds"]')).toBeNull();
-    expect(group).toHaveTextContent(/made again on its home, so its sign-ins are kept/);
+    expect(group).toHaveTextContent(/made again, with its sign-ins/);
     // Its profiles are kept there again, as after Add a pool.
     await waitFor(() => expect(profilesAsked).toContain("builds"));
   });
@@ -683,7 +683,7 @@ describe("You › This machine › Pools", () => {
     const nav = await yourSettings();
     await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
     const group = await screen.findByRole("region", { name: "Pools" });
-    await within(group).findByText(/sign-ins and work kept there/);
+    await within(group).findByText(/sign-ins kept there/);
   });
 
   it("says a suspended runner is suspended, not that it would not link (#2051)", async () => {
