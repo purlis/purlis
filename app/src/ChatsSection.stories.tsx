@@ -278,7 +278,8 @@ const drawn = () => new Promise((done) => requestAnimationFrame(() => requestAni
  * a chat arriving meanwhile is drawn only once the pointer has left for anywhere else. Laid out
  * by the browser: where the gap is, and what is under it, is the page's layout, which a window
  * test cannot see. It waits on what it checks, never on the clock (#3951): the card is up
- * before the chat arrives, and the hold's wait is over only when the story says so.
+ * before the chat arrives, the pointer is back on its row once the card is up so the list holds
+ * (#4020), and the hold's wait is over only when the story says so.
  */
 export const HeldAcrossTheGapToTheCard: Story = {
   render: () => <ArrivingInItsPanel />,
@@ -302,6 +303,14 @@ export const HeldAcrossTheGapToTheCard: Story = {
         },
         { timeout: 3000 },
       );
+      // The pointer rests on its row once more, now that the card is up (#4020). Until then a
+      // pointer leaving the list let the hold go at once, with nothing to wait for: any
+      // `pointerover` the list was not handed (the runner laying out its page under a pointer of
+      // its own, another story's frame) could end the hold before the card came, and the chat
+      // would arrive into a list that no longer held. A move over the row takes the hold again,
+      // as a person's next move would; from here a leave waits on the card, which the story holds.
+      await user.pointer({ target: row as HTMLElement });
+      await drawn();
       // A chat arrives while the pointer is on the list: held.
       arrive();
       await drawn();
