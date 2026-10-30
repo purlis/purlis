@@ -194,21 +194,26 @@ A baseline is a PNG at
 one for each pictured cell of the matrix.
 Every baseline is drawn and compared in one image, Playwright's own Docker image for the
 Playwright version the lockfile names, by the `stories` workflow's shards
-(`.github/workflows/stories.yml`): each browser's story files are split in two by Vitest's
-`--shard`, each shard a job of its own, so a shard and the pictures it draws again stay well
-inside its time limit. The `stories` check reads every shard's report. It names the image by its tag and its digest,
+(`.github/workflows/stories.yml`). The workflow names the image by its tag and its digest,
 `mcr.microsoft.com/playwright:v<version>-noble@sha256:<digest>`, so a tag pushed again never
-changes a picture; the `stories` check fails unless it names the lockfile's version
+changes a picture; the stories fail unless it names the lockfile's version
 (`tools/story-image.mjs`).
+
+**The stories run in shards.** Each browser's story files are split by Vitest's `--shard`, each
+part a job of its own, `stories (<browser> <part>/<parts>)`, so a part and the pictures it draws
+again stay well inside its time limit. Each shard's check carries the annotations of the stories
+that failed in it. The `stories (Chromium and WebKit, axe, keyboard, screenshots)` check reads
+every shard's report: it fails when any shard failed or never reported, checks the baselines
+below, and keeps the one `story-baselines` artifact a pull request takes.
 
 **A baseline is drawn only by a pull request's `stories` run, and taken only on request.** To
 add or change one:
 
-1. Push the change that adds the story or changes how it draws. Its `stories` check fails,
-   naming the story, the browser and the picture that is new or differs; the pictures that
-   differ are kept on the run as `story-pictures-<browser>-<shard>`. When a picture is all that
-   failed (or only an obsolete baseline is wrong), each shard that failed draws its stories again
-   with `--update` in the pinned image, and the check keeps every live baseline, of every shard,
+1. Push the change that adds the story or changes how it draws. Its `stories` checks fail, the
+   shard's naming the story, the browser and the picture that is new or differs; the pictures that
+   differ are kept on the run as `story-pictures-<browser>-<part>-of-<parts>`. When a picture is
+   all that failed (or only an obsolete baseline is wrong), each shard that failed draws again,
+   with `--update` in the pinned image, the story files and cells whose pictures failed in it, and the check keeps every live baseline, of every shard,
    as one `story-baselines`, with `drawn.json` naming the
    head and the base it tested. The check stays red: a picture counts only once it is committed.
    A story that fails any other gate draws nothing: fix it first.

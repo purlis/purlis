@@ -67,26 +67,28 @@ jobs:
   # a `changes` that fails runs it too. This workflow has no merge-group run, so a scope rule that
   # skips a story wrongly first shows on main's push run, not in the queue.
   #
-  # **The stories run in shards** (#4013): each browser's story files split in two by Vitest's
-  # `--shard`, each shard a job of its own. All of them in one job took 28 minutes of its 30, and a
-  # pull request whose pictures changed then drew them again past the limit, so the job was
-  # cancelled and kept no baselines to take. A shard runs its stories, names what failed in them,
-  # and draws again the pictures of its own story files that failed; `stories`, the check, then
-  # reads every shard's report and keeps the one `story-baselines` artifact the pull request takes.
+  # **The stories run in shards** (#4013): each browser's story files split by Vitest's `--shard`,
+  # each shard a job of its own. All of them in one job took 28 minutes of its 30, and a pull
+  # request whose pictures changed then drew them again past the limit, so the job was cancelled
+  # and kept no baselines to take. A shard runs its stories, names what failed in them, and draws
+  # again the pictures that failed in it; `stories`, the check, then reads every shard's report
+  # and keeps the one `story-baselines` artifact the pull request takes.
   shard:
-    name: stories (${{ matrix.browser }} ${{ matrix.shard }}/2)
+    name: stories (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.of }})
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.stories != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
-      # Every shard runs to its end, so the check names every story that failed.
+      # Every shard runs to its end, so every story that failed is named.
       fail-fast: false
       matrix:
         browser: [chromium, webkit]
-        # Two shards of each browser: `stories` below counts a report from each of
-        # `SHARDS`, so the two change together.
+        # `of` is how many parts `--shard` splits a browser's story files into, and `shard` lists
+        # each part: the two change together. Each report is named by both, so the check finds a
+        # part that never ran (`tools/story-failures.mjs shards`).
         shard: [1, 2]
+        of: [2]
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
       # An init that reaps, and the host's IPC namespace, which Chromium wants for its shared
@@ -97,6 +99,8 @@ jobs:
       HOME: /root
       BROWSER: ${{ matrix.browser }}
       SHARD: ${{ matrix.shard }}
+      OF: ${{ matrix.of }}
+      NAME: ${{ matrix.browser }}-${{ matrix.shard }}-of-${{ matrix.of }}
     defaults:
       run:
         working-directory: app
@@ -112,102 +116,104 @@ jobs:
       - run: npm ci
       - name: The image is the Playwright the lockfile names, by its tag and its digest
         run: node ../tools/story-image.mjs
-      # One browser and one shard of its story files; every cell of the matrix is a project of its
+      # One browser and one part of its story files; every cell of the matrix is a project of its
       # own, `stories <cell> (<browser>)`. The failures are kept by `tools/story-failures.mjs`'s
       # reporter rather than Vitest's JSON one, which keeps an error's stack alone: WebKit's does
-      # not repeat the message. The report is named by browser and shard, so `stories` reads them
-      # all from one directory.
+      # not repeat the message.
       - name: The stories, in this shard of this browser
         id: stories
         run: |
           mkdir -p "$RUNNER_TEMP/report"
-          PURLIS_STORY_REPORT="$RUNNER_TEMP/report/report-$BROWSER-$SHARD.json" \
-            npx vitest run --project "stories * ($BROWSER)" --shard="$SHARD/2" \
+          PURLIS_STORY_REPORT="$RUNNER_TEMP/report/report-$NAME.json" \
+            npx vitest run --project "stories * ($BROWSER)" --shard="$SHARD/$OF" \
             --reporter=default --reporter=../tools/story-failures.mjs
-      # Storybook's own index of the stories, for `stories` to check the baselines against: the
-      # same in every shard, and written by each, so any one of them is enough.
+      # Storybook's own index of the stories, for the check to read the baselines against: the
+      # same in every shard, so any one shard's will do, and named by its shard so none is lost.
       - name: The stories there are
         if: ${{ !cancelled() && steps.stories.conclusion != 'skipped' }}
         run: |
           npx storybook index --disable-telemetry --quiet -c .storybook \
-            -o "$RUNNER_TEMP/report/index.json"
+            -o "$RUNNER_TEMP/report/index-$NAME.json"
+      # Kept before any drawing, so a shard that runs out of time while it draws still reports.
+      - name: The shard's report, kept for the check
+        if: ${{ !cancelled() && steps.stories.conclusion != 'skipped' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: story-report-${{ matrix.browser }}-${{ matrix.shard }}-of-${{ matrix.of }}
+          path: ${{ runner.temp }}/report/
+          if-no-files-found: warn
+          retention-days: 7
       # One annotation per story that failed: its browser, its gate, the first line of why and
-      # the axe rules it broke, put on the story file's line it failed at (`GITHUB_WORKSPACE` is
-      # the root its path is relative to, which is why the shard that ran the story says it); a
-      # failure axe raises after the story has no such line, and is on the check alone.
+      # the axe rules it broke, put on the story file's line it failed at. The shard that ran the
+      # story says it: the frames are of this container's paths, which `GITHUB_WORKSPACE` is the
+      # root of. A failure axe raises after the story has no such line, and is on the check
+      # alone; a shard that failed before its stories ran says it wrote no report.
       - name: The stories that failed, named
-        if: failure() && steps.stories.conclusion != 'skipped'
-        run: node ../tools/story-failures.mjs "$BROWSER" "$RUNNER_TEMP/report/report-$BROWSER-$SHARD.json"
+        if: failure()
+        run: node ../tools/story-failures.mjs "$BROWSER" "$RUNNER_TEMP/report/report-$NAME.json"
       - name: The pictures that differ, kept
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: story-pictures-${{ matrix.browser }}-${{ matrix.shard }}
+          name: story-pictures-${{ matrix.browser }}-${{ matrix.shard }}-of-${{ matrix.of }}
           path: app/.vitest/attachments/
           if-no-files-found: ignore
           retention-days: 7
-      # The pictures of this shard's story files, drawn again for the pull request to take
-      # (above): only when a picture is all that failed in it, so the other gates hold every
-      # baseline drawn. `stories` keeps them only when that holds in every shard. Each story file's
-      # baselines in this browser are copied out under their path in `app/`, with `drew-<browser>-
-      # <shard>` beside them, which says this shard drew all it had to.
+      # The pictures that failed in this shard, drawn again for the pull request to take (above):
+      # only when a picture is all that failed in it, so the other gates hold every baseline
+      # drawn. Each story file is drawn in the cells its picture failed in, and only those cells'
+      # pictures are kept: a file's other cells may be another shard's. `drew-<shard>` beside
+      # them says this shard drew all it had to; the check keeps them only when every shard that
+      # failed drew.
       - name: The pictures that failed, drawn again
         id: drawn
         if: failure() && github.event_name == 'pull_request' && steps.stories.outcome == 'failure'
         run: |
-          if ! files=$(node ../tools/story-failures.mjs pictures-alone "$RUNNER_TEMP/report/report-$BROWSER-$SHARD.json"); then
-            echo "::notice::a story failed on more than its picture in $BROWSER $SHARD/2, so no baselines are drawn: fix it, and the next run draws them"
+          if ! node ../tools/story-failures.mjs pictures-to-draw "$RUNNER_TEMP/report/report-$NAME.json" > "$RUNNER_TEMP/to-draw.tsv"; then
+            echo "::notice::a story failed on more than its picture in $BROWSER $SHARD/$OF, so no baselines are drawn: fix it, and the next run draws them"
             exit 0
           fi
-          # shellcheck disable=SC2086 # story files, with no space in any
-          # Its own report: `stories` reads the whole run's, which names every story that takes no
+          projects=()
+          while IFS= read -r cell; do projects+=(--project "stories $cell ($BROWSER)"); done \
+            < <(cut -f2 "$RUNNER_TEMP/to-draw.tsv" | sort -u)
+          mapfile -t files < <(cut -f1 "$RUNNER_TEMP/to-draw.tsv" | sort -u)
+          # Its own report: the check reads the whole run's, which names every story that takes no
           # picture.
           if ! PURLIS_STORY_REPORT="$RUNNER_TEMP/drawing.json" \
-            npx vitest run --project "stories * ($BROWSER)" --update --reporter=default \
-            --reporter=../tools/story-failures.mjs $files; then
-            echo "::notice::a story failed while its baselines were drawn in $BROWSER $SHARD/2, so none are kept"
+            npx vitest run "${projects[@]}" --update --reporter=default \
+            --reporter=../tools/story-failures.mjs "${files[@]}"; then
+            echo "::notice::a story failed while its baselines were drawn in $BROWSER $SHARD/$OF, so none are kept"
             exit 0
           fi
-          # shellcheck disable=SC2086 # story files, with no space in any
-          for file in $files; do
+          while IFS=$'\t' read -r file cell; do
             pictures="$(dirname "$file")/__screenshots__/$(basename "$file")"
             mkdir -p "$RUNNER_TEMP/drawn/app/$pictures"
-            find "$pictures" -maxdepth 1 -type f -name "*-$BROWSER-linux.png" \
+            find "$pictures" -maxdepth 1 -type f -name "*_$cell-$BROWSER-linux.png" \
               -exec cp {} "$RUNNER_TEMP/drawn/app/$pictures/" \;
-          done
-          touch "$RUNNER_TEMP/drawn/drew-$BROWSER-$SHARD"
+          done < "$RUNNER_TEMP/to-draw.tsv"
+          touch "$RUNNER_TEMP/drawn/drew-$NAME"
           echo "drawn=true" >> "$GITHUB_OUTPUT"
       - name: The pictures drawn again, kept for the check
         if: failure() && steps.drawn.outputs.drawn == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: story-drawn-${{ matrix.browser }}-${{ matrix.shard }}
+          name: story-drawn-${{ matrix.browser }}-${{ matrix.shard }}-of-${{ matrix.of }}
           path: ${{ runner.temp }}/drawn/
           if-no-files-found: error
-          retention-days: 1
-      - name: The shard's report, kept for the check
-        if: ${{ !cancelled() && steps.stories.conclusion != 'skipped' }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: story-report-${{ matrix.browser }}-${{ matrix.shard }}
-          path: ${{ runner.temp }}/report/
-          if-no-files-found: warn
-          retention-days: 1
+          retention-days: 7
 
   # **The check**, under the name it has always had: it fails when any shard failed, checks that
   # every baseline is of a live story that takes a picture, and keeps the baselines a pull request
   # takes as one `story-baselines` artifact, as `tools/story-baselines-pull.mjs` and
   # `stories-baselines.yml` read it. It runs no story, so it needs no image and no `npm ci`: the
-  # baseline and report tools use Node's own modules alone.
+  # baseline and report tools use Node's own modules alone. Each story's annotations are on the
+  # shard that ran it.
   stories:
     name: stories (Chromium and WebKit, axe, keyboard, screenshots)
     needs: [changes, shard]
     if: ${{ !cancelled() && needs.changes.outputs.stories != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    env:
-      # A report from each shard: two browsers, two shards each (the `shard` job's matrix).
-      SHARDS: 4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -215,12 +221,10 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-      # A shard that never ran its stories kept no report, and one that drew no pictures kept
-      # none: the steps below say so. Each artifact's files are named by its shard, so they merge
-      # into one directory.
+      # Each artifact's files are named by its shard, so they merge into one directory. A shard
+      # that never ran its stories kept none: the next step names it.
       - name: Every shard's report
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        continue-on-error: true
         with:
           pattern: story-report-*
           path: ${{ runner.temp }}/reports
@@ -228,32 +232,31 @@ jobs:
       - name: Every shard's pictures, drawn again
         if: ${{ github.event_name == 'pull_request' && needs.shard.result == 'failure' }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        continue-on-error: true
         with:
           pattern: story-drawn-*
           path: ${{ runner.temp }}/redrawn
           merge-multiple: true
       # Storybook's own index says which stories there are, and the shards' reports which of them
       # take no picture (`screenshot: false`, which no index has); a baseline of any other is
-      # obsolete. After the stories, whether they passed or not (not when none ran).
+      # obsolete. After the stories, whether they passed or not.
       - name: Every baseline was drawn in this image, of a story there is that takes a picture
         id: check
         run: |
           shopt -s nullglob
-          REPORTS="$RUNNER_TEMP/reports"
-          reports=("$REPORTS"/report-*.json)
-          if [ ! -f "$REPORTS/index.json" ]; then
-            echo "::error::no shard wrote the story index, so no baseline is checked: the shards' logs say why"
+          reports=("$RUNNER_TEMP"/reports/report-*.json)
+          indexes=("$RUNNER_TEMP"/reports/index-*.json)
+          if ! node tools/story-failures.mjs shards "$RUNNER_TEMP/reports" > "$RUNNER_TEMP/shards.txt"; then
+            while IFS= read -r line; do echo "::warning::$line: its stories are not checked for screenshot: false"; done < "$RUNNER_TEMP/shards.txt"
+          fi
+          if [ "${#indexes[@]}" -eq 0 ]; then
+            echo "::error::no shard's story index reached this job, so no baseline is checked: the shards' logs say why"
             exit 1
           fi
-          if [ "${#reports[@]}" -ne "$SHARDS" ]; then
-            echo "::warning::${#reports[@]} of $SHARDS shards wrote a report; the stories of the others are not checked for screenshot: false"
-          fi
-          node tools/story-baselines.mjs check "$REPORTS/index.json" "${reports[@]}"
+          node tools/story-baselines.mjs check "${indexes[0]}" "${reports[@]}"
       # The baselines this run would make, for the pull request to take on request (above): every
       # shard's pictures drawn again, put over this checkout, and every live baseline gathered.
-      # Only when a picture is all that failed in every shard, and each shard that failed drew its
-      # own; an obsolete baseline alone needs no drawing, and gathering leaves it out.
+      # Only when every shard reported, a picture is all that failed in any, and each shard that
+      # failed drew; an obsolete baseline alone needs no drawing, and gathering leaves it out.
       - name: The baselines, drawn in this run for the pull request to take
         id: drawn
         if: ${{ !cancelled() && github.event_name == 'pull_request' && (needs.shard.result == 'failure' || steps.check.outcome == 'failure') }}
@@ -263,33 +266,22 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           shopt -s nullglob
-          REPORTS="$RUNNER_TEMP/reports"
-          REDRAWN="$RUNNER_TEMP/redrawn"
-          reports=("$REPORTS"/report-*.json)
-          if [ ! -f "$REPORTS/index.json" ]; then exit 0; fi
+          reports=("$RUNNER_TEMP"/reports/report-*.json)
+          indexes=("$RUNNER_TEMP"/reports/index-*.json)
+          if [ "${#indexes[@]}" -eq 0 ]; then exit 0; fi
           if [ "$SHARDS_RESULT" != success ]; then
-            if [ "${#reports[@]}" -ne "$SHARDS" ]; then
-              echo "::notice::${#reports[@]} of $SHARDS shards wrote a report, so no baselines are drawn: the shards' logs say why"
-              exit 0
-            fi
             if ! node tools/story-failures.mjs pictures-alone "${reports[@]}" > /dev/null; then
               echo "::notice::a story failed on more than its picture, so no baselines are drawn: fix it, and the next run draws them"
               exit 0
             fi
-            mkdir -p "$REDRAWN/app"
-            for report in "${reports[@]}"; do
-              shard=$(basename "$report" .json)
-              shard=${shard#report-}
-              if node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).failed ? 0 : 1)' "$report" \
-                && [ ! -f "$REDRAWN/drew-$shard" ]; then
-                echo "::notice::the shard $shard failed and drew no baselines, so none are kept: its log says why"
-                exit 0
-              fi
-            done
-            cp -R "$REDRAWN/app/." app/
+            if ! node tools/story-failures.mjs shards "$RUNNER_TEMP/reports" "$RUNNER_TEMP/redrawn" > "$RUNNER_TEMP/undrawn.txt"; then
+              while IFS= read -r line; do echo "::notice::$line, so no baselines are kept: its log says why"; done < "$RUNNER_TEMP/undrawn.txt"
+              exit 0
+            fi
+            if [ -d "$RUNNER_TEMP/redrawn/app" ]; then cp -R "$RUNNER_TEMP/redrawn/app/." app/; fi
           fi
           mkdir -p "$RUNNER_TEMP/drawn/app"
-          node tools/story-baselines.mjs gather "$REPORTS/index.json" \
+          node tools/story-baselines.mjs gather "${indexes[0]}" \
             "$RUNNER_TEMP/drawn/app" "${reports[@]}" > "$RUNNER_TEMP/gathered.txt"
           printf '{"head":"%s","base":"%s"}\n' "$HEAD_SHA" "$BASE_SHA" > "$RUNNER_TEMP/drawn/drawn.json"
           echo "$(grep -c . "$RUNNER_TEMP/gathered.txt" || true) baselines drawn; take them with node tools/story-baselines-pull.mjs ${{ github.event.pull_request.number }}, or the update-baselines label"
@@ -308,6 +300,6 @@ jobs:
           SHARDS_RESULT: ${{ needs.shard.result }}
         run: |
           if [ "$SHARDS_RESULT" != success ]; then
-            echo "::error::a shard of the stories failed ($SHARDS_RESULT): its annotations and log say which story and why"
+            echo "::error::a shard of the stories failed ($SHARDS_RESULT): the stories (<browser> <shard>) checks name each story and why"
             exit 1
           fi
