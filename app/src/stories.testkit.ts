@@ -241,6 +241,25 @@ export function expectFocusInSight(): void {
   );
 }
 
+/**
+ * **The focus comes into sight** (`step` names where in the story): {@link expectFocusInSight},
+ * waited for as long as the keyboard may take to land. A collection's focused item is scrolled
+ * in by React Aria on the frame after the keyboard moves to it (`useSelectableCollection`), and
+ * WebKit can draw that frame late in a busy run (#4026): checked at once, the item was still out
+ * of sight. Throws what `expectFocusInSight` says, after the step.
+ */
+export async function untilFocusInSight(step: string): Promise<void> {
+  let why: unknown;
+  try {
+    await waitFor(() => expectFocusInSight(), { timeout: LANDS_WITHIN_MS });
+    return;
+  } catch (error) {
+    why = error;
+  }
+  // Said after the step, with what the check last found.
+  throw new Error(`${step}: ${why instanceof Error ? why.message : String(why)}`);
+}
+
 function describe(element: Element): string {
   const name = element.getAttribute("aria-label") ?? element.textContent?.trim().slice(0, 40);
   const role = element.getAttribute("role") ?? element.tagName.toLowerCase();

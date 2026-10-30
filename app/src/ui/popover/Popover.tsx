@@ -35,6 +35,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { flushSync } from "react-dom";
 import {
   Dialog as AriaDialog,
   DialogTrigger as AriaDialogTrigger,
@@ -546,9 +547,14 @@ export function HungPopover({
   // React Aria to place it again by a nudge that differs from the last one drawn, so two in one
   // frame (a scroll's and its end's) never undo each other, as a nudge toggled twice would.
   // Back to none at rest, where it is drawn with no nudge.
+  // **Drawn in the frame that asks** (#4026): each ask is drawn at once (`flushSync`), so React
+  // Aria places the card in that frame. Left to React's own time, a frame can come before the
+  // drawing (WebKit, on a loaded machine): the frame at rest then asks for none, the nudge last
+  // drawn, React draws nothing, and the card stays where its chip was.
   const [nudged, setNudged] = useState(0);
   const nudge = nudged === 0 ? 0 : nudged % 2 === 1 ? 0.01 : 0.02;
-  const again = () => setNudged((was) => was + 1);
+  const again = () => flushSync(() => setNudged((was) => was + 1));
+  const rest = () => flushSync(() => setNudged(0));
   useEffect(() => {
     if (!isOpen) return;
     let asked = 0;
@@ -597,7 +603,7 @@ export function HungPopover({
         // At rest: placed with no nudge, so a card at rest is drawn at the one place whatever
         // number of frames brought it there (a hundredth of a pixel moves its words' pixels).
         if (at === placedAt) {
-          setNudged(0);
+          rest();
           return;
         }
         placedAt = at;
@@ -630,7 +636,7 @@ export function HungPopover({
         // at rest with no nudge: the following frame (`asked`) is not touched.
         else {
           again();
-          ending = requestAnimationFrame(() => setNudged(0));
+          ending = requestAnimationFrame(rest);
         }
       });
     };
