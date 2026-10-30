@@ -202,13 +202,26 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
             piece: at.piece.clone(),
             act,
         };
-        if let crate::gitask::Forwarded::Refused(why) =
+        // Refused only where the app says another live chat holds the folder; any other
+        // answer, a `No` included, lets the git run, as no answer does.
+        if let crate::gitask::Forwarded::Said { code, lines } =
             crate::gitask::forwarded(&at.workspace, work, left)
+            && code == purlis_core::hookwire::CLAIM_HELD
         {
+            use purlis_core::repocmd::Say;
+            let why: Vec<String> = lines
+                .iter()
+                .map(|line| match line {
+                    Say::Info(s) | Say::Done(s) | Say::Warn(s) | Say::Fail(s) | Say::Plain(s) => {
+                        s.to_string()
+                    }
+                    Say::Out(s) => s.clone(),
+                })
+                .collect();
             return Some(toolgate::Verdict {
                 reason: purlis_core::piececlaim::REASON.to_owned(),
                 shape: Some(write.sub),
-                denial: why,
+                denial: why.join(" "),
             });
         }
     }

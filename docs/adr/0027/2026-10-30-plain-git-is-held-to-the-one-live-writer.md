@@ -29,11 +29,13 @@ judges the claim against the chats it has (`piececlaim::take`), as it judges a b
 
 **A guard with no answer lets the call through.** Where no app takes the ask (none runs, or one
 older than the ask drops the line it cannot read), or none answers within 0.9 s for the whole
-line, the git runs. This differs on purpose from a brokered write, which fails closed with no
-app: there purlis itself is about to write, here the chat's own git is, and the guard keeps two
-chats from colliding by accident rather than walling a chat in. So a dead chat's stale claim
-never stops every other chat until the person acts, and a slow app never pushes the hook past
-its 2 s budget into a refusal that names nobody.
+line, the git runs. So does any answer but the one that another live chat holds the folder
+(`CLAIM_HELD`): a chat the app does not have open, a name it cannot read, a holder that has
+not come back since a restart, or a claim it could not judge. This differs on purpose from a
+brokered write, which fails closed with no app: there purlis itself is about to write, here the
+chat's own git is, and the guard keeps two chats from colliding by accident rather than walling
+a chat in. So a dead chat's stale claim never stops every other chat until the person acts, and
+a slow app never pushes the hook past its 2 s budget into a refusal that names nobody.
 
 **The person is never held to it.** Their own terminal runs no guard. A harness they start
 themselves has no chat number from the app and is not asked. A shell tab in the window is the
