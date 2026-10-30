@@ -477,6 +477,15 @@ describe("a filter drawn again (R168)", () => {
 });
 
 describe("the family's default, through the window's cascade (field.css)", () => {
+  // WCAG 2.5.8 (#3250): the compact density draws the chrome at 18px, and a smaller text size
+  // shrinks the scale, so sm's floor is 24 CSS px under both, as the sm button's is (#3210).
+  it("never draws an sm box under the 24px target, in any density or text size", () => {
+    render(<TextField aria-label="Filter" size="sm" value="" onChange={() => {}} />);
+    const box = screen.getByRole("textbox", { name: "Filter" }).parentElement as Element;
+    expect(box).toHaveAttribute("data-size", "sm");
+    expect(drawnWith(box, "block-size")).toBe("max(24px, var(--size-chrome), var(--space-7))");
+  });
+
   it("draws a one-line box a control tall, a textarea three, and the ring outside either", () => {
     render(
       <>

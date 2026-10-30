@@ -239,6 +239,41 @@ export const Sizes: Story = {
   },
 };
 
+/**
+ * **An sm field beside an sm button at a row's tightest gap** (#3250, WCAG 2.5.8): the compact
+ * density draws the chrome at 18px, so sm's floor is 24 CSS px, as the button's is (#3210). Each
+ * is a 24px target by itself in every cell, so axe's `target-size` passes with no spacing to
+ * lean on.
+ */
+export const SmallBesideAButton: Story = {
+  args: { "aria-label": "Filter the memories" },
+  render: () => (
+    <div
+      style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", inlineSize: "20rem" }}
+    >
+      <Held
+        type="search"
+        size="sm"
+        icon={<Search aria-hidden="true" />}
+        aria-label="Filter the memories"
+        placeholder="Filter 28 memories"
+      />
+      <Button size="sm">Clear</Button>
+    </div>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const field = canvas.getByRole("searchbox", { name: "Filter the memories" });
+    const box = field.parentElement as HTMLElement;
+    const clear = canvas.getByRole("button", { name: "Clear" });
+    for (const one of [box, clear]) {
+      await expect(one.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
+    }
+    await userEvent.tab();
+    await expect(field).toHaveFocus();
+    expectFocusInSight();
+  },
+};
+
 /** Unavailable: out of the tab sequence, drawn in the faint tier, nothing moves. */
 export const Unavailable: Story = {
   args: { label: "Host", start: "git.example.com", isDisabled: true },

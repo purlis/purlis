@@ -365,6 +365,23 @@ describe("the select", () => {
     );
     expect(selectNamed("Page size")).toHaveAttribute("data-size", "sm");
   });
+
+  // WCAG 2.5.8 (#3250): the compact density draws the chrome at 18px, so sm's floor is 24 CSS
+  // px, as the sm button's is (#3210).
+  it("never draws an sm select under the 24px target, in any density or text size", () => {
+    render(
+      <Select
+        aria-label="Page size"
+        size="sm"
+        value="a"
+        options={[{ value: "a", label: "A" }]}
+        onValueChange={() => {}}
+      />,
+    );
+    expect(drawnWith(selectNamed("Page size"), "block-size")).toBe(
+      "max(24px, var(--size-chrome), var(--space-7))",
+    );
+  });
 });
 
 describe("a long select", () => {
