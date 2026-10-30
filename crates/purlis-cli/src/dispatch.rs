@@ -821,11 +821,41 @@ fn sent_on(
     }
 }
 
+/// Whether this process serves purlis's tools ([`crate::mcp::serve`]): a message it could not
+/// queue was sent with a tool, and the sender is not pointed to the tool it used (#3914).
+static SERVING_TOOLS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// This process serves purlis's tools from now on ([`SERVING_TOOLS`]).
+pub(crate) fn serving_tools() {
+    SERVING_TOOLS.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// What a sender is told where the app did not answer and the message could not be queued.
 fn not_queued(unqueued: &purlis_core::dispatchqueue::Unqueued) -> String {
+    let harness = purlis_core::hookwire::chat_harness(&purlis_core::envvar::var);
+    not_queued_for(
+        unqueued,
+        SERVING_TOOLS.load(std::sync::atomic::Ordering::Relaxed),
+        purlis_core::dispatchqueue::tools_queue(harness.as_deref()),
+    )
+}
+
+/// [`not_queued`], sent with a tool (`as_tool`) or the command, in a chat whose harness's tools
+/// queue where its command cannot (`tools_queue`, [`purlis_core::dispatchqueue::tools_queue`]):
+/// only a command there is pointed to the tool (#3914).
+fn not_queued_for(
+    unqueued: &purlis_core::dispatchqueue::Unqueued,
+    as_tool: bool,
+    tools_queue: bool,
+) -> String {
+    let instead = if tools_queue && !as_tool {
+        ", or with purlis's dispatch tool for it, which queues it"
+    } else {
+        ""
+    };
     format!(
         "{SAYS} the purlis app did not answer, and {}. Nothing was sent. Send it again once the \
-         app answers, or with purlis's dispatch tool for it, which queues it.",
+         app answers{instead}.",
         unqueued.say()
     )
 }
@@ -1473,6 +1503,29 @@ fn read_brief() -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    /// **A sender kept from the queue is pointed to the tools only where they queue** (#3914):
+    /// the command, in a chat whose harness runs purlis's tools outside its sandbox (Claude
+    /// Code). The tools themselves, and the command under Codex or opencode, whose wrap holds
+    /// the tools too, are told to send it again once the app answers, and nothing else.
+    #[test]
+    fn a_sender_kept_from_the_queue_is_pointed_to_the_tools_only_where_they_queue() {
+        use purlis_core::dispatchqueue::Unqueued;
+        let kept =
+            || Unqueued::Unreachable(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+        let tool = "with purlis's dispatch tool for it, which queues it";
+        let command_in_claude = super::not_queued_for(&kept(), false, true);
+        assert!(command_in_claude.contains(tool), "{command_in_claude}");
+        for (as_tool, tools_queue) in [(true, true), (false, false), (true, false)] {
+            let said = super::not_queued_for(&kept(), as_tool, tools_queue);
+            assert!(!said.contains("tool"), "{said}");
+            assert!(
+                said.contains("Send it again once the app answers."),
+                "{said}"
+            );
+            assert!(said.contains("Nothing was sent."), "{said}");
+        }
+    }
+
     /// **A `--long`-first line reaches no subcommand** (#3905): `Bash(purlis dispatch --long *)`
     /// is pre-allowed for Claude Code, and it allows the task and nothing else only because the
     /// command's arguments and its subcommands exclude each other

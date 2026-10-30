@@ -33,6 +33,8 @@ const ANSWER: &str = "answer";
 
 /// Serves the tools on stdin and stdout until the harness closes them.
 pub fn serve(graded: bool) -> Result<u8, String> {
+    // A message a tool could not queue never points the sender to the tool (#3914).
+    crate::dispatch::serving_tools();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

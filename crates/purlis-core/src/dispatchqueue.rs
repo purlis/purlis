@@ -157,6 +157,22 @@ impl Unqueued {
     }
 }
 
+/// **Whether purlis's `dispatch_*` tools queue a message in a chat of `harness`** where its
+/// sandbox keeps the `purlis dispatch` command from the queue (#3914), by the harness the chat's
+/// environment names ([`crate::hookwire::chat_harness`]; none is Claude Code's).
+///
+/// The ruling on #3914 grants a sandboxed command no way into the queue: the tools are what
+/// queue, because a harness that runs its MCP servers outside the sandbox it puts a command in
+/// runs purlis's there too. Claude Code does. Codex and opencode do not: purlis's wrap is around
+/// the whole harness, its MCP servers with it
+/// ([`crate::harness::HarnessAdapter::sandbox_holds_what_it_starts`]), so there the tools are
+/// kept from the queue as the command is, and a sender is never pointed to them for it. A
+/// harness purlis ships no adapter for is promised nothing.
+pub fn tools_queue(harness: Option<&str>) -> bool {
+    crate::harness::Harness::of_chat(harness)
+        .is_some_and(|harness| !harness.adapter().sandbox_holds_what_it_starts())
+}
+
 /// Where chat `chat`'s queue is, beside the hook socket `socket`.
 pub fn dir_for(socket: &Path, chat: u32) -> PathBuf {
     queues_for(socket).join(chat.to_string())

@@ -331,3 +331,18 @@ fn a_chat_started_again_in_its_place_keeps_what_it_queued_in_order() {
         vec![tell(4, "one"), tell(4, "two")]
     );
 }
+
+/// #3914: Claude Code runs purlis's MCP server outside the sandbox it confines a command in, so
+/// its `dispatch_*` tools queue where the command cannot; Codex and opencode run the server
+/// inside purlis's wrap, so neither does there, and nothing points a chat to them for it.
+#[test]
+fn only_a_harness_that_runs_purlis_s_tools_outside_its_sandbox_has_tools_that_queue() {
+    assert!(tools_queue(Some("claude-code")));
+    assert!(
+        tools_queue(None),
+        "a chat that names no harness is Claude Code's"
+    );
+    assert!(!tools_queue(Some("codex")));
+    assert!(!tools_queue(Some("opencode")));
+    assert!(!tools_queue(Some("a-harness-purlis-does-not-know")));
+}
