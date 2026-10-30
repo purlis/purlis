@@ -100,3 +100,42 @@ export const WithNoChipOffersOpen: Story = {
     await expect(canvas.getByTestId("said")).toHaveTextContent("Went to git-ci-cd");
   },
 };
+
+/** A card whose second way is the family's secondary button. */
+function TwoWays() {
+  return (
+    <div className="window-work" style={{ display: "grid", inlineSize: 760 }}>
+      <ActionResultNotice
+        cause="result:workspace.layout"
+        said={{
+          from: "workspace.layout",
+          refused: false,
+          title: "The layout of git-ci-cd is out of date",
+          words: "Update it to bring its settings to this version of purlis.",
+          ways: [
+            { label: "Update", onPress: () => undefined, primary: true },
+            { label: "Later", onPress: () => undefined },
+          ],
+        }}
+        onClose={() => undefined}
+        onSettings={() => undefined}
+      />
+    </div>
+  );
+}
+
+/**
+ * **A secondary way on the card is visibly a button** (#3478): a step off the card's own ground,
+ * in every theme, where in Purlis a secondary button's own fill is that ground.
+ */
+export const ASecondaryWayOnTheCard: Story = {
+  render: () => <TwoWays />,
+  play: async ({ canvas }) => {
+    const later = canvas.getByRole("button", { name: "Later" });
+    await expect(later).toHaveAttribute("data-variant", "secondary");
+    const card = later.closest<HTMLElement>('[data-scope="notice"][data-part="root"]');
+    await expect(card).toHaveAttribute("data-layout", "card");
+    const ground = getComputedStyle(card as HTMLElement).backgroundColor;
+    await expect(getComputedStyle(later).backgroundColor).not.toBe(ground);
+  },
+};
