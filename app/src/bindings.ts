@@ -1623,7 +1623,7 @@ export const commands = {
 	 *  goes there. The runner is asked again every few seconds until it says the profile is signed
 	 *  in there.
 	 */
-	typeProfileSignIn: (plane: PlaneId, session: number, name: string, provider: string | null, pool: string | null) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_in", { plane, session, name, provider, pool })),
+	typeProfileSignIn: (plane: PlaneId, session: number, name: string, provider: string | null, pool: string | null, device: boolean) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_in", { plane, session, name, provider, pool, device })),
 	/**
 	 *  Puts away project `plane`'s Ask to sign the profile `profile` in (#2035): Dismiss. A chat's
 	 *  next start on it asks again while its harness says it is signed out.
@@ -2973,6 +2973,16 @@ export const commands = {
 	poolSignInNext: (flow: number) => typedError<
 /**  Open this page in the browser here: the harness vendor's own. */
 { at: "open"; url: string } | 
+/**
+ *  Open this page in the browser here, where the person approves: this machine is listening
+ *  for the browser's answer, which purlis carries to the runner, so nothing is pasted (#4044).
+ */
+{ at: "approve"; url: string } | 
+/**
+ *  This machine's `port` is taken, so the browser's answer could not reach the runner: no
+ *  page was opened.
+ */
+{ at: "port-taken"; port: number } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
 /**  The harness refused the code, in its words. */
@@ -10162,6 +10172,16 @@ export type PoolRow = {
 export type PoolSignInStep = 
 /**  Open this page in the browser here: the harness vendor's own. */
 { at: "open"; url: string } | 
+/**
+ *  Open this page in the browser here, where the person approves: this machine is listening
+ *  for the browser's answer, which purlis carries to the runner, so nothing is pasted (#4044).
+ */
+{ at: "approve"; url: string } | 
+/**
+ *  This machine's `port` is taken, so the browser's answer could not reach the runner: no
+ *  page was opened.
+ */
+{ at: "port-taken"; port: number } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
 /**  The harness refused the code, in its words. */

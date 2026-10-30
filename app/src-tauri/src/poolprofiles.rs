@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use purlis_core::profilestore::sign_in::{Standing, driven};
+use purlis_core::profilestore::sign_in::{Standing, callback, driven};
 use purlis_core::profilestore::{self, onrunner};
 
 use crate::runnerlinks::{Machine, ToARunner};
@@ -233,7 +233,13 @@ fn config_root() -> Result<PathBuf, String> {
 /// sign-in`, through this machine's `docker` with settings of purlis's own, on the engine shown
 /// to be the person's own, in the container as it was made, checked first. Only one of this
 /// machine's profiles that goes to a runner, kept there first, so the runner has it to sign in.
-pub fn sign_in_line(pool: &str, name: &str, provider: Option<&str>) -> Result<String, String> {
+/// With `device`, by the harness's device-code flow (#4044).
+pub fn sign_in_line(
+    pool: &str,
+    name: &str,
+    provider: Option<&str>,
+    device: bool,
+) -> Result<String, String> {
     let config = config_root()?;
     let engine = owned()?;
     let record = profilestore::list(&config)?
@@ -253,7 +259,12 @@ pub fn sign_in_line(pool: &str, name: &str, provider: Option<&str>) -> Result<St
         ));
     }
     let runner = purlis_core::runners::runner_for(&config, pool).map_err(|why| why.to_string())?;
-    crate::runnerlinks::docker()?.sign_in_line(&runner.made, &engine, name, provider)
+    let docker = crate::runnerlinks::docker()?;
+    if device {
+        docker.device_sign_in_line(&runner.made, &engine, name, provider)
+    } else {
+        docker.sign_in_line(&runner.made, &engine, name, provider)
+    }
 }
 
 /// **One step of a sign-in on a pool's runner** that purlis drives with no terminal (#4042), as
@@ -263,6 +274,12 @@ pub fn sign_in_line(pool: &str, name: &str, provider: Option<&str>) -> Result<St
 pub enum PoolSignInStep {
     /// Open this page in the browser here: the harness vendor's own.
     Open { url: String },
+    /// Open this page in the browser here, where the person approves: this machine is listening
+    /// for the browser's answer, which purlis carries to the runner, so nothing is pasted (#4044).
+    Approve { url: String },
+    /// This machine's `port` is taken, so the browser's answer could not reach the runner: no
+    /// page was opened.
+    PortTaken { port: u16 },
     /// Ask for the code the page shows.
     Code,
     /// The harness refused the code, in its words.
@@ -283,6 +300,8 @@ impl From<driven::Event> for PoolSignInStep {
     fn from(event: driven::Event) -> Self {
         match event {
             driven::Event::Open { url } => Self::Open { url },
+            driven::Event::Approve { url, .. } => Self::Approve { url },
+            driven::Event::PortTaken { port } => Self::PortTaken { port },
             driven::Event::AskCode => Self::Code,
             driven::Event::Refused { said } => Self::Refused { said },
             driven::Event::Checking => Self::Checking,
@@ -312,8 +331,10 @@ const STEP_WITHIN: Duration = Duration::from_secs(20);
 /// the runner's own `purlis profile sign-in`, kept there first and run there through this
 /// machine's `docker` as [`sign_in_line`]'s is, but with pipes, its output read for the steps
 /// [`pool_sign_in_next`] answers. Nothing of this machine's sign-in goes to the runner (ADR
-/// 0095). A sign-in of the same profile on the same pool already running is cancelled. Answers
-/// the sign-in's number.
+/// 0095). A login that waits for the browser is answered through this machine's port, for as
+/// long as it runs: the redirect, and only that, is carried to the runner over a link of its own
+/// (`sign_in_redirect`, #4044). A sign-in of the same profile on the same pool already running is
+/// cancelled. Answers the sign-in's number.
 #[tauri::command]
 #[specta::specta]
 pub async fn pool_sign_in_start(
@@ -342,6 +363,13 @@ pub async fn pool_sign_in_start(
             &name,
             provider.as_deref(),
         )?;
+        let carry: callback::Carry = {
+            let (config, pool) = (config.clone(), pool.clone());
+            Arc::new(move |target: &str| {
+                let to = to_a_runner(&config, &pool, Waking::No)?;
+                crate::runnerlinks::sign_in_redirect(&to, target)
+            })
+        };
         let check = {
             let pool = pool.clone();
             move || match keep_on(&config, &pool, &kept) {
@@ -349,7 +377,13 @@ pub async fn pool_sign_in_start(
                 _ => Standing::CannotTell,
             }
         };
-        let driving = Arc::new(driven::drive(&login, &record.harness, check)?);
+        let driving = Arc::new(driven::drive_with(
+            &login,
+            &record.harness,
+            provider.as_deref(),
+            Some(carry),
+            check,
+        )?);
         // One of the same profile on the same pool is let go and ended, after the lock.
         let before: Vec<SignIn> = {
             let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);

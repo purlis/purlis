@@ -289,12 +289,187 @@ fn once_the_page_is_open_the_person_has_their_time() {
     assert_eq!(driven.waited(start + PAGE_WITHIN * 2), None);
 }
 
-/// Only harnesses whose login purlis follows are driven: none of the others yet.
+/// Only logins purlis follows are driven: opencode's to a plan of its own, Copilot's not yet.
 #[test]
-fn only_claude_codes_login_is_driven_yet() {
-    for kind in ["codex", "opencode", "gemini"] {
-        assert!(Driven::of(kind, Instant::now()).is_none(), "{kind}");
+fn only_the_logins_purlis_follows_are_driven() {
+    assert!(Driven::of("codex", Instant::now()).is_some());
+    assert!(Driven::of_plan("opencode", Some("openai"), Instant::now()).is_some());
+    for (kind, plan) in [
+        ("opencode", None),
+        ("opencode", Some("github-copilot")),
+        ("gemini", None),
+    ] {
+        assert!(
+            Driven::of_plan(kind, plan, Instant::now()).is_none(),
+            "{kind} {plan:?}"
+        );
     }
+}
+
+/// What Codex 0.163.0's `codex login` prints with its input a pipe, as its own code writes it.
+const CODEX: &str = include_str!("codex-0.163.0-login.txt");
+/// What opencode 1.18.33's ChatGPT `auth login` prints, as its own code writes it.
+const OPENCODE: &str = include_str!("opencode-1.18.33-chatgpt-login.txt");
+
+const STATE: &str = "Zm9yLXRoaXMtc2lnbi1pbi1hbG9uZQ";
+
+fn codex() -> Driven {
+    Driven::of("codex", Instant::now()).expect("Codex's sign-in is driven")
+}
+
+fn opencode() -> Driven {
+    Driven::of_plan("opencode", Some("openai"), Instant::now())
+        .expect("opencode's ChatGPT sign-in is driven")
+}
+
+/// The page line of a recorded login.
+fn page_of(printed: &str) -> String {
+    let at = printed.find("https://").unwrap();
+    printed[at..].split_whitespace().next().unwrap().to_owned()
+}
+
+/// **Codex's login is approved in the browser**: its page is opened, it waits on its port for
+/// the redirect of this login's state, and nothing is asked to be pasted.
+#[test]
+fn codexs_login_is_approved_in_the_browser() {
+    assert_eq!(
+        codex().read(CODEX),
+        [Event::Approve {
+            url: page_of(CODEX),
+            port: 1455,
+            state: STATE.to_owned()
+        }]
+    );
+}
+
+/// **opencode's ChatGPT login is approved the same way**.
+#[test]
+fn opencodes_chatgpt_login_is_approved_in_the_browser() {
+    assert_eq!(
+        opencode().read(OPENCODE),
+        [Event::Approve {
+            url: page_of(OPENCODE),
+            port: 1455,
+            state: STATE.to_owned()
+        }]
+    );
+}
+
+/// Read in pieces, on either output, it says the same, once.
+#[test]
+fn a_login_approved_in_the_browser_is_read_in_pieces() {
+    let mut driven = codex();
+    let mut said = Vec::new();
+    for piece in CODEX.as_bytes().chunks(11) {
+        said.extend(driven.read_from(Stream::Err, &String::from_utf8_lossy(piece)));
+    }
+
+    assert!(
+        matches!(said.as_slice(), [Event::Approve { .. }]),
+        "{said:?}"
+    );
+}
+
+/// **A page that does not send the browser back as purlis can carry is never opened**: to
+/// another address or port, with no state, two, or one no login made.
+#[test]
+fn a_page_that_sends_the_browser_elsewhere_cannot_be_followed() {
+    let page = page_of(CODEX);
+    let elsewhere = "redirect_uri=https%3A%2F%2Fevil.example%2Fauth%2Fcallback";
+    let own = "redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback";
+    for bad in [
+        page.replace(own, elsewhere),
+        page.replace("%3A1455", "%3A1456"),
+        page.replace("localhost", "127.0.0.1"),
+        page.replace(own, &format!("{own}&{elsewhere}")),
+        page.replace(&format!("&state={STATE}"), ""),
+        page.replace(&format!("state={STATE}"), &format!("state=a&state={STATE}")),
+        page.replace(STATE, "short"),
+        page.replace(STATE, "not+written%20plainly-at-all"),
+        page.replace("response_type=code", "response_type=token"),
+        page.replace("auth.openai.com", "auth.openai.com.evil.example"),
+        page.replacen("/oauth/authorize", "/elsewhere", 1),
+    ] {
+        let said = codex().read(&format!("{bad}\n"));
+
+        assert!(
+            matches!(said.as_slice(), [Event::CouldNotFollow { .. }]),
+            "{bad}: {said:?}"
+        );
+    }
+}
+
+/// Nothing is pasted to a login that waits for the browser.
+#[test]
+fn nothing_is_pasted_to_a_login_that_waits_for_the_browser() {
+    let mut driven = codex();
+    driven.read(CODEX);
+
+    assert!(driven.paste("a-code").is_err());
+}
+
+/// The person has their time at the page, and a login that ended well is checked.
+#[test]
+fn a_login_approved_in_the_browser_ends_with_its_status_check() {
+    let start = Instant::now();
+    let mut driven = Driven::of("codex", start).unwrap();
+    driven.read(CODEX);
+    assert_eq!(driven.waited(start + PAGE_WITHIN * 2), None);
+
+    assert_eq!(driven.carried(Ok(())), None);
+    driven.read("Successfully logged in\n");
+    assert_eq!(driven.ended(Some(0)), [Event::Checking]);
+    assert_eq!(driven.checked(Standing::SignedIn), Event::SignedIn);
+}
+
+/// **A redirect that was not carried fails the sign-in**, and says why.
+#[test]
+fn a_redirect_not_carried_fails_the_sign_in() {
+    let mut driven = codex();
+    driven.read(CODEX);
+
+    assert_eq!(
+        driven.carried(Err("no sign-in is waiting on the runner".to_owned())),
+        Some(Event::Failed {
+            why: "no sign-in is waiting on the runner".to_owned()
+        })
+    );
+    assert!(driven.is_over());
+}
+
+/// A login whose own port is taken on the runner fails in its words.
+#[test]
+fn a_login_that_fails_says_so_in_codexs_and_opencodes_words() {
+    let mut driven = codex();
+    driven.read("Error logging in: Port 127.0.0.1:1455 is already in use\n");
+    assert_eq!(
+        driven.ended(Some(1)),
+        [Event::Failed {
+            why: "Port 127.0.0.1:1455 is already in use".to_owned()
+        }]
+    );
+
+    let mut driven = opencode();
+    driven.read("\u{1b}[91m\u{1b}[1mError: \u{1b}[0mFailed to authorize: Failed to start server\n");
+    assert_eq!(
+        driven.ended(Some(1)),
+        [Event::Failed {
+            why: "Failed to authorize: Failed to start server".to_owned()
+        }]
+    );
+}
+
+/// A taken port on this device ends it, and is its last step.
+#[test]
+fn a_taken_port_is_the_last_step() {
+    let mut driven = codex();
+    driven.read(CODEX);
+
+    let said = driven.port_taken(1455);
+
+    assert_eq!(said, Event::PortTaken { port: 1455 });
+    assert!(said.is_last());
+    assert!(driven.is_over());
 }
 
 /// **A login driven end to end**: a stand-in prints the recorded output, takes the code, says
@@ -345,6 +520,126 @@ fn a_cancelled_sign_in_ends_its_login() {
     driving.cancel();
 
     assert_eq!(next(&driving), Event::Cancelled);
+}
+
+/// A stand-in that prints a login's page and waits, as Codex's does, until `gate` exists.
+#[cfg(unix)]
+fn waiting_login(gate: &std::path::Path) -> Login {
+    Login {
+        program: "/bin/sh".to_owned(),
+        args: vec![
+            "-c".to_owned(),
+            "printf '%s' \"$PRINTED\"; while [ ! -e \"$GATE\" ]; do sleep 0.05; done; \
+             echo 'Successfully logged in'"
+                .to_owned(),
+        ],
+        env: vec![
+            ("PRINTED".to_owned(), CODEX.to_owned()),
+            ("GATE".to_owned(), gate.display().to_string()),
+        ],
+        cleared: Vec::new(),
+    }
+}
+
+/// Whether anything listens on this device's loopback at `port`.
+#[cfg(unix)]
+fn listens(port: u16) -> bool {
+    std::net::TcpStream::connect(("127.0.0.1", port)).is_ok()
+}
+
+/// A port nothing listens on now.
+#[cfg(unix)]
+fn free_port() -> u16 {
+    let free = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    free.local_addr().unwrap().port()
+}
+
+/// Drives a stand-in for Codex's login, listening on `port` as it would on its own.
+#[cfg(unix)]
+fn driving_on(port: u16, login: &Login, carry: Carry) -> Driving {
+    let forwarding = Arc::new(Forwarding {
+        carry,
+        listen_on: Some(port),
+        forward: Mutex::new(Forwarded::Not),
+    });
+    run(login, codex(), Some(forwarding), || Standing::SignedIn).unwrap()
+}
+
+/// **A login approved in the browser, end to end**: the page is told once this device listens,
+/// the browser's redirect is carried, the port closes, and the login's end is checked.
+#[cfg(unix)]
+#[test]
+fn a_login_is_approved_end_to_end() {
+    let dir = tempfile::tempdir().unwrap();
+    let gate = dir.path().join("carried");
+    let port = free_port();
+    let carry: Carry = {
+        let gate = gate.clone();
+        Arc::new(move |target: &str| {
+            assert!(target.starts_with("/auth/callback?code=c&state="));
+            std::fs::write(&gate, "").map_err(|e| e.to_string())
+        })
+    };
+    let driving = driving_on(port, &waiting_login(&gate), carry);
+
+    assert!(matches!(next(&driving), Event::Approve { .. }));
+    let mut browser = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    write!(
+        browser,
+        "GET /auth/callback?code=c&state={STATE} HTTP/1.1\r\nHost: localhost:{port}\r\n\r\n"
+    )
+    .unwrap();
+
+    assert_eq!(next(&driving), Event::Checking);
+    assert_eq!(next(&driving), Event::SignedIn);
+    assert!(!listens(port), "it is closed after");
+}
+
+/// **A sign-in that ends closes the port**: cancelled, nothing listens, and nothing was carried.
+#[cfg(unix)]
+#[test]
+fn a_cancelled_sign_in_closes_the_port() {
+    let dir = tempfile::tempdir().unwrap();
+    let port = free_port();
+    let carry: Carry = Arc::new(|_: &str| panic!("nothing is carried"));
+    let driving = driving_on(port, &waiting_login(&dir.path().join("never")), carry);
+    assert!(matches!(next(&driving), Event::Approve { .. }));
+    assert!(listens(port), "it listens from before the page opens");
+
+    driving.cancel();
+
+    assert_eq!(next(&driving), Event::Cancelled);
+    assert!(!listens(port));
+}
+
+/// **A taken port is said, the page is not opened, and the login is ended**.
+#[cfg(unix)]
+#[test]
+fn a_taken_port_is_said_and_no_page_opens() {
+    let dir = tempfile::tempdir().unwrap();
+    let held = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = held.local_addr().unwrap().port();
+    let driving = driving_on(
+        port,
+        &waiting_login(&dir.path().join("never")),
+        Arc::new(|_: &str| Ok(())),
+    );
+
+    assert_eq!(next(&driving), Event::PortTaken { port: 1455 });
+    drop(held);
+}
+
+/// A login that waits for the browser is not driven with no way to carry its answer.
+#[test]
+fn a_login_that_waits_for_the_browser_needs_a_way_to_carry_its_answer() {
+    let login = Login {
+        program: "/bin/true".to_owned(),
+        args: Vec::new(),
+        env: Vec::new(),
+        cleared: Vec::new(),
+    };
+
+    assert!(drive(&login, "codex", || Standing::SignedIn).is_err());
 }
 
 #[cfg(unix)]

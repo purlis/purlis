@@ -66,14 +66,20 @@ pub type Keeping = Arc<
         + Sync,
 >;
 
+/// Hands a sign-in's redirect to the login waiting on the runner's loopback, and says whether it
+/// took it (`sign_in_redirect`, 1.58, #4044).
+pub type Delivering = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
+
 /// A runner's pairing, as its host serves it: who it is and whom it admits ([`Answering`]),
-/// how the desktop it admits is taken out of its peers ([`Unpairing`]), and how it keeps that
-/// desktop's profiles ([`Keeping`]).
+/// how the desktop it admits is taken out of its peers ([`Unpairing`]), how it keeps that
+/// desktop's profiles ([`Keeping`]), and how it hands a login that desktop's browser's answer
+/// ([`Delivering`]).
 #[derive(Clone)]
 pub struct Pairing {
     pub answering: Answering,
     pub unpairing: Unpairing,
     pub keeping: Keeping,
+    pub delivering: Delivering,
 }
 
 /// The lock's file name beside `purlisd.sock`, the socket of a person's own config home.
@@ -209,6 +215,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
         let hosting = hosting.clone();
         let unpairing = Arc::clone(&pairing.unpairing);
         let keeping = Arc::clone(&pairing.keeping);
+        let delivering = Arc::clone(&pairing.delivering);
         tokio::spawn(async move {
             let chats = Arc::new(hosting.clone());
             match hostlink::answer_local(
@@ -228,6 +235,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
                         desktop,
                         unpairing,
                         keeping,
+                        delivering,
                         unpaired: Arc::clone(&unpaired),
                     };
                     let serving = session::serve(answered.link, paired, None);
@@ -249,12 +257,14 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
 
 /// The session protocol on a link from the desktop a runner is paired with: the host's own,
 /// `unpair` (1.25, #2525), which takes that desktop, the one the handshake proved, out of the
-/// runner's peers, and `keep_profile` (1.43, #2049), which keeps one of its profiles here.
+/// runner's peers, `keep_profile` (1.43, #2049), which keeps one of its profiles here, and
+/// `sign_in_redirect` (1.58, #4044), which hands a login here its browser's answer.
 struct PairedLink {
     hosting: Hosting,
     desktop: Pinned,
     unpairing: Unpairing,
     keeping: Keeping,
+    delivering: Delivering,
     /// Told once the desktop is unpaired, so its link ends.
     unpaired: Arc<tokio::sync::Notify>,
 }
@@ -299,6 +309,20 @@ impl PairedLink {
                 why,
             })
     }
+
+    /// `sign_in_redirect` (1.58, #4044): the desktop's browser's answer handed to the login
+    /// waiting here, off the runtime, since the login signs in with its vendor before it answers.
+    async fn deliver(&self, target: String) -> Result<session::Answer, session::Refusal> {
+        let delivering = Arc::clone(&self.delivering);
+        tokio::task::spawn_blocking(move || delivering(&target))
+            .await
+            .unwrap_or_else(|why| Err(format!("the redirect was not handed on: {why}")))
+            .map(|()| session::Answer::Done)
+            .map_err(|why| session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            })
+    }
 }
 
 impl session::Host for PairedLink {
@@ -331,6 +355,7 @@ impl session::Host for PairedLink {
         }
         match command {
             session::Command::KeepProfile(profile) => self.keep(profile).await,
+            session::Command::SignInRedirect { target } => self.deliver(target).await,
             session::Command::Unpair => self.unpair().await,
             command => session::Host::call(&self.hosting, command, peer).await,
         }

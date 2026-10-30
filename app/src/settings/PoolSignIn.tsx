@@ -12,17 +12,23 @@ import { TextField } from "../ui/field/Field";
 /** Where a sign-in is, as the strip draws it: starting, one of the core's steps, or refused. */
 export type StripStep = { at: "starting" } | PoolSignInStep | { at: "not-started"; why: string };
 
-/** **The step the strip is on, in words** (spec #4023 story 12): "Step 2 of 3: …". */
-export function stepSaid(step: StripStep): string | null {
+/**
+ * **The step the strip is on, in words** (spec #4023 story 12): "Step 2 of 3: …". A login approved
+ * in the browser has one step fewer, with nothing to paste (`approves`).
+ */
+export function stepSaid(step: StripStep, approves = false): string | null {
+  const steps = approves ? 2 : 3;
   switch (step.at) {
     case "starting":
     case "open":
-      return "Step 1 of 3: Opening the sign-in page in your browser";
+      return `Step 1 of ${steps}: Opening the sign-in page in your browser`;
+    case "approve":
+      return `Step 1 of ${steps}: Approve in your browser`;
     case "code":
     case "refused":
-      return "Step 2 of 3: Paste the code the page shows";
+      return `Step 2 of ${steps}: Paste the code the page shows`;
     case "checking":
-      return "Step 3 of 3: Checking it is signed in on the runner";
+      return `Step ${steps} of ${steps}: Checking it is signed in on the runner`;
     default:
       return null;
   }
@@ -33,7 +39,10 @@ export function stepSaid(step: StripStep): string | null {
  * A): the strip a profile's line on a pool row opens into. purlis runs the harness's own login on
  * the runner (`pool_sign_in_start`), opens its page in the browser here, takes the code the page
  * shows in one field and passes it back, and says Signed in once the harness's own status check
- * on the runner agrees. Nothing of this Mac's sign-in goes to the runner (ADR 0095).
+ * on the runner agrees. Codex's, and opencode's ChatGPT one (#4044), have nothing to paste: the
+ * person approves in the page, and purlis carries the browser's answer to the runner. A port taken
+ * on this Mac is said, with a device code as the way out. Nothing of this Mac's sign-in goes to
+ * the runner (ADR 0095).
  *
  * Each step is said by the core (`pool_sign_in_next`); the strip draws it, says which step it is
  * on, moves the keyboard to the code field when it appears, and says each step change to a
@@ -44,17 +53,26 @@ export function PoolSignIn({
   pool,
   profile,
   harness,
+  provider,
+  approves = false,
   onEnd,
   onTerminal,
+  onDeviceCode,
 }: {
   pool: string;
   profile: string;
   /** The harness as people call it: `Claude Code`. */
   harness: string;
+  /** The plan it signs in to, for a harness that serves several. */
+  provider?: string;
+  /** Whether its login is approved in the browser, with nothing to paste. */
+  approves?: boolean;
   /** The strip is closed; `signedIn` when it ended signed in. */
   onEnd: (signedIn: boolean) => void;
   /** "Open in terminal", where the window can open one. */
   onTerminal?: () => void;
+  /** "Use a device code", where the window can open a terminal for it. */
+  onDeviceCode?: () => void;
 }) {
   const [step, setStep] = useState<StripStep>({ at: "starting" });
   const [page, setPage] = useState<string>();
@@ -78,19 +96,21 @@ export function PoolSignIn({
         }
         if (next.data === null) continue;
         const now = next.data;
-        if (now.at === "open") {
+        if (now.at === "open" || now.at === "approve") {
           setPage(now.url);
           void openUrl(now.url).catch(() => undefined);
         }
         setStep(now);
-        if (["signed-in", "could-not-follow", "failed", "cancelled"].includes(now.at)) {
+        if (
+          ["signed-in", "port-taken", "could-not-follow", "failed", "cancelled"].includes(now.at)
+        ) {
           flow.current = undefined;
           return;
         }
       }
     };
     void commands
-      .poolSignInStart(pool, profile, null)
+      .poolSignInStart(pool, profile, provider ?? null)
       .catch(said)
       .then((started) => {
         if (started.status === "error") {
@@ -112,7 +132,7 @@ export function PoolSignIn({
         flow.current = undefined;
       }
     };
-  }, [pool, profile, attempt]);
+  }, [pool, profile, provider, attempt]);
 
   const paste = (event: FormEvent) => {
     event.preventDefault();
@@ -140,6 +160,7 @@ export function PoolSignIn({
       pool={pool}
       profile={profile}
       harness={harness}
+      approves={approves}
       step={step}
       code={code}
       setCode={setCode}
@@ -149,6 +170,7 @@ export function PoolSignIn({
       onTryAgain={tryAgain}
       onEnd={onEnd}
       onTerminal={onTerminal}
+      onDeviceCode={onDeviceCode}
     />
   );
 }
@@ -158,6 +180,8 @@ export type SignInStripProps = {
   pool: string;
   profile: string;
   harness: string;
+  /** Whether its login is approved in the browser, with nothing to paste. */
+  approves?: boolean;
   step: StripStep;
   /** What the code field holds. */
   code: string;
@@ -170,15 +194,21 @@ export type SignInStripProps = {
   onTryAgain: () => void;
   onEnd: (signedIn: boolean) => void;
   onTerminal?: () => void;
+  onDeviceCode?: () => void;
 };
 
 /** **The strip at one step**, as {@link PoolSignIn} drives it: its head, its body, its foot. */
 export function SignInStrip(props: SignInStripProps) {
   const { pool, profile, harness, step, onEnd, onTerminal } = props;
-  const now = stepSaid(step);
-  const over = ["signed-in", "could-not-follow", "failed", "cancelled", "not-started"].includes(
-    step.at,
-  );
+  const now = stepSaid(step, props.approves);
+  const over = [
+    "signed-in",
+    "port-taken",
+    "could-not-follow",
+    "failed",
+    "cancelled",
+    "not-started",
+  ].includes(step.at);
   const who = `${profile} (${harness})`;
   // The keyboard was in the code field, which goes once the code is sent: it goes to the strip,
   // never to the page's start.
@@ -247,6 +277,8 @@ function troubleAt(step: StripStep, who: string, pool: string, pasteRefused?: st
       return pasteRefused;
     case "refused":
       return pasteRefused ?? `The sign-in refused that code: ${step.said}`;
+    case "port-taken":
+      return `Port ${step.port} is in use on this Mac, so your browser's answer cannot reach ${pool}'s runner. Close what is using it and try again, or use a device code.`;
     case "could-not-follow":
       return "purlis could not follow this sign-in, so it ended it. Sign in with Open in terminal, where the harness asks you itself. It said:";
     case "failed":
@@ -281,6 +313,8 @@ function StepBody({
   setCode,
   onPaste,
   page,
+  harness,
+  onDeviceCode,
 }: SignInStripProps & { who: string }) {
   const again = page !== undefined && (
     <Button size="sm" variant="ghost" onPress={() => void openUrl(page).catch(() => undefined)}>
@@ -294,6 +328,35 @@ function StepBody({
         <p className="pending" aria-busy="true">
           Starting the sign-in on {pool}&apos;s runner, then opening its page in your browser…
         </p>
+      );
+    case "approve":
+      return (
+        <>
+          <p>
+            Approve the sign-in on the page that opened in your browser. There is nothing to paste:
+            purlis carries your browser&apos;s answer to {pool}&apos;s runner.
+          </p>
+          <p className="ui-setting-help">
+            This signs in {who} on {pool}&apos;s runner only. Nothing of this Mac&apos;s sign-in
+            goes there.
+          </p>
+          {again}
+        </>
+      );
+    case "port-taken":
+      return onDeviceCode === undefined ? (
+        <p className="ui-setting-help">Open a project to sign in with a device code.</p>
+      ) : (
+        <>
+          <Button size="sm" onPress={onDeviceCode}>
+            Use a device code
+          </Button>
+          {harness === "Codex" && (
+            <p className="ui-setting-help">
+              Runs <code>codex login --device-auth</code> on the runner, in a terminal.
+            </p>
+          )}
+        </>
       );
     case "code":
     case "refused":

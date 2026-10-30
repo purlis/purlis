@@ -781,6 +781,26 @@ fn a_profile_is_signed_in_on_the_runner_by_its_own_sign_in_in_the_container_it_p
 
 /// **A sign-in purlis drives runs with pipes, never a terminal** (#4042): the same runner's own
 /// `purlis profile sign-in`, as the same user in the same container, with `-i` alone.
+/// **A plan's driven sign-in names its browser flow**, which has no list to answer, and the
+/// fallback where the browser's answer cannot reach the runner names its device-code flow in a
+/// terminal the person drives (#4044).
+#[test]
+fn a_sign_in_on_a_runner_names_the_flow_it_runs() {
+    let driven = made().sign_in_args_by(Typed::Driven, "chatgpt", Some("openai"));
+    assert_eq!(driven[1], "-i");
+    assert_eq!(driven[driven.len() - 2..], ["--way", "browser"]);
+
+    let device = made().sign_in_args_by(Typed::DeviceInATerminal, "fast", None);
+    assert_eq!(device[1], "-it");
+    assert_eq!(device[device.len() - 2..], ["--way", "device"]);
+
+    assert!(
+        !made()
+            .sign_in_args_by(Typed::Driven, "work", None)
+            .contains(&"--way".to_owned())
+    );
+}
+
 #[test]
 fn a_driven_sign_in_runs_the_same_sign_in_with_pipes() {
     let driven = made().sign_in_args_by(Typed::Driven, "work", None);

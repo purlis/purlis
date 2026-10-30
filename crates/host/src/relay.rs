@@ -1311,6 +1311,15 @@ impl session::Host for Relay {
                     .into(),
             });
         }
+        // A sign-in's redirect is that desktop's too (#4044): never sent on for a client.
+        if let Command::SignInRedirect { .. } = command {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "a sign-in's redirect goes to a runner on its desktop's own link, never \
+                      through a relaying host"
+                    .into(),
+            });
+        }
         // While this host is stopped nothing starts on the runner either (#2051): its stop is
         // carried first, and a start sent meanwhile is refused here, whatever the runner holds.
         if matches!(command, Command::StartProgram(_) | Command::Start(_))

@@ -313,6 +313,10 @@ fn every_command() -> Vec<Command> {
             pinned: None,
             settings: None,
         }),
+        // A sign-in's redirect handed to a login on the runner (1.58, #4044).
+        Command::SignInRedirect {
+            target: "/auth/callback?code=c&state=s".into(),
+        },
         // A browser the person takes over, drives and hands back: the window's alone (1.14).
         Command::TakeOver {
             program: CHAT.into(),
@@ -600,6 +604,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             // The desktop removing the runner (1.25, #2525).
             "unpair",
             "keep_profile",
+            "sign_in_redirect",
             "take_over",
             "browser_input",
             "size_browser",

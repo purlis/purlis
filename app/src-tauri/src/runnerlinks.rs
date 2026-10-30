@@ -574,6 +574,28 @@ pub fn keep_profiles(
     })
 }
 
+/// **Hands the login waiting on the runner the redirect `target`, over one link of its own**
+/// (`sign_in_redirect`, 1.58, #4044): `Ok` once the login took it, or why not, in words.
+pub fn sign_in_redirect(to: &ToARunner, target: &str) -> Result<(), String> {
+    on_one_link(to, async |linked| {
+        match linked {
+        Ok(client) if client.version() < purlis_session_protocol::session::KNOWS_SIGN_IN_REDIRECT => Err(
+            "this pool's runner is older than this version of purlis, so your browser's answer \
+             could not reach it: update the pool, or sign in with Open in terminal"
+                .to_owned(),
+        ),
+        Ok(client) => client
+            .sign_in_redirect(target)
+            .await
+            .map_err(|why| match why.refusal() {
+                Some(refused) => said_by_the_runner(&refused.why),
+                None => why.to_string(),
+            }),
+        Err(down) => Err(down.why),
+    }
+    })
+}
+
 /// **`kept`, as a runner speaking `version` is sent it**: with its settings, read now
 /// ([`purlis_core::profilestore::onrunner::to_send`]), only from 1.50 (#3448). A runner before
 /// ignores them, so none is read for it, and nothing about them can refuse a chat that starts on

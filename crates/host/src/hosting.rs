@@ -3616,6 +3616,13 @@ impl session::Host for Hosting {
                       desktop's profile"
                     .into(),
             }),
+            // Nor does it wait on a login for one (1.58, #4044).
+            Command::SignInRedirect { .. } => Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "this host is paired with no desktop over this link, so it carries no \
+                      sign-in's redirect"
+                    .into(),
+            }),
             // The desktop's host relays a window's link to a runner before this host hears of
             // the link (`serving`, 1.33, #2679): a host that hears it relays to no runner.
             Command::RelayTo { .. } => Err(Refusal {

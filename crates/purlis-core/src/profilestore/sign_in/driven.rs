@@ -16,9 +16,16 @@
 //!
 //! **No credential is read or kept.** What the login prints is read for its page, its prompt and
 //! its words of refusal; the code pasted passes through to it and is kept nowhere. Each
-//! harness's words are here, beside its sign-in's own words (`FLOWS`): Claude Code's alone so far (2.1.314's
+//! harness's words are here, beside its sign-in's own words (`FLOWS`): Claude Code's 2.1.314
 //! `auth login`, which with its input a pipe prints its page and `Paste code here if prompted >`
-//! and reads `code#state` lines). [`drive`] runs a [`Login`] and feeds it to a [`Driven`].
+//! and reads `code#state` lines; and Codex's 0.163.0 `login` and opencode's 1.18.33 ChatGPT
+//! `auth login`, which print their page and wait for the browser's answer on their own port
+//! ([`Event::Approve`], #4044). [`drive`] runs a [`Login`] and feeds it to a [`Driven`].
+//!
+//! **A login that waits for the browser has nothing to paste** (#4044): [`drive_with`] listens on
+//! this Mac's port for that login's redirect from before its page is opened until it ends, and
+//! carries the redirect to the runner ([`callback`]). A taken port is said
+//! ([`Event::PortTaken`]), and the page is not opened.
 
 use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -27,6 +34,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
+use super::callback::{self, Carry};
 use super::{Login, Standing};
 
 /// How long a login has to show its page before purlis says it cannot follow it: long enough
@@ -60,6 +68,16 @@ const MOST_SAID: usize = 4096;
 pub enum Event {
     /// Open this page in the browser on this device.
     Open { url: String },
+    /// Open this page, and the login waits for the browser's answer on `port`: the redirect
+    /// with `state` is carried to it. Said once this device is listening for it.
+    Approve {
+        url: String,
+        port: u16,
+        state: String,
+    },
+    /// This device's `port` is taken, so the browser's answer cannot be carried: the page was
+    /// not opened.
+    PortTaken { port: u16 },
     /// Ask the person for the code the page shows.
     AskCode,
     /// The harness refused the code, in its own words; another may be pasted.
@@ -81,7 +99,11 @@ impl Event {
     pub fn is_last(&self) -> bool {
         matches!(
             self,
-            Self::SignedIn | Self::CouldNotFollow { .. } | Self::Failed { .. } | Self::Cancelled
+            Self::SignedIn
+                | Self::PortTaken { .. }
+                | Self::CouldNotFollow { .. }
+                | Self::Failed { .. }
+                | Self::Cancelled
         )
     }
 }
@@ -89,8 +111,14 @@ impl Event {
 /// What a harness's login prints, and where its pages may be.
 struct Words {
     kind: &'static str,
+    /// The plan it signs in to, for a harness that serves several.
+    plan: Option<&'static str>,
     /// What comes right before its page's address on a line.
     page_after: &'static [&'static str],
+    /// Whether its page's address may be a line of its own.
+    page_alone: bool,
+    /// The port it waits on for the browser's answer, for a login with nothing to paste.
+    answered_on: Option<u16>,
     /// The prompt for the code, which may end with no line break.
     asks_code: &'static str,
     /// The starts of the lines it refuses a code with.
@@ -106,7 +134,10 @@ struct Words {
 /// code, and `Login failed:`. Its sign-in pages are its own code's three `authorize` pages.
 const CLAUDE: Words = Words {
     kind: "claude",
+    plan: None,
     page_after: &["visit: ", "Sign in at: "],
+    page_alone: false,
+    answered_on: None,
     asks_code: "Paste code here",
     refuses: &["Invalid code", "That code is not from this sign-in"],
     fails: "Login failed: ",
@@ -116,6 +147,42 @@ const CLAUDE: Words = Words {
         ("platform.claude.com", "/oauth/authorize"),
     ],
 };
+
+/// Where Codex's and opencode's ChatGPT logins send the person.
+const OPENAI_PAGES: &[(&str, &str)] = &[("auth.openai.com", "/oauth/authorize")];
+
+/// Codex 0.163.0's `login`, by its own code: its page on a line of its own after `navigate to
+/// this URL to authenticate:`, then it waits on [`callback::PORT`], and `Error logging in:`.
+const CODEX: Words = Words {
+    kind: "codex",
+    plan: None,
+    page_after: &[],
+    page_alone: true,
+    answered_on: Some(callback::PORT),
+    asks_code: "",
+    refuses: &[],
+    fails: "Error logging in: ",
+    pages: OPENAI_PAGES,
+};
+
+/// opencode 1.18.33's ChatGPT `auth login`, as its browser method runs: `Go to: ` before its
+/// page, then it waits on [`callback::PORT`].
+const OPENCODE_CHATGPT: Words = Words {
+    kind: "opencode",
+    plan: Some("openai"),
+    page_after: &["Go to: "],
+    page_alone: false,
+    answered_on: Some(callback::PORT),
+    asks_code: "",
+    refuses: &[],
+    fails: "Error: ",
+    pages: OPENAI_PAGES,
+};
+
+/// The shortest and longest `state` a login's page is believed to have: a login's own, which is
+/// long and random.
+const LEAST_STATE: usize = 16;
+const MOST_STATE: usize = 512;
 
 /// Which of a login's outputs a piece was printed on: each is read in lines of its own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,6 +198,8 @@ enum At {
     Opened,
     Asking,
     Pasted,
+    /// Its page is opened, and it waits for the browser's answer.
+    Approving,
     Over,
 }
 
@@ -150,11 +219,17 @@ pub struct Driven {
 }
 
 impl Driven {
-    /// A login of harness `kind`, started at `now`; `None` for one purlis does not follow (Codex and opencode: #4044, #4045).
+    /// A login of harness `kind`, started at `now`; `None` for one purlis does not follow.
     pub fn of(kind: &str, now: Instant) -> Option<Self> {
-        [&CLAUDE]
+        Self::of_plan(kind, None, now)
+    }
+
+    /// A login of harness `kind` to its `plan`, started at `now`; `None` for one purlis does not
+    /// follow (opencode's Copilot: #4045).
+    pub fn of_plan(kind: &str, plan: Option<&str>, now: Instant) -> Option<Self> {
+        [&CLAUDE, &CODEX, &OPENCODE_CHATGPT]
             .into_iter()
-            .find(|words| words.kind == kind)
+            .find(|words| words.kind == kind && words.plan == plan)
             .map(|words| Self {
                 words,
                 at: At::Starting,
@@ -220,10 +295,10 @@ impl Driven {
         match self.at {
             At::Starting => {
                 if let Some(address) = self.page_on(line) {
-                    match self.page(address) {
-                        Some(url) => {
-                            self.at = At::Opened;
-                            said.push(Event::Open { url });
+                    match self.page(address).and_then(|url| self.step_at(url)) {
+                        Some((at, step)) => {
+                            self.at = at;
+                            said.push(step);
                         }
                         None => {
                             self.at = At::Over;
@@ -248,8 +323,21 @@ impl Driven {
         }
     }
 
+    /// Where the login is, and the step said, once its page `url` is shown: `None` for a login
+    /// waiting for the browser whose page does not send it back as purlis can carry.
+    fn step_at(&self, url: String) -> Option<(At, Event)> {
+        let Some(port) = self.words.answered_on else {
+            return Some((At::Opened, Event::Open { url }));
+        };
+        let state = state_on(&url, port)?;
+        Some((At::Approving, Event::Approve { url, port, state }))
+    }
+
     /// The address after one of the words before a page, on `line`.
     fn page_on<'a>(&self, line: &'a str) -> Option<&'a str> {
+        if self.words.page_alone && line.starts_with("https://") {
+            return Some(line);
+        }
         self.words.page_after.iter().find_map(|before| {
             let (_, after) = line.split_once(before)?;
             after.split_whitespace().next()
@@ -305,6 +393,9 @@ impl Driven {
             return said;
         }
         if exit == Some(0) {
+            if self.at == At::Approving {
+                self.at = At::Pasted;
+            }
             said.push(Event::Checking);
             return said;
         }
@@ -340,6 +431,31 @@ impl Driven {
         }
     }
 
+    /// **How carrying the browser's answer went**: carried, the login is left to end; not, it
+    /// failed, and why. Nothing is said once it is past waiting for one.
+    pub fn carried(&mut self, how: Result<(), String>) -> Option<Event> {
+        if self.at != At::Approving {
+            return None;
+        }
+        match how {
+            Ok(()) => {
+                self.at = At::Pasted;
+                None
+            }
+            Err(why) => {
+                self.at = At::Over;
+                Some(Event::Failed { why })
+            }
+        }
+    }
+
+    /// **This device's port for the browser's answer is taken**: the login is ended, and nothing
+    /// more is read of it.
+    pub fn port_taken(&mut self, port: u16) -> Event {
+        self.at = At::Over;
+        Event::PortTaken { port }
+    }
+
     /// **Whether the login waited too long at `now`**: one that shows no page within
     /// [`PAGE_WITHIN`] cannot be followed. Said once.
     pub fn waited(&mut self, now: Instant) -> Option<Event> {
@@ -368,6 +484,35 @@ impl Driven {
         let skip = all.chars().count().saturating_sub(MOST_SAID);
         all.chars().skip(skip).collect()
     }
+}
+
+/// **The `state` of a login's page `url`, where it sends the browser back as purlis can carry**:
+/// to `http://localhost:<port>` and [`callback::PATH`] exactly, asking for a code, with one `state`
+/// a login made and written as it is. Nothing else about a page is guessed at.
+fn state_on(url: &str, port: u16) -> Option<String> {
+    let (_, query) = url.split_once('?')?;
+    let query = query.split('#').next()?;
+    let one = |name: &str| {
+        let mut values = query
+            .split('&')
+            .filter_map(|pair| pair.split_once('='))
+            .filter(|(key, _)| *key == name)
+            .map(|(_, value)| value);
+        let value = values.next()?;
+        values.next().is_none().then_some(value)
+    };
+    let back = percent_encoding::percent_decode_str(one("redirect_uri")?)
+        .decode_utf8()
+        .ok()?;
+    let state = one("state")?;
+    let written = (LEAST_STATE..=MOST_STATE).contains(&state.len())
+        && state
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b));
+    (written
+        && one("response_type")? == "code"
+        && back == format!("http://localhost:{port}{}", callback::PATH))
+    .then(|| state.to_owned())
 }
 
 /// `line`, cut to its first `most` characters.
@@ -428,6 +573,62 @@ pub struct Driving {
     cancelled: Arc<AtomicBool>,
 }
 
+/// **The forward of a login that waits for the browser**: opened once its page is shown, closed
+/// when it ends, whichever comes first, and never opened after.
+struct Forwarding {
+    carry: Carry,
+    /// The port listened on, where it is not the one the login's page names: a test's.
+    listen_on: Option<u16>,
+    forward: Mutex<Forwarded>,
+}
+
+enum Forwarded {
+    Not,
+    Open(callback::Forward),
+    Ended,
+}
+
+impl Forwarding {
+    /// Listens for the redirect with `state` on `port`, carrying it and saying how that went.
+    fn open(
+        &self,
+        port: u16,
+        state: &str,
+        driven: &Arc<Mutex<Driven>>,
+        tell: &Sender<Event>,
+    ) -> std::io::Result<()> {
+        let mut forward = self.forward.lock().unwrap_or_else(PoisonError::into_inner);
+        if matches!(*forward, Forwarded::Ended) {
+            return Ok(());
+        }
+        let (driven, tell) = (Arc::clone(driven), tell.clone());
+        *forward = Forwarded::Open(callback::Forward::open(
+            self.listen_on.unwrap_or(port),
+            state,
+            Arc::clone(&self.carry),
+            move |how| {
+                let said = driven
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .carried(how);
+                if let Some(event) = said {
+                    let _ = tell.send(event);
+                }
+            },
+        )?);
+        Ok(())
+    }
+
+    /// Closes it: nothing listens once this returns, and nothing does from here on.
+    fn close(&self) {
+        let forward = std::mem::replace(
+            &mut *self.forward.lock().unwrap_or_else(PoisonError::into_inner),
+            Forwarded::Ended,
+        );
+        drop(forward);
+    }
+}
+
 /// **Runs `login` and drives it** as a login of harness `kind`, asking `check` for its status
 /// once it ends well. Refused for a harness purlis does not follow, and a login that cannot
 /// be run.
@@ -436,11 +637,42 @@ pub fn drive(
     kind: &str,
     check: impl FnOnce() -> Standing + Send + 'static,
 ) -> Result<Driving, String> {
-    let driven = Driven::of(kind, Instant::now()).ok_or_else(|| {
-        format!(
-            "purlis follows {kind}'s sign-in only in a terminal: sign it in with Open in terminal"
-        )
-    })?;
+    drive_with(login, kind, None, None, check)
+}
+
+/// [`drive`], of a login to `plan` where its harness serves several, with `carry` to take the
+/// browser's answer to a login that waits for it: one with no way to is refused.
+pub fn drive_with(
+    login: &Login,
+    kind: &str,
+    plan: Option<&str>,
+    carry: Option<Carry>,
+    check: impl FnOnce() -> Standing + Send + 'static,
+) -> Result<Driving, String> {
+    let driven = Driven::of_plan(kind, plan, Instant::now())
+        .filter(|driven| driven.words.answered_on.is_none() || carry.is_some())
+        .ok_or_else(|| {
+            format!(
+                "purlis follows {kind}'s sign-in only in a terminal: sign it in with Open in \
+                 terminal"
+            )
+        })?;
+    let forwarding = carry.map(|carry| {
+        Arc::new(Forwarding {
+            carry,
+            listen_on: None,
+            forward: Mutex::new(Forwarded::Not),
+        })
+    });
+    run(login, driven, forwarding, check)
+}
+
+fn run(
+    login: &Login,
+    driven: Driven,
+    forwarding: Option<Arc<Forwarding>>,
+    check: impl FnOnce() -> Standing + Send + 'static,
+) -> Result<Driving, String> {
     let mut command = Command::new(&login.program);
     command
         .args(&login.args)
@@ -473,12 +705,30 @@ pub fn drive(
         ),
     ]
     .into_iter()
-    .filter_map(|(stream, from)| Some(reading(stream, from?, Arc::clone(&driven), tell.clone())))
+    .filter_map(|(stream, from)| {
+        Some(reading(
+            stream,
+            from?,
+            Arc::clone(&driven),
+            forwarding.clone(),
+            tell.clone(),
+        ))
+    })
     .collect();
     let cancelled = Arc::new(AtomicBool::new(false));
     {
         let (driven, cancelled) = (Arc::clone(&driven), Arc::clone(&cancelled));
-        std::thread::spawn(move || watching(child, readers, &driven, &cancelled, &tell, check));
+        std::thread::spawn(move || {
+            watching(
+                child,
+                readers,
+                &driven,
+                &cancelled,
+                forwarding.as_deref(),
+                &tell,
+                check,
+            );
+        });
     }
     Ok(Driving {
         events: Mutex::new(events),
@@ -489,11 +739,13 @@ pub fn drive(
 }
 
 /// Reads what the login prints on `from`, its output `stream`, feeding it to `driven` and
-/// telling its steps. A character cut between two reads is read whole.
+/// telling its steps. A character cut between two reads is read whole. The page of a login that
+/// waits for the browser is told only once this device listens for its answer.
 fn reading(
     stream: Stream,
     mut from: Box<dyn Read + Send>,
     driven: Arc<Mutex<Driven>>,
+    forwarding: Option<Arc<Forwarding>>,
     tell: Sender<Event>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
@@ -517,6 +769,17 @@ fn reading(
                 .unwrap_or_else(PoisonError::into_inner)
                 .read_from(stream, &text);
             for event in said {
+                let event = match (&event, &forwarding) {
+                    (Event::Approve { port, state, .. }, Some(forwarding))
+                        if forwarding.open(*port, state, &driven, &tell).is_err() =>
+                    {
+                        driven
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .port_taken(*port)
+                    }
+                    _ => event,
+                };
                 let _ = tell.send(event);
             }
         }
@@ -524,19 +787,27 @@ fn reading(
 }
 
 /// Watches the login until it ends, is cancelled, cannot be followed or runs too long; then
-/// tells how it ended, its status checked where it ended well.
+/// tells how it ended, its status checked where it ended well. However it ended, its forward is
+/// closed before that is told, so a sign-in tried again finds the port free.
 fn watching(
     mut child: Child,
     readers: Vec<std::thread::JoinHandle<()>>,
     driven: &Mutex<Driven>,
     cancelled: &AtomicBool,
+    forwarding: Option<&Forwarding>,
     tell: &Sender<Event>,
     check: impl FnOnce() -> Standing,
 ) {
+    let close = || {
+        if let Some(forwarding) = forwarding {
+            forwarding.close();
+        }
+    };
     let started = Instant::now();
     let ended = loop {
         if cancelled.load(Ordering::SeqCst) {
             end(&mut child);
+            close();
             let _ = tell.send(Event::Cancelled);
             return;
         }
@@ -554,6 +825,7 @@ fn watching(
         };
         if let Some(event) = late {
             end(&mut child);
+            close();
             let _ = tell.send(event);
             return;
         }
@@ -561,10 +833,12 @@ fn watching(
         // asked of it.
         if over {
             end(&mut child);
+            close();
             return;
         }
         if started.elapsed() > LONGEST {
             end(&mut child);
+            close();
             let _ = tell.send(Event::Failed {
                 why: "the sign-in took too long, so purlis ended it".to_owned(),
             });
@@ -572,6 +846,7 @@ fn watching(
         }
         std::thread::sleep(Duration::from_millis(100));
     };
+    close();
     // All it printed is read before how it ended is said, for as long as that is worth waiting.
     let until = Instant::now() + DRAIN_WITHIN;
     while Instant::now() < until && !readers.iter().all(std::thread::JoinHandle::is_finished) {

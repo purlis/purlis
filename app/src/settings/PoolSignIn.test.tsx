@@ -18,6 +18,7 @@ import { PROFILE_SIGN_IN, type ProfileSignInAsk } from "./links";
  */
 
 const PAGE = "https://claude.ai/oauth/authorize?code=true&state=recorded";
+const OPENAI = "https://auth.openai.com/oauth/authorize?state=recorded";
 
 const a_profile = (name: string, kind = "claude"): PoolProfileRow => ({
   name,
@@ -53,7 +54,18 @@ beforeEach(() => {
     asked.push({ cmd, args: a });
     if (cmd === "pool_profiles") {
       profilesAsked += 1;
-      return [a_profile("work"), a_profile("fast", "codex")];
+      return [
+        a_profile("work"),
+        a_profile("codexing", "codex"),
+        a_profile("fast", "gemini"),
+        {
+          ...a_profile("open", "opencode"),
+          plans: [
+            { id: "openai", title: "ChatGPT" },
+            { id: "github-copilot", title: "GitHub Copilot" },
+          ],
+        },
+      ];
     }
     if (cmd === "pool_sign_in_start") return 7;
     if (cmd === "pool_sign_in_next") {
@@ -184,6 +196,75 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     );
     await userEvent.click(within(opened).getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
+  });
+
+  it("signs Codex in by approving in the browser, with nothing to paste (#4044)", async () => {
+    render(<PoolProfiles pool="builds" plane="/home/op/project" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Sign codexing in on pool builds" }),
+    );
+    const opened = await screen.findByRole("group", { name: "Signing codexing in on builds" });
+    expect(calls("pool_sign_in_start")).toEqual([
+      { pool: "builds", name: "codexing", provider: null },
+    ]);
+    expect(within(opened).getByText(/Step 1 of 2/)).toBeInTheDocument();
+
+    says({ at: "approve", url: OPENAI });
+
+    expect(await within(opened).findByText("Step 1 of 2: Approve in your browser")).toBeVisible();
+    expect(calls("plugin:opener|open_url")).toEqual([expect.objectContaining({ url: OPENAI })]);
+    expect(within(opened).queryByRole("textbox")).not.toBeInTheDocument();
+
+    says({ at: "checking" });
+    expect(await within(opened).findByText(/Step 2 of 2/)).toBeInTheDocument();
+    says({ at: "signed-in" });
+    expect(await within(opened).findByText("Signed in")).toBeInTheDocument();
+  });
+
+  it("signs opencode in to ChatGPT in place, and leaves Copilot to a shell tab (#4044)", async () => {
+    render(<PoolProfiles pool="builds" plane="/home/op/project" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Sign open in to ChatGPT on pool builds" }),
+    );
+    await screen.findByRole("group", { name: "Signing open in on builds" });
+
+    expect(calls("pool_sign_in_start")).toEqual([
+      { pool: "builds", name: "open", provider: "openai" },
+    ]);
+  });
+
+  it("says a taken port, and offers a device code (#4044)", async () => {
+    const heard: ProfileSignInAsk[] = [];
+    const hear = (event: Event) => heard.push((event as CustomEvent<ProfileSignInAsk>).detail);
+    window.addEventListener(PROFILE_SIGN_IN, hear);
+    try {
+      render(<PoolProfiles pool="builds" plane="/home/op/project" />);
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Sign codexing in on pool builds" }),
+      );
+      const opened = await screen.findByRole("group", { name: "Signing codexing in on builds" });
+
+      says({ at: "port-taken", port: 1455 });
+
+      expect(await within(opened).findByRole("alert")).toHaveTextContent(
+        "Port 1455 is in use on this Mac",
+      );
+      expect(within(opened).getByText("codex login --device-auth")).toBeVisible();
+      expect(calls("plugin:opener|open_url")).toEqual([]);
+      await userEvent.click(within(opened).getByRole("button", { name: "Use a device code" }));
+
+      expect(heard).toEqual([
+        {
+          plane: "/home/op/project",
+          profile: "codexing",
+          provider: undefined,
+          pool: "builds",
+          device: true,
+        },
+      ]);
+    } finally {
+      window.removeEventListener(PROFILE_SIGN_IN, hear);
+    }
   });
 
   it("keeps another harness's sign-in in a shell tab", async () => {

@@ -337,9 +337,21 @@ use crate::view::{Limits, Views};
 /// window's alone ([`crate::grants::Power::Code`]), relayed for it. A host before 1.51 refuses
 /// it `unknown_command`, so the window asks only one of 1.51 or later, and a clone a runner
 /// before it made stays there.
+///
+/// 1.58 added a sign-in's redirect (#4044, spec #4023): `sign_in_redirect` has a runner's host hand
+/// the browser's answer to a login waiting on the runner's loopback, and answers only whether the
+/// login took it. Its target is that login's own path alone, so nothing else on the runner's
+/// loopback is reached. The paired desktop's, on its own link. A host before 1.58 refuses it
+/// `unknown_command`, and the sign-in says so.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 51,
+    minor: 58,
+};
+
+/// The version that first hands a sign-in's redirect to a login on a runner (#4044).
+pub const KNOWS_SIGN_IN_REDIRECT: Version = Version {
+    major: 1,
+    minor: 58,
 };
 
 /// The version that first answers `relay_to` with the runner the link reached (#3417).
@@ -723,6 +735,14 @@ pub enum Command {
     /// host, on the link between hosts from the desktop it is paired with, carries it out;
     /// every other host refuses it [`NOT_ALLOWED`] ([`crate::grants::Power::KeepProfile`]).
     KeepProfile(ProfileToKeep),
+    /// The desktop on this link hands the runner a sign-in's redirect (1.58, #4044): `target` is
+    /// the request the person's browser made of the desktop's loopback, which the runner's host
+    /// makes of a login waiting on its own, at that login's own port and path alone. Answered
+    /// [`Answer::Done`] where the login took it; nothing of the login's answer crosses the link.
+    /// Only a runner's host, on the link between hosts from the desktop it is paired with, carries
+    /// it out; every other host refuses it [`NOT_ALLOWED`]
+    /// ([`crate::grants::Power::SignInRedirect`]).
+    SignInRedirect { target: String },
     /// The person takes browser `program` over (1.14, #2014): an act in flight answers that it
     /// was interrupted, and every act is refused in words until [`Command::HandBack`]. The lease
     /// is the host's: it stays with the person whatever becomes of the link that took it, until
@@ -1770,6 +1790,7 @@ wire_words!(Command {
     NameWindow => "name_window",
     Unpair => "unpair",
     KeepProfile => "keep_profile",
+    SignInRedirect => "sign_in_redirect",
     RelayTo => "relay_to",
     TakeCode => "take_code",
     GiveCode => "give_code",
@@ -1828,6 +1849,7 @@ impl Command {
             Command::NameWindow { .. } => Power::NameWindow,
             Command::Unpair => Power::Unpair,
             Command::KeepProfile(_) => Power::KeepProfile,
+            Command::SignInRedirect { .. } => Power::SignInRedirect,
             Command::RelayTo { .. } => Power::RelayTo,
             Command::TakeCode { .. }
             | Command::GiveCode { .. }
@@ -2335,6 +2357,7 @@ impl Lane {
             | Command::NameWindow { .. }
             | Command::Unpair
             | Command::KeepProfile(_)
+            | Command::SignInRedirect { .. }
             | Command::RelayTo { .. }
             | Command::TakeCode { .. }
             | Command::GiveCode { .. }
@@ -2983,6 +3006,21 @@ impl Client {
     pub async fn keep_profile(&self, profile: ProfileToKeep) -> Result<ProfileStanding, CallError> {
         match self.call(Command::KeepProfile(profile)).await? {
             Answer::ProfileKept { standing } => Ok(standing),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    /// Have the runner hand a login on its loopback the redirect `target` (1.58, #4044): `Ok`
+    /// once the login took it. Refused by every host but a runner's, on its link from the
+    /// desktop it is paired with.
+    pub async fn sign_in_redirect(&self, target: &str) -> Result<(), CallError> {
+        match self
+            .call(Command::SignInRedirect {
+                target: target.to_owned(),
+            })
+            .await?
+        {
+            Answer::Done => Ok(()),
             other => Err(unexpected(&other)),
         }
     }

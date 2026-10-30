@@ -526,6 +526,9 @@ pub struct Made {
 pub enum Typed {
     InATerminal,
     Driven,
+    /// In a terminal the person drives, by the harness's device-code flow: what is left where
+    /// the browser's answer cannot reach the runner (#4044).
+    DeviceInATerminal,
 }
 
 impl Made {
@@ -560,7 +563,7 @@ impl Made {
         let mut args: Vec<String> = [
             "exec",
             match typed {
-                Typed::InATerminal => "-it",
+                Typed::InATerminal | Typed::DeviceInATerminal => "-it",
                 Typed::Driven => "-i",
             },
             "--user",
@@ -576,6 +579,14 @@ impl Made {
         .collect();
         if let Some(provider) = provider {
             args.extend(["--provider".to_owned(), provider.to_owned()]);
+        }
+        // A plan's login asks from a list in a terminal, which nothing answers when driven.
+        match typed {
+            Typed::Driven if provider.is_some() => {
+                args.extend(["--way".to_owned(), "browser".to_owned()]);
+            }
+            Typed::DeviceInATerminal => args.extend(["--way".to_owned(), "device".to_owned()]),
+            _ => {}
         }
         args
     }
@@ -2128,6 +2139,19 @@ impl Docker {
         provider: Option<&str>,
     ) -> Result<String, String> {
         self.checked_sign_in(made, engine, name, provider, Typed::InATerminal)?
+            .line()
+    }
+
+    /// [`Docker::sign_in_line`], by the harness's device-code flow (#4044): what a person is left
+    /// with where this machine's port for the browser's answer is taken.
+    pub fn device_sign_in_line(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Result<String, String> {
+        self.checked_sign_in(made, engine, name, provider, Typed::DeviceInATerminal)?
             .line()
     }
 

@@ -373,7 +373,7 @@ const WATCHED_FOR: std::time::Duration = std::time::Duration::from_secs(15 * 60)
 /// `purlis profile sign-in`, run there through this machine's `docker`, in the runner's folder
 /// for the profile ([`crate::poolprofiles::sign_in_line`]); nothing of this machine's sign-in
 /// goes there. The runner is asked again every few seconds until it says the profile is signed
-/// in there.
+/// in there. With `device`, by the harness's device-code flow there (#4044).
 #[tauri::command]
 #[specta::specta]
 pub fn type_profile_sign_in(
@@ -383,6 +383,7 @@ pub fn type_profile_sign_in(
     name: String,
     provider: Option<String>,
     pool: Option<String>,
+    device: bool,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     if !held.chats().is_shell_at(session, held.root()) {
@@ -391,7 +392,7 @@ pub fn type_profile_sign_in(
         );
     }
     if let Some(pool) = pool {
-        let line = crate::poolprofiles::sign_in_line(&pool, &name, provider.as_deref())?;
+        let line = crate::poolprofiles::sign_in_line(&pool, &name, provider.as_deref(), device)?;
         held.operator_input(session, line.as_bytes())?;
         crate::poolprofiles::watch(pool, name, held.hooks().asks_teller());
         return Ok(());

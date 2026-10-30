@@ -938,6 +938,11 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
                 purlis_core::halt::now(),
             )
         }),
+        // A sign-in's redirect, carried from the desktop's browser to the login listening here
+        // (#4044). The login's answer stays here.
+        delivering: std::sync::Arc::new(|target| {
+            purlis_core::profilestore::sign_in::callback::deliver(target)
+        }),
     };
     ExitCode::from(
         u8::try_from(purlis_host::serve_alone_answering(
@@ -1390,6 +1395,10 @@ enum ProfileCommand {
         /// github-copilot. A Claude plan is never signed in through opencode.
         #[arg(long)]
         provider: Option<String>,
+        /// Which of the harness's own flows to run, `browser` or `device`: how a desktop asks
+        /// for one on a runner.
+        #[arg(long, hide = true, conflicts_with = "check")]
+        way: Option<String>,
     },
 }
 
@@ -4094,8 +4103,15 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
             name,
             check,
             provider,
+            way,
         } => {
-            return profile_sign_in(&store, name, *check, provider.as_deref());
+            use purlis_core::profilestore::sign_in::Way;
+            let way = match way.as_deref().map(Way::named) {
+                None => Way::Asked,
+                Some(Some(way)) => way,
+                Some(None) => return refused("--way is browser or device"),
+            };
+            return profile_sign_in(&store, name, *check, provider.as_deref(), way);
         }
         ProfileCommand::List => unreachable!("listed in run"),
     };
@@ -4120,6 +4136,7 @@ fn profile_sign_in(
     name: &str,
     check: bool,
     provider: Option<&str>,
+    way: purlis_core::profilestore::sign_in::Way,
 ) -> ExitCode {
     use purlis_core::profilestore::{self, installs, sign_in};
     let record = match profilestore::list(store.config_root()) {
@@ -4168,7 +4185,7 @@ fn profile_sign_in(
         eprintln!("{said}");
         return ExitCode::SUCCESS;
     }
-    let login = match sign_in::login_of(&record, provider, pinned.as_deref()) {
+    let login = match sign_in::login_by(&record, provider, pinned.as_deref(), way) {
         Ok(login) => login,
         Err(why) => return refused(&why),
     };
