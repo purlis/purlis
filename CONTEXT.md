@@ -554,8 +554,10 @@ _Avoid_: operator (unqualified, where the person could be meant), controller, ma
 To have a profile's harness sign in on a pool's runner by its own login, run there, with nothing of
 this machine's sign-in carried to it (ADR 0095). The window drives the login in place, in a strip
 on the profile's line: it opens the login's page in the browser here, takes the code the page shows
-and passes it back, and says the profile is **signed in on <pool>** once the harness's own status
-check on the runner says so (spec #4023). As a verb, two words; the noun is "sign-in".
+and passes it back, or shows the device code a vendor's login gives, and says the profile is
+**signed in on <pool>** once the harness's own status check on the runner says so (spec #4023).
+`purlis profile sign-in <profile> --pool <pool>` takes the same steps in a terminal. As a verb, two
+words; the noun is "sign-in".
 _Avoid_: log in, login (for the verb), authenticate, authorize, connect (an account), copy a
 sign-in (nothing is copied)
 

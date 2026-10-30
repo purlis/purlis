@@ -782,6 +782,39 @@ fn a_profile_is_signed_in_on_the_runner_by_its_own_sign_in_in_the_container_it_p
 /// **A sign-in purlis drives runs with pipes, never a terminal** (#4042): the same runner's own
 /// `purlis profile sign-in`, as the same user in the same container, with `-i` alone.
 #[test]
+fn a_runners_sign_in_check_is_read_by_its_own_words() {
+    use crate::profilestore::sign_in::Standing;
+    for (printed, standing) in [
+        ("'work' is signed in on runner-1\n", Standing::SignedIn),
+        (
+            "fetching claude 2.1.314\n'work' is signed in by Claude Code's own sign-in on r\n",
+            Standing::SignedIn,
+        ),
+        (
+            "'work' is not signed in on r: purlis profile sign-in work signs it in\n",
+            Standing::SignedOut,
+        ),
+        (
+            "its harness cannot tell whether 'work' is signed in on r; a chat on it starts\n",
+            Standing::CannotTell,
+        ),
+    ] {
+        assert_eq!(standing_said("work", printed), Ok(standing), "{printed}");
+    }
+    let why = standing_said(
+        "work",
+        "purlis: this machine has no profile named 'work'.\n",
+    );
+    assert_eq!(
+        why,
+        Err("the runner says: purlis: this machine has no profile named 'work'.".to_owned())
+    );
+    // Another profile's words are not this one's.
+    assert!(standing_said("work", "'workshop' is signed in on r\n").is_err());
+}
+
+/// The sign-in the window drives runs the same one a terminal does, with pipes.
+#[test]
 fn a_driven_sign_in_runs_the_same_sign_in_with_pipes() {
     let driven = made().sign_in_args_by(Typed::Driven, "work", None);
 
