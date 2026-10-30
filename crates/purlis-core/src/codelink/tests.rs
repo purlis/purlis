@@ -521,7 +521,34 @@ fn a_runner_names_each_clones_origin_only_where_it_is_a_forges_address_with_no_s
         ],
     );
 
+    // A `.git` file naming another repository's folder is not read: that repository's
+    // configuration is not this clone's.
+    let pointed = workspace.join("pointed");
+    std::fs::create_dir_all(&pointed).unwrap();
+    git(&pointed, &["init", "-q", "-b", "main"]);
+    commit(&pointed, "README", "pointed");
+    let other = dir.path().join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    git(&other, &["init", "-q", "-b", "main"]);
+    commit(&other, "README", "other");
+    git(
+        &other,
+        &[
+            "config",
+            "remote.origin.url",
+            "https://github.com/private/other.git",
+        ],
+    );
+    std::fs::remove_dir_all(pointed.join(".git")).unwrap();
+    std::fs::rename(other.join(".git"), dir.path().join("other.git")).unwrap();
+    std::fs::write(
+        pointed.join(".git"),
+        format!("gitdir: {}\n", dir.path().join("other.git").display()),
+    )
+    .unwrap();
+
     let mut asked: Vec<String> = origins.iter().map(|(repo, _)| (*repo).to_owned()).collect();
+    asked.push("pointed".to_owned());
     asked.push("../outside".to_owned());
     asked.push("memory".to_owned());
     assert_eq!(
@@ -561,6 +588,10 @@ fn a_fresh_clone_is_given_the_runners_origin_only_where_a_pasted_url_would_be_ta
         "ssh://-oProxyCommand=sh/owner/api",
         concat!("ssh://", "-oProxyCommand=sh", "@", "github.com/owner/api"),
         "https://github.com/owner/api.git\n[core]\n\tfsmonitor = sh",
+        "HTTPS://github.com/owner/api.git",
+        "SSH://github.com/owner/api.git",
+        "https://g\u{456}thub.com/owner/api.git",
+        "https://github.com/owner/\u{202e}tig.ipa",
         "",
     ] {
         let given = give_origin(&repo, "builds", refused);
@@ -580,6 +611,10 @@ fn a_fresh_clone_is_given_the_runners_origin_only_where_a_pasted_url_would_be_ta
     assert_eq!(
         git(&repo, &["remote", "get-url", "origin"]),
         "git@github.com:owner/api.git"
+    );
+    assert!(
+        crate::forge::gitcredential::made_on_a_runner(&repo),
+        "no save pushes to it on its own until the person saves it from the window"
     );
     assert!(
         give_origin(&repo, "builds", "https://github.com/other/api.git").is_err(),

@@ -591,6 +591,47 @@ fn a_push_outside_the_window_is_not_held_to_a_record() {
     assert!(helper.is_ok_and(|helper| !helper.contains(HELPER_ARG)));
 }
 
+/// **A clone made from a runner's work pushes nothing on its own** (#3985): its remote is the
+/// one the runner named, so no automatic push, in the window or outside it, gets any helper
+/// until the person saves it once from the window, which confirms that remote and records it.
+#[test]
+fn a_clone_made_on_a_runner_pushes_nothing_automatic_until_the_window_saves_it_once() {
+    let machine = Machine::signed_in_on("github.example.com");
+    let clone = tempfile::tempdir().unwrap();
+    git::run_untimed(clone.path(), &["init", "-q"]).unwrap();
+    mark_made_on_a_runner(clone.path()).unwrap();
+    let url = "https://github.example.com/someone/api.git";
+    let on = Forge {
+        kind: Kind::GitHub,
+        host: "github.example.com".to_string(),
+    };
+
+    assert_eq!(
+        push_helper(&machine, "github.example.com", clone.path(), url),
+        Err(NOT_SAVED_FROM_THE_WINDOW),
+        "not the forge CLI's helper either"
+    );
+    assert_eq!(
+        helper_for_push(&on, clone.path(), url),
+        Err(NOT_SAVED_FROM_THE_WINDOW),
+        "nor outside the window"
+    );
+
+    let saved = confirmed_if(true, || {
+        push_helper(&machine, "github.example.com", clone.path(), url)
+    });
+    assert!(saved.is_ok_and(|helper| helper.contains(HELPER_ARG)));
+    assert!(
+        !made_on_a_runner(clone.path()),
+        "the mark goes with the Save"
+    );
+    assert!(
+        push_helper(&machine, "github.example.com", clone.path(), url)
+            .is_ok_and(|helper| helper.contains(HELPER_ARG)),
+        "and automatic saves push as for any clone the window saved"
+    );
+}
+
 #[test]
 fn a_remote_is_placed_by_its_host_owner_and_repo_in_every_spelling() {
     for url in [

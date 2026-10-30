@@ -3,12 +3,15 @@
 **Built by #3990 and #3985**, under spec #2041, after the amendment of the same day (a clone the
 runner chat made comes back with Move here). The guards are the person's ruling of 2026-10-27
 (item 8 of that day's amendment), unchanged; the rest was **decided in implementation, to be
-confirmed** (D-3990-1 to D-3990-2 and D-3985-1 to D-3985-5 in the pull request).
+confirmed** (D-3990-1 to D-3990-2 and D-3985-1 to D-3985-7 in the pull request).
 
 1. **The harnesses' instruction files are what a tool here reads** (#3990). A harness here reads
    `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`, `GEMINI.md`,
-   `.cursorrules`, `.windsurfrules` and `.clinerules` in any folder of a clone, and Copilot its
-   `.github/copilot-instructions.md` and `.github/instructions/`, as instructions, so the chat's
+   `.cursorrules`, `.windsurfrules` and `.clinerules` in any folder of a clone, Copilot its
+   `.github/copilot-instructions.md`, `.github/instructions/`, prompts and agents, opencode its
+   `.opencode/` (whose plugins it runs) and `opencode.jsonc`, and the other agents their own
+   folders (`.agents/`, `.windsurf/`, `.roo/`, `.kiro/`, `.continue/`, `.amazonq/`, `.junie/`),
+   as instructions, so the chat's
    tab names each that came back, with the other files of the ruling's third guard. Names are
    compared without case, as a disk here may not tell them apart.
 2. **A clone made fresh is said to be whole from the runner** (#3990): the chat's tab says it was
@@ -21,9 +24,13 @@ confirmed** (D-3990-1 to D-3990-2 and D-3985-1 to D-3985-5 in the pull request).
    **A runner-supplied URL is untrusted data**, so the desktop holds it again to the rules a URL
    pasted here is held to (`getproject::ProjectUrl::parse`: no other transport, no local path,
    no token or user name over HTTPS, nothing git or ssh reads as an option, no whitespace or
-   control character) and to 2,048 bytes, and writes nothing else of the runner's: only
-   `remote.origin.url` and git's default fetch refspec. It is never recorded as a remote purlis's
-   saves push to with the person's sign-in: the person pushes it themselves. Where none comes,
+   control character; printable ASCII alone, `https://` or `ssh://` spelled in lower case, no
+   `ssh://` user name read as an option) and to 2,048 bytes, and writes nothing else of the
+   runner's: only `remote.origin.url` and git's default fetch refspec. The runner reads it only
+   from a clone's own `.git` folder, never one a link or a `.git` file names. **No save pushes
+   to it on its own**: the clone is marked as made on a runner, and until the person confirms a
+   Save from the window, which records that remote as any confirmed push does and lifts the mark,
+   no push from it, automatic or outside the window, gets any credential helper. Where none comes,
    one is refused, the pool keeps its branches under `refs/remotes/origin/`, or the clone has an
    `origin`, the clone stays here with no remote, and the chat's tab says why and how to give it
    one. The chat's tab names the remote it was given, so the person sees where a push goes.

@@ -280,9 +280,13 @@ const ORIGIN_MOST: usize = 2048;
 /// address with no sign-in in it, held to the rules a URL pasted here is held to
 /// ([`crate::getproject::ProjectUrl::parse`]: no other transport, no local path, no token and
 /// nothing git or ssh would read as an option), exactly as it is, and within [`ORIGIN_MOST`].
-/// Nor an `ssh://` user name ssh could read as an option, which those rules leave to git.
+/// Nor an `ssh://` user name ssh could read as an option, which those rules leave to git, a
+/// scheme git would hand a remote helper of that spelling (`HTTPS://`), or anything but
+/// printable ASCII, so the chat's tab shows the host it reaches as it is.
 fn forge_url(url: &str) -> Option<&str> {
     (url.len() <= ORIGIN_MOST
+        && url.bytes().all(|byte| byte.is_ascii_graphic())
+        && (url.starts_with("https://") || url.starts_with("ssh://") || !url.contains("://"))
         && !url.contains("://-")
         && crate::getproject::ProjectUrl::parse(url).is_ok_and(|parsed| parsed.as_str() == url))
     .then_some(url)
@@ -292,7 +296,7 @@ fn forge_url(url: &str) -> Option<&str> {
 /// the `origin` URL of each one's own configuration, by its folder name, as its git keeps it
 /// (no included file read, no `insteadOf` applied), and only where it is a forge's address
 /// with no sign-in in it ([`forge_url`]). Nothing for a name that is not one of its clones
-/// ([`clones_in`]).
+/// ([`clones_in`]), nor for one whose `.git` is not a folder of its own.
 pub fn origins_in(
     project: &Path,
     workspace: &str,
@@ -305,6 +309,12 @@ pub fn origins_in(
     clones
         .into_iter()
         .filter(|clone| repos.contains(clone))
+        // Only a clone's own `.git` folder: never one reached through a link or named by a
+        // `.git` file, which would read another repository's configuration.
+        .filter(|clone| {
+            std::fs::symlink_metadata(folder.join(clone).join(".git"))
+                .is_ok_and(|meta| meta.is_dir())
+        })
         .filter_map(|clone| {
             let ran = run(
                 &folder.join(&clone),
@@ -328,7 +338,9 @@ pub fn origins_in(
 /// had** (#3985), so its branch can be pushed here: only a forge's address with no sign-in in
 /// it ([`forge_url`]), a runner's word being held to the rules every URL here is. Refused,
 /// leaving it with no remote, where `pool` keeps its branches under `refs/remotes/origin/`
-/// already, or where it has an `origin`.
+/// already, or where it has an `origin`. Marked as made on a runner, so no push signs in for it
+/// on its own until the person saves it once from the window
+/// ([`crate::forge::gitcredential::mark_made_on_a_runner`]).
 pub fn give_origin(repo: &Path, pool: &str, url: &str) -> Result<(), Refused> {
     if forge_url(url).is_none() {
         return Err(not_allowed(
@@ -356,6 +368,17 @@ pub fn give_origin(repo: &Path, pool: &str, url: &str) -> Result<(), Refused> {
             );
             return Err(git_failed("give it its remote", &ran));
         }
+    }
+    // A runner named it, so no save pushes to it on its own until the person saves it once from
+    // the window: unmarked, it has no remote.
+    if let Err(why) = crate::forge::gitcredential::mark_made_on_a_runner(repo) {
+        let _ = run(
+            repo,
+            &["config", "--local", "--remove-section", "remote.origin"],
+        );
+        return Err(Refused::Git(format!(
+            "it could not be marked as made on the runner: {why}"
+        )));
     }
     Ok(())
 }

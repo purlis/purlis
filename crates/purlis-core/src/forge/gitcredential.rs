@@ -191,6 +191,18 @@ pub(crate) fn helper_for_fetch_with(
     clone: &Path,
     places: Option<&[String]>,
 ) -> Result<String, &'static str> {
+    // Before anything else: a runner named this clone's remote, and nothing signs in for it on
+    // its own.
+    if made_on_a_runner(clone) {
+        if !CONFIRMED.with(std::cell::Cell::get) {
+            return Err(NOT_SAVED_FROM_THE_WINDOW);
+        }
+        // Confirmed by the person: the push records its remote below, so the mark goes.
+        let _ = git::run_untimed(
+            clone,
+            &["config", "--local", "--unset-all", MADE_ON_A_RUNNER],
+        );
+    }
     let Some(own) = for_the_window(&forge.host) else {
         return Ok(super::helper_for(forge));
     };
@@ -227,7 +239,45 @@ pub fn confirmed_if<T>(confirmed: bool, then: impl FnOnce() -> T) -> T {
     then()
 }
 
+/// The git config key, in a clone's own config, that marks it as made here from a runner's work
+/// (#3985): its remote is the one the runner named.
+const MADE_ON_A_RUNNER: &str = "purlis.madeonarunner";
+
+/// **Marks `clone` as made from a runner's work** (#3985): no push from it gets a helper on its
+/// own ([`helper_for_push`]) until the person confirms one Save from the window.
+pub fn mark_made_on_a_runner(clone: &Path) -> Result<(), String> {
+    let ran = git::run_untimed(clone, &["config", "--local", MADE_ON_A_RUNNER, "true"])
+        .map_err(|why| why.to_string())?;
+    if ran.ok() {
+        Ok(())
+    } else {
+        Err(ran.err.trim().to_owned())
+    }
+}
+
+/// Whether `clone` is marked as made from a runner's work ([`mark_made_on_a_runner`]), read from
+/// its own config alone.
+pub(crate) fn made_on_a_runner(clone: &Path) -> bool {
+    match git::run_untimed(
+        clone,
+        &[
+            "config",
+            "--local",
+            "--no-includes",
+            "--get",
+            MADE_ON_A_RUNNER,
+        ],
+    ) {
+        Ok(ran) => ran.ok(),
+        Err(_) => false,
+    }
+}
+
 /// The credential helper a save's push from `clone` to `url` gets.
+///
+/// A clone made from a runner's work ([`mark_made_on_a_runner`], #3985) gets none, in the window
+/// or outside it, until the person confirms a Save from the window: that push records its
+/// remote, as any confirmed push does, and the mark goes.
 ///
 /// Where the window's git would get purlis's own helper ([`for_the_window`]), the helper is held
 /// to the remote recorded for the clone in the config home ([`PUSH_REMOTES`]). A push the person

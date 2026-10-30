@@ -377,6 +377,12 @@ fn runs_here_names_the_harnesses_instruction_files_in_any_folder() {
         ".windsurfrules",
         ".clinerules",
         ".clinerules/style.md",
+        ".opencode/plugin/run.ts",
+        "opencode.jsonc",
+        ".github/prompts/review.prompt.md",
+        ".github/agents/fix.md",
+        ".agents/skills/a/SKILL.md",
+        ".windsurf/rules/a.md",
     ] {
         assert!(runs_here(path), "{path}");
     }

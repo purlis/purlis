@@ -283,9 +283,10 @@ fn move_tree(
 /// `.cargo/`, `rust-toolchain.toml`, `pyproject.toml`, `setup.py`, Gradle's and Maven's. And
 /// the harnesses' instruction files, which a harness here reads as instructions, in any folder
 /// of a clone (#3990): `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, Copilot's
-/// `.github/copilot-instructions.md` and `.github/instructions/`, and the like.
+/// `.github/copilot-instructions.md`, `.github/instructions/` and its prompts and agents,
+/// opencode's `.opencode/` (whose plugins it runs), and the other agents' folders.
 pub fn runs_here(path: &str) -> bool {
-    const FOLDERS: [&str; 15] = [
+    const FOLDERS: [&str; 26] = [
         ".claude/",
         ".codex/",
         ".cursor/",
@@ -300,12 +301,24 @@ pub fn runs_here(path: &str) -> bool {
         ".gemini/",
         ".github/workflows/",
         ".github/instructions/",
+        ".github/prompts/",
+        ".github/agents/",
+        ".github/chatmodes/",
         ".clinerules/",
+        ".opencode/",
+        ".agents/",
+        ".windsurf/",
+        ".roo/",
+        ".kiro/",
+        ".continue/",
+        ".amazonq/",
+        ".junie/",
     ];
-    const NAMES: [&str; 44] = [
+    const NAMES: [&str; 45] = [
         ".envrc",
         ".mcp.json",
         "opencode.json",
+        "opencode.jsonc",
         "package.json",
         "makefile",
         "gnumakefile",
