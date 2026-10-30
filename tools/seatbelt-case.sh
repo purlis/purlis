@@ -35,7 +35,8 @@
 # purlis writes, so
 # `crates/purlis-core/tests/it/claude_codes_own_sandbox_holds_the_settings_purlis_writes.rs` has the
 # real Claude Code run this line through its Bash tool, at the full sandbox and at the floor. The
-# last line says how many answers were checked and how many were wrong.
+# last line says how many answers were checked and how many were wrong. There, it also probes
+# the sample project's repositories: each git folder held as a whole, and git still at work.
 set -eu
 
 failed=0
@@ -89,12 +90,58 @@ held_in() {
   rm -f "$p/Library/LaunchAgents/x.plist" "$p/library/launchagents/y.plist" "$p/.ZSHRC" 2>/dev/null || :
 }
 
+# The probes of the sample project's repositories at `p`: `repo`, a clone git works in; `scratch`,
+# a clone each refused change is tried on, so one that got through spoils no other probe of
+# `repo`; and `wt`, a linked worktree of `repo`. Each git folder there as the chat started stays
+# where it is, as do the folders above it, while git still commits, branches and checks out.
+git_held_in() {
+  p=$1
+  what=$2
+  try=$3
+  s=$p/scratch
+  g="git -C '$p/repo' -c user.name=probe -c user.email=probe@example.invalid -c commit.gpgsign=false"
+  expect "$("$try" "echo y > '$p/repo/probe.txt' && $g add probe.txt && $g commit -q -m probe")" yes "$what: git commits in a clone"
+  expect "$("$try" "$g branch probe && $g checkout -q probe")" yes "$what: git branches and checks out in a clone"
+  expect "$("$try" "mkdir '$p/plain' && mv '$p/plain' '$p/plain2'")" yes "$what: a folder that holds no repository is moved"
+  rm -rf "$p/plain" "$p/plain2" 2>/dev/null || :
+  expect "$("$try" "mv '$s/.git' '$s/g'")" no "$what: a clone's git folder is moved"
+  [ -e "$s/g" ] && mv "$s/g" "$s/.git" 2>/dev/null || :
+  expect "$("$try" "mv '$s/.GIT' '$s/g'")" no "$what: a clone's git folder is moved by another spelling"
+  [ -e "$s/g" ] && mv "$s/g" "$s/.git" 2>/dev/null || :
+  expect "$("$try" "mv '$s/.Git' '$s/g'")" no "$what: a clone's git folder is moved by a third spelling"
+  [ -e "$s/g" ] && mv "$s/g" "$s/.git" 2>/dev/null || :
+  expect "$("$try" "mv '$s' '$p/scratch-moved'")" no "$what: a clone is moved"
+  [ -e "$p/scratch-moved" ] && mv "$p/scratch-moved" "$s" 2>/dev/null || :
+  # A folder swapped into the git folder's place in one step (`renamex_np`, `RENAME_SWAP`). Where
+  # there is no python3 to make the call, the probe is refused all the same, and said so.
+  if command -v python3 >/dev/null 2>&1; then
+    swap="python3 -c 'import ctypes, os, sys
+c = ctypes.CDLL(None, use_errno=True)
+os.makedirs(sys.argv[1] + \"/x\")
+sys.exit(0 if c.renamex_np(sys.argv[1].encode(), sys.argv[2].encode(), 2) == 0 else 1)' '$s/swap' '$s/.git'"
+  else
+    echo "::notice::seatbelt-case: $what: no python3, so the swap probe could not be tried"
+    swap=false
+  fi
+  expect "$("$try" "$swap")" no "$what: a folder is swapped into a clone's git folder's place"
+  if [ -e "$s/swap/HEAD" ]; then
+    python3 -c 'import ctypes, sys
+ctypes.CDLL(None).renamex_np(sys.argv[1].encode(), sys.argv[2].encode(), 2)' "$s/swap" "$s/.git" || :
+  fi
+  expect "$("$try" "rm -rf '$s/.git'")" no "$what: a clone's git folder is removed"
+  expect "$("$try" "rm -rf '$s/.git' ; mkdir '$s/.git'")" no "$what: a clone's git folder is replaced"
+  expect "$("$try" "mv '$p/wt/.git' '$p/wt/g'")" no "$what: a worktree's .git file is moved"
+  [ -e "$p/wt/g" ] && mv "$p/wt/g" "$p/wt/.git" 2>/dev/null || :
+  expect "$("$try" "rm -f '$p/wt/.git'")" no "$what: a worktree's .git file is removed"
+}
+
 if [ "${1-}" = --here ]; then
   if [ $# -ne 3 ]; then
     echo "usage: tools/seatbelt-case.sh --here <project> <what>" >&2
     exit 2
   fi
   held_in "$2" "$3" here
+  git_held_in "$2" "$3" here
   echo "seatbelt-case: $3: $checks checks, $wrong wrong"
   exit "$failed"
 fi

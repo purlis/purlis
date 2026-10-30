@@ -104,6 +104,12 @@ pub struct Asker {
     pub mode: Mode,
     /// Whether this chat still owes it a report.
     pub owes: bool,
+    /// Where its report stands, by its record: what [`Doing::ReportedStillRunning`] (#3899) is
+    /// read from, by [`crate::dispatched::still_running_after_report`].
+    pub report: crate::reopen::Owed,
+    /// Whether it was dispatched as a long-running task (#3905): notes are its heartbeat, and
+    /// purlis never asks it for a report.
+    pub long: bool,
 }
 
 /// How the chat that asked for a chat started it, as the chat is told it (#1455): the
@@ -141,6 +147,10 @@ pub enum Doing {
     WaitingOnItsOwnWork,
     /// It has sent its report, and is still open.
     Reported,
+    /// **It reported and its program still runs** (#3899,
+    /// [`crate::dispatched::still_running_after_report`]): purlis made its report from its last
+    /// message, or it came out blocked. Still its asking chat's to tell and cancel.
+    ReportedStillRunning,
     /// Its program ended, content.
     Ended,
     /// Its program ended badly.
@@ -152,6 +162,14 @@ impl Doing {
         match known.state {
             State::Done => Self::Ended,
             State::Failed => Self::Failed,
+            // The one rule a follow-up and a cancel read (#3899). Its program has not ended:
+            // that was asked above.
+            _ if known.from.as_ref().is_some_and(|from| {
+                crate::dispatched::still_running_after_report(from.report, false)
+            }) =>
+            {
+                Self::ReportedStillRunning
+            }
             _ if known.from.as_ref().is_some_and(|from| from.reported) => Self::Reported,
             State::Unknown => Self::Open,
             State::Running => Self::Running,
@@ -168,6 +186,7 @@ impl Doing {
             Self::Waiting => "waiting",
             Self::WaitingOnItsOwnWork => crate::dispatched::WAITING_ON_ITS_OWN_WORK,
             Self::Reported => "reported",
+            Self::ReportedStillRunning => crate::dispatched::REPORTED_STILL_RUNNING,
             Self::Ended => "ended",
             Self::Failed => "failed",
         }
@@ -329,6 +348,9 @@ pub struct OpenTask {
     /// Whether it is stopped on the person: a prompt of its harness's or its sandbox's Notice.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub on_the_person: bool,
+    /// Whether it is a long-running task (#3905): said beside its state.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub long: bool,
 }
 
 /// Why a chat asks, which decides whether the app counts it as told.
@@ -371,7 +393,8 @@ impl Stage {
             Doing::Open | Doing::Running | Doing::Waiting | Doing::WaitingOnItsOwnWork => {
                 Self::Live
             }
-            Doing::Reported => Self::Reported,
+            // It reported: a sibling is told so once, as of any report.
+            Doing::Reported | Doing::ReportedStillRunning => Self::Reported,
             Doing::Ended => Self::Finished,
             Doing::Failed => Self::Failed,
         }
@@ -512,12 +535,18 @@ fn open_tasks(known: &[Known], chat: u32) -> Vec<OpenTask> {
                 .as_ref()
                 .is_some_and(|from| from.mode == Mode::Task)
         })
-        .filter(|one| Stage::of(Doing::of(one)) == Stage::Live)
+        // A task that reported while its program still runs is open too (#3899): it is still
+        // its asking chat's to tell and cancel.
+        .filter(|one| {
+            let doing = Doing::of(one);
+            Stage::of(doing) == Stage::Live || doing == Doing::ReportedStillRunning
+        })
         .map(|one| OpenTask {
             chat: one.chat,
             name: one.name.clone(),
             state: Doing::of(one),
             on_the_person: one.asking.is_some(),
+            long: one.from.as_ref().is_some_and(|from| from.long),
         })
         .collect();
     tasks.sort_by_key(|one| one.chat);
@@ -806,7 +835,13 @@ fn roster_line(working: &Working) -> Option<String> {
             } else {
                 task.state.word()
             };
-            format!("chat {} {} {state}", task.chat, quoted(&task.name))
+            // A long-running task says so beside its state (#3905).
+            let long = if task.long {
+                format!("{}, ", crate::dispatched::LONG_RUNNING)
+            } else {
+                String::new()
+            };
+            format!("chat {} {} {long}{state}", task.chat, quoted(&task.name))
         })
         .collect();
     if working.more_tasks > 0 {

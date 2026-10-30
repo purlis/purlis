@@ -286,6 +286,9 @@ pub(crate) fn listed_for(held: &Held, asker: u32) -> Vec<purlis_core::dispatched
                 .as_ref()
                 .and_then(|tree| tree.branch.clone()),
             branch_stands: None,
+            long: false,
+            last_note: None,
+            noted_secs: None,
             finished: true,
         })
     })

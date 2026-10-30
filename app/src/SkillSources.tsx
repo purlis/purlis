@@ -1145,9 +1145,8 @@ function UpdateReviewPage({
         ? "The review is being read."
         : review === undefined
           ? "The review could not be read."
-          : busy
-            ? BUSY
-            : undefined;
+          : // It brings along a skill under a built-in skill's name, which accepting refuses (#3728).
+            (review.refused ?? (busy ? BUSY : undefined));
   let body: ReactNode;
   if (offer === undefined)
     body = updatesRead ? (
@@ -1174,6 +1173,11 @@ function UpdateReviewPage({
                 <code>{data.newer.short}</code>
               </Fact>
             </Facts>
+            {data.refused !== null && (
+              <p className="honest" role="note" data-testid="update-refused">
+                {data.refused}
+              </p>
+            )}
             {!data.from_pin && (
               <p className="honest">
                 The pinned commit is no longer in the source, so this compares with the copy here.

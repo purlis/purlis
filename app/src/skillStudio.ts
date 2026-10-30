@@ -567,6 +567,37 @@ export function askSkillStudio(
   );
 }
 
+// --- The Harness skills and Routing pages' items (#3692) -------------------------------------
+
+/**
+ * **A program's own skill, as a place on Harness skills names it** (#3692): its program, then
+ * its row's id ({@link skillRowId}), which no other row of that program shares. What a way in
+ * that names one skill (Needs you's "Show in Harness skills", #3689) hands {@link skillStudioAt}
+ * as its `skill`, so the page opens at that skill with its switch beside the list.
+ */
+export function harnessSkillId(harness: string, skill: Parameters<typeof skillRowId>[0]): string {
+  return `${harness}/${skillRowId(skill)}`;
+}
+
+/** **A program's own skill named only by its name** (#3692): where the one asking knows the
+ *  program and the name and nothing else, the page goes to the first of that program's rows of
+ *  that name. */
+export function harnessSkillNamed(harness: string, name: string): string {
+  return `${harness}/${skillRowNamed(name)}`;
+}
+
+/** The program a Harness skills place names, and the rest of it: `undefined` for one that
+ *  names none. */
+export function harnessOfId(id: string): { harness: string; row: string } | undefined {
+  const at = id.indexOf("/");
+  return at <= 0 ? undefined : { harness: id.slice(0, at), row: id.slice(at + 1) };
+}
+
+/** **A chat's start, as a place on Routing names it** (#3692): by the chat's number. */
+export function routedChatId(session: number): string {
+  return `chat-${session}`;
+}
+
 /**
  * **The chat a skill's page uses a skill in** (#3682): the chat last in front in this project's
  * window, by its session and the name its tab shows, which keeps its pane while the studio is
