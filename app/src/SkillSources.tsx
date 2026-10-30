@@ -1300,7 +1300,8 @@ function ChooseSkillsPage({
                         tooltip={row.installed ? "It is installed already." : undefined}
                       />
                     </RowLead>
-                    <RowLabel>
+                    {/* Installed: greyed, its words stepped back to the meta tier (decision 2). */}
+                    <RowLabel className={row.installed ? "ui-text-meta" : undefined}>
                       <code>{skill.name}</code>
                     </RowLabel>
                     <RowTrail>
