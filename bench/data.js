@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793340409112,
+  "lastUpdate": 1793341750255,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30912,6 +30912,48 @@ window.BENCHMARK_DATA = {
             "value": 101.54878149999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.181, 101.530, 101.549, 101.918, 102.941 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1c0685314c79d2b36303c5f7fd65dbf9c4087ad9",
+          "message": "Forge tools: refuse every credential command of gh and glab (#3894) (#3988)\n\n* Forge tools: refuse every credential command of gh and glab, and api routes that do what one does (#3894)\n\nAudits gh 2.83.2's and glab 1.103.0's whole command sets and the api routes on the\nforge's own host against the 2026-10-29 test, records the audit in\ndocs/forge-tool-refusals.md, and adds what belongs to refused_forge with tests.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65CFMT104C9A95D47KDZNXX\nPurlis-Persona: steward\n\n* Forge tools: refuse glab's aliases, mcp, ci variables and JSON project pages; read endpoints every way a server may (#3894)\n\nReview fixes: glab's hidden aliases (conf, var, tf, terraform, rc), glab mcp, ci\n--with-variables, repo view as JSON and the project/group pages' runner token; GitLab\nformat suffixes, both split/decode orders and resolved dot segments; added GitHub and\nGitLab routes; --jq . and -v no longer refused.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65CFMT104C9A95D47KDZNXX\nPurlis-Persona: steward\n\n* Forge tools: a project's own page is refused, so the old api test reads its issues (#3894)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65CFMT104C9A95D47KDZNXX\nPurlis-Persona: steward\n\n* Forge tools: a run with -- never runs with a vault's value (#3894)\n\nWhat follows -- goes to git (repo clone, repo fork), whose own options can name a\ntemplate, a config or a program to run with the token in its environment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65CFMT104C9A95D47KDZNXX\nPurlis-Persona: steward\n\n* Forge tools: resolve api dot segments against the API base, refuse spreading placeholders, schedule variables and orbit local (#3894)\n\nRe-review fixes: .. resolved from /, /api/v3 and /api/v4 (and /api/graphql is GraphQL);\n{branch}, :branch, :namespace, :group, :repo placeholders refused; glab schedule\n--variable and orbit local refused; -F found in a run of short options; repo/project\nJSON output refused only for view, so lists run.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65CFMT104C9A95D47KDZNXX\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T05:44:38Z",
+          "tree_id": "0f6b4a51d956bdce22d1cec1663cd2f878434f94",
+          "url": "https://github.com/purlis/purlis/commit/1c0685314c79d2b36303c5f7fd65dbf9c4087ad9"
+        },
+        "date": 1793341747171,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5470675,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.534, 0.539, 0.547, 0.550, 0.550 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3566305,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.287, 16.299, 16.357, 16.404, 16.429 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.3232055,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.612, 101.213, 101.323, 101.443, 101.580 ms"
           }
         ]
       }
