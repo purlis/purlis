@@ -647,9 +647,9 @@ const DRAWN_ONLY: &[(&str, State, &[&str])] = &[
 /// switcher's rows and pin toggles are never drawn inside a workspace chip, so each is reached by
 /// its own attributes, as a part drawn around its root is ([`Family::around`]); but each is a
 /// control of its own, under the pointer, open or pinned, so a state key reaches the part marked
-/// in that state. They came in version 12 as parts of the chip, and a format only grows
-/// (`theme::published`): a key that names one in a variant of the chip, or in a state it is never
-/// marked in, stays in the schema, marked deprecated, and is said and left out.
+/// in that state. A key that names one in a variant of the chip, or in a state it is never
+/// marked in, is not in the schema, and is said and left out: no release has published format 2
+/// yet (v0.4.1 has no theme schema), so the keys the chip's variants gave them are dropped.
 const APART: &[(&str, &str, &[State])] = &[
     (
         "titlebar",
@@ -1413,8 +1413,8 @@ fn key(raw: &str) -> Result<Key, String> {
             format!("{} or {last}", carried.join(", "))
         };
         return Err(format!(
-            "parts.{raw} is not a component part purlis has: {}.{} is drawn apart from every \
-             {}, in no variant of it, and its own states are {states}, so it was left out",
+            "parts.{raw} reaches nothing purlis draws: {}.{} is drawn apart from every {}, in \
+             no variant of it, and its own states are {states}, so it was left out",
             family.name, part.name, family.parts[0].name,
         ));
     }
@@ -3231,13 +3231,12 @@ fn fallback(family: &'static Family, variant: &'static str, state: Option<State>
         });
     }
     for part in 1..family.parts.len() {
-        // A part drawn apart from the root is drawn back where it is reached: in no variant of
-        // the root, and in the state it is in only where its own element is marked in it
-        // (#3656).
-        let (variant, state) = match drawn_apart(family, family.parts[part].name) {
-            Some(carried) => (None, state.filter(|one| carried.contains(one))),
-            None => (variant, state),
-        };
+        // A part drawn apart from the root never falls with a look of the root's (#3656): a
+        // chip that breaks a floor is no reason to take a crumb's colours away, and a rule with
+        // no variant would reach every crumb in the window.
+        if drawn_apart(family, family.parts[part].name).is_some() {
+            continue;
+        }
         // A part of a family drawn in marks draws its own fill back, for the state (#3143), and a
         // meter's fill its variant's (#3674).
         let by_state = marked(family)
@@ -3991,6 +3990,15 @@ pub fn manifest_as_of(version: u32) -> Value {
                     if family.around.contains(&part.name) {
                         said["around"] = Value::Bool(true);
                     }
+                    // Drawn apart from the root, in no variant of it and only in its own states
+                    // (#3656). Said from the next release on: what version 12 shipped keeps its
+                    // contract.
+                    if version > VERSION
+                        && let Some(carried) = drawn_apart(family, part.name)
+                    {
+                        let states: Vec<&str> = carried.iter().map(|one| one.name()).collect();
+                        said["apart"] = json!(states);
+                    }
                     if MARKS.contains(&(family.name, part.name)) {
                         said["mark_height"] = json!({
                             "least": 0,
@@ -4102,12 +4110,14 @@ pub(super) fn schema() -> Value {
                         } else {
                             property.name().to_owned()
                         };
-                        let mut value = json!({ "$ref": format!("#/$defs/part-{def}") });
-                        // Kept, since a format only grows, but it reaches nothing (#3656).
+                        // A key that reaches nothing is never completed (#3656).
                         if apart_in_nothing(family, part.name, variant, state) {
-                            value["deprecated"] = Value::Bool(true);
+                            continue;
                         }
-                        keys.insert(key.to_string(), value);
+                        keys.insert(
+                            key.to_string(),
+                            json!({ "$ref": format!("#/$defs/part-{def}") }),
+                        );
                     }
                 }
             }

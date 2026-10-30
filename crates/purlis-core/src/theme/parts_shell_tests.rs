@@ -797,12 +797,14 @@ fn each_apart_part_s_state_reaches_the_part_marked_in_it() {
 
 #[test]
 fn an_apart_part_in_a_chip_s_variant_or_a_state_it_is_never_in_is_said_and_left_out() {
-    // Kept in the schema since version 12 (a format only grows), but marked deprecated.
+    // No release has published format 2 (v0.4.1 has no theme schema), so the schema never
+    // completes these keys, and a theme that writes one is told it reaches nothing.
     let keys = parts::schema()["properties"].clone();
     for key in [
         "titlebar.crumb.pinned.fill",
         "titlebar.all.unpinned.hover.text",
         "titlebar.pin.root.fill",
+        "titlebar.row.dormant.corner-radius",
         "titlebar.row.focused.fill",
     ] {
         let loaded = load(&with_parts(json!({ key: "surface.raised" })));
@@ -810,7 +812,8 @@ fn an_apart_part_in_a_chip_s_variant_or_a_state_it_is_never_in_is_said_and_left_
         assert!(
             said(&loaded)
                 .iter()
-                .any(|one| one.contains(&format!("parts.{key} is not")) && one.contains("apart")),
+                .any(|one| one.contains(&format!("parts.{key} reaches nothing"))
+                    && one.contains("apart")),
             "{key}: {:?}",
             said(&loaded)
         );
@@ -818,11 +821,57 @@ fn an_apart_part_in_a_chip_s_variant_or_a_state_it_is_never_in_is_said_and_left_
             !parts::stylesheet(loaded.theme.first()).contains("var(--surface-raised)"),
             "{key} draws nothing"
         );
-        assert_eq!(keys[key]["deprecated"], true, "{key}");
+        assert!(keys.get(key).is_none(), "{key} is not completed");
     }
-    // Its own keys are not deprecated.
-    for key in ["titlebar.crumb.hover.fill", "titlebar.row.selected.text"] {
-        assert!(keys[key].get("deprecated").is_none(), "{key}");
+    // Its own keys are.
+    for key in [
+        "titlebar.crumb.fill",
+        "titlebar.crumb.hover.fill",
+        "titlebar.row.selected.text",
+        "titlebar.pin.focused.fill",
+    ] {
+        assert!(keys.get(key).is_some(), "{key}");
+    }
+}
+
+#[test]
+fn a_chip_that_falls_leaves_the_crumb_s_colours_as_the_theme_sets_them() {
+    // #3946's review: in Purlis dark a faint unpinned chip breaks its floor and draws its
+    // default back; the crumb, which broke nothing, keeps the primary words the theme gave it.
+    let loaded = load(&json!({
+        "name": "Shaped",
+        "extends": "purlis",
+        "parts": {
+            "titlebar.crumb.text": "text.primary",
+            "titlebar.workspace.unpinned.text": "text.faint",
+        },
+    }));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    let dark = loaded
+        .theme
+        .appearances
+        .iter()
+        .find(|one| one.id == "dark")
+        .expect("Purlis dark");
+    let fell = parts::fallen(dark);
+    assert!(
+        fell.iter()
+            .any(|one| one.part == "titlebar.workspace.unpinned"),
+        "the chip falls: {fell:?}"
+    );
+    let sheet = parts::stylesheet(dark);
+    let crumb = "[data-scope=\"titlebar\"][data-part=\"crumb\"]";
+    assert!(
+        sheet.contains(&format!(
+            ":where({crumb}) {{ color: var(--text-primary); }}"
+        )),
+        "{sheet}"
+    );
+    for line in sheet.lines().filter(|line| line.contains(crumb)) {
+        assert!(
+            !line.contains("--text-secondary"),
+            "the crumb is drawn back: {line}"
+        );
     }
 }
 
@@ -859,7 +908,9 @@ fn the_pairs_the_crumb_the_all_button_a_row_and_a_pin_draw_are_held() {
         ("accent.base", "surface.overlay", mark),
         // A row: secondary on the popover, primary on the selected row's fill, faint while it
         // cannot run.
+        ("text.secondary", "surface.overlay", words),
         ("text.primary", "list.selected", words),
+        ("text.faint", "surface.overlay", mark),
     ] {
         assert!(
             check::PAIRS.iter().any(|pair| pair.front == front

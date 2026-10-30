@@ -138,8 +138,8 @@
 /* ---------------------------------------------------------------------------------------------
    **A card pressed whole** (`CardButton.tsx`, #3655): a door on the welcome, a repo to get. It is
    a family of its own (`card-button`, #3885), so a theme that sets its cards flat on their panel
-   never takes a pressed card's edge away, and a theme's `card.title` never reaches its title. It is a thing that is pressed, so it is drawn in the
-   `control.*` shades. The button in it (`press`) holds its title, and the button's `::after`
+   never takes a pressed card's edge away, and a theme's `card.title` never reaches its title.
+   It is a thing that is pressed, so it is drawn in the `control.*` shades. The button in it (`press`) holds its title, and the button's `::after`
    covers the whole box, so a press anywhere on the card presses it and its ring is drawn around
    the card. Under the pointer and while pressed, the box's ground and edge change and nothing
    moves (#2800); its ring is the window's, from the keyboard only, outside it.
