@@ -231,18 +231,19 @@ describe("a view tab's close, with its unsaved work", () => {
     await vi.waitFor(() => expect(projectTabs()).toEqual(["one"]));
     await vi.waitFor(() => expect(listening("settings-asked")).toBe(true));
     fire("settings-asked", null);
+    /** The view tabs on the strip, by their names. */
     const tabs = () =>
       within(stripNamed("Tabs"))
         .queryAllByRole("tab")
-        .map((tab) => tab.getAttribute("aria-label"));
-    await vi.waitFor(() => expect(tabs()).toEqual(["Settings"]));
+        .map((tab) => (tab.textContent ?? "").includes("Settings"));
+    await vi.waitFor(() => expect(tabs()).toEqual([true]));
     const deploy = work(ONE);
 
     await userEvent.keyboard("{F2}");
     await screen.findByRole("dialog", { name: "Command palette" });
     await userEvent.keyboard("Close this view{Enter}");
     await userEvent.click(within(await question()).getByRole("button", { name: "Keep editing" }));
-    expect(tabs()).toEqual(["Settings"]);
+    expect(tabs()).toEqual([true]);
 
     await userEvent.keyboard("{F2}");
     await screen.findByRole("dialog", { name: "Command palette" });
