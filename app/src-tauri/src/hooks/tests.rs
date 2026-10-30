@@ -2643,19 +2643,13 @@ fn a_server_whose_socket_could_not_be_taken_is_told_why_and_what_to_do() {
     );
     assert_eq!(untaken.0, BlockOffer::Unsandboxed);
     assert_eq!(untaken.1, None);
-    let said = untaken.2.clone().expect("why");
-    assert!(
-        said.contains("could not take the server's socket"),
-        "{said}"
-    );
-    assert!(
-        said.contains("remove the runner and add it again"),
-        "{said}"
-    );
-    assert!(said.contains("Kubernetes"), "{said}");
-    assert!(said.contains("without the sandbox"), "{said}");
+    assert_eq!(untaken.2.as_deref(), Some(NOT_TAKEN_SAID));
+    assert!(NOT_TAKEN_SAID.contains("could not take the server's socket"));
+    assert!(NOT_TAKEN_SAID.contains("remove the runner and add it again"));
+    assert!(NOT_TAKEN_SAID.contains("Kubernetes"));
+    assert!(NOT_TAKEN_SAID.contains("without the sandbox"));
     // Not the words for a port to pick, which would send it round to the same Notice.
-    assert!(!said.contains("purlis listen 3000"), "{said}");
+    assert!(!NOT_TAKEN_SAID.contains("purlis listen 3000"));
     // purlis's own wrap, the only one that tells it, keeps the words; a Claude Code chat,
     // whose sandbox purlis does not wrap, is never told of a runner's socket.
     assert_eq!(
