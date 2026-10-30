@@ -262,6 +262,8 @@ describe("deleting a workspace", () => {
       name: "deploy",
       save: vi.fn(() => Promise.resolve(undefined)),
       discard: vi.fn(() => keepUnsaved("deploy", undefined)),
+      kind: "test",
+      handOver: () => null,
     };
     keepUnsaved("deploy", deploy);
 

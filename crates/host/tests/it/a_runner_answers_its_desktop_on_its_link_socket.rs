@@ -16,7 +16,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use purlis_host::{
-    Answering, ComposesNothing, HostError, Hosting, Keeping, Pairing, Place, Unpairing,
+    Answering, ComposesNothing, Forgetting, HostError, Hosting, Keeping, Pairing, Place, Unpairing,
     serve_answering,
 };
 use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
@@ -92,6 +92,26 @@ fn unpairing(paired: &Paired) -> Unpairing {
 /// The profiles the runner was asked to keep, in order.
 type KeptHere = Arc<Mutex<Vec<purlis_session_protocol::session::ProfileToKeep>>>;
 
+/// Forgets the profile of a name from `kept`, for the desktop `desktop` alone; refused where
+/// none of that name is kept.
+fn forgetting(kept: &KeptHere, desktop: Option<Pinned>) -> Forgetting {
+    let kept = Arc::clone(kept);
+    Arc::new(move |asked, name| {
+        assert_eq!(
+            Some(asked),
+            desktop.as_ref(),
+            "forgotten for the desktop the link proved"
+        );
+        let mut kept = kept.lock().unwrap();
+        let before = kept.len();
+        kept.retain(|profile| profile.name != name);
+        if kept.len() == before {
+            return Err(format!("no profile named {name} is kept here"));
+        }
+        Ok(())
+    })
+}
+
 /// Keeps each profile in `kept`, signed out there unless its name is `signed-in`, for the
 /// desktop `desktop` alone.
 fn keeping(kept: &KeptHere, desktop: Option<Pinned>) -> Keeping {
@@ -132,20 +152,19 @@ async fn hosting_keeping(
 ) {
     let (stop, stopped) = oneshot::channel::<()>();
     let (ready, is_ready) = oneshot::channel::<()>();
+    let desktop = paired
+        .lock()
+        .unwrap()
+        .as_ref()
+        .ok()
+        .and_then(|found| found.as_ref().map(|(_, desktop)| desktop.clone()));
     let (place, pairing) = (
         place.clone(),
         Pairing {
             answering: answering(paired),
             unpairing: unpairing(paired),
-            keeping: keeping(
-                kept,
-                paired
-                    .lock()
-                    .unwrap()
-                    .as_ref()
-                    .ok()
-                    .and_then(|found| found.as_ref().map(|(_, desktop)| desktop.clone())),
-            ),
+            keeping: keeping(kept, desktop.clone()),
+            forgetting: forgetting(kept, desktop),
         },
     );
     let host = tokio::spawn(async move {
@@ -339,5 +358,41 @@ async fn the_paired_desktop_has_the_runner_keep_its_profile_and_hears_where_it_s
     assert_eq!(
         *kept.lock().unwrap(),
         vec![profile("signed-in"), profile("work")]
+    );
+}
+
+/// **The paired desktop has the runner forget its profile** (1.52, #4047): asked by name, the
+/// runner forgets it, and a refusal there is said to the desktop.
+#[tokio::test]
+async fn the_paired_desktop_has_the_runner_forget_its_profile() {
+    let dir = tempfile::tempdir().unwrap();
+    let place = place_in(dir.path());
+    let (runner, desktop) = (identity(RUNNER), identity(DESKTOP));
+    let runner_pinned = pinned_of(&runner);
+    let paired: Paired = Arc::new(Mutex::new(Ok(Some((runner, pinned_of(&desktop))))));
+    let kept = KeptHere::default();
+    let (_stop, _host) = hosting_keeping(&place, &paired, &kept).await;
+    let linked = link(&place, &desktop, &runner_pinned)
+        .await
+        .expect("the paired desktop is linked");
+    let client = purlis_session_protocol::session::Client::new(linked).0;
+    client
+        .keep_profile(purlis_session_protocol::session::ProfileToKeep {
+            name: "work".into(),
+            harness: "claude".into(),
+            sandbox_only: false,
+            pinned: None,
+            settings: None,
+        })
+        .await
+        .unwrap();
+
+    client.forget_profile("work").await.expect("forgotten");
+
+    assert!(kept.lock().unwrap().is_empty());
+    let refused = client.forget_profile("work").await.unwrap_err();
+    assert!(
+        refused.to_string().contains("no profile named work"),
+        "{refused}"
     );
 }

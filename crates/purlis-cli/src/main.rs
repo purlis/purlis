@@ -939,6 +939,18 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
                 purlis_core::halt::now(),
             )
         }),
+        // And forgets one as the desktop takes it off the pool, its sign-in here with it
+        // (#4047).
+        forgetting: std::sync::Arc::new(|desktop, name| {
+            use purlis_core::profilestore::{Homes, onrunner};
+            let homes = Homes::here().ok_or_else(|| {
+                "this runner has no data home its profiles are in, or it is inside a project"
+                    .to_owned()
+            })?;
+            let home = purlis_core::profiles::home()
+                .ok_or_else(|| "this runner has no home its profiles are in".to_owned())?;
+            onrunner::forget(&homes, &home, name, &desktop.device)
+        }),
     };
     ExitCode::from(
         u8::try_from(purlis_host::serve_alone_answering(

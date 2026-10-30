@@ -53,7 +53,10 @@ beforeEach(() => {
     asked.push({ cmd, args: a });
     if (cmd === "pool_profiles") {
       profilesAsked += 1;
-      return [a_profile("work"), a_profile("fast", "codex")];
+      return {
+        kept: [a_profile("work"), a_profile("fast", "codex")],
+        addable: [{ name: "home", harness: "Codex" }],
+      };
     }
     if (cmd === "pool_sign_in_start") return 7;
     if (cmd === "pool_sign_in_next") {
@@ -151,6 +154,24 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     expect(screen.getByRole("group", { name: "Signing work in on builds" })).toBe(opened);
     expect(calls("pool_sign_in_start")).toHaveLength(1);
     expect(calls("pool_sign_in_cancel")).toEqual([]);
+  });
+
+  it("offers neither Add a profile… nor Remove while a sign-in runs on the pool (#4047)", async () => {
+    render(<PoolProfiles pool="builds" plane={undefined} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Remove fast from pool builds" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Sign work in on pool builds" }));
+    await screen.findByRole("group", { name: "Signing work in on builds" });
+
+    expect(screen.queryByRole("button", { name: "Add a profile…" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /remove/i })).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    // The question Remove asked went with the sign-in that was started over it.
+    expect(screen.getByRole("button", { name: "Remove fast from pool builds" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add a profile…" })).toBeVisible();
   });
 
   it("says what the login printed when purlis cannot follow it, with a terminal the way out", async () => {

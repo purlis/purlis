@@ -12,14 +12,17 @@
  *   the tab's history is (`viewHistory.ts`): a relaunch starts afresh.
  * - **Unsaved, it is registered as the view's unsaved work** (`unsavedWork.ts`, #3929), so every
  *   close that would lose it asks first, the window's one question: a tab's, a pane's, the
- *   project's, the removal of the workspace it is saved into, and a quit.
+ *   project's, the removal of the workspace or the persona it is saved into, and a quit.
  * - **A closed tab's edit goes with it** ({@link forgetSkillEdit}), as its history does.
+ * - **A project moved to another window takes its edit along** (#4028): the window it arrives in
+ *   keeps it under the same tab's history id, so its studio tab opens on the text as it was.
  */
 import { useSyncExternalStore } from "react";
 import { commands, type SkillLevel, type StudioSkill } from "./bindings";
-import type { StudioPlace } from "./skillStudio";
+import { samePlace, type StudioPlace } from "./skillStudio";
+import { openViewAt } from "./ui/panel/viewHistory";
 import type { ViewRef } from "./tabs";
-import { keepUnsaved } from "./unsavedWork";
+import { keepUnsaved, takesHandedWork } from "./unsavedWork";
 
 /** **The editor in progress**: the skill's page it was opened on, and its text then and now. */
 export type SkillEdit = {
@@ -97,11 +100,42 @@ function registered(tab: string, edit: SkillEdit | undefined): void {
     plane: edit.plane,
     view: edit.view,
     workspace: edit.level.at === "workspace" ? edit.level.name : undefined,
+    persona: edit.level.at === "persona" ? edit.level.name : undefined,
     name: edit.skill.name,
+    kind: SKILL_EDIT,
+    handOver: () => edit,
     save: () => saveSkillEdit(tab),
     discard: () => keepSkillEdit(tab, undefined),
     check: () => savable(edit),
   });
+}
+
+/** The kind of unsaved work an edit is, carried to another window (#4028). */
+const SKILL_EDIT = "skill-edit";
+
+/** **An edit carried here from another window** with its project (#4028): the same editor,
+ *  under the same tab's history id, and the tab's history at the skill's page it was opened
+ *  on, so the studio's tab opens on the text and not on its library, away from it. */
+takesHandedWork(SKILL_EDIT, (tab, data) => {
+  if (!isSkillEdit(data)) return;
+  openViewAt(tab, data.at, samePlace);
+  keepSkillEdit(tab, data);
+});
+
+/** Whether `data` is an edit as {@link SkillEdit} holds it: what another window's `handOver`
+ *  gave, so only its shape is checked. */
+function isSkillEdit(data: unknown): data is SkillEdit {
+  if (typeof data !== "object" || data === null) return false;
+  const edit = data as Partial<SkillEdit>;
+  return (
+    typeof edit.plane === "string" &&
+    typeof edit.was === "string" &&
+    typeof edit.now === "string" &&
+    typeof edit.view === "object" &&
+    typeof edit.skill === "object" &&
+    typeof edit.level === "object" &&
+    typeof edit.at === "object"
+  );
 }
 
 /** **Keeps `edit` as the tab `tab`'s editor**, or ends it (`undefined`). */
