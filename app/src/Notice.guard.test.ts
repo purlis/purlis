@@ -463,8 +463,8 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "the retry",
   },
   "SkillSources.tsx": {
-    count: 3,
-    why: "the Sources pages' reads in place (#3687): the line said after a second while rows are held, a read that failed with Try again, and the updates still being read",
+    count: 4,
+    why: "the Sources pages' reads in place (#3687): the line said after a second while rows are held, a read that failed with Try again, the updates still being read, and Install all's review that is more than one read, with its first part to review in place (#4024)",
   },
   "SkillStudioDeleted.tsx": {
     count: 1,
