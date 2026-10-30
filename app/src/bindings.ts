@@ -3054,14 +3054,21 @@ export const commands = {
 { at: "failed"; why: string } | 
 /**  It was cancelled, and its login ended. */
 { at: "cancelled" } | null, string>(__TAURI_INVOKE("pool_sign_in_next", { flow })),
-	/**  **Passes the code the person pasted to sign-in `flow`**, as one line. */
+	/**
+	 *  **Passes the code the person pasted to sign-in `flow`**, as one line: on a cluster pool, only
+	 *  while its runner is still as the gate judged it ([`still_driving`]); else the sign-in is
+	 *  cancelled and the code goes nowhere.
+	 */
 	poolSignInPaste: (flow: number, code: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_paste", { flow, code })),
 	/**
 	 *  **Cancels sign-in `flow`**: what drives its login is ended, and with its input the login
 	 *  ends on the runner.
 	 */
 	poolSignInCancel: (flow: number) => __TAURI_INVOKE<void>("pool_sign_in_cancel", { flow }),
-	/**  **Passes what the person typed in the strip's terminal to sign-in `flow`**, as it is. */
+	/**
+	 *  **Passes what the person typed in the strip's terminal to sign-in `flow`**, as it is: on a
+	 *  cluster pool, only while its runner is still as the gate judged it ([`still_driving`]).
+	 */
 	poolSignInType: (flow: number, text: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_type", { flow, text })),
 	/**  **Signs `name` out on pool `pool`'s runner** (#4043): the harness's own sign-out, run there. */
 	poolSignOut: (pool: string, name: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_out", { pool, name })),
@@ -10299,6 +10306,11 @@ export type PoolProfileRow = {
 export type PoolProfiles = {
 	kept: PoolProfileRow[],
 	addable: AddableProfile[],
+	/**
+	 *  A cluster runner on a fresh claim (#3819, spec #4023 Q6): a sign-in there lasts only for
+	 *  this claim, since nothing of its home outlives its pod.
+	 */
+	fresh_claim: boolean,
 };
 
 /**  One pool's limits, which each of its runners that runs requests (#2052, story 55). */

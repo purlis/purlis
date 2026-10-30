@@ -69,7 +69,7 @@ fn on_an_owned_pool_it_goes_on_to_the_pool() {
     let config = tempfile::tempdir().unwrap();
 
     let said = keep_on_as(
-        Ok(PathBuf::from("/var/run/docker.sock")),
+        Ok(Yours::Docker(PathBuf::from("/var/run/docker.sock"))),
         config.path(),
         "builds",
         &work(),
@@ -377,4 +377,104 @@ fn the_pools_whose_runner_keeps_a_removed_profile_are_named_in_one_sentence() {
             .unwrap()
             .starts_with("Pools builds, tests and gpu keep the profile 'work'")
     );
+}
+
+/// The cluster pool `team` and its runner, kept under `config`, as this machine reads them.
+#[cfg(unix)]
+fn a_cluster_pool(
+    config: &Path,
+) -> (
+    purlis_core::runners::ClusterPool,
+    purlis_core::runners::ClusterKept,
+) {
+    crate::clusterpools::tests::a_cluster_pool_kept(config);
+    purlis_core::runners::cluster_runner_for(config, "team")
+        .unwrap()
+        .unwrap()
+}
+
+/// **A cluster pool's runner keeps a profile only where the person marked the pool and its
+/// claim is vouched for now** (#3819, the gate of #4071): unmarked, nothing asks its cluster and
+/// nothing is sent; marked, the cluster is asked, and a refusal there sends nothing and tells
+/// none of the cluster's words.
+#[cfg(unix)]
+#[test]
+fn a_cluster_pool_keeps_a_profile_only_marked_and_vouched_for_now() {
+    let config = tempfile::tempdir().unwrap();
+    let (cluster, kept) = a_cluster_pool(config.path());
+    let asked = std::cell::Cell::new(0);
+    let vouches = |_: &Path, _: &str| {
+        asked.set(asked.get() + 1);
+        Ok(())
+    };
+
+    let unmarked = yours_on_a_cluster(config.path(), "team", &cluster, &kept, &vouches);
+    let why = unmarked.clone().unwrap_err();
+    assert!(why.contains("This is my own"), "{why}");
+    assert_eq!(asked.get(), 0, "an unmarked pool's cluster is never asked");
+    assert_eq!(
+        keep_on_as(
+            unmarked,
+            config.path(),
+            "team",
+            &work(),
+            Waking::No,
+            &RefCell::default()
+        ),
+        Ok(None),
+        "nothing is sent"
+    );
+
+    purlis_core::runners::set_cluster_owned(config.path(), "team", true).unwrap();
+    let (cluster, kept) = purlis_core::runners::cluster_runner_for(config.path(), "team")
+        .unwrap()
+        .unwrap();
+    let judged = yours_on_a_cluster(config.path(), "team", &cluster, &kept, &vouches).unwrap();
+    assert_eq!(judged, Yours::Cluster(Box::new(kept.clone())));
+    assert_eq!(asked.get(), 1);
+    assert!(still_yours(config.path(), "team", &kept).is_ok());
+
+    let refused = yours_on_a_cluster(config.path(), "team", &cluster, &kept, &|_, _| {
+        Err(purlis_core::clusterpool::Refused::Other(
+            "kubectl said secret-host:6443".into(),
+        ))
+    })
+    .unwrap_err();
+    assert!(refused.contains("could not confirm"), "{refused}");
+    assert!(!refused.contains("secret-host"), "{refused}");
+
+    // The mark taken back while its cluster was asked: nothing is kept there.
+    let taken_back = yours_on_a_cluster(config.path(), "team", &cluster, &kept, &|config, pool| {
+        purlis_core::runners::set_cluster_owned(config, pool, false).unwrap();
+        Ok(())
+    });
+    assert!(taken_back.is_err(), "{taken_back:?}");
+    // Taken back after the gate: nothing reaches the runner it judged, by link or sign-in.
+    let refused = still_yours(config.path(), "team", &kept).unwrap_err();
+    assert!(
+        refused.contains("changed since purlis confirmed it"),
+        "{refused}"
+    );
+    let to = to_a_runner(config.path(), "team", Waking::No, &judged);
+    assert!(to.is_err());
+}
+
+/// **A cluster pool's profiles are its own record's** (#3819): the same `profiles` a Docker pool
+/// keeps, so its row lists what was chosen for it.
+#[cfg(unix)]
+#[test]
+fn a_cluster_pools_profiles_are_the_ones_chosen_for_it() {
+    let config = tempfile::tempdir().unwrap();
+    a_cluster_pool(config.path());
+    assert_eq!(
+        kept_on(config.path(), "team", Some("work")),
+        Ok(vec!["work".to_owned()])
+    );
+    purlis_core::runners::add_pool_profile(config.path(), "team", "home", Some("work")).unwrap();
+    assert_eq!(
+        kept_on(config.path(), "team", None),
+        Ok(vec!["work".to_owned(), "home".to_owned()])
+    );
+    assert!(changeable(config.path(), "team", None).is_ok());
+    assert!(kept_on(config.path(), "nowhere", None).is_err());
 }

@@ -8168,6 +8168,11 @@ export type PoolProfileRow = {
 export type PoolProfiles = {
 	kept: PoolProfileRow[],
 	addable: AddableProfile[],
+	/**
+	 *  A cluster runner on a fresh claim (#3819, spec #4023 Q6): a sign-in there lasts only for
+	 *  this claim, since nothing of its home outlives its pod.
+	 */
+	fresh_claim: boolean,
 };
 
 /**  One pool's limits, which each of its runners that runs requests (#2052, story 55). */

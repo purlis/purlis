@@ -219,10 +219,7 @@ impl Pool {
     /// **The profiles its runner keeps** (#4047): the ones chosen for it, or, where none were,
     /// `default`, the profile a new chat in the open project gets, if there is one.
     pub fn profiles_kept(&self, default: Option<&str>) -> Vec<String> {
-        match &self.profiles {
-            Some(chosen) => chosen.clone(),
-            None => default.map(str::to_owned).into_iter().collect(),
-        }
+        kept_of(self.profiles.as_deref(), default)
     }
 
     pub fn name(&self) -> &str {
@@ -568,8 +565,9 @@ pub fn record_pool_locked(
     write(config_root, &held)
 }
 
-/// **Has the Docker pool `name` keep the profiles `profiles` on its runner** (#4047), or, `None`,
-/// the default: refused where no such pool is kept, and what is kept stays.
+/// **Has the pool `name` keep the profiles `profiles` on its runner** (#4047), a Docker pool or
+/// a cluster pool (#3819), or, `None`, the default: refused where no such pool is kept, and what
+/// is kept stays.
 pub fn set_pool_profiles(
     config_root: &Path,
     name: &str,
@@ -586,13 +584,14 @@ pub fn name_pool_profiles_where_none(
     name: &str,
     profiles: Vec<String>,
 ) -> Result<(), Refused> {
-    change_pool_profiles(config_root, name, |pool| {
-        Some(pool.profiles().map_or(profiles, <[String]>::to_vec))
+    change_pool_profiles(config_root, name, |chosen| {
+        Some(chosen.map_or(profiles, <[String]>::to_vec))
     })
 }
 
-/// **Adds the profile `profile` to the Docker pool `name`** (#4047): a pool that named none
-/// keeps `default`, the profile a new chat in the open project gets, beside it. Kept once.
+/// **Adds the profile `profile` to the pool `name`** (#4047, of either kind since #3819): a pool
+/// that named none keeps `default`, the profile a new chat in the open project gets, beside it.
+/// Kept once.
 pub fn add_pool_profile(
     config_root: &Path,
     name: &str,
@@ -605,8 +604,8 @@ pub fn add_pool_profile(
             crate::shown::short(profile)
         )));
     }
-    change_pool_profiles(config_root, name, |pool| {
-        let mut kept = pool.profiles_kept(default);
+    change_pool_profiles(config_root, name, |chosen| {
+        let mut kept = kept_of(chosen, default);
         if !kept.iter().any(|one| one == profile) {
             kept.push(profile.to_owned());
         }
@@ -614,35 +613,80 @@ pub fn add_pool_profile(
     })
 }
 
-/// **Takes the profile `profile` off the Docker pool `name`** (#4047): a pool that named none
-/// starts from `default`, so the last one taken off leaves it keeping none.
+/// **Takes the profile `profile` off the pool `name`** (#4047, of either kind since #3819): a
+/// pool that named none starts from `default`, so the last one taken off leaves it keeping none.
 pub fn remove_pool_profile(
     config_root: &Path,
     name: &str,
     profile: &str,
     default: Option<&str>,
 ) -> Result<(), Refused> {
-    change_pool_profiles(config_root, name, |pool| {
-        let mut kept = pool.profiles_kept(default);
+    change_pool_profiles(config_root, name, |chosen| {
+        let mut kept = kept_of(chosen, default);
         kept.retain(|one| one != profile);
         Some(kept)
     })
 }
 
+/// The profiles `chosen` for a pool, or, where none were, `default` (#4047).
+fn kept_of(chosen: Option<&[String]>, default: Option<&str>) -> Vec<String> {
+    match chosen {
+        Some(chosen) => chosen.to_vec(),
+        None => default.map(str::to_owned).into_iter().collect(),
+    }
+}
+
+/// **The profiles chosen for pool `name`**, a Docker pool or a cluster pool (#4047, #3819), if
+/// any were: `None` keeps the default. Refused where no pool is called `name`.
+pub fn profiles_of(config_root: &Path, name: &str) -> Result<Option<Vec<String>>, Refused> {
+    let held = load(config_root)?;
+    held.pools
+        .iter()
+        .find(|pool| pool.name() == name)
+        .map(|pool| pool.profiles().map(<[String]>::to_vec))
+        .or_else(|| {
+            held.clusters
+                .iter()
+                .find(|pool| pool.name() == name)
+                .map(|pool| pool.profiles().map(<[String]>::to_vec))
+        })
+        .ok_or_else(|| no_pool_keeps_profiles(name))
+}
+
+/// **The profiles pool `name`'s runner keeps**, of either kind (#4047, #3819): the ones chosen
+/// for it, or, where none were, `default`. Refused where no pool is called `name`.
+pub fn profiles_kept_of(
+    config_root: &Path,
+    name: &str,
+    default: Option<&str>,
+) -> Result<Vec<String>, Refused> {
+    Ok(kept_of(profiles_of(config_root, name)?.as_deref(), default))
+}
+
+fn no_pool_keeps_profiles(name: &str) -> Refused {
+    Refused::Other(format!(
+        "there is no pool named {name} on this machine that keeps profiles"
+    ))
+}
+
+/// Changes the profiles chosen for pool `name`, of either kind, to what `change` makes of the
+/// ones chosen for it now, `None` where none were.
 fn change_pool_profiles(
     config_root: &Path,
     name: &str,
-    change: impl FnOnce(&Pool) -> Option<Vec<String>>,
+    change: impl FnOnce(Option<&[String]>) -> Option<Vec<String>>,
 ) -> Result<(), Refused> {
     let _locked = lock(config_root);
     let mut held = load(config_root)?;
-    let Some(at) = held.pools.iter().position(|pool| pool.name() == name) else {
-        return Err(Refused::Other(format!(
-            "there is no pool named {name} on this machine that keeps profiles"
-        )));
-    };
-    let profiles = change(&held.pools[at]);
-    held.pools[at] = held.pools[at].clone().keeping_profiles(profiles);
+    if let Some(at) = held.pools.iter().position(|pool| pool.name() == name) {
+        let profiles = change(held.pools[at].profiles());
+        held.pools[at] = held.pools[at].clone().keeping_profiles(profiles);
+    } else if let Some(at) = held.clusters.iter().position(|pool| pool.name() == name) {
+        let profiles = change(held.clusters[at].profiles());
+        held.clusters[at].profiles = profiles;
+    } else {
+        return Err(no_pool_keeps_profiles(name));
+    }
     write(config_root, &held)
 }
 
@@ -1260,6 +1304,9 @@ pub struct ClusterPool {
     /// their window ([`set_cluster_owned`]), never as it is added, and read from nothing a chat,
     /// the Pool or the operator says.
     owned: bool,
+    /// The profiles chosen for it (`profiles`, #3819), in order, as a Docker pool's are;
+    /// `None` where none were.
+    profiles: Option<Vec<String>>,
 }
 
 impl ClusterPool {
@@ -1336,6 +1383,7 @@ impl ClusterPool {
             cluster,
             holds: Vec::new(),
             owned: false,
+            profiles: None,
         })
     }
 
@@ -1360,6 +1408,18 @@ impl ClusterPool {
     /// `poollogins::Bound::of_a_cluster_pool`.
     pub fn owned(&self) -> bool {
         self.owned
+    }
+
+    /// The profiles chosen for it (#3819), if any were: `None` keeps the default, as a Docker
+    /// pool's ([`Pool::profiles`]).
+    pub fn profiles(&self) -> Option<&[String]> {
+        self.profiles.as_deref()
+    }
+
+    /// **The profiles its runner keeps** (#3819), as [`Pool::profiles_kept`] says of a Docker
+    /// pool's.
+    pub fn profiles_kept(&self, default: Option<&str>) -> Vec<String> {
+        kept_of(self.profiles.as_deref(), default)
     }
 
     /// **What a cluster runner's values are bound to, as a digest** (#4071, the person's ruling
@@ -1734,9 +1794,9 @@ pub fn keep_cluster_pin(config_root: &Path, name: &str, pin: &PoolPin) -> Result
 }
 
 /// A cluster pool's row (#3292): `{"name", "kind": "cluster", "kubeconfig", "context", "pool",
-/// "namespace", "operatorKey", "cluster", "holds", "owned"}`, `cluster` left out only of a pool
-/// kept before its cluster was pinned (#3305), and `owned` `true` alone, left out otherwise
-/// (#4071).
+/// "namespace", "operatorKey", "cluster", "holds", "owned", "profiles"}`, `cluster` left out
+/// only of a pool kept before its cluster was pinned (#3305), `owned` `true` alone, left out
+/// otherwise (#4071), and `profiles` as a Docker pool's, left out where none were chosen (#3819).
 fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
     let mut row = serde_json::json!({
         "name": pool.name(),
@@ -1758,6 +1818,9 @@ fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
     if pool.owned {
         row["owned"] = true.into();
     }
+    if let Some(profiles) = pool.profiles() {
+        row["profiles"] = profiles.into();
+    }
     row
 }
 
@@ -1775,10 +1838,15 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         "cluster",
         "holds",
         "owned",
+        "profiles",
     ];
     if fields.keys().any(|key| !known.contains(&key.as_str())) {
         return None;
     }
+    let profiles = match fields.get("profiles") {
+        None => None,
+        Some(profiles) => Some(profiles_from_row(profiles)?),
+    };
     // `true` alone: a mark spelled any other way is no mark, and the row is refused.
     let owned = match fields.get("owned") {
         None => false,
@@ -1810,7 +1878,11 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         cluster,
     )
     .and_then(|pool| pool.holding(holds))
-    .map(|pool| ClusterPool { owned, ..pool })
+    .map(|pool| ClusterPool {
+        owned,
+        profiles,
+        ..pool
+    })
     .ok()
 }
 
