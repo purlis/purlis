@@ -407,6 +407,8 @@ pub const PAIRS: &[Pair] = &[
     // - What waits said in a badge or a count (#2912): the same amber on its wash, on a popover's
     //   surface.
     p("state.waiting", "wash.warning", TEXT).over("surface.overlay"),
+    // - A switcher row's count (#3947): the same, on the row Enter would go to.
+    p("state.waiting", "wash.warning", TEXT).over("list.selected"),
     // - The rail's waiting badge (R79): its digits in amber on the overlay's pill.
     p("state.waiting", "surface.overlay", TEXT),
     // - The warning-soft button: amber words on the control, and under the pointer.

@@ -2584,6 +2584,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             skills: None,
             plane_skills: true,
             skills_read: Default::default(),
+            clones_at_start: None,
         },
     );
 
@@ -2659,6 +2660,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     };
@@ -3098,6 +3100,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     };
@@ -7395,6 +7398,7 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
         let case = format!("compiled {}, recorded {ran:?}", confines.is_some());
@@ -7837,6 +7841,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     };
@@ -7891,6 +7896,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     };
@@ -8094,6 +8100,7 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 skills: None,
                 plane_skills: true,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     }
@@ -8368,10 +8375,18 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
                 }),
                 plane_skills,
                 skills_read: Default::default(),
+                clones_at_start: None,
             },
         );
     }
-    assert_eq!(chats.skills_changed_while_on(), [4], "the flag is on now");
+    let sessions = |chats: &Chats| -> Vec<u32> {
+        chats
+            .skills_changed_while_on()
+            .into_iter()
+            .map(|(session, _)| session)
+            .collect()
+    };
+    assert_eq!(sessions(&chats), [4], "the flag is on now");
     // Use skill… is told what its start read, never a constant.
     assert!(chats.skills_of(1).expect("open").plane_skills);
     assert!(!chats.skills_of(4).expect("open").plane_skills);
@@ -8379,10 +8394,19 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
     // A Codex chat reads the SKILL.md purlis wrote for it at its start (SK-8), so an edit to a
     // body waits for a restart there too.
     skill("deploy", "two");
-    assert_eq!(chats.skills_changed_while_on(), [1, 2, 4]);
+    assert_eq!(sessions(&chats), [1, 2, 4]);
 
     skill("triage", "one");
-    assert_eq!(chats.skills_changed_while_on(), [1, 2, 4]);
+    assert_eq!(sessions(&chats), [1, 2, 4]);
+    // And its Skills view is told what changed, by name (#3694).
+    let changed = chats.skills_changed_while_on();
+    let (_, first) = changed
+        .iter()
+        .find(|(session, _)| *session == 1)
+        .expect("1");
+    assert_eq!(first.added, ["triage"]);
+    assert_eq!(first.edited, ["deploy"]);
+    assert!(first.gone.is_empty());
 }
 
 /// #2019: a chat serving on a port is not told its sandbox is older once its own door listens

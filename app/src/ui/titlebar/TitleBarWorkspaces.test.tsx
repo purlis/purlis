@@ -326,6 +326,22 @@ describe("the crumb, the ⌄, a switcher's row and its pin (#3656)", () => {
     expect(reached("all", "[data-selected]")).toEqual([]);
   });
 
+  it("draws a row's count as a part of its own, not a chip's count (#3947)", () => {
+    render(
+      <>
+        <WorkspaceChip name="alpha" waiting={2} />
+        <SwitcherRow id="r" name="beta" waiting={3} active={false} onPress={() => undefined} />
+      </>,
+    );
+    const row = screen.getByRole("option", { name: "beta" });
+    expect(reached("row-count")).toEqual([row.querySelector('[data-part="row-count"]')]);
+    expect(reached("row-count")[0]).toHaveTextContent("3");
+    // The chip's count is the chip's part, reached inside it.
+    const chip = screen.getByRole("button", { name: "alpha" });
+    expect(row.querySelector('[data-part="count"]')).toBeNull();
+    expect(chip.querySelector('[data-part="count"]')).toHaveTextContent("2");
+  });
+
   it("marks the pointer on each, as its hover keys reach it", async () => {
     render(
       <>

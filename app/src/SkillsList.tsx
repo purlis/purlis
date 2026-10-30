@@ -17,6 +17,7 @@ import { counted } from "./dispatches";
 import type { GroupDrawn } from "./menuModel";
 import { Groups } from "./Menus";
 import { OPEN_SKILL_STUDIO } from "./skillStudio";
+import type { ChatNeed } from "./chatSkillNeeds";
 import {
   cardReasonOf,
   menuRowsOf,
@@ -53,6 +54,9 @@ export const A_NEW_CHAT_GETS = "A new chat gets";
 export function SkillsList({
   whose,
   chat,
+  setSaid = [],
+  chatNeeds = [],
+  onChatFix,
   groups,
   count,
   clashes,
@@ -80,6 +84,12 @@ export function SkillsList({
   /** Whether they are a chat's, one in front: its group is In this chat, and else the set a new
    *  chat would get is headed A new chat gets (#3778). */
   chat: boolean;
+  /** What the chat's set says as a whole, under whose it is: its budget and its routing (S8). */
+  setSaid?: readonly string[];
+  /** **What the chat needs of the person as a whole** (S8, #3694), first in Needs you, each with
+   *  its one fix: its budget, pins, router, what it started without and what changed. */
+  chatNeeds?: readonly ChatNeed[];
+  onChatFix?: (need: ChatNeed) => void;
   groups: SkillGroups;
   /** How many skills the chat gets, whatever the filter leaves: the header's count. */
   count: number;
@@ -157,13 +167,37 @@ export function SkillsList({
       />
     );
   };
+  /** A need of the chat's own: a card with its title, what it says in the waiting colour, and its
+   *  fix. Enter or a click goes where the fix goes, as a skill's card opens it; a restart, which
+   *  ends what the chat is doing, is only ever its button. */
+  const needCard = (need: ChatNeed) => (
+    <ListCardRow
+      key={`need:${need.id}`}
+      id={`need:${need.id}`}
+      textValue={need.title}
+      name={need.title}
+      reason={{ says: need.says, tone: "warning" }}
+      fix={
+        <Button size="sm" isDisabled={busy} onPress={() => onChatFix?.(need)}>
+          {need.fix.label}
+        </Button>
+      }
+      data-testid={`skills-need-${need.id}`}
+    />
+  );
   const rows = [...needs, ...inChat, ...builtIns, ...leftOut];
+  const needing = chatNeeds.length + needs.length;
   return (
     <div className="skills-view" data-testid="skills-view">
       <p className="skills-view-whose" data-testid="skills-view-whose">
         <strong>{whose}</strong>{" "}
         <span className="honest">· {counted(count, "skill", "skills")}</span>
       </p>
+      {setSaid.length > 0 && (
+        <p className="skills-view-said" data-testid="skills-view-said">
+          {setSaid.join(" · ")}
+        </p>
+      )}
       <ButtonRow className="skills-view-head">
         <Button
           variant="ghost"
@@ -216,6 +250,12 @@ export function SkillsList({
           aria-label="Skills"
           size="sm"
           onAction={(key) => {
+            const need = chatNeeds.find((one) => `need:${one.id}` === String(key));
+            if (need !== undefined) {
+              // A press on the card goes where its fix goes; a restart is only ever its button.
+              if (need.fix.act !== "restart" && !busy) onChatFix?.(need);
+              return;
+            }
             const row = rows.find((one) => one.key === String(key));
             if (row !== undefined) onOpen(row);
           }}
@@ -227,17 +267,18 @@ export function SkillsList({
             )
           }
         >
-          {rows.length === 0 ? null : (
+          {rows.length + chatNeeds.length === 0 ? null : (
             <>
-              {needs.length > 0 && (
+              {needing > 0 && (
                 <ListFoldSection
                   id="needs-you"
                   title="Needs you"
-                  count={needs.length}
+                  count={needing}
                   tone="waiting"
                   folded={isFolded("needs-you")}
                   onFoldedChange={(to) => onFold("needs-you", to)}
                 >
+                  {chatNeeds.map(needCard)}
                   {needs.map(card)}
                 </ListFoldSection>
               )}

@@ -3732,7 +3732,7 @@ fn a_chat_an_older_build_handed_off_owing_a_report_wakes_its_asker_when_it_repor
     let purlis_core::hookwire::Answer::Task(listed) = asks_after(&held, asker, What::List) else {
         panic!("a list")
     };
-    let Answered::Listed { rows } = *listed else {
+    let Answered::Listed { rows, .. } = *listed else {
         panic!("rows, not {listed:?}")
     };
     assert_eq!(
@@ -6980,6 +6980,9 @@ fn a_chat_is_marked_when_the_instructions_it_started_on_change_under_it() {
             session,
             files: vec!["CLAUDE.md".to_owned()],
             skills: false,
+            skills_added: Vec::new(),
+            skills_gone: Vec::new(),
+            skills_edited: Vec::new(),
         }]
     );
     held.close_chat(session).expect("it closes");

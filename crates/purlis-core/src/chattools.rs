@@ -121,6 +121,27 @@ pub const DISPATCH_ASK: &str = "dispatch_ask";
 /// outside the chat's sandbox after judging it; with no app, it runs nothing.
 pub const WORKTREE_UPDATE: &str = "worktree_update";
 
+/// The tool that removes a finished branch folder of the chat's own workspace (#3879): the one
+/// operation `purlis worktree remove <repo> <piece>` without `--force` performs. The server
+/// hands it to the app, which removes the folder only where nothing would be lost; with no app,
+/// it removes nothing.
+pub const WORKTREE_REMOVE: &str = "worktree_remove";
+
+/// What [`WORKTREE_REMOVE`] is asked to remove: the `repo` and `piece` of a branch folder of
+/// the chat's own workspace, and whether to delete its branch too, as `git branch -d` does.
+pub fn worktree_remove_args(args: &Map<String, Value>) -> Result<(String, String, bool), String> {
+    let name = |key: &str| match args.get(key) {
+        Some(Value::String(name)) if !name.trim().is_empty() => Ok(name.trim().to_owned()),
+        _ => Err(format!("{key} is the name of the branch folder's {key}")),
+    };
+    let delete_branch = match args.get("delete_branch") {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(delete)) => *delete,
+        Some(_) => return Err("delete_branch is true or false".to_owned()),
+    };
+    Ok((name("repo")?, name("piece")?, delete_branch))
+}
+
 /// What [`WORKTREE_UPDATE`] is asked to do: `start` (the default), `continue` or `abort`, and
 /// for a branch folder's start, the `base` branch.
 pub fn worktree_update_args(
@@ -192,7 +213,7 @@ pub const PRE_ALLOWED: [&str; 14] = [
 /// Apart from [`PRE_ALLOWED`] on purpose: a grade's chat is served the reads alone (SK-16), and
 /// is handed none of these. Named one by one, so a tool added later is asked about until it is
 /// ruled in here; an operator's or a project's `ask` or `deny` for any of them still wins.
-pub const OWN_SCOPE_TOOLS: [&str; 8] = [
+pub const OWN_SCOPE_TOOLS: [&str; 9] = [
     "todo_add",
     "todo_done",
     "memory_add",
@@ -202,6 +223,8 @@ pub const OWN_SCOPE_TOOLS: [&str; 8] = [
     ASK_OPERATOR,
     // The update the app makes for the chat in its own clone, branch folder or root (#3831).
     WORKTREE_UPDATE,
+    // The removal the app makes for the chat of its own finished branch folder (#3879).
+    WORKTREE_REMOVE,
 ];
 
 /// The variables the server reads to find the chat's place, as a `charter` command in the chat
@@ -406,7 +429,7 @@ fn wait_seconds() -> Value {
 }
 
 /// Every tool, in the order a harness lists them.
-pub static TOOLS: [Tool; 26] = [
+pub static TOOLS: [Tool; 27] = [
     Tool {
         name: "todo_list",
         description: "List the open todos of the workspace this chat works in, oldest first, \
@@ -568,6 +591,38 @@ pub static TOOLS: [Tool; 26] = [
                                         onto (default: the one it was cut from).",
                     },
                 },
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
+        name: WORKTREE_REMOVE,
+        description: "Remove a finished branch folder of the workspace this chat works in, as \
+                      `purlis worktree remove <repo> <piece>` does: the app removes it only \
+                      when it holds no uncommitted change and no commit that no other branch \
+                      reaches, and otherwise names what would be lost and removes nothing. \
+                      Never forced: discarding work is the person's, from the window. Call it \
+                      from the workspace, not from inside the folder.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "repo": {
+                        "type": "string",
+                        "description": "The clone the branch folder was cut from.",
+                    },
+                    "piece": {
+                        "type": "string",
+                        "description": "The branch folder's name (.worktrees/<repo>/<piece>).",
+                    },
+                    "delete_branch": {
+                        "type": "boolean",
+                        "description": "Also delete its branch, only where it is merged \
+                                        (default false).",
+                    },
+                },
+                "required": ["repo", "piece"],
                 "additionalProperties": false,
             })
         },
@@ -744,21 +799,30 @@ pub static TOOLS: [Tool; 26] = [
     Tool {
         name: DISPATCH_TELL,
         description: "Send a follow-up to a task this chat dispatched that is still working, \
-                      quoted as data from this chat. A task at rest is started on it at once; \
-                      one mid-turn reads it when that turn ends. A task that reported while \
-                      its program still runs is told too. Refused, with the task's state, once \
-                      its program has ended.",
+                      quoted as data from this chat, or with `all` to every task of this chat \
+                      still working. A task at rest is started on it at once; one mid-turn \
+                      reads it when that turn ends. A task that reported while its program \
+                      still runs is told too. Refused, with the task's state, once its program \
+                      has ended. Each follow-up is an instruction with a number, which a task \
+                      acknowledges with dispatch_note's `ack`; dispatch_list shows which tasks \
+                      have. Where the app does not answer, it is queued and delivered when it \
+                      does.",
         schema: || {
             json!({
                 "type": "object",
                 "properties": {
                     "chat": a_task(),
+                    "all": {
+                        "type": "boolean",
+                        "description": "Send it to every task of this chat still working, \
+                                        instead of the one `chat` names.",
+                    },
                     "text": {
                         "type": "string",
                         "description": "What to add or correct, in a few lines.",
                     },
                 },
-                "required": ["chat", "text"],
+                "required": ["text"],
                 "additionalProperties": false,
             })
         },
@@ -852,7 +916,9 @@ pub static TOOLS: [Tool; 26] = [
     Tool {
         name: DISPATCH_NOTE,
         description: "From a dispatched task: send the chat that asked a progress note. It \
-                      reads it on its next turn, and nothing waits on it.",
+                      reads it on its next turn, and nothing waits on it. With `ack`, it \
+                      acknowledges that instruction (a follow-up's number) of the asking \
+                      chat's, and `text` may be left out.",
         schema: || {
             json!({
                 "type": "object",
@@ -861,8 +927,12 @@ pub static TOOLS: [Tool; 26] = [
                         "type": "string",
                         "description": "Where the task has got to, in a few lines.",
                     },
+                    "ack": {
+                        "type": "integer",
+                        "description": "The number of an instruction of the asking chat's \
+                                        this task has taken in.",
+                    },
                 },
-                "required": ["text"],
                 "additionalProperties": false,
             })
         },
@@ -961,6 +1031,7 @@ pub fn call(
         DISPATCH_NOTE,
         DISPATCH_ASK,
         WORKTREE_UPDATE,
+        WORKTREE_REMOVE,
     ]
     .contains(&tool)
     {
@@ -1291,6 +1362,28 @@ pub fn dispatch_text(args: &Map<String, Value>, key: &str, tool: &str) -> Result
     match args.get(key) {
         Some(Value::String(text)) => Ok(text.clone()),
         _ => Err(format!("{tool} needs `{key}`, as text")),
+    }
+}
+
+/// A yes-or-no field of a dispatch tool's, `false` where it is left out (#3904).
+pub fn dispatch_flag(args: &Map<String, Value>, key: &str, tool: &str) -> Result<bool, String> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(flag)) => Ok(*flag),
+        Some(_) => Err(format!("{tool}'s `{key}` is true or false")),
+    }
+}
+
+/// The instruction `dispatch_note` acknowledges, where it names one (#3904).
+pub fn dispatch_ack(args: &Map<String, Value>) -> Result<Option<u32>, String> {
+    match args.get("ack") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Number(n)) => n
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .map(Some)
+            .ok_or_else(|| "`ack` is an instruction's number".to_owned()),
+        Some(_) => Err("`ack` is an instruction's number".to_owned()),
     }
 }
 

@@ -661,6 +661,8 @@ fn kibana() -> Tool {
         ],
         login: None,
         args: None,
+        mint: None,
+        host: None,
     }
 }
 

@@ -414,7 +414,7 @@ fn what_the_asking_chat_asks_of_a_finished_task_is_answered_in_plain_words() {
     // And its list still has it, as finished, until its row is cleared.
     let listed = |held: &Held| match asks(held, &id, steward, What::List) {
         Answer::Task(answered) => match *answered {
-            Answered::Listed { rows } => rows,
+            Answered::Listed { rows, .. } => rows,
             other => panic!("a list, not {other:?}"),
         },
         other => panic!("a list, not {other:?}"),
@@ -1075,6 +1075,7 @@ fn sent_up(said: &Answer) -> Option<purlis_core::dispatchtalk::Kind> {
 fn a_note() -> What {
     What::Note {
         text: "half way through the logs".to_owned(),
+        ack: None,
     }
 }
 

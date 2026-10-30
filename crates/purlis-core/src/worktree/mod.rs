@@ -60,6 +60,24 @@ pub fn recorded_base(clone: &Path, branch: &str) -> Option<String> {
     }
 }
 
+/// Records `base` as the branch `branch` of the clone at `clone` was cut from, in place of what
+/// was recorded: what `purlis worktree update --base` moved it onto (#3836). Why not, where
+/// git did not write it.
+pub fn record_base(clone: &Path, branch: &str, base: &str) -> Result<(), String> {
+    name::branch_name_ok(base).map_err(|e| e.to_string())?;
+    let wrote = git::run(
+        clone,
+        &["config", "--replace-all", &base_key(branch), base],
+        git::READ,
+    )
+    .map_err(|e| e.to_string())?;
+    if wrote.ok() {
+        Ok(())
+    } else {
+        Err(wrote.err.trim().to_owned())
+    }
+}
+
 /// The branches in `repo`'s clone that purlis cut: every branch with a base recorded under it,
 /// detached bases included (#835).
 ///
@@ -713,8 +731,9 @@ pub struct Start {
 
 /// [`add`], cut from branch `base` of the clone by name (`purlis worktree add --base`, qw387):
 /// the branch is brought up to its remote first where it may be ([`fresh::bring_up`]), the
-/// piece is cut from it, and it is recorded as the piece's base. Answers what bringing it up
-/// did, for the command to say.
+/// piece is cut from it, and it is recorded as the piece's base. A remote-tracking branch
+/// (`origin/main`) is cut from as it is and recorded as the clone's branch of the same name
+/// (#3836). Answers what bringing it up did, for the command to say.
 pub fn add_based(
     plane: &Path,
     ws: &str,
@@ -729,8 +748,8 @@ pub fn add_based(
     let clone = clone_dir(plane, ws, repo)?;
     let fresh = fresh::bring_up(&clone, base)?;
     let start = Start {
-        branch: base.to_owned(),
-        tree: fresh::checked_out_in(&clone, base)?,
+        branch: fresh.branch.clone(),
+        tree: fresh::checked_out_in(&clone, &fresh.branch)?,
         at: fresh.instead.clone(),
     };
     let added = add_vetted(plane, ws, repo, piece, branch, Some(&start), vet)?;
