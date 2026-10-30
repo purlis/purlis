@@ -269,6 +269,18 @@ export const config: WebdriverIO.Config = {
               workKids: [...(document.querySelector(".window-work")?.children ?? [])].map(
                 (k) => `${k.tagName}.${k.className} ${JSON.stringify(rect(k))}`,
               ),
+              below: [...document.querySelectorAll("body *")]
+                .filter((el) => el.getBoundingClientRect().bottom > window.innerHeight + 4)
+                .filter((el) => {
+                  // Only what no ancestor clips: what lengthens the page.
+                  for (let at = el.parentElement; at && at !== document.body; at = at.parentElement) {
+                    const cs = getComputedStyle(at);
+                    if (cs.overflowY !== "visible" || cs.overflowX !== "visible") return false;
+                  }
+                  return true;
+                })
+                .slice(0, 25)
+                .map((el) => `${el.tagName}.${el.className}#${el.getAttribute("data-testid") ?? ""} ${JSON.stringify(rect(el))} pos=${getComputedStyle(el).position}`),
               popovers: [...document.querySelectorAll('[data-scope="popover"][data-part="root"]')].map(
                 (p) => `${p.getAttribute("data-variant")} ${JSON.stringify(rect(p))} ${(p.textContent ?? "").slice(0, 80)}`,
               ),
