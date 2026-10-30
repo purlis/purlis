@@ -24,7 +24,7 @@ import {
 import { counted } from "./dispatches";
 import { Notice, type NoticeAction } from "./Notice";
 import { Choice, Field, SettingRow } from "./settings/components";
-import { labelOf, levelKey, picking, sameLevel } from "./skillChanges";
+import { labelOf, picking, sameLevel } from "./skillChanges";
 import { NotRead, ReadingRows } from "./SkillPanels";
 import { sourceKey, type SourcesAt } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
@@ -1181,7 +1181,7 @@ function InstallReviewPage({
   // Read again where it lands changes: a skill it refers to that the level holds already is
   // left as it is, not brought along (#4032).
   const { read, again } = useRead(
-    `${sourceKey(source.remote)}\u0000${name}\u0000${levelKey(level)}`,
+    `${sourceKey(source.remote)}\u0000${name}\u0000${JSON.stringify(level)}`,
     () => commands.skillInstallReview(plane, source, [name], level),
   );
   const picker = picking(
@@ -1469,7 +1469,7 @@ function InstallSetReviewPage({
   const { read, again } = useRead(
     names.length === 0
       ? undefined
-      : `${sourceKey(source.remote)}\u0000${levelKey(level)}\u0000${names.join("\u0000")}`,
+      : `${sourceKey(source.remote)}\u0000${JSON.stringify(level)}\u0000${names.join("\u0000")}`,
     () => commands.skillInstallSetReview(plane, source, [...names], level),
   );
   const picker = picking(

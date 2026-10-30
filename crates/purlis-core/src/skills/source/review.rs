@@ -389,8 +389,10 @@ fn reviewed_from(
             .collect();
         next.append(&mut queue);
         queue = next;
+        // One that is named is reviewed itself, so it is never said to be left as it is.
+        let left_as_is = |other: &str| have(other) && !names.iter().any(|named| named == other);
         skills.push(Reviewed {
-            review: review_of(one, &files, left, by, &held, have),
+            review: review_of(one, &files, left, by, &held, &left_as_is),
             files,
         });
     }
@@ -451,6 +453,20 @@ pub(super) fn has(plane: &Path, level: &Level, name: &str) -> bool {
     level.named(plane, name).is_some()
 }
 
+/// [`has`] for one review: each name looked up in the level once, however many skills refer to
+/// it.
+pub(super) fn held_at<'a>(plane: &'a Path, level: &'a Level) -> impl Fn(&str) -> bool + 'a {
+    let seen = std::cell::RefCell::new(std::collections::HashMap::<String, bool>::new());
+    move |name| {
+        if let Some(known) = seen.borrow().get(name) {
+            return *known;
+        }
+        let held = has(plane, level, name);
+        seen.borrow_mut().insert(name.to_owned(), held);
+        held
+    }
+}
+
 /// **The review of installing `names` from `source` at `level`**, at its newest commit: every
 /// skill they refer to that the source holds and `level` does not comes along.
 pub fn review(
@@ -459,7 +475,7 @@ pub fn review(
     names: &[String],
     level: &Level,
 ) -> Result<Review, String> {
-    fetch(plane, source, None)?.review_with(names, &|other| has(plane, level, other))
+    fetch(plane, source, None)?.review_with(names, &held_at(plane, level))
 }
 
 /// **The review of installing `names` from `source` together at `level`** (#4024), at its newest
@@ -473,22 +489,24 @@ pub fn review_set(
 ) -> Result<SetReview, String> {
     let fetched = fetch(plane, source, None)?;
     let (found, _) = fetched.skills()?;
-    fetched.set_review(&found, names, &|other| has(plane, level, other))
+    fetched.set_review(&found, names, &held_at(plane, level))
 }
 
 /// **The review of installing every skill of `source` not installed from it yet** (#4024,
-/// `purlis skill install <source> --all`), at its newest commit, landing at `level`. A review of no
-/// skill where every one is.
+/// `purlis skill install <source> --all`), at its newest commit, landing at `level`; one `level`
+/// holds already, from anywhere, is left out too, as its install would be refused (#4032). A
+/// review of no skill where every one is.
 pub fn review_all(plane: &Path, source: &Source, level: &Level) -> Result<SetReview, String> {
     let fetched = fetch(plane, source, None)?;
     let (found, _) = fetched.skills()?;
     let (locked, _) = lock::every(plane);
+    let have = held_at(plane, level);
     let names: Vec<String> = found
         .iter()
-        .filter(|skill| installed_at(&locked, source, &skill.name).is_empty())
+        .filter(|skill| installed_at(&locked, source, &skill.name).is_empty() && !have(&skill.name))
         .map(|skill| skill.name.clone())
         .collect();
-    fetched.set_review(&found, &names, &|other| has(plane, level, other))
+    fetched.set_review(&found, &names, &have)
 }
 
 /// The levels `name` is installed at from `source`, by the lockfiles' entries `locked`.

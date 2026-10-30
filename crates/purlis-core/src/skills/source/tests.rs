@@ -2115,3 +2115,32 @@ fn a_referred_skill_the_level_holds_already_is_marked_there_and_not_installed_ag
         "the one made by hand is left as it was"
     );
 }
+
+/// #4032: `--all` leaves out a skill the level holds already from anywhere, as its install would
+/// be refused; one named as well as referred to is reviewed itself, never said to be left as it
+/// is.
+#[test]
+fn installing_all_leaves_out_what_the_level_holds_and_a_named_skill_is_never_left_as_it_is() {
+    let remote = three_skills();
+    let tmp = plane();
+    let root = tmp.path();
+    let source = remote.source();
+    let ops = Level::workspace("ops");
+    std::fs::create_dir_all(root.join("workspaces/ops/skills/notify")).unwrap();
+    std::fs::write(root.join("workspaces/ops/skills/notify/SKILL.md"), NOTIFY).unwrap();
+
+    let all = whole(review_all(root, &source, &ops).unwrap());
+    let names: Vec<&str> = all.skills.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["deploy", "lint"]);
+    assert_eq!(all.skills[0].already, ["notify"]);
+
+    let named = ["deploy".to_owned(), "notify".to_owned()];
+    let both = whole(review_set(root, &source, &named, &ops).unwrap());
+    let names: Vec<&str> = both.skills.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["deploy", "notify"]);
+    assert!(
+        both.skills[0].already.is_empty(),
+        "{:?}",
+        both.skills[0].already
+    );
+}

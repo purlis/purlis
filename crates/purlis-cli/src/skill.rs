@@ -1609,7 +1609,7 @@ fn install(
         Named::All => match source::review_all(root, source, level) {
             Ok(source::SetReview::Review(review)) if review.skills.is_empty() => {
                 voice::info(format!(
-                    "Every skill {} offers is installed from it already.",
+                    "Every skill {} offers is installed already.",
                     esc(&source.to_string())
                 ));
                 return Ok(0);
