@@ -7999,18 +7999,25 @@ refuses a `<data>` under a project or inside any git work tree.
 - **Format:** one JSON object (#4018): `v` (1) and `skills`, each skill that had a name or a level
   git could not follow it from, keyed by the copy it is now (its level's folder and its name,
   `skills.local/ship`), holding its earlier places newest first, at most 16: `name`, the name it
-  had; `level`, that level's folder (`skills.local`, `workspaces/ops/skills`); and `until`, when it
-  left it (RFC 3339). Written `0600`, whole or not at all, through no link, by the core's rename,
+  had; `level`, that level's folder (`skills.local`, `workspaces/ops/skills`); `until`, when it
+  left it (RFC 3339); `grades`, the ids of its grades under way as it left (absent for none, at
+  most 16, #4104), whose rows are recorded by that name once they end; and `folder`, which folder
+  took the key, as this machine tells folders apart (its device, inode and the time it was made,
+  `<dev>:<ino>:<nanos or ->`; absent where that does not read, #4104). Written `0600`, whole or not at all, through no link, by the core's rename,
   move and share of a skill (`grades::earlier`): where either side is a skill only on this machine
   (`skills.local/`), the place it leaves is added, and the earlier places of any renamed or moved
   skill go along to its new key. A move from a shared level into `skills.local/` adds the places
   git followed it through too, which its history no longer reads. A skill made with a name at a
-  level drops that key's entry; a delete keeps it, so a Restore brings the grades back. Read by a skill's Grades tab and a
-  grade's scorecard, never as a chat opens: an earlier place lends the grades recorded under its
-  name and level before `until`. A file that is a link, past 256 KiB, of another `v`, or holding
+  level (a create, a copy of a built-in skill, a draft's accept or an install) drops that key's
+  entry; a delete keeps it, and a Restore takes the folder it brings back as the entry's, so the
+  grades come back. Read by a skill's Grades tab and a grade's scorecard, never as a chat opens:
+  an earlier place lends the grades recorded under its name and level before `until`, and those
+  of its `grades`, only while the folder at the key is its `folder` (a skill made there by hand
+  after the first was removed by hand shows none of them). A file that is a link, past 256 KiB, of another `v`, or holding
   more than 512 skills reads as empty (each change holds the `flock` of `skill-earlier-names.lock`
   beside it), and an entry that does not hold together (a name that is no plain name, a level no
-  level's folder is, a time that does not read) is left out.
+  level's folder is, a time that does not read, a grade id that is no plain name, a `folder`
+  that is not digits, `:` and `-`) is left out.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Machine, device-bound — as the grades of a skill only on this machine are. Losing it
   leaves those grades under the name and level they were recorded by.

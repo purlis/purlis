@@ -520,6 +520,10 @@ pub fn accept(cx: &mut Ctx<'_>, id: &str) -> Result<PathBuf, String> {
         written.push(file_rel);
     }
     remove_in(&app_state(plane)?, DRAFTS_DIR, &draft.id)?;
+    if draft.new {
+        // A new skill: the grades of one that had its name before are none of its own (#4104).
+        super::earlier_dropped(cx, &level, &name);
+    }
     cx.done(format!("the draft of {name} is accepted, in {folder_rel}"));
     if !level.local {
         let message = if draft.new {

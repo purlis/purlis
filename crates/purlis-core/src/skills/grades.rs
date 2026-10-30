@@ -604,6 +604,7 @@ fn wanted_of(was: &[super::history::Was]) -> Vec<Wanted<'_>> {
                 level: Some(level.rel()),
                 trees: (at > 0).then_some(place.trees.as_slice()),
                 until: None,
+                grades: &[],
             })
         })
         .collect()
@@ -640,6 +641,7 @@ fn followed<'a>(
             level: Some(level.rel()),
             trees: None,
             until: None,
+            grades: &[],
         });
     }
     copies.extend(earlier.iter().filter_map(|one| {
@@ -648,6 +650,7 @@ fn followed<'a>(
             level: Some(Some(one.level.clone())),
             trees: None,
             until: Some(one.until()?),
+            grades: &one.grades,
         })
     }));
     Some(copies)
@@ -656,12 +659,14 @@ fn followed<'a>(
 /// A copy whose rows [`read_where`] reads: its skill's name; where `level` is `Some`, its
 /// level's folder (`None` in it for a copy no folder holds), else every copy of the name; and
 /// where `trees` is `Some`, only rows whose tree is one of them; where `until` is `Some`, only
-/// rows recorded before it (a place this machine kept, [`earlier`]).
+/// rows recorded before it (a place this machine kept, [`earlier`]), or of `grades`, those under
+/// way as it was left (#4104).
 struct Wanted<'a> {
     name: &'a str,
     level: Option<Option<String>>,
     trees: Option<&'a [String]>,
     until: Option<chrono::DateTime<chrono::Utc>>,
+    grades: &'a [String],
 }
 
 impl Wanted<'_> {
@@ -673,9 +678,9 @@ impl Wanted<'_> {
                 Some(word) => row.level.is_none() || row.level == *word,
             }
             && self.trees.is_none_or(|trees| trees.contains(&row.tree))
-            && self.until.is_none_or(|until| {
+            && (self.until.is_none_or(|until| {
                 chrono::DateTime::parse_from_rfc3339(&row.ts).is_ok_and(|at| at <= until)
-            })
+            }) || self.grades.contains(&row.grade))
     }
 }
 
@@ -691,6 +696,7 @@ fn read_at(
         level: level.map(Level::rel),
         trees: None,
         until: None,
+        grades: &[],
     };
     read_where(root, std::slice::from_ref(&wanted), None, now)
 }
@@ -786,6 +792,7 @@ pub fn grade_of(root: &Path, name: &str, grade: &str) -> Option<Graded> {
         level: None,
         trees: None,
         until: None,
+        grades: &[],
     };
     of(std::slice::from_ref(&named)).or_else(|| {
         Level::copies_of(root, name).find_map(|(level, _)| {
