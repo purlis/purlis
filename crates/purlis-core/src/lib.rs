@@ -60,6 +60,7 @@ pub mod dispatchmode;
 pub mod dispatchnever;
 pub mod dispatchplace;
 pub mod dispatchprofiles;
+pub mod dispatchqueue;
 pub mod dispatchrecord;
 pub mod dispatchrestart;
 pub mod dispatchtalk;

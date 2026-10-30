@@ -392,6 +392,24 @@ fn or_finished(held: &Held, asker: u32, of: u32, why: String, asked: &str) -> St
 /// connection it came on, which a wait asks after.
 pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
     let asker = asked.chat;
+    // What this chat queued while the app did not answer goes first (#3902): a message sent
+    // now never overtakes one it sent before, and a list says where each stands.
+    if matches!(
+        asked.what,
+        What::Tell { .. }
+            | What::TellAll { .. }
+            | What::Note { .. }
+            | What::Question { .. }
+            | What::Answer { .. }
+            | What::List
+            | What::Output { .. }
+    ) {
+        deliver_queued(held, asker, None);
+    }
+    // **A chat that waits on another does not wait on that one's queue** (#3902): a wait
+    // delivers what the task it waits on queued, and a task's wait for its answer what its
+    // asking chat queued, each time it looks again ([`wait`], [`await_answer`]).
+
     match &asked.what {
         What::Wait { .. } => wait(&held.weak(), asked, connection),
         What::AwaitAnswer { .. } => await_answer(&held.weak(), asked, connection),
@@ -411,12 +429,17 @@ pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
         }
         What::List => task(Answered::Listed {
             rows: list(held, asker),
+            messages: records(held, asker),
         }),
         What::Cancel { of } => cancel(held, asker, *of).unwrap_or_else(no),
         What::Output { of } => output(held, asker, *of).unwrap_or_else(no),
         What::Close { of } => close(held, asker, *of).unwrap_or_else(no),
         What::Tell { to, text } => tell(held, asker, *to, text).unwrap_or_else(no),
-        What::Note { text } => send_up(held, asker, Kind::Note, text).unwrap_or_else(no),
+        What::TellAll { text } => tell_all(held, asker, text).unwrap_or_else(no),
+        What::Note { text, ack } => note(held, asker, text, *ack).unwrap_or_else(no),
+        What::Deliver { id } => {
+            deliver_queued(held, asker, Some(id)).unwrap_or_else(|| what_became_of(held, asker, id))
+        }
         What::Question { text } => send_up(held, asker, Kind::Question, text).unwrap_or_else(no),
         What::Answer { to, text } => answer_it(held, asker, *to, text).unwrap_or_else(no),
         What::GotAnswer => {
@@ -580,9 +603,688 @@ impl<'a> RunningLimits<'a> {
     }
 }
 
+/// **Chat `chat`'s key in the record of messages** (#3902, #3904): its id, which it keeps across
+/// a restart of the app. A chat with none is keyed for this run of the app alone, never by its
+/// number alone: a later run reuses numbers, and an acknowledgement must never match an
+/// instruction another chat was sent under the same number.
+fn key(held: &Held, chat: u32) -> String {
+    static RUN: std::sync::OnceLock<u128> = std::sync::OnceLock::new();
+    crate::dispatches::chat_ref(held, chat)
+        .and_then(|chat| chat.id)
+        .unwrap_or_else(|| {
+            let run = RUN.get_or_init(|| {
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map_or(0, |since| since.as_nanos())
+            });
+            format!("run-{run}-chat-{chat}")
+        })
+}
+
+/// The ledger, with its record of messages read from where it is kept beside the queues
+/// ([`purlis_core::dispatchqueue::records_for`]) the first time it is needed.
+fn ledger(held: &Held) -> MutexGuard<'_, Ledger> {
+    let mut ledger = held.tasks().ledger();
+    if let Some(socket) = held.hooks().socket() {
+        ledger
+            .talk
+            .keep_at(&purlis_core::dispatchqueue::records_for(socket));
+    }
+    ledger
+}
+
+/// Keeps the record of a message chat `sender` sent: of `kind`, instruction `instruction`, and
+/// for each chat it was for, what became of it there.
+fn kept_record(
+    held: &Held,
+    sender: u32,
+    kind: Kind,
+    instruction: Option<u32>,
+    to: Vec<(u32, String, dispatchtalk::Delivered)>,
+) {
+    let to_all = to.len() > 1;
+    record_with(held, sender, kind, instruction, to_all, to);
+}
+
+fn record_with(
+    held: &Held,
+    sender: u32,
+    kind: Kind,
+    instruction: Option<u32>,
+    to_all: bool,
+    to: Vec<(u32, String, dispatchtalk::Delivered)>,
+) {
+    let to = to
+        .into_iter()
+        .map(|(chat, name, state)| dispatchtalk::Delivery {
+            chat,
+            key: if chat == 0 {
+                String::new()
+            } else {
+                key(held, chat)
+            },
+            name,
+            state,
+        })
+        .collect();
+    let sender = key(held, sender);
+    ledger(held).talk.record(
+        &sender,
+        dispatchtalk::Record {
+            id: None,
+            kind,
+            instruction,
+            to_all,
+            to,
+            queued: false,
+        },
+    );
+}
+
 /// A follow-up from chat `asker` to task `to`: refused unless `asker` dispatched it and it is
 /// still working and not being cancelled, then left for its next turn.
 fn tell(held: &Held, asker: u32, to: u32, said: &str) -> Result<Answer, String> {
+    let (name, number) = tell_numbered(held, asker, to, said, None)?;
+    record_with(
+        held,
+        asker,
+        Kind::FollowUp,
+        Some(number),
+        false,
+        vec![(to, name.clone(), dispatchtalk::Delivered::Delivered)],
+    );
+    Ok(task(Answered::Sent {
+        kind: Kind::FollowUp,
+        to: name,
+        instruction: Some(number),
+    }))
+}
+
+/// The tasks of chat `asker` a `tell --all` is for: listed under it, not finished, and not one
+/// the person started from its tab.
+fn live_tasks(held: &Held, asker: u32) -> Vec<(u32, String)> {
+    list(held, asker)
+        .into_iter()
+        .filter(|row| !row.finished && !row.by_person && row.chat != 0)
+        .map(|row| (row.chat, row.name))
+        .collect()
+}
+
+/// **One follow-up from chat `asker` to every task of its that is still working** (#3904):
+/// one instruction, numbered once, delivered to each as [`tell`] delivers it. A task it cannot
+/// reach (finished, being cancelled, at the pair's limit) is said with why, beside those it
+/// reached. Refused only where it reached none.
+fn tell_all(held: &Held, asker: u32, said: &str) -> Result<Answer, String> {
+    let text = dispatchtalk::text(said)?;
+    let tasks = live_tasks(held, asker);
+    if tasks.is_empty() {
+        return Err(NO_LIVE_TASKS.to_owned());
+    }
+    let asker_key = key(held, asker);
+    let number = ledger(held).talk.instruction(&asker_key);
+    let to: Vec<(u32, String, dispatchtalk::Delivered)> = tasks
+        .into_iter()
+        .map(|(chat, name)| {
+            let state = match tell_numbered(held, asker, chat, &text, Some(number)) {
+                Ok(_) => dispatchtalk::Delivered::Delivered,
+                Err(why) => dispatchtalk::Delivered::Undeliverable { why },
+            };
+            (chat, name, state)
+        })
+        .collect();
+    if to
+        .iter()
+        .all(|(_, _, state)| matches!(state, dispatchtalk::Delivered::Undeliverable { .. }))
+    {
+        let why: Vec<String> = to.iter().map(|(_, _, state)| state.say()).collect();
+        return Err(format!(
+            "no task of this chat's could be sent it. Nothing was sent: {}",
+            why.join("; ")
+        ));
+    }
+    record_with(held, asker, Kind::FollowUp, Some(number), true, to.clone());
+    Ok(task(Answered::SentAll {
+        instruction: number,
+        to: to
+            .into_iter()
+            .map(|(chat, name, state)| dispatchtalk::Delivery {
+                chat,
+                key: key(held, chat),
+                name,
+                state,
+            })
+            .collect(),
+    }))
+}
+
+/// What `tell --all` is told where the chat has no task still working.
+const NO_LIVE_TASKS: &str = "this chat has no task still working to tell: `purlis dispatch \
+    list` shows its tasks. Nothing was sent.";
+
+/// A progress note from task `sender` to its asking chat, acknowledging instruction `ack` of
+/// that chat's where it names one (#3904). With an acknowledgement, the note may be empty: the
+/// acknowledgement is recorded, and nothing more is sent.
+fn note(held: &Held, sender: u32, said: &str, ack: Option<u32>) -> Result<Answer, String> {
+    let Some(number) = ack else {
+        return send_up(held, sender, Kind::Note, said);
+    };
+    let record = held.chats().handed_from(sender);
+    let from = dispatchtalk::up(record.as_ref())?.clone();
+    let (asker, task_key) = (key(held, from.chat), key(held, sender));
+    ledger(held).talk.acknowledge(&asker, &task_key, number)?;
+    held.tasks().changed();
+    if said.trim().is_empty() {
+        return Ok(task(Answered::Acknowledged {
+            instruction: number,
+            to: held
+                .chats()
+                .shown_name(from.chat)
+                .unwrap_or_else(|| from.name.clone()),
+        }));
+    }
+    send_up(held, sender, Kind::Note, said)
+}
+
+/// **The lock one drain of chat `chat`'s queue holds** (#3902): one drain of a chat at a time,
+/// so no message is delivered twice; drains of different chats run side by side.
+///
+/// **Lock order**: a drain's lock is taken before the ledger's and never while the ledger is
+/// held, and a drain never takes another chat's drain lock (nothing a delivery runs drains).
+fn draining(chat: u32) -> Arc<Mutex<()>> {
+    static DRAINS: Mutex<std::collections::BTreeMap<u32, Arc<Mutex<()>>>> =
+        Mutex::new(std::collections::BTreeMap::new());
+    let mut drains = DRAINS.lock().unwrap_or_else(PoisonError::into_inner);
+    // A drain lock nobody holds is let go of, so the map holds only those in use.
+    drains.retain(|_, lock| Arc::strong_count(lock) > 1);
+    Arc::clone(drains.entry(chat).or_default())
+}
+
+/// How a drain treats what a limit holds back.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Drain {
+    /// It waits, with everything after it, for the next drain.
+    Waits,
+    /// The sender is closing: nothing is held back, and what cannot be delivered is reported
+    /// where the person reads it.
+    Closing,
+}
+
+/// **Delivers what chat `sender` queued while the app did not answer** (#3902,
+/// [`purlis_core::dispatchqueue`]), oldest first, each once: removed as it is delivered or found
+/// undeliverable ([`draining`]).
+///
+/// A message a limit holds back stays, with every one after it, for the next drain: order is
+/// kept. One that cannot be delivered (its task has finished, it is not the sender's task, it
+/// does not check) is removed and recorded undeliverable, with why, for `purlis dispatch list`;
+/// but for `fresh`, the one the asking command has just queued, whose answer is its own, as a
+/// live send's is.
+///
+/// Answers `fresh`'s fate where this drain found it: `None` where it did not (another drain
+/// took it first), for [`what_became_of`] to answer.
+fn deliver_queued(held: &Held, sender: u32, fresh: Option<&str>) -> Option<Answer> {
+    drain(held, sender, fresh, Drain::Waits)
+}
+
+fn drain(held: &Held, sender: u32, fresh: Option<&str>, how: Drain) -> Option<Answer> {
+    let socket = held.hooks().socket()?.to_path_buf();
+    if !purlis_core::dispatchqueue::holds(&socket, sender) {
+        return None;
+    }
+    // **Nothing is typed into a pane while the drain lock is held** (the rule at the top of this
+    // module): the chats each delivery wakes are collected, and woken once it is let go. A
+    // closing chat's drain collects them already, for after the close's hold ([`sender_ending`]).
+    let collects = WAKES.with(|wakes| {
+        let mut wakes = wakes.borrow_mut();
+        let outer = wakes.is_none();
+        if outer {
+            *wakes = Some(Vec::new());
+        }
+        outer
+    });
+    let answered = drain_locked(held, &socket, sender, fresh, how);
+    if collects {
+        let wakes = WAKES
+            .with(|wakes| wakes.borrow_mut().take())
+            .unwrap_or_default();
+        for wake in wakes {
+            wake_now(held, wake);
+        }
+    }
+    answered
+}
+
+/// [`drain`], under chat `sender`'s drain lock ([`draining`]), which is let go as it returns.
+fn drain_locked(
+    held: &Held,
+    socket: &std::path::Path,
+    sender: u32,
+    fresh: Option<&str>,
+    how: Drain,
+) -> Option<Answer> {
+    use purlis_core::dispatchqueue::{self, Found};
+    let socket = socket.to_path_buf();
+    let lock = draining(sender);
+    let _one = lock.lock().unwrap_or_else(PoisonError::into_inner);
+    let sender_key = key(held, sender);
+    let mut answered = None;
+    for found in dispatchqueue::waiting(&socket, sender) {
+        let message = match found {
+            Found::Message(message) => message,
+            // A copy of one delivered before: the floor was raised before it was, so an app
+            // that stopped between the two leaves it behind. It is not delivered again.
+            Found::Delivered(path) => {
+                dispatchqueue::drop_unchecked(&path);
+                continue;
+            }
+            Found::Unchecked(path) => {
+                tracing::warn!(
+                    "purlis: a message in chat {sender}'s queue does not check, so it is removed \
+                     and not delivered ({})",
+                    path.display()
+                );
+                dispatchqueue::drop_unchecked(&path);
+                record_with(
+                    held,
+                    sender,
+                    Kind::FollowUp,
+                    None,
+                    false,
+                    vec![(
+                        0,
+                        "a message in this chat's queue".to_owned(),
+                        dispatchtalk::Delivered::Undeliverable {
+                            why: DID_NOT_CHECK.to_owned(),
+                        },
+                    )],
+                );
+                held.tasks().changed();
+                continue;
+            }
+        };
+        let is_fresh = fresh == Some(message.id.as_str());
+        if how == Drain::Waits
+            && let Some(limit) = held_back(held, sender, &message.what)
+        {
+            if !is_fresh {
+                // It waits, and so does every message after it.
+                break;
+            }
+            dispatchqueue::delivered(&socket, sender, &message);
+            answered = Some(no(limit));
+            break;
+        }
+        let before = ledger(held).talk.recorded(&sender_key);
+        // **At most once**: the floor is raised and the file removed before the message is
+        // delivered, so an app that stops in between never delivers it a second time.
+        dispatchqueue::delivered(&socket, sender, &message);
+        let outcome = delivered_now(held, sender, &message.what);
+        match outcome {
+            Ok(answer) => {
+                let mut ledger = ledger(held);
+                // Only where this delivery kept a record: an acknowledgement alone keeps none.
+                if ledger.talk.recorded(&sender_key) > before {
+                    ledger.talk.mark_last_queued(&sender_key, &message.id);
+                }
+                drop(ledger);
+                if is_fresh {
+                    answered = Some(answer);
+                }
+            }
+            Err(why) if is_fresh => answered = Some(no(why)),
+            Err(why) if how == Drain::Closing => not_delivered(held, sender, &message, why),
+            Err(why) => undeliverable(held, sender, &message, why),
+        }
+    }
+    answered
+}
+
+/// What a message that did not check is said to be, in its sender's list.
+const DID_NOT_CHECK: &str = "it did not check under a key the app issued this chat: it was \
+    changed, written by something else, or is a copy of one already delivered, so it was \
+    removed";
+
+/// The ask a queued message is, made now.
+fn delivered_now(
+    held: &Held,
+    sender: u32,
+    what: &purlis_core::dispatchqueue::Queued,
+) -> Result<Answer, String> {
+    use purlis_core::dispatchqueue::Queued;
+    match what {
+        Queued::Tell { to, text } => tell(held, sender, *to, text),
+        Queued::TellAll { text } => tell_all(held, sender, text),
+        Queued::Note { text, ack } => note(held, sender, text.as_deref().unwrap_or_default(), *ack),
+        Queued::Question { text } => send_up(held, sender, Kind::Question, text),
+        Queued::Answer { to, text } => answer_it(held, sender, *to, text),
+    }
+}
+
+/// **What became of queued message `id` of chat `sender`'s**, where no drain of this ask found
+/// it (#3902): still queued, delivered, or undeliverable with why, by the queue and the record.
+fn what_became_of(held: &Held, sender: u32, id: &str) -> Answer {
+    use purlis_core::dispatchqueue::{self, Found};
+    let waits = held.hooks().socket().is_some_and(|socket| {
+        dispatchqueue::waiting(socket, sender)
+            .iter()
+            .any(|found| matches!(found, Found::Message(message) if message.id == id))
+    });
+    if waits {
+        return task(Answered::Queued {
+            id: id.to_owned(),
+            delivered: false,
+        });
+    }
+    let sender_key = key(held, sender);
+    let records = ledger(held).talk.records(&sender_key);
+    let Some(record) = records
+        .into_iter()
+        .rev()
+        .find(|record| record.id.as_deref() == Some(id))
+    else {
+        return no(format!(
+            "the app holds no record of the message this chat queued as {id}: `purlis \
+             dispatch list` shows where this chat's messages stand"
+        ));
+    };
+    match record.to.iter().find_map(|to| match &to.state {
+        dispatchtalk::Delivered::Undeliverable { why } => Some(why.clone()),
+        _ => None,
+    }) {
+        Some(why) if record.to.len() == 1 => no(why),
+        _ => task(Answered::Queued {
+            id: id.to_owned(),
+            delivered: true,
+        }),
+    }
+}
+
+/// The kind of a queued message, and the chat it names, where it names one.
+fn queued_to(what: &purlis_core::dispatchqueue::Queued) -> (Kind, Option<u32>) {
+    use purlis_core::dispatchqueue::Queued;
+    match what {
+        Queued::Tell { to, .. } => (Kind::FollowUp, Some(*to)),
+        Queued::TellAll { .. } => (Kind::FollowUp, None),
+        Queued::Answer { to, .. } => (Kind::Answer, Some(*to)),
+        Queued::Note { .. } => (Kind::Note, None),
+        Queued::Question { .. } => (Kind::Question, None),
+    }
+}
+
+/// A queued message the app could not deliver, recorded for its sender's list (#3902).
+fn undeliverable(
+    held: &Held,
+    sender: u32,
+    message: &purlis_core::dispatchqueue::Waiting,
+    why: String,
+) {
+    let (kind, to) = queued_to(&message.what);
+    let name = to
+        .and_then(|to| held.chats().shown_name(to))
+        .or_else(|| {
+            held.chats()
+                .handed_from(sender)
+                .map(|from| from.name.clone())
+        })
+        .unwrap_or_else(|| "its asking chat".to_owned());
+    let sender_key = key(held, sender);
+    record_with(
+        held,
+        sender,
+        kind,
+        None,
+        matches!(
+            message.what,
+            purlis_core::dispatchqueue::Queued::TellAll { .. }
+        ),
+        vec![(
+            to.unwrap_or(0),
+            name,
+            dispatchtalk::Delivered::Undeliverable { why },
+        )],
+    );
+    ledger(held).talk.mark_last_queued(&sender_key, &message.id);
+    held.tasks().changed();
+}
+
+/// **A message chat `sender` queued and closed before it could be delivered** (#3902): kept on
+/// the dispatch record of the task it is between, with why, where the person reads it in the
+/// Dispatches tab. A message between no task and its asking chat is said in the log.
+fn not_delivered(
+    held: &Held,
+    sender: u32,
+    message: &purlis_core::dispatchqueue::Waiting,
+    why: String,
+) {
+    use purlis_core::dispatchqueue::Queued;
+    let (kind, to) = queued_to(&message.what);
+    let text = match &message.what {
+        Queued::Tell { text, .. }
+        | Queued::TellAll { text }
+        | Queued::Question { text }
+        | Queued::Answer { text, .. } => text.clone(),
+        Queued::Note { text, ack } => text.clone().unwrap_or_else(|| {
+            ack.map(|n| format!("(acknowledges instruction {n})"))
+                .unwrap_or_default()
+        }),
+    };
+    // The task the message is between: the one it names, or the sender itself going up.
+    let task = to.or_else(|| {
+        matches!(kind, Kind::Note | Kind::Question)
+            .then_some(sender)
+            .filter(|_| held.chats().handed_from(sender).is_some())
+    });
+    match task {
+        Some(task) => crate::dispatches::not_delivered(held, task, kind, &text, &why),
+        None => tracing::warn!(
+            "purlis: chat {sender} closed with a {} queued that could not be delivered ({why})",
+            kind.word()
+        ),
+    }
+}
+
+/// **The limit's refusal, where a pair a queued message is between has reached it now**
+/// (#3902): the message waits for the next drain rather than being dropped. A `tell --all`
+/// waits while any of the sender's live tasks' pairs is at its limit.
+fn held_back(
+    held: &Held,
+    sender: u32,
+    what: &purlis_core::dispatchqueue::Queued,
+) -> Option<String> {
+    use purlis_core::dispatchqueue::Queued;
+    let pairs: Vec<(u32, u32)> = match what {
+        Queued::Tell { to, .. } | Queued::Answer { to, .. } => vec![(sender, *to)],
+        Queued::Note { text, .. } if text.as_deref().is_none_or(|t| t.trim().is_empty()) => {
+            return None;
+        }
+        Queued::Note { .. } | Queued::Question { .. } => {
+            vec![(held.chats().handed_from(sender)?.chat, sender)]
+        }
+        Queued::TellAll { .. } => live_tasks(held, sender)
+            .into_iter()
+            .map(|(task, _)| (sender, task))
+            .collect(),
+    };
+    pairs.into_iter().find_map(|(asker, task)| {
+        let limits = limits_between(held, asker, task);
+        let sent = held
+            .tasks()
+            .ledger()
+            .talk
+            .in_the_last_minute(asker, task, Instant::now());
+        dispatchtalk::may_send(&limits, sent).err()
+    })
+}
+
+/// What chat `sender` sent lately, and what it still has queued (#3902, #3904).
+fn records(held: &Held, sender: u32) -> Vec<dispatchtalk::Record> {
+    use purlis_core::dispatchqueue::{self, Found};
+    // The chats are asked before the ledger is taken.
+    let sender_key = key(held, sender);
+    let mut records = ledger(held).talk.records(&sender_key);
+    let Some(socket) = held.hooks().socket() else {
+        return records;
+    };
+    for found in dispatchqueue::waiting(socket, sender) {
+        let Found::Message(message) = found else {
+            continue;
+        };
+        let (kind, to) = queued_to(&message.what);
+        let to_all = matches!(
+            message.what,
+            purlis_core::dispatchqueue::Queued::TellAll { .. }
+        );
+        let to = if to_all { None } else { Some(to.unwrap_or(0)) };
+        records.push(dispatchtalk::Record {
+            id: Some(message.id.clone()),
+            kind,
+            instruction: None,
+            to_all,
+            to: to
+                .map(|chat| dispatchtalk::Delivery {
+                    chat,
+                    key: String::new(),
+                    name: if chat == 0 {
+                        "its asking chat".to_owned()
+                    } else {
+                        held.chats()
+                            .shown_name(chat)
+                            .unwrap_or_else(|| format!("chat {chat}"))
+                    },
+                    state: dispatchtalk::Delivered::Queued,
+                })
+                .into_iter()
+                .collect(),
+            queued: true,
+        });
+    }
+    records
+}
+
+/// **Delivers what every chat queued**, once the project's chats and their tasks are back
+/// (#3902): what a chat queued while the app was away reaches its task with nobody acting.
+///
+/// **Off the launch path**: a thread of its own, started as the launch finishes, so nothing is
+/// added to the time the window takes to come up; [`deliver_all_queued_now`] is the drain.
+pub(crate) fn deliver_all_queued(held: &Held) {
+    let Some(socket) = held.hooks().socket() else {
+        return;
+    };
+    // Nothing queued, nothing started: one look at a folder.
+    if purlis_core::dispatchqueue::chats(socket).is_empty() {
+        return;
+    }
+    let weak = held.weak();
+    let spawned = std::thread::Builder::new()
+        .name("purlis-queue-at-open".into())
+        .spawn(move || {
+            if let Some(held) = weak.upgrade() {
+                deliver_all_queued_now(&held);
+            }
+        });
+    if let Err(why) = spawned {
+        tracing::warn!(
+            "purlis: what chats queued while the app was away is delivered when each is next \
+             heard from ({why})"
+        );
+    }
+}
+
+/// [`deliver_all_queued`], on this thread.
+pub(crate) fn deliver_all_queued_now(held: &Held) {
+    let Some(socket) = held.hooks().socket() else {
+        return;
+    };
+    for chat in purlis_core::dispatchqueue::chats(socket) {
+        if held.chats().shown_name(chat).is_some() {
+            deliver_queued(held, chat, None);
+        }
+    }
+}
+
+/// **Chat `chat` is closing** (#3902): what it still has queued is delivered now, held back by
+/// no limit, and what cannot be is kept on the dispatch record it is about, where the person
+/// reads it ([`not_delivered`]). The spool clears its folder as the chat ends. Then the records
+/// of what it sent go with it.
+///
+/// **Nothing is typed into a pane here**: a close runs under `Chats::deciding()`. Each chat a
+/// delivery would wake ([`woken`]) is woken by a thread of its own once that hold is let go.
+pub(crate) fn sender_ending(held: &Held, chat: u32) {
+    WAKES.with(|wakes| *wakes.borrow_mut() = Some(Vec::new()));
+    drain(held, chat, None, Drain::Closing);
+    let wakes = WAKES
+        .with(|wakes| wakes.borrow_mut().take())
+        .unwrap_or_default();
+    let key = key(held, chat);
+    ledger(held).talk.forget_records(&key);
+    if wakes.is_empty() {
+        return;
+    }
+    let weak = held.weak();
+    let spawned = std::thread::Builder::new()
+        .name("purlis-queue-wake".into())
+        .spawn(move || {
+            let Some(held) = weak.upgrade() else { return };
+            // Once the close that drained them has let go of the hold.
+            drop(held.chats().deciding());
+            for wake in wakes {
+                wake_now(&held, wake);
+            }
+        });
+    if let Err(why) = spawned {
+        tracing::warn!(
+            "purlis: the chats a closing chat's messages were left for are not woken ({why}); \
+             each reads them on its next turn"
+        );
+    }
+}
+
+/// A chat a delivery wakes: typed the line, where it takes one now.
+enum Wake {
+    Told(u32),
+    ToldOrSettled(u32),
+}
+
+thread_local! {
+    /// Where a drain on this thread collects the chats it would wake, so none is typed into
+    /// under its drain lock ([`drain`]) or a close's `Chats::deciding()` ([`sender_ending`]);
+    /// `None` everywhere else.
+    static WAKES: std::cell::RefCell<Option<Vec<Wake>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// **`wake`, now, or once the drain or the close it is under has let go** ([`drain`],
+/// [`sender_ending`]): what every delivery wakes its reader by.
+fn woken(held: &Held, wake: Wake) {
+    let wake = WAKES.with(|wakes| match wakes.borrow_mut().as_mut() {
+        Some(later) => {
+            later.push(wake);
+            None
+        }
+        None => Some(wake),
+    });
+    if let Some(wake) = wake {
+        wake_now(held, wake);
+    }
+}
+
+/// Wakes the chat `wake` names, now.
+fn wake_now(held: &Held, wake: Wake) {
+    match wake {
+        Wake::Told(chat) => {
+            tell_the_chat(held, chat);
+        }
+        Wake::ToldOrSettled(chat) => told_or_settled(held, chat),
+    }
+}
+
+/// [`tell`], as instruction `number`, or one numbered here once every check has let it
+/// through: the task's name and the number, once the follow-up is left for it.
+fn tell_numbered(
+    held: &Held,
+    asker: u32,
+    to: u32,
+    said: &str,
+    number: Option<u32>,
+) -> Result<(String, u32), String> {
     let (from, name) = owned(held, asker, to)
         .map_err(|why| or_finished(held, asker, to, why, "no turn left to read a message in"))?;
     let seen = seen(held, to);
@@ -597,26 +1299,27 @@ fn tell(held: &Held, asker: u32, to: u32, said: &str) -> Result<Answer, String> 
     // A task that reported while its program still runs is told too (#3899).
     dispatchtalk::still_working(&name, to, &from, seen, &state.say())?;
     let text = dispatchtalk::text(said)?;
+    let from_name = shown(held, asker)?;
+    let limits = limits_between(held, asker, to);
+    let asker_key = key(held, asker);
+    let number = {
+        let mut ledger = ledger(held);
+        ledger.talk.count(asker, to, &limits, Instant::now())?;
+        number.unwrap_or_else(|| ledger.talk.instruction(&asker_key))
+    };
     let message = Message {
         kind: Kind::FollowUp,
-        from: shown(held, asker)?,
+        from: from_name,
         chat: asker,
         text,
+        instruction: Some(number),
     };
-    let limits = limits_between(held, asker, to);
-    held.tasks()
-        .ledger()
-        .talk
-        .count(asker, to, &limits, Instant::now())?;
     dispatchtalk::leave(held.root(), to, &message).map_err(kept)?;
     held.tasks().ledger().landed(to, Landed::FollowUp);
     // One more message on the task's dispatch record (#1452), now that it is kept.
     crate::dispatches::message(held, to, &message);
-    tell_the_chat(held, to);
-    Ok(task(Answered::Sent {
-        kind: Kind::FollowUp,
-        to: name,
-    }))
+    woken(held, Wake::Told(to));
+    Ok((name, number))
 }
 
 /// **Whether task `task`, with record `from`, may still talk with the chat that asked for it**:
@@ -657,6 +1360,7 @@ fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, S
         from: shown(held, sender)?,
         chat: sender,
         text: text.clone(),
+        instruction: None,
     };
     let limits = limits_between(held, asker, sender);
     {
@@ -701,14 +1405,23 @@ fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, S
         // The asking chat is typed the line where it takes one. Where it does not, and its
         // turn's end was held for this task, it is the one who must act and the person the
         // one who can see that (#1491): this task no longer counts toward its wait.
-        told_or_settled(held, asker);
+        woken(held, Wake::ToldOrSettled(asker));
     }
+    let to = held
+        .chats()
+        .shown_name(asker)
+        .unwrap_or_else(|| from.name.clone());
+    kept_record(
+        held,
+        sender,
+        kind,
+        None,
+        vec![(asker, to.clone(), dispatchtalk::Delivered::Delivered)],
+    );
     Ok(task(Answered::Sent {
         kind,
-        to: held
-            .chats()
-            .shown_name(asker)
-            .unwrap_or_else(|| from.name.clone()),
+        to,
+        instruction: None,
     }))
 }
 
@@ -737,6 +1450,7 @@ fn answer_it(held: &Held, asker: u32, to: u32, said: &str) -> Result<Answer, Str
         from: asker_name.clone(),
         chat: asker,
         text: text.clone(),
+        instruction: None,
     };
     let limits = limits_between(held, asker, to);
     let number = {
@@ -763,10 +1477,18 @@ fn answer_it(held: &Held, asker: u32, to: u32, said: &str) -> Result<Answer, Str
     held.tasks().changed();
     // Typed the line where it takes one; where it does not, its held end of turn is the
     // person's from here (#1491).
-    told_or_settled(held, to);
+    woken(held, Wake::ToldOrSettled(to));
+    kept_record(
+        held,
+        asker,
+        Kind::Answer,
+        None,
+        vec![(to, name.clone(), dispatchtalk::Delivered::Delivered)],
+    );
     Ok(task(Answered::Sent {
         kind: Kind::Answer,
         to: name,
+        instruction: None,
     }))
 }
 
@@ -788,6 +1510,9 @@ pub fn await_answer(held: &Weak<Held>, asked: &Asked, connection: u64) -> Answer
             Ok(from) => from.clone(),
             Err(why) => return no(why),
         };
+        // Each time the wait looks again (#3902): an answer its asking chat queued since is
+        // delivered now.
+        deliver_queued(&held, from.chat, None);
         let tasks = Arc::clone(held.tasks_shared());
         if parked.is_none() {
             match tasks.park(sender) {
@@ -1059,6 +1784,10 @@ pub fn wait(held: &Weak<Held>, asked: &Asked, connection: u64) -> Answer {
         let Some(held) = held.upgrade() else {
             return no("this project has been closed".to_owned());
         };
+        // Each time the wait looks again (#3902): what the two chats queued since is
+        // delivered, so a message queued during a long wait arrives in it.
+        deliver_queued(&held, asked.chat, None);
+        deliver_queued(&held, of, None);
         let tasks = Arc::clone(held.tasks_shared());
         let (from, name) = match owned(&held, asked.chat, of) {
             Ok(owned) => owned,
@@ -1694,6 +2423,9 @@ fn type_line(held: &Held, chat: u32, line: &str) -> Result<(), String> {
 pub fn heard(held: &Held, report: &Report) {
     // A chat a Reopen started was heard from: its harness brought the conversation back.
     reopen_settled(held, report.chat, false);
+    // The app hears from it, so what it queued while the app did not answer is delivered
+    // now (#3902). One look at a folder where it queued nothing.
+    deliver_queued(held, report.chat, None);
     // Activity of its own run's, which a task's quiet stretch is measured from (#1981). A
     // helper's report is the chat's work too.
     crate::silence::heard(
@@ -1974,6 +2706,11 @@ pub fn closed(held: &Held, chat: u32, task_of: Option<(u32, String)>) {
 /// Chat `old` is now `new`: the same chat, started again under a new number. What the app
 /// remembers of it, and the messages waiting for its next turn, follow it.
 pub fn followed(held: &Held, old: u32, new: u32) {
+    // What it queued while the app did not answer goes on with it (#3902): moved to the new
+    // number, signed under the new run's key, before the old run ends and its folder is cleared.
+    if let Some(socket) = held.hooks().socket() {
+        purlis_core::dispatchqueue::moved(socket, old, new);
+    }
     held.tasks().ledger().followed(old, new);
     // A cancel under way goes on, as a cancel of the new run (#1459).
     crate::stopping::cancel_followed(held, old, new);

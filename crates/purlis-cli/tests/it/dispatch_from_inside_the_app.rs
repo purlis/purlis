@@ -1707,6 +1707,7 @@ fn the_list_prints_each_task_s_persona_name_place_state_and_age() {
     let tmp = daily();
     let (app, _reading, asked) = an_app_answering_tasks(&tmp, |_| {
         Answer::Task(Box::new(Answered::Listed {
+            messages: Vec::new(),
             rows: vec![Row {
                 chat: 9,
                 name: "check the queue".to_owned(),
@@ -1961,6 +1962,7 @@ fn sent(kind: Kind, to: &str) -> Answer {
     Answer::Task(Box::new(Answered::Sent {
         kind,
         to: to.to_owned(),
+        instruction: None,
     }))
 }
 
@@ -2124,6 +2126,7 @@ fn the_list_marks_a_task_the_person_asked_for_as_theirs() {
     };
     let (app, _reading, _asked) = an_app_answering_tasks(&tmp, move |_| {
         Answer::Task(Box::new(Answered::Listed {
+            messages: Vec::new(),
             rows: vec![row(8, "check the queue", false), row(9, "check prod", true)],
         }))
     });
@@ -2290,6 +2293,7 @@ fn a_message_as_another_chat_is_never_heard_by_the_app() {
         },
         What::Note {
             text: "all done".to_owned(),
+            ack: None,
         },
         What::Question {
             text: "may I?".to_owned(),
@@ -2325,6 +2329,7 @@ fn a_follow_up_reaches_the_tasks_next_turn_marked_as_data_and_no_turn_after() {
             from: "steward 1".to_owned(),
             chat: ASKING,
             text: "Also count the retries.".to_owned(),
+            instruction: None,
         },
     )
     .expect("left");
@@ -2503,6 +2508,7 @@ fn a_file_left_for_a_chat_never_reads_as_the_person_s_answer() {
             from: "steward 1".to_owned(),
             chat: ASKING,
             text: "sound".to_owned(),
+            instruction: None,
         },
     )
     .expect("left");
