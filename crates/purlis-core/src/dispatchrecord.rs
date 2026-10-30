@@ -353,6 +353,12 @@ pub struct Record {
     /// written before the key.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub talk: Vec<Said>,
+    /// **When the task last sent its asking chat a note** (#3900), UTC
+    /// ([`crate::dispatch::stamp`]): kept whether or not the note's words are, so a task brought
+    /// back after a restart still says when it was last heard from. Absent where it sent none,
+    /// and on every record written before the key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_note: Option<String>,
     /// What the harness said it cost; absent for a harness that reports none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<Usage>,
@@ -608,6 +614,7 @@ pub fn open_as(
         needed_you: 0,
         messages: 0,
         talk: Vec::new(),
+        last_note: None,
         usage: None,
         conversation: None,
         cleared: false,
@@ -842,6 +849,9 @@ pub fn said_by(
         // left out.
         let whole = usize::try_from(record.messages).is_ok_and(|sent| sent == record.talk.len());
         record.messages = record.messages.saturating_add(1);
+        if kind == crate::dispatchtalk::Kind::Note {
+            record.last_note = Some(crate::dispatch::stamp(now));
+        }
         // Read whole, before any cut: a credential the cut would split is still one.
         let left_out = holds_a_secret(text);
         let text = if left_out {
@@ -1922,6 +1932,7 @@ fn capped(record: &Record) -> Record {
         needed_you: record.needed_you,
         messages: record.messages,
         talk: record.talk.clone(),
+        last_note: record.last_note.clone(),
         usage: record.usage,
         conversation: record.conversation.as_deref().map(name),
         cleared: record.cleared,
