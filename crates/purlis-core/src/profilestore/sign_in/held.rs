@@ -13,6 +13,7 @@
 //! end holds, which a terminal `docker exec` makes for it could not give.
 
 use std::io::{Read, Write};
+use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
