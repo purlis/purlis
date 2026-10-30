@@ -33,9 +33,10 @@ import { Dialog } from "./ui/dialog/Dialog";
 export const HISTORY_MOVES = "Its history and grades move with it.";
 
 /** What it says where the skill is, or is to be, only on this machine: git holds no history of
- *  it to follow (#3918). */
+ *  it to follow (#3918), and this machine keeps the names and levels it had, so its grades go
+ *  with it (#4018). */
 export const HISTORY_RESTARTS_LOCAL =
-  "A skill only on this machine keeps no history, so its History and Grades start again from this change.";
+  "Its grades move with it. A skill only on this machine keeps no versions in git, so its History starts again from this change.";
 
 /** What a rename or a move says of the skill's history, by whether it is on this machine alone
  *  before or after. */

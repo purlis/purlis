@@ -170,7 +170,7 @@ fn after_a_move_history_lists_the_versions_from_before_with_their_grades() {
 }
 
 #[test]
-fn a_versions_diff_shows_the_rename_and_a_revert_from_before_it_is_refused() {
+fn a_versions_diff_shows_the_rename() {
     let tmp = graded_then_edited();
     let root = tmp.path();
     did(root, |cx| {
@@ -190,15 +190,120 @@ fn a_versions_diff_shows_the_rename_and_a_revert_from_before_it_is_refused() {
     let edited =
         history::diff(root, &Level::project(), "ship", &listed.versions[1].commit).unwrap();
     assert!(edited.text.contains("+Step two."), "{}", edited.text);
+}
 
-    let refused = did(root, |cx| {
-        history::revert(cx, &Level::project(), "ship", &listed.versions[1].commit)
+/// The text of `rel` in the plane at `root`.
+fn text(root: &Path, rel: &str) -> String {
+    std::fs::read_to_string(root.join(rel)).unwrap()
+}
+
+/// What `git status` says of the skills' folders in the plane at `root`: empty where all of
+/// them is committed.
+fn status(root: &Path) -> String {
+    run(
+        root,
+        &["status", "--porcelain", "--", "skills", "workspaces"],
+    )
+    .out
+}
+
+#[test]
+fn a_revert_from_before_a_rename_comes_back_under_the_name_it_has_now() {
+    let tmp = graded_then_edited();
+    let root = tmp.path();
+    let project = Level::project();
+    did(root, |cx| {
+        crate::skills::verbs::rename(cx, &project, "deploy", "ship")
     })
-    .unwrap_err();
-    assert!(
-        refused.contains("from before it was renamed or moved"),
-        "{refused}"
+    .unwrap();
+    // A file added since, which the version reverted to never had.
+    std::fs::write(root.join("skills/ship/notes.md"), "Notes.\n").unwrap();
+    run(root, &["add", "-A"]);
+    run(
+        root,
+        &["-c", "commit.gpgsign=false", "commit", "-q", "-m", "notes"],
     );
+    let listed = history::history(root, &project, "ship").unwrap();
+    let first = listed.versions.last().unwrap();
+    assert_eq!(
+        first.before,
+        Some(history::Before {
+            name: "deploy".into(),
+            folder: "skills/deploy".into()
+        }),
+        "the window is told it is from before the rename"
+    );
+    assert_eq!(listed.versions[0].before, None);
+    assert_eq!(
+        history::revert_widens(root, &project, "ship", &first.commit),
+        Ok(None)
+    );
+
+    did(root, |cx| {
+        history::revert(cx, &project, "ship", &first.commit)
+    })
+    .unwrap();
+
+    let now = text(root, "skills/ship/SKILL.md");
+    assert!(now.contains("name: ship\n"), "{now}");
+    assert!(now.contains("Step one."), "{now}");
+    assert!(root.join("skills/ship/evals/triggers.json").is_file());
+    assert!(
+        !root.join("skills/ship/notes.md").exists(),
+        "what it never had is gone"
+    );
+    assert!(
+        !root.join("skills/deploy").exists(),
+        "nothing comes back at the old place"
+    );
+    assert_eq!(status(root), "", "the revert is one commit");
+    let after = history::history(root, &project, "ship").unwrap();
+    let said = subjects(&after);
+    assert!(said[0].starts_with("skill revert ship "), "{said:?}");
+}
+
+#[test]
+fn a_revert_from_before_a_move_comes_back_in_the_folder_it_has_now() {
+    let tmp = graded_then_edited();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
+    std::fs::write(root.join("workspaces/ops/workspace.md"), "# ops\n").unwrap();
+    run(root, &["add", "-A"]);
+    run(
+        root,
+        &[
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            "add ops",
+        ],
+    );
+    let ops = Level::workspace("ops");
+    did(root, |cx| {
+        crate::skills::verbs::move_to(cx, &Level::project(), "deploy", &ops, None)
+    })
+    .unwrap();
+    let listed = history::history(root, &ops, "deploy").unwrap();
+    let first = listed.versions.last().unwrap();
+    assert_eq!(
+        first.before.as_ref().map(|one| one.folder.as_str()),
+        Some("skills/deploy")
+    );
+
+    did(root, |cx| {
+        history::revert(cx, &ops, "deploy", &first.commit)
+    })
+    .unwrap();
+
+    let now = text(root, "workspaces/ops/skills/deploy/SKILL.md");
+    assert!(
+        now.contains("name: deploy\n") && now.contains("Step one."),
+        "{now}"
+    );
+    assert!(!root.join("skills/deploy").exists());
+    assert_eq!(status(root), "");
 }
 
 #[test]
@@ -322,5 +427,103 @@ fn a_skill_that_takes_the_old_name_since_lends_none_of_its_grades() {
     assert_eq!(
         grade_of(root, "deploy", "g2").map(|one| one.grade),
         Some("g2".into())
+    );
+}
+
+#[test]
+fn a_rename_that_keeps_the_folder_keeps_the_versions_from_before_under_their_name() {
+    // `deploy` in a folder named otherwise, `skills/ship`, graded there.
+    let tmp = plane();
+    let root = tmp.path();
+    run(root, &["mv", "skills/deploy", "skills/ship"]);
+    run(
+        root,
+        &[
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            "skill folder ship",
+        ],
+    );
+    let row = graded(root, "g1", "2026-10-25T10:00:00+00:00", Spent::default());
+    record(root, &Level::project(), &row, "laptop");
+
+    // A rename to the folder's name changes only its `name:` line.
+    did(root, |cx| {
+        crate::skills::verbs::rename(cx, &Level::project(), "deploy", "ship")
+    })
+    .unwrap();
+
+    let listed = history::history(root, &Level::project(), "ship").unwrap();
+    let named: Vec<(&str, &str)> = listed
+        .versions
+        .iter()
+        .map(|one| (one.name.as_str(), one.folder.as_str()))
+        .collect();
+    assert_eq!(
+        named,
+        [
+            ("ship", "skills/ship"),
+            ("deploy", "skills/ship"),
+            ("deploy", "skills/deploy")
+        ]
+    );
+    assert_eq!(listed.versions[1].grade, GRADED, "the grade from before");
+    assert_eq!(listed.versions[0].grade, None);
+    let grades = read_followed(root, &Level::project(), "ship").grades;
+    assert_eq!(
+        grades
+            .iter()
+            .map(|one| one.grade.as_str())
+            .collect::<Vec<_>>(),
+        ["g1"]
+    );
+    assert_eq!(
+        grade_of(root, "ship", "g1").map(|one| one.grade),
+        Some("g1".into())
+    );
+}
+
+#[test]
+fn a_local_copys_grades_follow_a_rename_and_a_share() {
+    let tmp = plane();
+    let root = tmp.path();
+    let local = Level::project().local(true);
+    std::fs::create_dir_all(root.join("skills.local/draft")).unwrap();
+    std::fs::write(
+        root.join("skills.local/draft/SKILL.md"),
+        SKILL.replace("name: deploy", "name: draft"),
+    )
+    .unwrap();
+    let row = Graded {
+        skill: "draft".into(),
+        level: local.rel(),
+        ..graded(root, "g1", "2026-10-25T10:00:00+00:00", Spent::default())
+    };
+    record(root, &local, &row, "laptop");
+    assert_eq!(read(root, "draft", Some(&local)).grades.len(), 1);
+
+    did(root, |cx| {
+        crate::skills::verbs::rename(cx, &local, "draft", "sketch")
+    })
+    .unwrap();
+    let ids =
+        |read: Read| -> Vec<String> { read.grades.into_iter().map(|one| one.grade).collect() };
+    assert_eq!(ids(read_followed(root, &local, "sketch")), ["g1"]);
+    assert_eq!(
+        grade_of(root, "sketch", "g1").map(|one| one.grade),
+        Some("g1".into())
+    );
+
+    did(root, |cx| {
+        crate::skills::verbs::share(cx, &crate::skills::verbs::Whose::Project, "sketch")
+    })
+    .unwrap();
+    assert_eq!(
+        ids(read_followed(root, &Level::project(), "sketch")),
+        ["g1"],
+        "and into the shared skills, which git holds from the share on"
     );
 }
