@@ -662,6 +662,18 @@ mod cluster {
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
     }
 
+    /// What an add holds of the fake cluster's kubectl, a plain file: the name it is found by
+    /// and, where a link on the way leads elsewhere (`/tmp` on macOS), its real file.
+    fn held_kubectl(cluster: &FakeCluster) -> Vec<std::path::PathBuf> {
+        let named = cluster.kubectl().program().to_path_buf();
+        let real = named.canonicalize().expect("kubectl's real file");
+        if real == named {
+            vec![named]
+        } else {
+            vec![named, real]
+        }
+    }
+
     #[test]
     fn a_cluster_pool_is_added_with_its_runner_claimed_vouched_for_and_paired() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
@@ -682,7 +694,7 @@ mod cluster {
             Reached::Cluster(pool, runner) => {
                 // Kept pointing at its own copy of the context.
                 let copy = runners::kubeconfig_kept_at(config.path(), "team");
-                let held = links_to(cluster.kubectl().program()).unwrap();
+                let held = held_kubectl(&cluster);
                 assert_eq!(pool, team(&cluster).kept_at(&copy).holding(held).unwrap());
                 assert_eq!(runner, kept);
             }
@@ -701,8 +713,7 @@ mod cluster {
                 "namespace": "ada",
                 "operatorKey": cluster.operator.key().spelled(),
                 "cluster": crate::clusterpool::tests::CLUSTER,
-                "holds": links_to(cluster.kubectl().program())
-                    .unwrap()
+                "holds": held_kubectl(&cluster)
                     .iter()
                     .map(|it| it.display().to_string())
                     .collect::<Vec<_>>(),

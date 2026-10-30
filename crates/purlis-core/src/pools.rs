@@ -516,7 +516,13 @@ pub fn add_cluster(
     let context = taken_from
         .context_kept()
         .map_err(|why| Refused::Other(why.to_string()))?;
-    let held = programs_run(&taken_from, &context, crate::profiles::home().as_deref())?;
+    let held = programs_run(
+        &taken_from,
+        &context,
+        crate::profiles::home()
+            .map(|home| crate::sandbox::real(&home))
+            .as_deref(),
+    )?;
     // Recorded pointing at its own copy, which is kept only once its name is the pool's.
     let pool = &pool
         .kept_at(&runners::kubeconfig_kept_at(config_root, pool.name()))
@@ -625,8 +631,9 @@ pub type UnpairCluster<'a> =
 
 /// **Removes the cluster pool `name`** (#3292), on the desktop whose device id is `device`:
 ///
-/// 1. this desktop out of its runner's peers with `unpair`, where given, before anything is
-///    locked, since a link's own check may keep the pool's pin;
+/// 1. once an add of it still under way has finished, this desktop out of its runner's peers
+///    with `unpair`, where given, before the store is locked, since a link's own check may keep
+///    the pool's pin;
 /// 2. its claim deleted through `kubectl` (none where this machine has none), and with it its
 ///    runner, only where the claim is the one this desktop keeps (its uid) or, where no runner
 ///    was kept, one marked as this desktop's and asked for by who this kubeconfig is;
@@ -696,7 +703,8 @@ fn claim_released(
                 "Pool {} was removed here, but a claim of it may still hold a runner in the \
                  cluster (purlis could not read this desktop's device id, so it could not tell \
                  which claim is its own); list them with kubectl get claims.runners.purlis.dev \
-                 --namespace {} and delete the one named after the pool.",
+                 --namespace {} and delete only the one this desktop made, which starts with the \
+                 pool's name: other desktops' claims of the pool start with it too.",
                 pool.name(),
                 pool.namespace()
             ));

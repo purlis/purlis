@@ -1125,7 +1125,8 @@ pub struct ClusterPool {
     namespace: String,
     operator: OperatorKey,
     cluster: Option<String>,
-    /// The programs its kubectl runs, by their real paths, as they were found when it was added:
+    /// The programs its kubectl runs, each as named, every link on the way and its real file, as
+    /// they were found when it was added:
     /// kubectl itself and each credential plugin its context names (#3292). A chat writes none of
     /// them ([`cluster_holds`]).
     holds: Vec<std::path::PathBuf>,
@@ -1207,8 +1208,8 @@ impl ClusterPool {
         })
     }
 
-    /// This pool, holding `holds`, the real paths of the programs its kubectl runs, for no chat
-    /// to write (#3292). Each is absolute.
+    /// This pool, holding `holds`, the programs its kubectl runs as named, every link on the way
+    /// and their real files, for no chat to write (#3292). Each is absolute.
     pub fn holding(self, holds: Vec<std::path::PathBuf>) -> Result<ClusterPool, Refused> {
         if let Some(relative) = holds.iter().find(|held| !held.is_absolute()) {
             return Err(Refused::Other(format!(
