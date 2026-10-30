@@ -1114,6 +1114,7 @@ mod cluster {
                 "profile",
                 "sign-in",
                 "work",
+                "--until-input-ends",
             ]
         );
         assert!(login.args.contains(&"--context".to_owned()));
@@ -1130,6 +1131,7 @@ mod cluster {
         )
         .unwrap();
         assert!(typed.args.contains(&"-it".to_owned()));
+        assert!(!typed.args.contains(&"--until-input-ends".to_owned()));
         assert!(
             typed
                 .args
@@ -1149,6 +1151,30 @@ mod cluster {
             )
             .is_err()
         );
+    }
+
+    /// **A cluster runner's version and sign-out are asked of its own `purlis` in the vouched pod**
+    /// (#3819), after the check every link makes.
+    #[test]
+    fn a_cluster_runners_version_and_sign_out_run_its_own_purlis_after_the_links_check() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        cluster.write("paired.txt", "purlis 0.4.2 (release profile)\n");
+        assert_eq!(
+            cluster_runner_version(config.path(), &cluster.kubectl(), "team"),
+            Ok("0.4.2".to_owned())
+        );
+        assert!(cluster.calls().contains("/usr/local/bin/purlis --version"));
+        cluster_sign_out(config.path(), &cluster.kubectl(), "team", "work").unwrap();
+        assert!(
+            cluster
+                .calls()
+                .contains("/usr/local/bin/purlis profile sign-out work")
+        );
+        cluster.write("paired.txt", "not a version\n");
+        assert!(cluster_runner_version(config.path(), &cluster.kubectl(), "team").is_err());
+        cluster.write("claim.json", "{}");
+        assert!(cluster_sign_out(config.path(), &cluster.kubectl(), "team", "work").is_err());
     }
 
     /// **A cluster runner's claim says whether its home outlives its pod** (#3819): a kept claim's

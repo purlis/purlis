@@ -903,7 +903,25 @@ impl Kubectl {
             &format!("pod/{pod}"),
             "--",
         ]);
-        args.extend(crate::dockerpool::sign_in_words(name, provider));
+        args.extend(crate::dockerpool::sign_in_words(typed, name, provider));
+        args
+    }
+
+    /// **The words that run `pod`'s runner's own `purlis` with `words`** in `namespace`, with
+    /// pipes (#3819): its version, a profile's sign-out.
+    pub fn purlis_args(&self, namespace: &str, pod: &str, words: &[&str]) -> Vec<String> {
+        let mut args = self.args(&[
+            "exec",
+            "-i",
+            "--namespace",
+            namespace,
+            "--container",
+            RUNNER_CONTAINER,
+            &format!("pod/{pod}"),
+            "--",
+            PURLIS,
+        ]);
+        args.extend(words.iter().map(|word| (*word).to_owned()));
         args
     }
 

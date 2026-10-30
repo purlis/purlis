@@ -739,6 +739,61 @@ pub fn cluster_sign_in(
     })
 }
 
+/// The cluster pool `name`'s kubectl, pointed at its context, and its runner's namespace and pod,
+/// once the check every link makes has passed ([`before_cluster_link`]).
+fn checked_runner(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+) -> Result<(crate::clusterpool::Kubectl, String, String), String> {
+    before_cluster_link(config_root, kubectl, name, runners::now())
+        .map_err(|why| why.to_string())?;
+    let (pool, kept) = runners::cluster_runner_for(config_root, name)
+        .map_err(|why| why.to_string())?
+        .ok_or_else(|| format!("no cluster pool named {name} is on this machine"))?;
+    Ok((
+        pool.kubectl(kubectl),
+        crate::clusterpool::runner_namespace(&kept.claimed.requester),
+        kept.pod,
+    ))
+}
+
+/// **The version the cluster pool `name`'s runner's `purlis` says it is** (#3819), asked over
+/// `kubectl exec` after the link's check, held to [`VOUCHED_NOW_WITHIN`]: a driven sign-in
+/// runs only on a runner of this desktop's purlis (#4043).
+pub fn cluster_runner_version(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+) -> Result<String, String> {
+    let (kubectl, namespace, pod) = checked_runner(config_root, kubectl, name)?;
+    let args = kubectl.purlis_args(&namespace, &pod, &["--version"]);
+    let said = kubectl
+        .within(VOUCHED_NOW_WITHIN)
+        .run(&args, None, crate::runnerlink::MOST_LINE)
+        .map_err(|why| why.to_string())?;
+    crate::dockerpool::version_in(&said)
+        .map(str::to_owned)
+        .ok_or_else(|| format!("pool {name}'s runner did not say its version as purlis does"))
+}
+
+/// **Runs the cluster pool `name`'s runner's own sign-out of its profile `profile`** (#3819),
+/// over `kubectl exec` after the link's check, given the time a Docker runner's sign-out has.
+pub fn cluster_sign_out(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    profile: &str,
+) -> Result<(), String> {
+    let (kubectl, namespace, pod) = checked_runner(config_root, kubectl, name)?;
+    let args = kubectl.purlis_args(&namespace, &pod, &["profile", "sign-out", profile]);
+    kubectl
+        .within(crate::dockerpool::SIGN_OUT_WITHIN)
+        .run(&args, None, 64 * 1024)
+        .map(drop)
+        .map_err(|why| why.to_string())
+}
+
 /// **Whether the cluster pool `name`'s runner keeps its home past its pod** (#3819, spec #4023
 /// Q6): its claim, as the cluster holds it now, is a kept one, so a sign-in there outlives the
 /// pod; a fresh one's lasts only for that claim. Asked on this machine's `kubectl`, held to

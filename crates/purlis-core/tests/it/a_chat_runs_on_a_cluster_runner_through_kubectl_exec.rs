@@ -380,20 +380,14 @@ fn work() -> ProfileToKeep {
         sandbox_only: false,
         pinned: None,
         settings: None,
+        settings_staged: None,
     }
 }
 
 /// **Where the runner in `pod` of `namespace` says `work` stands**, asked by its own `purlis
 /// profile sign-in --check` over the `kubectl exec` a sign-in there runs by (#3819).
 fn standing_by_exec(kubectl: &Kubectl, namespace: &str, pod: &str) -> String {
-    let mut args = kubectl.sign_in_args(
-        namespace,
-        pod,
-        purlis_core::dockerpool::Typed::Driven,
-        "work",
-        None,
-    );
-    args.push("--check".into());
+    let args = kubectl.purlis_args(namespace, pod, &["profile", "sign-in", "work", "--check"]);
     let ran =
         purlis_core::forklock::output(std::process::Command::new(kubectl.program()).args(&args))
             .expect("kubectl runs");

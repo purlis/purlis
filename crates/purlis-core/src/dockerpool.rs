@@ -2915,7 +2915,7 @@ const MOST_INSPECTED: u64 = 4 * 1024 * 1024;
 const PROBE_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// How long a runner's own sign-out has: long enough to fetch the version its profile pins.
-const SIGN_OUT_WITHIN: std::time::Duration = std::time::Duration::from_secs(180);
+pub(crate) const SIGN_OUT_WITHIN: std::time::Duration = std::time::Duration::from_secs(180);
 
 /// The most of what `docker` says on standard error that purlis keeps to show.
 const MOST_SAID: u64 = 64 * 1024;
