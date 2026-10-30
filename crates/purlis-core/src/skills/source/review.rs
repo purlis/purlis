@@ -316,21 +316,36 @@ pub(super) fn reviewed(
     have: &dyn Fn(&str) -> bool,
 ) -> Result<Vec<Reviewed>, Unread> {
     let (found, _) = source.skills()?;
+    reviewed_from(source, &found, names, have)
+}
+
+/// [`reviewed`], with what the source offers already listed as `found`: listing it again would
+/// read every skill's instructions a second time against the read's limit.
+fn reviewed_from(
+    source: &dyn super::SkillSource,
+    found: &[Found],
+    names: &[String],
+    have: &dyn Fn(&str) -> bool,
+) -> Result<Vec<Reviewed>, Unread> {
     let held: Vec<String> = found.iter().map(|f| f.name.clone()).collect();
     let mut queue: Vec<(String, Option<String>)> =
         names.iter().map(|name| (name.clone(), None)).collect();
     let mut skills: Vec<Reviewed> = Vec::new();
-    // The named whose reviews are whole, and the named one being reviewed now: a skill brought
-    // along is reviewed before the next named one is taken.
+    // The named whose reviews are whole, the named one being reviewed now, and how many skills
+    // the whole ones reviewed with what they brought along: a skill brought along is reviewed
+    // before the next named one is taken.
     let mut whole: Vec<String> = Vec::new();
     let mut now: Option<String> = None;
+    let mut wholly = 0;
     while !queue.is_empty() {
         let (name, by) = queue.remove(0);
-        if by.is_none()
-            && let Some(done) = now.replace(name.clone())
-            && !whole.contains(&done)
-        {
-            whole.push(done);
+        if by.is_none() {
+            if let Some(done) = now.replace(name.clone())
+                && !whole.contains(&done)
+            {
+                whole.push(done);
+            }
+            wholly = skills.len();
         }
         if skills.iter().any(|s| s.review.name == name) {
             continue;
@@ -339,10 +354,15 @@ pub(super) fn reviewed(
             return Err(format!("{} holds no skill named {name:?}", source.shown()).into());
         };
         if let Err(why) = source.fits_one_read(one) {
+            // A named one the first part brings along is in it, and not left for the rest.
+            let first: Vec<&str> = skills[..wholly]
+                .iter()
+                .map(|one| one.review.name.as_str())
+                .collect();
             return Err(Unread::TooMuch(TooMuch {
                 rest: names
                     .iter()
-                    .filter(|named| !whole.contains(named))
+                    .filter(|named| !whole.contains(named) && !first.contains(&named.as_str()))
                     .cloned()
                     .collect(),
                 fits: whole,
@@ -397,9 +417,9 @@ impl Fetched {
     }
 
     /// **The review of installing `names` together** from this commit, or which of them fit one
-    /// read where all of them do not.
-    fn set_review(&self, names: &[String]) -> Result<SetReview, String> {
-        match reviewed(self, names, &|_| false) {
+    /// read where all of them do not; `found` is what it offers, listed once.
+    fn set_review(&self, found: &[Found], names: &[String]) -> Result<SetReview, String> {
+        match reviewed_from(self, found, names, &|_| false) {
             Ok(skills) => Ok(SetReview::Review(Review {
                 source: self.source.clone(),
                 commit: self.commit.clone(),
@@ -419,7 +439,9 @@ pub fn review(plane: &Path, source: &Source, names: &[String]) -> Result<Review,
 /// **The review of installing `names` from `source` together** (#4024), at its newest commit: one
 /// review and one install for the set, or, past what one read may take, the names that fit.
 pub fn review_set(plane: &Path, source: &Source, names: &[String]) -> Result<SetReview, String> {
-    fetch(plane, source, None)?.set_review(names)
+    let fetched = fetch(plane, source, None)?;
+    let (found, _) = fetched.skills()?;
+    fetched.set_review(&found, names)
 }
 
 /// **The review of installing every skill of `source` not installed from it yet** (#4024,
@@ -430,11 +452,11 @@ pub fn review_all(plane: &Path, source: &Source) -> Result<SetReview, String> {
     let (found, _) = fetched.skills()?;
     let (locked, _) = lock::every(plane);
     let names: Vec<String> = found
-        .into_iter()
+        .iter()
         .filter(|skill| installed_at(&locked, source, &skill.name).is_empty())
-        .map(|skill| skill.name)
+        .map(|skill| skill.name.clone())
         .collect();
-    fetched.set_review(&names)
+    fetched.set_review(&found, &names)
 }
 
 /// The levels `name` is installed at from `source`, by the lockfiles' entries `locked`.

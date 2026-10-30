@@ -1616,7 +1616,7 @@ fn install(
             }
             Ok(source::SetReview::Review(review)) => Ok(review),
             Ok(source::SetReview::TooMuch(too_much)) => {
-                voice::err(esc(&too_much_text(source, &too_much)).to_string());
+                voice::err(esc(&too_much_text(&too_much)).to_string());
                 return Ok(1);
             }
             Err(why) => Err(why),
@@ -1668,16 +1668,15 @@ fn install(
 /// What `--all` says where its review is more than one read of the source may take: why, and the
 /// skills to install first, by name, so the rest follow with `--all` again (#4024). Nothing is
 /// cut from a review silently.
-fn too_much_text(source: &Source, too_much: &source::TooMuch) -> String {
+fn too_much_text(too_much: &source::TooMuch) -> String {
     if too_much.fits.is_empty() {
         return format!("{}, so nothing was reviewed.", too_much.why);
     }
     format!(
-        "{}, so nothing was reviewed. Install them in two parts: first {}, with `purlis skill \
-         install {} {}`, then the other {} with `--all` again.",
+        "{}, so nothing was reviewed. Install them in two parts: first run this command with \
+         these {} named in place of --all: {}; then run it with --all again for the other {}.",
         too_much.why,
         counted(too_much.fits.len(), "skill", "skills"),
-        source.remote.url,
         too_much.fits.join(" "),
         too_much.rest.len()
     )

@@ -656,6 +656,28 @@ describe("Install all… (#4024)", () => {
     expect(await screen.findByTestId("skill-source-page")).toBeInTheDocument();
   });
 
+  it("keeps the list as it was ticked when the person comes back from the review", async () => {
+    core({
+      answers: {
+        skill_install_set_review: (args) => setReview(args.names as string[]),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    const huge = () =>
+      within(within(screen.getByTestId("install-all-choose")).getByTestId("choose-huge")).getByRole(
+        "checkbox",
+      );
+    await within(choose).findByTestId("choose-huge");
+    await user.click(huge());
+    await user.click(within(choose).getByRole("button", { name: "Review 1 skill" }));
+    const review = await screen.findByTestId("install-all-review");
+    await user.click(within(review).getByRole("button", { name: "Cancel" }));
+    await screen.findByTestId("install-all-choose");
+    await waitFor(() => expect(huge()).not.toBeChecked());
+  });
+
   it("says Update waiting on a skill whose update waits, and sends it to Review update", async () => {
     core({ offers: [OFFER] });
     const user = userEvent.setup();

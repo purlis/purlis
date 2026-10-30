@@ -195,7 +195,7 @@ export type SourcesAt =
   | { at: "source"; source: string; label: string }
   | { at: "install"; source: string; label: string; skill: string }
   | { at: "update"; source: string; label: string; skill: string }
-  | { at: "choose"; source: string; label: string }
+  | { at: "choose"; source: string; label: string; ticked?: readonly string[] }
   | { at: "install-all"; source: string; label: string; skills: readonly string[] };
 
 /** **A source's key**: its repository and the branch read from it, which no other source shares. */

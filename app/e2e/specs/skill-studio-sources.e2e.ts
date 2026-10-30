@@ -220,10 +220,10 @@ describe("installing a skill from a skill source", function () {
     await choose.waitForExist({ timeout: 30_000 });
     const linter = await $(`[data-testid="choose-${LINTER}"]`);
     await linter.waitForExist({ timeout: 30_000 });
-    expect(await linter.$('input[type="checkbox"]').isSelected()).toBe(true);
+    expect(await linter.$(`aria/Install ${LINTER}`).isSelected()).toBe(true);
     const shipper = await $(`[data-testid="choose-${SHIPPER}"]`);
     await expect(shipper).toHaveText(/Installed/);
-    expect(await shipper.$('input[type="checkbox"]').isEnabled()).toBe(false);
+    expect(await shipper.$(`aria/Install ${SHIPPER}`).isEnabled()).toBe(false);
     await (await choose.$("button=Review 1 skill")).click();
 
     const review = await $('[data-testid="install-all-review"]');
