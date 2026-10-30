@@ -213,10 +213,13 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
             fits: names.slice(0, 1),
             rest: names.slice(1),
             why: "https://github.com/obra/superpowers holds more than 64 MiB of skills to read, the most purlis reads of one skill source at once",
+            there: [],
           };
         const skills = [TDD, DEBUGGING].filter((one) => names.includes(one.name));
         return {
           kind: "review",
+          // Those ticked that the level holds already, made there by hand (#4153).
+          there: names.filter((name) => name === "writing-plans"),
           review: {
             commit: commit("3"),
             skills,
@@ -254,8 +257,6 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
             files: [DEBUGGING.files[0]],
           },
           brought: [],
-          reserved: [],
-          refused: null,
           accepted: { commit: "8".repeat(40), skills: [] },
         };
       case "skill_deletes_cut_short":
@@ -412,6 +413,27 @@ export const InstallAllReview: Story = {
       }),
     );
     await expect(within(review).getByRole("button", { name: "Install" })).toBeVisible();
+  },
+};
+
+/** **Install all…, one ticked already there** (#4153): the level holds writing-plans, made
+ *  there by hand, so it is shown as there, its box unticked and out of reach, and left as it is. */
+export const InstallAllThere: Story = {
+  args: {
+    at: {
+      at: "install-all",
+      source: SOURCE,
+      label: SUPERPOWERS.label,
+      skills: ["test-driven-development", "writing-plans"],
+    },
+  },
+  play: async ({ canvas }) => {
+    const review = await canvas.findByTestId("install-all-review");
+    const there = await within(review).findByTestId("there-writing-plans");
+    await expect(within(there).getByRole("checkbox")).not.toBeChecked();
+    await expect(within(review).getByRole("button", { name: "Install" })).toBeVisible();
+    // The picture shows the section, below the skill being installed.
+    there.scrollIntoView({ block: "end" });
   },
 };
 

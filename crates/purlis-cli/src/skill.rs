@@ -912,12 +912,6 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
             };
             print!("{}", update_text(&update));
-            // It brings along a skill under a built-in skill's name: said before anything is
-            // asked, since accepting it is refused (#3728).
-            if let Some(why) = update.refused() {
-                voice::err(esc(&why).to_string());
-                return Ok(1);
-            }
             if !yes
                 && !asked(&format!(
                     "Update {} to {}?",
@@ -1605,16 +1599,31 @@ fn install(
         }
     };
     let review = match named {
-        Named::These(names) => source::review(root, source, names, level),
-        Named::All => match source::review_all(root, source, level) {
-            Ok(source::SetReview::Review(review)) if review.skills.is_empty() => {
-                voice::info(format!(
-                    "Every skill {} offers is installed already.",
-                    esc(&source.to_string())
-                ));
-                return Ok(0);
+        Named::These(names) => source::review(root, cx.built_in, source, names, level),
+        Named::All => match source::review_all(root, cx.built_in, source, level) {
+            Ok(source::SetReview::Review { review, there }) => {
+                // Those the level has already, made there or from another source, or a
+                // built-in's name: left as they are, and said (#4153).
+                for name in &there {
+                    voice::info(format!(
+                        "{} is there already at {level}, so it is left as it is.",
+                        esc(name)
+                    ));
+                }
+                if review.skills.is_empty() {
+                    voice::info(format!(
+                        "{} {} offers is installed already.",
+                        if there.is_empty() {
+                            "Every skill"
+                        } else {
+                            "Every other skill"
+                        },
+                        esc(&source.to_string())
+                    ));
+                    return Ok(0);
+                }
+                Ok(review)
             }
-            Ok(source::SetReview::Review(review)) => Ok(review),
             Ok(source::SetReview::TooMuch(too_much)) => {
                 voice::err(esc(&too_much_text(&too_much)).to_string());
                 return Ok(1);
@@ -1776,7 +1785,7 @@ fn review_text(review: &source::Review) -> String {
         out.push_str(&summary_text(&skill.summary, "  "));
         for name in &skill.already {
             out.push_str(&format!(
-                "  refers to {}, which is installed there already: it is left as it is\n",
+                "  refers to {}, which its chats there have already: it is left as it is\n",
                 esc(name)
             ));
         }
@@ -1850,13 +1859,8 @@ fn update_text(update: &source::UpdateReview) -> String {
         changes(&update.local_edits, &mut out);
     }
     for skill in &update.brought {
-        let reserved = if update.reserved.contains(&skill.name) {
-            ", under a built-in skill's name"
-        } else {
-            ""
-        };
         out.push_str(&format!(
-            "\nComes along: {} ({}){reserved}\n",
+            "\nComes along: {} ({})\n",
             esc(&skill.name),
             esc(&skill.description)
         ));

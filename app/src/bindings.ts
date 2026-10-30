@@ -2201,8 +2201,8 @@ export const commands = {
 	skillInstallReview: (plane: PlaneId, source: SkillSource, names: string[], level: SkillLevel) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_install_review", { plane, source, names, level })),
 	/**
 	 *  **The review of installing `names` from a source together** (#4024, Install all…): one review
-	 *  of the set into `level` and the skills they refer to that it does not hold already, or which of
-	 *  them fit one read.
+	 *  of the set into `level` and the skills they refer to that it does not hold already, those named
+	 *  that it holds already left out (#4153), or which of them fit one read.
 	 */
 	skillInstallSetReview: (plane: PlaneId, source: SkillSource, names: string[], level: SkillLevel) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_install_set_review", { plane, source, names, level })),
 	/**  **Installs what was reviewed** at `level`, with `grant` where it is a project skill. */
@@ -8148,14 +8148,18 @@ export type InstallReview = {
  *  where reading all of them is more than one read of the source may take, which of those named
  *  fit, so the window asks to install them in parts.
  */
-export type InstallSetReview = { kind: "review"; review: InstallReview } | { kind: "too-much"; 
+export type InstallSetReview = { kind: "review"; review: InstallReview; 
+/**  Those named that the level holds already (#4153): left out, and left as they are. */
+there: string[] } | { kind: "too-much"; 
 /**
  *  Those named first that fit one read, the first part; empty where the first alone
  *  does not.
  */
 fits: string[]; 
 /**  The rest of those named. */
-rest: string[]; why: string };
+rest: string[]; why: string; 
+/**  Those named that the level holds already (#4153), left out of every part. */
+there: string[] };
 
 /**
  *  What has contributed what to this window — ADR 0041's item 2, and the thing every
@@ -14414,13 +14418,6 @@ export type UpdateReview = {
 	local_edits: UpdateFile[],
 	skill: ReviewSkill,
 	brought: ReviewSkill[],
-	/**  Those of `brought` under a built-in skill's name (#3728). */
-	reserved: string[],
-	/**
-	 *  Why it cannot be taken as it is, said before Accept update: it brings along a skill under
-	 *  a built-in skill's name (#3728).
-	 */
-	refused: string | null,
 	accepted: Reviewed,
 };
 
