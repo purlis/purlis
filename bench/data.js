@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793398256910,
+  "lastUpdate": 1793399520408,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32298,6 +32298,48 @@ window.BENCHMARK_DATA = {
             "value": 101.287604,
             "unit": "ms",
             "extra": "median of 5 runs: 100.441, 100.810, 101.288, 101.553, 102.544 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1a55a6df23072b984f9eea19398f92f9b6ef9983",
+          "message": "A runner forgets the profiles no longer chosen for its pool, or removed on this Mac (#4139)\n\n* A runner forgets the profiles no longer chosen for its pool (#4060)\n\nSession protocol 1.59 adds kept_profiles: the runner names the profiles it\nkeeps for its desktop, never its own or another desktop's. As a pool's\nprofiles are shown, and as the first chat of a run starts there, the desktop\nasks and has the runner forget each one no longer chosen or no longer on this\nmachine. A pool that named none names the project's default once something is\nforgotten, and a chat's start names its profile, so another project's default\nnever has the runner forget it. Forgetting a name the runner holds of its own\nis nothing of the desktop's, so it is answered as forgotten and the pool's\nrecord still leaves it out.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66VZ1B4S05PQN85HQ9TWPVR\nPurlis-Persona: steward\n\n* A profile removed on this Mac is removed from its runners (#3849)\n\nRemoving a profile in Settings > You > Profiles has each Docker pool's runner\nthat kept it forget it, sign-in included, and takes it off each pool that\nnamed it. A runner that is away is not woken for it: it forgets the profile\nas it next links, since the name is no longer on this machine. A runner of a\npurlis before 1.52 keeps it, and the removal says so in words.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66VZ1B4S05PQN85HQ9TWPVR\nPurlis-Persona: steward\n\n* Tidy a runner's profiles without losing what is still used (#4060, #3849)\n\nReview fixes. A pool that names no profiles now names what its runner keeps\nof this machine's beside the project's default, and forgets only what this\nmachine no longer has, so no project's default and its sign-in are lost to\nanother's. No tidy forgets this machine's adopted folder or a profile a chat's\nstart readies; keep is asked of each name just before its forget. The pool is\nnamed only where it names none, under the file's lock. Runner-sent names are\nchecked as profile names and its words cut short. Removal on this Mac asks the\npools at once, notes only pools that kept the profile on a runner from 1.43 to\nbefore 1.52, and drops the name from the record of a runner that is away.\nProtocol docs say the new forget_profile answer.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66VZ1B4S05PQN85HQ9TWPVR\nPurlis-Persona: steward\n\n* Keep a removed profile's name for a runner that was away; skip cluster pools (#3849, #4060)\n\nRe-review fixes. A removal on this Mac that could not reach a pool's runner\nleaves the name on the pool's record, so its row offers Remove until a tidy\nfinds it gone there; a runner before 1.59 would otherwise keep it unseen. A\nchat's start on a cluster pool asks no tidy. A tidy never names this Mac's\nadopted folder back on a pool the person took it off. The runner's words in\nforget_profile's errors are cut short.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66VZ1B4S05PQN85HQ9TWPVR\nPurlis-Persona: steward\n\n* Session protocol: kept_profiles is 1.57, next after main's 1.56, so no minor is passed over (#4060)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66ZAVB0ZDRRTNA767ZG1T6N\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T21:49:28Z",
+          "tree_id": "755c9988d513f657db943e6ce183fa1dc233af33",
+          "url": "https://github.com/purlis/purlis/commit/1a55a6df23072b984f9eea19398f92f9b6ef9983"
+        },
+        "date": 1793399514831,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.45091250000000005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.439, 0.441, 0.451, 0.457, 0.461 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5406975,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.346, 16.448, 16.541, 16.611, 16.788 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.63958149999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.402, 101.479, 101.640, 102.125, 102.834 ms"
           }
         ]
       }
