@@ -831,14 +831,14 @@ fn lost(set: &SkillSet, folder: &Path, name: &str) -> Option<String> {
 fn references(root: &Path, built_in: Option<&Path>, project: &Project) -> Vec<String> {
     let mut said = Vec::new();
     let mut resolved = 0;
+    let env = crate::harness_plugin::Env::of(&[]);
     for persona in &project.personas {
-        if crate::skills::names_of(root, persona).is_empty() {
-            continue;
-        }
-        let env = crate::harness_plugin::Env::of(&[]);
         let missing = crate::skills::persona::unresolved(built_in, root, persona, Some(&env));
         if missing.is_empty() {
-            resolved += 1;
+            if !crate::skills::names_of(root, persona).is_empty() {
+                resolved += 1;
+            }
+            continue;
         }
         for (reference, reason) in missing {
             said.push(format!(

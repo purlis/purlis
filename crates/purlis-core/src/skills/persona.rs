@@ -43,7 +43,7 @@ pub fn brings(plane: &Path, persona: &str) -> usize {
 /// skill has is one a chat in that workspace gets, so it is none of these. With `env` `None`
 /// nothing is looked for on the machine, and no entry is said to be missing from it. What
 /// `persona lint` and the `project-skills` fix say of a persona's list, so they agree.
-pub fn unresolved(
+pub(crate) fn unresolved(
     built_in: Option<&Path>,
     plane: &Path,
     persona: &str,

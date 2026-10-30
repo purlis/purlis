@@ -5,8 +5,9 @@
 //! that names no persona, a key charter cannot read, a missing role, vault or
 //! `delegate-when`, an unfinished draft, a `bin/` file that cannot run, an MCP server that
 //! cannot be declared, a skill its charter names that no agent can invoke, an entry of its
-//! `skills:` list its chats start without (#2934), a key that only fed the retired sub-agent, and a generated sub-agent file that is still there (#1451). A
-//! port of `commands_persona.cmd_persona_lint` and `persona.lint`, `structural_errors`,
+//! `skills:` list its chats start without (#2934), a key that only fed the retired
+//! sub-agent, and a generated sub-agent file that is still there (#1451). A port of
+//! `commands_persona.cmd_persona_lint` and `persona.lint`, `structural_errors`,
 //! `key_issues`, `bin_issues` and the skill checks beneath them.
 //!
 //! [`Linter`] is the one implementation, and three readers ask it: this command, and the
@@ -67,9 +68,6 @@ const SKILLS_UNREAD: &str = "`skills:` is read only with the Skill studio previe
      › You › Previews): then a chat as this persona loads each skill it names. Until then a \
      chat loads a skill when it uses it";
 
-/// The prefix built-in skills had before the rename, which a `skills:` entry may still say.
-const OLD_PREFIX: &str = crate::skills::BUILT_IN_PREFIXES[1];
-
 /// `persona.EMPTY_REFERENCE`.
 const EMPTY_REFERENCE: &str = "is empty — remove the key, or name a persona";
 
@@ -81,7 +79,7 @@ pub struct Linter<'a> {
     home: Option<PathBuf>,
     /// Whether a variable a harness's skills are found by may be looked up in this process: off
     /// where the caller named the home ([`Linter::with_home`]).
-    process: bool,
+    read_process_env: bool,
     /// The built-in skills' directory a `purlis:` entry is checked against, where there is one.
     built_in: Option<PathBuf>,
     /// Whether the Skill studio's flag is on, where the caller said; else this machine's.
@@ -101,7 +99,7 @@ impl<'a> Linter<'a> {
             root,
             state,
             home: crate::profiles::home(),
-            process: true,
+            read_process_env: true,
             built_in: crate::skills::built_in_here(),
             studio: None,
             known: super::names(root).into_iter().collect(),
@@ -115,7 +113,7 @@ impl<'a> Linter<'a> {
     /// too, by the harnesses' default places under it, and no variable of this process is read.
     pub fn with_home(mut self, home: Option<PathBuf>) -> Self {
         self.home = home;
-        self.process = false;
+        self.read_process_env = false;
         self
     }
 
@@ -482,15 +480,11 @@ impl<'a> Linter<'a> {
                      it. Write `purlis:<name>` for a built-in skill, `<plugin>:<name>` for a \
                      plugin's, or a skill's name"
                 ))),
-                Some(Reference::BuiltIn(skill))
-                    if entry
-                        .split_once(':')
-                        .is_some_and(|(prefix, _)| prefix.trim() == OLD_PREFIX) =>
-                {
+                Some(Reference::BuiltIn(skill)) if Reference::written_old(entry) => {
                     issues.push(Issue::warn(format!(
                         "`skills:` entry '{shown}' has the old prefix: it names \
-                         `purlis:{skill}` until `purlis doctor --fix project-skills` rewrites \
-                         it so"
+                         `purlis:{skill}`, and `purlis doctor --fix project-skills` rewrites it \
+                         to that"
                     )))
                 }
                 Some(_) => {}
@@ -499,7 +493,7 @@ impl<'a> Linter<'a> {
         let env = self.home.as_ref().map(|home| crate::harness_plugin::Env {
             chat: &[],
             home: Some(home.clone()),
-            process: self.process,
+            process: self.read_process_env,
         });
         let missing = crate::skills::persona::unresolved(
             self.built_in.as_deref(),

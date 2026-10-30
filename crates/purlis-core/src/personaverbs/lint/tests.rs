@@ -697,7 +697,7 @@ fn each_skills_entry_its_chats_start_without_is_a_warning_with_its_fix() {
             (
                 Level::Warn,
                 "`skills:` entry 'charter:handoff' has the old prefix: it names \
-                 `purlis:handoff` until `purlis doctor --fix project-skills` rewrites it so"
+                 `purlis:handoff`, and `purlis doctor --fix project-skills` rewrites it to that"
             ),
             (
                 Level::Warn,
