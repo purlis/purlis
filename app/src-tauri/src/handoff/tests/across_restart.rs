@@ -249,6 +249,38 @@ fn a_task_brought_back_by_a_launch_is_as_old_as_its_dispatch_record_says() {
 }
 
 #[test]
+fn a_task_s_last_note_is_read_back_from_its_dispatch_record_after_a_restart() {
+    // #3956: the note a list row shows is in memory, and a relaunch empties it. The task put
+    // back says its last note again, by its record, and not "no note yet".
+    let (plane, host, planes, _id, held, _steward, task) = a_steward_and_a_working_task();
+    let id = record_of(&held, task).id;
+    let sent = chrono::DateTime::parse_from_rfc3339("2026-10-07T12:10:00Z")
+        .expect("a stamp")
+        .with_timezone(&chrono::Utc);
+    dispatchrecord::said(
+        held.root(),
+        &id,
+        purlis_core::dispatchtalk::Kind::Note,
+        "ticket 2 in review",
+        sent,
+    )
+    .expect("the note is kept");
+    let at_quit = quits(&held);
+
+    let (_relaunched, _planes, _again, held, _opened) =
+        launches_again(&plane, (host.clone(), planes, held), &at_quit);
+
+    let later = std::time::SystemTime::from(sent) + std::time::Duration::from_secs(240);
+    assert_eq!(
+        held.tasks().ledger().last_note(task, later),
+        Some((
+            Some("ticket 2 in review".to_owned()),
+            std::time::Duration::from_secs(240)
+        ))
+    );
+}
+
+#[test]
 fn no_brief_is_sent_twice_across_a_restart() {
     let (plane, host, planes, id, held, steward, task) = a_steward_and_a_working_task();
     // In one run, the same brief twice is two tasks on purpose.

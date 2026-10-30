@@ -283,8 +283,10 @@ pub struct Row {
     /// and purlis never asks it for a report. From the app's record of its dispatch.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub long: bool,
-    /// Its last progress note, as it sent it, where the app has one since it started (#3905):
-    /// a task's own words, which the list quotes as data.
+    /// Its last progress note, as it sent it (#3905): heard since the app started, or read
+    /// back from its dispatch record after a restart (#3956). A task's own words, which the
+    /// list quotes as data. Absent, with [`Row::noted_secs`] set, for a note whose record did
+    /// not keep its words.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_note: Option<String>,
     /// How long ago that note was sent, in seconds.
@@ -794,8 +796,9 @@ struct Task {
     /// What it said and ran, for `purlis dispatch read` (#1981).
     heard: Heard,
     /// Its last progress note to the chat that asked, and when it sent it (#3905). **In memory
-    /// only**: its dispatch record keeps every message.
-    last_note: Option<(String, SystemTime)>,
+    /// only**: its dispatch record keeps every message, and a restart reads it back from there
+    /// ([`Ledger::noted_before`], #3956). `None` words for a note whose record kept none.
+    last_note: Option<(Option<String>, SystemTime)>,
     /// When it last ran a command or sent a note (#3900).
     lately: crate::dispatchliveness::Heard,
     /// How it stands across the app's last restart (#3900).
@@ -1543,11 +1546,27 @@ impl Ledger {
     /// Task `task` sent its asking chat the progress note `text` at `now` (#3905): the one its
     /// list row shows, the latest only.
     pub fn noted(&mut self, task: u32, text: &str, now: SystemTime) {
-        self.tasks.entry(task).or_default().last_note = Some((text.to_owned(), now));
+        self.tasks.entry(task).or_default().last_note = Some((Some(text.to_owned()), now));
     }
 
-    /// Task `task`'s last progress note, and how long before `now` it was sent (#3905).
-    pub fn last_note(&self, task: u32, now: SystemTime) -> Option<(String, Duration)> {
+    /// **Task `task` sent its last note at `at`, before this app started** (#3956): as its
+    /// dispatch record keeps it, with `text` where the record kept its words. Read back when a
+    /// launch puts the task back, so its list row does not say "no note yet". A note this app
+    /// has heard since is newer, and is kept.
+    pub fn noted_before(&mut self, task: u32, text: Option<&str>, at: SystemTime) {
+        let entry = self.tasks.entry(task).or_default();
+        if entry
+            .last_note
+            .as_ref()
+            .is_none_or(|(_, heard)| *heard < at)
+        {
+            entry.last_note = Some((text.map(str::to_owned), at));
+        }
+    }
+
+    /// Task `task`'s last progress note, where its words are known, and how long before `now`
+    /// it was sent (#3905).
+    pub fn last_note(&self, task: u32, now: SystemTime) -> Option<(Option<String>, Duration)> {
         let (text, at) = self.tasks.get(&task)?.last_note.as_ref()?;
         Some((text.clone(), now.duration_since(*at).unwrap_or_default()))
     }
@@ -2207,7 +2226,13 @@ pub fn list_text(rows: &[Row]) -> String {
                         NOTE_SHOWN_AT_MOST
                     )
                 ),
-                (None, _) => format!(" · {LONG_RUNNING}, no note yet"),
+                // Read back from its record after a restart, which did not keep its words
+                // (#3956).
+                (None, Some(secs)) => format!(
+                    " · {LONG_RUNNING}, last note {} ago (its words were not kept)",
+                    age_word(Duration::from_secs(secs))
+                ),
+                (None, None) => format!(" · {LONG_RUNNING}, no note yet"),
             }
         } else {
             String::new()

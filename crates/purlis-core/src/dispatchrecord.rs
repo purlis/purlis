@@ -878,6 +878,34 @@ pub fn said_by(
     Ok(taken)
 }
 
+/// A task's last progress note as its dispatch record keeps it (#3956): when it was sent, and
+/// its words where the record kept them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LastNote {
+    pub at: chrono::DateTime<chrono::Utc>,
+    /// `None` where the record did not keep this note's words: past what it keeps ([`cut`],
+    /// [`MOST_SAID_BYTES`]), left out as a secret ([`Said::left_out`]), or expired since.
+    pub text: Option<String>,
+}
+
+/// **The last note `record`'s task sent, as a restart finds it** (#3956): its time from
+/// [`Record::last_note`], which moves with every note, and its words from the message kept at
+/// that very time. An older note's words are never read as the newer one's.
+pub fn last_note_of(record: &Record) -> Option<LastNote> {
+    let stamp = record.last_note.as_deref()?;
+    let at = chrono::DateTime::parse_from_rfc3339(stamp)
+        .ok()?
+        .with_timezone(&chrono::Utc);
+    let text = record
+        .talk
+        .iter()
+        .rev()
+        .find(|said| said.kind == crate::dispatchtalk::Kind::Note && said.at == stamp)
+        .filter(|said| !said.left_out && !said.text.is_empty())
+        .map(|said| said.text.clone());
+    Some(LastNote { at, text })
+}
+
 /// **The task of dispatch `id` ended before it was handed the person's answer** (#1496): the
 /// last answer the person gave on it says so from now on ([`Said::unread`]). Whether anything
 /// changed: nothing does where the record kept no such answer.

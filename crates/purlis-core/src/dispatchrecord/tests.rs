@@ -2891,3 +2891,90 @@ fn a_task_s_last_note_is_dated_on_its_record_whether_or_not_its_words_are_kept()
         Some("2026-10-07T12:40:00+00:00")
     );
 }
+
+#[test]
+fn a_task_s_last_note_reads_from_its_record_with_its_words_where_they_were_kept() {
+    // #3956: what a long-running task's list row says after a restart, from its record.
+    let (_d, root) = project();
+    let opened = open(&root, a_handoff(), at("2026-10-07T12:00:00Z")).unwrap();
+    assert_eq!(last_note_of(&read(&root, &opened.id).unwrap()), None);
+
+    let note = |text: &str, when: &str| {
+        said(
+            &root,
+            &opened.id,
+            crate::dispatchtalk::Kind::Note,
+            text,
+            at(when),
+        )
+        .unwrap();
+    };
+    note("first pass done", "2026-10-07T12:05:00Z");
+    note("halfway", "2026-10-07T12:10:00Z");
+    // A question after it is no note: the note before it is still the last.
+    said(
+        &root,
+        &opened.id,
+        crate::dispatchtalk::Kind::Question,
+        "which cluster?",
+        at("2026-10-07T12:20:00Z"),
+    )
+    .unwrap();
+    assert_eq!(
+        last_note_of(&read(&root, &opened.id).unwrap()),
+        Some(LastNote {
+            at: at("2026-10-07T12:10:00Z"),
+            text: Some("halfway".to_owned()),
+        })
+    );
+
+    // A newer note whose words the record did not keep (past what it keeps): the time is
+    // still read, and the older note's words are never taken for the newer one's.
+    let mut record = read(&root, &opened.id).unwrap();
+    record.last_note = Some("2026-10-07T12:40:00+00:00".to_owned());
+    assert_eq!(
+        last_note_of(&record),
+        Some(LastNote {
+            at: at("2026-10-07T12:40:00Z"),
+            text: None,
+        })
+    );
+    // Words expired since its dispatch ended are no words.
+    let mut expired = read(&root, &opened.id).unwrap();
+    for said in &mut expired.talk {
+        said.text.clear();
+    }
+    assert_eq!(
+        last_note_of(&expired),
+        Some(LastNote {
+            at: at("2026-10-07T12:10:00Z"),
+            text: None,
+        })
+    );
+}
+
+#[test]
+fn a_note_whose_words_were_left_out_as_a_secret_reads_with_no_words() {
+    let (_d, root) = project();
+    let opened = open(&root, a_handoff(), at("2026-10-07T12:00:00Z")).unwrap();
+    said(
+        &root,
+        &opened.id,
+        crate::dispatchtalk::Kind::Note,
+        &format!("token {}{}", "ghp_", "0123456789abcdefghijABCDEFGHIJ012345"),
+        at("2026-10-07T12:10:00Z"),
+    )
+    .unwrap();
+    let record = read(&root, &opened.id).unwrap();
+    assert!(
+        record.talk.last().unwrap().left_out,
+        "the words are not kept"
+    );
+    assert_eq!(
+        last_note_of(&record),
+        Some(LastNote {
+            at: at("2026-10-07T12:10:00Z"),
+            text: None,
+        })
+    );
+}

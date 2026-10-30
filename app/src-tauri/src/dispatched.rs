@@ -1919,7 +1919,7 @@ fn list(held: &Held, asker: u32) -> Vec<Row> {
                 finished: false,
                 // A long-running task, and its last note (#3905).
                 long: from.long,
-                last_note: last_note.as_ref().map(|(text, _)| text.clone()),
+                last_note: last_note.as_ref().and_then(|(text, _)| text.clone()),
                 noted_secs: last_note.map(|(_, ago)| ago.as_secs()),
                 liveness: Some(ledger.liveness(listed.session, running, now)),
             })
@@ -2040,16 +2040,12 @@ pub fn brought_back(
     let mut ledger = held.tasks().ledger();
     ledger.brought_back(task, record.map(|record| record.started.as_str()), restart);
     // The last note it sent is on its record, which a restart keeps (#3900): it was heard from
-    // then, though not by this app. What it ran is kept in memory only.
-    if let Some(at) = record
-        .and_then(|record| record.last_note.as_deref())
-        .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
-    {
-        ledger.heard_doing(
-            task,
-            purlis_core::dispatchliveness::Did::SentANote,
-            SystemTime::from(at),
-        );
+    // then, though not by this app. What it ran is kept in memory only. And its list row says
+    // that note again, with its words where the record kept them (#3956).
+    if let Some(note) = record.and_then(purlis_core::dispatchrecord::last_note_of) {
+        let at = SystemTime::from(note.at);
+        ledger.heard_doing(task, purlis_core::dispatchliveness::Did::SentANote, at);
+        ledger.noted_before(task, note.text.as_deref(), at);
     }
 }
 
