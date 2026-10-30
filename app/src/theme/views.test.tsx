@@ -1592,8 +1592,13 @@ const STATES: State[] = [
     drawn: /Who gets it/,
   },
   {
-    name: "a grade's scorecard, each chat one click away (SK-59)",
-    view: { from: null, view: "skill-grade", key: "deploy@01GRADE" },
+    name: "a grade's scorecard page in the studio, each chat one click away (SK-59, S6)",
+    view: SKILL_STUDIO_VIEW,
+    before: () =>
+      openViewAt(STUDIO_HISTORY, {
+        ...skillPageAt("grades"),
+        grading: { at: "scorecard", grade: "01GRADE" },
+      }),
     answers: {
       skill_grade_scorecard: {
         grade: "01GRADE",
@@ -1603,6 +1608,12 @@ const STATES: State[] = [
         ran_on: "Claude Code · claude-sonnet-4-5",
         ended: "Finished",
         delta: 33,
+        against: null,
+        delta_without: null,
+        after_edit: false,
+        outcome: "graded",
+        arms: { with: 100, without: 0, previous: null },
+        spent: { chats: 5, tokens: 40000, cost_usd: 0.4, limit_usd: 3 },
         asked: 1,
         tests: [
           {
@@ -1636,8 +1647,13 @@ const STATES: State[] = [
     drawn: /1 chat asked you something/,
   },
   {
-    name: "a grade's chat this machine did not keep (SK-59)",
-    view: { from: null, view: "skill-grade-chat", key: "deploy@01GRADE@01B" },
+    name: "a grade's chat this machine did not keep, on its page in the studio (SK-59, S6)",
+    view: SKILL_STUDIO_VIEW,
+    before: () =>
+      openViewAt(STUDIO_HISTORY, {
+        ...skillPageAt("grades"),
+        grading: { at: "chat", grade: "01GRADE", chat: "01B" },
+      }),
     answers: {
       skill_grade_chat: new Error("purlis keeps a grade's chats on the machine that ran it."),
     },

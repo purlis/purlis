@@ -863,6 +863,12 @@ describe("a todo's box and a done todo (R131, ADR 0106)", () => {
     const panel = within(screen.getByTestId("panel-todos"));
     const done = panel.getByTestId("panel-row-done/20260301-090000-ship");
     expect(done).toHaveClass("is-checked");
+    // Its words step back to the quiet tier, the meta's, by their class (#3917): a colour App.css
+    // set on them lost to the body role's later layer, and only the strike drew.
+    wears(done.querySelector(".row-text"), "meta", "a done todo's words");
+    expect(drawnWith(done.querySelector(".row-text") as Element, "text-decoration")).toBe(
+      "line-through",
+    );
     expect(panel.getByTestId("panel-row-20260302-091400-review")).not.toHaveClass("is-checked");
     // Under a group of its own, after the days the open ones are under.
     const groups = panel.getAllByRole("rowgroup");

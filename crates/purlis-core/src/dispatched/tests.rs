@@ -3,6 +3,8 @@
 
 use super::*;
 use crate::active::Place;
+use crate::dispatchliveness::Did;
+use crate::dispatchliveness::Restart::{KeptRunning, StartedAgain, StartedHere};
 use crate::handback::Task as Reported;
 
 const ASKER: u32 = 3;
@@ -176,6 +178,7 @@ fn a_task_the_person_started_is_listed_and_said_to_be_theirs() {
         last_note: None,
         noted_secs: None,
         finished: false,
+        liveness: None,
     };
     let listed = list_text(&[row(8, false), row(9, true)]);
     assert_eq!(
@@ -978,6 +981,7 @@ fn a_long_running_task_is_listed_as_that_with_its_last_note_quoted() {
         long: true,
         last_note: last_note.map(str::to_owned),
         noted_secs,
+        liveness: None,
     };
     let listed = list_text(&[row(Some("ticket 2 merged\nnow ticket 3"), Some(240))]);
     assert!(
@@ -1021,6 +1025,7 @@ fn the_list_says_persona_task_where_state_and_age_for_each() {
             last_note: None,
             noted_secs: None,
             finished: false,
+            liveness: None,
         },
         Row {
             chat: 12,
@@ -1036,6 +1041,7 @@ fn the_list_says_persona_task_where_state_and_age_for_each() {
             last_note: None,
             noted_secs: None,
             finished: false,
+            liveness: None,
         },
     ];
 
@@ -1072,6 +1078,7 @@ fn the_list_says_persona_task_where_state_and_age_for_each() {
         last_note: None,
         noted_secs: None,
         finished: false,
+        liveness: None,
     };
     let listed = list_text(std::slice::from_ref(&on_a_branch));
     assert!(
@@ -1115,17 +1122,79 @@ fn a_task_brought_back_by_a_launch_keeps_the_age_its_dispatch_record_says() {
     // conversation is as old as its dispatch's record says it is.
     let mut ledger = Ledger::default();
     let then = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
-    ledger.brought_back(TASK, "1970-01-01T00:16:40+00:00");
+    ledger.brought_back(TASK, Some("1970-01-01T00:16:40+00:00"), StartedAgain);
     assert_eq!(
         ledger.age(TASK, then + Duration::from_secs(90)),
         Some(Duration::from_secs(90))
     );
     // A start this launch saw is not moved by a record.
-    ledger.brought_back(TASK, "1970-01-01T00:00:00+00:00");
+    ledger.brought_back(TASK, Some("1970-01-01T00:00:00+00:00"), StartedAgain);
     assert_eq!(ledger.age(TASK, then), Some(Duration::ZERO));
     // A stamp that does not read says no age, never a made-up one.
-    ledger.brought_back(12, "yesterday");
+    ledger.brought_back(12, Some("yesterday"), StartedAgain);
     assert_eq!(ledger.age(12, then), None);
+}
+
+#[test]
+fn a_task_says_whether_it_lives_how_it_came_back_and_what_it_did_last() {
+    // #3900: after a restart a coordinator took a live task for a dead one.
+    let mut ledger = Ledger::default();
+    let at = |secs| SystemTime::UNIX_EPOCH + Duration::from_secs(secs);
+    ledger.brought_back(TASK, None, KeptRunning);
+    ledger.heard_doing(TASK, Did::RanACommand, at(100));
+    ledger.heard_doing(TASK, Did::SentANote, at(160));
+    let live = ledger.liveness(TASK, true, at(220));
+    assert_eq!(
+        live.said(),
+        "its program is running, last sent a note 1m ago, it kept running across purlis's \
+         restart"
+    );
+    // A chat that is no task here keeps nothing heard.
+    ledger.heard_doing(12, Did::RanACommand, at(100));
+    assert_eq!(ledger.liveness(12, true, at(220)).heard_secs, None);
+    // And a task this run started says no restart.
+    ledger.started(13, at(0));
+    assert_eq!(ledger.liveness(13, false, at(1)).restart, StartedHere);
+}
+
+#[test]
+fn a_listed_row_says_its_liveness_after_its_age_and_beside_its_long_running_note() {
+    let row = |long: bool| Row {
+        chat: 7,
+        name: "forms".to_owned(),
+        persona: Some("builder".to_owned()),
+        place: "alpha".to_owned(),
+        state: State::Running.say(),
+        age_secs: None,
+        by_person: false,
+        branch: None,
+        branch_stands: None,
+        long,
+        last_note: long.then(|| "ticket 2 merged".to_owned()),
+        noted_secs: long.then_some(60),
+        finished: false,
+        liveness: Some(crate::dispatchliveness::Liveness {
+            running: true,
+            heard_secs: Some(120),
+            did: Some(Did::RanACommand),
+            restart: StartedAgain,
+        }),
+    };
+    assert_eq!(
+        list_text(&[row(false)]),
+        "1 task dispatched by this chat:\n- chat 7 · 'forms' · builder · workspace 'alpha' \
+         · running · started before this app did · its program is running, last ran a \
+         command 2m ago, purlis's restart ended it and started it again on its \
+         conversation"
+    );
+    // #3905's long-running note and #3900's liveness both show, neither in the other's place.
+    assert_eq!(
+        list_text(&[row(true)]),
+        "1 task dispatched by this chat:\n- chat 7 · 'forms' · builder · workspace 'alpha' \
+         · running · long-running, last note 1m ago: 'ticket 2 merged' · started before this \
+         app did · its program is running, last ran a command 2m ago, purlis's restart ended \
+         it and started it again on its conversation"
+    );
 }
 
 // ----- cancelling ----------------------------------------------------------------------
@@ -1677,6 +1746,7 @@ fn a_finished_task_is_listed_as_finished_with_or_without_a_number() {
         last_note: None,
         noted_secs: None,
         finished: true,
+        liveness: None,
     };
     assert_eq!(
         list_text(&[finished(9), finished(0)]),

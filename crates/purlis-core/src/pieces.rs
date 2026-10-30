@@ -82,6 +82,10 @@ impl Event {
 pub struct Who {
     pub session: Option<String>,
     pub persona: Option<String>,
+    /// The chat's stable id (ADR 0066), where a chat speaks: what a branch folder's claim names
+    /// its one live writer by (#3901), since a chat's number is dealt again across launches.
+    /// None for the person, the window, and a line from before it was kept.
+    pub chat: Option<String>,
     /// The filename-safe host ([`crate::dispatch::host`]): the label a line carries as `host`.
     pub host: String,
     /// The name this device's log is filed under ([`crate::machine::log_name`]): its device
@@ -98,8 +102,17 @@ impl Who {
         Who {
             session,
             persona,
+            chat: None,
             log: crate::machine::log_name(config, &host),
             host,
+        }
+    }
+
+    /// This, speaking for the chat with the stable id `chat` (#3901).
+    pub fn for_chat(self, chat: Option<String>) -> Who {
+        Who {
+            chat: chat.filter(|id| !id.is_empty()),
+            ..self
         }
     }
 
@@ -143,6 +156,10 @@ pub fn record(
     line.insert("persona".into(), text(&who.persona));
     if let Some(reason) = reason.filter(|r| !r.is_empty()) {
         line.insert("reason".into(), Value::String(reason.into()));
+    }
+    // Only where a chat speaks (#3901): a line of the person's or the window's is as it was.
+    if let Some(chat) = &who.chat {
+        line.insert("chat".into(), Value::String(chat.clone()));
     }
     let path = log_path(plane, ws, who.file());
     #[cfg(unix)]
