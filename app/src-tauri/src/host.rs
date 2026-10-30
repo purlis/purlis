@@ -155,6 +155,30 @@ pub struct Moving {
     pub conversation: String,
 }
 
+/// **What came back with chats moved off a runner** (#2048, #3811): what the person is to look
+/// at before a tool here runs it, and each clone the runner's chat made, made here whole from
+/// its work.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CameBack {
+    /// Every file that came which a tool here runs or reads as its settings, every one a save
+    /// would refuse, and every link, by its path in the project (the person's ruling of
+    /// 2026-10-27).
+    pub watch: Vec<String>,
+    /// Each clone made here fresh from the runner's chat's work (#3811): every file of it was
+    /// made there (#3990).
+    pub made: Vec<MadeHere>,
+}
+
+/// **A clone made here fresh from a runner's chat's work** (#3811, #3985).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MadeHere {
+    /// Its folder in the project.
+    pub clone: String,
+    /// The `origin` the runner's clone had, offered to the person and never written into it, or
+    /// why none is.
+    pub remote: Result<String, String>,
+}
+
 /// What a host that moves no chat says.
 pub const MOVES_NO_CHAT: &str = "chats do not move to or from where this one runs";
 
@@ -325,8 +349,8 @@ pub trait SessionHost: Send + Sync {
     /// their pause: the chats of one workspace, which move together (#3453). Each clone's work
     /// tree here is taken over onto the runner's once, and each conversation kept in its
     /// profile's harness folder here. Answers what came back that the person is to look at
-    /// before a tool here runs it, by its path in the project.
-    fn move_out(&self, pool: &str, chats: &[Moving]) -> Result<Vec<String>, String> {
+    /// before a tool here runs it.
+    fn move_out(&self, pool: &str, chats: &[Moving]) -> Result<CameBack, String> {
         let _ = (pool, chats);
         Err(MOVES_NO_CHAT.to_owned())
     }
@@ -1008,11 +1032,11 @@ pub(crate) mod pretend {
             }
             Ok(())
         }
-        fn move_out(&self, pool: &str, chats: &[super::Moving]) -> Result<Vec<String>, String> {
+        fn move_out(&self, pool: &str, chats: &[super::Moving]) -> Result<super::CameBack, String> {
             for chat in chats {
                 lock(&self.seen.moved).push(("out", pool.to_owned(), chat.workspace.clone()));
             }
-            Ok(Vec::new())
+            Ok(super::CameBack::default())
         }
         fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {
             let now = self.seen.fetching.fetch_add(1, Ordering::SeqCst) + 1;
