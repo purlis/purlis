@@ -3365,7 +3365,7 @@ impl Listener {
 
     /// Hears `serve` lines alone, each handed to `serve`; every other line is heard as
     /// [`Self::each`] hears it. For the tests of a server dialling in (#3316).
-    #[cfg(test)]
+    #[cfg(all(test, target_os = "macos"))]
     pub(crate) fn serving_only(self, serve: Serves) -> Reading {
         let mut hearing = Hearing {
             each: Box::new(|_| Ok(())),
