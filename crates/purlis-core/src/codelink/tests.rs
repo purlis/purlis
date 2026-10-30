@@ -470,18 +470,19 @@ fn a_repositorys_folder_is_the_projects_own_or_a_workspaces_repo_reached_through
 }
 
 /// **The clones a runner holds in a workspace** (1.51, #3811): each repository's folder in it,
-/// by its name, and nothing reached through a link, nothing that is not a repository and no name
-/// a repository's folder may not have.
+/// by its name, and nothing reached through a link, nothing that is not a repository, no name a
+/// repository's folder may not have and none the workspace keeps for its own.
 #[test]
 fn a_runner_names_the_clones_it_holds_in_a_workspace_and_none_through_a_link() {
     let dir = tempfile::tempdir().unwrap();
     let project = dir.path().canonicalize().unwrap().join("project");
     let workspace = project.join("workspaces/app");
     assert_eq!(clones_in(&project, "app").unwrap(), Vec::<String>::new());
-    for repo in ["web", "api", "notes", ".hidden"] {
+    for repo in ["web", "api", "notes", ".hidden", "memory", "Todos"] {
         std::fs::create_dir_all(workspace.join(repo)).unwrap();
     }
-    for repo in ["web", "api", ".hidden"] {
+    // A repository at a name the workspace keeps for its own is never a clone.
+    for repo in ["web", "api", ".hidden", "memory", "Todos"] {
         std::fs::create_dir_all(workspace.join(repo).join(".git")).unwrap();
     }
     std::fs::write(workspace.join("README"), "a file\n").unwrap();

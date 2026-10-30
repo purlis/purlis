@@ -338,6 +338,14 @@ fn runs_here_names_what_a_local_tool_runs_or_reads_as_its_settings() {
         "Makefile",
         ".husky/pre-commit",
         "build.rs",
+        ".cargo/config.toml",
+        "rust-toolchain.toml",
+        "crates/core/Cargo.toml",
+        ".yarnrc.yml",
+        ".github/workflows/ci.yml",
+        ".gitattributes",
+        "pyproject.toml",
+        "gradlew",
     ] {
         assert!(runs_here(path), "{path}");
     }
@@ -478,6 +486,20 @@ fn a_clone_the_runner_made_is_never_made_over_a_folder_here() {
     assert!(matches!(came, Err(Refused::NotAllowed(_))), "{came:?}");
     assert_eq!(read(&here, "mine.txt").as_deref(), Some("mine\n"));
     assert!(!here.join(".git").exists());
+
+    // Nor at a name the workspace keeps for its own, whatever the runner's work.
+    let into = world.scratch("own").join("work.bundle");
+    let (heads, _) = give_work(&world.runner, &world.scratch("giveown"), &[], &into).unwrap();
+    let own = here.with_file_name("memory");
+    let refused = take_work_fresh(&own, "builds", Some(&into), &heads);
+    assert!(
+        matches!(refused, Err(Refused::NotAllowed(_))),
+        "{refused:?}"
+    );
+    assert!(
+        !own.exists(),
+        "no memory folder is made from the runner's work"
+    );
 
     // And where the runner's work does not come, no folder is left: here, commits nothing
     // carried.

@@ -275,21 +275,29 @@ fn move_tree(
 /// what a person looks at before running anything where a chat's work came back from another
 /// machine (the person's ruling of 2026-10-27). Direnv's `.envrc`, the harnesses' own folders and
 /// settings (`.claude/`, `.codex/`, `.cursor/`, `.mcp.json`, `opencode.json`), editors' workspace
-/// settings (`.vscode/`, `.idea/`), git hook managers (`.husky/`, `lefthook.yml`,
-/// `.pre-commit-config.yaml`), dev containers, and the files a build runs: `package.json` (its
-/// scripts), `Makefile`, `justfile`, `Taskfile.yml`, `build.rs`.
+/// settings (`.vscode/`, `.idea/`, `.zed/`, `.nvim.lua`), git hook managers (`.husky/`,
+/// `lefthook.yml`, `.pre-commit-config.yaml`), what git itself reads from the tree
+/// (`.gitattributes`, `.gitmodules`, `.lfsconfig`), dev containers and environments (`mise.toml`,
+/// `flake.nix`), CI workflows, and the files a build or a toolchain runs: `package.json` (its
+/// scripts), `.yarnrc.yml`, `Makefile`, `justfile`, `Taskfile.yml`, `Cargo.toml`, `build.rs`,
+/// `.cargo/`, `rust-toolchain.toml`, `pyproject.toml`, `setup.py`, Gradle's and Maven's.
 pub fn runs_here(path: &str) -> bool {
-    const FOLDERS: [&str; 8] = [
+    const FOLDERS: [&str; 13] = [
         ".claude/",
         ".codex/",
         ".cursor/",
         ".vscode/",
         ".idea/",
+        ".zed/",
         ".husky/",
         ".devcontainer/",
         ".githooks/",
+        ".cargo/",
+        ".mvn/",
+        ".gemini/",
+        ".github/workflows/",
     ];
-    const NAMES: [&str; 14] = [
+    const NAMES: [&str; 35] = [
         ".envrc",
         ".mcp.json",
         "opencode.json",
@@ -304,6 +312,27 @@ pub fn runs_here(path: &str) -> bool {
         "build.rs",
         ".npmrc",
         ".tool-versions",
+        "cargo.toml",
+        "rust-toolchain",
+        "rust-toolchain.toml",
+        ".yarnrc.yml",
+        ".pnpmfile.cjs",
+        "mise.toml",
+        ".mise.toml",
+        "flake.nix",
+        "shell.nix",
+        "pyproject.toml",
+        "setup.py",
+        "gradlew",
+        "build.gradle",
+        "build.gradle.kts",
+        "settings.gradle",
+        "settings.gradle.kts",
+        ".gitattributes",
+        ".gitmodules",
+        ".lfsconfig",
+        ".nvim.lua",
+        ".exrc",
     ];
     let lower = path.to_ascii_lowercase();
     let name = lower.rsplit('/').next().unwrap_or(&lower);
@@ -316,9 +345,11 @@ pub fn runs_here(path: &str) -> bool {
 /// **What came onto `repo`'s work tree, moving it from tree `from` to tree `to`, that the person
 /// is to look at** (the person's ruling of 2026-10-27): every changed or new file a local tool
 /// runs ([`runs_here`]), every one a save to the forge refuses
-/// ([`crate::reposave::refused_as`]), and every link, which may lead out of the clone. By path.
+/// ([`crate::reposave::refused_as`]), and every link, which may lead out of the clone. By path;
+/// the whole clone, an empty path, where what changed could not be listed, so nothing is ever
+/// left unnamed.
 fn to_watch(repo: &Path, from: &str, to: &str) -> Vec<String> {
-    let Ok(changed) = run(
+    let Some(changed) = run(
         repo,
         &[
             "diff-tree",
@@ -330,8 +361,10 @@ fn to_watch(repo: &Path, from: &str, to: &str) -> Vec<String> {
             from,
             to,
         ],
-    ) else {
-        return Vec::new();
+    )
+    .ok()
+    .filter(|ran| ran.ok()) else {
+        return vec![String::new()];
     };
     let mut watch = Vec::new();
     let mut fields = changed.out.split('\0');
@@ -615,8 +648,10 @@ fn work_named(heads: &[Ref]) -> Result<(String, Ref, Ref, Vec<Ref>), Refused> {
 /// attribute read, no submodule reached, no hook run, and git writes no path through a link.
 /// What came is what both ends agree on after. Answers what came that the person is to look
 /// at, every file of it a local tool runs and every link ([`to_watch`] from the empty tree).
-/// Refused where anything is at `repo` already, which is never written into; a clone that does
-/// not come leaves nothing at `repo`. No remote of the runner's comes with it.
+/// Refused where anything is at `repo` already, which is never written into, where its folder
+/// is not a folder reached through no link, and at a name the workspace keeps for its own
+/// ([`crate::contain::workspace_keeps`]); a clone that does not come leaves nothing at `repo`.
+/// No remote of the runner's comes with it.
 pub fn take_work_fresh(
     repo: &Path,
     pool: &str,
@@ -624,11 +659,31 @@ pub fn take_work_fresh(
     heads: &[Ref],
 ) -> Result<Vec<String>, Refused> {
     let (branch, head, snapshot, branches) = work_named(heads)?;
-    if std::fs::symlink_metadata(repo).is_ok() {
-        return Err(not_allowed(format!(
-            "{} is here already, so the runner's clone of it was not made here",
+    let not_made = |why: &str| {
+        not_allowed(format!(
+            "{} {why}, so the runner's clone of it was not made here",
             repo.display()
-        )));
+        ))
+    };
+    let name = repo
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    if !crate::contain::repo_name_ok(name) || crate::contain::workspace_keeps(name) {
+        return Err(not_made("is not a name a clone may have"));
+    }
+    let parent = repo.parent().ok_or_else(|| not_made("has no folder"))?;
+    if !std::fs::symlink_metadata(parent).is_ok_and(|meta| meta.is_dir()) {
+        return Err(not_made("is not in a folder here"));
+    }
+    // Made, or refused where anything is there already: the folder removed below is only ever
+    // the one made here.
+    if let Err(why) = std::fs::create_dir(repo) {
+        return Err(if why.kind() == std::io::ErrorKind::AlreadyExists {
+            not_made("is here already")
+        } else {
+            Refused::Git(format!("{} could not be made: {why}", repo.display()))
+        });
     }
     let made = super::made(repo).and_then(|()| {
         fetch_incoming(repo, bundle, heads)?;
