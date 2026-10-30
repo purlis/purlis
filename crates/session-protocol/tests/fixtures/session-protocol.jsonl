@@ -184,3 +184,4 @@
 {"call":{"id":173,"command":"clones_of","project":"01J9PRJCT00000000000000000","workspace":"app"}}
 {"reply":{"re":173,"ok":{"clones":{"repos":["api","web"]}}}}
 {"call":{"id":174,"command":"forget_profile","name":"work"}}
+{"reply":{"re":172,"ok":{"profile_kept":{"standing":"fetching"}}}}

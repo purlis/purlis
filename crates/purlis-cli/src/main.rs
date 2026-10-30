@@ -4172,6 +4172,11 @@ fn profile_sign_in(
                 );
                 return ExitCode::FAILURE;
             }
+            Some(sign_in::Standing::Fetching) => format!(
+                "its harness is still being fetched on {here}, so it cannot yet say whether '{}' \
+                 is signed in; purlis profile sign-in {} signs it in",
+                record.name, record.name
+            ),
             Some(sign_in::Standing::CannotTell) => format!(
                 "its harness cannot tell whether '{}' is signed in on {here}; a chat on it \
                  starts, and purlis profile sign-in {} signs it in",

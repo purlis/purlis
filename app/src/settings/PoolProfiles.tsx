@@ -3,7 +3,13 @@
 
 import { useEffect, useState } from "react";
 import type { PoolProfileRow, PoolProfiles as PoolProfilesAnswered } from "../bindings";
-import { addProfileToPool, askProfiles, removeProfileFromPool, usePools } from "../pools";
+import {
+  ASK_AGAIN_WHILE_FETCHING_MS,
+  addProfileToPool,
+  askProfiles,
+  removeProfileFromPool,
+  usePools,
+} from "../pools";
 import { Button } from "../ui/button/Button";
 import { Menu, MenuItem, MenuTrigger } from "../ui/menu/Menu";
 import { askProfileSignIn } from "./links";
@@ -20,6 +26,8 @@ export function standingOnPool(pool: string, row: PoolProfileRow): string {
       return `Signed in on pool ${pool}.`;
     case "signed-out":
       return `Not signed in on pool ${pool}: a chat on it does not start there until it is.`;
+    case "fetching":
+      return `Fetching ${row.harness} for this runner…`;
     default:
       return `${row.harness} cannot say whether it is signed in on pool ${pool}.`;
   }
@@ -50,6 +58,20 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   useEffect(() => {
     if (asked === undefined) void askProfiles(pool, plane);
   }, [pool, plane, asked]);
+  // A runner fetching a profile's harness answers once it is fetched: asked again until then,
+  // keeping the rows shown (#4008).
+  const fetching =
+    typeof asked === "object" &&
+    "kept" in asked &&
+    asked.kept.some((row) => row.standing === "fetching");
+  useEffect(() => {
+    if (!fetching) return;
+    const timer = setTimeout(
+      () => void askProfiles(pool, plane, { quietly: true }),
+      ASK_AGAIN_WHILE_FETCHING_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [pool, plane, asked, fetching]);
   const rows = signing !== undefined && heldRows !== undefined ? heldRows : asked;
   if (rows === undefined || rows === "asking") {
     return <p className="ui-setting-help">Asking the runner about this machine&apos;s profiles…</p>;
