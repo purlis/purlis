@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Fragment, useEffect, useState } from "react";
-import { ownWorkOf, stateOf, useChatsHere, useChatsSelect } from "./chatState";
+import { atAPause, useChatsHere, useChatsSelect } from "./chatState";
 import { commands, type PlaneId, type RestartEnds } from "./bindings";
 import { inertly } from "./sandboxBlocks";
 
@@ -101,9 +101,6 @@ export function RestartEndsLine({
   chat?: string;
 }) {
   const ends = useRestartEnds(plane, session, true);
-  const now = useChatsSelect(
-    useChatsHere(),
-    (states) => stateOf(states, session) === "waiting" && ownWorkOf(states, session) === undefined,
-  );
+  const now = useChatsSelect(useChatsHere(), (states) => atAPause(states, session));
   return <RestartEndsSaid ends={ends} chat={chat} now={now} />;
 }

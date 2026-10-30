@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { ChatMove, PoolsShown } from "./bindings";
-import type { State } from "./chatState";
+import { nothingKnown, type ChatStates, type State } from "./chatState";
 import {
   chatMovesOf,
   heardMove,
@@ -32,26 +32,21 @@ describe("Move to runner and Move here (#2048)", () => {
       3: { ...ready(3), stage: "preparing" },
       4: { ...ready(4), stage: "failed", why: "the runner did not answer" },
     };
-    const states: Record<number, State> = {
-      1: "waiting",
-      2: "running",
-      3: "waiting",
-      4: "waiting",
+    const states: ChatStates = {
+      ...nothingKnown,
+      bySession: { 1: "waiting", 2: "running", 3: "waiting", 4: "waiting" },
     };
-    expect(
-      movesDue(
-        moves,
-        (session) => states[session] ?? "unknown",
-        () => false,
-      ),
-    ).toEqual([1]);
+    expect(movesDue(moves, states)).toEqual([1]);
   });
 
   it("waits for the work of a chat waiting on its own work, which a move would cut off (#3887)", () => {
     const moves = { 1: ready(1), 2: ready(2) };
-    const waiting = () => "waiting" as const;
-    expect(movesDue(moves, waiting, (session) => session === 1)).toEqual([2]);
-    expect(movesDue(moves, waiting, () => false)).toEqual([1, 2]);
+    const waiting: Record<number, State> = { 1: "waiting", 2: "waiting" };
+    const monitor = { helpers: 0, workflows: 0, monitors: 1, shells: 0 };
+    expect(
+      movesDue(moves, { ...nothingKnown, bySession: waiting, ownWork: { 1: monitor } }),
+    ).toEqual([2]);
+    expect(movesDue(moves, { ...nothingKnown, bySession: waiting })).toEqual([1, 2]);
   });
 
   it("offers Move here on a runner, one row per pool here, and nothing for a shell", () => {

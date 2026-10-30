@@ -760,8 +760,9 @@ impl crate::planes::Held {
     /// move, their workspace's chats run there from now on, and a new run of each starts there
     /// on its conversation in its place; the runs they leave then end. Not yet (`None`)
     /// mid-turn (waiting on work of its own is mid-turn, #3887), while one waits on the person,
-    /// while the person stops one, or while the move is prepared. A switch that fails leaves every one of them running where it was, and its move
-    /// says why. Answers each run left and the run that took its place.
+    /// while the person stops one, or while the move is prepared. A switch that fails leaves
+    /// every one of them running where it was, and its move says why. Answers each run left
+    /// and the run that took its place.
     pub(crate) fn move_chat_now(
         &self,
         session: u32,

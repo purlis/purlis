@@ -478,11 +478,11 @@ import {
   inItsTurn,
   isShell,
   movedAt,
-  ownWorkOf,
   quietChats,
   sameList,
   sameQuiet,
   stateOf,
+  turnStateOf,
   useChats,
   useChatsHere,
   useChatsSelect,
@@ -5880,11 +5880,7 @@ export const PlaneView = memo(function PlaneView({
     if (owedRestarts.length === 0) return;
     const drive = () => {
       const states = chats.store.statesFor(chats.plane);
-      const due = restartsDue(
-        owedRestarts,
-        (session) => stateOf(states, session),
-        (session) => ownWorkOf(states, session) !== undefined,
-      );
+      const due = restartsDue(owedRestarts, states);
       for (const session of due.restart) restartOwed(session);
       // Dropped only once the core, which hears the program itself end, owes it nothing: a
       // hook can say the session ended while its program runs on ({@link owedAfterEnded}).
@@ -5915,11 +5911,8 @@ export const PlaneView = memo(function PlaneView({
     chats,
     (states): OwedStates =>
       Object.fromEntries(
-        owedRestarts.map((session) => [
-          session,
-          // Waiting on its own work is mid-turn to a restart (#3887): it waits, and says so.
-          inItsTurn(states, session) ? "running" : stateOf(states, session),
-        ]),
+        // Waiting on its own work is mid-turn to a restart (#3887): it waits, and says so.
+        owedRestarts.map((session) => [session, turnStateOf(states, session)]),
       ),
     sameStates,
   );
@@ -5984,12 +5977,7 @@ export const PlaneView = memo(function PlaneView({
       // unless the chat's program has ended meanwhile (#1986).
       if (act === "mid-turn") {
         const states = chats.store.statesFor(chats.plane);
-        const due = restartsDue(
-          [session],
-          (one) => stateOf(states, one),
-          (one) => ownWorkOf(states, one) !== undefined,
-          { now: session },
-        );
+        const due = restartsDue([session], states, { now: session });
         if (due.restart.includes(session)) restartOwed(session);
       }
     },
@@ -6095,11 +6083,7 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     const drive = () => {
       const states = chats.store.statesFor(chats.plane);
-      for (const session of movesDue(
-        chatMovesOf(plane),
-        (one) => stateOf(states, one),
-        (one) => ownWorkOf(states, one) !== undefined,
-      )) {
+      for (const session of movesDue(chatMovesOf(plane), states)) {
         if (movingNow.current.has(session)) continue;
         movingNow.current.add(session);
         const moving = chatMovesOf(plane)[session];
