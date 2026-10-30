@@ -6,6 +6,9 @@
  * a theme's parts are keyed on (ADR 0103). The look itself is held by the stories, in a real
  * browser (`Choice.stories.tsx`).
  */
+/// <reference types="node" />
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -397,5 +400,20 @@ describe("a choice's target size (#4173)", () => {
       </SegmentedControl>,
     );
     expect(drawnWith(screen.getByRole("radiogroup", { name: "Level" }), "block-size")).toBe(FLOOR);
+  });
+
+  // A segment sits inside the control's padding (space-1 above and below), so at any size it is
+  // drawn 4px under the control: 20px in a 24px control. Its press reaches the control's whole
+  // height, through the padding, so its target is the control's height, never under 24px.
+  it("takes a segment's press through the control's padding, the control's whole height", () => {
+    const sheet = readFileSync(join(process.cwd(), "src", "ui", "choice", "choice.css"), "utf8");
+    const reach = /\[data-scope="segment"\]\[data-part="root"\]::after\s*\{([^}]*)\}/.exec(sheet);
+    expect(reach, "a segment's ::after reaches through the padding").not.toBeNull();
+    const rule = (reach as RegExpExecArray)[1];
+    expect(rule).toMatch(/position:\s*absolute/);
+    expect(rule).toMatch(/inset-block:\s*calc\(-1 \* var\(--space-1\)\)/);
+    expect(sheet).toMatch(
+      /\[data-scope="segmented-control"\]\[data-part="root"\] \{[^}]*padding: var\(--space-1\);/,
+    );
   });
 });

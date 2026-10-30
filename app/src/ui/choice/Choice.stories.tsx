@@ -349,14 +349,30 @@ function BesideASmallButton() {
 export const ChoicesBesideASmallButton: Story = {
   render: () => <BesideASmallButton />,
   play: async ({ canvas, canvasElement }) => {
-    const roots = [
+    const rows = [
       ...canvasElement.querySelectorAll<HTMLElement>(
-        '[data-scope="checkbox"][data-part="root"], [data-scope="radio"][data-part="root"], [data-scope="switch"][data-part="root"], [data-scope="segment"][data-part="root"], [data-scope="slider"][data-part="root"]',
+        '[data-scope="checkbox"][data-part="root"], [data-scope="radio"][data-part="root"], [data-scope="switch"][data-part="root"], [data-scope="slider"][data-part="root"]',
       ),
     ];
-    await expect(roots).toHaveLength(7);
-    for (const one of [...roots, ...canvas.getAllByRole("button")])
+    await expect(rows).toHaveLength(4);
+    for (const one of [...rows, ...canvas.getAllByRole("button")])
       await expect(one.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
+    // A segment is drawn inside the control's padding; a press lands on it through the padding,
+    // so its target is the control's whole height, at least 24px.
+    const control = canvas.getByRole("radiogroup", { name: "Level" });
+    const outer = control.getBoundingClientRect();
+    await expect(outer.height).toBeGreaterThanOrEqual(24);
+    const segments = [
+      ...control.querySelectorAll<HTMLElement>('[data-scope="segment"][data-part="root"]'),
+    ];
+    await expect(segments).toHaveLength(2);
+    for (const one of segments) {
+      const x = one.getBoundingClientRect().left + one.getBoundingClientRect().width / 2;
+      for (const y of [outer.top + 0.5, outer.bottom - 0.5]) {
+        const hit = document.elementFromPoint(x, y);
+        await expect(hit?.closest('[data-scope="segment"][data-part="root"]')).toBe(one);
+      }
+    }
   },
 };
 
