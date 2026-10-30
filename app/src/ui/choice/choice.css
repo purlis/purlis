@@ -383,6 +383,8 @@
 }
 
 [data-scope="segment"][data-part="root"] {
+  /* What its press reaches through the control's padding is placed on it (#4173, below). */
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -404,10 +406,6 @@
    inside the control's padding, 4px under it (20px in a 24px control, in every density), and its
    press reaches through that padding, so it is never a target under 24px. Its words, its ground
    and its edge stay where they are drawn. */
-[data-scope="segment"][data-part="root"] {
-  position: relative;
-}
-
 [data-scope="segment"][data-part="root"]::after {
   content: "";
   position: absolute;

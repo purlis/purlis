@@ -354,7 +354,8 @@ export const ChoicesBesideASmallButton: Story = {
         '[data-scope="checkbox"][data-part="root"], [data-scope="radio"][data-part="root"], [data-scope="switch"][data-part="root"], [data-scope="slider"][data-part="root"]',
       ),
     ];
-    await expect(rows).toHaveLength(4);
+    // A box, a chip, a radio, a switch and a slider.
+    await expect(rows).toHaveLength(5);
     for (const one of [...rows, ...canvas.getAllByRole("button")])
       await expect(one.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
     // A segment is drawn inside the control's padding; a press lands on it through the padding,
