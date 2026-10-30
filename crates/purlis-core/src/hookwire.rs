@@ -2425,13 +2425,6 @@ pub struct SkillStarted {
 }
 
 impl ToolCall {
-    /// **Whether purlis's guard refused this call a git command that would update the
-    /// project's root** (arm A3c, [`crate::rootupdate`]): a needs-you item on its chat, in the
-    /// app's own words (qw348).
-    pub fn refused_a_root_update(&self) -> bool {
-        self.decision == Decision::Deny && self.rule.as_deref() == Some(crate::rootupdate::REASON)
-    }
-
     /// The line as it may be kept on disk: the same call without its argument digest (#977).
     /// The digest is unkeyed, so anyone who reads it can match it against a guess at the
     /// arguments; only the host keys it ([`crate::eventlog::ArgsKey`]) before anything is

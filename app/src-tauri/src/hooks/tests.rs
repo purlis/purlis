@@ -1915,10 +1915,12 @@ fn a_refused_commit_puts_the_chat_in_the_queue_saying_why() {
     assert_eq!(moved.refusals, vec![said.to_owned()]);
 }
 
-/// A chat refused an update of the project's root asks the person for it (qw348): the
-/// guard's own verdict raises the item, in the app's words. Another refusal raises none.
+/// A chat the guard refused an update of the project's root is not the person's to answer
+/// (#3877): the refusal names `purlis worktree update`, which the chat runs itself, so nothing
+/// is raised on its tab. Only that update, refused for a reason no chat can settle, asks the
+/// person (`gitbroker::answer`).
 #[test]
-fn a_chat_refused_an_update_of_the_root_asks_the_person_for_one() {
+fn a_chat_refused_an_update_of_the_root_raises_nothing_for_the_person() {
     let dir = tempfile::tempdir().expect("a directory");
     let at = Where {
         within: dir.path().to_path_buf(),
@@ -1948,28 +1950,20 @@ fn a_chat_refused_an_update_of_the_root_asks_the_person_for_one() {
         at_ms: 0,
         skill: None,
     };
-    let deliver = |call: &purlis_core::hookwire::ToolCall| {
+    for rule in ["project-root-branch", purlis_core::rootupdate::REASON] {
         purlis_core::hookwire::deliver_tool(
             hooks.socket().expect("a socket"),
             Some(&hooks.token_for(3)),
-            call,
+            &refused_by(rule),
         )
         .expect("told");
-    };
+    }
 
-    // Another guard's refusal first: heard, and no item of this kind.
-    deliver(&refused_by("project-root-branch"));
-    deliver(&refused_by(purlis_core::rootupdate::REASON));
-
-    let moved = rx
-        .recv_timeout(std::time::Duration::from_secs(5))
-        .expect("the window is told");
-    assert_eq!(moved.session, 3);
-    assert!(moved.needs_you);
-    assert_eq!(moved.needs, Some(vec![Need::RootUpdateRefused]));
-    assert_eq!(
-        hooks.board().needs_of(3),
-        vec![purlis_core::state::Need::RootUpdateRefused]
+    assert!(hooks.board().needs_of(3).is_empty());
+    assert!(
+        rx.recv_timeout(std::time::Duration::from_millis(200))
+            .is_err(),
+        "nothing moved on the chat's tab"
     );
 }
 

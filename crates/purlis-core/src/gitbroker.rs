@@ -74,7 +74,26 @@ pub fn answer(
     isolation: &git::Isolated,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Answer {
-    git::isolated(isolation, || isolated_answer(root, asker, ask, now))
+    answer_telling(root, asker, ask, isolation, now).0
+}
+
+/// [`answer`], and **whether the person is needed for what it could not do** (#3877): only an
+/// update of the project root left for a reason no chat can settle
+/// ([`crate::planegit::Left::needs_the_person`]), which the app raises as a needs-you item
+/// naming the window's Update. Every other refusal is the chat's to retry, told in the answer
+/// alone.
+pub fn answer_telling(
+    root: &Path,
+    asker: &Asker,
+    ask: &GitAsk,
+    isolation: &git::Isolated,
+    now: chrono::DateTime<chrono::Utc>,
+) -> (Answer, bool) {
+    let mut needs_the_person = false;
+    let answer = git::isolated(isolation, || {
+        isolated_answer(root, asker, ask, now, &mut needs_the_person)
+    });
+    (answer, needs_the_person)
 }
 
 fn isolated_answer(
@@ -82,6 +101,7 @@ fn isolated_answer(
     asker: &Asker,
     ask: &GitAsk,
     now: chrono::DateTime<chrono::Utc>,
+    needs_the_person: &mut bool,
 ) -> Answer {
     let no = |why: String| Answer::No { why };
     // A workspace the ask makes is one no chat works in yet: the chat need only stand in the
@@ -262,7 +282,8 @@ fn isolated_answer(
             let updated = crate::planegit::update_for_a_chat(root, chat_dir, &mut say);
             let request = crate::forge::request_words_of(root, root).request_noun();
             let said = updated.said(request);
-            if matches!(updated, crate::planegit::Updated::Left(_)) {
+            if let crate::planegit::Updated::Left(left) = &updated {
+                *needs_the_person = left.needs_the_person();
                 say(Say::Fail(said.into()));
                 1
             } else {

@@ -6591,8 +6591,8 @@ export type Need =
 /**  Its report has nowhere to go: the chat that asked for it, `asker`, has gone. */
 { kind: "report_undelivered"; asker: string } | 
 /**
- *  purlis refused it a git command that would rewrite the project's root from another
- *  commit, so bringing the remote's commits in is the person's, with Update (qw348).
+ *  purlis could not update the project's root for it, for a reason no chat can settle,
+ *  so bringing the remote's commits in is the person's, with Update (qw348, #3877).
  */
 { kind: "root_update_refused" } | 
 /**
@@ -12099,8 +12099,8 @@ export type UpdateKind =
 /**  purlis's `pre-commit` refused a commit a chat made (#1694). */
 "commit-refused" | 
 /**
- *  purlis refused a chat a git command that would rewrite the project's root from another
- *  commit, so bringing the remote's commits in is the person's (qw348).
+ *  purlis could not update the project's root for a chat, for a reason no chat can settle,
+ *  so bringing the remote's commits in is the person's (qw348, #3877).
  */
 "root-update-refused" | 
 /**  A chat asked the person to take its browser over, and the browser ended first (#2015). */

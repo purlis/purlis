@@ -317,6 +317,8 @@ fn a_chats_update_that_would_write_a_file_its_sandbox_denies_does_not_start() {
         Updated::Left(Left::HeldFromChats(vec![".vscode/tasks.json".into()]))
     );
     assert_eq!(project.as_it_is(), before, "nothing moved");
+    // No chat can settle it, so the person is asked (#3877).
+    assert!(matches!(&got, Updated::Left(left) if left.needs_the_person()));
     let said = got.said("pull request");
     assert!(said.contains("`.vscode/tasks.json`"), "{said}");
     assert!(said.contains("Update in the window"), "{said}");
@@ -705,4 +707,52 @@ fn the_conflict_sentence_names_every_command_and_sends_nobody_back_to_update() {
         assert!(sentence.contains(command), "{sentence}");
     }
     assert!(!sentence.contains("Update"), "{sentence}");
+}
+
+/// **Only a reason the chat cannot settle needs the person** (#3877): a file the chat's
+/// sandbox denies, a move the app will not make for a chat, a conflict, a stopped merge or
+/// rebase, a project not put back, a branch, a signer or a file purlis may not write. A wait,
+/// a fetch that failed, the chat's own unsaved work or a file in the way are the chat's to
+/// retry, and it is told them in the answer.
+#[test]
+fn only_a_reason_the_chat_cannot_settle_needs_the_person() {
+    let files = || vec!["a.md".to_owned()];
+    for left in [
+        Left::HeldFromChats(files()),
+        Left::NotForAChat("a reason.".into()),
+        Left::Conflict(files()),
+        Left::Stopped(gitstate::Stopped {
+            operation: None,
+            unmerged: files(),
+        }),
+        Left::NotPutBack {
+            said: "unable to unlink".into(),
+            still: StillMoved::default(),
+        },
+        Left::Unwritable(files()),
+        Left::OffTarget {
+            here: "topic".into(),
+            branch: "main".into(),
+        },
+        Left::NoBranch,
+        Left::Unsigned("no key".into()),
+    ] {
+        assert!(left.needs_the_person(), "{left:?}");
+    }
+    for left in [
+        Left::Busy,
+        Left::IndexLocked,
+        Left::NotFetched("offline".into()),
+        Left::Unsaved(2),
+        Left::InTheWay(files()),
+        Left::WaitsOnRequest {
+            mine: 1,
+            url: None,
+            why: None,
+        },
+        Left::OutOfTime(120),
+        Left::Failed("no space left".into()),
+    ] {
+        assert!(!left.needs_the_person(), "{left:?}");
+    }
 }

@@ -185,6 +185,36 @@ impl Left {
         !matches!(self, Self::NotPutBack { .. })
     }
 
+    /// **Whether only the person can settle this reason**, where a chat asked for the update
+    /// (#3877): a file the chat's sandbox denies, a move the app will not make for a chat, a
+    /// conflict or a stopped merge, a project not put back whole, a branch to choose, a signer,
+    /// or a file purlis may not write. Then the chat's ask raises a needs-you item that names
+    /// the window's Update. A wait, a fetch that failed, the chat's own unsaved work, an ignored
+    /// file in the way or a git failure the project was put back from are the chat's to settle
+    /// or retry, and it is told them in the answer alone. Every reason is judged here by name,
+    /// so a new one is judged when it is added.
+    pub fn needs_the_person(&self) -> bool {
+        match self {
+            Self::HeldFromChats(_)
+            | Self::NotForAChat(_)
+            | Self::Conflict(_)
+            | Self::Stopped(_)
+            | Self::NotPutBack { .. }
+            | Self::Unwritable(_)
+            | Self::OffTarget { .. }
+            | Self::NoBranch
+            | Self::Unsigned(_) => true,
+            Self::Busy
+            | Self::IndexLocked
+            | Self::NotFetched(_)
+            | Self::Unsaved(_)
+            | Self::InTheWay(_)
+            | Self::WaitsOnRequest { .. }
+            | Self::OutOfTime(_)
+            | Self::Failed(_) => false,
+        }
+    }
+
     /// The reason, as sentences for the person. `request` is what the project's forge calls a
     /// request (`pull request`, `merge request`).
     pub fn said(&self, request: &str) -> String {

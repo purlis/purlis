@@ -152,12 +152,19 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         GitWork::RootUpdate {} => "worktree update at the project root".to_owned(),
     };
     let isolation = isolation();
-    let run =
-        || purlis_core::gitbroker::answer(held.root(), &asker, ask, &isolation, chrono::Utc::now());
+    let run = || {
+        purlis_core::gitbroker::answer_telling(
+            held.root(),
+            &asker,
+            ask,
+            &isolation,
+            chrono::Utc::now(),
+        )
+    };
     let root_update = matches!(ask.work, GitWork::RootUpdate {});
     // The root's update is the window's own Update (#3831), fetched as the window fetches it:
     // its sign-in, offered to the remote recorded for the project alone.
-    let answer = if root_update {
+    let (answer, needs_the_person) = if root_update {
         crate::forgeaccounts::window_git(run)
     } else {
         run()
@@ -165,6 +172,13 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
     // The tree moved under every reader, as after the window's own Update.
     if root_update && matches!(answer, Answer::Said { code: 0, .. }) {
         held.tree_moved();
+    }
+    // **A root update left for a reason only the person settles asks the person** (#3877): a
+    // file the chat's sandbox denies, a conflict, a project not put back. The chat has the
+    // reason in its answer; the item names the window's Update. Any other refusal is the
+    // chat's to retry, and nobody else hears of it.
+    if needs_the_person {
+        held.needs_the_person(ask.chat, purlis_core::state::Need::RootUpdateRefused);
     }
     match &answer {
         Answer::Said { code, .. } => tracing::info!(
