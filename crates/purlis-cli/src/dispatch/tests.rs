@@ -7,13 +7,18 @@
 /// the tools too, are told to send it again once the app answers, and nothing else.
 #[test]
 fn a_sender_kept_from_the_queue_is_pointed_to_the_tools_only_where_they_queue() {
-    use purlis_core::dispatchqueue::Unqueued;
+    use super::Via;
+    use purlis_core::dispatchqueue::{ToolPath, Unqueued};
     let kept = || Unqueued::Unreachable(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
     let tool = "with purlis's dispatch tool for it, which queues it";
-    let command_in_claude = super::not_queued_for(&kept(), false, true);
+    let command_in_claude = super::not_queued_for(&kept(), Via::Command, ToolPath::Queues);
     assert!(command_in_claude.contains(tool), "{command_in_claude}");
-    for (as_tool, tools_queue) in [(true, true), (false, false), (true, false)] {
-        let said = super::not_queued_for(&kept(), as_tool, tools_queue);
+    for (via, tools) in [
+        (Via::Tool, ToolPath::Queues),
+        (Via::Command, ToolPath::KeptOut),
+        (Via::Tool, ToolPath::KeptOut),
+    ] {
+        let said = super::not_queued_for(&kept(), via, tools);
         assert!(!said.contains("tool"), "{said}");
         assert!(
             said.contains("Send it again once the app answers."),

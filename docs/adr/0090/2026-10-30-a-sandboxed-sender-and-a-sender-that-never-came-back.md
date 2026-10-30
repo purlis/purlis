@@ -16,7 +16,7 @@ The harness check left open by that ruling:
   (`HarnessAdapter::sandbox_holds_what_it_starts`), so their tools are kept from the queue as
   the command is. They cannot queue through their own MCP path.
 
-So the refusal is said per harness (`dispatchqueue::tools_queue`): the command points to the
+So the refusal is said per harness (`dispatchqueue::tool_path`): the command points to the
 tool only in a chat whose harness's tools queue; the tool itself, and the command under Codex or
 opencode, say to send it again once the app answers. The `dispatch_tell` tool says it queues
 unless the chat's sandbox holds purlis's tools too.

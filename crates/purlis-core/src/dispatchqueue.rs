@@ -157,6 +157,16 @@ impl Unqueued {
     }
 }
 
+/// **Whether purlis's `dispatch_*` tools reach the queue** where a sandbox keeps the command
+/// from it (#3914): [`tool_path`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolPath {
+    /// They run outside the sandbox the harness puts a command in, and queue.
+    Queues,
+    /// The sandbox holds them too, or the harness is one purlis ships no adapter for.
+    KeptOut,
+}
+
 /// **Whether purlis's `dispatch_*` tools queue a message in a chat of `harness`** where its
 /// sandbox keeps the `purlis dispatch` command from the queue (#3914), by the harness the chat's
 /// environment names ([`crate::hookwire::chat_harness`]; none is Claude Code's).
@@ -168,9 +178,14 @@ impl Unqueued {
 /// ([`crate::harness::HarnessAdapter::sandbox_holds_what_it_starts`]), so there the tools are
 /// kept from the queue as the command is, and a sender is never pointed to them for it. A
 /// harness purlis ships no adapter for is promised nothing.
-pub fn tools_queue(harness: Option<&str>) -> bool {
-    crate::harness::Harness::of_chat(harness)
-        .is_some_and(|harness| !harness.adapter().sandbox_holds_what_it_starts())
+pub fn tool_path(harness: Option<&str>) -> ToolPath {
+    let outside = crate::harness::Harness::of_chat(harness)
+        .is_some_and(|harness| !harness.adapter().sandbox_holds_what_it_starts());
+    if outside {
+        ToolPath::Queues
+    } else {
+        ToolPath::KeptOut
+    }
 }
 
 /// Where chat `chat`'s queue is, beside the hook socket `socket`.

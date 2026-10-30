@@ -736,9 +736,9 @@ pub fn run(command: &DispatchCommand) -> ExitCode {
         DispatchCommand::Close { chat } => said(close(*chat)),
         DispatchCommand::Cancel { chat } => said(cancel(*chat)),
         DispatchCommand::Tell { all, words } => said(tell_words(*all, words)),
-        DispatchCommand::Answer { chat, text } => said(answer(*chat, text)),
-        DispatchCommand::Note { ack, text } => said(note(text.as_deref(), *ack)),
-        DispatchCommand::Ask { question, timeout } => said(ask(question, *timeout)),
+        DispatchCommand::Answer { chat, text } => said(answer(Via::Command, *chat, text)),
+        DispatchCommand::Note { ack, text } => said(note(Via::Command, text.as_deref(), *ack)),
+        DispatchCommand::Ask { question, timeout } => said(ask(Via::Command, question, *timeout)),
     }
 }
 
@@ -756,15 +756,25 @@ enum Fate {
     DeliveredEarlier,
 }
 
+/// **What a message was sent with** (#3914): the command, or purlis's tool for it, which this
+/// process serves ([`crate::mcp::serve`]). A sender a queue refused is never pointed to the
+/// tool it used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Via {
+    Command,
+    Tool,
+}
+
 /// **One message handed to the app**: queued first where this process may write the queue,
 /// then delivered by the app (#3902); asked live where it may not.
-fn sent(what: What, queued: Queued) -> Result<Fate, String> {
-    sent_on(&mut None, what, queued)
+fn sent(via: Via, what: What, queued: Queued) -> Result<Fate, String> {
+    sent_on(via, &mut None, what, queued)
 }
 
 /// [`sent`], asked on `on` where the caller holds a connection to the app already, and on a
 /// new one held there otherwise: a question and the wait for its answer are asked on one.
 fn sent_on(
+    via: Via,
     on: &mut Option<(purlis_core::hookwire::Asking, u32)>,
     what: What,
     queued: Queued,
@@ -815,43 +825,36 @@ fn sent_on(
         Some((asking, chat)) => match ask_app(asking, *chat, what, WITHIN) {
             Ok(answered) => Ok(Fate::Answered(answered)),
             Err(Failed::Refused(why)) => Err(why),
-            Err(Failed::NoAnswer) => Err(not_queued(&unqueued)),
+            Err(Failed::NoAnswer) => Err(not_queued(via, &unqueued)),
         },
-        None => Err(not_queued(&unqueued)),
+        None => Err(not_queued(via, &unqueued)),
     }
 }
 
-/// Whether this process serves purlis's tools ([`crate::mcp::serve`]): a message it could not
-/// queue was sent with a tool, and the sender is not pointed to the tool it used (#3914).
-static SERVING_TOOLS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// This process serves purlis's tools from now on ([`SERVING_TOOLS`]).
-pub(crate) fn serving_tools() {
-    SERVING_TOOLS.store(true, std::sync::atomic::Ordering::Relaxed);
-}
-
 /// What a sender is told where the app did not answer and the message could not be queued.
-fn not_queued(unqueued: &purlis_core::dispatchqueue::Unqueued) -> String {
+fn not_queued(via: Via, unqueued: &purlis_core::dispatchqueue::Unqueued) -> String {
     let harness = purlis_core::hookwire::chat_harness(&purlis_core::envvar::var);
     not_queued_for(
         unqueued,
-        SERVING_TOOLS.load(std::sync::atomic::Ordering::Relaxed),
-        purlis_core::dispatchqueue::tools_queue(harness.as_deref()),
+        via,
+        purlis_core::dispatchqueue::tool_path(harness.as_deref()),
     )
 }
 
-/// [`not_queued`], sent with a tool (`as_tool`) or the command, in a chat whose harness's tools
-/// queue where its command cannot (`tools_queue`, [`purlis_core::dispatchqueue::tools_queue`]):
-/// only a command there is pointed to the tool (#3914).
+/// [`not_queued`], for a message sent `via` the command or a tool, in a chat whose harness's
+/// tools reach the queue or not (`tools`, [`purlis_core::dispatchqueue::tool_path`]): only the
+/// command, where the tools queue, is pointed to the tool (#3914).
 fn not_queued_for(
     unqueued: &purlis_core::dispatchqueue::Unqueued,
-    as_tool: bool,
-    tools_queue: bool,
+    via: Via,
+    tools: purlis_core::dispatchqueue::ToolPath,
 ) -> String {
-    let instead = if tools_queue && !as_tool {
-        ", or with purlis's dispatch tool for it, which queues it"
-    } else {
-        ""
+    use purlis_core::dispatchqueue::ToolPath;
+    let instead = match (via, tools) {
+        (Via::Command, ToolPath::Queues) => {
+            ", or with purlis's dispatch tool for it, which queues it"
+        }
+        (Via::Tool, _) | (Via::Command, ToolPath::KeptOut) => "",
     };
     format!(
         "{SAYS} the purlis app did not answer, and {}. Nothing was sent. Send it again once the \
@@ -892,13 +895,13 @@ fn sent_to(answered: Answered) -> Result<(String, Option<u32>), String> {
 /// `purlis dispatch tell`'s words, as clap hands them: `<chat> <text>`, or `--all <text>`.
 fn tell_words(all: bool, words: &[String]) -> Result<String, String> {
     match (all, words) {
-        (true, [text]) => tell_all(text),
+        (true, [text]) => tell_all(Via::Command, text),
         (true, _) => Err(format!(
             "{SAYS} `tell --all` takes the text alone: `purlis dispatch tell --all \"<text>\"`. \
              Nothing was sent."
         )),
         (false, [chat, text]) => match chat.parse::<u32>() {
-            Ok(chat) => tell(chat, text),
+            Ok(chat) => tell(Via::Command, chat, text),
             Err(_) => Err(format!(
                 "{SAYS} '{}' is not a task's chat number: `purlis dispatch list` shows them. \
                  Nothing was sent.",
@@ -922,13 +925,13 @@ fn acknowledged_by(number: u32) -> String {
 }
 
 /// `purlis dispatch tell <chat> "<text>"`: a follow-up to a task this chat dispatched.
-pub fn tell(to: u32, text: &str) -> Result<String, String> {
+pub fn tell(via: Via, to: u32, text: &str) -> Result<String, String> {
     let text = message(text)?;
     let queued = Queued::Tell {
         to,
         text: text.clone(),
     };
-    let answered = match sent(What::Tell { to, text }, queued)? {
+    let answered = match sent(via, What::Tell { to, text }, queued)? {
         Fate::Answered(answered) => answered,
         Fate::Queued => return Ok(queued_said(&format!("follow-up to chat {to}"))),
         Fate::DeliveredEarlier => return Ok(delivered_earlier(&format!("follow-up to chat {to}"))),
@@ -946,10 +949,10 @@ pub fn tell(to: u32, text: &str) -> Result<String, String> {
 
 /// `purlis dispatch tell --all "<text>"`: one follow-up to every task of this chat still
 /// working (#3904).
-pub fn tell_all(text: &str) -> Result<String, String> {
+pub fn tell_all(via: Via, text: &str) -> Result<String, String> {
     let text = message(text)?;
     let queued = Queued::TellAll { text: text.clone() };
-    let answered = match sent(What::TellAll { text }, queued)? {
+    let answered = match sent(via, What::TellAll { text }, queued)? {
         Fate::Answered(answered) => answered,
         Fate::Queued => return Ok(queued_said("follow-up to every task still working")),
         Fate::DeliveredEarlier => {
@@ -981,13 +984,13 @@ pub fn tell_all(text: &str) -> Result<String, String> {
 }
 
 /// `purlis dispatch answer <chat> "<text>"`: the answer to a question a task asked this chat.
-pub fn answer(to: u32, text: &str) -> Result<String, String> {
+pub fn answer(via: Via, to: u32, text: &str) -> Result<String, String> {
     let text = message(text)?;
     let queued = Queued::Answer {
         to,
         text: text.clone(),
     };
-    let answered = match sent(What::Answer { to, text }, queued)? {
+    let answered = match sent(via, What::Answer { to, text }, queued)? {
         Fate::Answered(answered) => answered,
         Fate::Queued => return Ok(queued_said(&format!("answer to chat {to}"))),
         Fate::DeliveredEarlier => return Ok(delivered_earlier(&format!("answer to chat {to}"))),
@@ -1000,7 +1003,7 @@ pub fn answer(to: u32, text: &str) -> Result<String, String> {
 
 /// `purlis dispatch note "<text>"`: a progress note to the chat that dispatched this one; with
 /// `ack`, the acknowledgement of that instruction of its (#3904), the text then optional.
-pub fn note(text: Option<&str>, ack: Option<u32>) -> Result<String, String> {
+pub fn note(via: Via, text: Option<&str>, ack: Option<u32>) -> Result<String, String> {
     // With an acknowledgement, a note left out or empty sends nothing more.
     let text = match text {
         Some(text) if ack.is_none() || !text.trim().is_empty() => message(text)?,
@@ -1011,7 +1014,7 @@ pub fn note(text: Option<&str>, ack: Option<u32>) -> Result<String, String> {
         text: (!text.is_empty()).then(|| text.clone()),
         ack,
     };
-    let answered = match sent(What::Note { text, ack }, queued)? {
+    let answered = match sent(via, What::Note { text, ack }, queued)? {
         Fate::Answered(answered) => answered,
         Fate::Queued => return Ok(queued_said("progress note")),
         Fate::DeliveredEarlier => return Ok(delivered_earlier("progress note")),
@@ -1038,7 +1041,7 @@ pub fn note(text: Option<&str>, ack: Option<u32>) -> Result<String, String> {
 /// **This chat pauses on it.** The command holds until the answer comes and prints it, quoted
 /// as data. If the wait runs out first, it says to end the turn: the answer is then handed to
 /// this chat's next turn, which purlis starts when the answer lands.
-pub fn ask(question: &str, within: Option<u32>) -> Result<String, String> {
+pub fn ask(via: Via, question: &str, within: Option<u32>) -> Result<String, String> {
     let text = message(question)?;
     let within = dispatched::wait_secs(within.unwrap_or(dispatched::WAITS_BY_DEFAULT));
     let mut on = the_app();
@@ -1050,7 +1053,7 @@ pub fn ask(question: &str, within: Option<u32>) -> Result<String, String> {
     }
     let asked_text = text.clone();
     let queued = Queued::Question { text: text.clone() };
-    let asker = match sent_on(&mut on, What::Question { text }, queued)? {
+    let asker = match sent_on(via, &mut on, What::Question { text }, queued)? {
         Fate::Answered(Answered::Sent { to, .. }) => purlis_core::personas::one_line(&to),
         // Queued (#3902): the question is asked when the app takes it, and this chat is paused
         // on it from now, as on one asked.

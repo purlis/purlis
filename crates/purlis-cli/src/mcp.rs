@@ -33,8 +33,6 @@ const ANSWER: &str = "answer";
 
 /// Serves the tools on stdin and stdout until the harness closes them.
 pub fn serve(graded: bool) -> Result<u8, String> {
-    // A message a tool could not queue never points the sender to the tool (#3914).
-    crate::dispatch::serving_tools();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -567,12 +565,17 @@ fn task_tool(name: &str) -> Option<TaskTool> {
         chattools::DISPATCH_TELL => |args| {
             let text = dispatch_text(args, "text", chattools::DISPATCH_TELL)?;
             if chattools::dispatch_flag(args, "all", chattools::DISPATCH_TELL)? {
-                return dispatch::tell_all(&text);
+                return dispatch::tell_all(dispatch::Via::Tool, &text);
             }
-            dispatch::tell(dispatch_task(args, chattools::DISPATCH_TELL)?, &text)
+            dispatch::tell(
+                dispatch::Via::Tool,
+                dispatch_task(args, chattools::DISPATCH_TELL)?,
+                &text,
+            )
         },
         chattools::DISPATCH_ANSWER => |args| {
             dispatch::answer(
+                dispatch::Via::Tool,
                 dispatch_task(args, chattools::DISPATCH_ANSWER)?,
                 &dispatch_text(args, "text", chattools::DISPATCH_ANSWER)?,
             )
@@ -590,10 +593,11 @@ fn task_tool(name: &str) -> Option<TaskTool> {
                 (None, Some(_)) => None,
                 _ => Some(dispatch_text(args, "text", chattools::DISPATCH_NOTE)?),
             };
-            dispatch::note(text.as_deref(), ack)
+            dispatch::note(dispatch::Via::Tool, text.as_deref(), ack)
         },
         chattools::DISPATCH_ASK => |args| {
             dispatch::ask(
+                dispatch::Via::Tool,
                 &dispatch_text(args, "question", chattools::DISPATCH_ASK)?,
                 dispatch_wait_seconds(args)?,
             )
