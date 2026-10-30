@@ -10,6 +10,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
+import { TOOLTIP_CLOSE_DELAY, TOOLTIP_DELAY } from "../tooltip/Tooltip";
 import { Plus } from "lucide-react";
 import { expectFocusInSight } from "../../stories.testkit";
 import { Rail, RailAction, RailList, RailProject, RailSpacer, SidebarIcon } from "./Rail";
@@ -89,6 +90,29 @@ function TheRail({ peek = false }: { peek?: boolean }) {
   );
 }
 
+/** The tooltip family's one tooltip, or `null` while none is drawn. */
+const tooltip = () => document.querySelector<HTMLElement>('[role="tooltip"][data-scope="tooltip"]');
+
+/**
+ * A hovered button's tooltip is drawn and says `says` (#3971). It opens only after
+ * {@link TOOLTIP_DELAY}, so the wait is that plus room for a loaded runner, where `waitFor`'s own
+ * second ran out before the tooltip was there and the text was asked of nothing. It still fails
+ * when no tooltip is drawn, or one says something else.
+ */
+const untilTooltipSays = (says: string) =>
+  waitFor(
+    () => {
+      const shown = tooltip();
+      expect(shown, "a tooltip is drawn").not.toBeNull();
+      expect(shown).toHaveTextContent(says);
+    },
+    { timeout: TOOLTIP_DELAY + 2_000 },
+  );
+
+/** No tooltip is drawn, given the room its close delay takes ({@link TOOLTIP_CLOSE_DELAY}). */
+const untilNoTooltip = () =>
+  waitFor(() => expect(tooltip()).toBeNull(), { timeout: TOOLTIP_CLOSE_DELAY + 2_000 });
+
 /** Every animation in the document has finished: the picture is of a rail at rest. */
 const atRest = () =>
   waitFor(() =>
@@ -122,15 +146,9 @@ export const Shown: Story = {
 
     // Its name is its tooltip, under the pointer, beside it (R89).
     await userEvent.hover(tabs[2]);
-    await waitFor(() =>
-      expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toHaveTextContent(
-        "easydmarc-umbrella",
-      ),
-    );
+    await untilTooltipSays("easydmarc-umbrella");
     await userEvent.unhover(tabs[2]);
-    await waitFor(() =>
-      expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
-    );
+    await untilNoTooltip();
 
     const hide = canvas.getByRole("button", { name: "Hide the projects sidebar" });
     hide.focus();
@@ -139,9 +157,7 @@ export const Shown: Story = {
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Hidden"));
     // Its tooltip, which the keyboard opened, taken down by Esc: the picture is of the rail.
     await userEvent.keyboard("{Escape}");
-    await waitFor(() =>
-      expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
-    );
+    await untilNoTooltip();
     await atRest();
   },
 };
@@ -157,9 +173,7 @@ export const Peek: Story = {
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Kept"));
     // The pointer off the rail, so no button is drawn under it, and its slide in over.
     await userEvent.unhover(keep);
-    await waitFor(() =>
-      expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
-    );
+    await untilNoTooltip();
     await atRest();
   },
 };
@@ -183,9 +197,7 @@ export const FocusedCurrent: Story = {
     await expect([after.width, after.height]).toEqual([before.width, before.height]);
     // Its tooltip, which the keyboard opened, taken down by Esc: the picture is of the rings.
     await userEvent.keyboard("{Escape}");
-    await waitFor(() =>
-      expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
-    );
+    await untilNoTooltip();
     await atRest();
   },
 };
