@@ -227,10 +227,15 @@ export function ViewListHead({
   );
 }
 
+/** **The custom property the page header writes its height to**, on the item's pane, which keeps
+ *  that much room at its top when it scrolls the keyboard's place into view (#3944). */
+export const HEADER_SIZE = "--view-frame-header-size";
+
 /**
  * **The page header of the item beside a list**: its name, its tag and one mark after the name,
  * the one-line description under it, and up to three actions then a "…" menu (`more`). It stays
- * in view while the item's body scrolls under it.
+ * in view, on its panel's fill, while the item's body scrolls under it; and it tells the item's
+ * pane how tall it is, so what the keyboard reaches there is scrolled clear of it (WCAG 2.4.11).
  */
 export function ViewPageHeader({
   name,
@@ -251,8 +256,24 @@ export function ViewPageHeader({
   /** The "…" menu after them: the rest of what can be done. */
   more?: ReactNode;
 }) {
+  const header = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const it = header.current;
+    const pane = it?.closest<HTMLElement>('[data-scope="view-frame"][data-part="item"]');
+    if (!it || !pane) return;
+    // Its height changes as its description wraps, or as the pane is narrowed or widened.
+    const write = () => pane.style.setProperty(HEADER_SIZE, `${it.offsetHeight}px`);
+    write();
+    if (typeof ResizeObserver === "undefined") return () => pane.style.removeProperty(HEADER_SIZE);
+    const watch = new ResizeObserver(write);
+    watch.observe(it);
+    return () => {
+      watch.disconnect();
+      pane.style.removeProperty(HEADER_SIZE);
+    };
+  }, []);
   return (
-    <header data-scope="view-frame" data-part="header">
+    <header ref={header} data-scope="view-frame" data-part="header">
       <h2 className="ui-text-strong">
         <span data-scope="view-frame" data-part="name">
           {name}

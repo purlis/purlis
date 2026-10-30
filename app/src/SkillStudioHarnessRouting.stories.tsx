@@ -13,6 +13,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillStudioTab } from "./SkillStudioTab";
+import { Panel } from "./ui/panel/Panel";
 import {
   SKILL_STUDIO_VIEW,
   inWorkspace,
@@ -138,9 +139,13 @@ function Tab({
   answer: Studio;
 }) {
   return (
-    <div className="view-body" style={{ inlineSize: width, blockSize: 520, display: "flex" }}>
-      <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
-    </div>
+    // In the content panel, as a view tab is drawn (`PlaneView`): its fill is the ground the
+    // page header is drawn on while the page scrolls under it (#3944).
+    <Panel variant="content">
+      <div className="view-body" style={{ inlineSize: width, blockSize: 520, display: "flex" }}>
+        <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
+      </div>
+    </Panel>
   );
 }
 
