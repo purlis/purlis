@@ -486,3 +486,45 @@ fn a_rename_that_keeps_the_folder_keeps_the_versions_from_before_under_their_nam
         Some("g1".into())
     );
 }
+
+#[test]
+fn a_local_copys_grades_follow_a_rename_and_a_share() {
+    let tmp = plane();
+    let root = tmp.path();
+    let local = Level::project().local(true);
+    std::fs::create_dir_all(root.join("skills.local/draft")).unwrap();
+    std::fs::write(
+        root.join("skills.local/draft/SKILL.md"),
+        SKILL.replace("name: deploy", "name: draft"),
+    )
+    .unwrap();
+    let row = Graded {
+        skill: "draft".into(),
+        level: local.rel(),
+        ..graded(root, "g1", "2026-10-25T10:00:00+00:00", Spent::default())
+    };
+    record(root, &local, &row, "laptop");
+    assert_eq!(read(root, "draft", Some(&local)).grades.len(), 1);
+
+    did(root, |cx| {
+        crate::skills::verbs::rename(cx, &local, "draft", "sketch")
+    })
+    .unwrap();
+    let ids =
+        |read: Read| -> Vec<String> { read.grades.into_iter().map(|one| one.grade).collect() };
+    assert_eq!(ids(read_followed(root, &local, "sketch")), ["g1"]);
+    assert_eq!(
+        grade_of(root, "sketch", "g1").map(|one| one.grade),
+        Some("g1".into())
+    );
+
+    did(root, |cx| {
+        crate::skills::verbs::share(cx, &crate::skills::verbs::Whose::Project, "sketch")
+    })
+    .unwrap();
+    assert_eq!(
+        ids(read_followed(root, &Level::project(), "sketch")),
+        ["g1"],
+        "and into the shared skills, which git holds from the share on"
+    );
+}

@@ -5,5 +5,4 @@
   and grades, and the version that renamed or moved it shows that as its diff. Its Grades and
   each grade's scorecard read the grades recorded under its earlier name or level, and the
   chats this machine kept of its grades go with a rename. The Rename and Move dialogs say its
-  history and grades move with it; for a skill only on this machine, which git keeps no history of, they say they
-  start again.
+  history and grades move with it.

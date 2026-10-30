@@ -970,21 +970,32 @@ pub fn move_to(
 }
 
 /// Grading after each edit of the copy of `old` at `from`, carried to `new` at `to` (#3612); where
-/// it could not be, that is said, and it stays off for the copy until it is turned on again.
+/// it could not be, that is said, and it stays off for the copy until it is turned on again. And
+/// its grades: where git cannot follow the change, the name and level it leaves are kept on this
+/// machine (#4018), and where they could not be, that is said.
 fn after_edit_follows(cx: &mut Ctx<'_>, from: &Level, old: &str, to: &Level, new: &str) {
     if let Err(why) = super::grades::after_edit::moved(cx.plane, from, old, to, new) {
         cx.warn(format!(
             "grading {new} after each edit is off until you turn it on again: {why}"
         ));
     }
+    if let Err(why) =
+        super::grades::earlier::moved(cx.plane, (from, old), (to, new), chrono::Utc::now())
+    {
+        cx.warn(why);
+    }
 }
 
-/// Grading after each edit of the copy of `name` at `level`, dropped with its delete (#3612).
+/// Grading after each edit of the copy of `name` at `level`, dropped with its delete (#3612), and
+/// the earlier names this machine kept of it (#4018).
 fn after_edit_dropped(cx: &mut Ctx<'_>, level: &Level, name: &str) {
     if let Err(why) = super::grades::after_edit::dropped(cx.plane, level, name) {
         cx.warn(format!(
             "grading {name} after each edit is still kept as on: {why}"
         ));
+    }
+    if let Err(why) = super::grades::earlier::dropped(cx.plane, level, name) {
+        cx.warn(why);
     }
 }
 

@@ -378,6 +378,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`<data>/app-state/<clone key>/skill-grades/<YYYY-MM>.jsonl`](#dataapp-stateclone-keyskill-gradesyyyy-mmjsonl)
   - [`<data>/app-state/<clone key>/skill-grades/routers/<YYYY-MM>.jsonl`](#dataapp-stateclone-keyskill-gradesroutersyyyy-mmjsonl)
   - [`<data>/app-state/<clone key>/skill-grade-after-edit.json`](#dataapp-stateclone-keyskill-grade-after-editjson)
+  - [`<data>/app-state/<clone key>/skill-earlier-names.json`](#dataapp-stateclone-keyskill-earlier-namesjson)
   - [`<data>/app-state/<clone key>/grades-under-way/<grade>.json`](#dataapp-stateclone-keygrades-under-waygradejson)
   - [`<data>/app-state/<clone key>/grades-under-way.lock`](#dataapp-stateclone-keygrades-under-waylock)
   - [`<data>/app-state/<clone key>/skill-grade-chats/<skill>/<grade>/<chat>.screen`](#dataapp-stateclone-keyskill-grade-chatsskillgradechatscreen)
@@ -7969,6 +7970,25 @@ refuses a `<data>` under a project or inside any git work tree.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Machine, device-bound — this machine's own: the person who pays turns it on, on this machine;
   a teammate's push never does. Losing it turns grading after each edit off.
+- **Git:** outside every project, in the data home.
+
+### `<data>/app-state/<clone key>/skill-earlier-names.json`
+- **Format:** one JSON object (#4018): `v` (1) and `skills`, each skill that had a name or a level
+  git could not follow it from, keyed by the copy it is now (its level's folder and its name,
+  `skills.local/ship`), holding its earlier places newest first, at most 16: `name`, the name it
+  had; `level`, that level's folder (`skills.local`, `workspaces/ops/skills`); and `until`, when it
+  left it (RFC 3339). Written `0600`, whole or not at all, through no link, by the core's rename,
+  move and share of a skill (`grades::earlier`): where either side is a skill only on this machine
+  (`skills.local/`), the place it leaves is added, and the earlier places of any renamed or moved
+  skill go along to its new key. A delete drops its entry. Read by a skill's Grades tab and a
+  grade's scorecard, never as a chat opens: an earlier place lends the grades recorded under its
+  name and level before `until`. A file that is a link, past 256 KiB, of another `v`, or holding
+  more than 512 skills reads as empty (each change holds the `flock` of `skill-earlier-names.lock`
+  beside it), and an entry that does not hold together (a name that is no plain name, a level no
+  level's folder is, a time that does not read) is left out.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Machine, device-bound — as the grades of a skill only on this machine are. Losing it
+  leaves those grades under the name and level they were recorded by.
 - **Git:** outside every project, in the data home.
 
 ### `<data>/app-state/<clone key>/grades-under-way/<grade>.json`
