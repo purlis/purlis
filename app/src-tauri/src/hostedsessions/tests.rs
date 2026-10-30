@@ -1848,6 +1848,7 @@ impl purlis_host::Compose for ComposesConfined {
 
 pub(crate) fn by_its_names() -> Named {
     Named {
+        tools_allowed: None,
         chat: None,
         run: None,
         profile: Some("work".to_owned()),

@@ -710,6 +710,32 @@ async fn remote_link_may_drive_a_chat_and_take_the_windows_relayed_start_but_nev
 }
 
 #[tokio::test]
+async fn only_the_window_or_its_hosts_relay_names_what_the_person_allowed_of_a_persona() {
+    // A scope that may start nothing is refused that first.
+    for scope in Scope::ALL
+        .into_iter()
+        .filter(|scope| scope.may(purlis_session_protocol::grants::Power::Start))
+    {
+        let client = linked(scope, Board::new(false)).await;
+        let said = client
+            .call(Command::StartProgram(Box::new(session::StartProgram {
+                tools_allowed: Some("digest".into()),
+                ..session::StartProgram::of(
+                    "01J9PRJCT00000000000000000",
+                    session::ProgramKind::Harness,
+                )
+            })))
+            .await;
+        let refused = said
+            .err()
+            .and_then(|why| why.refusal().map(|refusal| refusal.why.clone()))
+            .is_some_and(|why| why.contains("persona's tools"));
+        let windows = matches!(scope, Scope::LocalUi | Scope::RemoteLink);
+        assert_eq!(refused, !windows, "{scope}");
+    }
+}
+
+#[tokio::test]
 async fn every_scope_that_may_stop_stops_all_and_is_told_in_words_that_only_the_window_re_arms() {
     // A runner's `remote-link` is re-armed by its desktop (#2051, V29b): it is not among them.
     for scope in [Scope::Terminal, Scope::FleetMcp, Scope::Approval] {

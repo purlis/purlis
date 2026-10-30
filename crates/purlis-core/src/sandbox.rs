@@ -6274,6 +6274,7 @@ fn for_start_at(
             &policy::Locks::of(root),
             &crate::programs::search_dirs(),
             &writable,
+            chat.tools_allowed_by_desktop.as_deref(),
         ) {
             applied.confines.tools = resolved.ready.clone();
             applied.tools = Some(Box::new(resolved));
@@ -6320,6 +6321,7 @@ fn floor_for_start(
             &policy::Locks::of(root),
             &crate::programs::search_dirs(),
             &writable,
+            chat.tools_allowed_by_desktop.as_deref(),
         ) {
             let programs: Vec<PathBuf> = resolved
                 .ready
