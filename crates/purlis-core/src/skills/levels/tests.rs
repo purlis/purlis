@@ -556,6 +556,8 @@ fn a_link_to_a_folder_is_not_that_folder() {
     assert!(why.contains("chat 7"), "{why}");
 }
 
+/// Off unix no pid is taken as alive.
+#[cfg(unix)]
 #[test]
 fn a_chat_on_the_record_with_no_id_but_a_live_pid_holds_a_folder_made_after_the_accept() {
     let tmp = plane(&[]);
@@ -576,7 +578,7 @@ fn a_chat_on_the_record_with_no_id_but_a_live_pid_holds_a_folder_made_after_the_
     assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
     skill(root, "workspaces/x/skills/y", "y");
     let why = made_since(root)(&root.join("workspaces/x")).expect("held");
-    assert!(why.contains("a chat"), "{why}");
+    assert!(why.contains("while chat a chat was running"), "{why}");
 }
 
 #[test]
@@ -613,4 +615,32 @@ fn the_folders_accepted_one_by_one_stay_accepted_where_the_accept_cannot_finish(
     assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
     let (_, listed) = to_confirm(root).unwrap();
     assert_eq!(listed, ["personas/steward"]);
+}
+
+/// Two names of one folder, as a disk that folds case opens them, matched by identity alone.
+#[cfg(unix)]
+#[test]
+fn a_name_is_matched_to_the_folder_on_the_disk_by_its_identity() {
+    let on_disk: BTreeSet<String> = ["workspaces/ops", "workspaces/évite"]
+        .map(str::to_owned)
+        .into();
+    let identity = |rel: &str| match rel {
+        "workspaces/ops" | "workspaces/OPS" => Some((1, 1)),
+        "workspaces/évite" | "workspaces/e\u{301}vite" => Some((1, 2)),
+        "workspaces/other" => Some((1, 3)),
+        _ => None,
+    };
+    let spelled = |rel: &str| {
+        as_the_disk_spells(
+            &on_disk,
+            rel.to_owned(),
+            &identity,
+            &std::sync::OnceLock::new(),
+        )
+    };
+    assert_eq!(spelled("workspaces/OPS"), "workspaces/ops");
+    assert_eq!(spelled("workspaces/e\u{301}vite"), "workspaces/évite");
+    // A folder of its own, and a name that opens none, are themselves.
+    assert_eq!(spelled("workspaces/other"), "workspaces/other");
+    assert_eq!(spelled("workspaces/Ops"), "workspaces/Ops");
 }

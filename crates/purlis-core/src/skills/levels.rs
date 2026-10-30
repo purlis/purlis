@@ -330,9 +330,11 @@ fn made_since_in(root: &Path, state: Option<PathBuf>) -> MadeSince {
         }
     }
     let on_disk = owners(root);
+    let known = std::sync::OnceLock::new();
     let root = root.to_path_buf();
     Box::new(move |owner: &Path| {
-        let rel = as_the_disk_spells(&root, &on_disk, rel_in(&root, owner)?);
+        let identity = |rel: &str| folder_identity(&root, rel);
+        let rel = as_the_disk_spells(&on_disk, rel_in(&root, owner)?, &identity, &known);
         if unread && an_owner(&rel) {
             return Some(UNREAD.to_owned());
         }
@@ -357,43 +359,54 @@ fn made_since_in(root: &Path, state: Option<PathBuf>) -> MadeSince {
     })
 }
 
-/// **`rel` as the disk spells it**: the workspace or persona folder among `on_disk` (in the plane
-/// at `root`) that is the folder `rel` opens, where `rel` names it only in another spelling (a disk
-/// that folds case, or one spelling of a letter, opens both names as one folder). Matched by the
-/// folder's identity, its device and inode, never by folding the name. `rel` itself where it is
-/// one of them, or opens none.
-fn as_the_disk_spells(root: &Path, on_disk: &BTreeSet<String>, rel: String) -> String {
+/// A folder's identity on its disk: its device and inode.
+type Identity = (u64, u64);
+
+/// **`rel` as the disk spells it**: the workspace or persona folder among `on_disk` that is the
+/// folder `rel` opens, where `rel` names it only in another spelling (a disk that folds case, or
+/// one spelling of a letter, opens both names as one folder). Matched by the folders' `identity`,
+/// never by folding the name; `known` keeps `on_disk`'s identities once read. `rel` itself where
+/// it is one of them, or opens none.
+fn as_the_disk_spells(
+    on_disk: &BTreeSet<String>,
+    rel: String,
+    identity: &dyn Fn(&str) -> Option<Identity>,
+    known: &std::sync::OnceLock<std::collections::BTreeMap<Identity, String>>,
+) -> String {
     if on_disk.contains(&rel) || !an_owner(&rel) {
         return rel;
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        // Neither link is followed: a link is a folder of its own, never the one it points at.
-        let identity = |rel: &str| {
-            std::fs::symlink_metadata(root.join(rel))
-                .ok()
-                .filter(std::fs::Metadata::is_dir)
-                .map(|meta| (meta.dev(), meta.ino()))
-        };
-        if let Some(asked) = identity(&rel)
-            && let Some(folder) = on_disk
-                .iter()
-                .find(|folder| identity(folder) == Some(asked))
-        {
-            return folder.clone();
-        }
-    }
-    // No port reads a folder's identity here yet: the name is folded instead.
+    // No port reads a folder's identity there yet: the name is folded instead.
     #[cfg(not(unix))]
     {
-        let _ = root;
         let lower = rel.to_lowercase();
         if let Some(folder) = on_disk.iter().find(|folder| folder.to_lowercase() == lower) {
             return folder.clone();
         }
     }
-    rel
+    let Some(asked) = identity(&rel) else {
+        return rel;
+    };
+    known
+        .get_or_init(|| {
+            on_disk
+                .iter()
+                .filter_map(|folder| identity(folder).map(|id| (id, folder.clone())))
+                .collect()
+        })
+        .get(&asked)
+        .cloned()
+        .unwrap_or(rel)
+}
+
+/// The identity of the folder `rel` of the plane at `root`, following no link: a link is a folder
+/// of its own, never the one it points at.
+fn folder_identity(root: &Path, rel: &str) -> Option<Identity> {
+    let path = root.join(rel);
+    std::fs::symlink_metadata(&path)
+        .is_ok_and(|meta| meta.is_dir())
+        .then(|| crate::pypath::link_identity(&path))
+        .flatten()
 }
 
 /// `owner` relative to the plane at `root`, `/` between the parts.
@@ -555,9 +568,9 @@ pub(crate) fn noted_again(state: &Path, root: &Path) -> Result<(), String> {
     noted_again_with(state, root, &owners(root))
 }
 
-/// [`noted_again`], each new record holding `now`, the folders the caller listed: so [`confirm`]
-/// notes the folders it took off the ones not accepted yet, and no folder made in between is
-/// taken as there before.
+/// [`noted_again`], each new record holding `now`, every workspace and persona folder as the
+/// caller listed them: so [`confirm`]'s records and its folders not accepted yet are of one
+/// listing, and a folder made after it is held by each new record.
 fn noted_again_with(state: &Path, root: &Path, now: &BTreeSet<String>) -> Result<(), String> {
     let unnoted = || (UNNOTED.to_owned(), "a chat".to_owned());
     let chats: Vec<(String, String)> = match crate::reopen::read_strictly(root) {
@@ -685,12 +698,20 @@ pub fn confirm(root: &Path, folders: &[String]) -> Result<(), String> {
     if kept != was || unaccepted_read(&state).is_err() {
         write_unaccepted(&state, &kept)?;
     }
-    // Every chat on the record of open chats keeps its own record through the Accept, holding the
-    // folders listed above.
+    // Every chat on the record of open chats keeps its own record through the Accept, holding
+    // every folder of the one listing above.
     noted_again_with(&state, root, &now)?;
     crate::appstate::mark_levels_confirmed(&state, root)?;
-    // Emptied last: where a step above fails, the folders accepted one by one stay accepted.
-    write_list(&state, ACCEPTED, &Unaccepted::default())
+    // Emptied last: where a step above fails, the folders accepted one by one stay accepted. Once
+    // the mark is written the Accept is done, and the list is read only while the project is
+    // unconfirmed, so one left behind is said and not taken as the Accept failing.
+    if let Err(why) = write_list(&state, ACCEPTED, &Unaccepted::default()) {
+        tracing::warn!(
+            target: "purlis::skills",
+            "the folders accepted one by one were not emptied ({why})"
+        );
+    }
+    Ok(())
 }
 
 /// **Every record in the app state `state` that is there and cannot be read, replaced by one that
