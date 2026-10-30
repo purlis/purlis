@@ -8243,6 +8243,16 @@ export type PoolSignInStep =
 { at: "open"; url: string } | 
 /**  Show this code to enter on the vendor's own page `url`, before that page is opened. */
 { at: "device"; url: string; code: string } | 
+/**
+ *  Open this page in the browser here, where the person approves: this machine is listening
+ *  for the browser's answer, which purlis carries to the runner, so nothing is pasted (#4044).
+ */
+{ at: "approve"; url: string } | 
+/**
+ *  This machine's `port` is taken, so the browser's answer could not reach the runner: no
+ *  page was opened.
+ */
+{ at: "port-taken"; port: number } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
 /**  What a login in the strip's terminal printed, escapes and all. */

@@ -104,6 +104,7 @@ fn a_login_listening() -> std::thread::JoinHandle<String> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_browsers_answer_reaches_the_login_on_its_runner_and_nothing_comes_back() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let place = place_in(dir.path());
     let (runner, desktop) = (
