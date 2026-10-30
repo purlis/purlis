@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793377121551,
+  "lastUpdate": 1793380917022,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31794,6 +31794,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4927345,
             "unit": "ms",
             "extra": "median of 5 runs: 100.365, 100.809, 101.493, 101.515, 102.595 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7fdcaa3490710769d21d37aacae8f58a77a4dd66",
+          "message": "Runners: a Docker pool keeps its sign-ins across an update; a profile row asks again after its fetch (#4119)\n\n* Runners: a Docker pool keeps its sign-ins across an update; a profile row asks again after its fetch (#4011, #4008)\n\nReplays PR #4052 (its four commits, its merge of main and 3bcda43a's\nPools.test fix) onto main at protocol 1.52 (#4089). Changed in the\nreplay: askProfiles keeps #4089's plane argument and takes quietly as a\nthird; the fetching row is read from the kept list #4089 answers; the\nPools test's fetching answers ride the kept/addable answer; 1.53's doc\nparagraph follows 1.52's, and the frames doc names it after 1.52.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66NPTD3D3Y0NCZQBRASW5FC\nPurlis-Persona: steward\n\n* Runners: a driven sign-in's check that met a fetch reads as one that could not say (#4008)\n\nMain's sign-in drive (#4059) matches every Standing; #4052's Fetching\nwas added after it, so the replay adds it beside CannotTell.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66NPTD3D3Y0NCZQBRASW5FC\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T15:59:45Z",
+          "tree_id": "5757a34cf4c876b3fde2bc99eaec1beaebf0dab5",
+          "url": "https://github.com/purlis/purlis/commit/7fdcaa3490710769d21d37aacae8f58a77a4dd66"
+        },
+        "date": 1793380913686,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.34619,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.325, 0.341, 0.346, 0.348, 0.370 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.641135999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.443, 16.524, 16.641, 16.702, 16.816 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7431635,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.371, 101.484, 101.743, 102.220, 103.134 ms"
           }
         ]
       }
