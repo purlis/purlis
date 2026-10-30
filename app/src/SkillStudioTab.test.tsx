@@ -18,6 +18,7 @@ import {
   studioOpening,
 } from "./skillStudio";
 import { catalogue, SKILL_STUDIO_SHOW, type Now } from "./actions";
+import { skill, studio } from "./skillsListing.testkit";
 import { noTabs } from "./tabs";
 
 afterEach(() => {
@@ -134,50 +135,18 @@ describe("the Skill studio", () => {
   });
 
   it("keeps the Library's tools to search and chips, with New skill… the one way in (#4041)", async () => {
-    answering({
-      on: true,
-      workspace: null,
-      first: { starts: false, unmoved: null },
-      workspaces: [],
-      levels: [],
-      harnesses: [],
-      clashes: [],
-      skills: [
-        {
-          name: "deploy",
-          level: "project",
-          label: "project",
-          local: false,
-          grant: "root",
-          granted: { to: "root" },
-          turned_off: false,
-          on: true,
-          left_out: null,
-          description: "Deploys the site.",
-          not_granted: null,
-          written: "deploy",
-          named: false,
-          unchecked: null,
-          folder: "skills/deploy",
-          compat: [],
-          lint: [],
-          hidden: [],
-          pinned: false,
-          pinned_by: [],
-        },
-      ],
-    });
+    answering(studio([skill("deploy")]));
 
     renderStudio();
 
     await screen.findByTestId("skill-deploy");
-    const studio = screen.getByTestId("skill-studio");
-    expect(within(studio).getByRole("searchbox", { name: "Search skills" })).toBeInTheDocument();
-    expect(within(studio).getByRole("button", { name: "New skill…" })).toBeInTheDocument();
-    // New skill…'s Ask a chat to draft it (#3684) is the way a chat drafts one from here.
-    expect(
-      within(studio).queryByRole("button", { name: "Ask a chat to draft a skill" }),
-    ).toBeNull();
+    const tools = screen.getByTestId("skill-studio").querySelector(".skill-library-tools");
+    if (!(tools instanceof HTMLElement)) throw new Error("the Library draws no tools");
+    expect(within(tools).getByRole("searchbox", { name: "Search skills" })).toBeInTheDocument();
+    // Search and chips, and no button: New skill… on the bar is the way a skill is started,
+    // its Ask a chat to draft it (#3684) included.
+    expect(within(tools).queryAllByRole("button")).toEqual([]);
+    expect(screen.getByRole("button", { name: "New skill…" })).toBeInTheDocument();
   });
 
   it("says why the router hid a skill, and which are pinned (SK-15)", async () => {
