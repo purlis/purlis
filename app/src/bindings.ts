@@ -3372,9 +3372,10 @@ export const commands = {
 	 *  that names purlis's theme skill typed into it and never sent (ADR 0061), as the Curate menu's
 	 *  Create a theme opens one. With `theme`, the prompt names that card's theme, of the level
 	 *  `from`; the card is one this level's gallery shows, never a name the window made up. The
-	 *  machine's level has no project for a chat to work in, so it is never asked.
+	 *  machine's level has no project for a chat to work in, so it is never asked. A refused start
+	 *  says the approval its profile needs, where it needs one (#3968).
 	 */
-	themeChat: (at: ThemeAt, theme: string | null, from: string | null, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("theme_chat", { at, theme, from, columns, rows })),
+	themeChat: (at: ThemeAt, theme: string | null, from: string | null, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("theme_chat", { at, theme, from, columns, rows })),
 	/**
 	 *  The theme drafts of the chat `session`, as the window asks before it closes that chat: each
 	 *  draft, where Keep puts it. Empty for a chat with none. The window's alone: it names the chat
@@ -3650,9 +3651,10 @@ export const commands = {
 	 *  once its harness has started, and never sent.
 	 * 
 	 *  The harness is the project's default profile, as a new chat's is; the persona and the
-	 *  directory are the core's answer. A refusal comes back before anything starts.
+	 *  directory are the core's answer. A refusal comes back before anything starts, with the
+	 *  approval the profile needs where that is why (#3968).
 	 */
-	curate: (plane: PlaneId, subject: string, action: string, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("curate", { plane, subject, action, columns, rows })),
+	curate: (plane: PlaneId, subject: string, action: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("curate", { plane, subject, action, columns, rows })),
 	/**
 	 *  One file, folder or range of lines of a branch, typed into chat `session` as a reference in
 	 *  its harness's syntax, and never sent — or copied, with the reason, where it cannot be typed
@@ -3682,7 +3684,7 @@ export const commands = {
 	startChatHere: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string, lines: {
 	first: number,
 	last: number,
-} | null, columns: number, rows: number) => typedError<StartedHere, string>(__TAURI_INVOKE("start_chat_here", { plane, workspace, repo, piece, path, lines, columns, rows })),
+} | null, columns: number, rows: number) => typedError<StartedHere, StartRefused>(__TAURI_INVOKE("start_chat_here", { plane, workspace, repo, piece, path, lines, columns, rows })),
 	/**  Whether chat `session` is offered Smart close, and the answer the close dialog starts on. */
 	smartCloseOffer: (plane: PlaneId, session: number) => typedError<SmartCloseOffer, string>(__TAURI_INVOKE("smart_close_offer", { plane, session })),
 	/**

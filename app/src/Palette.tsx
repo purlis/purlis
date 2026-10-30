@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { AimedList, AimedOption } from "./ui/list/AimedList";
 import { RowLabel, RowLead, RowShortcut, RowTrail } from "./ui/list/Row";
 import { DialogSurface } from "./ui/dialog/Dialog";
+import { Button } from "./ui/button/Button";
 import {
   aim,
   inPalette,
@@ -609,6 +610,23 @@ export function Palette({
               }}
             />
           )}
+          {/* Its ways on, as the notice draws them: a refusal's Approve and start… (#3968). The
+              palette goes away first, so what the way opens is in front. */}
+          {showing.ways?.map((way) => (
+            <span key={way.label}>
+              {" "}
+              <Button
+                variant="link"
+                className="said-link"
+                onPress={() => {
+                  close();
+                  way.onPress();
+                }}
+              >
+                {way.label}
+              </Button>
+            </span>
+          ))}
         </p>
       )}
       {held && (

@@ -1627,7 +1627,7 @@ export const commands = {
 	themeChooseOption: __WINDOW_ONLY_RESULT,
 	themeDuplicate: __WINDOW_ONLY_RESULT,
 	themeOpenFolder: __WINDOW_ONLY_RESULT,
-	themeChat: __WINDOW_ONLY_RESULT,
+	themeChat: __WINDOW_ONLY_START_REFUSED,
 	themeDraftsOfChat: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **A link's close of chats that have theme drafts is handed to the window** (#2761): closing a
@@ -1830,10 +1830,10 @@ export const commands = {
 	 *  `workspace:<name>`, `persona:<name>`, `plane`), in the order asked.
 	 */
 	curationOffers: (plane: PlaneId, subjects: string[]) => typedError<Curations, string>(__TAURI_INVOKE("curation_offers", { plane, subjects })),
-	curate: __WINDOW_ONLY_RESULT,
+	curate: __WINDOW_ONLY_START_REFUSED,
 	referenceIntoChat: __WINDOW_ONLY_RESULT,
 	referencesIntoChat: __WINDOW_ONLY_RESULT,
-	startChatHere: __WINDOW_ONLY_RESULT,
+	startChatHere: __WINDOW_ONLY_START_REFUSED,
 	/**  Whether chat `session` is offered Smart close, and the answer the close dialog starts on. */
 	smartCloseOffer: (plane: PlaneId, session: number) => typedError<SmartCloseOffer, string>(__TAURI_INVOKE("smart_close_offer", { plane, session })),
 	smartClose: __WINDOW_ONLY_RESULT,
