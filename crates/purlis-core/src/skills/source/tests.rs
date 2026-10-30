@@ -1735,10 +1735,11 @@ fn a_set_of_skills_installs_through_one_review_and_one_change() {
         .collect();
     assert_eq!(
         pinned,
+        // The lockfile keeps its entries by name.
         [
-            ("notify", &review.commit),
             ("deploy", &review.commit),
-            ("lint", &review.commit)
+            ("lint", &review.commit),
+            ("notify", &review.commit)
         ]
     );
 }
