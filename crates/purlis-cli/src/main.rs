@@ -2125,10 +2125,15 @@ fn tell_the_host_about_the_tool_call(
 /// the command or what it printed. Sent once each and never spooled
 /// ([`hookwire::tell_blocked`]); a block the app did not take is said only on stderr. Answers
 /// the blocks the app took, which the chat is then told of ([`hooks::told_after`]).
+///
+/// A block that is the chat's own to retry (#3861,
+/// [`purlis_core::sandboxblock::its_own_to_retry`]) is sent for the record too, and raises no
+/// Notice there; it is answered apart, as the shape the chat retries in, whether or not the app
+/// took it.
 #[cfg(unix)]
-fn tell_the_host_about_blocks(word: &str, payload: &str) -> Vec<purlis_core::sandboxblock::Block> {
+fn tell_the_host_about_blocks(word: &str, payload: &str) -> hooks::Blocked {
     use std::io::Write as _;
-    let mut taken = Vec::new();
+    let mut taken = hooks::Blocked::default();
     // The word first: every other tool hook passes through here, and none of them is read.
     if !hooks::is_a_block_word(word) {
         return taken;
@@ -2146,7 +2151,14 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> Vec<purlis_core::san
     let harness = hookwire::chat_harness(&purlis_core::envvar::var);
     // A tool that ran nothing (a read of a background command's output): a quiet line (#1884).
     let read_back = purlis_core::sandboxblock::read_back(&data);
+    let chat_dir = hooks::chat_dir(&purlis_core::envvar::var);
     for (block, target) in hooks::blocks(&data, &purlis_core::envvar::var) {
+        let own = purlis_core::sandboxblock::its_own_to_retry(
+            &block,
+            target.as_deref(),
+            chat_dir.as_deref(),
+        );
+        taken.retry_with_purlis |= own;
         // A refused service on this Mac whose port only printed words name: offered to the
         // person to check, never as the target (qw384).
         let suggested = (block.kind == purlis_core::sandboxblock::Kind::LocalService
@@ -2163,7 +2175,8 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> Vec<purlis_core::san
             suggested,
         };
         match hookwire::tell_blocked(std::path::Path::new(&socket), token.as_ref(), &blocked) {
-            Ok(()) => taken.push(block),
+            Ok(()) if !own => taken.taken.push(block),
+            Ok(()) => {}
             Err(why) => {
                 let _ = writeln!(std::io::stderr(), "{} {word} ({why})", hookwire::NOT_TAKEN);
             }
@@ -2173,11 +2186,8 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> Vec<purlis_core::san
 }
 
 #[cfg(not(unix))]
-fn tell_the_host_about_blocks(
-    _word: &str,
-    _payload: &str,
-) -> Vec<purlis_core::sandboxblock::Block> {
-    Vec::new()
+fn tell_the_host_about_blocks(_word: &str, _payload: &str) -> hooks::Blocked {
+    hooks::Blocked::default()
 }
 
 /// What a crashed `PreToolUse` guard, or one that did not answer in time, tells the host from its

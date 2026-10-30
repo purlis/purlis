@@ -221,15 +221,16 @@ export function needsOf(states: ChatStates, session: number): readonly string[] 
 }
 
 /**
- * **What a needs-you item says of a chat refused an update of the project's root** (qw348). The
- * guard refuses a sandboxed chat every git command that rewrites the root from another commit,
- * and tells the chat to ask the person: this is that ask, in the app's words, and it names
- * what the person presses. The Inbox tells it from the other needs by this sentence.
+ * **What a needs-you item says of a chat refused an update of the project's root** (qw348,
+ * #3877). A chat updates the root itself with `purlis worktree update`, which the app runs for
+ * it; this item is raised only where that update was left for a reason no chat can settle (a
+ * file its sandbox denies, a conflict, a project not put back). It names what the person
+ * presses. The Inbox tells it from the other needs by this sentence.
  */
 export const ROOT_UPDATE_REFUSED_SAID =
-  "it asks you to update the project: purlis refused it a git command that would rewrite the " +
-  "project's files from another commit, which its sandbox would stop partway. Update, in " +
-  "Saving, brings the remote's commits in";
+  "it asks you to update the project: purlis could not update it for the chat, for a reason " +
+  "only you can settle, such as a file its sandbox denies or a conflict. Update, in Saving, " +
+  "brings the remote's commits in and says what stands in the way";
 
 /**
  * **What a needs-you item says of a need the app found** (#1448), after the chat's name and a

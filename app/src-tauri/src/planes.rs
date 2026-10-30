@@ -3239,6 +3239,17 @@ impl Planes {
                             crate::sandboxing::now_secs(),
                         );
                     }
+                    // A block that is the chat's own to retry (#3861): its hook told it the
+                    // command to retry with, and the person has nothing to answer, so it is
+                    // kept in the record above and raises no Notice, and the chat waits on
+                    // nobody for it.
+                    let chat_dir = strong
+                        .chats()
+                        .chat_at(block.line.chat)
+                        .and_then(|chat| chat.cwd);
+                    if hooks::its_own_to_retry(&block, chat_dir.as_deref()) {
+                        return;
+                    }
                     crate::taskblocks::heard(strong.chats(), &told);
                     // The chat now waits on the person for this Notice, until its turn moves
                     // on: what the chat that asked for it is told (#1663). purlis's own block
