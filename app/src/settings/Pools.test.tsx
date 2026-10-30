@@ -188,6 +188,7 @@ describe("You › This machine › Pools", () => {
         /No pool yet\. A pool is a runner on your Docker, or one claimed in your team's cluster, that chats and browsers can move to/,
       ),
     ).toBeInTheDocument();
+    expect(within(group).queryByText(/There is no undo/)).toBeNull();
     await userEvent.click(within(group).getByRole("button", { name: "Add a pool…" }));
     const dialog = await screen.findByRole("dialog", { name: "Add a pool" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
@@ -204,6 +205,9 @@ describe("You › This machine › Pools", () => {
       await within(group).findByRole("button", { name: "Remove pool builds" }),
     ).toBeInTheDocument();
     expect(within(group).queryByText(/No pool yet/)).toBeNull();
+    expect(
+      within(group).getByText(/Remove takes this machine out of the runner's peers/),
+    ).toBeInTheDocument();
     expect(within(group).getByRole("button", { name: "Add a pool…" })).toBeInTheDocument();
   });
 
@@ -511,8 +515,11 @@ describe("You › This machine › Pools", () => {
     await userEvent.click(within(asked).getByRole("button", { name: "Remove pool" }));
 
     await waitFor(() => expect(removed).toEqual(["builds"]));
-    // With none left, nothing about pools shows.
-    await waitFor(() => expect(within(nav).queryByRole("button", { name: "Pools" })).toBeNull());
+    // With none left, the group stays, and says what a pool is (the person's ruling of
+    // 2026-10-30), with nothing more about Remove.
+    expect(await within(group).findByText(/^No pool yet\./)).toBeInTheDocument();
+    expect(within(group).queryByText(/There is no undo/)).toBeNull();
+    expect(within(nav).getByRole("button", { name: "Pools" })).toBeInTheDocument();
   });
 
   it("says a suspended runner is suspended, not that it would not link (#2051)", async () => {

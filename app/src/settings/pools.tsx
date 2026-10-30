@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import type { ClusterPoolRow, PoolLink, PoolRow, PoolVersion, ProjectNotHeld } from "../bindings";
 import { Notice } from "../Notice";
 import { useProjectsNotHeld } from "../notheld";
@@ -58,6 +58,10 @@ export function poolsGroup(plane?: string): SettingsGroup {
 
 /** The group's address. */
 export const POOLS = "you.machine.pools";
+
+/** What a pool's Remove does, said under the list while there is a pool. */
+const REMOVE_SAID =
+  "Remove takes this machine out of the runner's peers while it answers, then removes a Docker pool's container and home, or releases a cluster pool's claim in its cluster. There is no undo.";
 
 /** What the group says while this machine keeps no pool: what a pool is. */
 const NO_POOL_YET =
@@ -311,9 +315,12 @@ export function NotHeldNotice({
 const poolsList = (plane: string | undefined): LiveSetting => ({
   id: `${POOLS}.list`,
   label: "Pools on this machine",
-  help: "Remove takes this machine out of the runner's peers while it answers, then removes a Docker pool's container and home, or releases a cluster pool's claim in its cluster. There is no undo.",
+  // What Remove does is said under the list, and only while there is a pool to remove: with
+  // none, the group says what a pool is instead (the person's ruling of 2026-10-30).
+  help: "",
   useControl: function usePoolsList() {
     const now = usePools();
+    const removeSaid = useId();
     const notHeld = useProjectsNotHeld();
     // Put away until the runner says something else of the project.
     const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
@@ -356,7 +363,11 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
       grouped: true,
       error: now.said === undefined ? undefined : [now.said],
       control: (ids) => (
-        <div role="group" aria-labelledby={ids.labelledBy} aria-describedby={ids.describedBy}>
+        <div
+          role="group"
+          aria-labelledby={ids.labelledBy}
+          aria-describedby={pools.length === 0 ? undefined : removeSaid}
+        >
           {now.read.state === "reading" && <p className="ui-setting-help">Reading…</p>}
           {now.read.state === "trouble" && (
             <p className="ui-setting-help" role="alert">
@@ -392,6 +403,11 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
                 ))}
               </ul>
             ))}
+          {pools.length > 0 && (
+            <p className="ui-setting-help" id={removeSaid}>
+              {REMOVE_SAID}
+            </p>
+          )}
           {asking !== undefined && (
             <RemovePool
               name={asking}
