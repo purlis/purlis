@@ -347,15 +347,21 @@ trailers. It names no repository or branch: the app uses the folder it started t
 - A chat that is not sandboxed, and any chat in a clone, uses `git commit` as before.
 
 **Where a piece is cut from.** `add` cuts from the branch the remote names its default
-(`origin/HEAD`, `main` most often), or from `--base <branch>`, a branch of the clone; `--base
-HEAD` cuts from whatever the clone is on, as git's own `worktree add` does. The branch is
-recorded as the piece's base: what a merge lands it into and what its Changes count against.
+(`origin/HEAD`, `main` most often), or from `--base <branch>`, a branch of the clone or a
+remote-tracking branch (`origin/main`), which is cut from as it is and recorded as the clone's
+branch of the same name (#3836); `--base HEAD` cuts from whatever the clone is on, as git's own
+`worktree add` does. The branch is recorded as the piece's base: what a merge lands it into
+and what its Changes count against.
 Before the cut, the base is brought up to its remote-tracking branch where that is a
 fast-forward and no worktree has it checked out, as `git fetch <remote> <branch>:<branch>`
 would. Where the base is checked out (the clone is on it, most often) and behind, it is left
 where it is and the piece is cut from, or rebased onto, the remote-tracking branch instead;
 the command says so, and until the clone is brought up (`purlis sync`) the piece's Changes
-count the remote's newer commits too. From a terminal `add` fetches nothing; `update` does.
+count the remote's newer commits too. Where the base and its remote-tracking branch have each
+moved on (the clone's branch holds a checkout's copies of work the remote landed another way,
+most often), the remote-tracking branch is used too, and the command says so: a piece cut from
+the clone's commits would carry them into its pull request (#3836). From a terminal `add`
+fetches nothing; `update` does.
 For a sandboxed chat the app fetches first, and checks the new folder out only as the chat's
 own checkout of it would be judged: a cut that would write a file the chat's sandbox denies,
 where the clone has that file otherwise or not at all, is refused, naming it.
@@ -365,7 +371,11 @@ directory, so its own `git fetch`, `git rebase` and `git reset` fail there. From
 piece, these run in the app for a chat (and here from a terminal):
 
 - `purlis worktree update` fetches the base's remote, brings the base up as above, and rebases
-  the piece onto it: the base it was cut from, or `--base <branch>`. A piece with uncommitted
+  the piece onto it: the base it was cut from, or `--base <branch>`. Only the piece's own
+  commits move, those after where it left the base it was recorded as cut from, as `git rebase
+  --onto <new> <old>` would: a piece cut from a base that had moved apart from its remote, or
+  moved onto another branch, leaves the old base's commits behind, and a base named in place of
+  the recorded one is recorded (#3836). A piece with uncommitted
   changes is refused: commit first. A rebase that stops on a conflict names the files: resolve
   them in the folder, then `purlis worktree update --continue`, which stages exactly those
   files and goes on, or `--abort`, which puts the branch back. A file still holding a conflict

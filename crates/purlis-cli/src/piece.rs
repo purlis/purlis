@@ -28,8 +28,9 @@ pub enum WorktreeCommand {
         /// Name the new branch something other than the piece.
         #[arg(long)]
         branch: Option<String>,
-        /// The branch of the clone to cut from, recorded as the piece's base; `HEAD` for
-        /// whatever the clone is on (default: the remote's default branch, else HEAD).
+        /// The branch of the clone to cut from, recorded as the piece's base, or a
+        /// remote-tracking branch (`origin/main`); `HEAD` for whatever the clone is on
+        /// (default: the remote's default branch, else HEAD).
         #[arg(long, value_name = "BRANCH")]
         base: Option<String>,
         /// The workspace (default: the active one).
@@ -62,7 +63,8 @@ pub enum WorktreeCommand {
     /// back. Refused with uncommitted changes, or where it would overwrite a file on disk that
     /// is not committed. In a chat the app runs it.
     Update {
-        /// The branch to rebase onto (default: the one the piece was cut from). A branch
+        /// The branch to rebase onto, or a remote-tracking branch (`origin/main`), carrying
+        /// only the piece's own commits (default: the one the piece was cut from). A branch
         /// folder's only.
         #[arg(long, value_name = "BRANCH", conflicts_with_all = ["go_on", "abort"])]
         base: Option<String>,

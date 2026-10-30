@@ -147,10 +147,16 @@ pub fn add(
     for note in &fresh.notes {
         say(Say::Warn(note.clone().into()));
     }
-    let shown_base = match (&added.base, &fresh.moved_to) {
-        (worktree::Base::Branch(b), Some(up)) => format!("{b} (brought up to {up})"),
-        (worktree::Base::Branch(b), None) => b.clone(),
-        (worktree::Base::Detached(sha), _) => format!("{sha} (detached)"),
+    let instead = fresh
+        .instead
+        .as_deref()
+        .and_then(|at| at.strip_prefix("refs/remotes/"));
+    let shown_base = match (&added.base, &fresh.moved_to, instead) {
+        (worktree::Base::Branch(b), Some(up), _) => format!("{b} (brought up to {up})"),
+        // Cut from the remote-tracking branch in its place (#3836).
+        (worktree::Base::Branch(b), None, Some(up)) => format!("{b} (as {up} has it)"),
+        (worktree::Base::Branch(b), None, None) => b.clone(),
+        (worktree::Base::Detached(sha), _, _) => format!("{sha} (detached)"),
     };
     say(Say::Info(format!("  base:   {shown_base}").into()));
     say(Say::Info(format!("  branch: {}", added.branch).into()));

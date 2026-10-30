@@ -91,6 +91,9 @@ env -C .worktrees/<repo>/<piece> purlis worktree done     # finished; or: … pu
 - `purlis worktree list` shows the workspace's pieces and what each declared.
 - A new workspace (`purlis workspace create`) is for a new task, not for another checkout of a
   repo you already have.
+- `--base origin/main` (a remote-tracking branch) works for `add` and `update` when the clone's
+  own `main` is stale. `update --base <branch>` moves the piece onto it carrying only the
+  piece's own commits.
 
 ## The boundary that is easy to get wrong
 
