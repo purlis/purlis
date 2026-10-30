@@ -496,31 +496,27 @@ pub fn tools_in_force_here(
 ) -> Vec<super::tools::Tool> {
     allowed_here(root, personas, persona, locks)
         .map(|(_, tools)| tools)
-        .or_else(|| allowed_by_its_desktop(root, personas, persona, locks))
         .unwrap_or_default()
 }
 
-/// **`persona`'s tools on a runner, where its desktop's person allowed exactly this list** (#4071):
-/// nobody on a runner can answer an Allow, so a start from its desktop says what was allowed
-/// there ([`super::local::desktop_allows_tools`]), held here to the persona as this runner reads
-/// it. Its tools alone: its hosts stay [`in_force_here`]'s, which this never widens. A tool armed
+/// **`persona`'s tools for the one chat a runner starts, where its desktop's person allowed
+/// exactly this list** (#4071): nobody on a runner can answer an Allow, so the start says what was
+/// allowed there, as `digest`, held here to the persona as this runner reads it. Its tools alone:
+/// its hosts stay [`in_force_here`]'s, which this never widens. Nothing of it is kept. A tool armed
 /// so is still sent nothing unless the desktop's gate passes and the person allows that run.
-fn allowed_by_its_desktop(
+pub fn tools_its_desktop_allowed(
     root: &Path,
     personas: &BTreeMap<String, Grants>,
-    persona: Option<&str>,
+    persona: &str,
     locks: &Locks,
-) -> Option<Vec<super::tools::Tool>> {
-    let (Some(name), Some(grants)) = (persona, of(personas, persona)) else {
-        return None;
+    digest: &str,
+) -> Vec<super::tools::Tool> {
+    let Some(grants) = of(personas, Some(persona)) else {
+        return Vec::new();
     };
-    let (tools, _) = reached_tools(root, name, grants, locks);
-    let now = digest_of(&reached(grants, locks), &tools, is_default(root, name));
-    (!tools.is_empty()
-        && super::local::tools_allowed_by_desktop(root)
-            .iter()
-            .any(|one| one.persona == name && one.digest == now))
-    .then_some(tools)
+    let (tools, _) = reached_tools(root, persona, grants, locks);
+    let now = digest_of(&reached(grants, locks), &tools, is_default(root, persona));
+    if now == digest { tools } else { Vec::new() }
 }
 
 /// **What the person on this machine allowed of `persona`, as its digest** (#4071): what a start

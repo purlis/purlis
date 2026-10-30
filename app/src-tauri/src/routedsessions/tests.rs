@@ -66,7 +66,6 @@ fn a_world() -> World {
 
 fn named_in(workspace: &str) -> Named {
     Named {
-        tools_allowed: None,
         workspace: Some(workspace.to_owned()),
         ..crate::hostedsessions::tests::by_its_names()
     }

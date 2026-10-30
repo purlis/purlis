@@ -529,8 +529,6 @@ pub fn compose(starting: &Starting<'_>, kit: &Kit, beside: &dyn Beside) -> Resul
         .map(crate::harness::SessionId::new)
         .transpose()
         .map_err(|why| format!("the conversation to resume is not one: {why}"))?;
-    // A runner has nobody to allow it (#4071): before its sandbox is compiled.
-    keep_what_its_desktop_allowed(starting)?;
     let ready = crate::start::ready(
         &crate::start::Start {
             profile: Some(profile),
@@ -542,7 +540,10 @@ pub fn compose(starting: &Starting<'_>, kit: &Kit, beside: &dyn Beside) -> Resul
             resuming: None,
             without_sandbox: start.without_sandbox.then(crate::sandbox::OptOut::default),
             held: None,
-            grants: crate::sandbox::grant::Grants::default(),
+            grants: crate::sandbox::grant::Grants {
+                tools_allowed_by_desktop: what_its_desktop_allowed(starting),
+                ..Default::default()
+            },
             made: crate::sandbox::Made::Unnamed,
         },
         root,
@@ -559,21 +560,12 @@ pub fn compose(starting: &Starting<'_>, kit: &Kit, beside: &dyn Beside) -> Resul
 }
 
 /// **What a start from this runner's desktop says its person allowed of the chat's persona**
-/// (#4071), kept before its sandbox is compiled: a runner has nobody to allow it. Only a link's
-/// start says so: a start of this machine's is held to this machine's Allow.
-fn keep_what_its_desktop_allowed(starting: &Starting<'_>) -> Result<(), String> {
-    let start = starting.start;
-    let Some(persona) = start.persona.as_deref().filter(|_| {
-        starting.started_by == purlis_session_protocol::auth::Scope::RemoteLink.word()
-    }) else {
-        return Ok(());
-    };
-    crate::sandbox::local::desktop_allows_tools(
-        starting.root,
-        persona,
-        start.tools_allowed.as_deref(),
-    )
-    .map_err(|why| format!("what this runner's desktop allowed could not be kept: {why}"))
+/// (#4071): a runner has nobody to allow it. Only a link's start says so: a start of this
+/// machine's is held to this machine's Allow.
+fn what_its_desktop_allowed(starting: &Starting<'_>) -> Option<String> {
+    (starting.started_by == purlis_session_protocol::auth::Scope::RemoteLink.word())
+        .then(|| starting.start.tools_allowed.clone())
+        .flatten()
 }
 
 /// [`compose`] from what [`crate::start::ready`] decided for it: the seam a test hands a sandbox

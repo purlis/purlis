@@ -668,8 +668,9 @@ fn a_persona_without_tools_keeps_the_digest_an_allow_was_made_with() {
 
 #[test]
 fn a_runner_arms_a_persona_s_tools_on_its_desktops_digest_and_never_its_hosts() {
-    use super::local::desktop_allows_tools;
-    use super::persona::{digest_allowed_here, digest_of, in_force_here};
+    use super::persona::{
+        digest_allowed_here, digest_of, in_force_here, tools_its_desktop_allowed,
+    };
     let desktop = tempfile::tempdir().expect("a project");
     let runner = tempfile::tempdir().expect("the same project there");
     let personas = policy(DEVOPS_TOOLS).personas;
@@ -688,30 +689,20 @@ fn a_runner_arms_a_persona_s_tools_on_its_desktops_digest_and_never_its_hosts() 
         Some(digest.as_str())
     );
 
-    // Another list than this runner reads arms nothing.
-    desktop_allows_tools(runner.path(), "devops", Some("another")).unwrap();
+    let armed = |persona: &str, said: &str| {
+        tools_its_desktop_allowed(runner.path(), &personas, persona, &none, said).len()
+    };
+    assert_eq!(armed("devops", "another"), 0, "another list arms nothing");
+    assert_eq!(armed("reviewer", &digest), 0, "no other persona");
+    assert_eq!(armed("devops", &digest), 1);
+    // Nothing of it stays, and the persona's hosts are this machine's Allow alone.
     assert_eq!(
         tools_here(runner.path(), DEVOPS_TOOLS, &none),
         Vec::<String>::new()
     );
-    // The same list arms its tools, and its hosts stay off.
-    desktop_allows_tools(runner.path(), "devops", Some(&digest)).unwrap();
-    assert_eq!(tools_here(runner.path(), DEVOPS_TOOLS, &none).len(), 1);
     assert_eq!(
         in_force_here(runner.path(), &personas, Some("devops"), &none),
-        Vec::new(),
-        "the persona's hosts are this machine's Allow alone"
-    );
-    // Another persona is not armed by it.
-    assert_eq!(
-        super::persona::tools_in_force_here(runner.path(), &personas, Some("reviewer"), &none),
         Vec::new()
-    );
-    // Taken back there, the next start says so.
-    desktop_allows_tools(runner.path(), "devops", None).unwrap();
-    assert_eq!(
-        tools_here(runner.path(), DEVOPS_TOOLS, &none),
-        Vec::<String>::new()
     );
 }
 

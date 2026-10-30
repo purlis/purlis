@@ -16,9 +16,9 @@ D-2047-8 in the pull request). §7's table row for secrets stands, read as below
    on this machine is refused, before the desktop is asked anything. **Nobody on a runner can
    answer the persona's Allow**, so its desktop's start says what its person allowed there, as a
    digest (session protocol 1.55, #4071). The runner arms the persona's tools only while that is
-   the digest of the persona as it reads it, and the start came over a link. It keeps the digest
-   as `persona_tools_from_desktop` in its machine file, in place of what the last start said, so
-   an Allow taken back holds from the next start. It arms tools alone, never the persona's hosts.
+   the digest of the persona as it reads it, and the start came over a link. The digest holds
+   for that one start and is kept nowhere, so an Allow taken back holds from the next start. It
+   arms tools alone, never the persona's hosts.
    A tool armed so is sent nothing but through item 3's gate. *Decided in implementation, to be
    confirmed* (D-4071-6).
 2. **Only a runner shown to be the person's own is sent a value**, by the one check browser

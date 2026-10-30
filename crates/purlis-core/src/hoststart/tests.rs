@@ -180,43 +180,28 @@ fn a_start_with_no_data_folder_for_its_long_settings_is_refused() {
 }
 
 #[test]
-fn only_a_links_start_says_what_its_desktop_allowed_and_each_replaces_the_last() {
+fn only_a_links_start_says_what_its_desktop_allowed() {
     let tmp = tempfile::tempdir().unwrap();
     let root = plane_in(&tmp);
-    let said = |by: &str, allowed: Option<&str>| {
-        let start = purlis_session_protocol::session::StartProgram {
-            persona: Some("devops".into()),
-            tools_allowed: allowed.map(str::to_owned),
-            ..purlis_session_protocol::session::StartProgram::of(
-                "01J9PRJCT00000000000000000",
-                purlis_session_protocol::session::ProgramKind::Harness,
-            )
-        };
-        keep_what_its_desktop_allowed(&Starting {
+    let start = purlis_session_protocol::session::StartProgram {
+        persona: Some("devops".into()),
+        tools_allowed: Some("d1".into()),
+        ..purlis_session_protocol::session::StartProgram::of(
+            "01J9PRJCT00000000000000000",
+            purlis_session_protocol::session::ProgramKind::Harness,
+        )
+    };
+    let said = |by: &str| {
+        what_its_desktop_allowed(&Starting {
             root: &root,
             number: 1,
             start: &start,
             reporting: None,
             started_by: by,
         })
-        .unwrap();
-        crate::sandbox::local::tools_allowed_by_desktop(&root)
-            .into_iter()
-            .map(|one| one.digest)
-            .collect::<Vec<_>>()
     };
     for own in ["local-ui", "terminal", "fleet-mcp", "approval", "editor"] {
-        assert!(said(own, Some("d1")).is_empty(), "{own}");
+        assert_eq!(said(own), None, "{own}");
     }
-    assert_eq!(said("remote-link", Some("d1")), ["d1"]);
-    assert_eq!(said("remote-link", Some("d2")), ["d2"]);
-    assert_eq!(
-        said("local-ui", Some("d3")),
-        ["d2"],
-        "and it changes nothing"
-    );
-    assert!(
-        said("remote-link", None).is_empty(),
-        "an Allow taken back there holds from the next start"
-    );
+    assert_eq!(said("remote-link").as_deref(), Some("d1"));
 }

@@ -269,6 +269,10 @@ pub struct Grants {
     /// Which of them were allowed for the chat's next run alone ([`Level::Once`], D-sock-3):
     /// a scope of its own, so a start can judge each against the scopes policy leaves open.
     pub once: Vec<What>,
+    /// **On a runner, what the start from its desktop says its person allowed of the chat's
+    /// persona** (#4071, [`super::persona::tools_its_desktop_allowed`]), as its digest: for this
+    /// start alone, set only for a start a link made, and it arms tools and grants nothing else.
+    pub tools_allowed_by_desktop: Option<String>,
 }
 
 impl Grants {

@@ -1132,13 +1132,16 @@ pub fn resolve(
         search,
         writable,
         &temp_folders(),
+        from_desktop,
     )
 }
 
 /// **`persona`'s tools for a chat starting in the project at `root`**, as [`resolve`] finds them,
 /// of only those the person on this machine allowed with the persona's hosts
 /// ([`super::persona::tools_in_force_here`], D-PE-ruling-1). None where none is allowed here:
-/// a persona whose tools wait for the Allow gets no shim, and says so in the log.
+/// a persona whose tools wait for the Allow gets no shim, and says so in the log. On a runner,
+/// `from_desktop` is what the chat's start says its desktop's person allowed
+/// ([`super::persona::tools_its_desktop_allowed`], #4071).
 pub fn for_chat(
     root: &Path,
     personas: &std::collections::BTreeMap<String, super::persona::Grants>,
@@ -1146,6 +1149,7 @@ pub fn for_chat(
     locks: &super::policy::Locks,
     search: &[PathBuf],
     writable: &[PathBuf],
+    from_desktop: Option<&str>,
 ) -> Option<Resolved> {
     for_chat_beside(
         root,
@@ -1167,8 +1171,12 @@ pub(crate) fn for_chat_beside(
     search: &[PathBuf],
     writable: &[PathBuf],
     temps: &[PathBuf],
+    from_desktop: Option<&str>,
 ) -> Option<Resolved> {
-    let allowed = super::persona::tools_in_force_here(root, personas, Some(persona), locks);
+    let mut allowed = super::persona::tools_in_force_here(root, personas, Some(persona), locks);
+    if let (true, Some(digest)) = (allowed.is_empty(), from_desktop) {
+        allowed = super::persona::tools_its_desktop_allowed(root, personas, persona, locks, digest);
+    }
     let listed = super::persona::of(personas, Some(persona)).map_or(0, |grants| grants.tools.len());
     if allowed.is_empty() && listed > 0 && !locks.forbids_persona_tools() {
         tracing::info!(

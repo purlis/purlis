@@ -331,18 +331,18 @@ use crate::view::{Limits, Views};
 /// the runner leaves the settings it keeps as they are. A host before 1.50 ignores the field, so
 /// the desktop sends it only to a runner of 1.50 or later.
 ///
-/// 1.55 added the person's Allow of a persona's tools to a chat's start on a runner (#4071, spec
-/// #2041): `start_program` may carry `tools_allowed`, the digest of what the person allowed on the
-/// desktop, which a runner holds to its own reading of the persona, and which never reaches the
-/// persona's hosts. Named only by the window or its host's relay. A host before 1.55 ignores the
-/// field, so its chats arm no tool, as before.
-///
 /// 1.51 added the clones a host holds in a workspace (#3811, spec #2041): `clones_of` answers
 /// `clones`, the folder name of each repository a project it keeps has in the workspace's
 /// folder, so a chat moving off a runner brings back a clone the runner chat made there. The
 /// window's alone ([`crate::grants::Power::Code`]), relayed for it. A host before 1.51 refuses
 /// it `unknown_command`, so the window asks only one of 1.51 or later, and a clone a runner
 /// before it made stays there.
+///
+/// 1.55 added the person's Allow of a persona's tools to a chat's start on a runner (#4071, spec
+/// #2041): `start_program` may carry `tools_allowed`, the digest of what the person allowed on the
+/// desktop, which a runner holds to its own reading of the persona, and which never reaches the
+/// persona's hosts. Named only by the window or its host's relay. A host before 1.55 ignores the
+/// field, so its chats arm no tool, as before.
 pub const VERSION: Version = Version {
     major: 1,
     minor: 55,

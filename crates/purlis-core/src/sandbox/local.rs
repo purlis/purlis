@@ -331,12 +331,6 @@ struct OnDisk {
     /// kept. A list that changed since grants nothing until it is allowed again.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     persona_hosts_mine: Vec<PersonaHostsAllowed>,
-    /// **On a runner: what its desktop's person allowed of each persona, with the chat that last
-    /// started as it** (#4071), each the digest [`super::persona::digest_of`] makes. It arms that
-    /// persona's tools and never its hosts, and only while it is the digest of the persona as
-    /// this runner reads it. Written only from a start a link made ([`tools_allowed_by_desktop`]).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    persona_tools_from_desktop: Vec<PersonaHostsAllowed>,
     /// **Always for this persona** on a chat's browser Ask (#2241): what every chat running as
     /// each persona in this project on this machine may have its browser reach, without being
     /// asked. The only place it is kept, where no chat writes; one per persona.
@@ -1611,29 +1605,6 @@ pub fn grant_vault(root: &Path, vault: &str, persona: &str) -> io::Result<()> {
 /// digest of what you allowed. A file that cannot be read allows nothing.
 pub fn allowed_persona_hosts(root: &Path) -> Vec<PersonaHostsAllowed> {
     read(root).persona_hosts_mine
-}
-
-/// What this runner's desktop last said its person allowed of each persona (#4071): each
-/// persona's digest, with `changed` never set.
-pub fn tools_allowed_by_desktop(root: &Path) -> Vec<PersonaHostsAllowed> {
-    read(root).persona_tools_from_desktop
-}
-
-/// **Keeps what a start from this runner's desktop says of `persona`** (#4071): `digest` in place
-/// of what it said before, or nothing where it allows nothing, so an Allow taken back there holds
-/// from the next start. Called only for a start a link made, never for one of this machine's.
-pub fn desktop_allows_tools(root: &Path, persona: &str, digest: Option<&str>) -> io::Result<()> {
-    change(root, |held| {
-        held.persona_tools_from_desktop
-            .retain(|one| one.persona != persona);
-        if let Some(digest) = digest {
-            held.persona_tools_from_desktop.push(PersonaHostsAllowed {
-                persona: persona.to_owned(),
-                digest: digest.to_owned(),
-                changed: false,
-            });
-        }
-    })
 }
 
 /// Marks your Allow of `persona`'s hosts as one whose list has changed since: it grants
