@@ -949,3 +949,55 @@ fn the_manifest_says_which_parts_are_drawn_apart_from_the_next_version_on() {
     assert!(part(parts::VERSION + 1, "count").get("apart").is_none());
     assert!(parts::has_unreleased());
 }
+
+/// #3999: the unpinned chip and a dormant one draw no fill of their own at rest, and the
+/// unpinned one none while it is current, so their dashed and dotted line is what draws them
+/// apart from the bar and says which they are. It is a non-text boundary, held to 3:1 (WCAG
+/// 1.4.11) on the bar's ground outside it and on its own fill inside it, in every state, in every
+/// built-in appearance. The window's hairline (`border.subtle`) measured 1.38:1 there in Purlis
+/// dark; the line is drawn in the chip's muted words, held to 4.5 on both grounds.
+#[test]
+fn an_edged_chip_s_line_holds_3_to_1_in_every_state_in_every_built_in() {
+    use parts::State::{Focused, Hover, Selected};
+    let states: [&[parts::State]; 5] = [&[], &[Hover], &[Selected], &[Selected, Hover], &[Focused]];
+    for theme in built_ins().iter().chain(&purlis().appearances) {
+        for variant in ["unpinned", "dormant"] {
+            for held in states {
+                let [fill, _, border] = parts::look_of("titlebar", variant, held);
+                for ground in ["surface.deep", fill] {
+                    if ground == "transparent" {
+                        continue;
+                    }
+                    let ratio = check::contrast(theme.value(border), theme.value(ground));
+                    assert!(
+                        ratio >= 3.0,
+                        "{} {}: the {variant} chip's {border} on {ground} {held:?} is {ratio:.2}",
+                        theme.name,
+                        theme.id
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// #3999 at the engine's interface: a theme that colours the chip itself has the unpinned and
+/// dormant chips' default looks measured (D-3949-3). They hold, so neither draws its default back.
+#[test]
+fn a_theme_that_colours_the_chip_leaves_the_edged_chips_standing() {
+    for base in ["purlis", "purlis-classic"] {
+        let loaded = load(&json!({
+            "name": "Shaped",
+            "extends": base,
+            "parts": { "titlebar.workspace.text": "text.secondary" },
+        }));
+        assert!(!loaded.refused, "{:?}", said(&loaded));
+        for appearance in &loaded.theme.appearances {
+            let fell: Vec<_> = parts::fallen(appearance)
+                .into_iter()
+                .filter(|one| one.part.starts_with("titlebar.workspace"))
+                .collect();
+            assert!(fell.is_empty(), "{base} {}: {fell:?}", appearance.id);
+        }
+    }
+}

@@ -596,8 +596,9 @@ pub(super) const TITLEBAR: Family = Family {
 /// **A chip's colours as `app/src/ui/titlebar/titlebar.css` draws them.** Quiet words with no box
 /// at rest; the card's fill and the primary words under the pointer; the accent's wash and the
 /// primary words while current, and the stronger wash while current under the pointer, so the
-/// chosen chip never looks hovered (#3345). The unpinned chip's words are muted, its edge the
-/// window's subtle line, dashed, and it is lit only under the pointer. A dormant chip (#3651) is
+/// chosen chip never looks hovered (#3345). The unpinned chip's words are muted, its edge dashed
+/// in the same muted colour, a boundary held to 3:1 on the bar and on the card's fill where the
+/// window's hairline was not (#3999), and it is lit only under the pointer. A dormant chip (#3651) is
 /// drawn as the unpinned one is, its line dotted and its words slanted.
 fn titlebar_look(variant: &str, states: &[State]) -> Look {
     let hovered = states.contains(&State::Hover);
@@ -621,7 +622,7 @@ fn titlebar_look(variant: &str, states: &[State]) -> Look {
             "text.quiet"
         },
         border: if edged {
-            "border.subtle"
+            "text.muted"
         } else {
             TRANSPARENT
         },
