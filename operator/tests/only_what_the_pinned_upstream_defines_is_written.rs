@@ -76,12 +76,12 @@ fn written() -> Vec<Value> {
     let mut pool = Pool::new(
         "team",
         PoolSpec {
-            image,
             kept_volume: purlis_cluster_operator::KeptVolume {
                 size: "10Gi".into(),
                 storage_class_name: Some("standard".into()),
             },
             stopped: false,
+            ..PoolSpec::new(image)
         },
     );
     pool.metadata.uid = Some("u".into());

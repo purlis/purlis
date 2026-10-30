@@ -693,24 +693,28 @@ fn a_server_refused_a_port_the_system_picks_is_a_server_that_did_not_start() {
 
 /// #3440: the wrap on Linux tells a listen it refused with no port to allow, a socket it never
 /// bound or one it could not take, as macOS tells a refused bind: a server that did not start.
-/// The port the system would have picked is named as such; a socket not taken names nothing.
+/// The port the system would have picked is named as such, and a socket not taken as one, so
+/// its Notice can say why; anything else the wrap named there names nothing.
 #[test]
 fn a_listen_the_wrap_refused_with_no_port_to_allow_is_a_server_that_did_not_start() {
-    for (target, picked) in [
-        ("*:0", true),
+    use crate::sandbox::localport::{PICKED, SOCKET_NOT_TAKEN};
+    for (target, named) in [
+        ("*:0", Some(PICKED)),
         (
             "(the chat's socket could not be taken: pidfd_getfd was refused)",
-            false,
+            Some(SOCKET_NOT_TAKEN),
         ),
+        ("(something else)", None),
     ] {
         let refusal = supervised::Refusal {
             operation: "network-bind",
             target: target.to_owned(),
             process: Some("node".to_owned()),
         };
+        let (block, _) = not_started(false);
         assert_eq!(
             supervised::block_of(&refusal, &place()),
-            Some(not_started(picked)),
+            Some((block, named.map(str::to_owned))),
             "{target}"
         );
     }

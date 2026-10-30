@@ -2604,6 +2604,11 @@ fn a_server_that_did_not_start_on_no_port_to_allow_is_told_what_to_do() {
         assert!(said.contains("without the sandbox"), "{said}");
     }
     assert!(PICKED_PORT_SAID.contains("a port the system picks"));
+    // Where purlis's own sandbox runs on Linux, the one address a port it picks is taken on.
+    assert!(
+        PICKED_PORT_SAID
+            .contains("On Linux, purlis's sandbox gives such a server a port on 127.0.0.1")
+    );
     // True of each refusal that names no port: another machine's address, a runner's socket.
     assert!(NO_PORT_SAID.contains("named no port purlis could allow"));
     assert!(NO_PORT_SAID.contains("remove the runner and add it again"));
@@ -2621,6 +2626,45 @@ fn a_server_that_did_not_start_on_no_port_to_allow_is_told_what_to_do() {
     }
     assert!(CLAUDE_CODE_NO_PORT_SAID.contains("without the sandbox"));
     assert!(CLAUDE_CODE_NO_PORT_SAID.contains("Codex or opencode chat"));
+}
+
+/// #3440: a server whose socket purlis's Linux wrap could not take is told why it did not
+/// start, and what to do: on a runner, remove it and add it again; on Kubernetes, not yet.
+#[test]
+fn a_server_whose_socket_could_not_be_taken_is_told_why_and_what_to_do() {
+    use purlis_core::harness::Harness;
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let refused = Block {
+        operation: Operation::Listen,
+        kind: Kind::System,
+        ours: false,
+    };
+    let untaken = offered(
+        &root,
+        &refused,
+        Some(purlis_core::sandbox::localport::SOCKET_NOT_TAKEN),
+    );
+    assert_eq!(untaken.0, BlockOffer::Unsandboxed);
+    assert_eq!(untaken.1, None);
+    assert_eq!(untaken.2.as_deref(), Some(NOT_TAKEN_SAID));
+    assert!(NOT_TAKEN_SAID.contains("could not take the server's socket"));
+    assert!(NOT_TAKEN_SAID.contains("remove the runner and add it again"));
+    assert!(NOT_TAKEN_SAID.contains("Kubernetes"));
+    assert!(NOT_TAKEN_SAID.contains("without the sandbox"));
+    // Not the words for a port to pick, which would send it round to the same Notice.
+    assert!(!NOT_TAKEN_SAID.contains("purlis listen 3000"));
+    // purlis's own wrap, the only one that tells it, keeps the words; a Claude Code chat,
+    // whose sandbox purlis does not wrap, is never told of a runner's socket.
+    assert_eq!(
+        for_its_harness(Some(Harness::Codex), untaken.clone()),
+        untaken
+    );
+    let (offer, target, why) = for_its_harness(Some(Harness::ClaudeCode), untaken);
+    assert_eq!(offer, BlockOffer::Unsandboxed);
+    assert_eq!(target, None);
+    assert_eq!(why.as_deref(), Some(CLAUDE_CODE_NO_PORT_SAID));
 }
 
 /// #2019: a port below 1024 is never one to serve on, and a port something on this Mac listens
@@ -3187,4 +3231,64 @@ fn an_ask_heard_over_a_link_knows_the_runner_its_host_said_it_reached() {
         None
     );
     assert_eq!(reached_over_the_link(), None);
+}
+
+/// A refused write of a repository's git folder that was there as a Claude Code chat started, or
+/// of a folder above one, is held so the git folder stays where it is: no grant lifts that, so
+/// its Notice offers no Allow, and says the way that works. Anything beside it or inside it, and
+/// any other harness's block, is offered as before.
+#[test]
+fn a_refused_write_that_keeps_a_git_folder_in_place_offers_no_allow() {
+    use purlis_core::harness::Harness;
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let repo = root.join("ws/app/repo");
+    std::fs::create_dir_all(repo.join(".git")).expect("a clone");
+    std::fs::write(repo.join(".git/HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+    std::fs::create_dir_all(root.join("ws/app/other")).expect("a folder beside it");
+    let write = |kind| Block {
+        operation: Operation::Write,
+        kind,
+        ours: false,
+    };
+    let claude = Some(Harness::ClaudeCode);
+    for (kind, path) in [
+        (Kind::ProtectedFile, repo.join(".git")),
+        (Kind::ProjectFiles, repo.clone()),
+        (Kind::ProjectFiles, root.join("ws/app")),
+        (Kind::ProjectFiles, root.join("ws")),
+    ] {
+        let named = path.display().to_string();
+        let (offer, target, why) = kept_in_place(claude, &root, &write(kind), Some(&named))
+            .unwrap_or_else(|| panic!("{named} is not kept in place"));
+        assert_eq!((offer, target), (BlockOffer::Brokered, None), "{named}");
+        assert!(
+            why.as_deref()
+                .is_some_and(|why| why.contains("`purlis worktree remove`")),
+            "{named}: {why:?}"
+        );
+    }
+    for path in [
+        root.join("ws/app/other"),
+        repo.join("src/main.rs"),
+        repo.join(".git/index"),
+    ] {
+        let named = path.display().to_string();
+        assert_eq!(
+            kept_in_place(claude, &root, &write(Kind::ProjectFiles), Some(&named)),
+            None,
+            "{named}"
+        );
+    }
+    let named = repo.display().to_string();
+    assert_eq!(
+        kept_in_place(
+            Some(Harness::Codex),
+            &root,
+            &write(Kind::ProjectFiles),
+            Some(&named)
+        ),
+        None
+    );
 }

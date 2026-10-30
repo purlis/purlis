@@ -240,8 +240,9 @@ it with `create --vision "…"`; a `fork` inherits it. It answers "why does this
 exist", so it should be short enough that a newcomer reads all of it.
 
 **Memory is a store, not a log.** One file per fact with an index, because a single
-growing notes file is written once and searched never. `purlis workspace remember "…"`
-adds one; `purlis recall <query>` searches **across every base at once** — workspace
+growing notes file is written once and searched never. A chat adds one with the
+`memory_add` tool, or `purlis workspace remember -w <workspace> "…"` (the spelling that runs
+without a prompt); `purlis recall <query>` searches **across every base at once** — workspace
 memory, persona memory, shared memory and refs — which is the only search you need to
 remember. A base it could not read — a `memory/` at mode 000, a `refs/` subdirectory it
 cannot tell is one — is named in `purlis doctor`'s sentence, never searched as if empty:
@@ -276,7 +277,7 @@ The most consequential per-workspace choice, and it is one flag.
   and `todos/` are un-ignored, and a memory written to a LIVE workspace is committed and
   pushed **immediately** — reactively, not on a later save.
 
-`purlis workspace live <name> --off` puts it back. `purlis workspace remember --no-sync`
+`purlis workspace live <name> --off` puts it back. `purlis workspace remember -w <workspace> --no-sync`
 defers the push for one memory, and `purlis save` pushes the plane's changes later. Writing
 to a LOCAL workspace tells you it stayed put, rather than letting you assume it travelled.
 
@@ -383,8 +384,11 @@ piece, these run in the app for a chat (and here from a terminal):
   sandbox denies (an editor's tasks, a hook, an agent's settings) does not start, and names it.
 - `purlis worktree push` pushes the piece's own branch to its remote under its own name, after
   purlis's scan of what it would publish, never the branch the remote names its default.
-  `--force-with-lease` pushes over the remote's copy, only while the branch is where purlis's
-  own last `update` left it, and only if the remote still has what was fetched just before.
+  Where purlis's own `update` rewrote a branch that was already pushed, the push goes over the
+  remote's copy, leased to the exact commit the update saw there, also with commits added on
+  top since. It is refused where the remote moved since (someone else pushed), where the
+  branch was rewritten any other way, or where the remote's copy had commits the folder never
+  had, and it says what to do. `--force-with-lease` asks for nothing more than a plain push.
   Which branch is the remote's default is asked of the remote itself.
 
 Every checkout purlis runs for these reads each commit once, by its id, and runs git on the

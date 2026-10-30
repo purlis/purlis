@@ -397,6 +397,11 @@ pub struct HandedFrom {
     /// Whether the person started it, from that chat's tab (#1438), and not that chat itself.
     /// Its report still goes to that chat, and says so.
     pub by_person: bool,
+    /// **Whether it was dispatched as a long-running task** (#3905, `purlis dispatch --long`):
+    /// its notes are its heartbeat, and purlis never asks it for a report nor makes one from
+    /// its last message ([`crate::dispatched::owes_at_turn_end`]). Written by the app from the
+    /// dispatch it decided, never from anything the task sends.
+    pub long: bool,
 }
 
 /// How one chat started another (the spec's two modes of a dispatch, #1434).
@@ -1668,6 +1673,9 @@ struct FromOnDisk {
     /// `"person"` for a chat the person started from that chat's tab (#1438), or absent.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     by: String,
+    /// `true` for a long-running task (#3905), or absent.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    long: bool,
 }
 
 /// The personas above a chat as its record keeps them, held to what the app writes: one per
@@ -1716,6 +1724,7 @@ impl From<&HandedFrom> for FromOnDisk {
             } else {
                 String::new()
             },
+            long: from.long,
         }
     }
 }
@@ -1777,6 +1786,8 @@ impl FromOnDisk {
             root: a_ulid(&self.root),
             above: self.above.and_then(|above| chain_above(above, depth)),
             by_person: self.by == BY_PERSON,
+            // Only a task is long-running: a handoff's work moved, and owes nothing.
+            long: self.long && !older && Mode::of(&self.mode) == Mode::Task,
         })
     }
 }

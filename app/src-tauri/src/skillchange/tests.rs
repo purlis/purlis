@@ -143,7 +143,7 @@ fn a_deleted_skill_handed_to_the_window_comes_back_whole_and_restores() {
     let listed = verbs::deleted(tmp.path());
     let id = serde_json::to_string(&listed[0]).unwrap();
     let back: verbs::Deleted = serde_json::from_str(&id).unwrap();
-    heard(tmp.path(), |cx| verbs::restore(cx, &back)).unwrap();
+    heard(tmp.path(), |cx| verbs::restore(cx, &back, None)).unwrap();
 
     assert!(tmp.path().join("skills/deploy/SKILL.md").exists());
     assert_eq!(levels(tmp.path())[0].label, "project");
@@ -176,5 +176,50 @@ fn a_pinner_the_window_sends_is_the_cores_and_back_sk15d() {
     assert_eq!(
         serde_json::to_string(&workspace).unwrap(),
         r#"{"at":"workspace","name":"ops"}"#
+    );
+}
+
+#[test]
+fn a_router_is_chosen_only_where_it_is_offered_and_taken_out_with_none_3692() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
+    let ops = SkillPinner::Workspace {
+        name: "ops".to_owned(),
+    };
+    let offered = [SkillRouterOffer {
+        id: "relevance".to_owned(),
+        name: "Relevance".to_owned(),
+    }];
+    let manifest = root.join("workspaces/ops/workspace.json");
+
+    let why =
+        route(root, &ops, Some("recent-first"), || offered.to_vec()).expect_err("not offered");
+    assert!(why.contains("'recent-first'"), "{why}");
+    assert!(
+        !manifest.exists(),
+        "nothing is written for a router not offered"
+    );
+
+    route(root, &ops, Some("relevance"), || offered.to_vec()).unwrap();
+    assert_eq!(
+        purlis_core::skills::router::chosen(root, Some("ops"), None),
+        Ok(purlis_core::skills::router::Chosen::Extension(
+            "relevance".to_owned()
+        ))
+    );
+    route(root, &ops, Some("built-in"), || {
+        unreachable!("no id to look up")
+    })
+    .unwrap();
+    assert_eq!(
+        purlis_core::skills::router::chosen(root, Some("ops"), None),
+        Ok(purlis_core::skills::router::Chosen::BuiltIn)
+    );
+    route(root, &ops, None, || unreachable!("no id to look up")).unwrap();
+    assert_eq!(
+        purlis_core::skills::router::written(root, &(&ops).into()),
+        None
     );
 }

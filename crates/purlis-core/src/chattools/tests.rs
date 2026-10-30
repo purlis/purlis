@@ -556,6 +556,7 @@ fn a_dispatch_s_arguments_are_its_name_its_brief_and_a_persona_where_one_is_name
         [
             "brief",
             "in",
+            "long",
             "name",
             "profile",
             "to",
@@ -583,6 +584,18 @@ fn a_dispatch_waits_only_when_told_to_and_for_the_default_unless_told_how_long()
     );
     assert!(dispatch_waits(&args(json!({"wait": "yes"}))).is_err());
     assert!(dispatch_waits(&args(json!({"wait": true, "wait_seconds": -1}))).is_err());
+}
+
+#[test]
+fn a_dispatch_is_long_running_only_when_told_to() {
+    // #3905: one job with one answer is the default.
+    assert_eq!(
+        dispatch_long(&args(json!({"name": "n", "brief": "b"}))),
+        Ok(false)
+    );
+    assert_eq!(dispatch_long(&args(json!({"long": false}))), Ok(false));
+    assert_eq!(dispatch_long(&args(json!({"long": true}))), Ok(true));
+    assert!(dispatch_long(&args(json!({"long": "yes"}))).is_err());
 }
 
 #[test]

@@ -15,9 +15,9 @@
  * one part, and a cut never goes stale into a missing file. When a part grows past the others,
  * the `Annotate the slowest scenario specs` notices say which, and a cut moves.
  *
- * `projects` is a cut in every split on purpose: the Skill studio's draft specs pass only after
- * the specs from `projects` on have run in the same app (#3562), and every part that holds them
- * starts there, as WebdriverIO's second half did.
+ * No spec needs a cut of its own: the Skill studio's draft specs once passed only after the
+ * specs from `projects` on, which approved the profile their chats start on, and now approve it
+ * themselves (#3562).
  */
 const CUTS: Record<number, readonly string[]> = {
   // WebdriverIO's halves, as they cut 100 specs (Linux's two parts).

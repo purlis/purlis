@@ -569,7 +569,7 @@ fn a_newer_commit_is_offered_and_never_applied_by_itself() {
         NOTIFY
     );
 
-    let diff = update_review(root, &Level::project(), "notify").unwrap();
+    let diff = update_review(root, None, &Level::project(), "notify").unwrap();
     assert!(diff.from_pin);
     assert!(
         diff.changes
@@ -683,7 +683,7 @@ fn an_edited_copy_says_so_and_its_update_lists_the_edits() {
     remote.commit(&tree, Some(&first));
     let offers = updates(root).offers;
     assert!(offers[0].edited);
-    let diff = update_review(root, &Level::project(), "notify").unwrap();
+    let diff = update_review(root, None, &Level::project(), "notify").unwrap();
     assert_eq!(diff.edited, ["SKILL.md"]);
 }
 
@@ -1165,7 +1165,7 @@ fn an_update_renaming_a_file_by_its_case_keeps_the_new_one() {
         ("skills/casey/Run.sh", "100755", b"echo two\n"),
     ]);
     remote.commit(&tree, Some(&first));
-    let diff = update_review(root, &Level::project(), "casey").unwrap();
+    let diff = update_review(root, None, &Level::project(), "casey").unwrap();
     on(root, |cx| {
         update(cx, &Level::project(), "casey", &diff.accepted())
     })
@@ -1216,9 +1216,11 @@ fn an_update_brings_along_a_skill_it_newly_refers_to_and_shows_the_local_edits()
         ),
     ]);
     remote.commit(&tree, Some(&first));
-    let diff = update_review(root, &Level::project(), "notify").unwrap();
+    let diff = update_review(root, None, &Level::project(), "notify").unwrap();
     assert_eq!(diff.brought.len(), 1);
     assert_eq!(diff.brought[0].name, "format");
+    assert!(diff.reserved.is_empty());
+    assert_eq!(diff.refused(), None);
     assert_eq!(diff.edited, ["SKILL.md"]);
     assert!(
         diff.local_edits[0].diff.contains("+My own line."),
@@ -1524,7 +1526,7 @@ fn an_update_of_a_skill_from_an_unconfirmed_committed_source_fetches_nothing() {
     // Another machine: the committed lockfile, and none of this machine's confirmations.
     std::fs::remove_file(root.join("charter.local.toml")).unwrap();
     let lock_before = std::fs::read(root.join(lock::FILE)).unwrap();
-    let why = update_review(root, &Level::project(), "notify").unwrap_err();
+    let why = update_review(root, None, &Level::project(), "notify").unwrap_err();
     assert!(why.contains("never a folder on one machine"), "{why}");
     let wanted = Accepted {
         commit: Commit::parse(&"0".repeat(40)).unwrap(),
@@ -1554,7 +1556,7 @@ fn an_update_of_a_skill_from_an_unconfirmed_committed_source_fetches_nothing() {
         }],
     });
     std::fs::write(root.join(lock::FILE), entry.to_string()).unwrap();
-    let why = update_review(root, &Level::project(), "far").unwrap_err();
+    let why = update_review(root, None, &Level::project(), "far").unwrap_err();
     assert!(why.contains("until it is confirmed here"), "{why}");
 }
 
@@ -1635,8 +1637,26 @@ fn no_skill_with_a_built_in_skills_name_lands_by_an_install_or_an_update() {
         ("skills/secrets/SKILL.md", "100644", secrets),
     ]);
     remote.commit(&tree, Some(&first));
-    let diff = update_review(root, &Level::project(), "notify").unwrap();
+    let diff = update_review(root, None, &Level::project(), "notify").unwrap();
     assert_eq!(diff.brought.len(), 1, "{:?}", diff.brought);
+    // The review says so up front (#3728), before it is accepted.
+    assert_eq!(diff.reserved, ["secrets"]);
+    assert_eq!(
+        diff.refused().as_deref(),
+        Some(
+            "This update brings along secrets, whose name belongs to a built-in skill, so it \
+             can't be taken until the source renames it."
+        )
+    );
+    let mut more = diff.clone();
+    more.reserved = vec!["secrets".into(), "browser".into(), "theme".into()];
+    assert_eq!(
+        more.refused().as_deref(),
+        Some(
+            "This update brings along secrets, browser and theme, whose names belong to built-in \
+             skills, so it can't be taken until the source renames them."
+        )
+    );
 
     let refused = on(root, |cx| {
         update(cx, &Level::project(), "notify", &diff.accepted())

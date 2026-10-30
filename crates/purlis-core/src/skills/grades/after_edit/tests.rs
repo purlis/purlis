@@ -65,7 +65,7 @@ fn it_is_kept_in_this_machines_state_never_in_the_project() {
     let project = project();
     let root = project.path();
     turn_on(root, &Level::project(), "deploy", accepted()).unwrap();
-    let file = crate::plane::state_dir(root).join(FILE);
+    let file = crate::appstate::dir(root).unwrap().join(FILE);
     assert!(file.is_file(), "{}", file.display());
     #[cfg(unix)]
     {
@@ -82,7 +82,7 @@ fn a_record_that_does_not_hold_together_reads_as_off() {
     let project = project();
     let root = project.path();
     turn_on(root, &Level::project(), "deploy", accepted()).unwrap();
-    let file = crate::plane::state_dir(root).join(FILE);
+    let file = crate::appstate::dir(root).unwrap().join(FILE);
     let text = std::fs::read_to_string(&file).unwrap();
     std::fs::write(&file, text.replace("\"chats\": 12", "\"chats\": 0")).unwrap();
     assert_eq!(of(root, &Level::project(), "deploy"), None);
@@ -217,4 +217,14 @@ fn a_changed_profile_model_cap_or_limit_pauses_the_opt_in() {
         );
     }
     assert_eq!(next(&accepted(), &now(12, 200_000, 3.0)), Next::Grade);
+}
+
+#[test]
+fn an_opt_in_in_the_plane_s_state_folder_is_never_read() {
+    // #3718: the opt-in is read from this machine's app state alone.
+    let project = project();
+    let root = project.path();
+    turn_on(root, &Level::project(), "deploy", accepted()).unwrap();
+    crate::appstate::put_in_the_plane(root, FILE);
+    assert_eq!(of(root, &Level::project(), "deploy"), None);
 }

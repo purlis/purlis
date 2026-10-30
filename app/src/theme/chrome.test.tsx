@@ -79,6 +79,7 @@ import { RemovePersona } from "../RemovePersona";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
 import { DeprecateDialog, OwnersDialog } from "../SkillPage";
+import { LeaveQuestion } from "../SkillEditInPlace";
 import { SkillCopy } from "../SkillCopy";
 import { RequestMerge } from "../SavingMerge";
 import { SavingView } from "../SavingView";
@@ -91,6 +92,7 @@ import { PinItem, UpdateItem } from "../Updates";
 import { VaultTab } from "../VaultTab";
 import { OpenVault } from "../Vaults";
 import { AddToAChat } from "../AddToAChat";
+import { RouterChange } from "../SkillStudioRouting";
 import { KeepAsk } from "../ThemeDraftStrip";
 import { forgetThisLaunch } from "../regions";
 import { complaints } from "./complaints.testkit";
@@ -415,6 +417,8 @@ function dialogCore() {
           dropped: [],
           unreadable: null,
         };
+      case "skill_routers":
+        return [{ id: "relevance", name: "Relevance router" }];
       case "reachable_repos":
         return { repos: [{ name: "svc", path: "acme/svc", description: "" }], trouble: [] };
       case "forge_device_sign_in_start":
@@ -1201,6 +1205,21 @@ const DIALOGS: Opened[] = [
       ),
   },
   {
+    name: "leaving a skill's editor with unsaved changes (#3683)",
+    file: "SkillEditInPlace.tsx",
+    open: async () =>
+      render(
+        <LeaveQuestion
+          name="deploy"
+          blocked={false}
+          busy={false}
+          onKeep={nothing}
+          onDiscard={nothing}
+          onSave={nothing}
+        />,
+      ),
+  },
+  {
     name: "naming who looks after a skill, from its page (#3682)",
     file: "SkillPage.tsx",
     open: async () =>
@@ -1467,6 +1486,20 @@ const DIALOGS: Opened[] = [
           offers={new Map()}
           onPress={nothing}
           onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "Change the router",
+    file: "SkillStudioRouting.tsx",
+    open: async () =>
+      render(
+        <RouterChange
+          plane={PLANE}
+          by={{ at: "persona", name: "reviewer" }}
+          written="relevance"
+          onClose={nothing}
+          onChoose={nothing}
         />,
       ),
   },

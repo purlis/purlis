@@ -11,13 +11,13 @@ import type { FamilyTheme } from "../../theme/families.testkit";
 export default {
   faint: [
     // An unavailable pressed card's words, as a disabled button's (#3655).
-    '[data-scope="card"][data-part="pressable"][data-disabled]',
+    '[data-scope="card-button"][data-part="root"][data-disabled]',
   ],
   quiet: [
     // An unavailable pressed card's line: beside its button, so words a person reads (#3655).
-    '[data-scope="card"][data-part="pressable"][data-disabled] > [data-part="line"]',
+    '[data-scope="card-button"][data-part="root"][data-disabled] > [data-part="line"]',
   ],
-  // Of the family's parts, only its root is a ground a button stands on: a pressed card is
-  // itself the button, and holds no other (#3655).
-  groundParts: { card: ["root"] },
+  // Of the card's parts, only its root is a ground a button stands on; a pressed card is itself
+  // the button, and holds no other (#3655), so none of its own parts is one (#3885).
+  groundParts: { card: ["root"], "card-button": [] },
 } satisfies FamilyTheme;

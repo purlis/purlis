@@ -76,10 +76,12 @@ pub enum WorktreeCommand {
         abort: bool,
     },
     /// Push the branch of the folder you stand in to its remote, under its own name, after
-    /// purlis's scan of what it would publish. In a chat the app runs it.
+    /// purlis's scan of what it would publish. Where purlis's own `update` rewrote the branch,
+    /// it goes over the remote's copy the update saw, also with commits added since (#3895).
+    /// In a chat the app runs it.
     Push {
-        /// Push over the remote's copy of the branch, only right after `update` rewrote it, and
-        /// only if the remote still has what was last fetched.
+        /// Accepted and asks for nothing more: a plain push already goes over the remote's
+        /// copy where purlis's own update rewrote the branch, and only then.
         #[arg(long)]
         force_with_lease: bool,
     },
@@ -132,11 +134,14 @@ pub enum WorktreeCommand {
 pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
     let root = here.plane.root().to_path_buf();
     let now = chrono::Utc::now();
+    // In a chat, by its stable id too (#3901): its `done` or `abandon` hands over a branch
+    // folder it holds, and another chat's lets nothing go.
     let who = Who::here(
         purlis_core::machine::config_root_if_there().as_deref(),
         here.ids.session.clone(),
         here.active_persona(None),
-    );
+    )
+    .for_chat(purlis_core::envvar::var(purlis_core::hookwire::CHAT_ID_ENV));
     let mut say = crate::speak;
     let code = match command {
         WorktreeCommand::Add {
@@ -191,7 +196,7 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                 (_, true) => purlis_core::hookwire::UpdateStep::Abort,
                 _ => purlis_core::hookwire::UpdateStep::Start { base },
             };
-            update(here, &step, &mut say)
+            update(here, &step, &who, &mut say)
         }
         WorktreeCommand::Push { force_with_lease } => standing_in(here, &mut say, |at, say| {
             let work = purlis_core::hookwire::GitWork::WorktreePush {
@@ -200,9 +205,14 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                 lease: force_with_lease,
             };
             ran_by_the_app(at, work, say).unwrap_or_else(|| {
+                if let Err(why) =
+                    no_app_to_tell(&root, at, &who, purlis_core::piececlaim::Act::Push)
+                {
+                    say(purlis_core::repocmd::Say::Fail(why.into()));
+                    return 1;
+                }
                 purlis_core::pieceupdate::push(
                     &piece_of(&root, at),
-                    force_with_lease,
                     &purlis_core::pieceupdate::Reach::default(),
                     say,
                 )
@@ -331,6 +341,7 @@ fn root_takes(step: &purlis_core::hookwire::UpdateStep) -> bool {
 fn update(
     here: &Here,
     step: &purlis_core::hookwire::UpdateStep,
+    who: &Who,
     say: &mut dyn FnMut(purlis_core::repocmd::Say),
 ) -> u8 {
     let Some(updated) = Updated::of(here) else {
@@ -353,6 +364,10 @@ fn update(
     let reach = purlis_core::pieceupdate::Reach::default();
     match &updated {
         Updated::Piece(at) => {
+            if let Err(why) = no_app_to_tell(root, at, who, purlis_core::piececlaim::Act::Update) {
+                say(purlis_core::repocmd::Say::Fail(why.into()));
+                return 1;
+            }
             purlis_core::pieceupdate::update(&piece_of(root, at), step, &reach, say)
         }
         Updated::Clone { ws, repo } => purlis_core::pieceupdate::update_clone(
@@ -434,6 +449,22 @@ fn standing_in(
             1
         }
     }
+}
+
+/// **In a chat whose app took no ask**, a branch folder's claim is still held to (#3901): with
+/// no app to say whether its holder lives, a folder another chat holds is refused, and the
+/// holder writes on. Outside a chat it is the person's own terminal, which hands any folder
+/// over, and nothing is asked.
+fn no_app_to_tell(
+    root: &std::path::Path,
+    at: &purlis_core::worktree::Located,
+    who: &Who,
+    act: purlis_core::piececlaim::Act,
+) -> Result<(), String> {
+    if crate::session::chat_number().is_none() {
+        return Ok(());
+    }
+    purlis_core::piececlaim::take(root, at, who, None, act, chrono::Utc::now())
 }
 
 /// The piece `at` names, in the project at `root`.

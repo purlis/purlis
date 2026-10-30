@@ -12,12 +12,11 @@
 //! `git fetch <remote> <branch>:<branch>` would**: only a fast-forward, and only where no
 //! worktree has the branch checked out, since moving a checked-out branch would leave that
 //! tree's files behind its commit. Where it is checked out and behind, the remote-tracking
-//! branch is used in its place ([`Fresh::instead`]); where it is ahead of its remote, it is
-//! used as the clone has it. Where it and its remote have each moved on, the remote-tracking
-//! branch is used too (#3836): the commits only the clone's branch has are most often a
-//! checkout's copies of work the remote has since landed another way (a squash), and a piece
-//! cut from them would carry them into its pull request. The note says which, and what brings
-//! the clone up.
+//! branch is used in its place ([`Fresh::instead`]), and so it is where the two have each moved
+//! on (#3890): the clone's branch then holds commits its remote never took, most often ones
+//! upstream squashed into one of its own, and is never moved. Where it is only ahead of its
+//! remote, it is used as the clone has it, its own commits the base's. The note says which,
+//! and what brings the clone up.
 //!
 //! A base may also name a remote-tracking branch, `origin/main` (#3836): the piece is cut from
 //! or moved onto it, and recorded as cut from the clone's branch of the same name, which
@@ -42,7 +41,7 @@ pub struct Fresh {
     pub moved_to: Option<String>,
     /// The remote-tracking branch to start from in its place (`refs/remotes/origin/main`),
     /// where the base is behind it and could not be moved (checked out in a worktree, whose
-    /// files would be left behind its commit), where the two have each moved on, or where the
+    /// files would be left behind its commit), where the two have diverged (#3890), or where the
     /// base named the remote-tracking branch itself (#3836).
     pub instead: Option<String>,
     /// What the person should know: the base is behind its remote and was left where it is, or
@@ -191,8 +190,7 @@ fn bring_up_branch(clone: &Path, branch: &str) -> Result<Fresh, Refusal> {
     )?;
     match behind.code {
         Some(0) => {}
-        // Ahead of it: the clone's own commits are the base's. Apart from it: the remote's
-        // (#3836).
+        // Ahead of it: the clone's own commits are the base's. Apart from it: the remote's.
         Some(1) => {
             let ahead = git::run(
                 clone,
@@ -205,9 +203,9 @@ fn bring_up_branch(clone: &Path, branch: &str) -> Result<Fresh, Refusal> {
                     moved_to: None,
                     instead: Some(upstream.clone()),
                     notes: vec![format!(
-                        "{branch} and {short} have each moved on, so purlis used {short}: the \
-                         commits only the clone's {branch} has are left out. `--base HEAD` \
-                         cuts from the clone as it is"
+                        "{branch} and {short} have each moved on, so purlis used {short} and \
+                         left {branch} where it is. To bring {branch} onto {short}, rebase or \
+                         reset it from your own terminal"
                     )],
                 });
             }
