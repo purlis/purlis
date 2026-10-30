@@ -93,7 +93,7 @@ function core({
   unlisted = false,
 }: {
   /** How `clone_repo` answers each repo: the core's lines, or a refusal it throws. */
-  clone?: (repo: string) => Promise<string[]>;
+  clone?: (repo: string, given: Record<string, unknown>) => Promise<string[]>;
   /** The repos the new-workspace dialog offers, while `clone` is given. */
   repos?: string[];
   missing?: string[];
@@ -163,7 +163,7 @@ function core({
         trouble: [],
       };
     if (cmd === "take_repos") return null;
-    if (cmd === "clone_repo" && clone !== undefined) return clone(String(given.repo));
+    if (cmd === "clone_repo" && clone !== undefined) return clone(String(given.repo), given);
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "running_sessions") return [];
@@ -864,6 +864,89 @@ describe("a new workspace's clone, on its chip (#3649)", () => {
   });
 });
 
+describe("a clone's progress on its card (#4079)", () => {
+  /** A `clone_repo` that holds its answer, and how to tell the card how far it has got. */
+  function telling() {
+    const held: {
+      tell: (stage: string, percent: number) => void;
+      answer: (lines: string[] | null) => void;
+      refuse: (why: unknown) => void;
+    }[] = [];
+    const clone = (_: string, given: Record<string, unknown>) =>
+      new Promise<string[]>((answer, refuse) => {
+        const progress = given.progress as {
+          onmessage: (now: { stage: string; percent: number }) => void;
+        };
+        held.push({
+          tell: (stage, percent) => act(() => progress.onmessage({ stage, percent })),
+          answer: answer as (lines: string[] | null) => void,
+          refuse,
+        });
+      });
+    return { held, clone };
+  }
+
+  it("draws the stage and the batch's percent on a bar, with a running mark and Cancel", async () => {
+    const { held, clone } = telling();
+    core({ clone, repos: ["api", "web"] });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma", ["api", "web"]);
+    const card = await findCard("gamma");
+    await waitFor(() => expect(held).toHaveLength(1));
+
+    const running = (await within(card).findByText("Cloning 2 repos…")).closest(
+      '[data-scope="notice"][data-part="root"]',
+    );
+    expect(running?.querySelector(".spinning")).not.toBeNull();
+    expect(running?.querySelector(".lucide-circle-check")).toBeNull();
+
+    held[0].tell("Downloading", 50);
+    await waitFor(() =>
+      expect(within(card).getByRole("progressbar", { name: "Downloading" })).toHaveAttribute(
+        "aria-valuenow",
+        "25",
+      ),
+    );
+    expect(within(card).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+  });
+
+  it("cancels: git is told to stop, and the card says so with Retry", async () => {
+    const { held, clone } = telling();
+    const { asked } = core({ clone });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma", ["api"]);
+    const card = await findCard("gamma");
+    await waitFor(() => expect(held).toHaveLength(1));
+    await userEvent.click(within(card).getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(asked.filter((one) => one.cmd === "cancel_clone_repo")).toHaveLength(1),
+    );
+    held[0].answer(null);
+    await waitFor(() => expect(card).toHaveTextContent("Stopped cloning api"));
+    expect(card).not.toHaveTextContent("Could not clone");
+    expect(within(card).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(within(card).queryByRole("progressbar")).toBeNull();
+  });
+
+  it("sends a sign-in failure to Accounts", async () => {
+    const { held, clone } = telling();
+    core({ clone });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    await make("gamma", ["api"]);
+    const card = await findCard("gamma");
+    await waitFor(() => expect(held).toHaveLength(1));
+    held[0].refuse({
+      said: "api: Sign in to git.corp.example to clone it.",
+      sign_in: "git.corp.example",
+    });
+    await waitFor(() => expect(card).toHaveTextContent("Sign in to git.corp.example"));
+    expect(within(card).getByRole("button", { name: "Open Accounts" })).toBeInTheDocument();
+  });
+});
+
 describe("a new workspace's clone, counted and retried (#3649's review)", () => {
   it("counts each repo as it lands, on the same notice, then says them cloned", async () => {
     const { clone, held } = heldClone();
@@ -966,6 +1049,8 @@ describe("a new workspace's clone, across what else happens (#3898)", () => {
         within(bar()).getByRole("button", { name: /^Show the 2 notices on gamma/ }),
       ).toBeInTheDocument(),
     );
+    // The count itself drew, in place, where every notice is listed (#4003): not a line dropped.
+    await waitFor(async () => expect(await results()).toHaveTextContent("1 of 2 done."));
     expect(queryCard("delta")).toBe(delta);
     expect(queryCard("gamma")).toBeNull();
   });

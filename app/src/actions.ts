@@ -186,8 +186,10 @@ export type Said = {
   details?: string;
   ways?: readonly SaidWay[];
   /** A line about work still under way ("Cloning 2 repos…"), which the next line replaces:
-   *  said, but not kept under Results, unless it is on a `track`. */
+   *  said, but not kept under Results, unless it is on a `track`. Its mark says it is running. */
   progress?: boolean;
+  /** How far that work has got, drawn as a bar under it: the stage, and its percent (#4079). */
+  meter?: { label: string; percent: number };
   /** **The run of lines it is one of** (#3649): a line on a track takes the place of the one
    *  kept before it on that track, in place, so a clone's progress turns into its result in one
    *  notice. A progress line on a track is kept until then. */

@@ -2,7 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { forThePerson, resultOf, saidInPlainWords, workspaceMade } from "./actionResult";
+import {
+  cloneTrack,
+  forThePerson,
+  reposCloning,
+  reposNotCloned,
+  reposStopped,
+  resultOf,
+  saidInPlainWords,
+  workspaceMade,
+} from "./actionResult";
 
 /** What `purlis workspace create` says, as `wscmd/create.rs` writes it. */
 const MADE_LIVE = [
@@ -117,5 +126,46 @@ describe("a result on one line (the palette's)", () => {
     expect(
       saidInPlainWords({ from: "x", refused: false, words: "Done. ⬢ ask the developer why" }),
     ).toBe("Done.");
+  });
+});
+
+describe("a workspace's repos cloning, on its chip (#4079)", () => {
+  const press = () => undefined;
+
+  it("draws the batch's overall percent and its stage, with Cancel", () => {
+    const said = reposCloning("gamma", ["api", "web"], 1, 1, {
+      moved: { stage: "Downloading", percent: 50 },
+      onCancel: press,
+    });
+    expect(said.meter).toEqual({ label: "Downloading", percent: 75 });
+    expect(said.ways).toEqual([{ label: "Cancel", onPress: press }]);
+  });
+
+  it("has a meter from its first line, before git has said anything", () => {
+    const said = reposCloning("gamma", ["api", "web"], 0, 1, { onCancel: press });
+    expect(said.meter).toEqual({ label: "Connecting", percent: 0 });
+  });
+
+  it("sends a sign-in failure to Accounts, and any other to the workspace's repos", () => {
+    const signIn = reposNotCloned(
+      "gamma",
+      [{ repo: "api", said: "api: Sign in to git.corp.example.", signIn: "git.corp.example" }],
+      press,
+      1,
+    );
+    expect(signIn.settings).toEqual({
+      label: "Open Accounts",
+      link: { group: "you.accounts" },
+    });
+    const other = reposNotCloned("gamma", [{ repo: "api", said: "no" }], press, 1);
+    expect(other.settings?.link).toEqual({ group: "workspace.repos", workspace: "gamma" });
+  });
+
+  it("says a stopped clone in its own words, with Retry, and is no refusal", () => {
+    const said = reposStopped("gamma", ["api"], press, 1);
+    expect(said.refused).toBe(false);
+    expect(said.title).toBe("Stopped cloning api");
+    expect(said.ways).toEqual([{ label: "Retry", onPress: press, primary: true }]);
+    expect(said.track).toBe(cloneTrack("gamma", 1));
   });
 });

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Said } from "./actions";
+import { clonesInAll } from "./repoClones";
 
 /**
  * **What an action answered, in the person's words** (#3344, the sidebar-views prototype's Q3 A).
@@ -101,13 +102,15 @@ const reposCounted = (count: number) => (count === 1 ? "1 repo" : `${count} repo
 /**
  * **A new workspace's repos cloning** (#3649, spec #3647): "Cloning 2 repos…", which ones into
  * where, and how many have landed so far. On its workspace's chip, and on the clone's track, so
- * each repo that lands updates it in place and its result takes its place.
+ * each repo that lands updates it in place and its result takes its place. Its bar says how far
+ * the batch has got across its repos, in one percent, and its Cancel stops the clone (#4079).
  */
 export function reposCloning(
   workspace: string,
   repos: readonly string[],
   done: number,
   run: number,
+  { moved, onCancel }: { moved?: { stage: string; percent: number }; onCancel?: () => void } = {},
 ): Said {
   const into = `${repos.join(", ")} into ${workspace}.`;
   return {
@@ -116,6 +119,11 @@ export function reposCloning(
     title: `Cloning ${reposCounted(repos.length)}…`,
     words: done === 0 ? into : `${into} ${done} of ${repos.length} done.`,
     progress: true,
+    meter: {
+      label: moved?.stage ?? "Connecting",
+      percent: clonesInAll(done, repos.length, moved?.percent ?? 0),
+    },
+    ways: onCancel === undefined ? [] : [{ label: "Cancel", onPress: onCancel }],
     workspace,
     track: cloneTrack(workspace, run),
   };
@@ -136,24 +144,46 @@ export function reposCloned(workspace: string, repos: readonly string[], run: nu
 /**
  * **A new workspace's repos that did not clone** (#3649): which, in the core's own words, with
  * Retry, which clones those again on the same track, and the way to the workspace's Repos
- * settings (#1201, SE-22). A warning, so the chip's dot is ▲ while it is hidden.
+ * settings (#1201, SE-22), or to Accounts where a sign-in is what it needs (#4079). A warning, so
+ * the chip's dot is ▲ while it is hidden.
  */
 export function reposNotCloned(
   workspace: string,
-  failed: readonly { repo: string; said: string }[],
+  failed: readonly { repo: string; said: string; signIn?: string }[],
   onRetry: () => void,
   run: number,
 ): Said {
+  const signIn = failed.some((one) => one.signIn !== undefined);
   return {
     from: "workspace.clone",
     refused: true,
     title: `Could not clone ${failed.map((one) => one.repo).join(", ")} into ${workspace}`,
     words: failed.map((one) => one.said).join(" "),
     ways: [{ label: "Retry", onPress: onRetry, primary: true }],
-    settings: {
-      label: `Open ${workspace}'s repo settings`,
-      link: { group: "workspace.repos", workspace },
-    },
+    settings: signIn
+      ? { label: "Open Accounts", link: { group: "you.accounts" } }
+      : {
+          label: `Open ${workspace}'s repo settings`,
+          link: { group: "workspace.repos", workspace },
+        },
+    workspace,
+    track: cloneTrack(workspace, run),
+  };
+}
+
+/** **A clone the person stopped** (#4079): the clone's notice, turned into that, with Retry. */
+export function reposStopped(
+  workspace: string,
+  repos: readonly string[],
+  onRetry: () => void,
+  run: number,
+): Said {
+  return {
+    from: "workspace.clone",
+    refused: false,
+    title: `Stopped cloning ${repos.join(", ")}`,
+    words: "Nothing was kept. Retry starts again.",
+    ways: [{ label: "Retry", onPress: onRetry, primary: true }],
     workspace,
     track: cloneTrack(workspace, run),
   };
