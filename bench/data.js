@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793351529378,
+  "lastUpdate": 1793353207669,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31248,6 +31248,48 @@ window.BENCHMARK_DATA = {
             "value": 102.689302,
             "unit": "ms",
             "extra": "median of 5 runs: 101.944, 102.313, 102.689, 103.068, 103.296 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1482b4006c5442de5396b246142f718695b5bec2",
+          "message": "Pools: always listed in Settings, Add a pool…, image defaults to this release's (#4005)\n\n* Pools: always listed in Settings, Add a pool…, image defaults to this release's\n\nThe person's ruling of 2026-10-30, after looking for pools in Settings and\nfinding none: Settings › This machine › Pools is always listed. With no pool\nit says what a pool is and has Add a pool…; with pools, the list stays, with\nthe same button. Its palette row, Your settings: Pools, follows the group.\nDevices and the other runner surfaces stay hidden until a pool exists.\n\nThe palette's Add a Docker pool… is Add a pool…, and its dialog is titled\nAdd a pool for both kinds, Kind first.\n\nThe Image box defaults to the runner image this version's release names, read\nby a new window-only command, runner_image_of_this_version, through\npoolfollow's updater read and signed-manifest check. The look and the dialog\nshare what was read. A build that names none (development, or a release\nwhose runner image was not built) says so under the box and still needs a\ndigest; the core still refuses an image not named by its digest.\n\nADR 0078 gets an amendment note for the ruling.\n\nRefs #2041, #2679\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65C93Q024FTVXW1XHK8E951\nPurlis-Persona: steward\n\n* Pools: offer a newer release's runner image when the update waits; fix group lists\n\nReview round 2 on #4005.\n\nThe exact-list tests for You's Settings groups (the nav lists in\nSettingsTab.test and SettingsFilter.test, and the palette's Your settings\nrows) now include Pools after Browsers.\n\nThe Add a pool dialog's default image no longer disappears on a machine\nbehind its update channel. On stable, purlis reads the manifest of this\nversion's own release (releases/download/v{version}/latest.json, a new\nChannel::release_endpoint) and falls back to the channel's. On dev, or\nwhere that manifest is missing, it reads the channel's newest manifest. If\nthat manifest names a newer version, that version's runner image is\noffered, and the dialog says whose image it is and that an update of purlis\nto it is waiting. The new purlis_core::runnerimage::offered checks every\nimage exactly as of_this_version does: the updater key's minisign signature\nover the line, the trusted comment's version equal to the manifest's,\npinned by digest, and purlis's own image. The command now answers\nRunnerImageOffered (ours / newer / none_named / local_build), and the help\nunder the Image box says each case plainly. \"Local build\" means a build\nwith no update channel. Only an answer that can't be read or is refused\nleaves the box empty.\n\nThe stories pass their pools as a parameter instead of an unused prop. A\ncomment line over 100 columns is reflowed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65C93Q024FTVXW1XHK8E951\nPurlis-Persona: steward\n\n* Pools: read runner-image manifests through the updater; close the dialog between tests\n\nTwo CI failures on #4005.\n\nThe guard that only the updater and report name purlis's own address\n(ADR 0083 §9) flagged poolfollow's channel read. The manifest reads now\nlive in the updater module (app/src-tauri/src/updates.rs):\nthis_versions_manifest for the follow look, manifest_for_a_new_pool for\nthe Add a pool dialog, and a shared read_manifest. poolfollow names no\nrelease address any more, so its one-line allowance is removed. The\nguard also watches Channel::release_endpoint now.\n\nIn Pools.test.tsx the first test left the Add a pool dialog open. Its\nopen state lives in the window's pool store and outlasts a render, so\nevery later test's palette could not open behind the modal. The test now\ncancels the dialog, and afterEach closes it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65C93Q024FTVXW1XHK8E951\nPurlis-Persona: steward\n\n* Pools: say what Remove does only while there is a pool; fix the key-changed test\n\nThe Pools group's sentence about Remove (\"Remove takes this machine out of\nthe runner's peers… There is no undo.\") was the row's fixed help, so it\nshowed in the empty state too. It is now a line under the list, drawn and\nused as the group's description only while a pool is kept. With no pool\nthe group shows only what a pool is.\n\nThe key-changed test still expected the Pools group to leave the nav once\nits last pool was removed. Per the 2026-10-30 ruling, the group stays: the\ntest now checks that it says what a pool is and nothing about Remove. The\nlisted-pools test checks the Remove line is there, and the empty-state\ntest checks it is not.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65C93Q024FTVXW1XHK8E951\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T09:13:44Z",
+          "tree_id": "b509e6e287221ff9dca9ceb16f3e278b51f5cf69",
+          "url": "https://github.com/purlis/purlis/commit/1482b4006c5442de5396b246142f718695b5bec2"
+        },
+        "date": 1793353204005,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.526816,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.524, 0.526, 0.527, 0.529, 0.531 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4205795,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.381, 16.413, 16.421, 16.446, 16.490 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.048475,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.140, 100.558, 101.048, 101.460, 101.858 ms"
           }
         ]
       }
