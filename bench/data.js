@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793368378854,
+  "lastUpdate": 1793370270210,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31626,6 +31626,48 @@ window.BENCHMARK_DATA = {
             "value": 102.319299,
             "unit": "ms",
             "extra": "median of 5 runs: 101.876, 102.170, 102.319, 102.495, 102.504 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bba53ed8a0d36bdb950c967d4f2e71329d0e1775",
+          "message": "Focus mode: run from the palette in a part it hides, the keyboard stays on the work (#4072) (#4082)\n\n* Focus mode: a window test that running it from the palette, opened in a part it hides, leaves the keyboard on the work (#4072)\n\nRed first: for each part HIDDEN_IN_FOCUS lists, the palette gave the\nkeyboard back to where it was opened from, a part focus mode had just\nhidden.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Focus mode: the keyboard is kept off a part it hides, however it got there (#4072)\n\nThe palette gives the keyboard back to where it was opened from as it\ncloses, after its row ran: Focus mode run from a part it hides handed it\nto a part no longer drawn, which left it on the page. The hand-back now\ntakes it to the work while focus mode is on\n(keepTheKeyboardOffWhatFocusModeHides), and focus mode takes it there\ntoo once its parts are hidden, for a hand-back that came first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T13:26:08Z",
+          "tree_id": "74d66a3e5dc4549a4c6db3dd51e6b317817ccce7",
+          "url": "https://github.com/purlis/purlis/commit/bba53ed8a0d36bdb950c967d4f2e71329d0e1775"
+        },
+        "date": 1793370266718,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6689825,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.651, 0.663, 0.669, 0.675, 0.703 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4025395,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.267, 16.341, 16.403, 16.494, 16.752 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.58726,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.820, 102.525, 102.587, 102.952, 103.150 ms"
           }
         ]
       }
