@@ -8110,10 +8110,13 @@ export type PoolSignInStep =
 { at: "refused"; said: string } | 
 /**  The login ended well, and the runner is asked whether it is signed in. */
 { at: "checking" } | 
+/**  The runner's own status check says it is signed in. */
 { at: "signed-in" } | 
 /**  purlis could not follow the login: what it printed. */
 { at: "could-not-follow"; said: string } | 
+/**  It did not sign in, and why. */
 { at: "failed"; why: string } | 
+/**  It was cancelled, and its login ended. */
 { at: "cancelled" };
 
 /**

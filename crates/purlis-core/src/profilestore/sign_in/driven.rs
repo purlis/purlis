@@ -16,7 +16,7 @@
 //!
 //! **No credential is read or kept.** What the login prints is read for its page, its prompt and
 //! its words of refusal; the code pasted passes through to it and is kept nowhere. Each
-//! harness's words are here, beside [`super::FLOWS`]: Claude Code's alone so far (2.1.314's
+//! harness's words are here, beside its sign-in's own words (`FLOWS`): Claude Code's alone so far (2.1.314's
 //! `auth login`, which with its input a pipe prints its page and `Paste code here if prompted >`
 //! and reads `code#state` lines). [`drive`] runs a [`Login`] and feeds it to a [`Driven`].
 

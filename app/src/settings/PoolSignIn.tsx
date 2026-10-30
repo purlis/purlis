@@ -179,18 +179,31 @@ export function SignInStrip(props: SignInStripProps) {
     step.at,
   );
   const who = `${profile} (${harness})`;
+  // The keyboard was in the code field, which goes once the code is sent: it goes to the strip,
+  // never to the page's start.
+  const strip = useRef<HTMLElement>(null);
+  const asked = step.at === "code" || step.at === "refused";
+  useEffect(() => {
+    const at = document.activeElement;
+    if (!asked && (at === null || at === document.body)) strip.current?.focus();
+  }, [asked, step.at]);
   return (
-    <Card className="pool-sign-in" aria-label={`Signing ${profile} in on ${pool}`} role="group">
+    <Card
+      ref={strip}
+      tabIndex={-1}
+      className="pool-sign-in"
+      aria-label={`Signing ${profile} in on ${pool}`}
+      role="group"
+    >
       <div className="pool-sign-in-head">
         <strong>
           Signing {profile} in on {pool}
         </strong>
-        {now !== null && <span className="ui-setting-help">{now}</span>}
+        {/* Each step change, said once to a screen reader. */}
+        <span className="ui-setting-help" role="status" aria-live="polite">
+          {now ?? (step.at === "signed-in" ? `${profile} is signed in on ${pool}` : "")}
+        </span>
       </div>
-      {/* Each step change, said once to a screen reader. */}
-      <p className="hidden-words" role="status" aria-live="polite">
-        {now ?? (step.at === "signed-in" ? `${profile} is signed in on ${pool}` : "")}
-      </p>
       <Body {...props} who={who} />
       <div className="pool-sign-in-foot">
         {step.at === "signed-in" ? (
@@ -265,7 +278,7 @@ function Body({
           )}
           <form className="pool-sign-in-paste" onSubmit={onPaste}>
             <TextField
-              label="Code from the browser"
+              label="Paste code"
               value={code}
               onChange={setCode}
               autoFocus

@@ -74,7 +74,9 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
         {rows.map((row) => (
           <li key={row.name} className="ui-machine-entry">
             <span className="ui-machine-name">{row.name}</span>
-            <span className="ui-setting-help">{standingOnPool(pool, row)}</span>
+            <span className="ui-setting-help">
+              {signing === row.name ? `Signing in on pool ${pool}…` : standingOnPool(pool, row)}
+            </span>
             {signing === row.name ? (
               <PoolSignIn
                 pool={pool}

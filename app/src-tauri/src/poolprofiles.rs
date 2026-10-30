@@ -262,25 +262,20 @@ pub fn sign_in_line(pool: &str, name: &str, provider: Option<&str>) -> Result<St
 #[serde(tag = "at", rename_all = "kebab-case")]
 pub enum PoolSignInStep {
     /// Open this page in the browser here: the harness vendor's own.
-    Open {
-        url: String,
-    },
+    Open { url: String },
     /// Ask for the code the page shows.
     Code,
     /// The harness refused the code, in its words.
-    Refused {
-        said: String,
-    },
+    Refused { said: String },
     /// The login ended well, and the runner is asked whether it is signed in.
     Checking,
+    /// The runner's own status check says it is signed in.
     SignedIn,
     /// purlis could not follow the login: what it printed.
-    CouldNotFollow {
-        said: String,
-    },
-    Failed {
-        why: String,
-    },
+    CouldNotFollow { said: String },
+    /// It did not sign in, and why.
+    Failed { why: String },
+    /// It was cancelled, and its login ended.
     Cancelled,
 }
 

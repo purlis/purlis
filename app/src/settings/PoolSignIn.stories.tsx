@@ -58,7 +58,7 @@ export const Starting: Story = {};
 export const PasteCode: Story = {
   args: { step: { at: "code" } },
   play: async ({ args, canvas, userEvent }) => {
-    const field = canvas.getByRole("textbox", { name: "Code from the browser" });
+    const field = canvas.getByRole("textbox", { name: "Paste code" });
     await untilFocused(() => field, "the code field takes the keyboard when it appears");
     expectFocusInSight();
     await userEvent.keyboard("abc123#state{Enter}");
@@ -72,16 +72,25 @@ export const PasteCode: Story = {
   },
 };
 
-/** The harness refused the code, in its words; another may be pasted. */
+/** The harness refused the code, in its words; another may be pasted, from the field. */
 export const CodeRefused: Story = {
   args: {
     step: { at: "refused", said: "Invalid code. Please make sure the full code was copied." },
+  },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByRole("alert")).toHaveTextContent("Invalid code");
+    await untilFocused(
+      () => canvas.getByRole("textbox", { name: "Paste code" }),
+      "the code field keeps the keyboard",
+    );
+    expectFocusInSight();
   },
 };
 
 /** Step 3: the runner's own status check is asked. */
 export const Checking: Story = { args: { step: { at: "checking" } } };
 
+/** The runner's status check says it is signed in: Close is all that is left. */
 export const SignedIn: Story = { args: { step: { at: "signed-in" } } };
 
 /** purlis could not follow the login: what it printed, and a terminal as the way out. */
@@ -94,6 +103,33 @@ export const CouldNotFollow: Story = {
   },
 };
 
+/** It did not sign in, and why; Try again starts it afresh, a Tab away from the strip. */
 export const Failed: Story = {
   args: { step: { at: "failed", why: "the code has expired" } },
+  play: async ({ canvas, userEvent }) => {
+    await expect(canvas.getByRole("alert")).toHaveTextContent("the code has expired");
+    await untilFocused(
+      () => canvas.getByRole("group", { name: "Signing work in on builds" }),
+      "the strip holds the keyboard once nothing is asked",
+    );
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Try again" }),
+      "Tab moves to Try again",
+    );
+    expectFocusInSight();
+  },
 };
+
+/** The sign-in could not start: the pool's runner or this machine said why. */
+export const NotStarted: Story = {
+  args: {
+    step: {
+      at: "not-started",
+      why: "Pool builds: its runner runs a purlis before 1.43, so its chats start on the profiles it has of its own. Nothing was signed in.",
+    },
+  },
+};
+
+/** The login was ended; nothing changed on the runner. */
+export const Cancelled: Story = { args: { step: { at: "cancelled" } } };

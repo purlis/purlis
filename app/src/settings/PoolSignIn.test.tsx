@@ -86,7 +86,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
 
     says({ at: "open", url: PAGE });
     says({ at: "code" });
-    const field = await within(opened).findByRole("textbox", { name: "Code from the browser" });
+    const field = await within(opened).findByRole("textbox", { name: "Paste code" });
     expect(calls("plugin:opener|open_url")).toEqual([expect.objectContaining({ url: PAGE })]);
     expect(within(opened).getByText("Step 2 of 3: Paste the code the page shows")).toBeVisible();
     // The keyboard is in the field, and the step is said to a screen reader.
@@ -116,7 +116,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     const opened = await strip();
     says({ at: "open", url: PAGE });
     says({ at: "code" });
-    const field = await within(opened).findByRole("textbox", { name: "Code from the browser" });
+    const field = await within(opened).findByRole("textbox", { name: "Paste code" });
     await userEvent.type(field, "wrong{Enter}");
     expect(calls("pool_sign_in_paste")).toEqual([{ flow: 7, code: "wrong" }]);
 
@@ -125,14 +125,14 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     expect(await within(opened).findByRole("alert")).toHaveTextContent(
       "Invalid code. Please make sure the full code was copied.",
     );
-    expect(within(opened).getByRole("textbox", { name: "Code from the browser" })).toBeVisible();
+    expect(within(opened).getByRole("textbox", { name: "Paste code" })).toBeVisible();
   });
 
   it("cancels the login on the runner when Cancel is pressed", async () => {
     const opened = await strip();
     says({ at: "open", url: PAGE });
     says({ at: "code" });
-    await within(opened).findByRole("textbox", { name: "Code from the browser" });
+    await within(opened).findByRole("textbox", { name: "Paste code" });
 
     await userEvent.click(within(opened).getByRole("button", { name: "Cancel" }));
 
