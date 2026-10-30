@@ -666,7 +666,7 @@ impl Talk {
     /// How many messages the asking chat `asker` and its task `task` have exchanged in the
     /// minute before `now`.
     pub fn in_the_last_minute(&mut self, asker: u32, task: u32, now: Instant) -> u32 {
-        let Some(sent) = self.messages.get_mut(&(asker, task)) else {
+        let Some(sent) = self.sent.get_mut(&(asker, task)) else {
             return 0;
         };
         while sent
@@ -687,7 +687,7 @@ impl Talk {
         now: Instant,
     ) -> Result<(), String> {
         may_send(limits, self.in_the_last_minute(asker, task, now))?;
-        self.messages
+        self.sent
             .entry((asker, task))
             .or_default()
             .push_back(now);
@@ -1124,9 +1124,9 @@ impl Talk {
             .copied()
             .collect();
         for pair in moved {
-            if let Some(sent) = self.messages.remove(&pair) {
+            if let Some(sent) = self.sent.remove(&pair) {
                 let renumber = |chat: u32| if chat == old { new } else { chat };
-                self.messages
+                self.sent
                     .insert((renumber(pair.0), renumber(pair.1)), sent);
             }
         }
