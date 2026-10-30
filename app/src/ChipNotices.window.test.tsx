@@ -405,6 +405,21 @@ describe("a dot pressed from the keyboard (#3648's review, WCAG 2.4.3)", () => {
     await waitFor(() => expect(card).toHaveFocus());
   });
 
+  // #3896: the card hands itself the keyboard over a few frames, while React Aria places it;
+  // the keyboard going on into the card in those frames was taken back to the card's edge.
+  it("leaves the keyboard where it went in the card, as the card takes it", async () => {
+    render(<Bar on="alpha" startOpen={false} />);
+    screen.getByRole("button", { name: "Show the notice on alpha" }).focus();
+    await userEvent.keyboard("{Enter}");
+    const card = await screen.findByRole("region", { name: "Notices for alpha" });
+    // On into the card before it has taken the keyboard: to its first way on.
+    const way = within(card).getAllByRole("button")[0];
+    way.focus();
+    for (let frame = 0; frame < 12; frame += 1)
+      await new Promise((done) => requestAnimationFrame(done));
+    expect(way).toHaveFocus();
+  });
+
   it("gives the keyboard to the chip once the card it went into is dismissed", async () => {
     // A chip in sight is left where it is: no scroll (#3648's round 4, note 4).
     laidOut(() => 100);

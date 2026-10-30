@@ -247,6 +247,39 @@ describe("a popover hung from what it is about (#3648)", () => {
     expect(gone.filter((id) => following.includes(id))).toEqual([]);
   });
 
+  // #3896: WebKit's smooth scroll can come to rest with no scroll event for its last steps, and
+  // a card placed only on the events was left short of its chip.
+  it("follows what it hangs from to where it comes to rest, though no scroll event says so", async () => {
+    let chipAt = 100;
+    laidOut(() => chipAt);
+    render(<Hung />);
+    const root = () =>
+      screen
+        .getByRole("region", { name: "Notices for gamma" })
+        .closest<HTMLElement>('[data-scope="popover"][data-part="root"]') as HTMLElement;
+    await aFrame();
+    const placed = () => root().style.left;
+    const first = placed();
+    // A scroll's last event, with the chip at 160, placed on the next frame.
+    chipAt = 160;
+    fireEvent.scroll(screen.getByTestId("clip"));
+    await aFrame();
+    const onTheEvent = placed();
+    expect(onTheEvent).not.toBe(first);
+    // The scroll's next steps say nothing: frame by frame to 200, where it rests.
+    chipAt = 180;
+    await aFrame();
+    chipAt = 200;
+    await aFrame();
+    await aFrame();
+    const atRest = placed();
+    expect(atRest).not.toBe(onTheEvent);
+    // At rest, it is placed no more.
+    await aFrame();
+    await aFrame();
+    expect(placed()).toBe(atRest);
+  });
+
   it("stays up when a scroll ends with what it hangs from in sight", async () => {
     let chipAt = -80;
     laidOut(() => chipAt);
