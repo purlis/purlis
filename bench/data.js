@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793330794654,
+  "lastUpdate": 1793332538378,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30702,6 +30702,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2406895,
             "unit": "ms",
             "extra": "median of 5 runs: 100.380, 101.639, 102.241, 102.312, 102.465 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7ded81b40d37ab9cc058efb72c7326a97d4f2076",
+          "message": "Chats row: its said words in its card, and a restarts status that stays mounted (#3886) (#3935)\n\n* Chats row: tests for its said words with its card up, and a mounted restarts status (#3886)\n\nRed first: the row's card says what the row says (a chat below it needs\nyou, the limit sentence, the memory count and hint, the restart words),\nthe row is described by it while it is up, and the restarts' status is\nmounted before any restart says a word and only its text changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Chats row: its said words in its card, and a restarts status that stays mounted (#3886)\n\nThe row's card says what the row says: a chat below it that needs you,\nthe whole limit sentence, the memory count with its hint, and the\nrestart words. The card describes the row while it is up, overriding\nthe row's aria-description, so a screen reader still hears them, and a\nkeyboard user reads the hints with no hover. The row's description\ngains the memory hint. One list feeds both.\n\nThe restarts' status is one region mounted with the section, empty\nuntil a restart says something, and only its text changes, a line per\nrow with aria-atomic false. The SaidInItsCard story holds the card-up\nstate to axe with no rule turned off.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Chats row: test that a restart's line stays put through folds and the filter (#3886)\n\nReview of #3935: the restarts' status was built from the rows drawn, so\na fold, the filter or the scope drawing a row again added its line\nagain, to be announced as new. Also expects a line that leads with its\nchat only where the words do not name it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Chats row: the restarts' status from every chat listed, not the rows drawn (#3886)\n\nA line now comes and goes with its restart's words, never with its row\nbeing folded, filtered or scoped back into view, and the lines stand in\nthe chats' numbers' order. A line says the core's words as they are\nwhere they name the chat, else leads with \"Restart of <chat>.\", so no\nname twice and no double colon. The card keys its said lines by kind.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Chats row: the e2e's Chats markup has the restarts' status, and the restart test reads the window's words (#3886)\n\nThe fixture the e2e measures is the component's own markup, which now\nholds the always-mounted Restarts status. The restart window test held\nthe line to the core's words alone, where the window wraps them; it now\nchecks the line leads with the chat and holds those words.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Chats row: the card story waits for the card to arrive before it reads it (#3886)\n\nThe popover family fades a card in from nothing, so SaidInItsCard read\nit as not visible on its first frame in every cell. It now waits until\nthe card is no longer entering and is visible, which is also the state\naxe checks after the play.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T03:21:41Z",
+          "tree_id": "3094ca26913edae94c4dcc67a0b2750aeb86372b",
+          "url": "https://github.com/purlis/purlis/commit/7ded81b40d37ab9cc058efb72c7326a97d4f2076"
+        },
+        "date": 1793332535613,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3293845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.319, 0.325, 0.329, 0.333, 0.350 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5021495,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.445, 16.455, 16.502, 16.504, 16.668 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.0387585,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.011, 101.022, 101.039, 101.667, 102.293 ms"
           }
         ]
       }
