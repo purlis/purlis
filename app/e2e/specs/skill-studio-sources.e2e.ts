@@ -158,10 +158,14 @@ describe("installing a skill from a skill source", function () {
     ).toHaveText(/curl -fsSL/);
 
     await (await $('[data-testid="install-review"]').$("button=Install")).click();
-    await browser.waitUntil(async () => existsSync(join(root, "skills.lock")), {
-      timeout: 30_000,
-      timeoutMsg: "the install never wrote skills.lock",
-    });
+    // The install has ended when the app says so: it goes on to the source's page, the skill
+    // marked Installed. skills.lock is written before the install's commit, so it says nothing of
+    // when the change ends (#3973).
+    await $('[data-testid="skill-source-page"]').waitForExist({ timeout: 30_000 });
+    await browser.waitUntil(
+      async () => /Installed/.test(await $(`[data-testid="offered-${SHIPPER}"]`).getText()),
+      { timeout: 30_000, timeoutMsg: `the source's page never marked ${SHIPPER} Installed` },
+    );
     expect(existsSync(join(root, "skills", SHIPPER, "scripts", "ship.sh"))).toBe(true);
     expect(existsSync(join(root, "skills", NOTIFIER, "SKILL.md"))).toBe(true);
     const lock = JSON.parse(readFileSync(join(root, "skills.lock"), "utf8")) as {

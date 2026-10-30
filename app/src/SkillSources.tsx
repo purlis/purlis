@@ -186,6 +186,9 @@ function Held<T>({
   return <>{children(read.data)}</>;
 }
 
+/** Where a change began once the Sources page is no longer drawn: the person went elsewhere. */
+const LEFT = Symbol("left Sources");
+
 /**
  * **What the Sources page shows at `at`**: Sources itself, a source's page, or a review. Each is
  * a step of the tab's history, so back and forward walk them; a change made on one goes on to
@@ -219,10 +222,15 @@ export function SkillSourcesPage({
 }) {
   const read = useSourcesRead(plane, changed);
   const [adding, setAdding] = useState<{ offered?: OfferedSource }>();
-  // Where the tab is now, for a change that ends after the person has gone somewhere else.
-  const here = useRef(at);
+  // Where the tab is now, for a change that ends after the person has gone somewhere else: gone
+  // once this page is, so a change ending after the person went to Library, Drafts or another
+  // page of the studio never pulls the tab back to Sources (#3973).
+  const here = useRef<SourcesAt | undefined | typeof LEFT>(at);
   useEffect(() => {
     here.current = at;
+    return () => {
+      here.current = LEFT;
+    };
   }, [at]);
   /** A change, and where the tab goes once it is made: only from the page it was made on, so a
    *  person who went on meanwhile is never pulled back. */
