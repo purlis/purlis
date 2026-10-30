@@ -145,6 +145,9 @@ describe("a grading page's way back (#3978)", () => {
     expect(backIsTo({ page: "library", scope: AT_THE_ROOT }, grades)).toBe(false);
     expect(backIsTo({ ...grades, tab: "overview" }, grades)).toBe(false);
     expect(backIsTo({ ...grades, grading: { at: "scorecard", grade: "01G" } }, grades)).toBe(false);
+    // A row named by its name alone is the row it was settled on since.
+    expect(backIsTo({ ...grades, skill: skillRowNamed("deploy") }, grades)).toBe(true);
+    expect(backIsTo({ ...grades, skill: skillRowNamed("ship") }, grades)).toBe(false);
   });
 
   it("lands Back to the scorecard on the scorecard, with Library behind a restored chat", async () => {

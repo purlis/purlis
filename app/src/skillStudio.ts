@@ -244,11 +244,14 @@ export function samePlace(one: StudioPlace, other: StudioPlace): boolean {
  *  the same tab of its skill's page. Else `to` is said in place of where the person is, so Back
  *  to the scorecard or to a skill's grades lands where it names, never on whatever came before. */
 export function backIsTo(behind: StudioPlace | undefined, to: StudioPlace): boolean {
-  return (
-    behind !== undefined &&
-    samePlace(behind, to) &&
-    (behind.tab ?? "overview") === (to.tab ?? "overview")
-  );
+  if (behind === undefined || (behind.tab ?? "overview") !== (to.tab ?? "overview")) return false;
+  // A row named by its skill's name alone is the row it was settled on since (#3978).
+  const named = (id: string | undefined) => id !== undefined && id.startsWith("#");
+  const sameSkill =
+    behind.skill === to.skill ||
+    ((named(behind.skill) || named(to.skill)) &&
+      skillOfRowId(behind.skill ?? "") === skillOfRowId(to.skill ?? ""));
+  return sameSkill && samePlace({ ...behind, skill: to.skill }, to);
 }
 
 /** Two pages inside Sources are one: the same page, of the same source and skill. */
