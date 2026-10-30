@@ -1949,14 +1949,22 @@ fn ends_as_a_refusal(line: &str) -> bool {
 }
 
 /// **Whether purlis's own proxy tells the app each host a chat of `harness` was refused**
-/// (#1663): a harness purlis wraps (Codex, opencode) reaches the network only through it
+/// (#1663): a harness purlis wraps (Codex, opencode, a Claude Code on a runner) reaches the
+/// network only through it
 /// (`crate::sandbox::egress`), and the app hears its refusals by name. Such a chat's hook leaves
 /// a refused host to it, so one refusal is one Notice; a lookup or a socket it still reads.
 pub fn the_proxy_tells_hosts(harness: Option<&str>) -> bool {
-    matches!(
-        harness.and_then(crate::harness::Harness::of_registry_or_kind),
-        Some(crate::harness::Harness::Codex | crate::harness::Harness::Opencode)
-    )
+    wrapped_claude_code()
+        || matches!(
+            harness.and_then(crate::harness::Harness::of_registry_or_kind),
+            Some(crate::harness::Harness::Codex | crate::harness::Harness::Opencode)
+        )
+}
+
+/// Whether this process is a hook of a Claude Code chat purlis wraps whole (#4083): held as a
+/// harness purlis wraps is, and told as one.
+fn wrapped_claude_code() -> bool {
+    crate::sandbox::wrapped_whole_in(&crate::envvar::var)
 }
 
 /// **The local sockets the system's name lookup is reached through** on Linux (#2428):
@@ -1992,9 +2000,10 @@ pub fn the_hooks_own(
     if !the_proxy_tells_hosts(harness) {
         return found;
     }
-    let supervised = harness
-        .and_then(crate::harness::Harness::of_registry_or_kind)
-        .is_some_and(|harness| os.purlis_wraps(harness));
+    let supervised = wrapped_claude_code()
+        || harness
+            .and_then(crate::harness::Harness::of_registry_or_kind)
+            .is_some_and(|harness| os.purlis_wraps(harness));
     found
         .into_iter()
         .filter(|(block, _)| !is_the_proxys(block))

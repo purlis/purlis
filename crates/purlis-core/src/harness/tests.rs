@@ -1125,6 +1125,26 @@ fn a_sandboxed_codex_chat_has_its_own_sandbox_off_only_inside_charters_wrap() {
 }
 
 #[test]
+fn a_claude_code_chat_purlis_wraps_runs_its_commands_unasked_as_its_own_sandbox_did() {
+    // Off in `--settings`, never left out, so a person's own `enabled` cannot start it inside
+    // the wrap; and `Bash` allowed, which `autoAllowBashIfSandboxed` did while it was on (#4083).
+    let settings = crate::sandbox::claude::Settings {
+        sandbox: serde_json::json!({ "enabled": false }),
+        deny: vec!["WebFetch".to_owned()],
+        made_empty: Vec::new(),
+    };
+    let text = super::claude::armed_settings_for_tests(&settings);
+    let armed: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+    assert_eq!(armed["sandbox"], settings.sandbox);
+    assert_eq!(
+        armed["permissions"]["deny"],
+        serde_json::json!(["WebFetch"])
+    );
+    let allow = armed["permissions"]["allow"].as_array().expect("a list");
+    assert!(allow.iter().any(|rule| rule == "Bash"), "{allow:?}");
+}
+
+#[test]
 fn a_sandboxed_claude_code_chat_carries_its_sandbox_in_the_same_settings() {
     // One `--settings`: the sandbox and its deny rules beside the Smart close allow, which
     // stays, because a deny outranks an allow and the two name different things.

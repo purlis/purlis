@@ -388,6 +388,13 @@ jobs:
           parity="$RUNNER_TEMP/parity"
           mkdir -p "$parity"
           cp target/debug/purlis target/debug/fake-harness "$parity/"
+          # The Claude Code purlis supports, this runner's build of it from npm with no install
+          # scripts run, for the behaviour that runs it inside the wrap (#4083). No model is
+          # called, and no credential is used.
+          version=$(sed 's/ .*//' tests/fixtures/harness-versions/claude.txt)
+          package="@anthropic-ai/claude-code-linux-x64"
+          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/claude-code" "$package@$version"
+          cp "$RUNNER_TEMP/claude-code/node_modules/$package/claude" "$parity/claude-code"
           docker build --file tests/parity/runner.Dockerfile \
             --build-arg RUNNER=purlis-runner:parity --build-arg "AT=$PWD/target/debug" \
             --tag localhost:5000/purlis-runner-parity:candidate "$parity"
