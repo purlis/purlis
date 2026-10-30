@@ -126,6 +126,10 @@ pub enum Found {
     /// A file that is not a message this chat queued: it does not read, or its MAC does not
     /// check under a key the app issued the chat. It is removed, never delivered.
     Unchecked(PathBuf),
+    /// A message that checks, numbered at or below the last one the app delivered: a copy of one
+    /// delivered already, or one an app that stopped as it delivered it left behind. It is
+    /// removed, never delivered again.
+    Delivered(PathBuf),
 }
 
 /// Why a message was not queued.
@@ -234,8 +238,13 @@ fn queued(
             .create_new(true)
             .open(dir.join(name(seq, "part")))
         {
+            // A sender that took this number and has finished already renamed its part away:
+            // the number is taken, and this sender lets it go and takes the next.
+            Ok(_) if dir.join(name(seq, "json")).exists() => {
+                let _ = std::fs::remove_file(dir.join(name(seq, "part")));
+            }
             Ok(file) => break (seq, file),
-            Err(why) if why.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(why) if why.kind() == io::ErrorKind::AlreadyExists => {}
             Err(why) => return Err(why),
         }
     };
@@ -249,7 +258,9 @@ fn queued(
     };
     part.write_all(&serde_json::to_vec(&file).map_err(io::Error::other)?)?;
     part.sync_all()?;
-    std::fs::rename(dir.join(name(seq, "part")), dir.join(name(seq, "json")))?;
+    // Linked, never renamed over: a name that is there already is never replaced.
+    std::fs::hard_link(dir.join(name(seq, "part")), dir.join(name(seq, "json")))?;
+    std::fs::remove_file(dir.join(name(seq, "part")))?;
     if let Ok(folder) = std::fs::File::open(&dir) {
         let _ = folder.sync_all();
     }
@@ -322,18 +333,37 @@ pub fn waiting(socket: &Path, chat: u32) -> Vec<Found> {
     let Ok(mut numbers) = numbers(&dir) else {
         return Vec::new();
     };
-    numbers.retain(|(_, part)| !part);
+    // **Never past a message still being written**: a sender that took a lower number than
+    // another is still writing it, and one delivered after it would raise the floor over it.
+    // What comes after the lowest `.part` waits for the next look.
+    let writing = numbers
+        .iter()
+        .filter(|(_, part)| *part)
+        .map(|(seq, _)| *seq)
+        .min();
+    numbers.retain(|(seq, part)| !part && writing.is_none_or(|first| *seq < first));
     numbers.sort_unstable();
     numbers
         .into_iter()
         .map(|(seq, _)| {
             let path = dir.join(name(seq, "json"));
-            read(socket, chat, seq, &path).map_or(Found::Unchecked(path), Found::Message)
+            match read(socket, chat, seq, &path) {
+                Some(Read::Fresh(message)) => Found::Message(message),
+                Some(Read::Delivered) => Found::Delivered(path),
+                None => Found::Unchecked(path),
+            }
         })
         .collect()
 }
 
-fn read(socket: &Path, chat: u32, seq: u64, path: &Path) -> Option<Waiting> {
+/// What a message's file read as, where it checked.
+enum Read {
+    Fresh(Waiting),
+    /// At or below the floor: delivered already.
+    Delivered,
+}
+
+fn read(socket: &Path, chat: u32, seq: u64, path: &Path) -> Option<Read> {
     use std::io::Read;
     let mut bytes = Vec::new();
     std::fs::File::open(path)
@@ -348,20 +378,21 @@ fn read(socket: &Path, chat: u32, seq: u64, path: &Path) -> Option<Waiting> {
     if file.v != VERSION
         || file.seq != seq
         || !checks(socket, chat, seq, &file.key, &file.body, &file.mac)
-        // A copy of one the app delivered already.
-        || seq <= delivered_floor(socket, chat, &file.key)
     {
         return None;
     }
+    if seq <= delivered_floor(socket, chat, &file.key) {
+        return Some(Read::Delivered);
+    }
     let body: Body = serde_json::from_str(&file.body).ok()?;
-    Some(Waiting {
+    Some(Read::Fresh(Waiting {
         seq,
         id: body.id,
         at: body.at,
         what: body.what,
         key: file.key,
         path: path.to_path_buf(),
-    })
+    }))
 }
 
 #[cfg(unix)]

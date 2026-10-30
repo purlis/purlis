@@ -28,7 +28,9 @@ fn messages(found: Vec<Found>) -> Vec<Waiting> {
         .into_iter()
         .map(|found| match found {
             Found::Message(message) => message,
-            Found::Unchecked(path) => panic!("{} did not check", path.display()),
+            Found::Unchecked(path) | Found::Delivered(path) => {
+                panic!("{} is not a fresh message", path.display())
+            }
         })
         .collect()
 }
@@ -138,9 +140,10 @@ fn a_copy_of_a_delivered_message_is_refused_and_numbers_never_go_back() {
     let first = messages(waiting(&socket, 3));
     delivered(&socket, 3, &first[0]);
 
-    // Put back after the folder drained: it is not delivered again.
+    // Put back after the folder drained: it is said to be delivered already, not delivered
+    // again.
     std::fs::write(&path, &copy).expect("put back");
-    assert!(matches!(&waiting(&socket, 3)[..], [Found::Unchecked(_)]));
+    assert!(matches!(&waiting(&socket, 3)[..], [Found::Delivered(_)]));
     drop_unchecked(&path);
 
     // And the next message numbers past it, though the folder is empty.
@@ -179,4 +182,95 @@ fn a_file_past_what_a_message_can_be_is_not_read() {
     std::fs::write(&path, text).expect("padded");
 
     assert!(matches!(&waiting(&socket, 3)[..], [Found::Unchecked(_)]));
+}
+
+#[test]
+fn a_message_still_being_written_is_never_overtaken_by_a_later_one() {
+    let (_root, socket, token) = project(3, "tok-three");
+    // One sender has taken number 1 and is still writing it; another queues number 2.
+    let writing = dir_for(&socket, 3);
+    std::fs::create_dir_all(&writing).expect("the folder");
+    std::fs::File::create(writing.join(name(1, "part"))).expect("a part");
+    queue(&socket, 3, &token, tell(4, "second"), 1).expect("queued");
+
+    // Nothing is handed on past number 1 while it is written.
+    assert!(waiting(&socket, 3).is_empty());
+
+    // The first sender finishes: both are handed on, in their order.
+    std::fs::remove_file(writing.join(name(1, "part"))).expect("taken back");
+    let first = queued_as(&socket, 3, &token, 1, tell(4, "first"));
+    assert_eq!(first, 1);
+    let found = messages(waiting(&socket, 3));
+    assert_eq!(
+        found
+            .iter()
+            .map(|m| (m.seq, m.what.clone()))
+            .collect::<Vec<_>>(),
+        vec![(1, tell(4, "first")), (2, tell(4, "second"))]
+    );
+}
+
+#[test]
+fn senders_queueing_at_once_each_take_a_number_of_their_own() {
+    let (_root, socket, token) = project(3, "tok-three");
+    let threads: Vec<_> = (0..8)
+        .map(|sender| {
+            let (socket, token) = (socket.clone(), token.clone());
+            std::thread::spawn(move || {
+                for n in 0..10 {
+                    queue(&socket, 3, &token, tell(4, &format!("{sender}-{n}")), 1)
+                        .expect("queued");
+                }
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread.join().expect("a sender");
+    }
+
+    let found = messages(waiting(&socket, 3));
+    assert_eq!(found.len(), 80);
+    let numbers: Vec<u64> = found.iter().map(|m| m.seq).collect();
+    assert_eq!(numbers, (1..=80).collect::<Vec<u64>>());
+    // Each sender's own messages keep their order.
+    for sender in 0..8 {
+        let own: Vec<String> = found
+            .iter()
+            .filter_map(|m| match &m.what {
+                Queued::Tell { text, .. } if text.starts_with(&format!("{sender}-")) => {
+                    Some(text.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            own,
+            (0..10).map(|n| format!("{sender}-{n}")).collect::<Vec<_>>()
+        );
+    }
+}
+
+/// Writes `what` as message `seq` of chat `chat`, signed as [`queue`] signs it: a sender that
+/// took that number earlier and finishes now.
+fn queued_as(socket: &Path, chat: u32, token: &ChatToken, seq: u64, what: Queued) -> u64 {
+    let body = serde_json::to_string(&Body {
+        id: "late".to_owned(),
+        at: 0,
+        what,
+    })
+    .expect("a body");
+    let (key, mac) = sign(token, chat, seq, &body);
+    let file = File {
+        v: VERSION,
+        seq,
+        key,
+        body,
+        mac,
+    };
+    std::fs::write(
+        dir_for(socket, chat).join(name(seq, "json")),
+        serde_json::to_vec(&file).expect("a file"),
+    )
+    .expect("written");
+    seq
 }
