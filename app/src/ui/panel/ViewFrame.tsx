@@ -262,7 +262,9 @@ export function ViewPageHeader({
     const pane = it?.closest<HTMLElement>('[data-scope="view-frame"][data-part="item"]');
     if (!it || !pane) return;
     // Its height changes as its description wraps, or as the pane is narrowed or widened.
-    const write = () => pane.style.setProperty(HEADER_SIZE, `${it.offsetHeight}px`);
+    // Its exact height, not `offsetHeight`'s whole pixels, so the room kept is never short of it.
+    const write = () =>
+      pane.style.setProperty(HEADER_SIZE, `${it.getBoundingClientRect().height}px`);
     write();
     if (typeof ResizeObserver === "undefined") return () => pane.style.removeProperty(HEADER_SIZE);
     const watch = new ResizeObserver(write);

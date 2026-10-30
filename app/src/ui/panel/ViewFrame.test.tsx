@@ -174,17 +174,22 @@ describe("narrow: page-and-back", () => {
 
 describe("the page header over the item's body (#3944)", () => {
   it("tells the item's pane how tall it is, so the keyboard scrolls clear of it", () => {
-    // jsdom lays nothing out: the header is 96px tall here, as a browser would measure it.
+    // jsdom lays nothing out: the header is 96.4px tall here, as a browser would measure it.
     const tall = vi
-      .spyOn(HTMLElement.prototype, "offsetHeight", "get")
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
       .mockImplementation(function (this: HTMLElement) {
-        return this.getAttribute("data-part") === "header" ? 96 : 0;
+        const height = this.getAttribute("data-part") === "header" ? 96.4 : 0;
+        return new DOMRect(0, 0, 0, height);
       });
     try {
-      render(<Studio />);
+      const { unmount } = render(<Studio />);
       const header = screen.getByRole("heading", { name: "deploy" });
       const pane = header.closest('[data-scope="view-frame"][data-part="item"]') as HTMLElement;
-      expect(pane.style.getPropertyValue(HEADER_SIZE)).toBe("96px");
+      // Its exact height, never rounded down under it.
+      expect(pane.style.getPropertyValue(HEADER_SIZE)).toBe("96.4px");
+      // Gone with the header: a pane without one keeps no room for it.
+      unmount();
+      expect(pane.style.getPropertyValue(HEADER_SIZE)).toBe("");
     } finally {
       tall.mockRestore();
     }
