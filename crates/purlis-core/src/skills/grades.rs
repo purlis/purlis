@@ -87,6 +87,12 @@ pub fn recorded_level(level: &Level) -> Option<String> {
     level.rel()
 }
 
+/// **The level a grade was recorded by** ([`recorded_level`]), read back: what a grade's
+/// scorecard says the copy it graded was (#3978). `None` for a word no level's folder is.
+pub fn level_of_recorded(word: &str) -> Option<Level> {
+    Level::of_rel(word)
+}
+
 /// **Whether the copy at `level` is this machine's alone**: a `skills.local/` copy, or one in a
 /// workspace that is this machine's alone. Its grades never go in a committed file.
 pub fn is_local(root: &Path, level: &Level) -> bool {

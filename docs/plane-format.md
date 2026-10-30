@@ -7946,8 +7946,9 @@ refuses a `<data>` under a project or inside any git work tree.
   accepted on the plan they turned it on from: `profile` and `model` (null for the profile's own)
   the grades' chats run on; `chats`, the chats a grade ran then; `token_cap` and `limit_usd`, the
   cap and the dollar limit it was held to (at most the largest cap at 1,000 dollars a million);
-  `tests`, the SHA-256 of the trigger tests it ran; `previous`, the commit it compared with
-  (absent for none); `runs_on`, the model its chats ran on as the plan showed it (the one their
+  `tests`, the SHA-256 of the trigger tests it ran; `previous`, the commit it compared with then
+  (absent for none), kept as a record: a grade after an edit compares with the version before
+  that edit, which each saved edit moves (#4016); `runs_on`, the model its chats ran on as the plan showed it (the one their
   line names, else the one picked; absent for none, #3622); `at`, when it was turned on; `graded`, the consent
   digest of the copy an edit last graded (absent before the first), so a save that changed nothing
   since grades nothing; and `paused`, the sentence why it waits for the person (absent while it
@@ -7957,7 +7958,7 @@ refuses a `<data>` under a project or inside any git work tree.
   editor: a saved edit, once ten seconds pass with no other save of the skill, grades it on that
   profile and model, held to the cap and dollar limit of a grade pressed by hand, only while a
   grade of it runs on the same profile and model, runs no more chats, may spend no more, and runs
-  the same trigger tests against the same version as was accepted; a grade that would not
+  the same trigger tests as was accepted; a grade that would not
   waits (`paused`), starts nothing, and the opt-in is turned on again from a plan that shows the
   cost. A second save while such a grade runs stops it, and the next starts after it. Nothing
   grades on a timer, and a save from the command line or a chat's change grades nothing. A file

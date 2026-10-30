@@ -422,6 +422,9 @@ impl From<GradeEnd> for GradeEnded {
 pub struct SkillGradeStep {
     pub plane: PlaneId,
     pub skill: String,
+    /// The copy it grades, by its level (#3978): a same-named copy at another level is another
+    /// skill, whose tab a step of this one moves nothing on.
+    pub level: SkillLevel,
     pub grade: String,
     pub ran: u32,
     pub of: u32,
@@ -647,11 +650,13 @@ pub(crate) fn begin(
     // it (`skill_grades`).
     let step_of = {
         let (plane, skill, grade) = (plane.clone(), skill.clone(), id.clone());
+        let copy_level = SkillLevel::from(&level);
         let limit_usd = limits.cost_usd;
         move |spent: Spent, asked: u32, ended: Option<GradeEnded>, said: Option<String>| {
             SkillGradeStep {
                 plane: plane.clone(),
                 skill: skill.clone(),
+                level: copy_level.clone(),
                 grade: grade.clone(),
                 ran: spent.chats,
                 of,
@@ -970,6 +975,10 @@ pub struct ScoredTest {
 pub struct GradeScorecard {
     pub grade: String,
     pub skill: String,
+    /// **The copy it graded, by its level**, where its row says one (#3978): a scorecard
+    /// opened from where that copy is not listed (a retired tab comes back at the project's
+    /// root) goes to the scope that lists it.
+    pub level: Option<SkillLevel>,
     /// When it ran, the version it graded, what its chats ran on and how it ended, as its row
     /// says each.
     pub graded: String,
@@ -1214,6 +1223,11 @@ impl GradeScorecard {
         GradeScorecard {
             grade: graded.grade.clone(),
             skill: graded.skill.clone(),
+            level: graded
+                .level
+                .as_deref()
+                .and_then(grades::level_of_recorded)
+                .map(|level| (&level).into()),
             graded: studio::said_at(&graded.ts),
             version: studio::version_said(graded),
             ran_on: studio::ran_on_said(graded),

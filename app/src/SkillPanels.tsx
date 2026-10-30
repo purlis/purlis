@@ -7,6 +7,7 @@
  * and Grades panels, and each panel an extension adds, answered in panel blocks by the core.
  */
 import { useEffect, useId, useState } from "react";
+import { RotateCw } from "lucide-react";
 import {
   SKILL_RUNS_PANEL,
   type SkillPanel,
@@ -17,6 +18,7 @@ import {
 } from "./bindings";
 import type { Offer } from "./actions";
 import { counted } from "./dispatches";
+import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 import { AnsweredBlocks, type RowOpens } from "./Views";
@@ -50,6 +52,77 @@ export function useRead<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, again);
   return answer;
+}
+
+/**
+ * **A read on its way, as every studio page holds it** (S11, #3662; #3978): the layout stays,
+ * with placeholder rows, and after about a second a line says what is being read. `testid` is
+ * the page's own.
+ */
+export function ReadingRows({
+  what,
+  rows = 3,
+  testid,
+}: {
+  /** What is read, as the sentence names it: "the grades of deploy". */
+  what: string;
+  rows?: number;
+  testid: string;
+}) {
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    const after = window.setTimeout(() => setLate(true), 1000);
+    return () => window.clearTimeout(after);
+  }, []);
+  return (
+    <div className="skill-studio-placeholders" aria-busy="true" data-testid={testid}>
+      {Array.from({ length: rows }, (_, at) => (
+        <div key={at} className="skill-studio-placeholder" aria-hidden="true" />
+      ))}
+      <p role="status" className="honest">
+        {late ? `Reading ${what}…` : ""}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * **A read that failed, as every studio page says it** (S11, #3662; #3978): in place, where its
+ * data would be, with why and Try again, never hiding the rest of the page. `testid` is the
+ * page's own.
+ */
+export function NotRead({
+  what,
+  why,
+  onAgain,
+  testid,
+  variant = "panel",
+  size,
+}: {
+  /** What was read, as the sentence names it: "the grades of deploy". */
+  what: string;
+  why: string | undefined;
+  onAgain: () => void;
+  testid: string;
+  /** A panel inside a page, or the page's whole list. */
+  variant?: "panel" | "page";
+  /** Its Try again's size, where the page's rows are compact. */
+  size?: "sm";
+}) {
+  return (
+    <EmptyState
+      variant={variant}
+      headline={`purlis could not read ${what}`}
+      body={why}
+      role="status"
+      testid={testid}
+      action={
+        <Button size={size} icon={<RotateCw aria-hidden="true" />} onPress={onAgain}>
+          Try again
+        </Button>
+      }
+    />
+  );
 }
 
 /** How many runs a skill's totals count, all told. */

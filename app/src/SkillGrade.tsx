@@ -27,6 +27,7 @@ import {
   type SkillLevel,
 } from "./bindings";
 import { counted } from "./dispatches";
+import { NotRead, ReadingRows } from "./SkillPanels";
 import { Notice } from "./Notice";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Tile, Totals } from "./ui/card/Totals";
@@ -160,19 +161,6 @@ function startRefused(
   return undefined;
 }
 
-/** A read that failed, in place, with Try again (S11). */
-function NotRead({ what, why, onAgain }: { what: string; why: string; onAgain: () => void }) {
-  return (
-    <EmptyState
-      variant="panel"
-      headline={`purlis could not read ${what}`}
-      body={why}
-      testid="skill-grading-not-read"
-      action={<Button onPress={onAgain}>Try again</Button>}
-    />
-  );
-}
-
 /**
  * **A grading page's heading**, and the line under it: in the page's flow, never held over what
  * scrolls under it (a review page's body scrolls, and the plan's text would run under it).
@@ -183,15 +171,6 @@ export function GradingHeading({ name, description }: { name: string; descriptio
       <h2 className="ui-text-strong">{name}</h2>
       {description !== undefined && <p className="honest">{description}</p>}
     </div>
-  );
-}
-
-/** A read still on its way (S11). */
-export function Reading({ what }: { what: string }) {
-  return (
-    <p className="pending" aria-busy="true" data-testid="skill-grading-reading">
-      {`Reading ${what}…`}
-    </p>
   );
 }
 
@@ -296,9 +275,11 @@ export function GradePlanPage({
           setRefused(undefined);
           setAgain((n) => n + 1);
         }}
+        testid="skill-grading-not-read"
       />
     );
-  if (plan === undefined) return <Reading what={`what a grade of ${name} runs`} />;
+  if (plan === undefined)
+    return <ReadingRows what={`what a grade of ${name} runs`} testid="skill-grading-reading" />;
 
   const consent = plan.consent ?? "";
   const start = () =>
@@ -666,9 +647,11 @@ export function GradeRunningPage({
           setUnread(undefined);
           setAgain((n) => n + 1);
         }}
+        testid="skill-grading-not-read"
       />
     );
-  if (step === undefined && runs === undefined) return <Reading what={`the grade of ${name}`} />;
+  if (step === undefined && runs === undefined)
+    return <ReadingRows what={`the grade of ${name}`} testid="skill-grading-reading" />;
   if (step === undefined && runs === false)
     return (
       <EmptyState
