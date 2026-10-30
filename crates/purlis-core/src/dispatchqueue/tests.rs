@@ -347,14 +347,19 @@ fn only_a_harness_that_runs_purlis_s_tools_outside_its_sandbox_has_tools_that_qu
     assert!(!tools_queue(Some("a-harness-purlis-does-not-know")));
 }
 
+/// A chat's token, made at random as the app makes one: no test token is written out.
+fn a_token() -> String {
+    uuid::Uuid::new_v4().simple().to_string()
+}
+
 /// #3958: a sender that does not come back after a restart has its queue cleared as the project
 /// opens ([`crate::hookwire::spool::forget_all_but`]), and what it queued is reported first, each
 /// message with whom it was for, read from its own file while its key still checks it. A chat
 /// that comes back keeps its queue, and nothing of it is reported.
 #[test]
 fn what_a_sender_that_never_came_back_queued_is_reported_before_its_queue_is_cleared() {
-    let (_root, socket, token) = project(3, "tok-three");
-    let back = ChatToken::from("tok-five");
+    let (_root, socket, token) = project(3, &a_token());
+    let back = ChatToken::from(a_token().as_str());
     crate::hookwire::spool::remember(&spool_dir(&socket), 5, &back).expect("the key");
     let told = queue(&socket, 3, &token, tell(4, "one"), 10).expect("queued");
     let asked = queue(
@@ -408,9 +413,9 @@ fn what_a_sender_that_never_came_back_queued_is_reported_before_its_queue_is_cle
 /// sender with nothing that checks left behind leaves no report.
 #[test]
 fn a_report_goes_once_recorded_and_an_empty_queue_leaves_none() {
-    let (_root, socket, token) = project(3, "tok-three");
+    let (_root, socket, token) = project(3, &a_token());
     queue(&socket, 3, &token, tell(4, "one"), 10).expect("queued");
-    let (_other, quiet, _) = project(7, "tok-seven");
+    let (_other, quiet, _) = project(7, &a_token());
     crate::hookwire::spool::forget_all_but(&spool_dir(&quiet), &[]).expect("forgotten");
     assert!(left(&quiet).is_empty());
 
