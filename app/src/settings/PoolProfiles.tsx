@@ -16,12 +16,22 @@ import { Menu, MenuItem, MenuTrigger } from "../ui/menu/Menu";
 import { askProfileSignIn } from "./links";
 import { PoolSignIn, type SignInStanding } from "./PoolSignIn";
 
-/** The harnesses whose sign-in purlis drives in place, with no terminal (#4042). */
-export const DRIVEN = new Set(["claude"]);
+/** The harnesses whose sign-in purlis drives in place, with no terminal (#4042, #4044). */
+export const DRIVEN = new Set(["claude", "codex"]);
 
-/** Whether the sign-in of `row` to the plan `plan` is driven in place: opencode's Copilot (#4045). */
+/**
+ * Whether the sign-in of `row` to the plan `plan` is driven in place: opencode's Copilot (#4045)
+ * and its ChatGPT (#4044).
+ */
 const drivenPlan = (row: PoolProfileRow, plan: string) =>
-  row.kind === "opencode" && plan === "github-copilot";
+  row.kind === "opencode" && (plan === "github-copilot" || plan === "openai");
+
+/**
+ * Whether the login of harness `kind` to `plan` is approved in the browser, with nothing to paste
+ * (#4044): Codex's, and opencode's ChatGPT one.
+ */
+export const approvesIn = (kind: string, plan?: string) =>
+  kind === "codex" || (kind === "opencode" && plan === "openai");
 
 /** The harnesses with a sign-out of their own that purlis runs: opencode's asks in a terminal. */
 const SIGNS_OUT = new Set(["claude", "codex"]);
@@ -59,11 +69,11 @@ export function standingOnPool(pool: string, row: PoolProfileRow): string {
  * a folder of the runner's own with nothing of this machine's in it, and whether it is signed
  * in there. Add a profile… adds another of this machine's, and Remove, asked first, takes one
  * off, its sign-in there with it; neither is offered while a sign-in runs on the pool.
- * Sign in on a Claude Code profile, or an opencode profile's Copilot plan, opens its line in place
- * into a sign-in strip that drives the harness's own login with no terminal ({@link PoolSignIn},
- * #4042, #4045). Another opens a shell tab in the project `plane`'s window, where the core types
- * the runner's own sign-in, which the person drives; with no project open, it says how to sign in
- * from a terminal instead.
+ * Sign in on a Claude Code or Codex profile, or an opencode profile's Copilot or ChatGPT plan,
+ * opens its line in place into a sign-in strip that drives the harness's own login with no
+ * terminal ({@link PoolSignIn}, #4042, #4044, #4045). Another opens a shell tab in the project
+ * `plane`'s window, where the core types the runner's own sign-in, which the person drives; with
+ * no project open, it says how to sign in from a terminal instead.
  * Nothing of this machine's sign-in goes to the runner. Each line says where it stands, and a
  * signed-in one offers Sign out, asked first, which runs the harness's own there (#4043).
  */
@@ -121,8 +131,8 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
       </>
     );
   }
-  const signIn = (row: PoolProfileRow, provider?: string) => {
-    if (plane !== undefined) askProfileSignIn(plane, row.name, provider, pool);
+  const signIn = (row: PoolProfileRow, provider?: string, device?: boolean) => {
+    if (plane !== undefined) askProfileSignIn(plane, row.name, provider, pool, device);
   };
   const open = (row: PoolProfileRow, provider?: string) => {
     setRemoving(undefined);
@@ -229,6 +239,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
                 profile={row.name}
                 harness={row.harness}
                 provider={plan}
+                approves={approvesIn(row.kind, plan)}
                 onEnd={ended}
                 onStanding={setStrip}
                 onTerminal={
@@ -236,7 +247,17 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
                     ? undefined
                     : () => {
                         ended(false);
-                        signIn(row, plan);
+                        // The harness's browser flow in a terminal has no way back to the
+                        // runner, so a login approved in the browser runs its device flow there.
+                        signIn(row, plan, approvesIn(row.kind, plan) || undefined);
+                      }
+                }
+                onDeviceCode={
+                  plane === undefined
+                    ? undefined
+                    : () => {
+                        ended(false);
+                        signIn(row, plan, true);
                       }
                 }
               />

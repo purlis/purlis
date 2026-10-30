@@ -74,9 +74,14 @@ pub type Forgetting = Arc<dyn Fn(&Pinned, &str) -> Result<(), String> + Send + S
 /// (`kept_profiles`, 1.57, #4060).
 pub type Listing = Arc<dyn Fn(&Pinned) -> Result<Vec<String>, String> + Send + Sync>;
 
+/// Hands a sign-in's redirect to the login waiting on the runner's loopback, and says whether it
+/// took it (`sign_in_redirect`, 1.58, #4044).
+pub type Delivering = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
+
 /// A runner's pairing, as its host serves it: who it is and whom it admits ([`Answering`]),
-/// how the desktop it admits is taken out of its peers ([`Unpairing`]), and how it keeps that
-/// desktop's profiles ([`Keeping`]), forgets them ([`Forgetting`]) and names them ([`Listing`]).
+/// how the desktop it admits is taken out of its peers ([`Unpairing`]), how it keeps that
+/// desktop's profiles ([`Keeping`]), forgets them ([`Forgetting`]) and names them ([`Listing`]),
+/// and how it hands a login that desktop's browser's answer ([`Delivering`]).
 #[derive(Clone)]
 pub struct Pairing {
     pub answering: Answering,
@@ -84,6 +89,7 @@ pub struct Pairing {
     pub keeping: Keeping,
     pub forgetting: Forgetting,
     pub listing: Listing,
+    pub delivering: Delivering,
 }
 
 /// The lock's file name beside `purlisd.sock`, the socket of a person's own config home.
@@ -221,6 +227,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
         let keeping = Arc::clone(&pairing.keeping);
         let forgetting = Arc::clone(&pairing.forgetting);
         let listing = Arc::clone(&pairing.listing);
+        let delivering = Arc::clone(&pairing.delivering);
         tokio::spawn(async move {
             let chats = Arc::new(hosting.clone());
             match hostlink::answer_local(
@@ -243,6 +250,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
                         forgetting,
                         staged: std::sync::Mutex::default(),
                         listing,
+                        delivering,
                         unpaired: Arc::clone(&unpaired),
                     };
                     let serving = session::serve(answered.link, paired, None);
@@ -266,8 +274,9 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
 /// `unpair` (1.25, #2525), which takes that desktop, the one the handshake proved, out of the
 /// runner's peers, `keep_profile` (1.43, #2049), which keeps one of its profiles here, its
 /// settings staged on this link first (`stage_profile_settings`, 1.56, #4081),
-/// `forget_profile` (1.52, #4047), which forgets one, and `kept_profiles` (1.57, #4060), which
-/// names the ones kept.
+/// `forget_profile` (1.52, #4047), which forgets one, `kept_profiles` (1.57, #4060), which
+/// names the ones kept, and `sign_in_redirect` (1.58, #4044), which hands a login here its
+/// browser's answer.
 struct PairedLink {
     hosting: Hosting,
     desktop: Pinned,
@@ -277,6 +286,7 @@ struct PairedLink {
     /// The settings staged on this link: in memory, so they end with it.
     staged: std::sync::Mutex<session::StagedSettings>,
     listing: Listing,
+    delivering: Delivering,
     /// Told once the desktop is unpaired, so its link ends.
     unpaired: Arc<tokio::sync::Notify>,
 }
@@ -401,6 +411,20 @@ impl PairedLink {
                 why,
             })
     }
+
+    /// `sign_in_redirect` (1.58, #4044): the desktop's browser's answer handed to the login
+    /// waiting here, off the runtime, since the login signs in with its vendor before it answers.
+    async fn deliver(&self, target: String) -> Result<session::Answer, session::Refusal> {
+        let delivering = Arc::clone(&self.delivering);
+        tokio::task::spawn_blocking(move || delivering(&target))
+            .await
+            .unwrap_or_else(|why| Err(format!("the redirect was not handed on: {why}")))
+            .map(|()| session::Answer::Done)
+            .map_err(|why| session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            })
+    }
 }
 
 impl session::Host for PairedLink {
@@ -436,6 +460,7 @@ impl session::Host for PairedLink {
             session::Command::ForgetProfile { name } => self.forget(name).await,
             session::Command::StageProfileSettings(batch) => self.stage(batch),
             session::Command::KeptProfiles => self.list().await,
+            session::Command::SignInRedirect { target } => self.deliver(target.0).await,
             session::Command::Unpair => self.unpair().await,
             command => session::Host::call(&self.hosting, command, peer).await,
         }

@@ -45,7 +45,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use purlis_core::dockerpool::Typed;
-use purlis_core::profilestore::sign_in::{Standing, driven};
+use purlis_core::profilestore::sign_in::{Standing, callback, driven};
 use purlis_core::profilestore::{self, onrunner};
 
 use crate::runnerlinks::{Machine, ToARunner};
@@ -985,7 +985,13 @@ fn config_root() -> Result<PathBuf, String> {
 /// sign-in`, through this machine's `docker` with settings of purlis's own, on the engine shown
 /// to be the person's own, in the container as it was made, checked first. Only one of this
 /// machine's profiles that goes to a runner, kept there first, so the runner has it to sign in.
-pub fn sign_in_line(pool: &str, name: &str, provider: Option<&str>) -> Result<String, String> {
+/// With `device`, by the harness's device-code flow (#4044).
+pub fn sign_in_line(
+    pool: &str,
+    name: &str,
+    provider: Option<&str>,
+    device: bool,
+) -> Result<String, String> {
     let config = config_root()?;
     let yours = yours(&config, pool)?;
     let record = profilestore::list(&config)?
@@ -1013,7 +1019,12 @@ pub fn sign_in_line(pool: &str, name: &str, provider: Option<&str>) -> Result<St
             "Pool {pool}: {OLDER_RUNNER}. No sign-in was typed."
         ));
     }
-    login_on(&yours, &config, pool, name, provider, Typed::InATerminal)?.line()
+    let typed = if device {
+        Typed::DeviceInATerminal
+    } else {
+        Typed::InATerminal
+    };
+    login_on(&yours, &config, pool, name, provider, typed)?.line()
 }
 
 /// **The runner's own sign-in of `name` on pool `pool`'s runner, by `typed`**: through this
@@ -1032,10 +1043,12 @@ fn login_on(
         Yours::Docker(engine) => {
             // Only a runner of this desktop's purlis holds a login to what drives it (#4043).
             let runner = match typed {
-                Typed::InATerminal => {
+                Typed::InATerminal | Typed::DeviceInATerminal => {
                     purlis_core::runners::runner_for(config, pool).map_err(|why| why.to_string())?
                 }
-                Typed::Driven | Typed::InOwnTerminal(_) => this_desktops_runner(config, pool)?,
+                Typed::Driven | Typed::InOwnTerminal(_) | Typed::DeviceInOwnTerminal(_) => {
+                    this_desktops_runner(config, pool)?
+                }
             };
             crate::runnerlinks::docker()?.checked_sign_in(
                 &runner.made,
@@ -1047,7 +1060,7 @@ fn login_on(
         }
         Yours::Cluster(judged) => {
             still_yours(config, pool, judged)?;
-            if typed != Typed::InATerminal {
+            if !matches!(typed, Typed::InATerminal | Typed::DeviceInATerminal) {
                 this_desktops_cluster_runner(config, pool, judged)?;
             }
             purlis_core::pools::cluster_sign_in(
@@ -1072,6 +1085,12 @@ pub enum PoolSignInStep {
     Open { url: String },
     /// Show this code to enter on the vendor's own page `url`, before that page is opened.
     Device { url: String, code: String },
+    /// Open this page in the browser here, where the person approves: this machine is listening
+    /// for the browser's answer, which purlis carries to the runner, so nothing is pasted (#4044).
+    Approve { url: String },
+    /// This machine's `port` is taken, so the browser's answer could not reach the runner: no
+    /// page was opened.
+    PortTaken { port: u16 },
     /// Ask for the code the page shows.
     Code,
     /// What a login in the strip's terminal printed, escapes and all.
@@ -1095,6 +1114,8 @@ impl From<driven::Event> for PoolSignInStep {
         match event {
             driven::Event::Open { url } => Self::Open { url },
             driven::Event::DeviceCode { url, code } => Self::Device { url, code },
+            driven::Event::Approve { url, .. } => Self::Approve { url },
+            driven::Event::PortTaken { port } => Self::PortTaken { port },
             driven::Event::AskCode => Self::Code,
             driven::Event::Printed { text } => Self::Printed { text },
             driven::Event::Refused { said } => Self::Refused { said },
@@ -1135,10 +1156,14 @@ pub struct PoolSignInTerminal {
 /// the runner's own `purlis profile sign-in`, kept there first and run there through this
 /// machine's `docker` as [`sign_in_line`]'s is, but with pipes, its output read for the steps
 /// [`pool_sign_in_next`] answers. Nothing of this machine's sign-in goes to the runner (ADR
-/// 0095). A sign-in of the same profile on the same pool already running is cancelled. Answers
-/// the sign-in's number. With `terminal`, where purlis could not follow the login, it runs in a
-/// terminal the runner makes, for the person to drive in the strip (#4043): what it prints is
-/// [`PoolSignInStep::Printed`], and what is typed goes back by [`pool_sign_in_type`].
+/// 0095). A login that waits for the browser is answered through this machine's port, for as
+/// long as it runs: the redirect, and only that, is carried to the runner over a link of its own
+/// (`sign_in_redirect`, #4044). A sign-in of the same profile on the same pool already running is
+/// cancelled. Answers the sign-in's number. With `terminal`, where purlis could not follow the
+/// login, it runs in a terminal the runner makes, for the person to drive in the strip (#4043):
+/// what it prints is [`PoolSignInStep::Printed`], and what is typed goes back by
+/// [`pool_sign_in_type`]. A login that waits for the browser runs there by its harness's
+/// device-code flow, since nothing carries the browser's answer to that terminal (#4044).
 #[tauri::command]
 #[specta::specta]
 pub async fn pool_sign_in_start(
@@ -1174,13 +1199,29 @@ pub async fn pool_sign_in_start(
             Yours::Docker(_) => None,
         };
         let typed = match terminal {
-            Some(size) => Typed::InOwnTerminal(purlis_core::engine::Size {
-                columns: size.columns,
-                rows: size.rows,
-            }),
+            // A login approved in the browser restarts by its device code: nothing carries the
+            // browser's answer to a terminal (#4044).
+            Some(size) => {
+                let size = purlis_core::engine::Size {
+                    columns: size.columns,
+                    rows: size.rows,
+                };
+                if driven::waits_for_the_browser(&record.harness, provider.as_deref()) {
+                    Typed::DeviceInOwnTerminal(size)
+                } else {
+                    Typed::InOwnTerminal(size)
+                }
+            }
             None => Typed::Driven,
         };
         let login = login_on(&yours, &config, &pool, &name, provider.as_deref(), typed)?;
+        let carry: callback::Carry = {
+            let (config, pool) = (config.clone(), pool.clone());
+            Arc::new(move |target: &str| {
+                let to = to_a_runner(&config, &pool, Waking::No)?;
+                crate::runnerlinks::sign_in_redirect(&to, target)
+            })
+        };
         let check = {
             let pool = pool.clone();
             move || match keep_on(&config, &pool, &kept) {
@@ -1190,7 +1231,13 @@ pub async fn pool_sign_in_start(
         };
         let driving = Arc::new(match terminal {
             Some(_) => driven::in_a_terminal(&login, check)?,
-            None => driven::drive_with(&login, &record.harness, provider.as_deref(), check)?,
+            None => driven::drive_with(
+                &login,
+                &record.harness,
+                provider.as_deref(),
+                Some(carry),
+                check,
+            )?,
         });
         // One of the same profile on the same pool is let go and ended, after the lock.
         let before: Vec<SignIn> = {

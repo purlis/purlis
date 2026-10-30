@@ -194,3 +194,5 @@
 {"call":{"id":179,"command":"kept_profiles"}}
 {"reply":{"re":179,"ok":{"profiles":{"names":["work","claude"]}}}}
 {"pushed":{"link_down":{"why":"the connector did not connect: pool first's runner first was removed outside purlis: Docker has no container 0f9ad8c1e2b3; its home volume went too, and with it the sign-ins kept there","gone":true}}}
+{"call":{"id":180,"command":"sign_in_redirect","target":"/auth/callback?code=recorded&state=recorded"}}
+{"reply":{"re":180,"ok":"done"}}
