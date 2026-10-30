@@ -6004,7 +6004,9 @@ export type InstallReview = {
  *  where reading all of them is more than one read of the source may take, which of those named
  *  fit, so the window asks to install them in parts.
  */
-export type InstallSetReview = { kind: "review"; review: InstallReview } | { kind: "too-much"; 
+export type InstallSetReview = { kind: "review"; review: InstallReview; 
+/**  Those named that the level holds already (#4153): left out, and left as they are. */
+there: string[] } | { kind: "too-much"; 
 /**
  *  Those named first that fit one read, the first part; empty where the first alone
  *  does not.

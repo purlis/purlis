@@ -773,8 +773,9 @@ describe("the install review", () => {
 });
 
 /** The one review of `names` as the core answers it (#4024): each named, notify brought along by
- *  deploy, and what accepting says of exactly those. */
-function setReview(names: readonly string[]) {
+ *  deploy, and what accepting says of exactly those; those of `there` the level holds already,
+ *  left out (#4153). */
+function setReview(names: readonly string[], there: readonly string[] = []) {
   const HUGE = {
     ...NOTIFY,
     name: "huge",
@@ -782,12 +783,14 @@ function setReview(names: readonly string[]) {
     folder: "skills/huge",
     brought_by: null,
   };
+  const reviewed = names.filter((name) => !there.includes(name));
   const skills = [
-    ...(names.includes("deploy") ? [REVIEW.skills[0], NOTIFY] : []),
-    ...(names.includes("huge") ? [HUGE] : []),
+    ...(reviewed.includes("deploy") ? [REVIEW.skills[0], NOTIFY] : []),
+    ...(reviewed.includes("huge") ? [HUGE] : []),
   ];
   return {
     kind: "review",
+    there: names.filter((name) => there.includes(name)),
     review: {
       commit: commit("a"),
       skills,
@@ -872,6 +875,50 @@ describe("Install all… (#4024)", () => {
     expect(install?.args.reviewed).toEqual(setReview(["deploy"]).review.accepted);
     expect(install?.args.level).toEqual(PROJECT);
     expect(await screen.findByTestId("skill-source-page")).toBeInTheDocument();
+  });
+
+  it("shows a ticked skill the level holds already as there, unticked, and installs the rest (#4153)", async () => {
+    const asked = core({
+      answers: {
+        // The project holds huge already, made there by hand.
+        skill_install_set_review: (args) => setReview(args.names as string[], ["huge"]),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    await user.click(await within(choose).findByRole("button", { name: "Review 2 skills" }));
+    const review = await screen.findByTestId("install-all-review");
+    const huge = await within(review).findByTestId("there-huge");
+    expect(within(huge).getByRole("checkbox")).not.toBeChecked();
+    expect(within(huge).getByRole("checkbox")).toBeDisabled();
+    expect(within(review).getByText(/so it is left as it is/)).toBeInTheDocument();
+    expect(within(review).queryByTestId("keep-huge")).toBeNull();
+    expect(within(review).queryByTestId("left-out-huge")).toBeNull();
+
+    await user.click(within(review).getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(did(asked, "skill_install")).toBe(true));
+    const install = asked.find((one) => one.cmd === "skill_install");
+    expect(install?.args.reviewed).toEqual(setReview(["deploy", "huge"], ["huge"]).review.accepted);
+  });
+
+  it("holds Install where every ticked skill is there already (#4153)", async () => {
+    core({
+      answers: {
+        skill_install_set_review: (args) =>
+          setReview(args.names as string[], args.names as string[]),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    await user.click(await within(choose).findByRole("button", { name: "Review 2 skills" }));
+    const review = await screen.findByTestId("install-all-review");
+    await within(review).findByTestId("there-deploy");
+    expect(within(review).getByRole("button", { name: "Install" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 
   it("keeps the list as it was ticked when the person comes back from the review", async () => {

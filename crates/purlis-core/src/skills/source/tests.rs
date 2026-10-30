@@ -1919,8 +1919,14 @@ fn three_skills() -> Upstream {
 
 /// The review a set review answered, or a failure naming what it answered instead.
 fn whole(set: SetReview) -> Review {
+    whole_and_there(set).0
+}
+
+/// The review a set review answered and those named it left out as there already, or a failure
+/// naming what it answered instead.
+fn whole_and_there(set: SetReview) -> (Review, Vec<String>) {
     match set {
-        SetReview::Review(review) => review,
+        SetReview::Review { review, there } => (review, there),
         SetReview::TooMuch(too_much) => panic!("more than one read: {too_much:?}"),
     }
 }
@@ -2117,10 +2123,9 @@ fn a_referred_skill_the_level_holds_already_is_marked_there_and_not_installed_ag
 }
 
 /// #4032: `--all` leaves out a skill the level holds already from anywhere, as its install would
-/// be refused; one named as well as referred to is reviewed itself, never said to be left as it
-/// is.
+/// be refused, and one that refers to it says it is left as it is.
 #[test]
-fn installing_all_leaves_out_what_the_level_holds_and_a_named_skill_is_never_left_as_it_is() {
+fn installing_all_leaves_out_what_the_level_holds() {
     let remote = three_skills();
     let tmp = plane();
     let root = tmp.path();
@@ -2133,14 +2138,43 @@ fn installing_all_leaves_out_what_the_level_holds_and_a_named_skill_is_never_lef
     let names: Vec<&str> = all.skills.iter().map(|s| s.name.as_str()).collect();
     assert_eq!(names, ["deploy", "lint"]);
     assert_eq!(all.skills[0].already, ["notify"]);
+}
 
-    let named = ["deploy".to_owned(), "notify".to_owned()];
-    let both = whole(review_set(root, &source, &named, &ops).unwrap());
-    let names: Vec<&str> = both.skills.iter().map(|s| s.name.as_str()).collect();
-    assert_eq!(names, ["deploy", "notify"]);
-    assert!(
-        both.skills[0].already.is_empty(),
-        "{:?}",
-        both.skills[0].already
+/// #4153: Install all… ticks its list before the level is chosen, so one ticked that the chosen
+/// level holds already, made there by hand or installed from another source, is left out of the
+/// review and said to be there; the install of the rest goes ahead, and leaves it as it was.
+#[test]
+fn a_ticked_skill_the_level_holds_already_is_said_to_be_there_and_left_out() {
+    let remote = three_skills();
+    let tmp = plane();
+    let root = tmp.path();
+    let source = remote.source();
+    let ops = Level::workspace("ops");
+    std::fs::create_dir_all(root.join("workspaces/ops/skills/notify")).unwrap();
+    std::fs::write(root.join("workspaces/ops/skills/notify/SKILL.md"), NOTIFY).unwrap();
+
+    let named = ["deploy".to_owned(), "notify".to_owned(), "lint".to_owned()];
+    let (set, there) = whole_and_there(review_set(root, &source, &named, &ops).unwrap());
+    assert_eq!(there, ["notify"]);
+    let names: Vec<&str> = set.skills.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["deploy", "lint"]);
+    assert_eq!(set.skills[0].already, ["notify"]);
+    let (made, _) = on(root, |cx| install(cx, &source, &ops, &set.accepted(), None));
+    assert_eq!(made.unwrap().len(), 2);
+    assert_eq!(
+        std::fs::read(root.join("workspaces/ops/skills/notify/SKILL.md")).unwrap(),
+        NOTIFY,
+        "the one made by hand is left as it was"
     );
+
+    // Where every one ticked is there, the review holds none, and says which.
+    let (none, there) =
+        whole_and_there(review_set(root, &source, &["notify".to_owned()], &ops).unwrap());
+    assert!(none.skills.is_empty(), "{:?}", none.skills);
+    assert_eq!(there, ["notify"]);
+
+    // `--all` says the same of one it leaves out.
+    let (all, there) = whole_and_there(review_all(root, &source, &ops).unwrap());
+    assert!(all.skills.is_empty(), "{:?}", all.skills);
+    assert_eq!(there, ["notify"]);
 }

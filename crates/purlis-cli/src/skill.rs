@@ -1607,14 +1607,14 @@ fn install(
     let review = match named {
         Named::These(names) => source::review(root, source, names, level),
         Named::All => match source::review_all(root, source, level) {
-            Ok(source::SetReview::Review(review)) if review.skills.is_empty() => {
+            Ok(source::SetReview::Review { review, .. }) if review.skills.is_empty() => {
                 voice::info(format!(
                     "Every skill {} offers is installed already.",
                     esc(&source.to_string())
                 ));
                 return Ok(0);
             }
-            Ok(source::SetReview::Review(review)) => Ok(review),
+            Ok(source::SetReview::Review { review, .. }) => Ok(review),
             Ok(source::SetReview::TooMuch(too_much)) => {
                 voice::err(esc(&too_much_text(&too_much)).to_string());
                 return Ok(1);

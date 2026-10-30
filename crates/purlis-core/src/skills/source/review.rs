@@ -278,7 +278,13 @@ pub struct TooMuch {
 /// read may take, which of those named fit.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum SetReview {
-    Review(Review),
+    Review {
+        review: Review,
+        /// Those named that the level they land in holds already, from any source or made there
+        /// by hand (#4153): left out of the review and the install, which would refuse them, and
+        /// left as they are.
+        there: Vec<String>,
+    },
     TooMuch(TooMuch),
 }
 
@@ -427,19 +433,25 @@ impl Fetched {
 
     /// **The review of installing `names` together** from this commit, or which of them fit one
     /// read where all of them do not; `found` is what it offers, listed once, and `have` says
-    /// which skills the level they land in holds already.
+    /// which skills the level they land in holds already. One named that the level holds is left
+    /// out and said to be there (#4153).
     fn set_review(
         &self,
         found: &[Found],
         names: &[String],
         have: &dyn Fn(&str) -> bool,
     ) -> Result<SetReview, String> {
-        match reviewed_from(self, found, names, have) {
-            Ok(skills) => Ok(SetReview::Review(Review {
-                source: self.source.clone(),
-                commit: self.commit.clone(),
-                skills: skills.into_iter().map(|one| one.review).collect(),
-            })),
+        let (there, names): (Vec<String>, Vec<String>) =
+            names.iter().cloned().partition(|name| have(name));
+        match reviewed_from(self, found, &names, have) {
+            Ok(skills) => Ok(SetReview::Review {
+                review: Review {
+                    source: self.source.clone(),
+                    commit: self.commit.clone(),
+                    skills: skills.into_iter().map(|one| one.review).collect(),
+                },
+                there,
+            }),
             Err(Unread::TooMuch(too_much)) => Ok(SetReview::TooMuch(too_much)),
             Err(Unread::Refused(why)) => Err(why),
         }
@@ -480,7 +492,8 @@ pub fn review(
 
 /// **The review of installing `names` from `source` together at `level`** (#4024), at its newest
 /// commit: one review and one install for the set, or, past what one read may take, the names
-/// that fit.
+/// that fit. One named that `level` holds already is left out, and said to be there (#4153): the
+/// window's list is ticked before the level is chosen.
 pub fn review_set(
     plane: &Path,
     source: &Source,
@@ -494,19 +507,18 @@ pub fn review_set(
 
 /// **The review of installing every skill of `source` not installed from it yet** (#4024,
 /// `purlis skill install <source> --all`), at its newest commit, landing at `level`; one `level`
-/// holds already, from anywhere, is left out too, as its install would be refused (#4032). A
-/// review of no skill where every one is.
+/// holds already, from anywhere, is left out too and said to be there, as its install would be
+/// refused (#4032, #4153). A review of no skill where every one is.
 pub fn review_all(plane: &Path, source: &Source, level: &Level) -> Result<SetReview, String> {
     let fetched = fetch(plane, source, None)?;
     let (found, _) = fetched.skills()?;
     let (locked, _) = lock::every(plane);
-    let have = held_at(plane, level);
     let names: Vec<String> = found
         .iter()
-        .filter(|skill| installed_at(&locked, source, &skill.name).is_empty() && !have(&skill.name))
+        .filter(|skill| installed_at(&locked, source, &skill.name).is_empty())
         .map(|skill| skill.name.clone())
         .collect();
-    fetched.set_review(&found, &names, &have)
+    fetched.set_review(&found, &names, &held_at(plane, level))
 }
 
 /// The levels `name` is installed at from `source`, by the lockfiles' entries `locked`.

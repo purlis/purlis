@@ -525,6 +525,8 @@ impl From<&source::Review> for InstallReview {
 pub enum InstallSetReview {
     Review {
         review: InstallReview,
+        /// Those named that the level holds already (#4153): left out, and left as they are.
+        there: Vec<String>,
     },
     TooMuch {
         /// Those named first that fit one read, the first part; empty where the first alone
@@ -882,8 +884,8 @@ pub(crate) async fn skill_install_review(
 }
 
 /// **The review of installing `names` from a source together** (#4024, Install all…): one review
-/// of the set into `level` and the skills they refer to that it does not hold already, or which of
-/// them fit one read.
+/// of the set into `level` and the skills they refer to that it does not hold already, those named
+/// that it holds already left out (#4153), or which of them fit one read.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_install_set_review(
@@ -898,8 +900,9 @@ pub(crate) async fn skill_install_set_review(
         flag_on()?;
         Ok(
             match source::review_set(held.root(), &source.core(), &names, &(&level).into())? {
-                source::SetReview::Review(review) => InstallSetReview::Review {
+                source::SetReview::Review { review, there } => InstallSetReview::Review {
                     review: (&review).into(),
+                    there: there.iter().map(|one| esc(one)).collect(),
                 },
                 source::SetReview::TooMuch(too_much) => InstallSetReview::TooMuch {
                     fits: too_much.fits.iter().map(|one| esc(one)).collect(),

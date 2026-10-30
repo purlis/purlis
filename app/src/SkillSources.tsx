@@ -1494,9 +1494,11 @@ function InstallSetReviewPage({
           ? "The review could not be read."
           : review === undefined
             ? "It is more than one review can read: install it in two parts."
-            : busy
-              ? BUSY
-              : undefined;
+            : review.skills.length === 0
+              ? `Every skill ticked is in the ${labelOf(levels, level)} skills already.`
+              : busy
+                ? BUSY
+                : undefined;
   const risky = review === undefined ? 0 : riskyIn(review);
   return (
     <ReviewPage
@@ -1605,6 +1607,30 @@ function InstallSetReviewPage({
                     }
                   />
                 ))}
+                {data.there.length > 0 && (
+                  <section aria-labelledby="install-all-there" className="skill-review">
+                    <h3 id="install-all-there" className="ui-text-small ui-text-strong">
+                      There already
+                    </h3>
+                    <p className="honest">
+                      The {labelOf(levels, level)} skills have{" "}
+                      {data.there.length === 1 ? "this one" : "these"} already, so{" "}
+                      {data.there.length === 1 ? "it is" : "they are"} left as{" "}
+                      {data.there.length === 1 ? "it is" : "they are"}.
+                    </p>
+                    {data.there.map((name) => (
+                      <Checkbox
+                        key={name}
+                        isSelected={false}
+                        isDisabled
+                        tooltip={`The ${labelOf(levels, level)} skills have ${name} already.`}
+                        data-testid={`there-${name}`}
+                      >
+                        Install {name}
+                      </Checkbox>
+                    ))}
+                  </section>
+                )}
               </>
             )
           }
