@@ -9,6 +9,7 @@ import {
   cloningWords,
   forgetRepoClones,
   stopRepoClones,
+  subscribeRepoClones,
 } from "./repoClones";
 
 /**
@@ -295,5 +296,35 @@ describe("a stop that comes too late for its run (#4176)", () => {
     held[1].land();
     expect(await again).toEqual([]);
     expect(asked).toEqual(["api", "web"]);
+  });
+});
+
+describe("a store listener that throws (#4177)", () => {
+  it("never leaves a waiting call unanswered, nor the workspace's next clone waiting", async () => {
+    const { held } = heldCore();
+    let thrown = false;
+    let landed = false;
+    const stop = subscribeRepoClones(() => {
+      if (thrown || held.length === 0 || !landed) return;
+      thrown = true;
+      throw new Error("a listener broke");
+    });
+    try {
+      const first = cloneRepos("/p", "gamma", ["api"]);
+      const waiting = cloneRepos("/p", "gamma", ["api"]);
+      await expect.poll(() => held.length).toBe(1);
+      landed = true;
+      held[0].land();
+      await expect(first).rejects.toThrow("a listener broke");
+      // The call waiting on api still answers, with how it ended.
+      expect(await waiting).toEqual([]);
+      // And the workspace's next clone runs.
+      const next = cloneRepos("/p", "gamma", ["web"]);
+      await expect.poll(() => held.length).toBe(2);
+      held[1].land();
+      expect(await next).toEqual([]);
+    } finally {
+      stop();
+    }
   });
 });

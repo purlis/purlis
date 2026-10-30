@@ -191,9 +191,11 @@ async function cloneInTurn(
    *  never reached, is not kept to stop the next ask. */
   const end = (repo: string, state: CloneState) => {
     stopping.get(key)?.delete(repo);
-    set(plane, workspace, repo, state);
+    // Recorded and told before the store hears it (#4177): a listener of the store that throws
+    // must never leave a call waiting on this repo unanswered, or the workspace's chain behind it.
     done.add(repo);
     settle.get(repo)?.(state);
+    set(plane, workspace, repo, state);
   };
   try {
     if (repos.length === 0) return [];
@@ -248,11 +250,19 @@ async function cloneInTurn(
       onEach?.(repo, state);
     }
     return failed;
-  } finally {
+  } catch (err: unknown) {
     // **Stopped part way** (#4003): a repo this run never reached is not left waiting for as
     // long as the window is open, which would make every later ask answer "not finished". It
-    // ends failed, so asking again clones it.
-    for (const repo of repos) if (!done.has(repo)) end(repo, NOT_FINISHED(repo));
+    // ends failed, so asking again clones it. Every one is ended, though the store's listener
+    // throws again on one (#4177); then the run's own throw is said.
+    for (const repo of repos.filter((one) => !done.has(one))) {
+      try {
+        end(repo, NOT_FINISHED(repo));
+      } catch {
+        // `end` recorded and told it before the store threw: only the store's drawing is lost.
+      }
+    }
+    throw err;
   }
 }
 
@@ -283,7 +293,9 @@ async function seen(
   };
 }
 
-function subscribe(listener: () => void) {
+/** **The store's subscription**, as `useRepoClones` reads it: `listener` hears every change,
+ *  until the function it answers is called. */
+export function subscribeRepoClones(listener: () => void) {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
@@ -292,7 +304,10 @@ function subscribe(listener: () => void) {
 
 /** What this window has asked to clone into `workspace`, by repo. */
 export function useRepoClones(plane: PlaneId, workspace: string): Clones {
-  return useSyncExternalStore(subscribe, () => byWorkspace.get(keyOf(plane, workspace)) ?? EMPTY);
+  return useSyncExternalStore(
+    subscribeRepoClones,
+    () => byWorkspace.get(keyOf(plane, workspace)) ?? EMPTY,
+  );
 }
 
 /**
