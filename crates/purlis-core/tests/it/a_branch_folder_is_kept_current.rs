@@ -1031,3 +1031,64 @@ fn a_record_left_from_an_earlier_update_never_vouches_for_the_persons_own_rebase
         );
     }
 }
+
+/// The clone's `main` given a commit its remote never took, as a clone keeps commits upstream
+/// squashed into one of its own (#3890), and the remote moved on too: the two have diverged.
+/// Answers the commit the clone's `main` is at.
+fn diverged_main(w: &World) -> String {
+    commit_in(&w.clone, "stale.txt", "squashed upstream\n");
+    w.they_commit("new.txt", "new\n");
+    git(&w.clone, &["fetch", "-q", "origin"]);
+    out(&w.clone, &["rev-parse", "main"])
+}
+
+#[test]
+fn an_update_onto_a_base_that_diverged_from_its_remote_uses_the_remote_and_leaves_the_base() {
+    purlis_core::unsteered!();
+    let w = world();
+    let (code, cut) = add(&w, "p1", None);
+    assert_eq!(code, 0, "{cut}");
+    let piece = w.piece("p1");
+    commit_in(&piece, "mine.txt", "mine\n");
+    let local = diverged_main(&w);
+    let upstream = out(&w.theirs, &["rev-parse", "HEAD"]);
+
+    let (code, said) = update(&w, "p1", &start(None), &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("origin/main"), "{said}");
+    assert_eq!(out(&piece, &["rev-parse", "HEAD~1"]), upstream);
+    assert!(
+        !piece.join("stale.txt").exists(),
+        "the stale commit is not brought in"
+    );
+    assert_eq!(
+        out(&w.clone, &["rev-parse", "main"]),
+        local,
+        "the person's main is left where it is"
+    );
+}
+
+#[test]
+fn a_piece_cut_from_a_base_that_diverged_from_its_remote_starts_from_the_remote() {
+    purlis_core::unsteered!();
+    let w = world();
+    let local = diverged_main(&w);
+    let upstream = out(&w.theirs, &["rev-parse", "HEAD"]);
+
+    for (piece, base) in [("p1", None), ("p2", Some("main"))] {
+        let (code, said) = add(&w, piece, base);
+        assert_eq!(code, 0, "{said}");
+        assert!(said.contains("origin/main"), "{said}");
+        assert!(!said.contains("used as the clone has it"), "{said}");
+        assert_eq!(out(&w.piece(piece), &["rev-parse", "HEAD"]), upstream);
+        assert_eq!(
+            out(
+                &w.clone,
+                &["config", "--get", &format!("branch.{piece}.charterBase")]
+            ),
+            "main",
+            "the base recorded is still the branch"
+        );
+    }
+    assert_eq!(out(&w.clone, &["rev-parse", "main"]), local);
+}
