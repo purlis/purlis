@@ -1097,6 +1097,7 @@ export const commands = {
 	skillSourceConfirm: __WINDOW_ONLY_RESULT,
 	skillSourceBrowse: __WINDOW_ONLY_RESULT,
 	skillInstallReview: __WINDOW_ONLY_RESULT,
+	skillInstallSetReview: __WINDOW_ONLY_RESULT,
 	skillInstall: __WINDOW_ONLY_RESULT,
 	skillUpdates: __WINDOW_ONLY_RESULT,
 	skillUpdateReview: __WINDOW_ONLY_RESULT,
@@ -1487,6 +1488,8 @@ export const commands = {
 	clusterPoolKey: __WINDOW_ONLY_RESULT,
 	addClusterPool: __WINDOW_ONLY_RESULT,
 	poolProfiles: __WINDOW_ONLY_RESULT,
+	poolProfileAdd: __WINDOW_ONLY_RESULT,
+	poolProfileRemove: __WINDOW_ONLY_RESULT,
 	poolSignInStart: __WINDOW_ONLY_RESULT,
 	poolSignInNext: __WINDOW_ONLY_RESULT,
 	poolSignInPaste: __WINDOW_ONLY_RESULT,
@@ -1627,7 +1630,7 @@ export const commands = {
 	themeChooseOption: __WINDOW_ONLY_RESULT,
 	themeDuplicate: __WINDOW_ONLY_RESULT,
 	themeOpenFolder: __WINDOW_ONLY_RESULT,
-	themeChat: __WINDOW_ONLY_RESULT,
+	themeChat: __WINDOW_ONLY_START_REFUSED,
 	themeDraftsOfChat: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **A link's close of chats that have theme drafts is handed to the window** (#2761): closing a
@@ -1830,10 +1833,10 @@ export const commands = {
 	 *  `workspace:<name>`, `persona:<name>`, `plane`), in the order asked.
 	 */
 	curationOffers: (plane: PlaneId, subjects: string[]) => typedError<Curations, string>(__TAURI_INVOKE("curation_offers", { plane, subjects })),
-	curate: __WINDOW_ONLY_RESULT,
+	curate: __WINDOW_ONLY_START_REFUSED,
 	referenceIntoChat: __WINDOW_ONLY_RESULT,
 	referencesIntoChat: __WINDOW_ONLY_RESULT,
-	startChatHere: __WINDOW_ONLY_RESULT,
+	startChatHere: __WINDOW_ONLY_START_REFUSED,
 	/**  Whether chat `session` is offered Smart close, and the answer the close dialog starts on. */
 	smartCloseOffer: (plane: PlaneId, session: number) => typedError<SmartCloseOffer, string>(__TAURI_INVOKE("smart_close_offer", { plane, session })),
 	smartClose: __WINDOW_ONLY_RESULT,
@@ -2320,6 +2323,13 @@ export type ActivityLine = {
 	 *  how deep, is the tab's to say there.
 	 */
 	depth: number,
+};
+
+/**  One of this machine's profiles that is not on a pool yet, and could go there. */
+export type AddableProfile = {
+	name: string,
+	/**  The harness as people call it: `Claude Code`. */
+	harness: string,
 };
 
 /**  How far a branch is from the branch it was cut from: the branch cockpit's header (FM-5). */
@@ -5960,6 +5970,20 @@ export type InstallReview = {
 };
 
 /**
+ *  **The review of installing a set of a source's skills together** (#4024): one review, or,
+ *  where reading all of them is more than one read of the source may take, which of those named
+ *  fit, so the window asks to install them in parts.
+ */
+export type InstallSetReview = { kind: "review"; review: InstallReview } | { kind: "too-much"; 
+/**
+ *  Those named first that fit one read, the first part; empty where the first alone
+ *  does not.
+ */
+fits: string[]; 
+/**  The rest of those named. */
+rest: string[]; why: string };
+
+/**
  *  What has contributed what to this window — ADR 0041's item 2, and the thing every
  *  later decision about extensions is read off.
  */
@@ -7040,6 +7064,11 @@ export type OpenHosts = {
 	hosts: string[],
 };
 
+/**  The open project a command is asked for: a type of its own, so its plane stays a `PlaneId`. */
+export type OpenProject = {
+	plane: PlaneId | null,
+};
+
 /**  A skill run open in a chat, as its tab's chip shows it. */
 export type OpenRun = {
 	/**  The skill, by the name its harness started it by. */
@@ -8070,6 +8099,15 @@ export type PoolProfileRow = {
 	not_kept: string | null,
 	/**  The plans Sign in offers there, where purlis names the provider. */
 	plans: PlanRow[],
+};
+
+/**
+ *  **A pool's profiles** (#4047): the ones its runner keeps, as it stands with each, and this
+ *  machine's others that Add a profile… offers.
+ */
+export type PoolProfiles = {
+	kept: PoolProfileRow[],
+	addable: AddableProfile[],
 };
 
 /**  One pool's limits, which each of its runners that runs requests (#2052, story 55). */

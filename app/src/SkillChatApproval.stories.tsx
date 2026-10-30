@@ -12,8 +12,9 @@ import { useState } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { NeedsApproval } from "./bindings";
-import { SkillChatApproveAsk } from "./SkillChatApproval";
+import { startedAgain, studioStartNamed } from "./SkillChatApproval";
 import type { SkillChatAsk } from "./skillDraftAsks";
+import { StartApproveAsk } from "./StartApproval";
 import { pictureNow } from "./stories.testkit";
 
 const PLANE = "/home/dev/plane";
@@ -35,13 +36,20 @@ function Asking() {
     <>
       <p data-testid="said">{said ?? "Asking"}</p>
       {said === undefined && (
-        <SkillChatApproveAsk
+        <StartApproveAsk
           plane={PLANE}
-          asked={{ wanted: TRY, approval: WORK }}
+          asked={{
+            named: studioStartNamed(TRY),
+            typed: "its request",
+            approval: WORK,
+            way: { label: "Approve and start…", onPress: () => undefined },
+            again: (profile) => {
+              const again = startedAgain(TRY, profile);
+              setSaid(`Started ${again.kind} on ${again.kind === "try" ? again.profile : ""}`);
+            },
+          }}
           onCancel={() => setSaid("Cancelled")}
-          onApproved={(again) =>
-            setSaid(`Started ${again.kind} on ${again.kind === "try" ? again.profile : ""}`)
-          }
+          onApproved={() => undefined}
         />
       )}
     </>

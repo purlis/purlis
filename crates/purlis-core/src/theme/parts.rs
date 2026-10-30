@@ -2321,18 +2321,41 @@ fn grounds(theme: &ResolvedTheme, family: &Family) -> Vec<String> {
     laid(theme, family.grounds)
 }
 
-/// `fill` as it is drawn over each of the grounds `under` names: itself where it is opaque.
-fn laid_over(theme: &ResolvedTheme, fill: &str, under: &[&str]) -> Vec<String> {
+/// `fill` as it is drawn over each of the grounds `under` holds: itself where it is opaque.
+fn laid_over(theme: &ResolvedTheme, fill: &str, under: &[String]) -> Vec<String> {
     let Some(colour) = hex(theme, fill) else {
-        return laid(theme, under);
+        return under.to_vec();
     };
     if is_opaque(colour) {
         return vec![solid(colour)];
     }
-    laid(theme, under)
-        .iter()
-        .map(|below| onto(colour, below))
-        .collect()
+    under.iter().map(|below| onto(colour, below)).collect()
+}
+
+/// **What a part drawn apart from its root stands on, as drawn** (#4064): each ground it names,
+/// but where it stands in a surface a theme fills ([`APART_STANDS_ON`]), that fill as it is laid
+/// over the surface's own grounds in place of the surface's default.
+fn apart_grounds(
+    theme: &ResolvedTheme,
+    rules: &[Rule],
+    family: &Family,
+    under: &[&str],
+) -> Vec<String> {
+    let mut grounds = Vec::new();
+    for token in under {
+        let filled = APART_STANDS_ON
+            .iter()
+            .filter(|(_, _, name)| *name == family.name)
+            .find_map(|(surface, variant, _)| {
+                let surface = self::family(surface)?;
+                let default = (surface.defaults)(variant, &[]).fill;
+                let set = drawn(rules, surface, variant, &[]).fill;
+                (default == *token && set != default && set != TRANSPARENT)
+                    .then(|| surface_ground(theme, surface, set))
+            });
+        grounds.extend(filled.unwrap_or_else(|| laid(theme, &[token])));
+    }
+    grounds
 }
 
 /// [`grounds`] of a list of ground tokens: what a part drawn apart from its root stands on.
@@ -3402,7 +3425,7 @@ impl Held<'_> {
                 let floor = theme.least.floor(floor_of(family, part));
                 // On what it stands on by default, where the theme colours it.
                 if fill.is_some() || words.is_some() {
-                    let on = laid(theme, own.under);
+                    let on = apart_grounds(theme, self.rules, family, own.under);
                     if let Some(ratio) = lowest(
                         theme,
                         &on,
@@ -3430,7 +3453,11 @@ impl Held<'_> {
                     // The row's fill as drawn: laid over the popover it stands on.
                     let holder_on =
                         apart_look_in(family.name, family.parts[holder].name, &held_in).under;
-                    let on = laid_over(theme, under, holder_on);
+                    let on = laid_over(
+                        theme,
+                        under,
+                        &apart_grounds(theme, self.rules, family, holder_on),
+                    );
                     let read = |fill: &str, words: &str| lowest(theme, &on, fill, words);
                     let drawn = read(fill.unwrap_or(own.fill), words.unwrap_or(own.words));
                     if drawn.is_none_or(|ratio| ratio >= floor) {
@@ -3590,7 +3617,9 @@ impl Held<'_> {
     /// `variant` draws its family default while `states` hold, said once in a [`Fell`] that names
     /// them. The default is written for one state: in a set, the last of them any of the
     /// family's rules names. A fallback is written after every theme rule, so the set draws that
-    /// state's default, which the floors already hold.
+    /// state's default, which the floors already hold. A title-bar chip ([`REST_KEEPS_STATES`])
+    /// draws a pair that falls back as the pair, keyed on both its states (#4049), and a state
+    /// that falls alone back as only what its default changes from the rest.
     fn fall(&mut self, variant: &'static str, states: &[State], floor: String, ratio: Option<f64>) {
         let family = self.family;
         let part = named(family, variant, states);
@@ -3620,7 +3649,7 @@ impl Held<'_> {
         // own change kept after a fall at rest draws some, and a fall of that state then draws
         // the rest of them (#4039's review).
         let drawn_back = fallback(family, variant, state);
-        let root_colours: Vec<Prop> = drawn_back
+        let root_props: Vec<Prop> = drawn_back
             .iter()
             .find(|rule| rule.part == 0)
             .map(|rule| rule.values.keys().copied().collect())
@@ -3632,7 +3661,7 @@ impl Held<'_> {
                 && rule.state == state
                 && rule.also.is_none()
                 && !rule.values.contains_key(&Prop::BorderWidth)
-                && root_colours.iter().all(|one| rule.values.contains_key(one))
+                && root_props.iter().all(|one| rule.values.contains_key(one))
         });
         // A title-bar chip's state draws back only what its default changes from the rest, and
         // what the theme set in it, and each pair that holds it draws its own look after it: a
@@ -3640,32 +3669,52 @@ impl Held<'_> {
         // wash (#4039's second review).
         let keeps_states = REST_KEEPS_STATES.contains(&family.name)
             && state.is_some_and(|one| one != State::Invalid);
+        // A pair that falls draws its own look back where both its states hold, and nowhere
+        // else: a chip under the pointer alone, or current alone, keeps the theme's (#4049).
+        if keeps_states && let [first, second] = states {
+            self.rules.push(Rule {
+                family,
+                part: 0,
+                variant: reached,
+                state: Some(*first),
+                also: Some(*second),
+                values: colour_values(root_colours(family, variant, states)),
+                fallback: true,
+            });
+            // And the words and fills of the parts in it, a chip's count among them, keyed on
+            // the pair too (#4084's review).
+            self.rules.extend(
+                fallback(family, variant, Some(*first))
+                    .into_iter()
+                    .filter(|rule| rule.part != 0)
+                    .map(|rule| Rule {
+                        also: Some(*second),
+                        ..rule
+                    }),
+            );
+            return;
+        }
         if !written && keeps_states {
             let one = state.unwrap_or(State::Hover);
             self.rules
                 .extend(drawn_back.into_iter().filter(|rule| rule.part != 0));
-            let rest = (family.defaults)(variant, &[]);
-            let own = (family.defaults)(variant, &[one]);
-            let values: BTreeMap<Prop, PartValue> = [
-                (Prop::Fill, own.fill, rest.fill),
-                (Prop::Text, own.text, rest.text),
-                (Prop::BorderColour, own.border, rest.border),
-            ]
-            .into_iter()
-            .filter(|(property, _, _)| family.parts[0].properties.contains(property))
-            .filter(|(property, token, at_rest)| {
-                token != at_rest
-                    || self.rules.iter().any(|rule| {
-                        std::ptr::eq(rule.family, family)
-                            && !rule.fallback
-                            && rule.part == 0
-                            && rule.variant.is_none_or(|v| Some(v) == reached)
-                            && rule.state == Some(one)
-                            && rule.values.contains_key(property)
+            let rest = root_colours(family, variant, &[]);
+            let values = colour_values(
+                root_colours(family, variant, &[one])
+                    .into_iter()
+                    .filter(|(property, token)| {
+                        rest.get(property) != Some(token)
+                            || self.rules.iter().any(|rule| {
+                                std::ptr::eq(rule.family, family)
+                                    && !rule.fallback
+                                    && rule.part == 0
+                                    && rule.variant.is_none_or(|v| Some(v) == reached)
+                                    && rule.state == Some(one)
+                                    && rule.values.contains_key(property)
+                            })
                     })
-            })
-            .map(|(property, token, _)| (property, PartValue::Colour(token)))
-            .collect();
+                    .collect(),
+            );
             if !values.is_empty() {
                 self.rules.push(Rule {
                     family,
@@ -3681,23 +3730,13 @@ impl Held<'_> {
                 .into_iter()
                 .filter(|pair| pair.len() == 2 && pair.contains(&one))
             {
-                let look = (family.defaults)(variant, &pair);
-                let values: BTreeMap<Prop, PartValue> = [
-                    (Prop::Fill, look.fill),
-                    (Prop::Text, look.text),
-                    (Prop::BorderColour, look.border),
-                ]
-                .into_iter()
-                .filter(|(property, _)| family.parts[0].properties.contains(property))
-                .map(|(property, token)| (property, PartValue::Colour(token)))
-                .collect();
                 self.rules.push(Rule {
                     family,
                     part: 0,
                     variant: reached,
                     state: Some(pair[0]),
                     also: Some(pair[1]),
-                    values,
+                    values: colour_values(root_colours(family, variant, &pair)),
                     fallback: true,
                 });
             }
@@ -3710,17 +3749,7 @@ impl Held<'_> {
         // itself (#4000, as #3997 did for a part drawn apart). Only where #4000 found it: every
         // other family's states already fall with their rest, as their tests hold.
         if state.is_none() && REST_KEEPS_STATES.contains(&family.name) {
-            let colours = |states: &[State]| -> BTreeMap<Prop, &'static str> {
-                let look = (family.defaults)(variant, states);
-                [
-                    (Prop::Fill, look.fill),
-                    (Prop::Text, look.text),
-                    (Prop::BorderColour, look.border),
-                ]
-                .into_iter()
-                .filter(|(property, _)| family.parts[0].properties.contains(property))
-                .collect()
-            };
+            let colours = |states: &[State]| root_colours(family, variant, states);
             let theme_sets = |rules: &[Rule], one: State, property: Prop| {
                 rules.iter().any(|rule| {
                     std::ptr::eq(rule.family, family)
@@ -3785,6 +3814,28 @@ impl Held<'_> {
             }
         }
     }
+}
+
+/// The colours `family`'s root takes in `variant` while `states` hold, as its stylesheet draws
+/// them: its fill, words and edge, those it takes.
+fn root_colours(family: &Family, variant: &str, states: &[State]) -> BTreeMap<Prop, &'static str> {
+    let look = (family.defaults)(variant, states);
+    [
+        (Prop::Fill, look.fill),
+        (Prop::Text, look.text),
+        (Prop::BorderColour, look.border),
+    ]
+    .into_iter()
+    .filter(|(property, _)| family.parts[0].properties.contains(property))
+    .collect()
+}
+
+/// Colour tokens as the values a rule writes.
+fn colour_values(colours: BTreeMap<Prop, &'static str>) -> BTreeMap<Prop, PartValue> {
+    colours
+        .into_iter()
+        .map(|(property, token)| (property, PartValue::Colour(token)))
+        .collect()
 }
 
 /// **The families whose root, falling at rest, draws its states' own defaults back after it**

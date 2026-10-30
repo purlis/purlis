@@ -7804,32 +7804,17 @@ nav.piece-files-head {
   overflow-wrap: anywhere;
 }
 
-/* The empty studio's three starts (SK-22): side by side where they fit, stacked where not. */
-.skill-starts {
+/* New skill…'s ways (#3684, S4): one pressed card each, stacked in the dialog. */
+.skill-new-ways {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: var(--space-3);
-  max-width: 48rem;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
-  text-align: left;
 }
 
-.skill-starts > li {
+.skill-new-ways > li {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-}
-
-.skill-starts p {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  /* Each start's line, in the empty state's quiet tier, which holds AA on every theme. */
-  color: var(--text-muted);
 }
 
 /* The Skills view (#3266, #3693): a sidebar view, whose skills it shows, its header's two ways
@@ -7864,16 +7849,6 @@ nav.piece-files-head {
   margin: 0;
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
-}
-
-.skills-view .skill-starts {
-  grid-template-columns: 1fr;
-}
-
-/* New skill…'s menu, narrower than the family's widest, so at a sidebar's width it stays over
-   the view and not the editor beside it (#3308); its starts' lines wrap. */
-.skills-view-starts {
-  --menu-max: calc(var(--space-8) * 8);
 }
 
 .skills-view > .skills-view-list {

@@ -15,6 +15,12 @@
 //!   the port onto the socket and has it say it listens on the port: Vite, Next.js, webpack and
 //!   Express, unchanged.
 //!
+//! **In a Claude Code chat** (#3316), which can make no socket of its own, its server dials in
+//! instead: `PURLIS_SERVE_DIAL` names the chat's hook socket
+//! ([`purlis_core::sandbox::door::DIAL_ENV`], set by purlis where the chat's door is open), and
+//! the shim keeps a few connections dialled in there, each parked at the chat's door until it
+//! carries a request. Node servers alone.
+//!
 //! In a chat that may not serve yet, `COMMAND` runs as it is, with `PORT` and `HOST`: its server
 //! is refused the port, and purlis asks the person once.
 
@@ -25,16 +31,25 @@ use std::process::ExitCode;
 /// The shim, as `purlis listen` writes it for Node to load.
 pub const SHIM: &str = include_str!("listen/shim.cjs");
 
-/// The variables a server is handed the socket and the port by.
+/// The variables a server is handed the socket, the hook socket it dials in to, and the port by.
 pub const SOCKET_ENV: &str = "PURLIS_SERVE_SOCKET";
+pub use purlis_core::sandbox::door::DIAL_ENV;
 pub const PORT_ENV: &str = "PURLIS_SERVE_PORT";
 
-/// **What `COMMAND` is started with**, for `port` in a chat whose servers listen in `folder`
-/// (none where it may not serve yet), the shim at `shim`, and `node_options` as they were: each
-/// variable and its value.
+/// **How a chat's server is reached**: on a socket of its own in the chat's folder, or through
+/// connections it dials in to the chat's hook socket (#3316).
+#[derive(Debug, Clone, Copy)]
+pub enum Serving<'a> {
+    Socket(&'a Path),
+    Dial(&'a str),
+}
+
+/// **What `COMMAND` is started with**, for `port` in a chat whose servers are reached as
+/// `serving` says (none where it may not serve yet), the shim at `shim`, and `node_options` as
+/// they were: each variable and its value.
 pub fn env(
     port: u16,
-    folder: Option<&Path>,
+    serving: Option<Serving<'_>>,
     shim: Option<&Path>,
     node_options: Option<&str>,
 ) -> Vec<(String, String)> {
@@ -42,11 +57,14 @@ pub fn env(
         ("PORT".to_owned(), port.to_string()),
         ("HOST".to_owned(), "127.0.0.1".to_owned()),
     ];
-    let Some(folder) = folder else {
-        return out;
-    };
-    let socket = purlis_core::sandbox::localport::serve_socket(folder, port);
-    out.push((SOCKET_ENV.to_owned(), socket.display().to_string()));
+    match serving {
+        None => return out,
+        Some(Serving::Socket(folder)) => {
+            let socket = purlis_core::sandbox::localport::serve_socket(folder, port);
+            out.push((SOCKET_ENV.to_owned(), socket.display().to_string()));
+        }
+        Some(Serving::Dial(hook)) => out.push((DIAL_ENV.to_owned(), hook.to_owned())),
+    }
     out.push((PORT_ENV.to_owned(), port.to_string()));
     if let Some(shim) = shim {
         let quoted = shim
@@ -109,16 +127,17 @@ pub fn run(port: u16, command: &[OsString]) -> ExitCode {
     let folder = purlis_core::envvar::var(purlis_core::sandbox::door::FOLDER_ENV)
         .filter(|folder| !folder.is_empty())
         .map(PathBuf::from);
-    let shim = folder.as_ref().and_then(|_| shim_in(&std::env::temp_dir()));
+    let dial = purlis_core::envvar::var(DIAL_ENV).filter(|hook| !hook.is_empty());
+    let serving = match (&folder, &dial) {
+        (Some(folder), _) => Some(Serving::Socket(folder)),
+        (None, Some(hook)) => Some(Serving::Dial(hook)),
+        (None, None) => None,
+    };
+    let shim = serving.and_then(|_| shim_in(&std::env::temp_dir()));
     let node_options = purlis_core::envvar::var("NODE_OPTIONS");
     let mut child = std::process::Command::new(program);
     child.args(args);
-    for (name, value) in env(
-        port,
-        folder.as_deref(),
-        shim.as_deref(),
-        node_options.as_deref(),
-    ) {
+    for (name, value) in env(port, serving, shim.as_deref(), node_options.as_deref()) {
         child.env(name, value);
     }
     use std::os::unix::process::CommandExt;

@@ -515,6 +515,7 @@ import {
   SETTINGS_ACTION,
   SETTINGS_LINK,
   THEME_CHAT,
+  askThemeChat,
   type ProfileSignInAsk,
   type SettingsActionAsk,
   type SettingsLink,
@@ -525,11 +526,13 @@ import { enterSettings, placeOfView } from "./settings/entering";
 import { onceTheKeyboardIsBack } from "./keyboardBack";
 import { SessionOffersLent } from "./sessionOffers";
 import { askSkillChat, SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
+import { skillChatRefused } from "./SkillChatApproval";
 import {
-  SkillChatApproveAsk,
-  skillChatRefused,
-  type SkillChatApproving,
-} from "./SkillChatApproval";
+  StartApproveAsk,
+  startRefused,
+  startRefusedRan,
+  type StartApproving,
+} from "./StartApproval";
 import { ChatStrip, NO_ENDED, NO_ROWS } from "./ChatStrip";
 import {
   type FirstChat,
@@ -1122,6 +1125,14 @@ export const PlaneView = memo(function PlaneView({
   /** **A close waiting on the person's answer about the unsaved work it would lose** (#3929,
    *  `unsavedWork.ts`): a tab's, a pane's, or a workspace's removal. */
   const [unsavedAsk, setUnsavedAsk] = useState<UnsavedAsk>();
+  const unsavedAskNow = useRef(unsavedAsk);
+  /** Asks about `ask`'s work, unless a question about unsaved work is up already: that one is
+   *  answered first, and this ask is one not taken (`kept`), as `App`'s is (#4029). */
+  const askUnsaved = useCallback((ask: UnsavedAsk | undefined) => {
+    if (ask !== undefined && unsavedAskNow.current !== undefined) return ask.kept?.();
+    unsavedAskNow.current = ask;
+    setUnsavedAsk(ask);
+  }, []);
   /** The workspace being renamed, while its dialog is up: whether charter is renaming it now,
    *  and why the last attempt renamed nothing, in the core's words (charter#367). */
   /** The workspace whose vision is being added (#3344), whether it is being saved, and why the
@@ -3963,6 +3974,7 @@ export const PlaneView = memo(function PlaneView({
     closeView,
     reread: rereadPanels,
     reloadVaults,
+    askUnsaved,
   });
   /** A plane's memories (SI-9b): the preview tab, edits, Delete and its Undo. */
   const memoryEdits = useMemoryEdits({
@@ -4861,11 +4873,11 @@ export const PlaneView = memo(function PlaneView({
    *  with the workspace. Then the removal's own question. */
   const removeWorkspace = useCallback(
     (workspace: string) => {
-      const work = unsavedIn(plane, workspace);
+      const work = unsavedIn(plane, { workspace });
       if (work.length === 0) return askToRemove(workspace);
-      setUnsavedAsk({ work, then: () => askToRemove(workspace) });
+      askUnsaved({ work, then: () => askToRemove(workspace) });
     },
-    [askToRemove, plane],
+    [askToRemove, askUnsaved, plane],
   );
 
   // Remove… on a chat's question about a workspace opens this same dialog (qw356): the chat
@@ -4979,7 +4991,7 @@ export const PlaneView = memo(function PlaneView({
       }
       setRemoving(undefined);
       // The unsaved work a save would have written into it goes with it (#3929).
-      discardRemoved(plane, workspace);
+      discardRemoved(plane, { workspace });
       setReport({
         from: `workspace.remove:${workspace}`,
         refused: false,
@@ -5258,33 +5270,59 @@ export const PlaneView = memo(function PlaneView({
     [ofWorkspace, plane],
   );
 
+  /** A start refused for its profile's approval, while Approve and start… asks (#3942, #3968). */
+  const [startApproving, setStartApproving] = useState<StartApproving>();
+  /** What a start run again after Approve and start… answered, said in the line of `from` where
+   *  it says anything: a quiet start leaves the notice as it is (#3968). */
+  const sayAgain = useCallback(
+    (from: string) => (ran: Ran) => {
+      const said = saidOf(from, ran);
+      if (said !== undefined) setReport(said);
+    },
+    [],
+  );
+
   /**
    * A curation action chosen from a "Curate ▸" menu or the palette (ADR 0061): the core opens
    * the chat — the default profile, the action's runner, where it runs — and holds its prompt
    * until the harness reports its start; this puts its tab on the strip it is filed under, in
    * front, named for the action and its subject. A refusal is the core's sentence, before
-   * anything started.
+   * anything started, with Approve and start… where its profile needs approving (#3968).
    */
   const curate = useCallback(
-    async (subject: string, action: string): Promise<Ran> => {
-      const started = await commands
-        .curate(plane, subject, action, STARTING_SIZE.columns, STARTING_SIZE.rows)
-        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      if (started.status === "error") return { ok: false, refused: started.error };
-      const chat = started.data;
-      setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
-      change((tabs) =>
-        openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label),
-      );
-      return { ok: true };
+    (subject: string, action: string, label: string): Promise<Ran> => {
+      const start = async (): Promise<Ran> => {
+        const started = await commands
+          .curate(plane, subject, action, STARTING_SIZE.columns, STARTING_SIZE.rows)
+          .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+        if (started.status === "error")
+          return startRefusedRan(
+            started.error,
+            {
+              named: `The curation action ${label}`,
+              typed: "its prompt",
+              // The same action again, said in the line of the row that asked.
+              again: () => void start().then(sayAgain(`curate:${subject}/${action}`)),
+            },
+            setStartApproving,
+          );
+        const chat = started.data;
+        setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
+        change((tabs) =>
+          openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label),
+        );
+        return { ok: true };
+      };
+      return start();
     },
-    [change, plane],
+    [change, plane, sayAgain],
   );
 
   /**
    * **Settings › Theme's New theme and Edit with a chat** (#2333): the core opens the chat at the
    * gallery's level with its prompt typed and never sent, as a curation chat is opened, and its
-   * tab goes on the strip it is filed under, in front. A refusal is the core's sentence.
+   * tab goes on the strip it is filed under, in front. A refusal is the core's sentence, with
+   * Approve and start… where its profile needs approving (#3968).
    */
   useEffect(() => {
     const asked = (event: Event) => {
@@ -5301,7 +5339,16 @@ export const PlaneView = memo(function PlaneView({
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
         .then((started) => {
           if (started.status === "error") {
-            setReport({ from: "theme-chat", refused: true, words: started.error });
+            const said = startRefused(
+              started.error,
+              {
+                named: wanted.theme === null ? "New theme" : "Edit with a chat",
+                typed: "its request",
+                again: () => askThemeChat(wanted),
+              },
+              setStartApproving,
+            );
+            setReport({ from: "theme-chat", refused: true, ...said });
             return;
           }
           const chat = started.data;
@@ -5315,8 +5362,6 @@ export const PlaneView = memo(function PlaneView({
     return () => window.removeEventListener(THEME_CHAT, asked);
   }, [change, plane]);
 
-  /** A studio start refused for its profile's approval, while Approve and start… asks (#3942). */
-  const [studioApproving, setStudioApproving] = useState<SkillChatApproving>();
   /**
    * **The Skill studio's "Ask a chat to draft a skill", Try it, a draft's redo and "Ask a chat to
    * write them"** (SK-9, #2772; S9, #3690; #3925): the core opens
@@ -5360,7 +5405,13 @@ export const PlaneView = memo(function PlaneView({
       }
       const starting =
         wanted.kind === "draft"
-          ? commands.skillDraftChat(plane, wanted.level, STARTING_SIZE.columns, STARTING_SIZE.rows)
+          ? commands.skillDraftChat(
+              plane,
+              wanted.level,
+              wanted.what,
+              STARTING_SIZE.columns,
+              STARTING_SIZE.rows,
+            )
           : wanted.kind === "triggers"
             ? commands.skillTriggerTestsChat(
                 plane,
@@ -5383,7 +5434,7 @@ export const PlaneView = memo(function PlaneView({
         .then((started) => {
           if (started.status === "error") {
             // With Approve and start… where its profile needs approving (#3942).
-            setReport(skillChatRefused(wanted, started.error, setStudioApproving));
+            setReport(skillChatRefused(wanted, started.error, setStartApproving, askSkillChat));
             return;
           }
           const chat = started.data;
@@ -5402,34 +5453,48 @@ export const PlaneView = memo(function PlaneView({
    * project's default profile in the branch's folder, with a reference to the row typed as its
    * first prompt once its harness has started, and never sent. Its tab goes on the strip it is
    * filed under, as a curation chat's does. Where the harness cannot be typed into, the core
-   * copies the reference, and the window says so.
+   * copies the reference, and the window says so. A refusal is the core's sentence, with Approve
+   * and start… where its profile needs approving (#3968).
    */
   const startChatHere = useCallback(
-    async (at: BranchPath, lines?: { first: number; last: number }): Promise<Ran> => {
-      const started = await commands
-        .startChatHere(
-          plane,
-          at.workspace,
-          at.repo,
-          at.piece,
-          at.path,
-          // The lines picked in a file's preview (#1151): the core types them in the reference.
-          lines ?? null,
-          STARTING_SIZE.columns,
-          STARTING_SIZE.rows,
-        )
-        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      if (started.status === "error") return { ok: false, refused: started.error };
-      const chat = started.data;
-      setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
-      change((tabs) =>
-        openTab(tabs, chat.session, chat.name, whoOf(null, chat.harness), chat.label),
-      );
-      if (chat.copied === null) return { ok: true };
-      const why = chat.copied.charAt(0).toUpperCase() + chat.copied.slice(1);
-      return { ok: true, said: `${why}: ${chat.text}` };
+    (at: BranchPath, lines?: { first: number; last: number }): Promise<Ran> => {
+      const start = async (): Promise<Ran> => {
+        const started = await commands
+          .startChatHere(
+            plane,
+            at.workspace,
+            at.repo,
+            at.piece,
+            at.path,
+            // The lines picked in a file's preview (#1151): the core types them in the reference.
+            lines ?? null,
+            STARTING_SIZE.columns,
+            STARTING_SIZE.rows,
+          )
+          .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+        if (started.status === "error")
+          return startRefusedRan(
+            started.error,
+            {
+              named: "Start a chat here",
+              typed: "its reference",
+              // The same start again, said as a file's start is.
+              again: () => void start().then(sayAgain("file.chat")),
+            },
+            setStartApproving,
+          );
+        const chat = started.data;
+        setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
+        change((tabs) =>
+          openTab(tabs, chat.session, chat.name, whoOf(null, chat.harness), chat.label),
+        );
+        if (chat.copied === null) return { ok: true };
+        const why = chat.copied.charAt(0).toUpperCase() + chat.copied.slice(1);
+        return { ok: true, said: `${why}: ${chat.text}` };
+      };
+      return start();
     },
-    [change, plane],
+    [change, plane, sayAgain],
   );
 
   /**
@@ -7764,7 +7829,7 @@ export const PlaneView = memo(function PlaneView({
           : undefined;
       if (unsaved !== undefined) {
         if (now.current.inFront !== unsaved.tab) bringToFront(unsaved.tab);
-        setUnsavedAsk({
+        askUnsaved({
           work: unsaved.work,
           then: () => void askAgain.current?.(offer, fromALink, true),
         });
@@ -7868,7 +7933,7 @@ export const PlaneView = memo(function PlaneView({
       }
       return carryOut(offer);
     },
-    [askedByNow, bringToFront, carryOut, plane, setEndingChat],
+    [askUnsaved, askedByNow, bringToFront, carryOut, plane, setEndingChat],
   );
   /**
    * **A close counts as a question up from its first step** (#2761), and the mark is cleared
@@ -8666,13 +8731,10 @@ export const PlaneView = memo(function PlaneView({
           { workspace: r.workspace, repo: r.repo, piece: r.piece, path: r.path },
           r.lines,
         ).then((ran) => {
-          // A chat that started says nothing more: its tab is in front.
+          // A chat that started says nothing more: its tab is in front. A refusal keeps its
+          // Approve and start… (#3968).
           if (ran.ok && ran.said === undefined) return;
-          setReport(
-            ran.ok
-              ? { from: "file.chat", refused: false, words: ran.said ?? "" }
-              : { from: "file.chat", refused: true, words: ran.refused },
-          );
+          setReport(saidOf("file.chat", ran));
         });
       },
     };
@@ -10045,7 +10107,7 @@ export const PlaneView = memo(function PlaneView({
 
             {/* The one question a close asks about a view's unsaved work (#3929). */}
             {unsavedAsk && (
-              <UnsavedWorkQuestion asked={unsavedAsk} onAnswered={() => setUnsavedAsk(undefined)} />
+              <UnsavedWorkQuestion asked={unsavedAsk} onAnswered={() => askUnsaved(undefined)} />
             )}
 
             {removing && (
@@ -10077,16 +10139,16 @@ export const PlaneView = memo(function PlaneView({
                 afterClose={afterForgetAsk}
               />
             )}
-            {studioApproving && (
-              <SkillChatApproveAsk
+            {startApproving && (
+              <StartApproveAsk
                 plane={plane}
-                asked={studioApproving}
-                onCancel={() => setStudioApproving(undefined)}
-                onApproved={(again) => {
-                  setStudioApproving(undefined);
+                asked={startApproving}
+                onCancel={() => setStartApproving(undefined)}
+                onApproved={() => {
                   // The refusal it answered is put away; any other line stays.
-                  setReport((was) => (was?.from === "skill-chat" ? undefined : was));
-                  askSkillChat(again);
+                  const answered = startApproving.way;
+                  setReport((was) => (was?.ways?.includes(answered) ? undefined : was));
+                  setStartApproving(undefined);
                 }}
               />
             )}

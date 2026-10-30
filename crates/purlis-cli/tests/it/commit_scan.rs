@@ -75,6 +75,7 @@ impl Chat {
         let held = Mutex::new(held);
         let stall = stalled.then_some(stall);
         let reading = listener.hear(Hearing {
+            serve: purlis_core::hookwire::serve::refusing(),
             secret_exec: Box::new(|_, _, writer| {
                 purlis_core::secrets::brokered::not_answered(writer)
             }),

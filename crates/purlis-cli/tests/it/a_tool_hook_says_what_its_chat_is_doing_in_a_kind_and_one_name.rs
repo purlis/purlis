@@ -40,6 +40,7 @@ fn hook(word: &str, payload: &serde_json::Value) -> Heard {
     let (doings, heard_doing) = mpsc::channel();
     let doings = Mutex::new(doings);
     let _reading = listener.hear(Hearing {
+        serve: purlis_core::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, writer| purlis_core::secrets::brokered::not_answered(writer)),
         each: Box::new(|_| Ok(())),
         answer: Box::new(|_, _| panic!("no ask")),

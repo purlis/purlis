@@ -29,7 +29,7 @@ use specta::Type;
 use purlis_core::hookwire::{Answer, ProposeAsk};
 use purlis_core::skills::verbs::drafts;
 
-use crate::curation::{ChatTyped, Curating, StartRefused, off_the_window_refused};
+use crate::curation::{ChatTyped, Curating, StartRefused};
 use crate::planes::{Held, PlaneId, Planes};
 use crate::skillchange::{SkillChanged, SkillLevel};
 
@@ -248,18 +248,20 @@ pub(crate) async fn skill_draft_reject(
 
 /// **"Ask a chat to draft a skill"** (decision 13): a chat where `level`'s skills are reached
 /// from (the project's root, or the workspace's folder), on the project's default profile, with
-/// the core's prompt typed and never sent.
+/// the core's prompt typed and never sent, ending with `what` the skill should do where New
+/// skill… asked it (S4, #3684).
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_draft_chat(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     level: SkillLevel,
+    what: String,
     columns: u16,
     rows: u16,
 ) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
-    off_the_window_refused("starting the chat", move || {
+    crate::curation::off_the_window_refused("starting the chat", move || {
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let level: purlis_core::skills::verbs::Level = (&level).into();
@@ -272,7 +274,7 @@ pub(crate) async fn skill_draft_chat(
                 persona: None,
                 cwd,
                 label: "Draft a skill".to_owned(),
-                prompt: drafts::asking(&level),
+                prompt: drafts::asking(&level, &what),
                 then_a_space: false,
                 starts_runs: None,
             },
@@ -297,7 +299,7 @@ pub(crate) async fn skill_trigger_tests_chat(
     rows: u16,
 ) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
-    off_the_window_refused("starting the chat", move || {
+    crate::curation::off_the_window_refused("starting the chat", move || {
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let level: purlis_core::skills::verbs::Level = (&level).into();
@@ -336,7 +338,7 @@ pub(crate) async fn skill_draft_try(
     rows: u16,
 ) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
-    off_the_window_refused("starting Try it", move || {
+    crate::curation::off_the_window_refused("starting Try it", move || {
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let standing: Vec<std::path::PathBuf> = held
@@ -467,7 +469,7 @@ pub(crate) async fn skill_draft_redo(
     rows: u16,
 ) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
-    off_the_window_refused("starting the chat", move || {
+    crate::curation::off_the_window_refused("starting the chat", move || {
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let draft = drafts::one(&root, &id)?;

@@ -1701,7 +1701,7 @@ const STATES: State[] = [
         clashes: [],
       },
     },
-    drawn: /This project has no skills of its own yet/,
+    drawn: /No skill reaches these chats yet/,
   },
   {
     name: "the project's dispatches, none yet",

@@ -9,7 +9,7 @@ import {
   type ClusterPoolKey,
   type PoolAdding,
   type PoolLink,
-  type PoolProfileRow,
+  type PoolProfiles as PoolProfilesAnswered,
   type PoolVersion,
   type PoolsShown,
   type RunnerImageOffered,
@@ -224,21 +224,46 @@ export async function addClusterPool(adding: ClusterPoolAdding): Promise<string 
   return undefined;
 }
 
-/** What a pool's runner keeps of this machine's profiles, as last asked. */
-export type PoolProfiles = PoolProfileRow[] | "asking" | { trouble: string };
+/** What a pool's runner keeps of this machine's profiles, as last asked: the ones chosen for
+ *  it and the others Add a profile… offers (#4047), that they are being asked, or why not. */
+export type PoolProfiles = PoolProfilesAnswered | "asking" | { trouble: string };
 
-/** Asks pool `name`'s runner to keep each of this machine's profiles, and where each stands
- *  there (#2049). */
-export async function askProfiles(name: string) {
+/** Asks pool `name`'s runner to keep the profiles chosen for it, and where each stands there
+ *  (#2049, #4047): a pool that names none keeps the default of the open project `plane`. */
+export async function askProfiles(name: string, plane?: string) {
   set((was) => ({ ...was, profiles: { ...was.profiles, [name]: "asking" } }));
-  const said = await caught(commands.poolProfiles(name));
+  const said = await caught(commands.poolProfiles(name, { plane: plane ?? null }));
   const rows: PoolProfiles =
     said.status === "error"
       ? { trouble: said.error }
-      : Array.isArray(said.data)
+      : typeof said.data === "object" && said.data !== null && Array.isArray(said.data.kept)
         ? said.data
         : { trouble: "purlis did not say which profiles the runner keeps." };
   set((was) => ({ ...was, profiles: { ...was.profiles, [name]: rows } }));
+}
+
+/** **Adds this machine's profile `profile` to pool `name`** (#4047, Add a profile…), then asks
+ *  the pool's profiles again, so its runner keeps it. Why not, in the core's words. */
+export async function addProfileToPool(
+  name: string,
+  profile: string,
+  plane?: string,
+): Promise<string | undefined> {
+  const said = await caught(commands.poolProfileAdd(name, profile, { plane: plane ?? null }));
+  await askProfiles(name, plane);
+  return said.status === "error" ? said.error : undefined;
+}
+
+/** **Takes profile `profile` off pool `name`** (#4047): its runner forgets it, sign-in included,
+ *  then the pool's profiles are asked again. What the core said of it, or why not. */
+export async function removeProfileFromPool(
+  name: string,
+  profile: string,
+  plane?: string,
+): Promise<string | undefined> {
+  const said = await caught(commands.poolProfileRemove(name, profile, { plane: plane ?? null }));
+  await askProfiles(name, plane);
+  return said.status === "error" ? said.error : (said.data ?? undefined);
 }
 
 /** Closes what adding a pool ended with: its profiles to sign in there. */

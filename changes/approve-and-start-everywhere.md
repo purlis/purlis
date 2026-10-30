@@ -1,0 +1,3 @@
+### Changed
+
+- **Curation actions, Start a chat here and theme chats refused for an unapproved profile offer Approve and start in place** (#3968). These start their chats on the project's default profile without the new-chat picker, and purlis refuses a profile nobody has approved on this machine. That refusal now has an Approve and start… button, as the Skill studio's starts have. It asks the picker's own question, showing the command the profile would run, and once you approve it starts the same chat with its prompt or reference typed and not sent. Before, you had to open a new tab, approve the profile there and come back.
