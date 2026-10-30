@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793388491513,
+  "lastUpdate": 1793389706083,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32004,6 +32004,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6268855,
             "unit": "ms",
             "extra": "median of 5 runs: 100.739, 100.850, 101.627, 101.642, 101.655 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6bf22efd0d7bf0a05e7feae8b2889d094040dc11",
+          "message": "Runners: a chat's open or dispatch heard from a pool waits for the person (#4147)\n\n* Runners: a chat's open or dispatch heard from a pool waits for the person\n\nA handoff or task a chat on a pool's runner asks this machine for is held\nin the Inbox and on the chat's tab until the person approves it, whatever\npersona it names and whatever kind of pool it runs on. Approve decides it\nas a dispatch of a chat here is decided; Refuse starts nothing and tells\nthe chat in words. The person's own chats' dispatches are unchanged.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66NXKSD8VJ5RTJRMQMH7RQ9\nPurlis-Persona: steward\n\n* Runners: approve a runner chat's dispatch in its own tab, where it is whole\n\nReview fixes. The row offers Open and Refuse; the ask's own tab shows the\nasking chat, persona, place, profile, whether it creates a workspace or\nruns long, the whole brief, and that the runner chat can keep instructing\na task, with Approve there. A refused ask is listed with the ones kept\nblocked; an approved ask that a waiting grant drops is said not started;\na failed row keeps its persona; a task name purlis would not draw is\nrefused before the hold. ADR 0078 gains a dated note.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66NXKSD8VJ5RTJRMQMH7RQ9\nPurlis-Persona: steward\n\n* Runners: a runner dispatch's tab shows what Approve would start\n\nThe tab's persona, place and profile are read as the dispatch decision\nreads them (one would_start read, shared with the failed row), including a\npersona's own worktree. A place or a handoff's workspace that would be\nrefused is refused before the ask is held, and the tab reads again when an\nask is answered elsewhere.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66NXKSD8VJ5RTJRMQMH7RQ9\nPurlis-Persona: steward\n\n* Runners: the runner dispatch tab is in the views catalogue, and Open says it opened\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66NXKSD8VJ5RTJRMQMH7RQ9\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T19:17:51Z",
+          "tree_id": "d05af4a34e5ac15b3b4ed70accc521ef8d9af148",
+          "url": "https://github.com/purlis/purlis/commit/6bf22efd0d7bf0a05e7feae8b2889d094040dc11"
+        },
+        "date": 1793389702545,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.673851,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.659, 0.673, 0.674, 0.682, 0.686 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.563197000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.420, 16.476, 16.563, 16.688, 16.830 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1190565,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.820, 102.049, 102.119, 102.549, 102.665 ms"
           }
         ]
       }
