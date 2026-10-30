@@ -105,6 +105,16 @@ export const windowOnlyRefused = noLinkSends(
 );
 
 /**
+ * {@link windowOnly} for a start the core makes on a profile without the new-chat picker, whose
+ * error is its words and the approval its profile needs (#3942, #3968): that shape, saying where
+ * it is done and asking no approval.
+ */
+export const windowOnlyStartRefused = noLinkSends(
+  (): Promise<{ status: "error"; error: { words: string; approval: null } }> =>
+    Promise.resolve({ status: "error", error: { words: WINDOW_ONLY_SAID, approval: null } }),
+);
+
+/**
  * Tauri's `invoke`, over the link: `method` is the command's name and `args` its arguments by
  * name. A command's own error rejects with that error, as Tauri's does, so the generated client's
  * typed results read it the same way. Anything else that goes wrong rejects with an `Error`.

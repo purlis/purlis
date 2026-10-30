@@ -180,6 +180,11 @@ pub fn updates(plane: &Path) -> Updates {
             }),
         }
     }
+    let answered: Vec<Remote> = asked
+        .into_iter()
+        .filter_map(|(remote, answer)| answer.is_ok().then_some(remote))
+        .collect();
+    super::checked::asked(plane, &answered);
     out
 }
 
