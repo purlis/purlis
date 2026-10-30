@@ -780,20 +780,12 @@ export function SkillPage({
                   "reason" in tests
                     ? tests
                     : onOpenView === undefined
-                      ? { reason: "This window cannot open a file." }
+                      ? { reason: "This window can't open the skill's files." }
                       : {
-                          write: () =>
-                            change(
-                              "The trigger tests were not started",
-                              () => commands.skillTriggerTestsStart(plane, level, name),
-                              () => {
-                                // Its file opens to write in, once the template is there.
-                                onOpenView(
-                                  pieceFileView(tests.place, tests.path),
-                                  pieceFileTitle(tests.place, tests.path),
-                                );
-                                return Promise.resolve(undefined);
-                              },
+                          open: () =>
+                            onOpenView(
+                              pieceFileView(tests.place, tests.path),
+                              pieceFileTitle(tests.place, tests.path),
                             ),
                         }
                 }

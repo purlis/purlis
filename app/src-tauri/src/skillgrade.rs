@@ -449,6 +449,9 @@ pub(crate) struct Running {
     /// The skill it grades, by its name; empty for a router's grade (SK-15e), which no skill's
     /// name is.
     pub(crate) skill: String,
+    /// The copy it grades, by its level: same-named copies at two levels are two skills
+    /// (#3353). `None` for a router's grade.
+    pub(crate) level: Option<Level>,
     pub(crate) stop: Arc<AtomicBool>,
     /// The copy a saved edit of which started it (SK-58), by its opt-in's key (level and
     /// name): the next save of that copy stops it. `None` for a grade pressed by hand.
@@ -676,6 +679,7 @@ pub(crate) fn begin(
             Running {
                 plane: plane.clone(),
                 skill: skill.clone(),
+                level: Some(level.clone()),
                 stop: Arc::clone(&stop),
                 after_edit: after_edit
                     .then(|| grades::after_edit::key(&level, &skill))
@@ -1108,27 +1112,42 @@ pub struct SkillGrades {
 }
 
 impl SkillGrades {
-    /// The grades `read` of `skill` in `plane`, its trigger tests `tests`, and the grade of it
-    /// running now, where one is.
-    fn of(read: &grades::Read, tests: &grades::TriggerTests, plane: &PlaneId, skill: &str) -> Self {
+    /// The grades `read` of `skill` at `level` in `plane`, its trigger tests `tests` (or why
+    /// they could not be counted), and the grade of that copy running now, where one is.
+    fn of(
+        read: &grades::Read,
+        tests: Result<grades::TriggerTests, String>,
+        plane: &PlaneId,
+        level: &Level,
+        skill: &str,
+    ) -> Self {
+        // A copy that cannot be found keeps its grades: only its tests are not counted.
+        let (tests, tests_refused) = match tests {
+            Ok(tests) => (
+                u32::try_from(tests.runs).unwrap_or(u32::MAX),
+                tests
+                    .refused
+                    .as_ref()
+                    .map(purlis_core::skills::grade::Refused::in_window),
+            ),
+            Err(why) => (0, Some(why)),
+        };
         SkillGrades {
             grades: read.grades.iter().map(GradeRow::of).collect(),
             said: read.said(),
-            tests: u32::try_from(tests.runs).unwrap_or(u32::MAX),
-            tests_refused: tests
-                .refused
-                .as_ref()
-                .map(purlis_core::skills::grade::Refused::in_window),
-            running: step_of_running(plane, skill),
+            tests,
+            tests_refused,
+            running: step_of_running(plane, level, skill),
         }
     }
 }
 
-/// The latest step of the grade of `skill` running in `plane` now, where one is.
-fn step_of_running(plane: &PlaneId, skill: &str) -> Option<SkillGradeStep> {
+/// The latest step of the grade of the copy of `skill` at `level` running in `plane` now, where
+/// one is.
+fn step_of_running(plane: &PlaneId, level: &Level, skill: &str) -> Option<SkillGradeStep> {
     running()
         .values()
-        .find(|one| one.plane == *plane && one.skill == skill)
+        .find(|one| one.plane == *plane && one.skill == skill && one.level.as_ref() == Some(level))
         .and_then(|one| one.step.clone())
 }
 
@@ -1148,8 +1167,8 @@ pub(crate) async fn skill_grades(
         flag_on()?;
         let level = Level::from(&level);
         let read = grades::read(held.root(), &skill, Some(&level));
-        let tests = grades::trigger_tests(held.root(), &level, &skill)?;
-        Ok(SkillGrades::of(&read, &tests, &plane, &skill))
+        let tests = grades::trigger_tests(held.root(), &level, &skill);
+        Ok(SkillGrades::of(&read, tests, &plane, &level, &skill))
     })
     .await
 }

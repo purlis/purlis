@@ -183,6 +183,7 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
             Running {
                 plane: plane.clone(),
                 skill: "deploy".into(),
+                level: None,
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
                 step: None,
@@ -560,21 +561,41 @@ fn a_press_on_a_plan_that_changed_is_refused() {
 }
 
 /// #3928: the Grades tab learns from its one read whether the skill has trigger tests, and the
-/// grade of it running now at its latest step, so it asks no plan; a grade of another skill, or
-/// in another project, is not this one's.
+/// grade of that copy running now at its latest step, so it asks no plan; a grade of another
+/// skill, of the same name's copy at another level, or in another project, is not this one's.
+/// A copy whose tests cannot be counted keeps its grades, and says why.
 #[test]
 fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
     let plane: PlaneId = serde_json::from_value(serde_json::json!("plane-of-grades-3928")).unwrap();
     let elsewhere: PlaneId =
         serde_json::from_value(serde_json::json!("plane-elsewhere-3928")).unwrap();
-    let tests = grades::TriggerTests {
-        runs: 2,
-        refused: None,
+    let shared = Level::project();
+    let local = Level::project().local(true);
+    let tests = || {
+        Ok(grades::TriggerTests {
+            runs: 2,
+            refused: None,
+        })
     };
-    let none = SkillGrades::of(&grades::Read::default(), &tests, &plane, "ship-3928");
+    let none = SkillGrades::of(
+        &grades::Read::default(),
+        tests(),
+        &plane,
+        &shared,
+        "ship-3928",
+    );
     assert_eq!(none.tests, 2);
     assert_eq!(none.tests_refused, None);
     assert_eq!(none.running, None, "no grade runs");
+    let lost = SkillGrades::of(
+        &grades::Read::default(),
+        Err("no project skill is named \"ship-3928\"".to_owned()),
+        &plane,
+        &shared,
+        "ship-3928",
+    );
+    assert_eq!(lost.tests, 0);
+    assert!(lost.tests_refused.is_some());
 
     let step = |plane: &PlaneId, skill: &str, grade: &str| SkillGradeStep {
         plane: plane.clone(),
@@ -590,25 +611,41 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
         ended: None,
         said: None,
     };
-    for (grade, at, skill) in [
-        ("g-3928-other-skill", &plane, "other-3928"),
-        ("g-3928-elsewhere", &elsewhere, "ship-3928"),
-        ("g-3928", &plane, "ship-3928"),
-    ] {
+    let grades_running = [
+        ("g-3928-other-skill", &plane, "other-3928", &shared),
+        ("g-3928-elsewhere", &elsewhere, "ship-3928", &shared),
+        ("g-3928-local", &plane, "ship-3928", &local),
+    ];
+    for (grade, at, skill, level) in grades_running {
         running().insert(
             grade.to_owned(),
             Running {
                 plane: at.clone(),
                 skill: skill.to_owned(),
+                level: Some(level.clone()),
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
                 step: Some(step(at, skill, grade)),
             },
         );
     }
-    let now = SkillGrades::of(&grades::Read::default(), &tests, &plane, "ship-3928");
-    for grade in ["g-3928-other-skill", "g-3928-elsewhere", "g-3928"] {
+    let now = |level: &Level| {
+        SkillGrades::of(
+            &grades::Read::default(),
+            tests(),
+            &plane,
+            level,
+            "ship-3928",
+        )
+        .running
+    };
+    let (shared_now, local_now) = (now(&shared), now(&local));
+    for (grade, ..) in grades_running {
         running().remove(grade);
     }
-    assert_eq!(now.running, Some(step(&plane, "ship-3928", "g-3928")));
+    assert_eq!(
+        shared_now, None,
+        "the local copy's grade is not the shared copy's"
+    );
+    assert_eq!(local_now, Some(step(&plane, "ship-3928", "g-3928-local")));
 }

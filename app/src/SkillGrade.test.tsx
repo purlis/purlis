@@ -708,6 +708,33 @@ describe("a grade running (S6)", () => {
     expect(totals).toHaveTextContent("Spent$1.50of at most $15.00");
   });
 
+  it("says in place why it could not read the grade, with Try again", async () => {
+    let reads = 0;
+    mockIPC(
+      (cmd) => {
+        if (cmd !== "skill_grades") return null;
+        reads += 1;
+        if (reads === 1) throw "The Skill studio is not turned on on this machine.";
+        return grades(step({ ran: 2 }));
+      },
+      { shouldMockEvents: true },
+    );
+    render(
+      <GradeRunningPage
+        plane="p"
+        name="deploy"
+        level={LEVEL}
+        grade="01GRADE"
+        onEnded={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    await screen.findByText("The Skill studio is not turned on on this machine.");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    const totals = await screen.findByRole("group", { name: "How far the grade of deploy is" });
+    expect(totals).toHaveTextContent("Chats2 of 12");
+  });
+
   it("says a grade that ended while the page was away, and opens its scorecard", async () => {
     mockIPC((cmd) => (cmd === "skill_grades" ? grades(null) : null));
     const onEnded = vi.fn();

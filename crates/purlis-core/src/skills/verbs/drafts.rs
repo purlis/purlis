@@ -1092,8 +1092,15 @@ pub fn asking(level: &Level) -> String {
 /// `triggers.json` format, and what makes a good test. The write comes back as a draft, as any
 /// chat's write to a skill's files does. One line, which the person may add to before sending.
 pub fn asking_for_trigger_tests(root: &Path, level: &Level, name: &str) -> Result<String, String> {
-    let folder = find(root, level, name)?;
-    let folder = folder
+    let found = find(root, level, name)?;
+    // Only a skill whose folder is the level's own: a chat is told its file from there.
+    if level.dir(root).as_deref() != found.parent() {
+        return Err(format!(
+            "{name}'s files are not in its level's folder, so no chat can be asked to write its \
+             trigger tests"
+        ));
+    }
+    let folder = found
         .file_name()
         .map(|one| one.to_string_lossy().into_owned())
         .unwrap_or_default();

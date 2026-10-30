@@ -645,8 +645,8 @@ pub fn edit(
 /// **Starts the trigger tests of the skill named `name` at `level`** (#3925): its
 /// `evals/triggers.json` from a short template ([`purlis_skills::grade::triggers_template`]: one
 /// query it should start on, one near miss it should leave alone), where it has none, committed
-/// alone. A file it has already, read or not, is left as it is, and that is said. The answer is
-/// the file, relative to the plane, for the person to write in.
+/// alone. A file it has already is left as it is, and that is said; one purlis would not read is
+/// refused, with why. The answer is the file, relative to the plane, for the person to write in.
 pub fn start_trigger_tests(cx: &mut Ctx<'_>, level: &Level, name: &str) -> Result<String, String> {
     use purlis_skills::grade;
     let plane = cx.plane;
@@ -654,12 +654,21 @@ pub fn start_trigger_tests(cx: &mut Ctx<'_>, level: &Level, name: &str) -> Resul
     let folder = find(plane, level, name)?;
     let folder_rel = rel(plane, &folder);
     let file = format!("{folder_rel}/{}", grade::triggers_path());
-    let there = grade::fixtures_of(plane, Path::new(&folder_rel), name).triggers;
-    if !matches!(there, grade::Read::Absent) {
-        (cx.say)(Say::Info(
-            format!("{name} has a trigger tests file already, so it was left as it is.").into(),
-        ));
-        return Ok(file);
+    match grade::fixtures_of(plane, Path::new(&folder_rel), name).triggers {
+        grade::Read::Absent => {}
+        grade::Read::Read(_) => {
+            (cx.say)(Say::Info(
+                format!("{name} has a trigger tests file already, so it was left as it is.").into(),
+            ));
+            return Ok(file);
+        }
+        // One purlis would not read (a link, too large) is never opened to write in either.
+        grade::Read::Refused(why) => {
+            return Err(format!(
+                "{name}'s trigger tests were left as they are: {}",
+                why.in_window()
+            ));
+        }
     }
     write(
         plane,

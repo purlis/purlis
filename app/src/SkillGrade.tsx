@@ -609,6 +609,9 @@ export function GradeRunningPage({
   const [step, setStep] = useState<SkillGradeStep>();
   // Whether the app said this grade runs, where it has: its latest step says the rest (#3928).
   const [runs, setRuns] = useState<boolean>();
+  // Why the app's word on it could not be read, where it could not, and a press to read again.
+  const [unread, setUnread] = useState<string>();
+  const [again, setAgain] = useState(0);
   const [stopping, setStopping] = useState(false);
   const levelKey = JSON.stringify(level);
   const ended = useRef(onEnded);
@@ -630,22 +633,41 @@ export function GradeRunningPage({
     void listening
       .then(() => commands.skillGrades(plane, level, name))
       .then((answer) => {
-        if (!live || answer.status !== "ok") return;
+        if (!live) return;
+        if (answer.status !== "ok") {
+          setUnread(answer.error);
+          return;
+        }
+        setUnread(undefined);
         const now = answer.data.running;
         const ours = now !== null && now.grade === grade ? now : undefined;
         setRuns(ours !== undefined);
         // A step told since is newer than the one the read says.
         if (ours !== undefined) setStep((told) => told ?? ours);
       })
-      .catch(() => undefined);
+      .catch((err: unknown) => {
+        if (live) setUnread(String(err));
+      });
     return () => {
       live = false;
       void listening.then((stop) => stop?.()).catch(() => undefined);
     };
     // The level as a value: an equal level reads nothing anew.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plane, levelKey, name, grade]);
+  }, [plane, levelKey, name, grade, again]);
 
+  // A read that failed with no step told says so in place, never "Reading…" for good.
+  if (step === undefined && unread !== undefined)
+    return (
+      <NotRead
+        what={`the grade of ${name}`}
+        why={unread}
+        onAgain={() => {
+          setUnread(undefined);
+          setAgain((n) => n + 1);
+        }}
+      />
+    );
   if (step === undefined && runs === undefined) return <Reading what={`the grade of ${name}`} />;
   if (step === undefined && runs === false)
     return (

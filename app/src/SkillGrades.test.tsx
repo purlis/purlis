@@ -168,12 +168,18 @@ describe("a skill's Grades tab (S6)", () => {
   });
 
   it("offers a skill with no trigger tests to write them or to ask a chat to (#3925)", async () => {
-    core({ skill_grades: grades([], 0) });
-    const write = vi.fn();
-    renderTab({ write });
+    const asked = core({ skill_grades: grades([], 0), skill_trigger_tests_start: { notes: [] } });
+    const open = vi.fn();
+    renderTab({ open });
     const none = await screen.findByTestId("skill-grades-no-tests");
     fireEvent.click(within(none).getByRole("button", { name: "Write trigger tests" }));
-    expect(write).toHaveBeenCalledTimes(1);
+    // The core starts the file, then it opens to write in.
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+    expect(asked.find((one) => one.cmd === "skill_trigger_tests_start")?.args).toMatchObject({
+      plane: "p",
+      level: LEVEL,
+      name: "deploy",
+    });
 
     const asks: SkillChatAsk[] = [];
     const heard = (event: Event) => asks.push((event as CustomEvent<SkillChatAsk>).detail);
@@ -183,16 +189,30 @@ describe("a skill's Grades tab (S6)", () => {
     expect(asks).toEqual([{ plane: "p", kind: "triggers", level: LEVEL, name: "deploy" }]);
   });
 
-  it("holds Write trigger tests where the skill's file can't be opened, and says why", async () => {
+  it("holds both offers where the skill's files can't be opened, and says why", async () => {
     core({ skill_grades: grades([], 0) });
     renderTab({ reason: "Its file is outside the project." });
     const none = await screen.findByTestId("skill-grades-no-tests");
-    const write = within(none).getByRole("button", { name: "Write trigger tests" });
-    expect(write.getAttribute("aria-disabled") === "true" || write.hasAttribute("disabled")).toBe(
-      true,
-    );
-    // A chat can still be asked: its write comes back as a draft.
-    expect(within(none).getByRole("button", { name: "Ask a chat to write them" })).toBeEnabled();
+    // Neither would land in the skill: not the template, nor a chat's draft.
+    for (const name of ["Write trigger tests", "Ask a chat to write them"]) {
+      const offer = within(none).getByRole("button", { name });
+      expect(offer.getAttribute("aria-disabled") === "true" || offer.hasAttribute("disabled")).toBe(
+        true,
+      );
+    }
+  });
+
+  it("says why the trigger tests were not started, and opens nothing", async () => {
+    core({
+      skill_grades: grades([], 0),
+      skill_trigger_tests_start: new Error("This project can't be written, so nothing was."),
+    });
+    const open = vi.fn();
+    renderTab({ open });
+    const none = await screen.findByTestId("skill-grades-no-tests");
+    fireEvent.click(within(none).getByRole("button", { name: "Write trigger tests" }));
+    await screen.findByText("This project can't be written, so nothing was.");
+    expect(open).not.toHaveBeenCalled();
   });
 
   it("says why its trigger tests were not read, and does not call them missing", async () => {
@@ -286,6 +306,18 @@ describe("a skill's Grades tab (S6)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show it" }));
     expect(onGrading).toHaveBeenCalledWith({ at: "running", grade: "01RUN" }, "go");
     expect(asked.some((one) => one.cmd === "skill_grade_plan")).toBe(false);
+  });
+
+  it("shows a grade that starts while the tab is open", async () => {
+    let started = false;
+    core({ skill_grades: () => grades(GRADES, 2, started ? "01NEW" : null) });
+    renderTab();
+    await screen.findByRole("group", { name: "The latest grade of deploy" });
+    expect(screen.queryByTestId("skill-grades-running")).toBeNull();
+    // A grade after an edit starts: its first step reads the tab again.
+    started = true;
+    await emit("skill-grade", step("01NEW"));
+    await screen.findByTestId("skill-grades-running");
   });
 
   it("says in place why its grades could not be read, with Try again", async () => {

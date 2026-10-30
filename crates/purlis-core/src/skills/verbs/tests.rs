@@ -141,6 +141,13 @@ fn trigger_tests_start_from_a_template_and_one_there_is_left_as_it_is() {
     );
     assert_eq!(std::fs::read_to_string(root.join(&file)).unwrap(), "[]");
 
+    std::fs::write(root.join(&file), vec![b' '; 300 * 1024]).unwrap();
+    let refused = did(root, |cx| start_trigger_tests(cx, &level, "triage")).unwrap_err();
+    assert!(
+        refused.starts_with("triage's trigger tests were left as they are"),
+        "{refused}"
+    );
+
     assert!(did(root, |cx| start_trigger_tests(cx, &level, "nowhere")).is_err());
 }
 

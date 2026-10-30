@@ -49,9 +49,10 @@ import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from 
 /** A skill's trigger tests file, in its folder: skill-creator's, which a grade runs. */
 export const TRIGGER_TESTS_FILE = "evals/triggers.json";
 
-/** **Write trigger tests**, where the skill's page can: it starts the file from a template where
- *  there is none, then opens it to write in. Else why it can't (a file outside the project). */
-export type TestsFile = { write: () => void } | { reason: string };
+/** **Where a skill's trigger tests file is opened to write in**, by the skill's page, or why it
+ *  can't be (a skill installed from a source, a file outside the project): then neither Write
+ *  trigger tests nor Ask a chat to write them is offered, as neither would land in the skill. */
+export type TestsFile = { open: () => void } | { reason: string };
 
 /** How a grading page is gone to: a step of the studio's history, or said again in its place
  *  (a grade started from its plan, a scorecard once its grade ended). `undefined` is the skill's
@@ -158,6 +159,9 @@ export function GradesTab({
     graded.current = onGraded;
   });
   const [said, setSaid] = useState<string>();
+  const [writing, setWriting] = useState(false);
+  // The grade the last read said runs: a step of another one reads the tab again.
+  const runningNow = useRef<string | null>(null);
   // The level as a value: a page drawn again with an equal level reads nothing anew.
   const levelKey = JSON.stringify(level);
   const reread = [plane, name, levelKey, changed, again];
@@ -170,11 +174,15 @@ export function GradesTab({
   useEffect(() => {
     const ended = listen<SkillGradeStep>(SKILL_GRADE, (event) => {
       const now = event.payload;
-      if (now.plane === plane && now.skill === name && now.ended !== null) {
-        setAgain((n) => n + 1);
-        graded.current?.();
-        if (now.said !== null) setSaid(endedSaid(now));
+      if (now.plane !== plane || now.skill !== name) return;
+      // A grade that starts while the tab is open (one after an edit) is read, so it is shown.
+      if (now.ended === null) {
+        if (runningNow.current !== now.grade) setAgain((n) => n + 1);
+        return;
       }
+      setAgain((n) => n + 1);
+      graded.current?.();
+      if (now.said !== null) setSaid(endedSaid(now));
     }).catch(() => undefined);
     const waits = listen<SkillGradeAfterEditStep>(SKILL_GRADE_AFTER_EDIT, (event) => {
       const now = event.payload;
@@ -193,6 +201,16 @@ export function GradesTab({
   const tests = typeof grades.data?.tests === "number" ? grades.data.tests : undefined;
   const noTests = tests === 0 && grades.data?.tests_refused == null;
   const running = grades.data?.running?.grade ?? null;
+  // Why trigger tests can't be written here, where they can't.
+  const held =
+    testsFile === undefined
+      ? "This skill's files can't be opened here."
+      : "reason" in testsFile
+        ? testsFile.reason
+        : undefined;
+  useEffect(() => {
+    runningNow.current = running;
+  }, [running]);
   const on =
     typeof afterEdit.data === "object" && afterEdit.data !== null && "profile" in afterEdit.data
       ? afterEdit.data
@@ -231,19 +249,37 @@ export function GradesTab({
             <ButtonRow>
               <Button
                 variant="primary"
-                isDisabled={testsFile === undefined || "reason" in testsFile}
-                tooltip={
-                  testsFile !== undefined && "reason" in testsFile ? testsFile.reason : undefined
-                }
+                isDisabled={held !== undefined || writing}
+                tooltip={held}
                 onPress={() => {
-                  if (testsFile !== undefined && "write" in testsFile) testsFile.write();
+                  if (testsFile === undefined || !("open" in testsFile)) return;
+                  const open = testsFile.open;
+                  setWriting(true);
+                  // The template is the core's, written as a change to the skill; its file then
+                  // opens to write in. A refusal is said here, and opens nothing.
+                  void commands
+                    .skillTriggerTestsStart(plane, level, name)
+                    .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+                    .then((answer) => {
+                      setWriting(false);
+                      if (answer.status === "error") {
+                        setSaid(answer.error);
+                        return;
+                      }
+                      setAgain((n) => n + 1);
+                      open();
+                    });
                 }}
               >
                 Write trigger tests
               </Button>
               {/* A chat on the project's default profile, the core's prompt typed and not sent:
                   as Ask a chat to draft a skill opens one, and its write comes back as a draft. */}
-              <Button onPress={() => askSkillChat({ plane, kind: "triggers", level, name })}>
+              <Button
+                isDisabled={held !== undefined}
+                tooltip={held}
+                onPress={() => askSkillChat({ plane, kind: "triggers", level, name })}
+              >
                 Ask a chat to write them
               </Button>
             </ButtonRow>
