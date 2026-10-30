@@ -331,6 +331,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`app/dispatches/refused-while-away.json`](#appdispatchesrefused-while-awayjson)
   - [`app/spend/<chat>.json` — what a chat's harness says its session has cost](#appspendchatjson--what-a-chats-harness-says-its-session-has-cost)
   - [`app/hooks.sock`](#apphookssock)
+  - [`app/slots.sock`](#appslotssock)
   - [Top-level markers, gates and ledgers](#top-level-markers-gates-and-ledgers)
   - [`chat-turns/<chat>`](#chat-turnschat)
   - [`dispatch-inflight/<agent>.<random>.json`](#dispatch-inflightagentrandomjson)
@@ -6906,6 +6907,13 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
     "browsed": <the browser's answer>}}` or a `no`; a screenshot travels as one `image/png`
     attachment on the framed stream, never inside the answer, and an answer on a line leaves
     it out and says so. **It is never stored**, as no line is.
+  - A Claude Code chat's server dials in on it (#3316, macOS): `purlis listen`'s shim writes one
+    `serve` line, `{"chat": <n>, "serve": <port>}` with the chat's token, on each of a few
+    connections. Admitted as every line is, the connection is parked at the chat's door on that
+    port and answered `{"taken": true}`, or answered `{"taken": false, "refused": "<why>"}` and
+    closed. A parked connection is then told `{"go": true}` by the door as it takes it, the shim
+    writes the same line back, and one browser request is carried over it. **Nothing on it is
+    stored.** A parked connection holds no turn and no place in the pool below.
 - **Connections:** served from a bounded pool (#991): at most 32 at once from one process (by
   the pid the socket reports; processes it cannot name share one count) and 128 from all
   processes together. A connection past either is answered at once with one `no` line saying
@@ -6925,6 +6933,20 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   `<plane>/.charter/app/hooks.sock` would be longer than a socket path may be (104 bytes on
   macOS), it is `charter-<user>-<16 hex>/hooks.sock` under `$XDG_RUNTIME_DIR`, else the per-user
   temp directory, instead. The path is handed to each chat as `$CHARTER_HOOK_SOCKET`.
+- **Git:** gitignored (under `/.charter/`).
+
+### `app/slots.sock`
+- **Format:** a unix socket, not a file, beside `app/hooks.sock`. Where the session host owns the
+  hook socket, it hands each connection a Claude Code chat's server dialled in (a `serve` line it
+  admitted, #3316) on to the window over this socket: one connection each, carrying the line
+  `{"chat": <n>, "serve": <port>}` with the connection's descriptor beside it. The window parks
+  it at the chat's door or refuses it. **It is never stored.**
+- **Status:** **internal** — bound by the window on macOS while it hears a plane's hooks through
+  the session host, and removed as it stops. Only this user's processes are read, and no chat's
+  sandbox reaches it. **purlis only.**
+- **Tier:** Clone state, transient.
+- **Written by:** `hookwire::serve::Receiving::bind` (`crates/purlis-core/src/hookwire/serve.rs`,
+  in `app/src-tauri/src/hooks.rs`); handed on to by `hookwire::serve::hand_on`.
 - **Git:** gitignored (under `/.charter/`).
 
 ### `app/spool/<n>/`
