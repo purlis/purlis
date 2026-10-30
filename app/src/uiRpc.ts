@@ -6981,6 +6981,12 @@ export type OpenChat = {
 	 *  the other chats of its workspace, which move with it.
 	 */
 	workspace?: string | null,
+	/**
+	 *  Whether Move here brings back a clone its runner's chat made there (#3811): its runner
+	 *  names the clones it holds (session protocol 1.51). `null` for a chat here, and for one on
+	 *  a runner before 1.51, whose Move here row says such a clone stays there.
+	 */
+	clones_come_back?: boolean | null,
 	/**  The persona it adopted. */
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */

@@ -1203,6 +1203,31 @@ impl HostLink {
         .map(|(file, _)| file)
     }
 
+    /// **The clones the host holds in `workspace`** of `project` (1.51, #3811), by their folder
+    /// names: `None` from a host before 1.51, which cannot say, so a clone it made stays there.
+    pub(crate) fn clones_of(
+        &self,
+        project: &str,
+        workspace: &str,
+    ) -> Result<Option<Vec<String>>, String> {
+        if !self.names_its_clones() {
+            return Ok(None);
+        }
+        match self.call(Command::ClonesOf {
+            project: project.to_owned(),
+            workspace: workspace.to_owned(),
+        })? {
+            Answer::Clones { repos } => Ok(Some(repos)),
+            _ => Err("the runner did not say which clones it holds".to_owned()),
+        }
+    }
+
+    /// Whether the host names the clones it holds in a workspace (1.51, #3811), so a chat moving
+    /// off it brings back a clone it made.
+    pub(crate) fn names_its_clones(&self) -> bool {
+        self.version() >= session::KNOWS_CLONES_OF
+    }
+
     /// Refused in purlis's words where the host is before 1.44 and moves no chat.
     pub(crate) fn moves_chats(&self) -> Result<(), String> {
         if self.version() < session::MOVES_CHATS {
@@ -2109,6 +2134,12 @@ impl HostedSessions {
     /// The link, with this project held on it.
     fn link(&self) -> Result<(Arc<HostLink>, String), String> {
         held_on(&self.holding())
+    }
+
+    /// [`Self::moving_link`], for the tests of what moves over it.
+    #[cfg(test)]
+    pub(crate) fn moving_link_in_a_test(&self) -> Result<(Arc<HostLink>, String), String> {
+        self.moving_link()
     }
 
     /// The link a chat moves over (#2048): this project held on a pool's runner that keeps it,
@@ -3261,6 +3292,15 @@ impl SessionHost for HostedSessions {
 
     /// The project held on the pool's runner, and each clone of `workspace` sent ahead
     /// (#2048). Only where the runner keeps the project and moves chats.
+    /// Only of a link already open: a tab drawn never opens one to the runner.
+    fn clones_come_back(&self, _id: u32) -> bool {
+        self.kept_on_the_runner
+            && self
+                .connection
+                .of_project(&self.root, Duration::ZERO)
+                .is_ok_and(|link| link.names_its_clones())
+    }
+
     fn move_ahead(&self, _pool: &str, workspace: &str) -> Result<(), String> {
         let (link, project) = self.moving_link()?;
         crate::runnercode::send_ahead(&link, &project, &self.root, workspace, &self.sent)

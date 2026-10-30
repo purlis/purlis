@@ -469,6 +469,43 @@ fn a_repositorys_folder_is_the_projects_own_or_a_workspaces_repo_reached_through
     ));
 }
 
+/// **The clones a runner holds in a workspace** (1.51, #3811): each repository's folder in it,
+/// by its name, and nothing reached through a link, nothing that is not a repository and no name
+/// a repository's folder may not have.
+#[test]
+fn a_runner_names_the_clones_it_holds_in_a_workspace_and_none_through_a_link() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().canonicalize().unwrap().join("project");
+    let workspace = project.join("workspaces/app");
+    assert_eq!(clones_in(&project, "app").unwrap(), Vec::<String>::new());
+    for repo in ["web", "api", "notes", ".hidden"] {
+        std::fs::create_dir_all(workspace.join(repo)).unwrap();
+    }
+    for repo in ["web", "api", ".hidden"] {
+        std::fs::create_dir_all(workspace.join(repo).join(".git")).unwrap();
+    }
+    std::fs::write(workspace.join("README"), "a file\n").unwrap();
+    let elsewhere = dir.path().join("elsewhere");
+    std::fs::create_dir_all(elsewhere.join(".git")).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, workspace.join("linked")).unwrap();
+
+    assert_eq!(clones_in(&project, "app").unwrap(), ["api", "web"]);
+    for refused in ["..", "", "app/web", ".hidden"] {
+        assert!(
+            matches!(clones_in(&project, refused), Err(Refused::NotAllowed(_))),
+            "{refused:?}"
+        );
+    }
+
+    // A workspace reached through a link is not listed.
+    std::fs::create_dir_all(elsewhere.join("web/.git")).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, project.join("workspaces/other")).unwrap();
+    assert!(matches!(
+        clones_in(&project, "other"),
+        Err(Refused::NotAllowed(_))
+    ));
+}
+
 #[test]
 fn no_filter_the_work_tree_names_runs_on_its_snapshot() {
     let world = World::new();

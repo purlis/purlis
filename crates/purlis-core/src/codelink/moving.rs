@@ -210,6 +210,23 @@ pub fn take_over(
     let from = agreed_tree(repo, scratch, leave_out, to_head)?;
     let to_tree = tree_of(repo, to_snapshot)?;
     let kept = IndexKept::of(repo, scratch)?;
+    move_tree(repo, &from, &to_tree, &to, to_head, || kept.put_back())?;
+    agree(repo, to_branch, to_snapshot, was.as_deref())?;
+    Ok(to_watch(repo, &from, &to_tree))
+}
+
+/// **Moves `repo`'s work tree from tree `from` to tree `to_tree`**, then branch `to` to `to_head`
+/// with the index at it, so what `to_tree` has beyond `to_head` is uncommitted work: git's own
+/// two-tree `read-tree -m -u`, with no attribute of the work tree read (so no filter it names
+/// runs), no submodule reached and no hook run. `undo` is called where the work tree did not move.
+fn move_tree(
+    repo: &Path,
+    from: &str,
+    to_tree: &str,
+    to: &str,
+    to_head: &str,
+    undo: impl Fn(),
+) -> Result<(), Refused> {
     let empty = empty_tree(repo)?;
     let attr = format!("--attr-source={empty}");
     let quiet = [
@@ -222,15 +239,15 @@ pub fn take_over(
         attr.as_str(),
     ];
     let steps: [Vec<&str>; 2] = [
-        vec!["read-tree", from.as_str()],
-        vec!["read-tree", "-m", "-u", from.as_str(), to_tree.as_str()],
+        vec!["read-tree", from],
+        vec!["read-tree", "-m", "-u", from, to_tree],
     ];
     for (at, step) in steps.into_iter().enumerate() {
         let mut args: Vec<&str> = quiet.to_vec();
         args.extend(step);
         let ran = run(repo, &args)?;
         if !ran.ok() {
-            kept.put_back();
+            undo();
             return Err(git_failed("move the work tree", &ran));
         }
         if at == 0 {
@@ -241,8 +258,8 @@ pub fn take_over(
     }
     let message = "purlis: the chat's work moved here";
     let moved = [
-        vec!["update-ref", "-m", message, to.as_str(), to_head],
-        vec!["symbolic-ref", "-m", message, "HEAD", to.as_str()],
+        vec!["update-ref", "-m", message, to, to_head],
+        vec!["symbolic-ref", "-m", message, "HEAD", to],
         vec!["read-tree", to_head],
     ];
     for step in moved {
@@ -251,8 +268,7 @@ pub fn take_over(
             return Err(git_failed("move the branch with its work", &ran));
         }
     }
-    agree(repo, to_branch, to_snapshot, was.as_deref())?;
-    Ok(to_watch(repo, &from, &to_tree))
+    Ok(())
 }
 
 /// **Files a tool on this machine runs or reads as its settings**, by their place in a clone:
@@ -538,6 +554,21 @@ pub fn take_work_back(
     if heads.is_empty() && bundle.is_none() {
         return Ok(Vec::new());
     }
+    let (branch, head, snapshot, branches) = work_named(heads)?;
+    let moved = fetch_incoming(repo, bundle, heads).and_then(|()| {
+        // The runner's branches, as a fetch keeps them, from what came.
+        super::take_back(repo, pool, None, &branches)?;
+        take_over(repo, scratch, leave_out, &branch, &head.oid, &snapshot.oid)
+    });
+    drop_incoming(repo);
+    moved
+}
+
+/// **What a runner gave of its work tree, as [`give_work`] names it**: exactly one snapshot,
+/// `refs/purlis/snapshots/<branch>`, with its branch among `heads`, every name one a move
+/// carries and every commit named in full. Answers the branch's short name, its head, its
+/// snapshot, and every branch.
+fn work_named(heads: &[Ref]) -> Result<(String, Ref, Ref, Vec<Ref>), Refused> {
     let snapshots: Vec<&Ref> = heads
         .iter()
         .filter(|one| one.name.starts_with(SNAPSHOTS))
@@ -560,11 +591,6 @@ pub fn take_work_back(
                 "the runner sent work for {branch} without the branch, so none was taken"
             ))
         })?;
-    let branches: Vec<Ref> = heads
-        .iter()
-        .filter(|one| one.name.starts_with(HEADS))
-        .cloned()
-        .collect();
     for one in heads {
         carried(&one.name)?;
         if !an_oid(&one.oid) {
@@ -574,13 +600,58 @@ pub fn take_work_back(
             )));
         }
     }
-    let moved = fetch_incoming(repo, bundle, heads).and_then(|()| {
-        // The runner's branches, as a fetch keeps them, from what came.
+    let branches: Vec<Ref> = heads
+        .iter()
+        .filter(|one| one.name.starts_with(HEADS))
+        .cloned()
+        .collect();
+    Ok((branch, head.clone(), (*snapshot).clone(), branches))
+}
+
+/// **The desktop makes a clone the runner chat made, fresh** (#3811): where this machine has
+/// nothing at `repo`, a repository is made there, the runner's branches kept under
+/// `refs/remotes/<pool>/` as a fetch keeps them, and its work tree checked out on the runner's
+/// work tree's branch with the work in it, as [`take_over`] moves one from nothing: no
+/// attribute read, no submodule reached, no hook run, and git writes no path through a link.
+/// What came is what both ends agree on after. Answers what came that the person is to look
+/// at, every file of it a local tool runs and every link ([`to_watch`] from the empty tree).
+/// Refused where anything is at `repo` already, which is never written into; a clone that does
+/// not come leaves nothing at `repo`. No remote of the runner's comes with it.
+pub fn take_work_fresh(
+    repo: &Path,
+    pool: &str,
+    bundle: Option<&Path>,
+    heads: &[Ref],
+) -> Result<Vec<String>, Refused> {
+    let (branch, head, snapshot, branches) = work_named(heads)?;
+    if std::fs::symlink_metadata(repo).is_ok() {
+        return Err(not_allowed(format!(
+            "{} is here already, so the runner's clone of it was not made here",
+            repo.display()
+        )));
+    }
+    let made = super::made(repo).and_then(|()| {
+        fetch_incoming(repo, bundle, heads)?;
+        if commit_of(repo, &format!("{}^1", snapshot.oid))? != head.oid {
+            return Err(not_allowed(format!(
+                "the work that came for {branch} is not on its branch's commit, so it was not \
+                 taken"
+            )));
+        }
         super::take_back(repo, pool, None, &branches)?;
-        take_over(repo, scratch, leave_out, &branch, &head.oid, &snapshot.oid)
+        let empty = empty_tree(repo)?;
+        let to_tree = tree_of(repo, &snapshot.oid)?;
+        move_tree(repo, &empty, &to_tree, &head.name, &head.oid, || {})?;
+        agree(repo, &branch, &snapshot.oid, None)?;
+        Ok(to_watch(repo, &empty, &to_tree))
     });
-    drop_incoming(repo);
-    moved
+    if made.is_err() {
+        // Only what this made: nothing was at `repo` before it.
+        let _ = std::fs::remove_dir_all(repo);
+    } else {
+        drop_incoming(repo);
+    }
+    made
 }
 
 /// **The desktop bundles `work` of `repo` for a move** into `into`: the branch at its commit and

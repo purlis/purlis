@@ -243,7 +243,10 @@ pub(crate) fn move_workspace_to(
 /// chat moves here: the runner's branches into `refs/remotes/<pool>/*`, and this clone's work
 /// tree taken over onto the runner's, its branch, commits and uncommitted work, where it is
 /// still what both ends last agreed. The first clone that is not stops the move, in its words.
-/// Answers what came back that the person is to look at, by its path in the project
+/// A clone the runner chat made there, which this machine has none of, is made here fresh from
+/// the runner's work (#3811, [`codelink::take_work_fresh`]), where the runner names its clones
+/// (session protocol 1.51); a runner before it cannot, and such a clone stays there. Answers
+/// what came back that the person is to look at, by its path in the project
 /// ([`codelink::take_work_back`]).
 pub(crate) fn move_workspace_back(
     link: &HostLink,
@@ -252,8 +255,11 @@ pub(crate) fn move_workspace_back(
     workspace: &str,
     pool: &str,
 ) -> Result<Vec<String>, String> {
+    let here = clones_of(root, workspace);
+    // Asked first, so a runner that cannot say changes nothing here.
+    let only_there = made_there(link, project, workspace, &here)?;
     let mut watch = Vec::new();
-    for rel in clones_of(root, workspace) {
+    for rel in here {
         let repo = root.join(&rel);
         let leave_out = leave_out_of(root, &rel)?;
         let scratch = scratch()?;
@@ -285,7 +291,59 @@ pub(crate) fn move_workspace_back(
             }
         }
     }
+    for rel in only_there {
+        let made = codelink::repo_in(root, &rel)
+            .map_err(|why| why.to_string())
+            .and_then(|repo| {
+                let scratch = scratch()?;
+                let into = scratch.path().join("work.bundle");
+                let (heads, wrote) = link.fetch_work(project, &rel, Vec::new(), &into)?;
+                let bundle = wrote.then_some(into.as_path());
+                codelink::take_work_fresh(&repo, pool, bundle, &core_refs(heads))
+                    .map_err(|why| why.to_string())
+            });
+        match made {
+            Ok(came) => watch.extend(came.into_iter().map(|path| format!("{rel}/{path}"))),
+            Err(why) => {
+                return Err(format!(
+                    "{rel}, which the runner's chat cloned, did not come back from the runner: \
+                     {why}"
+                ));
+            }
+        }
+    }
     Ok(watch)
+}
+
+/// **The clones of `workspace` the runner holds and this machine has none of** (#3811), by
+/// their folders in the project: what its chat cloned there. None from a runner before session
+/// protocol 1.51, which cannot say. A name no repository's folder may have is refused, in words.
+fn made_there(
+    link: &HostLink,
+    project: &str,
+    workspace: &str,
+    here: &[String],
+) -> Result<Vec<String>, String> {
+    let Some(there) = link
+        .clones_of(project, workspace)
+        .map_err(|why| format!("the runner did not say which clones it holds: {why}"))?
+    else {
+        return Ok(Vec::new());
+    };
+    let mut only_there = std::collections::BTreeSet::new();
+    for name in there {
+        if !purlis_core::contain::repo_name_ok(&name) {
+            return Err(format!(
+                "the runner named a clone `{name}`, which is not a repository's folder name, so \
+                 nothing came back"
+            ));
+        }
+        let rel = format!("workspaces/{workspace}/{name}");
+        if !here.contains(&rel) {
+            only_there.insert(rel);
+        }
+    }
+    Ok(only_there.into_iter().collect())
 }
 
 /// The repositories of `workspace` in the project at `root`, by their folders in it.
