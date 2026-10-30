@@ -1893,15 +1893,22 @@ pub enum GitWork {
     /// `act` in the folder `<repo>/<piece>` of the ask's workspace? The app runs no git: it
     /// judges the folder's claim against the chats it has, and takes the folder for the chat
     /// where no live chat holds it, as a brokered write does ([`crate::piececlaim::take`]). It
-    /// answers an empty `Said` with exit 0 where the chat may write, and `No` with the refusal
-    /// where another live chat holds the folder. A kind of its own, so an app that does not
-    /// know it answers nothing and the asker judges by the piece log alone.
+    /// answers an empty `Said` with exit 0 where the chat may write, and a `Said` with exit
+    /// [`CLAIM_HELD`] and the refusal as its one line where another live chat holds the folder:
+    /// the one answer the asking guard refuses on. Any `No` (a chat the app does not have open,
+    /// a name that cannot be a branch folder, a claim it could not judge) lets the git run, as
+    /// no answer does. A kind of its own, so an app that does not know it answers nothing.
     WorktreeClaim {
         repo: String,
         piece: String,
         act: ClaimAct,
     },
 }
+
+/// The exit status a [`GitWork::WorktreeClaim`] is answered with where another live chat holds
+/// the folder: the one answer the guard on a chat's own git refuses on (#3931, the review of
+/// #4129). Not 1, which any failure could say.
+pub const CLAIM_HELD: u8 = 3;
 
 /// What plain git would do in a branch folder, as a [`GitWork::WorktreeClaim`] names it.
 ///

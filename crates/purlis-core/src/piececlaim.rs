@@ -288,19 +288,63 @@ pub fn take(
     act: Act,
     now: DateTime<Utc>,
 ) -> Result<(), String> {
+    take_telling(plane, at, who, live, act, now).map_err(Refusal::why)
+}
+
+/// Why [`take_telling`] refused: the one case a guard on a chat's own git refuses for
+/// (#3931, the review of #4129), apart from every other.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Refusal {
+    /// Another chat holds the folder, and its program runs here now: the sentence names it.
+    HeldByALiveChat(String),
+    /// Anything else: a holder that has not come back since a restart, no app to say who
+    /// lives, or a lock or a claim that could not be held or written.
+    Otherwise(String),
+}
+
+impl Refusal {
+    /// The sentence, whichever it is.
+    pub fn why(self) -> String {
+        match self {
+            Self::HeldByALiveChat(why) | Self::Otherwise(why) => why,
+        }
+    }
+}
+
+/// [`take`], saying whether a refusal is because another live chat holds the folder.
+pub fn take_telling(
+    plane: &Path,
+    at: &Located,
+    who: &Who,
+    live: Option<&[Live]>,
+    act: Act,
+    now: DateTime<Utc>,
+) -> Result<(), Refusal> {
     let refused = |why: String| {
-        format!(
+        Refusal::Otherwise(format!(
             "{why}, so a second chat could not be kept out of {}'s branch folder '{}', and \
              purlis will not {} there. Nothing was done",
             at.repo,
             at.piece,
             act.word()
-        )
+        ))
     };
     let _one_at_a_time = locked(plane, &at.workspace).map_err(refused)?;
     match writer(plane, at, who.chat.as_deref(), live, act) {
         Writer::Yours => Ok(()),
-        Writer::Refused(why) => Err(why),
+        Writer::Refused(why) => {
+            // Under the lock, so the holder read is the one `writer` judged.
+            let by_a_live_chat = holder(plane, at).is_some_and(|holder| {
+                live.into_iter()
+                    .flatten()
+                    .any(|one| one.id == holder.id && one.back)
+            });
+            Err(if by_a_live_chat {
+                Refusal::HeldByALiveChat(why)
+            } else {
+                Refusal::Otherwise(why)
+            })
+        }
         Writer::Free if who.chat.is_none() => Ok(()),
         Writer::Free => pieces::record(
             plane,

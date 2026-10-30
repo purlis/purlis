@@ -134,8 +134,13 @@ fn plain_git_s_claim_is_taken_by_the_first_live_chat_and_refused_to_a_second() {
     };
     assert_eq!(asked(&chat(4, "01A", true), ClaimAct::Commit), may);
     assert_eq!(asked(&chat(4, "01A", true), ClaimAct::Push), may);
-    let Answer::No { why } = asked(&chat(9, "01B", true), ClaimAct::Push) else {
+    // Held by another live chat: the one answer the guard refuses on.
+    let Answer::Said { lines, code } = asked(&chat(9, "01B", true), ClaimAct::Push) else {
         panic!("a second live chat's push was let through");
+    };
+    assert_eq!(code, crate::hookwire::CLAIM_HELD);
+    let [Say::Fail(why)] = lines.as_slice() else {
+        panic!("{lines:?}");
     };
     assert!(
         why.contains("widget's branch folder 'p1' is claimed by chat 4"),
@@ -147,7 +152,10 @@ fn plain_git_s_claim_is_taken_by_the_first_live_chat_and_refused_to_a_second() {
     assert_eq!(asked(&chat(9, "01B", false), ClaimAct::Commit), may);
     assert!(matches!(
         asked(&chat(9, "01B", true), ClaimAct::Commit),
-        Answer::No { .. }
+        Answer::Said {
+            code: crate::hookwire::CLAIM_HELD,
+            ..
+        }
     ));
     // The holder still writes.
     assert_eq!(asked(&chat(4, "01A", true), ClaimAct::Update), may);
@@ -169,6 +177,60 @@ fn plain_git_s_claim_is_taken_by_the_first_live_chat_and_refused_to_a_second() {
         chrono::Utc::now(),
     );
     assert!(matches!(odd, Answer::No { .. }), "{odd:?}");
+}
+
+/// The review of #4129: only a folder another LIVE chat holds is `CLAIM_HELD`. A holder that
+/// has not come back since a restart is a refusal the guard lets through, so it is a `No`.
+#[test]
+fn a_holder_not_back_since_a_restart_is_answered_no_and_not_held() {
+    use crate::hookwire::ClaimAct;
+    let (_dir, root) = tree();
+    let chat = |number: u32, id: &str, holder_back: bool| Asker {
+        chat: number,
+        id: Some(id.to_owned()),
+        live: Some(vec![
+            crate::piececlaim::Live {
+                id: "01A".to_owned(),
+                chat: Some(4),
+                back: holder_back,
+            },
+            crate::piececlaim::Live {
+                id: "01B".to_owned(),
+                chat: Some(9),
+                back: true,
+            },
+        ]),
+        unsandboxed: true,
+        ..asker(None)
+    };
+    let asked = |asker: &Asker| {
+        answer(
+            &root,
+            asker,
+            &GitAsk {
+                chat: 0,
+                workspace: "alpha".to_owned(),
+                work: GitWork::WorktreeClaim {
+                    repo: "widget".to_owned(),
+                    piece: "p1".to_owned(),
+                    act: ClaimAct::Push,
+                },
+            },
+            &git::Isolated::default(),
+            chrono::Utc::now(),
+        )
+    };
+    // Chat 4 takes the folder while it runs.
+    assert!(matches!(
+        asked(&chat(4, "01A", true)),
+        Answer::Said { code: 0, .. }
+    ));
+    // Restarted, and not back yet: chat 9 is told no, not that a live chat holds it.
+    let answer = asked(&chat(9, "01B", false));
+    let Answer::No { why } = &answer else {
+        panic!("{answer:?}");
+    };
+    assert!(why.contains("has not come back"), "{why}");
 }
 
 #[test]
