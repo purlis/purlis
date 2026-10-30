@@ -270,8 +270,9 @@ describe("deleting a workspace", () => {
     expect(calls("workspace_at_risk")).toEqual([]);
     await userEvent.click(within(asked).getByRole("button", { name: "Discard and leave" }));
 
-    // Then the removal's own question, which deletes nothing until it is answered.
-    expect(deploy.discard).toHaveBeenCalledOnce();
+    // Then the removal's own question, which deletes nothing until it is answered: the work
+    // goes only with the workspace.
+    expect(deploy.discard).not.toHaveBeenCalled();
     await waitFor(() => expect(calls("workspace_at_risk")).toHaveLength(1));
     expect(await screen.findByRole("alertdialog")).not.toHaveAccessibleName(
       "Save your changes to deploy?",
