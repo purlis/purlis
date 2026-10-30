@@ -32,6 +32,7 @@
 // The shared helpers, in the folders they always had; each module reaches one as
 // `crate::support` and so on.
 #[path = "../old_names/mod.rs"]
+mod a_killed_docker_exec_closes_what_it_ran_on_a_runner;
 mod old_names;
 #[path = "../oracle_corpus/mod.rs"]
 mod oracle_corpus;
