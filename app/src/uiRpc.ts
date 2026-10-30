@@ -1047,6 +1047,7 @@ export const commands = {
 	skillDraftTry: __WINDOW_ONLY_RESULT,
 	skillDraftRedo: __WINDOW_ONLY_RESULT,
 	skillDraftRedoIn: __WINDOW_ONLY_RESULT,
+	skillChatApproval: __WINDOW_ONLY_RESULT,
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	skillLevelsConfirm: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */

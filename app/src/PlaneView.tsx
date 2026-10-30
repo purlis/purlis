@@ -521,7 +521,12 @@ import {
 import { enterSettings, placeOfView } from "./settings/entering";
 import { onceTheKeyboardIsBack } from "./keyboardBack";
 import { SessionOffersLent } from "./sessionOffers";
-import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
+import { askSkillChat, SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
+import {
+  SkillChatApproveAsk,
+  skillChatRefused,
+  type SkillChatApproving,
+} from "./SkillChatApproval";
 import { ChatStrip, NO_ENDED, NO_ROWS } from "./ChatStrip";
 import {
   type FirstChat,
@@ -5278,12 +5283,15 @@ export const PlaneView = memo(function PlaneView({
     return () => window.removeEventListener(THEME_CHAT, asked);
   }, [change, plane]);
 
+  /** A studio start refused for its profile's approval, while Approve and start… asks (#3942). */
+  const [studioApproving, setStudioApproving] = useState<SkillChatApproving>();
   /**
    * **The Skill studio's "Ask a chat to draft a skill", Try it and a draft's redo** (SK-9, #2772;
    * S9, #3690): the core opens
    * the chat with its prompt typed and never sent (Try it's in a throwaway folder, with the
    * built-in skills and the draft alone), and its tab goes on the strip it is filed under, in
-   * front. A refusal is the core's sentence.
+   * front. A refusal is the core's sentence, with Approve and start… where its profile needs
+   * approving (#3942).
    */
   useEffect(() => {
     const asked = (event: Event) => {
@@ -5334,7 +5342,8 @@ export const PlaneView = memo(function PlaneView({
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
         .then((started) => {
           if (started.status === "error") {
-            setReport({ from: "skill-chat", refused: true, words: started.error });
+            // With Approve and start… where its profile needs approving (#3942).
+            void skillChatRefused(plane, wanted, started.error, setStudioApproving).then(setReport);
             return;
           }
           const chat = started.data;
@@ -9969,6 +9978,18 @@ export const PlaneView = memo(function PlaneView({
                 onAnswer={() => void forgetChat(forgetting.id, forgetting.name)}
                 onCancel={() => setForgetting(undefined)}
                 afterClose={afterForgetAsk}
+              />
+            )}
+            {studioApproving && (
+              <SkillChatApproveAsk
+                plane={plane}
+                asked={studioApproving}
+                onCancel={() => setStudioApproving(undefined)}
+                onApproved={(again) => {
+                  setStudioApproving(undefined);
+                  setReport(undefined);
+                  askSkillChat(again);
+                }}
               />
             )}
             {approving && (

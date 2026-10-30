@@ -307,23 +307,7 @@ pub(crate) async fn skill_draft_try(
             .collect();
         drafts::sweep_tries(&root, &standing);
         let draft = drafts::one(&root, &id)?;
-        // The harness and profile of the draft's own level (decision 50): the chat that drafted
-        // it where it still runs there, else another chat of that workspace (or of the
-        // project's root), else the project's default.
-        let chats_open = held.chats().open_now();
-        let at_level = |one: &&crate::chats::Open| {
-            one.workspace.as_deref() == draft.level.at.workspace() && one.profile.is_some()
-        };
-        let of_level = chats_open
-            .iter()
-            .filter(at_level)
-            .find(|one| Some(one.session) == draft.chat)
-            .or_else(|| chats_open.iter().find(at_level))
-            .and_then(|one| one.profile.clone());
-        let profile = match profile.or(of_level) {
-            Some(profile) => profile,
-            None => crate::curation::default_profile(&root, "Try it did not start")?.0,
-        };
+        let profile = try_profile(&held, &draft, profile)?;
         let tried = drafts::try_out(&root, &id)?;
         let started = open(
             &held,
@@ -345,6 +329,67 @@ pub(crate) async fn skill_draft_try(
         }
         started
     })
+    .await
+}
+
+/// The profile Try it starts `draft`'s chat on: `picked`, where the person picked one, else the
+/// harness and profile of the draft's own level (decision 50): the chat that drafted it where it
+/// still runs there, else another chat of that workspace (or of the project's root), else the
+/// project's default.
+fn try_profile(
+    held: &Arc<Held>,
+    draft: &drafts::Draft,
+    picked: Option<String>,
+) -> Result<String, String> {
+    if let Some(profile) = picked {
+        return Ok(profile);
+    }
+    let chats_open = held.chats().open_now();
+    let at_level = |one: &&crate::chats::Open| {
+        one.workspace.as_deref() == draft.level.at.workspace() && one.profile.is_some()
+    };
+    let of_level = chats_open
+        .iter()
+        .filter(at_level)
+        .find(|one| Some(one.session) == draft.chat)
+        .or_else(|| chats_open.iter().find(at_level))
+        .and_then(|one| one.profile.clone());
+    match of_level {
+        Some(profile) => Ok(profile),
+        None => Ok(crate::curation::default_profile(held.root(), "Try it did not start")?.0),
+    }
+}
+
+/// **What the profile a studio start runs on needs approved** (#3942), where the core refused
+/// "Ask a chat to draft a skill", Try it or a redo only because nobody approved that profile on
+/// this machine: the picker's own approval, for the window to show and the person to confirm
+/// before it starts the same chat again. `tried` is the draft Try it was pressed on, with the
+/// profile picked for it; without one, the start was on the project's default. `None` where the
+/// profile needs nothing approved, so the refusal was for another reason.
+///
+/// Read again from the profile and never from the refusal's words, as a waiting chat's is
+/// (`NotStarted::approval`). Nothing is approved here: `approve_profile` is the person's press.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_chat_approval(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    tried: Option<String>,
+    profile: Option<String>,
+) -> Result<Option<crate::chats::NeedsApproval>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window(
+        "reading what the chat's profile needs approved",
+        move || {
+            crate::skillchange::flag_on()?;
+            let root = held.root().to_path_buf();
+            let profile = match tried {
+                Some(id) => try_profile(&held, &drafts::one(&root, &id)?, profile)?,
+                None => crate::curation::default_profile(&root, "no chat was opened")?.0,
+            };
+            Ok(crate::chats::NeedsApproval::of_profile(&profile, &root))
+        },
+    )
     .await
 }
 

@@ -2059,6 +2059,29 @@ export const commands = {
 	 */
 	skillDraftRedoIn: (plane: PlaneId, id: string, session: number) => typedError<Handed, string>(__TAURI_INVOKE("skill_draft_redo_in", { plane, id, session })),
 	/**
+	 *  **What the profile a studio start runs on needs approved** (#3942), where the core refused
+	 *  "Ask a chat to draft a skill", Try it or a redo only because nobody approved that profile on
+	 *  this machine: the picker's own approval, for the window to show and the person to confirm
+	 *  before it starts the same chat again. `tried` is the draft Try it was pressed on, with the
+	 *  profile picked for it; without one, the start was on the project's default. `None` where the
+	 *  profile needs nothing approved, so the refusal was for another reason.
+	 * 
+	 *  Read again from the profile and never from the refusal's words, as a waiting chat's is
+	 *  (`NotStarted::approval`). Nothing is approved here: `approve_profile` is the person's press.
+	 */
+	skillChatApproval: (plane: PlaneId, tried: string | null, profile: string | null) => typedError<{
+	/**  The profile's name, as `approve_profile` takes it. */
+	profile: string,
+	/**  Its `kind`. */
+	kind: string,
+	/**  Where it was declared: `built-in`, `charter.local.toml` or the project's harnesses. */
+	source: string,
+	/**  `new` or `changed`, as the picker's row says it. */
+	approval: string,
+	/**  What it would run, as the picker shows it (`profiletrust::shown`), already contained. */
+	shown: string,
+} | null, string>(__TAURI_INVOKE("skill_chat_approval", { plane, tried, profile })),
+	/**
 	 *  **Accepts a workspace or persona folder a chat could have made** (SK-9): its skills reach
 	 *  chats from now on. The person's press in the studio, on a skill left out for it.
 	 */
