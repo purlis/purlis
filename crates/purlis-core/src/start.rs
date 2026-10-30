@@ -753,8 +753,10 @@ fn on_pinned_version(
 pub const SANDBOX_ONLY_LOCK: &str =
     "This profile is for sandboxed chats only, so a chat on it starts only sandboxed.";
 
-/// Why the picker offers no "Start without the sandbox" for a Claude Code chat on a runner
-/// (#4083): the start refuses that chat ([`profile_refusal`]).
+/// Why the picker offers no "Start without the sandbox" for a Claude Code chat where the picker
+/// itself runs on a runner, a person's own Linux machine paired as one (#4083): the start refuses
+/// that chat ([`profile_refusal`]). A desktop's picker for a pool's chat asks its own machine,
+/// and the runner's start refuses it there.
 pub const RUNNER_LOCK: &str =
     "On a runner, a Claude Code chat starts only inside purlis's sandbox.";
 

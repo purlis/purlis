@@ -164,14 +164,18 @@ fn on_a_person_s_own_linux_a_claude_code_chat_keeps_its_own_sandbox() {
 }
 
 #[test]
-fn a_pairing_that_cannot_be_read_is_no_runner() {
+fn a_pairing_that_cannot_be_read_is_still_a_runner() {
+    // Fail closed (#4083, ruled 2026-10-30): a runner whose pairing broke still never starts a
+    // Claude Code chat outside the wrap, on a profile wrapped chats wrote.
+    let unpaired = place(FULL, false);
     let place = place(FULL, true);
     std::fs::write(
         crate::machine::dir(&place.home.join(".config")).join(crate::runnerlink::PEERS_FILE),
         "not what purlis writes",
     )
     .expect("written over");
-    assert!(!place.machine.is_a_runner());
+    assert!(place.machine.is_a_runner());
+    assert!(!unpaired.machine.is_a_runner());
 }
 
 #[test]

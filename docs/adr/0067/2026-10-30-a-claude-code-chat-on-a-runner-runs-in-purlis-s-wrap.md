@@ -29,8 +29,8 @@ Claude Code's own sandbox needs a user namespace that a pod or a default contain
    settings are screened as before.
 7. **On a runner, a Claude Code profile is for wrapped chats only** (ruled 2026-10-30). A Claude
    Code chat there that would start without the sandbox, whether the person chose "Start without
-   the sandbox", their own level is off, or the floor could not be applied, is refused in words,
-   and the picker offers no way round it. So what a wrapped chat writes in the profile's folder (a
+   the sandbox", their own level is off, or the floor could not be applied, is refused in words
+   by the runner's own start. A runner whose pairing cannot be read counts as a runner here. So what a wrapped chat writes in the profile's folder (a
    transcript, a memory, a folder marked trusted) is loaded only by other wrapped chats, which is
    D-88s's residual and no wider, as a sandbox-only profile does for Codex (D-88q). A person's own
    machine is unchanged.

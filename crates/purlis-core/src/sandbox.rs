@@ -1309,8 +1309,9 @@ impl Machine {
 
     /// **Whether this machine is a runner** (#4083): a Linux machine whose session host is paired
     /// with a desktop ([`crate::runnerlink`]). Read from its pairing, in the session host's own
-    /// store, which no chat reads or writes. A pairing that cannot be read is no runner, so such a
-    /// machine's chat is held to what any other Linux machine's is.
+    /// store, which no chat reads or writes. A pairing there that cannot be read is a runner all
+    /// the same, so a runner whose pairing broke never starts a Claude Code chat outside the wrap
+    /// on a profile wrapped chats wrote ([`crate::start::profile_refusal`]).
     pub fn is_a_runner(&self) -> bool {
         self.os == Os::Linux
             && crate::machine::rooted(
@@ -1318,7 +1319,7 @@ impl Machine {
                 self.env.get("XDG_CONFIG_HOME").map(Into::into),
                 self.home.clone(),
             )
-            .is_some_and(|config| matches!(crate::runnerlink::answering(&config), Ok(Some(_))))
+            .is_some_and(|config| !matches!(crate::runnerlink::answering(&config), Ok(None)))
     }
 
     /// **Whether a chat of `harness` here starts inside purlis's own Linux wrap**: a harness purlis
