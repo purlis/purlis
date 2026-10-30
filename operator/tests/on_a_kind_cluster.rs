@@ -3175,6 +3175,19 @@ async fn the_operators_metrics_count_a_claim_its_suspension_and_its_deletion_onc
         },
     }))
     .expect("a network policy");
+    // One a failed run left is taken away first.
+    let _ = policies
+        .delete("e2e-metrics-scrape", &DeleteParams::default())
+        .await;
+    eventually("no scrape policy left", Duration::from_secs(30), || async {
+        policies
+            .get_opt("e2e-metrics-scrape")
+            .await
+            .ok()?
+            .is_none()
+            .then_some(())
+    })
+    .await;
     policies
         .create(&PostParams::default(), &scrape)
         .await
