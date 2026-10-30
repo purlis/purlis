@@ -304,6 +304,44 @@ export const QuietPaneMarks: Story = {
     expectFocusInSight();
   },
 };
+/**
+ * **A theme that draws the quiet hover its own way** (#3295): it sets `button.root.quiet.hover`'s
+ * fill and words in the `parts` layer, as the engine writes a theme's parts. The close that ends a
+ * chat takes the theme's fill, but keeps its danger mark: its glyph in the danger colour and an
+ * edge of it, drawn in the `cues` layer after the theme's.
+ */
+export const QuietHoverThemedKeepsTheCloseCue: Story = {
+  // What is held is a computed colour and edge under a theme's rule, not a picture.
+  parameters: { screenshot: false },
+  render: () => (
+    <div className="pane-doing" style={{ visibility: "visible" }}>
+      <style>{`@layer parts {
+  :where([data-scope="button"][data-part="root"][data-variant="quiet"][data-hovered]:not([data-disabled])) {
+    background-color: var(--surface-hover);
+    color: var(--text-primary);
+  }
+}`}</style>
+      <IconButton
+        icon={<X />}
+        aria-label="End this pane's chat"
+        variant="quiet"
+        size="sm"
+        className="ends-a-chat"
+      />
+      <span data-testid="danger" style={{ color: "var(--danger-text)" }} />
+    </div>
+  ),
+  play: async ({ canvas }) => {
+    const close = canvas.getByRole("button", { name: "End this pane's chat" });
+    const danger = getComputedStyle(canvas.getByTestId("danger")).color;
+    close.setAttribute("data-hovered", "true");
+    const drawn = getComputedStyle(close);
+    const [words, edge] = [drawn.color, drawn.boxShadow];
+    close.removeAttribute("data-hovered");
+    await expect(words).toBe(danger);
+    await expect(edge).toContain(danger);
+  },
+};
 export const Link: Story = {
   args: { variant: "link", label: "Open its settings" },
   play: pressedByTheKeyboard,
