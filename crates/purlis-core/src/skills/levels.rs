@@ -332,7 +332,7 @@ fn made_since_in(root: &Path, state: Option<PathBuf>) -> MadeSince {
     let on_disk = owners(root);
     let root = root.to_path_buf();
     Box::new(move |owner: &Path| {
-        let rel = as_the_disk_spells(&on_disk, rel_in(&root, owner)?);
+        let rel = as_the_disk_spells(&root, &on_disk, rel_in(&root, owner)?);
         if unread && an_owner(&rel) {
             return Some(UNREAD.to_owned());
         }
@@ -357,19 +357,43 @@ fn made_since_in(root: &Path, state: Option<PathBuf>) -> MadeSince {
     })
 }
 
-/// **`rel` as the disk spells it**: the workspace or persona folder of that name among `on_disk`,
-/// where `rel` names one only in another case (a disk that folds case opens both names as one
-/// folder). `rel` itself where it is one of them, or none is.
-fn as_the_disk_spells(on_disk: &BTreeSet<String>, rel: String) -> String {
-    if on_disk.contains(&rel) {
+/// **`rel` as the disk spells it**: the workspace or persona folder among `on_disk` (in the plane
+/// at `root`) that is the folder `rel` opens, where `rel` names it only in another spelling (a disk
+/// that folds case, or one spelling of a letter, opens both names as one folder). Matched by the
+/// folder's identity, its device and inode, never by folding the name. `rel` itself where it is
+/// one of them, or opens none.
+fn as_the_disk_spells(root: &Path, on_disk: &BTreeSet<String>, rel: String) -> String {
+    if on_disk.contains(&rel) || !an_owner(&rel) {
         return rel;
     }
-    let lower = rel.to_lowercase();
-    on_disk
-        .iter()
-        .find(|folder| folder.to_lowercase() == lower)
-        .cloned()
-        .unwrap_or(rel)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        // Neither link is followed: a link is a folder of its own, never the one it points at.
+        let identity = |rel: &str| {
+            std::fs::symlink_metadata(root.join(rel))
+                .ok()
+                .filter(std::fs::Metadata::is_dir)
+                .map(|meta| (meta.dev(), meta.ino()))
+        };
+        if let Some(asked) = identity(&rel)
+            && let Some(folder) = on_disk
+                .iter()
+                .find(|folder| identity(folder) == Some(asked))
+        {
+            return folder.clone();
+        }
+    }
+    // No port reads a folder's identity here yet: the name is folded instead.
+    #[cfg(not(unix))]
+    {
+        let _ = root;
+        let lower = rel.to_lowercase();
+        if let Some(folder) = on_disk.iter().find(|folder| folder.to_lowercase() == lower) {
+            return folder.clone();
+        }
+    }
+    rel
 }
 
 /// `owner` relative to the plane at `root`, `/` between the parts.
@@ -528,7 +552,13 @@ pub fn sweep(root: &Path, open: &[String]) {
 /// be read, or names a running chat with no id of its own, one record no sweep removes holds them
 /// all ([`UNNOTED`]).
 pub(crate) fn noted_again(state: &Path, root: &Path) -> Result<(), String> {
-    let now = owners(root);
+    noted_again_with(state, root, &owners(root))
+}
+
+/// [`noted_again`], each new record holding `now`, the folders the caller listed: so [`confirm`]
+/// notes the folders it took off the ones not accepted yet, and no folder made in between is
+/// taken as there before.
+fn noted_again_with(state: &Path, root: &Path, now: &BTreeSet<String>) -> Result<(), String> {
     let unnoted = || (UNNOTED.to_owned(), "a chat".to_owned());
     let chats: Vec<(String, String)> = match crate::reopen::read_strictly(root) {
         Ok(None) => Vec::new(),
@@ -655,10 +685,12 @@ pub fn confirm(root: &Path, folders: &[String]) -> Result<(), String> {
     if kept != was || unaccepted_read(&state).is_err() {
         write_unaccepted(&state, &kept)?;
     }
-    write_list(&state, ACCEPTED, &Unaccepted::default())?;
-    // Every chat on the record of open chats keeps its own record through the Accept.
-    noted_again(&state, root)?;
-    crate::appstate::mark_levels_confirmed(&state, root)
+    // Every chat on the record of open chats keeps its own record through the Accept, holding the
+    // folders listed above.
+    noted_again_with(&state, root, &now)?;
+    crate::appstate::mark_levels_confirmed(&state, root)?;
+    // Emptied last: where a step above fails, the folders accepted one by one stay accepted.
+    write_list(&state, ACCEPTED, &Unaccepted::default())
 }
 
 /// **Every record in the app state `state` that is there and cannot be read, replaced by one that
