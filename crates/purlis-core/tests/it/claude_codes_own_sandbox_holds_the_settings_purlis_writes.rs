@@ -136,6 +136,8 @@ fn settings_for(root: &Path, machine: &Machine) -> (Level, Value) {
     let Form::ClaudeCode(compiled) = applied.form_in(Some(root)) else {
         panic!("not Claude Code's settings");
     };
+    // What a start makes before the chat starts ([`sandbox::Applied::line`]).
+    compiled.make_empty();
     let settings = compiled.reporting_on(None).through(PROXY_PORTS);
     (
         applied.level(),
@@ -285,7 +287,14 @@ fn claude(program: &Path, home: &Path, tmp: &Path) -> Command {
         .env("HOME", home)
         .env("CLAUDE_CONFIG_DIR", home.join(".claude"))
         .env("TMPDIR", tmp)
-        .env("SHELL", if cfg!(target_os = "macos") { "/bin/zsh" } else { "/bin/bash" })
+        .env(
+            "SHELL",
+            if cfg!(target_os = "macos") {
+                "/bin/zsh"
+            } else {
+                "/bin/bash"
+            },
+        )
         .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
         .env("DISABLE_AUTOUPDATER", "1")
         .stdin(Stdio::null());
