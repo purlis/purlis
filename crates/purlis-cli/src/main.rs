@@ -4239,9 +4239,6 @@ fn pool_sign_in(
     use purlis_core::profilestore::{self, sign_in};
     use purlis_core::runners;
     let config = store.config_root();
-    let engine = Docker::engine_on_this_machine();
-    purlis_core::poollogins::owned(engine.clone())?;
-    let engine = engine?;
     let record = profilestore::list(config)?
         .into_iter()
         .find(|p| p.name == name)
@@ -4253,6 +4250,22 @@ fn pool_sign_in(
             )
         })?;
     sign_in::plan_named(&record.harness, provider)?;
+    let plans = sign_in::providers(&record.harness);
+    if provider.is_none() && !plans.is_empty() {
+        let named: Vec<String> = plans
+            .iter()
+            .map(|p| format!("--provider {} ({})", p.provider, p.title))
+            .collect();
+        return Err(format!(
+            "'{}' signs in to the plan you name: add {}.",
+            record.name,
+            named.join(" or ")
+        ));
+    }
+    // Nothing reaches a runner, nor is read of one, before its engine is shown to be yours.
+    let engine = Docker::engine_on_this_machine();
+    purlis_core::poollogins::owned(engine.clone())?;
+    let engine = engine?;
     if runners::cluster_runner_for(config, pool)
         .map_err(|why| why.to_string())?
         .is_some()

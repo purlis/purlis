@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-use std::sync::mpsc::{Sender, channel};
+use std::sync::mpsc::channel;
 
 use super::super::driven::drive_with;
 use super::super::{Login, Standing};
@@ -37,7 +37,14 @@ fn claude(then: &str) -> Login {
 }
 
 fn followed(login: &Login, lines: &[&str]) -> (Result<(), String>, Vec<String>) {
-    followed_with(login, "claude", None, lines, &|_| ())
+    followed_with(login, "claude", None, lines, Input::StaysOpen)
+}
+
+/// Whether the terminal's input stays open once `lines` were typed.
+#[derive(PartialEq)]
+enum Input {
+    StaysOpen,
+    Ends,
 }
 
 fn followed_with(
@@ -45,16 +52,17 @@ fn followed_with(
     kind: &str,
     plan: Option<&str>,
     lines: &[&str],
-    keep: &dyn Fn(Sender<String>),
+    input: Input,
 ) -> (Result<(), String>, Vec<String>) {
     let driving = drive_with(login, kind, plan, || Standing::SignedIn).unwrap();
     let (type_in, typed) = channel();
     for line in lines {
         type_in.send((*line).to_owned()).unwrap();
     }
-    keep(type_in);
+    let held = (input == Input::StaysOpen).then_some(type_in);
     let mut terminal = Written::default();
     let ended = follow(&driving, &typed, &mut terminal, "work", "builds");
+    drop(held);
     (ended, terminal.0)
 }
 
@@ -96,7 +104,13 @@ fn a_device_code_is_said_before_its_page_opens() {
         cleared: Vec::new(),
     };
 
-    let (ended, said) = followed_with(&login, "opencode", Some("github-copilot"), &[], &|_| ());
+    let (ended, said) = followed_with(
+        &login,
+        "opencode",
+        Some("github-copilot"),
+        &[],
+        Input::StaysOpen,
+    );
 
     assert_eq!(ended, Ok(()));
     assert_eq!(
@@ -154,7 +168,7 @@ fn a_page_it_does_not_know_says_what_to_do() {
 #[cfg(unix)]
 #[test]
 fn a_failed_sign_in_says_why() {
-    let login = claude("echo 'Login failed: the vendor is down'; exit 1");
+    let login = claude("echo; echo 'Login failed: the vendor is down'; exit 1");
 
     let (ended, _) = followed(&login, &[]);
 
@@ -174,7 +188,7 @@ fn a_failed_sign_in_says_why() {
 fn an_input_that_ends_with_no_code_says_so() {
     let login = claude("exec sleep 30");
 
-    let (ended, _) = followed(&login, &[]);
+    let (ended, _) = followed_with(&login, "claude", None, &[], Input::Ends);
 
     assert!(ended.unwrap_err().contains("input ended"));
 }

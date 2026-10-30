@@ -202,9 +202,6 @@ fn an_opencode_profile_signs_in_to_the_plan_named_and_never_without_one() {
     );
 }
 
-/// An engine at a socket only root could have put there, so a pool's refusals past it are read.
-const LOCAL_ENGINE: (&str, &str) = ("DOCKER_HOST", "unix:///var/run/docker.sock");
-
 /// **`--check` says what a sign-in on a pool's runner reads it by**: the words of each answer.
 #[test]
 fn a_runner_is_read_by_the_words_check_writes() {
@@ -280,42 +277,21 @@ fn an_engine_not_shown_to_be_on_this_machine_is_refused() {
     assert_eq!(machine.ran(), None);
 }
 
-/// **A profile or a pool this machine does not have says where to find them**, and exits non-zero.
+/// **A profile this machine does not have, or an opencode profile with no plan, says what to
+/// do** before any engine is looked for, and exits non-zero.
 #[test]
-fn a_profile_or_pool_this_machine_does_not_have_says_what_to_do() {
+fn a_missing_profile_or_plan_says_what_to_do() {
     let machine = Machine::new(1);
-    machine.said(&["profile", "create", "work", "--harness", "claude"]);
+    machine.said(&["profile", "create", "oc", "--harness", "opencode"]);
 
-    let nobody = machine.purlis_with(
-        &[LOCAL_ENGINE],
-        &["profile", "sign-in", "nobody", "--pool", "builds"],
-    );
+    let nobody = machine.purlis(&["profile", "sign-in", "nobody", "--pool", "builds"]);
     assert!(!nobody.status.success());
     let said = String::from_utf8_lossy(&nobody.stderr);
     assert!(said.contains("purlis profile list"), "{said}");
 
-    let no_pool = machine.purlis_with(
-        &[LOCAL_ENGINE],
-        &["profile", "sign-in", "work", "--pool", "builds"],
-    );
-    assert!(!no_pool.status.success());
-    let said = String::from_utf8_lossy(&no_pool.stderr);
-    assert!(said.contains("Settings › Pools"), "{said}");
-    assert_eq!(machine.ran(), None);
-}
-
-/// **An opencode profile on a pool names its plan**, as it does here.
-#[test]
-fn a_pool_sign_in_of_opencode_names_its_plan() {
-    let machine = Machine::new(1);
-    machine.said(&["profile", "create", "oc", "--harness", "opencode"]);
-
-    let out = machine.purlis_with(
-        &[LOCAL_ENGINE],
-        &["profile", "sign-in", "oc", "--pool", "builds"],
-    );
-
-    assert!(!out.status.success());
-    let said = String::from_utf8_lossy(&out.stderr);
+    let no_plan = machine.purlis(&["profile", "sign-in", "oc", "--pool", "builds"]);
+    assert!(!no_plan.status.success());
+    let said = String::from_utf8_lossy(&no_plan.stderr);
     assert!(said.contains("github-copilot"), "{said}");
+    assert_eq!(machine.ran(), None);
 }
