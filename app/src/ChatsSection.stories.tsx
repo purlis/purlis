@@ -388,7 +388,15 @@ export const SaidInItsCard: Story = {
       },
       { timeout: 3000 },
     );
-    await expect(card).toBeVisible();
+    // Once it has arrived: the popover family fades it in from nothing (`data-entering`), and
+    // axe, after the play, reads its words' contrast as they are drawn.
+    await waitFor(
+      () => {
+        expect(card.closest("[data-entering]")).toBeNull();
+        expect(card).toBeVisible();
+      },
+      { timeout: 3000 },
+    );
     await expect(card).toHaveTextContent(UNDER[0].atLimit?.said ?? "");
     await expect(card).toHaveTextContent("1 dispatch waits on memory");
     await expect(card).toHaveTextContent(ON_MEMORY_SAID);
