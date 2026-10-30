@@ -37,7 +37,8 @@ export function stepSaid(step: StripStep): string | null {
  *
  * Each step is said by the core (`pool_sign_in_next`); the strip draws it, says which step it is
  * on, moves the keyboard to the code field when it appears, and says each step change to a
- * screen reader. Cancel ends the login on the runner; so does closing the strip.
+ * screen reader. Cancel, or closing the strip, stops driving the login (the login itself on the
+ * runner: #4043).
  */
 export function PoolSignIn({
   pool,
@@ -63,7 +64,7 @@ export function PoolSignIn({
   const flow = useRef<number>(undefined);
 
   // One try: start it, then ask for each step until the last. Leaving the strip, or trying again,
-  // cancels it on the runner.
+  // cancels it.
   useEffect(() => {
     let left = false;
     const said = (err: unknown) => ({ status: "error" as const, error: String(err) });

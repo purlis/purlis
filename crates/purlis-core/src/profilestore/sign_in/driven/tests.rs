@@ -320,6 +320,19 @@ fn a_login_is_driven_end_to_end() {
     assert_eq!(next(&driving), Event::SignedIn);
 }
 
+/// A login that ended is said to have ended, though something it started holds its output open.
+#[cfg(unix)]
+#[test]
+fn a_login_that_ended_is_not_waited_on_past_what_it_left_running() {
+    let login = stand_in("printf '%s' \"$PRINTED\"; sleep 20 & exit 0");
+    let driving = drive(&login, "claude", || Standing::SignedIn).unwrap();
+
+    assert!(matches!(next(&driving), Event::Open { .. }));
+    assert_eq!(next(&driving), Event::AskCode);
+    assert_eq!(next(&driving), Event::Checking);
+    assert_eq!(next(&driving), Event::SignedIn);
+}
+
 /// A sign-in cancelled ends its login, and says it was cancelled.
 #[cfg(unix)]
 #[test]

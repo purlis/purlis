@@ -35,11 +35,15 @@ export function standingOnPool(pool: string, row: PoolProfileRow): string {
  */
 export function PoolProfiles({ pool, plane }: { pool: string; plane: string | undefined }) {
   const now = usePools();
-  const rows = now.profiles[pool];
+  const asked = now.profiles[pool];
   const [signing, setSigning] = useState<string>();
+  // The rows a sign-in was opened from: asked again meanwhile, they stay drawn, so its strip stays
+  // and its login with it.
+  const [heldRows, setHeldRows] = useState<PoolProfileRow[]>();
   useEffect(() => {
-    if (rows === undefined) void askProfiles(pool);
-  }, [pool, rows]);
+    if (asked === undefined) void askProfiles(pool);
+  }, [pool, asked]);
+  const rows = signing !== undefined && heldRows !== undefined ? heldRows : asked;
   if (rows === undefined || rows === "asking") {
     return <p className="ui-setting-help">Asking the runner about this machine&apos;s profiles…</p>;
   }
@@ -66,6 +70,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   };
   const ended = (signedIn: boolean) => {
     setSigning(undefined);
+    setHeldRows(undefined);
     if (signedIn) void askProfiles(pool);
   };
   return (
@@ -87,7 +92,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
                   plane === undefined
                     ? undefined
                     : () => {
-                        setSigning(undefined);
+                        ended(false);
                         signIn(row);
                       }
                 }
@@ -98,7 +103,10 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
               (DRIVEN.has(row.kind) ? (
                 <Button
                   aria-label={`Sign ${row.name} in on pool ${pool}`}
-                  onPress={() => setSigning(row.name)}
+                  onPress={() => {
+                    setHeldRows(rows);
+                    setSigning(row.name);
+                  }}
                   className="ui-setting-reset"
                 >
                   Sign in
@@ -131,7 +139,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
           </li>
         ))}
       </ul>
-      {again}
+      {signing === undefined && again}
     </>
   );
 }

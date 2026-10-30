@@ -39,6 +39,10 @@ pub const LONGEST: Duration = Duration::from_secs(15 * 60);
 /// The most of a pasted code passed on.
 const MOST_CODE: usize = 2048;
 
+/// How long what a login printed is still read once it has ended: something it started may hold
+/// its output open.
+const DRAIN_WITHIN: Duration = Duration::from_secs(5);
+
 /// How many of the last lines a login printed are kept, to show when purlis cannot follow it.
 const KEPT_LINES: usize = 24;
 
@@ -539,7 +543,10 @@ fn watching(
         match child.try_wait() {
             Ok(Some(status)) => break status.code(),
             Ok(None) => {}
-            Err(_) => break None,
+            Err(_) => {
+                end(&mut child);
+                break None;
+            }
         }
         let (late, over) = {
             let mut driven = driven.lock().unwrap_or_else(PoisonError::into_inner);
@@ -565,9 +572,10 @@ fn watching(
         }
         std::thread::sleep(Duration::from_millis(100));
     };
-    // All it printed is read before how it ended is said.
-    for reader in readers {
-        let _ = reader.join();
+    // All it printed is read before how it ended is said, for as long as that is worth waiting.
+    let until = Instant::now() + DRAIN_WITHIN;
+    while Instant::now() < until && !readers.iter().all(std::thread::JoinHandle::is_finished) {
+        std::thread::sleep(Duration::from_millis(20));
     }
     let said = driven
         .lock()
@@ -623,8 +631,9 @@ impl Driving {
             .map_err(|e| format!("the code could not be passed to the sign-in: {e}"))
     }
 
-    /// **Ends the login**: [`Event::Cancelled`] follows. A code being passed on meanwhile
-    /// fails as the login ends.
+    /// **Ends the process that drives the login**: [`Event::Cancelled`] follows. A code being
+    /// passed on meanwhile fails as it ends. Where that process only reaches the login, as
+    /// `docker exec` does, the login itself may run on until it stops by itself (#4043).
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
     }

@@ -6,6 +6,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { PoolProfileRow, PoolSignInStep } from "../bindings";
+import { askProfiles } from "../pools";
 import { PoolProfiles } from "./PoolProfiles";
 import { PROFILE_SIGN_IN, type ProfileSignInAsk } from "./links";
 
@@ -139,6 +140,17 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     expect(calls("pool_sign_in_cancel")).toEqual([{ flow: 7 }]);
     expect(screen.queryByRole("group", { name: "Signing work in on builds" })).toBeNull();
     expect(screen.getByRole("button", { name: "Sign work in on pool builds" })).toBeVisible();
+  });
+
+  it("keeps the sign-in when the runner's profiles are asked again meanwhile", async () => {
+    const opened = await strip();
+    expect(screen.queryByRole("button", { name: "Ask again" })).toBeNull();
+
+    await askProfiles("builds");
+
+    expect(screen.getByRole("group", { name: "Signing work in on builds" })).toBe(opened);
+    expect(calls("pool_sign_in_start")).toHaveLength(1);
+    expect(calls("pool_sign_in_cancel")).toEqual([]);
   });
 
   it("says what the login printed when purlis cannot follow it, with a terminal the way out", async () => {

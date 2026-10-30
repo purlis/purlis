@@ -321,6 +321,8 @@ pub async fn pool_sign_in_start(
     name: String,
     provider: Option<String>,
 ) -> Result<u32, String> {
+    // Numbered as it is asked, so of two starts the one asked last is the one kept.
+    let flow = NEXT_SIGN_IN.fetch_add(1, Ordering::SeqCst);
     tauri::async_runtime::spawn_blocking(move || {
         let config = config_root()?;
         let engine = owned()?;
@@ -348,7 +350,6 @@ pub async fn pool_sign_in_start(
             }
         };
         let driving = Arc::new(driven::drive(&login, &record.harness, check)?);
-        let flow = NEXT_SIGN_IN.fetch_add(1, Ordering::SeqCst);
         // One of the same profile on the same pool is let go and ended, after the lock.
         let before: Vec<SignIn> = {
             let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -356,13 +357,25 @@ pub async fn pool_sign_in_start(
                 .into_iter()
                 .partition(|one| one.pool == pool && one.name == name);
             *held = others;
-            held.push(SignIn {
-                flow,
-                pool,
-                name,
-                driving,
-            });
-            same
+            let (later, before): (Vec<_>, Vec<_>) =
+                same.into_iter().partition(|one| one.flow > flow);
+            if later.is_empty() {
+                held.push(SignIn {
+                    flow,
+                    pool,
+                    name,
+                    driving,
+                });
+                before
+            } else {
+                held.extend(later);
+                drop(held);
+                driving.cancel();
+                for one in before {
+                    one.driving.cancel();
+                }
+                return Err("a later sign-in of this profile took its place".to_owned());
+            }
         };
         for one in before {
             one.driving.cancel();
@@ -404,7 +417,7 @@ pub async fn pool_sign_in_paste(flow: u32, code: String) -> Result<(), String> {
         .map_err(|why| format!("the code was not passed on: {why}"))?
 }
 
-/// **Cancels sign-in `flow`**: its login is ended, and it is let go.
+/// **Cancels sign-in `flow`**: what drives its login is ended, and it is let go.
 #[tauri::command]
 #[specta::specta]
 pub fn pool_sign_in_cancel(flow: u32) {
