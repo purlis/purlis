@@ -510,8 +510,8 @@ rule while one who reads a bare refusal files an issue.
   reaches a public repository by an indirect route:
 
   ```bash
-  purlis persona remember "the marker is appended to `pending` each pass"   # DENIED
-  purlis persona remember "the marker is appended to \`pending\` each pass"  # allowed
+  purlis persona remember <persona> "the marker is appended to `pending` each pass"   # DENIED
+  purlis persona remember <persona> "the marker is appended to \`pending\` each pass"  # allowed
   ```
 
   That is not a constructed example. It happened while a guard review's findings were being
@@ -757,7 +757,7 @@ it, is not winnable in a tokeniser, so the honest move is to say what is open:
   one: a `gh`/`glab` command that publishes prose, and a purlis command that persists it,
   are refused whenever a live substitution stands on the line — so
   `gh issue create --body "$(cat <vault>)"` and
-  `purlis persona remember "$(cat <vault>)"` both stop. See *Forge body substitution* and
+  `purlis persona remember <persona> "$(cat <vault>)"` both stop. See *Forge body substitution* and
   *purlis's own text substitution* above. Neither guard looks inside the substitution or
   knows anything about vaults; they refuse the shape. Everywhere else on this page, a quoted
   substitution is still open;

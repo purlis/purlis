@@ -39,7 +39,7 @@ use std::sync::LazyLock;
 
 const PLANNED: &str = "not in this version yet";
 
-fn repo() -> PathBuf {
+pub(crate) fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -47,7 +47,7 @@ fn repo() -> PathBuf {
 }
 
 /// Every shipped `.rs` file: `crates/*/src` and the app's, without test files.
-fn shipped_sources(root: &Path) -> Vec<PathBuf> {
+pub(crate) fn shipped_sources(root: &Path) -> Vec<PathBuf> {
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
@@ -77,7 +77,7 @@ fn shipped_sources(root: &Path) -> Vec<PathBuf> {
 
 /// The string literals of `src` outside comments and before the first `#[cfg(test)]`, with
 /// Rust's line continuation (`\` + newline + leading whitespace) already applied.
-fn literals(src: &str) -> Vec<String> {
+pub(crate) fn literals(src: &str) -> Vec<String> {
     let src = src.find("#[cfg(test)]").map_or(src, |at| &src[..at]);
     let chars: Vec<char> = src.chars().collect();
     let mut out = Vec::new();
@@ -150,7 +150,7 @@ fn literals(src: &str) -> Vec<String> {
 }
 
 /// Every `SKILL.md` under the plugin charter ships.
-fn shipped_skills(root: &Path) -> Vec<PathBuf> {
+pub(crate) fn shipped_skills(root: &Path) -> Vec<PathBuf> {
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;

@@ -690,14 +690,20 @@ fn mem_cadence_nudge(hook: &Hook, count: u64) -> String {
     // A plane-root chat is in no workspace, so no workspace's memory is where its facts go.
     let live = !hook.at_plane_root(session.as_deref())
         && crate::workspaces::Plane::open(hook.root).is_live(&ws);
+    // #3880: the tool first, then the command with the chat's own name written in, the
+    // spelling that runs without a prompt.
     let how = if live {
-        format!("`purlis workspace remember \"<fact>\"` (workspace **{ws}**)")
+        format!(
+            "the `memory_add` tool or `purlis workspace remember -w {ws} \"<fact>\"` (workspace \
+             **{ws}**)"
+        )
     } else if let Some(active) = hook.persona() {
-        format!("`purlis persona remember {active} \"<fact>\"`")
+        format!("the `persona_remember` tool or `purlis persona remember {active} \"<fact>\"`")
     } else {
-        "`purlis workspace remember \"<fact>\"` (make the workspace LIVE to share) or `purlis \
-         persona remember <p> \"<fact>\"`"
-            .to_string()
+        format!(
+            "the `memory_add` tool or `purlis workspace remember -w {ws} \"<fact>\"` (make the \
+             workspace LIVE to share), or the `persona_remember` tool"
+        )
     };
     format!(
         "⬢ Memory check — ~{count} file changes since your last recorded memory. Recording \
@@ -751,8 +757,8 @@ pub fn posttooluse(hook: &Hook) -> Answer {
                     format!(
                         "⬢ You're changing **{repo}** in workspace **{ws}**. Per the workspace \
                          flow, record a **workspace memory** (what changed + why + the repo \
-                         commit) before you finish — `purlis workspace remember \"<…>\"` (one \
-                         file per memory under `workspaces/{ws}/memory/`, recall with `purlis \
+                         commit) before you finish — the `memory_add` tool or `purlis workspace \
+                         remember -w {ws} \"<…>\"` (one file per memory under `workspaces/{ws}/memory/`, recall with `purlis \
                          workspace recall`). And keep the **purlis** current \
                          (`workspaces/{ws}/workspace.md`): if this work shifts the goal, adds a \
                          key decision, or introduces a new term, update its Vision / Context / \

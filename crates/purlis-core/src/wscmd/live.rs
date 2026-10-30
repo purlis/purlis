@@ -99,7 +99,7 @@ pub fn live(root: &Path, name: &str, off: bool, say: Sink) -> u8 {
         say(Say::Warn(
             format!(
                 "'{name}' has no memory/{} yet, and this purlis does not create one — it is \
-             LIVE with nothing to share. `purlis workspace remember` scaffolds it.",
+             LIVE with nothing to share. `purlis workspace remember -w {name}` scaffolds it.",
                 crate::memstore::INDEX
             )
             .into(),

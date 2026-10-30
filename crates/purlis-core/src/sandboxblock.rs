@@ -1299,12 +1299,13 @@ pub fn way_out(path: &Path, root: &Path) -> Option<&'static str> {
             "purlis writes session records for a chat: write one with `purlis session record`.",
         ),
         ["workspaces", _, "memory", _, ..] => Some(
-            "purlis writes a workspace's memory for a chat: record one with `purlis workspace \
-             remember \"<fact>\"`.",
+            "purlis writes a workspace's memory for a chat: record one with the memory_add \
+             tool, or `purlis workspace remember -w <workspace> \"<fact>\"`.",
         ),
         ["personas", _, "memory", _, ..] => Some(
-            "purlis writes a persona's memory for a chat: record one with `purlis persona \
-             remember`, and `--shared` for shared memory.",
+            "purlis writes a persona's memory for a chat: record one with the \
+             persona_remember tool (shared for shared memory), or `purlis persona remember \
+             <persona> \"<fact>\"`.",
         ),
         ["workspaces", _, "todos", _, ..] => Some(
             "purlis writes a workspace's todos for a chat: add one with `purlis workspace todo \
