@@ -3440,11 +3440,14 @@ fn head_pointed_at(post: &[String]) -> Option<String> {
     }
 }
 
-/// Where branch work goes, as every branch-guard denial says it (#3798).
+/// Where branch work goes, as every branch-guard denial says it (#3798). The guard is asked of
+/// every chat, and only a sandboxed one commits through purlis: elsewhere `purlis worktree
+/// commit` says to use git (#3865). One sentence for both, as the recorded answers hold it.
 const BRANCH_WORK: &str = "Branch work belongs in a branch folder of the workspace's clone: \
-     `purlis worktree add <repo> <piece>`, then commit and push from it with `purlis worktree \
-     commit` and `purlis worktree push`. A new task gets its own workspace: `purlis workspace \
-     create <task>`, then `purlis clone <repo>`.";
+     `purlis worktree add <repo> <piece>`, then commit and push from it: in a sandboxed chat \
+     with `purlis worktree commit` and `purlis worktree push`, in any other chat with plain \
+     `git commit` and `git push`. A new task gets its own workspace: `purlis workspace create \
+     <task>`, then `purlis clone <repo>`.";
 
 /// What every branch-guard denial ends with: why the root is guarded, where branch work goes,
 /// and the remedy that stays runnable — naming the default branch when there is one. Branch
