@@ -175,11 +175,10 @@ function scopeOfLevel(level: SkillLevel, shown: StudioScope): StudioScope {
 }
 
 /** **The scope whose Library lists a new skill made at `level`** (#3684): a workspace's or a
- *  persona's own; a project skill starts granted to the project's root alone, so a workspace's
- *  chats don't get it yet and the root's Library lists it. */
+ *  persona's own; a project skill starts granted to the project's root alone, so the root's
+ *  Library is the one sure to list it. */
 function scopeOfNew(level: SkillLevel, shown: StudioScope): StudioScope {
-  if (level.at === "project") return shown.at === "workspace" ? AT_THE_ROOT : shown;
-  return scopeOfLevel(level, shown);
+  return level.at === "project" ? AT_THE_ROOT : scopeOfLevel(level, shown);
 }
 
 /** Whether `skill`, a row of the studio showing `scope`, is at `level`. */
@@ -305,8 +304,6 @@ export function SkillStudioTab({
   // Make my own copy (#3686): of the built-in `from`, or of one the person picks; and why the
   // core did not make the last one asked for.
   const [copying, setCopying] = useState<{ from?: string; refused?: string }>();
-  // A skill New skill… just made, whose page opens in Edit once the studio has read it (#3684).
-  const [toEdit, setToEdit] = useState<{ place: StudioPlace; level: SkillLevel }>();
   const { workspace, persona } = whoseChats(scope);
   const key = scopeKey(scope);
   // What was read for another scope is not this one's: placeholders until this one's is.
@@ -378,24 +375,6 @@ export function SkillStudioTab({
       live = false;
     };
   }, [plane, opened, changed, done]);
-
-  // **A skill New skill… made opens in Edit** (#3684): once the studio has read it at the place
-  // it went to, its text opens in the editor on its page's Text tab. Gone elsewhere meanwhile,
-  // nothing opens.
-  useEffect(() => {
-    if (toEdit === undefined) return;
-    if (!samePlace(placeNow.current, toEdit.place)) {
-      setToEdit(undefined);
-      return;
-    }
-    const name = skillOfRowId(toEdit.place.skill ?? "");
-    const made = studio?.skills.find(
-      (one) => one.name === name && atLevel(one, toEdit.place.scope, toEdit.level),
-    );
-    if (made === undefined) return;
-    setToEdit(undefined);
-    edits.open(made, toEdit.level, toEdit.place);
-  }, [toEdit, studio, at, edits]);
 
   if (studio !== undefined && !studio.on)
     return (
@@ -564,9 +543,9 @@ export function SkillStudioTab({
     };
   };
 
-  /** **New skill…'s Write it yourself** (#3684, S4): made in one commit, then its page opens at
-   *  its Library with the Text tab in Edit, once the studio has read it; or the core's refusal,
-   *  said in the dialog. */
+  /** **New skill…'s Write it yourself** (#3684, S4): made in one commit; then, while its dialog
+   *  is still the change in hand, the studio goes to the Library that lists it and its page opens
+   *  with the Text tab in Edit. The core's refusal is said in the dialog. */
   const make = (
     asked: Doing,
     level: SkillLevel,
@@ -577,20 +556,27 @@ export function SkillStudioTab({
     change(
       "The skill was not made",
       () => commands.skillNew(plane, level, name, description, template),
-      (notes) => {
-        const place: StudioPlace = {
-          page: "library",
-          scope: scopeOfNew(level, scope),
-          skill: skillRowNamed(name),
-        };
+      async (notes) => {
+        const lands = labelOf(levels, level);
+        // Closed while the core made it: the person went on, so the tab stays where it is.
+        if (inHandNow.current?.doing !== asked)
+          return resultOf("Skill made", `${name} is made in the ${lands} skills.`, notes);
+        const where = scopeOfNew(level, scope);
+        const place: StudioPlace = { page: "library", scope: where, skill: skillRowNamed(name) };
+        const whose = whoseChats(where);
+        const read = await commands.skillStudio(plane, whose.workspace, whose.persona);
+        const made =
+          read.status === "ok"
+            ? read.data.skills.find((one) => one.name === name && atLevel(one, where, level))
+            : undefined;
         go(place);
-        setToEdit({ place, level });
-        return Promise.resolve(
-          resultOf(
-            "Skill made",
-            `${name} is made in the ${labelOf(levels, level)} skills. Its text is open to edit.`,
-            notes,
-          ),
+        if (made === undefined)
+          return resultOf("Skill made", `${name} is made in the ${lands} skills.`, notes);
+        edits.open(made, level, place);
+        return resultOf(
+          "Skill made",
+          `${name} is made in the ${lands} skills. Its text is open to edit.`,
+          notes,
         );
       },
       refusedInDialog(asked, "The skill was not made"),

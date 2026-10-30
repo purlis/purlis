@@ -64,11 +64,13 @@ function templateKey(id: SkillTemplateId): string {
   return id.kind === "extension" ? `${id.extension}/${id.template}` : id.kind;
 }
 
-/** The templates a new skill can start from, read as the dialog opens: purlis's own and each
- *  extension's (ADR 0101). None until they are read, and none where they could not be. */
-function useTemplates(plane: string): readonly SkillTemplate[] {
+/** The templates a new skill can start from, read once they are `wanted` (Write it yourself):
+ *  purlis's own and each extension's (ADR 0101). None until they are read, and none where they
+ *  could not be. */
+function useTemplates(plane: string, wanted: boolean): readonly SkillTemplate[] {
   const [templates, setTemplates] = useState<readonly SkillTemplate[]>([]);
   useEffect(() => {
+    if (!wanted) return;
     let live = true;
     void commands
       .skillTemplates(plane)
@@ -79,7 +81,7 @@ function useTemplates(plane: string): readonly SkillTemplate[] {
     return () => {
       live = false;
     };
-  }, [plane]);
+  }, [plane, wanted]);
   return templates;
 }
 
@@ -125,7 +127,7 @@ export function NewSkillDialog({
   const [description, setDescription] = useState("");
   const [level, setLevel] = useState<SkillLevel>(start);
   const [template, setTemplate] = useState<SkillTemplateId>({ kind: "blank" });
-  const templates = useTemplates(plane);
+  const templates = useTemplates(plane, way === "write");
   const edited =
     <T,>(set: (value: T) => void) =>
     (value: T) => {
@@ -136,6 +138,8 @@ export function NewSkillDialog({
   if (way === "how")
     return (
       <Dialog
+        // A dialog per step: each starts the keyboard where its own step does.
+        key="how"
         onClose={onClose}
         title={NEW_SKILL}
         titleId="skill-new"
@@ -167,6 +171,8 @@ export function NewSkillDialog({
   const lands = labelOf(levels, level);
   const back = {
     children: "Back",
+    // Not while the core is asked: its answer is said on this step.
+    isDisabled: busy,
     onPress: () => {
       setWay("how");
       onEdit();
@@ -174,6 +180,7 @@ export function NewSkillDialog({
   };
   return (
     <Dialog
+      key={way}
       onClose={onClose}
       title={writing ? "Write a new skill" : "Ask a chat to draft a skill"}
       titleId="skill-new"

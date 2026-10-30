@@ -1097,13 +1097,28 @@ pub fn asking(level: &Level, what: &str) -> String {
     }
 }
 
+/// The most characters of what a skill should do that a draft prompt types.
+const MOST_WHAT: usize = 500;
+
 /// `text` as one line: each run of whitespace and control characters is one space, none at
-/// either end.
+/// either end; the characters that only steer how text is shown (direction overrides and
+/// isolates, zero-width marks) dropped, so the typed prompt reads as it is; at most
+/// [`MOST_WHAT`] characters.
 fn one_line(text: &str) -> String {
-    text.split(|c: char| c.is_whitespace() || c.is_control())
+    let steering = |c: char| matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2069}' | '\u{FEFF}');
+    let line = text
+        .chars()
+        .filter(|&c| !steering(c))
+        .collect::<String>()
+        .split(|c: char| c.is_whitespace() || c.is_control())
         .filter(|word| !word.is_empty())
         .collect::<Vec<_>>()
-        .join(" ")
+        .join(" ");
+    line.chars()
+        .take(MOST_WHAT)
+        .collect::<String>()
+        .trim_end()
+        .to_owned()
 }
 
 /// **The prompt "Ask a chat to write them" types** (#3925), unsent, for the trigger tests of the

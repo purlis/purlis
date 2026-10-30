@@ -123,11 +123,17 @@ export function useSkillEditInPlace({
     }
     setLeaving({ then });
   };
-  /** Goes on with `then` where `to` is still the editor's page, else leaves it first. */
+  /** Goes on with `then` where `to` is still the editor's page, else leaves it first. Where it
+   *  goes on, `to` is where the tab is from then, before it is drawn there: an editor opened
+   *  for it (a skill New skill… made, #3684) finds the tab at it. */
   const stepTo = (to: StudioPlace, then: () => void) => {
+    const going = () => {
+      placeNow.current = to;
+      then();
+    };
     const now = skillEditIn(tab);
-    if (now !== undefined && samePlace(now.at, to)) then();
-    else leave(then);
+    if (now !== undefined && samePlace(now.at, to)) going();
+    else leave(going);
   };
   const history: ViewHistory<StudioPlace> = {
     ...walked,

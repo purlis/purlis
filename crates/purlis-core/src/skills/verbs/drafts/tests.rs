@@ -920,4 +920,9 @@ fn the_draft_prompt_ends_with_what_the_skill_does_on_one_line() {
     );
     assert!(!said.chars().any(char::is_control), "{said:?}");
     assert!(asking(&level, " \n ").ends_with("The skill should "));
+    // What only steers how text is shown is dropped, and a long paste is cut.
+    assert!(asking(&level, "a\u{202E}b\u{200B}c").ends_with("What the skill does: abc"));
+    let long = asking(&level, &"x".repeat(2_000));
+    assert!(long.ends_with(&"x".repeat(500)), "{long}");
+    assert!(!long.ends_with(&"x".repeat(501)), "{long}");
 }
