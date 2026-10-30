@@ -243,7 +243,9 @@ export async function untilFocusInSight(step: string): Promise<void> {
   try {
     await waitFor(() => expectFocusInSight(), { timeout: LANDS_WITHIN_MS });
   } catch (error) {
-    throw new Error(`${step}: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`${step}: ${error instanceof Error ? error.message : String(error)}`, {
+      cause: error,
+    });
   }
 }
 
