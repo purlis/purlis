@@ -952,16 +952,64 @@ fn a_long_running_task_is_never_asked_for_its_report_nor_has_one_made() {
     assert_eq!(ledger.nudge_step(TASK, WAITING), Vec::<Landed>::new());
 }
 
+/// What the ledger says of task [`TASK`]'s last note at `now`: its words and how long ago.
+fn last_note(ledger: &Ledger, now: SystemTime) -> Option<(Option<String>, Duration)> {
+    ledger
+        .last_note(TASK)
+        .map(|note| (note.text.clone(), note.ago(now)))
+}
+
+/// A note as a dispatch record keeps it, sent at `at`.
+fn on_its_record(text: Option<&str>, at: SystemTime) -> crate::dispatchrecord::LastNote {
+    crate::dispatchrecord::LastNote {
+        at: at.into(),
+        text: text.map(str::to_owned),
+    }
+}
+
 #[test]
 fn a_task_s_last_note_is_kept_latest_only_with_when_it_was_sent() {
     let mut ledger = Ledger::default();
     let at = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
-    assert_eq!(ledger.last_note(TASK, at), None);
+    assert_eq!(last_note(&ledger, at), None);
     ledger.noted(TASK, "ticket 1 merged", at);
     ledger.noted(TASK, "ticket 2 in review", at + Duration::from_secs(30));
     assert_eq!(
-        ledger.last_note(TASK, at + Duration::from_secs(270)),
-        Some(("ticket 2 in review".to_owned(), Duration::from_secs(240)))
+        last_note(&ledger, at + Duration::from_secs(270)),
+        Some((
+            Some("ticket 2 in review".to_owned()),
+            Duration::from_secs(240)
+        ))
+    );
+}
+
+#[test]
+fn a_task_s_last_note_on_its_record_is_taken_back_across_a_restart_never_over_a_later_one() {
+    // #3956: the ledger is in memory; a restart begins it empty, and the record's note is read.
+    let at = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
+    let mut restarted = Ledger::default();
+    restarted.noted_before(TASK, on_its_record(Some("ticket 2 in review"), at));
+    assert_eq!(
+        last_note(&restarted, at + Duration::from_secs(60)),
+        Some((
+            Some("ticket 2 in review".to_owned()),
+            Duration::from_secs(60)
+        ))
+    );
+    // Its words not kept on the record: the time alone.
+    let mut unkept = Ledger::default();
+    unkept.noted_before(TASK, on_its_record(None, at));
+    assert_eq!(
+        last_note(&unkept, at + Duration::from_secs(60)),
+        Some((None, Duration::from_secs(60)))
+    );
+    // A note heard by this app since is newer, and stays.
+    let mut heard = Ledger::default();
+    heard.noted(TASK, "ticket 3 merged", at + Duration::from_secs(30));
+    heard.noted_before(TASK, on_its_record(Some("ticket 2 in review"), at));
+    assert_eq!(
+        last_note(&heard, at + Duration::from_secs(60)),
+        Some((Some("ticket 3 merged".to_owned()), Duration::from_secs(30)))
     );
 }
 
@@ -994,6 +1042,12 @@ fn a_long_running_task_is_listed_as_that_with_its_last_note_quoted() {
     let listed = list_text(&[row(None, None)]);
     assert!(
         listed.contains(" · running · long-running, no note yet · "),
+        "{listed}"
+    );
+    // A note read back from its record after a restart whose words were not kept (#3956).
+    let listed = list_text(&[row(None, Some(240))]);
+    assert!(
+        listed.contains(" · running · long-running, last note 4m ago (its words were not kept) · "),
         "{listed}"
     );
     // Cut to what a row shows.
