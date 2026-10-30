@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793343177260,
+  "lastUpdate": 1793345004865,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30996,6 +30996,48 @@ window.BENCHMARK_DATA = {
             "value": 103.954696,
             "unit": "ms",
             "extra": "median of 5 runs: 102.770, 103.552, 103.955, 104.182, 104.633 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "fb41afe78d453c9e2f929d970e2331804a6f5f8b",
+          "message": "tools/land: runs held for approval are named and left to the operator, never rerun (#3991) (#3995)\n\n* tools/land: a test that a run held for approval is named and never rerun (#3991)\n\nRed first: land.mjs reran every run of the head waiting on approval\nbefore reading the checks. The --watch wait test no longer leans on a\nrerun.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* tools/land: runs held for approval are named and left to the operator, never rerun (#3991)\n\nStep 4 now stops when any run of the head waits on approval: it names\neach by its name, id and link, says the operator approves them, and\nexits 4 before it reads a check, marks a draft ready or enqueues. A run\nis held so a person approves it; rerunning it skipped that person on\n#3659 and #3871. The header and the landing-a-pr skill say the same.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T06:31:24Z",
+          "tree_id": "e2da872d934ccb6c5c97bcbacde157cb336ad140",
+          "url": "https://github.com/purlis/purlis/commit/fb41afe78d453c9e2f929d970e2331804a6f5f8b"
+        },
+        "date": 1793345001306,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.546101,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.526, 0.535, 0.546, 0.550, 0.565 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3956045,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.300, 16.320, 16.396, 16.398, 16.431 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8959995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.109, 101.433, 101.896, 102.111, 102.575 ms"
           }
         ]
       }
