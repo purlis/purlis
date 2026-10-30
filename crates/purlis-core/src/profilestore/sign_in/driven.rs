@@ -110,6 +110,9 @@ struct Words {
     pages: &'static [(&'static str, &'static str)],
     /// What comes right before its device code on a line, for a login that shows one.
     code_after: &'static str,
+    /// The shape its vendor's codes have, in groups of letters and digits: `[4, 4]` is
+    /// `WDJB-MJHT`. No other code is shown, so a login cannot pass words off as one.
+    code_groups: &'static [usize],
     /// The line of its one question that shows the choice purlis takes already chosen: it is
     /// answered with Return, once, and no other question is.
     chosen: &'static str,
@@ -129,6 +132,7 @@ const NO_WORDS: Words = Words {
     fails: "",
     pages: &[],
     code_after: "",
+    code_groups: &[],
     chosen: "",
     signed_in: "",
     stopped: "",
@@ -151,7 +155,9 @@ const CLAUDE: Words = Words {
     ..NO_WORDS
 };
 
-/// opencode 1.18.33's Copilot `auth login`, as it ran with its input a pipe: `Select GitHub
+/// opencode 1.18.33's Copilot `auth login`, as it ran with its input a pipe (its ending words are
+/// its own code's, read from the binary: its spinner stops on `Login successful`, or on `Failed to
+/// authorize`): `Select GitHub
 /// deployment type`, taken as it stands on GitHub.com (GitHub Enterprise is signed in in a
 /// terminal), then `Go to: ` before GitHub's device page and `Enter code: ` before the code. It
 /// exits 0 whether GitHub accepted the code or not, so its spinner's last words say which.
@@ -162,6 +168,8 @@ const OPENCODE_COPILOT: Words = Words {
     fails: "Error: ",
     pages: &[("github.com", "/login/device")],
     code_after: "Enter code: ",
+    // GitHub's own: four and four, upper case, by its device flow's documentation.
+    code_groups: &[4, 4],
     chosen: "\u{25cf} GitHub.com",
     signed_in: "Login successful",
     stopped: "Failed to authorize",
@@ -259,7 +267,10 @@ impl Driven {
             }
         }
         // A prompt ends with no line break.
-        if self.at == At::Opened && plain(&self.partial[at]).contains(self.words.asks_code) {
+        if self.at == At::Opened
+            && !self.words.asks_code.is_empty()
+            && plain(&self.partial[at]).contains(self.words.asks_code)
+        {
             self.partial[at].clear();
             self.at = At::Asking;
             said.push(Event::AskCode);
@@ -289,7 +300,7 @@ impl Driven {
             return;
         }
         if let Some(why) = line.strip_prefix(self.words.fails) {
-            self.failed = Some(cut(why.trim(), MOST_LINE));
+            self.failed = Some(format!("the runner said: {}", cut(why.trim(), MOST_LINE)));
             return;
         }
         let words = self.words;
@@ -297,7 +308,7 @@ impl Driven {
             self.said_signed_in = true;
         }
         if !words.stopped.is_empty() && line.ends_with(words.stopped) {
-            self.failed = Some(words.stopped.to_owned());
+            self.failed = Some(format!("the runner said: {}", words.stopped));
         }
         match self.at {
             At::Starting => {
@@ -310,8 +321,11 @@ impl Driven {
                     self.device_code(code, line, said);
                 } else if let Some(address) = self.page_on(line) {
                     match self.page(address) {
+                        // Its page as purlis spells it, from its own host and path alone: nothing the
+                        // login wrote after them is opened.
                         Some(url) if !words.code_after.is_empty() => {
-                            self.device_page.get_or_insert(url);
+                            let page = url.split(['?', '#']).next().unwrap_or_default().to_owned();
+                            self.device_page.get_or_insert(page);
                         }
                         Some(url) => {
                             self.at = At::Opened;
@@ -321,7 +335,9 @@ impl Driven {
                     }
                 }
             }
-            At::Opened if line.contains(self.words.asks_code) => {
+            At::Opened
+                if !self.words.asks_code.is_empty() && line.contains(self.words.asks_code) =>
+            {
                 self.at = At::Asking;
                 said.push(Event::AskCode);
             }
@@ -348,7 +364,7 @@ impl Driven {
     /// The device code the login printed, with its page, where it is one a window may show.
     fn device_code(&mut self, code: String, line: &str, said: &mut Vec<Event>) {
         match self.device_page.take() {
-            Some(url) if crate::forge::device::showable(&code) => {
+            Some(url) if shaped(&code, self.words.code_groups) => {
                 self.at = At::Device;
                 said.push(Event::DeviceCode { url, code });
             }
@@ -499,6 +515,19 @@ fn cut(line: &str, most: usize) -> String {
 /// an embedding or isolate, or a zero-width character.
 fn unseen(c: char) -> bool {
     matches!(c, '\u{061c}' | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{2069}' | '\u{feff}')
+}
+
+/// Whether `code` has the shape `groups` say: groups of upper-case letters and digits of those
+/// lengths, joined by `-`.
+fn shaped(code: &str, groups: &[usize]) -> bool {
+    let parts: Vec<&str> = code.split('-').collect();
+    parts.len() == groups.len()
+        && parts.iter().zip(groups).all(|(part, &len)| {
+            part.len() == len
+                && part
+                    .bytes()
+                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+        })
 }
 
 /// What is left on `line` where a spinner redrew it with no line break: what it last drew, in

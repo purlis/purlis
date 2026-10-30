@@ -13,10 +13,15 @@ import { SettingActions } from "./components";
 /** Where a sign-in is, as the strip draws it: starting, one of the core's steps, or refused. */
 export type StripStep = { at: "starting" } | PoolSignInStep | { at: "not-started"; why: string };
 
-/** **The step the strip is on, in words** (spec #4023 story 12): "Step 2 of 3: …". */
-export function stepSaid(step: StripStep): string | null {
+/**
+ * **The step the strip is on, in words** (spec #4023 story 12): "Step 2 of 3: …". A device code's
+ * sign-in (`device`) opens no page as it starts.
+ */
+export function stepSaid(step: StripStep, device = false): string | null {
   switch (step.at) {
     case "starting":
+      if (device) return "Step 1 of 3: Starting the sign-in on the runner";
+      return "Step 1 of 3: Opening the sign-in page in your browser";
     case "open":
       return "Step 1 of 3: Opening the sign-in page in your browser";
     case "device":
@@ -187,7 +192,9 @@ export type SignInStripProps = {
 /** **The strip at one step**, as {@link PoolSignIn} drives it: its head, its body, its foot. */
 export function SignInStrip(props: SignInStripProps) {
   const { pool, profile, harness, provider, step, onEnd, onTerminal } = props;
-  const now = stepSaid(step);
+  // opencode's Copilot plan signs in by a device code (#4045).
+  const device = provider === "github-copilot";
+  const now = stepSaid(step, device);
   const over = ["signed-in", "could-not-follow", "failed", "cancelled", "not-started"].includes(
     step.at,
   );
@@ -300,6 +307,8 @@ function StepBody({
   setCode,
   onPaste,
   page,
+  provider,
+  onTerminal,
 }: SignInStripProps & { who: string }) {
   const again = page !== undefined && (
     <Button size="sm" variant="ghost" onPress={() => void openUrl(page).catch(() => undefined)}>
@@ -311,11 +320,21 @@ function StepBody({
     case "open":
       return (
         <p className="pending" aria-busy="true">
-          Starting the sign-in on {pool}&apos;s runner, then opening its page in your browser…
+          {provider === "github-copilot"
+            ? `Starting the sign-in on ${pool}'s runner…`
+            : `Starting the sign-in on ${pool}'s runner, then opening its page in your browser…`}
         </p>
       );
     case "device":
-      return <DeviceCode url={step.url} code={step.code} who={who} pool={pool} />;
+      return (
+        <DeviceCode
+          url={step.url}
+          code={step.code}
+          who={who}
+          pool={pool}
+          terminal={onTerminal !== undefined}
+        />
+      );
     case "code":
     case "refused":
       return (
@@ -374,11 +393,14 @@ function DeviceCode({
   code,
   who,
   pool,
+  terminal,
 }: {
   url: string;
   code: string;
   who: string;
   pool: string;
+  /** Whether Open in terminal is there, for GitHub Enterprise. */
+  terminal: boolean;
 }) {
   const [copied, setCopied] = useState<boolean>();
   const copy = () => {
@@ -394,7 +416,11 @@ function DeviceCode({
   };
   return (
     <>
-      <p>Enter this code on the page, then approve it there.</p>
+      <p>
+        Enter this code on GitHub&apos;s page. GitHub should ask only to read your profile, for
+        opencode&apos;s Copilot sign-in. If it names another app, or asks for your repositories or
+        organisations, cancel there and here.
+      </p>
       <Card as="p" variant="ask" className="forge-device-code">
         <strong>
           <code aria-label="The code to enter on the page">{code}</code>
@@ -413,7 +439,7 @@ function DeviceCode({
       )}
       <p className="ui-setting-help">
         Or go to <code>{url}</code> on any device. This signs in {who} on {pool}&apos;s runner only,
-        on GitHub.com: for GitHub Enterprise, use Open in terminal.
+        on GitHub.com{terminal ? ": for GitHub Enterprise, use Open in terminal." : "."}
       </p>
       <p className="pending" aria-busy="true">
         Waiting for you to approve it there…

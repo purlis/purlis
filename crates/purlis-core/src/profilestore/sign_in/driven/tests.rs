@@ -189,7 +189,7 @@ fn a_failed_login_says_why_in_the_harnesss_words() {
     assert_eq!(
         driven.ended(Some(1)),
         [Event::Failed {
-            why: "the code has expired".to_owned()
+            why: "the runner said: the code has expired".to_owned()
         }]
     );
 }
@@ -242,7 +242,7 @@ fn what_the_runner_says_carries_no_unseen_characters() {
     assert_eq!(
         driven.ended(Some(1)),
         [Event::Failed {
-            why: "evil text".to_owned()
+            why: "the runner said: evil text".to_owned()
         }]
     );
 }
@@ -371,6 +371,11 @@ fn a_device_code_is_shown_only_for_githubs_own_page() {
         ("https://github.com/login/device/other", "WDJB-MJHT"),
         ("https://github.com/login/device", "not a code"),
         ("https://github.com/login/device", "WDJB<b>MJHT"),
+        (
+            "https://github.com/login/device",
+            "CALL-SUPPORT-18005550199",
+        ),
+        ("https://github.com/login/device", "wdjb-mjht"),
     ] {
         let mut driven = copilot();
         let said = driven.read(&format!(
@@ -382,6 +387,16 @@ fn a_device_code_is_shown_only_for_githubs_own_page() {
         );
         assert!(driven.is_over());
     }
+}
+
+/// **The page opened is GitHub's, as purlis spells it**: nothing after its path is kept.
+#[test]
+fn a_device_page_is_opened_without_what_follows_its_path() {
+    let mut driven = copilot();
+    let said = driven.read(
+        "Go to: https://github.com/login/device?return_to=https://evil.example\nEnter code: WDJB-MJHT\n",
+    );
+    assert_eq!(said, [device_code()]);
 }
 
 /// **A code with no page is not followed**: nothing is shown, and the wait runs out.
@@ -415,7 +430,7 @@ fn a_copilot_login_that_failed_with_status_0_is_not_signed_in() {
     assert_eq!(
         driven.ended(Some(0)),
         [Event::Failed {
-            why: "Failed to authorize".to_owned()
+            why: "the runner said: Failed to authorize".to_owned()
         }]
     );
     assert!(driven.is_over());
@@ -447,7 +462,7 @@ fn a_copilot_login_that_could_not_reach_github_says_so() {
     assert_eq!(
         driven.ended(Some(1)),
         [Event::Failed {
-            why: "Failed to authorize: Unable to connect.".to_owned()
+            why: "the runner said: Failed to authorize: Unable to connect.".to_owned()
         }]
     );
 }

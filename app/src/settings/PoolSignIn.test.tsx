@@ -232,6 +232,10 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     expect(calls("pool_sign_in_start")).toEqual([
       { pool: "builds", name: "open", provider: "github-copilot" },
     ]);
+    // No page is said to open as it starts: the code comes first.
+    expect(
+      within(opened).getByText("Step 1 of 3: Starting the sign-in on the runner"),
+    ).toBeVisible();
 
     const page = "https://github.com/login/device";
     says({ at: "device", url: page, code: "WDJB-MJHT" });
@@ -239,9 +243,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     expect(await within(opened).findByLabelText("The code to enter on the page")).toHaveTextContent(
       "WDJB-MJHT",
     );
-    expect(within(opened).getByRole("status")).toHaveTextContent(
-      "Step 2 of 3: Enter the code on the page",
-    );
+    expect(within(opened).getByText("Step 2 of 3: Enter the code on the page")).toBeVisible();
     expect(within(opened).getByText(page)).toBeVisible();
     // The code comes first: no browser opens until it is asked for.
     expect(calls("plugin:opener|open_url")).toEqual([]);
@@ -256,6 +258,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     says({ at: "checking" });
     says({ at: "signed-in" });
     expect(await within(opened).findByText("Signed in")).toBeInTheDocument();
+    Reflect.deleteProperty(navigator, "clipboard");
   });
 
   it("names the command that does the same in a terminal, with its plan (#4046)", async () => {

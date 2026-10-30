@@ -175,20 +175,27 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
                   Open a project to sign it in from its window.
                 </span>
               ) : row.plans.length > 0 ? (
-                row.plans
-                  .filter((one) => plane !== undefined || drivenPlan(row, one.id))
-                  .map((one) => (
-                    <Button
-                      key={one.id}
-                      aria-label={`Sign ${row.name} in to ${one.title} on pool ${pool}`}
-                      onPress={() =>
-                        drivenPlan(row, one.id) ? open(row, one.id) : signIn(row, one.id)
-                      }
-                      className="ui-setting-reset"
-                    >
-                      {`Sign in to ${one.title}`}
-                    </Button>
-                  ))
+                <>
+                  {row.plans
+                    .filter((one) => plane !== undefined || drivenPlan(row, one.id))
+                    .map((one) => (
+                      <Button
+                        key={one.id}
+                        aria-label={`Sign ${row.name} in to ${one.title} on pool ${pool}`}
+                        onPress={() =>
+                          drivenPlan(row, one.id) ? open(row, one.id) : signIn(row, one.id)
+                        }
+                        className="ui-setting-reset"
+                      >
+                        {`Sign in to ${one.title}`}
+                      </Button>
+                    ))}
+                  {plane === undefined && (
+                    <span className="ui-setting-help">
+                      Open a project to sign its other plans in from its window.
+                    </span>
+                  )}
+                </>
               ) : (
                 <Button
                   aria-label={`Sign ${row.name} in on pool ${pool}`}
