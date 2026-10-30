@@ -303,6 +303,44 @@ describe("a popover hung from what it is about (#3648)", () => {
     expect(placed()).toBe(`${parseFloat(first) + 40}px`);
   });
 
+  // #4026: WebKit on a loaded runner can run the next frame before React has drawn what the last
+  // one asked for. The frame that found the chip at rest then asked for no nudge, the nudge React
+  // had last drawn, so React drew nothing and the card stayed where the chip had been.
+  it("is placed where what it hangs from went though nothing is drawn between its frames", async () => {
+    let chipAt = 100;
+    laidOut(() => chipAt);
+    render(<Hung />);
+    const placed = () =>
+      (
+        screen
+          .getByRole("region", { name: "Notices for gamma" })
+          .closest('[data-scope="popover"][data-part="root"]') as HTMLElement
+      ).style.left;
+    await aFrame();
+    const first = placed();
+    let frames = new Map<number, FrameRequestCallback>();
+    let asked = 0;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.set(++asked, callback);
+      return asked;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => frames.delete(id));
+    const frame = () => {
+      const now = frames;
+      frames = new Map();
+      for (const callback of now.values()) callback(performance.now());
+    };
+    // A scroll set at once, and its end; then its frames, one straight after another, with
+    // nothing drawn between them: one `act`, which draws only as it ends.
+    chipAt = 140;
+    act(() => {
+      fireEvent.scroll(screen.getByTestId("clip"));
+      fireEvent(screen.getByTestId("clip"), new Event("scrollend"));
+      for (let at = 0; at < 4; at += 1) frame();
+    });
+    expect(placed()).toBe(`${parseFloat(first) + 40}px`);
+  });
+
   it("stays up when a scroll ends with what it hangs from in sight", async () => {
     let chipAt = -80;
     laidOut(() => chipAt);
