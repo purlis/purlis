@@ -32,7 +32,7 @@
 //! browser's edge (#2020, ids 166 to 168), 1.48's runner a relayed link reached (#3417, id
 //! 170), 1.49's browser started with its pool's own frame limits over a link (#3297, id 171),
 //! 1.50's profile kept on its runner with its settings (#3448, id 172), 1.51's clones a host
-//! holds in a workspace (#3811, id 173), and 1.52's profile whose harness its runner is still
+//! holds in a workspace (#3811, id 173), and 1.53's profile whose harness its runner is still
 //! fetching (#4008, the reply to 172).
 //! 1.35 adds no frame of the
 //! control lane: its origin frame is a browser view's bytes, held by

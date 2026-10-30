@@ -283,11 +283,7 @@ describe("You › This machine › Pools", () => {
       name: "Sign your profiles in on pool builds",
     });
     const list = await within(signIn).findByRole("list", { name: "Profiles on pool builds" });
-    expect(
-      within(list).getByText(
-        "Fetching Claude Code on pool builds. Whether it is signed in shows once it is fetched.",
-      ),
-    ).toBeInTheDocument();
+    expect(within(list).getByText("Fetching Claude Code for this runner…")).toBeInTheDocument();
     expect(
       await within(list).findByText("Signed in on pool builds.", {}, { timeout: 6000 }),
     ).toBeInTheDocument();

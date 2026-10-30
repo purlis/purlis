@@ -325,35 +325,55 @@ pub(crate) fn defaults(
     }
 }
 
-/// **What of a runner's home holds its profiles** (#4011, ruled 2026-10-30): each path, relative
-/// to the home, that a Docker pool's new runner takes from the runner it replaces when the pool
-/// follows an update, so a profile signed in there stays signed in. The store's record of them,
-/// under each spelling of the config home; the folders purlis made them in, under each spelling
-/// of the data home; and each harness's own folder a profile is adopted at ([`defaults`]), with
-/// Claude Code's `~/.claude.json` beside its folder. Nothing else of the home: not the runner's
-/// device id, link key or peers, its harness installs, its projects or its browsers.
-pub fn in_a_runner_home() -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    for config in crate::names::CONFIG_HOME.spellings() {
-        paths.push(Path::new(".config").join(config).join(FILE));
-    }
+/// **The sign-in files a made profile's harness keeps under its folder** (#4011): Claude Code's
+/// `.credentials.json` and Codex's `auth.json` in the folder its config variable names, and
+/// opencode's `opencode/auth.json` in its data folder. Facts of each harness, as
+/// [`sign_in`]'s statuses read them. Nothing else of a profile is a sign-in.
+pub const SIGN_IN_FILES: [&str; 3] = [
+    "config/.credentials.json",
+    "config/auth.json",
+    "data/opencode/auth.json",
+];
+
+/// **The folder under the data home a runner keeps the sign-ins carried to it in** (#4011),
+/// `<data>/carried/<profile>/`, until it keeps that profile for its desktop and takes them in.
+pub const CARRIED: &str = "carried";
+
+/// **What a Docker pool's new runner takes of the runner it replaces** (#4011, ruled
+/// 2026-10-30): its profiles' sign-ins, and nothing else, each as `<from>=<to>`, paths under
+/// the two homes. A made profile's sign-in files ([`SIGN_IN_FILES`], `*` its name, under either
+/// spelling of the data home) go to [`CARRIED`] under the new data home, which the new runner
+/// takes in as it keeps the profile again; each harness's own sign-in file in its default folder
+/// (`~/.claude/.credentials.json`, `~/.codex/auth.json`, opencode's `auth.json`) goes to the same
+/// place. No setting, hook, plugin, instruction or transcript of a harness, and nothing of
+/// purlis's own: not the profiles' records, the runner's device id, link key or peers, its
+/// harness installs, its projects or its browsers.
+pub fn carried_in_a_runner_home() -> Vec<String> {
+    let new_data = Path::new(".local/share").join(
+        crate::names::DATA_HOME
+            .spellings()
+            .next()
+            .unwrap_or("purlis"),
+    );
+    let mut pairs = Vec::new();
     for data in crate::names::DATA_HOME.spellings() {
-        paths.push(Path::new(".local/share").join(data).join(made::DIR));
-    }
-    for kind in crate::profiles::KINDS {
-        let Some((config, data, own)) = defaults(kind.word, Path::new("")) else {
-            continue;
-        };
-        for folder in std::iter::once(config).chain(data) {
-            paths.push(if own.is_empty() {
-                folder
-            } else {
-                folder.join(own)
-            });
+        let old_data = Path::new(".local/share").join(data);
+        for file in SIGN_IN_FILES {
+            pairs.push(format!(
+                "{}={}",
+                old_data.join(made::DIR).join("*").join(file).display(),
+                new_data.join(CARRIED).join("*").join(file).display()
+            ));
         }
     }
-    paths.push(PathBuf::from(".claude.json"));
-    paths
+    for own in [
+        ".claude/.credentials.json",
+        ".codex/auth.json",
+        ".local/share/opencode/auth.json",
+    ] {
+        pairs.push(format!("{own}={own}"));
+    }
+    pairs
 }
 
 /// What this device is called in a profile's title.

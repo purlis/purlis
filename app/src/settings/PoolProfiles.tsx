@@ -16,7 +16,7 @@ export function standingOnPool(pool: string, row: PoolProfileRow): string {
     case "signed-out":
       return `Not signed in on pool ${pool}: a chat on it does not start there until it is.`;
     case "fetching":
-      return `Fetching ${row.harness} on pool ${pool}. Whether it is signed in shows once it is fetched.`;
+      return `Fetching ${row.harness} for this runner…`;
     default:
       return `${row.harness} cannot say whether it is signed in on pool ${pool}.`;
   }

@@ -269,6 +269,8 @@ pub fn keep(
                     &mut made_folder,
                 )?;
                 store.profiles.retain(|p| p.name != kept.name);
+                // The sign-ins its last runner carried to this one, when its pool moved (#4011).
+                super::made::take_carried(homes, &kept.name);
                 made.record
             }
         };
@@ -324,15 +326,19 @@ fn is_ours(
 /// look may have started, it is said to be fetching (#4008), so the desktop asks again once the
 /// fetch has ended.
 pub fn standing(record: &MachineProfile, look: &dyn Look) -> Standing {
-    let said = match sign_in::asked_of(record, look) {
+    let asked = || match sign_in::asked_of(record, look) {
         Some(profile) => {
             sign_in::forget(&profile);
             sign_in::standing_remembered(&profile, look)
         }
         None => Standing::CannotTell,
     };
-    match said {
+    let installed = look.pinned_program(record).is_some();
+    match asked() {
         Standing::CannotTell if look.fetching(record) => Standing::Fetching,
+        // A fetch that ended while it was asked is asked of once more, so the row is not left
+        // saying the harness cannot tell.
+        Standing::CannotTell if !installed && look.pinned_program(record).is_some() => asked(),
         said => said,
     }
 }

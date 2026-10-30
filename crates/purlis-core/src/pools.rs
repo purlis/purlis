@@ -16,7 +16,7 @@
 //!
 //! - **After an update, a pool of purlis's own image follows the desktop's version, side by
 //!   side** ([`follow`], #2749, ruled 2026-10-20): a runner of the image of the desktop's
-//!   version is made beside the pool's, given the old runner's profiles (#4011), checked and
+//!   version is made beside the pool's, given the old runner's sign-ins (#4011), checked and
 //!   paired, kept as the pool's runner, and the one it replaces is kept draining: it keeps its
 //!   chats and starts no new one, and is removed once its last chat has ended ([`drain`]). A
 //!   pool of a team's own image is never moved.
@@ -215,9 +215,10 @@ pub fn workspaces_on_pools(
 /// **Moves the pool `name` to `image`, the runner image of the desktop's version** (#2749): a
 /// runner of `image` is made beside the pool's, held to the pool's limits, checked, paired with
 /// `desktop` and kept as the pool's runner, and every runner of the pool before it is kept
-/// draining ([`runners::succeed_locked`]). Before it is paired, the profiles of the runner it
-/// replaces are copied to its home on the Docker host ([`Docker::copy_profiles`], #4011), so a
-/// profile signed in on the pool stays signed in. The runner kept, or `None` where the pool is of
+/// draining ([`runners::succeed_locked`]). Before it is paired, the sign-ins of the runner it
+/// replaces are carried to its home on the Docker host ([`Docker::copy_profiles`], #4011), so a
+/// profile signed in on the pool stays signed in; one that cannot be carried is said in the log
+/// and signed in again. The runner kept, or `None` where the pool is of
 /// `image` already.
 ///
 /// Refused, with nothing changed, for a pool of a team's own image, which is never moved, and
@@ -260,22 +261,35 @@ pub fn follow(
         })
         .and_then(|runner| docker.make_for(&runner, Some(&runners::desktop_label(config_root))))
         .map_err(|why| Refused::Other(why.0))?;
-    // Its profiles come before it is paired, so it never serves without them (#4011).
-    let copied = match &replaced {
-        Some(replaced) => docker.copy_profiles(&replaced.made, &made).map_err(|why| {
-            Refused::Other(format!(
-                "the profiles of runner {} could not be copied to the new runner: {why}",
-                replaced.name()
-            ))
-        }),
-        None => Ok(()),
-    };
-    let kept = copied
-        .and_then(|()| {
-            docker
-                .pair(&made, desktop)
-                .map_err(|why| Refused::Other(why.0))
-        })
+    // Its profiles' sign-ins come before it is paired, so it never serves without them (#4011).
+    // What cannot be carried is said, and the move goes on: that profile is signed in again on
+    // the pool, as before any was carried, and nothing in the old home holds the pool back.
+    match &replaced {
+        Some(replaced) if replaced.made.runner.user() != made.runner.user() => {
+            tracing::warn!(
+                "purlis: runner {} runs as {} and the new runner as {}, so its profiles' \
+                 sign-ins were not carried to it; sign them in again on pool {name}",
+                replaced.name(),
+                replaced.made.runner.user().spelled(),
+                made.runner.user().spelled()
+            );
+        }
+        Some(replaced) => {
+            if let Err(why) =
+                docker.copy_profiles(&replaced.made, &made, &runners::desktop_label(config_root))
+            {
+                tracing::warn!(
+                    "purlis: the sign-ins of runner {} were not carried to the new runner of \
+                     pool {name}, so its profiles are signed in again there: {why}",
+                    replaced.name()
+                );
+            }
+        }
+        None => {}
+    }
+    let kept = docker
+        .pair(&made, desktop)
+        .map_err(|why| Refused::Other(why.0))
         .and_then(|answered| {
             runners::succeed_locked(config_root, name, &made, &answered, desktop, &locked)
         });

@@ -2595,72 +2595,76 @@ fn the_disk_volumes_hold_is_read_by_system_df_alone_starting_nothing() {
     assert_eq!(fake.file("log").trim(), "system df --verbose");
 }
 
-/// **What a follow copies of the old runner's home is its profiles and nothing else** (#4011):
-/// the store's record of them, the folders purlis made them in and each harness's own folder,
-/// their modes kept, the new home's own files left as they are. Not the runner's identity, its
-/// harness installs or its projects. Run by the shell, as in the new runner's image.
+/// Runs [`COPY_PROFILES`] by the shell, as in the new runner's image, from the home `from` to
+/// the home `to`: whether it ended well.
 #[cfg(unix)]
-#[test]
-fn a_follow_copies_the_profiles_of_a_home_and_nothing_else() {
-    use std::os::unix::fs::PermissionsExt;
-    let from = tempfile::tempdir().unwrap();
-    let to = tempfile::tempdir().unwrap();
-    let put = |root: &std::path::Path, path: &str, text: &str, mode: u32| {
-        let path = root.join(path);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, text).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
-    };
-    put(
-        from.path(),
-        ".config/purlis/profiles.json",
-        "{\"version\":1}",
-        0o600,
-    );
-    put(from.path(), ".config/purlis/peers.json", "old peers", 0o600);
-    put(
-        from.path(),
-        ".local/share/purlis/profiles/work/config/.credentials.json",
-        "work's sign-in",
-        0o600,
-    );
-    put(
-        from.path(),
-        ".local/share/purlis/harnesses/claude/2.1.0/claude",
-        "",
-        0o755,
-    );
-    put(
-        from.path(),
-        ".local/share/purlis/projects/p1/README",
-        "",
-        0o644,
-    );
-    put(
-        from.path(),
-        ".claude/.credentials.json",
-        "claude's sign-in",
-        0o600,
-    );
-    put(from.path(), ".claude.json", "{\"oauthAccount\":{}}", 0o600);
-    put(from.path(), ".config/opencode/opencode.json", "{}", 0o600);
-    put(
-        from.path(),
-        ".local/share/opencode/auth.json",
-        "opencode's sign-in",
-        0o600,
-    );
-    put(to.path(), ".config/purlis/peers.json", "new peers", 0o600);
-
-    let ran = std::process::Command::new("/bin/sh")
+fn carried(from: &std::path::Path, to: &std::path::Path) -> std::process::Output {
+    std::process::Command::new("/bin/sh")
         .arg("-c")
         .arg(COPY_PROFILES)
         .arg("sh")
-        .arg(from.path())
-        .arg(to.path())
-        .args(crate::profilestore::in_a_runner_home())
+        .arg(from)
+        .arg(to)
+        .args(crate::profilestore::carried_in_a_runner_home())
         .output()
-        .unwrap();
+        .unwrap()
+}
+
+/// **A follow carries the old runner's sign-ins and nothing else** (#4011): each made profile's
+/// sign-in file to `carried/<profile>/` under the new data home, and each harness's own sign-in
+/// file to its place, with its mode. Not a setting, hook or instruction of a harness, not the
+/// profiles' records, the runner's identity, its harness installs or its projects, and never a
+/// link. What the new home has of its own stays.
+#[cfg(unix)]
+#[test]
+fn a_follow_carries_the_sign_ins_of_a_home_and_nothing_else() {
+    use std::os::unix::fs::PermissionsExt;
+    let from = tempfile::tempdir().unwrap();
+    let to = tempfile::tempdir().unwrap();
+    let put = |root: &std::path::Path, path: &str, text: &str| {
+        let path = root.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, text).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    };
+    let old = from.path();
+    for (path, text) in [
+        (
+            ".local/share/purlis/profiles/work/config/.credentials.json",
+            "work's sign-in",
+        ),
+        (
+            ".local/share/purlis/profiles/work/config/settings.json",
+            "work's hooks",
+        ),
+        (
+            ".local/share/purlis/profiles/gpt/config/auth.json",
+            "gpt's sign-in",
+        ),
+        (
+            ".local/share/purlis/profiles/oc/data/opencode/auth.json",
+            "oc's sign-in",
+        ),
+        (".local/share/purlis/harnesses/claude/2.1.0/claude", ""),
+        (".config/purlis/profiles.json", "{}"),
+        (".config/purlis/peers.json", "old peers"),
+        (".claude/.credentials.json", "claude's sign-in"),
+        (".claude/settings.json", "claude's hooks"),
+        (".claude.json", "{}"),
+        (".codex/auth.json", "codex's sign-in"),
+        (".config/opencode/opencode.json", "{}"),
+    ] {
+        put(old, path, text);
+    }
+    std::fs::create_dir_all(old.join(".local/share/opencode")).unwrap();
+    std::os::unix::fs::symlink(
+        old.join(".config/purlis/peers.json"),
+        old.join(".local/share/opencode/auth.json"),
+    )
+    .unwrap();
+    put(to.path(), ".codex/auth.json", "the new runner's own");
+
+    let ran = carried(old, to.path());
     assert!(
         ran.status.success(),
         "{}",
@@ -2668,71 +2672,85 @@ fn a_follow_copies_the_profiles_of_a_home_and_nothing_else() {
     );
 
     let read = |path: &str| std::fs::read_to_string(to.path().join(path)).ok();
-    let mode = |path: &str| {
-        std::fs::metadata(to.path().join(path))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o777
-    };
+    let carried_to = ".local/share/purlis/carried";
     assert_eq!(
-        read(".config/purlis/profiles.json").as_deref(),
-        Some("{\"version\":1}")
-    );
-    assert_eq!(
-        read(".local/share/purlis/profiles/work/config/.credentials.json").as_deref(),
+        read(&format!("{carried_to}/work/config/.credentials.json")).as_deref(),
         Some("work's sign-in")
     );
     assert_eq!(
-        mode(".local/share/purlis/profiles/work/config/.credentials.json"),
+        std::fs::metadata(
+            to.path()
+                .join(format!("{carried_to}/work/config/.credentials.json"))
+        )
+        .unwrap()
+        .permissions()
+        .mode()
+            & 0o777,
         0o600
+    );
+    assert_eq!(
+        read(&format!("{carried_to}/gpt/config/auth.json")).as_deref(),
+        Some("gpt's sign-in")
+    );
+    assert_eq!(
+        read(&format!("{carried_to}/oc/data/opencode/auth.json")).as_deref(),
+        Some("oc's sign-in")
     );
     assert_eq!(
         read(".claude/.credentials.json").as_deref(),
         Some("claude's sign-in")
     );
     assert_eq!(
-        read(".claude.json").as_deref(),
-        Some("{\"oauthAccount\":{}}")
+        read(".codex/auth.json").as_deref(),
+        Some("the new runner's own")
     );
-    assert_eq!(
-        read(".local/share/opencode/auth.json").as_deref(),
-        Some("opencode's sign-in")
-    );
-    assert_eq!(
-        read(".config/opencode/opencode.json").as_deref(),
-        Some("{}")
-    );
-    // What the new runner has of its own stays its own, and nothing else of the home comes.
-    assert_eq!(
-        read(".config/purlis/peers.json").as_deref(),
-        Some("new peers")
-    );
-    assert!(!to.path().join(".local/share/purlis/harnesses").exists());
-    assert!(!to.path().join(".local/share/purlis/projects").exists());
+    for not in [
+        &format!("{carried_to}/work/config/settings.json") as &str,
+        ".local/share/purlis/profiles",
+        ".local/share/purlis/harnesses",
+        ".config/purlis",
+        ".claude/settings.json",
+        ".claude.json",
+        ".config/opencode",
+        ".local/share/opencode/auth.json",
+    ] {
+        assert!(
+            std::fs::symlink_metadata(to.path().join(not)).is_err(),
+            "{not} was carried"
+        );
+    }
     // A folder the copy makes is the runner's user's alone.
-    assert_eq!(mode(".local/share/purlis") & 0o077, 0);
+    let mode = std::fs::metadata(to.path().join(carried_to))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o077, 0, "{mode:o}");
 }
 
-/// A home with no profile in it copies nothing, and does not fail.
+/// A home with no sign-in carries nothing, and a sign-in that cannot be read is passed over: the
+/// copy ends well either way, so it never holds a pool back.
 #[cfg(unix)]
 #[test]
-fn a_home_with_no_profiles_copies_nothing() {
+fn a_home_with_no_sign_in_or_one_unread_carries_nothing_and_ends_well() {
+    use std::os::unix::fs::PermissionsExt;
     let from = tempfile::tempdir().unwrap();
     let to = tempfile::tempdir().unwrap();
-    let ran = std::process::Command::new("/bin/sh")
-        .arg("-c")
-        .arg(COPY_PROFILES)
-        .arg("sh")
-        .arg(from.path())
-        .arg(to.path())
-        .args(crate::profilestore::in_a_runner_home())
-        .output()
-        .unwrap();
+    let ran = carried(from.path(), to.path());
     assert!(
         ran.status.success(),
         "{}",
         String::from_utf8_lossy(&ran.stderr)
     );
     assert_eq!(std::fs::read_dir(to.path()).unwrap().count(), 0);
+
+    let locked = from.path().join(".codex/auth.json");
+    std::fs::create_dir_all(locked.parent().unwrap()).unwrap();
+    std::fs::write(&locked, "codex's sign-in").unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let ran = carried(from.path(), to.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
 }

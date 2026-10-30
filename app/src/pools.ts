@@ -227,6 +227,9 @@ export async function addClusterPool(adding: ClusterPoolAdding): Promise<string 
 /** What a pool's runner keeps of this machine's profiles, as last asked. */
 export type PoolProfiles = PoolProfileRow[] | "asking" | { trouble: string };
 
+/** The pools whose profiles are being asked again quietly. */
+const askingQuietly = new Set<string>();
+
 /** How long a pool's profiles are shown before they are asked again while its runner fetches
  *  a profile's harness (#4008). */
 export const ASK_AGAIN_WHILE_FETCHING_MS = 3000;
@@ -234,8 +237,13 @@ export const ASK_AGAIN_WHILE_FETCHING_MS = 3000;
 /** Asks pool `name`'s runner to keep each of this machine's profiles, and where each stands
  *  there (#2049). Asked `quietly`, the rows shown stay until the answer comes (#4008). */
 export async function askProfiles(name: string, { quietly = false } = {}) {
-  if (!quietly) set((was) => ({ ...was, profiles: { ...was.profiles, [name]: "asking" } }));
-  const said = await caught(commands.poolProfiles(name));
+  // One quiet ask of a pool at a time, however many places show its profiles.
+  if (quietly && askingQuietly.has(name)) return;
+  if (quietly) askingQuietly.add(name);
+  else set((was) => ({ ...was, profiles: { ...was.profiles, [name]: "asking" } }));
+  const said = await caught(commands.poolProfiles(name)).finally(() => {
+    if (quietly) askingQuietly.delete(name);
+  });
   const rows: PoolProfiles =
     said.status === "error"
       ? { trouble: said.error }
