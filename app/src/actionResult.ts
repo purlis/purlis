@@ -161,7 +161,7 @@ export function reposNotCloned(
     words: failed.map((one) => one.said).join(" "),
     ways: [{ label: "Retry", onPress: onRetry, primary: true }],
     settings: signIn
-      ? { label: "Open Accounts", link: { group: "you.accounts" } }
+      ? { label: "Open accounts", link: { group: "you.accounts" } }
       : {
           label: `Open ${workspace}'s repo settings`,
           link: { group: "workspace.repos", workspace },

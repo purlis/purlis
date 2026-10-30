@@ -154,7 +154,7 @@ describe("a workspace's repos cloning, on its chip (#4079)", () => {
       1,
     );
     expect(signIn.settings).toEqual({
-      label: "Open Accounts",
+      label: "Open accounts",
       link: { group: "you.accounts" },
     });
     const other = reposNotCloned("gamma", [{ repo: "api", said: "no" }], press, 1);

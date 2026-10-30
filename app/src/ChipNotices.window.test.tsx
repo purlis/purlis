@@ -943,7 +943,7 @@ describe("a clone's progress on its card (#4079)", () => {
       sign_in: "git.corp.example",
     });
     await waitFor(() => expect(card).toHaveTextContent("Sign in to git.corp.example"));
-    expect(within(card).getByRole("button", { name: "Open Accounts" })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Open accounts" })).toBeInTheDocument();
   });
 });
 
