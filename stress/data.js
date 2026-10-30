@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793228918166,
+  "lastUpdate": 1793389703798,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8366,6 +8366,42 @@ window.BENCHMARK_DATA = {
             "value": 298.6,
             "unit": "MB",
             "extra": "median of 6 samples: 326.7, 341.1, 315.3, 280.6, 281.9, 217.5 MB; window 184.1 MB, session host 114.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c9c82f6f4dac850aeaffea676476eddd11436d52",
+          "message": "Runners: a Claude Code chat runs inside purlis's Linux wrap (#4087)\n\n* Runners: a Claude Code chat runs inside purlis's Linux wrap (#4083)\n\nOn a runner a Claude Code chat runs whole in the wrap, with its own sandbox off. Its config\nfolder is written only where a turn writes, and a real Claude Code is probed in the parity suite.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66D3JW4RPWM32JJYK1WV0Q0\nPurlis-Persona: steward\n\n* Runners: the tests read the wrapped form (#4083)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66D3JW4RPWM32JJYK1WV0Q0\nPurlis-Persona: steward\n\n* Runners: a turn makes a plugin's data folder, and the live probe runs its Bash call (#4083)\n\nClaude Code makes a plugin's data folder before it runs that plugin's hook, measured on the\nparity job. The probe starts in the default mode, so its call stands on the Bash allow alone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66D3JW4RPWM32JJYK1WV0Q0\nPurlis-Persona: steward\n\n* Runners: the live probe runs at the floor and at the full sandbox (#4083)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66D3JW4RPWM32JJYK1WV0Q0\nPurlis-Persona: steward\n\n* Runners: Claude Code's state file where it reads it, ports carried as for Codex (#4083)\n\nOn a profile whose environment names no config folder, Claude Code keeps .claude.json in the\nhome, so purlis readies it there. A wrapped Claude Code chat's host listed without a port is\ncarried as a Codex chat's is. At the floor no link is made where a plugin keeps its data.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66D3JW4RPWM32JJYK1WV0Q0\nPurlis-Persona: steward\n\n* Runners: a Claude Code chat on a runner never starts without the sandbox (#4083)\n\nRuled 2026-10-30: on a runner a Claude Code profile is for wrapped chats\nonly, as a sandboxed Codex chat's is (D-88q). The start refuses it in\nwords and the picker offers no way round it, so what a wrapped chat\nleaves in the profile's folder, the folder it marks trusted among it, is\nread only by other wrapped chats. The caches are readied before the\nadapter's line, so a refused start readies nothing. A person's own\nmachine is unchanged.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66NPJ2S162DY1P55EDHR5QE\nPurlis-Persona: steward\n\n* Runners: a runner whose pairing cannot be read is still a runner (#4083)\n\nFail closed: a Claude Code chat there never starts outside the wrap on a\nprofile wrapped chats wrote. The ADR and changelog say what the start\nrefuses, not what a desktop's picker offers, which asks its own machine.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66NPJ2S162DY1P55EDHR5QE\nPurlis-Persona: steward\n\n* Runners: rustfmt the wrapped-profiles test (#4083)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66NPJ2S162DY1P55EDHR5QE\nPurlis-Persona: steward\n\n* Runners: the caches are readied where they were (#4083)\n\nReadying them before the adapter's line put their refusal before every\nharness's own, which a policy test holds. Since the ruling, only wrapped\nchats read the trust mark, so the order no longer matters for it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M66NPJ2S162DY1P55EDHR5QE\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T16:52:34Z",
+          "tree_id": "c0cd1d88bb51f0ab999d41e48683e9588b50e42b",
+          "url": "https://github.com/purlis/purlis/commit/c9c82f6f4dac850aeaffea676476eddd11436d52"
+        },
+        "date": 1793389699115,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 662,
+            "unit": "MB",
+            "extra": "median of 3 samples: 598, 662, 739 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 466.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 460.5, 464.8, 465.4, 467.7, 469, 631.5 MB; window 256.6 MB, session host 210 MB"
           }
         ]
       }
