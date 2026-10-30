@@ -164,44 +164,108 @@ fn a_codex_chat_is_handed_charter_s_mcp_server_for_that_session_alone() {
     );
 }
 
+/// The `mcp_servers.purlis` table Codex is handed with the operator's approvals `operator`.
+fn server_with(operator: &crate::chattools::CodexApprovals) -> toml::Value {
+    let flag = crate::chattools::codex_flag(std::path::Path::new("/bin/charter"), operator);
+    let value = flag
+        .strip_prefix("mcp_servers.purlis=")
+        .expect("the server");
+    format!("v = {value}").parse::<toml::Table>().expect("TOML")["v"].clone()
+}
+
+/// Each tool's `approval_mode` in `server`.
+fn modes(server: &toml::Value) -> std::collections::BTreeMap<String, String> {
+    server
+        .get("tools")
+        .and_then(toml::Value::as_table)
+        .into_iter()
+        .flatten()
+        .map(|(tool, rule)| {
+            (
+                tool.clone(),
+                rule["approval_mode"].as_str().expect("a word").to_owned(),
+            )
+        })
+        .collect()
+}
+
 #[test]
 fn a_codex_chat_runs_each_dispatch_tool_without_codex_s_own_prompt() {
     // #3794: consent to a dispatch is purlis's dispatch grant (V98b), and what a chat does with
     // its own tasks is its own (#3786), so Codex approves each dispatch tool by name, as
     // codex-cli 0.163.0 reads `mcp_servers.<server>.tools.<tool>.approval_mode = "approve"`.
+    let server = server_with(&crate::chattools::CodexApprovals::default());
+    let wanted: std::collections::BTreeMap<String, String> =
+        crate::chattools::run_on_the_dispatch_grant()
+            .map(|tool| (tool.to_owned(), "approve".to_owned()))
+            .collect();
+    assert_eq!(modes(&server), wanted);
+    assert_eq!(wanted.len(), 11);
+    // Each by name, never the server as a whole: a tool added later still asks.
+    assert!(server.get("default_tools_approval_mode").is_none());
+
+    // And the chat is handed what this machine's operator config makes of it.
     let StateHooks::ThisSessionOnly { args, .. } =
         adapter().arm(kit(), None, &crate::harness_plugin::Chosen::new(), None)
     else {
         panic!("armed per session");
     };
-    let flag = args
-        .iter()
-        .find_map(|arg| arg.strip_prefix("mcp_servers.purlis="))
-        .expect("the server's -c pair");
-    let server = format!("v = {flag}").parse::<toml::Table>().expect("TOML")["v"].clone();
-    let tools = server["tools"].as_table().expect("its tools");
-    for tool in [
-        "dispatch",
-        "dispatch_list",
-        "dispatch_read",
-        "dispatch_wait",
-        "dispatch_tell",
-        "dispatch_answer",
-        "dispatch_cancel",
-        "dispatch_close",
-        "dispatch_report",
-        "dispatch_note",
-        "dispatch_ask",
-    ] {
-        assert_eq!(
-            tools[tool]["approval_mode"].as_str(),
-            Some("approve"),
-            "{tool}"
-        );
-    }
-    // Each by name, never the server as a whole: a tool added later still asks.
-    assert_eq!(tools.len(), 11, "{tools:?}");
-    assert!(server.get("default_tools_approval_mode").is_none());
+    assert!(args.contains(&crate::chattools::codex_flag(
+        std::path::Path::new("/bin/charter"),
+        &crate::chattools::CodexApprovals::here(None),
+    )));
+}
+
+#[test]
+fn an_operator_s_own_approval_on_purlis_s_server_is_kept() {
+    // #3794: `-c mcp_servers.purlis={…}` replaces the operator's table for the server whole, so
+    // what they set on it is carried over, and wins over purlis's approve.
+    let home = tempfile::tempdir().expect("a Codex home");
+    let project = tempfile::tempdir().expect("a project");
+    let user = home.path().join("config.toml");
+    std::fs::write(
+        &user,
+        "[mcp_servers.purlis.tools.dispatch]\napproval_mode = \"prompt\"\n\
+         [mcp_servers.purlis.tools.todo_add]\napproval_mode = \"prompt\"\n\
+         [mcp_servers.other.tools.dispatch_tell]\napproval_mode = \"prompt\"\n",
+    )
+    .expect("the user's config");
+    let local = project.path().join(".codex/config.toml");
+    std::fs::create_dir_all(local.parent().expect("a parent")).expect(".codex");
+    std::fs::write(
+        &local,
+        "[mcp_servers.purlis.tools.dispatch_cancel]\napproval_mode = \"writes\"\n",
+    )
+    .expect("the project's config");
+    let kept = modes(&server_with(&crate::chattools::CodexApprovals::read(&[
+        user.clone(),
+        local,
+    ])));
+    assert_eq!(kept["dispatch"], "prompt");
+    assert_eq!(kept["dispatch_cancel"], "writes");
+    assert_eq!(kept["todo_add"], "prompt");
+    assert_eq!(kept["dispatch_tell"], "approve", "another server's rule");
+    assert_eq!(kept.len(), 12, "{kept:?}");
+
+    // A default for the whole server is the operator's word for every tool of it.
+    std::fs::write(
+        &user,
+        "[mcp_servers.purlis]\ndefault_tools_approval_mode = \"prompt\"\n",
+    )
+    .expect("the user's config");
+    let server = server_with(&crate::chattools::CodexApprovals::read(
+        std::slice::from_ref(&user),
+    ));
+    assert_eq!(
+        server["default_tools_approval_mode"].as_str(),
+        Some("prompt")
+    );
+    assert!(modes(&server).is_empty(), "{server}");
+
+    // A config purlis cannot read could say either, so nothing is approved over it.
+    std::fs::write(&user, "[mcp_servers.purlis\n").expect("a broken config");
+    let server = server_with(&crate::chattools::CodexApprovals::read(&[user]));
+    assert!(modes(&server).is_empty(), "{server}");
 }
 
 #[test]

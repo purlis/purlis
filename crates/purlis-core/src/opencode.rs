@@ -317,16 +317,18 @@ pub fn binary_in(text: &str) -> Option<PathBuf> {
 /// With `binary`, each dispatch tool of that server is allowed under `permission` by the name
 /// opencode asks for it under ([`crate::chattools::run_on_the_dispatch_grant`], #3794): consent
 /// to a dispatch is purlis's own grant, never the harness's prompt. Measured on 1.18.33 with
-/// `opencode debug agent build`: each became a rule `purlis_<tool> allow *`. opencode reads its
-/// rules last match first, and this layer is merged after the project's, so a rule of the
-/// operator's under the very same name is replaced here, while one under a pattern of its own
-/// (`purlis_*`) keeps the place its file gave it.
+/// `opencode debug agent build`: each became a rule `purlis_<tool> allow *`. **The operator's
+/// own rules always win** ([`OperatorRules`]): opencode applies the last rule that matches and
+/// merges this layer after the operator's, so an allow here would beat their earlier
+/// `purlis_*` or `*` rule, or replace one under the same name. A tool any rule of `operator`
+/// names is left to it, and none is allowed where the operator asks or denies every tool.
 pub fn session_config(
     shim: &Path,
     skills: &[PathBuf],
     binary: Option<&Path>,
     sandboxed: bool,
     skills_off: &[String],
+    operator: &OperatorRules,
 ) -> String {
     let mut url = String::from("file://");
     for byte in shim.display().to_string().bytes() {
@@ -363,7 +365,9 @@ pub fn session_config(
     if binary.is_some() {
         permission.extend(
             crate::chattools::run_on_the_dispatch_grant()
-                .map(|tool| (mcp_permission(tool), "allow".into())),
+                .map(mcp_permission)
+                .filter(|name| operator.leaves_unasked(name))
+                .map(|name| (name, "allow".into())),
         );
     }
     if !permission.is_empty() {
@@ -389,6 +393,260 @@ fn mcp_permission(tool: &str) -> String {
             .collect()
     };
     format!("{}_{}", clean(crate::chattools::SERVER), clean(tool))
+}
+
+/// **Where the operator's own opencode config is read from** (#3794): every file opencode
+/// 1.18.33 merges a `permission` from, and every folder it reads an agent's Markdown from.
+/// Read wide: a file opencode would not load is read anyway, since a rule can only take an
+/// allow of purlis's away.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Layers {
+    /// Config files: `opencode.json`, `opencode.jsonc` or `config.json`.
+    pub files: Vec<PathBuf>,
+    /// Folders whose `agent/` and `agents/` hold agents as Markdown with a front matter.
+    pub dirs: Vec<PathBuf>,
+}
+
+impl Layers {
+    /// This machine's, for a chat working in `cwd`: the global config folder
+    /// (`$XDG_CONFIG_HOME/opencode`, else `~/.config/opencode`), `~/.opencode`, the file
+    /// `$OPENCODE_CONFIG` names and the folder `$OPENCODE_CONFIG_DIR` names, and each folder
+    /// from `cwd` up to the root with its `.opencode`.
+    pub fn here(cwd: Option<&Path>) -> Self {
+        let var = |name: &str| {
+            std::env::var_os(name)
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+        };
+        let home = var("HOME");
+        let config = var("XDG_CONFIG_HOME")
+            .filter(|dir| dir.is_absolute())
+            .or_else(|| home.as_ref().map(|home| home.join(".config")));
+        Self::of(&Places {
+            global: config.map(|config| config.join("opencode")),
+            home: home.map(|home| home.join(".opencode")),
+            file: var("OPENCODE_CONFIG"),
+            dir: var("OPENCODE_CONFIG_DIR"),
+            cwd: cwd.map(Path::to_path_buf),
+        })
+    }
+
+    /// The layers of `places`.
+    pub fn of(places: &Places) -> Self {
+        const NAMES: [&str; 3] = ["config.json", "opencode.json", "opencode.jsonc"];
+        let mut dirs: Vec<PathBuf> = [&places.global, &places.home, &places.dir]
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect();
+        let mut files: Vec<PathBuf> = places.file.iter().cloned().collect();
+        if let Some(cwd) = &places.cwd {
+            for folder in cwd.ancestors() {
+                files.extend(NAMES[1..].iter().map(|name| folder.join(name)));
+                dirs.push(folder.join(".opencode"));
+            }
+        }
+        for dir in &dirs {
+            files.extend(NAMES.iter().map(|name| dir.join(name)));
+        }
+        Self { files, dirs }
+    }
+}
+
+/// The folders [`Layers::of`] reads.
+#[derive(Debug, Clone, Default)]
+pub struct Places {
+    /// opencode's global config folder.
+    pub global: Option<PathBuf>,
+    /// `~/.opencode`.
+    pub home: Option<PathBuf>,
+    /// The file `$OPENCODE_CONFIG` names.
+    pub file: Option<PathBuf>,
+    /// The folder `$OPENCODE_CONFIG_DIR` names.
+    pub dir: Option<PathBuf>,
+    /// The folder the chat works in.
+    pub cwd: Option<PathBuf>,
+}
+
+/// **The operator's own opencode permission rules** (#3794): each rule's name, and whether it
+/// asks or denies, from the top-level `permission` and each agent's, in their config files and
+/// their agents' Markdown. What purlis allows for one chat yields to all of them, as an
+/// operator's `ask` or `deny` does in Claude Code.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OperatorRules {
+    /// Each rule's name, and whether it asks or denies anywhere.
+    rules: Vec<(String, bool)>,
+    /// A file there could not be read as opencode reads it: nothing is allowed over it.
+    unreadable: bool,
+}
+
+impl OperatorRules {
+    /// What `layers` hold. A file that is not there holds nothing; one that cannot be read or
+    /// parsed holds what purlis cannot know, and is taken to refuse every allow.
+    pub fn read(layers: &Layers) -> Self {
+        let mut rules = Self::default();
+        for file in &layers.files {
+            match std::fs::read_to_string(file) {
+                Ok(text) => match crate::theme::jsonc(&text) {
+                    Ok(config) => rules.add_config(&config),
+                    Err(_) => rules.unreadable = true,
+                },
+                Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => rules.unreadable = true,
+            }
+        }
+        for dir in &layers.dirs {
+            for agents in ["agent", "agents"] {
+                rules.add_agents(&dir.join(agents), 3);
+            }
+        }
+        rules
+    }
+
+    /// A config's top-level `permission`, and each agent's.
+    fn add_config(&mut self, config: &serde_json::Value) {
+        self.add_permission(config.get("permission"));
+        if let Some(agents) = config.get("agent").and_then(serde_json::Value::as_object) {
+            for agent in agents.values() {
+                self.add_permission(agent.get("permission"));
+            }
+        }
+    }
+
+    /// One `permission`: a word for every tool, or rules by name.
+    fn add_permission(&mut self, permission: Option<&serde_json::Value>) {
+        match permission {
+            None => {}
+            Some(serde_json::Value::Object(rules)) => {
+                for (name, rule) in rules {
+                    self.rules.push((name.clone(), asks_or_denies(rule)));
+                }
+            }
+            Some(every) => self.rules.push(("*".to_owned(), asks_or_denies(every))),
+        }
+    }
+
+    /// The agents' Markdown in `dir`, `depth` folders down: the names under `permission:` in
+    /// each front matter. A rule written as a map of patterns is taken to ask.
+    fn add_agents(&mut self, dir: &Path, depth: u8) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if depth > 0 {
+                    self.add_agents(&path, depth - 1);
+                }
+                continue;
+            }
+            if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+                continue;
+            }
+            match std::fs::read_to_string(&path) {
+                Ok(text) => self.rules.extend(front_matter_permission(&text)),
+                Err(_) => self.unreadable = true,
+            }
+        }
+    }
+
+    /// Whether the permission `name` is left to purlis's allow: no rule of the operator's
+    /// names it but a bare `*` that allows, and nothing could not be read.
+    pub fn leaves_unasked(&self, name: &str) -> bool {
+        !self.unreadable
+            && self.rules.iter().all(|(rule, asks)| {
+                if rule == "*" {
+                    !asks
+                } else {
+                    !wildcard(rule, name)
+                }
+            })
+    }
+}
+
+/// Whether a rule asks or denies: its word, or any word of its patterns.
+fn asks_or_denies(rule: &serde_json::Value) -> bool {
+    match rule {
+        serde_json::Value::String(word) => word != "allow",
+        serde_json::Value::Object(patterns) => patterns.values().any(asks_or_denies),
+        _ => true,
+    }
+}
+
+/// The rules under `permission:` in a Markdown file's front matter, by name, each taken to ask
+/// or deny unless it says `allow` alone. Read by indentation, which is all opencode's agents
+/// write there; a front matter it cannot follow names a bare `*` that asks.
+fn front_matter_permission(text: &str) -> Vec<(String, bool)> {
+    let mut lines = text.lines();
+    if lines.next().map(str::trim_end) != Some("---") {
+        return Vec::new();
+    }
+    let mut rules = Vec::new();
+    let mut under = false;
+    let mut indent: Option<usize> = None;
+    for line in lines {
+        if line.trim_end() == "---" {
+            break;
+        }
+        if line.trim().is_empty() || line.trim_start().starts_with('#') {
+            continue;
+        }
+        let depth = line.len() - line.trim_start().len();
+        if depth == 0 {
+            under = false;
+            if let Some(value) = line.strip_prefix("permission:") {
+                under = true;
+                indent = None;
+                let value = value.trim();
+                if !value.is_empty() {
+                    rules.push(("*".to_owned(), unquoted(value) != "allow"));
+                    under = false;
+                }
+            }
+            continue;
+        }
+        if !under || indent.is_some_and(|indent| depth > indent) {
+            continue;
+        }
+        indent = Some(depth);
+        let Some((name, value)) = line.trim().split_once(':') else {
+            rules.push(("*".to_owned(), true));
+            continue;
+        };
+        let value = unquoted(value.trim());
+        rules.push((unquoted(name.trim()).to_owned(), value != "allow"));
+    }
+    rules
+}
+
+/// `word` without the quotes around it.
+fn unquoted(word: &str) -> &str {
+    word.trim_matches(|c| c == '"' || c == '\'')
+}
+
+/// Whether `name` matches opencode's wildcard `pattern`: `*` for any run of characters, `?`
+/// for one, and every other character itself.
+fn wildcard(pattern: &str, name: &str) -> bool {
+    let (pattern, name): (Vec<char>, Vec<char>) =
+        (pattern.chars().collect(), name.chars().collect());
+    let (mut p, mut n, mut star, mut from) = (0, 0, None, 0);
+    while n < name.len() {
+        if p < pattern.len() && (pattern[p] == '?' || pattern[p] == name[n]) {
+            p += 1;
+            n += 1;
+        } else if p < pattern.len() && pattern[p] == '*' {
+            star = Some(p);
+            from = n;
+            p += 1;
+        } else if let Some(at) = star {
+            p = at + 1;
+            from += 1;
+            n = from;
+        } else {
+            return false;
+        }
+    }
+    pattern[p..].iter().all(|c| *c == '*')
 }
 
 /// The shim's option that names charter's skills directory.

@@ -635,14 +635,16 @@ fn settings(
         allow.extend(OWN_SCOPE_ALLOW.iter().map(|rule| (*rule).to_owned()));
         allow.extend(own_scope_rules(own.0.as_deref(), own.1.as_deref()));
     }
+    // The dispatch tools from the one list every harness's adapter reads (#3794), then the
+    // other reads, each once.
     allow.extend(
-        crate::chattools::DISPATCH_TOOLS
-            .iter()
+        crate::chattools::run_on_the_dispatch_grant()
             .map(|tool| format!("mcp__{}__{tool}", crate::chattools::SERVER)),
     );
     allow.extend(
         crate::chattools::PRE_ALLOWED
             .iter()
+            .filter(|tool| !crate::chattools::run_on_the_dispatch_grant().any(|one| one == **tool))
             .map(|tool| format!("mcp__{}__{tool}", crate::chattools::SERVER)),
     );
     // And their twins among the tools, and the chat's question to the person, whose answer is

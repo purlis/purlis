@@ -110,6 +110,7 @@ fn a_session_config_names_the_shim_as_a_url_no_character_can_end() {
         None,
         false,
         &[],
+        &OperatorRules::default(),
     );
     let doc: serde_json::Value = serde_json::from_str(&config).expect("JSON");
     assert_eq!(
@@ -131,6 +132,7 @@ fn a_session_config_hands_the_shim_the_skills_directory_as_its_option() {
         None,
         false,
         &[],
+        &OperatorRules::default(),
     );
     let doc: serde_json::Value = serde_json::from_str(&config).expect("JSON");
     assert_eq!(
@@ -249,6 +251,7 @@ fn a_sandboxed_chat_makes_no_snapshot() {
         None,
         true,
         &[],
+        &OperatorRules::default(),
     );
     let doc: serde_json::Value = serde_json::from_str(&config).expect("JSON");
     assert_eq!(doc["snapshot"], serde_json::Value::Bool(false));
@@ -258,6 +261,7 @@ fn a_sandboxed_chat_makes_no_snapshot() {
         None,
         false,
         &[],
+        &OperatorRules::default(),
     );
     let doc: serde_json::Value = serde_json::from_str(&unsandboxed).expect("JSON");
     assert_eq!(doc.get("snapshot"), None);
@@ -381,6 +385,7 @@ fn a_session_config_denies_each_skill_the_project_turned_off_by_its_name() {
         None,
         false,
         &["langfuse".to_owned(), "review".to_owned()],
+        &OperatorRules::default(),
     );
     let doc: serde_json::Value = serde_json::from_str(&config).expect("JSON");
     assert_eq!(
@@ -393,7 +398,130 @@ fn a_session_config_denies_each_skill_the_project_turned_off_by_its_name() {
         None,
         false,
         &[],
+        &OperatorRules::default(),
     );
     let doc: serde_json::Value = serde_json::from_str(&none).expect("JSON");
     assert_eq!(doc.get("permission"), None);
+}
+
+/// The dispatch tools' permissions a session config allows, with the operator's opencode config
+/// in a project folder holding `files` (#3794).
+fn allowed_with(files: &[(&str, &str)]) -> Vec<String> {
+    let project = tempfile::tempdir().expect("a project");
+    for (name, text) in files {
+        let path = project.path().join(name);
+        std::fs::create_dir_all(path.parent().expect("a parent")).expect("folders");
+        std::fs::write(path, text).expect("the operator's file");
+    }
+    let operator = OperatorRules::read(&Layers::of(&Places {
+        cwd: Some(project.path().to_path_buf()),
+        ..Places::default()
+    }));
+    let config = session_config(
+        Path::new("/Apps/plugin/opencode/charter.ts"),
+        &[],
+        Some(Path::new("/bin/purlis")),
+        false,
+        &[],
+        &operator,
+    );
+    let doc: serde_json::Value = serde_json::from_str(&config).expect("JSON");
+    let mut allowed: Vec<String> = doc
+        .get("permission")
+        .and_then(serde_json::Value::as_object)
+        .map(|rules| {
+            rules
+                .iter()
+                .filter(|(_, rule)| *rule == "allow")
+                .map(|(name, _)| name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    allowed.sort();
+    allowed
+}
+
+/// Every dispatch tool's permission, as opencode names it.
+fn every_dispatch_tool() -> Vec<String> {
+    let mut every: Vec<String> = crate::chattools::run_on_the_dispatch_grant()
+        .map(|tool| format!("purlis_{tool}"))
+        .collect();
+    every.sort();
+    every
+}
+
+#[test]
+fn each_dispatch_tool_is_allowed_where_the_operator_names_none_of_them() {
+    // #3794: on purlis's own dispatch grant, each by the name opencode asks it under.
+    assert_eq!(allowed_with(&[]), every_dispatch_tool());
+    assert_eq!(every_dispatch_tool().len(), 11);
+    // A rule for another tool, or every tool allowed, leaves them to purlis.
+    assert_eq!(
+        allowed_with(&[(
+            "opencode.json",
+            r#"{"permission": {"bash": "deny", "*": "allow"}}"#
+        )]),
+        every_dispatch_tool()
+    );
+}
+
+#[test]
+fn an_operator_s_rule_for_the_dispatch_tools_wins_over_purlis_s_allow() {
+    // #3794: opencode applies the last rule that matches, and purlis's layer comes last, so an
+    // allow of purlis's would beat the operator's own rule. None is written for a tool their
+    // rule names.
+    assert_eq!(
+        allowed_with(&[("opencode.json", r#"{"permission": {"purlis_*": "deny"}}"#)]),
+        Vec::<String>::new()
+    );
+    let exact = allowed_with(&[(
+        "opencode.jsonc",
+        "{\n  // the operator's own\n  \"permission\": {\"purlis_dispatch\": \"deny\",},\n}",
+    )]);
+    assert!(!exact.contains(&"purlis_dispatch".to_owned()), "{exact:?}");
+    assert_eq!(exact.len(), every_dispatch_tool().len() - 1, "{exact:?}");
+    // An agent's own rule, in a config or in its Markdown.
+    let agent = allowed_with(&[(
+        ".opencode/opencode.json",
+        r#"{"agent": {"build": {"permission": {"purlis_dispatch_tell": "ask"}}}}"#,
+    )]);
+    assert!(
+        !agent.contains(&"purlis_dispatch_tell".to_owned()),
+        "{agent:?}"
+    );
+    assert_eq!(agent.len(), every_dispatch_tool().len() - 1, "{agent:?}");
+    let markdown = allowed_with(&[(
+        ".opencode/agent/review.md",
+        "---\ndescription: Reviews.\npermission:\n  purlis_dispatch_cancel: deny\n  edit: allow\n---\nReview.\n",
+    )]);
+    assert!(
+        !markdown.contains(&"purlis_dispatch_cancel".to_owned()),
+        "{markdown:?}"
+    );
+    assert_eq!(
+        markdown.len(),
+        every_dispatch_tool().len() - 1,
+        "{markdown:?}"
+    );
+}
+
+#[test]
+fn an_operator_who_asks_about_every_tool_is_asked_about_the_dispatch_tools_too() {
+    // #3794: a bare `*` that asks or denies is the operator's wish for every tool.
+    for config in [
+        r#"{"permission": {"*": "ask"}}"#,
+        r#"{"permission": {"*": "deny"}}"#,
+        r#"{"permission": "ask"}"#,
+    ] {
+        assert_eq!(
+            allowed_with(&[("opencode.json", config)]),
+            Vec::<String>::new(),
+            "{config}"
+        );
+    }
+    // A file purlis cannot read could say either, so nothing is allowed over it.
+    assert_eq!(
+        allowed_with(&[("opencode.json", "{\"permission\": ")]),
+        Vec::<String>::new()
+    );
 }

@@ -78,26 +78,22 @@ fn an_opencode_chat_is_handed_charter_s_mcp_server_in_its_session_config() {
     );
     assert!(config["plugin"].is_array(), "{config}");
     // #3794: and each dispatch tool runs on purlis's own dispatch grant, by the name opencode
-    // asks its permission under (`<server>_<tool>`, 1.18.33), never the server as a whole.
-    let allowed = config["permission"]
-        .as_object()
-        .expect("its permission rules");
-    for tool in [
-        "dispatch",
-        "dispatch_list",
-        "dispatch_read",
-        "dispatch_wait",
-        "dispatch_tell",
-        "dispatch_answer",
-        "dispatch_cancel",
-        "dispatch_close",
-        "dispatch_report",
-        "dispatch_note",
-        "dispatch_ask",
-    ] {
-        assert_eq!(allowed[&format!("purlis_{tool}")], "allow", "{tool}");
-    }
-    assert_eq!(allowed.len(), 11, "{allowed:?}");
+    // asks its permission under (`<server>_<tool>`, 1.18.33), never the server as a whole, but
+    // where a rule of this machine's operator names it (`opencode::tests` holds those).
+    let operator = crate::opencode::OperatorRules::read(&crate::opencode::Layers::here(None));
+    let mut wanted: Vec<String> = crate::chattools::run_on_the_dispatch_grant()
+        .map(|tool| format!("purlis_{tool}"))
+        .filter(|name| operator.leaves_unasked(name))
+        .collect();
+    wanted.sort();
+    let mut allowed: Vec<String> = config
+        .get("permission")
+        .and_then(serde_json::Value::as_object)
+        .map(|rules| rules.keys().cloned().collect())
+        .unwrap_or_default();
+    allowed.sort();
+    assert_eq!(allowed, wanted);
+    assert_eq!(crate::chattools::run_on_the_dispatch_grant().count(), 11);
 }
 
 #[test]
