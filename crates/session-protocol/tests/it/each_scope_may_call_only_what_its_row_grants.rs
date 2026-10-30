@@ -323,6 +323,8 @@ fn every_command() -> Vec<Command> {
             profile: "work".into(),
             pieces: Vec::new(),
         }),
+        // The profiles a runner keeps for its desktop (1.57, #4060).
+        Command::KeptProfiles,
         // A browser the person takes over, drives and hands back: the window's alone (1.14).
         Command::TakeOver {
             program: CHAT.into(),
@@ -612,6 +614,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "keep_profile",
             "forget_profile",
             "stage_profile_settings",
+            "kept_profiles",
             "take_over",
             "browser_input",
             "size_browser",

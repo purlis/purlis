@@ -1305,7 +1305,8 @@ impl session::Host for Relay {
         // to it (#2049): never sent on for a client.
         if let Command::KeepProfile(_)
         | Command::ForgetProfile { .. }
-        | Command::StageProfileSettings(_) = command
+        | Command::StageProfileSettings(_)
+        | Command::KeptProfiles = command
         {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),

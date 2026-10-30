@@ -191,3 +191,5 @@
 {"reply":{"re":177,"ok":"done"}}
 {"call":{"id":178,"command":"keep_profile","name":"work","harness":"claude","pinned":"2.1.300","settings_staged":2}}
 {"reply":{"re":178,"ok":{"profile_kept":{"standing":"signed_in"}}}}
+{"call":{"id":179,"command":"kept_profiles"}}
+{"reply":{"re":179,"ok":{"profiles":{"names":["work","claude"]}}}}

@@ -342,14 +342,20 @@ pub async fn machine_profile_removal(name: String) -> Result<MachineProfileRemov
     blocking(move || profilestore::removal(&store()?, &name).map(MachineProfileRemoval::from)).await
 }
 
-/// Removes `name`, only if `shown` is what removing it takes away now.
+/// Removes `name`, only if `shown` is what removing it takes away now, and has each pool's
+/// runner that kept it forget it, its sign-in there with it (#3849). `Some` note, in words, for
+/// a runner of a purlis before 1.52, which keeps it.
 #[tauri::command]
 #[specta::specta]
 pub async fn machine_profile_remove(
     name: String,
     shown: MachineProfileRemoval,
-) -> Result<(), String> {
-    blocking(move || profilestore::remove(&store()?, &name, &shown.into()).map(|_| ())).await
+) -> Result<Option<String>, String> {
+    blocking(move || {
+        profilestore::remove(&store()?, &name, &shown.into())?;
+        Ok(crate::poolprofiles::forget_off_the_pools(&name))
+    })
+    .await
 }
 
 /// How often, and for how long, a profile's harness is asked again after its Sign in, so its

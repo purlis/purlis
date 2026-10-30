@@ -341,8 +341,10 @@ use crate::view::{Limits, Views};
 /// 1.52 added a desktop's profile taken off its runner (#4047, spec #4023): `forget_profile`,
 /// sent by the desktop on its own link to the runner as it takes a profile off the pool, has the
 /// runner forget a profile it keeps for that desktop, with its folder and so its sign-in there,
-/// answered `done`. A profile the runner keeps of its own, or for another desktop, is refused. A
-/// host before 1.52 refuses it `unknown_command`, and the profile stays kept there.
+/// answered `done`. A profile the runner keeps of its own, or for another desktop, stays as it
+/// is: from 1.57 that is answered `done` too, since nothing of this desktop's has the name
+/// (#4060), where a host from 1.52 to 1.56 refuses it. A host before 1.52 refuses it
+/// `unknown_command`, and the profile stays kept there.
 ///
 /// 1.53 added a profile whose harness its runner is still fetching (#4008, spec #4023):
 /// `profile_kept` may answer [`ProfileStanding::Fetching`] while the runner fetches the harness
@@ -370,9 +372,16 @@ use crate::view::{Limits, Views};
 /// link, as `keep_profile` is ([`crate::grants::Power::KeepProfile`]). A host before 1.56 refuses
 /// it `unknown_command`, so the desktop sends such a runner what one `keep_profile` carries, as
 /// it did.
+///
+/// 1.57 added the profiles a runner keeps for its desktop (#4060, spec #4023): `kept_profiles`,
+/// sent by the desktop on its own link to the runner, answers `profiles`, the name of each
+/// profile the runner keeps for that desktop and for no other, never one of its own. The desktop
+/// asks it before it forgets the ones no longer chosen for the pool, or no longer on the
+/// desktop. Carried out and refused as `keep_profile` is. A host before 1.57 refuses it
+/// `unknown_command`, and the desktop forgets nothing it was not asked to there.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 56,
+    minor: 57,
 };
 
 /// The version that first answers `relay_to` with the runner the link reached (#3417).
@@ -435,6 +444,13 @@ pub const KNOWS_CLONE_ORIGINS: Version = Version {
 pub const KNOWS_FORGET_PROFILE: Version = Version {
     major: 1,
     minor: 52,
+};
+
+/// The version that first answers the profiles a runner keeps for its desktop (#4060): the
+/// desktop asks no runner before it.
+pub const KNOWS_KEPT_PROFILES: Version = Version {
+    major: 1,
+    minor: 57,
 };
 
 /// The version that first knows browsers relayed for a window (#2050): a runner before it refuses
@@ -779,14 +795,20 @@ pub enum Command {
     KeepProfile(ProfileToKeep),
     /// The desktop on this link has the runner forget its profile `name` (1.52, #4047): the
     /// runner's host forgets the profile it keeps for that desktop, with its folder and so its
-    /// sign-in there, and answers [`Answer::Done`]; one it does not keep is nothing. A profile
-    /// it keeps of its own, or for another desktop, is refused. Carried out and refused as
+    /// sign-in there, and answers [`Answer::Done`]; one it does not keep for that desktop,
+    /// one of its own or another desktop's included, is nothing and stays as it is (from 1.57,
+    /// #4060; refused before). Carried out and refused as
     /// [`Command::KeepProfile`] is ([`crate::grants::Power::KeepProfile`]).
     ForgetProfile { name: String },
     /// Part of a profile's settings, held on this link for the [`Command::KeepProfile`] that
     /// keeps them all (1.56, #4081). Answers [`Answer::Done`]. As `keep_profile`, the paired
     /// desktop's alone, on its own link.
     StageProfileSettings(SettingsBatch),
+    /// The desktop on this link asks which of its profiles the runner keeps (1.57, #4060): the
+    /// runner's host answers [`Answer::Profiles`] with the name of each profile it keeps for
+    /// that desktop, never one of its own or another desktop's. Carried out and refused as
+    /// [`Command::KeepProfile`] is ([`crate::grants::Power::KeepProfile`]).
+    KeptProfiles,
     /// The person takes browser `program` over (1.14, #2014): an act in flight answers that it
     /// was interrupted, and every act is refused in words until [`Command::HandBack`]. The lease
     /// is the host's: it stays with the person whatever becomes of the link that took it, until
@@ -1662,6 +1684,9 @@ pub enum Answer {
     /// Whether the profile a runner keeps is signed in there, as its harness says:
     /// [`Command::KeepProfile`] (1.43).
     ProfileKept { standing: ProfileStanding },
+    /// The profiles a runner keeps for the desktop on this link, by name:
+    /// [`Command::KeptProfiles`] (1.57).
+    Profiles { names: Vec<String> },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Where the host's own event log ends: [`Command::LogEnd`] (1.41).
@@ -2016,6 +2041,7 @@ wire_words!(Command {
     KeepProfile => "keep_profile",
     ForgetProfile => "forget_profile",
     StageProfileSettings => "stage_profile_settings",
+    KeptProfiles => "kept_profiles",
     RelayTo => "relay_to",
     TakeCode => "take_code",
     GiveCode => "give_code",
@@ -2075,7 +2101,8 @@ impl Command {
             Command::Unpair => Power::Unpair,
             Command::KeepProfile(_)
             | Command::ForgetProfile { .. }
-            | Command::StageProfileSettings(_) => Power::KeepProfile,
+            | Command::StageProfileSettings(_)
+            | Command::KeptProfiles => Power::KeepProfile,
             Command::RelayTo { .. } => Power::RelayTo,
             Command::TakeCode { .. }
             | Command::GiveCode { .. }
@@ -2151,6 +2178,7 @@ wire_words!(Answer {
     Conversation => "conversation",
     Clones => "clones",
     ProfileKept => "profile_kept",
+    Profiles => "profiles",
     Subscribed => "subscribed",
     LogEnd => "log_end",
     RelayedTo => "relayed_to",
@@ -2585,6 +2613,7 @@ impl Lane {
             | Command::KeepProfile(_)
             | Command::ForgetProfile { .. }
             | Command::StageProfileSettings(_)
+            | Command::KeptProfiles
             | Command::RelayTo { .. }
             | Command::TakeCode { .. }
             | Command::GiveCode { .. }
@@ -3264,6 +3293,15 @@ impl Client {
     /// on its link from that desktop.
     pub async fn stage_profile_settings(&self, batch: SettingsBatch) -> Result<(), CallError> {
         self.done(Command::StageProfileSettings(batch)).await
+    }
+
+    /// The name of each profile the runner keeps for this link's desktop (1.57, #4060). Refused
+    /// by every host but a runner's, on its link from that desktop.
+    pub async fn kept_profiles(&self) -> Result<Vec<String>, CallError> {
+        match self.call(Command::KeptProfiles).await? {
+            Answer::Profiles { names } => Ok(names),
+            other => Err(unexpected(&other)),
+        }
     }
 
     /// Ask the desktop's host to relay this link to the runner it keeps as `runner` (1.33,

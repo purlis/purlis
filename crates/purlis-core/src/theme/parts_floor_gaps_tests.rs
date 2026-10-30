@@ -630,3 +630,45 @@ fn a_row_s_failing_pair_leaves_a_plain_hovered_row_the_theme_s_colours() {
     let both = drawn_on(&sheet, "row", &["data-hovered", "data-selected"]);
     assert_eq!(fill_of(&both), Some("var(--list-selected)"), "{sheet}");
 }
+
+// ---------------------------------------------------------------------------------------
+// 9. Three states at once (#4086)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_current_hovered_focused_chip_falls_only_where_all_three_hold() {
+    // In Purlis light, `text.muted` reads on the bar, on the card's fill and on the accent's
+    // wash, so on a chip reached from the keyboard alone, under the pointer or current; but
+    // not on the stronger wash a current chip under the pointer takes (4.3:1).
+    let theme = shaped(
+        "purlis",
+        "light",
+        json!({ "titlebar.workspace.pinned.focused.text": "text.muted" }),
+    );
+    assert_eq!(
+        fell(&theme),
+        ["titlebar.workspace.pinned.hover+selected+focused"]
+    );
+    let sheet = parts::stylesheet(&theme);
+    let chip = |states: &[&str]| {
+        let mut attributes = vec!["data-variant=pinned"];
+        attributes.extend_from_slice(states);
+        drawn_on(&sheet, "workspace", &attributes)
+    };
+    // A plain focused chip, and a focused one current or under the pointer, keep the theme's.
+    for states in [
+        &["data-focus-visible"][..],
+        &["data-focus-visible", "data-selected"][..],
+        &["data-focus-visible", "data-hovered"][..],
+    ] {
+        assert_eq!(
+            words_of(&chip(states)),
+            Some("var(--text-muted)"),
+            "{states:?}: {sheet}"
+        );
+    }
+    // All three draw the pair's own look: the stronger wash, the primary words.
+    let all = chip(&["data-focus-visible", "data-hovered", "data-selected"]);
+    assert_eq!(fill_of(&all), Some("var(--accent-wash-hover)"), "{sheet}");
+    assert_eq!(words_of(&all), Some("var(--text-primary)"), "{sheet}");
+}

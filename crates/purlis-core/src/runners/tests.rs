@@ -1191,6 +1191,21 @@ fn adding_and_removing_a_profile_start_from_the_default_and_change_the_record() 
     );
 }
 
+/// **A pool that names none is given its profiles once** (#4060); one that names its own
+/// keeps them as they are.
+#[test]
+fn a_pool_that_names_none_is_given_its_profiles_and_one_that_names_its_own_keeps_them() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(config.path(), &pool("builds", Set::default())).unwrap();
+    let named = |config: &Path| pools(config).unwrap()[0].profiles().map(<[String]>::to_vec);
+
+    name_pool_profiles_where_none(config.path(), "builds", vec!["work".to_owned()]).unwrap();
+    assert_eq!(named(config.path()), Some(vec!["work".to_owned()]));
+
+    name_pool_profiles_where_none(config.path(), "builds", vec!["home".to_owned()]).unwrap();
+    assert_eq!(named(config.path()), Some(vec!["work".to_owned()]));
+}
+
 /// The profiles a pool keeps are not how it is defined: choosing them leaves its definition's
 /// digest as it was, as a price does.
 #[test]

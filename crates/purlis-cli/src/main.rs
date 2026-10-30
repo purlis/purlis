@@ -951,6 +951,15 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
                 .ok_or_else(|| "this runner has no home its profiles are in".to_owned())?;
             onrunner::forget(&homes, &home, name, &desktop.device)
         }),
+        // And names the ones it keeps for the desktop, which forgets those no longer chosen
+        // (#4060).
+        listing: std::sync::Arc::new(|desktop| {
+            let homes = purlis_core::profilestore::Homes::here().ok_or_else(|| {
+                "this runner has no data home its profiles are in, or it is inside a project"
+                    .to_owned()
+            })?;
+            purlis_core::profilestore::onrunner::kept_for(&homes, &desktop.device)
+        }),
     };
     ExitCode::from(
         u8::try_from(purlis_host::serve_alone_answering(

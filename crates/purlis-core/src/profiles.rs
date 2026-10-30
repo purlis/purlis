@@ -1069,7 +1069,7 @@ pub(crate) fn env_name_ok(name: &str) -> bool {
 
 /// `^[A-Za-z0-9][A-Za-z0-9_-]*$`. No dot: a dot in a name broke tmux targets in charter
 /// #695, and a profile's name reaches the same places.
-pub(crate) fn name_ok(name: &str) -> bool {
+pub fn name_ok(name: &str) -> bool {
     let mut chars = name.chars();
     chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
