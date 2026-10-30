@@ -416,6 +416,7 @@ export const commands = {
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
 	mcpFailures: (plane: PlaneId, session: number) => typedError<McpFailed[], string>(__TAURI_INVOKE("mcp_failures", { plane, session })),
 	putAwayMcpFailure: __WINDOW_ONLY_RESULT,
+	putAwayLeftMessages: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Chat `session`, where its program ended with its session host and the person has not put
 	 *  it away.
@@ -2399,7 +2400,13 @@ target: string | null;
  *  Whether purlis saves it by itself. A repo's fix reaches its request by the repo's
  *  next save, so where this is off the Notice says a save is needed.
  */
-autosave: boolean; merge: SaveMerge };
+autosave: boolean; merge: SaveMerge } | 
+/**
+ *  **Messages a chat left queued that no running dispatch could keep** (#3958): Put away
+ *  takes the Notice back ([`put_away_left_messages`]), by `report`, the name purlis keeps
+ *  it under.
+ */
+{ kind: "left-messages"; report: string };
 
 /**
  *  **What Stop all tasks on a session would end** (#1498, V100-53), as the window asks before

@@ -136,6 +136,7 @@ macro_rules! app_commands {
                 oldplugins::dismiss_old_harness_plugins,
                 mcpfailed::mcp_failures,
                 mcpfailed::put_away_mcp_failure,
+                alerts::put_away_left_messages,
                 hostlost::chat_lost_with_the_host,
                 hostlost::put_away_lost_chat,
                 reconnecting::chats_reconnecting,

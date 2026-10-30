@@ -956,7 +956,8 @@ pub static TOOLS: [Tool; 27] = [
                       has ended. Each follow-up is an instruction with a number, which a task \
                       acknowledges with dispatch_note's `ack`; dispatch_list shows which tasks \
                       have. Where the app does not answer, it is queued and delivered when it \
-                      does.",
+                      does, unless the chat's sandbox holds purlis's tools too: then nothing \
+                      is queued, and the tool says so.",
         schema: || {
             json!({
                 "type": "object",
