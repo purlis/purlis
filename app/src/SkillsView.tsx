@@ -107,7 +107,7 @@ async function readSkills(
   workspace: string | undefined,
   chat: FrontChat | undefined,
   /** What changed since each chat started: the answer the chats' panes read at this change. */
-  updated: () => Promise<readonly PlaneUpdated[]> = async () => [],
+  updatedSinceStart: () => Promise<readonly PlaneUpdated[]> = async () => [],
 ): Promise<Read> {
   if (chat === undefined) {
     const base = await answered(commands.skillStudio(plane, workspace ?? null, null));
@@ -126,7 +126,7 @@ async function readSkills(
     answered(commands.skillPersonaSkills(plane, chat.workspace ?? null)),
     answered(commands.chatSkills(plane, chat.session)),
     answered(commands.chatSkillsMissing(plane, chat.session)),
-    updated(),
+    updatedSinceStart(),
   ]);
   if ("refused" in base) return base;
   const rows = viewRowsOf(base.ok, "ok" in personas ? personas.ok : undefined);
