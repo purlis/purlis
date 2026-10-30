@@ -1054,6 +1054,28 @@ pub fn checks_as(dir: &Path, chat: u32, seq: u64, id: &str, body: &str, mac: &st
         .any(|key| key.checks(chat, seq, id, body, mac))
 }
 
+/// The id of the key the host keeps for chat `chat` now, the last it issued it: `None` where it
+/// keeps none, or `keys.json` does not read.
+pub fn kept_key_of(dir: &Path, chat: u32) -> Option<String> {
+    read_keys(dir)
+        .ok()?
+        .keys
+        .into_iter()
+        .rev()
+        .find(|held| held.chat == chat)
+        .map(|held| held.id)
+}
+
+/// **Signs `body`, number `seq` of chat `chat`, under the key the host keeps for it now**
+/// ([`kept_key_of`]): what a queued message moved to a chat started again in its place is
+/// written again under (#3902). `None` where no key is kept for it.
+pub fn sign_kept(dir: &Path, chat: u32, seq: u64, body: &str) -> Option<(String, String)> {
+    let keys = read_keys(dir).ok()?;
+    let held = keys.keys.iter().rev().find(|held| held.chat == chat)?;
+    let key = key_of(&held.key)?;
+    Some((held.id.clone(), key.sign(chat, seq, &held.id, body)))
+}
+
 /// The id of the key `token` signs under: what [`message_floor`] is asked by.
 pub fn key_id_of(token: &ChatToken) -> String {
     SpoolKey::of(token).id()

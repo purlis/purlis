@@ -826,11 +826,43 @@ fn deliver_queued(held: &Held, sender: u32, fresh: Option<&str>) -> Option<Answe
 }
 
 fn drain(held: &Held, sender: u32, fresh: Option<&str>, how: Drain) -> Option<Answer> {
-    use purlis_core::dispatchqueue::{self, Found};
     let socket = held.hooks().socket()?.to_path_buf();
-    if !dispatchqueue::holds(&socket, sender) {
+    if !purlis_core::dispatchqueue::holds(&socket, sender) {
         return None;
     }
+    // **Nothing is typed into a pane while the drain lock is held** (the rule at the top of this
+    // module): the chats each delivery wakes are collected, and woken once it is let go. A
+    // closing chat's drain collects them already, for after the close's hold ([`sender_ending`]).
+    let collects = WAKES.with(|wakes| {
+        let mut wakes = wakes.borrow_mut();
+        let outer = wakes.is_none();
+        if outer {
+            *wakes = Some(Vec::new());
+        }
+        outer
+    });
+    let answered = drain_locked(held, &socket, sender, fresh, how);
+    if collects {
+        let wakes = WAKES
+            .with(|wakes| wakes.borrow_mut().take())
+            .unwrap_or_default();
+        for wake in wakes {
+            wake_now(held, wake);
+        }
+    }
+    answered
+}
+
+/// [`drain`], under chat `sender`'s drain lock ([`draining`]), which is let go as it returns.
+fn drain_locked(
+    held: &Held,
+    socket: &std::path::Path,
+    sender: u32,
+    fresh: Option<&str>,
+    how: Drain,
+) -> Option<Answer> {
+    use purlis_core::dispatchqueue::{self, Found};
+    let socket = socket.to_path_buf();
     let lock = draining(sender);
     let _one = lock.lock().unwrap_or_else(PoisonError::into_inner);
     let sender_key = key(held, sender);
@@ -1167,10 +1199,7 @@ pub(crate) fn sender_ending(held: &Held, chat: u32) {
             // Once the close that drained them has let go of the hold.
             drop(held.chats().deciding());
             for wake in wakes {
-                match wake {
-                    Wake::Told(chat) => tell_the_chat(&held, chat),
-                    Wake::ToldOrSettled(chat) => told_or_settled(&held, chat),
-                }
+                wake_now(&held, wake);
             }
         });
     if let Err(why) = spawned {
@@ -1188,13 +1217,14 @@ enum Wake {
 }
 
 thread_local! {
-    /// Where a closing chat's drain on this thread collects the chats it would wake, so none is
-    /// typed into under `Chats::deciding()` ([`sender_ending`]); `None` everywhere else.
+    /// Where a drain on this thread collects the chats it would wake, so none is typed into
+    /// under its drain lock ([`drain`]) or a close's `Chats::deciding()` ([`sender_ending`]);
+    /// `None` everywhere else.
     static WAKES: std::cell::RefCell<Option<Vec<Wake>>> = const { std::cell::RefCell::new(None) };
 }
 
-/// **`wake`, now, or once a closing chat's hold is let go** ([`sender_ending`]): what every
-/// delivery wakes its reader by.
+/// **`wake`, now, or once the drain or the close it is under has let go** ([`drain`],
+/// [`sender_ending`]): what every delivery wakes its reader by.
 fn woken(held: &Held, wake: Wake) {
     let wake = WAKES.with(|wakes| match wakes.borrow_mut().as_mut() {
         Some(later) => {
@@ -1203,10 +1233,18 @@ fn woken(held: &Held, wake: Wake) {
         }
         None => Some(wake),
     });
+    if let Some(wake) = wake {
+        wake_now(held, wake);
+    }
+}
+
+/// Wakes the chat `wake` names, now.
+fn wake_now(held: &Held, wake: Wake) {
     match wake {
-        Some(Wake::Told(chat)) => tell_the_chat(held, chat),
-        Some(Wake::ToldOrSettled(chat)) => told_or_settled(held, chat),
-        None => {}
+        Wake::Told(chat) => {
+            tell_the_chat(held, chat);
+        }
+        Wake::ToldOrSettled(chat) => told_or_settled(held, chat),
     }
 }
 
@@ -2640,6 +2678,11 @@ pub fn closed(held: &Held, chat: u32, task_of: Option<(u32, String)>) {
 /// Chat `old` is now `new`: the same chat, started again under a new number. What the app
 /// remembers of it, and the messages waiting for its next turn, follow it.
 pub fn followed(held: &Held, old: u32, new: u32) {
+    // What it queued while the app did not answer goes on with it (#3902): moved to the new
+    // number, signed under the new run's key, before the old run ends and its folder is cleared.
+    if let Some(socket) = held.hooks().socket() {
+        purlis_core::dispatchqueue::moved(socket, old, new);
+    }
     held.tasks().ledger().followed(old, new);
     // A cancel under way goes on, as a cancel of the new run (#1459).
     crate::stopping::cancel_followed(held, old, new);

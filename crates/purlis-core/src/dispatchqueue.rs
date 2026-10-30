@@ -224,47 +224,157 @@ fn queued(
     }
     // Past every number in the folder, and past the last one the app delivered: a number
     // never goes back.
-    let mut seq = numbers
-        .iter()
-        .map(|(seq, _)| *seq)
-        .max()
-        .unwrap_or(0)
-        .max(floor(socket, chat, token));
-    // A number taken by another sender since the listing is passed over.
-    let (seq, mut part) = loop {
+    let start = numbers.iter().map(|(seq, _)| *seq).max().unwrap_or(0);
+    let (key, _) = sign(token, chat, 0, "");
+    let (seq, part) = claim(&dir, start, &|| floor_of(socket, chat, &key))?;
+    let (key, mac) = sign(token, chat, seq, &body);
+    written(
+        &dir,
+        seq,
+        part,
+        &File {
+            v: VERSION,
+            seq,
+            key,
+            body,
+            mac,
+        },
+    )?;
+    Ok(id)
+}
+
+/// **Takes the next free number past `start` and past the floor** in `dir`, by making its `.part`
+/// exclusively: the number and the part. `floor` is read again once the part is made, so a
+/// number a drain delivered and freed meanwhile (the floor raised to it, its file removed) is
+/// never taken again: a message under it would be read as delivered already, and dropped.
+fn claim(dir: &Path, start: u64, floor: &dyn Fn() -> u64) -> io::Result<(u64, std::fs::File)> {
+    let mut seq = start.max(floor());
+    loop {
         seq += 1;
+        let part = dir.join(name(seq, "part"));
         match std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(dir.join(name(seq, "part")))
+            .open(&part)
         {
-            // A sender that took this number and has finished already renamed its part away:
-            // the number is taken, and this sender lets it go and takes the next.
-            Ok(_) if dir.join(name(seq, "json")).exists() => {
-                let _ = std::fs::remove_file(dir.join(name(seq, "part")));
+            Ok(file) => {
+                // Taken already by a sender that finished, or at or below what a drain has
+                // delivered since this sender looked: let go of it, and go on past both.
+                let delivered = floor();
+                if dir.join(name(seq, "json")).exists() || seq <= delivered {
+                    let _ = std::fs::remove_file(&part);
+                    seq = seq.max(delivered);
+                    continue;
+                }
+                return Ok((seq, file));
             }
-            Ok(file) => break (seq, file),
             Err(why) if why.kind() == io::ErrorKind::AlreadyExists => {}
             Err(why) => return Err(why),
         }
-    };
-    let (key, mac) = sign(token, chat, seq, &body);
-    let file = File {
-        v: VERSION,
-        seq,
-        key,
-        body,
-        mac,
-    };
-    part.write_all(&serde_json::to_vec(&file).map_err(io::Error::other)?)?;
-    part.sync_all()?;
-    // Linked, never renamed over: a name that is there already is never replaced.
-    std::fs::hard_link(dir.join(name(seq, "part")), dir.join(name(seq, "json")))?;
-    std::fs::remove_file(dir.join(name(seq, "part")))?;
-    if let Ok(folder) = std::fs::File::open(&dir) {
+    }
+}
+
+/// **Writes `file` into the part numbered `seq` and links it whole as `<seq>.json`**. A part that
+/// could not be written is removed, so it holds up no later message of the chat's.
+fn written(dir: &Path, seq: u64, mut part: std::fs::File, file: &File) -> io::Result<()> {
+    let part_path = dir.join(name(seq, "part"));
+    let done = (|| {
+        part.write_all(&serde_json::to_vec(file).map_err(io::Error::other)?)?;
+        part.sync_all()?;
+        // Linked, never renamed over: a name that is there already is never replaced.
+        std::fs::hard_link(&part_path, dir.join(name(seq, "json")))
+    })();
+    let _ = std::fs::remove_file(&part_path);
+    done?;
+    if let Ok(folder) = std::fs::File::open(dir) {
         let _ = folder.sync_all();
     }
-    Ok(id)
+    Ok(())
+}
+
+/// **Moves what chat `old` has queued to chat `new`** (#3902): the same chat, started again
+/// under a new number in its own place. Each message that checks is written again under `new`,
+/// in its order, signed with the key the app keeps for `new`, and removed from `old`; what does
+/// not check is left for `old`'s end to clear. Answers how many moved.
+pub fn moved(socket: &Path, old: u32, new: u32) -> usize {
+    if old == new || !holds(socket, old) {
+        return 0;
+    }
+    let dir = dir_for(socket, new);
+    if crate::secrets::make_private_dir(&dir).is_err() {
+        return 0;
+    }
+    let mut count = 0;
+    for found in waiting(socket, old) {
+        let Found::Message(message) = found else {
+            continue;
+        };
+        let Ok(body) = serde_json::to_string(&Body {
+            id: message.id.clone(),
+            at: message.at,
+            what: message.what.clone(),
+        }) else {
+            continue;
+        };
+        let Some(key) = kept_key(socket, new) else {
+            break;
+        };
+        let start = numbers(&dir)
+            .map(|numbers| numbers.iter().map(|(seq, _)| *seq).max().unwrap_or(0))
+            .unwrap_or(0);
+        let Ok((seq, part)) = claim(&dir, start, &|| floor_of(socket, new, &key)) else {
+            break;
+        };
+        let Some((key, mac)) = signed_kept(socket, new, seq, &body) else {
+            break;
+        };
+        let file = File {
+            v: VERSION,
+            seq,
+            key,
+            body,
+            mac,
+        };
+        if written(&dir, seq, part, &file).is_err() {
+            break;
+        }
+        let _ = std::fs::remove_file(&message.path);
+        count += 1;
+    }
+    count
+}
+
+/// The last number chat `chat`'s messages under key `key` had delivered.
+#[cfg(unix)]
+fn floor_of(socket: &Path, chat: u32, key: &str) -> u64 {
+    crate::hookwire::spool::message_floor(&spool_dir(socket), chat, key)
+}
+
+#[cfg(not(unix))]
+fn floor_of(_: &Path, _: u32, _: &str) -> u64 {
+    0
+}
+
+/// The id of the key the app keeps for chat `chat` now: the last one it issued it.
+#[cfg(unix)]
+fn kept_key(socket: &Path, chat: u32) -> Option<String> {
+    crate::hookwire::spool::kept_key_of(&spool_dir(socket), chat)
+}
+
+#[cfg(not(unix))]
+fn kept_key(_: &Path, _: u32) -> Option<String> {
+    None
+}
+
+/// `body`, number `seq` of chat `chat`, signed under the key the app keeps for it.
+#[cfg(unix)]
+fn signed_kept(socket: &Path, chat: u32, seq: u64, body: &str) -> Option<(String, String)> {
+    crate::hookwire::spool::sign_kept(&spool_dir(socket), chat, seq, &format!("{LABEL}{body}"))
+}
+
+#[cfg(not(unix))]
+fn signed_kept(_: &Path, _: u32, _: u64, _: &str) -> Option<(String, String)> {
+    None
 }
 
 /// A message's file name: its number in [`DIGITS`] digits, and `ext`.
@@ -306,21 +416,6 @@ fn numbers(dir: &Path) -> io::Result<Vec<(u64, bool)>> {
             Some((seq, part))
         })
         .collect())
-}
-
-/// The last number of chat `chat`'s messages under `token`'s key the app delivered.
-#[cfg(unix)]
-fn floor(socket: &Path, chat: u32, token: &crate::hookwire::ChatToken) -> u64 {
-    crate::hookwire::spool::message_floor(
-        &spool_dir(socket),
-        chat,
-        &crate::hookwire::spool::key_id_of(token),
-    )
-}
-
-#[cfg(not(unix))]
-fn floor(_: &Path, _: u32, _: &crate::hookwire::ChatToken) -> u64 {
-    0
 }
 
 /// **Every message chat `chat` has waiting, oldest first**, each checked against the keys the

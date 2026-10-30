@@ -10000,7 +10000,7 @@ fn a_task_that_reported_while_its_program_still_runs_is_told_listed_and_cancelle
     let listed = asks(&held, &id, asking, What::List);
     assert!(
         matches!(&listed, Answer::Task(answered)
-            if matches!(&**answered, Answered::Listed { rows }
+            if matches!(&**answered, Answered::Listed { rows, .. }
                 if rows.iter().any(|row| row.chat == task
                     && row.state == "reported: blocked, still running"))),
         "{listed:?}"
@@ -10058,7 +10058,7 @@ fn a_long_running_task_is_recorded_told_so_and_listed_with_its_last_note() {
     let listed = asks(&held, &id, asking, What::List);
     assert!(
         matches!(&listed, Answer::Task(answered)
-            if matches!(&**answered, Answered::Listed { rows }
+            if matches!(&**answered, Answered::Listed { rows, .. }
                 if rows.iter().any(|row| row.chat == task
                     && row.long
                     && row.last_note.as_deref() == Some("ticket 1 merged")))),

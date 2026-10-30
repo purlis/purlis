@@ -274,3 +274,60 @@ fn queued_as(socket: &Path, chat: u32, token: &ChatToken, seq: u64, what: Queued
     .expect("written");
     seq
 }
+
+#[test]
+fn a_number_a_drain_delivered_while_a_sender_claimed_it_is_passed_over() {
+    // A drain delivers another sender's number 2 and raises the floor to it while this sender,
+    // which read the floor as 0, claims 2: it lets 2 go and takes 3.
+    let folder = tempfile::tempdir().expect("a folder");
+    let floor = std::cell::Cell::new(0);
+    let looks = std::cell::Cell::new(0);
+    let (seq, _part) = claim(folder.path(), 1, &|| {
+        looks.set(looks.get() + 1);
+        // The first look is before the claim; by the second, the drain has delivered 2.
+        if looks.get() > 1 {
+            floor.set(2);
+        }
+        floor.get()
+    })
+    .expect("claimed");
+
+    assert_eq!(seq, 3);
+    assert!(!folder.path().join(name(2, "part")).exists(), "2 let go of");
+}
+
+#[test]
+fn a_part_that_could_not_be_written_is_removed() {
+    let folder = tempfile::tempdir().expect("a folder");
+    let (seq, part) = claim(folder.path(), 0, &|| 0).expect("claimed");
+    // The whole name is there already: the link fails, and the part does not stay behind.
+    std::fs::write(folder.path().join(name(seq, "json")), b"x").expect("in the way");
+    let file = File {
+        v: VERSION,
+        seq,
+        key: String::new(),
+        body: String::new(),
+        mac: String::new(),
+    };
+
+    assert!(written(folder.path(), seq, part, &file).is_err());
+    assert!(!folder.path().join(name(seq, "part")).exists());
+}
+
+#[test]
+fn a_chat_started_again_in_its_place_keeps_what_it_queued_in_order() {
+    let (_root, socket, token) = project(3, "tok-three");
+    crate::hookwire::spool::remember(&spool_dir(&socket), 7, &ChatToken::from("tok-seven"))
+        .expect("the new run's key");
+    queue(&socket, 3, &token, tell(4, "one"), 1).expect("queued");
+    queue(&socket, 3, &token, tell(4, "two"), 2).expect("queued");
+
+    assert_eq!(moved(&socket, 3, 7), 2);
+
+    assert!(!holds(&socket, 3));
+    let found = messages(waiting(&socket, 7));
+    assert_eq!(
+        found.iter().map(|m| m.what.clone()).collect::<Vec<_>>(),
+        vec![tell(4, "one"), tell(4, "two")]
+    );
+}
