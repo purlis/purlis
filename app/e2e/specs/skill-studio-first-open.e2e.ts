@@ -59,9 +59,10 @@ describe("the Skill studio's first open", function () {
 
   before(async () => {
     root = await projectRoot();
-    // The studio's chats start without the picker, on a profile someone approved (#3562).
-    await theDefaultProfileApproved();
     await focusWorkspace("alpha");
+    // The studio's chats start without the picker, on a profile someone approved (#3562): in
+    // the project and workspace they start in.
+    await theDefaultProfileApproved();
     wereOpen = await tabNames();
     plane = await projectInFront();
     wereRunning = await runningIn(plane);
