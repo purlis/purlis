@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793345004865,
+  "lastUpdate": 1793346286167,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31038,6 +31038,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8959995,
             "unit": "ms",
             "extra": "median of 5 runs: 101.109, 101.433, 101.896, 102.111, 102.575 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d1e055361458dcf6b190834d324dede98746d93d",
+          "message": "Runners: Sign in fetches the profile's pinned harness first (#4007) (#4010)\n\n* Runners: Sign in fetches the profile's pinned harness first (#4007)\n\nA runner image carries no harness, so `purlis profile sign-in <profile>` on a runner\nwhere no chat had started failed with \"could not find a program called claude\", and\nthe profile's row on the pool said its harness could not say whether it was signed in.\n\n- `installs::on_this_runner` is the one fetch-or-reuse path: a chat's start and\n  `purlis profile sign-in` (and `--check`) on a runner both run it. The sign-in shell\n  gets one line saying what is fetched; a refused fetch says why and signs nothing in.\n- `install` and `program_for` take a `saying` callback for that line.\n- `Look::pinned_program` (default `None`): on a runner, whether a kept profile is signed\n  in is asked of its pinned version. A look starts the fetch in the background\n  (`installs::for_a_look`), one per version, so the desktop's 20 s keep link is never\n  held up by a download. After a refused fetch, looks wait 5 minutes before trying again.\n- `sign_in::login_of` takes the pinned program; the window's own sign-in passes None.\n- docs/runner-image.md and a changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65C93Q024FTVXW1XHK8E951\nPurlis-Persona: steward\n\n* Runners: a look finds no data home for a profile it fetches nothing for (#4007)\n\nReview fixes for #4010:\n\n- `installs::for_a_look` returns before it resolves the data home (or runs the fence\n  check on it) when the profile is not kept for a desktop or has no pin, as\n  `on_this_runner` does. Every look on a desktop is one of those. The data home is now\n  passed through `for_a_look_in`, so a test can see that it is never asked for.\n- `a_look_whose_fetch_is_refused_installs_nothing` now waits, up to a minute, until the\n  look's fetch is recorded as refused, then asks again and checks for exactly one\n  download. It no longer sleeps a fixed second, which could flake on loaded CI.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65C93Q024FTVXW1XHK8E951\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T07:19:52Z",
+          "tree_id": "918bdfad1f6b84da5d0e6d8d75bff706ce028345",
+          "url": "https://github.com/purlis/purlis/commit/d1e055361458dcf6b190834d324dede98746d93d"
+        },
+        "date": 1793346282201,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.681561,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.635, 0.667, 0.682, 0.689, 0.689 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.560763,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.477, 16.539, 16.561, 16.578, 16.991 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.39006900000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.901, 102.003, 102.390, 102.641, 102.663 ms"
           }
         ]
       }
