@@ -120,10 +120,10 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     await userEvent.type(field, "wrong{Enter}");
     expect(calls("pool_sign_in_paste")).toEqual([{ flow: 7, code: "wrong" }]);
 
-    says({ at: "refused", said: "Invalid code. Please make sure the full code was copied." });
+    says({ at: "refused", said: "Invalid code. That code is not from this sign-in." });
 
     expect(await within(opened).findByRole("alert")).toHaveTextContent(
-      "Invalid code. Please make sure the full code was copied.",
+      "Invalid code. That code is not from this sign-in.",
     );
     expect(within(opened).getByRole("textbox", { name: "Paste code" })).toBeVisible();
   });

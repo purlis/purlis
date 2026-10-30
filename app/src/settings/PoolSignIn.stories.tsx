@@ -75,7 +75,7 @@ export const PasteCode: Story = {
 /** The harness refused the code, in its words; another may be pasted, from the field. */
 export const CodeRefused: Story = {
   args: {
-    step: { at: "refused", said: "Invalid code. Please make sure the full code was copied." },
+    step: { at: "refused", said: "Invalid code. That code is not from this sign-in." },
   },
   play: async ({ canvas }) => {
     await expect(canvas.getByRole("alert")).toHaveTextContent("Invalid code");

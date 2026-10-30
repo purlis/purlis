@@ -239,14 +239,45 @@ export function SignInStrip(props: SignInStripProps) {
   );
 }
 
-/** The strip's body at `step`. */
-function Body({
+/** What went wrong at `step`, in one line, where anything did. */
+function troubleAt(step: StripStep, who: string, pool: string, pasteRefused?: string) {
+  switch (step.at) {
+    case "code":
+      return pasteRefused;
+    case "refused":
+      return pasteRefused ?? `The sign-in refused that code: ${step.said}`;
+    case "could-not-follow":
+      return "purlis could not follow this sign-in, so it ended it. Sign in with Open in terminal, where the harness asks you itself. It said:";
+    case "failed":
+      return `${who} did not sign in on ${pool}: ${step.why}`;
+    case "not-started":
+      return step.why;
+    default:
+      return undefined;
+  }
+}
+
+/** The strip's body at `step`: what went wrong first, in one line, then the step's own. */
+function Body(props: SignInStripProps & { who: string }) {
+  const trouble = troubleAt(props.step, props.who, props.pool, props.pasteRefused);
+  return (
+    <>
+      {trouble !== undefined && (
+        <p className="trouble said-in-full" role="alert">
+          {trouble}
+        </p>
+      )}
+      <StepBody {...props} />
+    </>
+  );
+}
+
+function StepBody({
   step,
   pool,
   who,
   code,
   setCode,
-  pasteRefused,
   onPaste,
   page,
 }: SignInStripProps & { who: string }) {
@@ -271,11 +302,6 @@ function Body({
             Sign in on the page that opened in your browser. It shows a code at the end: paste it
             here.
           </p>
-          {step.at === "refused" && (
-            <p className="trouble said-in-full" role="alert">
-              The sign-in refused that code: {step.said}
-            </p>
-          )}
           <form className="pool-sign-in-paste" onSubmit={onPaste}>
             <TextField
               label="Paste code"
@@ -284,7 +310,6 @@ function Body({
               autoFocus
               autoComplete="off"
               spellCheck={false}
-              error={pasteRefused}
             />
             <Button type="submit" variant="primary" isDisabled={code.trim() === ""}>
               Sign in
@@ -310,28 +335,10 @@ function Body({
         </p>
       );
     case "could-not-follow":
-      return (
-        <>
-          <p className="trouble said-in-full" role="alert">
-            purlis could not follow this sign-in, so it ended it. Sign in with Open in terminal,
-            where the harness asks you itself. It said:
-          </p>
-          <pre className="pool-sign-in-said">{step.said}</pre>
-        </>
-      );
-    case "failed":
-      return (
-        <p className="trouble said-in-full" role="alert">
-          {who} did not sign in on {pool}: {step.why}
-        </p>
-      );
-    case "not-started":
-      return (
-        <p className="trouble said-in-full" role="alert">
-          {step.why}
-        </p>
-      );
+      return <pre className="pool-sign-in-said">{step.said}</pre>;
     case "cancelled":
       return <p className="ui-setting-help">The sign-in was cancelled; nothing changed there.</p>;
+    default:
+      return null;
   }
 }

@@ -146,7 +146,7 @@ pub struct Driven {
 }
 
 impl Driven {
-    /// A login of harness `kind`, started at `now`; `None` for one purlis does not follow yet.
+    /// A login of harness `kind`, started at `now`; `None` for one purlis does not follow (Codex and opencode: #4044, #4045).
     pub fn of(kind: &str, now: Instant) -> Option<Self> {
         [&CLAUDE]
             .into_iter()
@@ -432,8 +432,11 @@ pub fn drive(
     kind: &str,
     check: impl FnOnce() -> Standing + Send + 'static,
 ) -> Result<Driving, String> {
-    let driven = Driven::of(kind, Instant::now())
-        .ok_or_else(|| format!("purlis does not follow {kind}'s sign-in without a terminal yet"))?;
+    let driven = Driven::of(kind, Instant::now()).ok_or_else(|| {
+        format!(
+            "purlis follows {kind}'s sign-in only in a terminal: sign it in with Open in terminal"
+        )
+    })?;
     let mut command = Command::new(&login.program);
     command
         .args(&login.args)
