@@ -32,7 +32,6 @@
 // The shared helpers, in the folders they always had; each module reaches one as
 // `crate::support` and so on.
 #[path = "../old_names/mod.rs"]
-mod a_killed_docker_exec_closes_what_it_ran_on_a_runner;
 mod old_names;
 #[path = "../oracle_corpus/mod.rs"]
 mod oracle_corpus;
@@ -88,6 +87,7 @@ mod a_grades_chat_runs_on_the_model_picked;
 mod a_handoff_todo_is_recorded_once_per_piece_of_work;
 mod a_harness_is_found_the_way_a_shell_finds_it;
 mod a_host_with_no_window_arms_a_chat_with_what_is_installed_beside_it;
+mod a_killed_docker_exec_closes_what_it_ran_on_a_runner;
 mod a_launchd_started_process_raises_its_open_file_limit;
 mod a_legacy_task_memo_is_indexed_by_the_rules_every_append_keeps;
 mod a_level_3_chat_starts_from_its_own_start;
