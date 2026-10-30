@@ -154,6 +154,7 @@ impl purlis_host::Compose for Composes {
                 number: starting.number,
                 start: starting.start,
                 reporting: starting.reporting,
+                prompt_key: starting.prompt_key,
                 started_by: starting.started_by.word(),
             },
             starting.size,

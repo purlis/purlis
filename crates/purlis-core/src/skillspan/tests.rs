@@ -8,9 +8,9 @@ use crate::state::{Detail, Event};
 const RUN: &str = "01JB0000000000000000000001";
 const OTHER: &str = "01JB0000000000000000000002";
 
-/// The chat's own salt: what its hook and the window digest its prompts under.
+/// The chat's prompt key: what its hook and the window digest its prompts under.
 fn salt() -> PromptSalt {
-    PromptSalt::of_chat("01JB00000000000000000000C4").expect("a chat's id")
+    PromptSalt::of_key("01JB00000000000000000000C4").expect("a chat's key")
 }
 
 fn report(event: Event) -> Report {
@@ -258,7 +258,7 @@ fn a_prompts_marks_hold_each_lines_stretches_and_nothing_else() {
 fn a_prompts_marks_are_salted_by_its_chat_so_another_chats_digest_of_the_same_words_misses() {
     // SK-38 (#3029): the same words digest apart in two chats, so a filter of a short prompt is
     // not matched against digests made anywhere but its own chat.
-    let other = PromptSalt::of_chat("01JB00000000000000000000C5").expect("a chat's id");
+    let other = PromptSalt::of_key("01JB00000000000000000000C5").expect("a chat's key");
     assert_ne!(
         PromptMarks::digest("/deploy", &salt()),
         PromptMarks::digest("/deploy", &other)
@@ -266,7 +266,20 @@ fn a_prompts_marks_are_salted_by_its_chat_so_another_chats_digest_of_the_same_wo
     let marks = PromptMarks::of("/deploy", &salt());
     assert!(marks.holds(PromptMarks::digest("/deploy", &salt())));
     assert!(!marks.holds(PromptMarks::digest("/deploy", &other)));
-    assert_eq!(PromptSalt::of_chat("  "), None, "no id, no salt");
+    assert_eq!(PromptSalt::of_key("  "), None, "no key, no salt");
+}
+
+#[test]
+fn a_minted_prompt_key_is_256_random_bits_and_crosses_the_protocol_whole() {
+    // #3369: minted where the chat is composed, one per chat.
+    let one = PromptSalt::mint().expect("a key");
+    let two = PromptSalt::mint().expect("a key");
+    assert_ne!(one, two);
+    assert_eq!(one.expose().len(), 64);
+    assert!(one.expose().bytes().all(|byte| byte.is_ascii_hexdigit()));
+    // What the host is handed and answers back is the same key.
+    assert_eq!(PromptSalt::from(&one.key()), one);
+    assert_eq!(format!("{:?}", one.key()), "PromptKey(..)");
 }
 
 #[test]

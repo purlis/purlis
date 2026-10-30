@@ -193,3 +193,7 @@
 {"reply":{"re":178,"ok":{"profile_kept":{"standing":"signed_in"}}}}
 {"call":{"id":179,"command":"kept_profiles"}}
 {"reply":{"re":179,"ok":{"profiles":{"names":["work","claude"]}}}}
+{"call":{"id":180,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"harness","number":13,"launch":{"program":"codex","harness":"codex","prompt_key":"0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"}}}
+{"reply":{"re":180,"ok":{"program_started":{"program":"01J9ZQ5000000000000000000G","number":13,"process":4245,"sandbox":"off","prompt_key":"0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"}}}}
+{"call":{"id":181,"command":"programs_of","project":"01J9PRJCT00000000000000000"}}
+{"reply":{"re":181,"ok":{"programs":[{"program":"01J9ZQ5000000000000000000G","kind":"harness","number":13,"process":4245,"sandbox":"off","cols":80,"rows":24,"prompt_key":"0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"}]}}}

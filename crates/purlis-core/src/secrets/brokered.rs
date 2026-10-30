@@ -1548,10 +1548,14 @@ pub fn not_answered(mut writer: Box<dyn Write + Send>) {
     );
 }
 
-/// The variables of the asker's environment a child never starts with: the chat's hook channel
-/// and its token (the child cannot reach the socket, and needs neither), and the ones the wrap
-/// sets itself. Each under its old prefix too ([`not_handed_on`]).
-const NOT_HANDED_ON: &[&str] = &[crate::hookwire::SOCKET_ENV, crate::hookwire::TOKEN_ENV];
+/// The variables of the asker's environment a child never starts with: the chat's hook channel,
+/// its token and its prompt key (the child cannot reach the socket, and needs none of them), and
+/// the ones the wrap sets itself. Each under its old prefix too ([`not_handed_on`]).
+const NOT_HANDED_ON: &[&str] = &[
+    crate::hookwire::SOCKET_ENV,
+    crate::hookwire::TOKEN_ENV,
+    crate::hookwire::PROMPT_KEY_ENV,
+];
 
 /// Whether `key` is one of [`NOT_HANDED_ON`], under the purlis prefix or an old one the window
 /// still reads ([`crate::names::ENV_PREFIX`]).

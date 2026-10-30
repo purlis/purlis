@@ -379,9 +379,16 @@ use crate::view::{Limits, Views};
 /// asks it before it forgets the ones no longer chosen for the pool, or no longer on the
 /// desktop. Carried out and refused as `keep_profile` is. A host before 1.57 refuses it
 /// `unknown_command`, and the desktop forgets nothing it was not asked to there.
+///
+/// 1.58 added each chat's prompt key (#3369): a random secret its hooks key the digests of its
+/// prompts by ([`PromptKey`]). A window's `launch` may carry it (`prompt_key`); a start the host
+/// composes itself is given one by the host. The host keeps it with the program in memory alone,
+/// and answers it in `program_started` and `programs` (`prompt_key`), so the window that started
+/// or takes back the chat digests what it types under the same key. A host before 1.58 ignores
+/// the field and answers none, and its chats' prompts are marked under no key.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 57,
+    minor: 58,
 };
 
 /// The version that first answers `relay_to` with the runner the link reached (#3417).
@@ -1553,6 +1560,54 @@ pub struct Launch {
     /// program does, whether or not the link that made it does (1.4).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confinement: Option<String>,
+    /// The chat's prompt key, which the window minted for it (1.58, #3369): set in its
+    /// environment for its hooks, and kept by the host with the program for a window that takes
+    /// it back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_key: Option<PromptKey>,
+}
+
+/// **A chat's prompt key** (1.58, #3369): 32 random bytes, written as hex, that its hooks key
+/// the digests of its prompts by, and the window the digests of what it types into the chat.
+/// One per chat, minted where the chat is composed: by the window for a launch of its own, by
+/// the host for a start it composes. It is set in the chat's environment, never on its command
+/// line; the host keeps it in memory alone, beside the program, and writes it to no record or
+/// log. **Its `Debug` never shows the value.**
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PromptKey(String);
+
+impl PromptKey {
+    /// How many random bytes a key is.
+    const BYTES: usize = 32;
+
+    /// A fresh key from the operating system's generator, or why there is none.
+    pub fn mint() -> std::io::Result<Self> {
+        let mut bytes = [0u8; Self::BYTES];
+        getrandom::fill(&mut bytes).map_err(std::io::Error::other)?;
+        Ok(Self(
+            bytes.iter().map(|byte| format!("{byte:02x}")).collect(),
+        ))
+    }
+
+    /// The key `value` names, as a chat's environment or a peer carries it; none for an empty
+    /// one.
+    pub fn of(value: &str) -> Option<Self> {
+        (!value.is_empty()).then(|| Self(value.to_owned()))
+    }
+
+    /// The value, for what must write it down: the chat's environment, and the digests keyed
+    /// by it.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Never prints the key.
+impl std::fmt::Debug for PromptKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PromptKey(..)")
+    }
 }
 
 /// Where a chat's hooks report, and the token they carry (1.2).
@@ -1641,6 +1696,10 @@ pub enum Answer {
         /// answers. Absent from a host before 1.29, whose window takes the run as sandboxed.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sandbox: Option<RunSandbox>,
+        /// Its prompt key (1.58, #3369): the launch's, or the one the host minted for a start
+        /// it composed. Absent for a program that has none, and from a host before 1.58.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        prompt_key: Option<PromptKey>,
     },
     /// Whether a program is ready to be typed at: [`Command::Readiness`] (1.2).
     Readiness(Readiness),
@@ -1744,6 +1803,10 @@ pub struct HeldProgram {
     /// named is an empty one, which no note names.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub logins: Vec<String>,
+    /// Its prompt key, as its start was given it (1.58, #3369): what a window that takes the
+    /// chat back digests what it types into it under.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_key: Option<PromptKey>,
 }
 
 /// The kill switch as the host holds it (1.5, ADR 0071).
@@ -1778,6 +1841,8 @@ pub struct ProgramStarted {
     pub confined: Option<Confined>,
     /// How its run is sandboxed, as the host applied it, where the host says (1.29).
     pub sandbox: Option<RunSandbox>,
+    /// Its prompt key, where it has one (1.58).
+    pub prompt_key: Option<PromptKey>,
 }
 
 /// One chat, as [`Command::List`] lists it.
@@ -3134,12 +3199,14 @@ impl Client {
                 process,
                 confined,
                 sandbox,
+                prompt_key,
             } => Ok(ProgramStarted {
                 program,
                 number,
                 process,
                 confined,
                 sandbox,
+                prompt_key,
             }),
             other => Err(unexpected(&other)),
         }

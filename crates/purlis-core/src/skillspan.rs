@@ -158,26 +158,51 @@ pub struct Reported {
     pub opened: Vec<Open>,
 }
 
-/// **The salt a chat's prompts are digested under** (SK-38, #3029): the chat's own id (ADR
-/// 0066), which its hooks read from [`crate::hookwire::CHAT_ID_ENV`] and the window from the chat
-/// it typed into. Each chat's digests of the same words differ, so a table of likely prompts
-/// made once matches no chat's filter. **It separates chats and hides nothing:** the id is no
-/// secret (it names the chat's records on disk), so whoever holds a filter and its chat's id can
-/// still test a guess against it (#3369). Its `Debug` shows nothing all the same.
+/// **The key a chat's prompts are digested under** (SK-38 #3029, #3369): the chat's prompt key,
+/// a random secret minted where the chat is composed, by the window for a launch of its own and
+/// by the session host for a start it composes
+/// ([`purlis_session_protocol::session::PromptKey`]). Its hooks read it from
+/// [`crate::hookwire::PROMPT_KEY_ENV`]; the window keeps it with the chat it started, or is
+/// answered it by the host that started or still runs the chat. Each chat's digests of the same
+/// words differ, and nobody without the key can test a guess against a chat's filter. Its
+/// `Debug` shows nothing.
 #[derive(Clone, PartialEq, Eq)]
 pub struct PromptSalt(String);
 
 impl PromptSalt {
-    /// The salt of the chat whose id is `id`; none for an empty one.
-    pub fn of_chat(id: &str) -> Option<Self> {
-        let id = id.trim();
-        (!id.is_empty()).then(|| Self(id.to_owned()))
+    /// A fresh key for a chat being composed, or why there is none.
+    pub fn mint() -> std::io::Result<Self> {
+        purlis_session_protocol::session::PromptKey::mint().map(|key| Self::from(&key))
     }
 
-    /// The salt of the chat a hook runs in, from its environment `env`; none outside a chat the
-    /// app started.
+    /// The key `value` names; none for an empty one.
+    pub fn of_key(value: &str) -> Option<Self> {
+        let value = value.trim();
+        (!value.is_empty()).then(|| Self(value.to_owned()))
+    }
+
+    /// The key of the chat a hook runs in, from its environment `env`; none outside a chat
+    /// purlis started.
     pub fn read(env: &dyn Fn(&str) -> Option<String>) -> Option<Self> {
-        crate::envvar::lookup(crate::hookwire::CHAT_ID_ENV, env).and_then(|id| Self::of_chat(&id))
+        crate::envvar::lookup(crate::hookwire::PROMPT_KEY_ENV, env)
+            .and_then(|value| Self::of_key(&value))
+    }
+
+    /// The key as the session protocol carries it, to the host that starts the chat.
+    pub fn key(&self) -> purlis_session_protocol::session::PromptKey {
+        purlis_session_protocol::session::PromptKey::of(&self.0)
+            .expect("a prompt salt is never empty")
+    }
+
+    /// The value, for the one place that must write it down: the chat's environment.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&purlis_session_protocol::session::PromptKey> for PromptSalt {
+    fn from(key: &purlis_session_protocol::session::PromptKey) -> Self {
+        Self(key.expose().to_owned())
     }
 }
 

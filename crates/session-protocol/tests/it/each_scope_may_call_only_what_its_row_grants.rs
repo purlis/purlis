@@ -60,6 +60,7 @@ impl Host for Board {
                 process: None,
                 confined: None,
                 sandbox: None,
+                prompt_key: None,
             },
             Command::AttachView { kind, .. } => Answer::Attached(session::Attached {
                 view: 1,
@@ -205,6 +206,7 @@ fn every_command() -> Vec<Command> {
                 git_hooks: None,
                 reporting: None,
                 confinement: None,
+                prompt_key: None,
             }),
             ..session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell)
         })),

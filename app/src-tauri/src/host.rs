@@ -85,6 +85,10 @@ pub struct Opening {
     /// that started it watches. A session host ends it as soon as this window's link to it ends
     /// without a quit, rather than keeping it for the window to come back to (1.42).
     pub ends_with_its_window: bool,
+    /// Its prompt key (#3369), which the window minted for a harness chat: set in its
+    /// environment for its hooks, and handed to the session host in its launch, which keeps it
+    /// for a window that takes the chat back. Its `Debug` shows nothing of it. None for a shell.
+    pub prompt_key: Option<purlis_core::skillspan::PromptSalt>,
 }
 
 /// A shell with nothing set, for fixtures (#2453): no program, the smallest terminal, nothing
@@ -111,6 +115,7 @@ impl Default for Opening {
             confinement: None,
             run: None,
             ends_with_its_window: false,
+            prompt_key: None,
         }
     }
 }
@@ -147,6 +152,8 @@ pub struct Composed {
     pub number: u32,
     pub confinement: Option<purlis_core::sandbox::Confinement>,
     pub ran: Option<purlis_session_protocol::session::RunSandbox>,
+    /// The prompt key the host minted for it (#3369), where it says one.
+    pub prompt_key: Option<purlis_core::skillspan::PromptSalt>,
 }
 
 /// **A chat that moves between this machine and a runner** (#2048): where it works, the profile
@@ -548,6 +555,14 @@ pub trait SessionHost: Send + Sync {
     /// it, where it is left running in one (#2006): what the window compares with the plan it
     /// makes now, to know whether its sandbox changed while no window was there.
     fn ran_with(&self, number: u32) -> Option<purlis_core::sandbox::plan::Plan> {
+        let _ = number;
+        None
+    }
+
+    /// **The prompt key of chat `number`, left running, as its host kept it** (#3369): what the
+    /// window digests what it types into the chat under once it is reattached. `None` where its
+    /// host keeps none. Read before it is reattached.
+    fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {
         let _ = number;
         None
     }
@@ -1031,6 +1046,8 @@ pub(crate) mod pretend {
                         "seatbelt".to_owned(),
                     ))
                 }),
+                // The runner mints its own (#3369).
+                prompt_key: purlis_core::skillspan::PromptSalt::of_key(&format!("composed-{id}")),
             })
         }
         fn move_ahead(&self, pool: &str, workspace: &str) -> Result<(), String> {
@@ -1145,6 +1162,11 @@ pub(crate) mod pretend {
         }
         fn left_running(&self, number: u32) -> bool {
             lock(&self.seen.left).iter().any(|(one, _)| *one == number)
+        }
+        fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {
+            self.left_running(number)
+                .then(|| purlis_core::skillspan::PromptSalt::of_key(&format!("left-{number}")))
+                .flatten()
         }
         fn ran_with(&self, number: u32) -> Option<purlis_core::sandbox::plan::Plan> {
             lock(&self.seen.left)

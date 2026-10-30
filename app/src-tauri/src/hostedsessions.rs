@@ -2840,6 +2840,10 @@ fn launch_of(opening: &Opening, program: String) -> Launch {
             .map(|hooks| hooks.dir().display().to_string()),
         reporting: None,
         confinement,
+        prompt_key: opening
+            .prompt_key
+            .as_ref()
+            .map(purlis_core::skillspan::PromptSalt::key),
     }
 }
 
@@ -2896,8 +2900,9 @@ impl HostedSessions {
                     process,
                     confined,
                     sandbox,
+                    prompt_key,
                     ..
-                }) => (program, process, confined, sandbox),
+                }) => (program, process, confined, sandbox, prompt_key),
                 Ok(other) => {
                     return Err(unclear(format!(
                         "the session host answered a start with {other:?}"
@@ -2909,7 +2914,7 @@ impl HostedSessions {
                 }
                 Err(refused) => return Err(unclear(refused.why)),
             };
-        let (program, pid, confined, ran) = started;
+        let (program, pid, confined, ran, prompt_key) = started;
         // A chat that runs on a pool's runner with nothing holding its files leaves that runner
         // trusted with no browser and no login until it is made again (D-2050-27): kept here,
         // where no runner reaches, before it is kept as running. Where that cannot be kept, it
@@ -2930,7 +2935,14 @@ impl HostedSessions {
         if !operator_shell && self.kill_switch.is_stopped() {
             link.send(Command::Stop { chat: program });
         }
-        Ok(Begun { id, confined, ran })
+        Ok(Begun {
+            id,
+            confined,
+            ran,
+            prompt_key: prompt_key
+                .as_ref()
+                .map(purlis_core::skillspan::PromptSalt::from),
+        })
     }
 }
 
@@ -2953,6 +2965,8 @@ struct Begun {
     id: u32,
     confined: Option<session::Confined>,
     ran: Option<session::RunSandbox>,
+    /// The chat's prompt key, as the host said it (1.58, #3369).
+    prompt_key: Option<purlis_core::skillspan::PromptSalt>,
 }
 
 /// Each call is documented once, on [`SessionHost`].
@@ -3052,7 +3066,12 @@ impl SessionHost for HostedSessions {
             }
         };
         // How the host applied the sandbox to the run it composed, by its own record (#2692).
-        let Begun { id, confined, ran } = self
+        let Begun {
+            id,
+            confined,
+            ran,
+            prompt_key,
+        } = self
             .started(&link, id, start, false, announce)
             .inspect_err(|_| unheard(&confinement))?;
         // Held from here, where the host named it to this window: dropping it, on any path, lets
@@ -3065,6 +3084,7 @@ impl SessionHost for HostedSessions {
                 number: id,
                 confinement: None,
                 ran,
+                prompt_key,
             });
         };
         let held = HeldInTheHost::new(confinement, Arc::clone(&link), true);
@@ -3084,6 +3104,7 @@ impl SessionHost for HostedSessions {
             number: id,
             confinement: Some(confinement),
             ran,
+            prompt_key,
         })
     }
 
@@ -3490,6 +3511,14 @@ impl SessionHost for HostedSessions {
 
     /// How the host says it applied the sandbox to chat `number`'s run: none from a host before
     /// 1.28 (#2636).
+    fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {
+        lock(&self.left)
+            .get(&number)?
+            .prompt_key
+            .as_ref()
+            .map(purlis_core::skillspan::PromptSalt::from)
+    }
+
     fn ran_in(&self, number: u32) -> Option<purlis_session_protocol::session::RunSandbox> {
         self.link().ok()?;
         lock(&self.left).get(&number)?.sandbox.clone()
