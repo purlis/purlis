@@ -31,6 +31,15 @@ use crate::relay::{Keep, Relay};
 /// there is none. Called off the runtime, as each `relay_to` is taken.
 pub type RelaysTo = Arc<dyn Fn(&str) -> Result<(Keep, String), String> + Send + Sync>;
 
+/// **The `<pool>/<runner>` a link's `relay_to` answer names** (#4071): a cluster runner's answer
+/// goes on to name the link key it was pinned with, `<pool>/<runner>@<key>`, for the window alone.
+/// Everything here goes by the name.
+fn runner_named(resolved: &str) -> &str {
+    resolved
+        .split_once('@')
+        .map_or(resolved, |(named, _)| named)
+}
+
 /// **Whether the runner `<pool>/<runner>` it is handed drains** (#2865): one replaced by a runner
 /// of the desktop's version, which keeps its chats until they end. A link relayed to it starts
 /// no new program there, asked again at each start, so a link relayed before a follow drains
@@ -125,12 +134,15 @@ impl Routed {
                 .await
                 .unwrap_or_else(|why| Err(format!("the runner could not be looked up: {why}"))),
         };
+        let mut reported = None;
         let relay = match relayed {
             Ok((keep, resolved)) => {
-                *lock(&self.runner) = Some(resolved.clone());
+                let named = runner_named(&resolved).to_owned();
+                reported = Some(resolved);
+                *lock(&self.runner) = Some(named.clone());
                 Relay::kept(keep)
                     .claiming(self.hosting.claimed())
-                    .stopping_first(self.hosting.stop_first(resolved))
+                    .stopping_first(self.hosting.stop_first(named))
             }
             Err(why) => {
                 *lock(&self.route) = Route::Undecided;
@@ -159,8 +171,7 @@ impl Routed {
         }
         // The window is told which runner its link reached (1.48, #3417): a draining one is
         // kept as the link's own until it ends, apart from the pool's runner now.
-        let reached = lock(&self.runner).clone();
-        Ok(match reached {
+        Ok(match reported {
             Some(runner) if peer.version() >= session::KNOWS_RELAYED_TO => {
                 Answer::RelayedTo { runner }
             }
