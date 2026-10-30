@@ -125,6 +125,8 @@ export function PoolSignIn({
         setStep(now);
         if (now.at === "could-not-follow") {
           flow.current = undefined;
+          // The page the login opened is over with it.
+          setPage(undefined);
           setInTerminal(true);
           return;
         }
@@ -173,11 +175,11 @@ export function PoolSignIn({
   };
 
   const tryAgain = () => {
-    setStep({ at: "starting" });
+    // A sign-in purlis could not follow starts again in the terminal, never at the first step.
+    setStep(inTerminal ? { at: "could-not-follow", said: "" } : { at: "starting" });
     setPage(undefined);
     setCode("");
     setPasteRefused(undefined);
-    // A sign-in purlis could not follow starts again in the terminal, never at the first step.
     printing.current.held = [];
     setAttempt((n) => n + 1);
   };

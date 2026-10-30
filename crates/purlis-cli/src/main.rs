@@ -4179,6 +4179,14 @@ fn profile_sign_in(
             shown::short(name)
         ));
     };
+    // Only a desktop drives a sign-in held to its input, on a runner that keeps the profile.
+    if !matches!(held, Held::No) && record.kept_for.is_none() {
+        return refused(&format!(
+            "'{}' is not kept on this device for a desktop, so purlis holds no sign-in of it \
+             here: run purlis profile sign-in {} without those options",
+            record.name, record.name
+        ));
+    }
     let here = profilestore::this_device();
     let pinned = match installs::on_this_runner(&record, &|line| eprintln!("{line}")) {
         Ok(pinned) => pinned,
@@ -4231,14 +4239,6 @@ fn profile_sign_in(
         record.folders.config.display()
     );
     if !matches!(held, Held::No) {
-        // Only a desktop drives a sign-in held to its input, on a runner that keeps the profile.
-        if record.kept_for.is_none() {
-            return refused(&format!(
-                "'{}' is not kept on this device for a desktop, so purlis holds no sign-in of it \
-                 here: run purlis profile sign-in {} without those options",
-                record.name, record.name
-            ));
-        }
         return held_login(&login, held);
     }
     let ran = std::process::Command::new(&login.program)
@@ -4273,7 +4273,7 @@ fn terminal_size(said: &str) -> Result<purlis_core::engine::Size, String> {
     said.split_once('x')
         .and_then(|(columns, rows)| {
             let (columns, rows) = (columns.parse().ok()?, rows.parse().ok()?);
-            (columns <= MOST_TERMINAL.0 && rows <= MOST_TERMINAL.1)
+            ((1..=MOST_TERMINAL.0).contains(&columns) && (1..=MOST_TERMINAL.1).contains(&rows))
                 .then_some(purlis_core::engine::Size { columns, rows })
         })
         .ok_or_else(|| format!("{} is not a terminal's size", shown::short(said)))

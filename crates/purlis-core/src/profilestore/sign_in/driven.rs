@@ -28,7 +28,7 @@
 use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -70,6 +70,49 @@ const MOST_TYPED: usize = 64 * 1024;
 /// How many steps wait to be asked for before what the login prints is read no further: a login
 /// that prints faster than the window draws is held back, never kept without end.
 const MOST_WAITING: usize = 64;
+
+/// How long the last steps wait to be asked for before no one is taken to be asking any more.
+const UNHEARD_WITHIN: Duration = Duration::from_secs(60);
+
+/// **Where a login's steps are told**: held back while they wait to be asked for, and let go
+/// once no one asks any more, so no thread waits on a window that went away.
+#[derive(Clone)]
+struct Telling {
+    tell: SyncSender<Event>,
+    /// Set once the last steps went unasked for [`UNHEARD_WITHIN`].
+    unheard: Arc<AtomicBool>,
+}
+
+impl Telling {
+    /// Tells `event`, waiting while the steps before it are not yet asked for.
+    fn say(&self, event: Event) {
+        self.say_within(event, None);
+    }
+
+    /// [`Self::say`], giving up after `within` and saying no one asks any more.
+    fn say_within(&self, mut event: Event, within: Option<Duration>) {
+        let until = within.map(|within| Instant::now() + within);
+        loop {
+            match self.tell.try_send(event) {
+                Ok(()) | Err(TrySendError::Disconnected(_)) => return,
+                Err(TrySendError::Full(back)) => event = back,
+            }
+            if self.unheard.load(Ordering::SeqCst) {
+                return;
+            }
+            if until.is_some_and(|until| Instant::now() >= until) {
+                self.unheard.store(true, Ordering::SeqCst);
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// One of the last steps: told within [`UNHEARD_WITHIN`], or no one is asking.
+    fn say_last(&self, event: Event) {
+        self.say_within(event, Some(UNHEARD_WITHIN));
+    }
+}
 
 /// One step of a driven sign-in, as its driver says it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -540,6 +583,10 @@ fn run(
         .map_err(|e| format!("{} could not be run: {e}", login.program))?;
     let input = child.stdin.take();
     let (tell, events) = std::sync::mpsc::sync_channel(MOST_WAITING);
+    let tell = Telling {
+        tell,
+        unheard: Arc::new(AtomicBool::new(false)),
+    };
     let driven = Arc::new(Mutex::new(driven));
     let readers: Vec<_> = [
         (
@@ -579,7 +626,7 @@ fn reading(
     stream: Stream,
     mut from: Box<dyn Read + Send>,
     driven: Arc<Mutex<Driven>>,
-    tell: SyncSender<Event>,
+    tell: Telling,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut buffer = [0u8; 4096];
@@ -602,7 +649,7 @@ fn reading(
                 .unwrap_or_else(PoisonError::into_inner)
                 .read_from(stream, &text);
             for event in said {
-                let _ = tell.send(event);
+                tell.say(event);
             }
         }
     })
@@ -615,14 +662,14 @@ fn watching(
     readers: Vec<std::thread::JoinHandle<()>>,
     driven: &Mutex<Driven>,
     cancelled: &AtomicBool,
-    tell: &SyncSender<Event>,
+    tell: &Telling,
     check: impl FnOnce() -> Standing,
 ) {
     let started = Instant::now();
     let ended = loop {
         if cancelled.load(Ordering::SeqCst) {
             end(&mut child);
-            let _ = tell.send(Event::Cancelled);
+            tell.say_last(Event::Cancelled);
             return;
         }
         match child.try_wait() {
@@ -639,7 +686,7 @@ fn watching(
         };
         if let Some(event) = late {
             end(&mut child);
-            let _ = tell.send(event);
+            tell.say_last(event);
             return;
         }
         // It was said to be over while it ran (a page purlis does not open): nothing more is
@@ -650,7 +697,7 @@ fn watching(
         }
         if started.elapsed() > LONGEST {
             end(&mut child);
-            let _ = tell.send(Event::Failed {
+            tell.say_last(Event::Failed {
                 why: "the sign-in took too long, so purlis ended it".to_owned(),
             });
             return;
@@ -668,7 +715,7 @@ fn watching(
         .ended(ended);
     let checking = said.last() == Some(&Event::Checking);
     for event in said {
-        let _ = tell.send(event);
+        tell.say_last(event);
     }
     if checking {
         let standing = check();
@@ -676,7 +723,7 @@ fn watching(
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .checked(standing);
-        let _ = tell.send(event);
+        tell.say_last(event);
     }
 }
 

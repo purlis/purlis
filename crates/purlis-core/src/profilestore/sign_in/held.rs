@@ -119,26 +119,27 @@ pub fn in_own_terminal(
                     return Ok(None);
                 }
             }
-            // A program it started may hold the terminal open after it ended: it is looked at.
-            Err(RecvTimeoutError::Timeout) => {
-                if let Ok(Some(exit)) = session.wait(Duration::ZERO) {
-                    while let Ok(bytes) = view.output.try_recv() {
-                        let _ = output.write_all(&bytes);
-                    }
-                    let _ = output.flush();
-                    session.stopper().stop();
-                    return Ok(match exit {
-                        Exit::Code(code) => i32::try_from(code).ok(),
-                        Exit::Signal(_) => None,
-                    });
-                }
-            }
+            Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => {
-                return Ok(match session.wait(ENDS_WITHIN) {
+                let ended = session.wait(ENDS_WITHIN);
+                session.stopper().stop();
+                return Ok(match ended {
                     Ok(Some(Exit::Code(code))) => i32::try_from(code).ok(),
                     _ => None,
                 });
             }
+        }
+        // A program it started may hold the terminal open after it ended: it is looked at.
+        if let Ok(Some(exit)) = session.wait(Duration::ZERO) {
+            while let Ok(bytes) = view.output.try_recv() {
+                let _ = output.write_all(&bytes);
+            }
+            let _ = output.flush();
+            session.stopper().stop();
+            return Ok(match exit {
+                Exit::Code(code) => i32::try_from(code).ok(),
+                Exit::Signal(_) => None,
+            });
         }
         if !matches!(closed.try_recv(), Err(mpsc::TryRecvError::Empty)) {
             session.stopper().stop();

@@ -18,10 +18,12 @@ vi.mock("./SignInTerminal", () => ({
     label,
     printer,
     onType,
+    live,
   }: {
     label: string;
     printer: Printer;
     onType: (text: string) => void;
+    live: boolean;
   }) {
     const [printed, setPrinted] = useState("");
     useEffect(() => {
@@ -31,7 +33,7 @@ vi.mock("./SignInTerminal", () => ({
     return (
       <div role="group" aria-label={label}>
         <pre>{printed}</pre>
-        <button onClick={() => onType("1\r")}>Type 1</button>
+        <button onClick={() => live && onType("1\r")}>Type 1</button>
       </div>
     );
   },
@@ -268,6 +270,10 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     expect(calls("pool_sign_in_start")[2]).toEqual(
       expect.objectContaining({ terminal: { columns: 80, rows: 16 } }),
     );
+    // The terminal takes typing again, and the line says it needs the person.
+    expect(screen.getByText("Needs you in the terminal")).toBeVisible();
+    await userEvent.click(within(opened).getByRole("button", { name: "Type 1" }));
+    expect(calls("pool_sign_in_type")).toEqual([{ flow: 7, text: "1\r" }]);
     await userEvent.click(within(opened).getByRole("button", { name: "Cancel" }));
     expect(calls("pool_sign_in_cancel")).toEqual([{ flow: 7 }]);
   });
