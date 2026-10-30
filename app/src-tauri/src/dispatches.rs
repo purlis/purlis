@@ -261,6 +261,24 @@ pub(crate) fn message(held: &Held, task: u32, said: &purlis_core::dispatchtalk::
     kept(held, task, said.kind, None, &said.text, None);
 }
 
+/// **A message between persona chat `task` and its asking chat that purlis could not deliver**
+/// (#3902): its sender closed with it still queued, and it could not be delivered then. Kept on
+/// the task's dispatch record with why, in purlis's words around the message, where the person
+/// reads it in the Dispatches tab.
+pub(crate) fn not_delivered(
+    held: &Held,
+    task: u32,
+    kind: purlis_core::dispatchtalk::Kind,
+    text: &str,
+    why: &str,
+) {
+    let said = format!(
+        "Not delivered: its sender closed with it still queued, and it could not be delivered \
+         ({why}). It said: {text}"
+    );
+    kept(held, task, kind, None, &said, None);
+}
+
 /// [`message`], for the asking chat's answer to question `number` of `task` (#1496): the
 /// window is told which question the line answers, so an open Activity tab closes that one
 /// and no other.

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { $, browser } from "@wdio/globals";
+import { $, $$, browser } from "@wdio/globals";
 import { projectInFront, runningIn } from "./running.js";
 import { endChatsStartedHere } from "./started.js";
 import { goToWorkspaceAt, workspacesListed } from "./titleBarWorkspaces.js";
@@ -205,4 +205,28 @@ export async function runFromThePalette(typed: string, id: string): Promise<void
         new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
       );
     });
+}
+
+/**
+ * **The button called `text` that is on screen** (#3694): a view the sidebar has shown once is
+ * kept drawn while another is shown, so a label two views share (the Skills view's Open Skill
+ * studio and New skill…, beside Settings' and the studio's own) may be held by one put away. The
+ * first one displayed, waited for until `timeout`.
+ */
+export async function shownButton(text: string, timeout = 20_000): Promise<WebdriverIO.Element> {
+  let found: WebdriverIO.Element | undefined;
+  await browser.waitUntil(
+    async () => {
+      for (const one of await $$(`button=${text}`)) {
+        if (await one.isDisplayed()) {
+          found = one;
+          return true;
+        }
+      }
+      return false;
+    },
+    { timeout, timeoutMsg: `no ${text} button on screen` },
+  );
+  if (found === undefined) throw new Error(`no ${text} button on screen`);
+  return found;
 }

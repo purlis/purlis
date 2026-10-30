@@ -5,7 +5,12 @@ import { useContext, useState } from "react";
 import type { PlaneId } from "./bindings";
 import { Notice, NoticeOf } from "./Notice";
 import { draftReadySays, useSkillDrafts } from "./skillDraftAsks";
-import { AT_THE_ROOT, OPEN_SKILL_STUDIO, askSkillStudio, useSkillStudioOn } from "./skillStudio";
+import { AT_THE_ROOT, askSkillStudio, useSkillStudioOn } from "./skillStudio";
+
+/** What the notice's one action is called (S8, #3694): one draft is opened, several are listed. */
+export function openDraftsSaid(drafts: number): string {
+  return drafts === 1 ? "Open the draft" : "Open the drafts";
+}
 
 /**
  * **"Draft ready in Skill studio", on the tab of the chat that drafted it** (SK-9, #2772,
@@ -13,8 +18,8 @@ import { AT_THE_ROOT, OPEN_SKILL_STUDIO, askSkillStudio, useSkillStudioOn } from
  * tab says of it. Trying, accepting and rejecting it are the studio's alone, and nothing else
  * asks for it: the Inbox does not list it.
  *
- * - **Open Skill studio**: the studio's Drafts, where the draft waits with its diff (#3681), at
- *   that draft's own page where the chat drafted one (S8, #3690).
+ * - **Open the draft** (S8, #3694): the studio at Drafts › that draft, where it waits with its
+ *   diff (#3690); **Open the drafts**, at Drafts, where the chat drafted several.
  * - **Dismiss**: puts it away until the chat drafts again.
  */
 export function DraftReadyNotice({ plane, session }: { plane: PlaneId; session: number }) {
@@ -33,7 +38,7 @@ export function DraftReadyNotice({ plane, session }: { plane: PlaneId; session: 
       label="Draft ready in Skill studio"
       fixes={[
         {
-          label: OPEN_SKILL_STUDIO,
+          label: openDraftsSaid(drafted.length),
           onPress: () =>
             askSkillStudio(
               plane,

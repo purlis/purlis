@@ -101,9 +101,18 @@ pub enum What {
     /// Send task `to` a follow-up (#1442). Refused unless this chat dispatched it and it is
     /// still working.
     Tell { to: u32, text: String },
+    /// **Send every live task of this chat one follow-up** (#3904): `tell --all`. One
+    /// instruction, one number, delivered to each task that is still working, as a `tell` is.
+    TellAll { text: String },
     /// Send this task's asking chat a progress note. It names no recipient: the chat it goes
-    /// to is the one the app recorded as this chat's asker.
-    Note { text: String },
+    /// to is the one the app recorded as this chat's asker. With `ack`, it acknowledges that
+    /// instruction of its asking chat's (#3904), and `text` may then be empty: nothing more is
+    /// sent.
+    Note {
+        text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ack: Option<u32>,
+    },
     /// Ask this task's asking chat a question, which this chat pauses on. It names no
     /// recipient, as a note names none.
     Question { text: String },
@@ -131,6 +140,9 @@ pub enum What {
     /// **The turn has read the messages named `names`** waiting for this chat
     /// ([`crate::dispatchtalk::waiting`]): the app takes them off disk, and says which it took.
     TookMessages { names: Vec<String> },
+    /// **Deliver what this chat queued** (#3902, [`crate::dispatchqueue`]), oldest first: `id` is
+    /// the message the asking command has just queued, whose fate it is answered with.
+    Deliver { id: String },
 }
 
 /// What the app answers an [`Asked`] with.
@@ -147,7 +159,12 @@ pub enum Answered {
     /// The messages a [`What::TookMessages`] named that the app took.
     TookMessages { taken: Vec<String> },
     /// The asking chat's tasks, oldest first.
-    Listed { rows: Vec<Row> },
+    Listed {
+        rows: Vec<Row>,
+        /// What became of the messages this chat sent lately (#3902, #3904), oldest first.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        messages: Vec<crate::dispatchtalk::Record>,
+    },
     /// Task `of`, called `name`, is being cancelled; its report follows as any report does.
     Cancelling { of: u32, name: String },
     /// Finished task `of`, called `name`, is closed (#1981 D-4).
@@ -164,6 +181,25 @@ pub enum Answered {
     Sent {
         kind: crate::dispatchtalk::Kind,
         to: String,
+        /// A follow-up's instruction number (#3904).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        instruction: Option<u32>,
+    },
+    /// One follow-up went to every live task of this chat (#3904): instruction `instruction`,
+    /// and what became of it at each.
+    SentAll {
+        instruction: u32,
+        to: Vec<crate::dispatchtalk::Delivery>,
+    },
+    /// The task acknowledged instruction `instruction` of the chat called `to` (#3904).
+    Acknowledged { instruction: u32, to: String },
+    /// The queued message `id` was not delivered now: it waits, and the app delivers it when
+    /// it may (a limit held it back). `delivered` where another look of the app's took it
+    /// first: what became of it is in `purlis dispatch list`.
+    Queued {
+        id: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        delivered: bool,
     },
     /// A wait for an answer ended.
     Replied { what: Reply },

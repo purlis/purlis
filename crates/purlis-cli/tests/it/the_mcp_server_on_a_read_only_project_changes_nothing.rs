@@ -281,6 +281,7 @@ fn arguments(tool: &str, todo: &str) -> Value {
         "workspace_vision" => json!({ "text": "Ship every widget" }),
         // The app's to run, and refused on a project this purlis cannot write (#3831).
         "worktree_update" => json!({}),
+        "worktree_remove" => json!({ "repo": "widget", "piece": "p1" }),
         "workspace_section" => json!({ "section": "decisions", "text": "Blue, because it sells" }),
         "change_status" => json!({ "change": "widget-v2" }),
         "dispatch" => json!({ "name": "paint", "brief": "Paint the widget" }),

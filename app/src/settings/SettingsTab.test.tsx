@@ -67,6 +67,7 @@ describe("the Settings tab, at the You level", () => {
       "Notifications",
       "This machine",
       "Browsers",
+      "Pools",
       "Accounts",
       "Profiles",
       "Previews",

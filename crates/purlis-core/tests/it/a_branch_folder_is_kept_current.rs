@@ -1130,3 +1130,163 @@ fn an_update_finished_after_a_conflict_is_pushed_over_the_copy_it_saw() {
     assert_eq!(code, 0, "{said}");
     assert_eq!(forge_has(&w, "p1"), out(&piece, &["rev-parse", "HEAD"]));
 }
+
+/// #3836: a commit on the clone's own `main` that the forge never took (a checkout's copy of
+/// work the forge landed another way).
+fn stale_commit(w: &World) {
+    commit_in(&w.clone, "stale.txt", "stale.txt\n");
+}
+
+/// The commits `dir`'s HEAD has and `base` lacks, oldest first, by subject.
+fn own_commits(dir: &Path, base: &str) -> Vec<String> {
+    out(
+        dir,
+        &["log", "--reverse", "--format=%s", &format!("{base}..HEAD")],
+    )
+    .lines()
+    .map(str::to_owned)
+    .collect()
+}
+
+#[test]
+fn a_piece_is_cut_from_the_remote_where_the_clones_branch_has_moved_apart_from_it() {
+    purlis_core::unsteered!();
+    let w = world();
+    stale_commit(&w);
+    w.they_commit("new.txt", "new\n");
+    git(&w.clone, &["fetch", "-q", "origin"]);
+    let upstream = out(&w.clone, &["rev-parse", "origin/main"]);
+    let local = out(&w.clone, &["rev-parse", "main"]);
+
+    // The default base, and the same base named.
+    for (piece, base) in [("p1", None), ("p2", Some("main"))] {
+        let (code, said) = add(&w, piece, base);
+        assert_eq!(code, 0, "{said}");
+        assert!(said.contains("have each moved on"), "{said}");
+        assert!(
+            said.contains("base:   main (as origin/main has it)"),
+            "{said}"
+        );
+        assert_eq!(out(&w.piece(piece), &["rev-parse", "HEAD"]), upstream);
+        assert!(!w.piece(piece).join("stale.txt").exists());
+        let key = format!("branch.{piece}.charterBase");
+        assert_eq!(out(&w.clone, &["config", "--get", &key]), "main");
+    }
+    // The clone's own branch is left as it is.
+    assert_eq!(out(&w.clone, &["rev-parse", "main"]), local);
+    // `--base HEAD` still cuts from the clone as it is.
+    let (code, said) = add(&w, "p3", Some("HEAD"));
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(out(&w.piece("p3"), &["rev-parse", "HEAD"]), local);
+}
+
+#[test]
+fn a_piece_is_cut_from_a_remote_tracking_branch_named_as_its_base() {
+    purlis_core::unsteered!();
+    let w = world();
+    // The clone's main is ahead of its remote: used as it is when named, and passed over for
+    // the remote when that is named.
+    stale_commit(&w);
+    let upstream = out(&w.clone, &["rev-parse", "origin/main"]);
+    let local = out(&w.clone, &["rev-parse", "main"]);
+
+    let (code, said) = add(&w, "p1", Some("origin/main"));
+    assert_eq!(code, 0, "{said}");
+    assert!(
+        said.contains("base:   main (as origin/main has it)"),
+        "{said}"
+    );
+    assert_eq!(out(&w.piece("p1"), &["rev-parse", "HEAD"]), upstream);
+    assert_eq!(
+        out(&w.clone, &["config", "--get", "branch.p1.charterBase"]),
+        "main"
+    );
+
+    let (code, said) = add(&w, "p2", Some("main"));
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(out(&w.piece("p2"), &["rev-parse", "HEAD"]), local);
+
+    // A remote-tracking branch the clone does not have is refused, and nothing is cut.
+    let (code, said) = add(&w, "p3", Some("origin/nope"));
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains("no remote-tracking branch origin/nope"),
+        "{said}"
+    );
+    assert!(!w.piece("p3").exists());
+}
+
+#[test]
+fn an_update_moves_a_piece_cut_from_a_stale_base_onto_the_remote_with_only_its_own_commits() {
+    purlis_core::unsteered!();
+    let w = world();
+    // Cut from the clone's main while it holds a commit the forge never took.
+    stale_commit(&w);
+    let (code, cut) = add(&w, "p1", Some("HEAD"));
+    assert_eq!(code, 0, "{cut}");
+    let piece = w.piece("p1");
+    commit_in(&piece, "mine.txt", "mine.txt\n");
+    w.they_commit("new.txt", "new\n");
+
+    let (code, said) = update(&w, "p1", &start(Some("origin/main")), &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert!(
+        said.contains("rebased onto main (as origin/main has it)"),
+        "{said}"
+    );
+    assert_eq!(own_commits(&piece, "origin/main"), ["mine.txt"]);
+    assert_eq!(
+        out(&piece, &["rev-parse", "HEAD~1"]),
+        out(&w.clone, &["rev-parse", "origin/main"])
+    );
+    assert!(!piece.join("stale.txt").exists());
+    assert!(piece.join("new.txt").exists());
+}
+
+#[test]
+fn an_update_on_the_recorded_base_leaves_its_moved_apart_commits_behind() {
+    purlis_core::unsteered!();
+    let w = world();
+    stale_commit(&w);
+    let (code, cut) = add(&w, "p1", Some("HEAD"));
+    assert_eq!(code, 0, "{cut}");
+    let piece = w.piece("p1");
+    commit_in(&piece, "mine.txt", "mine.txt\n");
+    commit_in(&piece, "more.txt", "more.txt\n");
+    // The forge moves on, so the clone's main and origin/main are apart.
+    w.they_commit("new.txt", "new\n");
+
+    // No base named: the recorded one, main, which has moved apart from origin/main.
+    let (code, said) = update(&w, "p1", &start(None), &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("have each moved on"), "{said}");
+    assert_eq!(own_commits(&piece, "origin/main"), ["mine.txt", "more.txt"]);
+    assert!(!piece.join("stale.txt").exists());
+    // Run again, it is already there.
+    let (code, said) = update(&w, "p1", &start(None), &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("already on main"), "{said}");
+}
+
+#[test]
+fn an_update_onto_another_base_carries_only_the_pieces_commits_and_records_it() {
+    purlis_core::unsteered!();
+    let w = world();
+    // A branch of the clone's own with a commit, and a piece cut from it.
+    git(&w.clone, &["checkout", "-q", "-b", "feature"]);
+    commit_in(&w.clone, "feature.txt", "feature.txt\n");
+    git(&w.clone, &["checkout", "-q", "main"]);
+    let (code, cut) = add(&w, "p1", Some("feature"));
+    assert_eq!(code, 0, "{cut}");
+    let piece = w.piece("p1");
+    commit_in(&piece, "mine.txt", "mine.txt\n");
+
+    let (code, said) = update(&w, "p1", &start(Some("main")), &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(own_commits(&piece, "main"), ["mine.txt"]);
+    assert!(!piece.join("feature.txt").exists());
+    assert_eq!(
+        out(&w.clone, &["config", "--get", "branch.p1.charterBase"]),
+        "main"
+    );
+}

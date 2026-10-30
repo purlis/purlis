@@ -193,6 +193,38 @@ fn a_release_with_no_runner_image_leaves_the_pools_where_they_are() {
     assert_eq!(this_versions_image_named(), Some(true));
     note_named(&Ok(Found::OtherVersion));
     assert_eq!(this_versions_image_named(), Some(true));
+    // The image found is kept, for a new pool's Image box: it is not read again.
+    assert_eq!(
+        this_versions_image_noted(),
+        Some(Image::pinned(NEW).unwrap())
+    );
+}
+
+/// **The Add a pool dialog is told which release's image it is offered** (the person's ruling
+/// of 2026-10-30): this version's, a newer version's with the update to it waiting, or none;
+/// and why where it was refused.
+#[test]
+fn the_dialog_is_told_which_releases_image_a_new_pool_is_offered() {
+    use purlis_core::runnerimage::Offered;
+    let image = Image::pinned(NEW).unwrap();
+    assert_eq!(
+        said(Ok(Offered::Ours(image.clone()))),
+        Ok(RunnerImageOffered::Ours {
+            image: NEW.to_owned()
+        })
+    );
+    assert_eq!(
+        said(Ok(Offered::Newer {
+            image,
+            version: "0.4.3".to_owned()
+        })),
+        Ok(RunnerImageOffered::Newer {
+            image: NEW.to_owned(),
+            version: "0.4.3".to_owned()
+        })
+    );
+    assert_eq!(said(Ok(Offered::None)), Ok(RunnerImageOffered::NoneNamed));
+    assert_eq!(said(Err("not signed".into())), Err("not signed".to_owned()));
 }
 
 /// **Only a manifest of this very version says its release has no runner image** (#2880): one
