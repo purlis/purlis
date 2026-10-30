@@ -833,7 +833,8 @@ pub async fn theme_open_folder(
 /// that names purlis's theme skill typed into it and never sent (ADR 0061), as the Curate menu's
 /// Create a theme opens one. With `theme`, the prompt names that card's theme, of the level
 /// `from`; the card is one this level's gallery shows, never a name the window made up. The
-/// machine's level has no project for a chat to work in, so it is never asked.
+/// machine's level has no project for a chat to work in, so it is never asked. A refused start
+/// says the approval its profile needs, where it needs one (#3968).
 #[tauri::command]
 #[specta::specta]
 pub async fn theme_chat(
@@ -843,11 +844,11 @@ pub async fn theme_chat(
     from: Option<String>,
     columns: u16,
     rows: u16,
-) -> Result<crate::curation::Curating, String> {
+) -> Result<crate::curation::Curating, crate::curation::StartRefused> {
     let level = level_of(from.as_deref())?;
     let held = planes.held(&at.plane)?;
     let config = config_root()?;
-    crate::off_the_window("starting the theme chat", move || {
+    crate::curation::off_the_window_refused("starting the theme chat", move || {
         let root = held.root().to_path_buf();
         let workspace = at.workspace;
         let chosen = match theme {

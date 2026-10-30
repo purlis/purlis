@@ -105,10 +105,11 @@ export const windowOnlyRefused = noLinkSends(
 );
 
 /**
- * {@link windowOnly} for a Skill studio start, whose error is its words and the approval its
- * profile needs (#3942): that shape, saying where it is done and asking no approval.
+ * {@link windowOnly} for a start the core makes on a profile without the new-chat picker, whose
+ * error is its words and the approval its profile needs (#3942, #3968): that shape, saying where
+ * it is done and asking no approval.
  */
-export const windowOnlyStudioRefused = noLinkSends(
+export const windowOnlyStartRefused = noLinkSends(
   (): Promise<{ status: "error"; error: { words: string; approval: null } }> =>
     Promise.resolve({ status: "error", error: { words: WINDOW_ONLY_SAID, approval: null } }),
 );

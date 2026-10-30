@@ -155,7 +155,14 @@ export const READ_AGAIN = "workspace.readagain";
 /** What running an action answered: one line to say, or a refusal in the words it came in —
  *  with the Settings group that puts it right, where a setting does. */
 export type Ran =
-  { ok: true; said?: string } | { ok: false; refused: string; settings?: SettingsWay };
+  | { ok: true; said?: string }
+  | {
+      ok: false;
+      refused: string;
+      settings?: SettingsWay;
+      /** Where to go on from the refusal, as its notice offers it: Approve and start… (#3968). */
+      ways?: readonly SaidWay[];
+    };
 
 /** A way on from what an action answered (#3344): "Open git-ci-cd", the filled primary where
  *  `primary`, or "Add a vision". */
@@ -198,9 +205,13 @@ export type Said = {
 /** What the window says of a row's answer: nothing for a quiet success. */
 export function saidOf(from: string, answer: Ran): Said | undefined {
   if (answer.ok) return answer.said ? { from, refused: false, words: answer.said } : undefined;
-  return answer.settings === undefined
-    ? { from, refused: true, words: answer.refused }
-    : { from, refused: true, words: answer.refused, settings: answer.settings };
+  return {
+    from,
+    refused: true,
+    words: answer.refused,
+    ...(answer.settings === undefined ? {} : { settings: answer.settings }),
+    ...(answer.ways === undefined ? {} : { ways: answer.ways }),
+  };
 }
 
 /**
@@ -604,8 +615,9 @@ export type Does =
   | { verb: "taskBranch"; id: string; act: "merge" | "discard" }
   /** Opens a new chat for one curation action on one subject, with the action's prompt typed
    *  into it and never sent (ADR 0061). It carries the action's id and nothing of its text: the
-   *  core resolves the subject again (`curate`), so what is typed is the core's prompt now. */
-  | { verb: "curate"; subject: string; action: string }
+   *  core resolves the subject again (`curate`), so what is typed is the core's prompt now.
+   *  `label` is only what a refusal's Approve and start… names it by (#3968). */
+  | { verb: "curate"; subject: string; action: string; label: string }
   | { verb: "quit" }
   /** Puts a branch file's or folder's path on the clipboard (FM-10): relative to the branch's
    *  folder, or `absolute`. The core places the path and copies it, so the absolute path is
@@ -1140,7 +1152,7 @@ export type Doing = {
   taskBranch: (id: string, act: "merge" | "discard") => void;
   /** Opens a curation chat. The core can refuse — the action gone, a harness that cannot be
    *  typed into — so it answers a `Ran`. */
-  curate: (subject: string, action: string) => Promise<Ran>;
+  curate: (subject: string, action: string, label: string) => Promise<Ran>;
   quit: () => void;
   /** Each answers a `Ran`: the core places the path and can refuse it — a path that left the
    *  branch, a link, a file gone meanwhile — and says so in its own sentence. */
@@ -1601,7 +1613,12 @@ function curationRows(subject: SubjectCurations, cannotOpen: string | null): Off
     if (cannotOpen !== null) return { ...cannot(id, title, cannotOpen, name), group };
     const who = action.runner === null ? "with no persona" : `as ${action.runner}`;
     return {
-      ...can(id, title, { verb: "curate", subject: subject.subject, action: action.id }, name),
+      ...can(
+        id,
+        title,
+        { verb: "curate", subject: subject.subject, action: action.id, label: action.label },
+        name,
+      ),
       note: `Opens a chat ${who} in ${action.cwd}, with its prompt typed and not sent.`,
       group,
     };
@@ -3634,7 +3651,7 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
         });
       return DID;
     case "curate":
-      return doing.curate(does.subject, does.action);
+      return doing.curate(does.subject, does.action, does.label);
     case "quit":
       doing.quit();
       return DID;
