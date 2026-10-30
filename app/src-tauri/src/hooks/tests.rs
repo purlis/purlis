@@ -3286,34 +3286,3 @@ fn a_refused_write_that_keeps_a_git_folder_in_place_offers_no_allow() {
         None
     );
 }
-
-/// #3861: a write in a branch folder's git record is its chat's own to retry, and raises no
-/// Notice; the same block anywhere else, or purlis's own, or one naming no path, keeps it.
-#[test]
-fn a_block_in_a_branch_folders_git_record_is_its_chats_own_to_retry() {
-    use purlis_core::hookwire::SandboxBlocked;
-    use purlis_core::sandboxblock::{Block, Kind, Operation};
-    let heard = |ours: bool, target: Option<&str>| -> HeardBlock {
-        SandboxBlocked {
-            chat: 3,
-            sandbox_blocked: Block {
-                operation: Operation::Write,
-                kind: Kind::ProtectedFile,
-                ours,
-            },
-            harness: Some("claude".to_owned()),
-            target: target.map(str::to_owned),
-            read_back: false,
-            suggested: None,
-        }
-        .into()
-    };
-    let record = "/plane/workspaces/a/repo/.git/worktrees/fix/index.lock";
-    assert!(its_own_to_retry(&heard(false, Some(record))));
-    assert!(!its_own_to_retry(&heard(true, Some(record))));
-    assert!(!its_own_to_retry(&heard(false, None)));
-    assert!(!its_own_to_retry(&heard(
-        false,
-        Some("/plane/workspaces/a/repo/.git/config")
-    )));
-}

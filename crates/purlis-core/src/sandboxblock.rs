@@ -462,49 +462,64 @@ pub fn told_the_chat_of_a_read(taken: &[Block]) -> Option<String> {
     ))
 }
 
-/// **A block that is the chat's own to retry, and the shape to retry it in** (#3861): a write
-/// the sandbox refused in a branch folder's git record (`.git/worktrees/<name>/…`), where a
-/// chat's own `git add`, `git commit` or `git worktree add` writes. The Bash guard refuses those
-/// before they run (arm A9b), but a line it cannot place (`cd -`, `popd`) still runs and meets
-/// the sandbox. No grant ever opens that record, so the person has nothing to answer: the chat
-/// is told the purlis command that does it ([`told_the_chat_of_its_own`]), and the app raises
-/// no Notice. The block is kept in the network record all the same.
+/// **Whether a block is the asking chat's own to retry** (#3861): a write the sandbox refused
+/// in the git record of the branch folder the chat works in ([`own_branch_record`]), where its
+/// own `git add`, `git commit` or `git worktree add` writes. The Bash guard refuses those before
+/// they run (arm A9b), but a line it cannot place (`cd -`, `popd`) still runs and meets the
+/// sandbox. No grant ever opens that record, so the person has nothing to answer: the chat is
+/// told the purlis command that does it ([`told_the_chat_to_retry`]), and the app raises no
+/// Notice. The block is kept in the network record all the same.
 ///
-/// Chosen by the block and its path alone, never by anything the chat said. A path that is not
-/// absolute, purlis's own block (a bug the person reports), and every other block are `None`,
-/// and keep their Notice.
-pub fn its_own_to_retry(block: &Block, target: Option<&str>) -> Option<&'static str> {
+/// `chat_dir` is the folder the app started the chat in, by the app's own record. A record of
+/// another branch folder, of the same clone or another, is not the chat's own and keeps its
+/// Notice, as do purlis's own block, a path that is not absolute, and every other block.
+pub fn its_own_to_retry(block: &Block, target: Option<&str>, chat_dir: Option<&Path>) -> bool {
     if block.ours
         || !matches!(
             (block.operation, block.kind),
             (Operation::Write | Operation::File, Kind::ProtectedFile)
         )
     {
-        return None;
+        return false;
     }
-    let path = Path::new(target?);
-    (path.is_absolute() && in_a_branch_folders_record(&lexical(path)))
-        .then_some(WORKTREE_COMMIT_WAY)
+    let (Some(target), Some(chat_dir)) = (target.map(Path::new), chat_dir) else {
+        return false;
+    };
+    let (Some(path), Some(own)) = (branch_record_path(target), own_branch_record(chat_dir)) else {
+        return false;
+    };
+    path.starts_with(own)
 }
 
-/// **What the chat is told of blocks that are its own to retry** ([`its_own_to_retry`],
-/// #3861): that the sandbox refused it, that nobody else was told, and each shape to retry in,
-/// once. It is not told of a Notice or to wait: none is raised. None when there are none.
-pub fn told_the_chat_of_its_own(ways: &[&str]) -> Option<String> {
-    let mut said: Vec<&str> = Vec::new();
-    for way in ways {
-        if !said.contains(way) {
-            said.push(way);
-        }
-    }
-    if said.is_empty() {
+/// **The git record of the branch folder `chat_dir` is in** (#3861): the linked worktree's
+/// record in its clone's `.git/worktrees/<name>`, which the folder's `.git` file names, and
+/// whose own `gitdir` names that `.git` back. `None` where `chat_dir` is in no branch folder (a
+/// clone's own `.git` is a folder), or the two do not name each other.
+pub fn own_branch_record(chat_dir: &Path) -> Option<PathBuf> {
+    let folder = chat_dir
+        .ancestors()
+        .find(|dir| dir.join(".git").symlink_metadata().is_ok())?;
+    let dot_git = folder.join(".git");
+    if !dot_git.symlink_metadata().ok()?.is_file() {
         return None;
     }
-    Some(format!(
-        "⬢ purlis's sandbox blocked a write to a branch folder's git record, which no chat \
-         writes and no Allow opens. Nobody else was told: this is yours to retry. {}",
-        said.join(" ")
-    ))
+    let named = std::fs::read_to_string(&dot_git).ok()?;
+    let record = folder.join(named.trim().strip_prefix("gitdir:")?.trim());
+    let back = std::fs::read_to_string(record.join("gitdir")).ok()?;
+    let canonical = |path: &Path| std::fs::canonicalize(path).ok();
+    if canonical(Path::new(back.trim()))? != canonical(&dot_git)? {
+        return None;
+    }
+    branch_record_path(&canonical(&record)?)
+}
+
+/// What the chat is told of a block that was its own to retry ([`its_own_to_retry`], #3861):
+/// what was refused, and the purlis commands that do it.
+pub fn told_the_chat_to_retry() -> String {
+    format!(
+        "⬢ purlis's sandbox blocked a write to this branch folder's git record, which no chat \
+         writes and no Allow opens. Retry it with purlis: {WORKTREE_COMMIT_WAY}"
+    )
 }
 
 /// What a chat is told of a write to macOS's per-user folders (#1416): fixed words, the same
@@ -1331,10 +1346,10 @@ fn target_of(block: &Block, named: &str, place: &Place<'_>) -> Option<String> {
 ///
 /// Chosen by the path alone: the block keeps its [`Kind`], and nothing is kept of the path.
 pub fn way_out(path: &Path, root: &Path) -> Option<&'static str> {
-    let path = unprivate(&lexical(path));
-    if in_a_branch_folders_record(&path) {
+    if branch_record_path(path).is_some() {
         return Some(WORKTREE_COMMIT_WAY);
     }
+    let path = unprivate(&lexical(path));
     let within = path.strip_prefix(unprivate(&lexical(root))).ok()?;
     let parts: Vec<&str> = within
         .components()
@@ -1385,6 +1400,13 @@ const WORKTREE_COMMIT_WAY: &str = "A branch folder keeps its git record in its c
      commit -m \"<message>\" --all`, or with paths in place of --all: the commit is made on the \
      folder's branch, outside the sandbox. A fetch, pull or rebase there is refused the same \
      way: `purlis worktree update` brings the folder up to its base.";
+
+/// `path`, spelled as a block's path is compared, where it is in a branch folder's git record
+/// ([`in_a_branch_folders_record`]): what [`way_out`] and [`its_own_to_retry`] both judge.
+fn branch_record_path(path: &Path) -> Option<PathBuf> {
+    let path = unprivate(&lexical(path));
+    in_a_branch_folders_record(&path).then_some(path)
+}
 
 /// Whether `path` is in a linked worktree's own record in its clone's git directory
 /// (`.git/worktrees/<name>/…`), where git keeps a branch folder's index.

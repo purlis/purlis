@@ -711,9 +711,10 @@ fn the_conflict_sentence_names_every_command_and_sends_nobody_back_to_update() {
 
 /// **Only a reason the chat cannot settle needs the person** (#3877): a file the chat's
 /// sandbox denies, a move the app will not make for a chat, a conflict, a stopped merge or
-/// rebase, a project not put back, a branch, a signer or a file purlis may not write. A wait,
-/// a fetch that failed, the chat's own unsaved work or a file in the way are the chat's to
-/// retry, and it is told them in the answer.
+/// rebase, a project not put back, a branch, a signer, a file purlis may not write, the root's
+/// own files and locks, and every fetch that did not go through (a sign-in, a remote, git's
+/// words). A save running beside it, a wait on a request, a replay out of time or a failure the
+/// project was put back from are the chat's to retry, and it is told them in the answer.
 #[test]
 fn only_a_reason_the_chat_cannot_settle_needs_the_person() {
     let files = || vec!["a.md".to_owned()];
@@ -736,15 +737,16 @@ fn only_a_reason_the_chat_cannot_settle_needs_the_person() {
         },
         Left::NoBranch,
         Left::Unsigned("no key".into()),
+        Left::NotFetched("Authentication failed for the remote".into()),
+        Left::NotFetched("could not resolve host".into()),
+        Left::IndexLocked,
+        Left::Unsaved(2),
+        Left::InTheWay(files()),
     ] {
         assert!(left.needs_the_person(), "{left:?}");
     }
     for left in [
         Left::Busy,
-        Left::IndexLocked,
-        Left::NotFetched("offline".into()),
-        Left::Unsaved(2),
-        Left::InTheWay(files()),
         Left::WaitsOnRequest {
             mine: 1,
             url: None,

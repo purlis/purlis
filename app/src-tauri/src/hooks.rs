@@ -787,16 +787,16 @@ impl From<purlis_core::secrets::brokered::RunBlocked> for HeardBlock {
 }
 
 /// **Whether `block` is its chat's own to retry** (#3861,
-/// [`purlis_core::sandboxblock::its_own_to_retry`]): a write in a branch folder's git record,
-/// which no Allow opens. Its hook already told the chat the command to retry with, so the app
-/// keeps it in the network record and raises no Notice for it. A brokered run's block is never
-/// one: that road names hosts alone.
-pub fn its_own_to_retry(block: &HeardBlock) -> bool {
+/// [`purlis_core::sandboxblock::its_own_to_retry`]): a write in the git record of the branch
+/// folder the chat works in, `chat_dir` by the app's own record, which no Allow opens. Its hook
+/// already told the chat the command to retry with, so the app keeps it in the network record
+/// and raises no Notice for it.
+pub fn its_own_to_retry(block: &HeardBlock, chat_dir: Option<&Path>) -> bool {
     purlis_core::sandboxblock::its_own_to_retry(
         &block.line.sandbox_blocked,
         block.line.target.as_deref(),
+        chat_dir,
     )
-    .is_some()
 }
 
 /// What is told each sandbox block the app let through, as it heard it.

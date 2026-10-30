@@ -2138,11 +2138,14 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> hooks::Blocked {
     let harness = hookwire::chat_harness(&purlis_core::envvar::var);
     // A tool that ran nothing (a read of a background command's output): a quiet line (#1884).
     let read_back = purlis_core::sandboxblock::read_back(&data);
+    let chat_dir = hooks::chat_dir(&purlis_core::envvar::var);
     for (block, target) in hooks::blocks(&data, &purlis_core::envvar::var) {
-        let own = purlis_core::sandboxblock::its_own_to_retry(&block, target.as_deref());
-        if let Some(way) = own {
-            taken.own.push(way);
-        }
+        let own = purlis_core::sandboxblock::its_own_to_retry(
+            &block,
+            target.as_deref(),
+            chat_dir.as_deref(),
+        );
+        taken.retry_with_purlis |= own;
         // A refused service on this Mac whose port only printed words name: offered to the
         // person to check, never as the target (qw384).
         let suggested = (block.kind == purlis_core::sandboxblock::Kind::LocalService
@@ -2159,7 +2162,7 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> hooks::Blocked {
             suggested,
         };
         match hookwire::tell_blocked(std::path::Path::new(&socket), token.as_ref(), &blocked) {
-            Ok(()) if own.is_none() => taken.taken.push(block),
+            Ok(()) if !own => taken.taken.push(block),
             Ok(()) => {}
             Err(why) => {
                 let _ = writeln!(std::io::stderr(), "{} {word} ({why})", hookwire::NOT_TAKEN);

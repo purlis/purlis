@@ -74,26 +74,39 @@ pub fn answer(
     isolation: &git::Isolated,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Answer {
-    answer_telling(root, asker, ask, isolation, now).0
+    answer_telling(root, asker, ask, isolation, now).answer
 }
 
-/// [`answer`], and **whether the person is needed for what it could not do** (#3877): only an
-/// update of the project root left for a reason no chat can settle
-/// ([`crate::planegit::Left::needs_the_person`]), which the app raises as a needs-you item
-/// naming the window's Update. Every other refusal is the chat's to retry, told in the answer
-/// alone.
+/// What the app makes of a chat's git ask ([`answer_telling`]): the answer the chat reads, and
+/// what the person is needed for, if anything.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Answered {
+    pub answer: Answer,
+    /// **The need the person is told of** (#3877): only an update of the project root left for
+    /// a reason no chat can settle ([`crate::planegit::Left::needs_the_person`]), which the
+    /// app raises as a needs-you item naming the window's Update. Every other refusal is the
+    /// chat's to retry, told in the answer alone.
+    pub needs: Option<crate::state::Need>,
+}
+
+impl From<Answer> for Answered {
+    fn from(answer: Answer) -> Self {
+        Self {
+            answer,
+            needs: None,
+        }
+    }
+}
+
+/// [`answer`], and what the person is needed for ([`Answered::needs`]).
 pub fn answer_telling(
     root: &Path,
     asker: &Asker,
     ask: &GitAsk,
     isolation: &git::Isolated,
     now: chrono::DateTime<chrono::Utc>,
-) -> (Answer, bool) {
-    let mut needs_the_person = false;
-    let answer = git::isolated(isolation, || {
-        isolated_answer(root, asker, ask, now, &mut needs_the_person)
-    });
-    (answer, needs_the_person)
+) -> Answered {
+    git::isolated(isolation, || isolated_answer(root, asker, ask, now))
 }
 
 fn isolated_answer(
@@ -101,9 +114,9 @@ fn isolated_answer(
     asker: &Asker,
     ask: &GitAsk,
     now: chrono::DateTime<chrono::Utc>,
-    needs_the_person: &mut bool,
-) -> Answer {
-    let no = |why: String| Answer::No { why };
+) -> Answered {
+    let no = |why: String| Answered::from(Answer::No { why });
+    let mut needs = None;
     // A workspace the ask makes is one no chat works in yet: the chat need only stand in the
     // project. Every other ask writes a workspace the chat already writes.
     let placed = match &ask.work {
@@ -283,7 +296,9 @@ fn isolated_answer(
             let request = crate::forge::request_words_of(root, root).request_noun();
             let said = updated.said(request);
             if let crate::planegit::Updated::Left(left) = &updated {
-                *needs_the_person = left.needs_the_person();
+                needs = left
+                    .needs_the_person()
+                    .then_some(crate::state::Need::RootUpdateRefused);
                 say(Say::Fail(said.into()));
                 1
             } else {
@@ -390,9 +405,12 @@ fn isolated_answer(
             code
         }
     };
-    Answer::Said {
-        lines: fitted(lines, SAID_AT_MOST),
-        code,
+    Answered {
+        answer: Answer::Said {
+            lines: fitted(lines, SAID_AT_MOST),
+            code,
+        },
+        needs,
     }
 }
 
