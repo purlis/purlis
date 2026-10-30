@@ -75,16 +75,16 @@ fn after_a_rename_history_lists_the_versions_from_before_with_their_grades() {
     })
     .unwrap();
 
-    let read = history::history(root, &Level::project(), "ship").unwrap();
+    let listed = history::history(root, &Level::project(), "ship").unwrap();
     assert_eq!(
-        subjects(&read),
+        subjects(&listed),
         [
             "skill rename deploy ship",
             "skill edit deploy",
             "make deploy"
         ]
     );
-    let first = &read.versions[2];
+    let first = &listed.versions[2];
     assert_eq!(first.grade, GRADED, "the grade from before the rename");
     assert_eq!(
         (first.name.as_str(), first.folder.as_str()),
@@ -145,12 +145,12 @@ fn after_a_move_history_lists_the_versions_from_before_with_their_grades() {
     })
     .unwrap();
 
-    let read = history::history(root, &ops, "deploy").unwrap();
-    let said = subjects(&read);
+    let listed = history::history(root, &ops, "deploy").unwrap();
+    let said = subjects(&listed);
     assert!(said[0].starts_with("skill mv deploy "), "{said:?}");
     assert_eq!(said[1..], ["skill edit deploy", "make deploy"]);
-    assert_eq!(read.versions[2].grade, GRADED);
-    assert_eq!(read.versions[2].folder, "skills/deploy");
+    assert_eq!(listed.versions[2].grade, GRADED);
+    assert_eq!(listed.versions[2].folder, "skills/deploy");
     let grades = read_followed(root, &ops, "deploy").grades;
     assert_eq!(
         grades
@@ -165,7 +165,7 @@ fn after_a_move_history_lists_the_versions_from_before_with_their_grades() {
     assert_eq!(planned.previous_refused, None);
     assert_eq!(
         planned.previous.map(|one| one.commit),
-        Some(read.versions[2].commit.clone())
+        Some(listed.versions[2].commit.clone())
     );
 }
 
@@ -177,20 +177,22 @@ fn a_versions_diff_shows_the_rename_and_a_revert_from_before_it_is_refused() {
         crate::skills::verbs::rename(cx, &Level::project(), "deploy", "ship")
     })
     .unwrap();
-    let read = history::history(root, &Level::project(), "ship").unwrap();
+    let listed = history::history(root, &Level::project(), "ship").unwrap();
 
-    let renamed = history::diff(root, &Level::project(), "ship", &read.versions[0].commit).unwrap();
+    let renamed =
+        history::diff(root, &Level::project(), "ship", &listed.versions[0].commit).unwrap();
     assert!(
         renamed.text.contains("rename from skills/deploy/SKILL.md"),
         "{}",
         renamed.text
     );
     assert!(renamed.text.contains("+name: ship"), "{}", renamed.text);
-    let edited = history::diff(root, &Level::project(), "ship", &read.versions[1].commit).unwrap();
+    let edited =
+        history::diff(root, &Level::project(), "ship", &listed.versions[1].commit).unwrap();
     assert!(edited.text.contains("+Step two."), "{}", edited.text);
 
     let refused = did(root, |cx| {
-        history::revert(cx, &Level::project(), "ship", &read.versions[1].commit)
+        history::revert(cx, &Level::project(), "ship", &listed.versions[1].commit)
     })
     .unwrap_err();
     assert!(
