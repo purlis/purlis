@@ -7,14 +7,24 @@
  * a real browser (`Field.stories.tsx`).
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { Search } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { drawnWith } from "../../cascade.testkit";
 import { Button } from "../button/Button";
-import { Form, TextArea, TextField, type PlainTextFieldProps } from "./Field";
+import { Select } from "../select/Select";
+import { pickIn, selectNamed } from "../select/select.testkit";
+import {
+  Form,
+  TextArea,
+  TextField,
+  nameOf,
+  summaryOf,
+  useFormRefusal,
+  type PlainTextFieldProps,
+} from "./Field";
 import { submitKeySaid, submits } from "./submitKey";
 
 afterEach(cleanup);
@@ -754,5 +764,157 @@ describe("a refusal too long for its line (#3033)", () => {
     } finally {
       restore();
     }
+  });
+});
+
+/** A form whose sends the core answers (`answer`), as an owner hands each answer to its form:
+ *  the refusal, counted by `answer`. */
+function Answered({ answer }: { answer: (name: string) => Promise<string | undefined> }) {
+  const [name, setName] = useState("ops");
+  const [why, setWhy] = useState<string>();
+  const [answers, setAnswers] = useState(0);
+  return (
+    <Form
+      aria-label="New workspace"
+      refused={why === undefined ? undefined : { fields: [{ name: "Name", why }], answer: answers }}
+      onSubmit={(event) => {
+        event.preventDefault();
+        void answer(name).then((said) => {
+          setWhy(said);
+          if (said !== undefined) setAnswers((n) => n + 1);
+        });
+      }}
+    >
+      <TextField label="Name" value={name} onChange={setName} error={why} />
+      <Button type="submit">Create</Button>
+    </Form>
+  );
+}
+
+const TAKEN = "A workspace called ops is already here.";
+
+describe("a refusal from elsewhere, said once (#3291)", () => {
+  it("says the core's answer once, and not again for the person's edits", async () => {
+    render(<Answered answer={() => Promise.resolve(TAKEN)} />);
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(`Name: ${TAKEN}`);
+    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "-2");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says a second answer that reads as the last again, as a new alert", async () => {
+    render(<Answered answer={() => Promise.resolve(TAKEN)} />);
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+    const first = await screen.findByRole("alert");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(screen.getByRole("alert")).not.toBe(first));
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getByRole("alert")).toHaveTextContent(`Name: ${TAKEN}`);
+  });
+
+  it("says nothing for the person's typing while a send waits, then that send's answer", async () => {
+    let settle: (said: string | undefined) => void = () => undefined;
+    let sends = 0;
+    render(
+      <Answered
+        answer={() => {
+          sends += 1;
+          return sends === 1 ? Promise.resolve(TAKEN) : new Promise((done) => (settle = done));
+        }}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+    await screen.findByRole("alert");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "x");
+    expect(screen.queryByRole("alert")).toBeNull();
+    await act(async () => settle("A name is letters, digits, ., _ and -."));
+    expect(screen.getByRole("alert")).toHaveTextContent("Name: A name is letters");
+  });
+
+  it("is said by what draws a form's fields, from inside it, once", async () => {
+    function Inside() {
+      const refuse = useFormRefusal();
+      const [why, setWhy] = useState<string>();
+      return (
+        <>
+          <TextField label="Port" value="http" onChange={() => {}} error={why} />
+          <Button
+            onPress={() => {
+              setWhy("A port is a number.");
+              refuse({ fields: [{ name: "Port", why: "A port is a number." }] });
+            }}
+          >
+            Check
+          </Button>
+        </>
+      );
+    }
+    render(
+      <Form aria-label="New host" onSubmit={(e) => e.preventDefault()}>
+        <Inside />
+      </Form>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Check" }));
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getByRole("alert")).toHaveTextContent("Port: A port is a number.");
+    expect(errorLine()).toHaveAttribute("aria-live", "off");
+  });
+
+  it("says the form's own refusal anew, as a new alert, when it is sent again unchanged", async () => {
+    render(<TwoRefusing sent={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    const first = screen.getByRole("alert");
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getByRole("alert")).not.toBe(first);
+  });
+
+  it("ends the summary on a select's pick, which fires no native change", async () => {
+    function Picking() {
+      const [kind, setKind] = useState("docker");
+      return (
+        <Form aria-label="New pool" onSubmit={(e) => e.preventDefault()}>
+          <TextField label="Name" value="a b" onChange={() => {}} validate={NAME_RULE} />
+          <Select
+            aria-label="Kind"
+            value={kind}
+            options={[
+              { value: "docker", label: "Docker" },
+              { value: "local", label: "Local" },
+            ]}
+            onValueChange={setKind}
+          />
+          <Button type="submit">Add</Button>
+        </Form>
+      );
+    }
+    render(<Picking />);
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    await pickIn(selectNamed("Kind"), "local");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(errorLine()).toHaveAttribute("aria-live", "polite");
+  });
+});
+
+describe("what a refused send is heard as (#3291)", () => {
+  it("names one field and why, more by how many and which, after what was said of the whole", () => {
+    expect(summaryOf({ fields: [{ name: "Name", why: "Taken." }] })).toBe("Name: Taken.");
+    expect(summaryOf({ fields: [{ name: "Name" }] })).toBe("1 field to fix: Name.");
+    expect(summaryOf({ fields: [{ name: "Name" }, { name: "Port" }] })).toBe(
+      "2 fields to fix: Name, Port.",
+    );
+    expect(summaryOf({ fields: [{ name: "Name", why: "Taken." }], reasons: ["Moved."] })).toBe(
+      "Moved. Name: Taken.",
+    );
+    expect(summaryOf({ fields: [] })).toBe("");
+  });
+
+  it("names a field by its own label and the label that names it, as React Aria joins them", () => {
+    document.body.innerHTML =
+      '<span id="named">Host</span><input id="box" aria-label="of the pool" aria-labelledby="box named">';
+    expect(nameOf(document.getElementById("box") as HTMLElement)).toBe("of the pool Host");
+    document.body.innerHTML = "";
   });
 });

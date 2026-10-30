@@ -149,12 +149,14 @@ function core({
   used: usedElsewhere = () => [],
   localDefault,
   refuseAdd,
+  refuseRename,
   chats = [],
 }: {
   profiles?: Profile[];
   used?: (name: string) => EntryReferrer[];
   localDefault?: string;
   refuseAdd?: (entry: ProfileEntry) => EntryWritten | undefined;
+  refuseRename?: () => EntryWritten | undefined;
   /** The profile each of the window's open chats started on (#1290). */
   chats?: (string | null)[];
 } = {}) {
@@ -245,6 +247,8 @@ function core({
           const to = given.to as string;
           const everywhere = given.everywhere as boolean;
           asked.push({ cmd: "rename", base, id, to, everywhere });
+          const refused = refuseRename?.();
+          if (refused) return refused;
           if (moved()) return refusal({ reasons: [MOVED] });
           const was = profiles.find((one) => idOf(one) === id);
           if (!was)
@@ -570,6 +574,21 @@ describe("Rename a profile", () => {
       id: "profile:fast:codex:codex --alt",
       to: "alt",
     });
+  });
+
+  it("says a rename refused with a reason once, under the entry, and not again by its form (#3291)", async () => {
+    core({ refuseRename: () => refusal({ reasons: [MOVED] }) });
+    await atProject();
+    await open("work");
+
+    await userEvent.click(screen.getByRole("button", { name: "Rename work" }));
+    const form = screen.getByRole("form", { name: "Rename work" });
+    await userEvent.type(within(form).getByLabelText("New name"), "2");
+    await userEvent.click(within(form).getByRole("button", { name: "Rename" }));
+
+    const said = await within(screen.getByRole("group", { name: "work" })).findByRole("alert");
+    expect(said).toHaveTextContent(MOVED);
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 
   it("is refused while something uses the profile, naming it", async () => {
