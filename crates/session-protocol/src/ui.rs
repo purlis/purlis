@@ -732,6 +732,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     // This machine's profiles on a pool's runner (#2049): keeping one there sends its name to a
     // runner, so only the person's own look in their window does.
     "pool_profiles",
+    // Signing a profile in on a pool's runner with no terminal (#4042): it runs the runner's
+    // own sign-in and passes the person's code to it, so only their own window drives it.
+    "pool_sign_in_start",
+    "pool_sign_in_next",
+    "pool_sign_in_paste",
+    "pool_sign_in_cancel",
     // The Devices view (#2052): it reads this machine's runners and links to each, so only the
     // person's own window asks it.
     "devices",

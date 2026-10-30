@@ -1487,6 +1487,10 @@ export const commands = {
 	clusterPoolKey: __WINDOW_ONLY_RESULT,
 	addClusterPool: __WINDOW_ONLY_RESULT,
 	poolProfiles: __WINDOW_ONLY_RESULT,
+	poolSignInStart: __WINDOW_ONLY_RESULT,
+	poolSignInNext: __WINDOW_ONLY_RESULT,
+	poolSignInPaste: __WINDOW_ONLY_RESULT,
+	poolSignInCancel: __WINDOW_ONLY,
 	devices: __WINDOW_ONLY_RESULT,
 	deviceRunner: __WINDOW_ONLY_RESULT,
 	devicesDisk: __WINDOW_ONLY_RESULT,
@@ -8099,6 +8103,28 @@ export type PoolRow = {
 	 */
 	suspend_after: string,
 };
+
+/**
+ *  **One step of a sign-in on a pool's runner** that purlis drives with no terminal (#4042), as
+ *  the window's sign-in strip shows it ([`driven::Event`]).
+ */
+export type PoolSignInStep = 
+/**  Open this page in the browser here: the harness vendor's own. */
+{ at: "open"; url: string } | 
+/**  Ask for the code the page shows. */
+{ at: "code" } | 
+/**  The harness refused the code, in its words. */
+{ at: "refused"; said: string } | 
+/**  The login ended well, and the runner is asked whether it is signed in. */
+{ at: "checking" } | 
+/**  The runner's own status check says it is signed in. */
+{ at: "signed-in" } | 
+/**  purlis could not follow the login: what it printed. */
+{ at: "could-not-follow"; said: string } | 
+/**  It did not sign in, and why. */
+{ at: "failed"; why: string } | 
+/**  It was cancelled, and its login ended. */
+{ at: "cancelled" };
 
 /**
  *  **How a pool's runner was made to suspend itself** (#3717), which its row says where it is
