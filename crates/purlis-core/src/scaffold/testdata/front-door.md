@@ -46,8 +46,9 @@ workspace's journal at once.
 Personas, workspaces, memory and vaults — the shape of this plane. Definitions and memory
 are committed and shared; credentials never are.
 
-Record durable facts with `charter persona remember front-door.2 "<fact>"`, and `--shared` for
-anything every persona needs.
+Record durable facts with the `persona_remember` tool, or
+`charter persona remember front-door.2 "<fact>"`; `shared` (`--shared`) for anything every persona
+needs.
 
 This file is yours: rename it, rewrite it, or delete it and declare a different front door
 with `charter persona default <name>`.

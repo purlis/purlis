@@ -167,7 +167,7 @@ function Tab({
 }) {
   return (
     <div className="view-body" style={{ inlineSize: width, blockSize: 620, display: "flex" }}>
-      <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
+      <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} onOpenView={() => undefined} />
     </div>
   );
 }
@@ -193,7 +193,30 @@ const meta = {
         case "skill_stats":
           return { by_harness: [], by_persona: [], by_workspace: [] };
         case "skill_grades":
-          return { grades: args.grades, said: null };
+          return {
+            grades: args.grades,
+            said: null,
+            tests: args.plan.tests.length,
+            tests_refused: args.plan.tests_refused,
+            // The grade running, at the step the app last told: none of its chats ran yet.
+            running:
+              args.plan.running === null
+                ? null
+                : {
+                    plane: PLANE,
+                    skill: "deploy",
+                    grade: args.plan.running,
+                    ran: 0,
+                    of: args.plan.chats,
+                    tokens: null,
+                    cost_usd: null,
+                    limit_usd: args.plan.cost_cap_usd,
+                    cap: args.plan.token_cap,
+                    asked: 0,
+                    ended: null,
+                    said: null,
+                  },
+          };
         case "skill_grade_plan":
           plans += 1;
           // A plan that changed under the person: the second read consents to another.
@@ -265,13 +288,19 @@ export const Grades: Story = {
   },
 };
 
-/** **A skill with no trigger tests**: the tab says what they are, and offers nothing to run. */
+/**
+ * **A skill with no trigger tests**: the tab says what they are, offers nothing to run, and offers
+ * to write them or to ask a chat to (#3925). Tab reaches both.
+ */
 export const NoTests: Story = {
   args: { plan: { ...PLAN, tests: [], chats: 0, estimate: null }, grades: [] },
   play: async ({ canvas }) => {
-    await expect(await canvas.findByTestId("skill-grades-no-tests")).toHaveTextContent(
-      "deploy has no trigger tests yet",
-    );
+    const none = await canvas.findByTestId("skill-grades-no-tests");
+    await expect(none).toHaveTextContent("deploy has no trigger tests yet");
+    await expect(within(none).getByRole("button", { name: "Write trigger tests" })).toBeVisible();
+    const ask = within(none).getByRole("button", { name: "Ask a chat to write them" });
+    await tabInto(() => ask);
+    expectFocusInSight();
   },
 };
 

@@ -208,6 +208,14 @@ const DRAWN: &[Drawn] = &[
     },
     Drawn {
         family: "titlebar",
+        part: "dot-needs",
+        css: include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
+        own: &["[data-part=\"dot-needs\"][data-scope=\"titlebar\"]"],
+        around: &[],
+        on: None,
+    },
+    Drawn {
+        family: "titlebar",
         part: "row-count",
         css: include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
         own: &["[data-part=\"row-count\"][data-scope=\"titlebar\"]"],

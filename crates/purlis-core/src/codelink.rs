@@ -37,7 +37,8 @@ use crate::worktree::git;
 mod moving;
 
 pub use moving::{
-    MOVED, Work, bundle_work, give_work, receive_over, sent, take_over, take_work_back, work_of,
+    MOVED, Work, bundle_work, give_work, receive_over, sent, take_over, take_work_back,
+    take_work_fresh, work_of,
 };
 
 /// Where a branch's snapshot of uncommitted work is kept, in a repository either end holds.
@@ -217,6 +218,58 @@ pub fn repo_in(project: &Path, repo: &str) -> Result<PathBuf, Refused> {
         }
     }
     Ok(at)
+}
+
+/// **The clones `project` holds in `workspace`** (1.51, #3811): the folder name of each
+/// repository in the workspace's folder, sorted. Only a folder reached through no link, with a
+/// name a repository's folder may have ([`repo_in`]) and not one the workspace keeps for its own
+/// ([`crate::contain::workspace_keeps`]), that is a repository on a branch with a commit. None where the
+/// workspace has no folder. Refused for a name no workspace has, and for a workspace reached
+/// through a link.
+pub fn clones_in(project: &Path, workspace: &str) -> Result<Vec<String>, Refused> {
+    if !crate::contain::workspace_name_ok(workspace) {
+        return Err(not_allowed(format!(
+            "`{workspace}` is not a workspace's name, so no clone of it was named"
+        )));
+    }
+    let workspaces = project.join("workspaces");
+    let folder = workspaces.join(workspace);
+    for walked in [&workspaces, &folder] {
+        match std::fs::symlink_metadata(walked) {
+            Ok(meta) if meta.is_dir() => {}
+            Ok(_) => {
+                return Err(not_allowed(format!(
+                    "workspace {workspace} is not a folder in the project, so no clone of it was \
+                     named"
+                )));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => {
+                return Err(Refused::Git(format!(
+                    "workspace {workspace}'s folder could not be read: {e}"
+                )));
+            }
+        }
+    }
+    let entries = std::fs::read_dir(&folder).map_err(|e| {
+        Refused::Git(format!(
+            "workspace {workspace}'s folder could not be read: {e}"
+        ))
+    })?;
+    let mut clones: Vec<String> = entries
+        .filter_map(Result::ok)
+        // `file_type` does not follow a link.
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| crate::contain::repo_name_ok(name))
+        .filter(|name| !crate::contain::workspace_keeps(name))
+        .filter(|name| a_repository(&folder.join(name)))
+        // Only one whose work a move can give: on a branch with a commit ([`work_of`]). One
+        // on no branch, or none yet, stays where it is, as before 1.51.
+        .filter(|name| current_branch(&folder.join(name)).is_some())
+        .collect();
+    clones.sort();
+    Ok(clones)
 }
 
 /// **A snapshot of `tree`'s uncommitted work**: a commit of the work tree as it is, its untracked
@@ -1226,6 +1279,14 @@ impl purlis_host::Code for Moves {
             )))
         })?;
         Ok(found.shape)
+    }
+
+    fn clones_of(
+        &self,
+        project: &Path,
+        workspace: &str,
+    ) -> Result<Vec<String>, purlis_host::protocol::session::Refusal> {
+        clones_in(project, workspace).map_err(code_refused)
     }
 }
 

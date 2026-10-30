@@ -11,10 +11,11 @@ import {
   type RefObject,
 } from "react";
 import type { Said } from "./actions";
+import type { Shown } from "./bindings";
 import { ActionResultNotice } from "./ActionResultNotice";
 import { trackOf, type KeptResult } from "./keptResults";
 import { Notice, type NoticeAction } from "./Notice";
-import { aboutOf, kindOf, placeOf, type Chip, type Place } from "./noticePlace";
+import { aboutOf, kindOf, needsOn, placeOf, type Chip, type Place } from "./noticePlace";
 import { CARD_STOP } from "./regionCycle";
 import type { SettingsLink } from "./settings/links";
 import { HungPopover } from "./ui/popover/Popover";
@@ -72,6 +73,12 @@ export type ChipNotices = {
   on: ReadonlyMap<string, readonly ChipNotice[]>;
   /** The chip whose card is up, if one is. */
   open: string | undefined;
+  /** **The chips a chat needs the person on** (#3652): each workspace a chat asks to have
+   *  removed, by the asking chat's session. Its ✋ dot stays until the registry no longer lists
+   *  the question, whatever card is up. */
+  needs?: ReadonlyMap<string, number>;
+  /** Brings chat `session` forward, where its question is answered on its band (#3652). */
+  bring?: (session: number) => void;
   /** Shows `workspace`'s card: its dot's press, or a dormant chip's, which brings back a
    *  standing line dismissed before (#3651). */
   show: (workspace: string) => void;
@@ -82,6 +89,9 @@ export type ChipNotices = {
   /** A refusal's way to the setting that puts it right. */
   onSettings: (link: SettingsLink) => void;
 };
+
+/** No asks: one list, so the chips' needs are worked out again only when the asks move. */
+const NO_ASKS: readonly Shown[] = [];
 
 /** Where `said` is drawn, given the title bar's `chips`. */
 export const placeOfSaid = (said: Said, chips: readonly Chip[]): Place =>
@@ -102,12 +112,18 @@ export function useChipNotices({
   onSettings,
   standing = NO_STANDING,
   bringBack,
+  asks = NO_ASKS,
+  bring = () => {},
 }: {
   /** The standing lines about one workspace each (#3651), placed as a result about it is. */
   standing?: readonly StandingNotice[];
   /** Brings back what was dismissed about `workspace` before its card is shown, where a press
    *  asks for it again (a dormant chip's). */
   bringBack?: (workspace: string) => void;
+  /** What waits on the person in the project in front, as the registry lists it (#3652). */
+  asks?: readonly Shown[];
+  /** Brings a chat of the project in front forward. */
+  bring?: (session: number) => void;
   /** The newest result said, which brings its chip's card up when it is placed on one. */
   said: Said | undefined;
   kept: readonly KeptResult[];
@@ -148,6 +164,7 @@ export function useChipNotices({
     }
     return by;
   }, [kept, plane, chips, standing]);
+  const needs = useMemo(() => needsOn(asks, chips), [asks, chips]);
   // **Which card is up, and in which project** (#3648's review): a card is up only in the
   // project whose result brought it up, and a project brought to the front brings none up.
   const [up, setUp] = useState<{
@@ -181,11 +198,13 @@ export function useChipNotices({
   const follows = track !== undefined && tracks.has(track) && fresh?.refused !== true;
   if (track !== undefined && !tracks.has(track)) tracks = new Set([...tracks, track]);
   if (said !== up.seen || plane !== up.in) {
-    if (plane === up.in && !follows) {
+    // Nothing said is no new result: the window lets its newest result go as it moves to
+    // another chat (a ✋'s press does, #3652), and the card up then stays up.
+    if (plane === up.in && !follows && said !== undefined) {
       // A new result in the project in front. By what it is about, not by the chips drawn now:
       // a workspace just made is said before the title bar has heard of its chip, and its card
       // comes up as the chip does. A result about no workspace takes the card down.
-      const about = said === undefined ? undefined : aboutOf(said);
+      const about = aboutOf(said);
       open = about !== undefined && "workspace" in about ? about.workspace : undefined;
       openIn = plane;
       chipped = false;
@@ -222,6 +241,8 @@ export function useChipNotices({
     on,
     // A card with nothing left on it is down.
     open: shown !== undefined && on.has(shown) ? shown : undefined,
+    needs,
+    bring,
     show: (workspace) => {
       bringBack?.(workspace);
       setUp((was) => ({ ...was, open: workspace, on: plane, chipped: true }));
@@ -290,15 +311,17 @@ export function ChipCard({
   useLayoutEffect(() => {
     handed.current = { takesKeyboard, onKeyboardTaken };
   });
-  // Once React Aria has placed it (it is drawn hidden until then), a frame or a few later.
+  // Once React Aria has placed it (it is drawn hidden until then), a frame or a few later; and
+  // never taken back to the card's edge once the keyboard is in it already (#3896): Tab in
+  // those frames goes on into it, as it would a moment later.
   useEffect(() => {
     if (!takesKeyboard) return;
     let frames = 0;
     let asked = 0;
     const land = () => {
       const at = region.current;
-      at?.focus({ preventScroll: true });
-      if ((at !== null && document.activeElement === at) || ++frames > 10) {
+      if (at !== null && !at.contains(document.activeElement)) at.focus({ preventScroll: true });
+      if ((at !== null && at.contains(document.activeElement)) || ++frames > 10) {
         handed.current.onKeyboardTaken?.();
         return;
       }

@@ -181,3 +181,5 @@
 {"reply":{"re":170,"ok":{"relayed_to":{"runner":"builds/builds-01234567"}}}}
 {"call":{"id":171,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"browser","program":"01J9ZQ8000000000000000000D","link_frames":{"frames":30,"width":1920}}}
 {"call":{"id":172,"command":"keep_profile","name":"work","harness":"claude","pinned":"2.1.300","settings":[{"path":"settings.json","bytes":"eyJ0aGVtZSI6ImRhcmsifQ=="},{"path":"agents/review.md","bytes":"UmV2aWV3Lg=="}]}}
+{"call":{"id":173,"command":"clones_of","project":"01J9PRJCT00000000000000000","workspace":"app"}}
+{"reply":{"re":173,"ok":{"clones":{"repos":["api","web"]}}}}

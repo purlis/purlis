@@ -107,12 +107,7 @@ pub fn add(
     let base = match base {
         Some(HEAD) => None,
         Some(base) => Some(base.to_owned()),
-        // Asked of the remote, never read from the clone; a clone with no default of a
-        // branch it has, or no answer, is cut from its HEAD.
-        None => worktree::clone_dir(plane, ws, repo).ok().and_then(|clone| {
-            worktree::fresh::remote_default(plane, &clone, "origin", hosts)
-                .filter(|branch| git_has(&clone, &worktree::name::as_ref(branch)))
-        }),
+        None => default_base(plane, ws, repo, hosts),
     };
     let cut = match base.as_deref() {
         Some(base) => worktree::add_based(plane, ws, repo, piece, branch, base, vet),
@@ -172,6 +167,24 @@ pub fn add(
             .into(),
     ));
     0
+}
+
+/// **The base a piece of `repo` is cut from where none is named**: the branch the remote names
+/// its default, where the clone has it. Asked of the remote over `hosts` (the asking chat's
+/// egress, or `None` for no limit), never read from the clone; a clone with no default of a
+/// branch it has, or no answer, gives `None`, and the piece is cut from the clone's HEAD.
+///
+/// The one choice `purlis worktree add` and a dispatch's worktree from a workspace's folder
+/// (#3903, [`crate::dispatchplace::cut`]) both make, so the two cannot drift.
+pub fn default_base(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    hosts: Option<&[String]>,
+) -> Option<String> {
+    let clone = worktree::clone_dir(plane, ws, repo).ok()?;
+    worktree::fresh::remote_default(plane, &clone, "origin", hosts)
+        .filter(|branch| git_has(&clone, &worktree::name::as_ref(branch)))
 }
 
 /// `charter worktree done` / `abandon <reason>`: declare the piece `cwd` stands in.

@@ -59,11 +59,12 @@ const file = (name: string): FolderEntry => ({ name, kind: "file", ignored: fals
 
 /** The core: each repo's own folder holds `README.md`; `svc` changed two files; `find_files`
  *  answers one hit per branch the scope names. */
-function core(refused: string[] = []) {
+function core(refused: string[] = [], unreadable?: string) {
   const finds: FileScope[] = [];
   mockIPC(
     (cmd, args) => {
       const a = args as Record<string, unknown>;
+      if (cmd === "branch_tree" && a.folder === unreadable) throw "permission denied";
       if (cmd === "branch_tree")
         return {
           entries:
@@ -256,6 +257,17 @@ describe("Explorer, repos as folders (#3343)", () => {
     // secondary. It takes the view's size, and the words that say something is wrong are
     // `danger.text` (`docs/ui-primitives.md`), held on the trouble band's `danger.surface`.
     expect(inherited(said, "color")).toBe("var(--danger-text)");
+  });
+
+  it("says a folder it could not read in the danger colour, its mark in the failed one (#3938)", async () => {
+    core([], "src");
+    draw(["svc"]);
+    await userEvent.click(await within(tree()).findByRole("row", { name: /^src/ }));
+    const said = await within(tree()).findByText(/permission denied/);
+    // Words that say something is wrong are `danger.text`; `state.failed` is the mark's.
+    expect(inherited(said, "color")).toBe("var(--danger-text)");
+    const mark = said.parentElement?.querySelector(".node-icon");
+    expect(mark && inherited(mark, "color")).toBe("var(--state-failed)");
   });
 
   it("opens Search on the filter's scope: Branch for the selected repo, Workspace for all", async () => {

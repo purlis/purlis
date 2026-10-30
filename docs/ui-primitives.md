@@ -1535,7 +1535,9 @@ line is `ui-text-body ui-text-strong`**, not a second body class. `ui-text-code`
 monospace family alone, so a path under a name is `ui-text-secondary ui-text-code`.
 
 - **Colour follows the role.** Do not pick a colour to make a word quieter; give it the role it
-  has. **Muted is the meta's only**: a help line or a where line is secondary.
+  has. **Muted is the meta's only**: a help line or a where line is secondary. The one exception,
+  until the view tabs wear the roles, is a view's sentence with no role (`.view-body .none`,
+  `.pending`; `design-system.md`, #3938).
 - **Nothing is under 11px.**
 - **A word that says something is wrong is `danger.text`**, and that is the one colour a view
   still writes for words; `state.failed` is for a state's mark.

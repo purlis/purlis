@@ -525,6 +525,14 @@ pub(super) const TITLEBAR: Family = Family {
             properties: &[Prop::Fill, Prop::Text],
         },
         Part {
+            name: "dot-needs",
+            since: super::NEXT,
+            description: "The dot on a chip's corner while a chat asks the person to remove the \
+                          workspace, the most urgent kind: its raised hand and its fill, ringed \
+                          in the bar's ground.",
+            properties: &[Prop::Fill, Prop::Text],
+        },
+        Part {
             name: "row-count",
             since: super::NEXT,
             description: "How many things wait on the person in a switcher's row, after its \
@@ -584,18 +592,21 @@ pub(super) const TITLEBAR: Family = Family {
         ("dot", "surface.base"),
         // A warning's dot (#3649): its triangle, a mark, in the window's ground on the amber.
         ("dot-warning", "surface.base"),
+        // A needs-you dot (#3652): its hand, a mark, in the window's ground on the failed red.
+        ("dot-needs", "surface.base"),
         // A switcher row's count (#3947), in amber, as a chip's is.
         ("row-count", "state.waiting"),
     ],
     corner_most: None,
     // A chip's notice dot is the chip's sibling in its slot (#3648), drawn around the chip.
     // Each kind's dot is a part of its own (#3649), so a theme colours one kind at a time.
-    around: &["dot", "dot-warning"],
+    around: &["dot", "dot-warning", "dot-needs"],
     // The count's pill, the amber wash (`titlebar.css`): its digits are read on it (#3041).
     fills: &[
         ("count", "wash.warning"),
         ("dot", "accent.base"),
         ("dot-warning", "state.waiting"),
+        ("dot-needs", "state.failed"),
         ("row-count", "wash.warning"),
     ],
     // A switcher's row and its pin paint no ground at rest: they stand on the popover's surface

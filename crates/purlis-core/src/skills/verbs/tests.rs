@@ -106,6 +106,51 @@ fn a_new_skill_from_a_template_lands_at_the_level_it_was_made_at() {
     assert!(text.contains("## Steps"), "{text}");
 }
 
+/// #3925: Write trigger tests starts a skill's `evals/triggers.json` from a template where it has
+/// none, which a grade then reads; a file it has already is never written over.
+#[test]
+fn trigger_tests_start_from_a_template_and_one_there_is_left_as_it_is() {
+    let tmp = plane();
+    let root = tmp.path();
+    let level = Level::workspace("ops");
+    skill(
+        root,
+        "workspaces/ops/skills/triage",
+        "triage",
+        "Sorts new issues.",
+    );
+
+    let (file, lines) = on(root, None, |cx| start_trigger_tests(cx, &level, "triage"));
+    let file = file.unwrap();
+    assert_eq!(file, "workspaces/ops/skills/triage/evals/triggers.json");
+    assert!(
+        said(&lines, |line| matches!(line, Say::Done(_))),
+        "{lines:?}"
+    );
+    let written = std::fs::read_to_string(root.join(&file)).unwrap();
+    assert_eq!(written, purlis_skills::grade::triggers_template("triage"));
+    let counted = crate::skills::grades::trigger_tests(root, &level, "triage").unwrap();
+    assert_eq!(counted.runs, 2, "a grade reads the template");
+
+    std::fs::write(root.join(&file), "[]").unwrap();
+    let (again, lines) = on(root, None, |cx| start_trigger_tests(cx, &level, "triage"));
+    assert_eq!(again.unwrap(), file);
+    assert!(
+        said(&lines, |line| matches!(line, Say::Info(_))),
+        "{lines:?}"
+    );
+    assert_eq!(std::fs::read_to_string(root.join(&file)).unwrap(), "[]");
+
+    std::fs::write(root.join(&file), vec![b' '; 300 * 1024]).unwrap();
+    let refused = did(root, |cx| start_trigger_tests(cx, &level, "triage")).unwrap_err();
+    assert!(
+        refused.starts_with("triage's trigger tests were left as they are"),
+        "{refused}"
+    );
+
+    assert!(did(root, |cx| start_trigger_tests(cx, &level, "nowhere")).is_err());
+}
+
 #[test]
 fn a_new_skill_is_refused_for_a_bad_name_a_taken_name_or_a_built_in_name() {
     let tmp = plane();

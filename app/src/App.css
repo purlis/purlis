@@ -3257,9 +3257,14 @@ body {
   margin: var(--space-2) 0;
 }
 
-/* A folder that could not be read, a line of the file tree (#2911): its words and its mark in the
-   failed colour, on the line the tree family draws. */
-.explorer .trouble[data-part="root"] :is([role="alert"], .node-icon) {
+/* A folder that could not be read, a line of the file tree (#2911): its words in `danger.text`,
+   as every word that says something is wrong, and its mark in the failed state's colour, on the
+   line the tree family draws (#3938). */
+.explorer .trouble[data-part="root"] [role="alert"] {
+  color: var(--danger-text);
+}
+
+.explorer .trouble[data-part="root"] .node-icon {
   color: var(--state-failed);
 }
 
@@ -3880,7 +3885,6 @@ body {
   display: flex;
   gap: var(--space-3);
   align-items: flex-start;
-  color: var(--state-failed);
   margin: var(--space-2) 0;
 }
 
@@ -4304,8 +4308,8 @@ body {
 .panels .ci-pending {
   color: var(--state-waiting);
 }
+/* Its words are `.trouble`'s `danger.text` (#3938): `state.failed` is a state's mark. */
 .panels .trouble {
-  color: var(--state-failed);
   margin: var(--space-2) 0;
 }
 
@@ -5506,6 +5510,11 @@ nav.piece-files-head {
   max-width: 60rem;
 }
 
+/* **The one muted outside the meta, until the view tabs wear the roles** (#3938): a view's
+   sentence that wears no role (`.none`, `.pending`) is drawn muted here. A sentence's role is
+   `ui-text-secondary` (`docs/ui-primitives.md`), and this colour goes when the view tabs move
+   onto the roles (`docs/design-system.md`, "The order the surfaces move in"). A sentence that
+   already wears the role keeps it: the role's layer wins. */
 .view-body .pending,
 .view-body .none {
   margin: var(--space-2) 0;
