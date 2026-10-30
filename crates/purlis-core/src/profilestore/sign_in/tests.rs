@@ -254,7 +254,7 @@ fn an_adopted_profile_is_signed_in_by_the_persons_own_sign_in_and_never_asked() 
         variables: Vec::new(),
     });
 
-    let why = login_of(&record, None).expect_err("nothing to sign in");
+    let why = login_of(&record, None, None).expect_err("nothing to sign in");
 
     assert!(why.contains("own sign-in"), "{why}");
 }
@@ -506,4 +506,81 @@ fn the_plans_sign_in_offers_are_the_ones_the_harnesss_declaration_lists() {
     assert!(providers("codex").is_empty());
     let codex = login_for(&profile("codex"), "/bin/codex", None).unwrap();
     assert_eq!(codex.args, ["login"]);
+}
+
+/// A runner's record of the desktop's profile `work` of `kind`, kept for it and pinned.
+fn kept_pinned(kind: &str) -> MachineProfile {
+    MachineProfile {
+        kept_for: Some("01JA0DESKT0P00000000000000".to_owned()),
+        pinned: Some(crate::profilestore::pin::Pinned {
+            version: "2.1.300".to_owned(),
+            at: 1,
+        }),
+        ..made(kind)
+    }
+}
+
+/// **On a runner, Sign in runs the pinned version it installed, not one found on `PATH`**
+/// (#4007): a runner image carries no harness, so the version a chat's start installs is the
+/// one that signs the profile in.
+#[test]
+fn a_runners_sign_in_runs_the_pinned_version_it_installed() {
+    let installed = PathBuf::from("/runner/data/harnesses/claude/2.1.300/claude");
+
+    let login = login_of(&kept_pinned("claude"), None, Some(&installed)).expect("a sign-in");
+
+    assert_eq!(login.program, installed.display().to_string());
+    assert_eq!(login.args, ["auth", "login"]);
+    assert!(
+        login
+            .env
+            .iter()
+            .any(|(n, v)| n == "CLAUDE_CONFIG_DIR" && v == "/profiles/work/config"),
+        "{:?}",
+        login.env
+    );
+}
+
+/// A machine that answers every status with 0, and installs `pinned` as a runner's pinned
+/// version: the program each status was asked of, in order.
+struct WithPinned {
+    pinned: Option<PathBuf>,
+    programs: RefCell<Vec<String>>,
+}
+
+impl Look for WithPinned {
+    fn status(&self, program: &str, _: &[&str], _: &[(String, String)]) -> Option<i32> {
+        self.programs.borrow_mut().push(program.to_owned());
+        Some(0)
+    }
+    fn is_there(&self, _: &Path) -> bool {
+        false
+    }
+    fn pinned_program(&self, _: &MachineProfile) -> Option<PathBuf> {
+        self.pinned.clone()
+    }
+}
+
+/// **On a runner, whether a profile is signed in is asked of its pinned version** (#4007), and
+/// of the harness on `PATH` where none is installed for it.
+#[test]
+fn a_runners_standing_is_asked_of_its_pinned_version_where_it_is_installed() {
+    let installed = PathBuf::from("/runner/data/harnesses/claude/2.1.300/claude");
+    let mut record = kept_pinned("claude");
+    record.folders.config = PathBuf::from("/profiles/pinned-standing/config");
+    let pinned = WithPinned {
+        pinned: Some(installed.clone()),
+        programs: RefCell::new(Vec::new()),
+    };
+    let unpinned = WithPinned {
+        pinned: None,
+        programs: RefCell::new(Vec::new()),
+    };
+
+    assert_eq!(standing_of(&record, &pinned), Some(Standing::SignedIn));
+    forget_of(&record);
+    assert_eq!(standing_of(&record, &unpinned), Some(Standing::SignedIn));
+
+    assert_eq!(*pinned.programs.borrow(), [installed.display().to_string()]);
+    assert_eq!(*unpinned.programs.borrow(), ["claude"]);
 }
