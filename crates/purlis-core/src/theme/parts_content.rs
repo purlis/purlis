@@ -222,10 +222,12 @@ pub(super) const NOTICE: Family = Family {
     defaults: notice_look,
     states: &[],
     focused: "[data-focus-visible]",
-    // A card's mark in the success colour, a mark held at 3:1, and its title in the primary
-    // words, read on the card's ground (#3478). A card's `under`, the room its Details open in,
-    // is no part: it paints nothing and its words are the Notice's own (`notice.css`).
-    words: &[("mark", "state.success"), ("title", "text.primary")],
+    // A card's title in the primary words, read on the card's ground (#3478). Its mark's colour
+    // is its variant's (`notice.css`: success, danger, attention), which one default cannot say,
+    // so it names none: a theme's own mark colour is held as a mark, at 3:1. A card's `under`,
+    // the room its Details open in, is no part: it paints nothing and its words are the
+    // Notice's own.
+    words: &[("title", "text.primary")],
     corner_most: None,
     around: &[],
     fills: &[],
