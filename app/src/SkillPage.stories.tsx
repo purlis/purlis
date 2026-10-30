@@ -12,8 +12,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, screen, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { SkillStudioTab } from "./SkillStudioTab";
-import { Panel } from "./ui/panel/Panel";
+import { STORY_PLANE, StudioInPanel } from "./skillStudioStory.testkit";
 import {
   SKILL_STUDIO_VIEW,
   inWorkspace,
@@ -27,7 +26,7 @@ import { forgetSkillEdit } from "./skillEdit";
 import { expectFocusInSight, untilFocused, untilFocusWithin } from "./stories.testkit";
 import type { StudioSkill } from "./bindings";
 
-const PLANE = "/home/dev/plane";
+const PLANE = STORY_PLANE;
 const HISTORY = studioHistoryOf(PLANE, SKILL_STUDIO_VIEW);
 const SCOPE = inWorkspace("smart-ide");
 
@@ -86,20 +85,7 @@ function Tab({
   chosen: StudioSkill;
   tab: SkillPageTab;
 }) {
-  return (
-    // In the content panel, as a view tab is drawn (`PlaneView`): its fill is the ground the
-    // page header is drawn on while the page scrolls under it (#3944). Isolated as the window's
-    // root is (`App.css`, #1481), so a dialog opened over the page is drawn over its sticky
-    // header here too.
-    <Panel variant="content">
-      <div
-        className="view-body"
-        style={{ inlineSize: width, blockSize: height, display: "flex", isolation: "isolate" }}
-      >
-        <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
-      </div>
-    </Panel>
-  );
+  return <StudioInPanel width={width} height={height} narrow={narrow} />;
 }
 
 const meta = {
