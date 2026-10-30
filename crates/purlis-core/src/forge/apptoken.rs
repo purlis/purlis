@@ -758,9 +758,11 @@ fn revoke_later(
         return None;
     }
     let (done, finished) = std::sync::mpsc::channel();
+    let in_thread = whose.clone();
     let started = std::thread::Builder::new()
         .name("purlis-revoke-app-token".to_owned())
         .spawn(move || {
+            let whose = in_thread;
             let revoked = revoke_each(&tokens, &revoke_on_github);
             tracing::info!(
                 "purlis: {whose} ended: {revoked} of its {} revoked",
