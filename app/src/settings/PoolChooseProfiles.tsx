@@ -41,15 +41,24 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
   const [at, setAt] = useState<At>({ at: "choose" });
   const [ticked, setTicked] = useState<ReadonlySet<string>>();
   const [trouble, setTrouble] = useState<string>();
+  // Asked afresh as the strip opens, and ticked only from that answer, which is what the pool
+  // keeps: its default. What the window held of a pool of the same name before is not this one's.
+  const [read, setRead] = useState(false);
   useEffect(() => {
-    if (asked === undefined) void askProfiles(pool, plane);
-  }, [pool, plane, asked]);
-  const rows = asked !== undefined && asked !== "asking" && "kept" in asked ? asked : undefined;
-  // What the pool keeps as it is first read is what is ticked: its default.
-  useEffect(() => {
-    if (rows !== undefined && ticked === undefined)
-      setTicked(new Set(rows.kept.map((row) => row.name)));
-  }, [rows, ticked]);
+    let gone = false;
+    void askProfiles(pool, plane).then(() => {
+      if (gone) return;
+      const now = profilesHeld(pool);
+      if (now !== undefined && now !== "asking" && "kept" in now)
+        setTicked(new Set(now.kept.map((row) => row.name)));
+      setRead(true);
+    });
+    return () => {
+      gone = true;
+    };
+  }, [pool, plane]);
+  const rows =
+    read && asked !== undefined && asked !== "asking" && "kept" in asked ? asked : undefined;
 
   const told = trouble !== undefined && (
     <p className="ui-setting-help" role="alert">
@@ -86,7 +95,7 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
       </>
     );
   }
-  if (asked !== undefined && asked !== "asking" && !("kept" in asked)) {
+  if (read && asked !== undefined && asked !== "asking" && !("kept" in asked)) {
     // The pool's lines say why, with Ask again.
     return <PoolProfiles pool={pool} plane={plane} />;
   }
@@ -134,10 +143,14 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
   };
   const n = ticked.size;
   return (
-    <Card className="pool-sign-in" role="group" aria-label={`Profiles that sign in on pool ${pool}`}>
+    <Card
+      className="pool-sign-in"
+      role="group"
+      aria-label={`Profiles that sign in on pool ${pool}`}
+    >
       <p className="ui-setting-help">
-        Which of your profiles should chats on {pool} use? Each one you pick signs in on its
-        runner once, there; nothing of this machine&apos;s sign-in goes there.
+        Which of your profiles should chats on {pool} use? Each one you pick signs in on its runner
+        once, there; nothing of this machine&apos;s sign-in goes there.
       </p>
       {all.map((one) => (
         <Checkbox

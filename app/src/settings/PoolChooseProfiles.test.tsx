@@ -178,7 +178,10 @@ describe("choosing the profiles a new pool signs in", () => {
   it("says where the core refused a change, and goes on to the pool's lines", async () => {
     mockIPC((cmd) => {
       if (cmd === "pool_profiles")
-        return { kept: [a_profile("work")], addable: [{ name: "personal", harness: "Claude Code" }] };
+        return {
+          kept: [a_profile("work")],
+          addable: [{ name: "personal", harness: "Claude Code" }],
+        };
       if (cmd === "pool_profile_add") throw "pool builds keeps the profile a new chat gets";
       return null;
     });
@@ -187,6 +190,8 @@ describe("choosing the profiles a new pool signs in", () => {
     await userEvent.click(within(group).getByRole("checkbox", { name: /work/ }));
     await userEvent.click(screen.getByRole("button", { name: "Sign in 1 profile" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/keeps the profile a new chat gets/);
-    expect(await screen.findByRole("list", { name: "Profiles on pool builds" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("list", { name: "Profiles on pool builds" }),
+    ).toBeInTheDocument();
   });
 });
