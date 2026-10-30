@@ -318,17 +318,22 @@ describe("a popover hung from what it is about (#3648)", () => {
       ).style.left;
     await aFrame();
     const first = placed();
-    let frames = new Map<number, FrameRequestCallback>();
-    let asked = 0;
+    const frames = new Map<number, FrameRequestCallback>();
+    // Numbered far past any frame asked for before this test, so no cancel of one meets these.
+    let asked = 1_000_000;
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
       frames.set(++asked, callback);
       return asked;
     });
     vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => frames.delete(id));
+    // Each callback asked before this frame, unless a callback before it in the frame cancels it.
     const frame = () => {
-      const now = frames;
-      frames = new Map();
-      for (const callback of now.values()) callback(performance.now());
+      const now = [...frames.keys()];
+      for (const id of now) {
+        const callback = frames.get(id);
+        frames.delete(id);
+        callback?.(performance.now());
+      }
     };
     // A scroll set at once, and its end; then its frames, one straight after another, with
     // nothing drawn between them: one `act`, which draws only as it ends.

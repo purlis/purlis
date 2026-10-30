@@ -360,20 +360,20 @@ export const ScrolledNarrow: Story = {
 async function typeALine(canvas: ReturnType<typeof within>): Promise<void> {
   await userEvent.click(await canvas.findByRole("button", { name: "Edit deploy" }));
   // The editor is a chunk of its own, loaded the first time: given the time a busy cell takes.
-  const text = await canvas.findByRole(
-    "textbox",
-    { name: "deploy's instructions" },
-    { timeout: 10_000 },
-  );
+  await canvas.findByRole("textbox", { name: "deploy's instructions" }, { timeout: 10_000 });
   // Its grammar is a chunk of its own as well, which lands after the editor is up (`colour`) and
   // draws every line again. Landing between two keys, it drew the line being typed again under
   // user-event's caret, which WebKit then put at the line's start: "5." ended the line typed
   // (#4026). Typed into once the grammar is in and has read the whole text.
-  await waitFor(
+  // The text found again on each look, should the editor be made again meanwhile.
+  const text = await waitFor(
     () => {
-      const view = EditorView.findFromDOM(text);
-      expect(view?.state.facet(language)).toBeTruthy();
-      expect(view !== null && syntaxTreeAvailable(view.state)).toBe(true);
+      const now = canvas.getByRole("textbox", { name: "deploy's instructions" });
+      const view = EditorView.findFromDOM(now);
+      expect(view, "the text is a CodeMirror view's").not.toBeNull();
+      expect(view?.state.facet(language), "its grammar is in").toBeTruthy();
+      expect(view !== null && syntaxTreeAvailable(view.state), "it has read the text").toBe(true);
+      return now;
     },
     { timeout: 10_000 },
   );
