@@ -1297,15 +1297,7 @@ export const commands = {
 	 *  cloned by name (ADR 0055). Asked once for a whole pick, before the clones.
 	 */
 	takeRepos: (plane: PlaneId, repos: string[]) => typedError<null, string>(__TAURI_INVOKE("take_repos", { plane, repos })),
-	/**
-	 *  Clone ONE repo into a workspace: `charter clone <repo> -w <workspace>`.
-	 * 
-	 *  One per call, and the window calls it once per repo in turn: that is what lets it show each
-	 *  repo's own state as it lands and retry one that failed, and no two calls race to write the
-	 *  workspace's manifest. On a blocking thread, because a clone can take the network's two
-	 *  minutes.
-	 */
-	cloneRepo: (plane: PlaneId, workspace: string, repo: string) => typedError<string[], string>(__TAURI_INVOKE("clone_repo", { plane, workspace, repo })),
+	cancelCloneRepo: __WINDOW_ONLY_RESULT,
 	dropRepo: __WINDOW_ONLY_REFUSED,
 	dropRepoMembership: __WINDOW_ONLY_RESULT,
 	/**
@@ -3695,6 +3687,22 @@ export type ClashOutcome =
  *  own skills where the program reads every skill by its bare name.
  */
 "either-one";
+
+/**  How far a repo's clone has got, as the window shows it (#4079). */
+export type CloneProgress = {
+	/**  The stage, in the person's words ("Downloading"). */
+	stage: string,
+	/**  The share of the whole clone done: it never goes back. */
+	percent: number,
+};
+
+/**  Why a repo was not cloned. */
+export type CloneRefused = {
+	/**  The core's own words. */
+	said: string,
+	/**  The server the person needs to sign in to, where that is why (#4079). */
+	sign_in: string | null,
+};
 
 /**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */
 export type CloseHanded = {

@@ -523,6 +523,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // with the person's own git sign-in, so it is started and stopped from the window alone.
     "project_url_folder",
     "cancel_get_project",
+    // And of a repo cloned into a workspace (#4079), for the same reason.
+    "cancel_clone_repo",
     // Where the person is in the guided steps (#1817), read and kept for the next launch:
     // setting up this machine is the window's, never a link's.
     "onboarding_progress",

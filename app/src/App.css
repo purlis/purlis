@@ -3923,6 +3923,11 @@ body {
   display: contents;
 }
 
+.action-result-meter,
+.clone-bar {
+  margin-block-start: var(--space-1);
+}
+
 .action-result-details {
   margin: 0;
   /* 8 and 10, as the prototype's details box. */
