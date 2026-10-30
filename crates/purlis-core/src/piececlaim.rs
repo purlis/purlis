@@ -14,6 +14,8 @@
 //!   before chats were named in the log, is held by no chat.
 //! - **A second chat's write in a folder a live chat holds is refused**, naming the holder and
 //!   how to hand it over: the holder's `purlis worktree done` or `abandon`, or the person.
+//! - **A removal is held to the claim too** (#3879): a folder a live chat holds is not removed
+//!   for another, and a removal ends the folder's claim, whoever held it.
 //! - **A claim whose chat has ended is released**: the chat is not open in this app, or its
 //!   program has ended. So is one its holder, or the person, declared `done` or `abandoned`; a
 //!   declaration by some other chat releases nothing.
@@ -56,6 +58,8 @@ pub enum Act {
     Commit,
     Update,
     Push,
+    /// The folder's removal (#3879).
+    Remove,
     /// Any of the three: what a dispatch into a held folder is warned of.
     Write,
 }
@@ -66,6 +70,7 @@ impl Act {
             Self::Commit => "commit",
             Self::Update => "update",
             Self::Push => "push",
+            Self::Remove => "remove",
             Self::Write => "commit, update or push",
         }
     }
@@ -124,6 +129,8 @@ fn holder(plane: &Path, at: &Located) -> Option<Holder> {
                     });
                 }
             }
+            // The folder is gone, and its claim with it (#3879).
+            Some("removed") => held = None,
             Some("done" | "abandoned") => {
                 let the_persons = chat.is_none() && text(&e, "session").is_none();
                 let the_holders =
@@ -290,6 +297,59 @@ pub fn take(
         .map(|_| ())
         .ok_or_else(|| refused("purlis could not record that this chat works there".to_owned())),
     }
+}
+
+/// Whose word a removal is held to (#3879).
+#[derive(Debug, Clone, Copy)]
+pub enum Judged<'a> {
+    /// The person's own terminal, which hands any folder over: nothing is checked.
+    ByThePerson,
+    /// A chat: refused where another live chat holds the folder, by `live` (the chats the app
+    /// has, or `None` where no app said, which refuses a held folder).
+    ByAChat(Option<&'a [Live]>),
+}
+
+/// **A branch folder's removal, held to its claim** (#3879): `remove` is run, under the
+/// workspace's claim lock, only where `judged` lets `who` have the folder; a removal that
+/// answers `0` ends the folder's claim, whoever held it, by a `removed` line. Else the refusal,
+/// in the words a commit, an update or a push is refused in.
+pub fn removing(
+    plane: &Path,
+    at: &Located,
+    who: &Who,
+    judged: Judged<'_>,
+    now: DateTime<Utc>,
+    remove: impl FnOnce() -> u8,
+) -> Result<u8, String> {
+    let refused = |why: String| {
+        format!(
+            "{why}, so a second chat could not be kept out of {}'s branch folder '{}', and \
+             purlis will not remove it. Nothing was removed",
+            at.repo, at.piece
+        )
+    };
+    let _one_at_a_time = locked(plane, &at.workspace).map_err(refused)?;
+    if let Judged::ByAChat(live) = judged
+        && let Writer::Refused(why) = writer(plane, at, who.chat.as_deref(), live, Act::Remove)
+    {
+        return Err(why);
+    }
+    let code = remove();
+    if code == 0 {
+        // Best-effort: the folder is gone either way, and a claim on a folder that is not
+        // there holds nothing a later cut of the same name could not take back.
+        let _ = pieces::record(
+            plane,
+            &at.workspace,
+            Event::Removed,
+            &at.repo,
+            &at.piece,
+            None,
+            who,
+            now,
+        );
+    }
+    Ok(code)
 }
 
 #[cfg(test)]

@@ -321,3 +321,87 @@ fn a_fifo_at_the_lock_s_place_is_refused_at_once() {
     // Nothing was claimed.
     assert!(!dir_for(&root, "alpha").join("box.jsonl").exists());
 }
+
+#[test]
+fn a_folder_another_live_chat_holds_is_not_removed_for_a_chat_and_its_own_is() {
+    // #3879: a removal is held to the claim as a commit is.
+    let (_dir, root) = a_plane();
+    let both = [live(FIRST, 3), live(SECOND, 4)];
+    take_as(&root, &chat(3, Some(FIRST)), Some(&both)).unwrap();
+    let mut ran = false;
+    let why = removing(
+        &root,
+        &folder("forms"),
+        &chat(4, Some(SECOND)),
+        Judged::ByAChat(Some(&both)),
+        now(),
+        || {
+            ran = true;
+            0
+        },
+    )
+    .unwrap_err();
+    assert!(!ran, "the removal ran");
+    assert!(why.contains("claimed by chat 3"), "{why}");
+    assert!(why.contains("will not remove"), "{why}");
+    // Where no app says who lives, a held folder is refused too.
+    assert!(
+        removing(
+            &root,
+            &folder("forms"),
+            &chat(4, Some(SECOND)),
+            Judged::ByAChat(None),
+            now(),
+            || 0
+        )
+        .is_err()
+    );
+    // Its holder removes it, and the claim ends with it.
+    assert_eq!(
+        removing(
+            &root,
+            &folder("forms"),
+            &chat(3, Some(FIRST)),
+            Judged::ByAChat(Some(&both)),
+            now(),
+            || 0
+        ),
+        Ok(0)
+    );
+    assert_eq!(write_as(&root, Some(SECOND), &both), Writer::Free);
+}
+
+#[test]
+fn the_person_removes_any_folder_and_a_removal_ends_whatever_claim_it_had() {
+    let (_dir, root) = a_plane();
+    let both = [live(FIRST, 3), live(SECOND, 4)];
+    take_as(&root, &chat(3, Some(FIRST)), Some(&both)).unwrap();
+    // A removal that did not happen leaves the claim where it was.
+    assert_eq!(
+        removing(
+            &root,
+            &folder("forms"),
+            &person(),
+            Judged::ByThePerson,
+            now(),
+            || 1
+        ),
+        Ok(1)
+    );
+    assert!(matches!(
+        write_as(&root, Some(SECOND), &both),
+        Writer::Refused(_)
+    ));
+    assert_eq!(
+        removing(
+            &root,
+            &folder("forms"),
+            &person(),
+            Judged::ByThePerson,
+            now(),
+            || 0
+        ),
+        Ok(0)
+    );
+    assert_eq!(write_as(&root, Some(SECOND), &both), Writer::Free);
+}

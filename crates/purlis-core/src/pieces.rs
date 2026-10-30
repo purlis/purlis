@@ -59,6 +59,9 @@ pub enum Event {
     Done,
     /// The worker says it gave the piece up. Always carries a reason.
     Abandoned,
+    /// The piece's folder was removed (#3879): an observation, as a claim is. It ends any claim
+    /// on the folder, whoever held it: the folder is gone.
+    Removed,
 }
 
 impl Event {
@@ -68,6 +71,7 @@ impl Event {
             Event::Claimed => "claimed",
             Event::Done => "done",
             Event::Abandoned => "abandoned",
+            Event::Removed => "removed",
         }
     }
 }

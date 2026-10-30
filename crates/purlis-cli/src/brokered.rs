@@ -387,8 +387,8 @@ pub fn no_persona_removal_in_a_sandbox(name: &str) -> String {
 }
 
 /// The sentence `purlis worktree remove <repo> <piece>` is refused with in a chat the app
-/// started under the sandbox (#1408): the folder's files go before git's record of it, which a
-/// sandboxed chat cannot finish.
+/// started under the sandbox where no app took the removal (#1408, #3879): the folder's files
+/// go before git's record of it, which a sandboxed chat cannot finish.
 pub fn no_piece_removal_in_a_sandbox(repo: &str, piece: &str) -> String {
     let (repo, piece) = (
         purlis_core::shown::short(repo),
@@ -399,6 +399,23 @@ pub fn no_piece_removal_in_a_sandbox(repo: &str, piece: &str) -> String {
          its files and git's record of it, which a sandboxed chat cannot finish, so nothing was \
          removed. Ask the person to remove it from the window: Remove folder {piece} in {repo}, \
          in the palette"
+    )
+}
+
+/// The sentence `purlis worktree remove --force` is refused with in any chat the app started
+/// (#3879): forcing discards the uncommitted changes and unique commits a plain removal names,
+/// which is the person's to decide. The plain removal the app runs for the chat is named too.
+pub fn no_forced_piece_removal_in_a_chat(repo: &str, piece: &str) -> String {
+    let (repo, piece) = (
+        purlis_core::shown::short(repo),
+        purlis_core::shown::short(piece),
+    );
+    format!(
+        "a chat does not force a branch folder's removal: --force discards the work in \
+         '{repo} · {piece}' that a plain removal would name, which is the person's to decide, \
+         so nothing was removed. Without --force the app removes it where nothing would be \
+         lost; otherwise ask the person to remove it from the window: Remove folder {piece} in \
+         {repo}, in the palette"
     )
 }
 

@@ -36,6 +36,20 @@ fn a_branch_folder_a_chat_cannot_remove_is_named_by_its_palette_row() {
 }
 
 #[test]
+fn a_forced_removal_from_a_chat_names_the_window_and_the_plain_one() {
+    let said = no_forced_piece_removal_in_a_chat("charter", "probe");
+    assert!(said.contains("nothing was removed"), "{said}");
+    assert!(
+        said.contains("Without --force the app removes it"),
+        "{said}"
+    );
+    assert!(
+        said.ends_with("Remove folder probe in charter, in the palette"),
+        "{said}"
+    );
+}
+
+#[test]
 fn its_own_workspace_spelled_out_is_taken_as_no_w() {
     assert_eq!(named(None, Some("alpha"), true), Named::Own);
     assert_eq!(named(Some("alpha"), Some("alpha"), true), Named::Own);

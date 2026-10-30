@@ -154,7 +154,11 @@ fn commit_of(clone: &Path, name: &str) -> Result<Option<String>, Refusal> {
 
 /// The remote-tracking branch `branch` follows: its upstream where git has one, else
 /// `origin`'s branch of the same name where the clone has that. Never a local branch.
-fn upstream_of(clone: &Path, branch: &str, local_ref: &str) -> Result<Option<String>, Refusal> {
+pub(super) fn upstream_of(
+    clone: &Path,
+    branch: &str,
+    local_ref: &str,
+) -> Result<Option<String>, Refusal> {
     let asked = git::run(
         clone,
         &["for-each-ref", "--format=%(upstream)", local_ref],

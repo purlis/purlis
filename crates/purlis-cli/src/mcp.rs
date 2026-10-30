@@ -217,6 +217,20 @@ impl ServerHandler for Server {
                 .await,
             ));
         }
+        if name == chattools::WORKTREE_REMOVE {
+            return Ok(done(
+                blocking(move || {
+                    let (repo, piece, delete_branch) = chattools::worktree_remove_args(&args)?;
+                    crate::piece::remove_by_the_app(
+                        &crate::Here::read()?,
+                        &repo,
+                        &piece,
+                        delete_branch,
+                    )
+                })
+                .await,
+            ));
+        }
         if name == chattools::DISPATCH_LIST {
             return Ok(done(
                 blocking(|| crate::dispatch::list().map_err(|why| in_the_chat(&why))).await,
