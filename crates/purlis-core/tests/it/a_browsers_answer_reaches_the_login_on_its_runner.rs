@@ -61,6 +61,7 @@ async fn a_runner(place: &Place, runner: Identity, desktop: Pinned) -> oneshot::
         unpairing: Arc::new(|_| Ok(())),
         keeping: Arc::new(|_, _| Ok(ProfileStanding::SignedOut)),
         forgetting: Arc::new(|_, _| Ok(())),
+        listing: Arc::new(|_| Ok(Vec::new())),
         delivering: Arc::new(callback::deliver),
     };
     let place = place.clone();

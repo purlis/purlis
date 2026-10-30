@@ -672,12 +672,12 @@ pub fn keep_profiles(
     })
 }
 
-/// Why a browser's answer did not reach a runner before 1.57.
+/// Why a browser's answer did not reach a runner before 1.58.
 const OLDER_RUNNER: &str = "this pool's runner is older than this version of purlis, so your \
                             browser's answer could not reach it: update the pool, and try again";
 
 /// **Hands the login waiting on the runner the redirect `target`, over one link of its own**
-/// (`sign_in_redirect`, 1.57, #4044): `Ok` once the login took it, or why not, in words.
+/// (`sign_in_redirect`, 1.58, #4044): `Ok` once the login took it, or why not, in words.
 pub fn sign_in_redirect(to: &ToARunner, target: &str) -> Result<(), String> {
     use purlis_session_protocol::session::KNOWS_SIGN_IN_REDIRECT;
     on_one_link_within(to, CARRIED_WITHIN, async |linked| match linked {
