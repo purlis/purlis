@@ -84,7 +84,12 @@ function Tab({
   tab: SkillPageTab;
 }) {
   return (
-    <div className="view-body" style={{ inlineSize: width, blockSize: 560, display: "flex" }}>
+    // Isolated as the window's root is (`App.css`, #1481), so a dialog opened over the page is
+    // drawn over its sticky header here too.
+    <div
+      className="view-body"
+      style={{ inlineSize: width, blockSize: 560, display: "flex", isolation: "isolate" }}
+    >
       <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
     </div>
   );
