@@ -831,6 +831,23 @@ fn settings_too_large_for_the_link_are_refused_in_words() {
     assert!(refused.contains("larger than"), "{refused}");
 }
 
+/// **A profile with a few MiB of skills reaches its runner** (#4081): the refusal the person
+/// hit on a real pool, whose every chat was refused for it.
+#[test]
+fn a_profile_with_several_mib_of_skills_is_sent_to_its_runner() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    let skill = desktop.folders.config.join("skills/large");
+    fs::create_dir_all(&skill).unwrap();
+    for one in 0..30 {
+        fs::write(skill.join(format!("{one}.md")), vec![b'a'; 100 * 1024]).unwrap();
+    }
+
+    let sent = to_send(&Kept::of(&desktop).unwrap().with_settings_of(&desktop));
+
+    assert!(sent.is_ok(), "{sent:?}");
+}
+
 /// **A runner keeps no settings file it would not import**: one named like a credential, a
 /// hidden one, one the list does not name, and one outside the settings folder are each refused,
 /// and nothing of what was sent is written.
