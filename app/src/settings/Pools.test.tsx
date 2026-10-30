@@ -372,6 +372,8 @@ describe("You › This machine › Pools", () => {
     const signIn = await screen.findByRole("dialog", {
       name: "Sign your profiles in on pool builds",
     });
+    await within(signIn).findByRole("group", { name: "Profiles that sign in on pool builds" });
+    await userEvent.click(within(signIn).getByRole("button", { name: "Not now" }));
     const list = await within(signIn).findByRole("list", { name: "Profiles on pool builds" });
     expect(within(list).getByText("Fetching Claude Code for this runner…")).toBeInTheDocument();
     expect(
