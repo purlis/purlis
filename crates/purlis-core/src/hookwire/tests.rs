@@ -544,6 +544,11 @@ fn a_git_ask_is_read_back_whole_and_names_the_chat_its_token_must_be() {
             step: UpdateStep::Abort,
         },
         GitWork::RootUpdate {},
+        GitWork::WorktreeRemove {
+            repo: "widget".to_owned(),
+            piece: "p1".to_owned(),
+            delete_branch: true,
+        },
     ] {
         let ask = Ask::Git(Box::new(GitAsk {
             chat: 7,

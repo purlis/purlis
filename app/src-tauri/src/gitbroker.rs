@@ -6,7 +6,8 @@
 //! runs the same core functions the terminal's commands run.
 //!
 //! And a commit in the branch folder a sandboxed chat stands in (#1055), handed to
-//! `purlis_core::gitbroker::commit`.
+//! `purlis_core::gitbroker::commit`; and a finished branch folder's removal (#3879), never
+//! forced, which the core runs only where nothing would be lost.
 //!
 //! Answered on the listener's thread for this one connection, so a slow clone holds no other
 //! chat's hooks or asks (D-6).
@@ -146,6 +147,7 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         }
         GitWork::WorktreeUpdate { repo, piece, .. } => format!("worktree update {repo} {piece}"),
         GitWork::WorktreePush { repo, piece, .. } => format!("worktree push {repo} {piece}"),
+        GitWork::WorktreeRemove { repo, piece, .. } => format!("worktree remove {repo} {piece}"),
         GitWork::CloneUpdate { repo, .. } => format!("worktree update {repo}"),
         GitWork::RootUpdate {} => "worktree update at the project root".to_owned(),
     };

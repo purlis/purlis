@@ -1745,6 +1745,18 @@ pub enum GitWork {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         lease: bool,
     },
+    /// `purlis worktree remove <repo> <piece> [--delete-branch]` (#3879): the branch folder
+    /// `<repo>/<piece>` of the ask's workspace removed, only where nothing would be lost: no
+    /// uncommitted change and no commit no other ref reaches. **It has no word for `--force`**,
+    /// which discards work and stays the person's, from the window. A kind of its own, so an
+    /// app that does not know it answers nothing and removes nothing.
+    WorktreeRemove {
+        repo: String,
+        piece: String,
+        /// Also delete the folder's branch, as `git branch -d` does: only where it is merged.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        delete_branch: bool,
+    },
 }
 
 /// What a [`GitWork::WorktreeUpdate`] does.

@@ -18,8 +18,7 @@ fn a_path_in_the_branch_folder_is_taken_from_where_the_command_runs_in_it() {
     // #3927: `env -C <folder>`, or a shell standing in it or below it.
     let top = Path::new("/p/workspaces/alpha/.worktrees/thing/piece");
     let paths = |of: &[&str]| of.iter().map(|p| (*p).to_owned()).collect::<Vec<_>>();
-    let placed =
-        |here: &Path, of: &[&str]| relative_to_the_folder(top, here, &folder(), paths(of));
+    let placed = |here: &Path, of: &[&str]| relative_to_the_folder(top, here, &folder(), paths(of));
     assert_eq!(
         placed(top, &["crates/a.rs", "./b", "-n"]),
         Ok(paths(&["crates/a.rs", "b", "-n"]))
@@ -59,8 +58,7 @@ fn a_path_outside_the_branch_folder_is_refused_naming_the_spelling_that_works() 
         (top.join("src"), "../../a.rs"),
         (top.to_path_buf(), "/p/workspaces/alpha/README.md"),
     ] {
-        let why =
-            relative_to_the_folder(top, &here, &folder(), vec![path.to_owned()]).unwrap_err();
+        let why = relative_to_the_folder(top, &here, &folder(), vec![path.to_owned()]).unwrap_err();
         assert!(why.contains("thing · piece"), "{path}: {why}");
         assert!(
             why.contains("relative to the branch folder"),
