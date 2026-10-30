@@ -66,14 +66,19 @@ pub type Keeping = Arc<
         + Sync,
 >;
 
+/// Forgets the profile of a name the runner keeps for the desktop a link proved, with its
+/// folder and sign-in there (`forget_profile`, 1.52, #4047).
+pub type Forgetting = Arc<dyn Fn(&Pinned, &str) -> Result<(), String> + Send + Sync>;
+
 /// A runner's pairing, as its host serves it: who it is and whom it admits ([`Answering`]),
 /// how the desktop it admits is taken out of its peers ([`Unpairing`]), and how it keeps that
-/// desktop's profiles ([`Keeping`]).
+/// desktop's profiles ([`Keeping`]) and forgets them ([`Forgetting`]).
 #[derive(Clone)]
 pub struct Pairing {
     pub answering: Answering,
     pub unpairing: Unpairing,
     pub keeping: Keeping,
+    pub forgetting: Forgetting,
 }
 
 /// The lock's file name beside `purlisd.sock`, the socket of a person's own config home.
@@ -209,6 +214,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
         let hosting = hosting.clone();
         let unpairing = Arc::clone(&pairing.unpairing);
         let keeping = Arc::clone(&pairing.keeping);
+        let forgetting = Arc::clone(&pairing.forgetting);
         tokio::spawn(async move {
             let chats = Arc::new(hosting.clone());
             match hostlink::answer_local(
@@ -228,6 +234,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
                         desktop,
                         unpairing,
                         keeping,
+                        forgetting,
                         unpaired: Arc::clone(&unpaired),
                     };
                     let serving = session::serve(answered.link, paired, None);
@@ -249,12 +256,14 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
 
 /// The session protocol on a link from the desktop a runner is paired with: the host's own,
 /// `unpair` (1.25, #2525), which takes that desktop, the one the handshake proved, out of the
-/// runner's peers, and `keep_profile` (1.43, #2049), which keeps one of its profiles here.
+/// runner's peers, `keep_profile` (1.43, #2049), which keeps one of its profiles here, and
+/// `forget_profile` (1.52, #4047), which forgets one.
 struct PairedLink {
     hosting: Hosting,
     desktop: Pinned,
     unpairing: Unpairing,
     keeping: Keeping,
+    forgetting: Forgetting,
     /// Told once the desktop is unpaired, so its link ends.
     unpaired: Arc<tokio::sync::Notify>,
 }
@@ -299,6 +308,20 @@ impl PairedLink {
                 why,
             })
     }
+
+    /// `forget_profile` (1.52, #4047): the desktop's profile forgotten here, off the runtime,
+    /// since its folder is deleted.
+    async fn forget(&self, name: String) -> Result<session::Answer, session::Refusal> {
+        let (forgetting, desktop) = (Arc::clone(&self.forgetting), self.desktop.clone());
+        tokio::task::spawn_blocking(move || forgetting(&desktop, &name))
+            .await
+            .unwrap_or_else(|why| Err(format!("the profile was not forgotten: {why}")))
+            .map(|()| session::Answer::Done)
+            .map_err(|why| session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            })
+    }
 }
 
 impl session::Host for PairedLink {
@@ -331,6 +354,7 @@ impl session::Host for PairedLink {
         }
         match command {
             session::Command::KeepProfile(profile) => self.keep(profile).await,
+            session::Command::ForgetProfile { name } => self.forget(name).await,
             session::Command::Unpair => self.unpair().await,
             command => session::Host::call(&self.hosting, command, peer).await,
         }

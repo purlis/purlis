@@ -1486,6 +1486,8 @@ export const commands = {
 	clusterPoolKey: __WINDOW_ONLY_RESULT,
 	addClusterPool: __WINDOW_ONLY_RESULT,
 	poolProfiles: __WINDOW_ONLY_RESULT,
+	poolProfileAdd: __WINDOW_ONLY_RESULT,
+	poolProfileRemove: __WINDOW_ONLY_RESULT,
 	devices: __WINDOW_ONLY_RESULT,
 	deviceRunner: __WINDOW_ONLY_RESULT,
 	devicesDisk: __WINDOW_ONLY_RESULT,

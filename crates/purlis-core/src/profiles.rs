@@ -244,6 +244,14 @@ impl ProfileSet {
         &self.profiles
     }
 
+    /// **The profile a fresh chat starts on**: the project's default, else the first there is.
+    /// What a pool that names no profiles keeps too (#4047).
+    pub fn for_a_new_chat(&self) -> Option<String> {
+        self.default
+            .clone()
+            .or_else(|| self.profiles.first().map(|p| p.name.clone()))
+    }
+
     pub fn get(&self, name: &str) -> Option<&Profile> {
         self.profiles.iter().find(|p| p.name == name)
     }

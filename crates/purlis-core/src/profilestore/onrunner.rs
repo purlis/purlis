@@ -418,6 +418,73 @@ pub fn kept_for_the_desktop(
     Ok(standing_for_the_wire(standing(&record, look)))
 }
 
+/// **Forgets the profile `name` this runner keeps for the desktop `desktop`** (#4047), with
+/// `homes` its store and `home` its home: what a desktop that takes the profile off the pool
+/// asks. Its record goes, and with it where its harness keeps its sign-in here: a made
+/// profile's folder, or, for the desktop's adopted folder kept as the harness's default folder,
+/// that harness's own folder in `home` (`~/.claude`, `~/.codex`, opencode's `opencode` under
+/// the XDG folders), never the XDG folders themselves. A profile the runner does not keep is
+/// nothing; one of its own, or kept for another desktop, is refused and stays as it is.
+pub fn forget(homes: &Homes, home: &Path, name: &str, desktop: &str) -> Result<(), String> {
+    let Some(record) = super::list(homes.config_root())?
+        .into_iter()
+        .find(|p| p.name == name)
+    else {
+        return Ok(());
+    };
+    let shown = crate::shown::short(name);
+    let theirs = || {
+        format!(
+            "this runner has a profile named '{shown}' of its own, so it forgets none of that \
+             name for the desktop"
+        )
+    };
+    if record.kept_for.as_deref() != Some(desktop) {
+        return Err(theirs());
+    }
+    // The harness's own folders here, for the desktop's adopted folder kept in its place.
+    let own_folders = match &record.adopted {
+        None => Vec::new(),
+        Some(adopted) => {
+            let (config, data, sub) = super::defaults(&record.harness, home).ok_or_else(theirs)?;
+            let defaults = super::Folders {
+                config: config.clone(),
+                data: data.clone(),
+            };
+            if !adopted.variables.is_empty() || record.folders != defaults {
+                return Err(theirs());
+            }
+            [Some(config), data]
+                .into_iter()
+                .flatten()
+                .map(|folder| {
+                    if sub.is_empty() {
+                        folder
+                    } else {
+                        folder.join(sub)
+                    }
+                })
+                .collect()
+        }
+    };
+    sign_in::forget_of(&record);
+    super::remove(homes, name, &super::removal(homes, name)?)?;
+    for folder in own_folders {
+        match std::fs::remove_dir_all(&folder) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                return Err(format!(
+                    "the profile '{shown}' was forgotten, but its folder {} could not be \
+                     deleted: {e}",
+                    folder.display()
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// **Whether a chat on the desktop's profile `name` may start on pool `pool`'s runner**, for the
 /// project at `root`, with this desktop's profiles in the store under `config_root`, the runner
 /// asked to keep it through `keep`, which answers `None` where it sent nothing (a runner not
