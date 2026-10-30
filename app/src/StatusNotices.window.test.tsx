@@ -99,13 +99,15 @@ const line = () => screen.getByTestId("status-line");
 /** The card that pops from the Notices item, named by the project. */
 const findCard = () => screen.findByRole("region", { name: "Notices for one" });
 const queryCard = () => screen.queryByRole("region", { name: "Notices for one" });
+const findCardNow = queryCard;
 /** The dot a hidden result leaves on the Notices item. */
 const queryDot = () =>
   within(line()).queryByRole("button", { name: /^Show the notice on the status bar/ });
 /** The Notices centre's Results, where every result is listed too. */
 const results = () => screen.findByRole("region", { name: "Results" });
 
-/** What the page lays out, in order: each element of the work and of the status bar, by its
+/** What the page lays out, in order (the `PopsFromNotices` story measures the rects, which are
+ *  all zero here): each element of the work and of the status bar, by its
  *  tag, its class and its test id, but the Notices centre's Results, which lists the result as
  *  it should. A card in the page's flow would be one more. */
 const laidOut = () =>
@@ -183,6 +185,29 @@ describe("a project's result pops from the status bar's Notices item (#3653)", (
     // Asked for, it takes the keyboard, since the dot it was on goes as it comes.
     await waitFor(() => expect(card).toHaveFocus());
     expect(queryDot()).toBeNull();
+  });
+
+  it("keeps the keyboard in it across the palette, opened and closed (#3653's review)", async () => {
+    core();
+    opened();
+    await refusePin();
+    await findCard();
+    await userEvent.click(document.body);
+    await waitFor(() => expect(queryCard()).toBeNull());
+    (queryDot() as HTMLElement).focus();
+    await userEvent.keyboard("{Enter}");
+    const card = await findCard();
+    await waitFor(() => expect(card).toHaveFocus());
+
+    // The palette is modal: it says the result on its own line, and gives the keyboard back
+    // where it was as it closes, which is still drawn.
+    await userEvent.keyboard("{Meta>}k{/Meta}");
+    await screen.findByRole("dialog", { name: "Command palette" });
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull(),
+    );
+    await waitFor(() => expect(findCardNow()?.contains(document.activeElement)).toBe(true));
   });
 
   it("is dismissed by its ×, in the Notices centre too", async () => {

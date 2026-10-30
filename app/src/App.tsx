@@ -1365,10 +1365,10 @@ function App() {
   });
   /** **The status bar's card** (#3653): the project's and the app's results, its own list alone,
    *  which keeps while the chips change, so the project's view handed it is drawn again only when
-   *  what the status bar shows does. Down while the palette is up, which is modal and says the
-   *  newest result on its own line. */
+   *  what the status bar shows does. It stays drawn under the palette, as a chip's card does: the
+   *  palette is modal and gives the keyboard back where it was as it closes (#3653's review). */
   const statusList = chipNotices.on.get(AT_STATUS);
-  const statusUp = !paletteOpen && chipNotices.open === AT_STATUS;
+  const statusUp = chipNotices.open === AT_STATUS;
   const { show: showNotices, hide: hideNotices, dismiss: dismissNotice } = chipNotices;
   const statusNotices = useMemo<ChipNotices>(
     () => ({
@@ -2324,7 +2324,12 @@ function App() {
             <ActionResultNotice
               cause={`result:${said.from}`}
               said={said}
-              onClose={() => setClosedSaid(said)}
+              onClose={() => {
+                setClosedSaid(said);
+                // Closed here, it does not pop on the status bar of the project that comes next
+                // (#3653's review).
+                hideNotices();
+              }}
               onSettings={followSaid}
             />
           )}

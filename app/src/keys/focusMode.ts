@@ -38,6 +38,9 @@ export const HIDDEN_IN_FOCUS = [
   ".region-slot.slot-right",
   ".region-slot.slot-panel",
   'footer[data-scope="status-bar"]',
+  // The card that pops from the status bar's Notices item (`AT_STATUS`, #3653): portaled over
+  // the window, no part of the footer, but it goes as the footer goes.
+  '[data-chip="status/bar/notices"]',
 ].join(", ");
 
 /** **The window's focus mode**: whether it is on, whether its parts are coming back, and the

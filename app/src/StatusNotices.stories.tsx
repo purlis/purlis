@@ -16,14 +16,36 @@ import { expect, screen, waitFor, within } from "storybook/test";
 import { AT_STATUS, type ChipNotice, type ChipNotices } from "./ChipNotices";
 import { StatusLine } from "./StatusLine";
 import { untilFocused } from "./stories.testkit";
+import { useFocusMode } from "./keys/focusMode";
 
 const REFUSED = "purlis pins at most 12 workspaces in one project. Unpin one first.";
 
-function TheWindow({ startOpen = true }: { startOpen?: boolean }) {
+function TheWindow({
+  startOpen = true,
+  results = 1,
+  tall = 320,
+}: {
+  startOpen?: boolean;
+  /** How many results are kept, the newest the refused pin. */
+  results?: number;
+  /** How tall the page over the bar is: the room the card has above it. */
+  tall?: number;
+}) {
   const [open, setOpen] = useState<string | undefined>(startOpen ? AT_STATUS : undefined);
   const [kept, setKept] = useState<readonly ChipNotice[]>(() => [
-    { id: 1, kind: "warning", said: { from: "workspace.pin", refused: true, words: REFUSED } },
+    {
+      id: results,
+      kind: "warning",
+      said: { from: "workspace.pin", refused: true, words: REFUSED },
+    },
+    ...Array.from({ length: results - 1 }, (_, at): ChipNotice => ({
+      id: results - 1 - at,
+      kind: "info",
+      said: { from: "workspace.layout", refused: false, words: `Layout ${at + 1} was read again.` },
+    })),
   ]);
+  // Focus mode, as the window's key turns it on: the bar goes, and its card with it.
+  const focus = useFocusMode();
   const notices: ChipNotices = {
     on: new Map(kept.length === 0 ? [] : [[AT_STATUS, kept]]),
     open: kept.length === 0 ? undefined : open,
@@ -41,11 +63,16 @@ function TheWindow({ startOpen = true }: { startOpen?: boolean }) {
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
-          blockSize: 320,
+          blockSize: tall,
           background: "var(--surface-base)",
         }}
       >
-        <p style={{ margin: 0, padding: "var(--space-4)" }}>The work</p>
+        <div className="region-centre" style={{ padding: "var(--space-4)" }}>
+          <button type="button">The work</button>{" "}
+          <button type="button" data-testid="focus-mode" onClick={focus.toggle}>
+            Focus mode
+          </button>
+        </div>
         {/* Somewhere to press that no card is over, whatever a theme's metrics: the page's
             top end corner. */}
         <span
@@ -53,15 +80,17 @@ function TheWindow({ startOpen = true }: { startOpen?: boolean }) {
           style={{ alignSelf: "flex-end", inlineSize: 40, blockSize: 40, order: -1 }}
         />
       </div>
-      <StatusLine
-        plane="/p/purlis-demo"
-        read
-        where="3rd-try"
-        workspaces={4}
-        state={{ pieces: {}, piecesRefused: {}, reading: false }}
-        alerts={{ count: 2, open: () => undefined }}
-        notices={notices}
-      />
+      {!focus.on && (
+        <StatusLine
+          plane="/p/purlis-demo"
+          read
+          where="3rd-try"
+          workspaces={4}
+          state={{ pieces: {}, piecesRefused: {}, reading: false }}
+          alerts={{ count: 2, open: () => undefined }}
+          notices={notices}
+        />
+      )}
     </div>
   );
 }
@@ -149,10 +178,51 @@ export const DotOnNotices: Story = {
       canvas.getByTestId("status-alerts"),
       canvas.getByTestId("status-line"),
     ].map((one) => one.getBoundingClientRect());
-    await expect(centre(d)).toBeLessThan(i.left + 8);
+    await expect(centre(d)).toBeLessThan(i.left + 12);
     await expect(d.top).toBeLessThan(i.top + 4);
     // Whole inside the bar, which clips what leaves it.
     await expect(d.top).toBeGreaterThanOrEqual(b.top);
     await expect(d.bottom).toBeLessThanOrEqual(b.bottom);
+  },
+};
+
+/**
+ * **Many results in a short window** (#3653's review, D-3653-9): the card keeps its side above
+ * Notices, never flipped below the window, held to the room there, and its notices scroll inside
+ * it while its point stays on the item.
+ */
+export const ManyInAShortWindow: Story = {
+  args: { results: 8, tall: 160 },
+  play: async ({ canvas }) => {
+    const card = await waitFor(() => cardOf() as HTMLElement);
+    const surface = surfaceOf(card);
+    await waitFor(() => expect(surface).toHaveAttribute("data-placement", "top"));
+    const item = canvas.getByTestId("status-alerts").getBoundingClientRect();
+    const box = surface.getBoundingClientRect();
+    await expect(box.bottom).toBeLessThan(item.top);
+    await expect(box.top).toBeGreaterThanOrEqual(0);
+    // Held to the room, its notices scroll inside it.
+    await expect(card.scrollHeight).toBeGreaterThan(card.clientHeight);
+    await expect(document.documentElement.scrollHeight).toBeLessThanOrEqual(window.innerHeight);
+  },
+};
+
+/**
+ * **Focus mode with the keyboard in the card** (#3653's review, WCAG 2.4.3): the bar goes, and
+ * the card with it; the keyboard goes to the work, never left on nothing. In a real browser the
+ * hidden Notices item takes no keyboard, which jsdom would let it.
+ */
+export const FocusModeKeepsTheKeyboard: Story = {
+  play: async ({ canvas }) => {
+    const card = await waitFor(() => cardOf() as HTMLElement);
+    card.focus();
+    await untilFocused(() => card, "the card, as F6 lands there");
+    // The key's press, which moves no keyboard of its own.
+    canvas.getByTestId("focus-mode").click();
+    await waitFor(() => expect(cardOf()).toBeNull());
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "The work" }),
+      "the work, once focus mode took the bar",
+    );
   },
 };

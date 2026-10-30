@@ -341,6 +341,34 @@ describe("the status bar's card (#3653)", () => {
     expect(result.current.on.get(AT_STATUS)?.map((one) => one.id)).toEqual([1]);
   });
 
+  it("stays down on the first project when it was closed on the opener (#3653's review)", () => {
+    const took: Said = { from: "open_repo", refused: false, words: "GitLab was added." };
+    const kept: KeptResult[] = [{ id: 1, said: took, plane: undefined }];
+    const { result, rerender } = renderHook(
+      ({ said, plane }: { said: Said | undefined; plane: string | undefined }) =>
+        useChipNotices({
+          said,
+          kept: said === undefined ? [] : kept,
+          plane,
+          chips: CHIPS,
+          drop: () => undefined,
+          onSettings: () => undefined,
+        }),
+      {
+        initialProps: {
+          said: undefined as Said | undefined,
+          plane: undefined as string | undefined,
+        },
+      },
+    );
+    rerender({ said: took, plane: undefined });
+    // Closed on the opener's page, as its × there does.
+    act(() => result.current.hide());
+    rerender({ said: took, plane: A });
+    expect(result.current.open).toBeUndefined();
+    expect(result.current.on.get(AT_STATUS)?.map((one) => one.id)).toEqual([1]);
+  });
+
   it("stands a line under way on it, never kept, and put away by its × until the next", () => {
     const late: Said = { from: "answer.late.plane_pins", refused: true, words: "Still waiting." };
     const { result, rerender } = hook({ said: undefined, kept: [], plane: A });

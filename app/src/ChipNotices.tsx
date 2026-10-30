@@ -240,7 +240,11 @@ export function useChipNotices({
   if (said !== up.seen || plane !== up.in) {
     // Nothing said is no new result: the window lets its newest result go as it moves to
     // another chat (a ✋'s press does, #3652), and the card up then stays up.
-    if ((plane === up.in || up.in === undefined) && !follows && said !== undefined) {
+    if (
+      !follows &&
+      said !== undefined &&
+      (plane === up.in || (up.in === undefined && said !== up.seen))
+    ) {
       // A new result in the project in front. By what it is about, not by the chips drawn now:
       // a workspace just made is said before the title bar has heard of its chip, and its card
       // comes up as the chip does. A result about no workspace takes the card down.

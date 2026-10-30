@@ -282,7 +282,8 @@ footer[data-scope="status-bar"] {
   position: absolute;
   z-index: 1;
   inset-block-start: calc(var(--space-2) * -1);
-  inset-inline-start: calc(var(--space-2) * -2);
+  /* No further out than the end's gap, so its clear border never covers the item before. */
+  inset-inline-start: calc(var(--space-1) * -1);
   display: grid;
   place-items: center;
   box-sizing: border-box;
