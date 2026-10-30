@@ -86,10 +86,8 @@ const BIND: &str = "network-bind";
 /// name for a port the kernel picks, on every interface.
 const NEVER_BOUND: &str = "*:0";
 
-/// What a listen whose socket could not be taken is told as refused on: why. The container's
-/// runtime may refuse `pidfd_getfd` (a runner made before #3410, or a Kubernetes runner), and so
-/// may the system (Yama's `ptrace_scope` 3, a process that is not dumpable).
-const NOT_TAKEN: &str = "(the chat's socket could not be taken: pidfd_getfd was refused)";
+/// What a listen whose socket could not be taken is told as refused on.
+const NOT_TAKEN: &str = crate::refusal::NOT_TAKEN;
 
 /// The longest path a call may name, as the kernel's own limit.
 const PATH_MAX: usize = 4096;
