@@ -15,7 +15,7 @@ import type {
   PoolsShown,
   RunnerImageOffered,
 } from "../bindings";
-import { stopAddingAPool } from "../pools";
+import { doneWithTheAddedPool, stopAddingAPool } from "../pools";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 
@@ -159,9 +159,11 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
-  // The dialog's open state is the window's, kept across renders: a test that leaves it open
-  // must not leave it over the next test's window.
+  // The dialogs' open state is the window's, kept across renders: a test that leaves the add
+  // dialog, or the sign-in that adding ends with, open must not leave it over the next test's
+  // window.
   stopAddingAPool();
+  doneWithTheAddedPool();
   clearMocks();
   Reflect.deleteProperty(globalThis, GLOBAL);
 });
@@ -288,6 +290,12 @@ describe("You › This machine › Pools", () => {
       await within(list).findByText("Signed in on pool builds.", {}, { timeout: 6000 }),
     ).toBeInTheDocument();
     expect(profilesAsked).toEqual(["builds", "builds"]);
+    await userEvent.click(within(signIn).getByRole("button", { name: "Done" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Sign your profiles in on pool builds" }),
+      ).toBeNull(),
+    );
   }, 10000);
 
   it("adds a pool with its own time before its runner suspends, and its row says it (#3471)", async () => {
