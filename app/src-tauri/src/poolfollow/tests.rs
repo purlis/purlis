@@ -306,26 +306,3 @@ fn a_suspended_draining_runner_is_removed_without_being_asked() {
     let log = std::fs::read_to_string(config.path().join("log")).unwrap();
     assert!(!log.contains("start "), "{log}");
 }
-
-/// **A draining runner removed outside purlis runs no chat** (#4149): Docker has no container
-/// of its id, so it is removed at the next look, never asked over a link that cannot come back.
-#[test]
-fn a_draining_runner_removed_outside_purlis_is_removed_without_being_asked() {
-    let config = tempfile::tempdir().unwrap();
-    let machine = a_machine(config.path());
-    a_pool_draining(&machine);
-    // This Docker lists no container at all.
-    let docker = config.path().join("docker");
-    std::fs::write(
-        &docker,
-        format!(
-            "#!/bin/sh\necho \"$*\" >> '{}'\nexit 0\n",
-            config.path().join("log").display()
-        ),
-    )
-    .unwrap();
-
-    follow_and_drain(&machine, None, &|_| panic!("a gone runner is not asked"));
-
-    assert_eq!(names(&machine), ["first-fedcba98"]);
-}

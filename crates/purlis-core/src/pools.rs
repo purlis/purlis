@@ -398,9 +398,14 @@ fn make_again_as(
     })
 }
 
+/// How far the Docker host's clock may run ahead of this machine's when a home's making is held
+/// to its runner's pairing (#4149): a Docker Desktop VM drifts after a sleep. A home made under
+/// the runner's name within this of its pairing is an accident this does not guard against.
+const CLOCKS_APART: u64 = 10 * 60;
+
 /// **Carries the sign-ins of `old`'s home to `made`** (#4149), only where that home is the one
-/// purlis made for it: made no later than `old` was paired, so not one made of its name since
-/// its container went, and its runner's user the same. What is not carried is said in the log,
+/// purlis made for it: made no later than `old` was paired (give or take [`CLOCKS_APART`]), so
+/// not one made of its name since its container went, and its runner's user the same. What is not carried is said in the log,
 /// and the profiles are signed in again.
 fn carried_from_its_own_home(
     config_root: &Path,
@@ -410,7 +415,7 @@ fn carried_from_its_own_home(
     pool: &str,
 ) -> bool {
     let its_own = match docker.home_made_at(&old.made) {
-        Ok(Some(at)) => at <= old.paired,
+        Ok(Some(at)) => at <= old.paired.saturating_add(CLOCKS_APART),
         Ok(None) => false,
         Err(why) => {
             tracing::warn!(

@@ -382,8 +382,8 @@ export async function readRemovedPools(): Promise<readonly PoolRemoved[]> {
  *  there. */
 export function removedSaid(name: string, homeKept: boolean): string {
   return homeKept
-    ? `Pool ${name}'s runner was removed outside purlis, so purlis no longer links to it. Its home is still there: Make the runner again makes a runner from the pool's image and limits, with the sign-ins kept there.`
-    : `Pool ${name}'s runner was removed outside purlis, so purlis no longer links to it. Its home went too, and with it the sign-ins kept there: Make the runner again makes a runner from the pool's image and limits, whose profiles you sign in again.`;
+    ? `Pool ${name}'s runner was removed outside purlis: Docker has no container of its id, so purlis no longer links to it. If Docker now points at another engine, point it back instead. Its home is still there: Make the runner again makes a runner from the pool's image and limits, with the sign-ins kept there.`
+    : `Pool ${name}'s runner was removed outside purlis: Docker has no container of its id, so purlis no longer links to it. If Docker now points at another engine, point it back instead. Its home went too, and with it the sign-ins kept there: Make the runner again makes a runner from the pool's image and limits, whose profiles you sign in again.`;
 }
 
 /** What a row says once its runner was made again, by whether its sign-ins were carried. */
