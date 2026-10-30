@@ -12,7 +12,7 @@
  *   the tab's history is (`viewHistory.ts`): a relaunch starts afresh.
  * - **Unsaved, it is registered as the view's unsaved work** (`unsavedWork.ts`, #3929), so every
  *   close that would lose it asks first, the window's one question: a tab's, a pane's, the
- *   project's, the removal of the workspace it is saved into, and a quit.
+ *   project's, the removal of the workspace or the persona it is saved into, and a quit.
  * - **A closed tab's edit goes with it** ({@link forgetSkillEdit}), as its history does.
  */
 import { useSyncExternalStore } from "react";
@@ -97,6 +97,7 @@ function registered(tab: string, edit: SkillEdit | undefined): void {
     plane: edit.plane,
     view: edit.view,
     workspace: edit.level.at === "workspace" ? edit.level.name : undefined,
+    persona: edit.level.at === "persona" ? edit.level.name : undefined,
     name: edit.skill.name,
     save: () => saveSkillEdit(tab),
     discard: () => keepSkillEdit(tab, undefined),

@@ -16,6 +16,8 @@
  *   asked in `App` before what the close ends is.
  * - **A workspace's removal** (`unsavedIn` with the workspace): the work a save would write into
  *   it, which goes with it. Its view tabs stay (`refileViews`), so nothing else is lost.
+ * - **A persona's removal** (`unsavedIn` with the persona, #4029): the work a save would write
+ *   into the persona, a persona-level skill, which goes with it.
  * - **A project let go of** (`discardUnsavedIn`): what was kept for it goes, as its tabs do.
  *
  * **Discard and leave lets nothing go by itself**: the work goes when what holds it does: a
@@ -42,6 +44,8 @@ export type UnsavedWork = {
   view: ViewRef;
   /** The workspace a save writes into, where it is a workspace's: its removal loses it too. */
   workspace?: string;
+  /** The persona a save writes into, where it is a persona's: its removal loses it too. */
+  persona?: string;
   /** What it is, as the question names it (`deploy`). */
   name: string;
   /** Saves it, and unregisters it once saved: `undefined`, or why it was not saved. */
@@ -85,11 +89,20 @@ export function useUnsavedWork(): readonly UnsavedWork[] {
   return useSyncExternalStore(subscribe, unsavedNow);
 }
 
-/** The work in `plane`, or in its workspace `workspace` where one is named. */
-export function unsavedIn(plane: string, workspace?: string): readonly UnsavedWork[] {
-  return now.filter(
-    (one) => one.plane === plane && (workspace === undefined || one.workspace === workspace),
-  );
+/** **What holds work a save writes into**, and whose removal loses it: a workspace or a
+ *  persona of the project. */
+export type Holder = { workspace: string } | { persona: string };
+
+/** Whether `one` is work a save writes into `holder`. */
+function heldBy(one: UnsavedWork, holder: Holder): boolean {
+  return "workspace" in holder
+    ? one.workspace === holder.workspace
+    : one.persona === holder.persona;
+}
+
+/** The work in `plane`, or only what a save writes into `holder` where one is named. */
+export function unsavedIn(plane: string, holder?: Holder): readonly UnsavedWork[] {
+  return now.filter((one) => one.plane === plane && (holder === undefined || heldBy(one, holder)));
 }
 
 /** **`plane` is let go of**: what it held goes with its tabs, unasked, as they do. */
@@ -121,10 +134,10 @@ export function discardGone(plane: string, before: Tabs, after: Tabs): void {
   }
 }
 
-/** **The workspace `workspace` of `plane` was removed**: the work a save would have written
- *  into it goes with it. */
-export function discardRemoved(plane: string, workspace: string): void {
-  for (const one of unsavedIn(plane, workspace)) one.discard();
+/** **`holder`, a workspace or a persona of `plane`, was removed**: the work a save would have
+ *  written into it goes with it. */
+export function discardRemoved(plane: string, holder: Holder): void {
+  for (const one of unsavedIn(plane, holder)) one.discard();
 }
 
 /**

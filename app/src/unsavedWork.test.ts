@@ -52,8 +52,15 @@ describe("the registry", () => {
   it("names a workspace's work for its removal, and no other", () => {
     const ops = work("ops", { workspace: "ops" });
     work("root");
-    expect(unsavedIn("p", "ops")).toEqual([ops]);
-    expect(unsavedIn("p", "web")).toEqual([]);
+    expect(unsavedIn("p", { workspace: "ops" })).toEqual([ops]);
+    expect(unsavedIn("p", { workspace: "web" })).toEqual([]);
+  });
+
+  it("names a persona's work for its removal, and no workspace's of the same name (#4029)", () => {
+    const steward = work("steward", { persona: "steward" });
+    work("ops", { workspace: "steward" });
+    expect(unsavedIn("p", { persona: "steward" })).toEqual([steward]);
+    expect(unsavedIn("p", { persona: "ops" })).toEqual([]);
   });
 
   it("lets a project's work go when the project is let go of", () => {
@@ -85,9 +92,17 @@ describe("what goes with what holds it", () => {
   it("is a removed workspace's work", () => {
     const ops = work("ops", { workspace: "ops" });
     const web = work("web", { workspace: "web" });
-    discardRemoved("p", "ops");
+    discardRemoved("p", { workspace: "ops" });
     expect(ops.discard).toHaveBeenCalledOnce();
     expect(web.discard).not.toHaveBeenCalled();
+  });
+
+  it("is a removed persona's work (#4029)", () => {
+    const steward = work("steward", { persona: "steward" });
+    const ops = work("ops", { workspace: "steward" });
+    discardRemoved("p", { persona: "steward" });
+    expect(steward.discard).toHaveBeenCalledOnce();
+    expect(ops.discard).not.toHaveBeenCalled();
   });
 });
 

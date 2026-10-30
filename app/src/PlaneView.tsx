@@ -3962,6 +3962,7 @@ export const PlaneView = memo(function PlaneView({
     closeView,
     reread: rereadPanels,
     reloadVaults,
+    askUnsaved: setUnsavedAsk,
   });
   /** A plane's memories (SI-9b): the preview tab, edits, Delete and its Undo. */
   const memoryEdits = useMemoryEdits({
@@ -4860,7 +4861,7 @@ export const PlaneView = memo(function PlaneView({
    *  with the workspace. Then the removal's own question. */
   const removeWorkspace = useCallback(
     (workspace: string) => {
-      const work = unsavedIn(plane, workspace);
+      const work = unsavedIn(plane, { workspace });
       if (work.length === 0) return askToRemove(workspace);
       setUnsavedAsk({ work, then: () => askToRemove(workspace) });
     },
@@ -4978,7 +4979,7 @@ export const PlaneView = memo(function PlaneView({
       }
       setRemoving(undefined);
       // The unsaved work a save would have written into it goes with it (#3929).
-      discardRemoved(plane, workspace);
+      discardRemoved(plane, { workspace });
       setReport({
         from: `workspace.remove:${workspace}`,
         refused: false,

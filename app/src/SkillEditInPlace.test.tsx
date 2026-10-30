@@ -283,6 +283,7 @@ describe("the editor's unsaved text, as the window's unsaved work (#3929)", () =
         view: SKILL_STUDIO_VIEW,
         name: "deploy",
         workspace: undefined,
+        persona: undefined,
       }),
     ]);
 
@@ -329,7 +330,23 @@ describe("the editor's unsaved text, as the window's unsaved work (#3929)", () =
       was: TEXT,
       now: `${TEXT}More.\n`,
     });
-    expect(unsavedIn(PLANE, "ops").map((one) => one.name)).toEqual(["deploy"]);
+    expect(unsavedIn(PLANE, { workspace: "ops" }).map((one) => one.name)).toEqual(["deploy"]);
+    unsavedIn(PLANE)[0].discard();
+    expect(skillEditIn(STUDIO_HISTORY)).toBeUndefined();
+  });
+
+  it("is a persona's where the skill is saved into one, so its removal asks too (#4029)", () => {
+    keepSkillEdit(STUDIO_HISTORY, {
+      plane: PLANE,
+      view: SKILL_STUDIO_VIEW,
+      at: at(DEPLOY, { tab: "text" }),
+      skill: DEPLOY,
+      level: { at: "persona", name: "steward", local: false },
+      was: TEXT,
+      now: `${TEXT}More.\n`,
+    });
+    expect(unsavedIn(PLANE, { persona: "steward" }).map((one) => one.name)).toEqual(["deploy"]);
+    expect(unsavedIn(PLANE, { workspace: "steward" })).toEqual([]);
     unsavedIn(PLANE)[0].discard();
     expect(skillEditIn(STUDIO_HISTORY)).toBeUndefined();
   });
