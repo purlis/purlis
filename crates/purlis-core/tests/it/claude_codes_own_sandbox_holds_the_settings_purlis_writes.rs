@@ -26,8 +26,10 @@
 //! so the probes answer for what a chat in such a project runs under.
 //!
 //! Without `PURLIS_CLAUDE_CODE` (the path to the `claude` program) the settings are built and
-//! checked, and no Claude Code is started. CI sets it on the macOS runner to the version in
-//! `tests/fixtures/harness-versions/claude.txt`, which this test holds it to.
+//! checked, and no Claude Code is started. CI sets it on the macOS runner and on a Linux one to
+//! the version in `tests/fixtures/harness-versions/claude.txt`, which this test holds it to. On
+//! Linux, where Claude Code's sandbox is bubblewrap and no name is folded to another case, the
+//! command is `tools/seatbelt-case.sh --repositories-here`: the repositories' probes alone.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -55,6 +57,9 @@ const SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/seatbelt-
 /// The probes `--here` asserts, each one answer: the sample project's eight, and its
 /// repositories' twelve.
 const PROBES: usize = 20;
+
+/// The probes `--repositories-here` asserts, as it is run on Linux: the repositories' twelve.
+const REPOSITORY_PROBES: usize = 12;
 
 /// The id of the stand-in's one Bash call.
 const CALL: &str = "toolu_seatbelt_case";
@@ -280,7 +285,7 @@ fn claude(program: &Path, home: &Path, tmp: &Path) -> Command {
         .env("HOME", home)
         .env("CLAUDE_CONFIG_DIR", home.join(".claude"))
         .env("TMPDIR", tmp)
-        .env("SHELL", "/bin/zsh")
+        .env("SHELL", if cfg!(target_os = "macos") { "/bin/zsh" } else { "/bin/bash" })
         .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
         .env("DISABLE_AUTOUPDATER", "1")
         .stdin(Stdio::null());
@@ -305,8 +310,13 @@ fn probed(
         .expect("a runtime");
     let server = rt.block_on(MockServer::start());
     let results = Arc::new(Mutex::new(Vec::new()));
+    let mode = if cfg!(target_os = "macos") {
+        "--here"
+    } else {
+        "--repositories-here"
+    };
     let command = format!(
-        "/bin/sh '{}' --here '{}' '{what}'",
+        "/bin/sh '{}' {mode} '{}' '{what}'",
         Path::new(SCRIPT)
             .canonicalize()
             .expect("the script")
@@ -386,11 +396,11 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
     let machine = Machine {
         env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
         home: Some(home.clone()),
-        os: Os::MacOs,
+        os: Os::this(),
     };
     if let Some(program) = &program {
-        if !cfg!(target_os = "macos") {
-            panic!("Claude Code's sandbox is probed on macOS");
+        if !cfg!(any(target_os = "macos", target_os = "linux")) {
+            panic!("Claude Code's sandbox is probed on macOS and Linux");
         }
         let version = purlis_core::forklock::output(claude(program, &home, &out).arg("--version"))
             .expect("claude --version");
@@ -428,7 +438,12 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
         for line in result.lines().filter(|line| line.starts_with("::error::")) {
             println!("{line}");
         }
-        let verdict = format!("seatbelt-case: {what}: {PROBES} checks, 0 wrong");
+        let probes = if cfg!(target_os = "macos") {
+            PROBES
+        } else {
+            REPOSITORY_PROBES
+        };
+        let verdict = format!("seatbelt-case: {what}: {probes} checks, 0 wrong");
         assert!(
             result.lines().any(|line| line.trim() == verdict),
             "{what}: not every probe answered as it should:\n{result}"

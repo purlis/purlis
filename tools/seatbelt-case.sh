@@ -112,21 +112,30 @@ git_held_in() {
   [ -e "$s/g" ] && mv "$s/g" "$s/.git" 2>/dev/null || :
   expect "$("$try" "mv '$s' '$p/scratch-moved'")" no "$what: a clone is moved"
   [ -e "$p/scratch-moved" ] && mv "$p/scratch-moved" "$s" 2>/dev/null || :
-  # A folder swapped into the git folder's place in one step (`renamex_np`, `RENAME_SWAP`). Where
-  # there is no python3 to make the call, the probe is refused all the same, and said so.
+  # A folder swapped into the git folder's place in one step: `renamex_np` with `RENAME_SWAP` on
+  # macOS, `renameat2` with `RENAME_EXCHANGE` on Linux, both flag 2. Where there is no python3 to
+  # make the call, the probe is refused all the same, and said so.
+  if [ "$(uname)" = Darwin ]; then
+    exchange='c.renamex_np(a.encode(), b.encode(), 2)'
+  else
+    exchange='c.renameat2(-100, a.encode(), -100, b.encode(), 2)'
+  fi
   if command -v python3 >/dev/null 2>&1; then
     swap="python3 -c 'import ctypes, os, sys
 c = ctypes.CDLL(None, use_errno=True)
-os.makedirs(sys.argv[1] + \"/x\")
-sys.exit(0 if c.renamex_np(sys.argv[1].encode(), sys.argv[2].encode(), 2) == 0 else 1)' '$s/swap' '$s/.git'"
+a, b = sys.argv[1], sys.argv[2]
+os.makedirs(a + \"/x\")
+sys.exit(0 if $exchange == 0 else 1)' '$s/swap' '$s/.git'"
   else
     echo "::notice::seatbelt-case: $what: no python3, so the swap probe could not be tried"
     swap=false
   fi
   expect "$("$try" "$swap")" no "$what: a folder is swapped into a clone's git folder's place"
   if [ -e "$s/swap/HEAD" ]; then
-    python3 -c 'import ctypes, sys
-ctypes.CDLL(None).renamex_np(sys.argv[1].encode(), sys.argv[2].encode(), 2)' "$s/swap" "$s/.git" || :
+    python3 -c "import ctypes, sys
+c = ctypes.CDLL(None)
+a, b = sys.argv[1], sys.argv[2]
+$exchange" "$s/swap" "$s/.git" || :
   fi
   expect "$("$try" "rm -rf '$s/.git'")" no "$what: a clone's git folder is removed"
   expect "$("$try" "rm -rf '$s/.git' ; mkdir '$s/.git'")" no "$what: a clone's git folder is replaced"
@@ -134,6 +143,18 @@ ctypes.CDLL(None).renamex_np(sys.argv[1].encode(), sys.argv[2].encode(), 2)' "$s
   [ -e "$p/wt/g" ] && mv "$p/wt/g" "$p/wt/.git" 2>/dev/null || :
   expect "$("$try" "rm -f '$p/wt/.git'")" no "$what: a worktree's .git file is removed"
 }
+
+# `--repositories-here <project> <what>`: the repositories' probes alone, for a sandbox whose
+# other holds are not the case-folding ones `held_in` asks about (Claude Code's on Linux).
+if [ "${1-}" = --repositories-here ]; then
+  if [ $# -ne 3 ]; then
+    echo "usage: tools/seatbelt-case.sh --repositories-here <project> <what>" >&2
+    exit 2
+  fi
+  git_held_in "$2" "$3" here
+  echo "seatbelt-case: $3: $checks checks, $wrong wrong"
+  exit "$failed"
+fi
 
 if [ "${1-}" = --here ]; then
   if [ $# -ne 3 ]; then
