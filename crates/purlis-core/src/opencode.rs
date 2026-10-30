@@ -313,6 +313,14 @@ pub fn binary_in(text: &str) -> Option<PathBuf> {
 /// so a name denied here is never a plane skill's and a repo's at once. Measured
 /// on 1.18.33: `OPENCODE_CONFIG_CONTENT='{"permission":{"skill":{"langfuse":"deny"}}}'` gave
 /// `opencode debug agent build` the rule `skill langfuse deny`, after the operator's own.
+///
+/// With `binary`, each dispatch tool of that server is allowed under `permission` by the name
+/// opencode asks for it under ([`crate::chattools::run_on_the_dispatch_grant`], #3794): consent
+/// to a dispatch is purlis's own grant, never the harness's prompt. Measured on 1.18.33 with
+/// `opencode debug agent build`: each became a rule `purlis_<tool> allow *`. opencode reads its
+/// rules last match first, and this layer is merged after the project's, so a rule of the
+/// operator's under the very same name is replaced here, while one under a pattern of its own
+/// (`purlis_*`) keeps the place its file gave it.
 pub fn session_config(
     shim: &Path,
     skills: &[PathBuf],
@@ -344,14 +352,43 @@ pub fn session_config(
     if sandboxed {
         config["snapshot"] = serde_json::Value::Bool(false);
     }
+    let mut permission = serde_json::Map::new();
     if !skills_off.is_empty() {
         let denied: serde_json::Map<String, serde_json::Value> = skills_off
             .iter()
             .map(|name| (name.clone(), "deny".into()))
             .collect();
-        config["permission"] = serde_json::json!({ "skill": denied });
+        permission.insert("skill".to_owned(), denied.into());
+    }
+    if binary.is_some() {
+        permission.extend(
+            crate::chattools::run_on_the_dispatch_grant()
+                .map(|tool| (mcp_permission(tool), "allow".into())),
+        );
+    }
+    if !permission.is_empty() {
+        config["permission"] = permission.into();
     }
     config.to_string()
+}
+
+/// **The name opencode asks permission for a call of charter's MCP tool `tool` under**
+/// (#3794): `<server>_<tool>`, each part with every character but `[A-Za-z0-9_-]` made `_`, the
+/// key opencode 1.18.33 lists the tool under and passes as the call's `permission` (read in its
+/// bundle: `toolName`, and the MCP tool's `ask({permission: key, patterns: ["*"]})`).
+fn mcp_permission(tool: &str) -> String {
+    let clean = |word: &str| -> String {
+        word.chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect()
+    };
+    format!("{}_{}", clean(crate::chattools::SERVER), clean(tool))
 }
 
 /// The shim's option that names charter's skills directory.

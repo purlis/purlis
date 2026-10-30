@@ -165,6 +165,46 @@ fn a_codex_chat_is_handed_charter_s_mcp_server_for_that_session_alone() {
 }
 
 #[test]
+fn a_codex_chat_runs_each_dispatch_tool_without_codex_s_own_prompt() {
+    // #3794: consent to a dispatch is purlis's dispatch grant (V98b), and what a chat does with
+    // its own tasks is its own (#3786), so Codex approves each dispatch tool by name, as
+    // codex-cli 0.163.0 reads `mcp_servers.<server>.tools.<tool>.approval_mode = "approve"`.
+    let StateHooks::ThisSessionOnly { args, .. } =
+        adapter().arm(kit(), None, &crate::harness_plugin::Chosen::new(), None)
+    else {
+        panic!("armed per session");
+    };
+    let flag = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("mcp_servers.purlis="))
+        .expect("the server's -c pair");
+    let server = format!("v = {flag}").parse::<toml::Table>().expect("TOML")["v"].clone();
+    let tools = server["tools"].as_table().expect("its tools");
+    for tool in [
+        "dispatch",
+        "dispatch_list",
+        "dispatch_read",
+        "dispatch_wait",
+        "dispatch_tell",
+        "dispatch_answer",
+        "dispatch_cancel",
+        "dispatch_close",
+        "dispatch_report",
+        "dispatch_note",
+        "dispatch_ask",
+    ] {
+        assert_eq!(
+            tools[tool]["approval_mode"].as_str(),
+            Some("approve"),
+            "{tool}"
+        );
+    }
+    // Each by name, never the server as a whole: a tool added later still asks.
+    assert_eq!(tools.len(), 11, "{tools:?}");
+    assert!(server.get("default_tools_approval_mode").is_none());
+}
+
+#[test]
 fn a_sandbox_compiled_for_another_harness_arms_no_codex_chat() {
     // ADR 0067, fail closed, held by the adapter seam itself.
     let (plane, claude) = crate::harness::testing::sandbox_compiled_for(Harness::ClaudeCode);

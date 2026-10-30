@@ -321,10 +321,27 @@ pub fn codex_flag(binary: &Path) -> String {
             "tool_timeout_sec".to_owned(),
             toml::Value::from(CODEX_TOOL_TIMEOUT_SECS),
         ),
+        ("tools".to_owned(), toml::Value::Table(codex_approved())),
     ]
     .into_iter()
     .collect();
     format!("mcp_servers.{SERVER}={}", toml::Value::Table(table))
+}
+
+/// **Codex's rule for [`run_on_the_dispatch_grant`]** (#3794): `tools.<tool>.approval_mode =
+/// "approve"` for each, which codex-cli 0.163.0 reads under one MCP server (measured: `codex -c
+/// 'mcp_servers.<server>={…,tools={<tool>={approval_mode=…}}}' mcp get` takes `auto`, `prompt`,
+/// `writes` and `approve`, and refuses any other word at that key). Each by name, never the
+/// server's `default_tools_approval_mode`, so a tool added later still asks.
+fn codex_approved() -> toml::Table {
+    run_on_the_dispatch_grant()
+        .map(|tool| {
+            let rule: toml::Table = [("approval_mode".to_owned(), toml::Value::from("approve"))]
+                .into_iter()
+                .collect();
+            (tool.to_owned(), toml::Value::Table(rule))
+        })
+        .collect()
 }
 
 /// The server as ACP's `session/new` takes it in `mcpServers` (ADR 0080 §1): a stdio server, run
@@ -410,6 +427,19 @@ pub const DISPATCH_TOOLS: [&str; 8] = [
     DISPATCH_NOTE,
     DISPATCH_ASK,
 ];
+
+/// **Every dispatch tool, which a harness runs without its own prompt** (#3794, as V98b and
+/// #3786 ruled for Claude Code): [`DISPATCH_TOOLS`], which write, and the three that only read
+/// a chat's own tasks ([`DISPATCH_LIST`], [`DISPATCH_READ`], [`DISPATCH_WAIT`]). Consent to a
+/// dispatch is purlis's own dispatch grant, asked of the person by the app the same on every
+/// harness, and what a chat does with its own tasks is its own. Each harness's adapter turns
+/// these names into its own rule where it has one, as for
+/// [`crate::browsertools::run_on_the_browser_ask`].
+pub fn run_on_the_dispatch_grant() -> impl Iterator<Item = &'static str> {
+    DISPATCH_TOOLS
+        .into_iter()
+        .chain([DISPATCH_LIST, DISPATCH_READ, DISPATCH_WAIT])
+}
 
 /// A task's chat, by its number in `dispatch_list`: the one argument a tool about one task
 /// takes.

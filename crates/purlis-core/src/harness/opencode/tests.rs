@@ -77,6 +77,27 @@ fn an_opencode_chat_is_handed_charter_s_mcp_server_in_its_session_config() {
         serde_json::json!({"type": "local", "command": ["/bin/charter", "mcp"], "enabled": true})
     );
     assert!(config["plugin"].is_array(), "{config}");
+    // #3794: and each dispatch tool runs on purlis's own dispatch grant, by the name opencode
+    // asks its permission under (`<server>_<tool>`, 1.18.33), never the server as a whole.
+    let allowed = config["permission"]
+        .as_object()
+        .expect("its permission rules");
+    for tool in [
+        "dispatch",
+        "dispatch_list",
+        "dispatch_read",
+        "dispatch_wait",
+        "dispatch_tell",
+        "dispatch_answer",
+        "dispatch_cancel",
+        "dispatch_close",
+        "dispatch_report",
+        "dispatch_note",
+        "dispatch_ask",
+    ] {
+        assert_eq!(allowed[&format!("purlis_{tool}")], "allow", "{tool}");
+    }
+    assert_eq!(allowed.len(), 11, "{allowed:?}");
 }
 
 #[test]
@@ -127,8 +148,8 @@ fn an_opencode_chat_denies_each_skill_turned_off_except_a_built_in_skills_name()
         .expect("the session config");
     let config: serde_json::Value = serde_json::from_str(config).expect("JSON");
     assert_eq!(
-        config["permission"],
-        serde_json::json!({ "skill": { "review": "deny", "secrets": "deny" } })
+        config["permission"]["skill"],
+        serde_json::json!({ "review": "deny", "secrets": "deny" })
     );
 }
 
