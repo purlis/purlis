@@ -59,7 +59,7 @@ describe("a chat's needs as a whole", () => {
     expect(needs.map((one) => one.id)).toEqual(["budget", "routing", "missing", "changed"]);
     expect(needs[0].fix).toEqual({
       act: "studio",
-      label: "Open Routing",
+      label: "Open routing",
       scope: inWorkspace("ops"),
       page: "routing",
     });

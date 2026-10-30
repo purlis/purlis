@@ -387,7 +387,7 @@ const WHOLE: ChatSkillsSaid = {
 
 /**
  * **The chat's own needs** (S8, #3694): its budget under whose set it is, and in Needs you, before
- * its skills' own, what the chat needs as a whole: its set past the budget (Open Routing), what
+ * its skills' own, what the chat needs as a whole: its set past the budget (Open routing), what
  * it started without (Open in Skill studio) and what changed since it started (Restart). Tab
  * walks the header onto Needs you; ↓ reaches each need, and Enter goes where its fix goes, except
  * a restart, which is only ever its button. The picture is
@@ -409,7 +409,7 @@ export const TheChatsOwnNeeds: Story = {
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(() => row(/^Near the skill budget/), "Skills: Down reaches the budget");
     await userEvent.keyboard("{Enter}");
-    await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Open Routing"));
+    await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Open routing"));
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(() => row(/^Started without 1 skill/), "Skills: Down reaches what it lacks");
     await userEvent.keyboard("{ArrowDown}");
@@ -418,7 +418,7 @@ export const TheChatsOwnNeeds: Story = {
     await expect(changed).toHaveTextContent("new: triage; gone: old-deploy");
     // A press on the card restarts nothing: the restart is only ever its button.
     await userEvent.keyboard("{Enter}");
-    await expect(canvas.getByRole("status")).toHaveTextContent("Open Routing");
+    await expect(canvas.getByRole("status")).toHaveTextContent("Open routing");
     await userEvent.click(within(changed).getByRole("button", { name: "Restart" }));
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Restart"));
     expectFocusInSight();

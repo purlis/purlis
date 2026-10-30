@@ -73,7 +73,7 @@ export function chatNeedsOf(said: ChatSkillsSaid, scope: StudioScope): ChatNeed[
   const needs: ChatNeed[] = [];
   const routing = {
     act: "studio" as const,
-    label: "Open Routing",
+    label: "Open routing",
     scope,
     page: "routing" as const,
   };

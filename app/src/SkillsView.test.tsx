@@ -862,7 +862,7 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
     );
 
     await userEvent.click(
-      within(needOf("Near the skill budget")).getByRole("button", { name: "Open Routing" }),
+      within(needOf("Near the skill budget")).getByRole("button", { name: "Open routing" }),
     );
     expect(hands.onOpenView).toHaveBeenLastCalledWith(
       skillStudioAt(inWorkspace("ops"), "routing"),

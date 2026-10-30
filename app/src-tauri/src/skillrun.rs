@@ -34,8 +34,9 @@ pub struct OpenRun {
     pub tool_calls: u32,
     /// The tokens the chat has spent since it opened, as its harness last said them (SK-26,
     /// #3694): what the eventlog records the run's tokens from, live. `None` where the harness
-    /// says none, so the chip shows no zero.
-    pub tokens: Option<u64>,
+    /// says none, so the chip shows no zero. A `u32`, as the window reads it whole: a run past
+    /// four billion tokens says the most it can.
+    pub tokens: Option<u32>,
     /// The level of the copy it is of, as a person reads it (`persona`, `local workspace`), where
     /// its start knew it: the scope its chip opens the Skill studio at (#3694).
     pub level: Option<String>,
@@ -161,7 +162,9 @@ impl SkillRuns {
             Some(now) => Some(*started.entry((chat, run.id.clone())).or_insert(now)),
             None => started.get(&(chat, run.id.clone())).copied(),
         };
-        run.tokens = now.zip(start).map(|(now, then)| now.saturating_sub(then));
+        run.tokens = now
+            .zip(start)
+            .map(|(now, then)| u32::try_from(now.saturating_sub(then)).unwrap_or(u32::MAX));
         Some(run)
     }
 

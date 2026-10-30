@@ -8979,7 +8979,8 @@ export type OpenRun = {
 	/**
 	 *  The tokens the chat has spent since it opened, as its harness last said them (SK-26,
 	 *  #3694): what the eventlog records the run's tokens from, live. `None` where the harness
-	 *  says none, so the chip shows no zero.
+	 *  says none, so the chip shows no zero. A `u32`, as the window reads it whole: a run past
+	 *  four billion tokens says the most it can.
 	 */
 	tokens: number | null,
 	/**
