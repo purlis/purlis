@@ -111,6 +111,23 @@ async fn the_windows_reply_to_a_hook_line_crosses_the_link_as_its_host_relays_it
 }
 
 #[tokio::test]
+async fn what_the_person_allowed_of_a_persona_passes_a_link_to_the_host_at_the_far_end() {
+    let board = Board::default();
+    let client = linked(&board).await;
+
+    let refused = client
+        .call(Command::StartProgram(Box::new(StartProgram {
+            tools_allowed: Some("digest".to_owned()),
+            ..StartProgram::of("01J9PRJCT00000000000000000", ProgramKind::Shell)
+        })))
+        .await;
+
+    if let Some(refusal) = refused.as_ref().err().and_then(|why| why.refusal()) {
+        assert_ne!(refusal.code, session::NOT_ALLOWED, "{}", refusal.why);
+    }
+}
+
+#[tokio::test]
 async fn a_start_without_the_sandbox_is_refused_by_the_host_at_the_far_end() {
     let board = Board::default();
     let client = linked(&board).await;

@@ -667,6 +667,55 @@ fn a_persona_without_tools_keeps_the_digest_an_allow_was_made_with() {
 }
 
 #[test]
+fn a_runner_arms_a_persona_s_tools_on_its_desktops_digest_and_never_its_hosts() {
+    use super::local::desktop_allows_tools;
+    use super::persona::{digest_allowed_here, digest_of, in_force_here};
+    let desktop = tempfile::tempdir().expect("a project");
+    let runner = tempfile::tempdir().expect("the same project there");
+    let personas = policy(DEVOPS_TOOLS).personas;
+    let hosts = [Host::parse("10.0.0.5:6443").unwrap()];
+    let digest = digest_of(&hosts, &personas["devops"].tools, false);
+    let none = Locks::none();
+
+    assert_eq!(
+        digest_allowed_here(desktop.path(), &personas, "devops", &none),
+        None,
+        "nothing allowed there, nothing said"
+    );
+    super::local::allow_persona_hosts(desktop.path(), "devops", &digest).unwrap();
+    assert_eq!(
+        digest_allowed_here(desktop.path(), &personas, "devops", &none).as_deref(),
+        Some(digest.as_str())
+    );
+
+    // Another list than this runner reads arms nothing.
+    desktop_allows_tools(runner.path(), "devops", Some("another")).unwrap();
+    assert_eq!(
+        tools_here(runner.path(), DEVOPS_TOOLS, &none),
+        Vec::<String>::new()
+    );
+    // The same list arms its tools, and its hosts stay off.
+    desktop_allows_tools(runner.path(), "devops", Some(&digest)).unwrap();
+    assert_eq!(tools_here(runner.path(), DEVOPS_TOOLS, &none).len(), 1);
+    assert_eq!(
+        in_force_here(runner.path(), &personas, Some("devops"), &none),
+        Vec::new(),
+        "the persona's hosts are this machine's Allow alone"
+    );
+    // Another persona is not armed by it.
+    assert_eq!(
+        super::persona::tools_in_force_here(runner.path(), &personas, Some("reviewer"), &none),
+        Vec::new()
+    );
+    // Taken back there, the next start says so.
+    desktop_allows_tools(runner.path(), "devops", None).unwrap();
+    assert_eq!(
+        tools_here(runner.path(), DEVOPS_TOOLS, &none),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
 fn a_persona_s_tools_reach_no_chat_until_this_machine_allows_them_with_its_hosts() {
     use super::persona::{Standing, digest_of, shown_in};
     let root = tempfile::tempdir().expect("a project");

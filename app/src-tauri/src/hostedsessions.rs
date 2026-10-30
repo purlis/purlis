@@ -3025,6 +3025,7 @@ impl SessionHost for HostedSessions {
             resume: named.resume.clone(),
             first_message: named.first_message.clone(),
             without_sandbox: named.without_sandbox,
+            tools_allowed: named.tools_allowed.clone(),
             // Asked about where the host leaves it out, so said only where it asks this window.
             alone: if confinement.is_some() {
                 named.alone.clone()

@@ -331,6 +331,12 @@ use crate::view::{Limits, Views};
 /// the runner leaves the settings it keeps as they are. A host before 1.50 ignores the field, so
 /// the desktop sends it only to a runner of 1.50 or later.
 ///
+/// 1.55 added the person's Allow of a persona's tools to a chat's start on a runner (#4071, spec
+/// #2041): `start_program` may carry `tools_allowed`, the digest of what the person allowed on the
+/// desktop, which a runner holds to its own reading of the persona, and which never reaches the
+/// persona's hosts. Named only by the window or its host's relay. A host before 1.55 ignores the
+/// field, so its chats arm no tool, as before.
+///
 /// 1.51 added the clones a host holds in a workspace (#3811, spec #2041): `clones_of` answers
 /// `clones`, the folder name of each repository a project it keeps has in the workspace's
 /// folder, so a chat moving off a runner brings back a clone the runner chat made there. The
@@ -339,7 +345,7 @@ use crate::view::{Limits, Views};
 /// before it made stays there.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 51,
+    minor: 55,
 };
 
 /// The version that first answers `relay_to` with the runner the link reached (#3417).
@@ -1156,6 +1162,11 @@ pub struct StartProgram {
     /// The persona it runs as, or the project's default (1.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub persona: Option<String>,
+    /// The digest of what the person allowed of that persona on the desktop that starts it on a
+    /// runner (1.55, #4071): the runner arms the persona's tools only where this is the digest
+    /// of the persona as it reads it. None where nothing is allowed there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools_allowed: Option<String>,
     /// The profile it runs on, or none (1.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
@@ -1243,6 +1254,7 @@ impl StartProgram {
             resume: None,
             first_message: None,
             without_sandbox: false,
+            tools_allowed: None,
             launch: None,
             reach: None,
             confinement: None,
@@ -2569,6 +2581,18 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
             why: format!(
                 "a chat's confinement is named to purlis's window, or its host's relay, only, and \
                  this link is `{scope}`"
+            ),
+        });
+    }
+    if let Command::StartProgram(start) = command
+        && start.tools_allowed.is_some()
+        && !scope.may(Power::Confine)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "what the person allowed of a persona's tools is named by purlis's window, or \
+                 its host's relay, only, and this link is `{scope}`"
             ),
         });
     }

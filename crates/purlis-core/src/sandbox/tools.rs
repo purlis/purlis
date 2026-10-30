@@ -1265,6 +1265,19 @@ pub fn declared_and_allowed_here(root: &Path, persona: &str) -> (Vec<Tool>, Vec<
     (declared, allowed)
 }
 
+/// **The digest of what the person on this machine allowed of `persona`**, for a start of it on
+/// a runner to carry (#4071, [`super::persona::digest_allowed_here`]), under policy.
+pub fn allowed_digest_here(root: &Path, persona: &str) -> Option<String> {
+    let said = super::Plane::read(root).said();
+    let policy = said.policy.or(said.unset)?;
+    super::persona::digest_allowed_here(
+        root,
+        &policy.personas,
+        persona,
+        &super::policy::Locks::of(root),
+    )
+}
+
 /// **What a brokered `secret exec` from a sandboxed chat asks to run**, as [`declared`] judges
 /// it: the vault, each hand-over as `secret exec` spells it (`VAR=key`), and the program as the
 /// chat named it.
