@@ -308,6 +308,15 @@ struct KeptKey {
     /// file is taken under it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     file: Option<u64>,
+    /// The highest number of the dispatch messages queued under this key that the app has
+    /// delivered (#3902, [`crate::dispatchqueue`]): the floor a message's number never goes
+    /// back below, so a copy of one already delivered is refused after its folder drains.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    messages: u64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 /// Which of a chat's two stores a line is in. Each has a sequence of its own under one key.
@@ -944,6 +953,7 @@ fn remember_within(dir: &Path, tokens: &[(u32, &ChatToken)], wait: Duration) -> 
                     drained: 0,
                     missing: Vec::new(),
                     file: None,
+                    messages: 0,
                 });
             }
         }
@@ -1042,6 +1052,47 @@ pub fn checks_as(dir: &Path, chat: u32, seq: u64, id: &str, body: &str, mac: &st
         .filter(|held| held.chat == chat && held.id == id)
         .filter_map(|held| key_of(&held.key))
         .any(|key| key.checks(chat, seq, id, body, mac))
+}
+
+/// The id of the key `token` signs under: what [`message_floor`] is asked by.
+pub fn key_id_of(token: &ChatToken) -> String {
+    SpoolKey::of(token).id()
+}
+
+/// **The highest number of chat `chat`'s queued dispatch messages under key `id` that the app
+/// has delivered** (#3902): 0 where none was, the key is not held, or `keys.json` does not
+/// read. A sender numbers past it, and the app refuses a message at or below it. Read under no
+/// lock: the file is replaced whole.
+pub fn message_floor(dir: &Path, chat: u32, id: &str) -> u64 {
+    read_keys(dir)
+        .ok()
+        .and_then(|keys| {
+            keys.keys
+                .into_iter()
+                .find(|held| held.chat == chat && held.id == id)
+        })
+        .map_or(0, |held| held.messages)
+}
+
+/// **Raises the floor of chat `chat`'s queued messages under key `id` to `seq`** (#3902), under
+/// the lock on the keys, before the message's file is removed: it never goes down. A key that
+/// is not held raises nothing.
+pub fn raise_message_floor(dir: &Path, chat: u32, id: &str, seq: u64) -> io::Result<()> {
+    keys_locked(dir, || {
+        let mut keys = read_keys(dir)?;
+        let Some(held) = keys
+            .keys
+            .iter_mut()
+            .find(|held| held.chat == chat && held.id == id)
+        else {
+            return Ok(());
+        };
+        if held.messages >= seq {
+            return Ok(());
+        }
+        held.messages = seq;
+        write_keys(dir, &keys)
+    })
 }
 
 /// The highest number a drain has handed on under the key `id`, for a hook choosing its next
@@ -1529,7 +1580,33 @@ fn forget(
     if keys.keys.len() != before {
         write_keys(dir, &keys)?;
     }
-    tidy(dir, &keys, ended);
+    tidy(dir, &keys, &ended);
+    // And the dispatch messages an ended chat left queued (#3902): the app delivered or
+    // reported them as the chat closed, so what is left checks under no key it keeps.
+    if let Ok(entries) = std::fs::read_dir(dir.join(crate::dispatchqueue::DIR)) {
+        for entry in entries.filter_map(Result::ok) {
+            let name = entry.file_name();
+            let Some(chat) = name
+                .to_str()
+                .and_then(|name| name.parse::<u32>().ok().filter(|n| n.to_string() == name))
+            else {
+                continue;
+            };
+            if ended(chat)
+                && !keys.keys.iter().any(|held| held.chat == chat)
+                && entry.file_type().is_ok_and(|kind| kind.is_dir())
+            {
+                let left = std::fs::read_dir(entry.path()).map_or(0, Iterator::count);
+                if left > 0 {
+                    tracing::warn!(
+                        "purlis: chat {chat} ended with {left} dispatch messages still queued \
+                         that the app could not deliver before it ended; they are removed"
+                    );
+                }
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1544,7 +1621,7 @@ fn forget(
 /// lands: a hook that makes the folder again spools into the new one, and a hook that held the
 /// old one open is told the line is lost. Best effort: what cannot be removed now is left for
 /// the next chat's end or open.
-fn tidy(dir: &Path, keys: &Keys, ended: impl Fn(u32) -> bool) {
+fn tidy(dir: &Path, keys: &Keys, ended: &impl Fn(u32) -> bool) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };

@@ -7,11 +7,13 @@
 //! before the sender is answered, and then the app is asked to deliver what the chat queued
 //! ([`crate::dispatched::What::Deliver`]). Where the app answers, it delivers each message and
 //! removes it; where it does not, the message waits, and the app delivers it the next time it
-//! hears from the chat (a hook line, any ask) or opens the project. So a message is delivered
-//! once (the app removes it as it delivers it, one drain at a time) and in the order its chat
-//! queued it (by number). A message the app finds it cannot deliver (the task has ended, the
-//! chat is not the sender's task) is removed and recorded undeliverable, which the sender reads
-//! in `purlis dispatch list`.
+//! hears from the chat (a hook line, any ask), when a chat waits on it (a coordinator's `wait`, a
+//! task's wait for an answer), and when it opens the project, once the tasks are back. So a
+//! message is delivered once (the app removes it as it delivers it, one drain of a chat at a
+//! time, and never takes a number at or below the last one it delivered: [`floor`]) and in the
+//! order its chat queued it (by number). A message the app finds it cannot deliver (the task
+//! has finished, it is not the sender's task, it does not check) is removed and recorded
+//! undeliverable, which the sender reads in `purlis dispatch list`.
 //!
 //! # Where, and who may write it
 //!
@@ -27,9 +29,10 @@
 //!
 //! # A file per message
 //!
-//! `<seq>.json`, its number taken by making `<seq>.part` exclusively, written and synced there,
-//! then renamed: a reader never sees half of one, and two senders of one chat never take one
-//! number.
+//! `<seq>.json`, its number (twenty digits) taken by making `<seq>.part` exclusively, written and
+//! synced there, then renamed: a reader never sees half of one, and two senders of one chat never
+//! take one number. A `.part` a sender left more than an hour ago is a dead sender's, and is
+//! removed. Every name counts against [`MOST_QUEUED`]; a name of any other shape is not read.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -42,6 +45,19 @@ pub const MOST_QUEUED: usize = 256;
 
 /// The version of a queued message's file.
 const VERSION: u32 = 1;
+
+/// The most of a message's file that is read: a message's text is at most 4,096 bytes.
+const A_FILE_IS_READ_UP_TO: u64 = 64 * 1024;
+
+/// How long a `.part` is a sender's still writing it; past that it is a dead sender's.
+const A_PART_IS_DEAD_AFTER: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// The digits a message's number is written with.
+const DIGITS: usize = 20;
+
+/// Where the app keeps what became of each chat's messages, and its instruction numbers
+/// ([`crate::dispatchtalk::Talk::keep_at`]), beside the queues and under their denial.
+pub const RECORDS: &str = "records.json";
 
 /// What a queued message's MAC is over, ahead of its body: so no spool line's MAC is ever a
 /// message's, or the other way round.
@@ -97,6 +113,8 @@ pub struct Waiting {
     /// When it was queued, in seconds since the epoch.
     pub at: i64,
     pub what: Queued,
+    /// The id of the key it was signed under: what its floor is kept by.
+    key: String,
     path: PathBuf,
 }
 
@@ -138,6 +156,11 @@ impl Unqueued {
 /// Where chat `chat`'s queue is, beside the hook socket `socket`.
 pub fn dir_for(socket: &Path, chat: u32) -> PathBuf {
     queues_for(socket).join(chat.to_string())
+}
+
+/// Where the app keeps what became of the messages ([`RECORDS`]), beside `socket`.
+pub fn records_for(socket: &Path) -> PathBuf {
+    queues_for(socket).join(RECORDS)
 }
 
 /// Where every chat's queue is.
@@ -192,17 +215,24 @@ fn queued(
     })
     .map_err(io::Error::other)?;
     let numbers = numbers(&dir)?;
-    if numbers.iter().filter(|(_, part)| !part).count() >= MOST_QUEUED {
+    if numbers.len() >= MOST_QUEUED {
         return Err(io::Error::from(io::ErrorKind::StorageFull));
     }
-    let mut seq = numbers.iter().map(|(seq, _)| *seq).max().unwrap_or(0);
+    // Past every number in the folder, and past the last one the app delivered: a number
+    // never goes back.
+    let mut seq = numbers
+        .iter()
+        .map(|(seq, _)| *seq)
+        .max()
+        .unwrap_or(0)
+        .max(floor(socket, chat, token));
     // A number taken by another sender since the listing is passed over.
     let (seq, mut part) = loop {
         seq += 1;
         match std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(dir.join(format!("{seq:020}.part")))
+            .open(dir.join(name(seq, "part")))
         {
             Ok(file) => break (seq, file),
             Err(why) if why.kind() == io::ErrorKind::AlreadyExists => continue,
@@ -219,29 +249,67 @@ fn queued(
     };
     part.write_all(&serde_json::to_vec(&file).map_err(io::Error::other)?)?;
     part.sync_all()?;
-    std::fs::rename(
-        dir.join(format!("{seq:020}.part")),
-        dir.join(format!("{seq:020}.json")),
-    )?;
+    std::fs::rename(dir.join(name(seq, "part")), dir.join(name(seq, "json")))?;
     if let Ok(folder) = std::fs::File::open(&dir) {
         let _ = folder.sync_all();
     }
     Ok(id)
 }
 
-/// The numbers in a queue's folder, each with whether it is a `.part` still.
+/// A message's file name: its number in [`DIGITS`] digits, and `ext`.
+fn name(seq: u64, ext: &str) -> String {
+    format!("{seq:0DIGITS$}.{ext}")
+}
+
+/// The number a file name is a message's under, and whether it is a `.part` still: only the
+/// names [`name`] writes.
+fn named(name: &str) -> Option<(u64, bool)> {
+    let (seq, part) = match name.strip_suffix(".json") {
+        Some(seq) => (seq, false),
+        None => (name.strip_suffix(".part")?, true),
+    };
+    if seq.len() != DIGITS || !seq.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some((seq.parse().ok()?, part))
+}
+
+/// The numbers in a queue's folder, each with whether it is a `.part` still. A `.part` older
+/// than [`A_PART_IS_DEAD_AFTER`] is a dead sender's, and is removed, not listed.
 fn numbers(dir: &Path) -> io::Result<Vec<(u64, bool)>> {
     Ok(std::fs::read_dir(dir)?
         .filter_map(Result::ok)
         .filter_map(|entry| {
-            let name = entry.file_name().into_string().ok()?;
-            let (seq, part) = match name.strip_suffix(".json") {
-                Some(seq) => (seq, false),
-                None => (name.strip_suffix(".part")?, true),
-            };
-            Some((seq.parse().ok()?, part))
+            let (seq, part) = named(entry.file_name().to_str()?)?;
+            let dead = part
+                && entry
+                    .metadata()
+                    .and_then(|meta| meta.modified())
+                    .ok()
+                    .and_then(|at| at.elapsed().ok())
+                    .is_some_and(|age| age > A_PART_IS_DEAD_AFTER);
+            if dead {
+                let _ = std::fs::remove_file(entry.path());
+                return None;
+            }
+            Some((seq, part))
         })
         .collect())
+}
+
+/// The last number of chat `chat`'s messages under `token`'s key the app delivered.
+#[cfg(unix)]
+fn floor(socket: &Path, chat: u32, token: &crate::hookwire::ChatToken) -> u64 {
+    crate::hookwire::spool::message_floor(
+        &spool_dir(socket),
+        chat,
+        &crate::hookwire::spool::key_id_of(token),
+    )
+}
+
+#[cfg(not(unix))]
+fn floor(_: &Path, _: u32, _: &crate::hookwire::ChatToken) -> u64 {
+    0
 }
 
 /// **Every message chat `chat` has waiting, oldest first**, each checked against the keys the
@@ -259,18 +327,29 @@ pub fn waiting(socket: &Path, chat: u32) -> Vec<Found> {
     numbers
         .into_iter()
         .map(|(seq, _)| {
-            let path = dir.join(format!("{seq:020}.json"));
+            let path = dir.join(name(seq, "json"));
             read(socket, chat, seq, &path).map_or(Found::Unchecked(path), Found::Message)
         })
         .collect()
 }
 
 fn read(socket: &Path, chat: u32, seq: u64, path: &Path) -> Option<Waiting> {
-    let bytes = std::fs::read(path).ok()?;
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(A_FILE_IS_READ_UP_TO + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > A_FILE_IS_READ_UP_TO {
+        return None;
+    }
     let file: File = serde_json::from_slice(&bytes).ok()?;
     if file.v != VERSION
         || file.seq != seq
         || !checks(socket, chat, seq, &file.key, &file.body, &file.mac)
+        // A copy of one the app delivered already.
+        || seq <= delivered_floor(socket, chat, &file.key)
     {
         return None;
     }
@@ -280,14 +359,35 @@ fn read(socket: &Path, chat: u32, seq: u64, path: &Path) -> Option<Waiting> {
         id: body.id,
         at: body.at,
         what: body.what,
+        key: file.key,
         path: path.to_path_buf(),
     })
+}
+
+#[cfg(unix)]
+fn delivered_floor(socket: &Path, chat: u32, key: &str) -> u64 {
+    crate::hookwire::spool::message_floor(&spool_dir(socket), chat, key)
+}
+
+#[cfg(not(unix))]
+fn delivered_floor(_: &Path, _: u32, _: &str) -> u64 {
+    0
 }
 
 /// Whether chat `chat` has a message waiting: one look at its folder, for a caller that drains
 /// only where there is something to drain.
 pub fn holds(socket: &Path, chat: u32) -> bool {
-    numbers(&dir_for(socket, chat)).is_ok_and(|numbers| numbers.iter().any(|(_, part)| !part))
+    std::fs::read_dir(dir_for(socket, chat)).is_ok_and(|mut entries| {
+        entries.any(|entry| {
+            entry.is_ok_and(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .and_then(named)
+                    .is_some_and(|(_, part)| !part)
+            })
+        })
+    })
 }
 
 /// The chats that have a folder of waiting messages: what the app drains as a project opens.
@@ -304,11 +404,31 @@ pub fn chats(socket: &Path) -> Vec<u32> {
     chats
 }
 
-/// The message has been delivered, or found undeliverable: it is removed, so it is never
+/// **The message has been delivered, or found undeliverable**: the floor of chat `chat`'s
+/// numbers is raised to it, and then it is removed, so neither it nor a copy of it is ever
 /// delivered again.
-pub fn delivered(message: &Waiting) {
+pub fn delivered(socket: &Path, chat: u32, message: &Waiting) {
+    raise(socket, chat, message);
     let _ = std::fs::remove_file(&message.path);
 }
+
+#[cfg(unix)]
+fn raise(socket: &Path, chat: u32, message: &Waiting) {
+    if let Err(why) = crate::hookwire::spool::raise_message_floor(
+        &spool_dir(socket),
+        chat,
+        &message.key,
+        message.seq,
+    ) {
+        tracing::warn!(
+            "purlis: the floor of chat {chat}'s queued messages was not raised ({why}); the \
+             message is removed all the same"
+        );
+    }
+}
+
+#[cfg(not(unix))]
+fn raise(_: &Path, _: u32, _: &Waiting) {}
 
 /// A file that did not check is removed.
 pub fn drop_unchecked(path: &Path) {

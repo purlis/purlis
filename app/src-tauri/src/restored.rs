@@ -132,6 +132,9 @@ pub(crate) fn finish(
         }
     }
     after_put_back(held, &launch, coming, settles);
+    // What the chats queued while the app was away is delivered now that their tasks are back
+    // (#3902), with nobody acting.
+    crate::dispatched::deliver_all_queued(held);
     opened
 }
 

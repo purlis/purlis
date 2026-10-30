@@ -1067,6 +1067,10 @@ impl Held {
     /// without what a close owes a persona chat. For a chat that is being started again in its
     /// own place, which is the same chat going on and not one that ended.
     fn end_chat(&self, session: u32) -> Result<(), String> {
+        // **What it queued while the app did not answer is delivered first** (#3902), while the
+        // app still knows the chat and its tasks; what cannot be is kept on the dispatch record
+        // it is about. The spool clears its folder as the chat ends (`hooks.chat_ended` below).
+        crate::dispatched::sender_ending(self, session);
         // **A stop of it is let go of before its program is ended** (#1448, D-T59-j15), and a
         // chat above it that waited for it to end waits no more. First, because the end of
         // that program is heard on another thread, which ends a chat still in a stop

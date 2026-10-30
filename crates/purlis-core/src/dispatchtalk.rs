@@ -204,13 +204,34 @@ pub struct Talk {
     /// one asked before the restart was not kept, and an answer to it is told so
     /// ([`asked_before_the_restart`]).
     restored: HashSet<u32>,
-    /// By sender: what became of the messages it sent lately, oldest first (#3902, #3904), at
-    /// most [`RECORDS_KEPT`] each.
-    records: HashMap<u32, VecDeque<Record>>,
-    /// How many instructions (follow-ups) have been numbered since the app started: the next
-    /// one's number is one more.
-    instructions: u32,
+    /// What became of each chat's messages, and its instruction numbers (#3902, #3904): kept
+    /// on disk where [`Talk::keep_at`] says, so a restart of the app forgets neither.
+    sent: Sent,
+    /// Where [`Talk::sent`] is kept.
+    kept_at: Option<PathBuf>,
 }
+
+/// **What became of each chat's messages, and the last instruction number each has used**, by
+/// the chat's key: its id, which it keeps across a restart of the app (ADR 0066), or its number
+/// where it has none.
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct Sent {
+    #[serde(default)]
+    v: u32,
+    /// By sender: what became of the messages it sent lately, oldest first, at most
+    /// [`RECORDS_KEPT`].
+    #[serde(default)]
+    records: HashMap<String, VecDeque<Record>>,
+    /// By sender: the last instruction number it used. Never goes back.
+    #[serde(default)]
+    instructions: HashMap<String, u32>,
+    /// By sender: how many records it has had kept, ever: what says a delivery kept one.
+    #[serde(default)]
+    recorded: HashMap<String, u64>,
+}
+
+/// The version of the file [`Sent`] is kept in.
+const SENT_VERSION: u32 = 1;
 
 /// The most records of its messages the app keeps for one sender.
 pub const RECORDS_KEPT: usize = 32;
@@ -219,6 +240,9 @@ pub const RECORDS_KEPT: usize = 32;
 /// shows its sender.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Record {
+    /// The queued message's id, where it waited in the queue: what a `Deliver` is answered by.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub kind: Kind,
     /// The instruction's number, on a follow-up: what its task acknowledges it by.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -239,6 +263,9 @@ pub struct Record {
 pub struct Delivery {
     /// The chat, by the app's number; 0 where it is not known yet.
     pub chat: u32,
+    /// The chat's key ([`Sent`]): what an acknowledgement is matched by, across a restart.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub key: String,
     /// The name the person sees it under.
     pub name: String,
     pub state: Delivered,
@@ -329,9 +356,8 @@ pub fn records_text(records: &[Record]) -> Option<String> {
 /// What a task is told when it acknowledges an instruction its asking chat did not send it.
 pub fn no_instruction(number: u32) -> String {
     format!(
-        "this task was sent no instruction {number} by its asking chat that the app still holds \
-         (it numbers them from 1 each time it starts). Nothing was acknowledged. The number is \
-         the one its follow-up said."
+        "this task was sent no instruction {number} by its asking chat. Nothing was \
+         acknowledged. The number is the one its follow-up said."
     )
 }
 
@@ -511,51 +537,130 @@ pub const THE_PERSON: &str = "the person";
 const A_MINUTE: Duration = Duration::from_secs(60);
 
 impl Talk {
-    /// **Numbers one more instruction** (#3904): a follow-up, by which its task acknowledges it.
-    pub fn instruction(&mut self) -> u32 {
-        self.instructions = self.instructions.saturating_add(1);
-        self.instructions
+    /// **Keeps what became of each chat's messages at `path`** (#3902, #3904), and reads what is
+    /// there: once, as the app first needs it. What does not read is started afresh, and said.
+    pub fn keep_at(&mut self, path: &Path) {
+        if self.kept_at.as_deref() == Some(path) {
+            return;
+        }
+        self.sent = match std::fs::read(path) {
+            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|why| {
+                tracing::warn!(
+                    "purlis: {} does not read as the record of dispatch messages ({why}); it \
+                     is started afresh",
+                    path.display()
+                );
+                Sent::default()
+            }),
+            Err(_) => Sent::default(),
+        };
+        self.kept_at = Some(path.to_path_buf());
+    }
+
+    /// Writes what became of each chat's messages where [`Talk::keep_at`] said.
+    fn save(&mut self) {
+        let Some(path) = &self.kept_at else { return };
+        self.sent.v = SENT_VERSION;
+        let written = serde_json::to_vec(&self.sent)
+            .map_err(std::io::Error::other)
+            .and_then(|bytes| {
+                let dir = path.parent().unwrap_or(Path::new("."));
+                std::fs::create_dir_all(dir)?;
+                crate::rewrite::replace(dir, path, &bytes, crate::rewrite::Mode::Private)
+            });
+        if let Err(why) = written {
+            tracing::warn!(
+                "purlis: the record of dispatch messages was not written ({why}); it is kept in \
+                 memory until the next write"
+            );
+        }
+    }
+
+    /// **Numbers one more instruction of chat `sender`'s** (#3904): a follow-up, by which its
+    /// task acknowledges it. Each chat's numbers go up and never back, across a restart too.
+    pub fn instruction(&mut self, sender: &str) -> u32 {
+        let next = self
+            .sent
+            .instructions
+            .get(sender)
+            .copied()
+            .unwrap_or(0)
+            .saturating_add(1);
+        self.sent.instructions.insert(sender.to_owned(), next);
+        self.save();
+        next
     }
 
     /// Keeps `record` of a message chat `sender` sent, dropping its oldest past
     /// [`RECORDS_KEPT`].
-    pub fn record(&mut self, sender: u32, record: Record) {
-        let kept = self.records.entry(sender).or_default();
+    pub fn record(&mut self, sender: &str, record: Record) {
+        let kept = self.sent.records.entry(sender.to_owned()).or_default();
         kept.push_back(record);
         while kept.len() > RECORDS_KEPT {
             kept.pop_front();
         }
+        *self.sent.recorded.entry(sender.to_owned()).or_default() += 1;
+        self.save();
+    }
+
+    /// How many records chat `sender` has had kept, ever: a caller compares it before and after
+    /// a delivery to know whether the delivery kept one ([`Talk::mark_last_queued`]).
+    pub fn recorded(&self, sender: &str) -> u64 {
+        self.sent.recorded.get(sender).copied().unwrap_or(0)
+    }
+
+    /// **The last record of chat `sender`'s waited in the queue as message `id`**: marked so.
+    /// Only for a delivery that kept a record ([`Talk::recorded`]), so an acknowledgement alone,
+    /// which keeps none, never marks an earlier message's.
+    pub fn mark_last_queued(&mut self, sender: &str, id: &str) {
+        if let Some(last) = self
+            .sent
+            .records
+            .get_mut(sender)
+            .and_then(VecDeque::back_mut)
+        {
+            last.queued = true;
+            last.id = Some(id.to_owned());
+            self.save();
+        }
     }
 
     /// What became of the messages chat `sender` sent lately, oldest first.
-    pub fn records(&self, sender: u32) -> Vec<Record> {
-        self.records
-            .get(&sender)
+    pub fn records(&self, sender: &str) -> Vec<Record> {
+        self.sent
+            .records
+            .get(sender)
             .map(|kept| kept.iter().cloned().collect())
             .unwrap_or_default()
     }
 
     /// **Task `task` acknowledges instruction `number`**, which its asking chat `asker` sent it
-    /// (#3904). Refused where `asker` sent `task` no instruction of that number.
-    pub fn acknowledge(&mut self, asker: u32, task: u32, number: u32) -> Result<(), String> {
+    /// (#3904): both by their keys. Refused where `asker` sent `task` no instruction of that
+    /// number, or one that was not delivered.
+    pub fn acknowledge(&mut self, asker: &str, task: &str, number: u32) -> Result<(), String> {
         let delivery = self
+            .sent
             .records
-            .get_mut(&asker)
+            .get_mut(asker)
             .and_then(|kept| {
                 kept.iter_mut()
                     .rev()
                     .find(|record| record.instruction == Some(number))
             })
-            .and_then(|record| record.to.iter_mut().find(|to| to.chat == task))
+            .and_then(|record| record.to.iter_mut().find(|to| to.key == task))
             .filter(|to| matches!(to.state, Delivered::Delivered | Delivered::Acknowledged))
             .ok_or_else(|| no_instruction(number))?;
         delivery.state = Delivered::Acknowledged;
+        self.save();
         Ok(())
     }
 
-    /// Chat `chat` has closed: the records of what it sent go with it.
-    pub fn forget_records(&mut self, chat: u32) {
-        self.records.remove(&chat);
+    /// Chat `chat` has closed for good: the records of what it sent, and its numbers, go with it.
+    pub fn forget_records(&mut self, chat: &str) {
+        self.sent.records.remove(chat);
+        self.sent.instructions.remove(chat);
+        self.sent.recorded.remove(chat);
+        self.save();
     }
 
     /// How many messages the asking chat `asker` and its task `task` have exchanged in the
@@ -1674,8 +1779,14 @@ mod tests {
     const TASK: u32 = 9;
     const SIBLING: u32 = 10;
 
+    /// The key ([`Sent`]) of chat `chat`, in these tests.
+    fn key(chat: u32) -> String {
+        format!("id-{chat}")
+    }
+
     fn follow_up(instruction: u32, to: &[u32]) -> Record {
         Record {
+            id: None,
             kind: Kind::FollowUp,
             instruction: Some(instruction),
             to_all: to.len() > 1,
@@ -1683,6 +1794,7 @@ mod tests {
                 .iter()
                 .map(|chat| Delivery {
                     chat: *chat,
+                    key: key(*chat),
                     name: format!("task {chat}"),
                     state: Delivered::Delivered,
                 })
@@ -1694,18 +1806,17 @@ mod tests {
     #[test]
     fn a_task_acknowledges_only_an_instruction_its_asking_chat_sent_it() {
         let mut talk = Talk::default();
-        let number = talk.instruction();
+        let asker = key(ASKER);
+        let number = talk.instruction(&asker);
         assert_eq!(number, 1);
-        assert_eq!(
-            talk.instruction(),
-            2,
-            "each instruction has a number of its own"
-        );
-        talk.record(ASKER, follow_up(number, &[TASK, SIBLING]));
+        assert_eq!(talk.instruction(&asker), 2, "each has a number of its own");
+        assert_eq!(talk.instruction(&key(SIBLING)), 1, "numbered per sender");
+        talk.record(&asker, follow_up(number, &[TASK, SIBLING]));
 
-        talk.acknowledge(ASKER, TASK, number).expect("sent to it");
+        talk.acknowledge(&asker, &key(TASK), number)
+            .expect("sent to it");
 
-        let states: Vec<Delivered> = talk.records(ASKER)[0]
+        let states: Vec<Delivered> = talk.records(&asker)[0]
             .to
             .iter()
             .map(|to| to.state.clone())
@@ -1714,42 +1825,100 @@ mod tests {
         // Not an instruction it was not sent, nor one of another asking chat's, nor one that
         // was never numbered.
         assert_eq!(
-            talk.acknowledge(ASKER, 77, number),
+            talk.acknowledge(&asker, &key(77), number),
             Err(no_instruction(number))
         );
         assert_eq!(
-            talk.acknowledge(SIBLING, TASK, number),
+            talk.acknowledge(&key(SIBLING), &key(TASK), number),
             Err(no_instruction(number))
         );
-        assert_eq!(talk.acknowledge(ASKER, TASK, 9), Err(no_instruction(9)));
+        assert_eq!(
+            talk.acknowledge(&asker, &key(TASK), 9),
+            Err(no_instruction(9))
+        );
+    }
+
+    #[test]
+    fn instruction_numbers_and_acknowledgements_outlast_a_restart_of_the_app() {
+        let folder = tempfile::tempdir().expect("a folder");
+        let path = folder.path().join("records.json");
+        let asker = key(ASKER);
+        let mut before = Talk::default();
+        before.keep_at(&path);
+        let first = before.instruction(&asker);
+        before.record(&asker, follow_up(first, &[TASK, SIBLING]));
+        before
+            .acknowledge(&asker, &key(SIBLING), first)
+            .expect("sent to it");
+
+        // The app starts again.
+        let mut after = Talk::default();
+        after.keep_at(&path);
+
+        assert_eq!(after.instruction(&asker), 2, "numbers never go back");
+        let states: Vec<Delivered> = after.records(&asker)[0]
+            .to
+            .iter()
+            .map(|to| to.state.clone())
+            .collect();
+        assert_eq!(states, vec![Delivered::Delivered, Delivered::Acknowledged]);
+        // Instruction 2 was sent to nobody yet: the number alone acknowledges nothing.
+        assert_eq!(
+            after.acknowledge(&asker, &key(TASK), 2),
+            Err(no_instruction(2))
+        );
+        after
+            .acknowledge(&asker, &key(TASK), first)
+            .expect("the instruction it was really sent");
+    }
+
+    #[test]
+    fn an_acknowledgement_alone_marks_no_earlier_record_queued() {
+        let mut talk = Talk::default();
+        let asker = key(ASKER);
+        talk.record(&asker, follow_up(1, &[TASK]));
+        let before = talk.recorded(&asker);
+        talk.acknowledge(&asker, &key(TASK), 1).expect("sent");
+        // The caller marks only where a record was kept.
+        assert_eq!(talk.recorded(&asker), before);
+        talk.record(&asker, follow_up(2, &[TASK]));
+        assert_eq!(talk.recorded(&asker), before + 1);
+        talk.mark_last_queued(&asker, "m-2");
+        let records = talk.records(&asker);
+        assert!(!records[0].queued && records[0].id.is_none());
+        assert!(records[1].queued && records[1].id.as_deref() == Some("m-2"));
     }
 
     #[test]
     fn an_undeliverable_message_cannot_be_acknowledged_and_records_are_bounded() {
         let mut talk = Talk::default();
+        let asker = key(ASKER);
         let mut record = follow_up(1, &[TASK]);
         record.to[0].state = Delivered::Undeliverable {
             why: "it has finished".to_owned(),
         };
-        talk.record(ASKER, record);
-        assert!(talk.acknowledge(ASKER, TASK, 1).is_err());
+        talk.record(&asker, record);
+        assert!(talk.acknowledge(&asker, &key(TASK), 1).is_err());
 
         for n in 0..(RECORDS_KEPT as u32 + 5) {
-            talk.record(ASKER, follow_up(n + 2, &[TASK]));
+            talk.record(&asker, follow_up(n + 2, &[TASK]));
         }
-        assert_eq!(talk.records(ASKER).len(), RECORDS_KEPT);
-        talk.forget_records(ASKER);
-        assert!(talk.records(ASKER).is_empty());
+        assert_eq!(talk.records(&asker).len(), RECORDS_KEPT);
+        talk.forget_records(&asker);
+        assert!(talk.records(&asker).is_empty());
     }
 
     #[test]
     fn a_list_says_who_acknowledged_an_instruction_and_who_has_not() {
         let mut talk = Talk::default();
-        talk.record(ASKER, follow_up(4, &[TASK, SIBLING]));
-        talk.acknowledge(ASKER, SIBLING, 4).expect("sent to it");
+        let asker = key(ASKER);
+        talk.record(&asker, follow_up(4, &[TASK, SIBLING]));
+        talk.acknowledge(&asker, &key(SIBLING), 4)
+            .expect("sent to it");
         talk.record(
-            ASKER,
+            &asker,
             Record {
+                id: None,
                 kind: Kind::FollowUp,
                 instruction: None,
                 to_all: true,
@@ -1758,13 +1927,15 @@ mod tests {
             },
         );
         talk.record(
-            ASKER,
+            &asker,
             Record {
+                id: None,
                 kind: Kind::Answer,
                 instruction: None,
                 to_all: false,
                 to: vec![Delivery {
                     chat: TASK,
+                    key: key(TASK),
                     name: "task 9".to_owned(),
                     state: Delivered::Undeliverable {
                         why: "'task 9' (chat 9) has finished.".to_owned(),
@@ -1775,7 +1946,7 @@ mod tests {
         );
 
         assert_eq!(
-            records_text(&talk.records(ASKER)).expect("some"),
+            records_text(&talk.records(&asker)).expect("some"),
             "Messages this chat sent lately, oldest first:\n\
              - instruction 4 (follow-up), to every live task: 'task 9' (chat 9) delivered, not \
              acknowledged yet; 'task 10' (chat 10) acknowledged\n\

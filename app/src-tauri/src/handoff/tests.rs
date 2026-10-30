@@ -10037,9 +10037,28 @@ fn a_message_goes_only_along_the_lineage() {
     }
 }
 
+/// What became of a message at each chat, as `(chat, name, state)`.
+fn states_of(to: &[dispatchtalk::Delivery]) -> Vec<(u32, String, dispatchtalk::Delivered)> {
+    to.iter()
+        .map(|to| (to.chat, to.name.clone(), to.state.clone()))
+        .collect()
+}
+
+/// The messages chat `chat`'s list says it sent.
+fn listed_messages(held: &Held, id: &PlaneId, chat: u32) -> Vec<dispatchtalk::Record> {
+    let Answer::Task(listed) = asks(held, id, chat, What::List) else {
+        panic!("listed")
+    };
+    let Answered::Listed { messages, .. } = *listed else {
+        panic!("listed, not {listed:?}")
+    };
+    messages
+}
+
 #[test]
 fn every_task_still_working_is_told_at_once_and_the_list_says_who_acknowledged() {
     // #3904: one instruction to every live task, numbered, and each task's acknowledgement.
+    use dispatchtalk::Delivered;
     let (_plane, _planes, id, held, asking, task) = a_dispatched_task();
     let (said, _) = dispatch(
         &held,
@@ -10062,21 +10081,19 @@ fn every_task_still_working_is_told_at_once_and_the_list_says_who_acknowledged()
         },
     );
 
-    let delivered =
-        |chat: u32, name: &str, state: dispatchtalk::Delivered| dispatchtalk::Delivery {
-            chat,
-            name: name.to_owned(),
-            state,
-        };
+    let Answer::Task(sent) = said else {
+        panic!("sent, not {said:?}")
+    };
+    let Answered::SentAll { instruction, to } = *sent else {
+        panic!("sent to all, not {sent:?}")
+    };
+    assert_eq!(instruction, 1);
     assert_eq!(
-        said,
-        Answer::Task(Box::new(Answered::SentAll {
-            instruction: 1,
-            to: vec![
-                delivered(task, "check the queue", dispatchtalk::Delivered::Delivered),
-                delivered(sibling, "read the logs", dispatchtalk::Delivered::Delivered),
-            ],
-        }))
+        states_of(&to),
+        [
+            (task, "check the queue".to_owned(), Delivered::Delivered),
+            (sibling, "read the logs".to_owned(), Delivered::Delivered),
+        ]
     );
     for chat in [task, sibling] {
         assert_eq!(
@@ -10126,28 +10143,16 @@ fn every_task_still_working_is_told_at_once_and_the_list_says_who_acknowledged()
     // Nothing was left for the asking chat by an acknowledgement alone.
     assert!(dispatchtalk::take(held.root(), asking).is_empty());
 
-    let Answer::Task(listed) = asks(&held, &id, asking, What::List) else {
-        panic!("listed")
-    };
-    let Answered::Listed { messages, .. } = *listed else {
-        panic!("listed, not {listed:?}")
-    };
+    let messages = listed_messages(&held, &id, asking);
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].instruction, Some(1));
+    assert!(messages[0].to_all);
     assert_eq!(
-        messages,
-        [dispatchtalk::Record {
-            kind: Kind::FollowUp,
-            instruction: Some(1),
-            to_all: true,
-            to: vec![
-                delivered(
-                    task,
-                    "check the queue",
-                    dispatchtalk::Delivered::Acknowledged
-                ),
-                delivered(sibling, "read the logs", dispatchtalk::Delivered::Delivered),
-            ],
-            queued: false,
-        }]
+        states_of(&messages[0].to),
+        [
+            (task, "check the queue".to_owned(), Delivered::Acknowledged),
+            (sibling, "read the logs".to_owned(), Delivered::Delivered),
+        ]
     );
 }
 
@@ -10179,35 +10184,39 @@ fn telling_every_task_with_none_still_working_is_refused() {
     assert!(dispatchtalk::take(held.root(), task).is_empty());
 }
 
+/// Queues `what` from chat `chat` as its command would, with the token the app issued it: the
+/// message's id, or `None` where this project's socket has no queue beside it (a temporary
+/// folder whose path is too long for a socket).
+fn queued_by(held: &Held, chat: u32, what: purlis_core::dispatchqueue::Queued) -> Option<String> {
+    let socket = held.hooks().socket().expect("listening").to_path_buf();
+    if !purlis_core::hookwire::spool::covered(&purlis_core::hookwire::spool::dir_for(&socket)) {
+        return None;
+    }
+    let token = held.hooks().token_for(chat);
+    Some(purlis_core::dispatchqueue::queue(&socket, chat, &token, what, 0).expect("queued"))
+}
+
 #[test]
 fn messages_queued_while_the_app_did_not_answer_are_delivered_in_order_and_once() {
     // #3902: three messages queued by the asking chat, then one sent live. The live one goes
     // after them, each is delivered once, and the one that cannot be is said undeliverable.
     use purlis_core::dispatchqueue::{self, Queued};
     let (_plane, _planes, id, held, asking, task) = a_dispatched_task();
-    let socket = held.hooks().socket().expect("listening").to_path_buf();
-    let token = held.hooks().token_for(asking);
-    let queued = |what: Queued| dispatchqueue::queue(&socket, asking, &token, what, 0);
-    let Ok(_) = queued(Queued::Tell {
-        to: task,
-        text: "first".to_owned(),
-    }) else {
-        // A socket outside the project's state folder (a temporary folder whose path is too
-        // long for one) has no queue beside it, and nothing is queued there.
-        assert!(!purlis_core::hookwire::spool::covered(
-            &purlis_core::hookwire::spool::dir_for(&socket)
-        ));
+    let tell_queued = |to: u32, text: &str| Queued::Tell {
+        to,
+        text: text.to_owned(),
+    };
+    let Some(_) = queued_by(&held, asking, tell_queued(task, "first")) else {
         return;
     };
-    queued(Queued::TellAll {
-        text: "second".to_owned(),
-    })
-    .expect("queued");
-    queued(Queued::Tell {
-        to: 9999,
-        text: "to nobody".to_owned(),
-    })
-    .expect("queued");
+    queued_by(
+        &held,
+        asking,
+        Queued::TellAll {
+            text: "second".to_owned(),
+        },
+    );
+    queued_by(&held, asking, tell_queued(9999, "to nobody"));
 
     let said = asks(&held, &id, asking, tell(task, "third"));
 
@@ -10224,18 +10233,13 @@ fn messages_queued_while_the_app_did_not_answer_are_delivered_in_order_and_once(
             ("third".to_owned(), Some(3)),
         ]
     );
+    let socket = held.hooks().socket().expect("listening").to_path_buf();
     assert!(
         !dispatchqueue::holds(&socket, asking),
         "each is delivered once"
     );
 
-    let Answer::Task(listed) = asks(&held, &id, asking, What::List) else {
-        panic!("listed")
-    };
-    let Answered::Listed { messages, .. } = *listed else {
-        panic!("listed, not {listed:?}")
-    };
-    let states: Vec<(bool, Vec<dispatchtalk::Delivered>)> = messages
+    let states: Vec<(bool, Vec<dispatchtalk::Delivered>)> = listed_messages(&held, &id, asking)
         .iter()
         .map(|record| {
             (
@@ -10259,15 +10263,142 @@ fn messages_queued_while_the_app_did_not_answer_are_delivered_in_order_and_once(
         ]
     );
 
-    // A message the asking command has just queued is answered with its own fate.
-    let fresh = queued(Queued::Tell {
-        to: task,
-        text: "fourth".to_owned(),
-    })
-    .expect("queued");
+    // A message the asking command has just queued is answered with its own fate, and one a
+    // drain took first by what became of it.
+    let fresh = queued_by(&held, asking, tell_queued(task, "fourth")).expect("queued");
     assert_eq!(
-        asks(&held, &id, asking, What::Deliver { id: fresh }),
+        asks(&held, &id, asking, What::Deliver { id: fresh.clone() }),
         told("check the queue", 4)
+    );
+    assert_eq!(
+        asks(&held, &id, asking, What::Deliver { id: fresh.clone() }),
+        Answer::Task(Box::new(Answered::Queued {
+            id: fresh,
+            delivered: true,
+        }))
+    );
+    let gone = queued_by(&held, asking, tell_queued(9999, "nobody")).expect("queued");
+    asks(&held, &id, asking, What::List);
+    assert_eq!(
+        asks(&held, &id, asking, What::Deliver { id: gone }),
+        not_yours(9999)
+    );
+}
+
+#[test]
+fn a_tell_queued_while_the_app_was_away_reaches_the_task_while_its_asker_waits() {
+    // #3897's run: the coordinator told a builder while the app did not answer, and now sits in
+    // `dispatch wait`. The wait itself delivers it; nobody sends it again.
+    let (_plane, _planes, id, held, asking, task) = a_dispatched_task();
+    let Some(_) = queued_by(
+        &held,
+        asking,
+        purlis_core::dispatchqueue::Queued::Tell {
+            to: task,
+            text: "No PRs from builders.".to_owned(),
+        },
+    ) else {
+        return;
+    };
+
+    asks(
+        &held,
+        &id,
+        asking,
+        What::Wait {
+            of: task,
+            within_secs: 1,
+        },
+    );
+
+    let taken = dispatchtalk::take(held.root(), task);
+    assert_eq!(taken.len(), 1);
+    assert_eq!(taken[0].text, "No PRs from builders.");
+}
+
+#[test]
+fn a_tell_queued_while_the_app_was_away_is_delivered_once_the_project_is_back() {
+    let (_plane, _planes, _id, held, asking, task) = a_dispatched_task();
+    let Some(_) = queued_by(
+        &held,
+        asking,
+        purlis_core::dispatchqueue::Queued::Tell {
+            to: task,
+            text: "carry on".to_owned(),
+        },
+    ) else {
+        return;
+    };
+
+    crate::dispatched::deliver_all_queued(&held);
+
+    assert_eq!(dispatchtalk::take(held.root(), task).len(), 1);
+}
+
+#[test]
+fn an_answer_queued_for_a_task_that_waits_for_it_arrives_with_nobody_acting() {
+    let (_plane, _planes, id, held, asking, task) = a_dispatched_task();
+    assert_eq!(
+        asks(&held, &id, task, question("Which queue?")),
+        sent(Kind::Question, "steward 1")
+    );
+    let Some(_) = queued_by(
+        &held,
+        asking,
+        purlis_core::dispatchqueue::Queued::Answer {
+            to: task,
+            text: "The staging one.".to_owned(),
+        },
+    ) else {
+        return;
+    };
+
+    let waited = asks(&held, &id, task, What::AwaitAnswer { within_secs: 2 });
+
+    assert!(
+        matches!(
+            &waited,
+            Answer::Task(answered) if matches!(
+                &**answered,
+                Answered::Replied { what: Reply::Answered { text, .. } } if text == "The staging one."
+            )
+        ),
+        "{waited:?}"
+    );
+}
+
+#[test]
+fn a_message_that_does_not_check_is_listed_as_undeliverable_with_why() {
+    let (_plane, _planes, id, held, asking, task) = a_dispatched_task();
+    let socket = held.hooks().socket().expect("listening").to_path_buf();
+    if !purlis_core::hookwire::spool::covered(&purlis_core::hookwire::spool::dir_for(&socket)) {
+        return;
+    }
+    // Written as the asking chat by something that does not hold its token.
+    purlis_core::dispatchqueue::queue(
+        &socket,
+        asking,
+        &purlis_core::hookwire::ChatToken::from("not the chat's"),
+        purlis_core::dispatchqueue::Queued::Tell {
+            to: task,
+            text: "forged".to_owned(),
+        },
+        0,
+    )
+    .expect("written");
+
+    let messages = listed_messages(&held, &id, asking);
+
+    assert!(dispatchtalk::take(held.root(), task).is_empty());
+    assert!(
+        matches!(
+            &messages[..],
+            [record] if matches!(
+                &record.to[0].state,
+                dispatchtalk::Delivered::Undeliverable { why } if why.contains("did not check")
+            )
+        ),
+        "{messages:?}"
     );
 }
 

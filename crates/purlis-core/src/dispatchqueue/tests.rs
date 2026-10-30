@@ -62,11 +62,11 @@ fn queued_messages_wait_in_the_order_they_were_queued_until_each_is_delivered() 
     assert_eq!(waiting[0].at, 10);
 
     // Delivered once: gone, and the next look finds only the other.
-    delivered(&waiting[0]);
+    delivered(&socket, 3, &waiting[0]);
     let left = messages(super::waiting(&socket, 3));
     assert_eq!(left.len(), 1);
     assert_eq!(left[0].what, Queued::TellAll { text: "two".into() });
-    delivered(&left[0]);
+    delivered(&socket, 3, &left[0]);
     assert!(!holds(&socket, 3));
 }
 
@@ -90,7 +90,7 @@ fn a_message_signed_with_another_token_than_the_chat_s_is_never_delivered() {
 fn a_message_whose_body_was_changed_after_it_was_queued_does_not_check() {
     let (_root, socket, token) = project(3, "tok-three");
     queue(&socket, 3, &token, tell(4, "as sent"), 1).expect("queued");
-    let path = dir_for(&socket, 3).join(format!("{:020}.json", 1));
+    let path = dir_for(&socket, 3).join(name(1, "json"));
     let text = std::fs::read_to_string(&path).expect("the file");
     std::fs::write(&path, text.replace("as sent", "as changed")).expect("rewritten");
 
@@ -127,4 +127,56 @@ fn a_full_queue_refuses_one_more() {
     let refused = queue(&socket, 3, &token, tell(4, "one more"), 1).expect_err("full");
 
     assert!(matches!(refused, Unqueued::Full));
+}
+
+#[test]
+fn a_copy_of_a_delivered_message_is_refused_and_numbers_never_go_back() {
+    let (_root, socket, token) = project(3, "tok-three");
+    queue(&socket, 3, &token, tell(4, "once"), 1).expect("queued");
+    let path = dir_for(&socket, 3).join(name(1, "json"));
+    let copy = std::fs::read(&path).expect("the file");
+    let first = messages(waiting(&socket, 3));
+    delivered(&socket, 3, &first[0]);
+
+    // Put back after the folder drained: it is not delivered again.
+    std::fs::write(&path, &copy).expect("put back");
+    assert!(matches!(&waiting(&socket, 3)[..], [Found::Unchecked(_)]));
+    drop_unchecked(&path);
+
+    // And the next message numbers past it, though the folder is empty.
+    queue(&socket, 3, &token, tell(4, "next"), 2).expect("queued");
+    let next = messages(waiting(&socket, 3));
+    assert_eq!(next[0].seq, 2);
+}
+
+#[test]
+fn only_the_names_a_sender_writes_are_read_and_a_dead_part_is_cleared() {
+    let (_root, socket, token) = project(3, "tok-three");
+    queue(&socket, 3, &token, tell(4, "real"), 1).expect("queued");
+    let dir = dir_for(&socket, 3);
+    // A name of another shape is not a message: not read, not counted.
+    std::fs::write(dir.join("2.json"), b"{}").expect("written");
+    std::fs::write(dir.join("../3/0002.json"), b"{}").expect("written");
+    assert_eq!(messages(waiting(&socket, 3)).len(), 1);
+
+    // A part of a sender long dead is removed.
+    let part = dir.join(name(7, "part"));
+    let old = std::fs::File::create(&part).expect("a part");
+    old.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60))
+        .expect("aged");
+    drop(old);
+    let _ = waiting(&socket, 3);
+    assert!(!part.exists());
+}
+
+#[test]
+fn a_file_past_what_a_message_can_be_is_not_read() {
+    let (_root, socket, token) = project(3, "tok-three");
+    queue(&socket, 3, &token, tell(4, "x"), 1).expect("queued");
+    let path = dir_for(&socket, 3).join(name(1, "json"));
+    let mut text = std::fs::read_to_string(&path).expect("the file");
+    text.push_str(&" ".repeat(70 * 1024));
+    std::fs::write(&path, text).expect("padded");
+
+    assert!(matches!(&waiting(&socket, 3)[..], [Found::Unchecked(_)]));
 }
