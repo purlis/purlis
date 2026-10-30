@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793321982771,
+  "lastUpdate": 1793323438314,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30450,6 +30450,48 @@ window.BENCHMARK_DATA = {
             "value": 100.97466800000001,
             "unit": "ms",
             "extra": "median of 5 runs: 99.861, 100.769, 100.975, 101.810, 101.915 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "879ff6d32f19f2b80d1129bff1672df70364e980",
+          "message": "Skills: purlis worktree commit is a sandboxed chat's, and the skill's round runs from above the piece (#3865) (#3937)\n\nThe plane-root branch guard is asked of every chat, and its branch-work\nsentence told each to commit with purlis worktree commit, which a chat\nwith no sandbox is refused. It now says that is a sandboxed chat's, and\nany other chat commits and pushes with plain git. Re-frozen byte for\nbyte in the recorded answers, logged in fixtures/corpora/README.md.\n\nworking-in-a-clone section 5 now shows the round from the workspace\nfolder, as a chat that cut its own piece stands: commit names the piece\nby path, update, push, done and abandon run through env -C. It says\ncommit goes by the chat's start folder and the others by the current\nfolder, and that commit and update run alone, with no cd or $(...).\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T00:49:42Z",
+          "tree_id": "a3cb191b00e7dcd3678e1807d4509ab3286ec8d6",
+          "url": "https://github.com/purlis/purlis/commit/879ff6d32f19f2b80d1129bff1672df70364e980"
+        },
+        "date": 1793323435238,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.33389800000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.317, 0.333, 0.334, 0.336, 0.346 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.569854,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.406, 16.539, 16.570, 16.571, 16.625 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.69477,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.028, 101.353, 101.695, 101.977, 103.093 ms"
           }
         ]
       }
