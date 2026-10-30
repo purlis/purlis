@@ -83,7 +83,7 @@ impl ProfilesOnPools for Linked {
         profile: &str,
     ) -> Result<(), onrunner::NotYet> {
         chosen_by_a_chat(&self.config, root, pool, profile);
-        onrunner::ready_to_move_on(&self.config, root, pool, profile, &|kept| {
+        onrunner::ready_to_move_on(&self.config, pool, profile, &|kept| {
             keep_on_as(owned(), &self.config, pool, kept, Waking::Yes)
         })
     }

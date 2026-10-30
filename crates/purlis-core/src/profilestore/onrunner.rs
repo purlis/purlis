@@ -519,7 +519,7 @@ pub fn ready_on(
     name: &str,
     keep: &dyn Fn(&Kept) -> Result<Option<Standing>, String>,
 ) -> Result<(), String> {
-    let Some(record) = ready_on_for(config_root, root, pool, name, keep, For::Start)? else {
+    let Some(record) = ready_on_for(config_root, pool, name, keep, For::Start)? else {
         return Ok(());
     };
     waits_on_pool(root, pool, &record);
@@ -537,12 +537,11 @@ pub fn ready_on(
 /// is signed in. Anything else that keeps it from the runner refuses the move, in words.
 pub fn ready_to_move_on(
     config_root: &Path,
-    root: &Path,
     pool: &str,
     name: &str,
     keep: &dyn Fn(&Kept) -> Result<Option<Standing>, String>,
 ) -> Result<(), NotYet> {
-    match ready_on_for(config_root, root, pool, name, keep, For::Move)? {
+    match ready_on_for(config_root, pool, name, keep, For::Move)? {
         Some(record) => Err(NotYet::SignIn(SignInAsked {
             pool: pool.to_owned(),
             profile: record.name.clone(),
@@ -618,7 +617,6 @@ enum For {
 /// runner, which a start refuses and a move waits on.
 fn ready_on_for(
     config_root: &Path,
-    root: &Path,
     pool: &str,
     name: &str,
     keep: &dyn Fn(&Kept) -> Result<Option<Standing>, String>,

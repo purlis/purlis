@@ -644,7 +644,7 @@ fn a_move_whose_profile_is_signed_out_there_waits_for_its_sign_in() {
     let desktop = homes(dir.path(), "desktop");
     let project = dir.path().join("project-moving");
 
-    let signed_out = ready_to_move_on(desktop.config_root(), &project, "builds", "work", &|_| {
+    let signed_out = ready_to_move_on(desktop.config_root(), "builds", "work", &|_| {
         Ok(Some(Standing::SignedOut))
     })
     .unwrap_err();
@@ -662,7 +662,7 @@ fn a_move_whose_profile_is_signed_out_there_waits_for_its_sign_in() {
     assert!(said.contains("not signed in on pool builds"), "{said}");
     assert!(said.contains("The chat did not move"), "{said}");
 
-    let not_kept = ready_to_move_on(desktop.config_root(), &project, "builds", "work", &|_| {
+    let not_kept = ready_to_move_on(desktop.config_root(), "builds", "work", &|_| {
         Err("the runner did not answer".into())
     })
     .unwrap_err();
