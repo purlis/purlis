@@ -400,6 +400,21 @@
   cursor: default;
 }
 
+/* **A segment's target is the control's whole height** (#4173, WCAG 2.5.8): a segment is drawn
+   inside the control's padding, 4px under it (20px in a 24px control, in every density), and its
+   press reaches through that padding, so it is never a target under 24px. Its words, its ground
+   and its edge stay where they are drawn. */
+[data-scope="segment"][data-part="root"] {
+  position: relative;
+}
+
+[data-scope="segment"][data-part="root"]::after {
+  content: "";
+  position: absolute;
+  inset-block: calc(-1 * var(--space-1));
+  inset-inline: 0;
+}
+
 [data-scope="segmented-control"][data-size="sm"] [data-scope="segment"][data-part="root"] {
   padding-inline: var(--space-3);
   font-size: var(--font-size-sm);
