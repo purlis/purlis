@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793361773709,
+  "lastUpdate": 1793363184058,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31458,6 +31458,48 @@ window.BENCHMARK_DATA = {
             "value": 102.099976,
             "unit": "ms",
             "extra": "median of 5 runs: 101.034, 101.913, 102.100, 102.112, 102.678 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "045e8ff0fa98d96c880f7b7349770a1b5e9407d7",
+          "message": "Grading: after-each-edit across edits (#4016), grading pages' back steps and copies (#3978) (#4033)\n\n* Grade after each edit keeps grading across the person's edits (#4016)\n\nEach window save commits the skill's SKILL.md, so the version a grade\ncompares with is the one before that edit and moves with every edit.\nThe opt-in held it to the commit the plan showed, so the first edit of\na skill with a previous version paused it, and so did every edit after.\n\nThe seam test across_edits saves edits through verbs::edit on a real\nrepository and checks next(): the version compared with moves, and the\nedit grades. The opt-in now covers \"compare with the version before\neach edit\"; the profile, model, trigger tests, chats, cap and dollar\nlimit still wait for the person. Recorded in ADR 0105.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grading pages: back steps, restored scorecards and same-named copies (#3978)\n\n- Back to the scorecard, Leave it running and Back to its grades go\n  back only where the step behind is the page they name, else say it\n  in place (ViewHistory gains `behind`; skillStudio's backIsTo).\n- A scorecard and a saved chat read by the grade alone draw for any\n  copy; the scorecard says the copy's level, and a retired tab put\n  back at the root moves to that workspace's or persona's scope.\n- A grade's steps and grading-after-each-edit's notices carry the\n  copy's level; a Grades tab ignores a same-named copy's.\n- One ReadingRows and one NotRead beside useRead, used by every studio\n  page.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grading tests: a grade's steps say their copy's level (#3978)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grading pages: settle on the graded copy's row, steps always say their level (#3978)\n\nReview fixes: a scorecard pins the row of the copy it graded (a\nsame-named copy is never acted on), moves only to a workspace the\nproject has, and is keyed by name so a row found later reads nothing\nanew. SkillGradeStep.level is no longer optional. A copy that cannot be\ngraded keeps its end as a Notice with Dismiss. Sources' Try again keeps\nits small size.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grading tests: a step's level is a literal (#3978)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grading pages: a way back finds its step under a name-only row, the reads' live lines listed (#3978)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Story pictures: the skill page holds rows while it reads what a skill names (#3978)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T12:03:14Z",
+          "tree_id": "9c54a77b5fdaa7c1554ae6a56cf306f65ca1f8be",
+          "url": "https://github.com/purlis/purlis/commit/045e8ff0fa98d96c880f7b7349770a1b5e9407d7"
+        },
+        "date": 1793363179906,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6587609999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.626, 0.653, 0.659, 0.671, 0.690 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5187055,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.392, 16.457, 16.519, 16.668, 16.903 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0458285,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.822, 101.897, 102.046, 102.481, 102.486 ms"
           }
         ]
       }
