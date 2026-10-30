@@ -620,6 +620,7 @@ describe("a runner chat's open or dispatch", () => {
     expect(await answerTaken(PLANE, RUNNER_DISPATCH, "open")).toEqual({
       refused: undefined,
       live: false,
+      opened: true,
     });
     window.removeEventListener(OPEN_RUNNER_DISPATCH_ASK, heard);
     expect(asked).toEqual([{ plane: PLANE, id: 2 }]);

@@ -1907,6 +1907,25 @@ const STATES: State[] = [
     drawn: /asks to change this project/,
   },
   {
+    name: "a runner chat's open or dispatch, whole",
+    view: { from: null, view: "runner-dispatch", key: "2" },
+    answers: {
+      runner_dispatch: {
+        session: 6,
+        chat: "devops 2",
+        pool: "builds",
+        persona: "devops",
+        handoff: false,
+        name: "check prod",
+        works: "the asking chat's folder",
+        profile: "work",
+        long: false,
+        brief: "look at the cluster",
+      },
+    },
+    drawn: /start a task as/,
+  },
+  {
     name: "an extension's view, its action refused",
     view: EXTENSION,
     answers: {
