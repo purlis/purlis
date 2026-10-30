@@ -157,6 +157,9 @@ export const PopsFromNotices: Story = {
 /** **Esc dismisses it** while the keyboard is in it, the keyboard goes back to Notices, and no
  *  dot is left. */
 export const DismissedByEsc: Story = {
+  // It ends with the card gone and the bar as `DotOnNotices` draws it without its dot: nothing
+  // to picture that another story does not.
+  parameters: { screenshot: false },
   play: async ({ canvas, userEvent }) => {
     const card = await waitFor(() => cardOf() as HTMLElement);
     card.focus();
@@ -214,6 +217,8 @@ export const ManyInAShortWindow: Story = {
  * hidden Notices item takes no keyboard, which jsdom would let it.
  */
 export const FocusModeKeepsTheKeyboard: Story = {
+  // It ends with the bar and the card gone: what it holds is where the keyboard is, no picture.
+  parameters: { screenshot: false },
   play: async ({ canvas }) => {
     const card = await waitFor(() => cardOf() as HTMLElement);
     card.focus();
