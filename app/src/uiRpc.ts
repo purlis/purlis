@@ -1495,6 +1495,9 @@ export const commands = {
 	applyRunnerWrite: __WINDOW_ONLY_RESULT,
 	runnerWrite: __WINDOW_ONLY_RESULT,
 	dismissRunnerWrite: __WINDOW_ONLY_RESULT,
+	runnerDispatch: __WINDOW_ONLY_RESULT,
+	approveRunnerDispatch: __WINDOW_ONLY_RESULT,
+	refuseRunnerDispatch: __WINDOW_ONLY_RESULT,
 	setChatsRunOn: __WINDOW_ONLY_RESULT,
 	sendLeavesOut: __WINDOW_ONLY_RESULT,
 	setSendLeavesOut: __WINDOW_ONLY_RESULT,
@@ -2464,6 +2467,11 @@ export type AnswerPath =
  */
 { via: "runner-write"; id: number } | 
 /**
+ *  `refuse_runner_dispatch` for Refuse, on held runner dispatch `id`; Open opens its own
+ *  tab, which shows it whole with Approve (`approve_runner_dispatch`), and sends nothing.
+ */
+{ via: "runner-dispatch"; id: number } | 
+/**
  *  Sign in sends nothing: it opens a shell tab where the core types the harness's own
  *  sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
  *  the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
@@ -2637,6 +2645,11 @@ export type AskSource =
  *  applies (#2046).
  */
 "runner-write" | 
+/**
+ *  An open or a dispatch a chat on a pool's runner asked for, which starts only on the
+ *  person's Approve.
+ */
+"runner-dispatch" | 
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
@@ -9472,6 +9485,33 @@ export type RunnerBranch = {
 	 *  checkout is on where there is none.
 	 */
 	ahead: number,
+};
+
+/**
+ *  **A held open or dispatch whole, as its own tab draws it**: what Approve would start, read
+ *  as the decision reads it ([`crate::handoff::would_start`]), the brief whole, and what the chat
+ *  could do with it after. Approve is pressed only there.
+ */
+export type RunnerDispatchWhole = {
+	/**  The chat that asked, by its number and as its tab names it. */
+	session: number,
+	chat: string,
+	/**  The pool it runs on. */
+	pool: string,
+	/**  The persona the new chat would run as, none for a chat on no persona. */
+	persona: string | null,
+	/**  Whether it hands the chat's work off, rather than asking for a task that reports back. */
+	handoff: boolean,
+	/**  The task's name; a handoff's may be empty. */
+	name: string,
+	/**  Where the new chat would work, in words. */
+	works: string,
+	/**  The profile it would start on, none where none is offered. */
+	profile: string | null,
+	/**  Whether it asks for a long-running task. */
+	long: boolean,
+	/**  The brief whole, drawn inertly: escapes written out for what would draw otherwise. */
+	brief: string,
 };
 
 /**

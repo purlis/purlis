@@ -1544,6 +1544,23 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* **A runner chat's held dispatch, in its own tab**: what it would start, as label and value. */
+.runner-dispatch-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+
+.runner-dispatch-facts dt {
+  color: var(--text-muted);
+}
+
+.runner-dispatch-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* **A tab that shows a task says so** (#1486, V100-35): `steward 4 › talk`, the task's name
    dimmer than the session's, since the tab is the session's. Both names give way to an
    ellipsis as a tab's name always did; the task's goes first. */

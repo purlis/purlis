@@ -12067,3 +12067,6 @@ fn a_task_s_level_is_heard_only_from_its_asking_chat_s_own_harness() {
     hears(Conversation::Named(own.clone()), None, Reported::Asks);
     assert_eq!(level(), Level::Asks);
 }
+
+/// A chat's open or dispatch heard from a pool waits for the person's Approve.
+mod heard_from_a_pool;
