@@ -6980,6 +6980,9 @@ fn a_chat_is_marked_when_the_instructions_it_started_on_change_under_it() {
             session,
             files: vec!["CLAUDE.md".to_owned()],
             skills: false,
+            skills_added: Vec::new(),
+            skills_gone: Vec::new(),
+            skills_edited: Vec::new(),
         }]
     );
     held.close_chat(session).expect("it closes");

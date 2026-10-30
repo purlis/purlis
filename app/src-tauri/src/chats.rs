@@ -3100,8 +3100,9 @@ impl Chats {
     /// **The open chats whose skills changed since they started** (#2770, ADR 0099 §5), by
     /// session: the plane skills each would get now differ from those it started with, in a way
     /// its harness does not take in by itself ([`Harness::skills_reload`]). Its tab offers a
-    /// restart on the same conversation. Read from disk each time it is asked.
-    pub fn skills_changed(&self) -> Vec<u32> {
+    /// restart on the same conversation, and its Skills view names what changed (#3694). Read
+    /// from disk each time it is asked.
+    pub fn skills_changed(&self) -> Vec<(u32, purlis_core::skills::SkillsChanged)> {
         // Asked once, for every chat: where the project's skills reach no chat, none changed.
         if !purlis_core::skills::reach_chats_here(&self.project) {
             return Vec::new();
@@ -3110,7 +3111,7 @@ impl Chats {
     }
 
     /// [`Self::skills_changed`] while the `skill-studio` flag is on.
-    fn skills_changed_while_on(&self) -> Vec<u32> {
+    fn skills_changed_while_on(&self) -> Vec<(u32, purlis_core::skills::SkillsChanged)> {
         // Read out first: no lock is held while the plane's skill folders are read.
         type Started = (
             u32,
@@ -3134,22 +3135,22 @@ impl Chats {
             })
             .collect();
         let built_in = built_in_skills_here();
-        let mut changed: Vec<u32> = started
+        let mut changed: Vec<(u32, purlis_core::skills::SkillsChanged)> = started
             .into_iter()
-            .filter(|(_, workspace, persona, harness, start, then)| {
-                purlis_core::skills::stamp_of(&purlis_core::skills::Running {
+            .filter_map(|(session, workspace, persona, harness, start, then)| {
+                let now = purlis_core::skills::stamp_of(&purlis_core::skills::Running {
                     plane: &self.project,
                     workspace: workspace.as_deref(),
                     persona: persona.as_deref(),
-                    harness: *harness,
+                    harness,
                     built_in: built_in.as_deref(),
                     plane_skills: true,
-                    start: Some(start),
-                }) != *then
+                    start: Some(&start),
+                });
+                (now != then).then(|| (session, then.changed_to(&now)))
             })
-            .map(|(session, ..)| session)
             .collect();
-        changed.sort_unstable();
+        changed.sort_unstable_by_key(|(session, _)| *session);
         changed
     }
 

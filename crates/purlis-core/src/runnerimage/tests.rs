@@ -126,3 +126,80 @@ fn a_signed_image_that_is_not_purlis_own_or_not_pinned_is_refused() {
         );
     }
 }
+
+/// **A new pool is offered this version's image, or a newer version's from the channel's newest
+/// manifest** (the person's ruling of 2026-10-30, round 2): a machine behind its channel, as a
+/// dev machine is after every merge, is still offered a verified image, said to be that
+/// version's.
+#[test]
+fn a_new_pool_is_offered_this_versions_image_or_the_channels_newer_one() {
+    let key = Key::new();
+    let ours = "0.4.2-dev.17";
+    assert_eq!(
+        offered(
+            &manifest(ours, IMAGE, &key.sign(IMAGE, ours)),
+            &key.public(),
+            ours
+        ),
+        Ok(Offered::Ours(Image::pinned(IMAGE).unwrap()))
+    );
+    let newer = "0.4.2-dev.18";
+    assert_eq!(
+        offered(
+            &manifest(newer, IMAGE, &key.sign(IMAGE, newer)),
+            &key.public(),
+            ours
+        ),
+        Ok(Offered::Newer {
+            image: Image::pinned(IMAGE).unwrap(),
+            version: newer.to_owned()
+        })
+    );
+}
+
+/// **What a manifest offers is held as strictly as this version's image is**: one signed by
+/// another key, for another version than the manifest's, or over another line is refused.
+#[test]
+fn a_newer_versions_image_is_checked_as_strictly_as_this_versions() {
+    let (key, other) = (Key::new(), Key::new());
+    let (ours, newer) = ("0.4.2", "0.4.3");
+    for signature in [
+        other.sign(IMAGE, newer),
+        key.sign(IMAGE, ours),
+        key.sign("ghcr.io/purlis/purlis-runner:main", newer),
+        String::new(),
+    ] {
+        assert!(
+            offered(&manifest(newer, IMAGE, &signature), &key.public(), ours).is_err(),
+            "{signature}"
+        );
+    }
+}
+
+/// **None is offered from a manifest that names none, or is of an older version**; one that
+/// names no version is refused.
+#[test]
+fn none_is_offered_from_a_manifest_with_no_image_or_of_an_older_version() {
+    let key = Key::new();
+    let ours = "0.4.2";
+    for version in [ours, "0.4.3"] {
+        assert_eq!(
+            offered(
+                &serde_json::json!({ "version": version }),
+                &key.public(),
+                ours
+            ),
+            Ok(Offered::None)
+        );
+    }
+    let older = "0.4.1";
+    assert_eq!(
+        offered(
+            &manifest(older, IMAGE, &key.sign(IMAGE, older)),
+            &key.public(),
+            ours
+        ),
+        Ok(Offered::None)
+    );
+    assert!(offered(&serde_json::json!({}), &key.public(), ours).is_err());
+}

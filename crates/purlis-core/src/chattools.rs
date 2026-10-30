@@ -121,6 +121,27 @@ pub const DISPATCH_ASK: &str = "dispatch_ask";
 /// outside the chat's sandbox after judging it; with no app, it runs nothing.
 pub const WORKTREE_UPDATE: &str = "worktree_update";
 
+/// The tool that removes a finished branch folder of the chat's own workspace (#3879): the one
+/// operation `purlis worktree remove <repo> <piece>` without `--force` performs. The server
+/// hands it to the app, which removes the folder only where nothing would be lost; with no app,
+/// it removes nothing.
+pub const WORKTREE_REMOVE: &str = "worktree_remove";
+
+/// What [`WORKTREE_REMOVE`] is asked to remove: the `repo` and `piece` of a branch folder of
+/// the chat's own workspace, and whether to delete its branch too, as `git branch -d` does.
+pub fn worktree_remove_args(args: &Map<String, Value>) -> Result<(String, String, bool), String> {
+    let name = |key: &str| match args.get(key) {
+        Some(Value::String(name)) if !name.trim().is_empty() => Ok(name.trim().to_owned()),
+        _ => Err(format!("{key} is the name of the branch folder's {key}")),
+    };
+    let delete_branch = match args.get("delete_branch") {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(delete)) => *delete,
+        Some(_) => return Err("delete_branch is true or false".to_owned()),
+    };
+    Ok((name("repo")?, name("piece")?, delete_branch))
+}
+
 /// What [`WORKTREE_UPDATE`] is asked to do: `start` (the default), `continue` or `abort`, and
 /// for a branch folder's start, the `base` branch.
 pub fn worktree_update_args(
@@ -192,7 +213,7 @@ pub const PRE_ALLOWED: [&str; 14] = [
 /// Apart from [`PRE_ALLOWED`] on purpose: a grade's chat is served the reads alone (SK-16), and
 /// is handed none of these. Named one by one, so a tool added later is asked about until it is
 /// ruled in here; an operator's or a project's `ask` or `deny` for any of them still wins.
-pub const OWN_SCOPE_TOOLS: [&str; 8] = [
+pub const OWN_SCOPE_TOOLS: [&str; 9] = [
     "todo_add",
     "todo_done",
     "memory_add",
@@ -202,6 +223,8 @@ pub const OWN_SCOPE_TOOLS: [&str; 8] = [
     ASK_OPERATOR,
     // The update the app makes for the chat in its own clone, branch folder or root (#3831).
     WORKTREE_UPDATE,
+    // The removal the app makes for the chat of its own finished branch folder (#3879).
+    WORKTREE_REMOVE,
 ];
 
 /// The variables the server reads to find the chat's place, as a `charter` command in the chat
@@ -406,7 +429,7 @@ fn wait_seconds() -> Value {
 }
 
 /// Every tool, in the order a harness lists them.
-pub static TOOLS: [Tool; 26] = [
+pub static TOOLS: [Tool; 27] = [
     Tool {
         name: "todo_list",
         description: "List the open todos of the workspace this chat works in, oldest first, \
@@ -568,6 +591,38 @@ pub static TOOLS: [Tool; 26] = [
                                         onto (default: the one it was cut from).",
                     },
                 },
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
+        name: WORKTREE_REMOVE,
+        description: "Remove a finished branch folder of the workspace this chat works in, as \
+                      `purlis worktree remove <repo> <piece>` does: the app removes it only \
+                      when it holds no uncommitted change and no commit that no other branch \
+                      reaches, and otherwise names what would be lost and removes nothing. \
+                      Never forced: discarding work is the person's, from the window. Call it \
+                      from the workspace, not from inside the folder.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "repo": {
+                        "type": "string",
+                        "description": "The clone the branch folder was cut from.",
+                    },
+                    "piece": {
+                        "type": "string",
+                        "description": "The branch folder's name (.worktrees/<repo>/<piece>).",
+                    },
+                    "delete_branch": {
+                        "type": "boolean",
+                        "description": "Also delete its branch, only where it is merged \
+                                        (default false).",
+                    },
+                },
+                "required": ["repo", "piece"],
                 "additionalProperties": false,
             })
         },
@@ -976,6 +1031,7 @@ pub fn call(
         DISPATCH_NOTE,
         DISPATCH_ASK,
         WORKTREE_UPDATE,
+        WORKTREE_REMOVE,
     ]
     .contains(&tool)
     {

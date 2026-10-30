@@ -10,8 +10,8 @@
 //                                  `mcr.microsoft.com/playwright:v<locked>-noble@sha256:<digest>`,
 //                                  with one digest for all of them
 //
-// `stories.yml` both compares the pictures and draws the baselines a pull request takes, in one
-// job (`stories-baselines.yml` draws nothing). When the lockfile's Playwright moves, its image
+// `stories.yml` both compares the pictures and draws the baselines a pull request takes, in its
+// shards' jobs (`stories-baselines.yml` draws nothing). When the lockfile's Playwright moves, its image
 // moves to the new version's tag and its digest, which
 // `docker buildx imagetools inspect mcr.microsoft.com/playwright:v<version>-noble` prints.
 import { readFileSync } from "node:fs";
