@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793389706083,
+  "lastUpdate": 1793391160029,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32046,6 +32046,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1190565,
             "unit": "ms",
             "extra": "median of 5 runs: 101.820, 102.049, 102.119, 102.549, 102.665 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bc70aea700eb2cc66f0b4fcdcec6fe1494868515",
+          "message": "Dispatch: same-name refusal under the deciding lock; Codex and opencode allow dispatch tools per tool (#3795, #3794) (#4131)\n\n* Duplicate task-name refusal is decided under the deciding lock (#3795)\n\nThe refusal of a task name a chat already has open was read before the\nlock a dispatch's slot is reserved under, so two dispatches under one\nname arriving together could both pass. It is now decided under that\nlock, over the open chats and the slots of tasks still starting, and a\nreserved slot carries its task's name.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Codex and opencode allow the dispatch tools per tool (#3794)\n\nOne neutral list, chattools::run_on_the_dispatch_grant, names the\neleven dispatch tools. Codex's adapter approves each by name under\npurlis's MCP server (tools.<tool>.approval_mode = \"approve\", measured on\ncodex-cli 0.163.0); opencode's allows each as permission.purlis_<tool>\n(measured on 1.18.33). ADR 0064 amended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* A starting task's refusal is matched as said, with no liveness (#3795)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Same-name refusal reads the tasks by number through one helper (#3795)\n\nThe asker's tasks are read in number order, so the task named is the\nsame each time when two share a name. Chats::tasks_of and the refusal\nshare chats::task_of. The lock proof is named _under_lock and documented.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* The operator's own Codex and opencode rules win over the dispatch allow (#3794)\n\nopencode: session_config reads the operator's layers (global, ~/.opencode,\nOPENCODE_CONFIG, OPENCODE_CONFIG_DIR, each folder up from the chat with its\n.opencode; top-level and per-agent permission, JSON and agent Markdown) and\nallows no dispatch tool a rule of theirs names; a bare * that asks or denies,\nor an unreadable file, allows none.\n\nCodex: the -c table for purlis's server carries the operator's own\napproval_mode per tool and default_tools_approval_mode from CODEX_HOME and\neach .codex/config.toml, and approves only what they leave unset.\n\nThe Claude adapter builds its MCP dispatch allow from the same list. Codex's\napprove is accepted by config, not measured live; the ADR says so.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T19:29:12Z",
+          "tree_id": "25f5982bb3026b64077c5664489d80b0ac561bb0",
+          "url": "https://github.com/purlis/purlis/commit/bc70aea700eb2cc66f0b4fcdcec6fe1494868515"
+        },
+        "date": 1793391156352,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6771510000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.674, 0.677, 0.677, 0.684, 0.692 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.502934000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.447, 16.451, 16.503, 16.541, 16.647 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4218755,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.386, 101.237, 101.422, 101.759, 102.013 ms"
           }
         ]
       }
