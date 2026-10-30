@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793347551614,
+  "lastUpdate": 1793348925506,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31122,6 +31122,48 @@ window.BENCHMARK_DATA = {
             "value": 102.347218,
             "unit": "ms",
             "extra": "median of 5 runs: 102.176, 102.295, 102.347, 102.374, 102.853 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "815d356d122f26f9b393b09b0c16f0549a5b12d5",
+          "message": "Skill studio: an install ending after leaving Sources no longer pulls the tab back (#3973) (#3993)\n\n* Skill studio: an install ending after the person left Sources no longer pulls the tab back\n\nThe Sources page sends the tab on to the source's page once an install\nends, but only if the person is still where they pressed Install. It\ntold that from a ref the page kept up to date in an effect; once the\nperson went to Library the page unmounted and the ref stayed at the\ninstall review, so the install's end took the tab back to Sources and\nthe Library the person had opened was gone (#3973).\n\nThe ref now says the page was left when it unmounts. The scenario spec\nwaits for the app to say the install ended (the source's page, the\nskill marked Installed) instead of for skills.lock, which the core\nwrites before the install's commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill studio: judge where an install ends by the tab's place, not the page's life\n\nReview finding on the fix for #3973: a sentinel set when the Sources page\nunmounts also stopped an install from going on to its source's page when\nthe page was only drawn again (Library and Back to the review, or the\nview crossing its narrow width), where it used to. SkillSourcesPage now\nasks the tab whether it is still at the place the change began\n(samePlace on the tab's own place), so leaving holds the tab and coming\nback goes on. Adds a changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T07:53:37Z",
+          "tree_id": "b9da4935ac369809499f0e81fd74f423933ba7f0",
+          "url": "https://github.com/purlis/purlis/commit/815d356d122f26f9b393b09b0c16f0549a5b12d5"
+        },
+        "date": 1793348922281,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.31650100000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.314, 0.315, 0.317, 0.328, 0.340 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.486759,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.433, 16.457, 16.487, 16.522, 16.580 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.434416,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.849, 101.219, 101.434, 101.565, 101.738 ms"
           }
         ]
       }
