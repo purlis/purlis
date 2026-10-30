@@ -258,7 +258,7 @@ fn queued(
 
 /// A message's file name: its number in [`DIGITS`] digits, and `ext`.
 fn name(seq: u64, ext: &str) -> String {
-    format!("{seq:0DIGITS$}.{ext}")
+    format!("{seq:0width$}.{ext}", width = DIGITS)
 }
 
 /// The number a file name is a message's under, and whether it is a `.part` still: only the

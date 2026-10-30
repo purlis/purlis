@@ -206,8 +206,8 @@ pub struct Talk {
     restored: HashSet<u32>,
     /// What became of each chat's messages, and its instruction numbers (#3902, #3904): kept
     /// on disk where [`Talk::keep_at`] says, so a restart of the app forgets neither.
-    sent: Sent,
-    /// Where [`Talk::sent`] is kept.
+    messages: Sent,
+    /// Where [`Talk::messages`] is kept.
     kept_at: Option<PathBuf>,
 }
 
@@ -543,7 +543,7 @@ impl Talk {
         if self.kept_at.as_deref() == Some(path) {
             return;
         }
-        self.sent = match std::fs::read(path) {
+        self.messages = match std::fs::read(path) {
             Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|why| {
                 tracing::warn!(
                     "purlis: {} does not read as the record of dispatch messages ({why}); it \
@@ -560,8 +560,8 @@ impl Talk {
     /// Writes what became of each chat's messages where [`Talk::keep_at`] said.
     fn save(&mut self) {
         let Some(path) = &self.kept_at else { return };
-        self.sent.v = SENT_VERSION;
-        let written = serde_json::to_vec(&self.sent)
+        self.messages.v = SENT_VERSION;
+        let written = serde_json::to_vec(&self.messages)
             .map_err(std::io::Error::other)
             .and_then(|bytes| {
                 let dir = path.parent().unwrap_or(Path::new("."));
@@ -580,13 +580,13 @@ impl Talk {
     /// task acknowledges it. Each chat's numbers go up and never back, across a restart too.
     pub fn instruction(&mut self, sender: &str) -> u32 {
         let next = self
-            .sent
+            .messages
             .instructions
             .get(sender)
             .copied()
             .unwrap_or(0)
             .saturating_add(1);
-        self.sent.instructions.insert(sender.to_owned(), next);
+        self.messages.instructions.insert(sender.to_owned(), next);
         self.save();
         next
     }
@@ -594,19 +594,19 @@ impl Talk {
     /// Keeps `record` of a message chat `sender` sent, dropping its oldest past
     /// [`RECORDS_KEPT`].
     pub fn record(&mut self, sender: &str, record: Record) {
-        let kept = self.sent.records.entry(sender.to_owned()).or_default();
+        let kept = self.messages.records.entry(sender.to_owned()).or_default();
         kept.push_back(record);
         while kept.len() > RECORDS_KEPT {
             kept.pop_front();
         }
-        *self.sent.recorded.entry(sender.to_owned()).or_default() += 1;
+        *self.messages.recorded.entry(sender.to_owned()).or_default() += 1;
         self.save();
     }
 
     /// How many records chat `sender` has had kept, ever: a caller compares it before and after
     /// a delivery to know whether the delivery kept one ([`Talk::mark_last_queued`]).
     pub fn recorded(&self, sender: &str) -> u64 {
-        self.sent.recorded.get(sender).copied().unwrap_or(0)
+        self.messages.recorded.get(sender).copied().unwrap_or(0)
     }
 
     /// **The last record of chat `sender`'s waited in the queue as message `id`**: marked so.
@@ -614,7 +614,7 @@ impl Talk {
     /// which keeps none, never marks an earlier message's.
     pub fn mark_last_queued(&mut self, sender: &str, id: &str) {
         if let Some(last) = self
-            .sent
+            .messages
             .records
             .get_mut(sender)
             .and_then(VecDeque::back_mut)
@@ -627,7 +627,7 @@ impl Talk {
 
     /// What became of the messages chat `sender` sent lately, oldest first.
     pub fn records(&self, sender: &str) -> Vec<Record> {
-        self.sent
+        self.messages
             .records
             .get(sender)
             .map(|kept| kept.iter().cloned().collect())
@@ -639,7 +639,7 @@ impl Talk {
     /// number, or one that was not delivered.
     pub fn acknowledge(&mut self, asker: &str, task: &str, number: u32) -> Result<(), String> {
         let delivery = self
-            .sent
+            .messages
             .records
             .get_mut(asker)
             .and_then(|kept| {
@@ -657,16 +657,16 @@ impl Talk {
 
     /// Chat `chat` has closed for good: the records of what it sent, and its numbers, go with it.
     pub fn forget_records(&mut self, chat: &str) {
-        self.sent.records.remove(chat);
-        self.sent.instructions.remove(chat);
-        self.sent.recorded.remove(chat);
+        self.messages.records.remove(chat);
+        self.messages.instructions.remove(chat);
+        self.messages.recorded.remove(chat);
         self.save();
     }
 
     /// How many messages the asking chat `asker` and its task `task` have exchanged in the
     /// minute before `now`.
     pub fn in_the_last_minute(&mut self, asker: u32, task: u32, now: Instant) -> u32 {
-        let Some(sent) = self.sent.get_mut(&(asker, task)) else {
+        let Some(sent) = self.messages.get_mut(&(asker, task)) else {
             return 0;
         };
         while sent
@@ -687,7 +687,10 @@ impl Talk {
         now: Instant,
     ) -> Result<(), String> {
         may_send(limits, self.in_the_last_minute(asker, task, now))?;
-        self.sent.entry((asker, task)).or_default().push_back(now);
+        self.messages
+            .entry((asker, task))
+            .or_default()
+            .push_back(now);
         Ok(())
     }
 
@@ -1121,9 +1124,10 @@ impl Talk {
             .copied()
             .collect();
         for pair in moved {
-            if let Some(sent) = self.sent.remove(&pair) {
+            if let Some(sent) = self.messages.remove(&pair) {
                 let renumber = |chat: u32| if chat == old { new } else { chat };
-                self.sent.insert((renumber(pair.0), renumber(pair.1)), sent);
+                self.messages
+                    .insert((renumber(pair.0), renumber(pair.1)), sent);
             }
         }
     }
