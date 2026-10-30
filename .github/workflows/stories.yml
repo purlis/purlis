@@ -212,7 +212,9 @@ jobs:
       # One annotation per story that failed, the same in both browsers: its browser, its gate,
       # the first line of why and the axe rules it broke, put on the story file's line it failed
       # at (`GITHUB_WORKSPACE` is the root its path is relative to); a failure axe raises after
-      # the story has no such line, and is on the check alone.
+      # the story has no such line, and is on the check alone. GitHub keeps 10 of a step's, so
+      # the stories that stop the baselines being drawn come first, and the step's summary,
+      # never capped, lists them all and then every picture (#4050).
       - name: The stories that failed, named
         if: needs.part.result != 'success'
         env:
@@ -286,3 +288,12 @@ jobs:
           path: ${{ runner.temp }}/drawn/
           if-no-files-found: error
           retention-days: 7
+      # Last, so it is the newest annotation, which GitHub shows first: one that names every
+      # story that stops the baselines being drawn, however many pictures failed (#4050).
+      - name: What stops the baselines being drawn, named first
+        if: ${{ !cancelled() && needs.part.result != 'success' }}
+        env:
+          NAMED: ${{ steps.reports.outputs.named }}
+        run: |
+          # shellcheck disable=SC2086 # browser and report pairs, with no space in any
+          node ../tools/story-failures.mjs headline $NAMED
