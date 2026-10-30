@@ -240,13 +240,15 @@ export function expectFocusInSight(): void {
  * of sight. Throws what `expectFocusInSight` says, after the step.
  */
 export async function untilFocusInSight(step: string): Promise<void> {
+  let why: unknown;
   try {
     await waitFor(() => expectFocusInSight(), { timeout: LANDS_WITHIN_MS });
+    return;
   } catch (error) {
-    throw new Error(`${step}: ${error instanceof Error ? error.message : String(error)}`, {
-      cause: error,
-    });
+    why = error;
   }
+  // Said after the step, with what the check last found.
+  throw new Error(`${step}: ${why instanceof Error ? why.message : String(why)}`);
 }
 
 function describe(element: Element): string {
