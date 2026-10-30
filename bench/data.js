@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793359266675,
+  "lastUpdate": 1793361773709,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31416,6 +31416,48 @@ window.BENCHMARK_DATA = {
             "value": 102.664726,
             "unit": "ms",
             "extra": "median of 5 runs: 102.071, 102.569, 102.665, 102.829, 103.145 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6eeac9f7cccbcd01c2c7b11811f6b6c99acdb6cd",
+          "message": "Theme floors: the title bar's combined states, row-count grounds, unavailable rows, popover fills and the chip's rest fallback (#4000) (#4039)\n\n* theme: the title bar's floor gaps, held (#4000)\n\nThe five gaps #3997's review found:\n\n- A pinned pin and the row Enter would go to are measured under the\n  pointer too, in what both states draw at once, and draw each state's\n  default back when they fail together.\n- A row's count is held on a fill a theme gives its row; where even its\n  default cannot be read there, the row draws its own fill back.\n- An unavailable row is reached by no row key (:not([data-unavailable])),\n  so it stays in the faint tier the check holds on the popover.\n- A popover fill a theme sets that the switcher's rows and pins cannot\n  be read on draws the popover's own fill back.\n- A title-bar chip that falls at rest draws its states' own defaults\n  back after it, keeping what the theme sets in a state itself.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme: a fallback draws back only what a state changes, keyed on the states it draws (#4000)\n\n#4039's review:\n\n- B1: a state's partial rule, kept after a fall at rest, no longer counts\n  as written; a state that then falls draws back its whole change, for\n  a part drawn apart and for the chip.\n- B2: after a fall at rest each state keeps only what its own default\n  changes from the rest, and a pair whose look is its own keeps it in a\n  rule keyed on both states (Rule.also): a pinned pin under the pointer\n  keeps the card's fill, a current chip under the pointer the stronger\n  wash, and a focus ring writes no colour over the current chip.\n- B3: where the switcher stands is named by surface (APART_STANDS_ON),\n  not by ground token, so a tooltip or a dialog never falls for a row,\n  and a fill a theme sets is laid over the surface's grounds as drawn.\n  A row's fill is laid over the popover the same way.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme: a state that falls leaves each pair that holds it its own look (#4000)\n\n#4039's second review: a single state's fallback covered the look of\nthe pairs that hold it, with nothing keyed on the pair after it: a\npinned pin under the pointer drew the primary instead of the accent, a\ncurrent chip under the pointer the card's fill instead of the stronger\nwash, and a chip reached from the keyboard lost its wash after its focus\nfell. Each pair that holds a falling state now draws titlebar.css's pair\nlook, keyed on both, and a title-bar chip's falling state draws back only\nwhat it changes from the rest and what the theme set in it.\n\nThe tests resolve the look the parts layer draws on each pair.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T11:37:46Z",
+          "tree_id": "d8f9853c58217ff77ac84e0369be758ec21f542b",
+          "url": "https://github.com/purlis/purlis/commit/6eeac9f7cccbcd01c2c7b11811f6b6c99acdb6cd"
+        },
+        "date": 1793361770440,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.468987,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.451, 0.459, 0.469, 0.470, 0.476 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4009445,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.226, 16.348, 16.401, 16.499, 16.554 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.099976,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.034, 101.913, 102.100, 102.112, 102.678 ms"
           }
         ]
       }
