@@ -6944,7 +6944,7 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Status:** **internal** — bound by the window on macOS while it hears a plane's hooks through
   the session host, and removed as it stops. Only the process that holds `app/hooks.sock`'s
   listener, the session host, is read, and no chat's sandbox reaches it. **purlis only.**
-- **Tier:** Clone state, transient.
+- **Tier:** Clone state, transient — it lasts as long as the window hears the plane.
 - **Written by:** `hookwire::serve::Receiving::bind` (`crates/purlis-core/src/hookwire/serve.rs`,
   in `app/src-tauri/src/hooks.rs`); handed on to by `hookwire::serve::hand_on`.
 - **Git:** gitignored (under `/.charter/`).
