@@ -149,6 +149,9 @@ pub enum AskSource {
     /// A change to the project a chat on a pool's runner asked for, which only the person
     /// applies (#2046).
     RunnerWrite,
+    /// An open or a dispatch a chat on a pool's runner asked for, which starts only on the
+    /// person's Approve.
+    RunnerDispatch,
     /// A prompt shown in the harness's own terminal that purlis holds nothing for.
     Terminal,
     /// A chat whose turn ended with the next move the person's.
@@ -210,6 +213,9 @@ pub enum AnswerPath {
     /// `apply_runner_write` for Apply and `dismiss_runner_write` for Dismiss, on held runner
     /// write `id` (#2046); Open opens its own tab, which shows it whole, and sends nothing.
     RunnerWrite { id: u32 },
+    /// `refuse_runner_dispatch` for Refuse, on held runner dispatch `id`; Open opens its own
+    /// tab, which shows it whole with Approve (`approve_runner_dispatch`), and sends nothing.
+    RunnerDispatch { id: u32 },
     /// Sign in sends nothing: it opens a shell tab where the core types the harness's own
     /// sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
     /// the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
@@ -1399,6 +1405,8 @@ pub const DISMISS: &str = "dismiss";
 /// The id of Open on a proposed change too long for a row (PC-7): it opens the change's own
 /// tab, and answers nothing.
 pub const OPEN: &str = "open";
+/// The id of Refuse on a runner chat's held open or dispatch.
+pub const REFUSE: &str = "refuse";
 
 /// The key of chat `session`'s proposal `id`.
 fn proposal_key(id: u32) -> String {
@@ -1464,6 +1472,31 @@ pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals:
         since: None,
         held_until: None,
         writes,
+        lines: None,
+    }
+}
+
+/// The key of held runner dispatch `id`.
+fn runner_dispatch_key(id: u32) -> String {
+    format!("runner-dispatch:{id}")
+}
+
+/// **The runner dispatch adapter**: an open or a dispatch a chat on a pool's runner asked for,
+/// said in words, held until the person answers. Its row cuts the brief, so **Open** shows it
+/// whole in its own tab, where Approve is pressed; **Refuse** starts nothing. Never "always
+/// approve".
+pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
+    Shown {
+        session: one.session,
+        ask: runner_dispatch_key(one.id),
+        says: said_inertly(&one.said()),
+        options: vec![refuses(OPEN, "Open"), refuses(REFUSE, "Refuse")],
+        source: AskSource::RunnerDispatch,
+        chain: Vec::new(),
+        answer: AnswerPath::RunnerDispatch { id: one.id },
+        since: None,
+        held_until: None,
+        writes: None,
         lines: None,
     }
 }
@@ -1769,6 +1802,8 @@ pub struct Waiting<'a> {
     pub proposals: Vec<(crate::proposals::Proposal, crate::proposals::Now)>,
     /// The changes to the project chats on a pool's runner asked for (#2046).
     pub runner_writes: Vec<crate::runnerwrites::HeldWrite>,
+    /// The opens and dispatches chats on a pool's runner asked for.
+    pub runner_dispatches: Vec<crate::runnerdispatches::HeldDispatch>,
     /// The profiles a start was refused on because they are not signed in here (#2035).
     pub sign_ins: Vec<purlis_core::profilestore::sign_in::Wait>,
     /// The profiles a start on a pool was refused on because they are not signed in on its
@@ -1843,6 +1878,8 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     );
     // And one on a runner that asked to change the project waits on the person too (#2046).
     asks.extend(waiting.runner_writes.iter().map(runner_write));
+    // And one there that asked to start a chat here.
+    asks.extend(waiting.runner_dispatches.iter().map(runner_dispatch));
     // A chat whose first browser call asks the person waits on that answer too (#2013).
     asks.extend(
         waiting
@@ -2026,6 +2063,10 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &runner_writes {
         since.insert(runner_write_key(one.id), one.since);
     }
+    let runner_dispatches = held.runner_dispatches().every();
+    for one in &runner_dispatches {
+        since.insert(runner_dispatch_key(one.id), one.since);
+    }
     let sign_ins = purlis_core::profilestore::sign_in::waiting(root);
     for one in &sign_ins {
         since.insert(format!("sign-in:{}", one.profile.name), one.since);
@@ -2076,6 +2117,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         removals,
         proposals,
         runner_writes,
+        runner_dispatches,
         permissions: permissions.into_iter().map(|(raised, _)| raised).collect(),
         queue,
         at_its_prompt: &|session| board.glance(session).prompt,

@@ -523,6 +523,8 @@ pub fn sign_in_line(pool: &str, name: &str, provider: Option<&str>) -> Result<St
 pub enum PoolSignInStep {
     /// Open this page in the browser here: the harness vendor's own.
     Open { url: String },
+    /// Show this code to enter on the vendor's own page `url`, before that page is opened.
+    Device { url: String, code: String },
     /// Ask for the code the page shows.
     Code,
     /// The harness refused the code, in its words.
@@ -543,6 +545,7 @@ impl From<driven::Event> for PoolSignInStep {
     fn from(event: driven::Event) -> Self {
         match event {
             driven::Event::Open { url } => Self::Open { url },
+            driven::Event::DeviceCode { url, code } => Self::Device { url, code },
             driven::Event::AskCode => Self::Code,
             driven::Event::Refused { said } => Self::Refused { said },
             driven::Event::Checking => Self::Checking,
@@ -609,7 +612,12 @@ pub async fn pool_sign_in_start(
                 _ => Standing::CannotTell,
             }
         };
-        let driving = Arc::new(driven::drive(&login, &record.harness, check)?);
+        let driving = Arc::new(driven::drive_with(
+            &login,
+            &record.harness,
+            provider.as_deref(),
+            check,
+        )?);
         // One of the same profile on the same pool is let go and ended, after the lock.
         let before: Vec<SignIn> = {
             let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);

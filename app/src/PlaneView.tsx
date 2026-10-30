@@ -109,7 +109,7 @@ import { NewBranch } from "./NewBranch";
 import { LinkWorkItem } from "./LinkWorkItem";
 import { RenameWorkspace } from "./RenameWorkspace";
 import { AddVision } from "./AddVision";
-import { cloneRepos, settleRepoClones, useRepoClones } from "./repoClones";
+import { cloneRepos, settleRepoClones, stopRepoClones, useRepoClones } from "./repoClones";
 import { StartChat } from "./StartChat";
 import {
   handedSaid,
@@ -168,6 +168,7 @@ import {
 import { useRemoveWorkspaceAsked } from "./removeWorkspaceAsk";
 import { useOpenProposalAsked } from "./proposedChangeOpen";
 import { useOpenRunnerWriteAsked } from "./runnerWriteOpen";
+import { useOpenRunnerDispatchAsked } from "./runnerDispatchOpen";
 import { BROWSER_ASK_ENDED, useOpenBrowserAsked } from "./browserNeedsYou";
 import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
@@ -187,7 +188,13 @@ import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, useSandboxBlocks } from "./sandboxBlocks";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
-import { reposCloned, reposCloning, reposNotCloned, workspaceMade } from "./actionResult";
+import {
+  reposCloned,
+  reposCloning,
+  reposNotCloned,
+  reposStopped,
+  workspaceMade,
+} from "./actionResult";
 import { Inbox, landOnGroupIn, type UpdateRow, type WindowLines } from "./Inbox";
 import { awayRow } from "./AwayRefusals";
 import {
@@ -4712,21 +4719,33 @@ export const PlaneView = memo(function PlaneView({
       const track = cloneRuns;
       const run = async (repos: string[], before?: Said) => {
         let done = 0;
-        setReport({ ...reposCloning(name, repos, done, track), after: before });
-        const failed = await cloneRepos(plane, name, repos, () => {
-          done += 1;
-          if (done < repos.length) setReport(reposCloning(name, repos, done, track));
-        });
+        const onCancel = () => stopRepoClones(plane, name, repos);
+        setReport({ ...reposCloning(name, repos, done, track, { onCancel }), after: before });
+        const failed = await cloneRepos(
+          plane,
+          name,
+          repos,
+          () => {
+            done += 1;
+            if (done < repos.length)
+              setReport(reposCloning(name, repos, done, track, { onCancel }));
+          },
+          (_, moved) => setReport(reposCloning(name, repos, done, track, { moved, onCancel })),
+        );
+        // Only the ones that did not land, on the same notice.
+        const retry = () => void run(failed.map((one) => one.repo));
+        const refused = failed.filter((one) => one.stopped !== true);
         setReport(
           failed.length === 0
             ? reposCloned(name, repos, track)
-            : reposNotCloned(
-                name,
-                failed,
-                // Only the ones that failed, on the same notice.
-                () => void run(failed.map((one) => one.repo)),
-                track,
-              ),
+            : refused.length === 0
+              ? reposStopped(
+                  name,
+                  failed.map((one) => one.repo),
+                  retry,
+                  track,
+                )
+              : reposNotCloned(name, refused, retry, track),
         );
         setReplan((asked) => asked + 1);
       };
@@ -4895,6 +4914,7 @@ export const PlaneView = memo(function PlaneView({
   useOpenProposalAsked(plane, showView);
   // Open on a runner chat's change its row cannot show whole opens its own tab (#2046).
   useOpenRunnerWriteAsked(plane, showView);
+  useOpenRunnerDispatchAsked(plane, showView);
   /** A browser whose chat asked the person to take it over, taken over from its Ask (#2015):
    *  its view opens, where the bar says they drive and Done hands it back. */
   const showBrowserTakenOver = useCallback(
@@ -6713,15 +6733,19 @@ export const PlaneView = memo(function PlaneView({
       // Read again as each repo lands, so a repo that is cloned leaves "Not cloned here" while
       // the rest of a Clone all is still running. A clone the workspace does not then see is
       // a failure with a Retry — `cloneRepos` checks that for every caller (V91b).
-      const failed = await cloneRepos(plane, workspace, repos, rereadPanels);
-      return failed.length === 0
+      const ended = await cloneRepos(plane, workspace, repos, rereadPanels);
+      // A clone the person stopped is what they asked for: no failure to report.
+      const failed = ended.filter((one) => one.stopped !== true);
+      if (failed.length > 0)
+        return {
+          ok: false,
+          refused:
+            `Could not clone ${failed.map((f) => f.repo).join(", ")} into ${workspace} — ` +
+            failed.map((f) => f.said).join(" "),
+        };
+      return ended.length === 0
         ? { ok: true, said: `Cloned ${repos.join(", ")} into ${workspace}.` }
-        : {
-            ok: false,
-            refused:
-              `Could not clone ${failed.map((f) => f.repo).join(", ")} into ${workspace} — ` +
-              failed.map((f) => f.said).join(" "),
-          };
+        : { ok: true };
     },
     [plane, rereadPanels],
   );

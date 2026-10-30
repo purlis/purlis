@@ -733,6 +733,42 @@ pub fn check_on(
     checked_on(inspected, made, engine, true)
 }
 
+/// The most kept of what a runner's sign-in check prints, on each of its outputs.
+const STANDING_MOST: u64 = 64 * 1024;
+
+/// How long a runner's sign-in check is waited for.
+const STANDING_WITHIN: std::time::Duration = std::time::Duration::from_secs(180);
+
+/// **What `purlis profile sign-in <name> --check` said of `name`, in `printed`**: signed in, not
+/// signed in, or that its harness cannot tell, each by the words that command writes. `Err`, in
+/// the runner's own words cut short, for anything else, such as a profile it does not keep.
+pub fn standing_said(
+    name: &str,
+    printed: &str,
+) -> Result<crate::profilestore::sign_in::Standing, String> {
+    use crate::profilestore::sign_in::Standing;
+    let (signed_in, signed_out) = (
+        format!("'{name}' is signed in "),
+        format!("'{name}' is not "),
+    );
+    for line in printed.lines() {
+        if line.starts_with(&signed_in) {
+            return Ok(Standing::SignedIn);
+        }
+        if line.starts_with(&signed_out) {
+            return Ok(Standing::SignedOut);
+        }
+        if line.contains(&format!("cannot tell whether '{name}'")) {
+            return Ok(Standing::CannotTell);
+        }
+    }
+    let last = printed.lines().rfind(|line| !line.trim().is_empty());
+    Err(format!(
+        "the runner says: {}",
+        crate::shown::short(last.unwrap_or("nothing"))
+    ))
+}
+
 /// What [`Docker::resumed`] did: what it read of the container first, and whether it started it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Resumed {
@@ -2236,6 +2272,46 @@ impl Docker {
         provider: Option<&str>,
     ) -> Result<crate::profilestore::sign_in::Login, String> {
         self.checked_sign_in(made, engine, name, provider, Typed::Driven)
+    }
+
+    /// **Whether the runner says `name` is signed in**, by its own `purlis profile sign-in
+    /// --check` ([`standing_said`]), through the same `docker` as [`Docker::driven_sign_in`]:
+    /// for a sign-in with no link to the runner to ask over (#4046). `Err` where it says neither,
+    /// as for a profile it does not keep.
+    pub fn standing_on_runner(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+    ) -> Result<crate::profilestore::sign_in::Standing, String> {
+        let login = self.driven_sign_in(made, engine, name, None)?;
+        let mut command = std::process::Command::new(&login.program);
+        command
+            .args(&login.args)
+            .arg("--check")
+            .envs(login.env.iter().map(|(n, v)| (n, v)));
+        for name in &login.cleared {
+            command.env_remove(name);
+        }
+        // Bounded, in time and in what is kept of it: the runner's answer is its own. A runner
+        // that fetches the harness first (#4007) is given the time a fetch takes.
+        let ran = crate::boundedrun::run_within(
+            &mut command,
+            None,
+            STANDING_MOST,
+            STANDING_MOST,
+            Some(STANDING_WITHIN),
+        )
+        .map_err(|why| match why {
+            crate::boundedrun::Unanswered::NotStarted(e) => {
+                format!("{} could not be run: {e}", login.program)
+            }
+            crate::boundedrun::Unanswered::PrintedTooMuch => {
+                "it printed more than a status check does".to_owned()
+            }
+            crate::boundedrun::Unanswered::NotFinished(_) => "it did not answer in time".to_owned(),
+        })?;
+        standing_said(name, &String::from_utf8_lossy(&ran.said))
     }
 
     fn checked_sign_in(

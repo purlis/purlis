@@ -607,12 +607,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       " and what adding or removing one of them said (#4047), beside the buttons that did it",
   },
   "settings/PoolSignIn.tsx": {
-    count: 2,
+    count: 3,
     why:
       ACTION +
       ". A profile's sign-in on a pool's runner (#4042), inside its strip: the step it is on, said " +
       "as it changes, and the one line of what went wrong, in the core's or the runner's words; " +
-      "its Try again, Cancel and Open in terminal are the way out",
+      "its Try again, Cancel and Open in terminal are the way out; and whether Copy code put the " +
+      "device code on the clipboard (#4045), beside the button",
   },
   "settings/accounts.tsx": {
     count: 2,
