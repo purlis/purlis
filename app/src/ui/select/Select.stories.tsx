@@ -242,14 +242,17 @@ export const Refused: Story = {
     }
     return <Refusing />;
   },
-  play: async ({ canvas, userEvent }) => {
+  play: async ({ canvas, canvasElement, userEvent }) => {
     const select = theSelect(canvas, "Harness");
     await expect(select).toHaveAttribute("aria-invalid", "true");
     await expect(select).toHaveAccessibleDescription("A persona needs a harness to run.");
     // Why is the field's error part, a live region, under the box.
-    const line = canvas.getByRole("alert");
-    await expect(line).toHaveAttribute("data-part", "error");
-    await expect(line).toHaveAttribute("aria-live", "assertive");
+    const line = canvasElement.querySelector(
+      '[data-scope="field"][data-part="error"]:not([data-whole])',
+    ) as HTMLElement;
+    await expect(line).toHaveTextContent("A persona needs a harness to run.");
+    await expect(line).not.toHaveAttribute("role");
+    await expect(line).toHaveAttribute("aria-live", "polite");
     const box = select.getBoundingClientRect();
     await userEvent.tab();
     await untilFocused(() => select, "Refused: Tab onto the select");

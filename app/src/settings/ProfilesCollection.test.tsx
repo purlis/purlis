@@ -421,6 +421,42 @@ describe("Add profile", () => {
     expect(pages()).not.toContain("default");
   });
 
+  it("says a save refused on several rows once, as one summary, each row's words its own (#3291)", async () => {
+    core({
+      refuseAdd: () =>
+        refusal({
+          fields: [
+            { field: "name", why: "a profile cannot be named 'default'" },
+            { field: "command", why: "no such program on this machine" },
+          ],
+          reasons: [MOVED],
+        }),
+    });
+    await atProject();
+    await open("Harness & profiles");
+    await userEvent.click(screen.getByRole("button", { name: "Add profile" }));
+    const form = screen.getByRole("form", { name: "New profile" });
+    await userEvent.type(within(form).getByLabelText("Name"), "default");
+    await userEvent.type(within(form).getByLabelText("Command"), "claude");
+
+    await userEvent.click(within(form).getByRole("button", { name: "Add profile" }));
+
+    await within(form).findByText("no such program on this machine");
+    const alerts = screen.getAllByRole("alert");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveTextContent(`${MOVED} 2 fields to fix: Name, Command.`);
+    // Each row's words are its control's description, and not heard over the summary.
+    expect(within(form).getByLabelText("Name")).toHaveAccessibleDescription(
+      expect.stringContaining("a profile cannot be named 'default'"),
+    );
+    const lines = [...form.querySelectorAll(".ui-setting-error[aria-live]")];
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+    for (const line of lines) {
+      expect(line).not.toHaveAttribute("role");
+      expect(line).toHaveAttribute("aria-live", "off");
+    }
+  });
+
   it("is undone by removing what it added", async () => {
     const { asked, names } = core();
     await atProject();

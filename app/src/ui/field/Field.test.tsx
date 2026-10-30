@@ -32,6 +32,10 @@ const SEND = { key: "Enter", metaKey: MAC, ctrlKey: !MAC };
 const NAME_RULE = (value: string) =>
   /^[\w.-]*$/.test(value) ? undefined : "A name is letters, digits, ., _ and -.";
 
+/** The live line under the one field drawn: what is said of it, heard and described. */
+const errorLine = () =>
+  document.querySelector('[data-scope="field"][data-part="error"]:not([data-whole])') as Element;
+
 describe("a text field", () => {
   it("is its label, its box, its help and its error, as one", () => {
     render(
@@ -156,7 +160,7 @@ describe("inline validation (N26)", () => {
     expect(screen.queryByRole("alert")).toBeNull();
     expect(box).not.toHaveAttribute("aria-invalid");
     await userEvent.tab();
-    expect(screen.getByRole("alert")).toHaveTextContent("A name is letters, digits, ., _ and -.");
+    expect(errorLine()).toHaveTextContent("A name is letters, digits, ., _ and -.");
     expect(box).toHaveAttribute("aria-invalid", "true");
     expect(box).toHaveAccessibleDescription("A name is letters, digits, ., _ and -.");
   });
@@ -182,8 +186,9 @@ describe("inline validation (N26)", () => {
     render(<Held label="Name" validate={NAME_RULE} />);
     const line = document.querySelector('[data-scope="field"][data-part="error"]') as Element;
     // In the accessibility tree before it says anything (#3033): a live region that is already
-    // there when its words land is announced by VoiceOver on WebKit. Empty, it is no alert.
-    expect(line).toHaveAttribute("aria-live", "assertive");
+    // there when its words land is announced by VoiceOver on WebKit. Polite (#3291): it waits
+    // for the typing echo, and is never an alert as well.
+    expect(line).toHaveAttribute("aria-live", "polite");
     expect(line).toHaveAttribute("aria-atomic", "true");
     expect(line).not.toHaveAttribute("aria-hidden");
     expect(line).not.toHaveAttribute("role");
@@ -195,8 +200,11 @@ describe("inline validation (N26)", () => {
     // The same element, now saying why: no part comes or goes, so the field keeps its height.
     expect(document.querySelector('[data-part="error"]')).toBe(line);
     expect(line).toHaveTextContent("A name is letters");
-    expect(line).toHaveAttribute("role", "alert");
-    expect(line).toHaveAttribute("aria-live", "assertive");
+    // One signal (#3291): a live region whose words change, never an alert in the same render.
+    expect(line).not.toHaveAttribute("role");
+    expect(line).toHaveAttribute("aria-live", "polite");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(box).toHaveAccessibleDescription("A name is letters, digits, ., _ and -.");
     expect(drawnWith(line, "block-size")).toBe(
       "calc(var(--font-size-xs) * var(--line-height-body))",
     );
@@ -209,7 +217,7 @@ describe("inline validation (N26)", () => {
     await userEvent.click(box);
     await userEvent.keyboard("e");
     await userEvent.tab();
-    expect(screen.getByRole("alert")).toHaveTextContent("A name is letters");
+    expect(box).toHaveAccessibleDescription("A name is letters, digits, ., _ and -.");
     await userEvent.click(box);
     await userEvent.clear(box);
     await userEvent.type(box, "my-name");
@@ -235,7 +243,7 @@ describe("inline validation (N26)", () => {
     expect(box.parentElement).toHaveAttribute("data-scope", "textarea");
     await userEvent.type(box, "a b");
     await userEvent.tab();
-    expect(screen.getByRole("alert")).toHaveTextContent("One host per line.");
+    expect(errorLine()).toHaveTextContent("One host per line.");
   });
 });
 
@@ -342,7 +350,8 @@ describe("a form (N26)", () => {
     });
     expect(sent).not.toHaveBeenCalled();
     expect(name).toHaveFocus();
-    expect(screen.getByRole("alert")).toHaveTextContent("A name is letters");
+    expect(screen.getByRole("alert")).toHaveTextContent("1 field to fix: Name");
+    expect(name).toHaveAccessibleDescription("A name is letters, digits, ., _ and -.");
   });
 
   it("checks a field the person never left before it is sent", async () => {
@@ -358,7 +367,79 @@ describe("a form (N26)", () => {
     render(<Untouched />);
     await userEvent.click(screen.getByRole("button", { name: "Rename" }));
     expect(sent).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("1 field to fix: Name");
+  });
+});
+
+/** A form with two fields that refuse, each a line of its own. */
+function TwoRefusing({ sent }: { sent: () => void }) {
+  const [name, setName] = useState("a b");
+  const [port, setPort] = useState("http");
+  return (
+    <Form aria-label="New host" onSubmit={(e) => (e.preventDefault(), sent())}>
+      <TextField label="Name" value={name} onChange={setName} validate={NAME_RULE} />
+      <TextField
+        label="Port"
+        value={port}
+        onChange={setPort}
+        validate={(v) => (/^\d+$/.test(v) ? undefined : "A port is a number.")}
+      />
+      <Button type="submit">Add</Button>
+    </Form>
+  );
+}
+
+describe("one signal per refusal (#3291)", () => {
+  const lines = () => [
+    ...document.querySelectorAll('[data-scope="field"][data-part="error"]:not([data-whole])'),
+  ];
+
+  it("says a refused send once, as one alert summary, and each field keeps its own words", async () => {
+    const sent = vi.fn();
+    render(<TwoRefusing sent={sent} />);
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(sent).not.toHaveBeenCalled();
+    const alerts = screen.getAllByRole("alert");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveTextContent("2 fields to fix: Name, Port");
+    // The fields' lines got their words in the same render: they are not heard over the summary.
+    const [name, port] = lines();
+    expect(name).toHaveTextContent("A name is letters");
+    expect(port).toHaveTextContent("A port is a number.");
+    for (const line of lines()) {
+      expect(line).not.toHaveAttribute("role");
+      expect(line).toHaveAttribute("aria-live", "off");
+    }
+    // Each field's error is reachable from its field.
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveFocus();
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveAccessibleDescription(
+      "A name is letters, digits, ., _ and -.",
+    );
+    expect(screen.getByRole("textbox", { name: "Port" })).toHaveAccessibleDescription(
+      "A port is a number.",
+    );
+  });
+
+  it("is heard field by field again, politely, once the person changes something", async () => {
+    render(<TwoRefusing sent={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    const box = screen.getByRole("textbox", { name: "Port" });
+    await userEvent.clear(box);
+    await userEvent.type(box, "80");
+    expect(screen.queryByRole("alert")).toBeNull();
+    for (const line of lines()) expect(line).toHaveAttribute("aria-live", "polite");
+    expect(lines()[1]).toBeEmptyDOMElement();
+  });
+
+  it("says the summary anew when the send is refused again", async () => {
+    render(<TwoRefusing sent={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    const box = screen.getByRole("textbox", { name: "Port" });
+    await userEvent.clear(box);
+    await userEvent.type(box, "80");
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getByRole("alert")).toHaveTextContent("1 field to fix: Name");
   });
 });
 
@@ -543,7 +624,7 @@ describe("a refusal too long for its line (#3033)", () => {
       const box = screen.getByRole("textbox", { name: "Profile" });
       expect(box).toHaveAttribute("aria-invalid", "true");
       expect(box).toHaveAccessibleDescription(LONG);
-      const line = screen.getByRole("alert");
+      const line = errorLine();
       expect(roomOf(line)).toHaveAttribute("data-clipped");
       const whole = wholeOf(line) as Element;
       expect(whole).toHaveTextContent(LONG);
@@ -571,7 +652,7 @@ describe("a refusal too long for its line (#3033)", () => {
     } as unknown as typeof ResizeObserver;
     try {
       render(<TextField aria-label="Profile" error={LONG} value="x" onChange={() => {}} />);
-      const line = screen.getByRole("alert");
+      const line = errorLine();
       expect(wholeOf(line)).toBeNull();
       const changes: MutationRecord[] = [];
       const watch = new MutationObserver((records) => changes.push(...records));
@@ -601,7 +682,7 @@ describe("a refusal too long for its line (#3033)", () => {
     const restore = narrow();
     try {
       render(<TextField aria-label="Profile" error={LONG} value="x" onChange={() => {}} />);
-      const line = screen.getByRole("alert");
+      const line = errorLine();
       const room = roomOf(line);
       const whole = wholeOf(line) as Element;
       expect(drawnWith(whole, "display")).toBe("none");
@@ -640,7 +721,7 @@ describe("a refusal too long for its line (#3033)", () => {
       expect(into).not.toHaveBeenCalled();
       act(() => screen.getByRole("textbox", { name: "Profile" }).focus());
       expect(into).toHaveBeenCalledWith({ block: "nearest" });
-      expect(into.mock.contexts[0]).toBe(wholeOf(screen.getByRole("alert")));
+      expect(into.mock.contexts[0]).toBe(wholeOf(errorLine()));
     } finally {
       HTMLElement.prototype.scrollIntoView = had;
       restore();
@@ -649,7 +730,7 @@ describe("a refusal too long for its line (#3033)", () => {
 
   it("is drawn on its line alone when it fits, with no copy", () => {
     render(<TextField aria-label="Colour" error="Not a colour." value="x" onChange={() => {}} />);
-    const line = screen.getByRole("alert");
+    const line = errorLine();
     expect(roomOf(line)).not.toHaveAttribute("data-clipped");
     expect(wholeOf(line)).toBeNull();
   });
@@ -661,7 +742,7 @@ describe("a refusal too long for its line (#3033)", () => {
       const box = screen.getByLabelText("Token");
       expect(box).toHaveAttribute("aria-invalid", "true");
       expect(box).toHaveAccessibleDescription(LONG);
-      expect(roomOf(screen.getByRole("alert"))).toHaveAttribute("data-clipped");
+      expect(roomOf(errorLine())).toHaveAttribute("data-clipped");
     } finally {
       restore();
     }
