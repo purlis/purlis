@@ -17,7 +17,7 @@ const LINES = [
   '⬢ No vision yet — ask the developer what this workspace is for, then record it: purlis workspace vision "<the goal>"',
 ];
 
-function Result() {
+function Result({ noChip = false }: { noChip?: boolean }) {
   const [said, setSaid] = useState("Nothing pressed");
   const [closed, setClosed] = useState(false);
   const made = workspaceMade("git-ci-cd", LINES, {
@@ -34,6 +34,12 @@ function Result() {
           said={made}
           onClose={() => setClosed(true)}
           onSettings={() => undefined}
+          kept={noChip}
+          opens={
+            noChip
+              ? { label: "Open git-ci-cd", onPress: () => setSaid("Went to git-ci-cd") }
+              : undefined
+          }
         />
       )}
       <p style={{ margin: 0 }} data-testid="said">
@@ -76,5 +82,21 @@ export const Closes: Story = {
     canvas.getByRole("button", { name: "Add a vision" }).focus();
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(canvas.getByTestId("said")).toHaveTextContent("Closed"));
+  },
+};
+
+/**
+ * **A notice about a workspace with no chip** (#3651, D-3648-16), as the Notices centre lists it:
+ * nothing floats over a chip for it, so the line offers "Open git-ci-cd", its link, which goes
+ * there.
+ */
+export const WithNoChipOffersOpen: Story = {
+  args: { noChip: true },
+  play: async ({ canvas, userEvent }) => {
+    const open = canvas.getByRole("button", { name: "Open git-ci-cd" });
+    await expect(open).toHaveAttribute("data-way", "link");
+    open.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect(canvas.getByTestId("said")).toHaveTextContent("Went to git-ci-cd");
   },
 };

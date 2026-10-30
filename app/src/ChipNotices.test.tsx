@@ -203,3 +203,87 @@ describe("a clone's notice updated in place (#3649)", () => {
     expect(result.current.on.get("docs")).toHaveLength(1);
   });
 });
+
+describe("standing lines and dormant chips on a card (#3651)", () => {
+  const DORMANT: readonly Chip[] = [...CHIPS, { workspace: "gone", look: "dormant" }];
+  const line = (workspace: string) => ({
+    workspace,
+    cause: `pin-dormant:${workspace}`,
+    says: `${workspace} is gone, kept dormant`,
+    fixes: [],
+    dismiss: () => undefined,
+  });
+
+  it("sorts the results newest first, then the standing line after them, of kind info", () => {
+    const older: Said = { ...made("gone"), title: "older" };
+    const newer: Said = { ...made("gone"), title: "newer" };
+    const { result } = renderHook(() =>
+      useChipNotices({
+        said: undefined,
+        kept: [
+          { id: 1, said: older, plane: A },
+          { id: 2, said: newer, plane: A },
+        ],
+        plane: A,
+        chips: DORMANT,
+        drop: () => undefined,
+        onSettings: () => undefined,
+        standing: [line("gone")],
+      }),
+    );
+    const on = result.current.on.get("gone") ?? [];
+    expect(on.map((one) => one.id)).toEqual([2, 1, "pin-dormant:gone"]);
+    expect(on[2].kind).toBe("info");
+  });
+
+  it("offers no way to act in a dormant workspace: its words, without its ways", () => {
+    const ready: Said = {
+      ...made("gone"),
+      ways: [{ label: "Add a vision", onPress: () => undefined, primary: true }],
+    };
+    const { result } = renderHook(() =>
+      useChipNotices({
+        said: undefined,
+        kept: [{ id: 1, said: ready, plane: A }],
+        plane: A,
+        chips: DORMANT,
+        drop: () => undefined,
+        onSettings: () => undefined,
+      }),
+    );
+    const [one] = result.current.on.get("gone") ?? [];
+    expect(one !== undefined && "said" in one ? one.said.ways : undefined).toEqual([]);
+    expect(one !== undefined && "said" in one ? one.said.title : undefined).toBe(
+      "Workspace gone is ready",
+    );
+  });
+
+  it("brings back a standing line dismissed before, as a dormant chip's press asks", () => {
+    let standing = [line("gone")];
+    const asked: string[] = [];
+    const { result, rerender } = renderHook(() =>
+      useChipNotices({
+        said: undefined,
+        kept: [],
+        plane: A,
+        chips: DORMANT,
+        drop: () => undefined,
+        onSettings: () => undefined,
+        standing,
+        bringBack: (workspace) => {
+          asked.push(workspace);
+          standing = [line(workspace)];
+        },
+      }),
+    );
+    // Dismissed: nothing on the chip, and no card.
+    standing = [];
+    rerender();
+    expect(result.current.on.has("gone")).toBe(false);
+    // The chip's press brings it back, and its card is up in the same render.
+    act(() => result.current.show("gone"));
+    rerender();
+    expect(asked).toEqual(["gone"]);
+    expect(result.current.open).toBe("gone");
+  });
+});

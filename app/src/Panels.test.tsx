@@ -1223,7 +1223,8 @@ describe("a panel's words, each on its text role (#1920)", () => {
 
     const [empty] = screen.getAllByText("No workspace focused.");
     wears(empty, "secondary", "the empty sentence");
-    expect(drawnWith(empty, "opacity")).toBe("1");
+    // The role's colour is what makes it quiet: no rule fades it (#3790).
+    expect(drawnWith(empty, "opacity")).toBeUndefined();
   });
 });
 

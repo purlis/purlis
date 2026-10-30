@@ -978,3 +978,122 @@ fn a_bad_price_refuses_the_file_and_says_which_pool_and_how_to_write_it() {
             .unwrap();
     }
 }
+
+#[test]
+fn a_cluster_pools_row_of_another_shape_refuses_the_file_whole_and_never_replaces_it() {
+    let config = tempfile::tempdir().unwrap();
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
+    let key = format!("ed25519:{}", "ab".repeat(32));
+    let pool_row = serde_json::json!({
+        "name": "team", "kind": "cluster", "kubeconfig": "/home/ada/.kube/config",
+        "context": "team", "pool": "default", "namespace": "ada", "operatorKey": key,
+        "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
+        "holds": ["/opt/homebrew/bin/kubectl"],
+    });
+    let runner_row = serde_json::json!({
+        "name": "team", "pool": "cluster", "namespace": "ada", "claim": "team-1",
+        "claimUid": "6f1c2b8e-0f43-4c2e-9d7a-1b2c3d4e5f60", "requester": "ada@example.com",
+        "pod": "team-1", "device": "01JB0RUNNER0000000000000000", "key": "4d".repeat(32),
+        "paired": 1_800_000_000_u64,
+    });
+    let file = |pool: &serde_json::Value, runner: &serde_json::Value| {
+        serde_json::json!({ "version": 1, "runners": [runner], "pools": [pool] }).to_string()
+    };
+    // As purlis writes it, it is read.
+    folder
+        .replace_file(
+            crate::machine::RUNNERS_FILE,
+            file(&pool_row, &runner_row).as_bytes(),
+        )
+        .unwrap();
+    let (cluster, kept) = cluster_runner_for(config.path(), "team").unwrap().unwrap();
+    assert_eq!(cluster.operator().spelled(), key);
+    // A pool kept with its key alone, before its cluster was pinned (#3305), is read, and
+    // reaches no runner: it is to be added again.
+    let mut keyed_alone = pool_row.clone();
+    keyed_alone.as_object_mut().unwrap().remove("cluster");
+    folder
+        .replace_file(
+            crate::machine::RUNNERS_FILE,
+            file(&keyed_alone, &runner_row).as_bytes(),
+        )
+        .unwrap();
+    assert_eq!(cluster_pools(config.path()).unwrap().len(), 1);
+    let refused = cluster_runner_for(config.path(), "team").unwrap_err();
+    assert!(refused.to_string().contains("add it again"), "{refused}");
+    assert_eq!(kept.pod, "team-1");
+    let pool_with = |change: &dyn Fn(&mut serde_json::Value)| {
+        let mut row = pool_row.clone();
+        change(&mut row);
+        file(&row, &runner_row)
+    };
+    let runner_with = |change: &dyn Fn(&mut serde_json::Value)| {
+        let mut row = runner_row.clone();
+        change(&mut row);
+        file(&pool_row, &row)
+    };
+    for text in [
+        pool_with(&|row| row["kubeconfig"] = "kube/config".into()),
+        pool_with(&|row| row["context"] = "--server=evil".into()),
+        pool_with(&|row| row["pool"] = "Default".into()),
+        pool_with(&|row| row["namespace"] = "a.b".into()),
+        pool_with(&|row| row["operatorKey"] = "ab".repeat(32).into()),
+        pool_with(&|row| row["cluster"] = "kube-system".into()),
+        pool_with(&|row| row["holds"] = serde_json::json!(["kubectl"])),
+        pool_with(&|row| {
+            row.as_object_mut().unwrap().remove("holds");
+        }),
+        pool_with(&|row| row["image"] = IMAGE.into()),
+        pool_with(&|row| {
+            row.as_object_mut().unwrap().remove("operatorKey");
+        }),
+        runner_with(&|row| row["name"] = "other".into()),
+        runner_with(&|row| row["pod"] = "pod/team-1".into()),
+        runner_with(&|row| row["claimUid"] = "1".into()),
+        runner_with(&|row| row["container"] = ID.into()),
+        runner_with(&|row| {
+            row.as_object_mut().unwrap().remove("requester");
+        }),
+    ] {
+        folder
+            .replace_file(crate::machine::RUNNERS_FILE, text.as_bytes())
+            .unwrap();
+        assert!(pools(config.path()).is_err(), "{text} was read");
+        assert!(cluster_pools(config.path()).is_err(), "{text} was read");
+        assert!(record_pool(config.path(), &pool("other", Set::default())).is_err());
+        let there =
+            std::fs::read_to_string(folder.path().join(crate::machine::RUNNERS_FILE)).unwrap();
+        assert_eq!(there, text, "the file was replaced");
+    }
+}
+
+#[test]
+fn every_cluster_pools_programs_are_held_with_their_folders() {
+    let config = tempfile::tempdir().unwrap();
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
+    let row = |name: &str, holds: serde_json::Value| {
+        serde_json::json!({
+            "name": name, "kind": "cluster", "kubeconfig": "/home/ada/.kube/config",
+            "context": "team", "pool": "default", "namespace": "ada",
+            "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
+            "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b", "holds": holds,
+        })
+    };
+    let file = serde_json::json!({ "version": 1, "runners": [], "pools": [
+        row("team", serde_json::json!(["/opt/homebrew/bin/kubectl", "/opt/homebrew/bin/gke-gcloud-auth-plugin"])),
+        row("lab", serde_json::json!(["/opt/homebrew/bin/kubectl"])),
+    ]});
+    folder
+        .replace_file(crate::machine::RUNNERS_FILE, file.to_string().as_bytes())
+        .unwrap();
+    assert_eq!(
+        cluster_holds(config.path()),
+        [
+            std::path::PathBuf::from("/opt/homebrew/bin/kubectl"),
+            std::path::PathBuf::from("/opt/homebrew/bin"),
+            std::path::PathBuf::from("/opt/homebrew/bin/gke-gcloud-auth-plugin"),
+        ]
+    );
+}

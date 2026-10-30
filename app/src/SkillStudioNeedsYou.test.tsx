@@ -118,6 +118,35 @@ describe("Needs you", () => {
     );
   });
 
+  it("accepts the project's folders it lists, as one item", async () => {
+    const asked = core(
+      studio([DEPLOY], {
+        needs: [
+          need("review:project-folders", {
+            title: "The project's folders",
+            tag: null,
+            reason:
+              "Purlis can't confirm which of this project's folders you accepted before. It accepts workspaces/ops, personas/steward.",
+            fix: { kind: "accept-folders", folders: ["workspaces/ops", "personas/steward"] },
+            fix_label: "Accept the folders",
+            fix_does: "Their skills reach chats from then on.",
+          }),
+        ],
+      }),
+    );
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "needs");
+
+    await user.click(await screen.findByRole("button", { name: "Accept the folders" }));
+
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_levels_confirm")?.args).toEqual({
+        plane: "p",
+        folders: ["workspaces/ops", "personas/steward"],
+      }),
+    );
+  });
+
   it("renames a clash's copy from its page, with Rename open", async () => {
     core(studio([DEPLOY], { needs: [NEEDS[1]] }));
     const user = userEvent.setup();

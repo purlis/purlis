@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState, type ReactNode } from "react";
-import type { PoolLink, PoolRow, PoolVersion, ProjectNotHeld } from "../bindings";
+import type { ClusterPoolRow, PoolLink, PoolRow, PoolVersion, ProjectNotHeld } from "../bindings";
 import { Notice } from "../Notice";
 import { useProjectsNotHeld } from "../notheld";
 import { askLink, askVersion, removePool, startAddingAPool, usePools } from "../pools";
@@ -39,12 +39,17 @@ import { PoolProfiles } from "./PoolProfiles";
  *
  * **Every Remove asks first** ({@link RemovePool}): it says what goes and that there is no undo,
  * and Remove pool removes it.
+ *
+ * **A cluster pool has a row of its own** ({@link ClusterPoolEntry}, #3292): its cluster's pool,
+ * context and namespace, the cluster operator key pinned as it was added, and Remove, which
+ * deletes its claim. A changed runner key and a changed cluster operator key get the same Notice
+ * with Remove ({@link KeyChangedNotice}): either refuses every link to its runner.
  */
 export function poolsGroup(plane?: string): SettingsGroup {
   return {
     id: POOLS,
     label: "Pools",
-    help: "The Docker pools on this machine. Each runs a runner: a container of its image on your Docker, held to its limits and paired with this machine.",
+    help: "The pools on this machine. Each runs a runner paired with this machine: a container of its image on your Docker, held to its limits, or a runner claimed in your team's cluster.",
     sub: true,
     settings: [poolsList(plane)],
   };
@@ -64,7 +69,7 @@ function limitsSaid(pool: PoolRow): string {
 function linkSaid(link: PoolLink | "asking" | undefined): string | undefined {
   if (link === undefined || link === "asking") return "asking its runner…";
   if (link.state === "linked") return "linked";
-  if (link.state === "key_changed") return "key changed";
+  if (link.state === "key_changed" || link.state === "operator_key_changed") return "key changed";
   if (link.state === "suspended") return "suspended";
   return "not linked";
 }
@@ -128,10 +133,13 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
  */
 export function RemovePool({
   name,
+  cluster = false,
   onRemove,
   onCancel,
 }: {
   name: string;
+  /** A cluster pool's (#3292): its claim is deleted, and its runner with it. */
+  cluster?: boolean;
   onRemove: () => void;
   onCancel: () => void;
 }) {
@@ -141,8 +149,9 @@ export function RemovePool({
       title={`Remove pool ${name}?`}
       description={
         <p className="came-back">
-          Its runner&apos;s container and home are removed from your Docker, with everything chats
-          left in them, and this machine is taken out of the runner&apos;s peers. There is no undo.
+          {cluster
+            ? "Its runner's claim is deleted from your team's cluster, and its runner with it, with everything chats left there, and this machine is taken out of the runner's peers. There is no undo."
+            : "Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo."}
         </p>
       }
       main={{ children: "Remove pool", variant: "danger", onPress: onRemove }}
@@ -187,16 +196,7 @@ function PoolEntry({
         {removing ? "Removing…" : "Remove"}
       </Button>
       <p className="ui-setting-help">{suspendSaid(pool, version)}</p>
-      {typeof link === "object" && link.state === "key_changed" && (
-        <Notice
-          cause={`pool-key-changed:${pool.name}`}
-          tone="trouble"
-          fixes={[{ label: "Remove", onPress: remove, busy: removing }]}
-        >
-          Pool {pool.name}&apos;s runner answered with another key than the one this machine paired
-          with, so purlis no longer links to it. Remove it, then add the pool again.
-        </Notice>
-      )}
+      <KeyChangedNotice name={pool.name} link={link} removing={removing} onRemove={remove} />
       {typeof link === "object" && link.state === "down" && (
         <p className="ui-setting-help">{link.why}</p>
       )}
@@ -205,6 +205,79 @@ function PoolEntry({
       )}
       {notHeld}
       {profiles}
+    </li>
+  );
+}
+
+/**
+ * **A pool's runner key, or its cluster operator key, changed** (#3292): either refuses every
+ * link to its runner, so the row says which, with Remove.
+ */
+function KeyChangedNotice({
+  name,
+  link,
+  removing,
+  onRemove,
+}: {
+  name: string;
+  link: PoolLink | "asking" | undefined;
+  removing: boolean;
+  onRemove: () => void;
+}) {
+  if (typeof link !== "object") return null;
+  if (link.state !== "key_changed" && link.state !== "operator_key_changed") return null;
+  return (
+    <Notice
+      cause={`pool-key-changed:${name}`}
+      tone="trouble"
+      fixes={[{ label: "Remove", onPress: onRemove, busy: removing }]}
+    >
+      {link.state === "key_changed"
+        ? `Pool ${name}'s runner answered with another key than the one this machine paired with, so purlis no longer links to it. Remove it, then add the pool again.`
+        : `Pool ${name}'s cluster now names another cluster operator key than the one this machine pinned, so purlis no longer links to its runner. Check the new key with your cluster's admin, then remove the pool and add it again.`}
+    </Notice>
+  );
+}
+
+/** A cluster pool's row (#3292): its cluster's pool, where it is claimed, and Remove. */
+function ClusterPoolEntry({
+  pool,
+  link,
+  removing,
+  onAsk,
+  notHeld,
+}: {
+  pool: ClusterPoolRow;
+  link: PoolLink | "asking" | undefined;
+  removing: boolean;
+  /** Asks whether to remove it. */
+  onAsk: () => void;
+  /** The marks of projects whose chats run on it, drawn on its row. */
+  notHeld: ReactNode;
+}) {
+  return (
+    <li className="ui-machine-entry">
+      <span className="ui-machine-name">{pool.name}</span>
+      <span className="ui-machine-path">
+        Pool {pool.pool} in {pool.context}, namespace {pool.namespace}
+      </span>
+      <Badge variant="accent">{linkSaid(link)}</Badge>
+      <Button
+        size="sm"
+        aria-label={removing ? `Removing pool ${pool.name}` : `Remove pool ${pool.name}`}
+        aria-disabled={removing}
+        onPress={removing ? undefined : onAsk}
+      >
+        {removing ? "Removing…" : "Remove"}
+      </Button>
+      <p className="ui-setting-help">
+        Cluster operator key <code>{pool.operator_key}</code>
+      </p>
+      <KeyChangedNotice name={pool.name} link={link} removing={removing} onRemove={onAsk} />
+      {typeof link === "object" && link.state === "down" && (
+        <p className="ui-setting-help">{link.why}</p>
+      )}
+      {notHeld}
     </li>
   );
 }
@@ -232,8 +305,8 @@ export function NotHeldNotice({
 
 const poolsList = (plane: string | undefined): LiveSetting => ({
   id: `${POOLS}.list`,
-  label: "Docker pools",
-  help: "Remove takes this machine out of the runner's peers while it answers, then removes its container and home. There is no undo.",
+  label: "Pools on this machine",
+  help: "Remove takes this machine out of the runner's peers while it answers, then removes a Docker pool's container and home, or releases a cluster pool's claim in its cluster. There is no undo.",
   useControl: function usePoolsList() {
     const now = usePools();
     const notHeld = useProjectsNotHeld();
@@ -241,7 +314,11 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
     const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
     const [asking, setAsking] = useState<string | undefined>();
     const shown = notHeld.filter((one) => !dismissed.has(`${one.root}\u0000${one.why}`));
-    const pools = now.read.state === "read" ? now.read.shown.pools.map((one) => one.name) : [];
+    const clusters = now.read.state === "read" ? (now.read.shown.clusters ?? []) : [];
+    const pools =
+      now.read.state === "read"
+        ? [...now.read.shown.pools.map((one) => one.name), ...clusters.map((one) => one.name)]
+        : [];
     // Drawn once, on the row of the first pool it runs on that is listed here.
     const rowOf = (one: ProjectNotHeld) => one.pools.find((pool) => pools.includes(pool));
     const marks = (of: readonly ProjectNotHeld[]) =>
@@ -256,6 +333,7 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
       ));
     const names = now.read.state === "read" ? now.read.shown.pools.map((one) => one.name) : [];
     const asked = names.join("\u0000");
+    const clustersAsked = clusters.map((one) => one.name).join("\u0000");
     // Each runner is asked once, as the group comes on screen or a pool is added.
     useEffect(() => {
       for (const name of asked === "" ? [] : asked.split("\u0000")) {
@@ -263,6 +341,12 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
         void askVersion(name);
       }
     }, [asked]);
+    // A cluster pool's runner runs the cluster's version, which purlis does not move (#3292).
+    useEffect(() => {
+      for (const name of clustersAsked === "" ? [] : clustersAsked.split("\u0000")) {
+        void askLink(name);
+      }
+    }, [clustersAsked]);
     return {
       grouped: true,
       error: now.said === undefined ? undefined : [now.said],
@@ -275,7 +359,7 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
             </p>
           )}
           {now.read.state === "read" &&
-            (now.read.shown.pools.length === 0 ? (
+            (pools.length === 0 ? (
               <p className="ui-setting-help">No pool is on this machine.</p>
             ) : (
               <ul className="ui-machine-list">
@@ -291,11 +375,22 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
                     profiles={<PoolProfiles pool={pool.name} plane={plane} />}
                   />
                 ))}
+                {clusters.map((pool) => (
+                  <ClusterPoolEntry
+                    key={pool.name}
+                    pool={pool}
+                    link={now.links[pool.name]}
+                    removing={now.removing === pool.name}
+                    onAsk={() => setAsking(pool.name)}
+                    notHeld={marks(shown.filter((one) => rowOf(one) === pool.name))}
+                  />
+                ))}
               </ul>
             ))}
           {asking !== undefined && (
             <RemovePool
               name={asking}
+              cluster={clusters.some((one) => one.name === asking)}
               onCancel={() => setAsking(undefined)}
               onRemove={() => {
                 setAsking(undefined);
@@ -305,7 +400,7 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
           )}
           {/* A project whose pool this machine cannot name is marked under the list. */}
           {marks(shown.filter((one) => rowOf(one) === undefined))}
-          <Button onPress={startAddingAPool}>Add a Docker pool…</Button>
+          <Button onPress={() => startAddingAPool()}>Add a pool…</Button>
         </div>
       ),
     };

@@ -207,6 +207,25 @@ pub(crate) async fn skill_level_accept(
     .await
 }
 
+/// **Accepts the workspace and persona folders `folders` the studio listed** (#3718), each there
+/// now: the person's one press where purlis cannot confirm which of them they accepted before
+/// (`levels::to_confirm`).
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_levels_confirm(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    folders: Vec<String>,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("accepting the project's folders", move || {
+        crate::skillchange::flag_on()?;
+        purlis_core::skills::levels::confirm(held.root(), &folders)?;
+        Ok(SkillChanged::default())
+    })
+    .await
+}
+
 /// **Rejects a draft**: deletes it.
 #[tauri::command]
 #[specta::specta]

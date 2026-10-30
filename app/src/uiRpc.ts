@@ -1018,6 +1018,14 @@ export const commands = {
 	skillTurn: __WINDOW_ONLY_RESULT,
 	skillPin: __WINDOW_ONLY_RESULT,
 	/**
+	 *  **The router extensions the Skill studio's Change… offers**, beside the built-in router
+	 *  (#3692): each approved here, on in the project, and declaring `skill-router`. Read when the
+	 *  dialog opens, never with the studio, so opening a chat or the studio asks no extension's
+	 *  manifest.
+	 */
+	skillRouters: (plane: PlaneId) => typedError<SkillRouterOffer[], string>(__TAURI_INVOKE("skill_routers", { plane })),
+	skillRouterChoose: __WINDOW_ONLY_RESULT,
+	/**
 	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
 	 *  owners, and the skills it names and that name it. Nothing while the flag is off.
 	 */
@@ -1040,6 +1048,7 @@ export const commands = {
 	skillDraftRedo: __WINDOW_ONLY_RESULT,
 	skillDraftRedoIn: __WINDOW_ONLY_RESULT,
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
+	skillLevelsConfirm: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
 	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model })),
 	skillGradeStart: __WINDOW_ONLY_RESULT,
@@ -1464,6 +1473,9 @@ export const commands = {
 	removeDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
+	clusterContexts: __WINDOW_ONLY_RESULT,
+	clusterPoolKey: __WINDOW_ONLY_RESULT,
+	addClusterPool: __WINDOW_ONLY_RESULT,
 	poolProfiles: __WINDOW_ONLY_RESULT,
 	devices: __WINDOW_ONLY_RESULT,
 	deviceRunner: __WINDOW_ONLY_RESULT,
@@ -3674,6 +3686,48 @@ export type ClosingChat = {
 	running: string[],
 };
 
+/**  The contexts of a kubeconfig, as the Add a pool dialog offers them. */
+export type ClusterContexts = {
+	/**  The kubeconfig read, by its absolute path. */
+	kubeconfig: string,
+	contexts: string[],
+	/**  The context it is on, where it names one. */
+	current: string | null,
+};
+
+/**  A cluster pool as the person typed it, with the key they checked. */
+export type ClusterPoolAdding = {
+	name: string,
+	/**  The kubeconfig, by its path; empty or none is kubectl's own default, `~/.kube/config`. */
+	kubeconfig: string | null,
+	context: string,
+	/**  The cluster's Pool. */
+	pool: string,
+	/**  The cluster operator key Check its key showed, spelled as it showed it. */
+	key: string,
+};
+
+/**  What Check its key read of a cluster's Pool. */
+export type ClusterPoolKey = {
+	/**  The cluster operator key the Pool's status names, spelled as it gives it. */
+	key: string,
+	/**  The namespace the context names, where the pool's claim would be made. */
+	namespace: string,
+};
+
+/**  One cluster pool, as its row draws it. */
+export type ClusterPoolRow = {
+	name: string,
+	/**  The kubeconfig's context its kubectl is pointed at. */
+	context: string,
+	/**  The cluster's Pool its runner is claimed from. */
+	pool: string,
+	/**  The namespace its claim is made in. */
+	namespace: string,
+	/**  The cluster operator key pinned as it was added, spelled `ed25519:<64 hex>`. */
+	operator_key: string,
+};
+
 /**  What a palette command does. */
 export type CommandDoes = 
 /**  Opens one of its views, as the view's own button does. */
@@ -3786,6 +3840,11 @@ export type DeletedSkill = {
 	 *  after its days, for `purlis skill restore`; else this machine keeps it, and removes it then.
 	 */
 	in_history: boolean,
+	/**
+	 *  Whether its name belongs to a built-in skill now (a newer purlis ships one of that name),
+	 *  so it comes back only under a new name (#3729).
+	 */
+	reserved: boolean,
 };
 
 /**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */
@@ -6481,6 +6540,11 @@ export type Need =
 export type NeedFix = 
 /**  Accept the folder a chat made (`skill_level_accept`). */
 { kind: "accept"; folder: string } | 
+/**
+ *  Accept the project's folders it lists, where purlis cannot confirm which the person
+ *  accepted before (`skill_levels_confirm`, #3718).
+ */
+{ kind: "accept-folders"; folders: string[] } | 
 /**  Rename the plane's copy of a skill: its page in the Library, with Rename open. */
 { kind: "rename"; name: string; level: Level; local: boolean } | 
 /**  The Harness skills page, where the other copy's switch is. */
@@ -6682,6 +6746,11 @@ export type OfferedSkill = {
 	folder: string,
 	/**  The levels it is installed at from this source, as a person reads them. */
 	installed: string[],
+	/**
+	 *  What its files do beyond its instructions, a few words each, as the core marks them;
+	 *  `None` where they were not read to browse, and its review reads them.
+	 */
+	marks: string[] | null,
 };
 
 /**
@@ -7871,6 +7940,11 @@ export type PoolLink =
 { state: "linked" } | 
 /**  It answered with another key: it is refused, and the window offers to remove it. */
 { state: "key_changed" } | 
+/**
+ *  Its cluster's Pool names another cluster operator key than the one pinned as the pool was
+ *  added (#3292): its runner is refused, and the window offers to remove the pool.
+ */
+{ state: "operator_key_changed" } | 
 /**  It did not answer, and why. */
 { state: "down"; why: string } | 
 /**
@@ -8003,6 +8077,8 @@ export type PoolsShown = {
 	 *  by default (#3297).
 	 */
 	width?: number | null,
+	/**  This machine's cluster pools (#3292), each with its runner in a team's cluster. */
+	clusters?: ClusterPoolRow[] | null,
 };
 
 /**
@@ -10548,6 +10624,17 @@ export type SkillRouter =
 { extension: string };
 
 /**
+ *  **A router the Skill studio's Change… offers** (SK-15b, #3692): an extension this machine
+ *  approved, the project has on, and that declares `skill-router`.
+ */
+export type SkillRouterOffer = {
+	/**  Its id, which a choice writes. */
+	id: string,
+	/**  Its name, as its manifest gives it. */
+	name: string,
+};
+
+/**
  *  **How a chat's router extension did at its start** (SK-15b, ADR 0102 §6): the core's routing
  *  record, as the chat's tab and the studio say it.
  */
@@ -10989,10 +11076,25 @@ export type Studio = {
 	 */
 	router: StudioRouter | null,
 	/**
+	 *  Where purlis cannot confirm which of the project's workspace and persona folders the
+	 *  person accepted (#3718): the one item the studio shows for the project, whose Accept
+	 *  accepts the folders it lists (`skill_levels_confirm`). Null otherwise.
+	 */
+	levels_to_confirm: StudioLevelsToConfirm | null,
+	/**
 	 *  **What in these skills needs the person** (#3689): the Needs you page's items, by kind,
 	 *  each with why and one fix ([`needs`]). Empty while the studio is off.
 	 */
 	needs: NeedsYou[],
+};
+
+/**
+ *  **A chat's skill budget**, as the Routing page says it: the most skills its list holds, and
+ *  the most characters of their descriptions together.
+ */
+export type StudioBudget = {
+	skills: number,
+	chars: number,
 };
 
 /**
@@ -11059,6 +11161,15 @@ export type StudioLevel = {
 };
 
 /**
+ *  **The one item for the project's folders** (#3718): what it says, and the folders its Accept
+ *  accepts, relative to the project.
+ */
+export type StudioLevelsToConfirm = {
+	said: string,
+	folders: string[],
+};
+
+/**
  *  **A declared harness skills are not supported on** (SK-30, #2985): the core's
  *  `skills::NotSupported`.
  */
@@ -11074,6 +11185,11 @@ export type StudioNotSupported = {
 export type StudioRouted = {
 	session: number,
 	routing: SkillRouting,
+	/**
+	 *  **Every skill the routing hid at its start, by name** (#3692): the routing record's, so
+	 *  the Routing page says what a chat started without on its list.
+	 */
+	hidden: string[],
 };
 
 /**
@@ -11098,6 +11214,17 @@ export type StudioRouter = {
 	 *  graded on. Null where it has none, and for the built-in router.
 	 */
 	grade: string | null,
+	/**
+	 *  **What the scope's own choice writes** (#3692): the persona's `skill-router:` line, or
+	 *  else the workspace's `settings.skills.router`, as written. Null where it writes none,
+	 *  and at the project's root, which chooses no router. What Change… starts from.
+	 */
+	written: string | null,
+	/**
+	 *  **A chat's skill budget** (SK-12, ADR 0102 §1): past it the router decides what a chat's
+	 *  list shows. The same on every harness.
+	 */
+	budget: StudioBudget,
 };
 
 /**
@@ -11802,6 +11929,13 @@ export type UpdateReview = {
 	local_edits: UpdateFile[],
 	skill: ReviewSkill,
 	brought: ReviewSkill[],
+	/**  Those of `brought` under a built-in skill's name (#3728). */
+	reserved: string[],
+	/**
+	 *  Why it cannot be taken as it is, said before Accept update: it brings along a skill under
+	 *  a built-in skill's name (#3728).
+	 */
+	refused: string | null,
 	accepted: Reviewed,
 };
 

@@ -337,6 +337,7 @@ describe("the Skill studio's changes", () => {
                 label: "project",
                 days_left: 30,
                 in_history: false,
+                reserved: false,
               },
             ]
           : [],

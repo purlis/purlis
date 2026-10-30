@@ -67,6 +67,7 @@ import { NewPersona } from "../NewPersona";
 import { NewProject } from "../NewProject";
 import { PublishProject } from "../PublishProject";
 import { NewVault } from "../NewVault";
+import { AddSourceDialog } from "../SkillSources";
 import { NewWorkspace } from "../NewWorkspace";
 import { Palette } from "../Palette";
 import { PanelList } from "../PanelList";
@@ -91,6 +92,7 @@ import { PinItem, UpdateItem } from "../Updates";
 import { VaultTab } from "../VaultTab";
 import { OpenVault } from "../Vaults";
 import { AddToAChat } from "../AddToAChat";
+import { RouterChange } from "../SkillStudioRouting";
 import { KeepAsk } from "../ThemeDraftStrip";
 import { forgetThisLaunch } from "../regions";
 import { complaints } from "./complaints.testkit";
@@ -442,6 +444,8 @@ function dialogCore() {
           dropped: [],
           unreadable: null,
         };
+      case "skill_routers":
+        return [{ id: "relevance", name: "Relevance router" }];
       case "reachable_repos":
         return { repos: [{ name: "svc", path: "acme/svc", description: "" }], trouble: [] };
       case "skill_users":
@@ -1069,6 +1073,13 @@ const DIALOGS: Opened[] = [
       render(<PublishProject plane={PLANE} suggested="notebook" onClose={nothing} />),
   },
   {
+    name: "add a skill source",
+    file: "SkillSources.tsx",
+    open: async () => {
+      render(<AddSourceDialog busy={false} onCancel={nothing} onAdd={nothing} />);
+    },
+  },
+  {
     name: "a new vault",
     file: "NewVault.tsx",
     open: async () => {
@@ -1553,6 +1564,20 @@ const DIALOGS: Opened[] = [
           offers={new Map()}
           onPress={nothing}
           onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "Change the router",
+    file: "SkillStudioRouting.tsx",
+    open: async () =>
+      render(
+        <RouterChange
+          plane={PLANE}
+          by={{ at: "persona", name: "reviewer" }}
+          written="relevance"
+          onClose={nothing}
+          onChoose={nothing}
         />,
       ),
   },

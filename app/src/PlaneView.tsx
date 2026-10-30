@@ -209,6 +209,7 @@ import { useInboxOpenTold } from "./askNotices";
 import { useAnsweredWhenGone } from "./inboxRules";
 import { usePermissionAsks } from "./permissionAsks";
 import { useDismissals } from "./dismissals";
+import { dormantCause, dormantSays } from "./ChipNotices";
 import {
   ATTENTION_VIEWS,
   openView as viewOpenIn,
@@ -1207,8 +1208,9 @@ export const PlaneView = memo(function PlaneView({
   const [pinnedWorkspaces, setPinnedWorkspaces] = useState<string[]>([]);
   /**
    * **Dormant pins** (V91c as amended, NO-1): pins whose workspace is gone. They stay in the
-   * machine store, in their place in the order, and are never drawn; when the workspace comes
-   * back (a pull, another branch, a relaunch) the store's answer draws them again, in place.
+   * machine store, in their place in the order, and are drawn as dormant chips that open nothing
+   * (#3651); when the workspace comes back (a pull, another branch, a relaunch) the store's
+   * answer draws them as pins again, in place.
    */
   const [dormantPins, setDormantPins] = useState<string[]>([]);
   /** Every pin, dormant ones included, in the store's order (`plane_pins`' `order`). */
@@ -1883,8 +1885,8 @@ export const PlaneView = memo(function PlaneView({
         const said = answer.data as Partial<typeof answer.data> | null | undefined;
         setPinnedWorkspaces(Array.isArray(said?.workspaces) ? said.workspaces : []);
         setPinOrder(Array.isArray(said?.order) ? said.order : []);
-        // Named, never drawn, and never written away (V91c as amended): a dormant pin is the
-        // operator's to forget.
+        // Named, drawn dormant, and never written away (V91c as amended, #3651): a dormant pin
+        // is the operator's to forget.
         setDormantPins(Array.isArray(said?.missing) ? said.missing : []);
         // The store's answer is what says a gone pin came back, never a list not read yet
         // (`dismissals.ts`): a dismissal is let go only when the core answers without it.
@@ -1892,10 +1894,7 @@ export const PlaneView = memo(function PlaneView({
         // a listing it could not read whole, the store names nothing gone and says it is not
         // sure, and a pin it leaves out has not come back (D-NO2-10).
         if (said?.certain === true && Array.isArray(said.missing))
-          settleNotices(
-            "pin-dormant",
-            said.missing.map((name) => `pin-dormant:${name}`),
-          );
+          settleNotices("pin-dormant", said.missing.map(dormantCause));
       })
       // A window that cannot ask draws nothing pinned: the workspace strip holds the one you
       // are in, and the rest are behind its show-more — the arrangement an operator who has
@@ -8419,10 +8418,15 @@ export const PlaneView = memo(function PlaneView({
           : {
               names: strips.filter((name) => name !== OUTSIDE),
               pins: strips.filter((name) => pinnedWorkspaces.includes(name)),
+              // The pins whose workspace is gone, which the title bar draws dormant (#3651).
+              dormant: dormantPins,
+              forget: (name: string) => void forgetDormantPin(name),
               focused,
             },
     }),
     [
+      dormantPins,
+      forgetDormantPin,
       focused,
       pinnedWorkspaces,
       strips,
@@ -8985,20 +8989,22 @@ export const PlaneView = memo(function PlaneView({
         </Notice>
       ))}
 
-      {/* **A pin whose workspace is gone is kept dormant** (V91c as amended): never drawn, since
-          a strip that showed it would offer a workspace the project does not have (ADR 0034's
-          hazard, one scope down), and never written away. It is drawn again in its place when
-          the workspace comes back. Forget is the operator's, with an Undo for this run. */}
+      {/* **A pin whose workspace is gone is kept dormant** (V91c as amended): drawn in the
+          title bar as a dormant chip that offers no way in, since that would be offering a
+          workspace the project does not have (ADR 0034's hazard, one scope down), and never
+          written away. This line hangs from that chip too (#3651); both read one dismissal. It
+          is a live pin again when the workspace comes back. Forget is the operator's, with an
+          Undo for this run, which stays here in the Notices centre: its chip is gone. */}
       {dormantPins
-        .filter((name) => !dismissed.has(`pin-dormant:${name}`))
+        .filter((name) => !dismissed.has(dormantCause(name)))
         .map((name) => (
           <Notice
             key={name}
-            cause={`pin-dormant:${name}`}
+            cause={dormantCause(name)}
             fixes={[{ label: "Forget", onPress: () => void forgetDormantPin(name) }]}
-            onDismiss={() => dismiss(`pin-dormant:${name}`)}
+            onDismiss={() => dismiss(dormantCause(name))}
           >
-            {name} is gone, kept dormant: its pin comes back in its place when the workspace does.
+            {dormantSays(name)}
           </Notice>
         ))}
       {forgottenPins.map(({ name, after }) => (

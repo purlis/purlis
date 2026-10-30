@@ -75,12 +75,13 @@ async function drawTheWelcome(): Promise<void> {
   await $(DOORS).waitForExist({ timeout: 20_000, timeoutMsg: "the welcome never came" });
 }
 
-/** The doors drawn, each with its name, its description and whether Tab reaches it. */
+/** The doors drawn, each with its name, its description and whether Tab reaches it. A door is
+ *  named by the words its button shows, its title (WCAG 2.5.3, #3655). */
 async function doorsDrawn(): Promise<{ name: string; says: string; tab: number }[]> {
   return browser.execute((css: string) => {
     const list = document.querySelector(css);
     return [...(list?.querySelectorAll<HTMLButtonElement>("button") ?? [])].map((one) => ({
-      name: one.getAttribute("aria-label") ?? "",
+      name: one.getAttribute("aria-label") ?? (one.textContent ?? "").trim(),
       says: document.getElementById(one.getAttribute("aria-describedby") ?? "")?.textContent ?? "",
       tab: one.tabIndex,
     }));

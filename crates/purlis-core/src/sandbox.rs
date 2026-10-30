@@ -1042,6 +1042,31 @@ pub fn skills_held(root: &Path) -> Vec<Denial> {
         .collect()
 }
 
+/// **The app's state a chat is denied writing** (#3718, ADR 0067 as amended 2026-10-28):
+/// `<data>/app-state` and everything below it ([`crate::appstate`]), and that folder and the data
+/// home `data` itself as entries, so neither is renamed, moved or replaced. Each under every
+/// spelling a case-folding disk takes for it. Read, never written: a Try it's chat reads its
+/// laid-out skill there. [`Class::Integrity`]: purlis's own records, which only purlis writes, as
+/// they were in the plane's state folder, and which no grant reaches (`grant`).
+pub fn app_state_held(data: &Path) -> Vec<Denial> {
+    let app_state = data.join(crate::appstate::DIR);
+    [
+        (app_state.clone(), Reach::AndBelow),
+        (app_state, Reach::Itself),
+        (data.to_path_buf(), Reach::Itself),
+    ]
+    .into_iter()
+    .map(|(path, reach)| Denial {
+        class: Class::Integrity,
+        path,
+        access: Access::Write,
+        named: None,
+        reach,
+        any_case: true,
+    })
+    .collect()
+}
+
 /// **A part of a denied path that stands for any one name** (SK-9): `workspaces/*/skills` holds
 /// the skills of every workspace, made now or later. Only [`skills_held`] writes one.
 pub const ANY_NAME: &str = "*";
@@ -1441,6 +1466,28 @@ impl Denied {
                 access: Access::Write,
                 named: None,
                 reach,
+                any_case: machine.os == Os::MacOs,
+            });
+        }
+        // …and the programs each cluster pool's kubectl runs (#3292): kubectl itself and each
+        // credential plugin its context names, by their real paths as the pool was added, which
+        // purlis runs outside any sandbox before every link to its runner. Each name, and the
+        // folder it is in, as the folders of Docker's helpers are held (#2752).
+        let config_root = crate::machine::rooted(
+            machine.env.get(crate::machine::HOME_VAR).map(Into::into),
+            machine.env.get("XDG_CONFIG_HOME").map(Into::into),
+            machine.home.clone(),
+        );
+        for path in config_root
+            .iter()
+            .flat_map(|config_root| crate::runners::cluster_holds(config_root.as_path()))
+        {
+            paths.push(Denial {
+                class: Class::LaterCode,
+                path,
+                access: Access::Write,
+                named: None,
+                reach: Reach::Itself,
                 any_case: machine.os == Os::MacOs,
             });
         }
@@ -1870,6 +1917,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 home.join(crate::machine::RUNNER_HOURS_FILE),
                 Access::ReadWrite,
             );
+            // Each cluster pool's own copy of its kubeconfig's context (#3292): denied as they
+            // are.
+            deny(
+                Class::HumanPowers,
+                home.join(crate::machine::CLUSTER_KUBECONFIGS_DIR),
+                Access::ReadWrite,
+            );
             // What the human's forge sign-in fetched: the native transport's ETag store
             // holds raw answers, private repos' among them, so a chat neither reads nor
             // writes it (ADR 0070 §3 and §4).
@@ -1956,6 +2010,11 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             door::root_in(runtime.as_deref()),
             Access::Write,
         );
+    }
+    // The app's own state of every project (#3718): what purlis reads back to decide, kept in
+    // the data home where only purlis writes it.
+    for data in Homes::data_homes(machine) {
+        paths.extend(app_state_held(&data));
     }
     // A vault's file is kept under the other names purlis finds for it in the project.
     let mut vaults: Vec<PathBuf> = Vec::new();
@@ -3240,6 +3299,38 @@ impl Homes {
         // names the same folder for both, and the folder rename-local moved it to, once it has
         // (RN-5).
         crate::datahome::root_with(&|name: &str| machine.env.get(name), system)
+    }
+
+    /// **Every folder the data home's ladder can name on `machine`**, there or not: the one in use
+    /// ([`Self::charter_data`]) first, then what the variable names, and each spelling of its
+    /// folder under `$XDG_DATA_HOME` and under the system's data directory.
+    pub(crate) fn data_homes(machine: &Machine) -> Vec<PathBuf> {
+        let named = |name: &str| {
+            machine
+                .env
+                .get(name)
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+                .filter(|path| path.is_absolute())
+        };
+        let system = machine.home.as_ref().map(|home| match machine.os {
+            Os::MacOs => home.join("Library/Application Support"),
+            Os::Linux | Os::Windows | Os::Other => home.join(".local/share"),
+        });
+        let mut out: Vec<PathBuf> = Self::charter_data(machine).into_iter().collect();
+        out.extend(named(crate::datahome::HOME_VAR));
+        for base in [named("XDG_DATA_HOME"), system].into_iter().flatten() {
+            for spelling in crate::names::DATA_HOME.spellings() {
+                out.push(base.join(spelling));
+            }
+        }
+        let mut seen: Vec<PathBuf> = Vec::new();
+        out.retain(|path| {
+            let new = !seen.contains(path);
+            seen.push(path.clone());
+            new
+        });
+        out
     }
 
     /// The Codex home of the project at `root`'s sandboxed chats on `machine` (D-88q): a folder

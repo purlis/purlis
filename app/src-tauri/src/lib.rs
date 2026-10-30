@@ -45,6 +45,7 @@ mod clipath;
 mod createproject;
 mod curation;
 // The Devices view (#2052).
+mod clusterpools;
 mod devices;
 mod dispatchaway;
 mod dispatched;

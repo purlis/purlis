@@ -575,14 +575,18 @@ pub fn compose_ready(
     }
     let persona = persona_of(&ready.env, root);
     let sandbox = ready.sandbox.as_ref();
-    // What the start decided about the sandbox, written before anything runs (ADR 0067 §7).
-    let (trust, counted) =
-        crate::sandbox::at_start(ready.unsandboxed.as_ref(), sandbox.is_some(), false, true);
-    if let Some(change) = &trust {
-        recorded(change, start, ready.harness, persona.as_deref(), beside)?;
+    // No app state, no record of the folders there at a sandboxed chat's start (#3718): such a
+    // chat is not started, and nothing about its start is written.
+    if sandbox.is_some()
+        && crate::skills::reach_chats_here(root)
+        && start.program.is_some()
+        && let Some(refused) = crate::skills::levels::refusal_for_a_sandboxed_start(root)
+    {
+        return Err(refused);
     }
     // A sandboxed chat could make a workspace or persona folder while it runs: the ones there
-    // now are noted as not its own (SK-9), before it is armed.
+    // now are noted as not its own (SK-9), before it is armed, and before anything about its start is
+    // written, so a start refused here records nothing.
     if sandbox.is_some()
         && crate::skills::reach_chats_here(root)
         && let Some(id) = start.program.as_deref()
@@ -590,9 +594,20 @@ pub fn compose_ready(
         let name = start
             .number
             .map_or_else(|| id.to_owned(), |number| number.to_string());
-        if let Err(why) = crate::skills::levels::note(root, id, &name) {
-            tracing::warn!("purlis: a sandboxed chat's start was not noted for its skills ({why})");
+        match crate::skills::levels::note_or_hold(root, id, &name) {
+            Ok(None) => {}
+            Ok(Some(why)) => tracing::warn!(
+                "purlis: a sandboxed chat's start was not noted for its skills ({why}); every \
+                 workspace and persona folder made since waits for the person's Accept"
+            ),
+            Err(refused) => return Err(refused),
         }
+    }
+    // What the start decided about the sandbox, written before anything runs (ADR 0067 §7).
+    let (trust, counted) =
+        crate::sandbox::at_start(ready.unsandboxed.as_ref(), sandbox.is_some(), false, true);
+    if let Some(change) = &trust {
+        recorded(change, start, ready.harness, persona.as_deref(), beside)?;
     }
     // Read once `armed` has checked the start is not refused (#3461), and routed by the router
     // its persona or workspace chose (SK-15b).

@@ -127,7 +127,9 @@ fn a_grade_whose_row_cannot_be_written_is_kept_for_the_next_start() {
         .expect("held")
         .into_path();
     // This machine's record folder is a file: no row can go there.
-    let record = crate::plane::state_dir(root).join(super::super::LOCAL_DIR);
+    let record = crate::appstate::dir(root)
+        .unwrap()
+        .join(super::super::LOCAL_DIR);
     std::fs::write(&record, "not a folder").unwrap();
     assert!(interrupted(root, laptop, |_| false).is_empty());
     assert!(held.exists(), "kept, never lost");
@@ -205,7 +207,7 @@ fn a_start_while_another_records_the_folder_waits_its_turn_and_records_once_3443
         .create(true)
         .truncate(false)
         .write(true)
-        .open(crate::plane::state_dir(&root).join(CLAIM))
+        .open(crate::appstate::dir(&root).unwrap().join(CLAIM))
         .unwrap();
     theirs.lock().unwrap();
 
@@ -310,4 +312,14 @@ fn a_half_written_marker_a_crash_left_is_taken_away_at_the_next_start_3582() {
     assert!(!left.exists(), "taken away");
     assert!(writing.exists(), "one still being written is left");
     assert!(marker.exists(), "and the marker with it");
+}
+
+#[test]
+fn a_grade_under_way_in_the_plane_s_state_folder_is_never_read() {
+    // #3718: the grades under way are read from this machine's app state alone.
+    let (tmp, level) = project();
+    let root = tmp.path();
+    drop(began(root, &level, &starting("g-moved", &level)).expect("held"));
+    crate::appstate::put_in_the_plane(root, DIR);
+    assert!(interrupted(root, laptop, |_| false).is_empty());
 }
