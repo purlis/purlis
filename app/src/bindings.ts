@@ -2990,7 +2990,10 @@ export const commands = {
 	 *  terminal the runner makes, for the person to drive in the strip (#4043): what it prints is
 	 *  [`PoolSignInStep::Printed`], and what is typed goes back by [`pool_sign_in_type`].
 	 */
-	poolSignInStart: (pool: string, name: string, provider: string | null, terminal: PoolSignInTerminal | null) => typedError<number, string>(__TAURI_INVOKE("pool_sign_in_start", { pool, name, provider, terminal })),
+	poolSignInStart: (pool: string, name: string, provider: string | null, terminal: {
+	columns: number,
+	rows: number,
+} | null) => typedError<number, string>(__TAURI_INVOKE("pool_sign_in_start", { pool, name, provider, terminal })),
 	/**
 	 *  **The next step of sign-in `flow`**, waiting a while for one; null while there is none yet.
 	 *  After its last step, the sign-in is let go; signed in, its waits on the pool are too.
@@ -3016,15 +3019,15 @@ export const commands = {
 { at: "cancelled" } | null, string>(__TAURI_INVOKE("pool_sign_in_next", { flow })),
 	/**  **Passes the code the person pasted to sign-in `flow`**, as one line. */
 	poolSignInPaste: (flow: number, code: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_paste", { flow, code })),
-	/**  **Passes what the person typed in the strip's terminal to sign-in `flow`**, as it is. */
-	poolSignInType: (flow: number, text: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_type", { flow, text })),
-	/**  **Signs `name` out on pool `pool`'s runner** (#4043): the harness's own sign-out, run there. */
-	poolSignOut: (pool: string, name: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_out", { pool, name })),
 	/**
 	 *  **Cancels sign-in `flow`**: what drives its login is ended, and with its input the login
 	 *  ends on the runner.
 	 */
 	poolSignInCancel: (flow: number) => __TAURI_INVOKE<void>("pool_sign_in_cancel", { flow }),
+	/**  **Passes what the person typed in the strip's terminal to sign-in `flow`**, as it is. */
+	poolSignInType: (flow: number, text: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_type", { flow, text })),
+	/**  **Signs `name` out on pool `pool`'s runner** (#4043): the harness's own sign-out, run there. */
+	poolSignOut: (pool: string, name: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_out", { pool, name })),
 	/**
 	 *  **Every device and what runs on it** (#2052): this machine and every runner it keeps, each
 	 *  with the chats and browsers the window has open there, and each pool's limits.
@@ -10229,9 +10232,6 @@ export type PoolRow = {
  *  **One step of a sign-in on a pool's runner** that purlis drives with no terminal (#4042), as
  *  the window's sign-in strip shows it ([`driven::Event`]).
  */
-/**  The size of the terminal a sign-in's strip draws. */
-export type PoolSignInTerminal = { columns: number; rows: number };
-
 export type PoolSignInStep = 
 /**  Open this page in the browser here: the harness vendor's own. */
 { at: "open"; url: string } | 
@@ -10251,6 +10251,12 @@ export type PoolSignInStep =
 { at: "failed"; why: string } | 
 /**  It was cancelled, and its login ended. */
 { at: "cancelled" };
+
+/**  The size of the terminal a sign-in's strip draws. */
+export type PoolSignInTerminal = {
+	columns: number,
+	rows: number,
+};
 
 /**
  *  **How a pool's runner was made to suspend itself** (#3717), which its row says where it is
