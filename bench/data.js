@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793387063774,
+  "lastUpdate": 1793388491513,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31962,6 +31962,48 @@ window.BENCHMARK_DATA = {
             "value": 101.0766375,
             "unit": "ms",
             "extra": "median of 5 runs: 100.660, 100.782, 101.077, 101.109, 101.524 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c5fb5f322ecd6f8b0a483fe35240146089d46ca9",
+          "message": "Roster names record-only orphans; a long task's last note survives a restart (#3932, #3956) (#4133)\n\n* A long-running task's last note survives an app restart (#3956)\n\nAfter a restart the task list said \"no note yet\" for a long-running task until it\nsent another note: the ledger keeps the last note in memory. A launch putting a\ntask back now reads its last note from its dispatch record: the time from\nlast_note, and the words from the message kept at that very time, where the\nrecord kept them. A note heard since is newer and is kept. A note whose words\nwere not kept reads \"last note 4m ago (its words were not kept)\".\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* A turn's roster names tasks orphaned by a restart found only in dispatch records (#3932)\n\nThe per-turn roster named a task orphaned by a restart only where a launch could\nnot start it again; one that exists only as a running dispatch record (its chat\nnot open, coming back or waiting) was found only by the task list. The roster\nnow names those too, under no chat number (the one it had may be another\nchat's now), from the same rule the list uses (dispatchrecord::orphaned).\n\nThe records are read cheaply: dispatchrecord::Running keeps the store's running\nrecords and reads them again only once the store changed, by this process's\nwrite count for the store and the store folder's modified time (every write is a\nfile renamed in, so another process's write moves it too). Once after a launch,\nthen on change; never a whole-store read at every turn. The task list shares it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Review fixes: racy store look, a note's words only when nothing was dropped, slim orphans (#3932, #3956)\n\n- Running trusts no look taken within A_FOLDER_TIME_SETTLES (2 s) of the store\n  folder's time (git's racy rule): another process's rename in the same tick is\n  read at the next look. Seen is keyed by the store's folder.\n- Running keeps running records slim (no brief, no talk), never parses a record\n  again once read as ended, and owns the running filter (Running::orphaned). The\n  app maps each orphan as it is read: names for the roster, rows for the list.\n- last_note_of takes words only from the last Note in talk, of the record's\n  stamp, and only where talk kept every message; a capped newer note reads as\n  words not kept.\n- The ledger keeps a dispatchrecord::LastNote, not a nested tuple.\n- dispatched::NO_NUMBER_KNOWN names the chat number 0 in both crates.\n- dir() documents that every store write goes through write/withdraw.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Move finished.rs's tests to finished/tests.rs (move only)\n\nCONTRIBUTING, Where tests live: a changed file's inline test module moves\nbeside it. No test changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T18:16:58Z",
+          "tree_id": "248d26f8fa74d8f5bb34e626f0218c0b6befd93f",
+          "url": "https://github.com/purlis/purlis/commit/c5fb5f322ecd6f8b0a483fe35240146089d46ca9"
+        },
+        "date": 1793388487943,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.32645250000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.317, 0.321, 0.326, 0.338, 0.341 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.561411,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.538, 16.542, 16.561, 16.576, 16.620 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6268855,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.739, 100.850, 101.627, 101.642, 101.655 ms"
           }
         ]
       }
