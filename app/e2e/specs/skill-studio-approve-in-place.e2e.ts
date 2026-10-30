@@ -10,6 +10,7 @@ import {
   endTheSessionsStartedSince,
   focusWorkspace,
   runFromThePalette,
+  shownButton,
   tabNames,
 } from "../reach.js";
 import { studioPage } from "../studio.js";
@@ -109,8 +110,10 @@ describe("a Skill studio start refused for its profile's approval", function () 
     await option.click();
     await page.$("button=Try it").click();
 
-    // Refused, with the approval offered beside the refusal; nothing started.
-    const offer = await $("button=Approve and start…");
+    // Refused, with the approval offered beside the refusal; nothing started. The refusal pops
+    // from the status bar's Notices item (#3653) and is listed in the Notices centre too, where
+    // its copy may stand unseen: the one on screen.
+    const offer = await shownButton("Approve and start…", 30_000);
     await offer.waitForClickable({
       timeout: 30_000,
       timeoutMsg: "the refusal offered no Approve and start…",
