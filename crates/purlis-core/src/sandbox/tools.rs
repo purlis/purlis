@@ -1393,10 +1393,10 @@ pub fn reads_held_repository(
         .chain(real.as_deref())
         .map(file_name_of)
         .collect();
-    if names.iter().any(|name| name == "git") {
-        if let Some(why) = repo::refused_git(args) {
-            return Err(why);
-        }
+    if names.iter().any(|name| name == "git")
+        && let Some(why) = repo::refused_git(args)
+    {
+        return Err(why);
     }
     let glab = names.iter().any(|name| name == "glab");
     let pin = repo::held(folder, root, writable, glab)?;
