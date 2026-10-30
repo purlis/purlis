@@ -911,6 +911,34 @@ fn every_turn_a_chat_with_open_tasks_is_shown_them_and_one_with_none_is_shown_no
 }
 
 #[test]
+fn a_roster_says_whether_each_task_is_alive_and_marks_an_orphan_by_restart() {
+    // #3900: after a restart a coordinator could not tell a live task from a dead one.
+    let known = a_chat_with_open_tasks();
+    let mut told = told_at_start(&known, 1);
+    let working = answer(&known, 1, Tell::Turn, &mut told)
+        .expect("open")
+        .with_liveness(|chat| {
+            (chat == 4).then_some(crate::dispatchliveness::Liveness {
+                running: true,
+                heard_secs: Some(90),
+                did: Some(crate::dispatchliveness::Did::SentANote),
+                restart: crate::dispatchliveness::Restart::StartedAgain,
+            })
+        })
+        .with_orphans([(7, "forms".to_owned())]);
+    let said = update(&working, now()).expect("a roster");
+    assert!(
+        said.contains(
+            "chat 4 'check prod' running (its program is running, last sent a note 1m ago, \
+             purlis's restart ended it and started it again on its conversation); chat 5 \
+             'lint' running; chat 7 'forms' orphaned by restart: purlis can no longer reach \
+             it, and no program of it runs under this app."
+        ),
+        "{said}"
+    );
+}
+
+#[test]
 fn a_roster_carries_a_number_a_name_and_a_state_and_nothing_else() {
     let known = a_chat_with_open_tasks();
     let working = answer(&known, 1, Tell::Turn, &mut told_at_start(&known, 1)).expect("open");

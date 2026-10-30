@@ -289,7 +289,17 @@ pub fn answer(
             )
             .map_or_else(
                 || no(format!("chat {} is not one this app has open", asks.chat)),
-                |working| Answer::Working(Box::new(working)),
+                |working| {
+                    // Whether each of its tasks is alive, and the ones orphaned by a restart
+                    // (#3900): only a turn's answer carries a roster.
+                    let working = match asks.tell {
+                        purlis_core::awareness::Tell::Turn => working
+                            .with_liveness(|task| Some(crate::dispatched::liveness(held, task)))
+                            .with_orphans(crate::unstarted::orphans_of(held, asks.chat)),
+                        _ => working,
+                    };
+                    Answer::Working(Box::new(working))
+                },
             ),
         // An ask after a task this chat dispatched (#1441): no ticket, for the record's reason,
         // and whose task it names is the app's record of that chat.
@@ -1225,21 +1235,35 @@ pub struct PersonaChat {
 
 /// Why chat `asker`'s dispatch named `name` is refused as a task it already has open (#3788,
 /// [`dispatchdecision::same_name_open`]), from this app's record of its tasks; or `None`.
+///
+/// Each is named with its liveness (#3900): a task that came back after a restart is named
+/// live, never left to be taken for a dead one.
 fn same_name_open(held: &Held, asker: u32, name: &str) -> Option<String> {
-    let tasks: Vec<(u32, String, dispatchdecision::Standing)> = held
+    type Listed = (
+        u32,
+        String,
+        dispatchdecision::Standing,
+        purlis_core::dispatchliveness::Liveness,
+    );
+    let tasks: Vec<Listed> = held
         .chats()
         .tasks_of(asker)
         .into_iter()
         .filter_map(|(session, from)| {
             let named = held.chats().shown_name(session)?;
-            Some((session, named, standing_of(held, session, &from)))
+            Some((
+                session,
+                named,
+                standing_of(held, session, &from),
+                crate::dispatched::liveness(held, session),
+            ))
         })
         .collect();
     dispatchdecision::same_name_open(
         name,
-        tasks
-            .iter()
-            .map(|(session, named, standing)| (*session, named.as_str(), *standing)),
+        tasks.iter().map(|(session, named, standing, live)| {
+            (*session, named.as_str(), *standing, Some(live))
+        }),
     )
 }
 

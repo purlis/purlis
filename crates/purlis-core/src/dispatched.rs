@@ -254,6 +254,12 @@ pub struct Row {
     /// How long ago that note was sent, in seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub noted_secs: Option<u64>,
+    /// **Whether it is alive** (#3900): its program running, when it last ran a command or
+    /// sent a note, and how it stands across the app's restart, or that it is orphaned by one.
+    /// None for a finished task, whose program has ended and is said to have, and on a row
+    /// from an app older than this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub liveness: Option<crate::dispatchliveness::Liveness>,
 }
 
 // ---- how long a wait may be -------------------------------------------------------------------
@@ -754,6 +760,10 @@ struct Task {
     /// Its last progress note to the chat that asked, and when it sent it (#3905). **In memory
     /// only**: its dispatch record keeps every message.
     last_note: Option<(String, SystemTime)>,
+    /// When it last ran a command or sent a note (#3900).
+    lately: crate::dispatchliveness::Heard,
+    /// How it stands across the app's last restart (#3900).
+    restart: crate::dispatchliveness::Restart,
 }
 
 /// A report the app delivered, kept so a wait can answer with it.
@@ -1258,14 +1268,47 @@ impl Ledger {
     /// Task `task` was put back by a launch (#1463): it started when its dispatch's record says
     /// (`started`, the record's stamp), which this ledger, kept in memory, did not see. A start
     /// already known is kept, and a stamp that does not read is no start at all.
-    pub fn brought_back(&mut self, task: u32, started: &str) {
-        let Ok(at) = chrono::DateTime::parse_from_rfc3339(started) else {
+    ///
+    /// `restart` is how it came back (#3900): kept running in the session host, or started
+    /// again on its conversation. Kept whether or not the stamp reads.
+    pub fn brought_back(
+        &mut self,
+        task: u32,
+        started: Option<&str>,
+        restart: crate::dispatchliveness::Restart,
+    ) {
+        let entry = self.tasks.entry(task).or_default();
+        entry.restart = restart;
+        let Some(Ok(at)) = started.map(chrono::DateTime::parse_from_rfc3339) else {
             return;
         };
-        let entry = self.tasks.entry(task).or_default();
         if entry.started.is_none() {
             entry.started = Some(SystemTime::from(at));
         }
+    }
+
+    /// Task `task` did `did` at `at` (#3900): it ran a command, or sent its asking chat a note.
+    /// Kept for a task alone, as what it ran is.
+    pub fn heard_doing(&mut self, task: u32, did: crate::dispatchliveness::Did, at: SystemTime) {
+        if let Some(entry) = self.tasks.get_mut(&task) {
+            entry.lately.did(did, at);
+        }
+    }
+
+    /// Task `task`'s liveness at `now` (#3900), where `running` is what the board says of its
+    /// program.
+    pub fn liveness(
+        &self,
+        task: u32,
+        running: bool,
+        now: SystemTime,
+    ) -> crate::dispatchliveness::Liveness {
+        let (lately, restart) = self
+            .tasks
+            .get(&task)
+            .map(|entry| (entry.lately, entry.restart))
+            .unwrap_or_default();
+        lately.liveness(running, restart, now)
     }
 
     /// Chat `chat` has closed. `task_of` is its asking chat and its name, where it was a task:
@@ -2107,6 +2150,8 @@ pub fn list_text(rows: &[Row]) -> String {
         // One that finished before this app was started has no number to be asked after by.
         let chat = match (row.finished, row.chat) {
             (true, 0) => "finished earlier, under a chat number no longer known".to_owned(),
+            // Orphaned by a restart, with no chat here to be its number (#3900).
+            (false, 0) => "under a chat number no longer known".to_owned(),
             (_, chat) => format!("chat {chat}"),
         };
         let age = if row.finished {
@@ -2130,6 +2175,11 @@ pub fn list_text(rows: &[Row]) -> String {
             }
         } else {
             String::new()
+        };
+        // Whether it is alive (#3900), where the app said.
+        let age = match &row.liveness {
+            Some(live) => format!("{age} · {}", live.said()),
+            None => age,
         };
         said.push_str(&format!(
             "\n- {chat} · '{}' · {} · {place} · {}{long} · {age}{}",
