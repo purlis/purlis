@@ -49,13 +49,6 @@ export function budgetSaid(budget: SkillBudget): string {
   return `${skills} · ${chars}${free}${hidden}`;
 }
 
-/** The budget in a few words, for a chat tab's menu row: `12 of 30 skills`, and that it is near
- *  or past the budget where it warns. */
-export function budgetShort(budget: SkillBudget): string {
-  const short = `${budget.skills} of ${counted(budget.most_skills, "skill", "skills")}`;
-  return budget.warns === null ? short : `${short}, near the budget`;
-}
-
 /**
  * What the chat warns of where its set is at four fifths of the budget or past it, or nothing
  * below: which part, and what can be done.
@@ -388,7 +381,7 @@ export const skillsInTheSet = (budget: SkillBudget) => budget.skills + budget.ma
 /**
  * **The skill budgets of chats `sessions` of `plane`** (#2775), read once each while the Skill
  * studio is on, and how to set one read elsewhere (Use skill… reads a chat's skills as it opens).
- * The one place a window holds them: the chip on each pane and each chat tab's menu row draw it.
+ * The one place a window holds them: the chip on each pane draws it.
  */
 export function useChatSkillBudgets(
   plane: PlaneId,
@@ -438,7 +431,7 @@ export const SHOW_THIS_CHATS_SKILLS = "Show this chat's skills";
  * chat's skills in the sidebar Skills view, the one answer to what the chat gets and why; it no
  * longer opens Use skill…. Its budget is the window's ({@link SkillBudgetsHere}). Nothing while
  * the Skill studio is off, or for a chat purlis knows no skills of; where the pane leaves the chip
- * out, the chat tab's menu row says the budget.
+ * out, the Skills view says the budget (`⌘⇧X`).
  */
 export const SkillsChip = memo(function SkillsChip({
   plane,

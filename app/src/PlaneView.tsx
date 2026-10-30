@@ -68,6 +68,7 @@ import {
   PASS_THROUGH_KEY,
   FOCUS_MODE_ID,
   SHORTCUTS_ID,
+  usingSkillId,
   saidOf,
   type BranchPath,
   type FileRef,
@@ -1082,7 +1083,7 @@ export const PlaneView = memo(function PlaneView({
     () => [...new Set(tabs.order.flatMap((id) => panesOf(tabs, id).map((pane) => pane.session)))],
     [tabs],
   );
-  /** Each open chat's skill budget (#2775): the chip on its pane and its tab's menu row. */
+  /** Each open chat's skill budget (#2775): the chip on its pane. */
   const [skillBudgets, setSkillBudget] = useChatSkillBudgets(plane, chatSessions, studioOn);
   const reloadVaults = vaults.reload;
   /** Whether the vault picker is up. */
@@ -7649,7 +7650,6 @@ export const PlaneView = memo(function PlaneView({
             profiles: profileNames,
             screenReader,
             skillStudio: studioOn,
-            skillBudgets,
             readOnly: readOnlySaid,
             places,
           }),
@@ -7712,7 +7712,6 @@ export const PlaneView = memo(function PlaneView({
       memoryStores,
       profileNames,
       studioOn,
-      skillBudgets,
       screenReader,
     ],
   );
@@ -8248,6 +8247,28 @@ export const PlaneView = memo(function PlaneView({
       e.preventDefault();
       e.stopPropagation();
       // A held key is not a second press: one shell for one press.
+      if (e.repeat) return;
+      press(offer);
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, [by, inFront, press]);
+
+  /**
+   * **Use skill…'s key** (#3954, the key registry's `chat.useSkill`): the Use skill… row of the
+   * tab in front, pressed as the palette would press it, so the key opens the picker on the chat
+   * in front. Claimed on the window, capture-phase, by the project in front, as the shell's key
+   * is; never under a modal. A tab in front that is no chat has no such row, and the key goes on.
+   */
+  useEffect(() => {
+    if (!inFront) return;
+    const key = (e: KeyboardEvent) => {
+      if (pressed(e, ["chat.useSkill"]) === undefined) return;
+      const front = now.current.inFront;
+      const offer = front === undefined ? undefined : by(usingSkillId(front));
+      if (offer === undefined) return;
+      e.preventDefault();
+      e.stopPropagation();
       if (e.repeat) return;
       press(offer);
     };
