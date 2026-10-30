@@ -431,6 +431,17 @@ export function cellOf(project) {
   return /^stories (\S+) \(\w+\)$/.exec(project ?? "")?.[1];
 }
 
+/**
+ * **The cell a story ran in**: the one its page ran in, which `cell.setup.ts` puts in the test's
+ * meta, else its project's (`cellOf`). Vitest's browser mode can hand a story file's module to
+ * the reporter under another cell's project, so a story that failed in every cell came out in
+ * some cells twice and in others never (#4073); the page's own cell is the one it was drawn in.
+ */
+export function cellOfTest(test, module) {
+  const cell = test.meta?.()?.cell;
+  return typeof cell === "string" && cell !== "" ? cell : cellOf(module.project?.name);
+}
+
 /** **The reporter**: at the end of the run, each failed story's errors, the errors of a story
  *  file or a suite, those outside any, whether the run failed, and the stories that take no
  *  picture. */
@@ -440,7 +451,7 @@ export default class StoryFailures {
       [...module.children.allTests("failed")].map((test) => ({
         file: module.relativeModuleId,
         story: test.fullName.replaceAll(" > ", " "),
-        cell: cellOf(module.project?.name),
+        cell: cellOfTest(test, module),
         errors: (test.result().errors ?? []).map(kept),
       })),
     );
