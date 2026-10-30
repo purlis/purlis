@@ -157,7 +157,7 @@ impl HarnessAdapter for Codex {
     fn arm_under(
         &self,
         kit: Kit<'_>,
-        _cwd: Option<&std::path::Path>,
+        cwd: Option<&std::path::Path>,
         plugins: &crate::harness_plugin::Chosen,
         _sandbox: Sandbox<'_>,
     ) -> StateHooks {
@@ -168,7 +168,12 @@ impl HarnessAdapter for Codex {
             &crate::skills::skills_off_for(kit, Harness::Codex, plugins),
         ));
         // charter's MCP server (HP-7), for this session beside the operator's own servers.
-        args.extend(["-c".to_owned(), crate::chattools::codex_flag(kit.binary)]);
+        // The approvals the operator set on it carried over, since the `-c` replaces their
+        // table for it whole, and each dispatch tool approved where they set none (#3794).
+        args.extend([
+            "-c".to_owned(),
+            crate::chattools::codex_flag(kit.binary, &crate::chattools::CodexApprovals::here(cwd)),
+        ]);
         StateHooks::ThisSessionOnly {
             args,
             env: listed(kit),

@@ -303,8 +303,11 @@ pub fn claude_code_config_as(binary: &Path, graded: bool) -> String {
 /// stdio server only a few variables of its own, so the ones that say where the chat works
 /// and how it reaches the app are named in `env_vars` ([`SCOPE_ENV`], [`CONNECTION_ENV`]), by
 /// name only: Codex reads each value from its own environment.
-pub fn codex_flag(binary: &Path) -> String {
-    let table: toml::Table = [
+///
+/// The `-c` replaces the operator's own table for this server whole, so the approvals they set
+/// on it are carried into it ([`CodexApprovals`], #3794).
+pub fn codex_flag(binary: &Path, operator: &CodexApprovals) -> String {
+    let mut table: toml::Table = [
         (
             "command".to_owned(),
             toml::Value::from(binary.display().to_string()),
@@ -324,7 +327,141 @@ pub fn codex_flag(binary: &Path) -> String {
     ]
     .into_iter()
     .collect();
+    let tools = operator.tools();
+    if !tools.is_empty() {
+        table.insert("tools".to_owned(), toml::Value::Table(tools));
+    }
+    if let Some(default) = &operator.default {
+        table.insert(
+            CODEX_DEFAULT_APPROVAL.to_owned(),
+            toml::Value::from(default.clone()),
+        );
+    }
     format!("mcp_servers.{SERVER}={}", toml::Value::Table(table))
+}
+
+/// Codex's key for the approval of every tool of one MCP server.
+const CODEX_DEFAULT_APPROVAL: &str = "default_tools_approval_mode";
+
+/// **The approvals the operator's own Codex config sets on purlis's server** (#3794), which the
+/// session's `-c` carries over, since it replaces their table for the server whole: each tool's
+/// `approval_mode`, and the server's `default_tools_approval_mode`. **The operator's own always
+/// win**, as their `ask` or `deny` does in Claude Code.
+///
+/// **Codex's rule for [`run_on_the_dispatch_grant`]** ([`Self::tools`]): `approval_mode =
+/// "approve"` for each dispatch tool the operator sets nothing for, which codex-cli 0.163.0
+/// reads under one MCP server (measured: `codex -c 'mcp_servers.<server>={…,tools={<tool>=
+/// {approval_mode=…}}}' mcp get` takes `auto`, `prompt`, `writes` and `approve`, and refuses
+/// any other word at that key). Accepted by its config; not measured live against a model, which
+/// this machine's sandbox cannot serve. Each by name, never the server's
+/// `default_tools_approval_mode`, so a tool added later still asks; and none where the operator
+/// set that default, which is their word for every tool of the server.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CodexApprovals {
+    /// Each tool's `approval_mode`, by tool.
+    pub by_tool: std::collections::BTreeMap<String, String>,
+    /// The server's `default_tools_approval_mode`.
+    pub default: Option<String>,
+    /// A config there could not be read: nothing is approved over it.
+    pub unreadable: bool,
+}
+
+impl CodexApprovals {
+    /// This machine's, for a chat working in `cwd`: `config.toml` in `$CODEX_HOME` (else
+    /// `~/.codex`), then `.codex/config.toml` in each folder from the root down to `cwd`, a
+    /// later file's word over an earlier one's, as Codex layers a project's over the user's.
+    /// Read wide: a project file Codex would not load is read anyway, since it can only keep
+    /// an approval of purlis's out.
+    pub fn here(cwd: Option<&Path>) -> Self {
+        let var = |name: &str| {
+            std::env::var_os(name)
+                .filter(|value| !value.is_empty())
+                .map(std::path::PathBuf::from)
+        };
+        let home = var("CODEX_HOME")
+            .filter(|dir| dir.is_absolute())
+            .or_else(|| var("HOME").map(|home| home.join(".codex")));
+        let mut files: Vec<std::path::PathBuf> = home
+            .map(|home| home.join("config.toml"))
+            .into_iter()
+            .collect();
+        if let Some(cwd) = cwd {
+            let mut up: Vec<&Path> = cwd.ancestors().collect();
+            up.reverse();
+            files.extend(
+                up.into_iter()
+                    .map(|folder| folder.join(".codex/config.toml")),
+            );
+        }
+        Self::read(&files)
+    }
+
+    /// What `files` set, in order. A file that is not there sets nothing; one that cannot be
+    /// read or parsed is taken to refuse every approval.
+    pub fn read(files: &[std::path::PathBuf]) -> Self {
+        let mut approvals = Self::default();
+        for file in files {
+            let text = match std::fs::read_to_string(file) {
+                Ok(text) => text,
+                Err(why) if why.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(_) => {
+                    approvals.unreadable = true;
+                    continue;
+                }
+            };
+            let Ok(config) = text.parse::<toml::Table>() else {
+                approvals.unreadable = true;
+                continue;
+            };
+            let Some(server) = config
+                .get("mcp_servers")
+                .and_then(|servers| servers.get(SERVER))
+            else {
+                continue;
+            };
+            if let Some(default) = server
+                .get(CODEX_DEFAULT_APPROVAL)
+                .and_then(toml::Value::as_str)
+            {
+                approvals.default = Some(default.to_owned());
+            }
+            for (tool, rule) in server
+                .get("tools")
+                .and_then(toml::Value::as_table)
+                .into_iter()
+                .flatten()
+            {
+                if let Some(mode) = rule.get("approval_mode").and_then(toml::Value::as_str) {
+                    approvals.by_tool.insert(tool.clone(), mode.to_owned());
+                }
+            }
+        }
+        approvals
+    }
+
+    /// The server's `tools` table: the operator's own approvals, and `approve` for each dispatch
+    /// tool they leave to purlis.
+    fn tools(&self) -> toml::Table {
+        let rule = |mode: &str| {
+            let rule: toml::Table = [("approval_mode".to_owned(), toml::Value::from(mode))]
+                .into_iter()
+                .collect();
+            toml::Value::Table(rule)
+        };
+        let mut tools: toml::Table = self
+            .by_tool
+            .iter()
+            .map(|(tool, mode)| (tool.clone(), rule(mode)))
+            .collect();
+        if !self.unreadable && self.default.is_none() {
+            for tool in run_on_the_dispatch_grant() {
+                tools
+                    .entry(tool.to_owned())
+                    .or_insert_with(|| rule("approve"));
+            }
+        }
+        tools
+    }
 }
 
 /// The server as ACP's `session/new` takes it in `mcpServers` (ADR 0080 §1): a stdio server, run
@@ -410,6 +547,19 @@ pub const DISPATCH_TOOLS: [&str; 8] = [
     DISPATCH_NOTE,
     DISPATCH_ASK,
 ];
+
+/// **Every dispatch tool, which a harness runs without its own prompt** (#3794, as V98b and
+/// #3786 ruled for Claude Code): [`DISPATCH_TOOLS`], which write, and the three that only read
+/// a chat's own tasks ([`DISPATCH_LIST`], [`DISPATCH_READ`], [`DISPATCH_WAIT`]). Consent to a
+/// dispatch is purlis's own dispatch grant, asked of the person by the app the same on every
+/// harness, and what a chat does with its own tasks is its own. Each harness's adapter turns
+/// these names into its own rule where it has one, as for
+/// [`crate::browsertools::run_on_the_browser_ask`].
+pub fn run_on_the_dispatch_grant() -> impl Iterator<Item = &'static str> {
+    DISPATCH_TOOLS
+        .into_iter()
+        .chain([DISPATCH_LIST, DISPATCH_READ, DISPATCH_WAIT])
+}
 
 /// A task's chat, by its number in `dispatch_list`: the one argument a tool about one task
 /// takes.

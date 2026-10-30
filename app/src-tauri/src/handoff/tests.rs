@@ -11957,6 +11957,99 @@ fn a_dispatch_under_the_name_of_an_open_task_is_refused_and_one_after_its_report
     assert_ne!(again, task);
 }
 
+#[test]
+fn a_task_still_starting_under_a_name_refuses_a_second_dispatch_of_that_name() {
+    // #3795: the refusal is decided over the records the deciding lock reserves into, so a
+    // task let through and not yet open is an open task by its name.
+    let plane = a_plane_with_personas();
+    let planes = planes();
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
+    let slot = held.chats().reserve(
+        9001,
+        Chat {
+            name: "9001".to_owned(),
+            label: Some("check prod".to_owned()),
+            persona: Some("steward".to_owned()),
+            from: Some(HandedFrom {
+                id: None,
+                chat: asking,
+                name: "steward 1".to_owned(),
+                workspace: Place::PlaneRoot,
+                report: Owed::Due,
+                mode: Mode::Task,
+                depth: 1,
+                root: None,
+                above: None,
+                by_person: false,
+                long: false,
+            }),
+            ..Default::default()
+        },
+    );
+
+    let (said, _) = dispatch(&held, &id, &Tickets::default(), asking, None, "check prod");
+    assert!(
+        matches!(&said, Answer::No { why }
+            if why.contains("an open task named 'check prod' (chat 9001, running; the name")),
+        "{said:?}"
+    );
+
+    // Once its start has ended without a chat, the name is free.
+    drop(slot);
+    let (said, _) = dispatch(&held, &id, &Tickets::default(), asking, None, "check prod");
+    assert!(matches!(said, Answer::Dispatched { .. }), "{said:?}");
+}
+
+#[test]
+fn many_dispatches_at_once_under_one_name_start_one_task() {
+    // #3795: asks arrive a thread each, and a start takes a while. Under one name, one is
+    // let through and the rest are told it is open, whichever order the threads ran in.
+    let plane = a_plane_with_personas();
+    let planes = planes();
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
+    let ask = Wanted {
+        chat: asking,
+        to: None,
+        name: "check prod".to_owned(),
+        brief: "# Check prod\nSay what is down.\n".to_owned(),
+        profile: None,
+        place: None,
+        by: purlis_core::dispatchdecision::By::Chat,
+        moved: None,
+        long: false,
+    };
+
+    let answers: Vec<Result<bool, String>> = std::thread::scope(|scope| {
+        let running: Vec<_> = (0..4)
+            .map(|_| {
+                let (held, id, ask) = (&held, &id, &ask);
+                scope.spawn(move || {
+                    dispatch_it(held, id, ask, STARTING)
+                        .map(|it| matches!(it, Dispatched::Started { .. }))
+                })
+            })
+            .collect();
+        running
+            .into_iter()
+            .map(|thread| thread.join().expect("a dispatch"))
+            .collect()
+    });
+
+    let started = answers.iter().filter(|said| **said == Ok(true)).count();
+    assert_eq!(started, 1, "{answers:?}");
+    assert!(
+        answers
+            .iter()
+            .filter_map(|said| said.as_ref().err())
+            .all(|why| why.contains("an open task named 'check prod'")),
+        "{answers:?}"
+    );
+}
+
 /// #3787: a task starts in its asking chat's mode, capped at auto, as the app heard that
 /// chat's own harness say it: default stays default, auto travels, and bypass arrives as auto.
 /// A chat whose harness never said starts its tasks asking, and a switch back to asking is
