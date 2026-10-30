@@ -44,7 +44,7 @@
 //! | `log_in`, a login purlis performs with a vault's values (1.18) | yes | | | | | relayed (1.38) |
 //! | a kept login: a browser's start from one, and a `log_in` that keeps one (1.27) | yes | | | | | |
 //! | `unpair`, the desktop taken out of a runner's peers (1.25) | | | | | | yes |
-//! | `keep_profile`, a desktop's profile kept on its runner (1.43), `forget_profile`, taken off it (1.52), and `stage_profile_settings`, its settings in batches (1.56) | | | | | | yes |
+//! | `keep_profile`, a desktop's profile kept on its runner (1.43), `forget_profile`, taken off it (1.52), `stage_profile_settings`, its settings in batches (1.56), and `kept_profiles`, the ones it keeps (1.57) | | | | | | yes |
 //! | `name_window`, the window naming itself on a link to its own host (1.31) | yes | | | | | |
 //! | `relay_to`, the window's link relayed by its host to a runner it keeps (1.33) | yes | | | | | |
 //! | `take_code`, `give_code`, a repository's history moved over the link as a git bundle (1.34) | yes | | | | | relayed |
@@ -197,7 +197,8 @@
 //!   scope is granted it, the window's included, whose own host has its profiles already; and a
 //!   relaying host refuses it, so it reaches a runner only from the desktop it is paired with.
 //!   `forget_profile` (1.52, #4047), which takes one of the desktop's profiles off the runner, is
-//!   granted and refused exactly as it is.
+//!   granted and refused exactly as it is, and so is `kept_profiles` (1.57, #4060), which asks
+//!   the names of the ones the runner keeps for that desktop.
 //! - **`name_window` is the window's, on a link to its own host** (1.31, #2623). It names the
 //!   window by the name it keeps for that link across its restarts, so its host's relay names it
 //!   to a runner the same way after a restart, and the window takes back its runner chats. Only
@@ -306,8 +307,9 @@ pub enum Power {
     /// peers, as it removes the runner.
     Unpair,
     /// `keep_profile` (1.43, #2049): a desktop's profile kept on its runner, and
-    /// `forget_profile` (1.52, #4047): one taken off it, and `stage_profile_settings` (1.56,
-    /// #4081): the batches of its settings.
+    /// `forget_profile` (1.52, #4047): one taken off it, `stage_profile_settings` (1.56,
+    /// #4081): the batches of its settings, and `kept_profiles` (1.57, #4060): the ones kept
+    /// there.
     KeepProfile,
     /// `name_window` (1.31, #2623): the window names itself on a link to its own host, by the
     /// name it keeps for that link. The window's alone.

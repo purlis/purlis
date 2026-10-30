@@ -1508,10 +1508,11 @@ fn an_adopted_opencode_folder_forgotten_takes_only_its_own_folders() {
     );
 }
 
-/// A runner's own profile, or one kept for another desktop, is never forgotten for this one:
-/// refused, and it stays as it is.
+/// A runner's own profile, or one kept for another desktop, is never forgotten for this one: it
+/// stays as it is, and since nothing of this desktop's has that name, the desktop is told it is
+/// forgotten, so its pool's record can still leave it out (#4060).
 #[test]
-fn a_profile_not_kept_for_this_desktop_is_not_forgotten() {
+fn a_profile_not_kept_for_this_desktop_stays_and_nothing_of_the_desktops_is_left() {
     let dir = tempfile::tempdir().unwrap();
     let runner = homes(dir.path(), "runner");
     let home = runner_home(dir.path());
@@ -1525,11 +1526,38 @@ fn a_profile_not_kept_for_this_desktop_is_not_forgotten() {
     )
     .unwrap();
 
-    let refused = forget(&runner, &home, "work", DESKTOP).unwrap_err();
+    assert_eq!(forget(&runner, &home, "work", DESKTOP), Ok(()));
 
-    assert!(refused.contains("of its own"), "{refused}");
     assert_eq!(list(runner.config_root()).unwrap().len(), 1);
     assert!(runner.folder_of("work").is_dir());
+}
+
+/// **A runner names the profiles it keeps for a desktop, and no others** (#4060): not one it
+/// keeps for another desktop, nor one of its own.
+#[test]
+fn a_runner_names_the_profiles_it_keeps_for_the_desktop_and_no_others() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let home = runner_home(dir.path());
+    let work = a_signed_in_desktop_profile(dir.path());
+    keep(&runner, &home, &Kept::of(&work).unwrap(), DESKTOP, 7).unwrap();
+    let adopted = the_desktops_adopted_folder(dir.path());
+    keep(&runner, &home, &Kept::of(&adopted).unwrap(), DESKTOP, 7).unwrap();
+    let theirs = Kept {
+        name: "theirs".to_owned(),
+        ..Kept::of(&work).unwrap()
+    };
+    keep(&runner, &home, &theirs, "01JA0OTHER00000000000000000", 7).unwrap();
+
+    let mut named = kept_for(&runner, DESKTOP).unwrap();
+    named.sort();
+
+    assert_eq!(named, vec!["claude".to_owned(), "work".to_owned()]);
+    assert!(
+        kept_for(&runner, "01JA0NOBODY0000000000000000")
+            .unwrap()
+            .is_empty()
+    );
 }
 
 /// Forgetting a profile the runner does not keep is nothing: the removal can be asked again.
