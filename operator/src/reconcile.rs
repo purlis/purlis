@@ -17,6 +17,7 @@
 //! nothing is written for the Claim until that object is gone.
 
 use crate::admission::{POLICY, RUNNER_NAMESPACES_POLICY, admission, in_force_since};
+use crate::metrics::{Cause, Metrics};
 use crate::person::{self, QUOTA, Quota, RunnerNamespace};
 use crate::resources::{Claim, ClaimStatus, Pool, PoolStatus, READY, condition};
 use crate::stage;
@@ -285,6 +286,8 @@ struct Context {
     uncounted: Mutex<HashMap<ObjectRef<Claim>, std::time::Instant>>,
     /// How many times in a row each stopped Claim's runner was found still being suspended.
     suspending: Mutex<HashMap<ObjectRef<Claim>, u32>>,
+    /// What the operator counts for its metrics (#3737).
+    metrics: Arc<Metrics>,
 }
 
 /// How long a Claim waits for its requester's quota to count before it says so.
@@ -481,7 +484,7 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
                 // Still stopped by its own claim (#2058).
                 let runner = held.namespace().unwrap_or_default();
                 let sandbox = sandbox_of(client, &runner, &held).await?;
-                set_operating_mode(client, &claim, None, &held, sandbox.as_ref()).await?;
+                set_operating_mode(context, &claim, None, &held, sandbox.as_ref()).await?;
                 if upstream::is_stopped(&claim, None) {
                     let (suspension, again) =
                         suspension_seen(context, &claim, upstream::suspension_of(sandbox.as_ref()));
@@ -586,7 +589,7 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
         // way of the rest (#2058).
         if let (Found::Ours { .. }, Some(held)) = (&claim_found, claim_full.as_ref()) {
             let sandbox = sandbox_of(client, &runner_name, held).await?;
-            set_operating_mode(client, &claim, Some(&pool), held, sandbox.as_ref()).await?;
+            set_operating_mode(context, &claim, Some(&pool), held, sandbox.as_ref()).await?;
         }
         tracing::warn!(
             claim = %name, %namespace, runner_namespace = %runner_name, %kind, %object,
@@ -666,7 +669,7 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
         }
     };
     let sandbox = sandbox_of(client, &runner_name, &applied).await?;
-    set_operating_mode(client, &claim, Some(&pool), &applied, sandbox.as_ref()).await?;
+    set_operating_mode(context, &claim, Some(&pool), &applied, sandbox.as_ref()).await?;
     if stopped {
         let (suspension, again) =
             suspension_seen(context, &claim, upstream::suspension_of(sandbox.as_ref()));
@@ -768,6 +771,7 @@ async fn cleanup(claim: &Claim, context: &Context) -> Result<Action, Error> {
         .map(|held| held.metadata);
     if let Found::Ours { uid } = made_for_claim(held.as_ref(), &runner, claim) {
         delete_by_uid(&upstream_claims, &claim.name_any(), uid).await?;
+        context.metrics.deleted(&claim.spec.pool, Cause::Requested);
     }
     // Every Claim known first, so one not read yet never lets the pool's objects go under it.
     let _ = context.claims.wait_until_ready().await;
@@ -836,7 +840,7 @@ async fn sandbox_of(
 /// the one `upstream`, the claim's upstream claim, controls by uid. Its mode is the one field
 /// the operator writes on it.
 async fn set_operating_mode(
-    client: &Client,
+    context: &Context,
     claim: &Claim,
     pool: Option<&Pool>,
     upstream: &SandboxClaim,
@@ -858,13 +862,17 @@ async fn set_operating_mode(
     };
     let (name, namespace) = (sandbox.name_any(), sandbox.namespace().unwrap_or_default());
     tracing::info!(claim = %claim.name_any(), %namespace, sandbox = %name, %mode, "the runner's mode set");
-    Api::<Sandbox>::namespaced(client.clone(), &namespace)
+    Api::<Sandbox>::namespaced(context.client.clone(), &namespace)
         .patch(
             &name,
             &PatchParams::apply(FIELD_MANAGER).force(),
             &Patch::Apply(&upstream::sandbox_in_mode(sandbox, mode)),
         )
         .await?;
+    // The operator suspends a runner only for a stopped claim or pool (#2058).
+    if mode == upstream::SUSPENDED {
+        context.metrics.suspended(&claim.spec.pool, Cause::Stopped);
+    }
     Ok(())
 }
 
@@ -1149,8 +1157,9 @@ pub async fn cluster_of(client: &Client) -> Result<String, String> {
 /// Run the operator until the process is asked to stop (SIGTERM or Ctrl-C).
 pub async fn run(client: Client, keys: MountedKeys, cluster: String, quota: Quota) {
     let keys = Arc::new(keys);
+    let metrics = Arc::new(Metrics::default());
     tokio::select! {
-        () = run_claims(client.clone(), keys.clone(), cluster.clone(), quota) => {}
+        () = run_claims(client.clone(), keys.clone(), cluster.clone(), quota, metrics) => {}
         () = publish_pool_status(client, keys, cluster) => {}
     }
     tracing::info!("stopped; upstream {} is pinned", upstream::VERSION);
@@ -1228,7 +1237,13 @@ pub fn pool_status_patch(
     Some(serde_json::json!({ "status": status }))
 }
 
-async fn run_claims(client: Client, keys: Arc<MountedKeys>, cluster: String, quota: Quota) {
+async fn run_claims(
+    client: Client,
+    keys: Arc<MountedKeys>,
+    cluster: String,
+    quota: Quota,
+    metrics: Arc<Metrics>,
+) {
     let controller = Controller::new(
         Api::<Claim>::all(client.clone()),
         watcher::Config::default(),
@@ -1239,6 +1254,12 @@ async fn run_claims(client: Client, keys: Arc<MountedKeys>, cluster: String, quo
     let by_upstream_claim = controller.store();
     let by_template = controller.store();
     let by_warm_pool = controller.store();
+    // Served on the operator's own port, from the Claims this watch holds (#3737).
+    tokio::spawn(crate::metrics::serve(
+        client.clone(),
+        metrics.clone(),
+        controller.store(),
+    ));
     // Upstream's objects are watched by their metadata alone, whoever made them: each wakes the
     // Claims it is named for, so a Claim that still needs one it made makes it again at once,
     // and one an object was in the way of goes on as soon as it is gone. The API server sends
@@ -1298,6 +1319,7 @@ async fn run_claims(client: Client, keys: Arc<MountedKeys>, cluster: String, quo
                 conflicts: Mutex::new(HashMap::new()),
                 suspending: Mutex::new(HashMap::new()),
                 uncounted: Mutex::new(HashMap::new()),
+                metrics,
             }),
         )
         .for_each(|result| async move {

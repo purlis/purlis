@@ -556,6 +556,26 @@ namespace, which its desktop links to. The old runner is outside that namespace 
 person's quota, and anyone with rights in the Claim's namespace can still reach it. Delete such
 Claims and make them again soon after upgrading: the old runner goes with the Claim.
 
+## Its metrics
+
+The operator serves its metrics in Prometheus's text format on its pod's port `metrics`
+(8080), at `/metrics`, and the chart and the plain manifests give that port a Service of its
+own, `purlis-cluster-operator-metrics` in the operator's namespace (#3737). Point your
+Prometheus, or a `ServiceMonitor`, at it:
+
+| Metric | Type | Labels | What it counts |
+|---|---|---|---|
+| `purlis_cluster_operator_claims` | gauge | `pool`, `namespace`, `state` | the Claims the operator watches; `state` is `Ready` when the runner is ready, otherwise the Claim's `Ready` reason (`Stopped`, `Starting`, `OverQuota`, …), and `Unknown` before the operator has said one |
+| `purlis_cluster_operator_warm_runners` | gauge | `pool`, `namespace` | the runners upstream says are warm and ready in each runner namespace |
+| `purlis_cluster_operator_suspensions_total` | counter | `pool`, `cause` | the runners the operator suspended; `cause` is `stopped` (the Claim's or its Pool's `stopped`) |
+| `purlis_cluster_operator_claims_deleted_total` | counter | `pool`, `cause` | the Claims whose runner the operator removed as they were deleted; `cause` is `requested` (someone deleted the Claim) |
+
+The counters count from the operator's start. The causes grow as the operator suspends idle
+runners (#3980) and deletes long-suspended Claims (#3981). The port answers anyone in the
+cluster who can reach it; a NetworkPolicy in the operator's namespace narrows that. It says
+how many Claims each pool and namespace has and their states, and nothing about what a runner
+does.
+
 ## Rolling the signing key
 
 A team admin rolls the operator's signing key without any desktop being asked again (#3305).

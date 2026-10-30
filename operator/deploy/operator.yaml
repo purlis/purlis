@@ -164,6 +164,27 @@ subjects:
     name: purlis-cluster-operator
     namespace: purlis-system
 ---
+# Source: purlis-cluster-operator/templates/service.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: v1
+kind: Service
+metadata:
+  name: purlis-cluster-operator-metrics
+  namespace: purlis-system
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: purlis-cluster-operator
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+      protocol: TCP
+---
 # Source: purlis-cluster-operator/templates/deployment.yaml
 # Copyright 2026 Purlis
 # SPDX-License-Identifier: Apache-2.0
@@ -210,6 +231,12 @@ spec:
       containers:
         - name: operator
           image: ghcr.io/purlis/purlis-cluster-operator@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          # Its metrics (#3737), served at /metrics; the Service purlis-cluster-operator-metrics
+          # reaches them.
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
           env:
             # What each person's runners may hold at once (#2055), as JSON.
             - name: PURLIS_PER_PERSON_QUOTA

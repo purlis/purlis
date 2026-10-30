@@ -409,7 +409,7 @@ fn everything_the_chart_makes_lives_in_the_release_namespace_or_the_cluster() {
     for document in rendered(&with_digest(&[])) {
         let namespaced = matches!(
             document["kind"].as_str(),
-            Some("ServiceAccount" | "Deployment")
+            Some("ServiceAccount" | "Deployment" | "Service")
         );
         if namespaced {
             assert_eq!(
@@ -453,4 +453,36 @@ fn the_charts_app_version_is_the_operators() {
     .expect("YAML");
     assert_eq!(chart["appVersion"], env!("CARGO_PKG_VERSION"));
     assert_eq!(chart["name"], "purlis-cluster-operator");
+}
+
+#[test]
+fn the_operators_metrics_are_served_on_its_port_through_a_service_of_their_own() {
+    let documents = rendered(&with_digest(&[]));
+    let deployment = documents
+        .iter()
+        .find(|d| d["kind"] == "Deployment")
+        .expect("the operator's deployment");
+    let port = purlis_cluster_operator::metrics::PORT;
+    assert_eq!(
+        deployment["spec"]["template"]["spec"]["containers"][0]["ports"],
+        json!([{ "name": "metrics", "containerPort": port, "protocol": "TCP" }]),
+        "{deployment}"
+    );
+    let service = documents
+        .iter()
+        .find(|d| d["kind"] == "Service")
+        .expect("the metrics Service (#3737)");
+    assert_eq!(
+        service["metadata"]["name"],
+        "purlis-cluster-operator-metrics"
+    );
+    assert_eq!(
+        service["spec"]["selector"], deployment["spec"]["selector"]["matchLabels"],
+        "it selects the operator's pod"
+    );
+    assert_eq!(
+        service["spec"]["ports"],
+        json!([{ "name": "metrics", "port": port, "targetPort": "metrics", "protocol": "TCP" }]),
+        "{service}"
+    );
 }
