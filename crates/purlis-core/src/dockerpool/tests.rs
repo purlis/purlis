@@ -2599,15 +2599,15 @@ fn the_disk_volumes_hold_is_read_by_system_df_alone_starting_nothing() {
 /// the home `to`: whether it ended well.
 #[cfg(unix)]
 fn carried(from: &std::path::Path, to: &std::path::Path) -> std::process::Output {
-    std::process::Command::new("/bin/sh")
+    let mut command = std::process::Command::new("/bin/sh");
+    command
         .arg("-c")
         .arg(COPY_PROFILES)
         .arg("sh")
         .arg(from)
         .arg(to)
-        .args(crate::profilestore::carried_in_a_runner_home())
-        .output()
-        .unwrap()
+        .args(crate::profilestore::carried_in_a_runner_home());
+    crate::forklock::output(&mut command).unwrap()
 }
 
 /// **A follow carries the old runner's sign-ins and nothing else** (#4011): each made profile's
