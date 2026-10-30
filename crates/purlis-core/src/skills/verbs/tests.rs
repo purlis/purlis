@@ -32,6 +32,8 @@ fn plane() -> tempfile::TempDir {
         "release",
         "Cuts a release, then skills:deploy.",
     );
+    // Its app state, made before purlis was used there (#3718): nothing waits for an Accept.
+    crate::appstate::made(root).unwrap();
     tmp
 }
 

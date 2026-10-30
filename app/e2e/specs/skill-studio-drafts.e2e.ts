@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { projectRoot, stateOf } from "../acting.js";
+import { appStateOf, projectRoot } from "../acting.js";
 import {
   closeTheViewTabsOpenedSince,
   endTheSessionsStartedSince,
@@ -19,8 +19,8 @@ import { projectInFront, runningIn } from "../running.js";
  * **Draft skills in the Skill studio** (SK-9, #2772), in the built app against the real core, with
  * the `skill-studio` flag on for the run (`wdio.conf.ts`).
  *
- * A chat's write to a skill's files is kept as a draft in this machine's state
- * (`skill-drafts/<id>/`, `docs/plane-format.md`); how a chat's write gets there is the core's seam
+ * A chat's write to a skill's files is kept as a draft in this machine's app state of the project
+ * (`<data>/app-state/<clone key>/skill-drafts/<id>/`, `docs/plane-format.md`); how a chat's write gets there is the core's seam
  * (`toolhooks` and `skills/verbs/drafts` tests), so the spec puts two drafts there as the app
  * keeps them. Then, in the studio:
  *
@@ -87,7 +87,7 @@ describe("draft skills in the Skill studio", function () {
 
   before(async () => {
     root = await projectRoot();
-    state = stateOf(root);
+    state = appStateOf(root);
     await focusWorkspace("alpha");
     wereOpen = await tabNames();
     plane = await projectInFront();

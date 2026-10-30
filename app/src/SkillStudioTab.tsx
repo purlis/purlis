@@ -536,6 +536,11 @@ export function SkillStudioTab({
       case "accept":
         change("The change was not accepted", () => commands.skillLevelAccept(plane, fix.folder));
         return;
+      case "accept-folders":
+        change("The folders were not accepted", () =>
+          commands.skillLevelsConfirm(plane, fix.folders),
+        );
+        return;
       case "rename": {
         const skill = (studio?.skills ?? []).find(
           (row) =>

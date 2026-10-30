@@ -2062,6 +2062,12 @@ export const commands = {
 	 *  chats from now on. The person's press in the studio, on a skill left out for it.
 	 */
 	skillLevelAccept: (plane: PlaneId, folder: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_level_accept", { plane, folder })),
+	/**
+	 *  **Accepts the workspace and persona folders `folders` the studio listed** (#3718), each there
+	 *  now: the person's one press where purlis cannot confirm which of them they accepted before
+	 *  (`levels::to_confirm`).
+	 */
+	skillLevelsConfirm: (plane: PlaneId, folders: string[]) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_levels_confirm", { plane, folders })),
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
 	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model })),
 	/**
@@ -8525,6 +8531,11 @@ export type Need =
 export type NeedFix = 
 /**  Accept the folder a chat made (`skill_level_accept`). */
 { kind: "accept"; folder: string } | 
+/**
+ *  Accept the project's folders it lists, where purlis cannot confirm which the person
+ *  accepted before (`skill_levels_confirm`, #3718).
+ */
+{ kind: "accept-folders"; folders: string[] } | 
 /**  Rename the plane's copy of a skill: its page in the Library, with Rename open. */
 { kind: "rename"; name: string; level: Level; local: boolean } | 
 /**  The Harness skills page, where the other copy's switch is. */
@@ -13051,6 +13062,12 @@ export type Studio = {
 	 */
 	router: StudioRouter | null,
 	/**
+	 *  Where purlis cannot confirm which of the project's workspace and persona folders the
+	 *  person accepted (#3718): the one item the studio shows for the project, whose Accept
+	 *  accepts the folders it lists (`skill_levels_confirm`). Null otherwise.
+	 */
+	levels_to_confirm: StudioLevelsToConfirm | null,
+	/**
 	 *  **What in these skills needs the person** (#3689): the Needs you page's items, by kind,
 	 *  each with why and one fix ([`needs`]). Empty while the studio is off.
 	 */
@@ -13127,6 +13144,15 @@ export type StudioLevel = {
 	level: SkillLevel,
 	/**  As a person reads it: `project`, `local workspace ops` (the core's `Level`). */
 	label: string,
+};
+
+/**
+ *  **The one item for the project's folders** (#3718): what it says, and the folders its Accept
+ *  accepts, relative to the project.
+ */
+export type StudioLevelsToConfirm = {
+	said: string,
+	folders: string[],
 };
 
 /**

@@ -39,6 +39,9 @@ pub enum NeedKind {
 pub enum NeedFix {
     /// Accept the folder a chat made (`skill_level_accept`).
     Accept { folder: String },
+    /// Accept the project's folders it lists, where purlis cannot confirm which the person
+    /// accepted before (`skill_levels_confirm`, #3718).
+    AcceptFolders { folders: Vec<String> },
     /// Rename the plane's copy of a skill: its page in the Library, with Rename open.
     Rename {
         name: String,
@@ -111,8 +114,34 @@ fn whose(owner: &Owner) -> String {
 pub(crate) fn of(studio: &Studio) -> Vec<NeedsYou> {
     let mut needs = Vec::new();
 
+    // Where purlis cannot confirm which folders the person accepted (#3718): one item for the
+    // project, which lists them, and no item for each skill it holds.
+    let unconfirmed = purlis_core::skills::levels::UNCONFIRMED;
+    if let Some(confirm) = &studio.levels_to_confirm {
+        needs.push(NeedsYou {
+            id: "review:project-folders".to_owned(),
+            kind: NeedKind::Review,
+            title: "The project's folders".to_owned(),
+            tag: None,
+            reason: format!(
+                "{} It accepts {}.",
+                sentence(&confirm.said),
+                confirm.folders.join(", ")
+            ),
+            fix: NeedFix::AcceptFolders {
+                folders: confirm.folders.clone(),
+            },
+            fix_label: "Accept the folders".to_owned(),
+            fix_does: "Their skills reach chats from then on; a folder a running chat could have \
+                       made still waits for its own Accept."
+                .to_owned(),
+        });
+    }
     // A folder a chat made while it ran, which waits for the person's Accept (SK-9).
     for skill in &studio.skills {
+        if studio.levels_to_confirm.is_some() && skill.left_out.as_deref() == Some(unconfirmed) {
+            continue;
+        }
         if let Some(folder) = &skill.accept {
             needs.push(NeedsYou {
                 id: format!("review:{folder}"),

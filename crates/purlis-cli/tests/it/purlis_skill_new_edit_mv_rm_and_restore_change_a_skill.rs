@@ -31,6 +31,9 @@ impl Project {
         .unwrap();
         std::fs::create_dir_all(at.join("home")).unwrap();
         std::fs::write(root.join("charter.toml"), "[plane]\n").unwrap();
+        // The project's app state, made before purlis was ever used there (#3718), in the data
+        // home every run below is given: nothing of it waits for an Accept.
+        purlis_core::appstate::made_in_for_tests(&at.join("data"), &root).unwrap();
         Project { _tmp: tmp, at }
     }
 
@@ -47,6 +50,7 @@ impl Project {
             .env("CHARTER_ROOT", &root)
             .env("HOME", self.at.join("home"))
             .env("PURLIS_CONFIG_HOME", self.at.join("home/config"))
+            .env("PURLIS_DATA_HOME", self.at.join("data"))
             .env("PURLIS_SKILL_STUDIO", "1")
             .env("NO_COLOR", "1")
             .env_remove("VISUAL")
