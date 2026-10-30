@@ -848,6 +848,13 @@ fn a_sign_in_on_a_runner_names_the_flow_it_runs() {
             .sign_in_args_by(Typed::Driven, "work", None)
             .contains(&"--way".to_owned())
     );
+    // Copilot's login shows its device code by default, so a runner before #4044, which knows no
+    // `--way`, still signs it in.
+    assert!(
+        !made()
+            .sign_in_args_by(Typed::Driven, "open", Some("github-copilot"))
+            .contains(&"--way".to_owned())
+    );
 }
 
 /// **A sign-in purlis drives runs with pipes, never a terminal** (#4042): the same runner's own

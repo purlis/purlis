@@ -307,6 +307,9 @@ const OPENCODE_CHATGPT: Words = Words {
     ..NO_WORDS
 };
 
+/// The logins purlis follows, each by its harness and plan.
+const FOLLOWED: [&Words; 4] = [&CLAUDE, &OPENCODE_COPILOT, &CODEX, &OPENCODE_CHATGPT];
+
 /// The shortest and longest `state` a login's page is believed to have: a login's own, which is
 /// long and random.
 const LEAST_STATE: usize = 16;
@@ -369,7 +372,7 @@ impl Driven {
     /// A login of harness `kind` to its `plan`, started at `now`; `None` for one purlis does not
     /// follow.
     pub fn of_plan(kind: &str, plan: Option<&str>, now: Instant) -> Option<Self> {
-        [&CLAUDE, &OPENCODE_COPILOT, &CODEX, &OPENCODE_CHATGPT]
+        FOLLOWED
             .into_iter()
             .find(|words| words.kind == kind && words.plan == plan)
             .map(|words| Self::at(words, At::Starting, now))
@@ -770,6 +773,15 @@ fn state_on(url: &str, port: u16, client: &str) -> Option<String> {
             .iter()
             .any(|host| back == format!("http://{host}:{port}{}", callback::PATH)))
     .then(|| state.to_owned())
+}
+
+/// Whether the login to plan `plan`, of whichever harness serves it, waits for the browser's
+/// answer: only such a plan's login is told `--way browser`, which a runner before #4044 does not
+/// know.
+pub fn plan_waits_for_the_browser(plan: &str) -> bool {
+    FOLLOWED
+        .into_iter()
+        .any(|words| words.plan == Some(plan) && words.answered_on.is_some())
 }
 
 /// **Whether a login of harness `kind` to `plan` waits for the browser's answer on its own
