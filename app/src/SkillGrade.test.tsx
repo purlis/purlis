@@ -98,7 +98,7 @@ function renderPlan(over: { afterEdit?: boolean; changed?: number } = {}) {
 const step = (over: Record<string, unknown> = {}) => ({
   plane: "p",
   skill: "deploy",
-  level: { at: "project", local: false },
+  level: { at: "project" as const, local: false },
   grade: "01GRADE",
   ran: 0,
   of: 12,
@@ -333,7 +333,7 @@ describe("Grade, cost first", () => {
     const step = {
       plane: "p",
       skill: "deploy",
-      level: { at: "project", local: false },
+      level: { at: "project" as const, local: false },
       grade: "g",
       ran: 10,
       of: 12,
@@ -420,7 +420,7 @@ describe("Grade, cost first", () => {
       endedSaid({
         plane: "p",
         skill: "deploy",
-        level: { at: "project", local: false },
+        level: { at: "project" as const, local: false },
         grade: "g",
         ran: 1,
         of: 12,
@@ -480,7 +480,7 @@ describe("a grade's token cap", () => {
       endedSaid({
         plane: "p",
         skill: "deploy",
-        level: { at: "project", local: false },
+        level: { at: "project" as const, local: false },
         grade: "g",
         ran: 9,
         of: 12,
@@ -521,7 +521,7 @@ describe("a grade's dollar limit (#3469)", () => {
       endedSaid({
         plane: "p",
         skill: "deploy",
-        level: { at: "project", local: false },
+        level: { at: "project" as const, local: false },
         grade: "g",
         ran: 3,
         of: 12,
@@ -560,7 +560,7 @@ describe("a grade a fault ended", () => {
       endedSaid({
         plane: "p",
         skill: "deploy",
-        level: { at: "project", local: false },
+        level: { at: "project" as const, local: false },
         grade: "g",
         ran: 0,
         of: 12,
