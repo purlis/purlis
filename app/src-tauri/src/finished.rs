@@ -245,7 +245,7 @@ pub(crate) fn listed_for(held: &Held, asker: u32) -> Vec<purlis_core::dispatched
     .filter_map(|record| {
         let how = Finished::of(record)?;
         Some(purlis_core::dispatched::Row {
-            chat: ended_as(held, record, asker).unwrap_or(0),
+            chat: ended_as(held, record, asker).unwrap_or(purlis_core::dispatched::NO_NUMBER_KNOWN),
             name: name_of(record),
             persona: record.persona.clone(),
             place: record
@@ -305,84 +305,88 @@ pub(crate) fn listed_for(held: &Held, asker: u32) -> Vec<purlis_core::dispatched
 /// run, and no chat of theirs is open here, coming back, or waiting to start again. A launch
 /// that could not read the record of open chats ends none of these, so they would be listed
 /// nowhere; each is listed, by its record, and marked orphaned by restart. Its number is not
-/// known to be its own any more, so it is listed under 0.
+/// known to be its own any more, so it is listed under
+/// [`purlis_core::dispatched::NO_NUMBER_KNOWN`].
 fn orphaned_for(
     held: &Held,
     me: &dispatchrecord::ChatRef,
     open: &[crate::dispatches::OpenChat],
 ) -> Vec<purlis_core::dispatched::Row> {
     let now = chrono::Utc::now();
-    orphaned_records(held, me, open)
-        .iter()
-        .map(|record| purlis_core::dispatched::Row {
-            chat: 0,
-            name: name_of(record),
-            persona: record.persona.clone(),
-            place: record
-                .place
-                .workspace
-                .clone()
-                .map_or(
-                    purlis_core::active::Place::PlaneRoot,
-                    purlis_core::active::Place::Workspace,
-                )
-                .word()
-                .to_owned(),
-            state: ITS_DISPATCH_STILL_RUNS.to_owned(),
-            age_secs: chrono::DateTime::parse_from_rfc3339(&record.started)
-                .ok()
-                .and_then(|started| (now - started.with_timezone(&chrono::Utc)).to_std().ok())
-                .map(|age| age.as_secs()),
-            by_person: record.asker.by_person,
-            branch: record
-                .place
-                .worktree
-                .as_ref()
-                .and_then(|tree| tree.branch.clone()),
-            branch_stands: None,
-            finished: false,
-            long: false,
-            last_note: None,
-            noted_secs: None,
-            liveness: Some(purlis_core::dispatchliveness::Liveness::orphaned()),
-        })
-        .collect()
+    orphaned(held, me, open, |record| purlis_core::dispatched::Row {
+        chat: purlis_core::dispatched::NO_NUMBER_KNOWN,
+        name: name_of(record),
+        persona: record.persona.clone(),
+        place: record
+            .place
+            .workspace
+            .clone()
+            .map_or(
+                purlis_core::active::Place::PlaneRoot,
+                purlis_core::active::Place::Workspace,
+            )
+            .word()
+            .to_owned(),
+        state: ITS_DISPATCH_STILL_RUNS.to_owned(),
+        age_secs: chrono::DateTime::parse_from_rfc3339(&record.started)
+            .ok()
+            .and_then(|started| (now - started.with_timezone(&chrono::Utc)).to_std().ok())
+            .map(|age| age.as_secs()),
+        by_person: record.asker.by_person,
+        branch: record
+            .place
+            .worktree
+            .as_ref()
+            .and_then(|tree| tree.branch.clone()),
+        branch_stands: None,
+        finished: false,
+        long: false,
+        last_note: None,
+        noted_secs: None,
+        liveness: Some(purlis_core::dispatchliveness::Liveness::orphaned()),
+    })
 }
 
-/// The records of the tasks of the chat `me` orphaned by a restart ([`orphaned_for`]): running,
-/// asked for by it, and with no chat open here (`open`), coming back or waiting to start again.
-/// From the project's copy of its running records, read again only once the store has
-/// changed (#3932), so a turn's roster can ask at every turn.
-fn orphaned_records(
+/// What `each` makes of the tasks of the chat `me` orphaned by a restart ([`orphaned_for`]):
+/// running, asked for by it, and with no chat open here (`open`), coming back or waiting to
+/// start again. From the project's copy of its running records, read again only once the store
+/// has changed (#3932), so a turn's roster can ask at every turn.
+fn orphaned<T>(
     held: &Held,
     me: &dispatchrecord::ChatRef,
     open: &[crate::dispatches::OpenChat],
-) -> Vec<Record> {
+    each: impl Fn(&Record) -> T,
+) -> Vec<T> {
     let not_back: Vec<String> = held
         .chats()
         .not_back()
         .into_iter()
         .map(|(id, _)| id)
         .collect();
-    held.tasks().orphaned(held.root(), me, |worker| {
-        open.iter().any(|one| is_open(worker, one))
-            || worker.id.as_ref().is_some_and(|id| not_back.contains(id))
-    })
+    held.tasks().orphaned(
+        held.root(),
+        me,
+        |worker| {
+            open.iter().any(|one| is_open(worker, one))
+                || worker.id.as_ref().is_some_and(|id| not_back.contains(id))
+        },
+        each,
+    )
 }
 
 /// **The tasks of chat `asker` orphaned by a restart that only their dispatch records know**
-/// (#3932), as its turn's roster names them: each by its name, under number 0, since the number
-/// its chat had may be another chat's now. The ones a launch could not start again are named
-/// by [`crate::unstarted::orphans_of`], and are not among these.
+/// (#3932), as its turn's roster names them: each by its name, under
+/// [`purlis_core::dispatched::NO_NUMBER_KNOWN`], since the number its chat had may be another
+/// chat's now. The ones a launch could not start again are named by
+/// [`crate::unstarted::orphans_of`], and are not among these.
 pub(crate) fn orphans_of(held: &Held, asker: u32) -> Vec<(u32, String)> {
     let Some(me) = crate::dispatches::chat_ref(held, asker) else {
         return Vec::new();
     };
     let open = crate::dispatches::open_chats(held);
-    orphaned_records(held, &me, &open)
-        .iter()
-        .map(|record| (0, name_of(record)))
-        .collect()
+    orphaned(held, &me, &open, |record| {
+        (purlis_core::dispatched::NO_NUMBER_KNOWN, name_of(record))
+    })
 }
 
 /// The state an orphaned task's row says (#3900): its record's word, and nothing more.

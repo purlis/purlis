@@ -271,13 +271,10 @@ fn a_task_s_last_note_is_read_back_from_its_dispatch_record_after_a_restart() {
         launches_again(&plane, (host.clone(), planes, held), &at_quit);
 
     let later = std::time::SystemTime::from(sent) + std::time::Duration::from_secs(240);
-    assert_eq!(
-        held.tasks().ledger().last_note(task, later),
-        Some((
-            Some("ticket 2 in review".to_owned()),
-            std::time::Duration::from_secs(240)
-        ))
-    );
+    let ledger = held.tasks().ledger();
+    let note = ledger.last_note(task).expect("its last note");
+    assert_eq!(note.text.as_deref(), Some("ticket 2 in review"));
+    assert_eq!(note.ago(later), std::time::Duration::from_secs(240));
 }
 
 #[test]
@@ -330,9 +327,10 @@ fn a_turn_s_roster_names_a_task_only_its_dispatch_record_knows_and_drops_it_once
             .map(|task| (task.chat, task.name))
             .collect::<Vec<_>>()
     };
-    assert_eq!(roster(&held), vec![(0, "forms".to_owned())]);
+    let orphan = vec![(purlis_core::dispatched::NO_NUMBER_KNOWN, "forms".to_owned())];
+    assert_eq!(roster(&held), orphan);
     // Asked again with nothing changed, it is the same.
-    assert_eq!(roster(&held), vec![(0, "forms".to_owned())]);
+    assert_eq!(roster(&held), orphan);
 
     // Its record ends: the next turn's roster no longer names it.
     assert!(

@@ -77,6 +77,11 @@ pub const DIR_NAME: &str = "dispatches";
 pub const ENDED_WITHOUT_A_REPORT: &str = "ended without a report";
 
 /// The store of the project at `root`.
+///
+/// **Every write to a record goes through `write`** (and a removal through [`withdraw`]), which
+/// counts it for [`Running`] (`wrote`, #3932): a write made around it is only seen there once
+/// the folder's time has moved. Removals by [`crate::retention`] and the state folder's moves
+/// take only ended records, which [`Running`] does not keep.
 pub fn dir(root: &Path) -> PathBuf {
     crate::names::state(root).join("app").join(DIR_NAME)
 }
@@ -891,21 +896,34 @@ pub struct LastNote {
 }
 
 /// **The last note `record`'s task sent, as a restart finds it** (#3956): its time from
-/// [`Record::last_note`], which moves with every note, and its words from the message kept at
-/// that very time. An older note's words are never read as the newer one's.
+/// [`Record::last_note`], which moves with every note, and its words from the last note its
+/// talk keeps, **only where its talk kept every message** (`messages` is its length) and that
+/// note is of that time. A stamp is whole seconds, and a newer note past the caps
+/// ([`MOST_SAID`], [`MOST_SAID_BYTES`]) is counted and not kept, so an older note's words
+/// are never read as the newer one's.
 pub fn last_note_of(record: &Record) -> Option<LastNote> {
     let stamp = record.last_note.as_deref()?;
     let at = chrono::DateTime::parse_from_rfc3339(stamp)
         .ok()?
         .with_timezone(&chrono::Utc);
+    let whole = usize::try_from(record.messages).is_ok_and(|sent| sent == record.talk.len());
     let text = record
         .talk
         .iter()
         .rev()
-        .find(|said| said.kind == crate::dispatchtalk::Kind::Note && said.at == stamp)
+        .find(|said| said.kind == crate::dispatchtalk::Kind::Note)
+        .filter(|said| whole && said.at == stamp)
         .filter(|said| !said.left_out && !said.text.is_empty())
         .map(|said| said.text.clone());
     Some(LastNote { at, text })
+}
+
+impl LastNote {
+    /// How long before `now` it was sent; nothing for a note dated after `now`.
+    pub fn ago(&self, now: std::time::SystemTime) -> std::time::Duration {
+        now.duration_since(std::time::SystemTime::from(self.at))
+            .unwrap_or_default()
+    }
 }
 
 /// **The task of dispatch `id` ended before it was handed the person's answer** (#1496): the
@@ -2482,9 +2500,11 @@ fn wrote(root: &Path) {
     *writes.entry(dir(root)).or_default() += 1;
 }
 
-/// The store as [`Running`] last saw it: this process's writes to it, and its folder's time.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The store as [`Running`] last saw it: which store, this process's writes to it, and its
+/// folder's time.
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct Seen {
+    dir: PathBuf,
     writes: u64,
     /// The folder's modified time, which a record written in by another process moves: every
     /// write is a new file renamed over the old one ([`crate::rewrite::replace`]). `None`
@@ -2504,43 +2524,99 @@ impl Seen {
         let modified = std::fs::metadata(&dir)
             .and_then(|meta| meta.modified())
             .ok();
-        Self { writes, modified }
+        Self {
+            dir,
+            writes,
+            modified,
+        }
+    }
+
+    /// **Whether a read made with this look can be trusted until the look changes** (#3932,
+    /// git's "racy" rule): not where the folder's time is within [`A_FOLDER_TIME_SETTLES`] of
+    /// `now`, since another write in the same tick of the file system's clock would leave it
+    /// as it is. Such a read is made again at the next look.
+    fn settled(&self, now: std::time::SystemTime) -> bool {
+        self.modified.is_none_or(|modified| {
+            now.duration_since(modified)
+                .is_ok_and(|since| since >= A_FOLDER_TIME_SETTLES)
+        })
     }
 }
+
+/// How long after the store's folder last changed its time is trusted to say whether it has
+/// changed again ([`Seen::settled`]): past the coarsest clock a file system keeps, a second.
+pub const A_FOLDER_TIME_SETTLES: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// **The store's running records, read again only once it has changed** (#3932): what the
 /// per-turn roster names a task orphaned by a restart from, without reading every record at
 /// every turn. A look is one folder's time and a counter; a read happens once after a launch,
 /// and after a record is written, here or by another process.
+///
+/// **Slim, and cheap to read again.** Each record is kept without its brief and its talk,
+/// which nothing here reads. A record once read as ended is not read again: a dispatch ends
+/// once, and never runs again ([`close`]).
 #[derive(Debug, Default)]
 pub struct Running {
     seen: Option<Seen>,
     running: Vec<Record>,
+    ended: std::collections::BTreeSet<String>,
 }
 
 impl Running {
-    /// The running records of the project at `root`, newest first, as [`list`] reads them.
-    pub fn now(&mut self, root: &Path) -> &[Record] {
-        let seen = Seen::now(root);
-        if self.seen != Some(seen) {
-            self.running = list(root).into_iter().filter(Record::running).collect();
-            self.seen = Some(seen);
-        }
-        &self.running
+    /// **The tasks of `asker` orphaned by a restart** (#3900, #3932) in the project at
+    /// `root`: the running records it asked for (by its id, [`asked_by`]) whose chat is
+    /// nowhere `here`: not open, not coming back, not waiting to start again. What the task
+    /// list and a turn's roster both name. Newest first, slim ([`Running`]).
+    pub fn orphaned(
+        &mut self,
+        root: &Path,
+        asker: &ChatRef,
+        here: impl Fn(&ChatRef) -> bool,
+    ) -> Vec<&Record> {
+        self.orphaned_at(root, std::time::SystemTime::now(), asker, here)
     }
-}
 
-/// **The tasks of `asker` orphaned by a restart** (#3900, #3932): among `running`, the ones it
-/// asked for (by its id, [`asked_by`]) whose chat is nowhere `here`: not open, not coming back,
-/// not waiting to start again. What the task list and a turn's roster both name.
-pub fn orphaned<'a>(
-    running: &'a [Record],
-    asker: &'a ChatRef,
-    here: impl Fn(&ChatRef) -> bool + 'a,
-) -> impl Iterator<Item = &'a Record> + 'a {
-    running.iter().filter(move |record| {
-        record.running() && asked_by(record, asker) && !here(&record.worker.chat)
-    })
+    /// [`Self::orphaned`], looked at `now`.
+    pub fn orphaned_at(
+        &mut self,
+        root: &Path,
+        now: std::time::SystemTime,
+        asker: &ChatRef,
+        here: impl Fn(&ChatRef) -> bool,
+    ) -> Vec<&Record> {
+        self.look(root, now);
+        self.running
+            .iter()
+            .filter(|record| asked_by(record, asker) && !here(&record.worker.chat))
+            .collect()
+    }
+
+    /// Reads the store again where it changed since the last look, or where that look could
+    /// not be trusted ([`Seen::settled`]). The look is taken before the read, so a write
+    /// during it is a change at the next look.
+    fn look(&mut self, root: &Path, now: std::time::SystemTime) {
+        let seen = Seen::now(root);
+        if self.seen.as_ref() == Some(&seen) {
+            return;
+        }
+        let ids = ids(root);
+        self.ended.retain(|id| ids.contains(id));
+        self.running.clear();
+        let unread: Vec<&String> = ids.iter().filter(|id| !self.ended.contains(*id)).collect();
+        for id in unread {
+            let Some(mut record) = read(root, id) else {
+                continue;
+            };
+            if record.running() {
+                record.brief.clear();
+                record.talk.clear();
+                self.running.push(record);
+            } else {
+                self.ended.insert(record.id);
+            }
+        }
+        self.seen = seen.settled(now).then_some(seen);
+    }
 }
 
 /// Reads record `id`, applies `edit`, and writes it back when `edit` says it changed, under

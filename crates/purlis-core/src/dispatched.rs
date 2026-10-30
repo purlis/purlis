@@ -245,6 +245,12 @@ pub enum Waited {
     Asks { question: String },
 }
 
+/// **The chat number of a task whose number is not known to be its own** (#1485, #3900,
+/// #3932): one that finished before this app was started, or one orphaned by a restart that
+/// only its dispatch record knows. No chat is ever dealt it, so nothing taken by number reaches
+/// one through it; a list row and a turn's roster say "under a chat number no longer known".
+pub const NO_NUMBER_KNOWN: u32 = 0;
+
 /// One task in a chat's list of the tasks it dispatched.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Row {
@@ -797,8 +803,8 @@ struct Task {
     heard: Heard,
     /// Its last progress note to the chat that asked, and when it sent it (#3905). **In memory
     /// only**: its dispatch record keeps every message, and a restart reads it back from there
-    /// ([`Ledger::noted_before`], #3956). `None` words for a note whose record kept none.
-    last_note: Option<(Option<String>, SystemTime)>,
+    /// ([`Ledger::noted_before`], #3956).
+    last_note: Option<crate::dispatchrecord::LastNote>,
     /// When it last ran a command or sent a note (#3900).
     lately: crate::dispatchliveness::Heard,
     /// How it stands across the app's last restart (#3900).
@@ -1546,29 +1552,31 @@ impl Ledger {
     /// Task `task` sent its asking chat the progress note `text` at `now` (#3905): the one its
     /// list row shows, the latest only.
     pub fn noted(&mut self, task: u32, text: &str, now: SystemTime) {
-        self.tasks.entry(task).or_default().last_note = Some((Some(text.to_owned()), now));
+        self.tasks.entry(task).or_default().last_note = Some(crate::dispatchrecord::LastNote {
+            at: now.into(),
+            text: Some(text.to_owned()),
+        });
     }
 
-    /// **Task `task` sent its last note at `at`, before this app started** (#3956): as its
-    /// dispatch record keeps it, with `text` where the record kept its words. Read back when a
-    /// launch puts the task back, so its list row does not say "no note yet". A note this app
-    /// has heard since is newer, and is kept.
-    pub fn noted_before(&mut self, task: u32, text: Option<&str>, at: SystemTime) {
+    /// **Task `task` sent `note`, its last, before this app started** (#3956): as its dispatch
+    /// record keeps it ([`crate::dispatchrecord::last_note_of`]). Read back when a launch puts
+    /// the task back, so its list row does not say "no note yet". A note this app has heard
+    /// since is newer, and is kept.
+    pub fn noted_before(&mut self, task: u32, note: crate::dispatchrecord::LastNote) {
         let entry = self.tasks.entry(task).or_default();
         if entry
             .last_note
             .as_ref()
-            .is_none_or(|(_, heard)| *heard < at)
+            .is_none_or(|heard| heard.at < note.at)
         {
-            entry.last_note = Some((text.map(str::to_owned), at));
+            entry.last_note = Some(note);
         }
     }
 
-    /// Task `task`'s last progress note, where its words are known, and how long before `now`
-    /// it was sent (#3905).
-    pub fn last_note(&self, task: u32, now: SystemTime) -> Option<(Option<String>, Duration)> {
-        let (text, at) = self.tasks.get(&task)?.last_note.as_ref()?;
-        Some((text.clone(), now.duration_since(*at).unwrap_or_default()))
+    /// Task `task`'s last progress note (#3905): its words where they are known, and when
+    /// ([`crate::dispatchrecord::LastNote::ago`]).
+    pub fn last_note(&self, task: u32) -> Option<&crate::dispatchrecord::LastNote> {
+        self.tasks.get(&task)?.last_note.as_ref()
     }
 
     /// The person typed in task `task`'s pane while it worked.
@@ -2204,9 +2212,11 @@ pub fn list_text(rows: &[Row]) -> String {
         // A finished task's program has ended, and that is said: nothing can be sent to it.
         // One that finished before this app was started has no number to be asked after by.
         let chat = match (row.finished, row.chat) {
-            (true, 0) => "finished earlier, under a chat number no longer known".to_owned(),
+            (true, NO_NUMBER_KNOWN) => {
+                "finished earlier, under a chat number no longer known".to_owned()
+            }
             // Orphaned by a restart, with no chat here to be its number (#3900).
-            (false, 0) => "under a chat number no longer known".to_owned(),
+            (false, NO_NUMBER_KNOWN) => "under a chat number no longer known".to_owned(),
             (_, chat) => format!("chat {chat}"),
         };
         let age = if row.finished {

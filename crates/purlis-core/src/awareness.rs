@@ -885,11 +885,15 @@ fn roster_line(working: &Working) -> Option<String> {
             // task says it after its state, long-running or not.
             match &task.liveness {
                 // Found by its dispatch record alone (#3932): no number here is its own.
-                Some(live) if live.is_orphaned() && task.chat == 0 => format!(
-                    "{}, under a chat number no longer known, {}",
-                    quoted(&task.name),
-                    live.said()
-                ),
+                Some(live)
+                    if live.is_orphaned() && task.chat == crate::dispatched::NO_NUMBER_KNOWN =>
+                {
+                    format!(
+                        "{}, under a chat number no longer known, {}",
+                        quoted(&task.name),
+                        live.said()
+                    )
+                }
                 Some(live) if live.is_orphaned() => {
                     format!("chat {} {} {}", task.chat, quoted(&task.name), live.said())
                 }

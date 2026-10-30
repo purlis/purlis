@@ -946,7 +946,7 @@ fn an_orphan_found_only_in_dispatch_records_is_named_without_a_number_it_does_no
     let mut told = told_at_start(&known, 1);
     let working = answer(&known, 1, Tell::Turn, &mut told)
         .expect("open")
-        .with_orphans([(0, "forms".to_owned())]);
+        .with_orphans([(crate::dispatched::NO_NUMBER_KNOWN, "forms".to_owned())]);
     let said = update(&working, now()).expect("a roster");
     assert!(
         said.contains(

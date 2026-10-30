@@ -182,19 +182,23 @@ impl Tasks {
         &self.quiet
     }
 
-    /// The running dispatch records of the project at `root` asked for by `asker` whose chat is
-    /// nowhere `here` (#3900, #3932): read from this project's copy of its running records,
-    /// which reads the store again only once it has changed. Under a lock of its own, taken and
-    /// let go here, and never while another is wanted.
-    pub(crate) fn orphaned(
+    /// What `each` makes of the running dispatch records of the project at `root` asked for by
+    /// `asker` whose chat is nowhere `here` (#3900, #3932): read from this project's copy of its
+    /// running records ([`purlis_core::dispatchrecord::Running`]), which reads the store again
+    /// only once it has changed, and kept slim. Under a lock of its own, taken and let go here,
+    /// and never while another is wanted.
+    pub(crate) fn orphaned<T>(
         &self,
         root: &std::path::Path,
         asker: &purlis_core::dispatchrecord::ChatRef,
         here: impl Fn(&purlis_core::dispatchrecord::ChatRef) -> bool,
-    ) -> Vec<purlis_core::dispatchrecord::Record> {
+        each: impl Fn(&purlis_core::dispatchrecord::Record) -> T,
+    ) -> Vec<T> {
         let mut running = self.running.lock().unwrap_or_else(PoisonError::into_inner);
-        purlis_core::dispatchrecord::orphaned(running.now(root), asker, here)
-            .cloned()
+        running
+            .orphaned(root, asker, here)
+            .into_iter()
+            .map(each)
             .collect()
     }
 
@@ -1919,7 +1923,7 @@ fn list(held: &Held, asker: u32) -> Vec<Row> {
                     .say(),
                 (false, _) => listed.said.clone(),
             };
-            let last_note = ledger.last_note(listed.session, now);
+            let last_note = ledger.last_note(listed.session);
             Some(Row {
                 chat: listed.session,
                 name: listed.name,
@@ -1938,8 +1942,8 @@ fn list(held: &Held, asker: u32) -> Vec<Row> {
                 finished: false,
                 // A long-running task, and its last note (#3905).
                 long: from.long,
-                last_note: last_note.as_ref().and_then(|(text, _)| text.clone()),
-                noted_secs: last_note.map(|(_, ago)| ago.as_secs()),
+                last_note: last_note.and_then(|note| note.text.clone()),
+                noted_secs: last_note.map(|note| note.ago(now).as_secs()),
                 liveness: Some(ledger.liveness(listed.session, running, now)),
             })
         })
@@ -2064,7 +2068,7 @@ pub fn brought_back(
     if let Some(note) = record.and_then(purlis_core::dispatchrecord::last_note_of) {
         let at = SystemTime::from(note.at);
         ledger.heard_doing(task, purlis_core::dispatchliveness::Did::SentANote, at);
-        ledger.noted_before(task, note.text.as_deref(), at);
+        ledger.noted_before(task, note);
     }
 }
 
