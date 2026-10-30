@@ -10,6 +10,7 @@ import {
   type SkillDiff,
   type SkillLifecycle,
   type SkillVersion,
+  type SkillVersionBefore,
   type StatsRow,
 } from "./bindings";
 import { counted, saidAt } from "./dispatches";
@@ -28,9 +29,8 @@ export function gradeSaid(version: SkillVersion): string {
  * What a revert's confirm asks (#4017): a version from before a rename or a move comes back in the
  * folder the skill has now, and one from before a rename under the name it has now.
  */
-export function revertSaid(name: string, version: SkillVersion): string {
+export function revertSaid(name: string, before: SkillVersionBefore | null): string {
   const saved = "The revert is saved as a new version.";
-  const before = version.before;
   if (before === null) return `Put the skill back as this version had it? ${saved}`;
   if (before.name !== name) {
     return `This version is from when the skill was named ${before.name}, in ${before.folder}. Put its files back in the folder ${name} has now, with its name: line changed to ${name}? ${saved}`;
@@ -222,7 +222,7 @@ function VersionRow({
           data-testid="skill-revert-confirm"
         >
           <TableCell colSpan={6}>
-            <p>{revertSaid(name, version)}</p>
+            <p>{revertSaid(name, version.before)}</p>
             {asked.widens === undefined ? (
               <p className="pending" aria-busy="true">
                 <LoaderCircle className="node-icon spinning" />
