@@ -2041,9 +2041,10 @@ export const commands = {
 	/**
 	 *  **"Ask a chat to draft a skill"** (decision 13): a chat where `level`'s skills are reached
 	 *  from (the project's root, or the workspace's folder), on the project's default profile, with
-	 *  the core's prompt typed and never sent.
+	 *  the core's prompt typed and never sent, ending with `what` the skill should do where New
+	 *  skill… asked it (S4, #3684).
 	 */
-	skillDraftChat: (plane: PlaneId, level: SkillLevel, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_draft_chat", { plane, level, columns, rows })),
+	skillDraftChat: (plane: PlaneId, level: SkillLevel, what: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_draft_chat", { plane, level, what, columns, rows })),
 	/**
 	 *  **"Ask a chat to write them"** (#3925): a chat where `level`'s skills are reached from, on the
 	 *  project's default profile, with the core's prompt for the trigger tests of the skill `name`
@@ -2179,6 +2180,11 @@ export const commands = {
 	skillSourceBrowse: (plane: PlaneId, source: SkillSource) => typedError<SourceBrowse, string>(__TAURI_INVOKE("skill_source_browse", { plane, source })),
 	/**  **The install review** of `names` from a source, and the skills they refer to. */
 	skillInstallReview: (plane: PlaneId, source: SkillSource, names: string[]) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_install_review", { plane, source, names })),
+	/**
+	 *  **The review of installing `names` from a source together** (#4024, Install all…): one review
+	 *  of the set and the skills they refer to, or which of them fit one read.
+	 */
+	skillInstallSetReview: (plane: PlaneId, source: SkillSource, names: string[]) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_install_set_review", { plane, source, names })),
 	/**  **Installs what was reviewed** at `level`, with `grant` where it is a project skill. */
 	skillInstall: (plane: PlaneId, source: SkillSource, level: SkillLevel, reviewed: Reviewed, grant: 
 /**  Chats at the project's root alone. */
@@ -2952,11 +2958,28 @@ export const commands = {
 	 */
 	addClusterPool: (adding: ClusterPoolAdding) => typedError<ClusterPoolRow, string>(__TAURI_INVOKE("add_cluster_pool", { adding })),
 	/**
-	 *  **Every profile of this machine's, kept on pool `pool`'s runner**, as the runner stands with
-	 *  each (#2049): what adding a pool ends with, and what Settings › Pools shows. Refused, with
-	 *  nothing sent, for a pool not shown to be the person's own.
+	 *  **The profiles chosen for pool `pool`, kept on its runner** (#2049, #4047), as the runner
+	 *  stands with each, and this machine's others Add a profile… offers: the ones its `profiles`
+	 *  names, or, where it names none, the profile a new chat in the open project `plane` gets. What
+	 *  adding a pool ends with, and what Settings › Pools shows. Refused, with nothing sent, for a
+	 *  pool not shown to be the person's own.
 	 */
-	poolProfiles: (pool: string) => typedError<PoolProfileRow[], string>(__TAURI_INVOKE("pool_profiles", { pool })),
+	poolProfiles: (pool: string, open: OpenProject) => typedError<PoolProfiles, string>(__TAURI_INVOKE("pool_profiles", { pool, open })),
+	/**
+	 *  **Adds this machine's profile `name` to pool `pool`** (#4047, Add a profile…): its record
+	 *  names it from now on, beside the open project `plane`'s default where it named none. Its
+	 *  runner keeps it the next time the pool's profiles are asked.
+	 */
+	poolProfileAdd: (pool: string, name: string, open: OpenProject) => typedError<null, string>(__TAURI_INVOKE("pool_profile_add", { pool, name, open })),
+	/**
+	 *  **Takes profile `name` off pool `pool`** (#4047): its runner forgets it first, its folder
+	 *  and its sign-in there with it, then the pool's record leaves it out, starting from the
+	 *  open project `plane`'s default where it named none. A runner that could not forget it leaves
+	 *  the record as it was, so the removal can be asked again. The runner is woken for it, as a
+	 *  chat's start wakes it, since what it keeps must go. `Some` note for a runner of a purlis
+	 *  before 1.52, which keeps the profile until it is made again.
+	 */
+	poolProfileRemove: (pool: string, name: string, open: OpenProject) => typedError<string | null, string>(__TAURI_INVOKE("pool_profile_remove", { pool, name, open })),
 	/**
 	 *  **Starts signing `name` in on pool `pool`'s runner with no terminal** (#4042, spec #4023):
 	 *  the runner's own `purlis profile sign-in`, kept there first and run there through this
@@ -4371,6 +4394,13 @@ export type ActivityLine = {
 	 *  how deep, is the tab's to say there.
 	 */
 	depth: number,
+};
+
+/**  One of this machine's profiles that is not on a pool yet, and could go there. */
+export type AddableProfile = {
+	name: string,
+	/**  The harness as people call it: `Claude Code`. */
+	harness: string,
 };
 
 /**  How far a branch is from the branch it was cut from: the branch cockpit's header (FM-5). */
@@ -8017,6 +8047,20 @@ export type InstallReview = {
 };
 
 /**
+ *  **The review of installing a set of a source's skills together** (#4024): one review, or,
+ *  where reading all of them is more than one read of the source may take, which of those named
+ *  fit, so the window asks to install them in parts.
+ */
+export type InstallSetReview = { kind: "review"; review: InstallReview } | { kind: "too-much"; 
+/**
+ *  Those named first that fit one read, the first part; empty where the first alone
+ *  does not.
+ */
+fits: string[]; 
+/**  The rest of those named. */
+rest: string[]; why: string };
+
+/**
  *  What has contributed what to this window — ADR 0041's item 2, and the thing every
  *  later decision about extensions is read off.
  */
@@ -9097,6 +9141,11 @@ export type OpenHosts = {
 	hosts: string[],
 };
 
+/**  The open project a command is asked for: a type of its own, so its plane stays a `PlaneId`. */
+export type OpenProject = {
+	plane: PlaneId | null,
+};
+
 /**  A skill run open in a chat, as its tab's chip shows it. */
 export type OpenRun = {
 	/**  The skill, by the name its harness started it by. */
@@ -10127,6 +10176,15 @@ export type PoolProfileRow = {
 	not_kept: string | null,
 	/**  The plans Sign in offers there, where purlis names the provider. */
 	plans: PlanRow[],
+};
+
+/**
+ *  **A pool's profiles** (#4047): the ones its runner keeps, as it stands with each, and this
+ *  machine's others that Add a profile… offers.
+ */
+export type PoolProfiles = {
+	kept: PoolProfileRow[],
+	addable: AddableProfile[],
 };
 
 /**  One pool's limits, which each of its runners that runs requests (#2052, story 55). */

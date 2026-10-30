@@ -35,7 +35,6 @@ import {
 } from "./skillStudio";
 import { forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
 import { PLANE_ROOT, pieceFileView } from "./pieceViews";
-import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
 import { DEFAULT_SKILLS_VIEW, SKILLS_VIEW } from "./skillsViewPrefs";
 
 afterEach(() => {
@@ -738,50 +737,20 @@ describe("the view's header", () => {
     );
   });
 
-  it("starts a new skill with the studio's own starts: a chat's draft, or the studio's form", async () => {
+  it("opens the studio's own New skill… dialog, which asks how (#3684)", async () => {
     opsCore();
-    const asks: SkillChatAsk[] = [];
-    const heard = (event: Event) => asks.push((event as CustomEvent<SkillChatAsk>).detail);
-    window.addEventListener(SKILL_CHAT, heard);
     const hands = view();
     await list();
 
     await userEvent.click(screen.getByRole("button", { name: "New skill…" }));
-    const starts = await screen.findByRole("menu", { name: "Ways to start a skill" });
-    expect(
-      within(starts)
-        .getAllByRole("menuitem")
-        .map((item) => item.textContent),
-    ).toEqual([
-      "Ask a chat to draft a skillSay what you want in a chat. Its draft comes back here to try and accept.",
-      "Browse sourcesInstall a reviewed copy of a skill from a git repository.",
-      "New skillWrite one yourself, from a blank template.",
-    ]);
-    await userEvent.click(within(starts).getByRole("menuitem", { name: /Ask a chat/ }));
-    window.removeEventListener(SKILL_CHAT, heard);
-    expect(asks).toEqual([
-      { plane: "p", kind: "draft", level: { at: "workspace", name: "ops", local: false } },
-    ]);
-
-    await userEvent.click(screen.getByRole("button", { name: "New skill…" }));
-    const again = await screen.findByRole("menu", { name: "Ways to start a skill" });
-    await userEvent.click(within(again).getByRole("menuitem", { name: /blank template/ }));
+    // No menu of its own: the studio opens on its Library, and its dialog asks how there.
+    expect(screen.queryByRole("menu")).toBeNull();
     expect(hands.onOpenView).toHaveBeenLastCalledWith(
       skillStudioView(inWorkspace("ops")),
       SKILL_STUDIO_TITLE,
     );
-    // Browse sources opens the studio's Sources page on the same chats (#3681).
-    await userEvent.click(screen.getByRole("button", { name: "New skill…" }));
-    const third = await screen.findByRole("menu", { name: "Ways to start a skill" });
-    await userEvent.click(within(third).getByRole("menuitem", { name: /Browse sources/ }));
-    expect(hands.onOpenView).toHaveBeenLastCalledWith(
-      skillStudioAt(inWorkspace("ops"), "sources"),
-      SKILL_STUDIO_TITLE,
-    );
-
-    // The studio the blank template opened opens on its New skill form: one copy of the start.
     renderStudio(inWorkspace("ops"));
-    expect(await screen.findByRole("form", { name: "New skill" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "New skill" })).toBeInTheDocument();
     forgetStudio();
   });
 });
@@ -945,21 +914,18 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
 });
 
 describe("a project with no skill of its own", () => {
-  it("is offered the studio's claim, and its three starts under New skill…", async () => {
+  it("is offered the studio's claim, and New skill…", async () => {
     core(() =>
       studio([skill("secrets", { level: "built-in" })], { first: { starts: true, unmoved: null } }),
     );
     view();
     const empty = await screen.findByTestId("skills-view-empty");
     expect(within(empty).getByText("This project has no skills of its own yet")).toBeVisible();
-    // Its three starts are New skill…'s, so no start is a button of a name the studio's is too.
+    // A skill is started from New skill…, which asks how (#3684): the claim has no button.
     expect(empty).toHaveTextContent("Start one of the project's own from New skill…");
     expect(within(empty).queryByRole("button")).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "New skill…" }));
-    const starts = await screen.findByRole("menu", { name: "Ways to start a skill" });
-    expect(within(starts).getAllByRole("menuitem")).toHaveLength(3);
     // The skills its chats already get are listed under it: its built-in skills, folded.
-    expect(foldOf("1 built-in skill")).toBeInTheDocument();
+    await waitFor(() => expect(foldOf("1 built-in skill")).toBeInTheDocument());
   });
 
   it("says the core's sentence where its skills cannot be read", async () => {

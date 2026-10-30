@@ -95,3 +95,79 @@ fn a_watcher_is_claimed_once_per_pool_and_profile() {
         &("other".to_owned(), "work".to_owned())
     ));
 }
+
+/// One of this machine's made profiles, `name`, of `harness`.
+fn record(name: &str, harness: &str) -> profilestore::MachineProfile {
+    profilestore::MachineProfile {
+        name: name.to_owned(),
+        harness: harness.to_owned(),
+        title: format!("{name} (this Mac)"),
+        folders: profilestore::Folders {
+            config: PathBuf::from("/profiles").join(name).join("config"),
+            data: None,
+        },
+        adopted: None,
+        imported: None,
+        sign_in: None,
+        pinned: None,
+        sandbox_only: false,
+        kept_for: None,
+        rest: serde_json::Map::default(),
+    }
+}
+
+/// **A pool offers only the profiles chosen for it** (#4047), in their order, and Add a
+/// profile… offers this machine's others that go to a runner: never one already on it, nor one
+/// no runner keeps.
+#[test]
+fn a_pool_offers_its_chosen_profiles_and_add_offers_the_rest() {
+    let records = vec![
+        record("work", "claude"),
+        record("home", "codex"),
+        record("tests", "claude"),
+        record("local", "made-up-harness"),
+    ];
+
+    let (on_pool, addable) = chosen(&records, &["tests".to_owned(), "work".to_owned()]);
+
+    assert_eq!(
+        on_pool
+            .iter()
+            .map(|one| one.as_ref().map(|r| r.name.as_str()))
+            .collect::<Vec<_>>(),
+        vec![Ok("tests"), Ok("work")]
+    );
+    assert_eq!(
+        addable.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+        vec!["home"]
+    );
+}
+
+/// A profile chosen for a pool that this machine no longer has is still listed, so it can be
+/// removed, and says so.
+#[test]
+fn a_chosen_profile_this_machine_no_longer_has_is_listed_to_be_removed() {
+    let records = vec![record("work", "claude")];
+
+    let (on_pool, addable) = chosen(&records, &["gone".to_owned()]);
+
+    assert_eq!(on_pool.len(), 1);
+    let missing = on_pool[0].as_ref().unwrap_err();
+    assert!(missing.contains("no profile named 'gone'"), "{missing}");
+    assert_eq!(addable.len(), 1);
+}
+
+/// **A project's default that this machine keeps no record of is the runner's own** (#4047): a
+/// built-in such as `claude`, never adopted here, is not one of this machine's to keep there,
+/// so a pool that names none keeps nothing of this machine's rather than a missing row.
+#[test]
+fn a_default_this_machine_keeps_no_record_of_is_the_runners_own() {
+    let records = vec![record("work", "claude")];
+
+    assert_eq!(
+        of_this_machine(Some("work".to_owned()), &records),
+        Some("work".to_owned())
+    );
+    assert_eq!(of_this_machine(Some("claude".to_owned()), &records), None);
+    assert_eq!(of_this_machine(None, &records), None);
+}

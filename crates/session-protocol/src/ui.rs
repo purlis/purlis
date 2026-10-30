@@ -689,6 +689,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_source_confirm",
     "skill_source_browse",
     "skill_install_review",
+    "skill_install_set_review",
     "skill_install",
     "skill_updates",
     "skill_update_review",
@@ -732,6 +733,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // This machine's profiles on a pool's runner (#2049): keeping one there sends its name to a
     // runner, so only the person's own look in their window does.
     "pool_profiles",
+    // A profile added to or taken off a pool (#4047): it changes what the runner keeps, and a
+    // removal deletes its sign-in there, so only the person's own window does.
+    "pool_profile_add",
+    "pool_profile_remove",
     // Signing a profile in on a pool's runner with no terminal (#4042): it runs the runner's
     // own sign-in and passes the person's code to it, so only their own window drives it.
     "pool_sign_in_start",

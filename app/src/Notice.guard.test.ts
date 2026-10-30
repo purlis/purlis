@@ -365,6 +365,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 2,
     why: ACTION + "; and its progress while it copies the repo, a live value",
   },
+  "NewSkillDialog.tsx": {
+    count: 2,
+    why:
+      "New skill…'s name check as it is typed and the core's refusal (#3684), beside the fields " +
+      "the person is still filling, in the dialog that stays open",
+  },
   "NewVault.tsx": {
     count: 1,
     why: ACTION,
@@ -468,8 +474,8 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "every studio page's reads in place (S11, #3978): the line said after a second while rows are held, and a read that failed with Try again",
   },
   "SkillSources.tsx": {
-    count: 1,
-    why: "the Sources page's updates still being read (#3687)",
+    count: 2,
+    why: "the Sources page's updates still being read (#3687), and Install all's review that is more than one read, with its first part to review in place (#4024)",
   },
   "SkillStudioDeleted.tsx": {
     count: 1,
@@ -593,10 +599,11 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "as it comes on screen. A runner whose key changed has a Notice of its own",
   },
   "settings/PoolProfiles.tsx": {
-    count: 1,
+    count: 2,
     why:
       ACTION +
-      ". A pool's profiles refusing (#2049), in the core's words: its Ask again is the way on",
+      ". A pool's profiles refusing (#2049), in the core's words: its Ask again is the way on;" +
+      " and what adding or removing one of them said (#4047), beside the buttons that did it",
   },
   "settings/PoolSignIn.tsx": {
     count: 2,

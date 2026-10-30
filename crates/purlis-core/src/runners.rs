@@ -4,7 +4,7 @@
 //! **The pools this desktop added, and the runners it pinned** (ADR 0078 §3 and §8, #2525,
 //! #2679, #2749): `<config>/runners.json`, ruled 2026-10-18 and 2026-10-20, `{"version": 1,
 //! "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp", "suspendAfter",
-//! "frames", "width"}], "runners":
+//! "frames", "width", "profiles"}], "runners":
 //! [{"name", "pool", "container", "image", "user", "home", "device", "key", "paired", "of"?,
 //! "draining"?}]}`.
 //!
@@ -12,7 +12,9 @@
 //!   image by digest, and the limits the person set, each left out where purlis's default
 //!   holds ([`crate::dockerpool::Limits`]), and how long its runner is left without a link
 //!   before it suspends itself (`suspendAfter`, #3471, ruled 2026-10-28), left out at a day. Its browsers' frame limits over the link
-//!   are among them (#3297). A workspace names a pool (`machine.json`), and a name
+//!   are among them (#3297). So are the profiles its runner keeps (`profiles`, #4047, ruled
+//!   2026-10-30): the names chosen for it, or, left out, the profile a new chat in the open
+//!   project gets ([`Pool::profiles_kept`]). A workspace names a pool (`machine.json`), and a name
 //!   that is not kept here, or whose runner is not, starts no chat ([`runner_for`]).
 //! - **A runner's device id and public link key are kept once** ([`keep`]): a later answer for
 //!   a runner already kept, with another device id or key, is refused and what was kept stays
@@ -95,6 +97,8 @@ pub struct Pool {
     set: Set,
     limits: Limits,
     price: Option<Price>,
+    /// The profiles chosen for it (`profiles`, #4047), in order; `None` where none were.
+    profiles: Option<Vec<String>>,
 }
 
 /// **What one hour of a pool's runner costs, as the pool declares it** (#3491, the person's
@@ -178,6 +182,7 @@ impl Pool {
             set,
             limits,
             price: None,
+            profiles: None,
         })
     }
 
@@ -198,6 +203,26 @@ impl Pool {
     /// The price per hour it declares, if any (#3491): only then is money shown for it.
     pub fn price(&self) -> Option<&Price> {
         self.price.as_ref()
+    }
+
+    /// This pool, keeping the profiles `profiles` on its runner, or, `None`, the default
+    /// (#4047).
+    pub fn keeping_profiles(self, profiles: Option<Vec<String>>) -> Pool {
+        Pool { profiles, ..self }
+    }
+
+    /// The profiles chosen for it (#4047), if any were: `None` keeps the default.
+    pub fn profiles(&self) -> Option<&[String]> {
+        self.profiles.as_deref()
+    }
+
+    /// **The profiles its runner keeps** (#4047): the ones chosen for it, or, where none were,
+    /// `default`, the profile a new chat in the open project gets, if there is one.
+    pub fn profiles_kept(&self, default: Option<&str>) -> Vec<String> {
+        match &self.profiles {
+            Some(chosen) => chosen.clone(),
+            None => default.map(str::to_owned).into_iter().collect(),
+        }
     }
 
     pub fn name(&self) -> &str {
@@ -229,12 +254,13 @@ impl Pool {
     /// **What defines this pool, as a digest** (#2050): SHA-256, in hex, of its row as this file
     /// keeps it (its name, kind, image, the limits the person set and its `suspendAfter`), so any
     /// change to how it is defined changes it. Its price is not how it is defined, and is left
-    /// out (#3491).
+    /// out (#3491), and so are the profiles it keeps (#4047).
     pub fn definition_digest(&self) -> String {
         use sha2::Digest as _;
         let mut row = pool_to_row(self);
         if let Some(fields) = row.as_object_mut() {
             fields.remove("pricePerHour");
+            fields.remove("profiles");
         }
         let row = row.to_string();
         crate::runnerlink::hex_of(&sha2::Sha256::digest(row.as_bytes()))
@@ -539,6 +565,71 @@ pub fn record_pool_locked(
         )));
     }
     held.pools.push(pool.clone());
+    write(config_root, &held)
+}
+
+/// **Has the Docker pool `name` keep the profiles `profiles` on its runner** (#4047), or, `None`,
+/// the default: refused where no such pool is kept, and what is kept stays.
+pub fn set_pool_profiles(
+    config_root: &Path,
+    name: &str,
+    profiles: Option<Vec<String>>,
+) -> Result<(), Refused> {
+    change_pool_profiles(config_root, name, |_| profiles)
+}
+
+/// **Adds the profile `profile` to the Docker pool `name`** (#4047): a pool that named none
+/// keeps `default`, the profile a new chat in the open project gets, beside it. Kept once.
+pub fn add_pool_profile(
+    config_root: &Path,
+    name: &str,
+    profile: &str,
+    default: Option<&str>,
+) -> Result<(), Refused> {
+    if !crate::profiles::name_ok(profile) {
+        return Err(Refused::Other(format!(
+            "'{}' is not a profile's name, so pool {name} keeps it not",
+            crate::shown::short(profile)
+        )));
+    }
+    change_pool_profiles(config_root, name, |pool| {
+        let mut kept = pool.profiles_kept(default);
+        if !kept.iter().any(|one| one == profile) {
+            kept.push(profile.to_owned());
+        }
+        Some(kept)
+    })
+}
+
+/// **Takes the profile `profile` off the Docker pool `name`** (#4047): a pool that named none
+/// starts from `default`, so the last one taken off leaves it keeping none.
+pub fn remove_pool_profile(
+    config_root: &Path,
+    name: &str,
+    profile: &str,
+    default: Option<&str>,
+) -> Result<(), Refused> {
+    change_pool_profiles(config_root, name, |pool| {
+        let mut kept = pool.profiles_kept(default);
+        kept.retain(|one| one != profile);
+        Some(kept)
+    })
+}
+
+fn change_pool_profiles(
+    config_root: &Path,
+    name: &str,
+    change: impl FnOnce(&Pool) -> Option<Vec<String>>,
+) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(at) = held.pools.iter().position(|pool| pool.name() == name) else {
+        return Err(Refused::Other(format!(
+            "there is no pool named {name} on this machine that keeps profiles"
+        )));
+    };
+    let profiles = change(&held.pools[at]);
+    held.pools[at] = held.pools[at].clone().keeping_profiles(profiles);
     write(config_root, &held)
 }
 
@@ -996,6 +1087,9 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
     if let Some(width) = set.width {
         row["width"] = width.into();
     }
+    if let Some(profiles) = pool.profiles() {
+        row["profiles"] = profiles.into();
+    }
     row
 }
 
@@ -1003,7 +1097,8 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
 /// [`pool_to_row`] writes them: `cpus` a number of CPUs to the thousandth, `memory` and `tmp`
 /// in MiB, `processes` a count, `suspendAfter` a duration in seconds, minutes or hours (`"24h"`,
 /// [`crate::spelledtime`]), `frames` a count a second and `width` in pixels (#3297), and
-/// `pricePerHour` where the pool declares one (#3491). Any other
+/// `pricePerHour` where the pool declares one (#3491), and `profiles`, the names of the profiles
+/// chosen for it, each once (#4047). Any other
 /// key, or a value of another shape, is refused: with the reason for a price, which the person
 /// writes by hand (#3491), and with none for anything else.
 fn pool_from_row(row: &serde_json::Value) -> Result<Pool, Option<String>> {
@@ -1018,9 +1113,26 @@ fn pool_from_row(row: &serde_json::Value) -> Result<Pool, Option<String>> {
             Some(format!("the pricePerHour of {pool} is not a price: {why}"))
         })?),
     };
+    let profiles = match row.get("profiles") {
+        None => None,
+        Some(profiles) => Some(profiles_from_row(profiles).ok_or(None)?),
+    };
     plain_pool_from_row(row)
-        .map(|pool| pool.priced(price))
+        .map(|pool| pool.priced(price).keeping_profiles(profiles))
         .ok_or(None)
+}
+
+/// A pool's `profiles`: a list of profile names, each once, or `None`.
+fn profiles_from_row(profiles: &serde_json::Value) -> Option<Vec<String>> {
+    let mut named: Vec<String> = Vec::new();
+    for profile in profiles.as_array()? {
+        let profile = profile.as_str()?;
+        if !crate::profiles::name_ok(profile) || named.iter().any(|kept| kept == profile) {
+            return None;
+        }
+        named.push(profile.to_owned());
+    }
+    Some(named)
 }
 
 /// A pool's `pricePerHour`, `{"amount": "<decimal>", "currency": "<ISO 4217>"}`, or why not.
@@ -1055,6 +1167,7 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         "pricePerHour",
         "frames",
         "width",
+        "profiles",
     ];
     if fields.keys().any(|key| !known.contains(&key.as_str())) {
         return None;
