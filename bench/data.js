@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793325593332,
+  "lastUpdate": 1793327002344,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30534,6 +30534,48 @@ window.BENCHMARK_DATA = {
             "value": 102.044553,
             "unit": "ms",
             "extra": "median of 5 runs: 101.561, 101.790, 102.045, 102.698, 102.978 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7a3c23a7443b4038f3b07191072bcf990cf99335",
+          "message": "Dispatch: a reported task still running is reachable, and --long tasks (#3899, #3905) (#3916)\n\n* A reported task whose program still runs can be told and cancelled (#3899)\n\nA report purlis made from a task's last message, or a blocked one, leaves the task owing\none more report (Owed::Again) with its program still running. tell and cancel refused it\nas finished. It is now \"reported, still running\" in dispatch list, the roster and the\nawareness lines; tell, note, ask, answer and cancel reach it. A cancel that gets no new\nreport keeps the earlier one and ends the program at it. Once the program has ended, the\n\"has finished\" refusal stands.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* A long-running task: dispatch --long, notes as heartbeat, no report made for it (#3905)\n\npurlis dispatch --long and a long field on the dispatch tool start a task whose notes are\nits heartbeat: purlis never asks it for a report nor makes one from its last message, and\nit ends when it reports done or failed, or is cancelled. The app records it on the task's\nlineage (survives a restart) and says so under the stamp. dispatch list shows it as\nlong-running with its last note; the roster says long-running. --long is pre-allowed for\nClaude Code; the persona skill teaches the tool field; ADR 0090 amended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Move the dispatched and dispatchtalk tests into their own tests.rs (move only)\n\nCONTRIBUTING's \"Where tests live\": the inline mod tests of\ncrates/purlis-core/src/dispatched.rs and dispatchtalk.rs move, unchanged, to\ndispatched/tests.rs and dispatchtalk/tests.rs, under the licence header. Review of #3916.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Review of #3916: one rule for a reported task still running, a --long guard test, one long-task helper\n\nThe roster, the stop machine's facts and the cancel's end now read\ndispatched::still_running_after_report, which takes the record's word and whether the\nprogram ended; the roster's word is dispatched::REPORTED_STILL_RUNNING, built from the one\nSTILL_RUNNING spelling. Ledger::state binds the rule once. A test shows a --long-first line\nreaches no dispatch subcommand, and the guard's --in test covers --long. Wanted::long_task is\nthe one place a dispatch is read as long-running (#3899, #3905).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Bring clap's Parser into the --long guard test (#3905)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T01:21:31Z",
+          "tree_id": "4ccc88876ca3ac5fc785c271d8ee8ba0c00e413c",
+          "url": "https://github.com/purlis/purlis/commit/7a3c23a7443b4038f3b07191072bcf990cf99335"
+        },
+        "date": 1793326999373,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.320985,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.315, 0.319, 0.321, 0.334, 0.343 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4911055,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.441, 16.447, 16.491, 16.585, 16.628 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7821055,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.181, 101.696, 101.782, 101.801, 102.157 ms"
           }
         ]
       }
