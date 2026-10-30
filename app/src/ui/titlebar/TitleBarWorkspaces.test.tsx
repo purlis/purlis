@@ -7,12 +7,15 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { PinToggle, SwitcherRow } from "./Switcher";
 import {
+  AllWorkspaces,
   ChipSlot,
   mostUrgentOf,
   NOTICE_KINDS,
   NoticeDot,
   PinnedStrip,
+  ProjectCrumb,
   RootChip,
   TitleBarSlash,
   urgencyOf,
@@ -238,5 +241,59 @@ describe("its stylesheet (R101, R103, R153, R167)", () => {
 
   it("draws the slash in the faint tier, as a mark", () => {
     expect(rule('[data-part="slash"][data-scope="titlebar"]')).toContain("var(--text-faint)");
+  });
+});
+
+describe("the crumb, the ⌄, a switcher's row and its pin (#3656)", () => {
+  // The engine writes each apart from every chip (`parts::APART`): its own attributes, and the
+  // state its own element is marked in, e.g. `titlebar.crumb.selected.fill` as
+  // `:where([data-scope="titlebar"][data-part="crumb"][data-selected])`.
+  const reached = (part: string, state = "") => {
+    const selector = `:where([data-scope="titlebar"][data-part="${part}"]${state})`;
+    return [...document.querySelectorAll(selector)];
+  };
+
+  it("reaches each by its own attributes, never inside a chip", () => {
+    render(
+      <>
+        <ProjectCrumb name="purlis" mark={null} open onPress={() => undefined} />
+        <AllWorkspaces keys="⌥⌘P" open={false} stop onPress={() => undefined} />
+        <SwitcherRow id="r" name="alpha" active onPress={() => undefined} />
+        <PinToggle name="alpha" pinned onChange={() => undefined} />
+      </>,
+    );
+    const crumb = screen.getByRole("button", { name: /purlis/ });
+    const all = screen.getByRole("button", { name: "All workspaces" });
+    const row = screen.getByRole("option", { name: "alpha" });
+    const pin = screen.getByRole("button", { name: "Unpin alpha" });
+    expect(reached("crumb")).toEqual([crumb]);
+    expect(reached("all")).toEqual([all]);
+    expect(reached("row")).toEqual([row]);
+    expect(reached("pin")).toEqual([pin]);
+    for (const one of [crumb, all, row, pin]) {
+      expect(one.closest('[data-part="workspace"]')).toBeNull();
+    }
+    // Open, pinned, and the row Enter would go to: each its selected state.
+    expect(reached("crumb", "[data-selected]")).toEqual([crumb]);
+    expect(reached("row", "[data-selected]")).toEqual([row]);
+    expect(reached("pin", "[data-selected]")).toEqual([pin]);
+    expect(reached("all", "[data-selected]")).toEqual([]);
+  });
+
+  it("marks the pointer on each, as its hover keys reach it", async () => {
+    render(
+      <>
+        <ProjectCrumb name="purlis" mark={null} open={false} onPress={() => undefined} />
+        <SwitcherRow id="r" name="alpha" active={false} onPress={() => undefined} />
+      </>,
+    );
+    const hovered = "[data-hovered]:not([data-disabled])";
+    const crumb = screen.getByRole("button", { name: /purlis/ });
+    await userEvent.hover(crumb);
+    expect(reached("crumb", hovered)).toEqual([crumb]);
+    const row = screen.getByRole("option", { name: "alpha" });
+    await userEvent.hover(row);
+    expect(reached("row", hovered)).toEqual([row]);
+    expect(reached("row", "[data-selected]")).toEqual([]);
   });
 });

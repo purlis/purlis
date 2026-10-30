@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { MessageSquarePlus, Plus, RotateCw, Search, Sparkle, Sparkles } from "lucide-react";
 import {
   commands,
@@ -33,6 +33,7 @@ import { ViewBar, type Crumb } from "./ui/panel/ViewBar";
 import { useViewHistory } from "./ui/panel/viewHistory";
 import { NEEDS_YOU_LEAD, NeedsYouItem, NeedsYouList, needShown } from "./SkillStudioNeedsYou";
 import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
+import { GradingPage, gradingCrumbTo, gradingPath, type GradingGo } from "./SkillGrades";
 import { Notice } from "./Notice";
 import { DraftPage, DraftsList } from "./SkillStudioDrafts";
 import { DeletedList, DeletedPage } from "./SkillStudioDeleted";
@@ -84,15 +85,12 @@ import { PINNABLE } from "./skillsListing";
 import type { ViewRef } from "./tabs";
 import type { Offer } from "./actions";
 import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
-
-/** The light editor, its own chunk (`tools/main-chunk-has-no-codemirror.mjs`). */
-const SkillEditor = lazy(() => import("./SkillEditor"));
+import { useSkillEditInPlace } from "./SkillEditInPlace";
 
 /** A change in progress: New skill or the editor, drawn in the item pane; or Rename, Move or
  *  Delete, each a dialog (S4, #3685), with what the core refused the last time it was asked. */
 type Doing =
   | { what: "new" }
-  | { what: "edit"; skill: StudioSkill; level: SkillLevel; was: string }
   | { what: "rename"; skill: StudioSkill; level: SkillLevel; refused?: string }
   | { what: "move"; skill: StudioSkill; from: SkillLevel; refused?: string }
   | { what: "delete"; skill: StudioSkill; level: SkillLevel; refused?: string };
@@ -111,7 +109,6 @@ function sourcesPath(at: SourcesAt): Crumb[] {
 /** What a change in progress drawn in a pane is called in the path: a dialog is no place. */
 const DOING_NAMES: Partial<Record<Doing["what"], string>> = {
   new: NEW_SKILL,
-  edit: "Edit",
 };
 
 // --- The Library's list ------------------------------------------------------------------------
@@ -256,11 +253,9 @@ export function SkillStudioTab({
   /** Narrow or wide whatever the width: for a story or a test. Measured when left out. */
   narrow?: boolean;
 }) {
-  const history = useViewHistory<StudioPlace>(
-    studioHistoryOf(plane, { ...SKILL_STUDIO_VIEW, key: tab }),
-    STUDIO_START,
-  );
-  const at = history.at;
+  const historyId = studioHistoryOf(plane, { ...SKILL_STUDIO_VIEW, key: tab });
+  const walked = useViewHistory<StudioPlace>(historyId, STUDIO_START);
+  const at = walked.at;
   // Where the tab is now, for an answer that comes back after the person may have moved on.
   const placeNow = useRef(at);
   useEffect(() => {
@@ -289,6 +284,17 @@ export function SkillStudioTab({
       ? inHand.doing
       : undefined;
   const [busy, setBusy] = useState(false);
+  // Edit in place (#3683): the editor on a skill's page, and every way out of it asked first.
+  const edits = useSkillEditInPlace({
+    plane,
+    tab: historyId,
+    walked,
+    busy,
+    setBusy,
+    say: setSaid,
+    onSaved: () => setDone((n) => n + 1),
+  });
+  const history = edits.history;
   const [deleted, setDeleted] = useState<readonly DeletedSkill[]>([]);
   const [switched, setSwitched] = useState(0);
   // The item of Needs you chosen, by its id: on a wide tab the first is shown until one is.
@@ -311,10 +317,12 @@ export function SkillStudioTab({
   const drafts = draftsRead ?? [];
   // A start the Skills view asked this studio to open on (#3266): the New skill form.
   // Make my own copy, asked from the Skills view's folded built-in skills (#3693).
-  useStudioStart(tab, on, (start) => {
-    if (start === "copy") setCopying({});
-    else setDoing({ what: "new" });
-  });
+  useStudioStart(tab, on, (start) =>
+    edits.leave(() => {
+      if (start === "copy") setCopying({});
+      else setDoing({ what: "new" });
+    }),
+  );
   useEffect(() => {
     let live = true;
     void commands.skillStudio(plane, workspace, persona).then((answer) => {
@@ -380,10 +388,22 @@ export function SkillStudioTab({
 
   /** Goes to `place`, a step of the tab's history; a change in progress is left, as is the item
    *  of Needs you chosen. */
-  const go = (place: StudioPlace) => {
-    setDoing(undefined);
-    setNeed(undefined);
-    history.go(place);
+  const go = (place: StudioPlace) =>
+    edits.leaveFor(place, () => {
+      setDoing(undefined);
+      setNeed(undefined);
+      walked.go(place);
+    });
+
+  /** Goes to a grading page under the chosen skill (S6), or back to its Grades tab. */
+  const grading: GradingGo = (to, how) => {
+    const next: StudioPlace = { ...at, tab: "grades" };
+    if (to === undefined) delete next.grading;
+    else next.grading = to;
+    if (how === "go") go(next);
+    // Back where the way here was a step (a chat's scorecard), so walking never piles up steps.
+    else if (how === "back" && history.canGoBack) history.back();
+    else history.replace(next);
   };
 
   const change: Change = (label, run, then, refusedIn) => {
@@ -420,10 +440,7 @@ export function SkillStudioTab({
     (why: string): void => {
       if (inHandNow.current?.doing === asked)
         setInHand((was) =>
-          was === undefined ||
-          was.doing !== asked ||
-          was.doing.what === "new" ||
-          was.doing.what === "edit"
+          was === undefined || was.doing !== asked || was.doing.what === "new"
             ? was
             : { ...was, doing: { ...was.doing, refused: why } },
         );
@@ -432,27 +449,10 @@ export function SkillStudioTab({
   /** A field of the dialog in hand changed: the core's last refusal no longer stands. */
   const editedInDialog = () =>
     setInHand((was) =>
-      was === undefined ||
-      was.doing.what === "new" ||
-      was.doing.what === "edit" ||
-      was.doing.refused === undefined
+      was === undefined || was.doing.what === "new" || was.doing.refused === undefined
         ? was
         : { ...was, doing: { ...was.doing, refused: undefined } },
     );
-  /** Opens `skill`'s text in Edit, once read, if the tab is still at `asked`: where it is now, or
-   *  where a step just taken goes. */
-  const open = (skill: StudioSkill, level: SkillLevel, asked: StudioPlace = at) => {
-    void commands.skillText(plane, level, skill.name).then((answer) => {
-      if (answer.status === "error")
-        setSaid({ tone: "trouble", label: "The skill could not be opened", text: answer.error });
-      // The person went elsewhere while the text was read: the editor is not opened there.
-      else if (samePlace(placeNow.current, asked)) {
-        setDoing({ what: "edit", skill, level, was: answer.data });
-        // The editor is the Text tab's, in place (#3682; Skills design 04).
-        history.replace({ ...placeNow.current, tab: "text" });
-      }
-    });
-  };
   /** **Rename** (S4, #3685): done, its place follows the new name, and Undo renames it back. */
   const rename = (asked: Doing, skill: StudioSkill, level: SkillLevel, to: string) => {
     const from = skill.name;
@@ -666,7 +666,7 @@ export function SkillStudioTab({
         };
         go(place);
         const level = levelOf(skill, scope);
-        if (level !== null) open(skill, level, place);
+        if (level !== null) edits.open(skill, level, place);
         return;
       }
       case "harness": {
@@ -792,10 +792,12 @@ export function SkillStudioTab({
         size="sm"
         icon={<Plus aria-hidden="true" />}
         isDisabled={studio === undefined || doing?.what === "new"}
-        onPress={() => {
-          if (page !== "library" || at.skill !== undefined) history.go({ page: "library", scope });
-          setDoing({ what: "new" });
-        }}
+        onPress={() =>
+          edits.leave(() => {
+            if (page !== "library" || at.skill !== undefined) walked.go({ page: "library", scope });
+            setDoing({ what: "new" });
+          })
+        }
       >
         {`${NEW_SKILL}…`}
       </Button>
@@ -840,10 +842,13 @@ export function SkillStudioTab({
     ...(chosen !== undefined && at.tab !== undefined && at.tab !== "overview"
       ? [{ id: "tab", label: SKILL_PAGE_TAB_NAMES[at.tab] }]
       : []),
+    ...(chosen !== undefined && at.grading !== undefined ? gradingPath(at.grading) : []),
     ...(inSources === undefined ? [] : sourcesPath(inSources)),
-    ...(doing === undefined || DOING_NAMES[doing.what] === undefined
-      ? []
-      : [{ id: "doing", label: DOING_NAMES[doing.what] ?? "" }]),
+    ...(doing !== undefined && DOING_NAMES[doing.what] !== undefined
+      ? [{ id: "doing", label: DOING_NAMES[doing.what] ?? "" }]
+      : edits.editing !== undefined
+        ? [{ id: "doing", label: "Edit" }]
+        : []),
   ];
   const restoring = said?.restore;
   const undoing = said?.undo;
@@ -871,20 +876,29 @@ export function SkillStudioTab({
         path={path}
         onGo={(crumb, step) => {
           if (step === 0) go({ page, scope });
-          else if (crumb.id === "skill") {
-            setDoing(undefined);
-            history.replace({
-              page,
-              scope,
-              ...(at.skill === undefined ? {} : { skill: at.skill }),
+          else if (crumb.id === "skill")
+            edits.leave(() => {
+              setDoing(undefined);
+              walked.replace({
+                page,
+                scope,
+                ...(at.skill === undefined ? {} : { skill: at.skill }),
+              });
             });
-          } else if (crumb.id === "tab") setDoing(undefined);
-          else if (crumb.id === "source" && inSources !== undefined)
+          else if (crumb.id === "tab") {
+            setDoing(undefined);
+            edits.stop();
+            if (at.grading !== undefined) grading(undefined, "go");
+          } else if (crumb.id === "source" && inSources !== undefined)
             go({
               page,
               scope,
               sources: { at: "source", source: inSources.source, label: inSources.label },
             });
+          else if (at.grading !== undefined) {
+            const to = gradingCrumbTo(at.grading, crumb.id);
+            if (to !== undefined) grading(to, "back");
+          }
         }}
       >
         {controls}
@@ -1105,22 +1119,35 @@ export function SkillStudioTab({
       </>
     );
     const panel =
-      (doing?.what === "new" || doing?.what === "edit") && studio !== undefined ? (
+      doing?.what === "new" && studio !== undefined ? (
         <ChangePanel
           plane={plane}
           scope={scope}
-          doing={doing}
           busy={busy}
           levels={levels}
           onCancel={() => setDoing(undefined)}
           change={change}
         />
       ) : undefined;
+    // A grading page under the chosen skill (S6) is the page of a skill this studio can grade.
+    const gradingLevel =
+      chosen !== undefined && at.grading !== undefined ? levelOf(chosen, scope) : null;
     item =
       doing?.what === "new" && panel !== undefined ? (
         <div className="skill-studio-item" data-testid="skill-studio-doing">
           {panel}
         </div>
+      ) : chosen !== undefined && at.grading !== undefined && gradingLevel !== null ? (
+        <GradingPage
+          // A page of each kind and grade: walking a grade's chats keeps its scorecard read.
+          key={`${skillRowId(chosen)}:${at.grading.at}:${"grade" in at.grading ? at.grading.grade : ""}`}
+          plane={plane}
+          name={chosen.name}
+          level={gradingLevel}
+          grading={at.grading}
+          changed={changed + done}
+          onGrading={grading}
+        />
       ) : chosen !== undefined && studio !== undefined ? (
         <SkillPage
           key={skillRowId(chosen)}
@@ -1134,22 +1161,33 @@ export function SkillStudioTab({
           busy={busy}
           changed={changed + done}
           change={change}
-          doing={
-            doing?.what === "edit" && panel !== undefined
-              ? { what: "edit", drawn: panel }
-              : undefined
-          }
+          doing={edits.editor !== undefined ? { what: "edit", drawn: edits.editor } : undefined}
+          unsaved={edits.unsaved}
           onTab={(tab) => history.replace({ ...at, tab })}
           onGo={(to, item) => go({ page: to, scope, ...(item === undefined ? {} : { item }) })}
-          onEdit={(level) => open(chosen, level)}
-          onRename={(level) => setDoing({ what: "rename", skill: chosen, level })}
-          onMove={(level) => setDoing({ what: "move", skill: chosen, from: level })}
-          onDelete={(level) => setDoing({ what: "delete", skill: chosen, level })}
+          onEdit={(level) =>
+            edits.leave(() => {
+              // Edit takes the place of a change in progress (Rename, Move, Delete).
+              setDoing(undefined);
+              edits.open(chosen, level);
+            })
+          }
+          onStopEditing={edits.stop}
+          onRename={(level) =>
+            edits.leave(() => setDoing({ what: "rename", skill: chosen, level }))
+          }
+          onMove={(level) =>
+            edits.leave(() => setDoing({ what: "move", skill: chosen, from: level }))
+          }
+          onDelete={(level) =>
+            edits.leave(() => setDoing({ what: "delete", skill: chosen, level }))
+          }
           onPersona={personaSkill}
           onCopy={() => setCopying({ from: chosen.name })}
           offerFor={offerFor}
           onPress={onPress}
           onOpenView={onOpenView}
+          onGrading={grading}
         />
       ) : (
         <EmptyState
@@ -1438,6 +1476,7 @@ export function SkillStudioTab({
           onClose={() => setDoing(undefined)}
         />
       )}
+      {edits.question}
       <ViewFrame
         label="Skill studio pages"
         pages={pages}
@@ -1461,11 +1500,10 @@ export function SkillStudioTab({
   );
 }
 
-/** The panel for the change in progress drawn in a pane: New skill, or the editor. */
+/** The panel for the change in progress drawn in a pane: New skill. */
 function ChangePanel({
   plane,
   scope,
-  doing,
   busy,
   levels,
   onCancel,
@@ -1473,53 +1511,25 @@ function ChangePanel({
 }: {
   plane: string;
   scope: StudioScope;
-  doing: Extract<Doing, { what: "new" | "edit" }>;
   busy: boolean;
   levels: readonly StudioLevel[];
   onCancel: () => void;
   change: Change;
 }) {
-  switch (doing.what) {
-    case "new":
-      return (
-        <NewSkill
-          plane={plane}
-          scope={scope}
-          levels={levels}
-          busy={busy}
-          onCancel={onCancel}
-          onMake={(level, name, description, template) =>
-            change("The skill was not made", () =>
-              commands.skillNew(plane, level, name, description, template),
-            )
-          }
-        />
-      );
-    case "edit":
-      return (
-        <Suspense
-          fallback={
-            <p className="pending" aria-busy="true">
-              Opening the editor…
-            </p>
-          }
-        >
-          <SkillEditor
-            plane={plane}
-            level={doing.level}
-            name={doing.skill.name}
-            was={doing.was}
-            saving={busy}
-            onClose={onCancel}
-            onSave={(now) =>
-              change("The skill was not saved", () =>
-                commands.skillSave(plane, doing.level, doing.skill.name, doing.was, now),
-              )
-            }
-          />
-        </Suspense>
-      );
-  }
+  return (
+    <NewSkill
+      plane={plane}
+      scope={scope}
+      levels={levels}
+      busy={busy}
+      onCancel={onCancel}
+      onMake={(level, name, description, template) =>
+        change("The skill was not made", () =>
+          commands.skillNew(plane, level, name, description, template),
+        )
+      }
+    />
+  );
 }
 
 /** **New skill** (decisions 13 and 37): a name, a description and a template, at the level the

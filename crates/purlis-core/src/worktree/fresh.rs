@@ -12,8 +12,11 @@
 //! `git fetch <remote> <branch>:<branch>` would**: only a fast-forward, and only where no
 //! worktree has the branch checked out, since moving a checked-out branch would leave that
 //! tree's files behind its commit. Where it is checked out and behind, the remote-tracking
-//! branch is used in its place ([`Fresh::instead`]); where it has moved on from its remote, it
-//! is used as the clone has it. The note says which, and what brings the clone up.
+//! branch is used in its place ([`Fresh::instead`]), and so it is where the two have each moved
+//! on (#3890): the clone's branch then holds commits its remote never took, most often ones
+//! upstream squashed into one of its own, and is never moved. Where it is only ahead of its
+//! remote, it is used as the clone has it, its own commits the base's. The note says which,
+//! and what brings the clone up.
 //!
 //! Every git call goes through the hardened runner, under whatever isolation the caller holds.
 
@@ -28,8 +31,8 @@ pub struct Fresh {
     /// (`origin/main`), where it was moved.
     pub moved_to: Option<String>,
     /// The remote-tracking branch to start from in its place (`refs/remotes/origin/main`),
-    /// where the base is behind it and could not be moved: checked out in a worktree, whose
-    /// files would be left behind its commit.
+    /// where the base is behind it and could not be moved (checked out in a worktree, whose
+    /// files would be left behind its commit), or where the two have diverged (#3890).
     pub instead: Option<String>,
     /// What the person should know: the base is behind its remote and was left where it is.
     pub notes: Vec<String>,
@@ -69,7 +72,7 @@ pub fn bring_up(clone: &Path, branch: &str) -> Result<Fresh, Refusal> {
     )?;
     match behind.code {
         Some(0) => {}
-        // Ahead of it, or apart from it: the clone's own commits are the base's.
+        // Ahead of it: the clone's own commits are the base's. Apart from it: the remote's.
         Some(1) => {
             let ahead = git::run(
                 clone,
@@ -79,10 +82,11 @@ pub fn bring_up(clone: &Path, branch: &str) -> Result<Fresh, Refusal> {
             if ahead.code != Some(0) {
                 return Ok(Fresh {
                     moved_to: None,
-                    instead: None,
+                    instead: Some(upstream.clone()),
                     notes: vec![format!(
-                        "{branch} and {short} have each moved on, so {branch} is used as the \
-                         clone has it"
+                        "{branch} and {short} have each moved on, so purlis used {short} and \
+                         left {branch} where it is. To bring {branch} onto {short}, rebase or \
+                         reset it from your own terminal"
                     )],
                 });
             }

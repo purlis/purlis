@@ -202,6 +202,19 @@ fn commit(
     };
     let here = Here::of(root, Some(&folder))?;
     paced(root, asker.chat, now)?;
+    // One live writer per branch folder (#3901): a second chat's commit is refused, naming the
+    // chat that holds it; a chat committing where nobody live holds the folder takes it.
+    // `standing` answers only a folder purlis cut, so one it cannot place is refused, never
+    // committed in unclaimed (fail closed).
+    let at = worktree::locate(root, &folder).ok_or(NOT_PLACED)?;
+    crate::piececlaim::take(
+        root,
+        &at,
+        &super::who(asker),
+        asker.live.as_deref(),
+        crate::piececlaim::Act::Commit,
+        chrono::Utc::now(),
+    )?;
     // One commit at a time in a branch folder: a second ask waits for the first.
     let lock = lock_of(&here.git_dir);
     let _held = lock
@@ -214,6 +227,11 @@ fn commit(
         made(root, asker.chat, &ask, &here, identity)
     })
 }
+
+/// What a commit is answered where purlis cannot say which branch folder it would be made in,
+/// and so which chat holds it (#3901).
+const NOT_PLACED: &str = "purlis cannot tell which of its branch folders this is, so it cannot \
+    tell whether another chat works there, and will not commit in it. Nothing was committed";
 
 /// What a commit asked of a chat the app has no folder for is answered.
 const NO_RECORD: &str =
