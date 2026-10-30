@@ -23,7 +23,7 @@ const CUTS: Record<number, readonly string[]> = {
   // WebdriverIO's halves, as they cut 100 specs (Linux's two parts).
   2: ["projects"],
   // 7.7, 7.7, 6.9 and 7.6 minutes of specs on macOS, the mean of five runs on 2026-10-28.
-  4: ["pane-notices", "projects", "skill-studio-drafts"],
+  4: ["pane-notices", "projects", "tab-chip"],
 };
 
 /**
