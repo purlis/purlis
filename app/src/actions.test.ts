@@ -3259,6 +3259,11 @@ describe("Move to runner and Move here on a chat's tab (#2048)", () => {
       title: "Move chat one here",
       note: MOVE_HERE_NOTE,
     });
+    // Its runner names the clones it holds (1.51, #3811): a clone its chat made comes back too.
+    const back = catalogue(now({ tabs, movesTo: () => [null], clonesComeBack: () => true }));
+    expect(catalogued(back).get(`tab.move:${tab}:`)?.note).toBe(
+      "Its branch, uncommitted work and conversation come back to this machine at its next pause, with each repository it cloned on the runner.",
+    );
     const none = catalogue(now({ tabs, movesTo: () => [] }));
     expect([...catalogued(none).keys()].filter((id) => id.startsWith("tab.move:"))).toEqual([]);
   });

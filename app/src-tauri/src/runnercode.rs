@@ -243,7 +243,10 @@ pub(crate) fn move_workspace_to(
 /// chat moves here: the runner's branches into `refs/remotes/<pool>/*`, and this clone's work
 /// tree taken over onto the runner's, its branch, commits and uncommitted work, where it is
 /// still what both ends last agreed. The first clone that is not stops the move, in its words.
-/// Answers what came back that the person is to look at, by its path in the project
+/// A clone the runner chat made there, which this machine has none of, is made here fresh from
+/// the runner's work (#3811, [`codelink::take_work_fresh`]), where the runner names its clones
+/// (session protocol 1.51); a runner before it cannot, and such a clone stays there. Answers
+/// what came back that the person is to look at, by its path in the project
 /// ([`codelink::take_work_back`]).
 pub(crate) fn move_workspace_back(
     link: &HostLink,
@@ -252,8 +255,16 @@ pub(crate) fn move_workspace_back(
     workspace: &str,
     pool: &str,
 ) -> Result<Vec<String>, String> {
+    let here = clones_of(root, workspace);
+    // Asked first, so a runner that cannot say changes nothing here.
+    let only_there = made_there(link, project, workspace, &here)?;
+    // And each fresh one is checked to have room here before any clone here is taken over, so
+    // one refused changes nothing.
+    for rel in &only_there {
+        room_for(root, rel)?;
+    }
     let mut watch = Vec::new();
-    for rel in clones_of(root, workspace) {
+    for rel in here {
         let repo = root.join(&rel);
         let leave_out = leave_out_of(root, &rel)?;
         let scratch = scratch()?;
@@ -276,7 +287,7 @@ pub(crate) fn move_workspace_back(
                 .map_err(|why| why.to_string())
             });
         match moved {
-            Ok(came) => watch.extend(came.into_iter().map(|path| format!("{rel}/{path}"))),
+            Ok(came) => watch.extend(came.into_iter().map(|path| in_clone(&rel, &path))),
             Err(why) => {
                 return Err(format!(
                     "the work in {} did not come back from the runner: {why}",
@@ -285,7 +296,85 @@ pub(crate) fn move_workspace_back(
             }
         }
     }
+    for rel in only_there {
+        let made = codelink::repo_in(root, &rel)
+            .map_err(|why| why.to_string())
+            .and_then(|repo| {
+                let scratch = scratch()?;
+                let into = scratch.path().join("work.bundle");
+                let (heads, wrote) = link.fetch_work(project, &rel, Vec::new(), &into)?;
+                let bundle = wrote.then_some(into.as_path());
+                codelink::take_work_fresh(&repo, pool, bundle, &core_refs(heads))
+                    .map_err(|why| why.to_string())
+            });
+        match made {
+            Ok(came) => watch.extend(came.into_iter().map(|path| in_clone(&rel, &path))),
+            Err(why) => {
+                return Err(format!(
+                    "{rel}, which the runner's chat cloned, did not come back from the runner: \
+                     {why}"
+                ));
+            }
+        }
+    }
     Ok(watch)
+}
+
+/// **Whether a fresh clone at `rel` can be made here** (#3811): its folder in the project is
+/// reached through no link and holds nothing of that name yet. [`codelink::take_work_fresh`]
+/// holds it to that again as it makes it.
+fn room_for(root: &Path, rel: &str) -> Result<(), String> {
+    let refused = |why: &str| {
+        format!("{rel}, which the runner's chat cloned, did not come back from the runner: {why}")
+    };
+    let repo = codelink::repo_in(root, rel).map_err(|why| refused(&why.to_string()))?;
+    if std::fs::symlink_metadata(&repo).is_ok() {
+        return Err(refused("something of that name is here already"));
+    }
+    if !repo
+        .parent()
+        .is_some_and(|parent| std::fs::symlink_metadata(parent).is_ok_and(|meta| meta.is_dir()))
+    {
+        return Err(refused("its workspace's folder is not here"));
+    }
+    Ok(())
+}
+
+/// **The clones of `workspace` the runner holds and this machine has none of** (#3811), by
+/// their folders in the project: what its chat cloned there. None from a runner before session
+/// protocol 1.51, which cannot say. A name no repository's folder may have is refused, in words;
+/// one the workspace keeps for its own is never a clone, and stays there. A clone here is the
+/// runner's of that name however either is cased, as this machine's disk may not tell them
+/// apart.
+fn made_there(
+    link: &HostLink,
+    project: &str,
+    workspace: &str,
+    here: &[String],
+) -> Result<Vec<String>, String> {
+    let Some(there) = link
+        .clones_of(project, workspace)
+        .map_err(|why| format!("the runner did not say which clones it holds: {why}"))?
+    else {
+        return Ok(Vec::new());
+    };
+    let mut only_there = std::collections::BTreeSet::new();
+    for name in there {
+        if !purlis_core::contain::repo_name_ok(&name) {
+            return Err(format!(
+                "the runner named a clone `{name}`, which is not a repository's folder name, so \
+                 nothing came back"
+            ));
+        }
+        if purlis_core::contain::workspace_keeps(&name) {
+            continue;
+        }
+        let rel = format!("workspaces/{workspace}/{name}");
+        if !here.iter().any(|one| one.eq_ignore_ascii_case(&rel)) {
+            only_there.insert(rel);
+        }
+    }
+    Ok(only_there.into_iter().collect())
 }
 
 /// The repositories of `workspace` in the project at `root`, by their folders in it.
@@ -349,6 +438,16 @@ pub(crate) fn fetch_workspace(
         }
     }
     failed
+}
+
+/// `path` in the clone at `rel`, by its path in the project: the clone itself for an empty one,
+/// what [`codelink::take_work_back`] names where what came could not be listed.
+fn in_clone(rel: &str, path: &str) -> String {
+    if path.is_empty() {
+        rel.to_owned()
+    } else {
+        format!("{rel}/{path}")
+    }
 }
 
 fn shown(rel: &str) -> &str {

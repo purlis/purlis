@@ -5963,6 +5963,11 @@ export const PlaneView = memo(function PlaneView({
   );
   /** The other chats of a chat's workspace running where it runs, which move with it (#3453). */
   const movesWithChat = useCallback((session: number) => movesWith(session, reopened), [reopened]);
+  /** Whether Move here brings back what the chat cloned on its runner (#3811). */
+  const clonesComeBack = useCallback(
+    (session: number) => reopened.find((one) => one.session === session)?.clones_come_back === true,
+    [reopened],
+  );
   const moveTab = useCallback(
     (tab: number, to: string | null) => {
       const session = chatOf(now.current, tab);
@@ -7539,6 +7544,7 @@ export const PlaneView = memo(function PlaneView({
             restartable,
             movesTo,
             movesWith: movesWithChat,
+            clonesComeBack,
             ask: askOffer,
             // Not from a shell: it is on no harness profile to start the persona's chat on.
             askable: (session) => !shells.has(session),
@@ -7606,6 +7612,7 @@ export const PlaneView = memo(function PlaneView({
       restartable,
       movesTo,
       movesWithChat,
+      clonesComeBack,
       askOffer,
       shells,
       nearBranch,
