@@ -345,7 +345,7 @@ pub(crate) async fn router_grade_start(
                         profile: &profile,
                         stop: &stop,
                         spent: Spent::default(),
-                        tell: &|ran, tokens, _asked| tell(ran, tokens, None, None),
+                        tell: &|spent, _asked| tell(spent.chats, spent.tokens, None, None),
                         // No grade under way is held for a router's (#3616).
                         on_spent: &|_| {},
                         grade: &grade,

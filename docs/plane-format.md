@@ -7965,9 +7965,9 @@ refuses a `<data>` under a project or inside any git work tree.
 - **Format:** what one chat of a grade showed as the grade ended it (SK-59, #3239; ADR 0105 as
   amended 2026-10-28): its screen and scrollback as the escape sequences that draw them into a
   blank terminal (the session's snapshot, `purlis_core::engine`), at most 4 MiB, so a row of the
-  grade's scorecard opens the chat read-only in a tab. `<skill>`, `<grade>` (the grade's id, a
-  ULID) and `<chat>` (the chat's id, as the eval record's `report.triggers[].chats` names it) are
-  plain names. Each folder `0700` and never a link, each file `0600`, written and read through no
+  grade's scorecard opens the chat read-only, on a page of the Skill studio (S6, #3688).
+  `<skill>`, `<grade>` (the grade's id, a ULID) and `<chat>` (the chat's id, as the eval record's
+  `report.triggers[].chats` names it) are plain names. Each folder `0700` and never a link, each file `0600`, written and read through no
   link (`grades::kept`). When a grade ends, the chats of every grade of its skill but the three
   newest are removed (`grades::kept::sweep`).
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.

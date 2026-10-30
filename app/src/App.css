@@ -7656,6 +7656,31 @@ nav.piece-files-head {
   padding-block-start: var(--space-4);
 }
 
+/* **A skill's Grades tab** (S6, #3688): its bars, its list and the after-each-edit row; and one
+   test's arm on a scorecard: its runs, its verdict and its chats, wrapping in a narrow cell. */
+.skill-grades {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.skill-grading-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.skill-grading-head > * {
+  margin: 0;
+}
+
+.skill-grading-arm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
 .skill-page-text {
   display: flex;
   flex-direction: column;
