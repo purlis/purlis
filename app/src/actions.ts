@@ -134,7 +134,6 @@ import {
 } from "./tabs";
 import { isBrowser } from "./browsers";
 import { anyPoolKept, startAddingAPool } from "./pools";
-import { POOLS } from "./settings/pools";
 import { isDriven } from "./browserDriving";
 
 /**
@@ -2423,11 +2422,11 @@ export function catalogue(now: Now): Offer[] {
     ...can("settings.you", "Your settings…", { verb: "openYourSettings" }),
     note: "Your text sizes and your editor, on this machine.",
   });
-  // **Add a Docker pool…** (#2679): the way to this machine's first pool, there with or without
-  // a project, as Your settings… is. Nothing else about pools is listed until one is kept.
+  // **Add a pool…** (#2679): the way to this machine's first pool, there with or without a
+  // project, as Your settings… is. Its dialog adds a Docker or a cluster pool (#3292).
   offers.push({
-    ...can("pool.add", "Add a Docker pool…", { verb: "addDockerPool" }),
-    note: "A runner on your Docker, held to the limits you set.",
+    ...can("pool.add", "Add a pool…", { verb: "addDockerPool" }),
+    note: "A runner on your Docker, or one claimed in your team's cluster.",
   });
   // **Devices** (#2052): this machine and every runner it keeps, offered once it keeps a pool,
   // so nothing about runners shows before the first is added (spec #2041 story 6).
@@ -3697,9 +3696,9 @@ function settingsGroupRows(
     group,
     ...extra,
   });
-  // The Pools group only once this machine keeps a pool (#2679).
-  const you = SETTINGS_GROUPS.you.filter((one) => one.id !== POOLS || anyPoolKept());
-  const rows: Offer[] = you.map((one) => ({
+  // The Pools group with or without a pool, as Settings lists it (the person's ruling of
+  // 2026-10-30).
+  const rows: Offer[] = SETTINGS_GROUPS.you.map((one) => ({
     ...can(
       `settings.group:${one.id}`,
       `Your settings: ${one.label}`,

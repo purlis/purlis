@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import type { ClusterPoolRow, PoolLink, PoolRow, PoolVersion, ProjectNotHeld } from "../bindings";
 import { Notice } from "../Notice";
 import { useProjectsNotHeld } from "../notheld";
@@ -17,9 +17,10 @@ import { PoolProfiles } from "./PoolProfiles";
  * **You › This machine › Pools** (#2679, the person's rulings of 2026-10-20): the Docker pools
  * added on this machine, each with its image, its limits, how long its runner is left without a
  * link before it suspends itself (#3471; as its runner was made, {@link suspendSaid}, #3717) and
- * Remove, and Add a Docker pool….
- * Offered only while this machine keeps a pool (`SettingsTab`'s You level, and the palette): the
- * first is added from the palette's Add a Docker pool….
+ * Remove, and Add a pool….
+ * **Always listed** (the person's ruling of 2026-10-30, amending #2679's "nothing about pools
+ * shows before the first is added" for Settings): with no pool kept, it says in plain words what a
+ * pool is, and its Add a pool… opens the same dialog as the palette's.
  *
  * **Each pool's runner is asked once whether it answers with the key pinned for it**, as the
  * group comes on screen. One whose key changed is refused on every link, so its row has a
@@ -57,6 +58,14 @@ export function poolsGroup(plane?: string): SettingsGroup {
 
 /** The group's address. */
 export const POOLS = "you.machine.pools";
+
+/** What a pool's Remove does, said under the list while there is a pool. */
+const REMOVE_SAID =
+  "Remove takes this machine out of the runner's peers while it answers, then removes a Docker pool's container and home, or releases a cluster pool's claim in its cluster. There is no undo.";
+
+/** What the group says while this machine keeps no pool: what a pool is. */
+const NO_POOL_YET =
+  "No pool yet. A pool is a runner on your Docker, or one claimed in your team's cluster, that chats and browsers can move to. Add a pool… adds the first.";
 
 /** The limits a row says, in a line. */
 function limitsSaid(pool: PoolRow): string {
@@ -306,9 +315,12 @@ export function NotHeldNotice({
 const poolsList = (plane: string | undefined): LiveSetting => ({
   id: `${POOLS}.list`,
   label: "Pools on this machine",
-  help: "Remove takes this machine out of the runner's peers while it answers, then removes a Docker pool's container and home, or releases a cluster pool's claim in its cluster. There is no undo.",
+  // What Remove does is said under the list, and only while there is a pool to remove: with
+  // none, the group says what a pool is instead (the person's ruling of 2026-10-30).
+  help: "",
   useControl: function usePoolsList() {
     const now = usePools();
+    const removeSaid = useId();
     const notHeld = useProjectsNotHeld();
     // Put away until the runner says something else of the project.
     const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
@@ -351,7 +363,11 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
       grouped: true,
       error: now.said === undefined ? undefined : [now.said],
       control: (ids) => (
-        <div role="group" aria-labelledby={ids.labelledBy} aria-describedby={ids.describedBy}>
+        <div
+          role="group"
+          aria-labelledby={ids.labelledBy}
+          aria-describedby={pools.length === 0 ? undefined : removeSaid}
+        >
           {now.read.state === "reading" && <p className="ui-setting-help">Reading…</p>}
           {now.read.state === "trouble" && (
             <p className="ui-setting-help" role="alert">
@@ -360,7 +376,7 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
           )}
           {now.read.state === "read" &&
             (pools.length === 0 ? (
-              <p className="ui-setting-help">No pool is on this machine.</p>
+              <p className="ui-setting-help">{NO_POOL_YET}</p>
             ) : (
               <ul className="ui-machine-list">
                 {now.read.shown.pools.map((pool) => (
@@ -387,6 +403,11 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
                 ))}
               </ul>
             ))}
+          {pools.length > 0 && (
+            <p className="ui-setting-help" id={removeSaid}>
+              {REMOVE_SAID}
+            </p>
+          )}
           {asking !== undefined && (
             <RemovePool
               name={asking}
