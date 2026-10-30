@@ -113,7 +113,9 @@ export const CouldNotFollow: Story = {
     },
   },
   play: async ({ canvas, userEvent }) => {
-    await expect(canvas.getByRole("group", { name: "The runner's terminal on builds" })).toBeVisible();
+    await expect(
+      canvas.getByRole("group", { name: "The runner's terminal on builds" }),
+    ).toBeVisible();
     await userEvent.tab();
     await untilFocused(
       () => canvas.getByRole("button", { name: "Cancel" }),
