@@ -140,8 +140,8 @@ fn skill_grade_says_a_row_it_skipped_and_shows_no_grade_of_it() {
     );
 }
 
-/// #3602: a grade purlis stopped under before it was scored, newer than [`GRADE`]: its marker
-/// said its chats spent 8,000 tokens over the 4 it asked for, 2 of which ran.
+/// #3602: a grade purlis stopped under before it was scored: its marker said its chats spent
+/// 8,000 tokens over the 4 it asked for, 2 of which ran.
 const INTERRUPTED: &str = concat!(
     "{\"commit\": null, \"grade\": \"01JBGRADE00000000000000002\", \"harness\": \"claude\", ",
     "\"level\": \"skills\", \"profile\": \"work\", \"report\": {\"arms\": [], \"cap\": 200000, ",
@@ -152,15 +152,15 @@ const INTERRUPTED: &str = concat!(
     "\"v\": 1}\n"
 );
 
-/// #3602: the estimate is worked out from an interrupted grade's spend, shared over the chats
-/// it asked for, and says it was interrupted.
+/// #3602: a skill whose only grade was interrupted has its estimate worked out from that grade's
+/// spend, shared over the chats it asked for, and it says it was interrupted.
 #[test]
 fn skill_grade_works_its_estimate_out_from_an_interrupted_grade_3602() {
     let p = Project::new();
     let root = p.at.join("plane");
     std::fs::write(
         root.join("personas/_grades/2026-10.laptop.jsonl"),
-        format!("{GRADE}{INTERRUPTED}"),
+        INTERRUPTED,
     )
     .unwrap();
     let out = p.run(&["skill", "grade", "deploy"]);

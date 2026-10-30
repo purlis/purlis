@@ -3872,9 +3872,11 @@ An end row, never a pass or a fail:
   16 MiB), never dropping them unseen; a byte that is not text spoils only its own row. At most 200 grades of a skill are answered, newest first
   (`purlis_core::skills::grades::read`). The plan's estimate is worked out from the newest grade
   on the profile the grade runs on that asked for a chat, else the newest that asked for one, its
-  spend shared over every chat it asked for (an `interrupted` row's `spent.asked_for`, #3602; one
-  from before that counts none), and says which grade it is, that it was interrupted, that it ran
-  no chat, or that its cost is not known where its chats said nothing of it.
+  spend shared over every chat it asked for, and says which grade it is, that it was interrupted,
+  that it ran no chat, or that its cost is not known where its chats said nothing of it. An
+  `interrupted` row with no arms counts its `spent.asked_for` once that is a turn of each of its
+  arms, and is gone by only where no scored grade on the same profile is (#3602); one from before
+  that counts none.
 - **Git:** committed. Nothing commits it by itself: the next save does.
 - **Encoding details:** path `personas/_grades/{%Y-%m}.{device}.jsonl`, `<device>` named as the
   skill log's is; keys sorted, `\n`, `O_APPEND` through no link, `0o644` (`dispatch::append`).

@@ -1160,37 +1160,44 @@ fn an_interrupted_rows_chats_asked_for_are_held_to_what_it_could_ask_3602() {
 }
 
 /// #3602: the estimate is worked out from a grade purlis stopped under, its spend shared over
-/// the chats its marker said it asked for, and it says that grade was interrupted. One from
-/// before its marker counted them is passed over, as before.
+/// the chats its marker said it asked for, and it says that grade was interrupted. A scored
+/// grade on the same profile goes first; one stopped before a turn of each arm, or before its
+/// marker counted its chats, is passed over.
 #[test]
 fn the_estimate_is_worked_out_from_an_interrupted_grades_spend_3602() {
-    let mut stopped = a_row(
-        "stopped",
-        "2026-10-27T10:00:00+00:00",
-        "work",
-        Some(4_000),
-        false,
-    );
-    // Two chats ran, two more were ended at an ask or never started: four spent 4,000 tokens.
-    stopped.spent = Spent {
-        chats: 2,
-        tokens: Some(4_000),
-        cost_usd: Some(0.04),
-        asked_for: Some(4),
+    let stopped = |asked_for: Option<u32>, chats: u32| {
+        let mut row = a_row(
+            "stopped",
+            "2026-10-27T10:00:00+00:00",
+            "work",
+            Some(4_000),
+            false,
+        );
+        row.spent = Spent {
+            chats,
+            tokens: Some(4_000),
+            cost_usd: Some(0.04),
+            asked_for,
+        };
+        row.report.spent_tokens = Some(4_000);
+        row.report.spent_usd = Some(0.04);
+        assert!(row.sound(chrono::Utc::now()), "{row:?}");
+        row
     };
-    stopped.report.spent_tokens = Some(4_000);
-    stopped.report.spent_usd = Some(0.04);
-    assert!(stopped.sound(chrono::Utc::now()), "{stopped:?}");
-    let older = a_row(
-        "older",
-        "2026-10-25T10:00:00+00:00",
-        "work",
-        Some(30_000),
-        true,
-    );
+    let scored_on = |profile: &str| {
+        a_row(
+            "scored",
+            "2026-10-25T10:00:00+00:00",
+            profile,
+            Some(30_000),
+            true,
+        )
+    };
+    // Two chats ran, two more were ended at an ask or never started: four spent 4,000 tokens.
+    let four = stopped(Some(4), 2);
 
-    let estimate = estimate_of(&[stopped.clone(), older.clone()], 12, Some("work")).unwrap();
-    assert_eq!(estimate.ts, "2026-10-27T10:00:00+00:00", "the newest");
+    let estimate = estimate_of(&[four.clone(), scored_on("home")], 12, Some("work")).unwrap();
+    assert_eq!(estimate.ts, "2026-10-27T10:00:00+00:00", "on this profile");
     assert_eq!(estimate.chats_then, 4, "every chat it asked for");
     assert_eq!(estimate.tokens, Some(12_000), "a thousand a chat, not two");
     assert!(
@@ -1199,9 +1206,23 @@ fn the_estimate_is_worked_out_from_an_interrupted_grades_spend_3602() {
     );
     assert!(estimate.interrupted, "the plan says it was interrupted");
 
-    let mut uncounted = stopped;
-    uncounted.spent.asked_for = None;
-    let estimate = estimate_of(&[uncounted, older], 12, Some("work")).unwrap();
+    let estimate = estimate_of(&[four.clone(), scored_on("work")], 12, Some("work")).unwrap();
+    assert_eq!(
+        estimate.ts, "2026-10-25T10:00:00+00:00",
+        "a scored grade on this profile goes first"
+    );
+    assert!(!estimate.interrupted);
+
+    let one_arm = stopped(Some(1), 1);
+    let estimate = estimate_of(&[one_arm], 12, Some("work")).unwrap();
+    assert_eq!(
+        (estimate.chats_then, estimate.tokens, estimate.interrupted),
+        (0, None, false),
+        "one arm's chat alone says nothing of the others"
+    );
+
+    let uncounted = stopped(None, 2);
+    let estimate = estimate_of(&[uncounted, scored_on("home")], 12, Some("work")).unwrap();
     assert_eq!(estimate.ts, "2026-10-25T10:00:00+00:00", "passed over");
     assert!(!estimate.interrupted);
 }
