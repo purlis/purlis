@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793353207669,
+  "lastUpdate": 1793355134014,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31290,6 +31290,48 @@ window.BENCHMARK_DATA = {
             "value": 101.048475,
             "unit": "ms",
             "extra": "median of 5 runs: 100.140, 100.558, 101.048, 101.460, 101.858 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f17c15d66cb84d3067a474ea6ebf3312e10a4328",
+          "message": "purlis removes a chat's finished branch folder; worktree commit takes the folder's paths (#3879, #3927, #3969) (#4034)\n\n* Move the gitask, brokered and hookwire tests to their own files (move only)\n\nCONTRIBUTING's \"Where tests live\": a module's tests in <module>/tests.rs.\nNothing in them changes but their indentation.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* purlis worktree commit takes paths relative to the branch folder it runs in (#3927)\n\nRun inside a branch folder (or with env -C <folder>), purlis worktree commit\nreads its paths as git does there, relative to where it runs in the folder,\neven when the chat was started in the workspace above it. The CLI places\neach path inside the folder (.. within it, a whole path inside it, and a\nworkspace- or project-spelled path naming this very folder), and the ask\nnames the folder by its names (CommitAsk.folder). The app holds that folder\nto its record as a path naming it would be held: one purlis cut, reached\nthrough no link, the chat's own folder or one below it. Paths spelled from\nthe workspace keep working, and every refusal of a path names the spellings\nthat work. A message that starts with -- is the message.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* purlis removes a chat's finished branch folder for it when nothing would be lost (#3879, #3969)\n\nIn a chat the app started, purlis worktree remove <repo> <piece>\n[--delete-branch] is handed to the app as GitWork::WorktreeRemove, as update\nand push are. The app runs the terminal's removal in the checked clone and\nfolder, never forced: a folder holding an uncommitted change, a commit no\nother ref reaches, or a file git ignores (less purlis's own layer, as\ndispatchplace::tidy refuses it) is refused, naming what would be lost. Only\na branch folder of the chat's own workspace, from above it: never the\nfolder the chat stands in (the chat that cut it, or one in the workspace's\nfolder, removes it), another branch folder, the clone or the root; a place\nthe app cannot read is refused.\n\nA branch that landed by a squash merge counts as nothing lost: asked of the\nbase as tidy asks it (Landed::Carried), and of the base's remote branch,\nwhich the clone's fetch moved while its own base stayed behind. Such a\nfolder goes without --force and its branch is kept.\n\nOne live writer (#3901, #3969): the removal is held to the folder's claim\n(piececlaim::removing), refusing a folder another live chat holds in the\nwords a commit is refused in, from the app and from the command's fallback\nin a chat. A removal writes a 'removed' line (now in pieces::EVENTS), which\nends the folder's claim only while the folder is gone.\n\n--force is refused for every chat by the command and by the hook guard.\nClaude Code chats carry Bash(purlis worktree remove *) among the own-scope\nrules, alone in its call, and the new worktree_remove tool. Skill, ADR 0067\namendment, changelog fragment with a Security line.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T09:19:33Z",
+          "tree_id": "0ed715da1d524cf61fab32beba0117d6317c46bb",
+          "url": "https://github.com/purlis/purlis/commit/f17c15d66cb84d3067a474ea6ebf3312e10a4328"
+        },
+        "date": 1793355130776,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.685146,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.677, 0.683, 0.685, 0.692, 0.695 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5693475,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.476, 16.542, 16.569, 16.643, 16.783 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.92989850000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.905, 101.623, 101.930, 102.101, 102.471 ms"
           }
         ]
       }
