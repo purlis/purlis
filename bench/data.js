@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793396854532,
+  "lastUpdate": 1793398256910,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32256,6 +32256,48 @@ window.BENCHMARK_DATA = {
             "value": 103.382457,
             "unit": "ms",
             "extra": "median of 5 runs: 101.797, 102.839, 103.382, 103.472, 104.330 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9e8ad2c0e8a246776e0aca49b193f51863c32b08",
+          "message": "theme: a chip's three states that fall together fall only where all three hold (#4086) (#4117)\n\nA title-bar chip that is current, under the pointer and reached from\nthe keyboard at once can draw a look no single state or pair draws when\na theme sets a focused colour, and when it failed it fell back on the\nfocus alone, taking the theme's focus colour from every focused chip.\nRule.also now lists every further state a fallback is keyed on, so a\nchip's failing set of two or three states draws its own look, root and\ninner parts, only where all of them hold.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T21:40:52Z",
+          "tree_id": "684188a18edf45d6107d79e3d8118a5ea994268b",
+          "url": "https://github.com/purlis/purlis/commit/9e8ad2c0e8a246776e0aca49b193f51863c32b08"
+        },
+        "date": 1793398251067,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.345301,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.302, 0.328, 0.345, 0.347, 0.364 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.598228,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.537, 16.563, 16.598, 16.787, 16.855 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.287604,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.441, 100.810, 101.288, 101.553, 102.544 ms"
           }
         ]
       }
