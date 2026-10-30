@@ -30,6 +30,9 @@ export function byKeyboard(target: Element): boolean {
 /** What the element a list is held by listens to, spread on it. */
 export type HeldBy<E extends HTMLElement> = {
   ref: RefObject<E | null>;
+  /** Present while the list is held (#4020): what a story or a test waits on, as React Aria's
+   *  `data-entering` says an overlay is opening. It draws nothing. */
+  "data-holding": "" | undefined;
   onPointerOverCapture: PointerEventHandler<E>;
   onPointerEnter: PointerEventHandler<E>;
   onPointerMove: PointerEventHandler<E>;
@@ -155,10 +158,12 @@ export function useHeldStill<E extends HTMLElement>(
     const at = focused.current;
     if (at === null || !at.isConnected || at !== document.activeElement) setInside(false);
   }, [inside, drawn]);
+  const holding = on && (over || inside);
   return {
-    holding: on && (over || inside),
+    holding,
     held: {
       ref,
+      "data-holding": holding ? "" : undefined,
       onPointerOverCapture: (event) => {
         seen.current = event.nativeEvent;
         if (heardIn(event.target)) stay();

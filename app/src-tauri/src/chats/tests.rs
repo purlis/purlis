@@ -21,6 +21,47 @@ fn a_chat_whose_program_ended_is_owed_no_restart() {
     chats.unclaim(4);
 }
 
+/// #3808: the GitHub App tokens minted for a chat go when it ends, whether its program ended
+/// or the chat was closed, and every chat's when they all end; another chat's stay.
+#[test]
+fn a_chats_github_app_tokens_go_when_it_ends() {
+    use purlis_core::forge::apptoken::{keep_for_a_test, kept_by_a_test};
+    let size = Size {
+        columns: 80,
+        rows: 24,
+    };
+    // A project of its own: another test ending every chat of the shared one would take these.
+    let project = tempfile::tempdir().expect("a project");
+    std::fs::write(project.path().join(purlis_core::plane::MANIFEST), "").expect("a manifest");
+    let chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(Sessions::reporting_to(None)),
+        project.path().to_path_buf(),
+    );
+    let root = chats.project.clone();
+    let started = chats
+        .start(
+            &Chat {
+                program: "/bin/sleep".to_owned(),
+                args: vec!["5".to_owned()],
+                name: "gh".to_owned(),
+                ..Default::default()
+            },
+            size,
+        )
+        .expect("started");
+    keep_for_a_test(&root, started, "closed");
+    keep_for_a_test(&root, 9001, "program-ended");
+    keep_for_a_test(&root, 9002, "staying");
+    chats.close(started).expect("closed");
+    assert_eq!(kept_by_a_test(&root, started), 0, "gone as it closed");
+    chats.its_program_ended(9001);
+    assert_eq!(kept_by_a_test(&root, 9001), 0, "gone as its program ended");
+    assert_eq!(kept_by_a_test(&root, 9002), 1, "another chat's stays");
+    chats.end_all();
+    assert_eq!(kept_by_a_test(&root, 9002), 0, "gone as every chat ended");
+}
+
 /// #1353: past the hosts it names, a wrapped chat's proxy tells the count under the chat's
 /// number, as it grows, once the chat has one and only to a listener there is.
 #[test]

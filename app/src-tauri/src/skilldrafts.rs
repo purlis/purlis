@@ -29,7 +29,7 @@ use specta::Type;
 use purlis_core::hookwire::{Answer, ProposeAsk};
 use purlis_core::skills::verbs::drafts;
 
-use crate::curation::{ChatTyped, Curating, StartRefused, off_the_window_refused};
+use crate::curation::{ChatTyped, Curating, StartRefused};
 use crate::planes::{Held, PlaneId, Planes};
 use crate::skillchange::{SkillChanged, SkillLevel};
 
@@ -261,7 +261,7 @@ pub(crate) async fn skill_draft_chat(
     rows: u16,
 ) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
-    off_the_window_refused("starting the chat", move || {
+    crate::curation::off_the_window_refused("starting the chat", move || {
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let level: purlis_core::skills::verbs::Level = (&level).into();
@@ -299,7 +299,7 @@ pub(crate) async fn skill_trigger_tests_chat(
     rows: u16,
 ) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
-    off_the_window_refused("starting the chat", move || {
+    crate::curation::off_the_window_refused("starting the chat", move || {
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let level: purlis_core::skills::verbs::Level = (&level).into();
@@ -338,7 +338,7 @@ pub(crate) async fn skill_draft_try(
     rows: u16,
 ) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
-    off_the_window_refused("starting Try it", move || {
+    crate::curation::off_the_window_refused("starting Try it", move || {
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let standing: Vec<std::path::PathBuf> = held
@@ -469,7 +469,7 @@ pub(crate) async fn skill_draft_redo(
     rows: u16,
 ) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
-    off_the_window_refused("starting the chat", move || {
+    crate::curation::off_the_window_refused("starting the chat", move || {
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let draft = drafts::one(&root, &id)?;

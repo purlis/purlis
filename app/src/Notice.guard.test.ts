@@ -604,6 +604,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ACTION +
       ". A pool's profiles refusing (#2049), in the core's words: its Ask again is the way on",
   },
+  "settings/PoolSignIn.tsx": {
+    count: 2,
+    why:
+      ACTION +
+      ". A profile's sign-in on a pool's runner (#4042), inside its strip: the step it is on, said " +
+      "as it changes, and the one line of what went wrong, in the core's or the runner's words; " +
+      "its Try again, Cancel and Open in terminal are the way out",
+  },
   "settings/accounts.tsx": {
     count: 2,
     why:

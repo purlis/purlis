@@ -23,10 +23,12 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use purlis_core::profilestore::{self, onrunner, sign_in::Standing};
+use purlis_core::profilestore::sign_in::{Standing, driven};
+use purlis_core::profilestore::{self, onrunner};
 
 use crate::runnerlinks::{Machine, ToARunner};
 
@@ -252,6 +254,206 @@ pub fn sign_in_line(pool: &str, name: &str, provider: Option<&str>) -> Result<St
     }
     let runner = purlis_core::runners::runner_for(&config, pool).map_err(|why| why.to_string())?;
     crate::runnerlinks::docker()?.sign_in_line(&runner.made, &engine, name, provider)
+}
+
+/// **One step of a sign-in on a pool's runner** that purlis drives with no terminal (#4042), as
+/// the window's sign-in strip shows it ([`driven::Event`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(tag = "at", rename_all = "kebab-case")]
+pub enum PoolSignInStep {
+    /// Open this page in the browser here: the harness vendor's own.
+    Open { url: String },
+    /// Ask for the code the page shows.
+    Code,
+    /// The harness refused the code, in its words.
+    Refused { said: String },
+    /// The login ended well, and the runner is asked whether it is signed in.
+    Checking,
+    /// The runner's own status check says it is signed in.
+    SignedIn,
+    /// purlis could not follow the login: what it printed.
+    CouldNotFollow { said: String },
+    /// It did not sign in, and why.
+    Failed { why: String },
+    /// It was cancelled, and its login ended.
+    Cancelled,
+}
+
+impl From<driven::Event> for PoolSignInStep {
+    fn from(event: driven::Event) -> Self {
+        match event {
+            driven::Event::Open { url } => Self::Open { url },
+            driven::Event::AskCode => Self::Code,
+            driven::Event::Refused { said } => Self::Refused { said },
+            driven::Event::Checking => Self::Checking,
+            driven::Event::SignedIn => Self::SignedIn,
+            driven::Event::CouldNotFollow { said } => Self::CouldNotFollow { said },
+            driven::Event::Failed { why } => Self::Failed { why },
+            driven::Event::Cancelled => Self::Cancelled,
+        }
+    }
+}
+
+/// A sign-in purlis drives on a pool's runner, held in this process for its length alone.
+struct SignIn {
+    flow: u32,
+    pool: String,
+    name: String,
+    driving: Arc<driven::Driving>,
+}
+
+static SIGN_INS: Mutex<Vec<SignIn>> = Mutex::new(Vec::new());
+static NEXT_SIGN_IN: AtomicU32 = AtomicU32::new(1);
+
+/// How long one ask for a sign-in's next step waits before it answers there is none yet.
+const STEP_WITHIN: Duration = Duration::from_secs(20);
+
+/// **Starts signing `name` in on pool `pool`'s runner with no terminal** (#4042, spec #4023):
+/// the runner's own `purlis profile sign-in`, kept there first and run there through this
+/// machine's `docker` as [`sign_in_line`]'s is, but with pipes, its output read for the steps
+/// [`pool_sign_in_next`] answers. Nothing of this machine's sign-in goes to the runner (ADR
+/// 0095). A sign-in of the same profile on the same pool already running is cancelled. Answers
+/// the sign-in's number.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_sign_in_start(
+    pool: String,
+    name: String,
+    provider: Option<String>,
+) -> Result<u32, String> {
+    // Numbered as it is asked, so of two starts the one asked last is the one kept.
+    let flow = NEXT_SIGN_IN.fetch_add(1, Ordering::SeqCst);
+    tauri::async_runtime::spawn_blocking(move || {
+        let config = config_root()?;
+        let engine = owned()?;
+        let record = record_named(&config, &name)?;
+        profilestore::sign_in::plan_named(&record.harness, provider.as_deref())?;
+        let kept = onrunner::Kept::of(&record)?;
+        if keep_on(&config, &pool, &kept)?.is_none() {
+            return Err(format!(
+                "Pool {pool}: {OLDER_RUNNER}. Nothing was signed in."
+            ));
+        }
+        let runner =
+            purlis_core::runners::runner_for(&config, &pool).map_err(|why| why.to_string())?;
+        let login = crate::runnerlinks::docker()?.driven_sign_in(
+            &runner.made,
+            &engine,
+            &name,
+            provider.as_deref(),
+        )?;
+        let check = {
+            let pool = pool.clone();
+            move || match keep_on(&config, &pool, &kept) {
+                Ok(Some(standing)) => standing,
+                _ => Standing::CannotTell,
+            }
+        };
+        let driving = Arc::new(driven::drive(&login, &record.harness, check)?);
+        // One of the same profile on the same pool is let go and ended, after the lock.
+        let before: Vec<SignIn> = {
+            let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
+            let (same, others): (Vec<_>, Vec<_>) = std::mem::take(&mut *held)
+                .into_iter()
+                .partition(|one| one.pool == pool && one.name == name);
+            *held = others;
+            let (later, before): (Vec<_>, Vec<_>) =
+                same.into_iter().partition(|one| one.flow > flow);
+            if later.is_empty() {
+                held.push(SignIn {
+                    flow,
+                    pool,
+                    name,
+                    driving,
+                });
+                before
+            } else {
+                held.extend(later);
+                drop(held);
+                driving.cancel();
+                for one in before {
+                    one.driving.cancel();
+                }
+                return Err("a later sign-in of this profile took its place".to_owned());
+            }
+        };
+        for one in before {
+            one.driving.cancel();
+        }
+        Ok(flow)
+    })
+    .await
+    .map_err(|why| format!("the sign-in did not start: {why}"))?
+}
+
+/// **The next step of sign-in `flow`**, waiting a while for one; null while there is none yet.
+/// After its last step, the sign-in is let go; signed in, its waits on the pool are too.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_sign_in_next(flow: u32) -> Result<Option<PoolSignInStep>, String> {
+    let driving = driving(flow)?;
+    let event = tauri::async_runtime::spawn_blocking(move || driving.next(STEP_WITHIN))
+        .await
+        .map_err(|why| format!("the sign-in did not answer: {why}"))?;
+    if let Some(event) = event.as_ref().filter(|event| event.is_last()) {
+        let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(at) = held.iter().position(|one| one.flow == flow) {
+            let over = held.remove(at);
+            if *event == driven::Event::SignedIn {
+                onrunner::let_go(None, &over.pool, &over.name);
+            }
+        }
+    }
+    Ok(event.map(PoolSignInStep::from))
+}
+
+/// **Passes the code the person pasted to sign-in `flow`**, as one line.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_sign_in_paste(flow: u32, code: String) -> Result<(), String> {
+    let driving = driving(flow)?;
+    tauri::async_runtime::spawn_blocking(move || driving.paste(&code))
+        .await
+        .map_err(|why| format!("the code was not passed on: {why}"))?
+}
+
+/// **Cancels sign-in `flow`**: what drives its login is ended, and it is let go.
+#[tauri::command]
+#[specta::specta]
+pub fn pool_sign_in_cancel(flow: u32) {
+    let gone: Vec<SignIn> = {
+        let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
+        let (gone, kept) = std::mem::take(&mut *held)
+            .into_iter()
+            .partition(|one| one.flow == flow);
+        *held = kept;
+        gone
+    };
+    for one in gone {
+        one.driving.cancel();
+    }
+}
+
+fn driving(flow: u32) -> Result<Arc<driven::Driving>, String> {
+    SIGN_INS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .find(|one| one.flow == flow)
+        .map(|one| Arc::clone(&one.driving))
+        .ok_or_else(|| "that sign-in is over".to_owned())
+}
+
+fn record_named(config: &Path, name: &str) -> Result<profilestore::MachineProfile, String> {
+    profilestore::list(config)?
+        .into_iter()
+        .find(|p| p.name == name)
+        .ok_or_else(|| {
+            format!(
+                "this machine has no profile named '{}', so nothing was signed in.",
+                purlis_core::shown::short(name)
+            )
+        })
 }
 
 /// How often, and for how long, a profile's standing on a pool is asked again after its Sign

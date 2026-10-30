@@ -3179,6 +3179,8 @@ impl Chats {
             lock(&self.owed).remove(&session);
         }
         self.project_settings.forget(session);
+        // The GitHub App tokens minted for it go with its program (#3808).
+        purlis_core::forge::apptoken::chat_ended(&self.project, session);
     }
 
     /// Starts a chat, and remembers what it was started as.
@@ -4365,6 +4367,8 @@ impl Chats {
         lock(&self.told).remove(&session);
         lock(&self.records).remove(&session);
         self.blocks.ended(session);
+        // The GitHub App tokens minted for it are revoked, in the background (#3808).
+        purlis_core::forge::apptoken::chat_ended(&self.project, session);
         if let Some(gone) = gone {
             // A chat's grants end with it (D-1348-1): kept only while a session of that chat is
             // open, which a restart for a grant is, since it starts before the old one ends.
@@ -6304,6 +6308,11 @@ impl Chats {
     pub fn end_all(&self) {
         self.ending.store(true, Ordering::SeqCst);
         self.sessions.end_all();
+        // Waited on a little, so a quit right after does not cut the revokes off (#3808).
+        purlis_core::forge::apptoken::project_ended(
+            &self.project,
+            std::time::Duration::from_secs(2),
+        );
         lock(&self.open).clear();
         lock(&self.would_not_start).clear();
         lock(&self.coming).clear();

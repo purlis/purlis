@@ -7263,6 +7263,39 @@ nav.piece-files-head {
   margin-inline-start: auto;
 }
 
+/* **A profile's sign-in on a pool's runner, in place** (#4042, `PoolSignIn.tsx`): the strip its
+   line on the pool's row opens into, the whole row wide. A head that says the step, the step's
+   body, and a foot with Cancel and Open in terminal. */
+.pool-sign-in {
+  flex: 1 0 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.pool-sign-in-head,
+.pool-sign-in-foot,
+.pool-sign-in-paste {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.pool-sign-in-head {
+  align-items: baseline;
+}
+
+.pool-sign-in-said {
+  max-height: 12em;
+  overflow: auto;
+  margin: 0;
+  font-size: var(--font-size-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* A form's buttons (SettingActions, V89j): the row a form ends in, under its rows or as a
    dialog's answers. Its buttons, as a row's reset and undo, are the family's (#3129). */
 .ui-setting-actions {
