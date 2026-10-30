@@ -1605,8 +1605,8 @@ fn install(
         }
     };
     let review = match named {
-        Named::These(names) => source::review(root, source, names),
-        Named::All => match source::review_all(root, source) {
+        Named::These(names) => source::review(root, source, names, level),
+        Named::All => match source::review_all(root, source, level) {
             Ok(source::SetReview::Review(review)) if review.skills.is_empty() => {
                 voice::info(format!(
                     "Every skill {} offers is installed from it already.",
@@ -1774,6 +1774,12 @@ fn review_text(review: &source::Review) -> String {
             esc(&skill.description)
         ));
         out.push_str(&summary_text(&skill.summary, "  "));
+        for name in &skill.already {
+            out.push_str(&format!(
+                "  refers to {}, which is installed there already: it is left as it is\n",
+                esc(name)
+            ));
+        }
         for line in &skill.lint {
             out.push_str(&format!("  lint: {}\n", esc(line)));
         }

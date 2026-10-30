@@ -24,7 +24,7 @@ import {
 import { counted } from "./dispatches";
 import { Notice, type NoticeAction } from "./Notice";
 import { Choice, Field, SettingRow } from "./settings/components";
-import { labelOf, picking, sameLevel } from "./skillChanges";
+import { labelOf, levelKey, picking, sameLevel } from "./skillChanges";
 import { NotRead, ReadingRows } from "./SkillPanels";
 import { sourceKey, type SourcesAt } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
@@ -1114,6 +1114,11 @@ function SkillReviewed({
       {skill.brought_by !== null && (
         <p className="honest">Comes along: {skill.brought_by} refers to it.</p>
       )}
+      {skill.already.map((one) => (
+        <p key={one} className="honest" data-testid={`already-${skill.name}-${one}`}>
+          It refers to <code>{one}</code>, which is installed there already: it is left as it is.
+        </p>
+      ))}
       <h4 className="ui-text-small ui-text-strong">What it adds</h4>
       <Summary summary={skill.summary} testid={`summary-${skill.name}`} />
       {skill.lint.map((line) => (
@@ -1172,10 +1177,13 @@ function InstallReviewPage({
   onCancel: () => void;
   onInstall: (review: InstallReview, level: SkillLevel) => void;
 }) {
-  const { read, again } = useRead(`${sourceKey(source.remote)}\u0000${name}`, () =>
-    commands.skillInstallReview(plane, source, [name]),
-  );
   const [level, setLevel] = useState<SkillLevel>(start);
+  // Read again where it lands changes: a skill it refers to that the level holds already is
+  // left as it is, not brought along (#4032).
+  const { read, again } = useRead(
+    `${sourceKey(source.remote)}\u0000${name}\u0000${levelKey(level)}`,
+    () => commands.skillInstallReview(plane, source, [name], level),
+  );
   const picker = picking(
     levels.map((one) => one.level),
     (one) => labelOf(levels, one),
@@ -1211,6 +1219,24 @@ function InstallReviewPage({
       <h2 className="ui-text-strong">
         Install <code>{name}</code> from {source.label}
       </h2>
+      <SettingRow
+        label="Lands in"
+        grouped
+        help={`It lands in the ${labelOf(levels, level)} skills.`}
+        control={(ids) => (
+          <Choice
+            kind="radio"
+            ids={ids}
+            options={picker.options}
+            value={picker.value}
+            disabled={busy}
+            onValueChange={(to) => {
+              const chosen = picker.chosen(to);
+              if (chosen !== undefined) setLevel(chosen);
+            }}
+          />
+        )}
+      />
       <Held read={read} what={`the review of ${name}`} again={again}>
         {(data) => (
           <>
@@ -1225,24 +1251,6 @@ function InstallReviewPage({
             {data.skills.map((skill) => (
               <SkillReviewed key={skill.name} skill={skill} />
             ))}
-            <SettingRow
-              label="Lands in"
-              grouped
-              help={`It lands in the ${labelOf(levels, level)} skills.`}
-              control={(ids) => (
-                <Choice
-                  kind="radio"
-                  ids={ids}
-                  options={picker.options}
-                  value={picker.value}
-                  disabled={busy}
-                  onValueChange={(to) => {
-                    const chosen = picker.chosen(to);
-                    if (chosen !== undefined) setLevel(chosen);
-                  }}
-                />
-              )}
-            />
           </>
         )}
       </Held>
@@ -1455,12 +1463,15 @@ function InstallSetReviewPage({
 }) {
   // Those still in this install: unticking one here leaves it out and reads the review again.
   const [names, setNames] = useState<readonly string[]>(named);
-  // Nothing is asked while nothing is ticked.
-  const { read, again } = useRead(
-    names.length === 0 ? undefined : `${sourceKey(source.remote)}\u0000${names.join("\u0000")}`,
-    () => commands.skillInstallSetReview(plane, source, [...names]),
-  );
   const [level, setLevel] = useState<SkillLevel>(start);
+  // Nothing is asked while nothing is ticked. Read again where they land changes: a skill one
+  // refers to that the level holds already is left as it is (#4032).
+  const { read, again } = useRead(
+    names.length === 0
+      ? undefined
+      : `${sourceKey(source.remote)}\u0000${levelKey(level)}\u0000${names.join("\u0000")}`,
+    () => commands.skillInstallSetReview(plane, source, [...names], level),
+  );
   const picker = picking(
     levels.map((one) => one.level),
     (one) => labelOf(levels, one),

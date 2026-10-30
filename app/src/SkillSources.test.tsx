@@ -78,6 +78,7 @@ const NOTIFY = {
   description: "Tells the team.",
   folder: "skills/notify",
   brought_by: "deploy",
+  already: [],
   summary: EMPTY,
   files: [{ path: "SKILL.md", size: 5, executable: false, text: "hi", risky: false }],
   left_out: [],
@@ -93,6 +94,7 @@ const REVIEW = {
       description: "Ships it.",
       folder: "skills/deploy",
       brought_by: null,
+      already: [],
       summary: SUMMARY,
       files: [
         { path: "SKILL.md", size: 10, executable: false, text: "---\nname: deploy\n", risky: true },
@@ -629,6 +631,60 @@ describe("the install review", () => {
     expect(await screen.findByTestId("skill-source-page")).toBeInTheDocument();
   });
 
+  it("reads the review again where it lands, and leaves a referred skill already there as it is (#4032)", async () => {
+    const OPS = { at: "workspace", name: "ops", local: false };
+    const asked = core({
+      answers: {
+        skill_studio: () => ({
+          on: true,
+          workspace: null,
+          persona: null,
+          workspaces: [],
+          levels: [
+            { level: PROJECT, label: "project" },
+            { level: OPS, label: "ops" },
+          ],
+          harnesses: [],
+          clashes: [],
+          skills: [],
+          first: { starts: false, unmoved: null },
+        }),
+        // The project holds notify already; ops does not.
+        skill_install_review: (args) =>
+          (args.level as { at: string }).at === "project"
+            ? {
+                ...REVIEW,
+                skills: [{ ...REVIEW.skills[0], already: ["notify"] }],
+                accepted: { ...ACCEPTED, skills: [ACCEPTED.skills[0]] },
+              }
+            : REVIEW,
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
+    const review = await screen.findByTestId("install-review");
+    expect(await within(review).findByTestId("already-deploy-notify")).toHaveTextContent(
+      "It refers to notify, which is installed there already: it is left as it is.",
+    );
+    expect(within(review).queryByTestId("reviewed-notify")).toBeNull();
+    expect(within(review).getByTestId("install-commit")).toHaveTextContent("1 skill");
+    const reviews = () => asked.filter((one) => one.cmd === "skill_install_review");
+    expect(reviews().map((one) => one.args.level)).toEqual([PROJECT]);
+
+    // Another level that does not hold it: read again, and notify comes along.
+    await user.click(within(review).getByRole("radio", { name: "ops" }));
+    expect(await within(review).findByTestId("reviewed-notify")).toBeInTheDocument();
+    expect(within(review).queryByTestId("already-deploy-notify")).toBeNull();
+    expect(reviews().map((one) => one.args.level)).toEqual([PROJECT, OPS]);
+    await user.click(within(review).getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(did(asked, "skill_install")).toBe(true));
+    const install = asked.find((one) => one.cmd === "skill_install");
+    expect(install?.args.level).toEqual(OPS);
+    expect(install?.args.reviewed).toEqual(ACCEPTED);
+  });
+
   it("holds Install, saying why, until the review is read, and Cancel goes back", async () => {
     let answer: (review: unknown) => void = () => undefined;
     core({
@@ -790,6 +846,10 @@ describe("Install all… (#4024)", () => {
     expect(asked.find((one) => one.cmd === "skill_install_set_review")?.args.names).toEqual([
       "deploy",
     ]);
+    // Read for where they land, so a skill one refers to that is there already stays out (#4032).
+    expect(asked.find((one) => one.cmd === "skill_install_set_review")?.args.level).toEqual(
+      PROJECT,
+    );
     expect(await within(review).findByTestId("install-commit")).toHaveTextContent(
       "at commit aaaaaaa: 2 skills, 4 risky items marked",
     );

@@ -72,6 +72,7 @@ const DEBUGGING = {
   description: "Finds the cause of a bug before fixing it, with a loop that goes red.",
   folder: "skills/systematic-debugging",
   brought_by: null,
+  already: [],
   summary: SCRIPTED,
   files: [
     {
@@ -200,7 +201,8 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
       case "skill_install_review":
         return {
           commit: commit("3"),
-          skills: [DEBUGGING],
+          // It refers to a skill the level holds already, left as it is (#4032).
+          skills: [{ ...DEBUGGING, already: ["test-driven-development"] }],
           accepted: { commit: "3".repeat(40), skills: [] },
         };
       case "skill_install_set_review": {

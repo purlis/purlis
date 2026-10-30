@@ -89,7 +89,10 @@ pub fn install(
     let fetched = fetch(plane, source, Some(&accepted.commit))?;
     // The files each review read are the ones copied: read once, so a set that fit one read for
     // its review fits it for its install too (#4024).
-    let reviewed = review::reviewed(&fetched, &names, &|_| false).map_err(Unread::said)?;
+    // A skill they refer to that `level` holds already is left as it is, as the review left it
+    // (#4032).
+    let reviewed = review::reviewed(&fetched, &names, &|other| review::has(plane, level, other))
+        .map_err(Unread::said)?;
     let now = Accepted {
         commit: fetched.commit.clone(),
         skills: reviewed

@@ -23,7 +23,7 @@ use serde::Serialize;
 use super::fetch::{SourceFile, fetch};
 use super::install::{level_parts, paths_fit};
 use super::lock::{self, Kept, Locked};
-use super::review::{Accepted, SkillReview, digest_of, review_of, sha256, summary_of, wrote};
+use super::review::{Accepted, SkillReview, digest_of, has, review_of, sha256, summary_of, wrote};
 use super::{Commit, Remote, Source, listed, write};
 use crate::skills::verbs::{self, Ctx, Level};
 
@@ -351,11 +351,6 @@ fn locked_at(plane: &Path, level: &Level, name: &str) -> Result<(lock::Read, usi
     }
 }
 
-/// Whether `level` holds a skill named `name`.
-fn has(plane: &Path, level: &Level, name: &str) -> bool {
-    level.named(plane, name).is_some()
-}
-
 /// **The review of updating the installed skill `name` at `level`** to its source's newest
 /// commit, each skill it brings along under a built-in skill's name (with the built-in skills in
 /// `built_in`) marked. Refused where the pin is the newest, or where this machine may not contact
@@ -419,6 +414,7 @@ pub fn update_review(
             tree::left_in(&fetched.left, &one.dir),
             None,
             &held_names,
+            &|other| has(plane, level, other),
         )
     });
     let brought: Vec<SkillReview> = skills.collect();
