@@ -10,6 +10,7 @@ import {
   personaIn,
   sessionsAt,
   skillsIn,
+  skillSetsOfChats,
   todosIn,
   CURATIONS,
   GIT,
@@ -208,6 +209,25 @@ describe("whether a change concerns one view tab", () => {
     expect(concernsAView(told([change("skills", { workspace: "alpha" })]), alpha)).toBe(true);
     expect(concernsAView(told([change("skills", { workspace: "beta" })]), alpha)).toBe(false);
     expect(concernsAView(told([change("skills", { workspace: "alpha" })]), root)).toBe(false);
+  });
+
+  it("reads the open chats' skill sets again for any level's skills or settings, and nothing else (#4094)", () => {
+    for (const moved of [
+      change("project"),
+      change("harness"),
+      change("persona", { persona: "steward" }),
+      change("skills"),
+      change("skills", { workspace: "beta" }),
+      change("workspace", { workspace: "beta" }),
+    ])
+      expect(concernsAView(told([moved]), skillSetsOfChats)).toBe(true);
+    for (const moved of [
+      change("todos", { workspace: "alpha" }),
+      change("memory", { workspace: "alpha" }),
+      change("sessions"),
+      change("chats"),
+    ])
+      expect(concernsAView(told([moved]), skillSetsOfChats)).toBe(false);
   });
 
   it("reads every tab again when the core could not say what changed", () => {

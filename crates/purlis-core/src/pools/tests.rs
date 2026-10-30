@@ -400,11 +400,11 @@ fn a_new_runner_that_does_not_pair_is_taken_back_and_the_pool_stays_as_it_was() 
     );
 }
 
-/// **A follow keeps the pool's sign-ins** (#4011, ruled 2026-10-30): the old runner's sign-ins
-/// are carried from its home volume to the new runner's on the Docker host, after the new runner
-/// is made and before it is paired, so it never serves without them.
+/// **A follow carries no sign-in while the old runner has chats** (#4055, ruled 2026-10-30): the
+/// new runner is made and paired with nothing of the old runner's home, so a sign-in is never
+/// held by both; a new chat on the new runner asks to sign in there.
 #[test]
-fn a_follow_carries_the_old_runners_sign_ins_to_the_new_runner_before_it_is_paired() {
+fn a_follow_carries_no_sign_in_to_the_new_runner() {
     let config = tempfile::tempdir().unwrap();
     let ours = desktop();
     let fake = a_docker(&runner_answers());
@@ -414,16 +414,41 @@ fn a_follow_carries_the_old_runners_sign_ins_to_the_new_runner_before_it_is_pair
     makes(&fake, &successor, NEW, &successor_answers());
     std::fs::write(fake.file_path("log"), "").unwrap();
 
+    follow(config.path(), &fake.docker(), "first", &new_image, &ours)
+        .unwrap()
+        .expect("moved");
+
+    let log = fake.file("log");
+    assert!(log.contains("--pair"), "{log}");
+    assert!(!log.contains("-copy "), "{log}");
+    assert!(!log.contains("target=/from"), "{log}");
+}
+
+/// **A draining runner's sign-ins go to the pool's runner once it has no chat left** (#4055,
+/// ruled 2026-10-30): carried from its home volume to the new runner's on the Docker host, and
+/// only then is it removed with its volume, so the old copy goes and one runner holds each
+/// sign-in.
+#[test]
+fn a_drained_runner_carries_its_sign_ins_to_the_pools_runner_then_goes_with_its_home() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    makes(&fake, &successor, NEW, &successor_answers());
     follow(config.path(), &fake.docker(), "first", &new_image, &ours).unwrap();
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
 
     let log = fake.file("log");
     let lines: Vec<&str> = log.lines().collect();
     let at = |what: &dyn Fn(&str) -> bool| lines.iter().position(|line| what(line));
     let copying = format!("--name purlis-runner-{successor}-copy ");
-    let made = at(&|line| line.starts_with("run --detach")).expect(&log);
     let copied = at(&|line| line.contains(&copying)).expect(&log);
-    let paired = at(&|line| line.starts_with("exec ") && line.ends_with("--pair")).expect(&log);
-    assert!(made < copied && copied < paired, "{log}");
+    let removed = at(&|line| line == "volume rm --force purlis-runner-first-home").expect(&log);
+    assert!(copied < removed, "{log}");
     let copy = lines[copied];
     assert!(copy.starts_with("run --rm --network none"), "{copy}");
     assert!(
@@ -443,10 +468,10 @@ fn a_follow_carries_the_old_runners_sign_ins_to_the_new_runner_before_it_is_pair
     assert!(copy.contains(NEW), "{copy}");
 }
 
-/// **A sign-in that cannot be carried never holds the pool back** (#4011): the pool moves to its
-/// new runner all the same, and the profile is signed in again there, as before any was carried.
+/// **A sign-in that cannot be carried never holds the drain back** (#4055): the draining runner
+/// is removed all the same, and its profiles are signed in again on the pool's runner.
 #[test]
-fn a_follow_whose_sign_ins_are_not_carried_moves_the_pool_all_the_same() {
+fn a_drained_runner_whose_sign_ins_are_not_carried_is_removed_all_the_same() {
     let config = tempfile::tempdir().unwrap();
     let ours = desktop();
     let fake = a_docker(&runner_answers());
@@ -454,14 +479,55 @@ fn a_follow_whose_sign_ins_are_not_carried_moves_the_pool_all_the_same() {
     let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
     let successor = crate::dockerpool::successor_name("first", &new_image);
     makes(&fake, &successor, NEW, &successor_answers());
+    follow(config.path(), &fake.docker(), "first", &new_image, &ours).unwrap();
     fake.set("copy-fails", "");
 
-    let kept = follow(config.path(), &fake.docker(), "first", &new_image, &ours)
-        .unwrap()
-        .expect("moved");
+    let removed = drain(config.path(), &fake.docker(), "first", None).unwrap();
 
-    assert_eq!(kept.name(), successor);
-    assert!(fake.file("log").contains("--pair"), "{}", fake.file("log"));
+    assert!(removed.forgotten);
+    assert!(
+        fake.file("log")
+            .contains("volume rm --force purlis-runner-first-home"),
+        "{}",
+        fake.file("log")
+    );
+    assert_eq!(
+        runners::runner_for(config.path(), "first").unwrap().name(),
+        successor
+    );
+}
+
+/// **A copy container an earlier carry left holds no later one back** (#4055): one of this
+/// desktop's, of the pool's runner's copy name, is removed by its id before the carry runs.
+#[test]
+fn a_copy_container_an_earlier_carry_left_is_removed_before_the_next_carry() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    makes(&fake, &successor, NEW, &successor_answers());
+    follow(config.path(), &fake.docker(), "first", &new_image, &ours).unwrap();
+    fake.set(
+        "containers-full",
+        &format!(
+            "{LEFT} purlis-runner-{successor}-copy {}\n",
+            runners::desktop_label(config.path())
+        ),
+    );
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+
+    let log = fake.file("log");
+    let left = log
+        .find(&format!("container rm --force --volumes {LEFT}"))
+        .expect(&log);
+    let copied = log
+        .find(&format!("--name purlis-runner-{successor}-copy "))
+        .expect(&log);
+    assert!(left < copied, "{log}");
 }
 
 /// **A pool's runner suspends after the pool's own time** (#3471): the runner made as it is

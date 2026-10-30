@@ -35,6 +35,7 @@ function plan(over: Partial<SkillGradePlan> = {}): SkillGradePlan {
     ],
     chats: 12,
     runs: 3,
+    after_edit_chats: 18,
     tests_refused: null,
     left_out: [],
     outcome_evals: 1,
@@ -784,10 +785,16 @@ describe("Grade after each edit (SK-58), from its plan", () => {
     );
     const told = renderPlan({ afterEdit: true });
     const offer = await screen.findByTestId("skill-grade-after-edit-offer");
-    expect(offer.textContent).toContain("up to 12 chats and at most $15.00");
+    // A skill with no previous version yet gains one at its first saved edit (#4035): the plan
+    // shows and keeps the chats with that version's arm counted, and says why.
+    expect(offer.textContent).toContain("up to 18 chats and at most $15.00");
+    expect(offer.textContent).toContain(
+      "Your first saved edit makes a version of deploy to compare with, so each grade after an edit also runs that version: 18 chats, not the 12 a grade runs now.",
+    );
+    expect(screen.getByText("2 tests × 3 × 3 arms")).toBeInTheDocument();
     const turnOn = screen.getByRole("button", { name: "Turn on grading after each edit" });
     expect(turnOn).toHaveAccessibleDescription(
-      "Nothing runs now. Each edit you save then runs up to 12 chats, at most $15.00 each time, of work's account.",
+      "Nothing runs now. Each edit you save then runs up to 18 chats, at most $15.00 each time, of work's account.",
     );
     expect(asked.some((one) => one.cmd === "skill_grade_after_edit_on")).toBe(false);
 

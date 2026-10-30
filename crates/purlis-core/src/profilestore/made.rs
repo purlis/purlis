@@ -386,32 +386,61 @@ pub(super) fn make_in(
     Ok(Made { record, copied })
 }
 
-/// **Takes in the sign-ins carried to this runner for the profile `name`** (#4011), as it makes
-/// the profile again for its desktop: each of [`super::SIGN_IN_FILES`] under
-/// `<data>/carried/<name>/` that is a plain file reached through no link is moved into the
-/// profile's folder, where it has none of its own, and what was carried for it is removed. What
-/// cannot be taken in is left out: the profile is then signed in again, as before.
-pub(super) fn take_carried(homes: &Homes, name: &str) {
-    let carried = homes.data.join(super::CARRIED).join(name);
-    if std::fs::symlink_metadata(&carried).is_err() {
+/// **Takes in the sign-in carried to this runner for `record`** (#4011, #4055), a profile it
+/// keeps for its desktop: purlis's own, or the desktop's adopted folder kept as its harness's
+/// default folder under `home`. Each batch a drained runner carried
+/// (`<data>/carried/<batch>/<name>/`) is looked in, and only the sign-in file of `record`'s
+/// harness ([`super::sign_in_file_of`]), a plain file reached through no link, is moved in, by
+/// a link that never replaces a file: one the profile has here, signed in on this runner, stays
+/// over it. What was carried for the profile is then removed. What cannot be taken in is left
+/// out: the profile is signed in again, as before.
+pub(super) fn take_carried(homes: &Homes, home: &Path, record: &MachineProfile) {
+    let carried = homes.data.join(super::CARRIED);
+    let Ok(batches) = std::fs::read_dir(&carried) else {
         return;
-    }
-    let folder = homes.folder_of(name);
-    for file in super::SIGN_IN_FILES {
-        let from = carried.join(file);
-        let plain = crate::contain::no_link_on_the_way(&carried, &from).is_ok()
-            && std::fs::symlink_metadata(&from).is_ok_and(|meta| meta.file_type().is_file());
-        let to = folder.join(file);
-        if !plain || std::fs::symlink_metadata(&to).is_ok() {
+    };
+    let mut batches: Vec<PathBuf> = batches.flatten().map(|entry| entry.path()).collect();
+    batches.sort();
+    let into = super::sign_in_file_of(&record.harness).and_then(|file| {
+        let (under, rest) = file.split_once('/')?;
+        let folder = match under {
+            "config" => Some(&record.folders.config),
+            _ => record.folders.data.as_ref(),
+        }?;
+        Some((file, folder.join(rest)))
+    });
+    // Where the folders on its way may be made: a profile purlis made has its own folder, and an
+    // adopted one the runner's home.
+    let made_folder = homes.folder_of(&record.name);
+    let root = if record.adopted.is_none() {
+        made_folder.as_path()
+    } else {
+        home
+    };
+    for batch in batches {
+        if !std::fs::symlink_metadata(&batch).is_ok_and(|meta| meta.is_dir()) {
             continue;
         }
-        if let Some(parent) = to.parent()
-            && private_dirs_within(&folder, parent).is_ok()
-        {
-            let _ = std::fs::rename(&from, &to);
+        let mine = batch.join(&record.name);
+        if std::fs::symlink_metadata(&mine).is_err() {
+            continue;
         }
+        if let Some((file, to)) = &into {
+            let from = mine.join(file);
+            let plain = crate::contain::no_link_on_the_way(&carried, &from).is_ok()
+                && std::fs::symlink_metadata(&from).is_ok_and(|meta| meta.file_type().is_file());
+            if plain
+                && std::fs::symlink_metadata(to).is_err()
+                && let Some(parent) = to.parent()
+                && private_dirs_within(root, parent).is_ok()
+                && std::fs::hard_link(&from, to).is_ok()
+            {
+                let _ = std::fs::remove_file(&from);
+            }
+        }
+        let _ = std::fs::remove_dir_all(&mine);
+        let _ = std::fs::remove_dir(&batch);
     }
-    let _ = std::fs::remove_dir_all(&carried);
 }
 
 /// Imports `name`'s settings again from `machine`'s, at `now`: each listed settings file and

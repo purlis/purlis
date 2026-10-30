@@ -56,35 +56,63 @@ pub const PREFIX: &str = "purlis-runner-";
 /// Where `purlis` is in a runner image (`docs/runner-image.md`).
 pub const PURLIS: &str = "/usr/local/bin/purlis";
 
-/// **The shell script a follow carries a runner's sign-ins with** (#4011): `sh -c` hands it the
-/// old home, the new home and each `<from>=<to>` pair under them
-/// ([`crate::profilestore::carried_in_a_runner_home`]). A `*` in a pair is a profile's name: each
-/// one found under the old home goes to the same name under the new. Only a plain file is carried,
-/// never a link, and with its mode; what the new home has of its own stays. What it makes is the
-/// runner's user's alone. A file that cannot be carried is said and passed over: the profile is
-/// then signed in again, as before any was carried, and the move goes on.
+/// **The shell script a drained runner's sign-ins are carried with** (#4011, #4055): `sh -c`
+/// hands it the old home, the new home, the folder under the new home they go to
+/// ([`crate::profilestore::carried_under_a_runner_home`]) and each `<from>=<to>` pair
+/// ([`crate::profilestore::carried_in_a_runner_home`]). A `*` in a pair is a profile's name:
+/// each one found under the old home goes to the same name. The new runner serves chats as it
+/// runs, so nothing is written where they could have put something first: the folder is walked
+/// to one folder at a time, never through a link, and held by its real path, and the files go
+/// into a batch folder of its own that no one knew the name of before it was made, each written
+/// only where nothing is (`set -C`) and put in place whole, by a link. Only a plain file inside
+/// the old home is carried, never a link or what a folder linked out of it holds. What it makes is
+/// the runner's user's alone. A file that cannot be carried is said and passed over: the profile
+/// is then signed in again, as before any was carried, and the drain goes on.
 pub const COPY_PROFILES: &str = r#"set -u
 umask 077
-from=$1 to=$2
-shift 2
-cd "$from" || exit 1
+from=$1 to=$2 stage=$3
+shift 3
+from=$(cd -P "$from" && pwd -P) || exit 1
+cd -P "$to" || exit 1
+here=$(pwd -P)
+set -f
+IFS=/
+for part in $stage; do
+  [ -n "$part" ] || continue
+  [ ! -L "$part" ] || exit 1
+  [ -d "$part" ] || mkdir "$part" || exit 1
+  cd -P "$part" || exit 1
+  here=$here/$part
+  [ "$(pwd -P)" = "$here" ] || exit 1
+done
+unset IFS
+set +f
+batch=$(mktemp -d ./XXXXXXXX) || exit 1
+batch=${batch#./}
+cd -P "$batch" || exit 1
+[ "$(pwd -P)" = "$here/$batch" ] || exit 1
+set -C
 for pair in "$@"; do
   src=${pair%%=*} dst=${pair#*=}
-  for found in $src; do
-    [ -f "$found" ] && [ ! -L "$found" ] || continue
+  for found in "$from"/$src; do
+    rel=${found#"$from/"}
+    [ -f "$found" ] && [ ! -L "$found" ] && [ -r "$found" ] || continue
+    case $(realpath -- "$found") in "$from"/*) ;; *) continue ;; esac
     out=$dst
     case $src in
       *'*'*)
-        name=${found#"${src%%\**}"}
+        name=${rel#"${src%%\**}"}
         name=${name%"${src#*\*}"}
         case $name in ''|*/*|.*) continue ;; esac
         out=${dst%%\**}$name${dst#*\*}
         ;;
     esac
-    { mkdir -p "$to/$(dirname "$out")" && [ ! -e "$to/$out" ] && cp -p "$found" "$to/$out"; } \
-      || echo "not carried: $found" >&2
+    { mkdir -p "${out%/*}" && [ ! -e "$out" ] && [ ! -L "$out" ] && cat "$found" > "$out.part" \
+        && ln "$out.part" "$out"; } || echo "not carried: $rel" >&2
+    rm -f "$out.part"
   done
 done
+cd .. && rmdir "$batch" 2>/dev/null
 exit 0
 "#;
 
@@ -583,7 +611,8 @@ impl Made {
     }
 
     /// **The name of the container that carries sign-ins to this runner** (#4011): its own
-    /// container's, with `-copy`, so a follow that stopped short finds it with this runner's.
+    /// container's, with `-copy`, so what a carry that stopped short left is found with this
+    /// runner's ([`Docker::remove_leftovers_of`], [`Docker::copy_profiles`]).
     pub fn copy_container(&self) -> String {
         format!("{}-copy", self.runner.container())
     }
@@ -634,6 +663,7 @@ impl Made {
             "sh",
             "/from",
             "/to",
+            &crate::profilestore::carried_under_a_runner_home(),
         ]
         .iter()
         .map(|word| (*word).to_owned())
@@ -2521,18 +2551,19 @@ impl Docker {
         crate::runnerlink::from_line(&out).map_err(refused)
     }
 
-    /// **Removes what a make of the runner `name` by `desktop` left behind** (#2869): its
-    /// container, only where one of exactly its name carries the runner label of that name and
-    /// `desktop`'s label ([`DESKTOP_LABEL`]), removed by the id the listing gave; then its home
-    /// volume of exactly its name, only once no container of that name is left, whatever its
-    /// labels. One another desktop made, or one made before the label, is left as it is. What it
-    /// removed, each named. Only for a name no kept runner holds: the caller says so.
-    pub fn remove_leftovers_of(&self, name: &str, desktop: &str) -> Result<Vec<String>, Refused> {
+    /// **Removes each container of exactly a name in `names` that carries the runner label of
+    /// `name` and `desktop`'s label** ([`DESKTOP_LABEL`]), by the id the listing gave: one another
+    /// desktop made, or one made before the label, is left as it is. Each removed, named.
+    fn remove_labelled(
+        &self,
+        name: &str,
+        desktop: &str,
+        names: &[String],
+    ) -> Result<Vec<String>, Refused> {
         let words = |words: &[&str]| -> Vec<String> {
             words.iter().map(|word| (*word).to_owned()).collect()
         };
         let container = format!("{PREFIX}{name}");
-        let volume = format!("{PREFIX}{name}-home");
         let mut removed = Vec::new();
         let listed = self.read(
             &words(&[
@@ -2557,8 +2588,7 @@ impl Docker {
             else {
                 continue;
             };
-            // The container that carried sign-ins to it (#4011) is its leftover too.
-            if (named != container && named != format!("{container}-copy")) || made_by != desktop {
+            if !names.iter().any(|one| one == named) || made_by != desktop {
                 continue;
             }
             let id = ContainerId::new(id)?;
@@ -2567,8 +2597,29 @@ impl Docker {
                 None,
                 MOST_INSPECTED,
             )?;
-            removed.push(format!("container {container}"));
+            removed.push(format!("container {named}"));
         }
+        Ok(removed)
+    }
+
+    /// **Removes what a make of the runner `name` by `desktop` left behind** (#2869): its
+    /// container, only where one of exactly its name carries the runner label of that name and
+    /// `desktop`'s label ([`DESKTOP_LABEL`]), removed by the id the listing gave; then its home
+    /// volume of exactly its name, only once no container of that name is left, whatever its
+    /// labels. One another desktop made, or one made before the label, is left as it is. What it
+    /// removed, each named. Only for a name no kept runner holds: the caller says so.
+    pub fn remove_leftovers_of(&self, name: &str, desktop: &str) -> Result<Vec<String>, Refused> {
+        let words = |words: &[&str]| -> Vec<String> {
+            words.iter().map(|word| (*word).to_owned()).collect()
+        };
+        let container = format!("{PREFIX}{name}");
+        let volume = format!("{PREFIX}{name}-home");
+        // The container that carried sign-ins to it (#4011) is its leftover too.
+        let mut removed = self.remove_labelled(
+            name,
+            desktop,
+            &[container.clone(), format!("{container}-copy")],
+        )?;
         // A home volume goes only once no container of its name is left, whoever made it.
         let still = self.read(
             &words(&[
@@ -2622,9 +2673,11 @@ impl Docker {
 
     /// **Carries `from`'s sign-ins into `to`'s home** (#4011), on the Docker host
     /// ([`Made::copy_profiles_args`]), for at most [`CARRIED_WITHIN`]: nothing of either home
-    /// passes through this machine. What did not answer in its time is removed.
+    /// passes through this machine. What did not answer in its time is removed, and one a
+    /// carry before left, of `desktop`'s, goes first so it holds no later carry back (#4055).
     pub fn copy_profiles(&self, from: &Made, to: &Made, desktop: &str) -> Result<(), Refused> {
         let prepared = self.prepared()?;
+        let _ = self.remove_labelled(to.runner.name(), desktop, &[to.copy_container()]);
         let ran = self
             .ran_prepared(
                 &prepared,

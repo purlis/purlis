@@ -131,6 +131,9 @@ pub struct Named {
     pub resume: Option<String>,
     pub first_message: Option<String>,
     pub without_sandbox: bool,
+    /// What the person allowed of its persona here, as its digest: what arms its tools on a
+    /// runner (1.55, #4071).
+    pub tools_allowed: Option<String>,
     pub alone: Vec<u16>,
     pub size: Size,
 }

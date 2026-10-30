@@ -37,6 +37,8 @@
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+pub mod undelivered;
+
 /// The folder of the spool directory messages wait in.
 pub const DIR: &str = "messages";
 
@@ -82,6 +84,80 @@ pub enum Queued {
     Question { text: String },
     /// An answer to task `to`'s question.
     Answer { to: u32, text: String },
+}
+
+/// **Whom a queued message is for** ([`Queued::to`]): the one switch over its kinds that the
+/// app's delivery, its records and the notice of what was not delivered all read (#3958).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum For {
+    /// Task `to` of the sender's.
+    Task(u32),
+    /// Every task of the sender's still working.
+    Tasks,
+    /// The sender's asking chat.
+    Asker,
+}
+
+impl Queued {
+    /// The kind of message it is.
+    pub fn kind(&self) -> crate::dispatchtalk::Kind {
+        use crate::dispatchtalk::Kind;
+        match self {
+            Self::Tell { .. } | Self::TellAll { .. } => Kind::FollowUp,
+            Self::Note { .. } => Kind::Note,
+            Self::Question { .. } => Kind::Question,
+            Self::Answer { .. } => Kind::Answer,
+        }
+    }
+
+    /// Whom it is for.
+    pub fn to(&self) -> For {
+        match self {
+            Self::Tell { to, .. } | Self::Answer { to, .. } => For::Task(*to),
+            Self::TellAll { .. } => For::Tasks,
+            Self::Note { .. } | Self::Question { .. } => For::Asker,
+        }
+    }
+
+    /// Its text: none for an acknowledgement alone.
+    pub fn text(&self) -> Option<&str> {
+        match self {
+            Self::Tell { text, .. }
+            | Self::TellAll { text }
+            | Self::Question { text }
+            | Self::Answer { text, .. } => Some(text),
+            Self::Note { text, .. } => text.as_deref(),
+        }
+    }
+
+    /// Its text, to change: none for an acknowledgement alone.
+    fn text_mut(&mut self) -> Option<&mut String> {
+        match self {
+            Self::Tell { text, .. }
+            | Self::TellAll { text }
+            | Self::Question { text }
+            | Self::Answer { text, .. } => Some(text),
+            Self::Note { text, .. } => text.as_mut(),
+        }
+    }
+
+    /// The instruction it acknowledges, where it is a note that does.
+    pub fn acknowledges(&self) -> Option<u32> {
+        match self {
+            Self::Note { ack, .. } => *ack,
+            _ => None,
+        }
+    }
+
+    /// What it is, as a sentence names it: "a follow-up to chat 4".
+    pub fn named(&self) -> String {
+        let kind = self.kind().word();
+        match self.to() {
+            For::Task(to) => format!("a {kind} to chat {to}"),
+            For::Tasks => format!("a {kind} to every task"),
+            For::Asker => format!("a {kind} to its asking chat"),
+        }
+    }
 }
 
 /// One message, as its file holds it.
@@ -154,6 +230,37 @@ impl Unqueued {
                  was not queued"
             ),
         }
+    }
+}
+
+/// **Whether purlis's `dispatch_*` tools reach the queue** where a sandbox keeps the command
+/// from it (#3914): [`tool_path`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolPath {
+    /// They run outside the sandbox the harness puts a command in, and queue.
+    Queues,
+    /// The sandbox holds them too, or the harness is one purlis ships no adapter for.
+    KeptOut,
+}
+
+/// **Whether purlis's `dispatch_*` tools queue a message in a chat of `harness`** where its
+/// sandbox keeps the `purlis dispatch` command from the queue (#3914), by the harness the chat's
+/// environment names ([`crate::hookwire::chat_harness`]; none is Claude Code's).
+///
+/// The ruling on #3914 grants a sandboxed command no way into the queue: the tools are what
+/// queue, because a harness that runs its MCP servers outside the sandbox it puts a command in
+/// runs purlis's there too. Claude Code does. Codex and opencode do not: purlis's wrap is around
+/// the whole harness, its MCP servers with it
+/// ([`crate::harness::HarnessAdapter::sandbox_holds_what_it_starts`]), so there the tools are
+/// kept from the queue as the command is, and a sender is never pointed to them for it. A
+/// harness purlis ships no adapter for is promised nothing.
+pub fn tool_path(harness: Option<&str>) -> ToolPath {
+    let outside = crate::harness::Harness::of_chat(harness)
+        .is_some_and(|harness| !harness.adapter().sandbox_holds_what_it_starts());
+    if outside {
+        ToolPath::Queues
+    } else {
+        ToolPath::KeptOut
     }
 }
 
@@ -421,8 +528,13 @@ fn numbers(dir: &Path) -> io::Result<Vec<(u64, bool)>> {
 /// **Every message chat `chat` has waiting, oldest first**, each checked against the keys the
 /// app issued that chat. Nothing is removed: [`delivered`] and [`drop_unchecked`] do that.
 pub fn waiting(socket: &Path, chat: u32) -> Vec<Found> {
-    let dir = dir_for(socket, chat);
-    if crate::contain::no_link_on_the_way(&spool_dir(socket), &dir).is_err() {
+    waiting_in(&spool_dir(socket), chat)
+}
+
+/// [`waiting`], in the spool directory `spool`.
+fn waiting_in(spool: &Path, chat: u32) -> Vec<Found> {
+    let dir = spool.join(DIR).join(chat.to_string());
+    if crate::contain::no_link_on_the_way(spool, &dir).is_err() {
         return Vec::new();
     }
     let Ok(mut numbers) = numbers(&dir) else {
@@ -442,7 +554,7 @@ pub fn waiting(socket: &Path, chat: u32) -> Vec<Found> {
         .into_iter()
         .map(|(seq, _)| {
             let path = dir.join(name(seq, "json"));
-            match read(socket, chat, seq, &path) {
+            match read(spool, chat, seq, &path) {
                 Some(Looked::Fresh(message)) => Found::Message(message),
                 Some(Looked::Delivered) => Found::Delivered(path),
                 None => Found::Unchecked(path),
@@ -458,7 +570,7 @@ enum Looked {
     Delivered,
 }
 
-fn read(socket: &Path, chat: u32, seq: u64, path: &Path) -> Option<Looked> {
+fn read(spool: &Path, chat: u32, seq: u64, path: &Path) -> Option<Looked> {
     use std::io::Read;
     let mut bytes = Vec::new();
     std::fs::File::open(path)
@@ -472,11 +584,11 @@ fn read(socket: &Path, chat: u32, seq: u64, path: &Path) -> Option<Looked> {
     let file: File = serde_json::from_slice(&bytes).ok()?;
     if file.v != VERSION
         || file.seq != seq
-        || !checks(socket, chat, seq, &file.key, &file.body, &file.mac)
+        || !checks(spool, chat, seq, &file.key, &file.body, &file.mac)
     {
         return None;
     }
-    if seq <= delivered_floor(socket, chat, &file.key) {
+    if seq <= delivered_floor(spool, chat, &file.key) {
         return Some(Looked::Delivered);
     }
     let body: Body = serde_json::from_str(&file.body).ok()?;
@@ -491,8 +603,8 @@ fn read(socket: &Path, chat: u32, seq: u64, path: &Path) -> Option<Looked> {
 }
 
 #[cfg(unix)]
-fn delivered_floor(socket: &Path, chat: u32, key: &str) -> u64 {
-    crate::hookwire::spool::message_floor(&spool_dir(socket), chat, key)
+fn delivered_floor(spool: &Path, chat: u32, key: &str) -> u64 {
+    crate::hookwire::spool::message_floor(spool, chat, key)
 }
 
 #[cfg(not(unix))]
@@ -518,7 +630,12 @@ pub fn holds(socket: &Path, chat: u32) -> bool {
 
 /// The chats that have a folder of waiting messages: what the app drains as a project opens.
 pub fn chats(socket: &Path) -> Vec<u32> {
-    let Ok(entries) = std::fs::read_dir(queues_for(socket)) else {
+    chats_in(&spool_dir(socket))
+}
+
+/// [`chats`], in the spool directory `spool`.
+pub(crate) fn chats_in(spool: &Path) -> Vec<u32> {
+    let Ok(entries) = std::fs::read_dir(spool.join(DIR)) else {
         return Vec::new();
     };
     let mut chats: Vec<u32> = entries
@@ -582,15 +699,8 @@ fn sign(_: &crate::hookwire::ChatToken, _: u32, _: u64, _: &str) -> (String, Str
 }
 
 #[cfg(unix)]
-fn checks(socket: &Path, chat: u32, seq: u64, key: &str, body: &str, mac: &str) -> bool {
-    crate::hookwire::spool::checks_as(
-        &spool_dir(socket),
-        chat,
-        seq,
-        key,
-        &format!("{LABEL}{body}"),
-        mac,
-    )
+fn checks(spool: &Path, chat: u32, seq: u64, key: &str, body: &str, mac: &str) -> bool {
+    crate::hookwire::spool::checks_as(spool, chat, seq, key, &format!("{LABEL}{body}"), mac)
 }
 
 #[cfg(not(unix))]

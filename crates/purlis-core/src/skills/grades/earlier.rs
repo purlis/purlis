@@ -9,10 +9,18 @@
 //! tab and a grade's scorecard read the grades of each ([`super::read_followed`]).
 //!
 //! An earlier place lends only the rows recorded before it was left (`until`): a skill that
-//! takes the old name there since is another, and its grades are none of these. A rename or a
-//! move of the skill takes what it had along to its new place, so the list holds every earlier
-//! place it had on this machine, newest first, at most [`MOST_EARLIER`]. A new skill made with
-//! its name at its level drops it; a delete keeps it, so a Restore brings the grades back.
+//! takes the old name there since is another, and its grades are none of these. A grade of it
+//! that was under way as it left ends after that, by the old name, so the place lends the rows
+//! of those grades too (`grades`, #4104). A rename or a move of the skill takes what it had
+//! along to its new place, so the list holds every earlier place it had on this machine, newest
+//! first, at most [`MOST_EARLIER`].
+//!
+//! **The places are the folder's that took the key** (#4104): each keeps which folder that was
+//! (`folder`, [`identity`]), and lends its rows only while the folder at the key is that one. A
+//! skill made at the name some other way (an install, a draft's accept, a folder made by hand
+//! after the first was removed by hand) is another folder, and shows none of them. A new skill
+//! made with its name by a verb drops them besides; a delete keeps them, and a Restore takes the
+//! folder it brings back as theirs ([`refound`]), so the grades come back with it.
 //!
 //! **Tier:** Machine, device-bound. It lives in this machine's app state of the project,
 //! `<data>/app-state/<clone key>/skill-earlier-names.json` ([`FILE`], `crate::appstate`), as the
@@ -45,6 +53,9 @@ const MOST_SKILLS: usize = 512;
 /// The most earlier places kept for one skill: past them the oldest go.
 pub const MOST_EARLIER: usize = 16;
 
+/// The most grades under way one earlier place keeps, past any project's (one runs at a time).
+const MOST_UNDER_WAY: usize = 16;
+
 /// How long a change waits for another to let go of [`LOCK`].
 const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
@@ -55,6 +66,14 @@ pub struct Earlier {
     pub name: String,
     pub level: String,
     pub until: String,
+    /// **The grades of it under way as it left** (#4104), by id: each is recorded as it ends,
+    /// after `until`, by the name and level it had here, and is lent all the same.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub grades: Vec<String>,
+    /// **Which folder took the key it is kept by** ([`identity`], #4104): it lends nothing to
+    /// another. `None` where that could not be read, or in a file written before this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
 }
 
 impl Earlier {
@@ -67,7 +86,45 @@ impl Earlier {
 
     /// Whether it says only what purlis writes.
     fn sound(&self) -> bool {
-        plain(&self.name) && Level::of_rel(&self.level).is_some() && self.until().is_some()
+        plain(&self.name)
+            && Level::of_rel(&self.level).is_some()
+            && self.until().is_some()
+            && self.grades.len() <= MOST_UNDER_WAY
+            && self.grades.iter().all(|grade| plain(grade))
+            && self.folder.as_deref().is_none_or(|word| {
+                word.len() <= 128
+                    && word
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || b"-:".contains(&b))
+            })
+    }
+}
+
+/// **Which folder holds the copy of `name` at `level`** in the project at `root`, as this machine
+/// tells folders apart: its inode and when it was made, where that reads. A rename or a move
+/// keeps it; a folder removed and made again, by hand or by a verb, is another. Not its device,
+/// which a volume mounted again may change.
+/// `None` where no folder holds the copy, or this system says none of it.
+pub fn identity(root: &Path, level: &Level, name: &str) -> Option<String> {
+    let folder = super::super::verbs::find(root, level, name).ok()?;
+    let meta = std::fs::symlink_metadata(folder).ok()?;
+    if !meta.is_dir() {
+        return None;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        // Made at, where the system keeps it: an inode is given again once its folder is gone.
+        let made = meta
+            .created()
+            .ok()
+            .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or_else(|| "-".to_owned(), |since| since.as_nanos().to_string());
+        Some(format!("{}:{made}", meta.ino()))
+    }
+    #[cfg(not(unix))]
+    {
+        None
     }
 }
 
@@ -168,11 +225,19 @@ fn write(dir: &Path, kept: &Kept) -> Result<(), String> {
 }
 
 /// **The places the copy of `name` at `level` had before on this machine**, newest first: none
-/// where it had none git could not follow.
+/// where it had none git could not follow. A place kept for another folder than the one at the
+/// key now ([`identity`]) is none of this copy's.
 pub fn of(root: &Path, level: &Level, name: &str) -> Vec<Earlier> {
-    super::after_edit::key(level, name)
-        .and_then(|key| read(root).skills.remove(&key))
-        .unwrap_or_default()
+    let Some(mut earlier) =
+        super::after_edit::key(level, name).and_then(|key| read(root).skills.remove(&key))
+    else {
+        return Vec::new();
+    };
+    if earlier.iter().any(|one| one.folder.is_some()) {
+        let now = identity(root, level, name);
+        earlier.retain(|one| one.folder.is_none() || one.folder == now);
+    }
+    earlier
 }
 
 /// **Keeps that the copy of `old` at `from` is `new` at `to` now** (#4018), as of `now`: what a
@@ -200,21 +265,40 @@ pub fn moved(
     if was == is || (!unfollowed && !read(root).skills.contains_key(&was)) {
         return Ok(());
     }
+    // The places it had are lent only while the folder that took the new key is there.
+    let taken = identity(root, to, new);
+    let under_way: Vec<String> = super::underway::of(root, from, old)
+        .into_iter()
+        .take(MOST_UNDER_WAY)
+        .collect();
     let (_held, dir) = held(root)?;
     let mut kept = read(root);
     let mut earlier = kept.skills.remove(&was).unwrap_or_default();
     if unfollowed {
         let until = now.to_rfc3339();
-        let left = std::iter::once((old.to_owned(), level))
-            .chain(followed.iter().cloned())
-            .map(|(name, level)| Earlier {
+        let left = std::iter::once((old.to_owned(), level, under_way))
+            .chain(
+                followed
+                    .iter()
+                    .cloned()
+                    .map(|(name, level)| (name, level, Vec::new())),
+            )
+            .map(|(name, level, grades)| Earlier {
                 name,
                 level,
                 until: until.clone(),
+                grades,
+                folder: None,
             });
         earlier.splice(0..0, left);
     }
+    // A place kept for another folder than the one that moved is none of its own (#4104): a
+    // rename or a move keeps the folder, so it is the one at the new key now.
+    earlier.retain(|one| one.folder.is_none() || one.folder == taken);
     earlier.truncate(MOST_EARLIER);
+    for one in &mut earlier {
+        one.folder.clone_from(&taken);
+    }
     if !earlier.is_empty() {
         if !kept.skills.contains_key(&is) && kept.skills.len() >= MOST_SKILLS {
             return Err(not_kept(&format!(
@@ -227,8 +311,31 @@ pub fn moved(
     write(&dir, &kept)
 }
 
-/// **Drops the earlier places of the copy of `name` at `level`**: what its delete does. Nothing
-/// where it had none.
+/// **Takes the folder at the key of the copy of `name` at `level` as the one its earlier places
+/// are kept for** ([`identity`]): what a Restore does, as the folder it brings back may be
+/// another than the one deleted. Nothing where it had none.
+pub fn refound(root: &Path, level: &Level, name: &str) -> Result<(), String> {
+    let Some(key) = super::after_edit::key(level, name) else {
+        return Ok(());
+    };
+    if !read(root).skills.contains_key(&key) {
+        return Ok(());
+    }
+    let now = identity(root, level, name);
+    let (_held, dir) = held(root)?;
+    let mut kept = read(root);
+    let Some(earlier) = kept.skills.get_mut(&key) else {
+        return Ok(());
+    };
+    for one in earlier.iter_mut() {
+        one.folder.clone_from(&now);
+    }
+    kept.v = VERSION;
+    write(&dir, &kept)
+}
+
+/// **Drops the earlier places of the copy of `name` at `level`**: what a new skill made at its
+/// name does. Nothing where it had none.
 pub fn dropped(root: &Path, level: &Level, name: &str) -> Result<(), String> {
     let Some(key) = super::after_edit::key(level, name) else {
         return Ok(());

@@ -235,6 +235,9 @@ pub fn keep(
                 ));
             }
             brought(record);
+            // A pool's old runner carries its sign-ins once its last chat has ended, after this
+            // one kept the profile (#4055): taken in where it has none of its own.
+            super::made::take_carried(homes, home, record);
             return Ok(record.clone());
         }
         let mut record = match &defaults {
@@ -269,12 +272,12 @@ pub fn keep(
                     &mut made_folder,
                 )?;
                 store.profiles.retain(|p| p.name != kept.name);
-                // The sign-ins its last runner carried to this one, when its pool moved (#4011).
-                super::made::take_carried(homes, &kept.name);
                 made.record
             }
         };
         brought(&mut record);
+        // The sign-ins its pool's old runner carried to this one as it drained (#4011).
+        super::made::take_carried(homes, home, &record);
         store.profiles.push(record.clone());
         Ok(record)
     });
@@ -519,19 +522,91 @@ pub fn ready_on(
     name: &str,
     keep: &dyn Fn(&Kept) -> Result<Option<Standing>, String>,
 ) -> Result<(), String> {
-    ready_on_for(config_root, root, pool, name, keep, For::Start)
+    let Some(record) = ready_on_for(config_root, pool, name, keep, For::Start)? else {
+        return Ok(());
+    };
+    waits_on_pool(root, pool, &record);
+    let shown = crate::shown::short(name);
+    Err(format!(
+        "the profile '{shown}' is not signed in on pool {pool}. Nothing was started. It waits in \
+         the Inbox as Profile {shown} on pool {pool}, whose Sign in on pool {pool} runs its \
+         harness's own sign-in on the runner; then start the chat again."
+    ))
 }
 
-/// [`ready_on`], for a chat that moves to pool `pool`'s runner (#2048): the same keep and the same
-/// wait, said of the move, which the person asks for again once the profile is signed in there.
+/// [`ready_on`], for a chat that moves to pool `pool`'s runner (#2048): the same keep, said of the
+/// move. **A profile signed out there makes the move wait** ([`NotYet::SignIn`], #3477): the
+/// move's own notice asks the sign-in, so no Inbox wait is added, and the move goes ahead once it
+/// is signed in. Anything else that keeps it from the runner refuses the move, in words.
 pub fn ready_to_move_on(
     config_root: &Path,
-    root: &Path,
     pool: &str,
     name: &str,
     keep: &dyn Fn(&Kept) -> Result<Option<Standing>, String>,
-) -> Result<(), String> {
-    ready_on_for(config_root, root, pool, name, keep, For::Move)
+) -> Result<(), NotYet> {
+    match ready_on_for(config_root, pool, name, keep, For::Move)? {
+        Some(record) => Err(NotYet::SignIn(SignInAsked {
+            pool: pool.to_owned(),
+            profile: record.name.clone(),
+            kind: record.harness.clone(),
+            harness: harness_title(&record.harness),
+        })),
+        None => Ok(()),
+    }
+}
+
+/// **Why a chat does not move to a pool's runner yet** (#3477).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotYet {
+    /// Its profile is not signed in there: the move waits for it to be.
+    SignIn(SignInAsked),
+    /// It does not move, and why, in a sentence.
+    Refused(String),
+}
+
+/// **The sign-in a move waits for** (#3477): profile `profile` on pool `pool`'s runner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignInAsked {
+    pub pool: String,
+    pub profile: String,
+    /// Its harness, as a profile's kind names it.
+    pub kind: String,
+    /// Its harness as people call it: `Claude Code`.
+    pub harness: String,
+}
+
+impl NotYet {
+    /// Why the chat did not move, in a sentence, where it does not wait any more: a move
+    /// switched while its profile was signed out there, say.
+    pub fn said(&self) -> String {
+        match self {
+            NotYet::SignIn(asked) => format!(
+                "the profile '{}' is not signed in on pool {}. The chat did not move; sign it in \
+                 on pool {}, then ask for the move again.",
+                crate::shown::short(&asked.profile),
+                asked.pool,
+                asked.pool
+            ),
+            NotYet::Refused(why) => why.clone(),
+        }
+    }
+}
+
+impl From<String> for NotYet {
+    fn from(why: String) -> Self {
+        NotYet::Refused(why)
+    }
+}
+
+impl From<&str> for NotYet {
+    fn from(why: &str) -> Self {
+        NotYet::Refused(why.to_owned())
+    }
+}
+
+/// A harness as people call it, from a profile's kind.
+fn harness_title(kind: &str) -> String {
+    crate::harness_declaration::builtin(kind).map_or_else(|| kind.to_owned(), |d| d.title.clone())
 }
 
 /// What a profile is readied on a runner for: a chat's start there, or its move there.
@@ -541,23 +616,24 @@ enum For {
     Move,
 }
 
+/// [`ready_on`] for `purpose`: `Some` record where its harness says it is signed out on the
+/// runner, which a start refuses and a move waits on.
 fn ready_on_for(
     config_root: &Path,
-    root: &Path,
     pool: &str,
     name: &str,
     keep: &dyn Fn(&Kept) -> Result<Option<Standing>, String>,
     purpose: For,
-) -> Result<(), String> {
-    let (nothing, again) = match purpose {
-        For::Start => ("Nothing was started", "then start the chat again"),
-        For::Move => ("The chat did not move", "then ask for the move again"),
+) -> Result<Option<MachineProfile>, String> {
+    let nothing = match purpose {
+        For::Start => "Nothing was started",
+        For::Move => "The chat did not move",
     };
     let Some(record) = super::list(config_root)?
         .into_iter()
         .find(|p| p.name == name)
     else {
-        return Ok(());
+        return Ok(None);
     };
     let shown = crate::shown::short(name);
     // A start or a move sends the profile's settings with it, as they are now (#3448).
@@ -567,15 +643,8 @@ fn ready_on_for(
     match keep(&kept).map_err(|why| {
         format!("pool {pool}'s runner did not keep the profile '{shown}': {why}. {nothing}.")
     })? {
-        Some(Standing::SignedOut) => {
-            waits_on_pool(root, pool, &record);
-            Err(format!(
-                "the profile '{shown}' is not signed in on pool {pool}. {nothing}. It waits in \
-                 the Inbox as Profile {shown} on pool {pool}, whose Sign in on pool {pool} runs \
-                 its harness's own sign-in on the runner; {again}."
-            ))
-        }
-        Some(Standing::SignedIn | Standing::CannotTell | Standing::Fetching) | None => Ok(()),
+        Some(Standing::SignedOut) => Ok(Some(record)),
+        Some(Standing::SignedIn | Standing::CannotTell | Standing::Fetching) | None => Ok(None),
     }
 }
 
@@ -613,8 +682,7 @@ fn waits_on_pool(root: &Path, pool: &str, record: &MachineProfile) {
         pool: pool.to_owned(),
         profile: record.name.clone(),
         kind: record.harness.clone(),
-        harness: crate::harness_declaration::builtin(&record.harness)
-            .map_or_else(|| record.harness.clone(), |d| d.title.clone()),
+        harness: harness_title(&record.harness),
         since: crate::halt::now(),
     });
 }

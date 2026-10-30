@@ -165,7 +165,8 @@ fn accepted_of(
     Ok(after_edit::Accepted {
         profile,
         model: on.model,
-        chats: plan.chats,
+        // With its previous version's arm counted, as the plan shows it (#4035).
+        chats: planned.after_edit_chats.unwrap_or(plan.chats),
         token_cap: planned.cap.tokens,
         limit_usd: planned.cap.cost_usd(&on.priced),
         tests: after_edit::tests_of(request),

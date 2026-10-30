@@ -264,6 +264,11 @@ export async function askProfiles(name: string, plane?: string, { quietly = fals
   set((was) => ({ ...was, profiles: { ...was.profiles, [name]: rows } }));
 }
 
+/** Pool `name`'s profiles as last asked, outside React (#4048). */
+export function profilesHeld(name: string): PoolProfiles | undefined {
+  return held.profiles[name];
+}
+
 /** **Adds this machine's profile `profile` to pool `name`** (#4047, Add a profile…), then asks
  *  the pool's profiles again, so its runner keeps it. Why not, in the core's words. */
 export async function addProfileToPool(

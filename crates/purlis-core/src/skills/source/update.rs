@@ -549,6 +549,11 @@ pub fn update(
         take_back(&brought);
         return Err(why);
     }
+    // Each skill it brought is a new one: the grades of one that had its name before are none of
+    // its own (#4104).
+    for (skill, _) in &brought {
+        verbs::earlier_dropped(cx, level, skill);
+    }
     let folder = plane.join(parts.join("/"));
     cx.done(format!(
         "{name} is updated at {level}, pinned to {}",

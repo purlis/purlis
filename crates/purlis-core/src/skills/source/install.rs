@@ -210,6 +210,11 @@ pub fn install(
             "The source was not confirmed on this machine: {why}"
         ));
     }
+    // Each is a new skill: the grades of one that had its name before are none of its own
+    // (#4104).
+    for Reviewed { review: skill, .. } in &reviewed {
+        verbs::earlier_dropped(cx, level, &skill.name);
+    }
     let shown: Vec<&str> = reviewed.iter().map(|s| s.review.name.as_str()).collect();
     cx.done(format!(
         "{} installed at {level}, pinned to {}",

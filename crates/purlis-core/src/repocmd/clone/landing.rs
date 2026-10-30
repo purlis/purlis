@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A clone that is not a chat's**: the window's and the terminal's (#4079). A chat's stays on
-//! `clone`'s own deadline for now, because `gitask` bounds its wait on it.
+//! **How a clone runs**: the window's and the terminal's (#4079), and a chat's the app runs for
+//! it (#4080).
 //!
 //! - **No total deadline.** git is stopped once it has said nothing for [`cloning::STALL`], and
 //!   curl ends a dead transfer ([`cloning::low_speed_settings`]). A large repo on a slow line
@@ -14,9 +14,17 @@
 //! - **The hidden folder is held while it runs** ([`Hidden`]), so a crash's leftover is told from
 //!   a clone running now: a leftover is ours by name and replaced, a running one is left to the
 //!   run that has it. The lock goes with the process, so a killed clone never wedges the next.
+//! - **Git LFS files are fetched as a stage of their own** ([`Route::large_files`], #4102): one
+//!   large file downloading in a checkout's filter says nothing for as long as it takes, so the
+//!   clone leaves pointers, and `git lfs pull` then runs with its own progress.
 //! - **One second try**, on a transfer that broke part way ([`cloning::is_transient`]), over
 //!   HTTP/1.1, with a fresh token check.
 //! - **The words come from the failure** ([`spoken`]). What the window says names no forge CLI.
+//!
+//! **A chat's clone** ([`Route::for_a_chat`]) lands the same way, and the chat's command waits on
+//! it for as long as git speaks ([`crate::hookwire::alive`]). It is signed by the forge's CLI
+//! alone, never by the person's sign-in (#752), and with no CLI on this machine by nothing: it
+//! reaches public repos, and what it says names no CLI.
 //!
 //! **A folder an older version left**, with a `.git`, no HEAD that resolves, and nothing else but
 //! purlis's own layer in it, is a clone that never finished ([`unfinished`]), and is replaced once
@@ -43,7 +51,18 @@ pub(super) struct StandIn {
     pub config: Vec<String>,
     pub stall: Option<Duration>,
     pub script: Option<String>,
+    /// Whether the forge's CLI is on this machine, in place of looking.
+    pub cli: Option<bool>,
+    /// A script run in `git lfs pull`'s place, with the clone's folder as `$1`; its being there
+    /// stands for a git that fetches Git LFS files.
+    pub lfs: Option<String>,
+    /// Variables for the stand-in forge's git, by name.
+    pub pass: Vec<(String, std::ffi::OsString)>,
 }
+
+/// What tells git-lfs's filter to leave each file as its pointer, for [`Route::large_files`] to
+/// fetch as a stage of its own (#4102).
+const SKIP_SMUDGE: &str = "GIT_LFS_SKIP_SMUDGE";
 
 /// One clone, where it comes from and where it goes.
 pub(super) struct Route<'a> {
@@ -76,6 +95,20 @@ enum Tried {
 }
 
 impl Route<'_> {
+    /// Whether this is a chat's clone, run by the app with git isolated (#1335).
+    fn for_a_chat() -> bool {
+        git::isolation().is_some()
+    }
+
+    /// Whether the forge's CLI is on this machine.
+    fn cli_here(&self) -> bool {
+        #[cfg(test)]
+        if let Some(here) = self.watch.and_then(|watch| watch.stand_in.cli) {
+            return here;
+        }
+        forge::find_cli(self.forge.kind.cli()).is_some()
+    }
+
     fn stall(&self) -> Duration {
         #[cfg(test)]
         if let Some(stall) = self.watch.and_then(|watch| watch.stand_in.stall) {
@@ -100,8 +133,12 @@ impl Route<'_> {
     /// The helper this try's git consults, asked afresh, so a token that ran out over a long
     /// clone is renewed before its second try. In the window, a host with no account falls back
     /// to the forge's CLI only where that is on this machine: otherwise no helper is named,
-    /// rather than one git would fail to start and say so.
-    fn helper(&self) -> Option<String> {
+    /// rather than one git would fail to start and say so. A chat's clone is the CLI's alone,
+    /// on that same rule, and never the person's sign-in, whatever scope it runs on (#752).
+    pub(super) fn helper(&self) -> Option<String> {
+        if Self::for_a_chat() {
+            return self.cli_here().then(|| forge::cli_helper_for(self.forge));
+        }
         if !gitcredential::in_the_window() {
             return Some(forge::helper_for(self.forge));
         }
@@ -110,13 +147,25 @@ impl Route<'_> {
         })
     }
 
+    /// Variables handed to this clone's git by name.
+    fn pass(&self) -> Vec<(String, std::ffi::OsString)> {
+        #[allow(unused_mut)]
+        let mut pass = Vec::new();
+        #[cfg(test)]
+        if let Some(watch) = self.watch {
+            pass.extend(watch.stand_in.pass.iter().cloned());
+        }
+        pass
+    }
+
     fn tell(&self, stage: Stage, percent: u8) {
         if let Some(watch) = self.watch {
             (watch.heard)(stage, percent);
         }
     }
 
-    /// One `git clone` into `hidden`, followed to its end.
+    /// One `git clone` into `hidden`, followed to its end. Git LFS files are left as their
+    /// pointers ([`SKIP_SMUDGE`]), and fetched after it ([`Self::large_files`]).
     fn attempt(&self, hidden: &Path, second: bool, climb: &mut Climb) -> Tried {
         let into = hidden.display().to_string();
         let args = [
@@ -127,17 +176,73 @@ impl Route<'_> {
             self.url,
             into.as_str(),
         ];
-        let settings = self.settings(second);
+        let mut pass = self.pass();
+        pass.push((SKIP_SMUDGE.to_owned(), "1".into()));
         #[cfg(test)]
-        let spawned = match self
+        let script = self
             .watch
-            .and_then(|watch| watch.stand_in.script.as_deref())
-        {
-            Some(script) => Ok(Ok(in_gits_place(script, &into, &settings.join(" ")))),
-            None => git::spawn_network(self.ws_dir, self.helper().as_deref(), &settings, &args),
-        };
+            .and_then(|watch| watch.stand_in.script.as_deref());
         #[cfg(not(test))]
-        let spawned = git::spawn_network(self.ws_dir, self.helper().as_deref(), &settings, &args);
+        let script = None;
+        self.followed(self.ws_dir, &args, &into, script, second, pass, climb)
+    }
+
+    /// Whether the clone in `hidden` has Git LFS files this machine's git would have fetched
+    /// as it checked them out: the person's config names git-lfs's filter, and a file the
+    /// repo's attributes give it is there.
+    fn has_large_files(&self, hidden: &Path) -> bool {
+        #[cfg(test)]
+        let configured = self.watch.is_some_and(|watch| watch.stand_in.lfs.is_some());
+        #[cfg(not(test))]
+        let configured = git::run(
+            hidden,
+            &["config", "--get-regexp", r"^filter\.lfs\.(process|smudge)$"],
+            git::READ,
+        )
+        .is_ok_and(|run| run.ok() && !run.out.trim().is_empty());
+        configured
+            && git::run(hidden, &["ls-files", "--", ":(attr:filter=lfs)"], git::READ)
+                .is_ok_and(|run| run.ok() && !run.out.trim().is_empty())
+    }
+
+    /// **Git LFS files fetched as a stage of their own** (#4102): `git lfs pull` in `hidden`,
+    /// followed as the clone was. git-lfs rewrites its progress line as bytes arrive, so one
+    /// large file downloading is a clone that speaks, and one gone dead says nothing and is
+    /// stopped at the stall limit.
+    fn large_files(&self, hidden: &Path, climb: &mut Climb) -> Tried {
+        let at = hidden.display().to_string();
+        let mut pass = self.pass();
+        // git-lfs draws its progress only on a terminal unless told.
+        pass.push(("GIT_LFS_FORCE_PROGRESS".to_owned(), "1".into()));
+        #[cfg(test)]
+        let script = self.watch.and_then(|watch| watch.stand_in.lfs.as_deref());
+        #[cfg(not(test))]
+        let script = None;
+        self.followed(hidden, &["lfs", "pull"], &at, script, false, pass, climb)
+    }
+
+    /// git run with `args` in `dir`, on the one-credential rule, followed to its end. In a
+    /// test, `script` runs in its place with `target` as `$1`.
+    #[allow(clippy::too_many_arguments)]
+    fn followed(
+        &self,
+        dir: &Path,
+        args: &[&str],
+        target: &str,
+        script: Option<&str>,
+        second: bool,
+        pass: Vec<(String, std::ffi::OsString)>,
+        climb: &mut Climb,
+    ) -> Tried {
+        let settings = self.settings(second);
+        let spawned = match script {
+            #[cfg(test)]
+            Some(script) => Ok(Ok(in_gits_place(script, target, &settings.join(" ")))),
+            _ => {
+                let _ = target;
+                git::spawn_network(dir, self.helper().as_deref(), &settings, pass, args)
+            }
+        };
         let child = match spawned {
             Ok(Ok(child)) => child,
             Ok(Err(why)) => return Tried::Failed(vec![why]),
@@ -152,7 +257,7 @@ impl Route<'_> {
             }
         });
         let ok = matches!(followed, Ok(Followed::Ended { ok: true, .. }));
-        git::network_call_ended(self.ws_dir, &args, ok, started);
+        git::network_call_ended(dir, args, ok, started);
         match followed {
             Ok(Followed::Ended { ok: true, .. }) => Tried::Done,
             Ok(Followed::Ended { said, .. }) => Tried::Failed(said),
@@ -171,13 +276,34 @@ impl Route<'_> {
         {
             **sign_in = Some(self.forge.host.clone());
         }
-        let (head, said) = spoken(
-            self.name,
-            self.forge,
-            &reading,
-            said,
-            gitcredential::in_the_window(),
-        );
+        let voice = if Self::for_a_chat() {
+            Voice::Chat {
+                cli: self.cli_here(),
+            }
+        } else if gitcredential::in_the_window() {
+            Voice::Window
+        } else {
+            Voice::Terminal
+        };
+        let (head, mut said) = spoken(self.name, self.forge, &reading, said, voice);
+        // A chat's clone read none of your git config (#1413): where it could not reach its host
+        // and yours would have changed its route, say which key (#1550).
+        if Self::for_a_chat()
+            && (reading == Reading::Stalled
+                || reading == Reading::StalledOnLargeFiles
+                || reading == Reading::Unreachable
+                || super::super::unread::reads_as_a_route_failure(&said))
+            && let Some(note) = super::super::unread::network_note(
+                &super::super::unread::global_entries(),
+                self.url,
+            )
+        {
+            said = if said.is_empty() {
+                note
+            } else {
+                format!("{said}\n{note}")
+            };
+        }
         Landed::Failed { head, said }
     }
 }
@@ -213,6 +339,10 @@ pub(super) fn land(route: &Route) -> Landed {
         hidden.empty();
         tried = route.attempt(&hidden.path, true, &mut climb);
     }
+    // A chat's clone runs no filter of your config (#1413), so it has no large files to fetch.
+    if matches!(tried, Tried::Done) && !Route::for_a_chat() && route.has_large_files(&hidden.path) {
+        tried = route.large_files(&hidden.path, &mut climb);
+    }
     match tried {
         Tried::Done => {}
         Tried::Stopped => {
@@ -222,6 +352,9 @@ pub(super) fn land(route: &Route) -> Landed {
             return Landed::Stopped;
         }
         Tried::Failed(said) => return route.failed(cloning::read_words(&said), &said),
+        Tried::Stalled if climb.now().0 == Stage::LargeFiles => {
+            return route.failed(Reading::StalledOnLargeFiles, &[]);
+        }
         Tried::Stalled => return route.failed(Reading::Stalled, &[]),
         Tried::Lost(why) => return route.failed(Reading::Other(why), &[]),
     }
@@ -235,7 +368,8 @@ pub(super) fn land(route: &Route) -> Landed {
         );
     }
     // git's last stages say nothing on a small repo, so the clone's end is said here.
-    route.tell(Stage::WritingFiles, 100);
+    let (stage, _) = climb.now();
+    route.tell(stage.max(Stage::WritingFiles), 100);
     Landed::Cloned
 }
 
@@ -369,23 +503,46 @@ fn holds_only(folder: &Path, rel: &str, own: &std::collections::BTreeSet<String>
     })
 }
 
+/// Who a failed clone's words are for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Voice {
+    /// The window: the sentence alone, naming no forge CLI.
+    Window,
+    /// The terminal, whose way to sign in is the CLI it runs with: git's lines kept.
+    Terminal,
+    /// A chat the app cloned for (#4080): git's lines kept, and a forge CLI named only where it
+    /// is on this machine, since only it ever signs a chat's clone.
+    Chat { cli: bool },
+}
+
 /// A failed clone in the person's words: the sentence, and git's own lines to go under it. The
 /// window gets the sentence alone, naming no forge CLI: `reading` says what git's words said,
 /// and a line of git's may name the CLI's helper. The terminal keeps git's lines, and its way to
-/// sign in is the CLI it runs with.
+/// sign in is the CLI it runs with. A chat keeps them too, less any naming a CLI that is not
+/// here.
 fn spoken(
     name: &str,
     forge: &Forge,
     reading: &Reading,
     said: &[String],
-    window: bool,
+    voice: Voice,
 ) -> (String, String) {
     let host = &forge.host;
     let cli = forge.kind.cli();
+    let no_cli = matches!(voice, Voice::Window | Voice::Chat { cli: false });
     let head = match reading {
-        Reading::NoAccess if window => {
+        Reading::NoAccess if voice == Voice::Window => {
             format!("{name}: Sign in to {host} to clone it, in Settings › You › Accounts.")
         }
+        Reading::NoAccess if voice == (Voice::Chat { cli: true }) => format!(
+            "{name}: {host} refused this clone. A chat's clone is signed by `{cli}` on this \
+             machine, never by your sign-in in the window: run `{cli} auth login` in a \
+             terminal, then try again."
+        ),
+        Reading::NoAccess if no_cli => format!(
+            "{name}: {host} refused this clone. A chat's clone never uses your sign-in, so it \
+             reaches public repos only: clone this one from the window."
+        ),
         Reading::NoAccess => format!(
             "{name}: Sign in to {host} to clone it: `{cli} auth login`, or Settings › You › \
              Accounts in the window."
@@ -402,7 +559,12 @@ fn spoken(
              stopped it and kept nothing. Retry when your connection is back.",
             cloning::STALL.as_secs() / 60
         ),
-        Reading::Other(last) if window => {
+        Reading::StalledOnLargeFiles => format!(
+            "{name}: the clone stalled fetching its large files (Git LFS): nothing came for {} \
+             minutes, so purlis stopped it and kept nothing. Retry when your connection is back.",
+            cloning::STALL.as_secs() / 60
+        ),
+        Reading::Other(last) if no_cli => {
             let last = explained(last.clone());
             let shown: Vec<&str> = last.lines().filter(|line| !names_a_cli(line)).collect();
             if shown.is_empty() {
@@ -413,10 +575,17 @@ fn spoken(
         }
         Reading::Other(last) => format!("{name}: git could not clone it: {last}"),
     };
-    let said = if window {
-        String::new()
-    } else {
-        explained(said.join("\n"))
+    let said = match voice {
+        Voice::Window => String::new(),
+        Voice::Terminal | Voice::Chat { cli: true } => explained(said.join("\n")),
+        Voice::Chat { cli: false } => {
+            let kept: Vec<&str> = said
+                .iter()
+                .map(String::as_str)
+                .filter(|line| !names_a_cli(line))
+                .collect();
+            explained(kept.join("\n"))
+        }
     };
     (head, said)
 }

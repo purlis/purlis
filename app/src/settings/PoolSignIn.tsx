@@ -58,6 +58,7 @@ export function PoolSignIn({
   provider,
   onEnd,
   onTerminal,
+  onSignedIn,
 }: {
   pool: string;
   profile: string;
@@ -69,6 +70,8 @@ export function PoolSignIn({
   onEnd: (signedIn: boolean) => void;
   /** "Open in terminal", where the window can open one. */
   onTerminal?: () => void;
+  /** Told once the runner says it is signed in, before anything is pressed (#3477). */
+  onSignedIn?: () => void;
 }) {
   const [step, setStep] = useState<StripStep>({ at: "starting" });
   const [page, setPage] = useState<string>();
@@ -76,6 +79,10 @@ export function PoolSignIn({
   const [pasteRefused, setPasteRefused] = useState<string>();
   const [attempt, setAttempt] = useState(0);
   const flow = useRef<number>(undefined);
+  const signedIn = useRef(onSignedIn);
+  useEffect(() => {
+    signedIn.current = onSignedIn;
+  }, [onSignedIn]);
 
   // One try: start it, then ask for each step until the last. Leaving the strip, or trying again,
   // cancels it.
@@ -97,6 +104,7 @@ export function PoolSignIn({
           void openUrl(now.url).catch(() => undefined);
         }
         setStep(now);
+        if (now.at === "signed-in") signedIn.current?.();
         if (["signed-in", "could-not-follow", "failed", "cancelled"].includes(now.at)) {
           flow.current = undefined;
           return;

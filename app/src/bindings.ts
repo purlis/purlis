@@ -825,6 +825,11 @@ export const commands = {
 	 */
 	putAwayMcpFailure: (plane: PlaneId, session: number, server: string) => typedError<null, string>(__TAURI_INVOKE("put_away_mcp_failure", { plane, session, server })),
 	/**
+	 *  **Put away on the Notice of a chat's undelivered messages** (#3958): the person has read it,
+	 *  and purlis keeps it no longer.
+	 */
+	putAwayLeftMessages: (plane: PlaneId, report: string) => typedError<null, string>(__TAURI_INVOKE("put_away_left_messages", { plane, report })),
+	/**
 	 *  Chat `session`, where its program ended with its session host and the person has not put
 	 *  it away.
 	 */
@@ -1463,6 +1468,13 @@ export const commands = {
 	moveChatNow: (plane: PlaneId, session: number, columns: number, rows: number) => typedError<MoveNow, string>(__TAURI_INVOKE("move_chat_now", { plane, session, columns, rows })),
 	/**  **This project's chat moves** (#2048), as the window draws them when it is drawn anew. */
 	chatMoves: (plane: PlaneId) => typedError<ChatMove[], string>(__TAURI_INVOKE("chat_moves", { plane })),
+	/**
+	 *  **Chat `session`'s move waited on its profile's sign-in on the runner, which the window's
+	 *  strip says is done** (#3477): the move is prepared again, which asks the runner itself, so it
+	 *  goes ahead once the profile is signed in there, or waits again. Refused for a move that waits
+	 *  on no sign-in.
+	 */
+	chatMoveSignedIn: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("chat_move_signed_in", { plane, session })),
 	/**
 	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten for every chat
 	 *  of it, and a failed one's reason is dismissed. One being made now is refused (#3814).
@@ -4504,7 +4516,13 @@ target: string | null;
  *  Whether purlis saves it by itself. A repo's fix reaches its request by the repo's
  *  next save, so where this is off the Notice says a save is needed.
  */
-autosave: boolean; merge: SaveMerge };
+autosave: boolean; merge: SaveMerge } | 
+/**
+ *  **Messages a chat left queued that no running dispatch could keep** (#3958): Put away
+ *  takes the Notice back ([`put_away_left_messages`]), by `report`, the name purlis keeps
+ *  it under.
+ */
+{ kind: "left-messages"; report: string };
 
 /**
  *  **What Stop all tasks on a session would end** (#1498, V100-53), as the window asks before
@@ -5557,12 +5575,15 @@ export type ChatMove = {
 	/**  The pool it moves to, or `null` for this machine. */
 	to: string | null,
 	/**
-	 *  `preparing`, `ready`, `switching` (being made now, past cancelling), `failed`, or
-	 *  `over`: it moved or was put away, and the window forgets it (#3814).
+	 *  `preparing`, `signing-in` (#3477), `ready`, `switching` (being made now, past
+	 *  cancelling), `failed`, or `over`: it moved or was put away, and the window forgets it
+	 *  (#3814).
 	 */
 	stage: string,
 	/**  Why it failed, in a sentence: where it is `failed`. */
 	why: string | null,
+	/**  The profile it waits on to sign in on the runner: where it is `signing-in` (#3477). */
+	sign_in: MoveSignIn | null,
 	/**  The other chats of its workspace that move with it, by name (#3453). */
 	with: string[],
 };
@@ -8620,6 +8641,18 @@ export type MoveNow = {
 	moved: MovedChat[],
 	/**  Why it did not move yet, in a sentence: it moves at a later pause. */
 	not_yet: string | null,
+};
+
+/**
+ *  **The profile a move waits on to sign in on the runner it goes to** (#3477): what the
+ *  window's sign-in strip under the move's notice signs in.
+ */
+export type MoveSignIn = {
+	profile: string,
+	/**  Its harness, as a profile's kind names it. */
+	kind: string,
+	/**  Its harness as people call it: `Claude Code`. */
+	harness: string,
 };
 
 /**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */
@@ -12773,6 +12806,11 @@ export type SkillGradePlan = {
 	/**  The chats it runs in all, each one turn, and how many times each test runs in each arm. */
 	chats: number,
 	runs: number,
+	/**
+	 *  **The chats each grade after an edit may run** (#4035): with its previous version's arm
+	 *  counted where its first saved edit brings one (`after_edit::chats_to_accept`).
+	 */
+	after_edit_chats: number,
 	/**  Why the trigger tests could not be read, where they were not. */
 	tests_refused: string | null,
 	/**  The trigger tests left out, each with why: a query no chat can be started on. */

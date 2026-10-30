@@ -599,6 +599,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "as it comes on screen, and This is my own refused on its row (#4071), which the switch " +
       "pressed again retries. A runner whose key changed has a Notice of its own",
   },
+  "settings/PoolChooseProfiles.tsx": {
+    count: 1,
+    why:
+      ACTION +
+      ". What choosing a new pool's profiles said (#4048), beside the Sign in and Not now that " +
+      "did it; the pool's own lines follow it",
+  },
   "settings/PoolProfiles.tsx": {
     count: 2,
     why:

@@ -410,6 +410,9 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             // A project's chat moves, and putting one away (#2048): in memory.
             "chat_moves",
             "put_away_chat_move",
+            // A move waiting on a sign-in prepared again (#3477): in memory, the preparing on its
+            // own thread.
+            "chat_move_signed_in",
             "smart_closing",
             "task_ending",
             "all_tasks_ending",

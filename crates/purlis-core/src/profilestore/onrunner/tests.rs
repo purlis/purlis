@@ -633,37 +633,46 @@ fn only_a_plan_its_harness_serves_is_named_for_a_sign_in() {
     assert_eq!(sign_in::plan_named("claude", None), Ok(()));
 }
 
-/// A move refused for its profile says the chat did not move and to ask for the move again,
-/// never that nothing was started or to start the chat again (#2048).
+/// A move whose profile is not signed in on the pool waits for it to sign in (#3477): it is
+/// told as a sign-in to ask, naming the profile and its harness, and no Inbox wait is added, since
+/// the move's own notice asks it. A profile the runner did not keep refuses the move, saying the
+/// chat did not move and to ask for the move again, never that nothing was started (#2048).
 #[test]
-fn a_move_refused_for_its_profile_says_to_ask_for_the_move_again() {
+fn a_move_whose_profile_is_signed_out_there_waits_for_its_sign_in() {
     let dir = tempfile::tempdir().unwrap();
     a_signed_in_desktop_profile(dir.path());
     let desktop = homes(dir.path(), "desktop");
     let project = dir.path().join("project-moving");
 
-    let signed_out = ready_to_move_on(desktop.config_root(), &project, "builds", "work", &|_| {
+    let signed_out = ready_to_move_on(desktop.config_root(), "builds", "work", &|_| {
         Ok(Some(Standing::SignedOut))
     })
     .unwrap_err();
-    let not_kept = ready_to_move_on(desktop.config_root(), &project, "builds", "work", &|_| {
+    assert_eq!(
+        signed_out,
+        NotYet::SignIn(SignInAsked {
+            pool: "builds".into(),
+            profile: "work".into(),
+            kind: "claude".into(),
+            harness: "Claude Code".into(),
+        })
+    );
+    assert!(waiting_on_pools(&project).is_empty());
+    let said = signed_out.said();
+    assert!(said.contains("not signed in on pool builds"), "{said}");
+    assert!(said.contains("The chat did not move"), "{said}");
+
+    let not_kept = ready_to_move_on(desktop.config_root(), "builds", "work", &|_| {
         Err("the runner did not answer".into())
     })
     .unwrap_err();
-    for refused in [&signed_out, &not_kept] {
-        assert!(refused.contains("The chat did not move"), "{refused}");
-        assert!(!refused.contains("Nothing was started"), "{refused}");
-        assert!(!refused.contains("start the chat again"), "{refused}");
-    }
-    assert!(
-        signed_out.contains("ask for the move again"),
-        "{signed_out}"
-    );
-    assert!(
-        signed_out.contains("Profile work on pool builds"),
-        "{signed_out}"
-    );
-    let_go(None, "builds", "work");
+    let NotYet::Refused(refused) = &not_kept else {
+        panic!("{not_kept:?}");
+    };
+    assert!(refused.contains("The chat did not move"), "{refused}");
+    assert!(!refused.contains("Nothing was started"), "{refused}");
+    assert!(!refused.contains("start the chat again"), "{refused}");
+    assert_eq!(not_kept.said(), *refused);
 }
 
 /// The desktop's made profile `work`, signed in, with settings beside its sign-in: Claude Code's
@@ -1188,9 +1197,9 @@ fn a_kept_profile_whose_harness_is_being_fetched_is_said_to_be_fetching() {
     assert_eq!(standing_on_the_wire(said), Standing::Fetching);
 }
 
-/// **A runner takes in the sign-in carried to it when its pool moved** (#4011): keeping the
-/// desktop's profile again moves the sign-in file its last runner carried into the profile's new
-/// folder, and nothing else that was carried; what was carried for it is then gone.
+/// **A runner takes in the sign-in carried to it as its pool's old runner drained** (#4011):
+/// keeping the desktop's profile moves the sign-in file that runner carried into the profile's
+/// new folder, and nothing else that was carried; what was carried for it is then gone.
 #[test]
 fn a_runner_keeping_a_profile_takes_in_the_sign_in_carried_to_it() {
     let dir = tempfile::tempdir().unwrap();
@@ -1200,6 +1209,7 @@ fn a_runner_keeping_a_profile_takes_in_the_sign_in_carried_to_it() {
         .path()
         .join("runner/data")
         .join(crate::profilestore::CARRIED)
+        .join("Xb4tch01")
         .join("work");
     fs::create_dir_all(carried.join("config")).unwrap();
     fs::write(
@@ -1223,5 +1233,87 @@ fn a_runner_keeping_a_profile_takes_in_the_sign_in_carried_to_it() {
         "the old runner's sign-in"
     );
     assert!(!kept.folders.config.join("settings.json").exists());
+    assert!(!carried.exists());
+}
+
+/// **A runner already keeping a profile takes in the sign-in carried to it later** (#4055): its
+/// pool's old runner carries its sign-ins only once its last chat has ended, after the profile
+/// was kept here for a chat, so the next keep takes the carried sign-in in. One the profile
+/// signed in here on its own stays, and the carried one goes.
+#[test]
+fn a_runner_keeping_a_profile_again_takes_in_a_sign_in_carried_since() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let sent = Kept::of(&desktop).expect("it goes");
+    let kept = keep(&runner, &runner_home(dir.path()), &sent, DESKTOP, 7).expect("kept");
+    assert!(!kept.folders.config.join(".credentials.json").exists());
+    let carry = |text: &str| {
+        let carried = dir
+            .path()
+            .join("runner/data")
+            .join(crate::profilestore::CARRIED)
+            .join("Xb4tch01")
+            .join("work");
+        fs::create_dir_all(carried.join("config")).unwrap();
+        fs::write(carried.join("config/.credentials.json"), text).unwrap();
+        carried
+    };
+
+    let carried = carry("the old runner's sign-in");
+    let again = keep(&runner, &runner_home(dir.path()), &sent, DESKTOP, 8).expect("kept");
+    assert_eq!(
+        fs::read_to_string(again.folders.config.join(".credentials.json")).unwrap(),
+        "the old runner's sign-in"
+    );
+    assert!(!carried.exists());
+
+    fs::write(
+        again.folders.config.join(".credentials.json"),
+        "signed in here",
+    )
+    .unwrap();
+    let carried = carry("an older runner's sign-in");
+    keep(&runner, &runner_home(dir.path()), &sent, DESKTOP, 9).expect("kept");
+    assert_eq!(
+        fs::read_to_string(again.folders.config.join(".credentials.json")).unwrap(),
+        "signed in here"
+    );
+    assert!(!carried.exists());
+}
+
+/// **The desktop's adopted folder takes in the sign-in carried to it too** (#4055): kept as
+/// Claude Code's default folder in the runner's home, it takes the default folder's sign-in a
+/// drained runner carried under the harness's name; one of another harness's is left out.
+#[test]
+fn the_desktops_adopted_folder_takes_in_the_sign_in_carried_to_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let adopted = the_desktops_adopted_folder(dir.path());
+    let carried = dir
+        .path()
+        .join("runner/data")
+        .join(crate::profilestore::CARRIED)
+        .join("Xb4tch01")
+        .join("claude");
+    fs::create_dir_all(carried.join("config")).unwrap();
+    fs::write(carried.join("config/.credentials.json"), "the old runner's").unwrap();
+    fs::write(carried.join("config/auth.json"), "another harness's").unwrap();
+
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&adopted).expect("it goes"),
+        DESKTOP,
+        7,
+    )
+    .expect("kept");
+
+    assert_eq!(kept.folders.config, runner_home(dir.path()).join(".claude"));
+    assert_eq!(
+        fs::read_to_string(kept.folders.config.join(".credentials.json")).unwrap(),
+        "the old runner's"
+    );
+    assert!(!kept.folders.config.join("auth.json").exists());
     assert!(!carried.exists());
 }

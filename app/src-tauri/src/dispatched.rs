@@ -1023,14 +1023,12 @@ fn what_became_of(held: &Held, sender: u32, id: &str) -> Answer {
 
 /// The kind of a queued message, and the chat it names, where it names one.
 fn queued_to(what: &purlis_core::dispatchqueue::Queued) -> (Kind, Option<u32>) {
-    use purlis_core::dispatchqueue::Queued;
-    match what {
-        Queued::Tell { to, .. } => (Kind::FollowUp, Some(*to)),
-        Queued::TellAll { .. } => (Kind::FollowUp, None),
-        Queued::Answer { to, .. } => (Kind::Answer, Some(*to)),
-        Queued::Note { .. } => (Kind::Note, None),
-        Queued::Question { .. } => (Kind::Question, None),
-    }
+    use purlis_core::dispatchqueue::For;
+    let to = match what.to() {
+        For::Task(to) => Some(to),
+        For::Tasks | For::Asker => None,
+    };
+    (what.kind(), to)
 }
 
 /// A queued message the app could not deliver, recorded for its sender's list (#3902).
@@ -1078,18 +1076,17 @@ fn not_delivered(
     message: &purlis_core::dispatchqueue::Waiting,
     why: String,
 ) {
-    use purlis_core::dispatchqueue::Queued;
     let (kind, to) = queued_to(&message.what);
-    let text = match &message.what {
-        Queued::Tell { text, .. }
-        | Queued::TellAll { text }
-        | Queued::Question { text }
-        | Queued::Answer { text, .. } => text.clone(),
-        Queued::Note { text, ack } => text.clone().unwrap_or_else(|| {
-            ack.map(|n| format!("(acknowledges instruction {n})"))
+    let text = message.what.text().map_or_else(
+        || {
+            message
+                .what
+                .acknowledges()
+                .map(|n| format!("(acknowledges instruction {n})"))
                 .unwrap_or_default()
-        }),
-    };
+        },
+        str::to_owned,
+    );
     // The task the message is between: the one it names, or the sender itself going up.
     let task = to.or_else(|| {
         matches!(kind, Kind::Note | Kind::Question)
@@ -1192,8 +1189,10 @@ pub(crate) fn deliver_all_queued(held: &Held) {
     let Some(socket) = held.hooks().socket() else {
         return;
     };
-    // Nothing queued, nothing started: one look at a folder.
-    if purlis_core::dispatchqueue::chats(socket).is_empty() {
+    // Nothing queued and nothing left, nothing started: a look at two folders.
+    if purlis_core::dispatchqueue::chats(socket).is_empty()
+        && purlis_core::dispatchqueue::undelivered::to_place(socket).is_empty()
+    {
         return;
     }
     let weak = held.weak();
@@ -1222,6 +1221,99 @@ pub(crate) fn deliver_all_queued_now(held: &Held) {
             deliver_queued(held, chat, None);
         }
     }
+    place_undelivered(held);
+}
+
+/// **What chats that did not come back left queued is recorded where the person reads it**
+/// (#3958, [`purlis_core::dispatchqueue::undelivered`]): the spool set it aside as it cleared
+/// their queues, when the project opened without them.
+///
+/// Each message is kept, marked not delivered, on the running dispatch record it was between
+/// ([`kept_on_its_dispatch`]). What finds no running record is kept as one notice in the Inbox
+/// a sender, naming it and how many
+/// ([`purlis_core::dispatchqueue::undelivered::keep_as_notice`]), so nothing is cleared with no
+/// record the person can see. A message is placed once: a report an app that stopped left
+/// behind places nothing a record or a notice holds already, by id.
+pub(crate) fn place_undelivered(held: &Held) {
+    use purlis_core::dispatchqueue::undelivered::{self, Message};
+    let Some(socket) = held.hooks().socket().map(std::path::Path::to_path_buf) else {
+        return;
+    };
+    let reports = undelivered::to_place(&socket);
+    if reports.is_empty() {
+        return;
+    }
+    let records = purlis_core::dispatchrecord::list(held.root());
+    let mut seen = std::collections::HashSet::new();
+    for (path, report) in reports {
+        let unplaced: Vec<Message> = report
+            .messages
+            .iter()
+            // One message in two reports is placed from the first.
+            .filter(|message| seen.insert(message.id.clone()))
+            .filter(|message| !kept_on_its_dispatch(held, &records, report.sender, message))
+            .cloned()
+            .collect();
+        if unplaced.is_empty() {
+            undelivered::placed(&path);
+            continue;
+        }
+        // The sender's name as the newest record of it says it, where one does.
+        let name = records
+            .iter()
+            .flat_map(|record| [&record.worker.chat, &record.asker.chat])
+            .find(|chat| chat.chat == report.sender)
+            .map(|chat| chat.name.clone());
+        undelivered::keep_as_notice(&path, &report, unplaced, name);
+    }
+    held.tasks().changed();
+}
+
+/// **Keeps chat `sender`'s undelivered `message` on the running dispatch records it was
+/// between** (#3958), found in `records` by the numbers the chats had when it was queued, and
+/// started no later than it was: a follow-up or an answer on the record of the task it names
+/// that its sender asked for, a note or a question on the sender's own record as a task, a
+/// follow-up to every task on each running record its sender asked for. Whether any record
+/// holds it now, kept by this look or by one before it.
+fn kept_on_its_dispatch(
+    held: &Held,
+    records: &[purlis_core::dispatchrecord::Record],
+    sender: u32,
+    message: &purlis_core::dispatchqueue::undelivered::Message,
+) -> bool {
+    use purlis_core::dispatchqueue::For;
+    let queued_at = chrono::DateTime::from_timestamp(message.at, 0);
+    let between = |record: &&purlis_core::dispatchrecord::Record| {
+        record.running()
+            && chrono::DateTime::parse_from_rfc3339(&record.started)
+                .ok()
+                .zip(queued_at)
+                .is_some_and(|(started, queued)| started <= queued)
+    };
+    let on: Vec<&purlis_core::dispatchrecord::Record> = match message.what.to() {
+        For::Task(to) => records
+            .iter()
+            .filter(between)
+            .find(|record| record.worker.chat.chat == to && record.asker.chat.chat == sender)
+            .into_iter()
+            .collect(),
+        For::Tasks => records
+            .iter()
+            .filter(between)
+            .filter(|record| record.asker.chat.chat == sender)
+            .collect(),
+        For::Asker => records
+            .iter()
+            .filter(between)
+            .find(|record| record.worker.chat.chat == sender)
+            .into_iter()
+            .collect(),
+    };
+    let mut kept = false;
+    for record in on {
+        kept |= crate::dispatches::undelivered_on(held, record, message);
+    }
+    kept
 }
 
 /// **Chat `chat` is closing** (#3902): what it still has queued is delivered now, held back by
