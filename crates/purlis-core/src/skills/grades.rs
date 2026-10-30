@@ -589,7 +589,7 @@ pub fn read_of(root: &Path, was: &[super::history::Was]) -> Read {
             Some((place.name.as_str(), Some(level.rel())))
         })
         .collect();
-    read_where(root, Some(&copies), None, chrono::Utc::now())
+    read_where(root, Some(copies.as_slice()), None, chrono::Utc::now())
 }
 
 /// **The grades of the copy of `name` at `level`, and of the places it had before a rename or a
@@ -608,7 +608,12 @@ fn read_at(
     level: Option<&Level>,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Read {
-    read_where(root, Some(&[(name, level.map(Level::rel))]), None, now)
+    read_where(
+        root,
+        Some([(name, level.map(Level::rel))].as_slice()),
+        None,
+        now,
+    )
 }
 
 /// The rows of the record of any of `copies`, each a skill's name and, where it is `Some`, its
@@ -708,7 +713,7 @@ pub fn grade_of(root: &Path, name: &str, grade: &str) -> Option<Graded> {
             .into_iter()
             .next()
     };
-    of(Some(&[(name, None)])).or_else(|| of(None))
+    of(Some([(name, None)].as_slice())).or_else(|| of(None))
 }
 
 /// **What a grade of a copy would cost**, from what a grade of it before spent per chat

@@ -196,7 +196,7 @@ fn logged(plane: &Path, here: &Was, start: Option<&str>, most: usize) -> Vec<Ver
     let mut args = vec![
         "log",
         "-n",
-        &most,
+        most.as_str(),
         "--no-color",
         "--format=%H%x1f%ct%x1f%an%x1f%s%x1e",
     ];
