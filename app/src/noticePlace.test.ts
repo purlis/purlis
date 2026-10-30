@@ -78,22 +78,23 @@ describe("where a notice is drawn (spec #3647, the one test seam)", () => {
       { at: "status" },
     ],
     ["a chat's: its pane band, unchanged", A_CHAT, [PINNED], { at: "pane", pane: 3 }],
-    // **The project's findings about one workspace** (#3650): each is about that workspace, so
-    // it hangs from its chip, and lists in the Notices centre alone while it has none.
+    // **The project's findings about one workspace** (#3650): a stale repo and a layout behind
+    // are each placed by the workspace they name (`useChipNotices`), so these rows hold that rule
+    // for a finding across the chip states it meets, not one rule per kind of finding.
     [
-      "a repo off its default branch, in a pinned workspace: its chip's card",
+      "a finding about a pinned workspace: its chip's card",
       ABOUT_GAMMA,
       [ROOT, ANOTHER, PINNED],
       { at: "chip", workspace: "gamma" },
     ],
     [
-      "a repo on a moved remote, in the current unpinned workspace: its dashed chip's card",
+      "a finding about the current, unpinned workspace: its dashed chip's card",
       ABOUT_GAMMA,
       [ROOT, ANOTHER, DASHED],
       { at: "chip", workspace: "gamma" },
     ],
     [
-      "a layout behind, in a workspace with no chip: the Notices centre alone",
+      "a finding about a workspace with no chip: the Notices centre alone",
       ABOUT_GAMMA,
       [ROOT, ANOTHER],
       { at: "centre", open: "gamma" },

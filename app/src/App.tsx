@@ -79,13 +79,8 @@ import { useScreenReaderMode } from "./screenReader";
 import { useLatestSaid } from "./latestSaid";
 import { resultsFor, useKeptResults } from "./keptResults";
 import { useAlerts } from "./alerts";
-import {
-  LAYOUT_FIX,
-  LAYOUT_FIX_LABEL,
-  useAlertFix,
-  type InboxAlertsDo,
-  type WindowAlerts,
-} from "./InboxAlerts";
+import { LAYOUT_FIX, LAYOUT_FIX_LABEL, type InboxAlertsDo, type WindowAlerts } from "./InboxAlerts";
+import { useAlertFix } from "./alertFix";
 import { waitingAsk, type Elsewhere } from "./InboxElsewhere";
 import { ApprovePlane } from "./ApprovePlane";
 import { drawThemeFor, Extensions } from "./Extensions";
@@ -178,6 +173,20 @@ const STILL_CLOSING =
  * second launch handing its directory over, and the quit that ends every project's chats at
  * once.
  */
+/**
+ * **What the layout's Update does, said from one workspace's chip** (#3930's review): it updates
+ * every workspace behind the layout, so it names the others it touches.
+ */
+function updates(name: string, behind: readonly string[]): string {
+  const others = behind.filter((one) => one !== name);
+  if (others.length === 0) return `${LAYOUT_FIX_LABEL} brings it up to date.`;
+  const named =
+    others.length === 1
+      ? others[0]
+      : `${others.slice(0, -1).join(", ")} and ${others[others.length - 1]}`;
+  return `${LAYOUT_FIX_LABEL} brings it up to date, and ${named} too.`;
+}
+
 function App() {
   // The WebView's own menu, taken away from the whole window (`Menus.tsx`). One listener, on
   // the window, so it covers every surface including the ones with no charter menu of their
@@ -1318,16 +1327,24 @@ function App() {
   const forgetInFront = workspacesInFront?.forget;
   /** **The workspaces behind the current layout** (#3650): the project's `reinit` alert, by the
    *  names the core gave it, so each one's chip hangs it. */
-  const behindInFront = useMemo(() => {
-    if (inFront === undefined || alertsRead.at !== "read") return [];
+  // Their names as one string first, so a reading that names the same ones (every poll) draws
+  // nothing again.
+  const behindNamed = useMemo(() => {
+    if (inFront === undefined || alertsRead.at !== "read") return "";
     const read = alertsRead.planes.find((one) => one.plane === inFront);
     return (read?.alerts ?? [])
       .filter((one) => one.way.kind === "fix" && one.way.id === LAYOUT_FIX)
-      .flatMap((one) => (Array.isArray(one.workspaces) ? one.workspaces : []));
+      .flatMap((one) => (Array.isArray(one.workspaces) ? one.workspaces : []))
+      .join("\n");
   }, [alertsRead, inFront]);
-  /** Its Update, pressed from a chip's card: the Inbox row's own fix, then every project's
-   *  alerts read again, so the line goes from both once the layout is mended. */
-  const layoutFix = useAlertFix(inFront ?? "", LAYOUT_FIX_LABEL, rereadAlerts);
+  const behindInFront = useMemo(
+    () => (behindNamed === "" ? [] : behindNamed.split("\n")),
+    [behindNamed],
+  );
+  /** Its Update, pressed from a chip's card: the Inbox row's own fix, the one state both read
+   *  for the project in front (`alertFix.ts`), then every project's alerts read again, so the
+   *  line goes from both once the layout is mended. */
+  const layoutFix = useAlertFix(inFront ?? "", LAYOUT_FIX, LAYOUT_FIX_LABEL, rereadAlerts);
   const layoutSaid = layoutFix.said;
   const layoutBusy = layoutFix.busy;
   /** The press, through a ref, so the lines are not drawn again for each new closure. */
@@ -1354,7 +1371,7 @@ function App() {
       ...behindInFront.map((name): StandingNotice => ({
         workspace: name,
         cause: `alert:reinit:${name}`,
-        says: `${name} is behind the current layout. ${LAYOUT_FIX_LABEL} brings every workspace behind it up to date.${layoutSaid === undefined ? "" : ` ${layoutSaid}`}`,
+        says: `${name} is behind the current layout. ${updates(name, behindInFront)}${layoutSaid === undefined ? "" : ` ${layoutSaid}`}`,
         fixes: [
           {
             label: LAYOUT_FIX_LABEL,

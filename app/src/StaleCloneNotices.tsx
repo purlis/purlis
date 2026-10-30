@@ -120,7 +120,7 @@ export function useStaleClones({
     () =>
       stale
         .filter((one) => !dismissed.has(staleCloneCause(one)))
-        .flatMap((one): StandingNotice[] => {
+        .flatMap((one): StaleLine[] => {
           const cause = staleCloneCause(one);
           const repo = repoOf(one);
           const fixes: NoticeAction[] = [];
@@ -136,14 +136,15 @@ export function useStaleClones({
               busy: busy === repo,
               onPress: () => press(one, "remote"),
             });
-          if (fixes.length === 0) return [];
+          const [first, ...rest] = fixes;
+          if (first === undefined) return [];
           const blocked = said[repo];
           return [
             {
               workspace: one.workspace,
               cause,
               says: <StaleSays one={one} blocked={blocked} />,
-              fixes,
+              fixes: [first, ...rest],
               // A repo another chat would work on by mistake: a warning (▲), not news (#3650).
               kind: "warning",
               tone: blocked === undefined ? "news" : "trouble",
@@ -161,11 +162,17 @@ export function useStaleClones({
  *  Notices, and each workspace's chip in the title bar, with the same ways and one dismissal. */
 export type StaleClones = {
   /** One line per stale repo not dismissed, with its fixes. */
-  lines: readonly StandingNotice[];
+  lines: readonly StaleLine[];
   /** What could not be read, said in the Inbox alone. */
   unread: readonly string[];
   unreadShown: boolean;
   dismiss: (cause: string) => void;
+};
+
+/** **A stale repo's line**: always one fix at least, and always its Dismiss. */
+export type StaleLine = StandingNotice & {
+  fixes: readonly [NoticeAction, ...NoticeAction[]];
+  dismiss: () => void;
 };
 
 /**
@@ -217,8 +224,8 @@ export function StaleCloneNotices({ clones }: { clones: StaleClones }) {
           cause={line.cause}
           tone={line.tone}
           label={line.label}
-          fixes={line.fixes as [NoticeAction, ...NoticeAction[]]}
-          onDismiss={() => line.dismiss?.()}
+          fixes={line.fixes}
+          onDismiss={line.dismiss}
         >
           {line.says}
         </Notice>

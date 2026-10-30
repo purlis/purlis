@@ -167,7 +167,8 @@ function core({
     if (cmd === "clone_repo" && clone !== undefined) return clone(String(given.repo));
     if (cmd === "stale_clones") return { stale: staleNow, unread: [] };
     if (cmd === "fix_stale_clone") {
-      staleNow = [];
+      // The one repo fixed, as the core fixes one at a time.
+      staleNow = staleNow.filter((one) => one.repo !== String(given.repo));
       return `${String(given.repo)} is on main.`;
     }
     if (cmd === "alerts_everywhere")
@@ -1004,5 +1005,73 @@ describe("a workspace behind the current layout, on its chip (#3650)", () => {
     );
     await waitFor(() => expect(queryCard("alpha")).toBeNull());
     expect(within(bar()).queryByRole("button", { name: /^Show the notice on alpha/ })).toBeNull();
+  });
+});
+
+/** alpha's repo `api`, on a chat's branch too: a second line on the same card (#3930's review). */
+const API_OFF_MAIN: StaleClone = { ...WEB_OFF_MAIN, repo: "api" };
+
+/** The dot on alpha's chip, once the project's findings are read. */
+const alphaDot = () =>
+  waitFor(() => {
+    const found = within(bar()).queryByRole("button", { name: /^Show the .* on alpha/ });
+    expect(found).not.toBeNull();
+    return found as HTMLElement;
+  });
+
+describe("the keyboard on a card whose lines go one by one (#3930's review, WCAG 2.4.3)", () => {
+  it("stays in the card when one of two stale repos is switched and its line goes", async () => {
+    core({ stale: [WEB_OFF_MAIN, API_OFF_MAIN] });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    (await alphaDot()).focus();
+    await userEvent.keyboard("{Enter}");
+    const card = await findCard("alpha");
+    await waitFor(() => expect(card.contains(document.activeElement)).toBe(true));
+    const web = card.querySelector<HTMLElement>('[data-cause^="stale-clone:alpha/web"]');
+    expect(web).not.toBeNull();
+    within(web as HTMLElement)
+      .getByRole("button", { name: "Switch to main" })
+      .focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(linesSaying(/web in alpha is on chat-3/)).toHaveLength(0));
+    // api's line keeps the card up, and the keyboard is still in it, never on the page.
+    expect(card.isConnected).toBe(true);
+    await waitFor(() => expect(card.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("stays in the card when the layout is updated and a stale repo is left", async () => {
+    core({ stale: [WEB_OFF_MAIN], behind: ["alpha"] });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    (await alphaDot()).focus();
+    await userEvent.keyboard("{Enter}");
+    const card = await findCard("alpha");
+    await waitFor(() => expect(card).toHaveTextContent("alpha is behind the current layout."));
+    within(card).getByRole("button", { name: "Update workspace layout" }).focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(card).not.toHaveTextContent("alpha is behind the current layout."));
+    expect(card.isConnected).toBe(true);
+    await waitFor(() => expect(card.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("puts a card that holds only the layout line away by Esc, back behind its dot", async () => {
+    core({ behind: ["alpha"] });
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*"]));
+    (await alphaDot()).focus();
+    await userEvent.keyboard("{Enter}");
+    const card = await findCard("alpha");
+    await waitFor(() => expect(card).toHaveFocus());
+    await userEvent.keyboard("{Escape}");
+    // Hidden, not dismissed: the line goes only when the layout is updated.
+    await waitFor(() => expect(queryCard("alpha")).toBeNull());
+    expect(await alphaDot()).toHaveAttribute("data-kind", "warning");
+    // And the keyboard is on the chip it hung from (D-3648-21).
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(bar()).getByRole("button", { name: "alpha" })),
+    );
   });
 });

@@ -17,7 +17,13 @@ import { expect, screen, waitFor, within } from "storybook/test";
 import { OUTSIDE } from "./actions";
 import { reposCloning, reposNotCloned, workspaceMade } from "./actionResult";
 import type { Said } from "./actions";
-import { dormantCause, dormantSays, type ChipNotice, type ChipNotices } from "./ChipNotices";
+import {
+  dormantCause,
+  dormantSays,
+  type ChipNotice,
+  type ChipNotices,
+  type StandingNotice,
+} from "./ChipNotices";
 import { untilFocused } from "./stories.testkit";
 import { TitleBarSwitch, type SwitchProject } from "./TitleBarSwitch";
 
@@ -143,7 +149,7 @@ function TheWindow({
                     kind: "warning" as const,
                     label: `web in ${hasNotice}`,
                     dismiss: () => setPutAway(true),
-                  },
+                  } satisfies StandingNotice,
                 },
                 {
                   id: `alert:reinit:${hasNotice}`,
@@ -151,7 +157,7 @@ function TheWindow({
                   standing: {
                     workspace: hasNotice,
                     cause: `alert:reinit:${hasNotice}`,
-                    says: `${hasNotice} is behind the current layout. Update workspace layout brings every workspace behind it up to date.`,
+                    says: `${hasNotice} is behind the current layout. Update workspace layout brings it up to date.`,
                     fixes: [
                       {
                         label: "Update workspace layout",
@@ -159,7 +165,7 @@ function TheWindow({
                       },
                     ],
                     kind: "warning" as const,
-                  },
+                  } satisfies StandingNotice,
                 },
               ]
             : []),

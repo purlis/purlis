@@ -1,18 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { OctagonAlert, TriangleAlert } from "lucide-react";
 import { ApprovePlane } from "./ApprovePlane";
-import {
-  commands,
-  type AlertRow,
-  type AlertWay,
-  type DoctorFixed,
-  type FontReview,
-  type PlaneId,
-} from "./bindings";
+import { commands, type AlertRow, type AlertWay, type FontReview, type PlaneId } from "./bindings";
 import type { AlertsReading } from "./alerts";
+import { useAlertFix } from "./alertFix";
 import { identityNowOf, sendIdentity, useFixForm, type Fixer } from "./Doctor";
 import { useSeenOnThisMachine } from "./dismissals";
 import { drawWhatIsInForce } from "./Extensions";
@@ -239,47 +233,6 @@ function Words({
   );
 }
 
-/**
- * **An alert's fix, applied from where it is pressed** (#1301, #3650): the doctor's registry by its
- * id, one at a time; what it came to, said where it was pressed when it did not cure the alert;
- * then every project's alerts read again, since a fix that half-ran changed something too. The
- * Inbox's row and a workspace chip's card each press it this way.
- */
-export function useAlertFix(plane: PlaneId, label: string, reread: () => void) {
-  /** What the last fix answered, when it did not cure the alert: its refusal, or what it said. */
-  const [said, setSaid] = useState<string>();
-  const fixing = useRef(false);
-  const [busy, setBusy] = useState(false);
-  /** The act, as the sentence says it: its verb in lower case, and no ellipsis. */
-  const act = label.charAt(0).toLowerCase() + label.slice(1).replace(/…$/, "");
-  const landed = (fixed: DoctorFixed) => {
-    if (fixed.refused !== null) setSaid(`purlis could not ${act}: ${fixed.refused}`);
-    else if (!fixed.complete) setSaid(fixed.said.join(" "));
-    reread();
-  };
-  const apply = (id: string) => {
-    if (fixing.current) return;
-    fixing.current = true;
-    setBusy(true);
-    setSaid(undefined);
-    void commands
-      .planeDoctorFix(plane, id)
-      .then((answer) =>
-        landed(
-          answer.status === "ok"
-            ? answer.data
-            : { fix: id, refused: answer.error, said: [], complete: false },
-        ),
-      )
-      .catch((err: unknown) => landed({ fix: id, refused: String(err), said: [], complete: false }))
-      .finally(() => {
-        fixing.current = false;
-        setBusy(false);
-      });
-  };
-  return { said, setSaid, busy, setBusy, landed, apply };
-}
-
 /** The words on the layout fix's button (`workspace-reinit`), as the Inbox's row says them. */
 export const LAYOUT_FIX = "workspace-reinit";
 export const LAYOUT_FIX_LABEL = FIX_LABELS[LAYOUT_FIX] ?? ANY_FIX;
@@ -300,7 +253,14 @@ function ProjectRow({
 }) {
   const way = alert.way;
   const label = way.kind === "fix" ? (FIX_LABELS[way.id] ?? ANY_FIX) : "";
-  const { said, setSaid, busy, setBusy, landed, apply } = useAlertFix(plane, label, does.reread);
+  // One per project and fix, shared with a workspace chip's card that presses the same fix
+  // (`alertFix.ts`, #3930's review).
+  const { said, setSaid, busy, setBusy, landed, apply } = useAlertFix(
+    plane,
+    way.kind === "fix" ? way.id : "",
+    label,
+    does.reread,
+  );
   // **A fix that takes input opens its form here too** (#1301): the row's fix goes through the
   // doctor's own `useFixForm`, so a fix in `FIXES_WITH_A_FORM` is never applied bare (and
   // refused for the input it lacks). Every row asks for it, as hooks must; only a fix row uses it.
