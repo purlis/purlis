@@ -365,6 +365,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 2,
     why: ACTION + "; and its progress while it copies the repo, a live value",
   },
+  "NewSkillDialog.tsx": {
+    count: 2,
+    why:
+      "New skill…'s name check as it is typed and the core's refusal (#3684), beside the fields " +
+      "the person is still filling, in the dialog that stays open",
+  },
   "NewVault.tsx": {
     count: 1,
     why: ACTION,

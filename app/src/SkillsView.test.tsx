@@ -746,7 +746,7 @@ describe("a project with no skill of its own", () => {
     expect(empty).toHaveTextContent("Start one of the project's own from New skill…");
     expect(within(empty).queryByRole("button")).toBeNull();
     // The skills its chats already get are listed under it: its built-in skills, folded.
-    expect(foldOf("1 built-in skill")).toBeInTheDocument();
+    await waitFor(() => expect(foldOf("1 built-in skill")).toBeInTheDocument());
   });
 
   it("says the core's sentence where its skills cannot be read", async () => {

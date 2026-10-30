@@ -175,7 +175,7 @@ describe("New skill…", () => {
     expect(screen.getByRole("tab", { name: /Text/ })).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByRole("dialog", { name: "Write a new skill" })).toBeNull();
     // It went to the workspace's Library, where its skills are listed.
-    expect(screen.getByRole("combobox", { name: "Whose chats" })).toHaveTextContent("ops");
+    expect(screen.getByLabelText("Whose chats")).toHaveTextContent("A chat in ops");
     expect(
       screen.getByText("triage is made in the workspace ops skills. Its text is open to edit."),
     ).toBeInTheDocument();
