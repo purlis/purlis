@@ -613,13 +613,13 @@ fn confined() -> SecurityContext {
     }
 }
 
-/// A pool's warm pool in `namespace`, controlled by `owners` ([`runner_owner`]), keeping as many
-/// runners started ahead of a claim as [`replicas_kept`] says.
+/// A pool's warm pool in `namespace`, controlled by `owners` ([`runner_owner`]). It keeps no runner
+/// started ahead of a claim until the operator sets its count ([`replicas_kept`]).
 pub fn warm_pool_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -> SandboxWarmPool {
     SandboxWarmPool {
         metadata: owned_by(pool, namespace, owners),
         spec: SandboxWarmPoolSpec {
-            replicas: replicas_kept(pool),
+            replicas: 0,
             sandbox_template_ref: Reference {
                 name: name_for(&pool.name_any()),
             },
@@ -642,11 +642,12 @@ pub fn keep_volumes_held(wanted: &mut SandboxClaim, held: Option<&SandboxClaim>)
     }
 }
 
-/// How many runners `pool`'s warm pool is to keep warm: none while the pool is stopped
-/// (#2058), and otherwise its `warmReplicas` (#3737). The count is the operator's own: a warm
-/// pool scaled by hand is brought back to it at the next pass.
-pub fn replicas_kept(pool: &Pool) -> i32 {
-    if pool.spec.stopped {
+/// How many runners `pool`'s warm pool in a requester's runner namespace is to keep warm: its
+/// `warmReplicas` (#3737) where the requester `wants` them ([`crate::warm_wanted`]), and none
+/// while the pool is stopped (#2058). The count is the operator's own: a warm pool scaled by
+/// hand is brought back to it at the next pass.
+pub fn replicas_kept(pool: &Pool, wants: bool) -> i32 {
+    if pool.spec.stopped || !wants {
         0
     } else {
         pool.spec.warm_replicas.max(0)

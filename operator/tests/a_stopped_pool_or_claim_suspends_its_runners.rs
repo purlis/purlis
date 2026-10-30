@@ -280,16 +280,10 @@ fn a_stopped_claim_says_so_and_no_key_is_vouched_for() {
 fn a_stopped_pool_keeps_no_runner_warm_whatever_its_warm_count() {
     let mut running = pool(false);
     running.spec.warm_replicas = 3;
-    assert_eq!(upstream::replicas_kept(&running), 3);
+    assert_eq!(upstream::replicas_kept(&running, true), 3);
     let mut stopped = pool(true);
     stopped.spec.warm_replicas = 3;
-    assert_eq!(upstream::replicas_kept(&stopped), 0);
-    assert_eq!(
-        upstream::warm_pool_for(&stopped, "ada", Vec::new())
-            .spec
-            .replicas,
-        0
-    );
+    assert_eq!(upstream::replicas_kept(&stopped, true), 0);
 }
 
 #[test]

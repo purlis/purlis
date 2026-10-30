@@ -543,6 +543,14 @@ async fn a_pool_names_its_image_by_digest_and_a_claim_keeps_its_pool() {
             "fewer than no runners warm",
             serde_json::json!({ "warmReplicas": -1 }),
         ),
+        (
+            "more runners warm than purlis keeps",
+            serde_json::json!({ "warmReplicas": 21 }),
+        ),
+        (
+            "a time too long to read",
+            serde_json::json!({ "maxAge": "99999999999h" }),
+        ),
     ] {
         let mut asked = serde_json::json!({
             "apiVersion": "runners.purlis.dev/v1alpha1",

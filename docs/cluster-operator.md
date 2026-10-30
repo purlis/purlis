@@ -251,15 +251,19 @@ spec:
   A runner kept warm from the earlier template is replaced by one of the new (#2058): upstream
   deletes it, and a fresh Claim never takes it.
 - **A Pool's warm count and times** (#3737). `warmReplicas` is how many runners the pool keeps
-  warm for fresh Claims, in each person's runner namespace where the pool has a Claim, 0 unless
-  set and none while the pool is `stopped`; the operator keeps each warm pool at it, so a warm
-  pool scaled by hand is brought back to it. The times are a whole number followed by `s`, `m`
+  warm for fresh Claims, 0 unless set and 20 at most. It applies in each person's runner
+  namespace where that person has a fresh Claim on the pool that is not stopped, and never
+  while the pool is `stopped`. The operator keeps each warm pool at that count, so a warm pool
+  scaled by hand is brought back to it. **Warm runners count toward each person's quota**: set
+  `perPerson.quota` to hold them as well as the person's own runners. A fresh Claim on a pool
+  that keeps runners warm takes one already counted. A kept Claim is still refused once warm
+  runners fill the quota. The times are a whole number followed by `s`, `m`
   or `h`, as a Docker pool's `suspendAfter` is (`1d` is refused; write `24h`):
   - `idleAfter` (30m, a minute at least): how long a runner is idle before it is suspended, as
     `stopped` suspends. Idle is no running chat, no open stream, no forwarded request and no
     build; a runner a live chat owns, or whose browser holds an Ask, is never idle. It is a
-    different clock from a runner left without a link, which suspends itself after a day
-    (`suspendAfter` on a Docker pool).
+    different clock from a runner left without a link, which a Docker pool's runner suspends
+    itself after (its `suspendAfter`); a cluster pool's runner does not yet (#3703).
   - `deleteSuspendedAfter` (720h, 30 days): how long a kept Claim stays suspended before it is
     deleted, with its volume.
   - `noticeBeforeDelete` (168h, 7 days, shorter than `deleteSuspendedAfter`): how long before
@@ -267,8 +271,8 @@ spec:
   - `maxAge` (336h, 14 days): past it, a kept Claim's runner starts again on the pool's current
     image, and a fresh Claim's is made again.
 
-  The cluster refuses any other spelling, a notice that is not shorter than the deletion, and a
-  negative warm count. **The four times are named, not yet acted on**: the operator suspends,
+  The cluster refuses any other spelling, a time too long to read, a notice that is not shorter
+  than the deletion, and a warm count below 0 or above 20. **The four times are named, not yet acted on**: the operator suspends,
   deletes and restarts on them once #3980 (idle), #3981 (retention and its Update) and #3982
   (maximum age) are built.
 - **A Claim is kept or fresh** (#2057), and its `kept` never changes after it is made: the other

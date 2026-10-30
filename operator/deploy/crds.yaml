@@ -39,7 +39,9 @@ spec:
                 default: 720h
                 description: |-
                   How long a kept Claim stays suspended before it is deleted, with its volume (#3737). A
-                  whole number of `s`, `m` or `h`. 720h (30 days) unless the pool says otherwise.
+                  whole number of `s`, `m` or `h`. 720h (30 days) unless the pool says otherwise. Not
+                  acted on yet (#3981).
+                maxLength: 12
                 pattern: ^[1-9][0-9]*[smh]$
                 type: string
               idleAfter:
@@ -48,7 +50,8 @@ spec:
                   How long a runner of the pool is idle before it is suspended (#3737): no running chat, no
                   open stream, no forwarded request and no build (ADR 0089 §9); a runner a live chat owns,
                   or whose browser holds an Ask, is never idle. A whole number of `s`, `m` or `h`, a minute
-                  at least. 30m unless the pool says otherwise.
+                  at least. 30m unless the pool says otherwise. Not acted on yet (#3980).
+                maxLength: 12
                 pattern: ^[1-9][0-9]*[smh]$
                 type: string
               image:
@@ -80,7 +83,8 @@ spec:
                 description: |-
                   A Claim's maximum age (#3737): past it, a kept Claim's runner starts again on the pool's
                   current image, and a fresh Claim's is made again. A whole number of `s`, `m` or `h`. 336h
-                  (14 days) unless the pool says otherwise.
+                  (14 days) unless the pool says otherwise. Not acted on yet (#3982).
+                maxLength: 12
                 pattern: ^[1-9][0-9]*[smh]$
                 type: string
               noticeBeforeDelete:
@@ -88,7 +92,8 @@ spec:
                 description: |-
                   How long before that deletion its requester is sent an Update (#3737). A whole number of
                   `s`, `m` or `h`, shorter than `deleteSuspendedAfter`. 168h (7 days) unless the pool says
-                  otherwise.
+                  otherwise. Not acted on yet (#3981).
+                maxLength: 12
                 pattern: ^[1-9][0-9]*[smh]$
                 type: string
               stopped:
@@ -104,8 +109,10 @@ spec:
                 description: |-
                   How many runners are kept warm for fresh Claims (#3737), in each runner namespace the
                   pool has a Claim in; none while the pool is stopped. The operator keeps the warm pool at
-                  this count. 0 unless the pool says otherwise.
+                  this count, 20 at most. They count toward each person's quota. Kept only for a person
+                  with a fresh Claim on the pool that is not stopped. 0 unless the pool says otherwise.
                 format: int32
+                maximum: 20.0
                 minimum: 0.0
                 type: integer
             required:
@@ -116,6 +123,8 @@ spec:
               rule: duration(self.noticeBeforeDelete) < duration(self.deleteSuspendedAfter)
             - message: idleAfter is a minute at least.
               rule: duration(self.idleAfter) >= duration('1m')
+            - message: maxAge is too long to read as a duration.
+              rule: duration(self.maxAge) > duration('0s')
           status:
             description: What the operator says about a Pool.
             nullable: true

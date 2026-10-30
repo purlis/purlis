@@ -565,6 +565,10 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
     warm.metadata.resource_version = warm_held
         .as_ref()
         .and_then(|held| held.resource_version.clone());
+    // Runners are kept warm only for a requester who has a fresh Claim on the pool that runs:
+    // a kept or stopped Claim never takes one (#3737).
+    let wanted_warm = warm_wanted(&claim, &pool, context.claims.state());
+    warm.spec.replicas = upstream::replicas_kept(&pool, wanted_warm);
     let stopped = upstream::is_stopped(&claim, Some(&pool));
     let in_the_way = [
         (
@@ -600,8 +604,11 @@ async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<
         write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
         return Ok(Action::await_change());
     }
-    // A runner not asked for yet is asked for only within its requester's quota (#2055).
-    if claim_found == Found::Nothing {
+    // A runner not asked for yet is asked for only within its requester's quota (#2055). A fresh
+    // Claim on a pool that keeps runners warm takes one already counted, so it asks for nothing
+    // more; one made cold instead is still held to the quota by the cluster (#3737).
+    let takes_a_warm_runner = !claim.spec.kept && warm.spec.replicas > 0;
+    if claim_found == Found::Nothing && !takes_a_warm_runner {
         let pod = template.spec.pod_template.spec.clone().unwrap_or_default();
         let storage = claim
             .spec
@@ -714,6 +721,28 @@ pub fn pool_objects_go_with(claim: &Claim, watched: impl IntoIterator<Item = Arc
             && other.spec.requester == claim.spec.requester
             && other.spec.pool == claim.spec.pool
     })
+}
+
+/// Whether the requester of `claim` wants runners of `pool` kept warm (#3737): `claim` or another
+/// of theirs on `pool` among `watched`, not being deleted, is fresh and not stopped. A kept Claim
+/// starts cold and a stopped one gets no runner, so neither keeps one warm.
+pub fn warm_wanted(
+    claim: &Claim,
+    pool: &Pool,
+    watched: impl IntoIterator<Item = Arc<Claim>>,
+) -> bool {
+    let takes_one = |other: &Claim| {
+        other.metadata.deletion_timestamp.is_none()
+            && !other.spec.kept
+            && !upstream::is_stopped(other, Some(pool))
+    };
+    takes_one(claim)
+        || watched.into_iter().any(|other| {
+            other.uid() != claim.uid()
+                && other.spec.requester == claim.spec.requester
+                && other.spec.pool == claim.spec.pool
+                && takes_one(&other)
+        })
 }
 
 /// **What a deleted Claim's finalizer removes** (#2055): in its requester's runner namespace, the
