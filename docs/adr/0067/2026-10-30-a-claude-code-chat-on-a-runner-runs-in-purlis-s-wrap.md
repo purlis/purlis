@@ -25,8 +25,7 @@ Claude Code's own sandbox needs a user namespace that a pod or a default contain
    an ask still outranks that.
 6. **A folder trusted for a chat.** A chat on a runner cannot save Claude Code's answer to its
    trust question, and would be asked at every start, so purlis marks the chat's folder trusted
-   in `.claude.json` before the wrap, and only once nothing else refuses the start. Project
-   settings are screened as before.
+   in `.claude.json` before the wrap. Project settings are screened as before.
 7. **On a runner, a Claude Code profile is for wrapped chats only** (ruled 2026-10-30). A Claude
    Code chat there that would start without the sandbox, whether the person chose "Start without
    the sandbox", their own level is off, or the floor could not be applied, is refused in words
