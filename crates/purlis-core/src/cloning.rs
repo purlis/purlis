@@ -242,7 +242,9 @@ pub enum Followed {
 
 /// Reads a running clone to its end: its progress to `progress`, its other words kept to say
 /// why it failed, and the child stopped the moment `called_off` is raised, or once it has said
-/// nothing for `stall`. With no `stall` it may take for ever, and only the person ends it.
+/// nothing for `stall`. With no `stall` it may take for ever, and only the person ends it. Each
+/// line git says beats the pulse this thread holds ([`crate::hookwire::alive`]), so a chat that
+/// waits on the clone waits as long as git speaks.
 ///
 /// An error only where the child could no longer be asked how it is.
 pub fn follow(
@@ -298,6 +300,8 @@ pub fn follow(
         match heard.recv_timeout(LISTEN) {
             Ok(line) => {
                 spoke = Instant::now();
+                // A chat waiting on this clone is told it is alive (#4080).
+                crate::hookwire::alive::beat();
                 match read_progress(&line) {
                     Some(now) if last != Some(now) => {
                         last = Some(now);

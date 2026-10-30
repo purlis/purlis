@@ -2036,9 +2036,8 @@ pub fn run_in_hook(dir: &Path, args: &[&str], timeout: Duration) -> Result<RawRu
 /// other one first. `None` gives git no credential at all, which is what a host charter does
 /// not manage gets: a token for one forge is never offered to another.
 ///
-/// The deadline is [`NETWORK`]. A `clone` killed at the deadline leaves a partial directory,
-/// which the caller reports rather than retrying into. That is a chat's brokered clone: any other
-/// lands whole ([`spawn_network`]).
+/// The deadline is [`NETWORK`]. A clone is not run this way: every clone lands whole, with no
+/// total deadline ([`spawn_network`], #4079, #4080).
 pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Run, GitUnavailable> {
     let mut config: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
     if let Some(helper) = helper {

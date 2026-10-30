@@ -3038,6 +3038,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
         Ask::Git(Box::new(purlis_core::hookwire::GitAsk {
             chat,
             workspace: "alpha".to_owned(),
+            alive: false,
             work: purlis_core::hookwire::GitWork::Clone { repos: Vec::new() },
         })),
         Ask::Vaults { chat },

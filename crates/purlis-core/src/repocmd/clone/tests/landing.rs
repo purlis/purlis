@@ -113,6 +113,29 @@ impl World {
         (code, said)
     }
 
+    /// Clones `repos` as the app does for a sandboxed chat (#4080): under git's isolation, held
+    /// to the chat's hosts, with `watch` standing in for the forge.
+    fn clone_for_a_chat(&self, repos: &[&str], watch: &Watch) -> (u8, Vec<Say>) {
+        let repos: Vec<String> = repos.iter().map(|name| (*name).to_owned()).collect();
+        let hosts = [HOST.to_owned()];
+        let mut said = Vec::new();
+        let code = git::isolated(&git::Isolated::default(), || {
+            clone(
+                &Request {
+                    root: &self.root,
+                    ws: "alpha",
+                    repos: &repos,
+                    now: chrono::Utc::now(),
+                    author: "tester",
+                    hosts: Some(&hosts),
+                    watch: Some(watch),
+                },
+                &mut |line| said.push(line),
+            )
+        });
+        (code, said)
+    }
+
     /// [`Self::clone_as_the_window`] with nobody listening and nobody pressing Cancel.
     fn clone_plainly(&self, repos: &[&str]) -> (u8, Vec<Say>) {
         let off = AtomicBool::new(false);
@@ -562,4 +585,137 @@ fn no_sentence_from_a_window_clone_names_a_forge_cli() {
         let text = words(&said);
         assert!(!names_a_forge_cli(&text), "{repo}: {text}");
     }
+}
+
+// A chat's brokered clone (#4080): the same landing, its own words.
+
+#[test]
+fn a_chats_clone_lands_through_the_hidden_folder_too() {
+    let world = World::holding(&["widget"]);
+    let at_dest = Mutex::new(Vec::new());
+    let heard = |_: Stage, _: u8| {
+        at_dest.lock().unwrap().push((
+            world.dest("widget").exists(),
+            world.hidden("widget").is_dir(),
+        ));
+    };
+    let off = AtomicBool::new(false);
+    let watch = world.watching(&heard, &off, Duration::from_secs(60), None);
+    let (code, said) = world.clone_for_a_chat(&["widget"], &watch);
+    assert_eq!(code, 0, "{said:?}");
+    assert!(world.dest("widget").join("README.md").is_file(), "{said:?}");
+    assert!(!world.hidden("widget").exists());
+    assert_eq!(world.members(), ["widget"]);
+    let mut at_dest = at_dest.into_inner().unwrap();
+    assert_eq!(at_dest.pop(), Some((true, false)), "{said:?}");
+    assert!(!at_dest.is_empty(), "{said:?}");
+    assert!(
+        at_dest.iter().all(|seen| *seen == (false, true)),
+        "{at_dest:?}"
+    );
+}
+
+#[test]
+fn a_chats_clone_that_keeps_making_progress_outlasts_the_stall_limit() {
+    let world = World::holding(&["widget"]);
+    let script = "i=0; while [ $i -lt 10 ]; do i=$((i+1)); \
+         printf 'Receiving objects: %d%% (%d/10)\r' $((i*10)) $i >&2; sleep 0.1; done; \
+         git init -q \"$1\"";
+    let off = AtomicBool::new(false);
+    let heard = |_: Stage, _: u8| {};
+    let watch = world.watching(&heard, &off, Duration::from_millis(400), Some(script));
+    let (code, said) = world.clone_for_a_chat(&["widget"], &watch);
+    assert_eq!(code, 0, "{said:?}");
+    assert!(world.dest("widget").join(".git").is_dir(), "{said:?}");
+}
+
+#[test]
+fn a_chats_silent_clone_is_stopped_at_the_stall_limit_says_so_and_leaves_nothing() {
+    let world = World::holding(&["widget"]);
+    let _silent = world.silent("widget");
+    let off = AtomicBool::new(false);
+    let heard = |_: Stage, _: u8| {};
+    let watch = world.watching(&heard, &off, Duration::from_millis(400), None);
+    let (code, said) = world.clone_for_a_chat(&["widget"], &watch);
+    assert_eq!(code, 1, "{said:?}");
+    assert!(words(&said).contains("stalled"), "{said:?}");
+    assert!(!world.dest("widget").exists(), "{said:?}");
+    assert!(!world.hidden("widget").exists(), "{said:?}");
+}
+
+/// What a chat's clone says when `script` stands in for git, with the forge's CLI on this
+/// machine or not.
+fn a_chats_failure(world: &World, script: &str, cli: bool) -> String {
+    let off = AtomicBool::new(false);
+    let heard = |_: Stage, _: u8| {};
+    let mut watch = world.watching(&heard, &off, Duration::from_secs(60), Some(script));
+    watch.stand_in.cli = Some(cli);
+    let (code, said) = world.clone_for_a_chat(&["widget"], &watch);
+    assert_eq!(code, 1, "{said:?}");
+    words(&said)
+}
+
+#[test]
+fn a_chats_clone_with_no_forge_cli_here_names_none() {
+    let world = World::holding(&["widget"]);
+    let refused =
+        format!("echo \"fatal: Authentication failed for 'https://{HOST}/'\" >&2; exit 128");
+    let hidden = format!(
+        "echo '/bin/sh: glab: command not found' >&2; \
+         echo \"fatal: could not read Username for 'https://{HOST}': terminal prompts \
+         disabled\" >&2; exit 128"
+    );
+    let other = "echo 'error: glab auth git-credential get: broke' >&2; \
+         echo 'fatal: something else' >&2; exit 128";
+    for script in [refused.as_str(), hidden.as_str(), other] {
+        let text = a_chats_failure(&world, script, false);
+        assert!(!names_a_forge_cli(&text), "{text}");
+        assert!(text.contains("widget"), "{text}");
+    }
+    // Refused: where it can be cloned instead, since a chat's clone never has the sign-in.
+    let text = a_chats_failure(&world, &refused, false);
+    assert!(text.contains(HOST), "{text}");
+    assert!(text.contains("window"), "{text}");
+}
+
+#[test]
+fn a_chats_refused_clone_with_the_forge_cli_here_says_to_sign_it_in() {
+    let world = World::holding(&["widget"]);
+    let refused =
+        format!("echo \"fatal: Authentication failed for 'https://{HOST}/'\" >&2; exit 128");
+    let text = a_chats_failure(&world, &refused, true);
+    assert!(text.contains("glab auth login"), "{text}");
+    assert!(!text.contains("Settings › You › Accounts"), "{text}");
+}
+
+#[test]
+fn a_chats_clone_never_gets_the_persons_sign_in() {
+    // #752: the account the person signed in with in the window signs the window's clones
+    // alone, even where a chat's clone runs on the window's scope.
+    use crate::forge::gitcredential::HELPER_ARG;
+    let world = World::holding(&["widget"]);
+    let home = super::account_on(HOST);
+    let url = format!("https://{HOST}/acme/widget.git");
+    let forge = Forge::for_clone(&json!({"forge": "gitlab"}), &url);
+    let dest = world.dest("widget");
+    let ws = world.ws();
+    let route = landing::Route {
+        root: &world.root,
+        ws: "alpha",
+        ws_dir: &ws,
+        name: "widget",
+        dest: &dest,
+        url: &url,
+        forge: &forge,
+        watch: None,
+    };
+    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/charter-app");
+    let (window, chat) = as_the_window(&HostScope::for_a_test(), exe, home.path(), || {
+        let window = route.helper().is_some_and(|h| h.contains(HELPER_ARG));
+        let chat = git::isolated(&git::Isolated::default(), || route.helper())
+            .is_some_and(|h| h.contains(HELPER_ARG));
+        (window, chat)
+    });
+    assert!(window, "the window's clone is signed by the account");
+    assert!(!chat, "a chat's clone never is");
 }
