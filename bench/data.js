@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793370270210,
+  "lastUpdate": 1793373197941,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31668,6 +31668,48 @@ window.BENCHMARK_DATA = {
             "value": 102.58726,
             "unit": "ms",
             "extra": "median of 5 runs: 101.820, 102.525, 102.587, 102.952, 103.150 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e5c5e2259f38215b1e663f6cc79111e6e34b5cea",
+          "message": "Runners: a pool keeps only the profiles chosen for it (#4047) (#4089)\n\nA pool's entry in runners.json may name its `profiles`; without the key, its\nrunner keeps the profile a new chat in the open project gets. Settings › Pools\nlists only those, with Add a profile… and Remove, which takes the profile off\nthe runner, sign-in included, through a new session-protocol command,\n`forget_profile` (1.52). A chat that starts on or moves to a pool on another\nprofile adds it.\n\nCarried onto main past #4059: each profile's line keeps its sign-in strip\n(PoolSignIn), and Add a profile… and Remove are not offered while a sign-in\nruns on the pool. The three commands take `OpenProject`, so a plane stays a\n`PlaneId` in the bindings.\n\nCloses #4047\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M65C93Q024FTVXW1XHK8E951\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T14:23:29Z",
+          "tree_id": "7f8c804b5c23c744b97fac900b99db72cf051b16",
+          "url": "https://github.com/purlis/purlis/commit/e5c5e2259f38215b1e663f6cc79111e6e34b5cea"
+        },
+        "date": 1793373194608,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6706485,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.661, 0.668, 0.671, 0.698, 0.701 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.609482999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.399, 16.424, 16.609, 16.704, 16.757 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1599065,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.651, 101.879, 102.160, 102.418, 102.980 ms"
           }
         ]
       }
