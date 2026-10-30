@@ -2607,7 +2607,7 @@ fn a_server_that_did_not_start_on_no_port_to_allow_is_told_what_to_do() {
     // Where purlis's own sandbox runs on Linux, the one address a port it picks is taken on.
     assert!(
         PICKED_PORT_SAID
-            .contains("On Linux, a server may take a port the system picks on 127.0.0.1")
+            .contains("On Linux, purlis's sandbox gives such a server a port on 127.0.0.1")
     );
     // True of each refusal that names no port: another machine's address, a runner's socket.
     assert!(NO_PORT_SAID.contains("named no port purlis could allow"));

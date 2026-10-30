@@ -43,7 +43,7 @@ use nix::unistd::{Pid, UnlinkatFlags, linkat, symlinkat, unlinkat};
 
 use super::notify;
 use super::walk::{self, Chat, Found, World, named, named_in};
-use crate::loopback::{self, Picked};
+use crate::loopback::{self, Picked, PoolPort};
 use crate::profile::{FileOp, Kind, Op, Profile, Remote};
 use crate::refusal::Teller;
 
@@ -897,9 +897,21 @@ impl Supervisor {
                     ip: remote.ip(),
                     port: remote.port(),
                 }));
-                // A test server of the chat's own, on a port picked for it (#3396): reached
-                // while the socket made for it alone listens there, read again once connected.
-                let own = !allowed && self.chat_s_own(remote);
+                // A port picked for the chat's test servers (#3396): reached while the socket
+                // made for it is the one listening there, read again once connected; otherwise
+                // refused, and never told, so no Notice offers to allow a port the system picked.
+                let pool = if allowed {
+                    PoolPort::NotPicked
+                } else {
+                    self.pool_port(remote)
+                };
+                match pool {
+                    // As the kernel answers a connect where nothing listens.
+                    PoolPort::Free => return Err(Errno::ECONNREFUSED),
+                    PoolPort::Taken => return Err(REFUSED),
+                    PoolPort::Own | PoolPort::NotPicked => {}
+                }
+                let own = pool == PoolPort::Own;
                 if !allowed && !own {
                     // A service on this machine; an internet address dialled past the proxy,
                     // told apart, once a minute (#2423): the proxy tells each host by name.
@@ -927,9 +939,8 @@ impl Supervisor {
                 connect(socket.as_raw_fd(), address.as_ref())?;
                 // Its server let the port go between the judging and the connect, and another
                 // socket took it: the connection is dropped before the chat holds it.
-                if own && !self.chat_s_own(remote) {
+                if own && self.pool_port(remote) != PoolPort::Own {
                     drop(socket);
-                    self.tell(chat, CONNECT, remote.to_string());
                     return Err(REFUSED);
                 }
                 socket
@@ -959,10 +970,11 @@ impl Supervisor {
     ///   server started for a port, on whatever address, is served through the door. Any other
     ///   internet bind is refused, as the chat's Landlock layer refuses every TCP bind, and told,
     ///   so a server that asks for a port raises the Ask to serve on it.
-    /// - **A port the system picks on 127.0.0.1** (#3396, ruled 2026-10-30), which a test
-    ///   server asks for, is bound on a TCP socket of the supervisor's own, on a port of the
+    /// - **A port the system picks on 127.0.0.1, for a TCP socket of IPv4's** (#3396, ruled
+    ///   2026-10-30), which a test server asks for, is bound on a TCP socket of the supervisor's own, on a port of the
     ///   pool picked for the chat, put in place of the chat's descriptor ([`Self::bind_picked`]).
-    ///   A port of zero on any other address (every interface, `::1`) is refused and told: no
+    ///   A port of zero for any other socket or on any other address (every interface, `::1`)
+    ///   is refused and told: no
     ///   person allows one, and its Notice says what to do instead.
     /// - **A netlink socket (what `getifaddrs` binds) and an abstract or unnamed unix socket go
     ///   on in the kernel** ([`Answer::GoOn`]), as before; any other family is refused. Nothing
@@ -999,8 +1011,14 @@ impl Supervisor {
             }
             libc::AF_INET | libc::AF_INET6 => {
                 let local = ip_of(&bytes)?;
+                // A TCP socket of IPv4's alone: any other is refused below, as before.
                 if loopback::picks_on_the_loopback(local) {
-                    return self.bind_picked(chat, id, fd);
+                    let Some((_, socket)) = self.take(chat, id, fd)? else {
+                        return Ok(Answer::Gone);
+                    };
+                    if is_tcp_v4(&socket) {
+                        return self.bind_picked(chat, id, fd);
+                    }
                 }
                 if local.port() == 0 {
                     self.tell(chat, BIND, local.to_string());
@@ -1056,9 +1074,10 @@ impl Supervisor {
     /// **A bind on a port the system picks, on 127.0.0.1** (#3396): a TCP socket of the
     /// supervisor's own, bound on the first port of the pool picked for the chat that is free,
     /// recorded as the chat's, and put in place of the chat's descriptor `fd`. Made here rather
-    /// than on the chat's own socket, so no option the chat set first (a port shared with another
-    /// process's socket, `SO_REUSEPORT`) goes with the bind. A pool with no port free is
-    /// `EADDRINUSE`, as the kernel says it, and told.
+    /// than on the chat's own socket, so no option the chat set before its bind goes with it. One
+    /// it sets after (`SO_REUSEPORT`) may let another socket share the port; a connect there then
+    /// finds two sockets listening and is refused ([`PoolPort::Taken`]). A pool with no port free
+    /// is `EADDRINUSE`, as the kernel says it, and not told: there is nothing to allow.
     fn bind_picked(&self, chat: &Chat<'_>, id: u64, fd: i32) -> Result<Answer, Errno> {
         let at = u32::try_from(fd).map_err(|_| Errno::EBADF)?;
         let flags = descriptor_flags(chat.tid, fd)?;
@@ -1071,9 +1090,8 @@ impl Supervisor {
             SockFlag::SOCK_CLOEXEC,
             None,
         )?;
-        // As a server sets it before its bind, so a port a server let go is bound again while
-        // its last connections close. On Linux it never shares a port another socket listens on.
-        setsockopt(&served, sockopt::ReuseAddr, &true)?;
+        // No `SO_REUSEADDR`: a port any socket still holds, bound or closing, is never bound
+        // again, and the next port of the pool is tried.
         let mut bound = None;
         for port in self.picked.turn() {
             match nix::sys::socket::bind(served.as_raw_fd(), &SockaddrIn::new(127, 0, 0, 1, port)) {
@@ -1085,8 +1103,8 @@ impl Supervisor {
                 Err(why) => return Err(why),
             }
         }
+        // Every port of the pool in use: the kernel's own answer, and nothing to allow.
         let Some(port) = bound else {
-            self.tell(chat, BIND, "127.0.0.1:0".to_owned());
             return Err(Errno::EADDRINUSE);
         };
         self.picked.own(port, fstat(&served)?.st_ino);
@@ -1100,18 +1118,61 @@ impl Supervisor {
         })
     }
 
-    /// Whether `remote` is a test server of the chat's own (#3396): on 127.0.0.1, at a port
-    /// picked for it where the socket the supervisor made for it alone listens, as this
-    /// machine's table of TCP sockets says now.
-    fn chat_s_own(&self, remote: SocketAddr) -> bool {
+    /// What a connect to `remote` comes to for the ports picked for the chat's test servers
+    /// (#3396): none unless it is 127.0.0.1, and then as this machine's tables of TCP sockets,
+    /// IPv4's and IPv6's, say now. A table that cannot be read leaves the port taken.
+    fn pool_port(&self, remote: SocketAddr) -> PoolPort {
         let SocketAddr::V4(v4) = remote else {
-            return false;
+            return PoolPort::NotPicked;
         };
         if *v4.ip() != Ipv4Addr::LOCALHOST || !self.picked.ports().contains(&v4.port()) {
-            return false;
+            return PoolPort::NotPicked;
         }
-        std::fs::read_to_string("/proc/self/net/tcp")
-            .is_ok_and(|table| self.picked.owns(v4.port(), &table))
+        let Ok(mut table) = std::fs::read_to_string("/proc/self/net/tcp") else {
+            return PoolPort::Taken;
+        };
+        // No such table where this machine has no IPv6.
+        match std::fs::read_to_string("/proc/self/net/tcp6") {
+            Ok(v6) => table.push_str(&v6),
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return PoolPort::Taken,
+        }
+        self.picked.reach(v4.port(), &table)
+    }
+
+    /// The calling thread's own socket at its descriptor `fd`, taken from its own descriptor
+    /// table (`pidfd_open` with `PIDFD_THREAD`, then `pidfd_getfd`) and checked to be the one
+    /// the descriptor names; with the thread's pidfd. None where the call is gone.
+    fn take(&self, chat: &Chat<'_>, id: u64, fd: i32) -> Result<Option<(OwnedFd, OwnedFd)>, Errno> {
+        // The calling thread's own table (Linux 6.9; the sandbox needs 6.12).
+        let thread = rustix::process::Pid::from_raw(chat.tid).ok_or(REFUSED)?;
+        let flags = rustix::process::PidfdFlags::from_bits_retain(libc::PIDFD_THREAD);
+        let caller = match rustix::process::pidfd_open(thread, flags) {
+            Ok(caller) => caller,
+            // The thread ended, and its call with it.
+            Err(rustix::io::Errno::SRCH) if !self.alive(id) => return Ok(None),
+            Err(why) => return Err(self.not_taken(chat, why)),
+        };
+        // The thread the call came from, not another that took its number since.
+        if !self.alive(id) {
+            return Ok(None);
+        }
+        let socket =
+            rustix::process::pidfd_getfd(&caller, fd, rustix::process::PidfdGetfdFlags::empty())
+                .map_err(|why| self.not_taken(chat, why))?;
+        // The same open socket the thread's descriptor names, read a second way.
+        let theirs = stat(format!("/proc/{}/fd/{fd}", chat.tid).as_str()).map_err(|why| {
+            if why == Errno::ENOENT {
+                Errno::EBADF
+            } else {
+                REFUSED
+            }
+        })?;
+        let taken = fstat(&socket).map_err(|_| REFUSED)?;
+        if (taken.st_dev, taken.st_ino) != (theirs.st_dev, theirs.st_ino) {
+            return Err(REFUSED);
+        }
+        Ok(Some((caller, socket)))
     }
 
     /// **A listen, made by the supervisor on the socket it judged**: the calling thread's own
@@ -1135,34 +1196,9 @@ impl Supervisor {
     /// family but unix and the internet's (`AF_UNSPEC` would unbind a connected socket), and a
     /// connected socket is only ever handed back once its connect is made.
     fn listen(&self, chat: &Chat<'_>, id: u64, fd: i32, backlog: i32) -> Result<Answer, Errno> {
-        // The calling thread's own table (Linux 6.9; the sandbox needs 6.12).
-        let thread = rustix::process::Pid::from_raw(chat.tid).ok_or(REFUSED)?;
-        let flags = rustix::process::PidfdFlags::from_bits_retain(libc::PIDFD_THREAD);
-        let caller = match rustix::process::pidfd_open(thread, flags) {
-            Ok(caller) => caller,
-            // The thread ended, and its call with it.
-            Err(rustix::io::Errno::SRCH) if !self.alive(id) => return Ok(Answer::Gone),
-            Err(why) => return Err(self.not_taken(chat, why)),
-        };
-        // The thread the call came from, not another that took its number since.
-        if !self.alive(id) {
+        let Some((caller, socket)) = self.take(chat, id, fd)? else {
             return Ok(Answer::Gone);
-        }
-        let socket =
-            rustix::process::pidfd_getfd(&caller, fd, rustix::process::PidfdGetfdFlags::empty())
-                .map_err(|why| self.not_taken(chat, why))?;
-        // The same open socket the thread's descriptor names, read a second way.
-        let theirs = stat(format!("/proc/{}/fd/{fd}", chat.tid).as_str()).map_err(|why| {
-            if why == Errno::ENOENT {
-                Errno::EBADF
-            } else {
-                REFUSED
-            }
-        })?;
-        let taken = fstat(&socket).map_err(|_| REFUSED)?;
-        if (taken.st_dev, taken.st_ino) != (theirs.st_dev, theirs.st_ino) {
-            return Err(REFUSED);
-        }
+        };
         let judged = getsockname::<SockaddrStorage>(socket.as_raw_fd())?;
         if port_of(&judged) == Some(0) {
             self.tell(chat, BIND, NEVER_BOUND.to_owned());
@@ -1197,6 +1233,16 @@ impl Supervisor {
         self.tell(chat, BIND, NOT_TAKEN.to_owned());
         REFUSED
     }
+}
+
+/// Whether `socket` is a TCP socket of IPv4's: a stream (the filter makes no other internet
+/// stream) whose address, bound or not, is IPv4's.
+fn is_tcp_v4(socket: &OwnedFd) -> bool {
+    nix::sys::socket::getsockopt(socket, sockopt::SockType).ok() == Some(SockType::Stream)
+        && getsockname::<SockaddrStorage>(socket.as_raw_fd())
+            .ok()
+            .and_then(|name| name.family())
+            == Some(AddressFamily::Inet)
 }
 
 /// The port an internet socket's address `name` holds, port 0 where it cannot be read; None for

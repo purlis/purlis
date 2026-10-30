@@ -212,6 +212,35 @@ mod probe {
                     }),
                 )
             }
+            // A test server that stopped (#3396): bound on 127.0.0.1 at port 0, closed, then
+            // dialled at the port it had. With a file named, its port is written there and the
+            // dial waits for `<file>.go`, so a test can put something else on the port first.
+            "picked-closed-dial" => {
+                let port = std::net::TcpListener::bind(("127.0.0.1", 0))
+                    .and_then(|listener| listener.local_addr())
+                    .map_err(|why| name(&why))?
+                    .port();
+                if !word(1).is_empty() {
+                    io(std::fs::write(word(1), port.to_string()))?;
+                    let go = format!("{}.go", word(1));
+                    let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+                    while std::fs::symlink_metadata(&go).is_err() {
+                        if std::time::Instant::now() > until {
+                            return Err("no go".to_owned());
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                    }
+                }
+                io(
+                    std::net::TcpStream::connect(("127.0.0.1", port)).and_then(|mut stream| {
+                        stream.write_all(b"hi")?;
+                        let mut back = [0u8; 2];
+                        stream.read_exact(&mut back)
+                    }),
+                )
+            }
+            // A datagram socket bound on 127.0.0.1 at a port the system picks (#3396).
+            "udp-bind" => io(std::net::UdpSocket::bind(("127.0.0.1", 0))),
             // A user namespace of its own, as the browser engine's sandbox makes one (#3298).
             "user-namespace" => nix(nix::sched::unshare(nix::sched::CloneFlags::CLONE_NEWUSER)),
             // A server on a unix socket at a path (#2019).

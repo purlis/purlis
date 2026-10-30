@@ -429,9 +429,9 @@ fn a_socket_never_bound_does_not_listen() {
     assert_eq!(p.run(&["listen-unbound", "6"]), "EACCES");
 }
 
-/// `probe` run under the wrap in the chat's folder, with no port served: what it printed, and
-/// what the wrap told it refused, a line each.
-fn run_told(p: &Project, probe: &[&str]) -> (String, String) {
+/// The wrap started on `probe` in the chat's folder, with no port served, telling what it
+/// refused to the file it returns.
+fn told_command(p: &Project, probe: &[&str]) -> (Command, PathBuf) {
     let told = p.tmp.join("told");
     let _ = std::fs::remove_file(&told);
     let words = purlis_linux_sandbox::line(
@@ -439,21 +439,31 @@ fn run_told(p: &Project, probe: &[&str]) -> (String, String) {
         PROBE.to_owned(),
         probe.iter().map(|it| (*it).to_owned()).collect(),
     );
-    let out = wrap_with(
+    let mut command = wrap_with(
         &words,
         &[
             ("TMPDIR".into(), p.tmp.clone().into()),
             ("PROBE_TOLD".into(), told.clone().into()),
         ],
-    )
-    .current_dir(&p.cwd)
-    .output()
-    .expect("the wrap ran");
+    );
+    command.current_dir(&p.cwd);
+    (command, told)
+}
+
+/// What the wrap `command` printed and, from `told`, what it told it refused, a line each.
+fn said_and_told(out: std::process::Output, told: &Path) -> (String, String) {
     assert!(out.status.success(), "{out:?}");
     (
         String::from_utf8_lossy(&out.stdout).trim().to_owned(),
-        std::fs::read_to_string(&told).unwrap_or_default(),
+        std::fs::read_to_string(told).unwrap_or_default(),
     )
+}
+
+/// `probe` run under the wrap in the chat's folder, with no port served: what it printed, and
+/// what the wrap told it refused, a line each.
+fn run_told(p: &Project, probe: &[&str]) -> (String, String) {
+    let (mut command, told) = told_command(p, probe);
+    said_and_told(command.output().expect("the wrap ran"), &told)
 }
 
 /// #3396 (ruled 2026-10-30): a test server on a port the system picks, on 127.0.0.1, serves
@@ -508,6 +518,72 @@ fn a_chat_with_a_server_of_its_own_reaches_no_other_loopback_port() {
     // A fixed port goes the way it did: refused until a grant serves it (#2019).
     let fixed = free_port().to_string();
     assert_eq!(run_told(&p, &["serve-on", "127.0.0.1", &fixed]).0, "EACCES");
+}
+
+/// #3396: a datagram socket on 127.0.0.1 at a port the system picks is still refused: only a
+/// TCP socket is given a picked port.
+#[test]
+fn a_datagram_socket_is_given_no_port_the_system_picks() {
+    let p = project();
+    let (said, told) = run_told(&p, &["udp-bind"]);
+    assert_eq!(said, "EACCES", "told: {told:?}");
+}
+
+/// #3396: a test server that stopped is dialled where nothing listens any more, and answered as
+/// the kernel answers that, connection refused, with nothing told: no Notice offers to allow a
+/// port the system picked.
+#[test]
+fn a_test_server_that_stopped_is_refused_as_nothing_listening_and_not_told() {
+    let p = project();
+    let (said, told) = run_told(&p, &["picked-closed-dial"]);
+    assert_eq!(said, "ECONNREFUSED", "told: {told:?}");
+    assert!(
+        !told
+            .lines()
+            .any(|line| line.starts_with("network-outbound")),
+        "told: {told:?}"
+    );
+}
+
+/// #3396: once a chat's test server stopped, a service outside the chat that listens on the port
+/// it had is not the chat's to reach: the port was picked for the chat, but the socket listening
+/// there is not the one made for it. Refused, and not told.
+#[test]
+fn a_service_that_took_a_port_a_test_server_had_is_not_reached() {
+    let p = project();
+    let file = p.tmp.join("picked-port");
+    let (mut command, told) = told_command(&p, &["picked-closed-dial", &p.s(&file)]);
+    let child = command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("the wrap started");
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let port = loop {
+        if let Some(port) = std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|it| it.trim().parse::<u16>().ok())
+        {
+            break port;
+        }
+        assert!(std::time::Instant::now() < until, "the probe wrote no port");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    let other = TcpListener::bind(("127.0.0.1", port)).expect("the port, taken outside");
+    std::thread::spawn(move || {
+        for stream in other.incoming().flatten() {
+            echo(stream);
+        }
+    });
+    std::fs::write(p.tmp.join("picked-port.go"), "").expect("go");
+    let (said, told) = said_and_told(child.wait_with_output().expect("the wrap ended"), &told);
+    assert_eq!(said, "EACCES", "told: {told:?}");
+    assert!(
+        !told
+            .lines()
+            .any(|line| line.starts_with("network-outbound")),
+        "told: {told:?}"
+    );
 }
 
 /// #3396: Python's own test server, `HTTPServer(("127.0.0.1", 0))`, serves a request its chat

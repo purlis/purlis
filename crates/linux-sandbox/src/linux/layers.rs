@@ -56,7 +56,9 @@ fn fully(status: RulesetStatus) -> Result<(), String> {
 
 /// The supervisor's own layer: it reads everything, writes only what `reach` names, makes no
 /// device, and connects over TCP only to `reach`'s ports (anywhere, at the floor), and binds
-/// and connects to the ports picked for the chat's test servers (`picked`, #3396).
+/// and connects to the ports picked for the chat's test servers (`picked`, #3396). Landlock names
+/// ports and no address, so this layer allows those on any host; the supervisor's own code binds
+/// and reaches them on 127.0.0.1 alone. The chat's own layer ([`chat`]) allows no port.
 pub(super) fn supervisor(reach: &Reach, picked: &[u16]) -> Result<(), String> {
     let all = AccessFs::from_all(AT);
     let read = AccessFs::from_read(AT);
