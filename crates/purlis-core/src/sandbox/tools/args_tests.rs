@@ -490,3 +490,12 @@ fn graphql_never_asks_for_a_credential_and_glab_s_never_runs() {
         .is_err()
     );
 }
+
+#[test]
+fn what_follows_a_double_dash_goes_to_another_program_so_it_never_runs() {
+    let gh = ready(tool_with("gh", None), "/opt/homebrew/bin/gh");
+    assert!(runs(&gh, &["repo", "clone", "o/r", "--", "--template=./t"]).is_err());
+    let glab = ready(tool_with("glab", None), "/usr/local/bin/glab");
+    assert!(runs(&glab, &["repo", "clone", "g/p", "--", "--depth=1"]).is_err());
+    assert!(runs(&gh, &["repo", "clone", "o/r"]).is_ok());
+}

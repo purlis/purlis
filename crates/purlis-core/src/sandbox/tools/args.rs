@@ -274,6 +274,14 @@ pub fn refused_forge(names: &[&Path], args: &[String]) -> Option<String> {
              {first:?} is an option, so nothing ran: put the command first, or {terminal}."
         ));
     }
+    // What follows `--` goes to another program (git, for a clone or a fork), whose own
+    // options can name a template, a config or a program to run beside the value.
+    if args.iter().any(|arg| arg == "--") {
+        return Some(format!(
+            "{name} runs with a vault's value only with its own arguments, and \"--\" hands \
+             the rest to another program, so nothing ran; {terminal}."
+        ));
+    }
     let command = first.to_ascii_lowercase();
     if let Some(said) = forge.refuses(&command, args) {
         return Some(format!(

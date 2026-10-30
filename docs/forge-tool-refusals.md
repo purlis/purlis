@@ -20,6 +20,10 @@ help page; `glab` names none, so its aliases were found by trying names: `conf` 
 `project` (`repo`), `sched` (`schedule`) and `v` (`version`). An installed extension or an alias the person
 defined is never there: a run's home is its own (#3419), so none is installed for it.
 
+A run with `--` among its arguments is refused for both: `repo clone` and `repo fork` hand what follows to
+`git clone`, whose own options can name a template (and its hooks), a config or a program to run with the
+token in its environment.
+
 ## gh 2.83.2
 
 | Command | Decision | Why |
