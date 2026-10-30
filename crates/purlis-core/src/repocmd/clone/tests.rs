@@ -432,25 +432,21 @@ fn the_account_on_that_server_signs_the_clone_and_one_on_another_port_never_does
     let exe = Path::new("/Applications/purlis.app/Contents/MacOS/charter-app");
 
     let on_it = account_on("gitlab.corp.example:8443");
-    let helper = as_the_window(&HostScope::for_a_test(), exe, on_it.path(), || {
-        forge::helper_for(&forge)
+    // Only whether purlis's helper is named leaves the closure: the helper line itself is never
+    // printed, as `forge::gitcredential`'s own tests do.
+    let signs = as_the_window(&HostScope::for_a_test(), exe, on_it.path(), || {
+        forge::helper_for(&forge).contains(HELPER_ARG)
     });
-    assert!(
-        helper.contains(HELPER_ARG),
-        "the account on that server signs the clone"
-    );
+    assert!(signs, "the account on that server signs the clone");
 
     let on_another_port = account_on("gitlab.corp.example");
-    let helper = as_the_window(
+    let signs = as_the_window(
         &HostScope::for_a_test(),
         exe,
         on_another_port.path(),
-        || forge::helper_for(&forge),
+        || forge::helper_for(&forge).contains(HELPER_ARG),
     );
-    assert!(
-        !helper.contains(HELPER_ARG),
-        "an account on another port never signs it"
-    );
+    assert!(!signs, "an account on another port never signs it");
 }
 
 mod landing;
