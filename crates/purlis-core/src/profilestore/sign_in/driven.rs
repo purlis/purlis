@@ -333,7 +333,8 @@ impl Driven {
             Standing::SignedOut => Event::Failed {
                 why: "the sign-in ended, and its harness says it is still not signed in".to_owned(),
             },
-            Standing::CannotTell => Event::Failed {
+            // A fetch the status check started reads as a check that could not say (#4008).
+            Standing::CannotTell | Standing::Fetching => Event::Failed {
                 why: "the sign-in ended, and its harness could not say whether it is signed in"
                     .to_owned(),
             },
