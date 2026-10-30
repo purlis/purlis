@@ -11992,7 +11992,7 @@ fn a_task_still_starting_under_a_name_refuses_a_second_dispatch_of_that_name() {
     let (said, _) = dispatch(&held, &id, &Tickets::default(), asking, None, "check prod");
     assert!(
         matches!(&said, Answer::No { why }
-            if why.contains("an open task named 'check prod' (chat 9001, running)")),
+            if why.contains("an open task named 'check prod' (chat 9001, running; the name")),
         "{said:?}"
     );
 
