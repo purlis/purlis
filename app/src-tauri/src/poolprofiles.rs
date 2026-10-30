@@ -24,7 +24,8 @@
 //! **A runner keeps only what is chosen for its pool** (#4060, #3849): as a pool's profiles are
 //! asked, and as the first chat this run starts on it, the runner names the profiles it keeps
 //! for this machine, and forgets each one no longer chosen there or no longer on this machine
-//! ([`tidy`]).
+//! ([`tidy`]). A profile removed on this machine is forgotten on each pool's runner there and
+//! then ([`forget_off_the_pools`]); one that is away is told as it next links.
 //!
 //! Adding a pool ends with its profiles (Settings › Pools, `pool_profiles`); a start on a pool
 //! keeps its profile there first ([`Linked`]): signed in, it starts with nobody asked, a moved
@@ -247,6 +248,68 @@ fn untidied(pool: &str) {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .retain(|one| one != pool);
+}
+
+/// **Has each pool's runner forget profile `name`, just removed on this machine** (#3849), its
+/// folder and sign-in there with it, and takes it off each pool that named it: only a Docker
+/// pool shown to be the person's own, never woken for it. A runner that is away, or that could
+/// not forget it, is told as it next links ([`tidy`]). `Some` note, in words, naming the pools
+/// whose runner runs a purlis before 1.52, which keeps it.
+pub fn forget_off_the_pools(name: &str) -> Option<String> {
+    owned().ok()?;
+    let config = config_root().ok()?;
+    let config = config.as_path();
+    let pools = purlis_core::runners::pools(config).ok()?;
+    let mut older = Vec::new();
+    for pool in pools {
+        let pool_name = pool.name();
+        if !matches!(
+            purlis_core::runners::cluster_runner_for(config, pool_name),
+            Ok(None)
+        ) {
+            continue;
+        }
+        let forgot = to_a_runner(config, pool_name, Waking::No)
+            .and_then(|to| crate::runnerlinks::forget_profile(&to, name));
+        match forgot {
+            Ok(Some(())) => {
+                if pool
+                    .profiles()
+                    .is_some_and(|named| named.iter().any(|one| one == name))
+                    && let Err(why) =
+                        purlis_core::runners::remove_pool_profile(config, pool_name, name, None)
+                {
+                    tracing::warn!("purlis: pool {pool_name} still names {name}: {why}");
+                }
+                onrunner::let_go(None, pool_name, name);
+            }
+            Ok(None) => older.push(pool_name.to_owned()),
+            Err(why) => {
+                untidied(pool_name);
+                tracing::info!(
+                    "purlis: pool {pool_name}'s runner forgets the profile {name} as it next \
+                     links: {why}"
+                );
+            }
+        }
+    }
+    (!older.is_empty()).then(|| {
+        format!(
+            "{} runs a purlis before 1.52, so it keeps the profile '{}' and its sign-in until \
+             the runner is made again.",
+            pools_said(&older),
+            purlis_core::shown::short(name)
+        )
+    })
+}
+
+/// `pools` as a sentence names them: `Pool builds's runner`, `Pools builds and tests' runners`.
+fn pools_said(pools: &[String]) -> String {
+    match pools {
+        [one] => format!("Pool {one}'s runner"),
+        [rest @ .., last] => format!("Pools {} and {last}'s runners", rest.join(", ")),
+        [] => String::new(),
+    }
 }
 
 /// **Whether this machine's pools' runners are shown to be the person's own** (#2049, by

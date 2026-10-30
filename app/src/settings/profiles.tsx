@@ -159,10 +159,15 @@ function remove(shown: MachineProfileRemoval) {
   set((was) => ({ ...was, asking: undefined }));
   void acting(
     () => commands.machineProfileRemove(shown.name, shown),
-    () =>
-      shown.adopted
-        ? `Forgot ${shown.name}. ${shown.folder} stays.`
-        : `Removed ${shown.name} and deleted ${shown.folder}.`,
+    (note) =>
+      [
+        shown.adopted
+          ? `Forgot ${shown.name}. ${shown.folder} stays.`
+          : `Removed ${shown.name} and deleted ${shown.folder}.`,
+        note,
+      ]
+        .filter(Boolean)
+        .join(" "),
   );
 }
 

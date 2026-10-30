@@ -1614,8 +1614,12 @@ export const commands = {
 	machineProfileImport: (name: string) => typedError<MachineProfileImported, string>(__TAURI_INVOKE("machine_profile_import", { name })),
 	/**  What removing `name` takes away, for the window to ask about. */
 	machineProfileRemoval: (name: string) => typedError<MachineProfileRemoval, string>(__TAURI_INVOKE("machine_profile_removal", { name })),
-	/**  Removes `name`, only if `shown` is what removing it takes away now. */
-	machineProfileRemove: (name: string, shown: MachineProfileRemoval) => typedError<null, string>(__TAURI_INVOKE("machine_profile_remove", { name, shown })),
+	/**
+	 *  Removes `name`, only if `shown` is what removing it takes away now, and has each pool's
+	 *  runner that kept it forget it, its sign-in there with it (#3849). `Some` note, in words, for
+	 *  a runner of a purlis before 1.52, which keeps it.
+	 */
+	machineProfileRemove: (name: string, shown: MachineProfileRemoval) => typedError<string | null, string>(__TAURI_INVOKE("machine_profile_remove", { name, shown })),
 	/**
 	 *  Types the profile `name`'s sign-in into shell session `session`, and runs it (#2035, ADR
 	 *  0095 §3): its harness's own sign-in command, with the profile's folder variables set, to the

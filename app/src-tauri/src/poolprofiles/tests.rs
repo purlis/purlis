@@ -182,9 +182,10 @@ fn a_pool_naming(profiles: Option<&[&str]>) -> tempfile::TempDir {
         "ghcr.io/purlis/purlis-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     )
     .unwrap();
-    let pool = purlis_core::runners::Pool::new("builds", image, purlis_core::runners::Set::default())
-        .unwrap()
-        .keeping_profiles(profiles.map(|names| names.iter().map(|&n| n.to_owned()).collect()));
+    let pool =
+        purlis_core::runners::Pool::new("builds", image, purlis_core::runners::Set::default())
+            .unwrap()
+            .keeping_profiles(profiles.map(|names| names.iter().map(|&n| n.to_owned()).collect()));
     purlis_core::runners::record_pool(config.path(), &pool).unwrap();
     config
 }
@@ -214,7 +215,10 @@ fn a_runner_forgets_what_is_no_longer_chosen_and_a_removed_profile_leaves_the_re
         Ok(Some(vec![
             ("home".to_owned(), Ok(())),
             ("gone".to_owned(), Ok(())),
-            ("busy".to_owned(), Err("a chat on that profile runs".to_owned())),
+            (
+                "busy".to_owned(),
+                Err("a chat on that profile runs".to_owned()),
+            ),
         ]))
     })
     .unwrap();
@@ -247,8 +251,10 @@ fn a_runner_with_nothing_to_forget_leaves_the_pools_record_as_it_is() {
     let config = a_pool_naming(None);
     let records = vec![record("work", "claude")];
 
-    let forgotten = tidy(config.path(), "builds", &records, Some("work"), |_| Ok(Some(Vec::new())))
-        .unwrap();
+    let forgotten = tidy(config.path(), "builds", &records, Some("work"), |_| {
+        Ok(Some(Vec::new()))
+    })
+    .unwrap();
 
     assert_eq!(forgotten, Some(Vec::new()));
     assert_eq!(named(config.path()), None);
@@ -271,5 +277,19 @@ fn nothing_is_forgotten_with_no_default_to_judge_by_or_on_a_runner_before_1_59()
     let config = a_pool_naming(Some(&["gone"]));
     let older = tidy(config.path(), "builds", &records, None, |_| Ok(None)).unwrap();
     assert_eq!(older, None);
-    assert_eq!(named(config.path()), Some(names(&["gone"])), "kept to remove by hand");
+    assert_eq!(
+        named(config.path()),
+        Some(names(&["gone"])),
+        "kept to remove by hand"
+    );
+}
+
+/// The pools whose runner keeps a removed profile are named as a sentence names them.
+#[test]
+fn the_pools_whose_runner_keeps_a_removed_profile_are_named_in_a_sentence() {
+    assert_eq!(pools_said(&names(&["builds"])), "Pool builds's runner");
+    assert_eq!(
+        pools_said(&names(&["builds", "tests", "gpu"])),
+        "Pools builds, tests and gpu's runners"
+    );
 }
