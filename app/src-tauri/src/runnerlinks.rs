@@ -685,6 +685,36 @@ pub fn forget_profile(to: &ToARunner, name: &str) -> Result<Option<()>, String> 
     })
 }
 
+/// Each profile a runner was asked to forget, by name: forgotten, or why not in words.
+pub type Forgot = Vec<(String, Result<(), String>)>;
+
+/// **Has the runner `to` reaches forget each of this machine's profiles it keeps but those in
+/// `keep`** (#4060), over one link of its own: it names the ones it keeps for this machine
+/// (`kept_profiles`, 1.59), and each other one is forgotten as [`forget_profile`] forgets it,
+/// its folder and sign-in there with it. `None`, with nothing forgotten, from a runner before
+/// 1.59, which cannot say what it keeps.
+pub fn forget_all_but(to: &ToARunner, keep: Vec<String>) -> Result<Option<Forgot>, String> {
+    let refused = |why: purlis_session_protocol::session::CallError| match why.refusal() {
+        Some(refused) => said_by_the_runner(&refused.why),
+        None => why.to_string(),
+    };
+    on_one_link(to, async move |linked| match linked {
+        Ok(client) if client.version() < purlis_session_protocol::session::KNOWS_KEPT_PROFILES => {
+            Ok(None)
+        }
+        Ok(client) => {
+            let kept = client.kept_profiles().await.map_err(refused)?;
+            let mut forgot = Vec::new();
+            for name in kept.into_iter().filter(|name| !keep.contains(name)) {
+                let said = client.forget_profile(&name).await.map_err(refused);
+                forgot.push((name, said));
+            }
+            Ok(Some(forgot))
+        }
+        Err(down) => Err(down.why),
+    })
+}
+
 /// Whether a runner speaking `version` forgets a desktop's profile (`forget_profile`, 1.52).
 pub fn forgets_profiles(version: purlis_session_protocol::version::Version) -> bool {
     version >= purlis_session_protocol::session::KNOWS_FORGET_PROFILE

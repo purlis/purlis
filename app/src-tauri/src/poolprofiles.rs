@@ -21,6 +21,11 @@
 //! row adds one (`pool_profile_add`) and removes one (`pool_profile_remove`), which the runner
 //! forgets, its sign-in there with it; a chat that starts on or moves to it on another adds it.
 //!
+//! **A runner keeps only what is chosen for its pool** (#4060, #3849): as a pool's profiles are
+//! asked, and as the first chat this run starts on it, the runner names the profiles it keeps
+//! for this machine, and forgets each one no longer chosen there or no longer on this machine
+//! ([`tidy`]).
+//!
 //! Adding a pool ends with its profiles (Settings › Pools, `pool_profiles`); a start on a pool
 //! keeps its profile there first ([`Linked`]): signed in, it starts with nobody asked, a moved
 //! chat's too, and signed out, it waits as one Ask, *Profile <profile> on pool <pool>*, whose
@@ -75,6 +80,7 @@ impl ProfilesOnPools for Linked {
     fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<Option<String>, String> {
         chosen_by_a_chat(&self.config, root, pool, profile);
         let behind = RefCell::default();
+        tidy_once(&self.config, root, pool);
         // A chat's start is what wakes a suspended runner (#2051), so its keep does too.
         onrunner::ready_on(&self.config, root, pool, profile, &|kept| {
             keep_on_as(owned(), &self.config, pool, kept, Waking::Yes, &behind)
@@ -93,6 +99,7 @@ impl ProfilesOnPools for Linked {
         profile: &str,
     ) -> Result<(), onrunner::NotYet> {
         chosen_by_a_chat(&self.config, root, pool, profile);
+        tidy_once(&self.config, root, pool);
         onrunner::ready_to_move_on(&self.config, pool, profile, &|kept| {
             keep_on_as(
                 owned(),
@@ -109,8 +116,10 @@ impl ProfilesOnPools for Linked {
 /// **A chat in the project at `root` that starts on or moves to pool `pool` on `profile` adds
 /// it to the pool** (#4047), so its runner keeps it from now on: only one of this machine's
 /// profiles, on a Docker pool shown to be the person's own. One already on it is left as it is;
-/// a pool that named none keeps the project's default beside it. What could not be recorded is
-/// logged, and the start goes on: the runner is asked to keep the profile all the same.
+/// a pool that named none names it from now on, beside the project's default, so another
+/// project's chats never have its runner forget it ([`tidy`], #4060). What could not be
+/// recorded is logged, and the start goes on: the runner is asked to keep the profile all the
+/// same.
 fn chosen_by_a_chat(config: &Path, root: &Path, pool: &str, profile: &str) {
     if owned().is_err() {
         return;
@@ -128,14 +137,116 @@ fn chosen_by_a_chat(config: &Path, root: &Path, pool: &str, profile: &str) {
         return;
     }
     let default = default_in(Some(root), &records);
-    if default.as_deref() == Some(profile) {
-        return;
-    }
     if let Err(why) =
         purlis_core::runners::add_pool_profile(config, pool, profile, default.as_deref())
     {
         tracing::warn!("purlis: pool {pool} does not name the profile {profile}: {why}");
     }
+}
+
+/// **Has pool `pool`'s runner forget each of this machine's profiles it keeps that is not
+/// chosen for the pool any more** (#4060, #3849), through `forget_all_but`, which has the runner
+/// keep only the names it is given ([`crate::runnerlinks::forget_all_but`]): the ones the pool
+/// keeps with `default` the open project's, that this machine still has among `records`. One
+/// chosen there that this machine no longer has is forgotten too, and leaves the pool's record.
+/// A pool that named none and had its runner forget one names `default` from now on, so the
+/// next project opened does not have it forget this one's.
+///
+/// Nothing is asked where nothing can be judged: a pool that names none with no default (no
+/// project open, or a default that is the runner's own), and a runner before 1.59, which cannot
+/// say what it keeps (`None`). Answers the names forgotten; one the runner refused, under a chat
+/// running on it, is logged and asked again later.
+fn tidy(
+    config: &Path,
+    pool: &str,
+    records: &[profilestore::MachineProfile],
+    default: Option<&str>,
+    forget_all_but: impl FnOnce(Vec<String>) -> Result<Option<crate::runnerlinks::Forgot>, String>,
+) -> Result<Option<Vec<String>>, String> {
+    let named = purlis_core::runners::pools(config)
+        .map_err(|why| why.to_string())?
+        .into_iter()
+        .find(|p| p.name() == pool)
+        .ok_or_else(|| format!("there is no pool named {pool} on this machine"))?
+        .profiles()
+        .map(<[String]>::to_vec);
+    if named.is_none() && default.is_none() {
+        return Ok(None);
+    }
+    let ours = |name: &String| records.iter().any(|r| &r.name == name);
+    let keep: Vec<String> = match &named {
+        Some(named) => named.iter().filter(|name| ours(name)).cloned().collect(),
+        None => default.map(str::to_owned).into_iter().collect(),
+    };
+    let Some(forgot) = forget_all_but(keep.clone())? else {
+        return Ok(None);
+    };
+    if named.is_none() && !forgot.is_empty() {
+        purlis_core::runners::set_pool_profiles(config, pool, Some(keep))
+            .map_err(|why| why.to_string())?;
+    }
+    let mut forgotten = Vec::new();
+    for (name, said) in forgot {
+        match said {
+            Ok(()) => {
+                if named.as_ref().is_some_and(|named| named.contains(&name)) {
+                    purlis_core::runners::remove_pool_profile(config, pool, &name, default)
+                        .map_err(|why| why.to_string())?;
+                }
+                onrunner::let_go(None, pool, &name);
+                forgotten.push(name);
+            }
+            Err(why) => tracing::warn!(
+                "purlis: pool {pool}'s runner did not forget the profile {}: {why}",
+                purlis_core::shown::short(&name)
+            ),
+        }
+    }
+    Ok(Some(forgotten))
+}
+
+/// The pools whose runner was asked this run to forget what is no longer chosen ([`tidy`]):
+/// a chat's start asks only the first time, and a runner that could not be told is asked again.
+static TIDIED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// [`tidy`], for pool `pool` as a chat in the project at `root` starts on it, the first time
+/// this run: only a Docker pool shown to be the person's own, its runner woken as the start
+/// wakes it. What could not be done is logged, and the start goes on.
+fn tidy_once(config: &Path, root: &Path, pool: &str) {
+    if owned().is_err()
+        || !matches!(
+            purlis_core::runners::cluster_runner_for(config, pool),
+            Ok(None)
+        )
+    {
+        return;
+    }
+    {
+        let mut tidied = TIDIED.lock().unwrap_or_else(PoisonError::into_inner);
+        if tidied.iter().any(|one| one == pool) {
+            return;
+        }
+        tidied.push(pool.to_owned());
+    }
+    let tidied = profilestore::list(config).and_then(|records| {
+        let default = default_in(Some(root), &records);
+        let to = to_a_runner(config, pool, Waking::Yes)?;
+        tidy(config, pool, &records, default.as_deref(), |keep| {
+            crate::runnerlinks::forget_all_but(&to, keep)
+        })
+    });
+    if let Err(why) = tidied {
+        untidied(pool);
+        tracing::warn!("purlis: pool {pool}'s runner was not told what it no longer keeps: {why}");
+    }
+}
+
+/// Pool `pool`'s runner is asked again, at the next chat's start there, what it keeps.
+fn untidied(pool: &str) {
+    TIDIED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .retain(|one| one != pool);
 }
 
 /// **Whether this machine's pools' runners are shown to be the person's own** (#2049, by
@@ -342,9 +453,18 @@ pub async fn pool_profiles(
         owned()?;
         let records = profilestore::list(&config)?;
         let default = default_in(root.as_deref(), &records);
+        kept_on(&config, &pool, default.as_deref())?;
+        let to = to_a_runner(&config, &pool, Waking::No)?;
+        // What is no longer chosen is forgotten first, so the row shows what the runner keeps.
+        if let Err(why) = tidy(&config, &pool, &records, default.as_deref(), |keep| {
+            crate::runnerlinks::forget_all_but(&to, keep)
+        }) {
+            tracing::warn!(
+                "purlis: pool {pool}'s runner was not told what it no longer keeps: {why}"
+            );
+        }
         let names = kept_on(&config, &pool, default.as_deref())?;
         let (on_pool, addable) = chosen(&records, &names);
-        let to = to_a_runner(&config, &pool, Waking::No)?;
         // Each that goes to a runner, kept there over one link.
         let kept: Vec<_> = on_pool
             .iter()

@@ -16,8 +16,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use purlis_host::{
-    Answering, ComposesNothing, Forgetting, HostError, Hosting, Keeping, Pairing, Place, Unpairing,
-    serve_answering,
+    Answering, ComposesNothing, Forgetting, HostError, Hosting, Keeping, Listing, Pairing, Place,
+    Unpairing, serve_answering,
 };
 use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
 use purlis_session_protocol::link::Link;
@@ -112,6 +112,24 @@ fn forgetting(kept: &KeptHere, desktop: Option<Pinned>) -> Forgetting {
     })
 }
 
+/// Names each profile in `kept`, for the desktop `desktop` alone.
+fn listing(kept: &KeptHere, desktop: Option<Pinned>) -> Listing {
+    let kept = Arc::clone(kept);
+    Arc::new(move |asked| {
+        assert_eq!(
+            Some(asked),
+            desktop.as_ref(),
+            "named for the desktop the link proved"
+        );
+        Ok(kept
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|profile| profile.name.clone())
+            .collect())
+    })
+}
+
 /// Keeps each profile in `kept`, signed out there unless its name is `signed-in`, for the
 /// desktop `desktop` alone.
 fn keeping(kept: &KeptHere, desktop: Option<Pinned>) -> Keeping {
@@ -164,7 +182,8 @@ async fn hosting_keeping(
             answering: answering(paired),
             unpairing: unpairing(paired),
             keeping: keeping(kept, desktop.clone()),
-            forgetting: forgetting(kept, desktop),
+            forgetting: forgetting(kept, desktop.clone()),
+            listing: listing(kept, desktop),
         },
     );
     let host = tokio::spawn(async move {
@@ -438,7 +457,8 @@ async fn the_paired_desktop_has_the_runner_keep_its_profile_and_hears_where_it_s
 }
 
 /// **The paired desktop has the runner forget its profile** (1.52, #4047): asked by name, the
-/// runner forgets it, and a refusal there is said to the desktop.
+/// runner forgets it, and a refusal there is said to the desktop. The desktop hears which
+/// profiles the runner keeps for it before and after (1.59, #4060).
 #[tokio::test]
 async fn the_paired_desktop_has_the_runner_forget_its_profile() {
     let dir = tempfile::tempdir().unwrap();
@@ -464,7 +484,13 @@ async fn the_paired_desktop_has_the_runner_forget_its_profile() {
         .await
         .unwrap();
 
+    assert_eq!(
+        client.kept_profiles().await.unwrap(),
+        vec!["work".to_owned()]
+    );
     client.forget_profile("work").await.expect("forgotten");
+
+    assert!(client.kept_profiles().await.unwrap().is_empty());
 
     assert!(kept.lock().unwrap().is_empty());
     let refused = client.forget_profile("work").await.unwrap_err();
