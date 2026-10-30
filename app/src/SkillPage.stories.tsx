@@ -365,7 +365,10 @@ async function typeALine(canvas: ReturnType<typeof within>): Promise<void> {
   );
   await userEvent.click(text);
   await userEvent.keyboard("{Control>}{End}{/Control}{Meta>}{ArrowDown}{/Meta}");
-  await userEvent.keyboard("5. Tag the release.");
+  // Pasted, in one input, not typed a key at a time: on the text's empty last line, WebKit's
+  // editor could draw the line again between two keys and put the caret back at its start, so
+  // the line came out as " Tag the release.5." in some runs (#4078).
+  await userEvent.paste("5. Tag the release.");
   await expect(await canvas.findByTestId("skill-unsaved")).toHaveTextContent("Unsaved changes");
 }
 

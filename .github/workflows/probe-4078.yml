@@ -37,7 +37,7 @@ jobs:
       - name: Many runs
         run: |
           mkdir -p "$RUNNER_TEMP/r"
-          for i in $(seq 1 12); do
+          for i in $(seq 1 20); do
             PURLIS_STORY_REPORT="$RUNNER_TEMP/r/$i.json" npx vitest run --project "stories * (webkit)" \
               --reporter=dot --reporter=../tools/story-failures.mjs "$FILE" > /dev/null 2>&1 || true
           done
