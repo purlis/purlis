@@ -24,7 +24,7 @@ afterEach(() => {
 
 type Told = { onmessage: (now: { stage: string; percent: number }) => void };
 
-function heldCore() {
+function heldCore({ holdPanels = false }: { holdPanels?: boolean } = {}) {
   const held: {
     land: () => void;
     refuse: (why: unknown) => void;
@@ -33,9 +33,14 @@ function heldCore() {
   }[] = [];
   const asked: string[] = [];
   const cancelled: string[] = [];
+  /** Each held read of the workspace's panels, answered by calling it (`holdPanels`). */
+  const panels: (() => void)[] = [];
   mockIPC((cmd, args) => {
     if (cmd === "take_repos") return null;
-    if (cmd === "workspace_panels") return { absent: [] };
+    if (cmd === "workspace_panels")
+      return holdPanels
+        ? new Promise((answer) => panels.push(() => answer({ absent: [] })))
+        : { absent: [] };
     if (cmd === "clone_repo") {
       const { repo, progress } = args as { repo: string; progress: Told };
       asked.push(repo);
@@ -51,7 +56,7 @@ function heldCore() {
     if (cmd === "cancel_clone_repo") cancelled.push(String((args as { repo: string }).repo));
     return null;
   });
-  return { held, asked, cancelled };
+  return { held, asked, cancelled, panels };
 }
 
 describe("a repo already being cloned, asked for again", () => {
@@ -250,5 +255,45 @@ describe("a clone the forge refused a sign-in for (#4079)", () => {
     expect(await first).toEqual([
       { repo: "api", said: "api: Sign in to git.corp.example.", signIn: "git.corp.example" },
     ]);
+  });
+});
+
+describe("a stop that comes too late for its run (#4176)", () => {
+  it("is not kept for the next ask, when it came while the clone was being checked", async () => {
+    const { held, asked, panels } = heldCore({ holdPanels: true });
+    const first = cloneRepos("/p", "gamma", ["api"]);
+    await expect.poll(() => held.length).toBe(1);
+    held[0].land();
+    // git has answered; the workspace is being read to check it. Cancel is pressed now.
+    await expect.poll(() => panels.length).toBe(1);
+    stopRepoClones("/p", "gamma", ["api"]);
+    panels[0]();
+    expect(await first).toEqual([]);
+    // Asked again (a Retry, or a re-clone once it is forgotten): it is cloned, not "stopped".
+    const again = cloneRepos("/p", "gamma", ["api"]);
+    await expect.poll(() => held.length).toBe(2);
+    held[1].land();
+    await expect.poll(() => panels.length).toBe(2);
+    panels[1]();
+    expect(await again).toEqual([]);
+    expect(asked).toEqual(["api", "api"]);
+  });
+
+  it("is not kept for the next ask, when its run stopped part way before reaching the repo", async () => {
+    const { held, asked } = heldCore();
+    const first = cloneRepos("/p", "gamma", ["api", "web"], () => {
+      throw new Error("a listener broke");
+    });
+    await expect.poll(() => held.length).toBe(1);
+    // web is still waiting: Cancel marks it, then the run stops part way before reaching it.
+    stopRepoClones("/p", "gamma", ["web"]);
+    held[0].land();
+    await expect(first).rejects.toThrow("a listener broke");
+    // The Retry the "not finished" sentence asks for clones it.
+    const again = cloneRepos("/p", "gamma", ["web"]);
+    await expect.poll(() => held.length).toBe(2);
+    held[1].land();
+    expect(await again).toEqual([]);
+    expect(asked).toEqual(["api", "web"]);
   });
 });

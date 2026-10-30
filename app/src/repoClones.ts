@@ -186,8 +186,11 @@ async function cloneInTurn(
 ): Promise<Failed> {
   const key = keyOf(plane, workspace);
   const done = new Set<string>();
-  /** A repo's end: its state, told to the calls waiting on it. */
+  /** A repo's end: its state, told to the calls waiting on it. A stop asked for it ends with
+   *  its run (#4176): one that came while the clone was being checked, or for a repo the run
+   *  never reached, is not kept to stop the next ask. */
   const end = (repo: string, state: CloneState) => {
+    stopping.get(key)?.delete(repo);
     set(plane, workspace, repo, state);
     done.add(repo);
     settle.get(repo)?.(state);
