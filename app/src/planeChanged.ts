@@ -159,6 +159,10 @@ export function skillsIn(workspace: string | undefined): About {
       (change.workspace === null || change.workspace === workspace));
 }
 
+/** A workspace name no workspace has: `skillsIn` of it takes every change that is in no
+ *  workspace, as it does for a chat in any one. */
+const ANY_WORKSPACE = "\u0000";
+
 /**
  * **What any open chat's skill set is made of** (#4094), for the Skills chip on each chat's pane
  * (`useChatSkillSets`): {@link skillsIn} for every workspace at once, since the chats open may be
@@ -166,11 +170,9 @@ export function skillsIn(workspace: string | undefined): About {
  * pinned, in its `workspace.json`), moves a chat's budget as the Skills view's header shows it.
  */
 export const skillSetsOfChats: About = (change) =>
-  change.kind === "project" ||
-  change.kind === "harness" ||
-  change.kind === "persona" ||
-  change.kind === "skills" ||
-  change.kind === "workspace";
+  // Read as by the Skills view of a chat in the workspace the change is in, or of one in any
+  // workspace for a change in none: one list of what a set is made of, the view's.
+  skillsIn(change.workspace ?? ANY_WORKSPACE)(change);
 
 /**
  * Whether what the core said moved concerns a view tab that shows `about`, or any of the

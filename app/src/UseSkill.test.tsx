@@ -522,4 +522,42 @@ describe("the Skills chip on a chat's pane", () => {
     await act(async () => answers[0]?.(skills([], { ...BUDGET, skills: 1 })));
     expect(result.current[0][4]?.budget.skills).toBe(9);
   });
+
+  it("keeps a chat's set where a read again is refused (#4094)", async () => {
+    let refuse = false;
+    mockIPC((cmd) => {
+      if (cmd !== "chat_skills") throw new Error(`unexpected ${cmd}`);
+      // The core's refusal, as a command's `Err` reaches the window.
+      if (refuse) return Promise.reject("the plane is not held");
+      return skills([], BUDGET);
+    });
+    const { result, rerender } = renderHook(
+      ({ moved }) => useChatSkillSets("p", [4], true, {}, moved),
+      { initialProps: { moved: 0 } },
+    );
+    await waitFor(() => expect(result.current[0][4]?.budget.skills).toBe(3));
+    refuse = true;
+    rerender({ moved: 1 });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(result.current[0][4]?.budget.skills).toBe(3);
+  });
+
+  it("lets go of a chat restarted while the Skill studio was off (#4094)", async () => {
+    mockIPC((cmd, args) => {
+      if (cmd !== "chat_skills") throw new Error(`unexpected ${cmd}`);
+      return skills([], { ...BUDGET, skills: (args as { session: number }).session });
+    });
+    const { result, rerender } = renderHook(
+      ({ sessions, on }) => useChatSkillSets("p", sessions, on),
+      { initialProps: { sessions: [4], on: true } },
+    );
+    await waitFor(() => expect(result.current[0][4]?.budget.skills).toBe(4));
+    rerender({ sessions: [4], on: false });
+    rerender({ sessions: [7], on: false });
+    rerender({ sessions: [7], on: true });
+    await waitFor(() => expect(result.current[0][7]?.budget.skills).toBe(7));
+    expect(Object.keys(result.current[0])).toEqual(["7"]);
+  });
 });

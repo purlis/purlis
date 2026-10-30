@@ -340,8 +340,9 @@ export function useChatSkillSets(
   // Each chat's latest read, by session: only its answer is kept.
   const asked = useRef(new Map<number, number>());
   const reads = useRef(0);
-  // The `moved` the sets were last read for: one past it reads every open chat's again.
-  const readFor = useRef(moved);
+  // The `moved` the sets were last read for: one past it reads every open chat's again, as does
+  // none (the studio was off).
+  const readFor = useRef<number | undefined>(moved);
   // The chats whose "started without" notice was put away: an answer read before that, landing
   // after, does not bring it back.
   const putAway = useRef(new Set<number>());
@@ -352,33 +353,26 @@ export function useChatSkillSets(
         const missing = putAway.current.has(session) ? null : said.missing;
         return { ...was, [session]: { budget, routing: said.routing, missing } };
       }
-      if (!(session in was)) return was;
-      return Object.fromEntries(
-        Object.entries(was).filter(([one]) => Number(one) !== session),
-      ) as Record<number, HeldSet>;
+      return without(was, new Set([session]));
     });
   }, []);
   const key = sessions.join(",");
   useEffect(() => {
     if (!on) {
-      // Read again, all of them, once the studio is on again.
-      asked.current.clear();
+      // Read again, all of them, once the studio is on again. Who was asked is kept, so a chat
+      // closed or restarted meanwhile is let go then.
+      readFor.current = undefined;
       return;
     }
     const open = key === "" ? [] : key.split(",").map(Number);
+    const openNow = new Set(open);
     const again = moved !== readFor.current;
     readFor.current = moved;
-    // A chat no longer open (closed, or restarted into a new session) is let go.
-    const gone = [...asked.current.keys()].filter((one) => !open.includes(one));
+    // A chat no longer open (closed, or restarted into a new session) is let go, and an answer
+    // still on its way for it with it.
+    const gone = new Set([...asked.current.keys()].filter((one) => !openNow.has(one)));
     for (const session of gone) asked.current.delete(session);
-    if (gone.length > 0)
-      setHeld((was) =>
-        gone.some((one) => one in was)
-          ? (Object.fromEntries(
-              Object.entries(was).filter(([one]) => !gone.includes(Number(one))),
-            ) as Record<number, HeldSet>)
-          : was,
-      );
+    if (gone.size > 0) setHeld((was) => without(was, gone));
     for (const session of open) {
       if (!again && asked.current.has(session)) continue;
       const read = ++reads.current;
@@ -386,8 +380,9 @@ export function useChatSkillSets(
       void commands
         .chatSkills(plane, session)
         .then((said) => {
-          if (asked.current.get(session) === read)
-            set(session, said.status === "ok" ? said.data : null);
+          // Refused (the plane not held for a moment, a skill half-written): what was read
+          // before still stands, and the next change reads it again.
+          if (said.status === "ok" && asked.current.get(session) === read) set(session, said.data);
         })
         .catch(() => undefined);
     }
@@ -418,6 +413,15 @@ export function useChatSkillSets(
     [held, changed],
   );
   return [on ? sets : NO_SETS, set];
+}
+
+/** `was` without the sets of `sessions`: itself where it holds none of them. */
+function without(
+  was: Readonly<Record<number, HeldSet>>,
+  sessions: ReadonlySet<number>,
+): Readonly<Record<number, HeldSet>> {
+  if (!Object.keys(was).some((one) => sessions.has(Number(one)))) return was;
+  return Object.fromEntries(Object.entries(was).filter(([one]) => !sessions.has(Number(one))));
 }
 
 /** No chat's set known: what the window holds while the Skill studio is off. */
