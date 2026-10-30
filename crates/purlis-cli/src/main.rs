@@ -4351,6 +4351,26 @@ fn pool_sign_in(
     let path = purlis_core::envvar::var("PATH");
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
     let docker = Docker::on_this_machine(path.as_deref(), home.as_deref()).map_err(|why| why.0)?;
+    // A runner on another version has no sign-in held to what drives it (#4043): refused in
+    // words, as the window refuses it.
+    let ours = purlis_core::adopt::release_version();
+    match docker.version_of(&runner.made) {
+        Ok(theirs) if theirs == ours => {}
+        Ok(theirs) => {
+            return Err(format!(
+                "pool {pool}'s runner runs purlis {theirs}, and this runs {ours}, so purlis signs \
+                 nothing in there itself. Sign '{name}' in from its line in Settings › Pools with \
+                 Open in terminal, or once the runner runs this version."
+            ));
+        }
+        Err(why) => {
+            return Err(format!(
+                "pool {pool}'s runner's version could not be read, so it may not run this \
+                 purlis {ours}: {}. Nothing was started.",
+                why.0
+            ));
+        }
+    }
     eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
     docker
         .standing_on_runner(&runner.made, &engine, name)

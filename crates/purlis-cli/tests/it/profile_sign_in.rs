@@ -243,6 +243,25 @@ fn the_help_names_the_pool_and_a_check_is_not_of_a_pool() {
     assert!(!out.status.success());
 }
 
+/// **`--pool` is not combined with the hidden runner modes** (#4043): those are a runner's own,
+/// for its desktop, and a sign-in on a pool is followed here.
+#[test]
+fn a_pool_sign_in_is_not_held_as_a_runner_s_own() {
+    let machine = Machine::new(0);
+    machine.said(&["profile", "create", "work", "--harness", "claude"]);
+
+    for held in [
+        &["--until-input-ends"][..],
+        &["--in-own-terminal", "80x16"][..],
+    ] {
+        let mut args = vec!["profile", "sign-in", "work", "--pool", "builds"];
+        args.extend_from_slice(held);
+        let out = machine.purlis(&args);
+        assert!(!out.status.success(), "{args:?}");
+    }
+    assert_eq!(machine.ran(), None);
+}
+
 /// **A pool's sign-in is the person's too**: a chat is refused it, and nothing is run.
 #[test]
 fn a_chat_may_not_sign_a_profile_in_on_a_pool() {
