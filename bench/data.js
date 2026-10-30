@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793336756924,
+  "lastUpdate": 1793338136476,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30828,6 +30828,48 @@ window.BENCHMARK_DATA = {
             "value": 101.2163855,
             "unit": "ms",
             "extra": "median of 5 runs: 99.280, 100.088, 101.216, 101.596, 101.701 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "50b172cd667f475c558b53e1359f0c504cd74237",
+          "message": "Rail story: wait for the tooltip its delay opens before reading its text (#3971) (#3974)\n\nShown hovered a project and read the tooltip's text in a waitFor with the\ndefault one-second timeout. The tooltip opens only after TOOLTIP_DELAY\n(500 ms), so on a loaded runner the second ran out before it was drawn,\nand toHaveTextContent was asked of null: received value must be a Node.\n\nThe story now waits as Tooltip.stories does, for TOOLTIP_DELAY plus room,\nand first checks that a tooltip is drawn, so a failure says so. The four\nwaits for the tooltip to close get TOOLTIP_CLOSE_DELAY plus room too. The\nassertions are the same: the tooltip must be drawn and name the project.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T04:43:56Z",
+          "tree_id": "f9f45718de4fa35fc0fe54aae54f6bf5fe86e2de",
+          "url": "https://github.com/purlis/purlis/commit/50b172cd667f475c558b53e1359f0c504cd74237"
+        },
+        "date": 1793338132820,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3345475,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.308, 0.334, 0.335, 0.345, 0.349 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.575290499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.346, 16.525, 16.575, 16.674, 16.735 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.1978805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.034, 101.149, 101.198, 101.468, 102.498 ms"
           }
         ]
       }
