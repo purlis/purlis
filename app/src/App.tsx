@@ -177,7 +177,7 @@ const STILL_CLOSING =
  * **What the layout's Update does, said from one workspace's chip** (#3930's review): it updates
  * every workspace behind the layout, so it names the others it touches.
  */
-function updates(name: string, behind: readonly string[]): string {
+function layoutUpdates(name: string, behind: readonly string[]): string {
   const others = behind.filter((one) => one !== name);
   if (others.length === 0) return `${LAYOUT_FIX_LABEL} brings it up to date.`;
   const named =
@@ -1371,7 +1371,7 @@ function App() {
       ...behindInFront.map((name): StandingNotice => ({
         workspace: name,
         cause: `alert:reinit:${name}`,
-        says: `${name} is behind the current layout. ${updates(name, behindInFront)}${layoutSaid === undefined ? "" : ` ${layoutSaid}`}`,
+        says: `${name} is behind the current layout. ${layoutUpdates(name, behindInFront)}${layoutSaid === undefined ? "" : ` ${layoutSaid}`}`,
         fixes: [
           {
             label: LAYOUT_FIX_LABEL,
