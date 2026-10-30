@@ -408,6 +408,84 @@ fn a_worktree_asked_for_from_a_workspace_with_several_clones_names_them_until_on
 }
 
 #[test]
+fn a_folder_whose_git_is_a_file_is_no_clone_to_name() {
+    // #3903 review: a linked worktree's folder (a `.git` file) is not a clone of the workspace,
+    // whether named or the only folder there.
+    let (_dir, root) = project();
+    std::fs::create_dir_all(root.join("workspaces/alpha/linked")).unwrap();
+    std::fs::write(
+        root.join("workspaces/alpha/linked/.git"),
+        "gitdir: /elsewhere/.git/worktrees/linked\n",
+    )
+    .unwrap();
+    let alpha = root.join("workspaces/alpha");
+
+    assert_eq!(
+        ground(
+            &root,
+            Some(Where::Worktree(Some("linked".to_owned()))),
+            None,
+            Some(&alpha)
+        ),
+        Err(Refused::NoSuchRepo {
+            workspace: "alpha".to_owned(),
+            repo: "linked".to_owned(),
+            repos: Vec::new(),
+        })
+    );
+    assert_eq!(
+        ground(&root, Some(Where::Worktree(None)), None, Some(&alpha)),
+        Err(Refused::NotInARepo)
+    );
+    // Beside a real clone, it is still not one of the clones named.
+    clone_in(&root, "alpha", "api");
+    assert_eq!(
+        ground(&root, Some(Where::Worktree(None)), None, Some(&alpha)),
+        Ok(by_default("alpha", "api"))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_clone_folder_that_is_a_link_is_no_clone_to_name() {
+    // #3903 review: a link at `workspaces/<ws>/<repo>` would have git act on a repository
+    // outside the workspace, so it is never a clone a worktree is cut from.
+    let (_dir, root) = project();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(outside.path().join("repo/.git")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("repo"),
+        root.join("workspaces/alpha/linked"),
+    )
+    .unwrap();
+    let api = clone_in(&root, "alpha", "api");
+    let alpha = root.join("workspaces/alpha");
+
+    for cwd in [&alpha, &api] {
+        assert_eq!(
+            ground(
+                &root,
+                Some(Where::Worktree(Some("linked".to_owned()))),
+                None,
+                Some(cwd)
+            ),
+            Err(Refused::NoSuchRepo {
+                workspace: "alpha".to_owned(),
+                repo: "linked".to_owned(),
+                repos: vec!["api".to_owned()],
+            }),
+            "{}",
+            cwd.display()
+        );
+    }
+    // And it does not make the workspace one of several clones.
+    assert_eq!(
+        ground(&root, Some(Where::Worktree(None)), None, Some(&alpha)),
+        Ok(by_default("alpha", "api"))
+    );
+}
+
+#[test]
 fn a_chat_in_one_clone_may_name_another_clone_of_its_workspace() {
     let (_dir, root) = project();
     let api = clone_in(&root, "alpha", "api");

@@ -538,6 +538,13 @@ pub fn hosts(root: &Path, asker: &Asker) -> Result<Option<Vec<String>>, String> 
     if !asker.harnessed || asker.unsandboxed {
         return Ok(None);
     }
+    sandboxed_hosts(root)
+}
+
+/// The hosts a chat started under the project's sandbox may reach, or `None` where no sandbox
+/// is in force: [`hosts`] for a chat that carries no opt-out, as a dispatched persona chat
+/// never does (#3903, [`crate::dispatchplace::cut`]).
+pub fn sandboxed_hosts(root: &Path) -> Result<Option<Vec<String>>, String> {
     let plane = crate::sandbox::Plane::read(root);
     if plane.unreadable() {
         return Err(crate::sandbox::NotStarted::PlaneUnreadable.to_string());
