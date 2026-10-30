@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793323438314,
+  "lastUpdate": 1793325593332,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30492,6 +30492,48 @@ window.BENCHMARK_DATA = {
             "value": 101.69477,
             "unit": "ms",
             "extra": "median of 5 runs: 101.028, 101.353, 101.695, 101.977, 103.093 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a2baf859d448e72449bcc0bc91bf83297c3ffe62",
+          "message": "Skill studio test flakes: a quit losing a chat, studio specs in a fresh app, Shift+F10 on a card (#3941)\n\n* A start that returns into a quit keeps its chat in the record (#3114)\n\n`a_quit_while_chats_come_back_leaves_every_chat_in_the_record` failed once\non main (3f49b762) without chat 5. SK-9's sweep is not the cause: it runs\ninside `Records::write`, after `reopen::write`, and writes no record.\n\nThe cause is a quit racing a start that returns. `start_what_is_coming`\ntook the chat out of the ones still to start, then saw the quit had begun\nand closed it. In between those two lists it was in neither, so the\nquit's record, built a moment later, lost it for good.\n\nNow the quit is asked once, under the lock the record reads the ones still\nto start under. Seen begun, a chat that started is ended but stays one\nstill to start, in front where it was. Seen not begun, it stays open until\nthe quit's record holds it and the quit ends it.\n\nThe new chats-level test fails on the old code every time: after a start\nreturns into a quit, the record lists only chat 2.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Studio draft specs approve the profile their chats start on (#3562)\n\nRun first in a fresh app, `skill-studio-drafts` and `skill-studio-first-open`\nstarted no chat: the fake harness never ran, and no harness was running.\nTry it and Ask a chat to draft a skill start their chats in the core,\nwithout the picker, and the core's start gate refuses a profile nobody\nhas approved. The scenario plane's `scenario` profile is approved on its\nfirst use through the picker, so these specs passed only after a spec from\n`projects` on (`projects`, `search-to-chat`, `settings-limits`) had started\na chat there. `skill-compat`, which ran just before them in the failing part,\napproves its own `compat-claude`, not `scenario`.\n\nEach now approves it as the operator does, through the picker, and ends\nthat chat before it starts (`theDefaultProfileApproved`). `projects` is no\nlonger a cut the studio's specs need, so the comments in `e2e/parts.ts`\nand `ci.yml` no longer say it is.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* TEMPORARY, reverted before review: start a macOS part at skill-studio-drafts\n\nRuns the studio's draft specs first in a fresh app, to show #3562 is fixed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A scroll that has not moved a card closes no menu it opened (#3797)\n\nShift+F10 on a card just reached sometimes opened no menu. A diagnostic\nrun (a throwaway branch, the story's own first press logged across the\ntheme matrix) showed the press was not dropped: the menu opened, took the\nkeyboard, then closed within about 30 ms. The stack named React Aria's\nclose-on-scroll for a popover that is not modal (`useCloseOnScroll`).\n\nThe scroll was the keyboard's own. Arriving on a card, React Aria scrolls\nthe list to it, and the scroll event comes a frame later. A Shift+F10\ninside that frame opened the menu where the card now stands, and the late\nevent closed it. It happens to a person who presses straight after\narriving, too.\n\n`useContextMenu` now keeps where the opener stood when the menu opened.\nA scroll heard first on the window that left the opener in place holds\nback the close it would cause. A scroll that moved the opener closes the\nmenu as before. The stories' retry is gone: one press opens the menu.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Hold back only the close a still scroll causes, and say the fix (#3797)\n\nReview: the guard held back every close for a moment after any scroll,\nso an Enter or Escape right after one could leave the menu up. Now it\nnotes the one scroll event that left the opener in place, of a region\naround the opener only, and skips only the close asked while that event\nis heard (window.event). The close it hands React Aria is stable across\nrenders. Adds the changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Keep the kept chat's place and front before ending it (#3114)\n\nReview: close() cleared the front before it ended the program, and a\nchat that started under another number had its strip place rewritten to\nthat number, so a quit record built meanwhile lost which chat was in\nfront, or moved the chat to the strip's end. Its place and front go back\nto the number it is still to start as before it is ended, and close()\nleaves the front on a chat still to start. Adds the changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Approve the profile in the workspace the studio starts in (#3562)\n\nReview: the approval ran before alpha was in front, in whichever project\nan earlier spec left there.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Revert the temporary macOS cut at skill-studio-drafts\n\nIts run (40977896651, macOS part 4) started at skill-studio-drafts in a\nfresh app, and it and skill-studio-first-open passed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T01:16:59Z",
+          "tree_id": "effec12e7340ba8a1e1b8a0fe63ffced2ba3d6c4",
+          "url": "https://github.com/purlis/purlis/commit/a2baf859d448e72449bcc0bc91bf83297c3ffe62"
+        },
+        "date": 1793325589933,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6573765,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.621, 0.642, 0.657, 0.668, 0.678 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5532995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.342, 16.487, 16.553, 16.564, 16.838 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.044553,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.561, 101.790, 102.045, 102.698, 102.978 ms"
           }
         ]
       }
