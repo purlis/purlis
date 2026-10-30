@@ -66,6 +66,8 @@ let notHeld: { root: string; name: string; why: string; pools: string[] }[];
 let profilesAsked: unknown[];
 /** The runner image a new pool is offered, or why it could not be read. */
 let releaseImage: RunnerImageOffered | { trouble: string };
+/** What `pool_profiles` answers, in turn; the last again once the rest are said. */
+let profileAnswers: PoolProfileRow[][];
 
 const a_profile = (name: string, standing: string): PoolProfileRow => ({
   name,
@@ -100,6 +102,7 @@ beforeEach(() => {
   notHeld = [];
   profilesAsked = [];
   releaseImage = { state: "local_build" };
+  profileAnswers = [[a_profile("work", "signed-out"), a_profile("claude", "signed-in")]];
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
@@ -135,7 +138,7 @@ beforeEach(() => {
       if (cmd === "projects_not_held") return structuredClone(notHeld);
       if (cmd === "pool_profiles") {
         profilesAsked.push(a.pool);
-        return [a_profile("work", "signed-out"), a_profile("claude", "signed-in")];
+        return profileAnswers.length > 1 ? profileAnswers.shift() : profileAnswers[0];
       }
       if (cmd === "add_docker_pool") {
         added.push(a.adding);
@@ -266,6 +269,30 @@ describe("You › This machine › Pools", () => {
     const nav = await yourSettings();
     expect(await within(nav).findByRole("button", { name: "Pools" })).toBeInTheDocument();
   });
+
+  it("says a profile's harness is being fetched, and asks again until it is (#4008)", async () => {
+    profileAnswers = [[a_profile("work", "fetching")], [a_profile("work", "signed-in")]];
+    render(<App />);
+    await palette("Add a pool…");
+    const dialog = await screen.findByRole("dialog", { name: "Add a pool" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Name" }), "builds");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Image" }), IMAGE);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add pool" }));
+
+    const signIn = await screen.findByRole("dialog", {
+      name: "Sign your profiles in on pool builds",
+    });
+    const list = await within(signIn).findByRole("list", { name: "Profiles on pool builds" });
+    expect(
+      within(list).getByText(
+        "Fetching Claude Code on pool builds. Whether it is signed in shows once it is fetched.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      await within(list).findByText("Signed in on pool builds.", {}, { timeout: 6000 }),
+    ).toBeInTheDocument();
+    expect(profilesAsked).toEqual(["builds", "builds"]);
+  }, 10000);
 
   it("adds a pool with its own time before its runner suspends, and its row says it (#3471)", async () => {
     render(<App />);

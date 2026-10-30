@@ -148,7 +148,8 @@ pub struct PoolProfileRow {
     /// The harness as people call it: `Claude Code`.
     pub harness: String,
     /// Whether its harness says it is signed in on the runner: `signed-in`, `signed-out` or
-    /// `cannot-tell`. Null where it is not kept there.
+    /// `cannot-tell`, or `fetching` while the runner fetches the version it pins (#4008), which
+    /// the window asks again after. Null where it is not kept there.
     pub standing: Option<String>,
     /// Why it is not kept on the runner, in words, where it is not.
     pub not_kept: Option<String>,
@@ -309,6 +310,7 @@ fn watching(pool: &str, name: &str, told: impl FnOnce()) {
     let ends = std::time::Instant::now() + WATCHED_FOR;
     while std::time::Instant::now() < ends {
         std::thread::sleep(WATCHED_EVERY);
+        // A runner still fetching its harness cannot tell yet, so it is asked again (#4008).
         if matches!(
             keep_on(&config, pool, &kept),
             Ok(Some(Standing::SignedIn | Standing::CannotTell))

@@ -1028,3 +1028,49 @@ fn a_kept_pinned_profiles_standing_is_asked_of_the_version_the_runner_installs()
     );
     assert_eq!(*look.programs.borrow(), [installed.display().to_string()]);
 }
+
+/// A runner fetching the version each profile it keeps with a pin is pinned to: none is
+/// installed yet, and no harness on `PATH` answers.
+struct StillFetching;
+
+impl Look for StillFetching {
+    fn status(&self, _: &str, _: &[&str], _: &[(String, String)]) -> Option<i32> {
+        None
+    }
+    fn is_there(&self, _: &Path) -> bool {
+        false
+    }
+    fn fetching(&self, record: &MachineProfile) -> bool {
+        record.kept_for.is_some() && record.pinned.is_some()
+    }
+}
+
+/// **A runner fetching a profile's harness says so** (#4008): its desktop's keep answers
+/// `fetching`, not that the harness cannot tell, so the profile's row says the harness is being
+/// fetched and asks again once it is.
+#[test]
+fn a_kept_profile_whose_harness_is_being_fetched_is_said_to_be_fetching() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut desktop = a_signed_in_desktop_profile(dir.path());
+    desktop.pinned = Some(crate::profilestore::pin::Pinned {
+        version: "2.1.300".to_owned(),
+        at: 3,
+    });
+    let runner = homes(dir.path(), "runner");
+
+    let said = kept_for_the_desktop(
+        &runner,
+        &runner_home(dir.path()),
+        DESKTOP,
+        &Kept::of(&desktop).unwrap().into(),
+        &StillFetching,
+        7,
+    )
+    .expect("kept");
+
+    assert_eq!(
+        said,
+        purlis_session_protocol::session::ProfileStanding::Fetching
+    );
+    assert_eq!(standing_on_the_wire(said), Standing::Fetching);
+}

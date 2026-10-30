@@ -337,9 +337,15 @@ use crate::view::{Limits, Views};
 /// window's alone ([`crate::grants::Power::Code`]), relayed for it. A host before 1.51 refuses
 /// it `unknown_command`, so the window asks only one of 1.51 or later, and a clone a runner
 /// before it made stays there.
+///
+/// 1.52 added a profile whose harness its runner is still fetching (#4008, spec #4023):
+/// `profile_kept` may answer [`ProfileStanding::Fetching`] while the runner fetches the harness
+/// version the profile pins, which a look started, so the window says so and asks again once the
+/// fetch has ended. A desktop before 1.52 reads it as `cannot_tell`, as it reads any word a later
+/// minor adds.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 51,
+    minor: 52,
 };
 
 /// The version that first answers `relay_to` with the runner the link reached (#3417).
@@ -1123,6 +1129,9 @@ pub enum ProfileStanding {
     SignedIn,
     /// The harness says it is not: a chat on it does not start there until it is.
     SignedOut,
+    /// The runner is fetching the harness version the profile pins, so its harness cannot say
+    /// yet (1.52, #4008): asked again once the fetch has ended, it answers.
+    Fetching,
     /// The harness did not say, or has no way to; and a word a later minor adds.
     #[serde(other)]
     CannotTell,

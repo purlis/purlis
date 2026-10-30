@@ -319,13 +319,21 @@ fn is_ours(
 /// through `look` now: never a remembered answer, since this is what the desktop asks after a
 /// sign-in. Asked of the version it is pinned to where this runner installs it (#4007), since a
 /// runner image carries no harness on `PATH`.
+///
+/// Where its harness cannot tell because the version it pins is still being fetched, which this
+/// look may have started, it is said to be fetching (#4008), so the desktop asks again once the
+/// fetch has ended.
 pub fn standing(record: &MachineProfile, look: &dyn Look) -> Standing {
-    match sign_in::asked_of(record, look) {
+    let said = match sign_in::asked_of(record, look) {
         Some(profile) => {
             sign_in::forget(&profile);
             sign_in::standing_remembered(&profile, look)
         }
         None => Standing::CannotTell,
+    };
+    match said {
+        Standing::CannotTell if look.fetching(record) => Standing::Fetching,
+        said => said,
     }
 }
 
@@ -359,6 +367,7 @@ pub fn standing_on_the_wire(said: purlis_session_protocol::session::ProfileStand
     match said {
         Said::SignedIn => Standing::SignedIn,
         Said::SignedOut => Standing::SignedOut,
+        Said::Fetching => Standing::Fetching,
         Said::CannotTell => Standing::CannotTell,
     }
 }
@@ -371,6 +380,7 @@ pub fn standing_for_the_wire(
     match standing {
         Standing::SignedIn => Said::SignedIn,
         Standing::SignedOut => Said::SignedOut,
+        Standing::Fetching => Said::Fetching,
         Standing::CannotTell => Said::CannotTell,
     }
 }
@@ -490,7 +500,7 @@ fn ready_on_for(
                  its harness's own sign-in on the runner; {again}."
             ))
         }
-        Some(Standing::SignedIn | Standing::CannotTell) | None => Ok(()),
+        Some(Standing::SignedIn | Standing::CannotTell | Standing::Fetching) | None => Ok(()),
     }
 }
 
