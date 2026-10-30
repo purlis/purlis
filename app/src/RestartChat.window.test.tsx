@@ -444,7 +444,7 @@ describe("Restart chat on a task's row in the Chats list, for a task with no tab
 
     await waitFor(() => expect(asked("restart_chat")).toHaveLength(1));
     // Its text changes, and the region is the one that was there.
-    await waitFor(() => expect(region).toHaveTextContent(`talk: ${refused}`));
+    await waitFor(() => expect(region).toHaveTextContent(`Restart of talk. ${refused}`));
     expect(screen.getByRole("status", { name: "Restarts" })).toBe(region);
     expect(region.isConnected).toBe(true);
 
