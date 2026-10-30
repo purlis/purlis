@@ -213,6 +213,7 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
             fits: names.slice(0, 1),
             rest: names.slice(1),
             why: "https://github.com/obra/superpowers holds more than 64 MiB of skills to read, the most purlis reads of one skill source at once",
+            there: [],
           };
         const skills = [TDD, DEBUGGING].filter((one) => names.includes(one.name));
         return {

@@ -273,6 +273,9 @@ pub struct TooMuch {
     pub rest: Vec<String>,
     /// What the read's limit says.
     pub why: String,
+    /// Those named that the level holds already, left out of every part (#4153), as
+    /// [`SetReview::Review`]'s `there`.
+    pub there: Vec<String>,
 }
 
 /// **The review of a set of skills** (#4024): the review, or, where reading it is more than one
@@ -386,6 +389,7 @@ fn reviewed_from(
                     .collect(),
                 fits: whole,
                 why,
+                there: Vec::new(),
             }));
         }
         let (files, left) = source.files(one)?;
@@ -434,8 +438,8 @@ impl Fetched {
 
     /// **The review of installing `names` together** from this commit, or which of them fit one
     /// read where all of them do not; `found` is what it offers, listed once, `holds` says which
-    /// skills the level they land in holds, and `have` which references are met there already.
-    /// One named that the level holds is left out and said to be there (#4153).
+    /// names are taken where they land ([`taken`]), and `have` which references are met there
+    /// already. One named that is taken is left out and said to be there (#4153).
     fn set_review(
         &self,
         found: &[Found],
@@ -454,22 +458,29 @@ impl Fetched {
                 },
                 there,
             }),
-            Err(Unread::TooMuch(too_much)) => Ok(SetReview::TooMuch(too_much)),
+            Err(Unread::TooMuch(too_much)) => Ok(SetReview::TooMuch(TooMuch { there, ..too_much })),
             Err(Unread::Refused(why)) => Err(why),
         }
     }
 }
 
-/// Whether `level` holds a skill named `name`, from a source or made there: one named there is
-/// refused by an install, so a set review leaves it out (#4153).
+/// Whether `level` holds a skill named `name`, from a source or made there.
 pub(super) fn has(plane: &Path, level: &Level, name: &str) -> bool {
     level.named(plane, name).is_some()
+}
+
+/// **Whether `name` is taken where a set lands**: `level` holds a skill of that name, or it
+/// belongs to a built-in skill (`reserved`). An install of one so named is refused, so a set
+/// review leaves it out and says it is there already (#4153, #4155).
+fn taken(plane: &Path, reserved: &Reserved, level: &Level, name: &str) -> bool {
+    reserved.holds(name) || has(plane, level, name)
 }
 
 /// **Whether a skill installed at `level` that refers to `name` has it met already**, so the
 /// source's `name` is not brought along, as the review and the install agree (ADR 0100 as amended
 /// 2026-10-31): where every chat that gets the installed skill gets a skill named `name` without
-/// it, by the rule [`purlis_skills::skill_set`] resolves a chat's skills by.
+/// it, by the rules [`purlis_skills::skill_set`] resolves a chat's skills by
+/// ([`purlis_skills::reaches_workspace`], [`Reference::names_plane`]).
 ///
 /// - `name` belongs to a built-in skill, which every chat has and no plane skill may take (#4155);
 /// - `level` holds a skill of that name, from any source or made there (#4032);
@@ -506,17 +517,11 @@ pub(super) fn met(
             .any(|&local| has(plane, &level.clone().local(local), name))
         || match &level.at {
             Whose::Project => false,
-            Whose::Workspace(ws) => {
-                !wider.turned_off.iter().any(|off| off == name)
-                    && project_skill(&|folder| {
-                        crate::skills::grant_of(folder).is_ok_and(|grant| grant.reaches(ws))
-                    })
-            }
+            Whose::Workspace(ws) => project_skill(&|folder| {
+                purlis_skills::reaches_workspace(folder, ws, &wider.turned_off, name)
+            }),
             Whose::Persona(_) => {
-                wider
-                    .persona_names
-                    .iter()
-                    .any(|one| matches!(one, Reference::Named(named) if named == name))
+                wider.persona_names.iter().any(|one| one.names_plane(name))
                     && project_skill(&|_| true)
             }
         }
@@ -592,10 +597,11 @@ pub fn review_set(
 ) -> Result<SetReview, String> {
     let fetched = fetch(plane, source, None)?;
     let (found, _) = fetched.skills()?;
+    let reserved = Reserved::of(built_in);
     fetched.set_review(
         &found,
         names,
-        &|name| has(plane, level, name),
+        &|name| taken(plane, &reserved, level, name),
         &met_at(plane, built_in, level),
     )
 }
@@ -618,10 +624,11 @@ pub fn review_all(
         .filter(|skill| installed_at(&locked, source, &skill.name).is_empty())
         .map(|skill| skill.name.clone())
         .collect();
+    let reserved = Reserved::of(built_in);
     fetched.set_review(
         &found,
         &names,
-        &|name| has(plane, level, name),
+        &|name| taken(plane, &reserved, level, name),
         &met_at(plane, built_in, level),
     )
 }

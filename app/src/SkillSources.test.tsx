@@ -900,6 +900,51 @@ describe("Install all… (#4024)", () => {
     expect(install?.args.reviewed).toEqual(setReview(["deploy", "huge"], ["huge"]).review.accepted);
   });
 
+  it("keeps a skill there already named when it reviews the first part (#4153)", async () => {
+    let first = true;
+    const asked = core({
+      answers: {
+        // A third skill, lint, to leave for the second part.
+        skill_source_browse: () => ({
+          ...BROWSE,
+          skills: [
+            ...BROWSE.skills,
+            {
+              name: "lint",
+              description: "Lints.",
+              folder: "skills/lint",
+              installed: [],
+              marks: [],
+            },
+          ],
+        }),
+        // The first review is past one read: deploy fits, lint is the rest, and the level holds
+        // huge already.
+        skill_install_set_review: (args) => {
+          if (!first) return setReview(args.names as string[], ["huge"]);
+          first = false;
+          return {
+            kind: "too-much",
+            fits: ["deploy"],
+            rest: ["lint"],
+            why: "example skills holds more than 64 MiB of skills to read, the most purlis reads of one skill source at once",
+            there: ["huge"],
+          };
+        },
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    await user.click(await within(choose).findByRole("button", { name: "Review 3 skills" }));
+    const review = await screen.findByTestId("install-all-review");
+    await user.click(await within(review).findByRole("button", { name: "Review the first skill" }));
+    expect(await within(review).findByTestId("there-huge")).toBeInTheDocument();
+    expect(within(review).queryByTestId("left-out-huge")).toBeNull();
+    const reviews = asked.filter((one) => one.cmd === "skill_install_set_review");
+    expect(reviews.at(-1)?.args.names).toEqual(["deploy", "huge"]);
+  });
+
   it("holds Install where every ticked skill is there already (#4153)", async () => {
     core({
       answers: {
@@ -986,6 +1031,7 @@ describe("Install all… (#4024)", () => {
                 fits: ["deploy"],
                 rest: ["huge"],
                 why: "example skills holds more than 64 MiB of skills to read, the most purlis reads of one skill source at once",
+                there: [],
               }
             : setReview(args.names as string[]),
       },

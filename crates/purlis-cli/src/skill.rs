@@ -1601,14 +1601,29 @@ fn install(
     let review = match named {
         Named::These(names) => source::review(root, cx.built_in, source, names, level),
         Named::All => match source::review_all(root, cx.built_in, source, level) {
-            Ok(source::SetReview::Review { review, .. }) if review.skills.is_empty() => {
-                voice::info(format!(
-                    "Every skill {} offers is installed already.",
-                    esc(&source.to_string())
-                ));
-                return Ok(0);
+            Ok(source::SetReview::Review { review, there }) => {
+                // Those the level has already, made there or from another source, or a
+                // built-in's name: left as they are, and said (#4153).
+                for name in &there {
+                    voice::info(format!(
+                        "{} is there already at {level}, so it is left as it is.",
+                        esc(name)
+                    ));
+                }
+                if review.skills.is_empty() {
+                    voice::info(format!(
+                        "{} {} offers is installed already.",
+                        if there.is_empty() {
+                            "Every skill"
+                        } else {
+                            "Every other skill"
+                        },
+                        esc(&source.to_string())
+                    ));
+                    return Ok(0);
+                }
+                Ok(review)
             }
-            Ok(source::SetReview::Review { review, .. }) => Ok(review),
             Ok(source::SetReview::TooMuch(too_much)) => {
                 voice::err(esc(&too_much_text(&too_much)).to_string());
                 return Ok(1);

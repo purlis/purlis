@@ -323,6 +323,42 @@ fn what_a_source_says_reaches_the_terminal_escaped() {
     assert!(said.contains("⟦U+001B⟧[2J"), "{said}");
 }
 
+/// #4153: `--all` leaves out a skill the level has already, made there by hand, says so, and
+/// installs the rest.
+#[test]
+fn install_all_says_which_skills_are_there_already_and_installs_the_rest() {
+    let project = Project::new();
+    let root = project.root();
+    let url = project.url();
+    std::fs::create_dir_all(root.join("skills/notify")).unwrap();
+    std::fs::write(
+        root.join("skills/notify/SKILL.md"),
+        "---\nname: notify\ndescription: Made here.\n---\n",
+    )
+    .unwrap();
+
+    let out = project.run(
+        &[
+            "skill", "install", &url, "--all", "--folder", "skills", "--yes",
+        ],
+        "",
+    );
+
+    let said = text(&out);
+    assert!(out.status.success(), "{said}");
+    assert!(
+        said.contains("notify is there already at project, so it is left as it is."),
+        "{said}"
+    );
+    assert!(said.contains("Review of 1 skill"), "{said}");
+    assert!(root.join("skills/deploy/SKILL.md").exists());
+    assert!(
+        std::fs::read_to_string(root.join("skills/notify/SKILL.md"))
+            .unwrap()
+            .contains("Made here."),
+    );
+}
+
 /// #4024: `--all` reviews every skill the source offers that is not installed from it yet, asks
 /// once, and installs them as one change; `--yes` skips the question.
 #[test]

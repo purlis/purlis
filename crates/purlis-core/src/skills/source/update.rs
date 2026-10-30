@@ -454,7 +454,8 @@ pub fn update(
             "the source moved {name}: install it again from where it is now"
         ));
     }
-    // A skill it brings along takes no built-in skill's name, as an install's does not.
+    // A skill it brings along takes no built-in skill's name, as an install's does not. A
+    // reference to one is met already (#4155), so none is brought: this is the guard (S12).
     if let Some(skill) = reviewed
         .skills
         .iter()

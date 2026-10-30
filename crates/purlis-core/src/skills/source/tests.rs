@@ -1749,6 +1749,14 @@ fn a_reference_to_a_built_in_skills_name_is_met_and_brings_nothing_along() {
         "{:?}",
         review.skills[0].lint
     );
+    // Ticked, or offered to `--all`, a built-in's name is there already, and left out.
+    let named = ["deploy".to_owned(), "secrets".to_owned()];
+    let (set, there) = whole_and_there(review_set(root, None, &source, &named, &project).unwrap());
+    assert_eq!(there, ["secrets"]);
+    assert_eq!(set.accepted(), review.accepted());
+    let (all, there) = whole_and_there(review_all(root, None, &source, &project).unwrap());
+    assert_eq!(there, ["secrets"]);
+    assert_eq!(all.skills.len(), 2, "deploy and notify");
     let (made, _) = on(root, |cx| {
         install(cx, &source, &project, &review.accepted(), None)
     });

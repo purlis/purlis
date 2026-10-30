@@ -1517,8 +1517,9 @@ function InstallSetReviewPage({
       }}
     >
       <h2 className="ui-text-strong">
-        Install {counted(review?.skills.length ?? names.length, "skill", "skills")} from{" "}
-        {source.label}
+        {review !== undefined && review.skills.length === 0
+          ? `Nothing to install from ${source.label}`
+          : `Install ${counted(review?.skills.length ?? names.length, "skill", "skills")} from ${source.label}`}
       </h2>
       <SettingRow
         label="Lands in"
@@ -1565,7 +1566,12 @@ function InstallSetReviewPage({
                       Back to the list
                     </Button>
                   ) : (
-                    <Button size="sm" variant="primary" onPress={() => narrow(data.fits)}>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      // Those there already stay named, so the next review says so again.
+                      onPress={() => narrow([...data.fits, ...data.there])}
+                    >
                       Review {firstPart(data.fits.length)}
                     </Button>
                   )
@@ -1613,17 +1619,16 @@ function InstallSetReviewPage({
                       There already
                     </h3>
                     <p className="honest">
-                      The {labelOf(levels, level)} skills have{" "}
-                      {data.there.length === 1 ? "this one" : "these"} already, so{" "}
-                      {data.there.length === 1 ? "it is" : "they are"} left as{" "}
-                      {data.there.length === 1 ? "it is" : "they are"}.
+                      {data.there.length === 1
+                        ? "Chats there have this one already, so it is left as it is."
+                        : "Chats there have these already, so they are left as they are."}
                     </p>
                     {data.there.map((name) => (
                       <Checkbox
                         key={name}
                         isSelected={false}
                         isDisabled
-                        tooltip={`The ${labelOf(levels, level)} skills have ${name} already.`}
+                        tooltip={`${name} is there already.`}
                         data-testid={`there-${name}`}
                       >
                         Install {name}

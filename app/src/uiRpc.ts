@@ -6024,7 +6024,9 @@ there: string[] } | { kind: "too-much";
  */
 fits: string[]; 
 /**  The rest of those named. */
-rest: string[]; why: string };
+rest: string[]; why: string; 
+/**  Those named that the level holds already (#4153), left out of every part. */
+there: string[] };
 
 /**
  *  What has contributed what to this window — ADR 0041's item 2, and the thing every

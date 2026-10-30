@@ -48,7 +48,7 @@ impl Reference {
     }
 
     /// Whether it names the plane skill `name`: only a bare name can.
-    pub(crate) fn names_plane(&self, name: &str) -> bool {
+    pub fn names_plane(&self, name: &str) -> bool {
         matches!(self, Self::Named(named) if named == name)
     }
 

@@ -535,6 +535,8 @@ pub enum InstallSetReview {
         /// The rest of those named.
         rest: Vec<String>,
         why: String,
+        /// Those named that the level holds already (#4153), left out of every part.
+        there: Vec<String>,
     },
 }
 
@@ -917,6 +919,7 @@ pub(crate) async fn skill_install_set_review(
                     fits: too_much.fits.iter().map(|one| esc(one)).collect(),
                     rest: too_much.rest.iter().map(|one| esc(one)).collect(),
                     why: esc(&too_much.why),
+                    there: too_much.there.iter().map(|one| esc(one)).collect(),
                 },
             },
         )
