@@ -15,6 +15,14 @@
 //! [`crate::skilluse::By::Version`]). Grades join each version the same way (SK-16, #2779): a
 //! grade in the eval record says the tree its copy's folder held ([`super::grades`]).
 //!
+//! **It follows the skill across a rename and a move** (#3918): where the oldest commit of its
+//! folder's log brought the folder in by a rename git finds (the rename and move commits the core
+//! makes, a deferred save that carried one, or a `git mv` by hand), the log goes on from that
+//! commit's parent in the folder the skill had before, under the name it had there, at most
+//! [`MOST_MOVES`] times. So a version from before keeps its runs and grades, which were recorded
+//! by the name and level it had then ([`Was`]). Each step is one `git log` and one
+//! `git diff-tree` of one commit, read only where a history is asked for, never as a chat opens.
+//!
 //! What git says is read, never trusted: a commit is taken only as a whole hex id, a diff is cut
 //! at [`MOST_DIFF`] bytes, and a character that draws as nothing is shown by its code point and
 //! said.
@@ -30,6 +38,9 @@ pub const MOST_VERSIONS: usize = 100;
 
 /// The most bytes of one version's diff shown: past this the diff is cut, and says so.
 pub const MOST_DIFF: usize = 256 * 1024;
+
+/// The most renames and moves a history follows back: past them it lists what it has.
+pub const MOST_MOVES: usize = 16;
 
 /// **A version's grade** (SK-16, #2779): how many of its trigger tests passed with the skill in
 /// its newest grade, of those that ran.
@@ -57,6 +68,32 @@ pub struct Version {
     /// Its newest grade, where it was graded (SK-16): the eval record's row whose folder held
     /// this version's tree.
     pub grade: Option<Grade>,
+    /// The skill's folder relative to the plane at it, and the name it had there (#3918): the
+    /// folder it has now, or one it had before a rename or a move.
+    #[serde(skip)]
+    pub folder: String,
+    #[serde(skip)]
+    pub name: String,
+}
+
+/// **A place a skill had** (#3918): its folder relative to the plane, the name it had there,
+/// and the level whose folder that is (`None` for a folder no level's rule reads). The place it
+/// has now first, then each it had before a rename or a move, newest first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Was {
+    pub folder: String,
+    pub name: String,
+    pub level: Option<Level>,
+    /// The trees its folder held at its versions: what a grade or a run of a place it had before
+    /// is matched by, since a skill that took the name there since is another.
+    pub trees: Vec<String>,
+}
+
+impl Was {
+    /// Whether `version` is of this place: its folder, under its name.
+    fn holds(&self, version: &Version) -> bool {
+        version.folder == self.folder && version.name == self.name
+    }
 }
 
 /// Whether `word` is a whole commit id: 40 or 64 lowercase hex digits.
@@ -85,27 +122,99 @@ pub struct History {
 
 /// **Every version git holds of the skill named `name` at `level`**, newest first, at most
 /// [`MOST_VERSIONS`], each with the runs whose start recorded its folder's tree, and the runs on
-/// changes not committed. Empty for a skill git does not track, such as a local one; refused
-/// where there is no such skill.
+/// changes not committed. The versions from before a rename or a move are listed too (#3918),
+/// with the runs and grades of the name and level they had. Empty for a skill git does not
+/// track, such as a local one; refused where there is no such skill.
 pub fn history(plane: &Path, level: &Level, name: &str) -> Result<History, String> {
+    let (versions, was) = walked(plane, level, name)?;
+    let mut history = History {
+        versions,
+        uncommitted: Totals::default(),
+    };
+    count_runs(plane, &was, &mut history);
+    join_grades(plane, &was, &mut history.versions);
+    Ok(history)
+}
+
+/// **The places the skill named `name` at `level` had** (#3918): where it is now, then each
+/// place it had before a rename or a move that git holds, newest first ([`Was`]). What its
+/// Grades read their rows by, so a grade from before follows it.
+pub fn places(plane: &Path, level: &Level, name: &str) -> Result<Vec<Was>, String> {
+    walked(plane, level, name).map(|(_, was)| was)
+}
+
+/// The versions of the skill `name` at `level`, newest first, across its renames and moves, and
+/// the places it had ([`Was`]), its runs and grades not yet joined.
+fn walked(plane: &Path, level: &Level, name: &str) -> Result<(Vec<Version>, Vec<Was>), String> {
     let (_, folder_rel) = folder_of(plane, level, name)?;
-    let most = MOST_VERSIONS.to_string();
-    let folder_spec = literally(&folder_rel);
-    let log = git(
-        plane,
-        &[
-            "log",
-            "-n",
-            &most,
-            "--no-color",
-            "--format=%H%x1f%ct%x1f%an%x1f%s%x1e",
-            "--",
-            &folder_spec,
-        ],
-    )
-    .unwrap_or_default();
-    let mut versions: Vec<Version> = log
-        .split('\u{1e}')
+    let mut was = vec![Was {
+        folder: folder_rel,
+        name: name.to_owned(),
+        level: Some(level.clone()),
+        trees: Vec::new(),
+    }];
+    let mut versions: Vec<Version> = Vec::new();
+    // Where the log of the place before starts: the parent of the commit that left it.
+    let mut before: Option<String> = None;
+    while let Some(here) = was.last().cloned() {
+        let left = MOST_VERSIONS - versions.len();
+        let mut found = logged(plane, &here, before.as_deref(), left);
+        let oldest = found.last().map(|version| version.commit.clone());
+        let whole = found.len() < left;
+        trees(plane, &here.folder, &mut found);
+        // A commit that took the folder away holds no tree of it: it is no version to go back to.
+        found.retain(|version| !version.tree.is_empty());
+        if let Some(last) = was.last_mut() {
+            last.trees = found.iter().map(|version| version.tree.clone()).collect();
+        }
+        versions.extend(found);
+        let Some(oldest) = oldest.filter(|_| whole && was.len() <= MOST_MOVES) else {
+            break;
+        };
+        let Some(folder) = moved_from(plane, &oldest, &here.folder) else {
+            break;
+        };
+        let parent = format!("{oldest}^");
+        // A folder whose `SKILL.md` gives no plain name there is taken by its folder's name.
+        let name = name_at(plane, &parent, &folder).unwrap_or_else(|| {
+            folder
+                .rsplit_once('/')
+                .map_or(folder.as_str(), |(_, last)| last)
+                .to_owned()
+        });
+        let level = folder
+            .rsplit_once('/')
+            .and_then(|(level_rel, _)| Level::of_rel(level_rel));
+        was.push(Was {
+            folder,
+            name,
+            level,
+            trees: Vec::new(),
+        });
+        before = Some(parent);
+    }
+    Ok((versions, was))
+}
+
+/// The newest `most` commits from `start` (`HEAD` where `None`) that changed the folder of
+/// `here`, as versions with no tree yet.
+fn logged(plane: &Path, here: &Was, start: Option<&str>, most: usize) -> Vec<Version> {
+    if most == 0 {
+        return Vec::new();
+    }
+    let most = most.to_string();
+    let folder_spec = literally(&here.folder);
+    let mut args = vec![
+        "log",
+        "-n",
+        most.as_str(),
+        "--no-color",
+        "--format=%H%x1f%ct%x1f%an%x1f%s%x1e",
+    ];
+    args.extend(start);
+    args.extend(["--", folder_spec.as_str()]);
+    let log = git(plane, &args).unwrap_or_default();
+    log.split('\u{1e}')
         .filter_map(|record| {
             let mut fields = record.trim_start_matches('\n').split('\u{1f}');
             let commit = fields.next()?.trim();
@@ -120,32 +229,99 @@ pub fn history(plane: &Path, level: &Level, name: &str) -> Result<History, Strin
                 tree: String::new(),
                 runs: Totals::default(),
                 grade: None,
+                folder: here.folder.clone(),
+                name: here.name.clone(),
             })
         })
-        .collect();
-    trees(plane, &folder_rel, &mut versions);
-    // A commit that took the folder away holds no tree of it: it is no version to go back to.
-    versions.retain(|version| !version.tree.is_empty());
-    let mut history = History {
-        versions,
-        uncommitted: Totals::default(),
-    };
-    count_runs(plane, level, name, &mut history);
-    join_grades(plane, level, name, &mut history.versions);
-    Ok(history)
+        .collect()
 }
 
-/// Gives each of `versions` of the copy of `name` at `level` its newest grade: the eval record's
-/// row whose folder held the version's tree.
-fn join_grades(plane: &Path, level: &Level, name: &str, versions: &mut [Version]) {
+/// **The folder `commit` moved the skill's folder `folder` from** (#3918), where it brought it
+/// in by a rename git finds: a file of `folder` renamed from the same path below another folder,
+/// its `SKILL.md` first. `None` where it made the folder some other way.
+fn moved_from(plane: &Path, commit: &str, folder: &str) -> Option<String> {
+    if !whole_id(commit) {
+        return None;
+    }
+    let out = git(
+        plane,
+        &[
+            "diff-tree",
+            "-r",
+            "-z",
+            "-M",
+            "--no-commit-id",
+            "--name-status",
+            "--diff-filter=R",
+            commit,
+        ],
+    )
+    .ok()?;
+    moved_from_said(&out, folder)
+}
+
+/// [`moved_from`] read from `out`, what `git diff-tree -z --name-status --diff-filter=R` said:
+/// `R<score>`, the path it was, the path it is, each ended by a NUL.
+fn moved_from_said(out: &str, folder: &str) -> Option<String> {
+    let mut words = out.split('\0');
+    let mut found: Option<String> = None;
+    while let Some(status) = words.next() {
+        if !status.starts_with('R') {
+            continue;
+        }
+        let (Some(was), Some(is)) = (words.next(), words.next()) else {
+            break;
+        };
+        let Some(below) = is
+            .strip_prefix(folder)
+            .and_then(|rest| rest.strip_prefix('/'))
+        else {
+            continue;
+        };
+        let Some(earlier) = was
+            .strip_suffix(below)
+            .and_then(|rest| rest.strip_suffix('/'))
+            .filter(|earlier| !earlier.is_empty() && *earlier != folder)
+        else {
+            continue;
+        };
+        if below == "SKILL.md" {
+            return Some(earlier.to_owned());
+        }
+        found.get_or_insert_with(|| earlier.to_owned());
+    }
+    found
+}
+
+/// The name the `SKILL.md` in `folder` at `commit` gives the skill, where it gives a plain one.
+fn name_at(plane: &Path, commit: &str, folder: &str) -> Option<String> {
+    let text = git(plane, &["show", &format!("{commit}:{folder}/SKILL.md")]).ok()?;
+    purlis_skills::frontmatter(&text)
+        .into_iter()
+        .find(|(key, _)| key == "name")
+        .map(|(_, name)| name)
+        .filter(|name| purlis_skills::change::name_problem(name).is_none())
+}
+
+/// Gives each of `versions` of the skill that had the places `was` its newest grade: the eval
+/// record's row of the place it had then whose folder held the version's tree, read once.
+fn join_grades(plane: &Path, was: &[Was], versions: &mut [Version]) {
     if versions.is_empty() {
         return;
     }
-    let grades = super::grades::grades_of(plane, name, Some(level));
+    let grades = super::grades::read_of(plane, was).grades;
     for version in versions {
+        let Some(place) = was.iter().find(|place| place.holds(version)) else {
+            continue;
+        };
+        let level = place.level.as_ref().and_then(Level::rel);
         version.grade = grades
             .iter()
-            .find(|graded| graded.tree == version.tree)
+            .find(|graded| {
+                graded.tree == version.tree
+                    && graded.skill == place.name
+                    && (graded.level.is_none() || graded.level == level)
+            })
             .map(|graded| {
                 let (passed, fixtures) = graded.report.passed_with();
                 Grade { passed, fixtures }
@@ -183,38 +359,56 @@ fn trees(plane: &Path, folder_rel: &str, versions: &mut [Version]) {
     }
 }
 
-/// Totals onto each version of `history` the runs of this copy of the skill `name` whose start
-/// recorded its folder's tree, and onto [`History::uncommitted`] the runs on changes not committed.
-fn count_runs(plane: &Path, level: &Level, name: &str, history: &mut History) {
-    let copy = copy_of(level);
-    let ours: Vec<crate::skilluse::Run> = crate::skilluse::runs(plane)
-        .into_iter()
-        .filter(|run| {
-            run.is_of(name)
-                && run.copy.as_ref().is_some_and(|one| {
-                    // A persona's copy goes with it into every workspace: it is its persona's
-                    // runs, wherever they ran (SK-32).
-                    one.level == copy
-                        && match &level.at {
-                            super::verbs::Whose::Persona(persona) => {
-                                run.persona.as_deref() == Some(persona.as_str())
-                            }
-                            _ => one.workspace.as_deref() == level.at.workspace(),
-                        }
-                })
-        })
-        .collect();
-    let by_tree: std::collections::HashMap<Group, Totals> =
-        crate::skilluse::stats(&ours, By::Version)
-            .into_iter()
-            .map(|row| (row.group, row.totals))
-            .collect();
-    for version in &mut history.versions {
-        if let Some(totals) = by_tree.get(&Group::Named(version.tree.clone())) {
-            version.runs = *totals;
+/// Totals onto each version of `history` the runs of the skill at the place it had then
+/// ([`Was`]) whose start recorded its folder's tree, and onto [`History::uncommitted`] the runs
+/// of its copy now on changes not committed. A run is of a place by the name and the copy it
+/// recorded.
+fn count_runs(plane: &Path, was: &[Was], history: &mut History) {
+    // Each run goes to the first place it is of, read in one pass.
+    let mut ours: Vec<Vec<crate::skilluse::Run>> = vec![Vec::new(); was.len()];
+    for run in crate::skilluse::runs(plane) {
+        if let Some(at) = was.iter().position(|place| ran_at(&run, place)) {
+            ours[at].push(run);
         }
     }
-    history.uncommitted = by_tree.get(&Group::None).copied().unwrap_or_default();
+    for (at, (place, runs)) in was.iter().zip(&ours).enumerate() {
+        let by_tree: std::collections::HashMap<Group, Totals> =
+            crate::skilluse::stats(runs, By::Version)
+                .into_iter()
+                .map(|row| (row.group, row.totals))
+                .collect();
+        for version in history
+            .versions
+            .iter_mut()
+            .filter(|version| place.holds(version))
+        {
+            if let Some(totals) = by_tree.get(&Group::Named(version.tree.clone())) {
+                version.runs = *totals;
+            }
+        }
+        if at == 0 {
+            history.uncommitted = by_tree.get(&Group::None).copied().unwrap_or_default();
+        }
+    }
+}
+
+/// Whether `run` is of the skill's copy at `place`: by the name and the copy it recorded.
+fn ran_at(run: &crate::skilluse::Run, place: &Was) -> bool {
+    let Some(level) = &place.level else {
+        return false;
+    };
+    run.is_of(&place.name)
+        && run.copy.as_ref().is_some_and(|one| {
+            // A persona's copy goes with it into every workspace: it is its persona's runs,
+            // wherever they ran (SK-32).
+            one.level == copy_of(level)
+                && match &level.at {
+                    super::verbs::Whose::Persona(persona) => {
+                        run.persona.as_deref() == Some(persona.as_str())
+                    }
+                    _ => one.workspace.as_deref() == level.at.workspace(),
+                }
+        })
 }
 
 /// One version's diff, as the tab and the command line show it.
@@ -241,31 +435,65 @@ fn version_of(plane: &Path, level: &Level, name: &str, commit: &str) -> Result<V
         .ok_or_else(|| format!("{name} has no version {}", short(commit)))
 }
 
+/// The version `commit` of the skill `name` at `level` and the folder it has now, refused for a
+/// version from before a rename or a move (#3918): its files were in another folder, under
+/// another name or level, and a revert brings back only what this folder held.
+fn here_version_of(
+    plane: &Path,
+    level: &Level,
+    name: &str,
+    commit: &str,
+) -> Result<(PathBuf, String), String> {
+    let version = version_of(plane, level, name, commit)?;
+    let (folder, folder_rel) = folder_of(plane, level, name)?;
+    if version.folder != folder_rel || version.name != name {
+        return Err(format!(
+            "version {} of {name} is from before it was renamed or moved, when it was {} in {}, \
+             so nothing was reverted: a revert goes back only to a version of its folder now",
+            short(commit),
+            version.name,
+            version.folder
+        ));
+    }
+    Ok((folder, folder_rel))
+}
+
 /// A commit's short id, as a sentence or a line of the command line names it.
 pub fn short(commit: &str) -> &str {
     commit.get(..12).unwrap_or(commit)
 }
 
 /// **What version `commit` of the skill `name` at `level` changed**, against the version before
-/// it: a unified diff of its folder. Refused for a commit that is none of its history's.
+/// it: a unified diff of its folder. The version that renamed or moved it shows that (#3918),
+/// against the folder it had before. Refused for a commit that is none of its history's.
 pub fn diff(plane: &Path, level: &Level, name: &str, commit: &str) -> Result<Diff, String> {
-    version_of(plane, level, name, commit)?;
-    let (_, folder_rel) = folder_of(plane, level, name)?;
-    let folder_spec = literally(&folder_rel);
-    let raw = git(
-        plane,
-        &[
-            "show",
-            "--format=",
-            "--no-color",
-            "--no-ext-diff",
-            "--no-textconv",
-            commit,
-            "--",
-            &folder_spec,
-        ],
-    )
-    .map_err(|why| {
+    if !whole_id(commit) {
+        return Err(format!("{commit:?} is no version of {name}"));
+    }
+    let versions = history(plane, level, name)?.versions;
+    let at = versions
+        .iter()
+        .position(|version| version.commit == commit)
+        .ok_or_else(|| format!("{name} has no version {}", short(commit)))?;
+    // A version from before a rename or a move changed the folder the skill had then.
+    let mut specs = vec![literally(&versions[at].folder)];
+    if let Some(older) = versions.get(at + 1)
+        && older.folder != versions[at].folder
+    {
+        specs.push(literally(&older.folder));
+    }
+    let mut args = vec![
+        "show",
+        "--format=",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+        "-M",
+        commit,
+        "--",
+    ];
+    args.extend(specs.iter().map(String::as_str));
+    let raw = git(plane, &args).map_err(|why| {
         format!(
             "{name}'s version {} could not be read: {why}",
             short(commit)
@@ -341,8 +569,7 @@ pub fn revert_widens(
     name: &str,
     commit: &str,
 ) -> Result<Option<String>, String> {
-    version_of(plane, level, name, commit)?;
-    let (_, folder_rel) = folder_of(plane, level, name)?;
+    let (_, folder_rel) = here_version_of(plane, level, name, commit)?;
     let then = instructions_at(plane, &folder_rel, name, commit)?;
     let widening: Vec<purlis_skills::Field> = purlis_skills::handed::parse(&then)
         .map(|read| {
@@ -416,8 +643,7 @@ pub fn revert(
 ) -> Result<PathBuf, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
-    version_of(plane, level, name, commit)?;
-    let (folder, folder_rel) = folder_of(plane, level, name)?;
+    let (folder, folder_rel) = here_version_of(plane, level, name, commit)?;
     if !pending_in(plane, &[&folder_rel])?.is_empty() {
         return Err(format!(
             "{name} holds changes that are not committed yet, and a revert would lose them: \
@@ -564,15 +790,21 @@ pub(super) fn files_of_version(
     })
 }
 
-/// **The version a grade of the copy whose folder holds `tree` compares with** (SK-57, #3237):
-/// the newest of `history`'s versions whose folder held something else. For a copy with changes
-/// not committed (`tree` is `None`) that is its newest version; for one committed, the version
-/// before it. `None` for a skill with no other version.
-pub fn previous_of<'a>(history: &'a History, tree: Option<&str>) -> Option<&'a Version> {
+/// **The version a grade of the copy of `name` whose folder holds `tree` compares with** (SK-57,
+/// #3237): the newest of `history`'s versions whose folder held something else. For a copy with
+/// changes not committed (`tree` is `None`) that is its newest version; for one committed, the
+/// version before it. `None` for a skill with no other version, and where that version is from
+/// before a rename (#3918): it was another skill's name, which no chat would start it by.
+pub fn previous_of<'a>(
+    history: &'a History,
+    name: &str,
+    tree: Option<&str>,
+) -> Option<&'a Version> {
     history
         .versions
         .iter()
         .find(|version| tree != Some(version.tree.as_str()))
+        .filter(|version| version.name == name)
 }
 
 /// The copy of a skill at `level`, as its runs record it (SK-13).

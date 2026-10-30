@@ -1166,7 +1166,8 @@ pub(crate) async fn skill_grades(
     crate::off_the_window("reading a skill's grades", move || {
         flag_on()?;
         let level = Level::from(&level);
-        let read = grades::read(held.root(), &skill, Some(&level));
+        // With the grades from before a rename or a move (#3918).
+        let read = grades::read_followed(held.root(), &level, &skill);
         let tests = grades::trigger_tests(held.root(), &level, &skill);
         Ok(SkillGrades::of(&read, tests, &plane, &level, &skill))
     })
