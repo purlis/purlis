@@ -468,20 +468,22 @@ pub fn forget(homes: &Homes, home: &Path, name: &str, desktop: &str) -> Result<(
         }
     };
     sign_in::forget_of(&record);
-    super::remove(homes, name, &super::removal(homes, name)?)?;
+    // Its folders go before its record, so one that could not be deleted leaves the record to
+    // ask the removal again by.
     for folder in own_folders {
         match std::fs::remove_dir_all(&folder) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => {
                 return Err(format!(
-                    "the profile '{shown}' was forgotten, but its folder {} could not be \
+                    "the profile '{shown}' was not forgotten: its folder {} could not be \
                      deleted: {e}",
                     folder.display()
                 ));
             }
         }
     }
+    super::remove(homes, name, &super::removal(homes, name)?)?;
     Ok(())
 }
 

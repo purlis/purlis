@@ -85,9 +85,8 @@ fn chosen_by_a_chat(config: &Path, root: &Path, pool: &str, profile: &str) {
     if owned().is_err() {
         return;
     }
-    let ours = profilestore::list(config)
-        .map(|records| records.iter().any(|r| r.name == profile))
-        .unwrap_or(false);
+    let records = profilestore::list(config).unwrap_or_default();
+    let ours = records.iter().any(|r| r.name == profile);
     let Some(named) = purlis_core::runners::pools(config)
         .ok()
         .and_then(|pools| pools.into_iter().find(|p| p.name() == pool))
@@ -98,7 +97,7 @@ fn chosen_by_a_chat(config: &Path, root: &Path, pool: &str, profile: &str) {
     if !ours || named.is_some_and(|named| named.iter().any(|one| one == profile)) {
         return;
     }
-    let default = default_in(Some(root));
+    let default = default_in(Some(root), &records);
     if default.as_deref() == Some(profile) {
         return;
     }
@@ -244,10 +243,38 @@ fn chosen<'a>(
     (on_pool, addable)
 }
 
-/// The profile a new chat in the project at `root` gets: what a pool that names no profiles
-/// keeps (#4047). None with no project open.
-fn default_in(root: Option<&Path>) -> Option<String> {
-    root.and_then(|root| purlis_core::profiles::for_launch(root).0.for_a_new_chat())
+/// The profile a new chat in the project at `root` gets, among this machine's `records`: what a
+/// pool that names no profiles keeps (#4047). None with no project open, and none where it is
+/// a built-in this machine keeps no record of, which a runner has of its own.
+fn default_in(root: Option<&Path>, records: &[profilestore::MachineProfile]) -> Option<String> {
+    of_this_machine(
+        root.and_then(|root| purlis_core::profiles::for_launch(root).0.for_a_new_chat()),
+        records,
+    )
+}
+
+/// `default`, where it is one of this machine's `records`.
+fn of_this_machine(
+    default: Option<String>,
+    records: &[profilestore::MachineProfile],
+) -> Option<String> {
+    default.filter(|default| records.iter().any(|r| &r.name == default))
+}
+
+/// Refused, in words, where pool `pool` names no profiles and no project is open: what it keeps
+/// is the open project's default, so a change has nothing to start from (#4047).
+fn changeable(config: &Path, pool: &str, root: Option<&Path>) -> Result<(), String> {
+    let names_none = purlis_core::runners::pools(config)
+        .map_err(|why| why.to_string())?
+        .iter()
+        .any(|p| p.name() == pool && p.profiles().is_none());
+    if names_none && root.is_none() {
+        return Err(format!(
+            "pool {pool} keeps the profile a new chat in the open project gets, and no project \
+             is open; open one to change its profiles"
+        ));
+    }
+    Ok(())
 }
 
 /// The profiles pool `pool`, kept under `config`, keeps on its runner, with `default` the
@@ -277,9 +304,9 @@ pub async fn pool_profiles(
     tauri::async_runtime::spawn_blocking(move || {
         let config = config_root()?;
         owned()?;
-        let default = default_in(root.as_deref());
-        let names = kept_on(&config, &pool, default.as_deref())?;
         let records = profilestore::list(&config)?;
+        let default = default_in(root.as_deref(), &records);
+        let names = kept_on(&config, &pool, default.as_deref())?;
         let (on_pool, addable) = chosen(&records, &names);
         let to = to_a_runner(&config, &pool, Waking::No)?;
         // Each that goes to a runner, kept there over one link.
@@ -348,17 +375,16 @@ pub async fn pool_profile_add(
     tauri::async_runtime::spawn_blocking(move || {
         let config = config_root()?;
         owned()?;
-        let record = profilestore::list(&config)?
-            .into_iter()
-            .find(|p| p.name == name)
-            .ok_or_else(|| {
-                format!(
-                    "this machine has no profile named '{}', so none was added to pool {pool}",
-                    purlis_core::shown::short(&name)
-                )
-            })?;
-        onrunner::Kept::of(&record)?;
-        let default = default_in(root.as_deref());
+        changeable(&config, &pool, root.as_deref())?;
+        let records = profilestore::list(&config)?;
+        let record = records.iter().find(|p| p.name == name).ok_or_else(|| {
+            format!(
+                "this machine has no profile named '{}', so none was added to pool {pool}",
+                purlis_core::shown::short(&name)
+            )
+        })?;
+        onrunner::Kept::of(record)?;
+        let default = default_in(root.as_deref(), &records);
         purlis_core::runners::add_pool_profile(&config, &pool, &name, default.as_deref())
             .map_err(|why| why.to_string())
     })
@@ -384,20 +410,23 @@ pub async fn pool_profile_remove(
     tauri::async_runtime::spawn_blocking(move || {
         let config = config_root()?;
         owned()?;
+        changeable(&config, &pool, root.as_deref())?;
         let shown = purlis_core::shown::short(&name);
         let to = to_a_runner(&config, &pool, Waking::Yes)?;
         let forgotten = crate::runnerlinks::forget_profile(&to, &name).map_err(|why| {
             format!(
-                "pool {pool}'s runner did not forget the profile '{shown}', so it stays on the                  pool: {why}"
+                "pool {pool}'s runner did not forget the profile '{shown}', so it stays on the \
+                 pool: {why}"
             )
         })?;
-        let default = default_in(root.as_deref());
+        let default = default_in(root.as_deref(), &profilestore::list(&config)?);
         purlis_core::runners::remove_pool_profile(&config, &pool, &name, default.as_deref())
             .map_err(|why| why.to_string())?;
         onrunner::let_go(None, &pool, &name);
         Ok(forgotten.is_none().then(|| {
             format!(
-                "The profile '{shown}' is off pool {pool}, but its runner runs a purlis before                  1.52, so it keeps the profile and its sign-in until the runner is made again."
+                "The profile '{shown}' is off pool {pool}, but its runner runs a purlis before \
+                 1.52, so it keeps the profile and its sign-in until the runner is made again."
             )
         }))
     })

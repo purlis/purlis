@@ -312,6 +312,15 @@ impl PairedLink {
     /// `forget_profile` (1.52, #4047): the desktop's profile forgotten here, off the runtime,
     /// since its folder is deleted.
     async fn forget(&self, name: String) -> Result<session::Answer, session::Refusal> {
+        // A chat running on it here keeps its folder and sign-in: it ends first.
+        if self.hosting.runs_on_profile(&name) {
+            return Err(session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why: "a chat on that profile runs on this runner, so it was not forgotten; end \
+                      the chat first"
+                    .into(),
+            });
+        }
         let (forgetting, desktop) = (Arc::clone(&self.forgetting), self.desktop.clone());
         tokio::task::spawn_blocking(move || forgetting(&desktop, &name))
             .await

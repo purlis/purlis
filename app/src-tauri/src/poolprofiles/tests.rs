@@ -156,3 +156,18 @@ fn a_chosen_profile_this_machine_no_longer_has_is_listed_to_be_removed() {
     assert!(missing.contains("no profile named 'gone'"), "{missing}");
     assert_eq!(addable.len(), 1);
 }
+
+/// **A project's default that this machine keeps no record of is the runner's own** (#4047): a
+/// built-in such as `claude`, never adopted here, is not one of this machine's to keep there,
+/// so a pool that names none keeps nothing of this machine's rather than a missing row.
+#[test]
+fn a_default_this_machine_keeps_no_record_of_is_the_runners_own() {
+    let records = vec![record("work", "claude")];
+
+    assert_eq!(
+        of_this_machine(Some("work".to_owned()), &records),
+        Some("work".to_owned())
+    );
+    assert_eq!(of_this_machine(Some("claude".to_owned()), &records), None);
+    assert_eq!(of_this_machine(None, &records), None);
+}
