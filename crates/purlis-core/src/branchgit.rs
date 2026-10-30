@@ -23,8 +23,10 @@
 //!   commit` would not commit there (the review of #3841);
 //! - and the line can be placed: a `cd` to a literal folder is followed only on a line whose
 //!   commands all run in one shell, one after another (`&&`, `;`). A `cd` in a subshell, a
-//!   pipeline or a substitution, or any move it cannot place (an expansion, `cd -`, `popd`, a
-//!   wrapper's own chdir), leaves the line to the sandbox.
+//!   pipeline or a substitution, or any move it cannot place (an expansion, `cd -`, `popd`),
+//!   leaves the line to the sandbox. A wrapper's own move to a literal folder
+//!   (`env -C <folder> git …`, #3931) places that one command; one it cannot place leaves that
+//!   command to the sandbox.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -56,28 +58,36 @@ pub fn said(sub: &str) -> String {
 /// The refusal for `cmd`, run in `cwd` by a chat the app gave a sandbox, in the project at
 /// `root`: `(subcommand, sentence)`, or `None`.
 pub fn refusal(cmd: &str, cwd: &str, root: &str) -> Option<(String, String)> {
-    let ((sub, ()), _) = found(cmd, cwd, root, |sub, post| {
+    let first = found(cmd, cwd, root, |sub, post| {
         writes_the_index(sub, post).then_some(())
-    })?;
-    let why = said(&sub);
-    Some((sub, why))
+    })
+    .into_iter()
+    .next()?;
+    let why = said(&first.sub);
+    Some((first.sub, why))
 }
 
-/// **Plain git that writes a branch folder's branch** (#3931): the first `git commit`, `merge`,
+/// One `git` on a line, in a branch folder purlis made: what [`found`] reads a line into.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InAFolder<T> {
+    /// The git subcommand, as the line spells it.
+    pub sub: String,
+    /// What the reader asking made of it: for [`branch_write`], what it does to the branch.
+    pub what: T,
+    /// The branch folder's top.
+    pub folder: PathBuf,
+}
+
+/// **Plain git that writes a branch folder's branch** (#3931): every `git commit`, `merge`,
 /// `cherry-pick`, `revert` or `am` (a commit), `pull` or `rebase` (an update) or `push` on the
 /// line `cmd`, run in `cwd`, whose repository is a branch folder purlis made in the project at
-/// `root`, read and placed as [`refusal`] reads and places a line: `(subcommand, act, folder)`,
-/// where `folder` is the folder's top. What an unsandboxed chat's guard holds to the folder's
-/// one live writer ([`crate::piececlaim`]). A dry run, and a rebase, merge, cherry-pick, revert
-/// or am that only stops or shows one under way (`--abort`, `--quit`,
-/// `--show-current-patch`), writes nothing of its own and is let through.
-pub fn branch_write(
-    cmd: &str,
-    cwd: &str,
-    root: &str,
-) -> Option<(String, crate::piececlaim::Act, PathBuf)> {
-    let ((sub, act), folder) = found(cmd, cwd, root, writes_the_branch)?;
-    Some((sub, act, folder))
+/// `root`, in the line's order, read and placed as [`refusal`] reads and places a line. What an
+/// unsandboxed chat's guard holds to each folder's one live writer ([`crate::piececlaim`]). A
+/// dry run, and a rebase, merge, cherry-pick, revert or am that only stops or shows one under
+/// way (`--abort`, `--quit`, `--show-current-patch`), writes nothing of its own and is let
+/// through.
+pub fn branch_write(cmd: &str, cwd: &str, root: &str) -> Vec<InAFolder<crate::piececlaim::Act>> {
+    found(cmd, cwd, root, writes_the_branch)
 }
 
 /// What `git <sub> <post…>` does to the branch it runs on, as a branch folder's claim names it
@@ -96,19 +106,24 @@ fn writes_the_branch(sub: &str, post: &[String]) -> Option<crate::piececlaim::Ac
     }
 }
 
-/// The first `git` on the line `cmd`, run in `cwd`, that `wanted` names a `T` for and whose
-/// repository is the record of a branch folder purlis made in the project at `root`:
-/// `((subcommand, T), the folder's top)`, or `None`.
+/// Every `git` on the line `cmd`, run in `cwd`, that `wanted` names a `T` for and whose
+/// repository is the record of a branch folder purlis made in the project at `root`, in the
+/// line's order. A wrapper's own move (`env -C <folder> git …`) places that one command where
+/// it is literal. Reading stops at a move the line makes that cannot be placed: what it found
+/// before that move is kept.
 fn found<T>(
     cmd: &str,
     cwd: &str,
     root: &str,
     wanted: impl Fn(&str, &[String]) -> Option<T>,
-) -> Option<((String, T), PathBuf)> {
+) -> Vec<InAFolder<T>> {
+    let mut seen = Vec::new();
     if !shellwrap::prefilter_text(cmd).contains("git") {
-        return None;
+        return seen;
     }
-    let segments = shellseg::joined_argv(cmd)?;
+    let Some(segments) = shellseg::joined_argv(cmd) else {
+        return seen;
+    };
     // A `cd` carries over to the next command only where both run in this shell, in turn.
     let in_turn = |op: &Option<String>| {
         op.as_deref()
@@ -136,14 +151,22 @@ fn found<T>(
                     here = here.join(to);
                     continue;
                 }
-                _ => return None,
+                _ => return seen,
             },
-            "popd" => return None,
+            "popd" => return seen,
             _ => {}
         }
-        if program != "git" || !call.chdir.is_empty() {
+        if program != "git" {
             continue;
         }
+        // `env -C <folder>` moves this one command, never the shell.
+        let at = if call.chdir.is_empty() {
+            here.clone()
+        } else if projectgit::unplaceable(&call.chdir) {
+            continue;
+        } else {
+            here.join(&call.chdir)
+        };
         let (pre, rest) = shellwrap::git_globals(&call.argv);
         let Some((sub, post)) = rest.split_first() else {
             continue;
@@ -153,13 +176,17 @@ fn found<T>(
         };
         let mut env = before.clone();
         env.extend(call.env.iter().cloned());
-        if let Some(folder) = projectgit::repository(&here, &pre, &env)
+        if let Some(folder) = projectgit::repository(&at, &pre, &env)
             .and_then(|repo| purlis_made(&repo, Path::new(root)))
         {
-            return Some(((sub.clone(), what), folder));
+            seen.push(InAFolder {
+                sub: sub.clone(),
+                what,
+                folder,
+            });
         }
     }
-    None
+    seen
 }
 
 /// Whether `git <sub> <post…>` writes the index: `add` and `commit`, but for their dry runs

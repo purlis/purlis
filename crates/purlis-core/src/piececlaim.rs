@@ -27,9 +27,11 @@
 //! and pushes with git itself, which purlis does not broker. So its Bash guard reads each line
 //! for git that writes a branch folder's branch ([`crate::branchgit::branch_write`]) and asks
 //! the app this same check before it runs ([`crate::hookwire::GitWork::WorktreeClaim`]): a
-//! folder another live chat holds is refused in the words above, and a free one is taken. Where
-//! no app answers, the piece log alone decides, as the command line's does. The person's own
-//! terminal runs no guard, and a shell tab is never held to a claim.
+//! folder another live chat holds is refused in the words above, and a free one is taken.
+//! **Where no app answers in time, the git runs**: unlike a brokered write, which fails closed
+//! with no app, a guard on the chat's own git with no answer lets the call through (the review
+//! of #4129). The person's own terminal runs no guard, and a shell tab is never held to a
+//! claim.
 //!
 //! The claim and the check are made under one lock, an advisory lock on a file beside the
 //! workspace's piece log taken by the app and by the command line alike, so of two chats

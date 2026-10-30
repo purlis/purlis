@@ -397,13 +397,14 @@ rule while one who reads a bare refusal files an issue.
 - **Plain git in a branch folder another live chat holds** (#3931). A branch folder has one
   live writer (#3901). A chat the app started without the sandbox runs git itself, so its
   guard reads the line for git that writes the folder's branch (`git commit`, `merge`,
-  `cherry-pick`, `revert`, `am`, `pull`, `rebase`, `push`), placed as the arm above places it,
-  and asks the app whether this chat may write there. A folder no live chat holds is taken by
-  the chat. A folder another live chat holds is refused, naming that chat and how to hand the
-  folder over, in the words `purlis worktree commit`, `update` and `push` are refused in. With
-  no app to answer, a folder another chat holds is refused, since whether that chat still
-  works cannot be told. Your own terminal, a harness you start yourself, and a shell tab are
-  never held to it. Dry runs and `--abort` run.
+  `cherry-pick`, `revert`, `am`, `pull`, `rebase`, `push`), every one on the line, placed as
+  the arm above places it (and `env -C <folder> git …` too), and asks the app whether this chat
+  may write there. A folder no live chat holds is taken by the chat. A folder another live chat
+  holds is refused, naming that chat and how to hand the folder over, in the words `purlis
+  worktree commit`, `update` and `push` are refused in. **A guard with no answer lets the call
+  through**: with no app, or one that does not answer within the guard's wait, the git runs,
+  since this keeps chats from colliding by accident and is not a wall. Your own terminal, a
+  harness you start yourself, and a shell tab are never held to it. Dry runs and `--abort` run.
 - **One credential.** SSH to a forge, `GIT_SSH_COMMAND`, `-S`/`--gpg-sign`, and the
   `core.sshCommand` family that reaches the same transport by another road (`-c`,
   `--config-env`, `GIT_CONFIG_KEY_n`, and a `git config` write of it). This one *is*
