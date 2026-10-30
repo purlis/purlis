@@ -299,7 +299,7 @@ export function ChipCard({
     let asked = 0;
     const land = () => {
       const at = region.current;
-      if (at === null || !at.contains(document.activeElement)) at?.focus({ preventScroll: true });
+      if (at !== null && !at.contains(document.activeElement)) at.focus({ preventScroll: true });
       if ((at !== null && at.contains(document.activeElement)) || ++frames > 10) {
         handed.current.onKeyboardTaken?.();
         return;

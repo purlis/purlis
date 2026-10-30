@@ -217,6 +217,11 @@ const chipOf = (name: string) =>
 const centre = (box: DOMRect) => box.left + box.width / 2;
 // Centred within a pixel and a half: layout rounds a subpixel box to the device's pixels.
 const cardOf = () => screen.queryByRole("region", { name: "Notices for 3rd-try" });
+/** How long a smooth scroll the length of a strip too long to show takes to bring its last chip
+ *  in, with the card following, at the most: WebKit's scroll over that distance runs past the
+ *  testkit's `SETTLES_WITHIN_MS` (3 s) on a loaded runner (#3896). The wait ends as soon as the
+ *  card is centred. */
+const SCROLLS_IN_WITHIN_MS = 5_000;
 const surfaceOf = (card: HTMLElement) =>
   card.closest<HTMLElement>('[data-scope="popover"][data-part="root"]') as HTMLElement;
 
@@ -385,7 +390,7 @@ export const ComesUpOnAChipOutOfSight: Story = {
         const surface = surfaceOf(card).getBoundingClientRect();
         expect(Math.abs(centre(surface) - centre(chip))).toBeLessThanOrEqual(1.5);
       },
-      { timeout: 5000 },
+      { timeout: SCROLLS_IN_WITHIN_MS },
     );
     // Up all the way in: the same card, never taken down by its own scroll.
     await expect(card.isConnected).toBe(true);

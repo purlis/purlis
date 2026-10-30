@@ -571,7 +571,10 @@ export function HungPopover({
      * again on each frame after, while it is still moving** (#3896). A smooth scroll is not
      * always told to the end by its scroll events (WebKit's last steps can land with none), so a
      * card placed only on them was left where the scroll's last event found its chip, short of
-     * where the chip came to rest. It settles on the first frame that finds it where it was.
+     * where the chip came to rest. It settles on the first frame that finds it where it was, and
+     * the scroll's end places it once more besides (`ended`), should a scroll pause a frame.
+     * **A trigger that never stops moving** (an endless animation of its box) would have it
+     * placed on every frame for as long as it is up: hang it from something that holds still.
      */
     const follow = () => {
       cancelAnimationFrame(asked);
@@ -611,6 +614,9 @@ export function HungPopover({
       ending = requestAnimationFrame(() => {
         seen = seen || inSight();
         if (!seen) hide.current();
+        // A last placement where the scroll left it (#3896), in this frame of its own: the
+        // following frame (`asked`) is not touched.
+        else setNudge((was) => (was === 0 ? 0.01 : 0));
       });
     };
     window.addEventListener("scroll", scrolled, true);

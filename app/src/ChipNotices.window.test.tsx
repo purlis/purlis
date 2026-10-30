@@ -3,7 +3,7 @@
 
 import { StrictMode, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
@@ -408,6 +408,23 @@ describe("a dot pressed from the keyboard (#3648's review, WCAG 2.4.3)", () => {
   // #3896: the card hands itself the keyboard over a few frames, while React Aria places it;
   // the keyboard going on into the card in those frames was taken back to the card's edge.
   it("leaves the keyboard where it went in the card, as the card takes it", async () => {
+    // The window's frames, run by hand: no frame of the card's hand-off runs before the keyboard
+    // has gone on into it, however slow the run.
+    const frames = new Map<number, FrameRequestCallback>();
+    let next = 0;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.set(++next, callback);
+      return next;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
+      frames.delete(id);
+    });
+    const aFrame = () =>
+      act(() => {
+        const now = [...frames.values()];
+        frames.clear();
+        for (const callback of now) callback(performance.now());
+      });
     render(<Bar on="alpha" startOpen={false} />);
     screen.getByRole("button", { name: "Show the notice on alpha" }).focus();
     await userEvent.keyboard("{Enter}");
@@ -415,8 +432,7 @@ describe("a dot pressed from the keyboard (#3648's review, WCAG 2.4.3)", () => {
     // On into the card before it has taken the keyboard: to its first way on.
     const way = within(card).getAllByRole("button")[0];
     way.focus();
-    for (let frame = 0; frame < 12; frame += 1)
-      await new Promise((done) => requestAnimationFrame(done));
+    for (let frame = 0; frame < 12; frame += 1) aFrame();
     expect(way).toHaveFocus();
   });
 
