@@ -55,11 +55,11 @@ const SUPPORTED: &str = include_str!("../../../../tests/fixtures/harness-version
 const SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/seatbelt-case.sh");
 
 /// The probes `--here` asserts, each one answer: the sample project's eight, and its
-/// repositories' twelve.
-const PROBES: usize = 20;
+/// repositories' thirteen.
+const PROBES: usize = 21;
 
-/// The probes `--repositories-here` asserts, as it is run on Linux: the repositories' twelve.
-const REPOSITORY_PROBES: usize = 12;
+/// The probes `--repositories-here` asserts, as it is run on Linux: the repositories' thirteen.
+const REPOSITORY_PROBES: usize = 13;
 
 /// The id of the stand-in's one Bash call.
 const CALL: &str = "toolu_seatbelt_case";

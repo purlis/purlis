@@ -142,6 +142,10 @@ $exchange" "$s/swap" "$s/.git" || :
   expect "$("$try" "mv '$p/wt/.git' '$p/wt/g'")" no "$what: a worktree's .git file is moved"
   [ -e "$p/wt/g" ] && mv "$p/wt/g" "$p/wt/.git" 2>/dev/null || :
   expect "$("$try" "rm -f '$p/wt/.git'")" no "$what: a worktree's .git file is removed"
+  # A held config reached by another name: a hard link made in a folder the chat writes, and a
+  # write through it, which would change the same file.
+  expect "$("$try" "ln '$s/.git/config' '$p/config-link' && echo '[x]' >> '$p/config-link'")" no "$what: a held config is written through a hard link"
+  rm -f "$p/config-link" 2>/dev/null || :
 }
 
 # `--repositories-here <project> <what>`: the repositories' probes alone, for a sandbox whose
