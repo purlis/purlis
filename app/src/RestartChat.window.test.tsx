@@ -239,6 +239,31 @@ describe("Restart chat on a chat's tab", () => {
     expect(await screen.findByText("session 9")).toBeInTheDocument();
   });
 
+  // #3887: a chat waiting on its own work says `waiting`, and a restart then would cut its
+  // monitors and background shells off.
+  it("waits for a chat's own work as for its turn, and restarts it once that turn ends with nothing in flight", async () => {
+    const { asked } = await aChat();
+    await act(() =>
+      emit("chat-moved", {
+        ...WAITING,
+        own_work: { helpers: 0, workflows: 0, monitors: 1, shells: 1 },
+      }),
+    );
+    await userEvent.click(
+      within(await tabMenu()).getByRole("menuitem", {
+        name: "Restart when this turn ends",
+      }),
+    );
+    await waitFor(() => expect(asked("ask_chat_restart")).toEqual(ASKED));
+
+    expect(await screen.findByText(RESTART_WAITS_FOR_THE_TURN)).toBeInTheDocument();
+    expect(asked("restart_chat")).toEqual([]);
+
+    await act(() => emit("chat-moved", { ...WAITING, moved_at: 3, sequence: 3 }));
+
+    await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED));
+  });
+
   // qw351: an Allow pressed while the chat was mid-turn showed nothing until the turn ended.
   it("says on the pane that an owed restart waits for the turn, and Restart now ends the turn", async () => {
     const { asked } = await aChat();

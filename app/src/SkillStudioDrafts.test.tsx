@@ -189,7 +189,12 @@ describe("the Drafts page", () => {
     stop();
     expect(asks).toEqual([
       { plane: "p", kind: "try", id: "triage-id", profile: null },
-      { plane: "p", kind: "draft", level: { at: "workspace", name: "ops", local: false } },
+      {
+        plane: "p",
+        kind: "draft",
+        level: { at: "workspace", name: "ops", local: false },
+        what: "",
+      },
     ]);
   });
 

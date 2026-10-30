@@ -145,7 +145,9 @@ export const ToChooseFrom: Story = {
       () => within(list).getByRole("option", { name: "scribe" }),
       "To choose from: End moves to the last persona",
     );
-    await untilFocusInSight("To choose from: the last persona is scrolled into sight");
+    // The list scrolls the last persona into sight after it takes the focus, which WebKit can
+    // finish a frame later (#4078).
+    await waitFor(() => expectFocusInSight());
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(
       () => within(list).getByRole("option", { name: "scribe" }),

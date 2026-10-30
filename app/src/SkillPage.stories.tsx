@@ -14,23 +14,14 @@ import { expect, screen, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { language, syntaxTreeAvailable } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
-import { SkillStudioTab } from "./SkillStudioTab";
-import { Panel } from "./ui/panel/Panel";
-import {
-  SKILL_STUDIO_VIEW,
-  inWorkspace,
-  skillRowId,
-  studioHistoryOf,
-  type SkillPageTab,
-} from "./skillStudio";
+import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.testkit";
+import { inWorkspace, skillRowId, type SkillPageTab } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { forgetSkillEdit } from "./skillEdit";
 import { expectFocusInSight, untilFocused, untilFocusWithin } from "./stories.testkit";
 import type { StudioSkill } from "./bindings";
 
-const PLANE = "/home/dev/plane";
-const HISTORY = studioHistoryOf(PLANE, SKILL_STUDIO_VIEW);
 const SCOPE = inWorkspace("smart-ide");
 
 const DEPLOY = skill("deploy", {
@@ -74,6 +65,7 @@ const version = (commit: string, subject: string, at: string) => ({
   subject,
   runs: { ...RUNS, runs: 4, ended: 4, tool_calls: 9 },
   grade: null,
+  before: null,
 });
 
 /** The studio tab, opened at `chosen`'s page on `tab`, `width` by `height` (560) px. */
@@ -88,20 +80,7 @@ function Tab({
   chosen: StudioSkill;
   tab: SkillPageTab;
 }) {
-  return (
-    // In the content panel, as a view tab is drawn (`PlaneView`): its fill is the ground the
-    // page header is drawn on while the page scrolls under it (#3944). Isolated as the window's
-    // root is (`App.css`, #1481), so a dialog opened over the page is drawn over its sticky
-    // header here too.
-    <Panel variant="content">
-      <div
-        className="view-body"
-        style={{ inlineSize: width, blockSize: height, display: "flex", isolation: "isolate" }}
-      >
-        <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
-      </div>
-    </Panel>
-  );
+  return <StudioInPanel width={width} height={height} narrow={narrow} />;
 }
 
 const meta = {
@@ -379,7 +358,10 @@ async function typeALine(canvas: ReturnType<typeof within>): Promise<void> {
   );
   await userEvent.click(text);
   await userEvent.keyboard("{Control>}{End}{/Control}{Meta>}{ArrowDown}{/Meta}");
-  await userEvent.keyboard("5. Tag the release.");
+  // Pasted, in one input, not typed a key at a time: on the text's empty last line, WebKit's
+  // editor could draw the line again between two keys and put the caret back at its start, so
+  // the line came out as " Tag the release.5." in some runs (#4078).
+  await userEvent.paste("5. Tag the release.");
   await expect(await canvas.findByTestId("skill-unsaved")).toHaveTextContent("Unsaved changes");
 }
 

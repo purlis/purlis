@@ -145,6 +145,19 @@ impl Code for Recorded {
             .push((project.to_path_buf(), workspace.to_owned()));
         Ok(vec!["api".into(), "web".into()])
     }
+
+    fn origins_of(
+        &self,
+        _project: &Path,
+        _workspace: &str,
+        repos: &[String],
+    ) -> std::collections::BTreeMap<String, String> {
+        repos
+            .iter()
+            .filter(|repo| *repo == "api")
+            .map(|repo| (repo.clone(), format!("https://github.com/owner/{repo}.git")))
+            .collect()
+    }
 }
 
 struct Runner {
@@ -564,7 +577,15 @@ async fn the_window_hears_the_clones_a_runner_holds_in_a_workspace_and_no_other_
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(clones, ["api", "web"]);
+    assert_eq!(clones.0, ["api", "web"]);
+    assert_eq!(
+        clones.1,
+        std::collections::BTreeMap::from([(
+            "api".to_owned(),
+            "https://github.com/owner/api.git".to_owned()
+        )]),
+        "where each came from, to a window of 1.54 or later (#3985)"
+    );
     assert_eq!(
         *runner.recorded.clones_asked.lock().unwrap(),
         vec![(runner.projects.join(PROJECT), "app".to_owned())]

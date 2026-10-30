@@ -197,12 +197,19 @@ pub enum SkillCommand {
     /// outside the workspace, each risky one marked, and every file) and asks before it copies
     /// anything. The copy is pinned to the commit it was reviewed at, in `skills.lock`
     /// (`skills.local.lock` with `--local`). Skills the named ones refer to come along. With no
-    /// skill named, lists what the source offers.
+    /// skill named, lists what the source offers; with `--all`, installs every skill it offers
+    /// that is not installed from it yet, through one review and one commit.
     Install {
         /// The source: an https:// URL, or a folder on this machine by its full path.
         url: String,
         /// The skills to install, by name.
+        #[arg(conflicts_with = "all")]
         names: Vec<String>,
+        /// Every skill the source offers that is not installed from it yet, in one review, asked
+        /// once (`--yes` skips the question). Past what one read of the source may take, it says
+        /// which skills fit, to install in parts.
+        #[arg(long)]
+        all: bool,
         /// The source's branch (default: its own default branch).
         #[arg(long)]
         branch: Option<String>,
@@ -818,6 +825,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         SkillCommand::Install {
             url,
             names,
+            all,
             branch,
             folder,
             vault,
@@ -835,7 +843,12 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     user: None,
                 }),
             };
-            install(&mut cx, &source, &names, &grant, yes, &at.level())
+            let names = if all {
+                Named::All
+            } else {
+                Named::These(&names)
+            };
+            install(&mut cx, &source, names, &grant, yes, &at.level())
         }
         SkillCommand::Update {
             confirm: Some(url),
@@ -1534,18 +1547,30 @@ fn seconds(ms: u64) -> String {
     }
 }
 
+/// Which skills `purlis skill install` installs.
+#[derive(Clone, Copy)]
+enum Named<'a> {
+    /// Those named, and the ones they refer to.
+    These(&'a [String]),
+    /// Every skill the source offers that is not installed from it yet (`--all`, #4024).
+    All,
+}
+
 /// `purlis skill install`: what `source` offers where no skill is named; else the review of
-/// `names`, asked about, then the install at `level`.
+/// `names` (or of every skill not installed from it yet), asked about, then the install at
+/// `level`.
 fn install(
     cx: &mut verbs::Ctx<'_>,
     source: &Source,
-    names: &[String],
+    named: Named<'_>,
     grant: &[String],
     yes: bool,
     level: &Level,
 ) -> Result<Code, String> {
     let root = cx.plane;
-    if names.is_empty() {
+    if let Named::These(names) = named
+        && names.is_empty()
+    {
         let browse = match source::browse(root, source) {
             Ok(browse) => browse,
             Err(why) => {
@@ -1579,7 +1604,25 @@ fn install(
             }
         }
     };
-    let review = match source::review(root, source, names) {
+    let review = match named {
+        Named::These(names) => source::review(root, source, names),
+        Named::All => match source::review_all(root, source) {
+            Ok(source::SetReview::Review(review)) if review.skills.is_empty() => {
+                voice::info(format!(
+                    "Every skill {} offers is installed from it already.",
+                    esc(&source.to_string())
+                ));
+                return Ok(0);
+            }
+            Ok(source::SetReview::Review(review)) => Ok(review),
+            Ok(source::SetReview::TooMuch(too_much)) => {
+                voice::err(esc(&too_much_text(&too_much)).to_string());
+                return Ok(1);
+            }
+            Err(why) => Err(why),
+        },
+    };
+    let review = match review {
         Ok(review) => review,
         Err(why) => {
             voice::err(esc(&why).to_string());
@@ -1620,6 +1663,23 @@ fn install(
         &review.accepted(),
         grant.as_ref(),
     ))
+}
+
+/// What `--all` says where its review is more than one read of the source may take: why, and the
+/// skills to install first, by name, so the rest follow with `--all` again (#4024). Nothing is
+/// cut from a review silently.
+fn too_much_text(too_much: &source::TooMuch) -> String {
+    if too_much.fits.is_empty() {
+        return format!("{}, so nothing was reviewed.", too_much.why);
+    }
+    format!(
+        "{}, so nothing was reviewed. Install them in two parts: first run this command with \
+         these {} named in place of --all: {}; then run it with --all again for the other {}.",
+        too_much.why,
+        counted(too_much.fits.len(), "skill", "skills"),
+        too_much.fits.join(" "),
+        too_much.rest.len()
+    )
 }
 
 /// Asks `question` on the terminal and answers whether the person said yes. No answer is no.

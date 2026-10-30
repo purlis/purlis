@@ -269,6 +269,8 @@ pub fn keep(
                     &mut made_folder,
                 )?;
                 store.profiles.retain(|p| p.name != kept.name);
+                // The sign-ins its last runner carried to this one, when its pool moved (#4011).
+                super::made::take_carried(homes, &kept.name);
                 made.record
             }
         };
@@ -319,13 +321,25 @@ fn is_ours(
 /// through `look` now: never a remembered answer, since this is what the desktop asks after a
 /// sign-in. Asked of the version it is pinned to where this runner installs it (#4007), since a
 /// runner image carries no harness on `PATH`.
+///
+/// Where its harness cannot tell because the version it pins is still being fetched, which this
+/// look may have started, it is said to be fetching (#4008), so the desktop asks again once the
+/// fetch has ended.
 pub fn standing(record: &MachineProfile, look: &dyn Look) -> Standing {
-    match sign_in::asked_of(record, look) {
+    let asked = || match sign_in::asked_of(record, look) {
         Some(profile) => {
             sign_in::forget(&profile);
             sign_in::standing_remembered(&profile, look)
         }
         None => Standing::CannotTell,
+    };
+    let installed = look.pinned_program(record).is_some();
+    match asked() {
+        Standing::CannotTell if look.fetching(record) => Standing::Fetching,
+        // A fetch that ended while it was asked is asked of once more, so the row is not left
+        // saying the harness cannot tell.
+        Standing::CannotTell if !installed && look.pinned_program(record).is_some() => asked(),
+        said => said,
     }
 }
 
@@ -359,6 +373,7 @@ pub fn standing_on_the_wire(said: purlis_session_protocol::session::ProfileStand
     match said {
         Said::SignedIn => Standing::SignedIn,
         Said::SignedOut => Standing::SignedOut,
+        Said::Fetching => Standing::Fetching,
         Said::CannotTell => Standing::CannotTell,
     }
 }
@@ -371,6 +386,7 @@ pub fn standing_for_the_wire(
     match standing {
         Standing::SignedIn => Said::SignedIn,
         Standing::SignedOut => Said::SignedOut,
+        Standing::Fetching => Said::Fetching,
         Standing::CannotTell => Said::CannotTell,
     }
 }
@@ -416,6 +432,75 @@ pub fn kept_for_the_desktop(
         super::made::settings_kept(homes, &record, files)?;
     }
     Ok(standing_for_the_wire(standing(&record, look)))
+}
+
+/// **Forgets the profile `name` this runner keeps for the desktop `desktop`** (#4047), with
+/// `homes` its store and `home` its home: what a desktop that takes the profile off the pool
+/// asks. Its record goes, and with it where its harness keeps its sign-in here: a made
+/// profile's folder, or, for the desktop's adopted folder kept as the harness's default folder,
+/// that harness's own folder in `home` (`~/.claude`, `~/.codex`, opencode's `opencode` under
+/// the XDG folders), never the XDG folders themselves. A profile the runner does not keep is
+/// nothing; one of its own, or kept for another desktop, is refused and stays as it is.
+pub fn forget(homes: &Homes, home: &Path, name: &str, desktop: &str) -> Result<(), String> {
+    let Some(record) = super::list(homes.config_root())?
+        .into_iter()
+        .find(|p| p.name == name)
+    else {
+        return Ok(());
+    };
+    let shown = crate::shown::short(name);
+    let theirs = || {
+        format!(
+            "this runner has a profile named '{shown}' of its own, so it forgets none of that \
+             name for the desktop"
+        )
+    };
+    if record.kept_for.as_deref() != Some(desktop) {
+        return Err(theirs());
+    }
+    // The harness's own folders here, for the desktop's adopted folder kept in its place.
+    let own_folders = match &record.adopted {
+        None => Vec::new(),
+        Some(adopted) => {
+            let (config, data, sub) = super::defaults(&record.harness, home).ok_or_else(theirs)?;
+            let defaults = super::Folders {
+                config: config.clone(),
+                data: data.clone(),
+            };
+            if !adopted.variables.is_empty() || record.folders != defaults {
+                return Err(theirs());
+            }
+            [Some(config), data]
+                .into_iter()
+                .flatten()
+                .map(|folder| {
+                    if sub.is_empty() {
+                        folder
+                    } else {
+                        folder.join(sub)
+                    }
+                })
+                .collect()
+        }
+    };
+    sign_in::forget_of(&record);
+    // Its folders go before its record, so one that could not be deleted leaves the record to
+    // ask the removal again by.
+    for folder in own_folders {
+        match std::fs::remove_dir_all(&folder) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                return Err(format!(
+                    "the profile '{shown}' was not forgotten: its folder {} could not be \
+                     deleted: {e}",
+                    folder.display()
+                ));
+            }
+        }
+    }
+    super::remove(homes, name, &super::removal(homes, name)?)?;
+    Ok(())
 }
 
 /// **Whether a chat on the desktop's profile `name` may start on pool `pool`'s runner**, for the
@@ -490,7 +575,7 @@ fn ready_on_for(
                  its harness's own sign-in on the runner; {again}."
             ))
         }
-        Some(Standing::SignedIn | Standing::CannotTell) | None => Ok(()),
+        Some(Standing::SignedIn | Standing::CannotTell | Standing::Fetching) | None => Ok(()),
     }
 }
 

@@ -88,6 +88,9 @@
 //!   certificates"*; its profile adds exactly `(allow mach-lookup (global-name
 //!   "com.apple.trustd.agent"))`. It is `true` only where the project's `certificate-checks` is
 //!   (D-1337-7), and `false` otherwise, never left out, so a user's `true` does not merge in.
+//!
+//! **On a runner** this sandbox is switched off, and purlis wraps the whole chat instead
+//! ([`super::claude_wrap`], #4083): its tools keep the deny rules compiled here.
 
 use std::path::{Path, PathBuf};
 
@@ -144,6 +147,12 @@ pub const HOME_GIT_CONFIG: &str = ".gitconfig";
 /// folder a denial covers ([`super::covering`], #1327).
 pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
     compiled.holds_every_service(Harness::ClaudeCode)?;
+    Ok(rules(compiled))
+}
+
+/// [`settings`], whatever services hold here: a chat purlis wraps whole holds those itself
+/// ([`super::claude_wrap`]), and answers to these rules with its Read, Edit and web tools.
+pub(super) fn rules(compiled: &Compiled) -> Settings {
     let mut deny_read = Vec::new();
     let mut deny_write = Vec::new();
     let mut read_rules = Vec::new();
@@ -388,7 +397,7 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
         filesystem["allowWrite"] = json!(allow_write);
     }
     if compiled.level == Level::Floor {
-        return Ok(floor(filesystem, read_rules, edit_rules, compiled));
+        return floor(filesystem, read_rules, edit_rules, compiled);
     }
     let deny = WEB_TOOLS
         .iter()
@@ -423,11 +432,11 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
                 .collect::<Vec<_>>()
         );
     }
-    Ok(Settings {
+    Settings {
         sandbox,
         deny,
         made_empty: Vec::new(),
-    })
+    }
 }
 
 /// **The floor's settings** (#2071): Claude Code's sandbox on, holding `filesystem` (every
@@ -481,6 +490,12 @@ fn floor(
 }
 
 impl Settings {
+    /// Whether these switch Claude Code's own sandbox off: a chat purlis wraps whole
+    /// ([`super::claude_wrap`]).
+    pub fn is_off(&self) -> bool {
+        self.sandbox.get("enabled") == Some(&Value::Bool(false))
+    }
+
     /// Makes each of [`Self::made_empty`], outside the sandbox, as an empty file where nothing
     /// is there: a file already there keeps what it holds, and a link, even one to nothing, is
     /// neither followed nor replaced. One not made is left to the chat, whose git then says why.

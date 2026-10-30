@@ -42,6 +42,23 @@ fn hook_in(word: &str, payload: &serde_json::Value, sandboxed: bool) -> Heard {
 
 /// [`hook_in`], in a chat of `harness`.
 fn hook_of(word: &str, payload: &serde_json::Value, sandboxed: bool, harness: &str) -> Heard {
+    hook_with(
+        word,
+        payload,
+        sandboxed,
+        harness,
+        "/Users/dev/plane/workspaces/a/repo",
+    )
+}
+
+/// [`hook_of`], in a chat the app started in `chat_dir`.
+fn hook_with(
+    word: &str,
+    payload: &serde_json::Value,
+    sandboxed: bool,
+    harness: &str,
+    chat_dir: &str,
+) -> Heard {
     let dir = tempfile::tempdir().expect("a directory");
     let path = support::hooks_socket(dir.path());
     let listener = Listener::bind(dir.path(), &path).expect("a socket");
@@ -82,7 +99,7 @@ fn hook_of(word: &str, payload: &serde_json::Value, sandboxed: bool, harness: &s
         .env(CHAT_ENV, "7")
         .env(TOKEN_ENV, token.expose())
         .env(HARNESS_ENV, harness)
-        .env(CHAT_DIR_ENV, "/Users/dev/plane/workspaces/a/repo")
+        .env(CHAT_DIR_ENV, chat_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -318,6 +335,87 @@ fn a_git_move_the_sandbox_stopped_partway_tells_the_chat_the_way_back() {
     holds_nothing_of_the_call(&heard);
     let unsandboxed = hook_in("posttooluse-blocked", &payload, false);
     assert_eq!(unsandboxed.said, "", "not the sandbox's refusal");
+}
+
+/// #3861: a line the guard could not place (`cd -`) ran `git commit` in the chat's own branch
+/// folder, and the sandbox refused the write of its index in the clone's `.git/worktrees`. The
+/// person got a Notice for what was the chat's own work. Now the block still reaches the app for
+/// the record, and the chat is told the command that commits there, with no Notice and no wait.
+/// The record of another chat's branch folder of the same clone keeps its Notice.
+#[test]
+fn a_block_in_the_chats_own_branch_folders_git_record_is_told_to_the_chat_alone() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let ws = std::fs::canonicalize(dir.path())
+        .expect("its path")
+        .join("workspaces/a");
+    let mut records = Vec::new();
+    for piece in ["fix", "other"] {
+        let record = ws.join("repo/.git/worktrees").join(piece);
+        let folder = ws.join(".worktrees/repo").join(piece);
+        std::fs::create_dir_all(&record).expect("its record");
+        std::fs::create_dir_all(&folder).expect("its folder");
+        std::fs::write(
+            folder.join(".git"),
+            format!("gitdir: {}\n", record.display()),
+        )
+        .expect("its .git");
+        std::fs::write(
+            record.join("gitdir"),
+            format!("{}\n", folder.join(".git").display()),
+        )
+        .expect("its gitdir");
+        records.push(record.join("index.lock").display().to_string());
+    }
+    let chat = ws.join(".worktrees/repo/fix");
+    let committed = |lock: &str| {
+        hook_with(
+            "posttoolusefailure-blocked",
+            &serde_json::json!({
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": "Bash",
+                "tool_input": {"command": "cd - && git commit -am wip"},
+                "error": format!(
+                    "fatal: Unable to create '{lock}': Operation not permitted\n\
+                     <sandbox_violations>\n\
+                     git(5) deny(1) file-write-create {lock}\n\
+                     </sandbox_violations>"
+                ),
+                "cwd": chat.display().to_string(),
+            }),
+            true,
+            "claude",
+            &chat.display().to_string(),
+        )
+    };
+    let written = Block {
+        operation: Operation::Write,
+        kind: Kind::ProtectedFile,
+        ours: false,
+    };
+
+    let heard = committed(&records[0]);
+    assert_eq!(
+        heard
+            .blocked
+            .iter()
+            .map(|one| (one.sandbox_blocked, one.target.clone()))
+            .collect::<Vec<_>>(),
+        vec![(written, Some(records[0].clone()))],
+        "kept in the record"
+    );
+    let told = context_of(&heard.said, "PostToolUseFailure");
+    assert!(told.contains("`purlis worktree commit"), "{told}");
+    assert!(told.contains("Retry it with purlis"), "{told}");
+    for never in ["Notice", "wait for their answer"] {
+        assert!(!told.contains(never), "{never}: {told}");
+    }
+
+    // Another chat's branch folder of the same clone: the person's Notice, as before.
+    let heard = committed(&records[1]);
+    assert_eq!(heard.blocked.len(), 1, "kept in the record");
+    let told = context_of(&heard.said, "PostToolUseFailure");
+    assert!(told.contains("Notice"), "{told}");
+    assert!(!told.contains("Retry it with purlis"), "{told}");
 }
 
 /// #1631, replayed: a command that reached three hosts came back with exit status 0, and Claude

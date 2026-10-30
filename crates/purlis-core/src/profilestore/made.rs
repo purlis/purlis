@@ -386,6 +386,34 @@ pub(super) fn make_in(
     Ok(Made { record, copied })
 }
 
+/// **Takes in the sign-ins carried to this runner for the profile `name`** (#4011), as it makes
+/// the profile again for its desktop: each of [`super::SIGN_IN_FILES`] under
+/// `<data>/carried/<name>/` that is a plain file reached through no link is moved into the
+/// profile's folder, where it has none of its own, and what was carried for it is removed. What
+/// cannot be taken in is left out: the profile is then signed in again, as before.
+pub(super) fn take_carried(homes: &Homes, name: &str) {
+    let carried = homes.data.join(super::CARRIED).join(name);
+    if std::fs::symlink_metadata(&carried).is_err() {
+        return;
+    }
+    let folder = homes.folder_of(name);
+    for file in super::SIGN_IN_FILES {
+        let from = carried.join(file);
+        let plain = crate::contain::no_link_on_the_way(&carried, &from).is_ok()
+            && std::fs::symlink_metadata(&from).is_ok_and(|meta| meta.file_type().is_file());
+        let to = folder.join(file);
+        if !plain || std::fs::symlink_metadata(&to).is_ok() {
+            continue;
+        }
+        if let Some(parent) = to.parent()
+            && private_dirs_within(&folder, parent).is_ok()
+        {
+            let _ = std::fs::rename(&from, &to);
+        }
+    }
+    let _ = std::fs::remove_dir_all(&carried);
+}
+
 /// Imports `name`'s settings again from `machine`'s, at `now`: each listed settings file and
 /// folder replaced by the machine's, and the record's time moved. Only for a profile purlis
 /// made; an adopted one's settings are the harness's own.

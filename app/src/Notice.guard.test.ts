@@ -365,6 +365,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 2,
     why: ACTION + "; and its progress while it copies the repo, a live value",
   },
+  "NewSkillDialog.tsx": {
+    count: 2,
+    why:
+      "New skill…'s name check as it is typed and the core's refusal (#3684), beside the fields " +
+      "the person is still filling, in the dialog that stays open",
+  },
   "NewVault.tsx": {
     count: 1,
     why: ACTION,
@@ -468,8 +474,8 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "every studio page's reads in place (S11, #3978): the line said after a second while rows are held, and a read that failed with Try again",
   },
   "SkillSources.tsx": {
-    count: 1,
-    why: "the Sources page's updates still being read (#3687)",
+    count: 2,
+    why: "the Sources page's updates still being read (#3687), and Install all's review that is more than one read, with its first part to review in place (#4024)",
   },
   "SkillStudioDeleted.tsx": {
     count: 1,
@@ -586,25 +592,28 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "the reference picker saying it found no chat, inside its menu",
   },
   "settings/pools.tsx": {
-    count: 1,
+    count: 2,
     why:
       ACTION +
       ". The Pools group's read refusing (#2679), in the core's words: the group is read again " +
-      "as it comes on screen. A runner whose key changed has a Notice of its own",
+      "as it comes on screen, and This is my own refused on its row (#4071), which the switch " +
+      "pressed again retries. A runner whose key changed has a Notice of its own",
   },
   "settings/PoolProfiles.tsx": {
-    count: 1,
+    count: 2,
     why:
       ACTION +
-      ". A pool's profiles refusing (#2049), in the core's words: its Ask again is the way on",
+      ". A pool's profiles refusing (#2049), in the core's words: its Ask again is the way on;" +
+      " and what adding or removing one of them said (#4047), beside the buttons that did it",
   },
   "settings/PoolSignIn.tsx": {
-    count: 2,
+    count: 3,
     why:
       ACTION +
       ". A profile's sign-in on a pool's runner (#4042), inside its strip: the step it is on, said " +
       "as it changes, and the one line of what went wrong, in the core's or the runner's words; " +
-      "its Try again, Cancel and Open in terminal are the way out",
+      "its Try again, Cancel and Open in terminal are the way out; and whether Copy code put the " +
+      "device code on the clipboard (#4045), beside the button",
   },
   "settings/accounts.tsx": {
     count: 2,

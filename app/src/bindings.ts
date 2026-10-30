@@ -2041,9 +2041,10 @@ export const commands = {
 	/**
 	 *  **"Ask a chat to draft a skill"** (decision 13): a chat where `level`'s skills are reached
 	 *  from (the project's root, or the workspace's folder), on the project's default profile, with
-	 *  the core's prompt typed and never sent.
+	 *  the core's prompt typed and never sent, ending with `what` the skill should do where New
+	 *  skill… asked it (S4, #3684).
 	 */
-	skillDraftChat: (plane: PlaneId, level: SkillLevel, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_draft_chat", { plane, level, columns, rows })),
+	skillDraftChat: (plane: PlaneId, level: SkillLevel, what: string, columns: number, rows: number) => typedError<Curating, StartRefused>(__TAURI_INVOKE("skill_draft_chat", { plane, level, what, columns, rows })),
 	/**
 	 *  **"Ask a chat to write them"** (#3925): a chat where `level`'s skills are reached from, on the
 	 *  project's default profile, with the core's prompt for the trigger tests of the skill `name`
@@ -2179,6 +2180,11 @@ export const commands = {
 	skillSourceBrowse: (plane: PlaneId, source: SkillSource) => typedError<SourceBrowse, string>(__TAURI_INVOKE("skill_source_browse", { plane, source })),
 	/**  **The install review** of `names` from a source, and the skills they refer to. */
 	skillInstallReview: (plane: PlaneId, source: SkillSource, names: string[]) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_install_review", { plane, source, names })),
+	/**
+	 *  **The review of installing `names` from a source together** (#4024, Install all…): one review
+	 *  of the set and the skills they refer to, or which of them fit one read.
+	 */
+	skillInstallSetReview: (plane: PlaneId, source: SkillSource, names: string[]) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_install_set_review", { plane, source, names })),
 	/**  **Installs what was reviewed** at `level`, with `grant` where it is a project skill. */
 	skillInstall: (plane: PlaneId, source: SkillSource, level: SkillLevel, reviewed: Reviewed, grant: 
 /**  Chats at the project's root alone. */
@@ -2952,11 +2958,35 @@ export const commands = {
 	 */
 	addClusterPool: (adding: ClusterPoolAdding) => typedError<ClusterPoolRow, string>(__TAURI_INVOKE("add_cluster_pool", { adding })),
 	/**
-	 *  **Every profile of this machine's, kept on pool `pool`'s runner**, as the runner stands with
-	 *  each (#2049): what adding a pool ends with, and what Settings › Pools shows. Refused, with
-	 *  nothing sent, for a pool not shown to be the person's own.
+	 *  **The person marks the cluster pool `name` as their own, or takes the mark back** (#4071, the
+	 *  person's ruling of 2026-10-30). The window's alone (`ui::WINDOW_ONLY`): no chat, Pool or
+	 *  operator reaches it. Taken back, every login opted in on the pool is forgotten, so a later
+	 *  mark asks about each again.
 	 */
-	poolProfiles: (pool: string) => typedError<PoolProfileRow[], string>(__TAURI_INVOKE("pool_profiles", { pool })),
+	setClusterPoolOwned: (name: string, owned: boolean) => typedError<null, string>(__TAURI_INVOKE("set_cluster_pool_owned", { name, owned })),
+	/**
+	 *  **The profiles chosen for pool `pool`, kept on its runner** (#2049, #4047), as the runner
+	 *  stands with each, and this machine's others Add a profile… offers: the ones its `profiles`
+	 *  names, or, where it names none, the profile a new chat in the open project `plane` gets. What
+	 *  adding a pool ends with, and what Settings › Pools shows. Refused, with nothing sent, for a
+	 *  pool not shown to be the person's own.
+	 */
+	poolProfiles: (pool: string, open: OpenProject) => typedError<PoolProfiles, string>(__TAURI_INVOKE("pool_profiles", { pool, open })),
+	/**
+	 *  **Adds this machine's profile `name` to pool `pool`** (#4047, Add a profile…): its record
+	 *  names it from now on, beside the open project `plane`'s default where it named none. Its
+	 *  runner keeps it the next time the pool's profiles are asked.
+	 */
+	poolProfileAdd: (pool: string, name: string, open: OpenProject) => typedError<null, string>(__TAURI_INVOKE("pool_profile_add", { pool, name, open })),
+	/**
+	 *  **Takes profile `name` off pool `pool`** (#4047): its runner forgets it first, its folder
+	 *  and its sign-in there with it, then the pool's record leaves it out, starting from the
+	 *  open project `plane`'s default where it named none. A runner that could not forget it leaves
+	 *  the record as it was, so the removal can be asked again. The runner is woken for it, as a
+	 *  chat's start wakes it, since what it keeps must go. `Some` note for a runner of a purlis
+	 *  before 1.52, which keeps the profile until it is made again.
+	 */
+	poolProfileRemove: (pool: string, name: string, open: OpenProject) => typedError<string | null, string>(__TAURI_INVOKE("pool_profile_remove", { pool, name, open })),
 	/**
 	 *  **Starts signing `name` in on pool `pool`'s runner with no terminal** (#4042, spec #4023):
 	 *  the runner's own `purlis profile sign-in`, kept there first and run there through this
@@ -2973,6 +3003,8 @@ export const commands = {
 	poolSignInNext: (flow: number) => typedError<
 /**  Open this page in the browser here: the harness vendor's own. */
 { at: "open"; url: string } | 
+/**  Show this code to enter on the vendor's own page `url`, before that page is opened. */
+{ at: "device"; url: string; code: string } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
 /**  The harness refused the code, in its words. */
@@ -4373,6 +4405,13 @@ export type ActivityLine = {
 	depth: number,
 };
 
+/**  One of this machine's profiles that is not on a pool yet, and could go there. */
+export type AddableProfile = {
+	name: string,
+	/**  The harness as people call it: `Claude Code`. */
+	harness: string,
+};
+
 /**  How far a branch is from the branch it was cut from: the branch cockpit's header (FM-5). */
 export type AheadBehind = {
 	/**  Commits the branch has that its base does not. */
@@ -5619,6 +5658,12 @@ export type ChatSkills = {
 	 *  built-in router, which is asked nothing.
 	 */
 	routing: SkillRouting | null,
+	/**
+	 *  The skills its persona names that it started without, as its tab's Notice says them
+	 *  (SK-5), until that is put away: null for a chat that has every one. Held from its start,
+	 *  so the chip on its pane says every need of the chat's own with no read of its own (#3953).
+	 */
+	missing: SkillsMissing | null,
 };
 
 /**  One step of one chat's stop, as the window is told it. */
@@ -5791,6 +5836,8 @@ export type ClusterPoolRow = {
 	namespace: string,
 	/**  The cluster operator key pinned as it was added, spelled `ed25519:<64 hex>`. */
 	operator_key: string,
+	/**  Whether the person marked it as their own (#4071). */
+	owned: boolean,
 };
 
 /**  What a palette command does. */
@@ -8011,6 +8058,20 @@ export type InstallReview = {
 };
 
 /**
+ *  **The review of installing a set of a source's skills together** (#4024): one review, or,
+ *  where reading all of them is more than one read of the source may take, which of those named
+ *  fit, so the window asks to install them in parts.
+ */
+export type InstallSetReview = { kind: "review"; review: InstallReview } | { kind: "too-much"; 
+/**
+ *  Those named first that fit one read, the first part; empty where the first alone
+ *  does not.
+ */
+fits: string[]; 
+/**  The rest of those named. */
+rest: string[]; why: string };
+
+/**
  *  What has contributed what to this window — ADR 0041's item 2, and the thing every
  *  later decision about extensions is read off.
  */
@@ -8642,8 +8703,8 @@ export type Need =
 /**  Its report has nowhere to go: the chat that asked for it, `asker`, has gone. */
 { kind: "report_undelivered"; asker: string } | 
 /**
- *  purlis refused it a git command that would rewrite the project's root from another
- *  commit, so bringing the remote's commits in is the person's, with Update (qw348).
+ *  purlis could not update the project's root for it, for a reason no chat can settle,
+ *  so bringing the remote's commits in is the person's, with Update (qw348, #3877).
  */
 { kind: "root_update_refused" } | 
 /**
@@ -9089,6 +9150,11 @@ export type OpenHosts = {
 	title: string,
 	/**  Each host, spelled out. */
 	hosts: string[],
+};
+
+/**  The open project a command is asked for: a type of its own, so its plane stays a `PlaneId`. */
+export type OpenProject = {
+	plane: PlaneId | null,
 };
 
 /**  A skill run open in a chat, as its tab's chip shows it. */
@@ -10114,13 +10180,23 @@ export type PoolProfileRow = {
 	harness: string,
 	/**
 	 *  Whether its harness says it is signed in on the runner: `signed-in`, `signed-out` or
-	 *  `cannot-tell`. Null where it is not kept there.
+	 *  `cannot-tell`, or `fetching` while the runner fetches the version it pins (#4008), which
+	 *  the window asks again after. Null where it is not kept there.
 	 */
 	standing: string | null,
 	/**  Why it is not kept on the runner, in words, where it is not. */
 	not_kept: string | null,
 	/**  The plans Sign in offers there, where purlis names the provider. */
 	plans: PlanRow[],
+};
+
+/**
+ *  **A pool's profiles** (#4047): the ones its runner keeps, as it stands with each, and this
+ *  machine's others that Add a profile… offers.
+ */
+export type PoolProfiles = {
+	kept: PoolProfileRow[],
+	addable: AddableProfile[],
 };
 
 /**  One pool's limits, which each of its runners that runs requests (#2052, story 55). */
@@ -10162,6 +10238,8 @@ export type PoolRow = {
 export type PoolSignInStep = 
 /**  Open this page in the browser here: the harness vendor's own. */
 { at: "open"; url: string } | 
+/**  Show this code to enter on the vendor's own page `url`, before that page is opened. */
+{ at: "device"; url: string; code: string } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
 /**  The harness refused the code, in its words. */
@@ -12981,6 +13059,15 @@ export type SkillVersion = {
 	/**  What the runs that started on it add up to, as a skill's totals row says them (SK-20). */
 	runs: StatsRow,
 	grade: SkillGrade | null,
+	/**  Where it is from before a rename or a move (#4017): null for a version of its place now. */
+	before: SkillVersionBefore | null,
+};
+
+/**  The name and the folder a skill had at a version from before a rename or a move (#4017). */
+export type SkillVersionBefore = {
+	name: string,
+	/**  Its folder then, relative to the project. */
+	folder: string,
 };
 
 /**
@@ -14150,8 +14237,8 @@ export type UpdateKind =
 /**  purlis's `pre-commit` refused a commit a chat made (#1694). */
 "commit-refused" | 
 /**
- *  purlis refused a chat a git command that would rewrite the project's root from another
- *  commit, so bringing the remote's commits in is the person's (qw348).
+ *  purlis could not update the project's root for a chat, for a reason no chat can settle,
+ *  so bringing the remote's commits in is the person's (qw348, #3877).
  */
 "root-update-refused" | 
 /**  A chat asked the person to take its browser over, and the browser ended first (#2015). */

@@ -396,11 +396,13 @@ pub enum Need {
     /// The chat reported, and its report has nowhere to go: the chat that asked for it,
     /// `asker` as the person saw it, has gone. The report is kept for that chat's workspace.
     ReportUndelivered { asker: String },
-    /// purlis refused the chat a git command that would rewrite the project's root from
-    /// another commit (a pull, a rebase, a merge and the like: guard arm A3c,
-    /// [`crate::rootupdate`]), because its sandbox would stop it partway. Bringing the remote's
-    /// commits in is then the person's to do, with the window's Update (qw348). Raised by the
-    /// app from the guard's own verdict, so its words are the app's and never the chat's.
+    /// The chat asked purlis to update the project's root (`purlis worktree update`), and the
+    /// update was left for a reason no chat can settle: a file the chat's sandbox denies, a
+    /// conflict, a project not put back ([`crate::planegit::Left::needs_the_person`], #3877).
+    /// Bringing the remote's commits in is then the person's to do, with the window's Update
+    /// (qw348). Raised by the app from its own answer, so its words are the app's and never
+    /// the chat's. The guard's refusal of a git command that would update the root raises
+    /// nothing: it names that command, which the chat runs itself.
     RootUpdateRefused,
 }
 

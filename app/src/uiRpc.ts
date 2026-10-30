@@ -1097,6 +1097,7 @@ export const commands = {
 	skillSourceConfirm: __WINDOW_ONLY_RESULT,
 	skillSourceBrowse: __WINDOW_ONLY_RESULT,
 	skillInstallReview: __WINDOW_ONLY_RESULT,
+	skillInstallSetReview: __WINDOW_ONLY_RESULT,
 	skillInstall: __WINDOW_ONLY_RESULT,
 	skillUpdates: __WINDOW_ONLY_RESULT,
 	skillUpdateReview: __WINDOW_ONLY_RESULT,
@@ -1486,7 +1487,10 @@ export const commands = {
 	clusterContexts: __WINDOW_ONLY_RESULT,
 	clusterPoolKey: __WINDOW_ONLY_RESULT,
 	addClusterPool: __WINDOW_ONLY_RESULT,
+	setClusterPoolOwned: __WINDOW_ONLY_RESULT,
 	poolProfiles: __WINDOW_ONLY_RESULT,
+	poolProfileAdd: __WINDOW_ONLY_RESULT,
+	poolProfileRemove: __WINDOW_ONLY_RESULT,
 	poolSignInStart: __WINDOW_ONLY_RESULT,
 	poolSignInNext: __WINDOW_ONLY_RESULT,
 	poolSignInPaste: __WINDOW_ONLY_RESULT,
@@ -2320,6 +2324,13 @@ export type ActivityLine = {
 	 *  how deep, is the tab's to say there.
 	 */
 	depth: number,
+};
+
+/**  One of this machine's profiles that is not on a pool yet, and could go there. */
+export type AddableProfile = {
+	name: string,
+	/**  The harness as people call it: `Claude Code`. */
+	harness: string,
 };
 
 /**  How far a branch is from the branch it was cut from: the branch cockpit's header (FM-5). */
@@ -3568,6 +3579,12 @@ export type ChatSkills = {
 	 *  built-in router, which is asked nothing.
 	 */
 	routing: SkillRouting | null,
+	/**
+	 *  The skills its persona names that it started without, as its tab's Notice says them
+	 *  (SK-5), until that is put away: null for a chat that has every one. Held from its start,
+	 *  so the chip on its pane says every need of the chat's own with no read of its own (#3953).
+	 */
+	missing: SkillsMissing | null,
 };
 
 /**  One step of one chat's stop, as the window is told it. */
@@ -3740,6 +3757,8 @@ export type ClusterPoolRow = {
 	namespace: string,
 	/**  The cluster operator key pinned as it was added, spelled `ed25519:<64 hex>`. */
 	operator_key: string,
+	/**  Whether the person marked it as their own (#4071). */
+	owned: boolean,
 };
 
 /**  What a palette command does. */
@@ -5960,6 +5979,20 @@ export type InstallReview = {
 };
 
 /**
+ *  **The review of installing a set of a source's skills together** (#4024): one review, or,
+ *  where reading all of them is more than one read of the source may take, which of those named
+ *  fit, so the window asks to install them in parts.
+ */
+export type InstallSetReview = { kind: "review"; review: InstallReview } | { kind: "too-much"; 
+/**
+ *  Those named first that fit one read, the first part; empty where the first alone
+ *  does not.
+ */
+fits: string[]; 
+/**  The rest of those named. */
+rest: string[]; why: string };
+
+/**
  *  What has contributed what to this window — ADR 0041's item 2, and the thing every
  *  later decision about extensions is read off.
  */
@@ -6591,8 +6624,8 @@ export type Need =
 /**  Its report has nowhere to go: the chat that asked for it, `asker`, has gone. */
 { kind: "report_undelivered"; asker: string } | 
 /**
- *  purlis refused it a git command that would rewrite the project's root from another
- *  commit, so bringing the remote's commits in is the person's, with Update (qw348).
+ *  purlis could not update the project's root for it, for a reason no chat can settle,
+ *  so bringing the remote's commits in is the person's, with Update (qw348, #3877).
  */
 { kind: "root_update_refused" } | 
 /**
@@ -7038,6 +7071,11 @@ export type OpenHosts = {
 	title: string,
 	/**  Each host, spelled out. */
 	hosts: string[],
+};
+
+/**  The open project a command is asked for: a type of its own, so its plane stays a `PlaneId`. */
+export type OpenProject = {
+	plane: PlaneId | null,
 };
 
 /**  A skill run open in a chat, as its tab's chip shows it. */
@@ -8063,13 +8101,23 @@ export type PoolProfileRow = {
 	harness: string,
 	/**
 	 *  Whether its harness says it is signed in on the runner: `signed-in`, `signed-out` or
-	 *  `cannot-tell`. Null where it is not kept there.
+	 *  `cannot-tell`, or `fetching` while the runner fetches the version it pins (#4008), which
+	 *  the window asks again after. Null where it is not kept there.
 	 */
 	standing: string | null,
 	/**  Why it is not kept on the runner, in words, where it is not. */
 	not_kept: string | null,
 	/**  The plans Sign in offers there, where purlis names the provider. */
 	plans: PlanRow[],
+};
+
+/**
+ *  **A pool's profiles** (#4047): the ones its runner keeps, as it stands with each, and this
+ *  machine's others that Add a profile… offers.
+ */
+export type PoolProfiles = {
+	kept: PoolProfileRow[],
+	addable: AddableProfile[],
 };
 
 /**  One pool's limits, which each of its runners that runs requests (#2052, story 55). */
@@ -8111,6 +8159,8 @@ export type PoolRow = {
 export type PoolSignInStep = 
 /**  Open this page in the browser here: the harness vendor's own. */
 { at: "open"; url: string } | 
+/**  Show this code to enter on the vendor's own page `url`, before that page is opened. */
+{ at: "device"; url: string; code: string } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
 /**  The harness refused the code, in its words. */
@@ -10930,6 +10980,15 @@ export type SkillVersion = {
 	/**  What the runs that started on it add up to, as a skill's totals row says them (SK-20). */
 	runs: StatsRow,
 	grade: SkillGrade | null,
+	/**  Where it is from before a rename or a move (#4017): null for a version of its place now. */
+	before: SkillVersionBefore | null,
+};
+
+/**  The name and the folder a skill had at a version from before a rename or a move (#4017). */
+export type SkillVersionBefore = {
+	name: string,
+	/**  Its folder then, relative to the project. */
+	folder: string,
 };
 
 /**
@@ -12099,8 +12158,8 @@ export type UpdateKind =
 /**  purlis's `pre-commit` refused a commit a chat made (#1694). */
 "commit-refused" | 
 /**
- *  purlis refused a chat a git command that would rewrite the project's root from another
- *  commit, so bringing the remote's commits in is the person's (qw348).
+ *  purlis could not update the project's root for a chat, for a reason no chat can settle,
+ *  so bringing the remote's commits in is the person's (qw348, #3877).
  */
 "root-update-refused" | 
 /**  A chat asked the person to take its browser over, and the browser ended first (#2015). */

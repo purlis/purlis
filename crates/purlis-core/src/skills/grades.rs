@@ -603,27 +603,65 @@ fn wanted_of(was: &[super::history::Was]) -> Vec<Wanted<'_>> {
                 name: place.name.as_str(),
                 level: Some(level.rel()),
                 trees: (at > 0).then_some(place.trees.as_slice()),
+                until: None,
             })
         })
         .collect()
 }
 
 /// **The grades of the copy of `name` at `level`, and of the places it had before a rename or a
-/// move** (#3918): what its Grades tab draws. Its own alone where its history is not read.
+/// move** (#3918): what its Grades tab draws. The places git holds ([`super::history::places`]),
+/// and those this machine kept where git could not follow, as for a skill only on this machine
+/// (#4018, [`earlier`]). Its own alone where it had none.
 pub fn read_followed(root: &Path, level: &Level, name: &str) -> Read {
-    match super::history::places(root, level, name) {
-        Ok(was) if was.len() > 1 => read_of(root, &was),
-        _ => read(root, name, Some(level)),
+    let was = super::history::places(root, level, name).unwrap_or_default();
+    let earlier = earlier::of(root, level, name);
+    match followed((level, name), &was, &earlier) {
+        Some(copies) => read_where(root, &copies, None, chrono::Utc::now()),
+        None => read(root, name, Some(level)),
     }
+}
+
+/// The copies whose rows the copy of `name` at `level` reads, where it had the places `was` in
+/// git ([`wanted_of`], its own first, or none where its history was not read) and `earlier` on
+/// this machine: `None` where it had no place but its own.
+fn followed<'a>(
+    (level, name): (&Level, &'a str),
+    was: &'a [super::history::Was],
+    earlier: &'a [earlier::Earlier],
+) -> Option<Vec<Wanted<'a>>> {
+    if was.len() <= 1 && earlier.is_empty() {
+        return None;
+    }
+    let mut copies = wanted_of(was);
+    if was.is_empty() {
+        copies.push(Wanted {
+            name,
+            level: Some(level.rel()),
+            trees: None,
+            until: None,
+        });
+    }
+    copies.extend(earlier.iter().filter_map(|one| {
+        Some(Wanted {
+            name: one.name.as_str(),
+            level: Some(Some(one.level.clone())),
+            trees: None,
+            until: Some(one.until()?),
+        })
+    }));
+    Some(copies)
 }
 
 /// A copy whose rows [`read_where`] reads: its skill's name; where `level` is `Some`, its
 /// level's folder (`None` in it for a copy no folder holds), else every copy of the name; and
-/// where `trees` is `Some`, only rows whose tree is one of them.
+/// where `trees` is `Some`, only rows whose tree is one of them; where `until` is `Some`, only
+/// rows recorded before it (a place this machine kept, [`earlier`]).
 struct Wanted<'a> {
     name: &'a str,
     level: Option<Option<String>>,
     trees: Option<&'a [String]>,
+    until: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl Wanted<'_> {
@@ -635,6 +673,9 @@ impl Wanted<'_> {
                 Some(word) => row.level.is_none() || row.level == *word,
             }
             && self.trees.is_none_or(|trees| trees.contains(&row.tree))
+            && self.until.is_none_or(|until| {
+                chrono::DateTime::parse_from_rfc3339(&row.ts).is_ok_and(|at| at <= until)
+            })
     }
 }
 
@@ -649,6 +690,7 @@ fn read_at(
         name,
         level: level.map(Level::rel),
         trees: None,
+        until: None,
     };
     read_where(root, std::slice::from_ref(&wanted), None, now)
 }
@@ -729,8 +771,8 @@ pub fn ended_said(end: grade::GradeEnd) -> &'static str {
 /// **The grade `grade` of the skill `name`** in the project at `root`, as the eval record holds
 /// it (SK-59, #3239): what its scorecard is drawn from. A grade from before a rename or a move
 /// (#3918) is recorded by the name and level a copy of `name` had then, so where no row of `name`
-/// is the grade, the places each copy had before are looked in ([`read_of`]). `None` where no
-/// row of it is read.
+/// is the grade, the places each copy had before are looked in ([`read_followed`]). `None` where
+/// no row of it is read.
 pub fn grade_of(root: &Path, name: &str, grade: &str) -> Option<Graded> {
     let now = chrono::Utc::now();
     let of = |copies: &[Wanted<'_>]| {
@@ -743,11 +785,13 @@ pub fn grade_of(root: &Path, name: &str, grade: &str) -> Option<Graded> {
         name,
         level: None,
         trees: None,
+        until: None,
     };
     of(std::slice::from_ref(&named)).or_else(|| {
         Level::copies_of(root, name).find_map(|(level, _)| {
-            let was = super::history::places(root, &level, name).ok()?;
-            (was.len() > 1).then(|| of(&wanted_of(&was))).flatten()
+            let was = super::history::places(root, &level, name).unwrap_or_default();
+            let earlier = earlier::of(root, &level, name);
+            of(&followed((&level, name), &was, &earlier)?)
         })
     })
 }
@@ -1374,6 +1418,7 @@ fn not_on_this_harness() -> String {
 
 pub mod after_edit;
 pub mod cap;
+pub mod earlier;
 pub mod kept;
 pub mod price;
 pub mod routers;

@@ -94,6 +94,9 @@ export function expectAnchored(dialog: Element): void {
     );
 }
 
+/** The next frame drawn. */
+const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
 /** How long the keyboard may take to land: an engine may move it a frame or more late. */
 const LANDS_WITHIN_MS = 3_000;
 
@@ -101,6 +104,11 @@ const LANDS_WITHIN_MS = 3_000;
  * **The keyboard lands on `target`** (`step` names where in the story). Waits for it, as an
  * engine moves the focus a frame or more after the key that asked for it; throws naming the step
  * and what has the focus instead, so a failure says where the keyboard went.
+ *
+ * It has landed once the frame after the focus moved is drawn: a collection brings the row it
+ * moved the keyboard to into sight on that frame (React Aria's `useSelectableCollection` scrolls
+ * in a `requestAnimationFrame`), so `expectFocusInSight` right after checks what a person sees,
+ * not the list before it scrolled (#4103).
  */
 export async function untilFocused(target: () => Element | null, step: string): Promise<void> {
   await untilTheKeyboard(target, step, "on", (wanted, at) => at === wanted);
@@ -115,7 +123,8 @@ export async function untilFocusWithin(target: () => Element | null, step: strin
   await untilTheKeyboard(target, step, "in", (wanted, at) => at !== null && wanted.contains(at));
 }
 
-/** Waits until `holds` says the keyboard is where `target` wants it, `on` it or `in` it. */
+/** Waits until `holds` says the keyboard is where `target` wants it, `on` it or `in` it, then
+ *  for the next frame, which brings it into sight. */
 async function untilTheKeyboard(
   target: () => Element | null,
   step: string,
@@ -144,13 +153,13 @@ async function untilTheKeyboard(
         (wanted === null ? "an element that is not drawn" : describe(wanted)),
     );
   }
+  // The frame the engine scrolls the focus into sight on: its callback was asked for as the focus
+  // moved, before this one, so it has run once this one does.
+  await nextFrame();
 }
 
 /** How long a surface may take to arrive: WebKit draws the next frame late in a busy run. */
 const SETTLES_WITHIN_MS = 3_000;
-
-/** The next frame drawn. */
-const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
 /**
  * **The surface `inside` is on has settled** (#3414): a popover or a menu done arriving (React

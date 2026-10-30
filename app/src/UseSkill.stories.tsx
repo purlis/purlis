@@ -66,6 +66,7 @@ const SKILLS: ChatSkills = {
   repos: [],
   not_supported: null,
   routing: { router: "acme", ms: 3000, fell_back: true, said: "acme did not answer." },
+  missing: null,
 };
 
 /** The picker, and what was typed said under it. */

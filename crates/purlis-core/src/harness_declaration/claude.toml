@@ -35,7 +35,7 @@ hooks = true
 kinds = ["subscription", "api-key", "cloud"]
 # Read out of its sandbox as purlis compiles it (#2037): purlis denies its sign-in file in the
 # config folder to the commands its Bash tool runs and to its Read and Edit tools.
-kept_from_commands = "no: on macOS purlis cannot keep Claude Code's sign-in from the commands it runs"
+kept_from_commands = "no: on macOS and on a runner purlis cannot keep Claude Code's sign-in from the commands it runs"
 
 [folders]
 # Its settings, its sign-in and its conversations.

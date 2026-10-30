@@ -289,7 +289,7 @@ pub fn relays_to(config_root: PathBuf) -> purlis_host::RelaysTo {
             &cluster,
             &kept,
         )?;
-        let resolved = format!("{}/{}", cluster.name(), kept.name);
+        let resolved = kept.reached();
         Ok((Arc::new(move || to.keep()) as purlis_host::Keep, resolved))
     })
 }
@@ -592,6 +592,32 @@ pub fn for_a_runner_of(
 /// Whether a runner speaking `version` keeps a desktop's profiles (`keep_profile`, 1.43).
 pub fn keeps_profiles(version: purlis_session_protocol::version::Version) -> bool {
     version >= purlis_session_protocol::session::KNOWS_KEEP_PROFILE
+}
+
+/// **Has the runner `to` reaches forget this machine's profile `name`** (`forget_profile`, 1.52,
+/// #4047), its folder and sign-in there with it. `None`, with nothing sent, from a runner before
+/// 1.52, which keeps it.
+pub fn forget_profile(to: &ToARunner, name: &str) -> Result<Option<()>, String> {
+    let name = name.to_owned();
+    on_one_link(to, async move |linked| match linked {
+        Ok(client) if !forgets_profiles(client.version()) => Ok(None),
+        Ok(client) => {
+            client
+                .forget_profile(&name)
+                .await
+                .map(Some)
+                .map_err(|why| match why.refusal() {
+                    Some(refused) => said_by_the_runner(&refused.why),
+                    None => why.to_string(),
+                })
+        }
+        Err(down) => Err(down.why),
+    })
+}
+
+/// Whether a runner speaking `version` forgets a desktop's profile (`forget_profile`, 1.52).
+pub fn forgets_profiles(version: purlis_session_protocol::version::Version) -> bool {
+    version >= purlis_session_protocol::session::KNOWS_FORGET_PROFILE
 }
 
 /// A runner's own words refusing a profile, as the person reads them: marked as its, and cut

@@ -1821,3 +1821,85 @@ fn the_picker_refuses_a_path_embedded_in_a_word_as_the_start_does() {
     assert_eq!(install, None);
     assert!(ran.lock().unwrap().is_empty(), "nothing was run");
 }
+
+// -------------------------------------------------------------------------------------
+// On a runner, a Claude Code profile is for wrapped chats only (#4083, ruled 2026-10-30)
+// -------------------------------------------------------------------------------------
+
+/// A Linux machine paired as a runner, its home in `home`.
+fn a_runner(home: &Path) -> purlis_core::sandbox::Machine {
+    let config = home.join(".config");
+    fs::create_dir_all(&config).unwrap();
+    let desktop = purlis_session_protocol::hostlink::Pinned {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: purlis_session_protocol::hostlink::LinkKey::generate()
+            .unwrap()
+            .public(),
+    };
+    purlis_core::runnerlink::pair(&config, &desktop).unwrap();
+    let machine = purlis_core::sandbox::Machine {
+        env: purlis_core::secrets::Env::of(&[(
+            purlis_core::machine::HOME_VAR,
+            config.to_str().unwrap(),
+        )]),
+        home: Some(home.to_path_buf()),
+        os: purlis_core::sandbox::Os::Linux,
+    };
+    assert!(machine.is_a_runner());
+    machine
+}
+
+#[test]
+fn on_a_runner_a_claude_code_chat_is_never_started_without_the_sandbox() {
+    purlis_core::unsteered!();
+    let home = tempfile::tempdir().unwrap();
+    let runner = a_runner(home.path());
+    let plane = Plane::new();
+    let bin = plane.harness();
+    let config = home.path().join(".claude-work");
+    fs::create_dir_all(&config).unwrap();
+    plane.profile(
+        "claude",
+        &bin,
+        &format!(
+            "env = {{ CLAUDE_CONFIG_DIR = {:?} }}\n",
+            config.display().to_string()
+        ),
+    );
+    let mut start = plane.start("work");
+    start.without_sandbox = Some(purlis_core::sandbox::OptOut { reason: None });
+    let set = profiles::current(plane.root());
+    let profile = set.get("work").expect("declared");
+
+    // The picker offers no way round it, and says why.
+    assert_eq!(
+        start::without_sandbox_lock(profile, &runner),
+        Some(start::RUNNER_LOCK)
+    );
+    assert_eq!(start::without_sandbox_lock(profile, &a_mac()), None);
+    let why = start::ready_on(
+        &start,
+        plane.root(),
+        &purlis_core::harness_declaration::read(plane.root()),
+        &runner,
+        &|_| true,
+    )
+    .expect_err("refused on a runner");
+
+    assert!(why.contains("on a runner"), "{why}");
+    assert!(why.contains("only inside purlis's sandbox"), "{why}");
+    assert!(!plane.root().join("ran").exists(), "nothing was run");
+    // Nothing a later chat reads was written for it: no folder marked trusted.
+    assert!(!config.join(".claude.json").exists());
+    assert!(!home.path().join(".claude.json").exists());
+
+    // On a person's own machine the same start runs without the sandbox, as before.
+    start::ready_on(
+        &start,
+        plane.root(),
+        &purlis_core::harness_declaration::read(plane.root()),
+        &a_mac(),
+        &|_| true,
+    )
+    .expect("it starts on a Mac");
+}

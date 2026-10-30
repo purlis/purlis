@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
@@ -53,7 +53,21 @@ beforeEach(() => {
     asked.push({ cmd, args: a });
     if (cmd === "pool_profiles") {
       profilesAsked += 1;
-      return [a_profile("work"), a_profile("fast", "codex")];
+      return {
+        kept: [
+          a_profile("work"),
+          a_profile("fast", "codex"),
+          {
+            ...a_profile("open", "opencode"),
+            harness: "opencode",
+            plans: [
+              { id: "openai", title: "ChatGPT" },
+              { id: "github-copilot", title: "GitHub Copilot" },
+            ],
+          },
+        ],
+        addable: [{ name: "home", harness: "Codex" }],
+      };
     }
     if (cmd === "pool_sign_in_start") return 7;
     if (cmd === "pool_sign_in_next") {
@@ -153,6 +167,24 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     expect(calls("pool_sign_in_cancel")).toEqual([]);
   });
 
+  it("offers neither Add a profile… nor Remove while a sign-in runs on the pool (#4047)", async () => {
+    render(<PoolProfiles pool="builds" plane={undefined} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Remove fast from pool builds" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Sign work in on pool builds" }));
+    await screen.findByRole("group", { name: "Signing work in on builds" });
+
+    expect(screen.queryByRole("button", { name: "Add a profile…" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /remove/i })).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    // The question Remove asked went with the sign-in that was started over it.
+    expect(screen.getByRole("button", { name: "Remove fast from pool builds" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add a profile…" })).toBeVisible();
+  });
+
   it("says what the login printed when purlis cannot follow it, with a terminal the way out", async () => {
     const heard: ProfileSignInAsk[] = [];
     const hear = (event: Event) => heard.push((event as CustomEvent<ProfileSignInAsk>).detail);
@@ -184,6 +216,84 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     );
     await userEvent.click(within(opened).getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
+  });
+
+  it("shows opencode's Copilot device code before any page opens, then signs in (#4045)", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    const before = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    try {
+      render(<PoolProfiles pool="builds" plane="plane-1" />);
+      await userEvent.click(
+        await screen.findByRole("button", {
+          name: "Sign open in to GitHub Copilot on pool builds",
+        }),
+      );
+      const opened = await screen.findByRole("group", { name: "Signing open in on builds" });
+      expect(calls("pool_sign_in_start")).toEqual([
+        { pool: "builds", name: "open", provider: "github-copilot" },
+      ]);
+      // No page is said to open as it starts: the code comes first.
+      expect(
+        within(opened).getByText("Step 1 of 3: Starting the sign-in on the runner"),
+      ).toBeVisible();
+
+      const page = "https://github.com/login/device";
+      says({ at: "device", url: page, code: "WDJB-MJHT" });
+
+      expect(
+        await within(opened).findByLabelText("The code to enter on the page"),
+      ).toHaveTextContent("WDJB-MJHT");
+      expect(within(opened).getByText("Step 2 of 3: Enter the code on the page")).toBeVisible();
+      expect(within(opened).getByText(page)).toBeVisible();
+      // The code comes first: no browser opens until it is asked for.
+      expect(calls("plugin:opener|open_url")).toEqual([]);
+
+      await userEvent.click(within(opened).getByRole("button", { name: "Copy code" }));
+      expect(writeText).toHaveBeenCalledWith("WDJB-MJHT");
+      expect(await within(opened).findByText("The code is on the clipboard.")).toBeVisible();
+
+      await userEvent.click(within(opened).getByRole("button", { name: "Open page" }));
+      expect(calls("plugin:opener|open_url")).toEqual([expect.objectContaining({ url: page })]);
+
+      says({ at: "checking" });
+      says({ at: "signed-in" });
+      expect(await within(opened).findByText("Signed in")).toBeInTheDocument();
+    } finally {
+      if (before) Object.defineProperty(navigator, "clipboard", before);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
+
+  it("names the command that does the same in a terminal, with its plan (#4046)", async () => {
+    render(<PoolProfiles pool="builds" plane="plane-1" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Sign open in to GitHub Copilot on pool builds" }),
+    );
+    const opened = await screen.findByRole("group", { name: "Signing open in on builds" });
+
+    expect(
+      within(opened).getByText(
+        "purlis profile sign-in open --pool builds --provider github-copilot",
+      ),
+    ).toBeVisible();
+  });
+
+  it("keeps opencode's other plan in a shell tab", async () => {
+    const asks: ProfileSignInAsk[] = [];
+    const hear = (event: Event) => asks.push((event as CustomEvent<ProfileSignInAsk>).detail);
+    window.addEventListener(PROFILE_SIGN_IN, hear);
+    render(<PoolProfiles pool="builds" plane="plane-1" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Sign open in to ChatGPT on pool builds" }),
+    );
+    window.removeEventListener(PROFILE_SIGN_IN, hear);
+
+    expect(calls("pool_sign_in_start")).toEqual([]);
+    expect(asks).toEqual([expect.objectContaining({ profile: "open", provider: "openai" })]);
   });
 
   it("keeps another harness's sign-in in a shell tab", async () => {

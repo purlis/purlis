@@ -605,6 +605,11 @@ fn a_file_of_an_unknown_shape_is_refused_whole_and_never_replaced() {
                 serde_json::json!({"amount": "1", "currency": "EUR", "per": "hour"});
         }),
         with(&|row| row["pricePerHour"] = "1 EUR".into()),
+        // A pool's profiles are a list of profile names, each once (#4047).
+        with(&|row| row["profiles"] = "work".into()),
+        with(&|row| row["profiles"] = serde_json::json!([1])),
+        with(&|row| row["profiles"] = serde_json::json!(["Work Things"])),
+        with(&|row| row["profiles"] = serde_json::json!(["work", "work"])),
         with(&|row| row["frames"] = 0.into()),
         with(&|row| row["frames"] = "15".into()),
         with(&|row| row["width"] = 70_000.into()),
@@ -1095,4 +1100,104 @@ fn every_cluster_pools_programs_are_listed_once() {
             std::path::PathBuf::from("/opt/homebrew/bin/gke-gcloud-auth-plugin"),
         ]
     );
+}
+
+/// **A pool keeps the profiles chosen for it** (#4047, `profiles`, ruled 2026-10-30): read and
+/// written as they were chosen, in their order; a pool that names none is written with none.
+#[test]
+fn a_pools_profiles_are_read_and_kept_as_they_were_chosen() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(config.path(), &pool("builds", Set::default())).unwrap();
+    record_pool(config.path(), &pool("tests", Set::default())).unwrap();
+
+    set_pool_profiles(
+        config.path(),
+        "builds",
+        Some(vec!["work".to_owned(), "claude".to_owned()]),
+    )
+    .unwrap();
+
+    assert_eq!(
+        the_file(config.path())["pools"][0]["profiles"],
+        serde_json::json!(["work", "claude"])
+    );
+    assert!(
+        the_file(config.path())["pools"][1]
+            .get("profiles")
+            .is_none()
+    );
+    let read = pools(config.path()).unwrap();
+    assert_eq!(
+        read[0].profiles(),
+        Some(&["work".to_owned(), "claude".to_owned()][..])
+    );
+    assert_eq!(read[1].profiles(), None);
+    // Set back to none, the key goes.
+    set_pool_profiles(config.path(), "builds", None).unwrap();
+    assert!(
+        the_file(config.path())["pools"][0]
+            .get("profiles")
+            .is_none()
+    );
+}
+
+/// A pool that names its profiles keeps exactly those; one that names none keeps the profile a
+/// new chat in the open project gets, and with no such profile, none (#4047).
+#[test]
+fn a_pool_keeps_its_named_profiles_or_else_the_projects_default() {
+    let plain = pool("builds", Set::default());
+    assert_eq!(plain.profiles_kept(Some("work")), vec!["work".to_owned()]);
+    assert_eq!(plain.profiles_kept(None), Vec::<String>::new());
+    let named = plain.keeping_profiles(Some(vec!["home".to_owned()]));
+    assert_eq!(named.profiles_kept(Some("work")), vec!["home".to_owned()]);
+    let none = pool("builds", Set::default()).keeping_profiles(Some(Vec::new()));
+    assert_eq!(none.profiles_kept(Some("work")), Vec::<String>::new());
+}
+
+/// **Adding and removing a profile change the pool's record** (#4047): the first change of a
+/// pool that named none starts from the project's default, so adding another keeps it and
+/// removing it leaves an empty list, never the default again.
+#[test]
+fn adding_and_removing_a_profile_start_from_the_default_and_change_the_record() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(config.path(), &pool("builds", Set::default())).unwrap();
+    let named = |config: &Path| pools(config).unwrap()[0].profiles().map(<[String]>::to_vec);
+
+    add_pool_profile(config.path(), "builds", "home", Some("work")).unwrap();
+    assert_eq!(
+        named(config.path()),
+        Some(vec!["work".to_owned(), "home".to_owned()])
+    );
+    add_pool_profile(config.path(), "builds", "home", Some("work")).unwrap();
+    assert_eq!(named(config.path()).unwrap().len(), 2, "kept once");
+
+    remove_pool_profile(config.path(), "builds", "work", Some("work")).unwrap();
+    remove_pool_profile(config.path(), "builds", "home", Some("work")).unwrap();
+    assert_eq!(named(config.path()), Some(Vec::new()));
+    assert_eq!(
+        pools(config.path()).unwrap()[0].profiles_kept(Some("work")),
+        Vec::<String>::new()
+    );
+
+    let refused = add_pool_profile(config.path(), "nowhere", "home", None).unwrap_err();
+    assert!(
+        refused.to_string().contains("no pool named nowhere"),
+        "{refused}"
+    );
+    let refused = add_pool_profile(config.path(), "builds", "Not A Name", None).unwrap_err();
+    assert!(
+        refused.to_string().contains("not a profile's name"),
+        "{refused}"
+    );
+}
+
+/// The profiles a pool keeps are not how it is defined: choosing them leaves its definition's
+/// digest as it was, as a price does.
+#[test]
+fn a_pools_profiles_leave_its_definition_digest_as_it_was() {
+    let plain = pool("builds", Set::default());
+    let named = plain
+        .clone()
+        .keeping_profiles(Some(vec!["work".to_owned()]));
+    assert_eq!(plain.definition_digest(), named.definition_digest());
 }

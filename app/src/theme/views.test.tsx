@@ -731,6 +731,7 @@ const ORDINARY: Answers = {
               ms: 900,
             },
             grade: null,
+            before: null,
           },
           {
             commit: "b".repeat(40),
@@ -749,6 +750,7 @@ const ORDINARY: Answers = {
               ms: 0,
             },
             grade: null,
+            before: null,
           },
         ],
         uncommitted: {
@@ -1701,7 +1703,7 @@ const STATES: State[] = [
         clashes: [],
       },
     },
-    drawn: /This project has no skills of its own yet/,
+    drawn: /No skill reaches these chats yet/,
   },
   {
     name: "the project's dispatches, none yet",

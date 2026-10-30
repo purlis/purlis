@@ -1028,3 +1028,200 @@ fn a_kept_pinned_profiles_standing_is_asked_of_the_version_the_runner_installs()
     );
     assert_eq!(*look.programs.borrow(), [installed.display().to_string()]);
 }
+
+/// **A profile the desktop takes off a pool leaves its runner, sign-in included** (#4047): the
+/// runner's record goes, and the folder it made for it, the harness's sign-in in it, is deleted.
+#[test]
+fn a_made_profile_forgotten_leaves_the_runner_with_its_sign_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let home = runner_home(dir.path());
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    let kept = keep(&runner, &home, &Kept::of(&desktop).unwrap(), DESKTOP, 7).unwrap();
+    fs::write(
+        kept.folders.config.join(".credentials.json"),
+        "{\"claudeAiOauth\":\"the runner's own sign-in\"}",
+    )
+    .unwrap();
+
+    forget(&runner, &home, "work", DESKTOP).expect("forgotten");
+
+    assert!(list(runner.config_root()).unwrap().is_empty());
+    assert!(!runner.folder_of("work").exists(), "its folder is gone");
+}
+
+/// **The desktop's adopted folder, kept as the runner's default folder, leaves it too**
+/// (#4047): the harness's own folder in the runner's home, where it keeps its sign-in there, is
+/// deleted with the record, and nothing else of the runner's home is.
+#[test]
+fn the_adopted_folder_forgotten_takes_the_harness_folder_on_the_runner_with_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let home = runner_home(dir.path());
+    let adopted = the_desktops_adopted_folder(dir.path());
+    keep(&runner, &home, &Kept::of(&adopted).unwrap(), DESKTOP, 7).unwrap();
+    fs::create_dir_all(home.join(".claude")).unwrap();
+    fs::write(home.join(".claude/.credentials.json"), "{}").unwrap();
+    fs::create_dir_all(home.join(".codex")).unwrap();
+
+    forget(&runner, &home, "claude", DESKTOP).expect("forgotten");
+
+    assert!(list(runner.config_root()).unwrap().is_empty());
+    assert!(!home.join(".claude").exists(), "its sign-in went with it");
+    assert!(
+        home.join(".codex").is_dir(),
+        "another harness's folder stays"
+    );
+}
+
+/// opencode keeps its files in a folder of its own name under the XDG folders: only those go,
+/// never the XDG folders themselves.
+#[test]
+fn an_adopted_opencode_folder_forgotten_takes_only_its_own_folders() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let home = runner_home(dir.path());
+    let adopted = MachineProfile {
+        name: "opencode".to_owned(),
+        harness: "opencode".to_owned(),
+        folders: Folders {
+            config: dir.path().join("desktop-home/.config"),
+            data: Some(dir.path().join("desktop-home/.local/share")),
+        },
+        pinned: None,
+        ..the_desktops_adopted_folder(dir.path())
+    };
+    keep(&runner, &home, &Kept::of(&adopted).unwrap(), DESKTOP, 7).unwrap();
+    for folder in [".config/opencode", ".local/share/opencode", ".config/git"] {
+        fs::create_dir_all(home.join(folder)).unwrap();
+    }
+
+    forget(&runner, &home, "opencode", DESKTOP).expect("forgotten");
+
+    assert!(!home.join(".config/opencode").exists());
+    assert!(!home.join(".local/share/opencode").exists());
+    assert!(
+        home.join(".config/git").is_dir(),
+        "the XDG folder itself stays"
+    );
+}
+
+/// A runner's own profile, or one kept for another desktop, is never forgotten for this one:
+/// refused, and it stays as it is.
+#[test]
+fn a_profile_not_kept_for_this_desktop_is_not_forgotten() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let home = runner_home(dir.path());
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    keep(
+        &runner,
+        &home,
+        &Kept::of(&desktop).unwrap(),
+        "01JA0OTHER00000000000000000",
+        7,
+    )
+    .unwrap();
+
+    let refused = forget(&runner, &home, "work", DESKTOP).unwrap_err();
+
+    assert!(refused.contains("of its own"), "{refused}");
+    assert_eq!(list(runner.config_root()).unwrap().len(), 1);
+    assert!(runner.folder_of("work").is_dir());
+}
+
+/// Forgetting a profile the runner does not keep is nothing: the removal can be asked again.
+#[test]
+fn forgetting_a_profile_the_runner_does_not_keep_is_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+
+    assert_eq!(
+        forget(&runner, &runner_home(dir.path()), "work", DESKTOP),
+        Ok(())
+    );
+}
+
+/// A runner fetching the version each profile it keeps with a pin is pinned to: none is
+/// installed yet, and no harness on `PATH` answers.
+struct StillFetching;
+
+impl Look for StillFetching {
+    fn status(&self, _: &str, _: &[&str], _: &[(String, String)]) -> Option<i32> {
+        None
+    }
+    fn is_there(&self, _: &Path) -> bool {
+        false
+    }
+    fn fetching(&self, record: &MachineProfile) -> bool {
+        record.kept_for.is_some() && record.pinned.is_some()
+    }
+}
+
+/// **A runner fetching a profile's harness says so** (#4008): its desktop's keep answers
+/// `fetching`, not that the harness cannot tell, so the profile's row says the harness is being
+/// fetched and asks again once it is.
+#[test]
+fn a_kept_profile_whose_harness_is_being_fetched_is_said_to_be_fetching() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut desktop = a_signed_in_desktop_profile(dir.path());
+    desktop.pinned = Some(crate::profilestore::pin::Pinned {
+        version: "2.1.300".to_owned(),
+        at: 3,
+    });
+    let runner = homes(dir.path(), "runner");
+
+    let said = kept_for_the_desktop(
+        &runner,
+        &runner_home(dir.path()),
+        DESKTOP,
+        &Kept::of(&desktop).unwrap().into(),
+        &StillFetching,
+        7,
+    )
+    .expect("kept");
+
+    assert_eq!(
+        said,
+        purlis_session_protocol::session::ProfileStanding::Fetching
+    );
+    assert_eq!(standing_on_the_wire(said), Standing::Fetching);
+}
+
+/// **A runner takes in the sign-in carried to it when its pool moved** (#4011): keeping the
+/// desktop's profile again moves the sign-in file its last runner carried into the profile's new
+/// folder, and nothing else that was carried; what was carried for it is then gone.
+#[test]
+fn a_runner_keeping_a_profile_takes_in_the_sign_in_carried_to_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let carried = dir
+        .path()
+        .join("runner/data")
+        .join(crate::profilestore::CARRIED)
+        .join("work");
+    fs::create_dir_all(carried.join("config")).unwrap();
+    fs::write(
+        carried.join("config/.credentials.json"),
+        "the old runner's sign-in",
+    )
+    .unwrap();
+    fs::write(carried.join("config/settings.json"), "hooks").unwrap();
+
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&desktop).expect("it goes"),
+        DESKTOP,
+        7,
+    )
+    .expect("kept");
+
+    assert_eq!(
+        fs::read_to_string(kept.folders.config.join(".credentials.json")).unwrap(),
+        "the old runner's sign-in"
+    );
+    assert!(!kept.folders.config.join("settings.json").exists());
+    assert!(!carried.exists());
+}

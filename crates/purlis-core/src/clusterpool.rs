@@ -641,6 +641,8 @@ pub struct Kubectl {
     path: Option<std::ffi::OsString>,
     /// The folder its discovery and HTTP caches are kept in (`--cache-dir`), where one is named.
     cache_dir: Option<PathBuf>,
+    /// How long each run is waited for, where it is held to a time ([`Kubectl::within`]).
+    within: Option<std::time::Duration>,
 }
 
 /// The variables a run of kubectl is never handed from this process: the kubeconfig is named,
@@ -679,7 +681,16 @@ impl Kubectl {
             context: None,
             path: None,
             cache_dir: None,
+            within: None,
         }
+    }
+
+    /// This kubectl, each run ended and refused once `within` is up (#4071): what a check that
+    /// must fail closed runs, so a cluster that does not answer never holds it.
+    #[must_use]
+    pub fn within(mut self, within: std::time::Duration) -> Kubectl {
+        self.within = Some(within);
+        self
     }
 
     /// This kubectl, keeping its caches in `folder` (`--cache-dir`) rather than the home's.
@@ -897,7 +908,14 @@ impl Kubectl {
             command.env_remove(name);
         }
         command.args(args);
-        let ran = crate::boundedrun::run(&mut command, input, most, MOST_SAID).map_err(|why| {
+        let ran = crate::boundedrun::run_within(
+            &mut command,
+            input,
+            most,
+            MOST_SAID,
+            self.within,
+        )
+        .map_err(|why| {
             use crate::boundedrun::Unanswered;
             Refused::Other(match why {
                 Unanswered::NotStarted(why) => {
@@ -1099,7 +1117,8 @@ impl Kubectl {
     }
 
     /// The statement and its signatures on the Claim `namespace`/`name`'s status, where the
-    /// operator has written one.
+    /// operator has written one. **A Claim being deleted vouches for nothing** (#4071): its
+    /// finalizer keeps it there, statement and all, while its runner is taken away.
     pub fn statement(&self, namespace: &str, name: &str) -> Result<Option<Signed>, Refused> {
         let held = self.json(
             &[
@@ -1113,6 +1132,12 @@ impl Kubectl {
             ],
             None,
         )?;
+        if held
+            .pointer("/metadata/deletionTimestamp")
+            .is_some_and(|since| !since.is_null())
+        {
+            return Ok(None);
+        }
         let field = |name: &str| {
             held.pointer(&format!("/status/linkKey/{name}"))
                 .and_then(serde_json::Value::as_str)

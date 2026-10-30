@@ -9,7 +9,7 @@ import {
   type ClusterPoolKey,
   type PoolAdding,
   type PoolLink,
-  type PoolProfileRow,
+  type PoolProfiles as PoolProfilesAnswered,
   type PoolVersion,
   type PoolsShown,
   type RunnerImageOffered,
@@ -224,21 +224,68 @@ export async function addClusterPool(adding: ClusterPoolAdding): Promise<string 
   return undefined;
 }
 
-/** What a pool's runner keeps of this machine's profiles, as last asked. */
-export type PoolProfiles = PoolProfileRow[] | "asking" | { trouble: string };
+/** Marks cluster pool `name` as the person's own, or takes the mark back (#4071): `undefined`
+ *  once it is kept, else why not. The window's alone. */
+export async function markPoolOwned(name: string, owned: boolean): Promise<string | undefined> {
+  const said = await caught(commands.setClusterPoolOwned(name, owned));
+  await rereadPools();
+  return said.status === "error" ? said.error : undefined;
+}
 
-/** Asks pool `name`'s runner to keep each of this machine's profiles, and where each stands
- *  there (#2049). */
-export async function askProfiles(name: string) {
-  set((was) => ({ ...was, profiles: { ...was.profiles, [name]: "asking" } }));
-  const said = await caught(commands.poolProfiles(name));
+/** What a pool's runner keeps of this machine's profiles, as last asked: the ones chosen for
+ *  it and the others Add a profile… offers (#4047), that they are being asked, or why not. */
+export type PoolProfiles = PoolProfilesAnswered | "asking" | { trouble: string };
+
+/** The pools whose profiles are being asked again quietly. */
+const askingQuietly = new Set<string>();
+
+/** How long a pool's profiles are shown before they are asked again while its runner fetches
+ *  a profile's harness (#4008). */
+export const ASK_AGAIN_WHILE_FETCHING_MS = 3000;
+
+/** Asks pool `name`'s runner to keep the profiles chosen for it, and where each stands there
+ *  (#2049, #4047): a pool that names none keeps the default of the open project `plane`. Asked
+ *  `quietly`, the rows shown stay until the answer comes (#4008). */
+export async function askProfiles(name: string, plane?: string, { quietly = false } = {}) {
+  // One quiet ask of a pool at a time, however many places show its profiles.
+  if (quietly && askingQuietly.has(name)) return;
+  if (quietly) askingQuietly.add(name);
+  else set((was) => ({ ...was, profiles: { ...was.profiles, [name]: "asking" } }));
+  const asked = caught(commands.poolProfiles(name, { plane: plane ?? null }));
+  const said = await asked.finally(() => {
+    if (quietly) askingQuietly.delete(name);
+  });
   const rows: PoolProfiles =
     said.status === "error"
       ? { trouble: said.error }
-      : Array.isArray(said.data)
+      : typeof said.data === "object" && said.data !== null && Array.isArray(said.data.kept)
         ? said.data
         : { trouble: "purlis did not say which profiles the runner keeps." };
   set((was) => ({ ...was, profiles: { ...was.profiles, [name]: rows } }));
+}
+
+/** **Adds this machine's profile `profile` to pool `name`** (#4047, Add a profile…), then asks
+ *  the pool's profiles again, so its runner keeps it. Why not, in the core's words. */
+export async function addProfileToPool(
+  name: string,
+  profile: string,
+  plane?: string,
+): Promise<string | undefined> {
+  const said = await caught(commands.poolProfileAdd(name, profile, { plane: plane ?? null }));
+  await askProfiles(name, plane);
+  return said.status === "error" ? said.error : undefined;
+}
+
+/** **Takes profile `profile` off pool `name`** (#4047): its runner forgets it, sign-in included,
+ *  then the pool's profiles are asked again. What the core said of it, or why not. */
+export async function removeProfileFromPool(
+  name: string,
+  profile: string,
+  plane?: string,
+): Promise<string | undefined> {
+  const said = await caught(commands.poolProfileRemove(name, profile, { plane: plane ?? null }));
+  await askProfiles(name, plane);
+  return said.status === "error" ? said.error : (said.data ?? undefined);
 }
 
 /** Closes what adding a pool ended with: its profiles to sign in there. */

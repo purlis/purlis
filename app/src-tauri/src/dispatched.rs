@@ -2366,13 +2366,20 @@ fn end_look_after(held: &Held, task: u32, after: Duration, looked: Looked) {
     {
         return;
     }
+    // A bound set anew since this one, as the task's own work ended, makes this one stale
+    // (#3921): it looks at nothing.
+    let epoch = held.tasks().ledger().bound_epoch(task);
     let held = held.weak();
     let _ = std::thread::Builder::new()
         .name("purlis-task-end".into())
         .spawn(move || {
             std::thread::sleep(after);
             if let Some(held) = held.upgrade() {
-                end_look(&held, task, looked);
+                let stale =
+                    looked == Looked::WaitedOut && held.tasks().ledger().bound_epoch(task) != epoch;
+                if !stale {
+                    end_look(&held, task, looked);
+                }
             }
         });
 }

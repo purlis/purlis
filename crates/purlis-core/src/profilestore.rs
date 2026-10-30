@@ -325,6 +325,57 @@ pub(crate) fn defaults(
     }
 }
 
+/// **The sign-in files a made profile's harness keeps under its folder** (#4011): Claude Code's
+/// `.credentials.json` and Codex's `auth.json` in the folder its config variable names, and
+/// opencode's `opencode/auth.json` in its data folder. Facts of each harness, as
+/// [`sign_in`]'s statuses read them. Nothing else of a profile is a sign-in.
+pub const SIGN_IN_FILES: [&str; 3] = [
+    "config/.credentials.json",
+    "config/auth.json",
+    "data/opencode/auth.json",
+];
+
+/// **The folder under the data home a runner keeps the sign-ins carried to it in** (#4011),
+/// `<data>/carried/<profile>/`, until it keeps that profile for its desktop and takes them in.
+pub const CARRIED: &str = "carried";
+
+/// **What a Docker pool's new runner takes of the runner it replaces** (#4011, ruled
+/// 2026-10-30): its profiles' sign-ins, and nothing else, each as `<from>=<to>`, paths under
+/// the two homes. A made profile's sign-in files ([`SIGN_IN_FILES`], `*` its name, under either
+/// spelling of the data home) go to [`CARRIED`] under the new data home, which the new runner
+/// takes in as it keeps the profile again; each harness's own sign-in file in its default folder
+/// (`~/.claude/.credentials.json`, `~/.codex/auth.json`, opencode's `auth.json`) goes to the same
+/// place. No setting, hook, plugin, instruction or transcript of a harness, and nothing of
+/// purlis's own: not the profiles' records, the runner's device id, link key or peers, its
+/// harness installs, its projects or its browsers.
+pub fn carried_in_a_runner_home() -> Vec<String> {
+    let new_data = Path::new(".local/share").join(
+        crate::names::DATA_HOME
+            .spellings()
+            .next()
+            .unwrap_or("purlis"),
+    );
+    let mut pairs = Vec::new();
+    for data in crate::names::DATA_HOME.spellings() {
+        let old_data = Path::new(".local/share").join(data);
+        for file in SIGN_IN_FILES {
+            pairs.push(format!(
+                "{}={}",
+                old_data.join(made::DIR).join("*").join(file).display(),
+                new_data.join(CARRIED).join("*").join(file).display()
+            ));
+        }
+    }
+    for own in [
+        ".claude/.credentials.json",
+        ".codex/auth.json",
+        ".local/share/opencode/auth.json",
+    ] {
+        pairs.push(format!("{own}={own}"));
+    }
+    pairs
+}
+
 /// What this device is called in a profile's title.
 pub fn this_device() -> &'static str {
     if cfg!(target_os = "macos") {

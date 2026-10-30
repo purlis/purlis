@@ -11,10 +11,15 @@
 //! device: no sign-in is copied between devices.
 //!
 //! **Only a runner purlis can show is the person's own is sent a profile or signed in**
-//! ([`owned`], the check browser logins and tools use, D-2050-4): until a pool can be marked
-//! owned (#2561), a Docker pool whose engine is a local socket on this machine. To any other
+//! ([`owned`], D-2050-4): a Docker pool whose engine is a local socket on this machine; a cluster
+//! pool's mark (#4071) is for values and tokens alone. To any other
 //! pool nothing is sent, and its chats start on the profiles its runner has of its own; its
 //! profiles are not offered for sign-in. A runner of a purlis before 1.43 is sent nothing either.
+//!
+//! **A pool keeps only the profiles chosen for it** (#4047, `profiles` in runners.json): the
+//! ones it names, or, where it names none, the profile a new chat in the open project gets. Its
+//! row adds one (`pool_profile_add`) and removes one (`pool_profile_remove`), which the runner
+//! forgets, its sign-in there with it; a chat that starts on or moves to it on another adds it.
 //!
 //! Adding a pool ends with its profiles (Settings › Pools, `pool_profiles`); a start on a pool
 //! keeps its profile there first ([`Linked`]): signed in, it starts with nobody asked, a moved
@@ -58,6 +63,7 @@ impl Linked {
 
 impl ProfilesOnPools for Linked {
     fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+        chosen_by_a_chat(&self.config, root, pool, profile);
         // A chat's start is what wakes a suspended runner (#2051), so its keep does too.
         onrunner::ready_on(&self.config, root, pool, profile, &|kept| {
             keep_on_as(owned(), &self.config, pool, kept, Waking::Yes)
@@ -65,9 +71,42 @@ impl ProfilesOnPools for Linked {
     }
 
     fn ready_to_move(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+        chosen_by_a_chat(&self.config, root, pool, profile);
         onrunner::ready_to_move_on(&self.config, root, pool, profile, &|kept| {
             keep_on_as(owned(), &self.config, pool, kept, Waking::Yes)
         })
+    }
+}
+
+/// **A chat in the project at `root` that starts on or moves to pool `pool` on `profile` adds
+/// it to the pool** (#4047), so its runner keeps it from now on: only one of this machine's
+/// profiles, on a Docker pool shown to be the person's own. One already on it is left as it is;
+/// a pool that named none keeps the project's default beside it. What could not be recorded is
+/// logged, and the start goes on: the runner is asked to keep the profile all the same.
+fn chosen_by_a_chat(config: &Path, root: &Path, pool: &str, profile: &str) {
+    if owned().is_err() {
+        return;
+    }
+    let records = profilestore::list(config).unwrap_or_default();
+    let ours = records.iter().any(|r| r.name == profile);
+    let Some(named) = purlis_core::runners::pools(config)
+        .ok()
+        .and_then(|pools| pools.into_iter().find(|p| p.name() == pool))
+        .map(|p| p.profiles().map(<[String]>::to_vec))
+    else {
+        return;
+    };
+    if !ours || named.is_some_and(|named| named.iter().any(|one| one == profile)) {
+        return;
+    }
+    let default = default_in(Some(root), &records);
+    if default.as_deref() == Some(profile) {
+        return;
+    }
+    if let Err(why) =
+        purlis_core::runners::add_pool_profile(config, pool, profile, default.as_deref())
+    {
+        tracing::warn!("purlis: pool {pool} does not name the profile {profile}: {why}");
     }
 }
 
@@ -121,8 +160,9 @@ fn keep_on_as(
     if owned.is_err() {
         return Ok(None);
     }
-    // A cluster pool's runner is a team's cluster's, never shown to be the person's own: no
-    // profile of this machine's is sent there, and its chats start on its own (#3292).
+    // A cluster pool's runner is a team's cluster's: its mark (#4071) is for values and tokens
+    // alone, so no profile of this machine's is sent there, and its chats start on its own
+    // (#3292).
     if purlis_core::runners::cluster_runner_for(config, pool)
         .map_err(|why| why.to_string())?
         .is_some()
@@ -150,7 +190,8 @@ pub struct PoolProfileRow {
     /// The harness as people call it: `Claude Code`.
     pub harness: String,
     /// Whether its harness says it is signed in on the runner: `signed-in`, `signed-out` or
-    /// `cannot-tell`. Null where it is not kept there.
+    /// `cannot-tell`, or `fetching` while the runner fetches the version it pins (#4008), which
+    /// the window asks again after. Null where it is not kept there.
     pub standing: Option<String>,
     /// Why it is not kept on the runner, in words, where it is not.
     pub not_kept: Option<String>,
@@ -162,29 +203,132 @@ pub struct PoolProfileRow {
 const OLDER_RUNNER: &str = "its runner runs a purlis before 1.43, so its chats start on the \
                             profiles it has of its own";
 
-/// **Every profile of this machine's, kept on pool `pool`'s runner**, as the runner stands with
-/// each (#2049): what adding a pool ends with, and what Settings › Pools shows. Refused, with
-/// nothing sent, for a pool not shown to be the person's own.
+/// **A pool's profiles** (#4047): the ones its runner keeps, as it stands with each, and this
+/// machine's others that Add a profile… offers.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolProfiles {
+    pub kept: Vec<PoolProfileRow>,
+    pub addable: Vec<AddableProfile>,
+}
+
+/// One of this machine's profiles that is not on a pool yet, and could go there.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct AddableProfile {
+    pub name: String,
+    /// The harness as people call it: `Claude Code`.
+    pub harness: String,
+}
+
+/// **The profiles chosen for a pool, `kept`, among this machine's `records`** (#4047), in the
+/// order chosen: each one's record, or why this machine has none of that name, so it can still
+/// be removed. And this machine's others that a runner keeps, which Add a profile… offers.
+fn chosen<'a>(
+    records: &'a [profilestore::MachineProfile],
+    kept: &[String],
+) -> (
+    Vec<Result<&'a profilestore::MachineProfile, String>>,
+    Vec<&'a profilestore::MachineProfile>,
+) {
+    let on_pool = kept
+        .iter()
+        .map(|name| {
+            records.iter().find(|r| &r.name == name).ok_or_else(|| {
+                format!(
+                    "this machine has no profile named '{}' any more",
+                    purlis_core::shown::short(name)
+                )
+            })
+        })
+        .collect();
+    let addable = records
+        .iter()
+        .filter(|r| !kept.contains(&r.name) && onrunner::Kept::of(r).is_ok())
+        .collect();
+    (on_pool, addable)
+}
+
+/// The profile a new chat in the project at `root` gets, among this machine's `records`: what a
+/// pool that names no profiles keeps (#4047). None with no project open, and none where it is
+/// a built-in this machine keeps no record of, which a runner has of its own.
+fn default_in(root: Option<&Path>, records: &[profilestore::MachineProfile]) -> Option<String> {
+    of_this_machine(
+        root.and_then(|root| purlis_core::profiles::for_launch(root).0.for_a_new_chat()),
+        records,
+    )
+}
+
+/// `default`, where it is one of this machine's `records`.
+fn of_this_machine(
+    default: Option<String>,
+    records: &[profilestore::MachineProfile],
+) -> Option<String> {
+    default.filter(|default| records.iter().any(|r| &r.name == default))
+}
+
+/// Refused, in words, where pool `pool` names no profiles and no project is open: what it keeps
+/// is the open project's default, so a change has nothing to start from (#4047).
+fn changeable(config: &Path, pool: &str, root: Option<&Path>) -> Result<(), String> {
+    let names_none = purlis_core::runners::pools(config)
+        .map_err(|why| why.to_string())?
+        .iter()
+        .any(|p| p.name() == pool && p.profiles().is_none());
+    if names_none && root.is_none() {
+        return Err(format!(
+            "pool {pool} keeps the profile a new chat in the open project gets, and no project \
+             is open; open one to change its profiles"
+        ));
+    }
+    Ok(())
+}
+
+/// The profiles pool `pool`, kept under `config`, keeps on its runner, with `default` the
+/// project's (#4047). Refused for a pool this machine keeps no Docker pool of.
+fn kept_on(config: &Path, pool: &str, default: Option<&str>) -> Result<Vec<String>, String> {
+    purlis_core::runners::pools(config)
+        .map_err(|why| why.to_string())?
+        .into_iter()
+        .find(|p| p.name() == pool)
+        .map(|p| p.profiles_kept(default))
+        .ok_or_else(|| format!("there is no pool named {pool} on this machine"))
+}
+
+/// **The profiles chosen for pool `pool`, kept on its runner** (#2049, #4047), as the runner
+/// stands with each, and this machine's others Add a profile… offers: the ones its `profiles`
+/// names, or, where it names none, the profile a new chat in the open project `plane` gets. What
+/// adding a pool ends with, and what Settings › Pools shows. Refused, with nothing sent, for a
+/// pool not shown to be the person's own.
 #[tauri::command]
 #[specta::specta]
-pub async fn pool_profiles(pool: String) -> Result<Vec<PoolProfileRow>, String> {
+pub async fn pool_profiles(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    pool: String,
+    open: OpenProject,
+) -> Result<PoolProfiles, String> {
+    let root = root_of(&planes, open.plane.as_ref())?;
     tauri::async_runtime::spawn_blocking(move || {
         let config = config_root()?;
         owned()?;
         let records = profilestore::list(&config)?;
+        let default = default_in(root.as_deref(), &records);
+        let names = kept_on(&config, &pool, default.as_deref())?;
+        let (on_pool, addable) = chosen(&records, &names);
         let to = to_a_runner(&config, &pool, Waking::No)?;
         // Each that goes to a runner, kept there over one link.
-        let kept: Vec<_> = records.iter().map(onrunner::Kept::of).collect();
+        let kept: Vec<_> = on_pool
+            .iter()
+            .map(|record| record.clone().and_then(onrunner::Kept::of))
+            .collect();
         let sent: Vec<_> = kept
             .iter()
             .filter_map(|kept| kept.as_ref().ok().cloned())
             .collect();
         let said = crate::runnerlinks::keep_profiles(&to, sent)?;
         let mut said = said.map(Vec::into_iter);
-        Ok(records
+        let kept = on_pool
             .iter()
+            .zip(&names)
             .zip(kept)
-            .map(|(record, kept)| {
+            .map(|((record, name), kept)| {
                 let standing = kept.and_then(|_| match said.as_mut() {
                     None => Err(OLDER_RUNNER.to_owned()),
                     Some(said) => said
@@ -192,12 +336,129 @@ pub async fn pool_profiles(pool: String) -> Result<Vec<PoolProfileRow>, String> 
                         .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
                         .map(onrunner::standing_on_the_wire),
                 });
-                row(record, standing)
+                match record {
+                    Ok(record) => row(record, standing),
+                    Err(why) => PoolProfileRow {
+                        name: name.clone(),
+                        kind: String::new(),
+                        harness: String::new(),
+                        standing: None,
+                        not_kept: Some(why.clone()),
+                        plans: Vec::new(),
+                    },
+                }
             })
-            .collect())
+            .collect();
+        Ok(PoolProfiles {
+            kept,
+            addable: addable
+                .into_iter()
+                .map(|record| AddableProfile {
+                    name: record.name.clone(),
+                    harness: harness_title(&record.harness),
+                })
+                .collect(),
+        })
     })
     .await
     .map_err(|why| format!("the pool's profiles did not answer: {why}"))?
+}
+
+/// **Adds this machine's profile `name` to pool `pool`** (#4047, Add a profile…): its record
+/// names it from now on, beside the open project `plane`'s default where it named none. Its
+/// runner keeps it the next time the pool's profiles are asked.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_profile_add(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    pool: String,
+    name: String,
+    open: OpenProject,
+) -> Result<(), String> {
+    let root = root_of(&planes, open.plane.as_ref())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let config = config_root()?;
+        owned()?;
+        changeable(&config, &pool, root.as_deref())?;
+        let records = profilestore::list(&config)?;
+        let record = records.iter().find(|p| p.name == name).ok_or_else(|| {
+            format!(
+                "this machine has no profile named '{}', so none was added to pool {pool}",
+                purlis_core::shown::short(&name)
+            )
+        })?;
+        onrunner::Kept::of(record)?;
+        let default = default_in(root.as_deref(), &records);
+        purlis_core::runners::add_pool_profile(&config, &pool, &name, default.as_deref())
+            .map_err(|why| why.to_string())
+    })
+    .await
+    .map_err(|why| format!("the profile was not added: {why}"))?
+}
+
+/// **Takes profile `name` off pool `pool`** (#4047): its runner forgets it first, its folder
+/// and its sign-in there with it, then the pool's record leaves it out, starting from the
+/// open project `plane`'s default where it named none. A runner that could not forget it leaves
+/// the record as it was, so the removal can be asked again. The runner is woken for it, as a
+/// chat's start wakes it, since what it keeps must go. `Some` note for a runner of a purlis
+/// before 1.52, which keeps the profile until it is made again.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_profile_remove(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    pool: String,
+    name: String,
+    open: OpenProject,
+) -> Result<Option<String>, String> {
+    let root = root_of(&planes, open.plane.as_ref())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let config = config_root()?;
+        owned()?;
+        changeable(&config, &pool, root.as_deref())?;
+        let shown = purlis_core::shown::short(&name);
+        let to = to_a_runner(&config, &pool, Waking::Yes)?;
+        let forgotten = crate::runnerlinks::forget_profile(&to, &name).map_err(|why| {
+            format!(
+                "pool {pool}'s runner did not forget the profile '{shown}', so it stays on the \
+                 pool: {why}"
+            )
+        })?;
+        let default = default_in(root.as_deref(), &profilestore::list(&config)?);
+        purlis_core::runners::remove_pool_profile(&config, &pool, &name, default.as_deref())
+            .map_err(|why| why.to_string())?;
+        onrunner::let_go(None, &pool, &name);
+        Ok(forgotten.is_none().then(|| {
+            format!(
+                "The profile '{shown}' is off pool {pool}, but its runner runs a purlis before \
+                 1.52, so it keeps the profile and its sign-in until the runner is made again."
+            )
+        }))
+    })
+    .await
+    .map_err(|why| format!("the profile was not removed: {why}"))?
+}
+
+/// The open project a command is asked for: a type of its own, so its plane stays a `PlaneId`.
+#[derive(Debug, serde::Deserialize, specta::Type)]
+pub struct OpenProject {
+    pub plane: Option<crate::planes::PlaneId>,
+}
+
+/// The root of the open project `plane`, whose default a pool that names no profiles keeps;
+/// none with no project open. Refused for a project this window does not hold.
+fn root_of(
+    planes: &crate::planes::Planes,
+    plane: Option<&crate::planes::PlaneId>,
+) -> Result<Option<PathBuf>, String> {
+    plane
+        .map(|plane| planes.held(plane).map(|held| held.root().to_path_buf()))
+        .transpose()
+}
+
+/// The harness `kind` as people call it: `Claude Code`.
+fn harness_title(kind: &str) -> String {
+    purlis_core::harness_declaration::builtin(kind)
+        .map_or_else(|| kind.to_owned(), |d| d.title.clone())
 }
 
 /// `record`'s row on a pool's runner: where it stands there, or why it is not kept there.
@@ -209,8 +470,7 @@ fn row(record: &profilestore::MachineProfile, kept: Result<Standing, String>) ->
     PoolProfileRow {
         name: record.name.clone(),
         kind: record.harness.clone(),
-        harness: purlis_core::harness_declaration::builtin(&record.harness)
-            .map_or_else(|| record.harness.clone(), |d| d.title.clone()),
+        harness: harness_title(&record.harness),
         standing,
         not_kept,
         plans: profilestore::sign_in::providers(&record.harness)
@@ -263,6 +523,8 @@ pub fn sign_in_line(pool: &str, name: &str, provider: Option<&str>) -> Result<St
 pub enum PoolSignInStep {
     /// Open this page in the browser here: the harness vendor's own.
     Open { url: String },
+    /// Show this code to enter on the vendor's own page `url`, before that page is opened.
+    Device { url: String, code: String },
     /// Ask for the code the page shows.
     Code,
     /// The harness refused the code, in its words.
@@ -283,6 +545,7 @@ impl From<driven::Event> for PoolSignInStep {
     fn from(event: driven::Event) -> Self {
         match event {
             driven::Event::Open { url } => Self::Open { url },
+            driven::Event::DeviceCode { url, code } => Self::Device { url, code },
             driven::Event::AskCode => Self::Code,
             driven::Event::Refused { said } => Self::Refused { said },
             driven::Event::Checking => Self::Checking,
@@ -349,7 +612,12 @@ pub async fn pool_sign_in_start(
                 _ => Standing::CannotTell,
             }
         };
-        let driving = Arc::new(driven::drive(&login, &record.harness, check)?);
+        let driving = Arc::new(driven::drive_with(
+            &login,
+            &record.harness,
+            provider.as_deref(),
+            check,
+        )?);
         // One of the same profile on the same pool is let go and ended, after the lock.
         let before: Vec<SignIn> = {
             let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -511,6 +779,7 @@ fn watching(pool: &str, name: &str, told: impl FnOnce()) {
     let ends = std::time::Instant::now() + WATCHED_FOR;
     while std::time::Instant::now() < ends {
         std::thread::sleep(WATCHED_EVERY);
+        // A runner still fetching its harness cannot tell yet, so it is asked again (#4008).
         if matches!(
             keep_on(&config, pool, &kept),
             Ok(Some(Standing::SignedIn | Standing::CannotTell))

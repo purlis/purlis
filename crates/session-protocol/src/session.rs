@@ -337,9 +337,28 @@ use crate::view::{Limits, Views};
 /// window's alone ([`crate::grants::Power::Code`]), relayed for it. A host before 1.51 refuses
 /// it `unknown_command`, so the window asks only one of 1.51 or later, and a clone a runner
 /// before it made stays there.
+///
+/// 1.52 added a desktop's profile taken off its runner (#4047, spec #4023): `forget_profile`,
+/// sent by the desktop on its own link to the runner as it takes a profile off the pool, has the
+/// runner forget a profile it keeps for that desktop, with its folder and so its sign-in there,
+/// answered `done`. A profile the runner keeps of its own, or for another desktop, is refused. A
+/// host before 1.52 refuses it `unknown_command`, and the profile stays kept there.
+///
+/// 1.53 added a profile whose harness its runner is still fetching (#4008, spec #4023):
+/// `profile_kept` may answer [`ProfileStanding::Fetching`] while the runner fetches the harness
+/// version the profile pins, which a look started, so the window says so and asks again once the
+/// fetch has ended. A desktop before 1.53 reads it as `cannot_tell`, as it reads any word a later
+/// minor adds.
+///
+/// 1.54 added where each such clone came from (#3985, spec #2041): `clones` may carry `origins`,
+/// the `origin` URL of each clone's own configuration there, by its folder name, as the
+/// runner's git keeps it and only where it is a forge's HTTPS or SSH address with no sign-in in
+/// it. A runner sends it only to a link of 1.54 or later; one before 1.54 sends none, and a
+/// window before it ignores the field. The window holds every URL to its own rules again and
+/// gives a clone it makes fresh that remote.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 51,
+    minor: 54,
 };
 
 /// The version that first answers `relay_to` with the runner the link reached (#3417).
@@ -381,6 +400,20 @@ pub const KNOWS_PROFILE_SETTINGS: Version = Version {
 pub const KNOWS_CLONES_OF: Version = Version {
     major: 1,
     minor: 51,
+};
+
+/// The version that first says where each clone it holds came from (#3985): a host sends
+/// [`Answer::Clones`]'s `origins` only to a link of this version or later.
+pub const KNOWS_CLONE_ORIGINS: Version = Version {
+    major: 1,
+    minor: 54,
+};
+
+/// The version that first forgets a desktop's profile on a runner (#4047): the desktop asks no
+/// runner before it, where the profile stays kept.
+pub const KNOWS_FORGET_PROFILE: Version = Version {
+    major: 1,
+    minor: 52,
 };
 
 /// The version that first knows browsers relayed for a window (#2050): a runner before it refuses
@@ -723,6 +756,12 @@ pub enum Command {
     /// host, on the link between hosts from the desktop it is paired with, carries it out;
     /// every other host refuses it [`NOT_ALLOWED`] ([`crate::grants::Power::KeepProfile`]).
     KeepProfile(ProfileToKeep),
+    /// The desktop on this link has the runner forget its profile `name` (1.52, #4047): the
+    /// runner's host forgets the profile it keeps for that desktop, with its folder and so its
+    /// sign-in there, and answers [`Answer::Done`]; one it does not keep is nothing. A profile
+    /// it keeps of its own, or for another desktop, is refused. Carried out and refused as
+    /// [`Command::KeepProfile`] is ([`crate::grants::Power::KeepProfile`]).
+    ForgetProfile { name: String },
     /// The person takes browser `program` over (1.14, #2014): an act in flight answers that it
     /// was interrupted, and every act is refused in words until [`Command::HandBack`]. The lease
     /// is the host's: it stays with the person whatever becomes of the link that took it, until
@@ -1123,6 +1162,9 @@ pub enum ProfileStanding {
     SignedIn,
     /// The harness says it is not: a chat on it does not start there until it is.
     SignedOut,
+    /// The runner is fetching the harness version the profile pins, so its harness cannot say
+    /// yet (1.53, #4008): asked again once the fetch has ended, it answers.
+    Fetching,
     /// The harness did not say, or has no way to; and a word a later minor adds.
     #[serde(other)]
     CannotTell,
@@ -1413,8 +1455,14 @@ pub enum Answer {
     /// [`Command::GiveConversation`].
     Conversation { file: String },
     /// The folder name of each clone a host holds in a workspace (1.51):
-    /// [`Command::ClonesOf`].
-    Clones { repos: Vec<String> },
+    /// [`Command::ClonesOf`]. And the `origin` URL of each that has one a forge reaches, by its
+    /// folder name (1.54, [`KNOWS_CLONE_ORIGINS`]): the host's own word, which the window holds
+    /// to its own rules before it uses any.
+    Clones {
+        repos: Vec<String>,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        origins: BTreeMap<String, String>,
+    },
     /// Whether the profile a runner keeps is signed in there, as its harness says:
     /// [`Command::KeepProfile`] (1.43).
     ProfileKept { standing: ProfileStanding },
@@ -1770,6 +1818,7 @@ wire_words!(Command {
     NameWindow => "name_window",
     Unpair => "unpair",
     KeepProfile => "keep_profile",
+    ForgetProfile => "forget_profile",
     RelayTo => "relay_to",
     TakeCode => "take_code",
     GiveCode => "give_code",
@@ -1827,7 +1876,7 @@ impl Command {
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,
             Command::Unpair => Power::Unpair,
-            Command::KeepProfile(_) => Power::KeepProfile,
+            Command::KeepProfile(_) | Command::ForgetProfile { .. } => Power::KeepProfile,
             Command::RelayTo { .. } => Power::RelayTo,
             Command::TakeCode { .. }
             | Command::GiveCode { .. }
@@ -2335,6 +2384,7 @@ impl Lane {
             | Command::NameWindow { .. }
             | Command::Unpair
             | Command::KeepProfile(_)
+            | Command::ForgetProfile { .. }
             | Command::RelayTo { .. }
             | Command::TakeCode { .. }
             | Command::GiveCode { .. }
@@ -2987,6 +3037,16 @@ impl Client {
         }
     }
 
+    /// Have the runner forget this link's desktop's profile `name` (1.52, #4047), with its
+    /// folder and sign-in there. Refused by every host but a runner's, on its link from that
+    /// desktop.
+    pub async fn forget_profile(&self, name: &str) -> Result<(), CallError> {
+        self.done(Command::ForgetProfile {
+            name: name.to_owned(),
+        })
+        .await
+    }
+
     /// Ask the desktop's host to relay this link to the runner it keeps as `runner` (1.33,
     /// #2679): the link's first command, before [`Client::subscribe`]. Answers the runner it
     /// reached, as `<pool>/<runner>` (1.48, #3417), or `None` from a host before 1.48.
@@ -3116,12 +3176,12 @@ impl Client {
     }
 
     /// **The clones the host holds in `workspace`** of `project` (1.51, #3811), by their folder
-    /// names.
+    /// names, and the `origin` URL the host names for each it can (1.54, #3985).
     pub async fn clones_of(
         &self,
         project: &str,
         workspace: &str,
-    ) -> Result<Vec<String>, CallError> {
+    ) -> Result<(Vec<String>, BTreeMap<String, String>), CallError> {
         match self
             .call(Command::ClonesOf {
                 project: project.to_owned(),
@@ -3129,7 +3189,7 @@ impl Client {
             })
             .await?
         {
-            Answer::Clones { repos } => Ok(repos),
+            Answer::Clones { repos, origins } => Ok((repos, origins)),
             other => Err(unexpected(&other)),
         }
     }
