@@ -453,6 +453,9 @@ pub(crate) struct Running {
     /// The copy a saved edit of which started it (SK-58), by its opt-in's key (level and
     /// name): the next save of that copy stops it. `None` for a grade pressed by hand.
     pub(crate) after_edit: Option<String>,
+    /// Its latest step told to the window, where it is a skill's grade: what a page that opens
+    /// while it runs starts from (#3928). `None` for a router's grade.
+    pub(crate) step: Option<SkillGradeStep>,
 }
 
 /// **The grades running in this app**, by id: one per project at a time.
@@ -628,6 +631,37 @@ pub(crate) fn begin(
     let profile = profile.ok_or("The grade did not start: no profile was found.")?;
     let id = purlis_core::reopen::mint();
     let stop = Arc::new(AtomicBool::new(false));
+    let of = grading::plan(&request).chats;
+    // The cap the plan showed, read again as the grade starts: the one it is held to.
+    let cap = planned.cap.tokens;
+    let limits = grading::Limits {
+        tokens: cap,
+        cost_usd: Some(planned.cap.cost_usd(&priced)),
+        priced: Some(priced),
+        unpriced_usd_per_million: Some(grades::price::DEAREST_USD_PER_MILLION),
+    };
+    // **One step of it**, as the window is told it and as a page that opens while it runs reads
+    // it (`skill_grades`).
+    let step_of = {
+        let (plane, skill, grade) = (plane.clone(), skill.clone(), id.clone());
+        let limit_usd = limits.cost_usd;
+        move |spent: Spent, asked: u32, ended: Option<GradeEnded>, said: Option<String>| {
+            SkillGradeStep {
+                plane: plane.clone(),
+                skill: skill.clone(),
+                grade: grade.clone(),
+                ran: spent.chats,
+                of,
+                tokens: spent.tokens.map(|tokens| tokens as f64),
+                cost_usd: spent.cost_usd,
+                limit_usd,
+                cap: cap as f64,
+                asked,
+                ended,
+                said,
+            }
+        }
+    };
     {
         let mut all = running();
         if all.values().any(|one| one.plane == plane) {
@@ -646,18 +680,10 @@ pub(crate) fn begin(
                 after_edit: after_edit
                     .then(|| grades::after_edit::key(&level, &skill))
                     .flatten(),
+                step: Some(step_of(Spent::default(), 0, None, None)),
             },
         );
     }
-    let of = grading::plan(&request).chats;
-    // The cap the plan showed, read again as the grade starts: the one it is held to.
-    let cap = planned.cap.tokens;
-    let limits = grading::Limits {
-        tokens: cap,
-        cost_usd: Some(planned.cap.cost_usd(&priced)),
-        priced: Some(priced),
-        unpriced_usd_per_million: Some(grades::price::DEAREST_USD_PER_MILLION),
-    };
     let grade = id.clone();
     // Held as under way while it runs (#3353): a crash, a fault or a quit before it ends
     // leaves it to the project's next start to record as interrupted.
@@ -700,23 +726,13 @@ pub(crate) fn begin(
             let marker = std::cell::RefCell::new(marker);
             let tell =
                 |spent: Spent, asked: u32, ended: Option<GradeEnded>, said: Option<String>| {
-                    let _ = app.emit(
-                        EVENT,
-                        SkillGradeStep {
-                            plane: plane.clone(),
-                            skill: skill.clone(),
-                            grade: grade.clone(),
-                            ran: spent.chats,
-                            of,
-                            tokens: spent.tokens.map(|tokens| tokens as f64),
-                            cost_usd: spent.cost_usd,
-                            limit_usd: limits.cost_usd,
-                            cap: cap as f64,
-                            asked,
-                            ended,
-                            said,
-                        },
-                    );
+                    let step = step_of(spent, asked, ended, said);
+                    // Kept while it runs, so a page opened later starts from it; an end is told
+                    // once it runs no more, and kept nowhere.
+                    if let Some(one) = running().get_mut(&grade) {
+                        one.step = Some(step.clone());
+                    }
+                    let _ = app.emit(EVENT, step);
                 };
             tell(Spent::default(), 0, None, None);
             let run = || {
@@ -1079,15 +1095,46 @@ impl GradeRow {
     }
 }
 
-/// **A copy's grades, newest first** (S6), and what the record left out as it was read.
+/// **A copy's grades, newest first** (S6), and what the record left out as it was read; and what
+/// the Grades tab says besides, so it asks no plan (#3928): how many trigger tests a grade would
+/// run, or why they were not read, and the grade of the skill running now, at its latest step.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct SkillGrades {
     pub grades: Vec<GradeRow>,
     pub said: Option<String>,
+    pub tests: u32,
+    pub tests_refused: Option<String>,
+    pub running: Option<SkillGradeStep>,
+}
+
+impl SkillGrades {
+    /// The grades `read` of `skill` in `plane`, its trigger tests `tests`, and the grade of it
+    /// running now, where one is.
+    fn of(read: &grades::Read, tests: &grades::TriggerTests, plane: &PlaneId, skill: &str) -> Self {
+        SkillGrades {
+            grades: read.grades.iter().map(GradeRow::of).collect(),
+            said: read.said(),
+            tests: u32::try_from(tests.runs).unwrap_or(u32::MAX),
+            tests_refused: tests
+                .refused
+                .as_ref()
+                .map(purlis_core::skills::grade::Refused::in_window),
+            running: step_of_running(plane, skill),
+        }
+    }
+}
+
+/// The latest step of the grade of `skill` running in `plane` now, where one is.
+fn step_of_running(plane: &PlaneId, skill: &str) -> Option<SkillGradeStep> {
+    running()
+        .values()
+        .find(|one| one.plane == *plane && one.skill == skill)
+        .and_then(|one| one.step.clone())
 }
 
 /// **The grades of the copy of `skill` at `level`** (S6), as the eval record holds them: what the
-/// skill's Grades tab draws its bars and its list from.
+/// skill's Grades tab draws its bars and its list from, with whether it has trigger tests and the
+/// grade of it running now (#3928), and what a running grade's page starts from.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_grades(
@@ -1101,10 +1148,8 @@ pub(crate) async fn skill_grades(
         flag_on()?;
         let level = Level::from(&level);
         let read = grades::read(held.root(), &skill, Some(&level));
-        Ok(SkillGrades {
-            grades: read.grades.iter().map(GradeRow::of).collect(),
-            said: read.said(),
-        })
+        let tests = grades::trigger_tests(held.root(), &level, &skill)?;
+        Ok(SkillGrades::of(&read, &tests, &plane, &skill))
     })
     .await
 }

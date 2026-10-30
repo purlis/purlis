@@ -334,7 +334,13 @@ describe("a skill's page", () => {
         previous: null,
         previous_refused: null,
       }),
-      skill_grades: () => ({ grades: [row], said: null }),
+      skill_grades: () => ({
+        grades: [row],
+        said: null,
+        tests: 1,
+        tests_refused: null,
+        running: null,
+      }),
       skill_grade_scorecard: () => ({
         ...row,
         skill: "deploy",

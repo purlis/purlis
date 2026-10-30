@@ -137,7 +137,7 @@ impl Level {
 
     /// **Every copy of skill `name` in the plane at `plane`, in the order its tab shows them**
     /// (#3443): each level of [`Self::every`] that holds one, with its folder. The one place that
-    /// order is decided: the first is the copy the tab shows first, and the one its Grades panel
+    /// order is decided: the first is the copy the tab shows first, and the one its Grades tab
     /// reads until the tab names another.
     pub fn copies_of<'a>(
         plane: &'a Path,

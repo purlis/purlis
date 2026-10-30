@@ -216,13 +216,12 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
         }
     );
 
-    // A panel on a skill's tab, after purlis's own Grades and Runs panels.
-    let panels = studio.panels(&probe.plane(), "deploy", None);
+    // A panel on a skill's tab, after purlis's own Runs panel.
+    let panels = studio.panels(&probe.plane(), "deploy");
     let keys: Vec<PanelKey> = panels.iter().map(|it| it.key.clone()).collect();
     assert_eq!(
         keys,
         [
-            PanelKey::Grades,
             PanelKey::Runs,
             PanelKey::Extension {
                 extension: ID.to_owned(),
@@ -230,7 +229,7 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
             }
         ]
     );
-    let blocks = panels[2]
+    let blocks = panels[1]
         .blocks
         .as_ref()
         .expect("the probe's panel answers");

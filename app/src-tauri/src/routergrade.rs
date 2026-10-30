@@ -279,6 +279,7 @@ pub(crate) async fn router_grade_start(
                     skill: String::new(),
                     stop: Arc::clone(&stop),
                     after_edit: None,
+                    step: None,
                 },
             );
         }

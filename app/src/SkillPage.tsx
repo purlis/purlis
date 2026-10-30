@@ -446,7 +446,7 @@ export function SkillPage({
     (data) => Array.isArray(data.by_harness),
   );
   const panels = shaped(
-    useRead(() => commands.skillPanels(plane, name, level), [...reread, level?.at]),
+    useRead(() => commands.skillPanels(plane, name), reread),
     Array.isArray,
   );
   // An installed skill alone has a source to ask for a newer version.

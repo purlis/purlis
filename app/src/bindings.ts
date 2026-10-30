@@ -1870,12 +1870,12 @@ export const commands = {
 	 */
 	skillStats: (plane: PlaneId, skill: string) => typedError<SkillStats, string>(__TAURI_INVOKE("skill_stats", { plane, skill })),
 	/**
-	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Grades panel, of the copy at
-	 *  `level` the tab shows (null: the copy it shows first, #3353), and its Runs panel, which lists
-	 *  every run of the skill, newest first, then each extension's. None while the flag is off. On a
-	 *  blocking thread, as it reads the project's skill log and asks each extension.
+	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
+	 *  run of the skill, newest first, then each extension's. A skill's grades are no panel: its
+	 *  Grades tab reads them whole ([`crate::skillgrade::skill_grades`]). None while the flag is off.
+	 *  On a blocking thread, as it reads the project's skill log and asks each extension.
 	 */
-	skillPanels: (plane: PlaneId, skill: string, level: { at: "project"; local: boolean } | { at: "workspace"; name: string; local: boolean } | { at: "persona"; name: string; local: boolean } | null) => typedError<SkillPanel[], string>(__TAURI_INVOKE("skill_panels", { plane, skill, level })),
+	skillPanels: (plane: PlaneId, skill: string) => typedError<SkillPanel[], string>(__TAURI_INVOKE("skill_panels", { plane, skill })),
 	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
 	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
 	/**
@@ -2092,7 +2092,8 @@ export const commands = {
 	skillGradeChat: (plane: PlaneId, skill: string, grade: string, chat: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_chat", { plane, skill, grade, chat })),
 	/**
 	 *  **The grades of the copy of `skill` at `level`** (S6), as the eval record holds them: what the
-	 *  skill's Grades tab draws its bars and its list from.
+	 *  skill's Grades tab draws its bars and its list from, with whether it has trigger tests and the
+	 *  grade of it running now (#3928), and what a running grade's page starts from.
 	 */
 	skillGrades: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<SkillGrades, string>(__TAURI_INVOKE("skill_grades", { plane, level, skill })),
 	/**
@@ -12557,10 +12558,17 @@ export type SkillGradeStep = {
 	said: string | null,
 };
 
-/**  **A copy's grades, newest first** (S6), and what the record left out as it was read. */
+/**
+ *  **A copy's grades, newest first** (S6), and what the record left out as it was read; and what
+ *  the Grades tab says besides, so it asks no plan (#3928): how many trigger tests a grade would
+ *  run, or why they were not read, and the grade of the skill running now, at its latest step.
+ */
 export type SkillGrades = {
 	grades: GradeRow[],
 	said: string | null,
+	tests: number,
+	tests_refused: string | null,
+	running: SkillGradeStep | null,
 };
 
 /**  Where a project skill reaches, as the studio sets it. */
@@ -12625,8 +12633,8 @@ export type SkillLintLevel =
 "warns";
 
 /**
- *  **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Grades and Runs
- *  panels, then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
+ *  **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,
+ *  then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
  *  or refused with the core's sentence.
  */
 export type SkillPanel = {
@@ -12643,7 +12651,7 @@ export type SkillPanel = {
  *  **Which panel on a skill's tab**, as the window holds it: purlis's Runs panel, or one an
  *  extension adds, by its id and the panel's.
  */
-export type SkillPanelKey = { kind: "grades" } | { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
+export type SkillPanelKey = { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
 
 /**
  *  **Whose pins a pin is** (SK-15d, #3232): a workspace's or a persona's, by name. The core's

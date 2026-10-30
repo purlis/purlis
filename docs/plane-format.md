@@ -3788,7 +3788,7 @@ An end row, never a pass or a fail:
   ends, whole or stopped, or at the project's next start for a grade purlis stopped under before
   it was scored (`report.ended` `interrupted`, no chat scored, #3353,
   [`<state>/grades-under-way/`](#dataapp-stateclone-keygrades-under-waygradejson)), and read by the Skill studio's
-  Grades panel (one copy's grades: the copy the skill's page shows, #3353), a skill's history and
+  Grades tab (one copy's grades: the copy the skill's page shows, #3353), a skill's history and
   `purlis skill grade`.
 - **Tier:** Plane — committed, beside the skill log, so a teammate sees a skill's grades on the
   version they pulled.
@@ -3844,7 +3844,7 @@ An end row, never a pass or a fail:
   `spent_tokens`, its cost `spent_usd` where the report has one; for an `interrupted` row with no
   arms, its chats at most what its runs could have asked for, #3582), or an arm whose chats are not
   what its tests ran and asked for) is skipped. **What was left out is said** (#3273): the
-  Grades panel, the plan and `purlis skill grade` say how many rows of the skill were skipped
+  Grades tab, the plan and `purlis skill grade` say how many rows of the skill were skipped
   (a row of it no purlis parses among them) and name each file not read (a link, or one past
   16 MiB), never dropping them unseen; a byte that is not text spoils only its own row. At most 200 grades of a skill are answered, newest first
   (`purlis_core::skills::grades::read`). The plan's estimate is worked out from the newest grade

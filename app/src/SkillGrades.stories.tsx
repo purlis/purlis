@@ -193,7 +193,30 @@ const meta = {
         case "skill_stats":
           return { by_harness: [], by_persona: [], by_workspace: [] };
         case "skill_grades":
-          return { grades: args.grades, said: null };
+          return {
+            grades: args.grades,
+            said: null,
+            tests: args.plan.tests.length,
+            tests_refused: args.plan.tests_refused,
+            // The grade running, at the step the app last told: none of its chats ran yet.
+            running:
+              args.plan.running === null
+                ? null
+                : {
+                    plane: PLANE,
+                    skill: "deploy",
+                    grade: args.plan.running,
+                    ran: 0,
+                    of: args.plan.chats,
+                    tokens: null,
+                    cost_usd: null,
+                    limit_usd: args.plan.cost_cap_usd,
+                    cap: args.plan.token_cap,
+                    asked: 0,
+                    ended: null,
+                    said: null,
+                  },
+          };
         case "skill_grade_plan":
           plans += 1;
           // A plan that changed under the person: the second read consents to another.

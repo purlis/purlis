@@ -53,15 +53,29 @@ const GRADES = [
   }),
 ];
 
-/** A plan with `tests` trigger tests, and a grade `running` where one is. */
-const plan = (tests = 2, running: string | null = null) => ({
-  tests: Array.from({ length: tests }, (_, at) => ({
-    query: `ship it ${at}`,
-    should_trigger: true,
-    hides: false,
-  })),
+/** A step of the grade `grade` of deploy, running. */
+const step = (grade: string) => ({
+  plane: "p",
+  skill: "deploy",
+  grade,
+  ran: 3,
+  of: 12,
+  tokens: 1000,
+  cost_usd: 0.25,
+  limit_usd: 3,
+  cap: 500000,
+  asked: 0,
+  ended: null,
+  said: null,
+});
+
+/** deploy's grades `grades`, its `tests` trigger tests, and a grade `running` where one is. */
+const grades = (rows: GradeRow[] = GRADES, tests = 2, running: string | null = null) => ({
+  grades: rows,
+  said: null,
+  tests,
   tests_refused: null,
-  running,
+  running: running === null ? null : step(running),
 });
 
 /** A core answering the tab, and each ask it was sent. */
@@ -75,8 +89,7 @@ function core(answers: Record<string, unknown> = {}) {
         if (answer instanceof Error) throw answer.message;
         return typeof answer === "function" ? (answer as () => unknown)() : answer;
       }
-      if (cmd === "skill_grades") return { grades: GRADES, said: null };
-      if (cmd === "skill_grade_plan") return plan();
+      if (cmd === "skill_grades") return grades();
       return null;
     },
     { shouldMockEvents: true },
@@ -124,7 +137,7 @@ describe("a skill's Grades tab (S6)", () => {
   });
 
   it("explains trigger tests to a skill that has none, and offers no grading after each edit", async () => {
-    core({ skill_grades: { grades: [], said: null }, skill_grade_plan: plan(0) });
+    const asked = core({ skill_grades: grades([], 0) });
     renderTab();
     const none = await screen.findByTestId("skill-grades-no-tests");
     expect(none).toHaveTextContent("deploy has no trigger tests yet");
@@ -134,10 +147,24 @@ describe("a skill's Grades tab (S6)", () => {
     expect(turnOn.getAttribute("aria-disabled") === "true" || turnOn.hasAttribute("disabled")).toBe(
       true,
     );
+    // Its grades say it has none: no plan is asked (#3928).
+    expect(asked.some((one) => one.cmd === "skill_grade_plan")).toBe(false);
+  });
+
+  it("says why its trigger tests were not read, and does not call them missing", async () => {
+    core({
+      skill_grades: {
+        ...grades([], 0),
+        tests_refused: "The skill's trigger tests are not JSON (line 1, column 2).",
+      },
+    });
+    renderTab();
+    await screen.findByTestId("skill-grades-empty");
+    expect(screen.queryByTestId("skill-grades-no-tests")).toBeNull();
   });
 
   it("offers a first grade where it has tests and no grades", async () => {
-    core({ skill_grades: { grades: [], said: null } });
+    core({ skill_grades: grades([]) });
     const onGrading = renderTab();
     const empty = await screen.findByTestId("skill-grades-empty");
     fireEvent.click(within(empty).getByRole("button", { name: "Grade deploy…" }));
@@ -209,11 +236,12 @@ describe("a skill's Grades tab (S6)", () => {
   });
 
   it("shows a grade running, one press away", async () => {
-    core({ skill_grade_plan: plan(2, "01RUN") });
+    const asked = core({ skill_grades: grades(GRADES, 2, "01RUN") });
     const onGrading = renderTab();
     await screen.findByTestId("skill-grades-running");
     fireEvent.click(screen.getByRole("button", { name: "Show it" }));
     expect(onGrading).toHaveBeenCalledWith({ at: "running", grade: "01RUN" }, "go");
+    expect(asked.some((one) => one.cmd === "skill_grade_plan")).toBe(false);
   });
 
   it("says in place why its grades could not be read, with Try again", async () => {
@@ -222,7 +250,7 @@ describe("a skill's Grades tab (S6)", () => {
       skill_grades: () => {
         reads += 1;
         if (reads === 1) throw "The grade record could not be read.";
-        return { grades: GRADES, said: null };
+        return grades();
       },
     });
     renderTab();

@@ -185,6 +185,7 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
                 skill: "deploy".into(),
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
+                step: None,
             },
         );
         let failed = std::cell::Cell::new(false);
@@ -556,4 +557,58 @@ fn a_press_on_a_plan_that_changed_is_refused() {
         assert!(refused.contains("changed since it was shown"), "{refused}");
         assert!(refused.contains("nothing was started"), "{refused}");
     }
+}
+
+/// #3928: the Grades tab learns from its one read whether the skill has trigger tests, and the
+/// grade of it running now at its latest step, so it asks no plan; a grade of another skill, or
+/// in another project, is not this one's.
+#[test]
+fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
+    let plane: PlaneId = serde_json::from_value(serde_json::json!("plane-of-grades-3928")).unwrap();
+    let elsewhere: PlaneId =
+        serde_json::from_value(serde_json::json!("plane-elsewhere-3928")).unwrap();
+    let tests = grades::TriggerTests {
+        runs: 2,
+        refused: None,
+    };
+    let none = SkillGrades::of(&grades::Read::default(), &tests, &plane, "ship-3928");
+    assert_eq!(none.tests, 2);
+    assert_eq!(none.tests_refused, None);
+    assert_eq!(none.running, None, "no grade runs");
+
+    let step = |plane: &PlaneId, skill: &str, grade: &str| SkillGradeStep {
+        plane: plane.clone(),
+        skill: skill.to_owned(),
+        grade: grade.to_owned(),
+        ran: 3,
+        of: 12,
+        tokens: Some(1_000.0),
+        cost_usd: Some(0.25),
+        limit_usd: Some(2.0),
+        cap: 500_000.0,
+        asked: 0,
+        ended: None,
+        said: None,
+    };
+    for (grade, at, skill) in [
+        ("g-3928-other-skill", &plane, "other-3928"),
+        ("g-3928-elsewhere", &elsewhere, "ship-3928"),
+        ("g-3928", &plane, "ship-3928"),
+    ] {
+        running().insert(
+            grade.to_owned(),
+            Running {
+                plane: at.clone(),
+                skill: skill.to_owned(),
+                stop: Arc::new(AtomicBool::new(false)),
+                after_edit: None,
+                step: Some(step(at, skill, grade)),
+            },
+        );
+    }
+    let now = SkillGrades::of(&grades::Read::default(), &tests, &plane, "ship-3928");
+    for grade in ["g-3928-other-skill", "g-3928-elsewhere", "g-3928"] {
+        running().remove(grade);
+    }
+    assert_eq!(now.running, Some(step(&plane, "ship-3928", "g-3928")));
 }

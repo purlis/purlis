@@ -149,8 +149,8 @@ export function GradesTab({
   // The level as a value: a page drawn again with an equal level reads nothing anew.
   const levelKey = JSON.stringify(level);
   const reread = [plane, name, levelKey, changed, again];
+  // One read says the grades, whether there are trigger tests and the grade running (#3928).
   const grades = useRead(() => commands.skillGrades(plane, level, name), reread);
-  const plan = useRead(() => commands.skillGradePlan(plane, level, name, null, null), reread);
   const afterEdit = useRead(() => commands.skillGradeAfterEdit(plane, level, name), reread);
 
   // A grade of this skill that ends, or an edit grading after each edit did not grade, is read
@@ -178,9 +178,9 @@ export function GradesTab({
 
   // Each answer is taken only in its own shape: a core that answers another leaves it unread.
   const rows = Array.isArray(grades.data?.grades) ? grades.data.grades : [];
-  const tests = Array.isArray(plan.data?.tests) ? plan.data.tests : undefined;
-  const noTests = tests !== undefined && tests.length === 0 && plan.data?.tests_refused == null;
-  const running = plan.data?.running ?? null;
+  const tests = typeof grades.data?.tests === "number" ? grades.data.tests : undefined;
+  const noTests = tests === 0 && grades.data?.tests_refused == null;
+  const running = grades.data?.running?.grade ?? null;
   const on =
     typeof afterEdit.data === "object" && afterEdit.data !== null && "profile" in afterEdit.data
       ? afterEdit.data
@@ -369,17 +369,7 @@ export function GradingPage({
           level={level}
           changed={changed}
           afterEdit={grading.afterEdit === true}
-          onStarted={(grade, plan) =>
-            onGrading(
-              {
-                at: "running",
-                grade,
-                chats: plan.chats,
-                ...(plan.cost_cap_usd === null ? {} : { limitUsd: plan.cost_cap_usd }),
-              },
-              "replace",
-            )
-          }
+          onStarted={(grade) => onGrading({ at: "running", grade }, "replace")}
           onAfterEdit={() => onGrading(undefined, "replace")}
           onRunning={(grade) => onGrading({ at: "running", grade }, "go")}
           onCancel={() => onGrading(undefined, "replace")}
@@ -392,7 +382,6 @@ export function GradingPage({
           name={name}
           level={level}
           grade={grading.grade}
-          started={grading}
           onEnded={() => onGrading({ at: "scorecard", grade: grading.grade }, "replace")}
           onBack={() => onGrading(undefined, "go")}
         />

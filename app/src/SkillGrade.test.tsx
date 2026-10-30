@@ -111,6 +111,15 @@ const step = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+/** deploy's grades as the core answers them, with the grade `running` at its latest step. */
+const grades = (running: ReturnType<typeof step> | null) => ({
+  grades: [],
+  said: null,
+  tests: 2,
+  tests_refused: null,
+  running,
+});
+
 describe("Grade, cost first", () => {
   it("shows what a grade runs and who pays before anything runs, then starts it on the press", async () => {
     const asked: Array<{ cmd: string; args: unknown }> = [];
@@ -601,7 +610,7 @@ describe("a grade running (S6)", () => {
     mockIPC(
       (cmd, args) => {
         asked.push({ cmd, args });
-        if (cmd === "skill_grade_plan") return plan({ running: "01GRADE" });
+        if (cmd === "skill_grades") return grades(step());
         if (cmd === "skill_grade_stop") throw "That grade is not running here.";
         return null;
       },
@@ -621,6 +630,8 @@ describe("a grade running (S6)", () => {
     const totals = await screen.findByRole("group", { name: "How far the grade of deploy is" });
     expect(totals).toHaveTextContent("Chats0 of 12");
     expect(totals).toHaveTextContent("of at most $15.00");
+    // Its skill's grades say where it is: no plan is asked (#3928).
+    expect(asked.some((one) => one.cmd === "skill_grade_plan")).toBe(false);
 
     await emit("skill-grade", step({ ran: 4, tokens: 36000, cost_usd: 0.32 }));
     await waitFor(() => expect(totals).toHaveTextContent("Chats4 of 12"));
@@ -648,7 +659,7 @@ describe("a grade running (S6)", () => {
   it("stays to say an end with words, with a way to its scorecard", async () => {
     mockIPC(
       (cmd) => {
-        if (cmd === "skill_grade_plan") return plan({ running: "01GRADE" });
+        if (cmd === "skill_grades") return grades(step());
         return null;
       },
       { shouldMockEvents: true },
@@ -678,8 +689,27 @@ describe("a grade running (S6)", () => {
     expect(onEnded).toHaveBeenCalledTimes(1);
   });
 
+  it("starts from the step the app last told, where it opens while the grade runs", async () => {
+    mockIPC((cmd) => (cmd === "skill_grades" ? grades(step({ ran: 7, cost_usd: 1.5 })) : null), {
+      shouldMockEvents: true,
+    });
+    render(
+      <GradeRunningPage
+        plane="p"
+        name="deploy"
+        level={LEVEL}
+        grade="01GRADE"
+        onEnded={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    const totals = await screen.findByRole("group", { name: "How far the grade of deploy is" });
+    expect(totals).toHaveTextContent("Chats7 of 12");
+    expect(totals).toHaveTextContent("Spent$1.50of at most $15.00");
+  });
+
   it("says a grade that ended while the page was away, and opens its scorecard", async () => {
-    mockIPC((cmd) => (cmd === "skill_grade_plan" ? plan({ running: null }) : null));
+    mockIPC((cmd) => (cmd === "skill_grades" ? grades(null) : null));
     const onEnded = vi.fn();
     render(
       <GradeRunningPage
