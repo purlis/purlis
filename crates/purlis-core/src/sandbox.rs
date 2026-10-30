@@ -1491,27 +1491,11 @@ impl Denied {
             });
         }
         // …and the programs each cluster pool's kubectl runs (#3292): kubectl itself and each
-        // credential plugin its context names, by their real paths as the pool was added, which
-        // purlis runs outside any sandbox before every link to its runner. Each name, and the
-        // folder it is in, as the folders of Docker's helpers are held (#2752).
-        let config_root = crate::machine::rooted(
-            machine.env.get(crate::machine::HOME_VAR).map(Into::into),
-            machine.env.get("XDG_CONFIG_HOME").map(Into::into),
-            machine.home.clone(),
-        );
-        for path in config_root
-            .iter()
-            .flat_map(|config_root| crate::runners::cluster_holds(config_root.as_path()))
-        {
-            paths.push(Denial {
-                class: Class::LaterCode,
-                path,
-                access: Access::Write,
-                named: None,
-                reach: Reach::Itself,
-                any_case: machine.os == Os::MacOs,
-            });
-        }
+        // credential plugin its context names, as the pool was added, which purlis runs outside
+        // any sandbox before every link to its runner. Each as named and by its real path, and
+        // the whole package its real file belongs to, with what it loads, as the floor holds the
+        // programs a chat starts ([`Compiled::hold_programs`]).
+        paths.extend(cluster_programs_held(root, machine));
         // …and what a protected config points at elsewhere, resolved now (V73d).
         let xdg_config = machine
             .env
@@ -1562,6 +1546,51 @@ impl Denied {
             git_folder_pins: Vec::new(),
         }
     }
+}
+
+/// **The programs every cluster pool's kubectl runs, held for no chat to write** (#3292): each
+/// as named, every link on the way and its real file, each with the folder it is in, and the
+/// package its real file belongs to ([`package_root`]) with all that is in it, but for a package
+/// that holds the project at `root` or is inside it, which the chat writes, as
+/// [`Compiled::hold_programs`] leaves it, and for one that is the home or a folder above it,
+/// which an add refuses now but one from before that refusal may have kept.
+fn cluster_programs_held(root: &Path, machine: &Machine) -> Vec<Denial> {
+    let Some(config_root) = crate::machine::rooted(
+        machine.env.get(crate::machine::HOME_VAR).map(Into::into),
+        machine.env.get("XDG_CONFIG_HOME").map(Into::into),
+        machine.home.clone(),
+    ) else {
+        return Vec::new();
+    };
+    let mut held: Vec<Denial> = Vec::new();
+    let mut hold = |path: PathBuf, reach: Reach| {
+        if !held.iter().any(|it| it.path == path && it.reach == reach) {
+            held.push(Denial {
+                class: Class::LaterCode,
+                path,
+                access: Access::Write,
+                named: None,
+                reach,
+                any_case: machine.os == Os::MacOs,
+            });
+        }
+    };
+    let project = real(root);
+    let home = machine.home.as_deref().map(real);
+    for program in crate::runners::cluster_holds(&config_root) {
+        let package = package_root(&real(&program));
+        if let Some(folder) = program.parent().filter(|folder| folder.parent().is_some()) {
+            hold(folder.to_path_buf(), Reach::Itself);
+        }
+        hold(program, Reach::Itself);
+        let around_project = project.starts_with(&package) || package.starts_with(&project);
+        // A row an add from before this check kept: never the home or a folder above it.
+        let around_home = home.as_ref().is_some_and(|home| home.starts_with(&package));
+        if !around_project && !around_home && package.parent().is_some() {
+            hold(package, Reach::AndBelow);
+        }
+    }
+    held
 }
 
 /// **What purlis keeps for itself, of a chat's denials** (classes 1 to 3: vaults, integrity and

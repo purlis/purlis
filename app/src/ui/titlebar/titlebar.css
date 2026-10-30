@@ -208,7 +208,8 @@
    under the pointer or chosen (as the count's wash is, D-3345-3). The slot is the chip's box:
    the dot coming or going moves nothing. Every kind's dot (`data-kind`) has the one geometry; its
    fill and its shape's colour are its kind's part's (#3649): `dot` the accent for news, and
-   `dot-warning` the waiting amber for a warning, its triangle in the window's ground.
+   `dot-warning` the waiting amber for a warning, its triangle in the window's ground, and
+   `dot-needs` the failed red for a chat asking to remove the workspace, its hand likewise (#3652).
    --------------------------------------------------------------------------------------------- */
 
 [data-part="slot"][data-scope="titlebar"] {
@@ -245,6 +246,11 @@
   background-color: var(--state-waiting);
 }
 
+[data-part="dot-needs"][data-scope="titlebar"] {
+  color: var(--surface-base);
+  background-color: var(--state-failed);
+}
+
 /* Its shape, filled, in the middle of the dot: a disc 6px across for news, a triangle 8px. */
 [data-kind][data-scope="titlebar"] svg {
   inline-size: 6px;
@@ -254,6 +260,12 @@
 [data-kind="warning"][data-scope="titlebar"] svg {
   inline-size: 8px;
   block-size: 8px;
+}
+
+/* Needs-you's raised hand, in its strokes, 10px: at 6px a hand is no longer a hand (#3652). */
+[data-kind="needs"][data-scope="titlebar"] svg {
+  inline-size: 10px;
+  block-size: 10px;
 }
 
 [data-kind][data-scope="titlebar"][data-focus-visible] {
@@ -349,8 +361,8 @@
   box-sizing: border-box;
   min-block-size: 32px;
   padding-inline: var(--space-4);
-  /* 8 in Purlis, as a control's; a theme's parts cannot reach this part apart from a chip
-     yet, so it keeps Classic's 5 by its own sum. */
+  /* 8 in Purlis, as a control's, and Classic's 5, by its own sum; a theme's own corner for
+     it is its part's (`titlebar.<part>.corner-radius`, drawn apart from every chip, #3656). */
   border-radius: calc(var(--radius-md) + 1px);
   color: var(--text-secondary);
   cursor: default;
@@ -464,8 +476,8 @@
   padding-block: 0;
   padding-inline: var(--space-3) var(--space-2);
   border: 0;
-  /* 8 in Purlis, as a control's; a theme's parts cannot reach this part apart from a chip
-     yet, so it keeps Classic's 5 by its own sum. */
+  /* 8 in Purlis, as a control's, and Classic's 5, by its own sum; a theme's own corner for
+     it is its part's (`titlebar.<part>.corner-radius`, drawn apart from every chip, #3656). */
   border-radius: calc(var(--radius-md) + 1px);
   color: var(--text-secondary);
   background-color: transparent;

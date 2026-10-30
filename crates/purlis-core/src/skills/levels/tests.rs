@@ -530,8 +530,117 @@ fn folder_names_are_matched_as_the_disk_spells_them() {
     // The chat closes: what it could have made waits for the person, by its name on the disk.
     noted_long_ago(root, CHAT);
     sweep(root, &[]);
-    let why = made_since(root)(&root.join("workspaces/EVIL")).expect("held");
+    let other_case = root.join("workspaces/EVIL");
+    if std::fs::symlink_metadata(&other_case).is_err() {
+        // A disk that keeps case apart opens no folder by the other name: nothing to match.
+        assert!(made_since(root)(&root.join("workspaces/evil")).is_some());
+        return;
+    }
+    let why = made_since(root)(&other_case).expect("held");
     assert!(why.contains("made by a chat"), "{why}");
     // The folder there before the chat is that folder, however it is asked about.
     assert_eq!(made_since(root)(&root.join("workspaces/OPS")), None);
+}
+
+/// A link is a folder of its own: never taken as the folder it points at.
+#[cfg(unix)]
+#[test]
+fn a_link_to_a_folder_is_not_that_folder() {
+    let tmp = plane(&[CHAT]);
+    let root = tmp.path();
+    confirm(root, &listed(root)).unwrap();
+    note(root, CHAT, "7").unwrap();
+    std::os::unix::fs::symlink(root.join("workspaces/ops"), root.join("workspaces/link")).unwrap();
+    assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
+    let why = made_since(root)(&root.join("workspaces/link")).expect("held");
+    assert!(why.contains("chat 7"), "{why}");
+}
+
+/// Off unix no pid is taken as alive.
+#[cfg(unix)]
+#[test]
+fn a_chat_on_the_record_with_no_id_but_a_live_pid_holds_a_folder_made_after_the_accept() {
+    let tmp = plane(&[]);
+    let root = tmp.path();
+    let record = crate::reopen::Record {
+        chats: vec![crate::reopen::Chat {
+            program: "claude".to_owned(),
+            name: "7".to_owned(),
+            // This test's own process: alive while it runs.
+            pid: Some(std::process::id()),
+            ..crate::reopen::Chat::default()
+        }],
+        ..Default::default()
+    };
+    crate::reopen::write(root, &record).unwrap();
+    crate::appstate::move_out_of_the_plane(root);
+    confirm(root, &listed(root)).unwrap();
+    assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
+    skill(root, "workspaces/x/skills/y", "y");
+    let why = made_since(root)(&root.join("workspaces/x")).expect("held");
+    assert!(why.contains("while chat a chat was running"), "{why}");
+}
+
+#[test]
+fn the_accept_notes_a_chat_that_came_onto_the_record_after_the_move() {
+    let tmp = plane(&[]);
+    let root = tmp.path();
+    crate::appstate::move_out_of_the_plane(root);
+    // Chat C comes onto the record of open chats after the move, before the person's Accept.
+    on_the_record(root, &[CHAT]);
+    confirm(root, &listed(root)).unwrap();
+    assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
+    skill(root, "workspaces/x/skills/y", "y");
+    let why = made_since(root)(&root.join("workspaces/x")).expect("held");
+    assert!(why.contains("chat 7"), "{why}");
+}
+
+#[test]
+fn the_folders_accepted_one_by_one_stay_accepted_where_the_accept_cannot_finish() {
+    let tmp = plane(&[]);
+    let root = tmp.path();
+    let old = crate::names::state(root).join(DIR);
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::write(old.join(UNACCEPTED), r#"{"levels":[]}"#).unwrap();
+    crate::appstate::move_out_of_the_plane(root);
+    accept(root, "workspaces/ops").unwrap();
+    // A folder where the mark goes: the Accept cannot mark the records confirmed.
+    let mark = crate::appstate::dir(root)
+        .unwrap()
+        .join(DIR)
+        .join(crate::appstate::CONFIRMED);
+    std::fs::create_dir_all(mark.join("in-the-way")).unwrap();
+    assert!(confirm(root, &listed(root)).is_err());
+    assert!(!confirmed(root));
+    assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
+    let (_, listed) = to_confirm(root).unwrap();
+    assert_eq!(listed, ["personas/steward"]);
+}
+
+/// Two names of one folder, as a disk that folds case opens them, matched by identity alone.
+#[cfg(unix)]
+#[test]
+fn a_name_is_matched_to_the_folder_on_the_disk_by_its_identity() {
+    let on_disk: BTreeSet<String> = ["workspaces/ops", "workspaces/évite"]
+        .map(str::to_owned)
+        .into();
+    let identity = |rel: &str| match rel {
+        "workspaces/ops" | "workspaces/OPS" => Some((1, 1)),
+        "workspaces/évite" | "workspaces/e\u{301}vite" => Some((1, 2)),
+        "workspaces/other" => Some((1, 3)),
+        _ => None,
+    };
+    let spelled = |rel: &str| {
+        as_the_disk_spells(
+            &on_disk,
+            rel.to_owned(),
+            &identity,
+            &std::sync::OnceLock::new(),
+        )
+    };
+    assert_eq!(spelled("workspaces/OPS"), "workspaces/ops");
+    assert_eq!(spelled("workspaces/e\u{301}vite"), "workspaces/évite");
+    // A folder of its own, and a name that opens none, are themselves.
+    assert_eq!(spelled("workspaces/other"), "workspaces/other");
+    assert_eq!(spelled("workspaces/Ops"), "workspaces/Ops");
 }

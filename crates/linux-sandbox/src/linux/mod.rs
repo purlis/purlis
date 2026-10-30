@@ -30,8 +30,8 @@ use std::sync::Arc;
 
 use nix::sys::signal::{SigSet, SigmaskHow, Signal, kill, pthread_sigmask};
 use nix::sys::socket::{
-    AddressFamily, ControlMessage, ControlMessageOwned, MsgFlags, SockFlag, SockType, recvmsg,
-    sendmsg, socketpair,
+    AddressFamily, ControlMessage, ControlMessageOwned, MsgFlags, SockFlag, SockType, SockaddrIn,
+    getsockname, recvmsg, sendmsg, socketpair,
 };
 use nix::sys::wait::WaitStatus;
 use nix::unistd::Pid;
@@ -48,6 +48,10 @@ const SERVERS: usize = 16;
 
 /// The longest a wrap whose chat has ended waits for its refusals to be told.
 const TOLD_WITHIN: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// How many ports the system picks for a wrap's chat on 127.0.0.1 (#3396): as many test servers
+/// as it can have listening at once.
+const POOL: usize = 256;
 
 /// The status a wrap ends with when it could not start the chat.
 const NOT_STARTED: i32 = 126;
@@ -135,7 +139,9 @@ fn supervise(
     // A process of the chat whose parent ends is the supervisor's, so it stays below it.
     nix::sys::prctl::set_child_subreaper(true)
         .map_err(|why| format!("the wrap could not keep the chat's processes: {why}"))?;
-    layers::supervisor(&profile.reach())
+    // Picked before the wrap holds itself, which names each port it may bind and reach.
+    let picked = crate::loopback::Picked::new(picked_ports(POOL));
+    layers::supervisor(&profile.reach(), picked.ports())
         .map_err(|why| format!("Landlock could not be applied to the wrap: {why}"))?;
 
     let (ours, theirs) = socketpair(
@@ -191,7 +197,7 @@ fn supervise(
     // the wrap's own Landlock layer, and with the signals above left to the waiter.
     let told = tell.map(|tell| Arc::new(crate::refusal::Teller::new(tell)));
     if let Some(listener) = received(&ours) {
-        match supervisor::Supervisor::new(listener, profile, told.clone()) {
+        match supervisor::Supervisor::new(listener, profile, told.clone(), picked) {
             Ok(supervisor) => {
                 let supervisor = Arc::new(supervisor);
                 for _ in 0..SERVERS {
@@ -226,6 +232,34 @@ fn supervise(
         told.flush(TOLD_WITHIN);
     }
     ended
+}
+
+/// **Up to `count` ports the system picks on 127.0.0.1 now** (#3396), each told apart by holding
+/// every socket bound until the last is; let go again once read. Fewer where the system runs out
+/// of descriptors or ports.
+fn picked_ports(count: usize) -> Vec<u16> {
+    let mut held = Vec::with_capacity(count);
+    let mut ports = Vec::with_capacity(count);
+    for _ in 0..count {
+        let Ok(socket) = nix::sys::socket::socket(
+            AddressFamily::Inet,
+            SockType::Stream,
+            SockFlag::SOCK_CLOEXEC,
+            None,
+        ) else {
+            break;
+        };
+        let loopback = SockaddrIn::new(127, 0, 0, 1, 0);
+        if nix::sys::socket::bind(socket.as_raw_fd(), &loopback).is_err() {
+            break;
+        }
+        let Ok(at) = getsockname::<SockaddrIn>(socket.as_raw_fd()) else {
+            break;
+        };
+        ports.push(at.port());
+        held.push(socket);
+    }
+    ports
 }
 
 /// The listener the chat's side sends, or `None` where it ended first.

@@ -465,7 +465,9 @@ fn rail_look(variant: &str, states: &[State]) -> Look {
 /// (#3654): a house drawn as a pin is, outside the strip.
 ///
 /// The family's root is the chip (`titlebar.workspace.*`, as the prototype's part keys name it):
-/// the strip around the chips lays them out and scrolls, and is no part a theme keys.
+/// the strip around the chips lays them out and scrolls, and is no part a theme keys. The crumb,
+/// the ⌄, and a switcher's rows and pin toggles are drawn apart from every chip, each a control
+/// in its own states (`parts::APART`, #3656), and a notice's dot beside one (`around`).
 pub(super) const TITLEBAR: Family = Family {
     name: "titlebar",
     description: "The title bar's pinned workspaces: a chip per pin, and the chip that pins the current one.",
@@ -522,6 +524,14 @@ pub(super) const TITLEBAR: Family = Family {
                           is a warning: its triangle and its fill, ringed in the bar's ground.",
             properties: &[Prop::Fill, Prop::Text],
         },
+        Part {
+            name: "dot-needs",
+            since: super::NEXT,
+            description: "The dot on a chip's corner while a chat asks the person to remove the \
+                          workspace, the most urgent kind: its raised hand and its fill, ringed \
+                          in the bar's ground.",
+            properties: &[Prop::Fill, Prop::Text],
+        },
     ],
     variants: &[
         Variant {
@@ -575,16 +585,19 @@ pub(super) const TITLEBAR: Family = Family {
         ("dot", "surface.base"),
         // A warning's dot (#3649): its triangle, a mark, in the window's ground on the amber.
         ("dot-warning", "surface.base"),
+        // A needs-you dot (#3652): its hand, a mark, in the window's ground on the failed red.
+        ("dot-needs", "surface.base"),
     ],
     corner_most: None,
     // A chip's notice dot is the chip's sibling in its slot (#3648), drawn around the chip.
     // Each kind's dot is a part of its own (#3649), so a theme colours one kind at a time.
-    around: &["dot", "dot-warning"],
+    around: &["dot", "dot-warning", "dot-needs"],
     // The count's pill, the amber wash (`titlebar.css`): its digits are read on it (#3041).
     fills: &[
         ("count", "wash.warning"),
         ("dot", "accent.base"),
         ("dot-warning", "state.waiting"),
+        ("dot-needs", "state.failed"),
     ],
     // A switcher's row and its pin paint no ground at rest: they stand on the popover's surface
     // the switcher is drawn on, which their words are read on (#3099).

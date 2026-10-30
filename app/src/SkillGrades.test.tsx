@@ -10,7 +10,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import { GradesTab, gradingCrumbTo, gradingPath, type GradingGo } from "./SkillGrades";
+import {
+  GradesTab,
+  gradingCrumbTo,
+  gradingPath,
+  type GradingGo,
+  type TestsFile,
+} from "./SkillGrades";
+import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
 import type { GradeRow } from "./bindings";
 
 afterEach(() => {
@@ -53,15 +60,29 @@ const GRADES = [
   }),
 ];
 
-/** A plan with `tests` trigger tests, and a grade `running` where one is. */
-const plan = (tests = 2, running: string | null = null) => ({
-  tests: Array.from({ length: tests }, (_, at) => ({
-    query: `ship it ${at}`,
-    should_trigger: true,
-    hides: false,
-  })),
+/** A step of the grade `grade` of deploy, running. */
+const step = (grade: string) => ({
+  plane: "p",
+  skill: "deploy",
+  grade,
+  ran: 3,
+  of: 12,
+  tokens: 1000,
+  cost_usd: 0.25,
+  limit_usd: 3,
+  cap: 500000,
+  asked: 0,
+  ended: null,
+  said: null,
+});
+
+/** deploy's grades `grades`, its `tests` trigger tests, and a grade `running` where one is. */
+const grades = (rows: GradeRow[] = GRADES, tests = 2, running: string | null = null) => ({
+  grades: rows,
+  said: null,
+  tests,
   tests_refused: null,
-  running,
+  running: running === null ? null : step(running),
 });
 
 /** A core answering the tab, and each ask it was sent. */
@@ -75,8 +96,7 @@ function core(answers: Record<string, unknown> = {}) {
         if (answer instanceof Error) throw answer.message;
         return typeof answer === "function" ? (answer as () => unknown)() : answer;
       }
-      if (cmd === "skill_grades") return { grades: GRADES, said: null };
-      if (cmd === "skill_grade_plan") return plan();
+      if (cmd === "skill_grades") return grades();
       return null;
     },
     { shouldMockEvents: true },
@@ -85,9 +105,18 @@ function core(answers: Record<string, unknown> = {}) {
 }
 
 /** The Grades tab of deploy, and where each press went. */
-function renderTab() {
+function renderTab(testsFile?: TestsFile) {
   const onGrading = vi.fn<GradingGo>();
-  render(<GradesTab plane="p" name="deploy" level={LEVEL} changed={0} onGrading={onGrading} />);
+  render(
+    <GradesTab
+      plane="p"
+      name="deploy"
+      level={LEVEL}
+      changed={0}
+      onGrading={onGrading}
+      testsFile={testsFile}
+    />,
+  );
   return onGrading;
 }
 
@@ -124,7 +153,7 @@ describe("a skill's Grades tab (S6)", () => {
   });
 
   it("explains trigger tests to a skill that has none, and offers no grading after each edit", async () => {
-    core({ skill_grades: { grades: [], said: null }, skill_grade_plan: plan(0) });
+    const asked = core({ skill_grades: grades([], 0) });
     renderTab();
     const none = await screen.findByTestId("skill-grades-no-tests");
     expect(none).toHaveTextContent("deploy has no trigger tests yet");
@@ -134,10 +163,72 @@ describe("a skill's Grades tab (S6)", () => {
     expect(turnOn.getAttribute("aria-disabled") === "true" || turnOn.hasAttribute("disabled")).toBe(
       true,
     );
+    // Its grades say it has none: no plan is asked (#3928).
+    expect(asked.some((one) => one.cmd === "skill_grade_plan")).toBe(false);
+  });
+
+  it("offers a skill with no trigger tests to write them or to ask a chat to (#3925)", async () => {
+    const asked = core({ skill_grades: grades([], 0), skill_trigger_tests_start: { notes: [] } });
+    const open = vi.fn();
+    renderTab({ open });
+    const none = await screen.findByTestId("skill-grades-no-tests");
+    fireEvent.click(within(none).getByRole("button", { name: "Write trigger tests" }));
+    // The core starts the file, then it opens to write in.
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+    expect(asked.find((one) => one.cmd === "skill_trigger_tests_start")?.args).toMatchObject({
+      plane: "p",
+      level: LEVEL,
+      name: "deploy",
+    });
+
+    const asks: SkillChatAsk[] = [];
+    const heard = (event: Event) => asks.push((event as CustomEvent<SkillChatAsk>).detail);
+    window.addEventListener(SKILL_CHAT, heard);
+    fireEvent.click(within(none).getByRole("button", { name: "Ask a chat to write them" }));
+    window.removeEventListener(SKILL_CHAT, heard);
+    expect(asks).toEqual([{ plane: "p", kind: "triggers", level: LEVEL, name: "deploy" }]);
+  });
+
+  it("holds both offers where the skill's files can't be opened, and says why", async () => {
+    core({ skill_grades: grades([], 0) });
+    renderTab({ reason: "Its file is outside the project." });
+    const none = await screen.findByTestId("skill-grades-no-tests");
+    // Neither would land in the skill: not the template, nor a chat's draft.
+    for (const name of ["Write trigger tests", "Ask a chat to write them"]) {
+      const offer = within(none).getByRole("button", { name });
+      expect(offer.getAttribute("aria-disabled") === "true" || offer.hasAttribute("disabled")).toBe(
+        true,
+      );
+    }
+  });
+
+  it("says why the trigger tests were not started, and opens nothing", async () => {
+    core({
+      skill_grades: grades([], 0),
+      skill_trigger_tests_start: new Error("This project can't be written, so nothing was."),
+    });
+    const open = vi.fn();
+    renderTab({ open });
+    const none = await screen.findByTestId("skill-grades-no-tests");
+    fireEvent.click(within(none).getByRole("button", { name: "Write trigger tests" }));
+    await screen.findByText("This project can't be written, so nothing was.");
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("says why its trigger tests were not read, and does not call them missing", async () => {
+    core({
+      skill_grades: {
+        ...grades([], 0),
+        tests_refused: "The skill's trigger tests are not JSON (line 1, column 2).",
+      },
+    });
+    renderTab();
+    await screen.findByTestId("skill-grades-empty");
+    expect(screen.queryByTestId("skill-grades-no-tests")).toBeNull();
   });
 
   it("offers a first grade where it has tests and no grades", async () => {
-    core({ skill_grades: { grades: [], said: null } });
+    core({ skill_grades: grades([]) });
     const onGrading = renderTab();
     const empty = await screen.findByTestId("skill-grades-empty");
     fireEvent.click(within(empty).getByRole("button", { name: "Grade deploy…" }));
@@ -209,11 +300,24 @@ describe("a skill's Grades tab (S6)", () => {
   });
 
   it("shows a grade running, one press away", async () => {
-    core({ skill_grade_plan: plan(2, "01RUN") });
+    const asked = core({ skill_grades: grades(GRADES, 2, "01RUN") });
     const onGrading = renderTab();
     await screen.findByTestId("skill-grades-running");
     fireEvent.click(screen.getByRole("button", { name: "Show it" }));
     expect(onGrading).toHaveBeenCalledWith({ at: "running", grade: "01RUN" }, "go");
+    expect(asked.some((one) => one.cmd === "skill_grade_plan")).toBe(false);
+  });
+
+  it("shows a grade that starts while the tab is open", async () => {
+    let started = false;
+    core({ skill_grades: () => grades(GRADES, 2, started ? "01NEW" : null) });
+    renderTab();
+    await screen.findByRole("group", { name: "The latest grade of deploy" });
+    expect(screen.queryByTestId("skill-grades-running")).toBeNull();
+    // A grade after an edit starts: its first step reads the tab again.
+    started = true;
+    await emit("skill-grade", step("01NEW"));
+    await screen.findByTestId("skill-grades-running");
   });
 
   it("says in place why its grades could not be read, with Try again", async () => {
@@ -222,7 +326,7 @@ describe("a skill's Grades tab (S6)", () => {
       skill_grades: () => {
         reads += 1;
         if (reads === 1) throw "The grade record could not be read.";
-        return { grades: GRADES, said: null };
+        return grades();
       },
     });
     renderTab();

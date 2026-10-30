@@ -325,7 +325,8 @@ Full detail, including exactly which collisions can and can't be qualified away:
 ## Memory posture: `[memory].share`
 
 Every persona and workspace can write **memory** — durable notes recorded with
-`purlis persona remember` / `purlis workspace remember`. A memory is written to disk, and no
+the `persona_remember` / `memory_add` tools, or `purlis persona remember <persona>` / `purlis
+workspace remember -w <workspace>`. A memory is written to disk, and no
 command commits it on its own: the plane's save commits it with everything else, by hand
 (`purlis save`) or by auto-save, as far as `[plane].mode` says (ADR 0051).
 

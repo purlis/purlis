@@ -1069,7 +1069,7 @@ fn a_cluster_pools_row_of_another_shape_refuses_the_file_whole_and_never_replace
 }
 
 #[test]
-fn every_cluster_pools_programs_are_held_with_their_folders() {
+fn every_cluster_pools_programs_are_listed_once() {
     let config = tempfile::tempdir().unwrap();
     let folder =
         purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
@@ -1092,7 +1092,6 @@ fn every_cluster_pools_programs_are_held_with_their_folders() {
         cluster_holds(config.path()),
         [
             std::path::PathBuf::from("/opt/homebrew/bin/kubectl"),
-            std::path::PathBuf::from("/opt/homebrew/bin"),
             std::path::PathBuf::from("/opt/homebrew/bin/gke-gcloud-auth-plugin"),
         ]
     );

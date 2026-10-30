@@ -136,7 +136,7 @@ pub struct SkillDiff {
 fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
     let unused = lifecycle::unused(root, now);
     // In the one order a skill's tab shows its copies (`Level::copies_of`): the window shows
-    // the first until another is picked, as the Grades panel reads it.
+    // the first until another is picked, and its Grades tab reads that copy's grades.
     let copies = Level::copies_of(root, name)
         .map(|(level, folder)| {
             let about = purlis_core::skills::about_of(&folder);

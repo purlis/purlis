@@ -127,6 +127,21 @@ pub fn file_identity(path: &Path) -> Option<(u64, u64)> {
     }
 }
 
+/// [`file_identity`], following no link: a link has its own identity, never its target's.
+pub fn link_identity(path: &Path) -> Option<(u64, u64)> {
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Some((meta.dev(), meta.ino()))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = meta;
+        None
+    }
+}
+
 /// `os.path.normpath` on posix — `posixpath.normpath`, collapsing `//`, `/./` and `a/b/..`.
 ///
 /// CPython runs this in C (`posix._path_normpath`) and the pure-Python fallback beside it is

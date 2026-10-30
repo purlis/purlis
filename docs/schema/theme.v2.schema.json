@@ -2825,6 +2825,330 @@
         "card.tile-value.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
+        "card-button.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card-button.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.root.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card-button.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "card-button.root.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "card-button.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "card-button.root.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card-button.root.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.root.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card-button.root.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card-button.root.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.root.pressed.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card-button.root.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card-button.root.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.root.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card-button.root.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card-button.root.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.root.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card-button.root.door.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card-button.root.door.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.root.door.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card-button.root.door.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "card-button.root.door.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "card-button.root.door.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "card-button.root.door.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card-button.root.door.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.root.door.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card-button.root.door.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card-button.root.door.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.root.door.pressed.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card-button.root.door.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card-button.root.door.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.root.door.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card-button.root.door.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card-button.root.door.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.root.door.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card-button.root.pick.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card-button.root.pick.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.root.pick.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card-button.root.pick.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "card-button.root.pick.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "card-button.root.pick.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "card-button.root.pick.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card-button.root.pick.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.root.pick.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card-button.root.pick.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card-button.root.pick.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.root.pick.pressed.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card-button.root.pick.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card-button.root.pick.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.root.pick.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card-button.root.pick.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "card-button.root.pick.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.root.pick.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card-button.mark.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.mark.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.mark.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.mark.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.mark.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.mark.door.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.mark.door.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.mark.door.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.mark.door.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.mark.door.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.mark.pick.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.mark.pick.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.mark.pick.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.mark.pick.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.mark.pick.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.title.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.title.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "card-button.title.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "card-button.title.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.title.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.title.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.title.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.title.door.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.title.door.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "card-button.title.door.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "card-button.title.door.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.title.door.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.title.door.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.title.door.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.title.pick.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.title.pick.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "card-button.title.pick.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "card-button.title.pick.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.title.pick.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.title.pick.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.title.pick.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.line.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.line.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "card-button.line.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.line.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.line.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.line.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.line.door.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.line.door.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "card-button.line.door.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.line.door.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.line.door.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.line.door.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.line.pick.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.line.pick.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "card-button.line.pick.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.line.pick.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.line.pick.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card-button.line.pick.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "checkbox.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -9284,114 +9608,6 @@
         "titlebar.crumb.focused.text": {
           "$ref": "#/$defs/part-text"
         },
-        "titlebar.crumb.pinned.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.crumb.pinned.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.crumb.pinned.corner-radius": {
-          "$ref": "#/$defs/part-corner-radius"
-        },
-        "titlebar.crumb.pinned.hover.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.crumb.pinned.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.crumb.pinned.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.crumb.pinned.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.crumb.pinned.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.crumb.pinned.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.crumb.unpinned.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.crumb.unpinned.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.crumb.unpinned.corner-radius": {
-          "$ref": "#/$defs/part-corner-radius"
-        },
-        "titlebar.crumb.unpinned.hover.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.crumb.unpinned.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.crumb.unpinned.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.crumb.unpinned.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.crumb.unpinned.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.crumb.unpinned.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.crumb.root.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.crumb.root.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.crumb.root.corner-radius": {
-          "$ref": "#/$defs/part-corner-radius"
-        },
-        "titlebar.crumb.root.hover.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.crumb.root.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.crumb.root.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.crumb.root.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.crumb.root.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.crumb.root.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.crumb.dormant.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.crumb.dormant.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.crumb.dormant.corner-radius": {
-          "$ref": "#/$defs/part-corner-radius"
-        },
-        "titlebar.crumb.dormant.hover.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.crumb.dormant.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.crumb.dormant.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.crumb.dormant.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.crumb.dormant.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.crumb.dormant.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
         "titlebar.all.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -9417,114 +9633,6 @@
           "$ref": "#/$defs/part-fill"
         },
         "titlebar.all.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.all.pinned.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.all.pinned.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.all.pinned.corner-radius": {
-          "$ref": "#/$defs/part-corner-radius"
-        },
-        "titlebar.all.pinned.hover.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.all.pinned.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.all.pinned.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.all.pinned.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.all.pinned.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.all.pinned.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.all.unpinned.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.all.unpinned.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.all.unpinned.corner-radius": {
-          "$ref": "#/$defs/part-corner-radius"
-        },
-        "titlebar.all.unpinned.hover.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.all.unpinned.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.all.unpinned.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.all.unpinned.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.all.unpinned.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.all.unpinned.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.all.root.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.all.root.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.all.root.corner-radius": {
-          "$ref": "#/$defs/part-corner-radius"
-        },
-        "titlebar.all.root.hover.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.all.root.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.all.root.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.all.root.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.all.root.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.all.root.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.all.dormant.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.all.dormant.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.all.dormant.corner-radius": {
-          "$ref": "#/$defs/part-corner-radius"
-        },
-        "titlebar.all.dormant.hover.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.all.dormant.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.all.dormant.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.all.dormant.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.all.dormant.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.all.dormant.focused.text": {
           "$ref": "#/$defs/part-text"
         },
         "titlebar.pin.fill": {
@@ -9554,114 +9662,6 @@
         "titlebar.pin.focused.text": {
           "$ref": "#/$defs/part-text"
         },
-        "titlebar.pin.pinned.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.pin.pinned.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.pin.pinned.corner-radius": {
-          "$ref": "#/$defs/part-corner-radius"
-        },
-        "titlebar.pin.pinned.hover.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.pin.pinned.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.pin.pinned.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.pin.pinned.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.pin.pinned.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.pin.pinned.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.pin.unpinned.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.pin.unpinned.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.pin.unpinned.corner-radius": {
-          "$ref": "#/$defs/part-corner-radius"
-        },
-        "titlebar.pin.unpinned.hover.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.pin.unpinned.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.pin.unpinned.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.pin.unpinned.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.pin.unpinned.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.pin.unpinned.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.pin.root.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.pin.root.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.pin.root.corner-radius": {
-          "$ref": "#/$defs/part-corner-radius"
-        },
-        "titlebar.pin.root.hover.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.pin.root.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.pin.root.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.pin.root.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.pin.root.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.pin.root.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.pin.dormant.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.pin.dormant.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.pin.dormant.corner-radius": {
-          "$ref": "#/$defs/part-corner-radius"
-        },
-        "titlebar.pin.dormant.hover.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.pin.dormant.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.pin.dormant.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.pin.dormant.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.pin.dormant.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.pin.dormant.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
         "titlebar.row.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -9683,120 +9683,6 @@
         "titlebar.row.selected.text": {
           "$ref": "#/$defs/part-text"
         },
-        "titlebar.row.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.row.pinned.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.pinned.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.row.pinned.corner-radius": {
-          "$ref": "#/$defs/part-corner-radius"
-        },
-        "titlebar.row.pinned.hover.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.pinned.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.row.pinned.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.pinned.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.row.pinned.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.pinned.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.row.unpinned.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.unpinned.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.row.unpinned.corner-radius": {
-          "$ref": "#/$defs/part-corner-radius"
-        },
-        "titlebar.row.unpinned.hover.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.unpinned.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.row.unpinned.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.unpinned.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.row.unpinned.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.unpinned.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.row.root.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.root.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.row.root.corner-radius": {
-          "$ref": "#/$defs/part-corner-radius"
-        },
-        "titlebar.row.root.hover.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.root.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.row.root.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.root.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.row.root.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.root.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.row.dormant.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.dormant.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.row.dormant.corner-radius": {
-          "$ref": "#/$defs/part-corner-radius"
-        },
-        "titlebar.row.dormant.hover.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.dormant.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.row.dormant.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.dormant.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "titlebar.row.dormant.focused.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "titlebar.row.dormant.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
         "titlebar.dot.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -9807,6 +9693,12 @@
           "$ref": "#/$defs/part-fill"
         },
         "titlebar.dot-warning.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.dot-needs.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.dot-needs.text": {
           "$ref": "#/$defs/part-text"
         },
         "tooltip.root.fill": {

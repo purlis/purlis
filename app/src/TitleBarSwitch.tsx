@@ -30,10 +30,11 @@ import {
   SwitcherMark,
   SwitcherRow,
 } from "./ui/titlebar/Switcher";
-import { ChipCard, mostUrgent, type ChipNotices } from "./ChipNotices";
+import { ChipCard, type ChipNotices } from "./ChipNotices";
 import {
   AllWorkspaces,
   ChipSlot,
+  mostUrgentOf,
   NoticeDot,
   PinnedStrip,
   ProjectCrumb,
@@ -338,9 +339,14 @@ export function TitleBarSwitch({
   const stop = unpinned ?? (focused !== undefined && pins.includes(focused) ? focused : pins[0]);
   /** What a chip's dot and description say of the notices hung from it (#3648). */
   const noticesOn = (workspace: string) => {
-    const on = notices?.on.get(workspace);
-    if (on === undefined || on.length === 0) return undefined;
-    return { count: on.length, kind: mostUrgent(on) };
+    const on = notices?.on.get(workspace) ?? [];
+    // A chat asking to remove it needs the person: ✋, the most urgent kind (#3652).
+    const asking = notices?.needs?.get(workspace) !== undefined;
+    if (on.length === 0 && !asking) return undefined;
+    return {
+      count: on.length,
+      kind: mostUrgentOf([...on.map((one) => one.kind), ...(asking ? (["needs"] as const) : [])]),
+    };
   };
   /** Shows `workspace`'s card, the keyboard going into it as it comes: a dot's press, or a
    *  dormant chip's (#3651), either of which goes or stays behind the card (WCAG 2.4.3). */
@@ -353,20 +359,34 @@ export function TitleBarSwitch({
    *  dormant chip has no menu: its workspace's rows are of a workspace the project lacks. */
   const slotted = (workspace: string, drawn: ReactNode, menued = true) => {
     const shows = noticesOn(workspace);
+    const asker = notices?.needs?.get(workspace);
     return (
       <ChipSlot>
-        {shows !== undefined && notices !== undefined && notices.open !== workspace && (
-          <NoticeDot
-            workspace={workspace === OUTSIDE ? OUTSIDE_TITLE : workspace}
-            count={shows.count}
-            kind={shows.kind}
-            // The house is no strip's: its dot is a Tab stop of its own.
-            stop={workspace === OUTSIDE}
-            // A press is the person asking for it: the keyboard goes to the card, since the
-            // dot it was on goes as the card comes (WCAG 2.4.3).
-            onPress={() => showCard(workspace)}
-          />
-        )}
+        {shows !== undefined &&
+          notices !== undefined &&
+          // A ✋ stays until its chat is answered, whatever card is up (#3652).
+          (asker !== undefined || notices.open !== workspace) && (
+            <NoticeDot
+              workspace={workspace === OUTSIDE ? OUTSIDE_TITLE : workspace}
+              count={shows.count}
+              kind={shows.kind}
+              // The house is no strip's: its dot is a Tab stop of its own.
+              stop={workspace === OUTSIDE}
+              onPress={() => {
+                if (asker !== undefined) {
+                  // ✋: the asking chat comes forward and takes the keyboard, since the consent is
+                  // answered on its band (#3652). The workspace's own notices, if it has any, come
+                  // up on their card beside it, which takes no keyboard.
+                  if ((notices.on.get(workspace)?.length ?? 0) > 0) notices.show(workspace);
+                  notices.bring?.(asker);
+                  return;
+                }
+                // A press is the person asking for it: the keyboard goes to the card, since the
+                // dot it was on goes as the card comes (WCAG 2.4.3).
+                showCard(workspace);
+              }}
+            />
+          )}
         {menued ? withMenu(workspace, drawn) : drawn}
       </ChipSlot>
     );

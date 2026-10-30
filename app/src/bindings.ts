@@ -1870,12 +1870,12 @@ export const commands = {
 	 */
 	skillStats: (plane: PlaneId, skill: string) => typedError<SkillStats, string>(__TAURI_INVOKE("skill_stats", { plane, skill })),
 	/**
-	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Grades panel, of the copy at
-	 *  `level` the tab shows (null: the copy it shows first, #3353), and its Runs panel, which lists
-	 *  every run of the skill, newest first, then each extension's. None while the flag is off. On a
-	 *  blocking thread, as it reads the project's skill log and asks each extension.
+	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
+	 *  run of the skill, newest first, then each extension's. A skill's grades are no panel: its
+	 *  Grades tab reads them whole ([`crate::skillgrade::skill_grades`]). None while the flag is off.
+	 *  On a blocking thread, as it reads the project's skill log and asks each extension.
 	 */
-	skillPanels: (plane: PlaneId, skill: string, level: { at: "project"; local: boolean } | { at: "workspace"; name: string; local: boolean } | { at: "persona"; name: string; local: boolean } | null) => typedError<SkillPanel[], string>(__TAURI_INVOKE("skill_panels", { plane, skill, level })),
+	skillPanels: (plane: PlaneId, skill: string) => typedError<SkillPanel[], string>(__TAURI_INVOKE("skill_panels", { plane, skill })),
 	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
 	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
 	/**
@@ -1937,6 +1937,12 @@ export const commands = {
 	 *  editor opened.
 	 */
 	skillSave: (plane: PlaneId, level: SkillLevel, name: string, was: string, now: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_save", { plane, level, name, was, now })),
+	/**
+	 *  **Write trigger tests** (#3925): starts the skill's trigger tests file from a template where
+	 *  it has none, committed as one change ([`verbs::start_trigger_tests`]). The window then opens
+	 *  the file to write in.
+	 */
+	skillTriggerTestsStart: (plane: PlaneId, level: SkillLevel, name: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_trigger_tests_start", { plane, level, name })),
 	/**  **Renames a skill**, and every persona and skill that names it. */
 	skillRename: (plane: PlaneId, level: SkillLevel, name: string, to: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_rename", { plane, level, name, to })),
 	/**
@@ -2039,6 +2045,13 @@ export const commands = {
 	 */
 	skillDraftChat: (plane: PlaneId, level: SkillLevel, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_draft_chat", { plane, level, columns, rows })),
 	/**
+	 *  **"Ask a chat to write them"** (#3925): a chat where `level`'s skills are reached from, on the
+	 *  project's default profile, with the core's prompt for the trigger tests of the skill `name`
+	 *  typed and never sent ([`drafts::asking_for_trigger_tests`]). It starts as "Ask a chat to draft
+	 *  a skill" does, through the same start; its write comes back as a draft.
+	 */
+	skillTriggerTestsChat: (plane: PlaneId, level: SkillLevel, name: string, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_trigger_tests_chat", { plane, level, name, columns, rows })),
+	/**
 	 *  **Try it** (decision 50): a scratch chat in a throwaway piece, armed with the built-in skills
 	 *  and the draft `id` alone, on `profile` (the project's default where none is picked), with the
 	 *  core's prompt typed and never sent. Tries a closed chat never ended (a quit, a crash) are
@@ -2092,7 +2105,8 @@ export const commands = {
 	skillGradeChat: (plane: PlaneId, skill: string, grade: string, chat: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_chat", { plane, skill, grade, chat })),
 	/**
 	 *  **The grades of the copy of `skill` at `level`** (S6), as the eval record holds them: what the
-	 *  skill's Grades tab draws its bars and its list from.
+	 *  skill's Grades tab draws its bars and its list from, with whether it has trigger tests and the
+	 *  grade of it running now (#3928), and what a running grade's page starts from.
 	 */
 	skillGrades: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<SkillGrades, string>(__TAURI_INVOKE("skill_grades", { plane, level, skill })),
 	/**
@@ -8978,6 +8992,12 @@ export type OpenChat = {
 	 *  the other chats of its workspace, which move with it.
 	 */
 	workspace?: string | null,
+	/**
+	 *  Whether Move here brings back a clone its runner's chat made there (#3811): its runner
+	 *  names the clones it holds (session protocol 1.51). `null` for a chat here, and for one on
+	 *  a runner before 1.51, whose Move here row says such a clone stays there.
+	 */
+	clones_come_back?: boolean | null,
 	/**  The persona it adopted. */
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */
@@ -12557,10 +12577,17 @@ export type SkillGradeStep = {
 	said: string | null,
 };
 
-/**  **A copy's grades, newest first** (S6), and what the record left out as it was read. */
+/**
+ *  **A copy's grades, newest first** (S6), and what the record left out as it was read; and what
+ *  the Grades tab says besides, so it asks no plan (#3928): how many trigger tests a grade would
+ *  run, or why they were not read, and the grade of the skill running now, at its latest step.
+ */
 export type SkillGrades = {
 	grades: GradeRow[],
 	said: string | null,
+	tests: number,
+	tests_refused: string | null,
+	running: SkillGradeStep | null,
 };
 
 /**  Where a project skill reaches, as the studio sets it. */
@@ -12625,8 +12652,8 @@ export type SkillLintLevel =
 "warns";
 
 /**
- *  **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Grades and Runs
- *  panels, then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
+ *  **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,
+ *  then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
  *  or refused with the core's sentence.
  */
 export type SkillPanel = {
@@ -12643,7 +12670,7 @@ export type SkillPanel = {
  *  **Which panel on a skill's tab**, as the window holds it: purlis's Runs panel, or one an
  *  extension adds, by its id and the panel's.
  */
-export type SkillPanelKey = { kind: "grades" } | { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
+export type SkillPanelKey = { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
 
 /**
  *  **Whose pins a pin is** (SK-15d, #3232): a workspace's or a persona's, by name. The core's

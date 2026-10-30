@@ -1248,10 +1248,14 @@ fn target_of(block: &Block, named: &str, place: &Place<'_>) -> Option<String> {
                 .ok()
                 .map(|port| port.to_string())
         }
-        // A server on a port the system picks (#3396): that port, so the Notice can say why no
-        // Allow names it. Anything else refused there names nothing.
+        // A server on a port the system picks (#3396), or one whose socket the wrap could not
+        // take (#3440): named as such, so the Notice can say why no Allow names it. Anything
+        // else refused there names nothing.
         (Operation::Listen, Kind::System) => {
-            use crate::sandbox::localport::{PICKED, picks_its_port};
+            use crate::sandbox::localport::{PICKED, SOCKET_NOT_TAKEN, picks_its_port};
+            if named == SOCKET_NOT_TAKEN {
+                return Some(SOCKET_NOT_TAKEN.to_owned());
+            }
             (named == PICKED || picks_its_port(named)).then(|| PICKED.to_owned())
         }
         // The certificate check is one service, whatever the line said of it.
@@ -1299,12 +1303,13 @@ pub fn way_out(path: &Path, root: &Path) -> Option<&'static str> {
             "purlis writes session records for a chat: write one with `purlis session record`.",
         ),
         ["workspaces", _, "memory", _, ..] => Some(
-            "purlis writes a workspace's memory for a chat: record one with `purlis workspace \
-             remember \"<fact>\"`.",
+            "purlis writes a workspace's memory for a chat: record one with the memory_add \
+             tool, or `purlis workspace remember -w <workspace> \"<fact>\"`.",
         ),
         ["personas", _, "memory", _, ..] => Some(
-            "purlis writes a persona's memory for a chat: record one with `purlis persona \
-             remember`, and `--shared` for shared memory.",
+            "purlis writes a persona's memory for a chat: record one with the \
+             persona_remember tool (shared for shared memory), or `purlis persona remember \
+             <persona> \"<fact>\"`.",
         ),
         ["workspaces", _, "todos", _, ..] => Some(
             "purlis writes a workspace's todos for a chat: add one with `purlis workspace todo \

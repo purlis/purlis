@@ -2679,6 +2679,11 @@ impl Chats {
         self.sessions.pool_of(session)
     }
 
+    /// Whether Move here brings back a clone the runner chat `session` runs on made (#3811).
+    pub fn clones_come_back(&self, session: u32) -> bool {
+        self.sessions.clones_come_back(session)
+    }
+
     /// This project's asks may have moved for a reason no event of its own says (qw356: a
     /// chat asked the person to remove a workspace, or that question was answered): the window
     /// is told its asks, so it reads the registry again.

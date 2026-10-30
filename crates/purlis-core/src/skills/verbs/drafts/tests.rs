@@ -869,3 +869,37 @@ fn the_redo_prompt_names_the_skills_file_and_asks_a_new_chat_for_the_change() {
     );
     assert!(new.ends_with("The change should "), "{new}");
 }
+
+/// #3925: "Ask a chat to write them" types a prompt naming the skill, its trigger tests file and
+/// skill-creator's format, and the file it names, from where the chat starts, is one whose write
+/// comes back as a draft.
+#[test]
+fn the_trigger_tests_prompt_names_the_file_a_draft_is_kept_for() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("skills/deploy")).unwrap();
+    std::fs::write(
+        root.join("skills/deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Ships it.\n---\n\nbody\n",
+    )
+    .unwrap();
+    let prompt = asking_for_trigger_tests(root, &Level::project(), "deploy").unwrap();
+    assert!(
+        prompt.starts_with(
+            "Write trigger tests for the deploy skill in skills/deploy/evals/triggers.json"
+        ),
+        "{prompt}"
+    );
+    assert!(
+        prompt.contains("skill-creator's triggers.json format"),
+        "{prompt}"
+    );
+    assert!(
+        prompt.contains("\"should_trigger\": true or false"),
+        "{prompt}"
+    );
+    assert!(!prompt.contains('\n'), "one line: {prompt}");
+    let file = draftable(root, &root.join("skills/deploy/evals/triggers.json")).expect("draftable");
+    assert_eq!(file.inner, "evals/triggers.json");
+    assert!(asking_for_trigger_tests(root, &Level::project(), "nowhere").is_err());
+}

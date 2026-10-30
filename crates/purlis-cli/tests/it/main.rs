@@ -57,6 +57,7 @@ mod curation;
 mod dispatch_from_inside_the_app;
 mod doctor;
 mod every_command_charter_names_is_one_it_has;
+mod every_memory_write_a_shipped_text_teaches_names_its_scope;
 mod every_test_starts_the_binary_unsteered;
 mod extension_commands;
 mod extensions;

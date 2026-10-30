@@ -12,7 +12,7 @@ import { HeadActions } from "./viewHead";
 import { ChatsHere, fixedChats, nothingKnown, type State } from "./chatState";
 import { drawnWith } from "./cascade.testkit";
 import { ReadOnlySaid } from "./ReadOnlyLine";
-import { wears } from "./textRoles.testkit";
+import { inherited, wears } from "./textRoles.testkit";
 import { CATALOGUE, type ViewId } from "./regions";
 import { catalogue, catalogued, type Catalogued, type Offer } from "./actions";
 import { noTabs } from "./tabs";
@@ -369,6 +369,10 @@ describe("the right-hand region", () => {
     const alerts = screen.getAllByRole("alert");
     expect(alerts.length).toBeGreaterThan(0);
     for (const alert of alerts) expect(alert).toHaveTextContent("no workspace 'alpha'");
+    // Words that say something is wrong are `danger.text` (#3938, `docs/ui-primitives.md`);
+    // `state.failed` is a state's mark.
+    const line = screen.getByTestId("panels").querySelector("p.trouble");
+    expect(line && inherited(line, "color")).toBe("var(--danger-text)");
   });
 
   it("says the plane is still being read rather than saying there is nothing to do", () => {

@@ -111,8 +111,9 @@ fn scaffold(
          Never print secret values.\n\
          - Defer to each repo's own `CLAUDE.md` / `AGENTS.md` and its tooling over general \
          habits.\n\
-         - Record durable facts with `{program} persona remember {name} \"<fact>\"`. Never store\n  \
-         secrets there — those belong in the vault.\n"
+         - Record durable facts with the `persona_remember` tool, or \
+         `{program} persona remember {name} \"<fact>\"`.\n  Never store secrets there — those \
+         belong in the vault.\n"
     ));
     if !delegate_when.is_empty() {
         text.push_str(&format!("\n## When to delegate here\n{delegate_when}\n"));

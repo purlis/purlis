@@ -217,8 +217,8 @@ export function GradePlanPage({
   level: SkillLevel;
   changed: number;
   afterEdit?: boolean;
-  /** A grade started: its id, and the plan it was started from. */
-  onStarted: (grade: string, plan: SkillGradePlan) => void;
+  /** A grade started: its id. */
+  onStarted: (grade: string) => void;
   /** Grading after each edit was turned on: what was accepted. */
   onAfterEdit: (on: SkillGradeAfterEdit) => void;
   /** A grade of this skill runs already: show it. */
@@ -305,7 +305,7 @@ export function GradePlanPage({
     void commands
       .skillGradeStart(plane, level, name, picked, pickedModel, consent)
       .then((answer) => {
-        if (answer.status === "ok") onStarted(answer.data, plan);
+        if (answer.status === "ok") onStarted(answer.data);
         else {
           setSaid(answer.error);
           // The plan is read again after any refusal: one that changed since it was shown is
@@ -595,7 +595,6 @@ export function GradeRunningPage({
   name,
   level,
   grade,
-  started,
   onEnded,
   onBack,
 }: {
@@ -603,15 +602,16 @@ export function GradeRunningPage({
   name: string;
   level: SkillLevel;
   grade: string;
-  /** What the plan it was started from said, where this page opened from Start: the chats and
-   *  the dollar limit until its first step says them (the core's first is told before then). */
-  started?: { chats?: number; limitUsd?: number };
   onEnded: () => void;
   /** Back to the Grades tab: the grade keeps going. */
   onBack: () => void;
 }) {
   const [step, setStep] = useState<SkillGradeStep>();
-  const [plan, setPlan] = useState<SkillGradePlan>();
+  // Whether the app said this grade runs, where it has: its latest step says the rest (#3928).
+  const [runs, setRuns] = useState<boolean>();
+  // Why the app's word on it could not be read, where it could not, and a press to read again.
+  const [unread, setUnread] = useState<string>();
+  const [again, setAgain] = useState(0);
   const [stopping, setStopping] = useState(false);
   const levelKey = JSON.stringify(level);
   const ended = useRef(onEnded);
@@ -620,8 +620,8 @@ export function GradeRunningPage({
   });
 
   const [stopRefused, setStopRefused] = useState<string>();
-  // Listened to first, then the app's word on whether it runs: an end told before the listener
-  // was attached is never missed, as the plan read after it says the grade runs no more.
+  // Listened to first, then the app's word on whether it runs and its latest step: an end told
+  // before the listener was attached is never missed, as the read after it says it runs no more.
   useEffect(() => {
     let live = true;
     const listening = listen<SkillGradeStep>(SKILL_GRADE, (event) => {
@@ -631,21 +631,45 @@ export function GradeRunningPage({
       if (now.ended !== null && now.said === null) ended.current();
     }).catch(() => undefined);
     void listening
-      .then(() => commands.skillGradePlan(plane, level, name, null, null))
+      .then(() => commands.skillGrades(plane, level, name))
       .then((answer) => {
-        if (live && answer.status === "ok") setPlan(answer.data);
+        if (!live) return;
+        if (answer.status !== "ok") {
+          setUnread(answer.error);
+          return;
+        }
+        setUnread(undefined);
+        const now = answer.data.running;
+        const ours = now !== null && now.grade === grade ? now : undefined;
+        setRuns(ours !== undefined);
+        // A step told since is newer than the one the read says.
+        if (ours !== undefined) setStep((told) => told ?? ours);
       })
-      .catch(() => undefined);
+      .catch((err: unknown) => {
+        if (live) setUnread(String(err));
+      });
     return () => {
       live = false;
       void listening.then((stop) => stop?.()).catch(() => undefined);
     };
     // The level as a value: an equal level reads nothing anew.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plane, levelKey, name, grade]);
+  }, [plane, levelKey, name, grade, again]);
 
-  if (step === undefined && plan === undefined) return <Reading what={`the grade of ${name}`} />;
-  if (step === undefined && plan !== undefined && plan.running !== grade)
+  // A read that failed with no step told says so in place, never "Reading…" for good.
+  if (step === undefined && unread !== undefined)
+    return (
+      <NotRead
+        what={`the grade of ${name}`}
+        why={unread}
+        onAgain={() => {
+          setUnread(undefined);
+          setAgain((n) => n + 1);
+        }}
+      />
+    );
+  if (step === undefined && runs === undefined) return <Reading what={`the grade of ${name}`} />;
+  if (step === undefined && runs === false)
     return (
       <EmptyState
         variant="panel"
@@ -656,9 +680,9 @@ export function GradeRunningPage({
       />
     );
   const ran = step?.ran ?? 0;
-  const of = step?.of ?? started?.chats ?? plan?.chats ?? 0;
-  const cap = step?.cap ?? plan?.token_cap ?? 0;
-  const limit = step?.limit_usd ?? started?.limitUsd ?? plan?.cost_cap_usd ?? null;
+  const of = step?.of ?? 0;
+  const cap = step?.cap ?? 0;
+  const limit = step?.limit_usd ?? null;
   const over = step !== undefined && step.ended !== null;
   return (
     <ReviewPage

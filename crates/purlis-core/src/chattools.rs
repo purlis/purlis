@@ -662,10 +662,12 @@ pub static TOOLS: [Tool; 26] = [
                         "description": "Where it works: `workspace:<name>` for another \
                                         workspace of the project, or `worktree` for a new \
                                         worktree of the repo this chat works in, on a new \
-                                        branch purlis names, which only the person merges. A \
-                                        sandboxed chat commits there with `purlis worktree \
-                                        commit`. Leave it out for \
-                                        this chat's folder.",
+                                        branch purlis names, which only the person merges. \
+                                        From a workspace's own folder, `worktree` is cut from \
+                                        its one clone, and `worktree:<repo>` names which \
+                                        clone where it holds several. A sandboxed chat \
+                                        commits there with `purlis worktree commit`. Leave it \
+                                        out for this chat's folder.",
                     },
                     "wait": {
                         "type": "boolean",
@@ -1248,13 +1250,13 @@ pub fn dispatch_profile(args: &Map<String, Value>) -> Result<Option<String>, Str
 }
 
 /// The `dispatch` tool's `in`: where the new chat works, where that is asked for (#1453). One
-/// of two words and nothing more: the app reads it ([`crate::dispatchplace::asked`]).
+/// of three words and nothing more: the app reads it ([`crate::dispatchplace::asked`]).
 pub fn dispatch_place(args: &Map<String, Value>) -> Result<Option<String>, String> {
     match args.get("in") {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(place)) if !place.trim().is_empty() => Ok(Some(place.trim().to_owned())),
         Some(Value::String(_)) => Ok(None),
-        Some(_) => Err("`in` is `worktree` or `workspace:<name>`".to_owned()),
+        Some(_) => Err("`in` is `worktree`, `worktree:<repo>` or `workspace:<name>`".to_owned()),
     }
 }
 
