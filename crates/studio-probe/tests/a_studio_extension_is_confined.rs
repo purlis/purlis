@@ -237,7 +237,7 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
         matches!(&blocks[1], purlis_core::panel::Block::Table(table) if table.columns == ["Handed", "Files"]),
         "{blocks:?}"
     );
-    assert_eq!(panels[2].by.as_deref(), Some("Studio probe"));
+    assert_eq!(panels[1].by.as_deref(), Some("Studio probe"));
 
     // A skill source: what it offers, and the install review purlis shows of it.
     let browse = purlis_core::skills::source::extension::browse(studio, ID).expect("it lists");
