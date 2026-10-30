@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793375423366,
+  "lastUpdate": 1793377121551,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31752,6 +31752,48 @@ window.BENCHMARK_DATA = {
             "value": 103.760086,
             "unit": "ms",
             "extra": "median of 5 runs: 102.941, 103.424, 103.760, 103.763, 104.075 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "fdd5f424e9d721724a4488febae8923836e7eca5",
+          "message": "A chat's reported permission mode is accepted only from its armed hook (#3822) (#4093)\n\n* A chat's reported permission mode is accepted only from its armed hook (#3822)\n\nA report's mode now counts only when the line carries the key purlis\narmed that chat's hook with. Any other report's mode reads as asking, so\nit can lower the level a task starts at and never raise it.\n\n- hookwire::armed: a per-chat key minted with the chat's token, held in\n  memory and written for its owner alone into the hook spool, which a\n  sandboxed chat's tools are denied. Removed as the chat ends.\n- The hook sends it beside the token on the socket only (never spooled);\n  the listener checks it in constant time (ChatTokens::proves).\n- Codex and opencode adapters state that their hooks, inside the wrap,\n  prove nothing beyond the token.\n- ADR 0090 amendment (2026-10-30), changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Review fixes for the armed hook key (#3822)\n\n- Test: a Claude Code chat's sandbox denyRead/denyWrite and its Read and\n  Edit tools are each denied the armed-key folder under every spelling of\n  the state folder.\n- A listener's bind removes no key: only the keys of chats a project's\n  open does not bring back are removed, with their spool keys\n  (armed::disarm_ended from spool::forget).\n- ADR amendment: the unattended mark is still taken without the key, as\n  it only restricts; the key proves nothing against a tool the chat\n  drives that runs outside the sandbox with the person's reach.\n- Report::mode_unproven in dispatchmode; deliver_armed takes the key\n  type; armed::file and the written length as a const; Codex/opencode say\n  what they can prove on their adapter types instead of repeating the\n  trait default; changelog slug matches the ADR's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T14:59:35Z",
+          "tree_id": "67e078379e9b4f3d8cb384595bf4b81441a58966",
+          "url": "https://github.com/purlis/purlis/commit/fdd5f424e9d721724a4488febae8923836e7eca5"
+        },
+        "date": 1793377115147,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3479885,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.315, 0.343, 0.348, 0.357, 0.365 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5634755,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.341, 16.441, 16.563, 16.686, 16.793 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4927345,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.365, 100.809, 101.493, 101.515, 102.595 ms"
           }
         ]
       }
