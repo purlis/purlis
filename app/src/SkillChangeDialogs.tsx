@@ -28,10 +28,20 @@ import { labelOf, levelKey, sameLevel } from "./skillChanges";
 import { Button } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
 
-/** What a dialog says of a skill's history across a rename or a move: History lists the versions
- *  of the folder it has now, so the earlier ones stay in git but not on its tabs (#3685). */
-export const HISTORY_RESTARTS =
-  "Its History and Grades start again from this change; its earlier versions stay in the project's git history.";
+/** What a dialog says of a skill's history across a rename or a move: History follows the folder
+ *  across the renames and moves git finds, and Grades the names and levels it had (#3918). */
+export const HISTORY_MOVES = "Its history and grades move with it.";
+
+/** What it says where the skill is, or is to be, only on this machine: git holds no history of
+ *  it to follow (#3918). */
+export const HISTORY_RESTARTS_LOCAL =
+  "A skill only on this machine keeps no history, so its History and Grades start again from this change.";
+
+/** What a rename or a move says of the skill's history, by whether it is on this machine alone
+ *  before or after. */
+export function historySaid(local: boolean): string {
+  return local ? HISTORY_RESTARTS_LOCAL : HISTORY_MOVES;
+}
 
 /** How long a deleted skill can be brought back, as Delete says it before it deletes. */
 export const DELETED_FOR = "It moves to Deleted for 30 days, where you can bring it back.";
@@ -340,7 +350,7 @@ export function RenameDialog({
         again={again}
         testid="skill-rename-reach"
       />
-      <p className="honest">{HISTORY_RESTARTS}</p>
+      <p className="honest">{historySaid(level.local)}</p>
       <p className="honest">Chats already running keep the old name until they restart.</p>
     </Dialog>
   );
@@ -489,7 +499,7 @@ export function MoveDialog({
             again={again}
             testid="skill-move-changes"
           />
-          <p className="honest">{HISTORY_RESTARTS}</p>
+          <p className="honest">{historySaid(from.local || to.local)}</p>
         </>
       )}
     </Dialog>

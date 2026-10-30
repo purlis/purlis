@@ -737,6 +737,9 @@ pub fn rename(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> Result<P
         from.clone()
     };
     cx.done(format!("{old} is renamed {new}"));
+    // Its history and grades follow it by git (#3918); the chats this machine kept of its grades
+    // are kept by name, so they go with it.
+    super::grades::kept::renamed(plane, old, new);
     let still = Level::every(plane)
         .into_iter()
         .find(|other| other.named(plane, old).is_some());
