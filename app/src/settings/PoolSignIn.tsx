@@ -363,13 +363,16 @@ export function SignInStrip(props: SignInStripProps) {
           </Button>
         )}
       </div>
-      <p className="ui-setting-help">
-        From a terminal:{" "}
-        <code>
-          purlis profile sign-in {profile} --pool {pool}
-          {provider === undefined ? "" : ` --provider ${provider}`}
-        </code>
-      </p>
+      {/* A login approved in the browser has no way back from a terminal here (#4044). */}
+      {!props.approves && (
+        <p className="ui-setting-help">
+          From a terminal:{" "}
+          <code>
+            purlis profile sign-in {profile} --pool {pool}
+            {provider === undefined ? "" : ` --provider ${provider}`}
+          </code>
+        </p>
+      )}
     </Card>
   );
 }

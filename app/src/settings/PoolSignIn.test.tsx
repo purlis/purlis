@@ -431,6 +431,8 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     says({ at: "approve", url: OPENAI });
 
     expect(await within(opened).findByText("Step 1 of 2: Approve in your browser")).toBeVisible();
+    // The CLI's --pool sign-in cannot carry the browser's answer, so it is not offered.
+    expect(within(opened).queryByText(/From a terminal/)).toBeNull();
     expect(calls("plugin:opener|open_url")).toEqual([expect.objectContaining({ url: OPENAI })]);
     expect(within(opened).queryByRole("textbox")).not.toBeInTheDocument();
 
