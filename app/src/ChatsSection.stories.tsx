@@ -11,7 +11,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useEffect, useState } from "react";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { aCardIsUp } from "./chatCard";
-import { CARD_LEAVE_MS, ChatsSection } from "./ChatsSection";
+import { CARD_LEAVE_MS, ChatsSection, ON_MEMORY_SAID } from "./ChatsSection";
 import { ChatsHere, fixedChats, moved, nothingKnown } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
@@ -394,7 +394,7 @@ export const AtItsTaskLimit: Story = {
     await expect(row).not.toBeNull();
     await expect(row).toHaveAttribute(
       "aria-description",
-      `${UNDER[0].atLimit?.said} 1 dispatch waits on memory.`,
+      `${UNDER[0].atLimit?.said} 1 dispatch waits on memory. ${ON_MEMORY_SAID}`,
     );
     const link = canvasElement.querySelector<HTMLElement>(".at-limit-settings");
     await expect(link).not.toBeNull();
@@ -427,12 +427,53 @@ export const AtItsTaskLimit: Story = {
 export const RestartSaid: Story = {
   render: () => <SaidUnderInItsPanel />,
   play: async ({ canvasElement }) => {
-    const said = within(canvasElement).getByRole("status", { name: "Restart of steward 2" });
+    const said = within(canvasElement).getByRole("status", { name: "Restarts" });
     await expect(said).toHaveTextContent(RESTART);
     await expect(said.closest('[role="tree"]')).toBeNull();
     await expect(rowOf(canvasElement, 2)).toHaveAttribute("aria-description", RESTART);
     const line = canvasElement.querySelector<HTMLElement>(".restart-said");
     await expect(line).toHaveTextContent(RESTART);
     await expect(line).toHaveAttribute("aria-hidden", "true");
+  },
+};
+
+/**
+ * **What a row says, in its card** (#3886): the keyboard rests on the row at its task limit,
+ * and its card comes up with the limit's whole sentence and what waits on memory, with where
+ * they are named. The card describes the row while it is up, so a screen reader is told them
+ * there, and a sighted keyboard user reads them with no hover. Held to axe with the card up.
+ */
+export const SaidInItsCard: Story = {
+  // The card stands over the canvas's edge, where a picture would be of the popover's place.
+  parameters: { screenshot: false },
+  render: () => <SaidUnderInItsPanel />,
+  play: async ({ canvasElement }) => {
+    const row = rowOf(canvasElement, 1);
+    await expect(row).not.toBeNull();
+    for (let step = 0; step < 12 && document.activeElement !== row; step += 1) {
+      await userEvent.tab();
+    }
+    await untilFocused(() => rowOf(canvasElement, 1), "the first row");
+    const card = await waitFor(
+      () => {
+        const up = document.querySelector<HTMLElement>('.chat-card [role="tooltip"]');
+        if (up === null) throw new Error("no card is up");
+        return up;
+      },
+      { timeout: 3000 },
+    );
+    // Once it has arrived: the popover family fades it in from nothing (`data-entering`), and
+    // axe, after the play, reads its words' contrast as they are drawn.
+    await waitFor(
+      () => {
+        expect(card.closest("[data-entering]")).toBeNull();
+        expect(card).toBeVisible();
+      },
+      { timeout: 3000 },
+    );
+    await expect(card).toHaveTextContent(UNDER[0].atLimit?.said ?? "");
+    await expect(card).toHaveTextContent("1 dispatch waits on memory");
+    await expect(card).toHaveTextContent(ON_MEMORY_SAID);
+    await expect(row).toHaveAttribute("aria-describedby", card.id);
   },
 };

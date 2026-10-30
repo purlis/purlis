@@ -1978,14 +1978,17 @@ pub const CLAUDE_CODE_LISTEN_SAID: &str = "Claude Code's sandbox can let a comma
      for this chat. Start it without the sandbox, or start the server in a Codex or opencode \
      chat, which can be allowed its one port.";
 
-/// Why a server on a port the system picks cannot be allowed (#3396): a test suite's servers
-/// (`listen(0)`) take whatever port is free, so there is no one port to allow, and purlis
-/// allows a chat's server only on one port of its own, behind its door. What to do instead.
+/// Why a server on a port the system picks was refused (#3396): on macOS, and on Linux on any
+/// address but 127.0.0.1 (ruled 2026-10-30). A test suite's servers (`listen(0)`) take whatever
+/// port is free, so there is no one port to allow, and purlis allows a chat's server only on one
+/// port of its own, behind its door. Says what to do: on Linux, start it on 127.0.0.1;
+/// elsewhere, start it on a port of its own or start the chat without the sandbox.
 pub const PICKED_PORT_SAID: &str = "It asked for a port the system picks, as a test suite's \
-     servers often do, so there is no one port to allow: purlis lets a chat's server listen only \
-     on a port of its own, from 1024. Start the server on such a port (PORT=3000, or purlis \
-     listen 3000 -- <command>) to be asked about it, or start this chat without the sandbox to \
-     run tests that pick their own ports.";
+     servers often do, so there is no one port to allow. On Linux, purlis's sandbox gives such a \
+     server a port on 127.0.0.1: start it there rather than on every interface. Otherwise, start \
+     the server on a port of its own, from 1024 (PORT=3000, or purlis listen 3000 -- <command>), \
+     to be asked about it, or start this chat without the sandbox to run tests that pick their \
+     own ports.";
 
 /// Why a server refused on no port purlis could allow cannot be allowed (#3440): what reached the
 /// Notice named none, which is so of another machine's address, and of a runner that could not

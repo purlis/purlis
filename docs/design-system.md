@@ -1891,7 +1891,9 @@ view wears one.
 1. **Colour follows the role, never the other way.** A word is not made quieter by picking a
    quieter colour; it is given the role it has, and the role brings the colour.
 2. **Muted is for meta only.** A help line or a where line is secondary. (Muted was the
-   window's most used text colour, mostly on secondary-role text.)
+   window's most used text colour, mostly on secondary-role text.) One exception stands until
+   the view tabs move onto the roles (below): a view's sentence that wears no role
+   (`.view-body .none`, `.pending`) is drawn muted by one rule in `App.css` (#3938).
 3. **Nothing is under the words' floor.** 11px (`--font-size-xs`) is it: `0.72rem` and
    `0.65rem` become it, and a snap never lands under it. The one step below, `--font-size-2xs`
    (10px, the operator, 2026-10-17), is for a tight secondary label only: the Chats view's and the
@@ -1981,7 +1983,9 @@ One change each, each checked against a screenshot (#1920):
 4. the tab strips and the status bar;
 5. Settings;
 6. Notices and dialogs;
-7. Welcome.
+7. Welcome;
+8. the view tabs (Todos, Memory, a task's changes, the skills' pages): their `.none` and
+   `.pending` sentences wear `ui-text-secondary`, and `.view-body`'s muted goes (#3938).
 
 Along the way the section label gets one spelling (`ui-text-label`, which is `.sidebar-title`'s
 type today), and the two largest size tokens are each read by a role or removed.
