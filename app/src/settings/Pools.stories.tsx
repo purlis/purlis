@@ -14,7 +14,7 @@ import { expect, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { AddDockerPoolHost } from "../AddDockerPool";
 import type { PoolLink, PoolRow, PoolsShown } from "../bindings";
-import { startAddingAPool, stopAddingAPool } from "../pools";
+import { askProfiles, startAddingAPool, stopAddingAPool } from "../pools";
 import { expectFocusInSight, pictureNow, untilFocused } from "../stories.testkit";
 import { SettingGroup, SettingRow } from "./components";
 import type { LiveSetting } from "./groups";
@@ -109,11 +109,15 @@ function Pools() {
 const meta = {
   component: Pools,
   // The pools the faked core keeps: a story's `parameters.pools`, none by default.
-  beforeEach: ({ parameters }) => {
+  beforeEach: async ({ parameters }) => {
     theCore(
       (parameters.pools as PoolRow[] | undefined) ?? [],
       parameters.link as PoolLink | undefined,
     );
+    // The window's pools are held once for every story drawn in this page: a pool of the same
+    // name another story's faked core answered for is asked again here, so its profiles' line is
+    // this core's.
+    await askProfiles("builds");
     return () => {
       stopAddingAPool();
       clearMocks();
