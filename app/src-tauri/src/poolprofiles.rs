@@ -559,6 +559,8 @@ pub enum PoolSignInStep {
     Device { url: String, code: String },
     /// Ask for the code the page shows.
     Code,
+    /// What a login in the strip's terminal printed, escapes and all.
+    Printed { text: String },
     /// The harness refused the code, in its words.
     Refused { said: String },
     /// The login ended well, and the runner is asked whether it is signed in.
@@ -579,6 +581,7 @@ impl From<driven::Event> for PoolSignInStep {
             driven::Event::Open { url } => Self::Open { url },
             driven::Event::DeviceCode { url, code } => Self::Device { url, code },
             driven::Event::AskCode => Self::Code,
+            driven::Event::Printed { text } => Self::Printed { text },
             driven::Event::Refused { said } => Self::Refused { said },
             driven::Event::Checking => Self::Checking,
             driven::Event::SignedIn => Self::SignedIn,
@@ -603,18 +606,28 @@ static NEXT_SIGN_IN: AtomicU32 = AtomicU32::new(1);
 /// How long one ask for a sign-in's next step waits before it answers there is none yet.
 const STEP_WITHIN: Duration = Duration::from_secs(20);
 
+/// The size of the terminal a sign-in's strip draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, specta::Type)]
+pub struct PoolSignInTerminal {
+    pub columns: u16,
+    pub rows: u16,
+}
+
 /// **Starts signing `name` in on pool `pool`'s runner with no terminal** (#4042, spec #4023):
 /// the runner's own `purlis profile sign-in`, kept there first and run there through this
 /// machine's `docker` as [`sign_in_line`]'s is, but with pipes, its output read for the steps
 /// [`pool_sign_in_next`] answers. Nothing of this machine's sign-in goes to the runner (ADR
 /// 0095). A sign-in of the same profile on the same pool already running is cancelled. Answers
-/// the sign-in's number.
+/// the sign-in's number. With `terminal`, where purlis could not follow the login, it runs in a
+/// terminal the runner makes, for the person to drive in the strip (#4043): what it prints is
+/// [`PoolSignInStep::Printed`], and what is typed goes back by [`pool_sign_in_type`].
 #[tauri::command]
 #[specta::specta]
 pub async fn pool_sign_in_start(
     pool: String,
     name: String,
     provider: Option<String>,
+    terminal: Option<PoolSignInTerminal>,
 ) -> Result<u32, String> {
     // Numbered as it is asked, so of two starts the one asked last is the one kept.
     let flow = NEXT_SIGN_IN.fetch_add(1, Ordering::SeqCst);
@@ -629,14 +642,21 @@ pub async fn pool_sign_in_start(
                 "Pool {pool}: {OLDER_RUNNER}. Nothing was signed in."
             ));
         }
-        let runner =
-            purlis_core::runners::runner_for(&config, &pool).map_err(|why| why.to_string())?;
-        let login = crate::runnerlinks::docker()?.driven_sign_in(
-            &runner.made,
-            &engine,
-            &name,
-            provider.as_deref(),
-        )?;
+        let runner = this_desktops_runner(&config, &pool)?;
+        let docker = crate::runnerlinks::docker()?;
+        let login = match terminal {
+            Some(size) => docker.terminal_sign_in(
+                &runner.made,
+                &engine,
+                &name,
+                provider.as_deref(),
+                purlis_core::engine::Size {
+                    columns: size.columns,
+                    rows: size.rows,
+                },
+            )?,
+            None => docker.driven_sign_in(&runner.made, &engine, &name, provider.as_deref())?,
+        };
         let check = {
             let pool = pool.clone();
             move || match keep_on(&config, &pool, &kept) {
@@ -644,12 +664,10 @@ pub async fn pool_sign_in_start(
                 _ => Standing::CannotTell,
             }
         };
-        let driving = Arc::new(driven::drive_with(
-            &login,
-            &record.harness,
-            provider.as_deref(),
-            check,
-        )?);
+        let driving = Arc::new(match terminal {
+            Some(_) => driven::in_a_terminal(&login, check)?,
+            None => driven::drive_with(&login, &record.harness, provider.as_deref(), check)?,
+        });
         // One of the same profile on the same pool is let go and ended, after the lock.
         let before: Vec<SignIn> = {
             let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
@@ -717,7 +735,57 @@ pub async fn pool_sign_in_paste(flow: u32, code: String) -> Result<(), String> {
         .map_err(|why| format!("the code was not passed on: {why}"))?
 }
 
-/// **Cancels sign-in `flow`**: what drives its login is ended, and it is let go.
+/// **Passes what the person typed in the strip's terminal to sign-in `flow`**, as it is.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_sign_in_type(flow: u32, text: String) -> Result<(), String> {
+    let driving = driving(flow)?;
+    tauri::async_runtime::spawn_blocking(move || driving.typed(&text))
+        .await
+        .map_err(|why| format!("what was typed was not passed on: {why}"))?
+}
+
+/// **Signs `name` out on pool `pool`'s runner** (#4043): the harness's own sign-out, run there.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_sign_out(pool: String, name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let config = config_root()?;
+        owned()?;
+        let record = record_named(&config, &name)?;
+        let kept = onrunner::Kept::of(&record)?;
+        let runner = this_desktops_runner(&config, &pool)?;
+        crate::runnerlinks::docker()?.sign_out(&runner.made, &name)?;
+        // Its harness says whether it is signed out, not the sign-out's exit status alone.
+        profilestore::sign_in::forget_of(&record);
+        match keep_on(&config, &pool, &kept)? {
+            Some(Standing::SignedIn) => Err(format!(
+                "{name} is still signed in on pool {pool}: its harness's sign-out ran, and its \
+                 status check says it is signed in"
+            )),
+            _ => Ok(()),
+        }
+    })
+    .await
+    .map_err(|why| format!("the sign-out did not run: {why}"))?
+}
+
+/// **Pool `pool`'s runner, where it runs this desktop's purlis**: one that runs another holds no
+/// sign-in to what drives it (#4043), and has no sign-out of purlis's own, so it is refused in
+/// words, with Open in terminal the way to sign in there.
+fn this_desktops_runner(config: &Path, pool: &str) -> Result<purlis_core::runners::Kept, String> {
+    let runner = purlis_core::runners::runner_for(config, pool).map_err(|why| why.to_string())?;
+    match crate::runnerlinks::behind(&Machine::here(config)?, &runner) {
+        None => Ok(runner),
+        Some(why) => Err(format!(
+            "{why}, so purlis signs nothing in or out there itself. Sign in with Open in \
+             terminal, or once the runner runs this desktop's version."
+        )),
+    }
+}
+
+/// **Cancels sign-in `flow`**: what drives its login is ended, and with its input the login
+/// ends on the runner.
 #[tauri::command]
 #[specta::specta]
 pub fn pool_sign_in_cancel(flow: u32) {

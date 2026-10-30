@@ -54,6 +54,20 @@ function theCore(pools: PoolRow[]) {
           waiting: 0,
         };
       if (cmd === "runner_image_of_this_version") return { state: "ours", image: IMAGE };
+      if (cmd === "pool_profiles")
+        return {
+          kept: [
+            {
+              name: "work",
+              kind: "claude",
+              harness: "Claude Code",
+              standing: "signed-in",
+              not_kept: null,
+              plans: [],
+            },
+          ],
+          addable: [],
+        };
       return [];
     },
     { shouldMockEvents: true },

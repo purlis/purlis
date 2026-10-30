@@ -1489,6 +1489,8 @@ export const commands = {
 	poolSignInNext: __WINDOW_ONLY_RESULT,
 	poolSignInPaste: __WINDOW_ONLY_RESULT,
 	poolSignInCancel: __WINDOW_ONLY,
+	poolSignInType: __WINDOW_ONLY_RESULT,
+	poolSignOut: __WINDOW_ONLY_RESULT,
 	devices: __WINDOW_ONLY_RESULT,
 	deviceRunner: __WINDOW_ONLY_RESULT,
 	devicesDisk: __WINDOW_ONLY_RESULT,
@@ -8207,6 +8209,8 @@ export type PoolSignInStep =
 { at: "device"; url: string; code: string } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
+/**  What a login in the strip's terminal printed, escapes and all. */
+{ at: "printed"; text: string } | 
 /**  The harness refused the code, in its words. */
 { at: "refused"; said: string } | 
 /**  The login ended well, and the runner is asked whether it is signed in. */
@@ -8219,6 +8223,12 @@ export type PoolSignInStep =
 { at: "failed"; why: string } | 
 /**  It was cancelled, and its login ended. */
 { at: "cancelled" };
+
+/**  The size of the terminal a sign-in's strip draws. */
+export type PoolSignInTerminal = {
+	columns: number,
+	rows: number,
+};
 
 /**
  *  **How a pool's runner was made to suspend itself** (#3717), which its row says where it is
