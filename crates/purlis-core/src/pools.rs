@@ -24,6 +24,12 @@
 //! A pool's chats start on its one runner that is not draining: the one called by the pool's
 //! name, or the one made beside it after an update.
 //!
+//! - **A runner removed outside purlis is made again on the person's word** ([`make_again`],
+//!   #4149): Docker lists no container of its id, so no link to it comes back. Its pool's row
+//!   and a refused start offer Make the runner again, which makes a runner of the same name from
+//!   the pool's own image and limits, on its home volume where that is still there, pairs it and
+//!   keeps it in the old one's place.
+//!
 //! - **A cluster pool is added with its runner claimed and paired at once** ([`add_cluster`],
 //!   #3292): the pool is recorded with the cluster operator key the person checked, a kept
 //!   runner is claimed from the cluster's Pool as who the kubeconfig is, waited on until the
@@ -275,6 +281,85 @@ pub fn follow(
                 made.runner.volume()
             )),
         }),
+    }
+}
+
+/// **A runner made again** (#4149, [`make_again`]): the runner kept, and whether it took up its
+/// old home, whose sign-ins and kept work it has; where not, its profiles are signed in again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MadeAgain {
+    pub kept: Kept,
+    pub home_kept: bool,
+}
+
+/// **Makes the pool `name`'s runner again, once it was removed outside purlis** (#4149): Docker
+/// lists no container of its id ([`Docker::gone`]). A runner of the same name is made from the
+/// pool's own image, held to its limits and its time before it suspends, on its home volume
+/// where that is still there ([`Docker::make_again_for`]), checked, paired with `desktop`, and
+/// kept in the old one's place ([`runners::remade_locked`]). The profiles the pool keeps are
+/// kept on it again as after the pool was added: the window asks for them.
+///
+/// Refused, with nothing made, for a runner Docker still lists, stopped or suspended among
+/// them: that one resumes. What fails takes back the container this made, never the home it
+/// took up.
+pub fn make_again(
+    config_root: &Path,
+    docker: &Docker,
+    name: &str,
+    desktop: &Pinned,
+) -> Result<MadeAgain, Refused> {
+    let locked = runners::lock(config_root);
+    let pool = runners::pools(config_root)?
+        .into_iter()
+        .find(|pool| pool.name() == name)
+        .ok_or_else(|| Refused::Other(format!("no pool named {name} is on this machine")))?;
+    let old = runners::runner_for(config_root, name)?;
+    let Some(gone) = docker
+        .gone(&old.made)
+        .map_err(|why| Refused::Other(why.0))?
+    else {
+        return Err(Refused::Other(format!(
+            "runner {}'s container is still there, so purlis does not make it again; it is \
+             linked to as it is",
+            old.name()
+        )));
+    };
+    let made = docker
+        .declared(pool.image())
+        .and_then(|(user, home)| Runner::new(old.name(), pool.image().clone(), user, &home))
+        .map(|runner| {
+            runner
+                .limited(pool.limits())
+                .suspending_after(pool.suspend_after())
+        })
+        .and_then(|runner| {
+            docker.make_again_for(&runner, Some(&runners::desktop_label(config_root)))
+        })
+        .map_err(|why| Refused::Other(own_time_said(&pool, why.0)))?;
+    let kept = docker
+        .pair(&made, desktop)
+        .map_err(|why| Refused::Other(why.0))
+        .and_then(|answered| {
+            runners::remade_locked(config_root, old.name(), &made, &answered, desktop, &locked)
+        });
+    match kept {
+        Ok(kept) => Ok(MadeAgain {
+            kept,
+            home_kept: gone.home_kept,
+        }),
+        Err(why) => {
+            let removed = if gone.home_kept {
+                docker.remove_container(&made)
+            } else {
+                docker.remove(&made)
+            };
+            Err(match removed {
+                Ok(()) => why,
+                Err(left) => Refused::Other(format!(
+                    "{why}; and the runner made again could not all be removed ({left})"
+                )),
+            })
+        }
     }
 }
 

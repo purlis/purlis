@@ -2361,6 +2361,49 @@ fn a_running_runner_is_only_checked() {
     assert!(!fake.file("log").contains("start "), "{}", fake.file("log"));
 }
 
+/// **A runner whose container Docker no longer has was removed outside purlis** (#4149): the
+/// person's cleanup took it, and Docker answers "No such container" to every check. It is told
+/// apart from one only stopped or suspended, which Docker still lists, and says whether its
+/// home volume, and so its sign-ins, went with it.
+#[test]
+fn a_runner_whose_container_docker_no_longer_lists_is_gone_with_or_without_its_home() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("containers", "");
+    fake.set("volumes", "purlis-runner-first-home\n");
+    assert_eq!(
+        fake.docker().gone(&made()),
+        Ok(Some(Gone { home_kept: true }))
+    );
+    fake.set("volumes", "purlis-runner-first-home-old\n");
+    assert_eq!(
+        fake.docker().gone(&made()),
+        Ok(Some(Gone { home_kept: false }))
+    );
+}
+
+/// A runner stopped or suspended is still listed by Docker, so it is not gone: it resumes as
+/// before (#4149).
+#[test]
+fn a_stopped_runner_docker_still_lists_is_not_gone() {
+    let mut stopped = inspected();
+    stopped[0]["State"]["Running"] = false.into();
+    let fake = FakeDocker::new(&stopped);
+    fake.set("containers", &format!("{ID}\n"));
+    assert_eq!(fake.docker().gone(&made()), Ok(None));
+}
+
+/// A Docker that does not answer says nothing of the runner: it is away, never taken as gone.
+#[test]
+fn a_docker_that_does_not_list_says_no_runner_is_gone() {
+    let fake = FakeDocker::new(&inspected());
+    std::fs::write(
+        fake.file_path("docker"),
+        "#!/bin/sh\necho 'Cannot connect to the Docker daemon' >&2\nexit 1\n",
+    )
+    .unwrap();
+    assert!(fake.docker().gone(&made()).is_err());
+}
+
 /// The earlier profile as `docker inspect` writes it back.
 fn earlier_seccomp() -> String {
     let profile: serde_json::Value = serde_json::from_str(EARLIER_SECCOMP_PROFILE).expect("JSON");

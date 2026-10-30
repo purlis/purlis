@@ -1009,6 +1009,7 @@ impl session::Host for SaysItsLink {
             Pushed::LinkDown {
                 why: "host B's own link".into(),
                 key_changed: false,
+                gone: false,
             },
             Pushed::LinkBack {},
             Pushed::Event(event(1)),

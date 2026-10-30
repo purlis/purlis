@@ -13,13 +13,16 @@ use super::*;
 const OLD: &str = "ghcr.io/purlis/purlis-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const NEW: &str = "ghcr.io/purlis/purlis-runner@sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
 
-/// A machine in `config` whose `docker` removes whatever it is asked to, and logs it.
+/// A machine in `config` whose `docker` removes whatever it is asked to, and logs it. Every
+/// container it is asked of is still there: none was removed outside purlis (#4149).
 fn a_machine(config: &std::path::Path) -> Machine {
     let docker = config.join("docker");
     std::fs::write(
         &docker,
         format!(
-            "#!/bin/sh\necho \"$*\" >> '{}'\nexit 0\n",
+            "#!/bin/sh\necho \"$*\" >> '{}'\ncase \"$1 $2\" in 'container ls') \
+             for a in \"$@\"; do case $a in id=*) echo \"${{a#id=}}\" ;; esac; done ;; esac\n\
+             exit 0\n",
             config.join("log").display()
         ),
     )
@@ -87,7 +90,7 @@ fn only_looked(config: &std::path::Path) -> bool {
     std::fs::read_to_string(config.join("log"))
         .unwrap_or_default()
         .lines()
-        .all(|line| line.starts_with("container inspect "))
+        .all(|line| line.starts_with("container inspect ") || line.starts_with("container ls "))
 }
 
 fn names(machine: &Machine) -> Vec<String> {
@@ -302,4 +305,27 @@ fn a_suspended_draining_runner_is_removed_without_being_asked() {
     assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
     let log = std::fs::read_to_string(config.path().join("log")).unwrap();
     assert!(!log.contains("start "), "{log}");
+}
+
+/// **A draining runner removed outside purlis runs no chat** (#4149): Docker has no container
+/// of its id, so it is removed at the next look, never asked over a link that cannot come back.
+#[test]
+fn a_draining_runner_removed_outside_purlis_is_removed_without_being_asked() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    // This Docker lists no container at all.
+    let docker = config.path().join("docker");
+    std::fs::write(
+        &docker,
+        format!(
+            "#!/bin/sh\necho \"$*\" >> '{}'\nexit 0\n",
+            config.path().join("log").display()
+        ),
+    )
+    .unwrap();
+
+    follow_and_drain(&machine, None, &|_| panic!("a gone runner is not asked"));
+
+    assert_eq!(names(&machine), ["first-fedcba98"]);
 }

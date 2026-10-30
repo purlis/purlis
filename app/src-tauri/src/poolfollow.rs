@@ -336,9 +336,13 @@ pub fn follow_and_drain(
             kept.pool().to_owned(),
             kept.name().to_owned(),
         );
-        // A suspended runner runs no chat (#2051): it is not woken to be asked.
-        let suspended = matches!(machine.running(&kept), Ok(false));
-        let chats = if suspended { Ok(0) } else { chats_on(&to) };
+        // A suspended runner runs no chat (#2051): it is not woken to be asked. Nor does one
+        // removed outside purlis (#4149), which never answers again.
+        let idle = match machine.running(&kept) {
+            Ok(running) => !running,
+            Err(_) => matches!(machine.docker.gone(&kept.made), Ok(Some(_))),
+        };
+        let chats = if idle { Ok(0) } else { chats_on(&to) };
         match chats {
             Ok(0) => {
                 lock_waiting().remove(&at);

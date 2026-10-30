@@ -9,6 +9,8 @@ import {
   askLink,
   askVersion,
   markPoolOwned,
+  makeRunnerAgain,
+  removedSaid,
   removePool,
   startAddingAPool,
   usePools,
@@ -54,6 +56,11 @@ import { PoolProfiles } from "./PoolProfiles";
  * context and namespace, the cluster operator key pinned as it was added, and Remove, which
  * deletes its claim. A changed runner key and a changed cluster operator key get the same Notice
  * with Remove ({@link KeyChangedNotice}): either refuses every link to its runner.
+ *
+ * **A runner removed outside purlis says so** ({@link RemovedNotice}, #4149): Docker has no
+ * container of its id, so purlis no longer links to it, and its row offers Make the runner
+ * again, saying whether its home, with its sign-ins and kept work, is still there. A runner only
+ * stopped or suspended is not removed: it resumes as before.
  */
 export function poolsGroup(plane?: string): SettingsGroup {
   return {
@@ -89,6 +96,7 @@ function linkSaid(link: PoolLink | "asking" | undefined): string | undefined {
   if (link.state === "linked") return "linked";
   if (link.state === "key_changed" || link.state === "operator_key_changed") return "key changed";
   if (link.state === "suspended") return "suspended";
+  if (link.state === "removed") return "removed outside purlis";
   return "not linked";
 }
 
@@ -182,7 +190,10 @@ function PoolEntry({
   link,
   version,
   removing,
+  remaking,
+  remade,
   onAsk,
+  onMakeAgain,
   notHeld,
   profiles,
 }: {
@@ -190,8 +201,14 @@ function PoolEntry({
   link: PoolLink | "asking" | undefined;
   version: PoolVersion | undefined;
   removing: boolean;
+  /** Its runner is being made again (#4149). */
+  remaking: boolean;
+  /** What Make the runner again did, once it did. */
+  remade: string | undefined;
   /** Asks whether to remove it. */
   onAsk: () => void;
+  /** Makes its runner again, once it was removed outside purlis (#4149). */
+  onMakeAgain: () => void;
   /** The marks of projects whose chats run on it, drawn on its row. */
   notHeld: ReactNode;
   /** This machine's profiles on its runner (#2049). */
@@ -215,6 +232,15 @@ function PoolEntry({
       </Button>
       <p className="ui-setting-help">{suspendSaid(pool, version)}</p>
       <KeyChangedNotice name={pool.name} link={link} removing={removing} onRemove={remove} />
+      {typeof link === "object" && link.state === "removed" && (
+        <RemovedNotice
+          name={pool.name}
+          homeKept={link.home_kept}
+          remaking={remaking}
+          onMakeAgain={onMakeAgain}
+        />
+      )}
+      {remade !== undefined && <p className="ui-setting-help">{remade}</p>}
       {typeof link === "object" && link.state === "down" && (
         <p className="ui-setting-help">{link.why}</p>
       )}
@@ -260,6 +286,33 @@ function KeyChangedNotice({
 /** What marking a cluster pool as the person's own means (#4071): who else can read its runner. */
 const MY_OWN_SAID =
   "Your cluster's admins, whoever holds the node or its storage, and anyone else allowed into this runner's pod can read what it holds, the vault values, tokens and logins purlis sends it among them. Turn this on only if you accept that. It stays off until you do, and purlis sends this runner nothing while it is off. Each run still asks you, and the cluster must vouch for the runner at that moment.";
+
+/**
+ * **A pool's runner was removed outside purlis** (#4149): Docker has no container of its id, so
+ * no link to it comes back. The Notice says whether its home went too, with Make the runner
+ * again.
+ */
+export function RemovedNotice({
+  name,
+  homeKept,
+  remaking,
+  onMakeAgain,
+}: {
+  name: string;
+  homeKept: boolean;
+  remaking: boolean;
+  onMakeAgain: () => void;
+}) {
+  return (
+    <Notice
+      cause={`pool-runner-removed:${name}`}
+      tone="trouble"
+      fixes={[{ label: "Make the runner again", onPress: onMakeAgain, busy: remaking }]}
+    >
+      {removedSaid(name, homeKept)}
+    </Notice>
+  );
+}
 
 /** A cluster pool's row (#3292): its cluster's pool, where it is claimed, and Remove. */
 function ClusterPoolEntry({
@@ -357,6 +410,8 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
     // Put away until the runner says something else of the project.
     const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
     const [asking, setAsking] = useState<string | undefined>();
+    // Why the last Make the runner again was refused, in the core's words (#4149).
+    const [remakeSaid, setRemakeSaid] = useState<string | undefined>();
     const shown = notHeld.filter((one) => !dismissed.has(`${one.root}\u0000${one.why}`));
     const clusters = now.read.state === "read" ? (now.read.shown.clusters ?? []) : [];
     const pools =
@@ -393,7 +448,10 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
     }, [clustersAsked]);
     return {
       grouped: true,
-      error: now.said === undefined ? undefined : [now.said],
+      error:
+        now.said === undefined && remakeSaid === undefined
+          ? undefined
+          : [now.said, remakeSaid].filter((said) => said !== undefined),
       control: (ids) => (
         <div
           role="group"
@@ -418,7 +476,10 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
                     link={now.links[pool.name]}
                     version={now.versions[pool.name]}
                     removing={now.removing === pool.name}
+                    remaking={now.remaking === pool.name}
+                    remade={now.remade[pool.name]}
                     onAsk={() => setAsking(pool.name)}
+                    onMakeAgain={() => void makeRunnerAgain(pool.name, plane).then(setRemakeSaid)}
                     notHeld={marks(shown.filter((one) => rowOf(one) === pool.name))}
                     profiles={<PoolProfiles pool={pool.name} plane={plane} />}
                   />

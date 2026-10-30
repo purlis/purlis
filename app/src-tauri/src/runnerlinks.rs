@@ -131,25 +131,31 @@ impl ToARunner {
         let checking = docker.clone();
         let preparing = docker.clone();
         let (config, of) = (machine.config.clone(), kept.clone());
-        let connector = CommandConnector::new(
+        let connector = CommandConnector::checked(
             docker.program().to_path_buf(),
             made.connect_args(),
             // The container is checked as it was made before every connection (ADR 0078 as
             // amended 2026-10-17, item 2): anything else refuses the link and runs nothing.
             Arc::new(move || {
-                if resumes {
+                let checked = if resumes {
                     // When it ran, as read before it was started, then its start (#3492).
-                    let resumed = checking.resumed(&made).map_err(|why| why.0)?;
-                    hours_seen(&config, &of, resumed.before);
-                    if resumed.started
-                        && let Ok(ran) = checking.ran(&made)
-                    {
-                        hours_seen(&config, &of, ran);
-                    }
-                    Ok(())
+                    checking.resumed(&made).map(|resumed| {
+                        hours_seen(&config, &of, resumed.before);
+                        if resumed.started
+                            && let Ok(ran) = checking.ran(&made)
+                        {
+                            hours_seen(&config, &of, ran);
+                        }
+                    })
                 } else {
-                    checking.check(&made).map_err(|why| why.0)
-                }
+                    checking.check(&made)
+                };
+                // A refusal of a container Docker no longer lists is a runner removed outside
+                // purlis, never linked to again on its own (#4149).
+                checked.map_err(|why| match checking.gone(&made) {
+                    Ok(Some(gone)) => NotChecked::Gone(gone_said(&of, gone)),
+                    _ => NotChecked::Refused(why.0),
+                })
             }),
         )
         // Each run of `docker exec` is given what every run of `docker` is: a checked copy of
@@ -234,6 +240,22 @@ impl ToARunner {
     }
 }
 
+/// **A runner removed outside purlis, in words a person reads** (#4149): and whether its home
+/// volume, and with it its sign-ins and kept work, went too.
+pub fn gone_said(kept: &Kept, gone: purlis_core::dockerpool::Gone) -> String {
+    let home = if gone.home_kept {
+        "its home volume is still there, and a runner made again takes it up"
+    } else {
+        "its home volume went too, and with it the sign-ins and work kept there"
+    };
+    format!(
+        "pool {}'s runner {} was removed outside purlis: Docker has no container {}; {home}",
+        kept.pool(),
+        kept.name(),
+        kept.made.container.short()
+    )
+}
+
 /// **A cluster runner's check, said to the link** (#3292): a changed runner key or a changed
 /// cluster operator key is a changed key, which the window asks the person about.
 pub fn not_checked(why: purlis_core::clusterpool::Refused) -> NotChecked {
@@ -309,7 +331,19 @@ pub fn relaying(
         }
         let resolved = format!("{}/{}", kept.pool(), kept.name());
         let to = ToARunner::of_kept_waking(&machine, &kept)?;
-        Ok((Arc::new(move || to.keep()) as purlis_host::Keep, resolved))
+        Ok((
+            Arc::new(move || {
+                // A runner made again since, after it was removed outside purlis (#4149), is
+                // linked to as it is kept now: the same name, a new container and pairing.
+                let again = purlis_core::runners::named(&machine.config, kept.name())
+                    .ok()
+                    .flatten()
+                    .filter(|now| now.made != kept.made && !now.draining)
+                    .and_then(|now| ToARunner::of_kept_waking(&machine, &now).ok());
+                again.as_ref().unwrap_or(&to).keep()
+            }) as purlis_host::Keep,
+            resolved,
+        ))
     })
 }
 
@@ -486,6 +520,7 @@ pub fn count_of(
                 .to_owned(),
         ),
         Err(PoolLink::Suspended) => Err("the runner is suspended".to_owned()),
+        Err(PoolLink::Removed { .. }) => Err("the runner was removed outside purlis".to_owned()),
         Err(PoolLink::Linked) => Err("the runner did not list".to_owned()),
     }
 }

@@ -439,6 +439,15 @@ fn not_linked(down: &Down) -> Refusal {
             ),
         };
     }
+    if down.gone {
+        return Refusal {
+            code: session::NOT_STARTED.into(),
+            why: format!(
+                "Runner removed outside purlis ({why}). purlis sent it nothing and does not link \
+                 to it again: make the runner again in its pool's settings, then send this again"
+            ),
+        };
+    }
     Refusal {
         code: session::NOT_STARTED.into(),
         why: format!(
@@ -494,7 +503,7 @@ async fn keep(
                                 retiring = None;
                                 let why = "the runner did not take this machine's stop";
                                 tell.send_replace(Standing::Down(Down::because(why)));
-                                told.down(&client, why, false);
+                                told.down(&client, &Down::because(why));
                             }
                             Ok(upstream) => {
                                 // The link it replaces ends once what was sent on it is
@@ -515,7 +524,7 @@ async fn keep(
                                 None => {
                                     let why = "the link to it ended as it came up";
                                     tell.send_replace(Standing::Down(Down::because(why)));
-                                    told.down(&client, why, false);
+                                    told.down(&client, &Down::because(why));
                                 }
                             },
                         }
@@ -523,7 +532,7 @@ async fn keep(
                     Some(Linked::Down(down)) => {
                         up = None;
                         retiring = None;
-                        told.down(&client, &down.why, down.key_changed);
+                        told.down(&client, &down);
                         tell.send_replace(Standing::Down(down));
                     }
                     None => no_more = true,
@@ -536,7 +545,7 @@ async fn keep(
                     up = None;
                     let why = "the link to it ended";
                     tell.send_replace(Standing::Down(Down::because(why)));
-                    told.down(&client, why, false);
+                    told.down(&client, &Down::because(why));
                 }
             }
         }
@@ -558,11 +567,12 @@ enum LinkTold {
 
 impl LinkTold {
     /// No link is up, for `why`: the client is told, unless it was told already.
-    fn down(&mut self, client: &ClientLink, why: &str, key_changed: bool) {
+    fn down(&mut self, client: &ClientLink, down: &Down) {
         if std::mem::replace(self, LinkTold::Down) == LinkTold::Up {
             client.tell_now(Pushed::LinkDown {
-                why: why.into(),
-                key_changed,
+                why: down.why.clone(),
+                key_changed: down.key_changed,
+                gone: down.gone,
             });
         }
     }

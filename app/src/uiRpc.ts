@@ -1476,6 +1476,19 @@ export const commands = {
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **The Docker pools whose runner was removed outside purlis** (#4149): Docker has no
+	 *  container of its id. What a refused start's Notice offers to make again; a pool whose Docker
+	 *  does not answer is not among them.
+	 */
+	dockerPoolsRemoved: () => typedError<PoolRemoved[], string>(__TAURI_INVOKE("docker_pools_removed")),
+	/**
+	 *  **Make the runner again** (#4149): the pool `name`'s runner, removed outside purlis, made
+	 *  again from the pool's own image and limits, on its home volume where that is still there,
+	 *  and paired. The window then has it keep the pool's profiles, as after Add a pool. Refused for
+	 *  a runner Docker still has, which resumes as it is.
+	 */
+	dockerPoolMakeAgain: (name: string) => typedError<MadeAgain, string>(__TAURI_INVOKE("docker_pool_make_again", { name })),
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
 	runnerImageOfThisVersion: __WINDOW_ONLY_RESULT,
 	clusterContexts: __WINDOW_ONLY_RESULT,
@@ -6439,6 +6452,14 @@ export type MachineWorkspacePin = {
 	gone: boolean,
 };
 
+/**
+ *  **What Make the runner again did** (#4149): whether the runner made again took up its old
+ *  home, with its sign-ins; where not, its profiles are signed in again.
+ */
+export type MadeAgain = {
+	home_kept: boolean,
+};
+
 /**  A persona's MCP server that could not start for a chat, as the Notice on its tab shows it. */
 export type McpFailed = {
 	plane: PlaneId,
@@ -8136,7 +8157,13 @@ export type PoolLink =
  *  It suspended itself, a day without a link (#2051): its container is stopped, its home
  *  kept, and the window's next chat there starts it again. A check never wakes it.
  */
-{ state: "suspended" };
+{ state: "suspended" } | 
+/**
+ *  It was removed outside purlis (#4149): Docker has no container of its id, so no link to
+ *  it comes back, and the window offers Make the runner again. Whether its home volume,
+ *  with its sign-ins and kept work, is still there for the runner made again.
+ */
+{ state: "removed"; home_kept: boolean };
 
 /**  One of this machine's profiles, as a pool's runner stands with it. */
 export type PoolProfileRow = {
@@ -8164,6 +8191,16 @@ export type PoolProfileRow = {
 export type PoolProfiles = {
 	kept: PoolProfileRow[],
 	addable: AddableProfile[],
+};
+
+/**
+ *  **A pool whose runner was removed outside purlis** (#4149): what the Notice of a refused
+ *  start names, with Make the runner again.
+ */
+export type PoolRemoved = {
+	name: string,
+	/**  Its home volume, with its sign-ins and kept work, is still there. */
+	home_kept: boolean,
 };
 
 /**  One pool's limits, which each of its runners that runs requests (#2052, story 55). */
@@ -8842,7 +8879,13 @@ export type Reconnection =
  *  host sends it nothing and does not link to it again until it is removed and added anew,
  *  so its chats stay dimmed and the window says why in a Notice of its own.
  */
-"key_changed";
+"key_changed" | 
+/**
+ *  The runner was removed outside purlis (#4149): its host does not link to it again until
+ *  it is made again, so its chats stay dimmed and the window offers Make the runner again in
+ *  a Notice of its own.
+ */
+"runner_gone";
 
 /**
  *  The level a referrer is changed at, when it is not the entry's own

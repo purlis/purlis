@@ -700,6 +700,39 @@ pub fn keep_for_its_pool(
     Ok(kept)
 }
 
+/// **Keeps `made`, the runner `name` made again, in its own place** (#4149), under `_locked`:
+/// the runner removed outside purlis is kept no more, and `made` is kept as [`keep`] keeps a
+/// runner, of the same pool and in the same place in the list, paired anew as `answered`. A
+/// runner not kept here is refused, and nothing changes.
+pub fn remade_locked(
+    config_root: &Path,
+    name: &str,
+    made: &Made,
+    answered: &Pinned,
+    ours: &Pinned,
+    _locked: &Locked,
+) -> Result<Kept, Refused> {
+    let mut held = load(config_root)?;
+    let Some(at) = held.runners.iter().position(|kept| kept.name() == name) else {
+        return Err(Refused::Other(format!(
+            "no runner named {name} is kept on this machine"
+        )));
+    };
+    let old = held.runners.remove(at);
+    let kept = keep_in(
+        &mut held,
+        made,
+        answered,
+        ours,
+        old.of.is_none(),
+        old.of.as_deref(),
+    )?;
+    let moved = held.runners.remove(held.runners.len() - 1);
+    held.runners.insert(at, moved);
+    write(config_root, &held)?;
+    Ok(kept)
+}
+
 /// **Keeps `made`, the runner made beside pool `pool`'s for its new `image`, as that pool's
 /// runner from now on** (#2749), under `_locked`: it is kept `of` the pool once, as [`keep`]
 /// keeps a runner; each runner of the pool kept before it is kept draining; and the pool's

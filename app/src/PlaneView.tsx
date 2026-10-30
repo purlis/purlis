@@ -411,6 +411,7 @@ import {
 } from "./AskPersona";
 import { SandboxOffer } from "./SandboxOffer";
 import { ProjectHostsNotice } from "./ProjectHostsNotice";
+import { RunnerGoneNotice } from "./RunnerGoneNotice";
 import { RunnerKeyChangedNotice } from "./RunnerKeyChangedNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
@@ -9143,6 +9144,12 @@ export const PlaneView = memo(function PlaneView({
       {/* **The runner this project's chats run on answered with another key** (#2752): said
           once for the project, where its pool is removed. */}
       <RunnerKeyChangedNotice
+        plane={plane}
+        onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
+      />
+      {/* **The runner this project's chats run on was removed outside purlis** (#4149): said
+          once for the project, with Make the runner again. */}
+      <RunnerGoneNotice
         plane={plane}
         onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
       />

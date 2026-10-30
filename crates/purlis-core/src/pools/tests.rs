@@ -1614,3 +1614,128 @@ mod cluster {
         assert!(runners::runner_for(config.path(), "team").is_err());
     }
 }
+
+/// The id Docker gives the container a runner is made again in (#4149).
+const AGAIN: &str = "a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1a9a1";
+
+/// A pool `first` added, whose container the person then removed outside purlis: Docker lists
+/// no container of its id, and lists its home volume where `home_kept`.
+fn removed_outside_purlis(
+    config: &Path,
+    fake: &FakeDocker,
+    ours: &Pinned,
+    home_kept: bool,
+) -> Kept {
+    let old = a_pool_added(config, fake, ours);
+    fake.set("containers", "");
+    fake.set(
+        "volumes",
+        if home_kept {
+            "purlis-runner-first-home\n"
+        } else {
+            ""
+        },
+    );
+    fake.set("id", &format!("{AGAIN}\n"));
+    let mut inspect = inspected();
+    inspect[0]["Id"] = AGAIN.into();
+    fake.set("inspect", &inspect.to_string());
+    std::fs::write(fake.file_path("log"), "").unwrap();
+    old
+}
+
+/// **Make the runner again** (#4149): a runner removed outside purlis is made again under its
+/// own name, from the pool's own image and limits, its home volume taken up where it is still
+/// there, paired, and kept in the old one's place.
+#[test]
+fn a_runner_removed_outside_purlis_is_made_again_on_its_home_and_paired() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = removed_outside_purlis(config.path(), &fake, &ours, true);
+    let answers = successor_answers();
+    fake.set(
+        "paired",
+        &format!("{}\n", crate::runnerlink::to_line(&answers)),
+    );
+
+    let again = make_again(config.path(), &fake.docker(), "first", &ours).unwrap();
+
+    assert!(again.home_kept);
+    assert_eq!(again.kept.name(), "first");
+    assert_eq!(again.kept.made.container.as_str(), AGAIN);
+    assert_eq!(again.kept.made.runner, old.made.runner);
+    assert_eq!(again.kept.pinned, answers);
+    assert_eq!(
+        runners::read(config.path()).unwrap(),
+        vec![again.kept.clone()]
+    );
+    let log = fake.file("log");
+    assert!(log.contains("--cpus 2 --memory 4096m"), "{log}");
+    assert!(
+        log.contains("type=volume,source=purlis-runner-first-home"),
+        "{log}"
+    );
+    // The home it took up was checked as Docker's own, and nothing removed it.
+    assert!(
+        log.contains("volume inspect purlis-runner-first-home"),
+        "{log}"
+    );
+    assert!(!log.contains("volume rm"), "{log}");
+}
+
+/// Its home gone too, it is made on a new one: its sign-ins and kept work went with the old.
+#[test]
+fn a_runner_whose_home_went_with_it_is_made_again_on_a_new_home() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    removed_outside_purlis(config.path(), &fake, &ours, false);
+
+    let again = make_again(config.path(), &fake.docker(), "first", &ours).unwrap();
+
+    assert!(!again.home_kept);
+    assert_eq!(again.kept.made.container.as_str(), AGAIN);
+    // No home was taken up: none was checked before the make.
+    let log = fake.file("log");
+    let made_at = log.find("run ").expect("made");
+    assert!(!log[..made_at].contains("volume inspect"), "{log}");
+}
+
+/// A runner Docker still lists, only stopped or suspended, is never made again: it resumes.
+#[test]
+fn a_runner_docker_still_lists_is_not_made_again() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = a_pool_added(config.path(), &fake, &ours);
+    fake.set("containers", &format!("{ID}\n"));
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    let refused = make_again(config.path(), &fake.docker(), "first", &ours).unwrap_err();
+
+    assert!(refused.to_string().contains("still there"), "{refused}");
+    assert!(!fake.file("log").contains("run "), "{}", fake.file("log"));
+    assert_eq!(runners::read(config.path()).unwrap(), vec![old]);
+}
+
+/// A runner made again that does not pair is taken back, and the home it took up stays: only
+/// the container made for it goes.
+#[test]
+fn a_runner_made_again_that_does_not_pair_leaves_the_home_it_took_up() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = removed_outside_purlis(config.path(), &fake, &ours, true);
+    fake.set("paired", "not a pin\n");
+
+    assert!(make_again(config.path(), &fake.docker(), "first", &ours).is_err());
+
+    let log = fake.file("log");
+    assert!(
+        log.contains(&format!("container rm --force --volumes {AGAIN}")),
+        "{log}"
+    );
+    assert!(!log.contains("volume rm"), "{log}");
+    assert_eq!(runners::read(config.path()).unwrap(), vec![old]);
+}
