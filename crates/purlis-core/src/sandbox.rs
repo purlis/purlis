@@ -6244,6 +6244,7 @@ pub(crate) fn applied_of(
             writable: compiled.writable.clone(),
             tools: Vec::new(),
             wrap: None,
+            clones: crate::forge::apptoken::clones_now(root),
         }),
         reach: Box::new(compiled.reach.clone()),
         // Claude Code waits for its program's answer ([`Applied::answered`]).
@@ -6290,6 +6291,10 @@ pub struct Confines {
     /// elsewhere, and where the start found none it could hold; a run for such a chat is
     /// refused.
     pub wrap: Option<PathBuf>,
+    /// **The clones of the plane's workspaces as the chat started** (#2053): each clone and its
+    /// `.git` as it was then. Only these name the chat's repos for a GitHub App's token
+    /// ([`crate::forge::apptoken`]).
+    pub clones: Vec<crate::forge::apptoken::Started>,
 }
 
 impl Confines {
