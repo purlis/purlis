@@ -429,8 +429,6 @@ const NOT_FOLLOWED: Readonly<Record<string, string>> = {
   "app/src-tauri/src/dispatchaway.rs: with":
     "a parameter: the closure `reading` and `grounded` run over the ground they read",
   "app/src-tauri/src/dispatchaway.rs: Shown::default": "a derived Default: it writes no words",
-  "app/src-tauri/src/curation.rs: StartRefused::from":
-    "carries the sentence it is handed into a start refusal's words, unchanged: it writes none",
 };
 
 /**
