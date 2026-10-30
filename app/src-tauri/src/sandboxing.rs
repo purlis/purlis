@@ -2307,7 +2307,8 @@ pub fn keep_sandbox_block(
     let held = planes.held(&plane)?;
     // Answered already, by another press or another window: nothing is left to keep blocked,
     // and the chat was told by that answer (#1987).
-    let Some(block) = keep_block(held.chats(), session, &shown, reason.as_deref()) else {
+    let audit = held.audit_then_record(planes.network());
+    let Some(block) = keep_block(held.chats(), session, &shown, reason.as_deref(), &audit) else {
         return Ok(());
     };
     // The person's no, kept where the Inbox's look back reads it (#1700).
@@ -2330,13 +2331,14 @@ pub(crate) fn keep_block(
     session: u32,
     shown: &crate::taskblocks::BlockShown,
     reason: Option<&str>,
+    audit: Audit<'_>,
 ) -> Option<crate::taskblocks::HeldBlock> {
     let block = crate::taskblocks::shown_one(chats.blocks(), session, shown).ok()?;
     chats.blocks().answered(session, &block);
     if block.what == GrantWhat::Host
         && let Ok(host) = sandbox::grant::host(&block.target)
     {
-        chats.keep_blocked_live(session, &host);
+        chats.keep_blocked_live(session, &host, audit);
     }
     // A service of the runner the chat runs on (#2510): its hold ends at once.
     if block.kind == purlis_core::sandboxblock::Kind::RunnerService.word()

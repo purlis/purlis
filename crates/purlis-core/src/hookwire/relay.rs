@@ -847,9 +847,10 @@ impl Relaying {
         ask.runs_as = None;
         ask.waited = false;
         ask.run = None;
-        let composed = lock(&self.root)
-            .as_deref()
-            .and_then(|root| crate::hostedchats::asker(root, ask.chat));
+        // Out of the hold first: reading the chat's record reads its confinement's board too.
+        let composed = self
+            .at()
+            .and_then(|root| crate::hostedchats::asker(&root, ask.chat));
         if let Some(asker) = composed {
             return self.secret_exec_composed_here(asker, ask, reader, writer);
         }
@@ -1271,6 +1272,23 @@ impl Heeding {
         if *on == Some(link) {
             *on = None;
             *lock(&self.inputs) = Inputs::default();
+        }
+    }
+
+    /// **The host these lines come from is lost to the host that relays them** (#3408): the
+    /// relay's link to it went down, and that host let go of every line it had handed on, so
+    /// none of its `secret exec`s waits for this window any more. Each one's input ends here, one
+    /// taken but not yet begun too, so whatever waits on its asker hears that it went: a run on a
+    /// pool's runner lets go of the person's Ask and reads no vault. The link the lines come over
+    /// stays, and what comes over it next is taken as before. Lost over a link the lines no
+    /// longer come over, it changes nothing, as [`Self::unlinked`] does.
+    pub fn lost_its_host(&self, link: u64) {
+        let Some((_on, mut inputs)) = self.inputs_on(link) else {
+            return;
+        };
+        let execs: Vec<u64> = inputs.by_exec.keys().copied().collect();
+        for exec in execs {
+            inputs.input_ended(exec);
         }
     }
 

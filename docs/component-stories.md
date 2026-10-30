@@ -2,8 +2,9 @@
 
 **A component is held to what a person sees and does by its stories.** Each story is a test:
 it renders in real Chromium and real WebKit, its `play` function walks it with the keyboard, axe
-checks it against WCAG 2.2 AA, and a picture of it is compared with a baseline. CI fails on any
-of the four (#2901, part of the UI system spec #2897).
+checks it against WCAG 2.2 AA, the words it fades are measured as drawn (#3790), and a picture
+of it is compared with a baseline. CI fails on any of the five (#2901, part of the UI system
+spec #2897).
 
 Its siblings: [`ui-primitives.md`](ui-primitives.md) says what the window is built out of,
 [`design-system.md`](design-system.md) what it is drawn in.
@@ -15,6 +16,7 @@ Its siblings: [`ui-primitives.md`](ui-primitives.md) says what the window is bui
 | **Renders** | The story throws, or its component does, in either browser. | `app/.storybook/vitest.project.ts` |
 | **Keyboard** | Its `play` function fails: a key that does not move the focus or the value it should, Esc that does not dismiss, a focus that ends up out of sight. | the story's `play` |
 | **Accessibility** | Any axe violation of a rule tagged `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` or `wcag22aa`, with `target-size` (WCAG 2.5.8) switched on, which axe leaves off by default. | `app/.storybook/preview.tsx` |
+| **Faded words** | In Chromium, a word that an `opacity` or `filter: opacity()`, on its own box or any box above it, takes under 4.5:1 (3:1 for large text) on its ground, measured as drawn. Disabled controls, words hidden from assistive technology and moving opacities are not measured (#3790). | `app/.storybook/faded.setup.ts`, `app/src/theme/fadedWords.ts` |
 | **Screenshot** | Its picture is not its baseline, or it has no baseline. | `app/.storybook/screenshots.setup.ts` |
 
 Both browsers run every story: WebKit is the engine purlis ships in on macOS and Linux
@@ -106,8 +108,8 @@ Story Format 3. `app/src/settings/Choice.stories.tsx` is the first, and the one 
 
 A family's ticket (spec #2897) is done when it ships:
 
-- a story for each variant and state that draws differently, each passing all four gates in both
-  browsers;
+- a story for each variant and state that draws differently, each passing the four gates that
+  run in both browsers, and the faded-words gate, which runs in Chromium;
 - a `play` function on every interactive story: its keyboard path, Esc dismissal where it
   dismisses, and the focus in sight after every move;
 - its baselines, drawn by its `stories` run, taken, and reviewed in the pull request;

@@ -548,6 +548,9 @@ pub struct Glance {
     pub turns: u32,
     /// The prompt it is stopped on in its terminal, where it is (#1691).
     pub prompt: Option<purlis_core::harness::model::Prompt>,
+    /// Whether its turn ended waiting on work of its own (#3878,
+    /// `purlis_core::state::Chat::own_work`): it is still at work through it.
+    pub own_work: bool,
 }
 
 impl Glance {
@@ -608,6 +611,11 @@ pub trait ChatBoard: Send + Sync {
     /// turn that was held for its tasks, or for its asker's answer, is the needs-you item now.
     /// Nothing when no reader would see a difference.
     fn rested(&self, session: u32) -> Option<Moved>;
+
+    /// A sandbox block's Notice went up for chat `session` while it waits on its own work
+    /// (#3878, `purlis_core::state::Board::blocked_while_waiting`): the wait ends, and the
+    /// person has the next move. Nothing when no reader would see a difference.
+    fn blocked_while_waiting(&self, session: u32) -> Option<Moved>;
 
     /// A task chat `session` asked for failed, ended without a report, or did not start
     /// (#1491): a needs-you item on it. Nothing when no reader would see a difference.

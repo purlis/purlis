@@ -9,10 +9,13 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import {
   ChipSlot,
+  mostUrgentOf,
+  NOTICE_KINDS,
   NoticeDot,
   PinnedStrip,
   RootChip,
   TitleBarSlash,
+  urgencyOf,
   WorkspaceChip,
 } from "./TitleBarWorkspaces";
 
@@ -47,6 +50,14 @@ describe("a workspace's chip", () => {
     expect(chip.querySelector('[data-part="count"]')).toBeNull();
     expect(chip).toHaveTextContent("docs+");
     expect(chip).toHaveAttribute("data-variant", "unpinned");
+  });
+
+  it("names a dormant pin by its words and says it is gone in its description (#3651)", () => {
+    render(<WorkspaceChip name="delta" variant="dormant" notices={{ count: 1, kind: "info" }} />);
+    const chip = screen.getByRole("button", { name: "delta" });
+    expect(chip).toHaveAttribute("data-variant", "dormant");
+    expect(chip).not.toHaveAttribute("aria-current");
+    expect(chip).toHaveAccessibleDescription("gone, kept dormant, 1 notice");
   });
 
   it("marks the pointer on it", async () => {
@@ -102,6 +113,36 @@ describe("a chip's notice dot (#3648)", () => {
     );
     const chip = screen.getByRole("button", { name: "gamma" });
     expect(chip).toHaveAccessibleDescription("2 waiting, 1 notice");
+  });
+});
+
+describe("a dot's kind (#3649)", () => {
+  it("draws a warning as a triangle, its own part, and says it after the count", () => {
+    render(<NoticeDot workspace="gamma" count={2} kind="warning" onPress={() => undefined} />);
+    const dot = screen.getByRole("button", {
+      name: "Show the 2 notices on gamma, most urgent: warning",
+    });
+    expect(dot).toHaveAttribute("data-kind", "warning");
+    // Its own part, so a theme's news dot never colours it (`titlebar.dot-warning`).
+    expect(dot).toHaveAttribute("data-part", "dot-warning");
+    expect(dot.querySelector("svg.lucide-triangle")).not.toBeNull();
+  });
+
+  it("puts the most urgent kind in the chip's description", () => {
+    render(
+      <ChipSlot>
+        <WorkspaceChip name="gamma" waiting={2} notices={{ count: 3, kind: "warning" }} />
+      </ChipSlot>,
+    );
+    expect(screen.getByRole("button", { name: "gamma" })).toHaveAccessibleDescription(
+      "2 waiting, 3 notices, most urgent: warning",
+    );
+  });
+
+  it("ranks the kinds by urgency, news the least", () => {
+    expect(mostUrgentOf([])).toBe("info");
+    expect(mostUrgentOf(["info", "warning", "info"])).toBe("warning");
+    expect(NOTICE_KINDS.map(urgencyOf)).toEqual([0, 1]);
   });
 });
 

@@ -47,6 +47,9 @@ pub struct Known {
     pub workspace: Place,
     /// Its state on the app's board.
     pub state: State,
+    /// Whether its turn ended waiting on work of its own, which wakes it (#3878,
+    /// [`crate::state::Chat::own_work`]): at work through it, never idle.
+    pub own_work: bool,
     /// When its current run began, in seconds since 1970, where the app knows
     /// ([`run_started`]): this start of its program, not the chat's first.
     pub started: Option<i64>,
@@ -101,6 +104,12 @@ pub struct Asker {
     pub mode: Mode,
     /// Whether this chat still owes it a report.
     pub owes: bool,
+    /// Where its report stands, by its record: what [`Doing::ReportedStillRunning`] (#3899) is
+    /// read from, by [`crate::dispatched::still_running_after_report`].
+    pub report: crate::reopen::Owed,
+    /// Whether it was dispatched as a long-running task (#3905): notes are its heartbeat, and
+    /// purlis never asks it for a report.
+    pub long: bool,
 }
 
 /// How the chat that asked for a chat started it, as the chat is told it (#1455): the
@@ -133,8 +142,15 @@ pub enum Doing {
     Running,
     /// It handed control back: it asked something, or its turn ended.
     Waiting,
+    /// Its turn ended while work of its own is in flight, which wakes it (#3878): helpers,
+    /// monitors, a background command or a wake-up it scheduled. At work through it.
+    WaitingOnItsOwnWork,
     /// It has sent its report, and is still open.
     Reported,
+    /// **It reported and its program still runs** (#3899,
+    /// [`crate::dispatched::still_running_after_report`]): purlis made its report from its last
+    /// message, or it came out blocked. Still its asking chat's to tell and cancel.
+    ReportedStillRunning,
     /// Its program ended, content.
     Ended,
     /// Its program ended badly.
@@ -146,9 +162,18 @@ impl Doing {
         match known.state {
             State::Done => Self::Ended,
             State::Failed => Self::Failed,
+            // The one rule a follow-up and a cancel read (#3899). Its program has not ended:
+            // that was asked above.
+            _ if known.from.as_ref().is_some_and(|from| {
+                crate::dispatched::still_running_after_report(from.report, false)
+            }) =>
+            {
+                Self::ReportedStillRunning
+            }
             _ if known.from.as_ref().is_some_and(|from| from.reported) => Self::Reported,
             State::Unknown => Self::Open,
             State::Running => Self::Running,
+            State::Waiting if known.own_work => Self::WaitingOnItsOwnWork,
             State::Waiting => Self::Waiting,
         }
     }
@@ -159,7 +184,9 @@ impl Doing {
             Self::Open => "open",
             Self::Running => "running",
             Self::Waiting => "waiting",
+            Self::WaitingOnItsOwnWork => crate::dispatched::WAITING_ON_ITS_OWN_WORK,
             Self::Reported => "reported",
+            Self::ReportedStillRunning => crate::dispatched::REPORTED_STILL_RUNNING,
             Self::Ended => "ended",
             Self::Failed => "failed",
         }
@@ -321,6 +348,47 @@ pub struct OpenTask {
     /// Whether it is stopped on the person: a prompt of its harness's or its sandbox's Notice.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub on_the_person: bool,
+    /// Whether it is a long-running task (#3905): said beside its state.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub long: bool,
+    /// Whether it is alive (#3900): its program, what it last did, and how it stands across
+    /// the app's restart, or that it is orphaned by one. None from an app older than this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub liveness: Option<crate::dispatchliveness::Liveness>,
+}
+
+impl Working {
+    /// Says of each open task in its roster whether it is alive (#3900), as `of` has it for
+    /// the task's number: the app's ledger and board, which this module does not hold.
+    pub fn with_liveness(
+        mut self,
+        of: impl Fn(u32) -> Option<crate::dispatchliveness::Liveness>,
+    ) -> Self {
+        for task in &mut self.open_tasks {
+            task.liveness = of(task.chat);
+        }
+        self
+    }
+
+    /// Adds the chat's own tasks **orphaned by the app's restart** (#3900) to its roster, each
+    /// by its number and name: tasks whose dispatch still runs that this app cannot reach, so
+    /// the chat does not take one for a task at work, nor forget it. Held to [`MOST_ROWS`] with
+    /// the rest. Only a turn's answer carries a roster, so only it is given these.
+    pub fn with_orphans(mut self, orphans: impl IntoIterator<Item = (u32, String)>) -> Self {
+        let mut all: Vec<OpenTask> = std::mem::take(&mut self.open_tasks);
+        all.extend(orphans.into_iter().map(|(chat, name)| OpenTask {
+            chat,
+            name,
+            state: Doing::Open,
+            on_the_person: false,
+            long: false,
+            liveness: Some(crate::dispatchliveness::Liveness::orphaned()),
+        }));
+        self.more_tasks += all.len().saturating_sub(MOST_ROWS);
+        all.truncate(MOST_ROWS);
+        self.open_tasks = all;
+        self
+    }
 }
 
 /// Why a chat asks, which decides whether the app counts it as told.
@@ -360,8 +428,11 @@ enum Stage {
 impl Stage {
     fn of(doing: Doing) -> Self {
         match doing {
-            Doing::Open | Doing::Running | Doing::Waiting => Self::Live,
-            Doing::Reported => Self::Reported,
+            Doing::Open | Doing::Running | Doing::Waiting | Doing::WaitingOnItsOwnWork => {
+                Self::Live
+            }
+            // It reported: a sibling is told so once, as of any report.
+            Doing::Reported | Doing::ReportedStillRunning => Self::Reported,
             Doing::Ended => Self::Finished,
             Doing::Failed => Self::Failed,
         }
@@ -502,12 +573,19 @@ fn open_tasks(known: &[Known], chat: u32) -> Vec<OpenTask> {
                 .as_ref()
                 .is_some_and(|from| from.mode == Mode::Task)
         })
-        .filter(|one| Stage::of(Doing::of(one)) == Stage::Live)
+        // A task that reported while its program still runs is open too (#3899): it is still
+        // its asking chat's to tell and cancel.
+        .filter(|one| {
+            let doing = Doing::of(one);
+            Stage::of(doing) == Stage::Live || doing == Doing::ReportedStillRunning
+        })
         .map(|one| OpenTask {
             chat: one.chat,
             name: one.name.clone(),
             state: Doing::of(one),
             on_the_person: one.asking.is_some(),
+            long: one.from.as_ref().is_some_and(|from| from.long),
+            liveness: None,
         })
         .collect();
     tasks.sort_by_key(|one| one.chat);
@@ -796,7 +874,26 @@ fn roster_line(working: &Working) -> Option<String> {
             } else {
                 task.state.word()
             };
-            format!("chat {} {} {state}", task.chat, quoted(&task.name))
+            // A long-running task says so beside its state (#3905).
+            let long = if task.long {
+                format!("{}, ", crate::dispatched::LONG_RUNNING)
+            } else {
+                String::new()
+            };
+            // Whether it is alive (#3900): an orphan says that in place of a state; any other
+            // task says it after its state, long-running or not.
+            match &task.liveness {
+                Some(live) if live.is_orphaned() => {
+                    format!("chat {} {} {}", task.chat, quoted(&task.name), live.said())
+                }
+                Some(live) => format!(
+                    "chat {} {} {long}{state} ({})",
+                    task.chat,
+                    quoted(&task.name),
+                    live.said()
+                ),
+                None => format!("chat {} {} {long}{state}", task.chat, quoted(&task.name)),
+            }
         })
         .collect();
     if working.more_tasks > 0 {

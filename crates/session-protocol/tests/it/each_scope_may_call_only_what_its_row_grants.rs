@@ -311,6 +311,7 @@ fn every_command() -> Vec<Command> {
             harness: "claude".into(),
             sandbox_only: false,
             pinned: None,
+            settings: None,
         }),
         // A browser the person takes over, drives and hands back: the window's alone (1.14).
         Command::TakeOver {

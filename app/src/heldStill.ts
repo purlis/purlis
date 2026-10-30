@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -65,10 +66,18 @@ export type HeldBy<E extends HTMLElement> = {
  * which costs two comparisons. A hold that is not `on` is never taken, listens to nothing, and
  * lets go of what it held: the Chats list turns it off while it has no row to draw, where
  * nothing would say the pointer left.
+ *
+ * **The pointer's hold can wait as the pointer leaves** (`leaveAfter`, #3773): how long, asked
+ * as it leaves, and nothing for a hold let go at once. Something the list draws a step away from
+ * it, which the pointer crosses the gap to (a Chats row's card, over the view's inset), asks the
+ * wait while it is up: the pointer coming over anything of the list's in that time keeps the
+ * hold, and over nothing of it the hold goes once the wait is over. The window stopping being
+ * the one in use lets go at once, waiting or not.
  */
 export function useHeldStill<E extends HTMLElement>(
   drawn: unknown,
   on = true,
+  leaveAfter: () => number = NO_WAIT,
 ): { holding: boolean; held: HeldBy<E> } {
   const ref = useRef<E>(null);
   /** The element the hold last saw the keyboard on: the one that must still have it. */
@@ -80,6 +89,31 @@ export function useHeldStill<E extends HTMLElement>(
   const seen = useRef<Event | null>(null);
   const [over, setOver] = useState(false);
   const [inside, setInside] = useState(false);
+  /** The wait the pointer's hold is let go after, while the pointer is off the list. */
+  const leaving = useRef<number | undefined>(undefined);
+  /** How long the list asks it to wait, as it is now. */
+  const asks = useRef(leaveAfter);
+  useLayoutEffect(() => {
+    asks.current = leaveAfter;
+  });
+  /** What the pointer coming over the list's own does: the wait, if any, is over. */
+  const stay = useCallback(() => {
+    window.clearTimeout(leaving.current);
+    leaving.current = undefined;
+  }, []);
+  /** The pointer is off the list: let go, at once or after the wait the list asks. */
+  const leave = useCallback(() => {
+    const wait = asks.current();
+    if (wait <= 0) {
+      stay();
+      setOver(false);
+    } else if (leaving.current === undefined) {
+      leaving.current = window.setTimeout(() => {
+        leaving.current = undefined;
+        setOver(false);
+      }, wait);
+    }
+  }, [stay]);
   if (!on && (over || inside)) {
     setOver(false);
     setInside(false);
@@ -87,6 +121,7 @@ export function useHeldStill<E extends HTMLElement>(
   useEffect(() => {
     if (!on) return;
     const away = () => {
+      stay();
       setOver(false);
       setInside(false);
     };
@@ -99,18 +134,19 @@ export function useHeldStill<E extends HTMLElement>(
     };
     // And the pointer over an element React did not hand the list is off it.
     const pointedAt = (event: Event) => {
-      if (seen.current !== event) setOver(false);
+      if (seen.current !== event) leave();
       seen.current = null;
     };
     window.addEventListener("blur", away);
     window.addEventListener("focusin", landed);
     window.addEventListener("pointerover", pointedAt);
     return () => {
+      stay();
       window.removeEventListener("blur", away);
       window.removeEventListener("focusin", landed);
       window.removeEventListener("pointerover", pointedAt);
     };
-  }, [on]);
+  }, [on, stay, leave]);
   // After each draw of new rows: a row the keyboard was on, taken out of the page, took the
   // focus with it. The element the hold saw is asked, never what the list holds in the page:
   // a row's menu is drawn outside it.
@@ -125,6 +161,7 @@ export function useHeldStill<E extends HTMLElement>(
       ref,
       onPointerOverCapture: (event) => {
         seen.current = event.nativeEvent;
+        if (heardIn(event.target)) stay();
       },
       onPointerEnter: (event) => {
         if (heardIn(event.target)) setOver(true);
@@ -133,9 +170,10 @@ export function useHeldStill<E extends HTMLElement>(
       // let go on a move over the filter, which React counts as inside.
       onPointerMove: (event) => {
         const here = heardIn(event.target);
+        if (here) stay();
         if (here !== over) setOver(here);
       },
-      onPointerLeave: () => setOver(false),
+      onPointerLeave: () => leave(),
       // A focus by the keyboard takes the hold; any focus in the list while it holds moves what
       // the hold follows (an arrow's move, a menu's item, the row a menu gave the focus back to).
       onFocus: (event) => {
@@ -167,6 +205,9 @@ export function useHeldStill<E extends HTMLElement>(
     },
   };
 }
+
+/** No wait: the pointer's hold is let go as the pointer leaves. */
+const NO_WAIT = () => 0;
 
 /** The view's top, where a list in a view draws its filter (`ui/panel/Panel`'s `InPanelTop`). */
 const IN_THE_TOP = "[data-top-slot]";

@@ -555,6 +555,58 @@ fn only_a_runner_of_1_43_or_later_keeps_a_desktops_profiles() {
     }));
 }
 
+/// The desktop's profile `work`, its settings in `folder`.
+fn work_with_settings_in(folder: &std::path::Path) -> purlis_core::profilestore::onrunner::Kept {
+    purlis_core::profilestore::onrunner::Kept {
+        name: "work".into(),
+        harness: "claude".into(),
+        sandbox_only: false,
+        pinned: None,
+        settings_in: Some(folder.to_path_buf()),
+    }
+}
+
+fn version(minor: u16) -> purlis_session_protocol::version::Version {
+    purlis_session_protocol::version::Version { major: 1, minor }
+}
+
+/// **A profile's settings go only to a runner of 1.50 or later** (#3448): one before it ignores
+/// them, so it is sent the profile alone and keeps the settings it has.
+#[test]
+fn only_a_runner_of_1_50_or_later_is_sent_a_profiles_settings() {
+    let folder = tempfile::tempdir().unwrap();
+    std::fs::write(folder.path().join("CLAUDE.md"), "Be brief.").unwrap();
+    let kept = work_with_settings_in(folder.path());
+
+    let older = for_a_runner_of(version(49), &kept).unwrap();
+    let newer = for_a_runner_of(version(50), &kept).unwrap();
+
+    assert_eq!(older.settings, None);
+    assert_eq!(older.name, "work");
+    let sent = newer.settings.expect("sent");
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].path, "CLAUDE.md");
+}
+
+/// **Settings never refuse a chat on a runner that ignores them** (#3448, F2): a settings folder
+/// too large to send refuses the profile on a runner of 1.50, in words, and a runner before it
+/// keeps the profile as it always did, with nothing of its settings read.
+#[test]
+fn settings_too_large_to_send_refuse_no_chat_on_a_runner_before_1_50() {
+    let folder = tempfile::tempdir().unwrap();
+    std::fs::write(
+        folder.path().join("CLAUDE.md"),
+        vec![b'a'; purlis_core::profilestore::onrunner::MOST_SETTINGS_BYTES + 1],
+    )
+    .unwrap();
+    let kept = work_with_settings_in(folder.path());
+
+    assert!(for_a_runner_of(version(49), &kept).is_ok());
+    assert!(for_a_runner_of(version(43), &kept).is_ok());
+    let refused = for_a_runner_of(version(50), &kept).unwrap_err();
+    assert!(refused.contains("larger than"), "{refused}");
+}
+
 /// **A runner's refusal is said as its own words, cut short** (#2049, L4): a runner cannot fill
 /// the person's screen, or pass its words off as purlis's.
 #[test]

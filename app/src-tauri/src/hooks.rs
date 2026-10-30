@@ -84,6 +84,11 @@ pub struct Moved {
     /// every other chat.
     #[specta(optional)]
     pub asking: Option<bool>,
+    /// **What this chat waits on of its own** (#3878, `purlis_core::ownwork::OwnWork`): its
+    /// turn ended while work of its own is in flight, so it is waiting, and not on the person.
+    /// `null` for every other chat.
+    #[specta(optional)]
+    pub own_work: Option<OwnWork>,
     /// Which snapshot of the board this is — bigger was taken later (charter-app#248).
     ///
     /// **What lets the window put its events back in order.** Every `Moved` is built under the
@@ -135,6 +140,33 @@ impl Moved {
     pub fn counting_only(mut self) -> Self {
         self.counts_only = true;
         self
+    }
+}
+
+/// **What a chat waits on of its own, as the window is sent it** (#3878,
+/// `purlis_core::ownwork::OwnWork`): how many of each kind of work, and when it next wakes
+/// on a schedule of its own, in seconds since 1970. Counts of none are `0`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct OwnWork {
+    pub helpers: u16,
+    pub workflows: u16,
+    pub monitors: u16,
+    pub shells: u16,
+    /// When it next wakes on a schedule of its own, in seconds since 1970. A `u32`, as
+    /// `Moved::moved_at` is, since `specta` carries no 64-bit number: it holds until 2106.
+    #[specta(optional)]
+    pub wakes_at: Option<u32>,
+}
+
+impl From<purlis_core::ownwork::OwnWork> for OwnWork {
+    fn from(work: purlis_core::ownwork::OwnWork) -> Self {
+        Self {
+            helpers: work.helpers,
+            workflows: work.workflows,
+            monitors: work.monitors,
+            shells: work.shells,
+            wakes_at: work.wakes_at.and_then(|at| u32::try_from(at).ok()),
+        }
     }
 }
 
@@ -377,6 +409,8 @@ pub struct Relayed {
     plane: PlaneId,
     /// Told each chat of the host's board as the window takes it.
     moved: Teller,
+    /// Asked what a chat waits on as its wait on its own work lapses (#3878): the hearing's.
+    waits: Arc<Mutex<Option<WaitsOf>>>,
     /// The lines handed on before the window took the host's board, in the order they came:
     /// `None` once it has.
     waiting: Mutex<Option<Vec<InOrder>>>,
@@ -597,6 +631,7 @@ impl Relayed {
             board: Arc::clone(&self.board),
             plane: self.plane.clone(),
             moved: Arc::clone(&self.moved),
+            waits: Arc::clone(&self.waits),
             waiting: Mutex::new(None),
             pool: Some(pool.to_owned()),
             routes: Mutex::new(Some(routes)),
@@ -616,6 +651,13 @@ impl Relayed {
         self.heeding.unlinked(link);
     }
 
+    /// **The host link `link` relays to is lost to it** (#3408): that host let go of every line
+    /// it handed on, so each `secret exec` from it ends here, and a pool tool's Ask goes with it.
+    /// A link this project's lines no longer come over changes nothing.
+    pub fn lost_its_host(&self, link: u64) {
+        self.heeding.lost_its_host(link);
+    }
+
     /// The socket the host listens on for this project.
     pub fn socket(&self) -> &Path {
         &self.socket
@@ -630,23 +672,39 @@ impl Relayed {
         keeper: purlis_core::state::Keeper,
         kept: Option<purlis_core::state::Kept>,
     ) {
-        let told: Vec<Moved> = {
+        let (told, limits): (Vec<Moved>, Vec<(u32, i64)>) = {
             let mut board = held_board(&self.board);
             board.told_to(keeper);
             match kept {
                 Some(kept) => {
                     board.keep(kept);
                     let chats: Vec<u32> = board.chats().collect();
-                    chats
-                        .into_iter()
-                        .map(|chat| seen_by(&board, &self.plane, chat))
-                        .collect()
+                    (
+                        chats
+                            .into_iter()
+                            .map(|chat| seen_by(&board, &self.plane, chat))
+                            .collect(),
+                        board.own_work_limits(),
+                    )
                 }
-                None => Vec::new(),
+                None => (Vec::new(), Vec::new()),
             }
         };
         for moved in told {
             (self.moved)(moved);
+        }
+        // A chat the host kept waiting on its own work is ended on time here too (#3878).
+        for (chat, until) in limits {
+            lapse_at(
+                OnTime {
+                    board: Arc::clone(&self.board),
+                    plane: self.plane.clone(),
+                    waits: Arc::clone(&self.waits),
+                    moved: Arc::clone(&self.moved),
+                },
+                chat,
+                until,
+            );
         }
         // Heard with the waiting held, so no line the host hands on now is heard before the
         // ones that came before it (#2571): a secret exec's input would otherwise find its exec
@@ -1023,8 +1081,9 @@ pub(crate) fn blocked_on(
     has_check: bool,
 ) -> ChatBlocked {
     let locks = purlis_core::sandbox::policy::Locks::of(plane.root());
-    let (first, named, why) =
-        for_its_harness(harness, offered_to(plane.root(), block, target, has_check));
+    let offered = kept_in_place(harness, plane.root(), block, target)
+        .unwrap_or_else(|| offered_to(plane.root(), block, target, has_check));
+    let (first, named, why) = for_its_harness(harness, offered);
     // Chosen by the person where nothing was named (#1884): said in place of "nothing to
     // allow". A socket named and refused keeps its own sentence, and may be chosen again.
     let choose = choosable(&locks, block, first);
@@ -1501,6 +1560,39 @@ fn offered(
     target: Option<&str>,
 ) -> (BlockOffer, Option<String>, Option<String>) {
     offered_to(root, block, target, false)
+}
+
+/// **A refused write that keeps a repository's git folder where it is**, in a Claude Code chat
+/// ([`purlis_core::sandbox::grant::keeps_git_folder`]): its sandbox denies a path in each git
+/// folder there as it started, which holds that git folder and every folder above it, and no
+/// grant lifts that. The way that works, and no Allow. `None` for any other block, or harness.
+fn kept_in_place(
+    harness: Option<purlis_core::harness::Harness>,
+    root: &Path,
+    block: &purlis_core::sandboxblock::Block,
+    target: Option<&str>,
+) -> Option<(BlockOffer, Option<String>, Option<String>)> {
+    use purlis_core::sandbox::{Os, grant};
+    use purlis_core::sandboxblock::{Kind, Operation};
+    if block.ours || harness != Some(purlis_core::harness::Harness::ClaudeCode) {
+        return None;
+    }
+    let (
+        Operation::Write | Operation::File,
+        Kind::ProjectFiles | Kind::ProtectedFile | Kind::Home | Kind::ToolchainCache | Kind::System,
+    ) = (block.operation, block.kind)
+    else {
+        return None;
+    };
+    let path = Path::new(target?);
+    let folded = purlis_core::sandbox::Machine::this().os == Os::MacOs;
+    (path.is_absolute() && grant::keeps_git_folder(path, root, folded)).then(|| {
+        (
+            BlockOffer::Brokered,
+            None,
+            Some(grant::GIT_FOLDER_KEPT.to_owned()),
+        )
+    })
 }
 
 /// [`offered`] to a chat whose sandbox was compiled with the system's certificate check
@@ -2125,6 +2217,7 @@ impl Hooks {
             board: Arc::clone(&hooks.board),
             plane,
             moved,
+            waits: Arc::clone(&hooks.waits),
             waiting: Mutex::new(Some(Vec::new())),
             pool: None,
             routes: Mutex::new(None),
@@ -2317,6 +2410,25 @@ impl Hooks {
                         tell_repeats(&throttle, &repeated, |t| t.repeats_of(report.chat));
                     }
                     let applied = apply(&board, &plane, &report, waits_at(&waits, &report));
+                    // A wait on its own work with a limit ends then, on the app's clock, whether
+                    // or not the chat wakes (#3878).
+                    if report.agent.is_none() && report.event == purlis_core::state::Event::Stop {
+                        let limit = held_board(&board)
+                            .own_work(report.chat)
+                            .and_then(|work| work.until);
+                        if let Some(until) = limit {
+                            lapse_at(
+                                OnTime {
+                                    board: Arc::clone(&board),
+                                    plane: plane.clone(),
+                                    waits: Arc::clone(&waits),
+                                    moved: Arc::clone(&moved),
+                                },
+                                report.chat,
+                                until,
+                            );
+                        }
+                    }
                     // The chat's line follows the board (#1493): a turn that began starts
                     // it, and a chat that is no longer running loses it.
                     doings.reported(&board, report.chat);
@@ -3047,6 +3159,7 @@ impl ChatBoard for Hooks {
             asking: board.asking(session),
             turns: board.turns(session),
             prompt: board.its_prompt(session),
+            own_work: board.own_work(session).is_some(),
         }
     }
 
@@ -3121,6 +3234,12 @@ impl ChatBoard for Hooks {
     fn rested(&self, session: u32) -> Option<Moved> {
         moving(&mut self.board(), &self.plane, session, |board| {
             board.rested(session)
+        })
+    }
+
+    fn blocked_while_waiting(&self, session: u32) -> Option<Moved> {
+        moving(&mut self.board(), &self.plane, session, |board| {
+            board.blocked_while_waiting(session)
         })
     }
 
@@ -3212,15 +3331,92 @@ fn moving(
 /// raises no needs-you item this could hold back, so the project's records are not read for
 /// it. **Asked before the board is taken**, never under it: the answer reads the chats, the
 /// board and the tasks' ledger in turn.
+///
+/// **Every report carries the app's clock** (`Waits::now`, #3878): what a turn's end on work of
+/// the chat's own is stamped at, whatever clock the chat keeps.
 fn waits_at(waits: &Mutex<Option<WaitsOf>>, report: &Report) -> purlis_core::state::Waits {
     use purlis_core::state::Event;
+    let now = chrono::Utc::now().timestamp();
     if report.agent.is_some() || !matches!(report.event, Event::Stop | Event::Notification) {
-        return purlis_core::state::Waits::default();
+        return purlis_core::state::Waits {
+            now,
+            ..purlis_core::state::Waits::default()
+        };
     }
     let asked = waits.lock().unwrap_or_else(PoisonError::into_inner).clone();
-    asked.map_or_else(purlis_core::state::Waits::default, |asked| {
+    let waits = asked.map_or_else(purlis_core::state::Waits::default, |asked| {
         asked(report.chat, report.event == Event::Stop)
-    })
+    });
+    purlis_core::state::Waits { now, ..waits }
+}
+
+/// What ends a chat's wait on its own work on time (#3878): the board, and what it is told
+/// and asked as the wait ends.
+#[derive(Clone)]
+struct OnTime {
+    board: Arc<Mutex<Board>>,
+    plane: PlaneId,
+    waits: Arc<Mutex<Option<WaitsOf>>>,
+    moved: Teller,
+}
+
+/// How often a wait on its own work looks at the clock while it holds (#3878): the machine's
+/// own clock, so a wait that ran out while the machine slept ends as it wakes, and a wait the
+/// chat has since left lets go of its thread within this.
+const A_WAIT_LOOKS_AT_THE_CLOCK_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// **Ends chat `chat`'s wait on its own work at `until`**, seconds since 1970, on the app's
+/// clock (#3878): a chat that never wakes still comes to need the person. The board decides
+/// (`Board::own_work_lapsed`), read with what the chat waits on beside the person then; a
+/// wait that is no longer the chat's, because it woke or waits on something else, is let go.
+fn lapse_at(on: OnTime, chat: u32, until: i64) {
+    let timer = on.clone();
+    let spawned = std::thread::Builder::new()
+        .name("purlis-own-work".to_owned())
+        .spawn(move || {
+            loop {
+                let now = chrono::Utc::now().timestamp();
+                let same = held_board(&timer.board)
+                    .own_work(chat)
+                    .is_some_and(|work| work.until == Some(until));
+                if !same {
+                    return;
+                }
+                if now >= until {
+                    break;
+                }
+                let left = std::time::Duration::from_secs(until.abs_diff(now));
+                std::thread::sleep(left.min(A_WAIT_LOOKS_AT_THE_CLOCK_EVERY));
+            }
+            lapse(&timer, chat, chrono::Utc::now().timestamp());
+        });
+    // **A wait nothing can end on time ends now** (#3878): it fails toward telling the person,
+    // never toward a chat left waiting with no hand.
+    if let Err(why) = spawned {
+        tracing::warn!(
+            "purlis: chat {chat}'s wait on its own work had no timer, so it ends now ({why})"
+        );
+        lapse(&on, chat, until);
+    }
+}
+
+/// Ends chat `chat`'s wait on its own work as of `now`, read with what it waits on beside the
+/// person then, and tells the window.
+fn lapse(on: &OnTime, chat: u32, now: i64) {
+    let asked = on
+        .waits
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    let waits = asked.map_or_else(purlis_core::state::Waits::default, |asked| {
+        asked(chat, true)
+    });
+    let what = moving(&mut held_board(&on.board), &on.plane, chat, |board| {
+        board.own_work_lapsed(chat, now, waits)
+    });
+    if let Some(what) = what {
+        (on.moved)(what);
+    }
 }
 
 /// What a reader sees for this chat right now.
@@ -3257,6 +3453,7 @@ fn seen_by(board: &Board, plane: &PlaneId, session: u32) -> Moved {
         )
         .filter(|needs| !needs.is_empty()),
         asking: board.waits_on_its_prompt(session).then_some(true),
+        own_work: board.own_work(session).map(OwnWork::from),
         counts_only: false,
         raised: false,
         children: board

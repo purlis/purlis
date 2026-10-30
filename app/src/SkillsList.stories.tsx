@@ -6,7 +6,7 @@
  * whose skills it shows, its header, and the chat's skills as small cards in three groups that
  * fold (Needs you, In this chat with its built-in skills folded to one quiet line, Left out
  * folded), each card with its level, Use, its ⋯ menu, two lines or its reason, and its one fix;
- * then a project with no skill of its own, whose starts are New skill…'s. Each is walked by the
+ * the same with no chat in front, its middle group headed A new chat gets; then a project with no skill of its own, whose starts are New skill…'s. Each is walked by the
  * keyboard from the header in, held to axe and pictured in every pictured cell of the theme
  * matrix, light and dark among them (`docs/component-stories.md`).
  */
@@ -63,8 +63,11 @@ function Skills({
   starts = false,
   rows = OPS,
   pinsRefused = null,
+  chat = true,
 }: {
   starts?: boolean;
+  /** Whether a chat is in front, or the set is a new chat's (#3778). */
+  chat?: boolean;
   rows?: ListedSkill[];
   /** Why ops's chats read none of its pins, where they read none (#3432). */
   pinsRefused?: SkillPinsRefused | null;
@@ -82,7 +85,8 @@ function Skills({
       }}
     >
       <SkillsList
-        whose="steward 5"
+        whose={chat ? "steward 5" : "A new chat in ops"}
+        chat={chat}
         groups={groupsOf(filter.shown)}
         count={rows.length}
         clashes={() => false}
@@ -96,6 +100,8 @@ function Skills({
         onOpenStudio={() => setSaid("Opened Skill studio")}
         onOpen={(row) => setSaid(`Opened ${row.skill.name}`)}
         usable={(row) => {
+          // Use types into the chat in front: with none, no card offers it.
+          if (!chat) return false;
           const mark = markOf(row);
           return mark !== "left-out" && mark !== "off" && mark !== "needs-review";
         }}
@@ -106,7 +112,7 @@ function Skills({
         menuOf={(row) => () => (
           <SkillMenu
             row={row}
-            at={{ workspace: "ops", chat: true, explorer: "ops", pinsRefused }}
+            at={{ workspace: "ops", chat, explorer: "ops", pinsRefused }}
             busy={false}
             onAct={(what) => setSaid(`Chose ${what}`)}
           />
@@ -134,21 +140,14 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/**
- * Shift+F10 on the card that has the keyboard, and its menu, named `name`. Pressed again while
- * no menu has come: about one cell a run drops the first on a card of Left out (#3797).
- */
+/** Shift+F10 on the card that has the keyboard, and its menu, named `name`: one press opens it,
+ *  even straight after the keyboard's arrival scrolled the list to the card (#3797). */
 async function menuByTheKeys(
   userEvent: { keyboard: (keys: string) => Promise<void> },
   name: string,
 ): Promise<HTMLElement> {
-  return waitFor(
-    async () => {
-      if (screen.queryByRole("menu") === null) await userEvent.keyboard("{Shift>}{F10}{/Shift}");
-      return screen.getByRole("menu", { name });
-    },
-    { timeout: 3_000, interval: 500 },
-  );
+  await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+  return screen.findByRole("menu", { name }, { timeout: 3_000 });
 }
 
 /**
@@ -230,6 +229,33 @@ export const InThisChat: Story = {
     await userEvent.keyboard("{ArrowLeft}");
     await waitFor(() => expect(cell(leftOut)).toHaveAttribute("aria-expanded", "false"));
     await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull(), { timeout: 3_000 });
+  },
+};
+
+/**
+ * **No chat in front** (#3778): the view shows what a new chat in ops would get, said in its
+ * header, and its middle group is headed A new chat gets, not In this chat. Tab walks the header
+ * onto Needs you, and ↓ past its cards reaches that group. The picture is the groups as they
+ * start.
+ */
+export const NoChatInFront: Story = {
+  render: () => <Skills chat={false} />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Skills" });
+    const row = (name: string | RegExp) => within(list).getByRole("row", { name });
+    await expect(canvas.getByTestId("skills-view-whose")).toHaveTextContent("A new chat in ops");
+    expect(within(list).queryByRole("row", { name: /^In this chat/ })).toBeNull();
+    await userEvent.tab();
+    await userEvent.tab();
+    await userEvent.tab();
+    await untilFocused(() => row(/^Needs you/), "Skills: Tab lands on the first group");
+    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(
+      () => row(/^A new chat gets/),
+      "Skills: Down reaches the group a new chat gets",
+    );
   },
 };
 

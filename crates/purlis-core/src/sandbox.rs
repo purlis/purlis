@@ -1042,6 +1042,31 @@ pub fn skills_held(root: &Path) -> Vec<Denial> {
         .collect()
 }
 
+/// **The app's state a chat is denied writing** (#3718, ADR 0067 as amended 2026-10-28):
+/// `<data>/app-state` and everything below it ([`crate::appstate`]), and that folder and the data
+/// home `data` itself as entries, so neither is renamed, moved or replaced. Each under every
+/// spelling a case-folding disk takes for it. Read, never written: a Try it's chat reads its
+/// laid-out skill there. [`Class::Integrity`]: purlis's own records, which only purlis writes, as
+/// they were in the plane's state folder, and which no grant reaches (`grant`).
+pub fn app_state_held(data: &Path) -> Vec<Denial> {
+    let app_state = data.join(crate::appstate::DIR);
+    [
+        (app_state.clone(), Reach::AndBelow),
+        (app_state, Reach::Itself),
+        (data.to_path_buf(), Reach::Itself),
+    ]
+    .into_iter()
+    .map(|(path, reach)| Denial {
+        class: Class::Integrity,
+        path,
+        access: Access::Write,
+        named: None,
+        reach,
+        any_case: true,
+    })
+    .collect()
+}
+
 /// **A part of a denied path that stands for any one name** (SK-9): `workspaces/*/skills` holds
 /// the skills of every workspace, made now or later. Only [`skills_held`] writes one.
 pub const ANY_NAME: &str = "*";
@@ -1287,6 +1312,27 @@ pub struct Denied {
     /// paths may be short of a vault's storage, so no sandbox is compiled from them and the
     /// chat is refused ([`NotStarted::KeptUntold`]). `None` when the list is whole.
     pub untold: Option<Untold>,
+    /// One path in or at each repository's git folder that is there as the chat starts, in the
+    /// plane and in each folder chats may be granted ([`git_folder_pins_of`]): denied by a
+    /// harness whose sandbox pins every folder above a denied path ([`claude`]), so each git
+    /// folder is held as a whole while git writes what is inside it. Found only for such a
+    /// harness's start (`applied_of`), and empty in [`Denied::of`]: a compiler that holds a
+    /// `.git` by itself already (a wrap's [`Reach::Itself`]) does not read it.
+    pub git_folder_pins: Vec<PathBuf>,
+}
+
+/// The folders searched for repositories as a chat of the plane at `root` starts: the plane, and
+/// each folder you listed as one chats may be granted.
+pub fn git_folders_searched(root: &Path) -> Vec<PathBuf> {
+    std::iter::once(root.to_path_buf())
+        .chain(local::grantable_folders(root))
+        .collect()
+}
+
+/// [`Denied::git_folder_pins`] for a chat of the plane at `root`: what
+/// [`planted::git_folder_pins`] finds in each of [`git_folders_searched`].
+pub fn git_folder_pins_of(root: &Path) -> Vec<PathBuf> {
+    planted::git_folder_pins(&git_folders_searched(root))
 }
 
 impl Denied {
@@ -1307,13 +1353,17 @@ impl Denied {
     #[must_use]
     pub fn and_what_waits_for_a_chat(mut self, root: &Path) -> Self {
         for state in crate::names::STATE_DIR.spellings() {
+            let path = root.join(state).join(crate::handback::DIR_NAME);
+            // Under every spelling of its name where its write denial is ([`kept_by_purlis`]
+            // holds the state folder so on macOS).
+            let any_case = self.paths.iter().any(|it| it.path == path && it.any_case);
             self.paths.push(Denial {
                 class: Class::Integrity,
-                path: root.join(state).join(crate::handback::DIR_NAME),
+                path,
                 access: Access::ReadWrite,
                 named: None,
                 reach: Reach::AndBelow,
-                any_case: false,
+                any_case,
             });
         }
         self
@@ -1440,6 +1490,28 @@ impl Denied {
                 any_case: machine.os == Os::MacOs,
             });
         }
+        // …and the programs each cluster pool's kubectl runs (#3292): kubectl itself and each
+        // credential plugin its context names, by their real paths as the pool was added, which
+        // purlis runs outside any sandbox before every link to its runner. Each name, and the
+        // folder it is in, as the folders of Docker's helpers are held (#2752).
+        let config_root = crate::machine::rooted(
+            machine.env.get(crate::machine::HOME_VAR).map(Into::into),
+            machine.env.get("XDG_CONFIG_HOME").map(Into::into),
+            machine.home.clone(),
+        );
+        for path in config_root
+            .iter()
+            .flat_map(|config_root| crate::runners::cluster_holds(config_root.as_path()))
+        {
+            paths.push(Denial {
+                class: Class::LaterCode,
+                path,
+                access: Access::Write,
+                named: None,
+                reach: Reach::Itself,
+                any_case: machine.os == Os::MacOs,
+            });
+        }
         // …and what a protected config points at elsewhere, resolved now (V73d).
         let xdg_config = machine
             .env
@@ -1487,6 +1559,7 @@ impl Denied {
             },
             unread,
             untold,
+            git_folder_pins: Vec::new(),
         }
     }
 }
@@ -1802,8 +1875,7 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     // The Skill studio's records (SK-9, SK-16, SK-58, SK-59): which levels a running chat could
     // have made, the drafts, the tries, the grades and the opt-in to grade after each edit, each
     // written by the app or the session host alone. Read, never written. Under every spelling of
-    // the state folder and where `$PURLIS_HOME` puts it, and, on macOS's case-folding disk, under
-    // every spelling of each record's name: one not there yet is made under the name as typed.
+    // the state folder and where `$PURLIS_HOME` puts it, each in every case on macOS (below).
     let mut states: Vec<PathBuf> = crate::names::STATE_DIR
         .spellings()
         .map(|state| root.join(state))
@@ -1824,7 +1896,7 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             access: Access::Write,
             named: None,
             reach: Reach::AndBelow,
-            any_case: machine.os == Os::MacOs,
+            any_case: false,
         })
         .collect();
 
@@ -1865,6 +1937,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             deny(
                 Class::HumanPowers,
                 home.join(crate::machine::RUNNER_HOURS_FILE),
+                Access::ReadWrite,
+            );
+            // Each cluster pool's own copy of its kubeconfig's context (#3292): denied as they
+            // are.
+            deny(
+                Class::HumanPowers,
+                home.join(crate::machine::CLUSTER_KUBECONFIGS_DIR),
                 Access::ReadWrite,
             );
             // What the human's forge sign-in fetched: the native transport's ETag store
@@ -1925,6 +2004,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         for folder in engines {
             deny(Class::HumanPowers, folder, Access::Write);
         }
+        // The harness versions a runner installs for its profiles' pins (#3446): a chat writes
+        // nothing there, so none chooses the program the next chat runs.
+        deny(
+            Class::HumanPowers,
+            data.join(crate::profilestore::installs::DIR),
+            Access::Write,
+        );
     }
     // The session host's socket and its lock, in the folder it makes this user's alone under
     // the runtime or temporary directory (#1997, `hostsocket`): a chat neither reads nor
@@ -1946,6 +2032,11 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             door::root_in(runtime.as_deref()),
             Access::Write,
         );
+    }
+    // The app's own state of every project (#3718): what purlis reads back to decide, kept in
+    // the data home where only purlis writes it.
+    for data in Homes::data_homes(machine) {
+        paths.extend(app_state_held(&data));
     }
     // A vault's file is kept under the other names purlis finds for it in the project.
     let mut vaults: Vec<PathBuf> = Vec::new();
@@ -1976,6 +2067,18 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     }
     paths.extend(held_whole);
     paths.extend(studio_held);
+    // Everything held in the state folder, under each of its spellings and where `$PURLIS_HOME`
+    // puts it, is held under every spelling of its name on macOS's case-folding disk: a store not
+    // there yet is made under the name as typed, and purlis reads it under its own. One pass
+    // here, so a row added above cannot be left out. Linux's disks do not fold case, and each
+    // row there stays as it was written above.
+    if machine.os == Os::MacOs {
+        for denial in &mut paths {
+            if states.iter().any(|state| denial.path.starts_with(state)) {
+                denial.any_case = true;
+            }
+        }
+    }
     // A list that is not whole is never held by the store alone.
     keyring |= unresolved.is_some();
     KeptList {
@@ -3220,6 +3323,38 @@ impl Homes {
         crate::datahome::root_with(&|name: &str| machine.env.get(name), system)
     }
 
+    /// **Every folder the data home's ladder can name on `machine`**, there or not: the one in use
+    /// ([`Self::charter_data`]) first, then what the variable names, and each spelling of its
+    /// folder under `$XDG_DATA_HOME` and under the system's data directory.
+    pub(crate) fn data_homes(machine: &Machine) -> Vec<PathBuf> {
+        let named = |name: &str| {
+            machine
+                .env
+                .get(name)
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+                .filter(|path| path.is_absolute())
+        };
+        let system = machine.home.as_ref().map(|home| match machine.os {
+            Os::MacOs => home.join("Library/Application Support"),
+            Os::Linux | Os::Windows | Os::Other => home.join(".local/share"),
+        });
+        let mut out: Vec<PathBuf> = Self::charter_data(machine).into_iter().collect();
+        out.extend(named(crate::datahome::HOME_VAR));
+        for base in [named("XDG_DATA_HOME"), system].into_iter().flatten() {
+            for spelling in crate::names::DATA_HOME.spellings() {
+                out.push(base.join(spelling));
+            }
+        }
+        let mut seen: Vec<PathBuf> = Vec::new();
+        out.retain(|path| {
+            let new = !seen.contains(path);
+            seen.push(path.clone());
+            new
+        });
+        out
+    }
+
     /// The Codex home of the project at `root`'s sandboxed chats on `machine` (D-88q): a folder
     /// named for the project as the kernel names it, under charter's data home.
     pub fn codex_project(machine: &Machine, root: &Path) -> Option<PathBuf> {
@@ -4323,8 +4458,9 @@ pub trait Board: Send + Sync + std::fmt::Debug {
     /// The person allowed `host` at `by` ([`asks::Asks::allow`]): the hosts held connections
     /// gave up on before it, which the chat is told to retry.
     fn allow(&self, host: &hosts::Host, by: reach::By) -> Vec<String>;
-    /// The person kept `host` blocked ([`asks::Asks::keep_blocked`]).
-    fn keep_blocked(&self, host: &hosts::Host);
+    /// The person kept `host` blocked ([`asks::Asks::keep_blocked`]): whether it ended a live
+    /// Allow of the chat's, so its reach narrowed.
+    fn keep_blocked(&self, host: &hosts::Host) -> bool;
     /// An Allow of `host` at `by` was removed ([`asks::Asks::forget`]).
     fn forget(&self, host: &hosts::Host, by: reach::By);
     /// The hosts allowed live, each with its scope ([`asks::Asks::allowed_live`]).
@@ -4347,8 +4483,8 @@ impl Board for asks::Asks {
         asks::Asks::allow(self, host, by)
     }
 
-    fn keep_blocked(&self, host: &hosts::Host) {
-        asks::Asks::keep_blocked(self, host);
+    fn keep_blocked(&self, host: &hosts::Host) -> bool {
+        asks::Asks::keep_blocked(self, host)
     }
 
     fn forget(&self, host: &hosts::Host, by: reach::By) {
@@ -6031,6 +6167,22 @@ pub(crate) fn applied_of(
             ..compiled.clone()
         };
         &unserving
+    } else {
+        compiled
+    };
+    // Each repository's git folder held as a whole, for Claude Code alone, whose sandbox pins
+    // every folder above a denied path ([`Denied::git_folder_pins`]): found here, for its start,
+    // and not for any other harness's.
+    let pinned;
+    let compiled = if harness == Harness::ClaudeCode {
+        pinned = Compiled {
+            denied: Denied {
+                git_folder_pins: git_folder_pins_of(root),
+                ..compiled.denied.clone()
+            },
+            ..compiled.clone()
+        };
+        &pinned
     } else {
         compiled
     };

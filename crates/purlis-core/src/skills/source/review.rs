@@ -316,6 +316,11 @@ pub struct Offered {
     pub skill: Found,
     /// The levels it is installed at from this source.
     pub installed: Vec<Level>,
+    /// **What its files do beyond its instructions**, a few words each
+    /// ([`summary::Summary::marks`]): what a source's page marks it with before any review.
+    /// `None` where its files were not read to browse, as the source holds more than one read
+    /// may take: its review reads them.
+    pub marks: Option<Vec<String>>,
 }
 
 /// **What a source offers**: its newest commit, its skills, and each folder that is not a skill
@@ -332,17 +337,34 @@ pub fn browse(plane: &Path, source: &Source) -> Result<Browse, String> {
     let fetched = fetch(plane, source, None)?;
     let (found, not_skills) = fetched.skills()?;
     let (locked, _) = lock::every(plane);
+    // Each skill's files are read for its marks until one read would take the fetch past what it
+    // may read: the rest are left for their reviews, and the browse is not refused for them.
+    let mut reading = true;
     Ok(Browse {
         commit: fetched.commit.clone(),
         skills: found
             .into_iter()
-            .map(|skill| Offered {
-                installed: locked
-                    .iter()
-                    .filter(|(_, one)| one.name == skill.name && one.source == source.remote)
-                    .map(|(_, one)| one.level.0.clone())
-                    .collect(),
-                skill,
+            .map(|skill| {
+                let marks = if reading {
+                    match super::SkillSource::files(&fetched, &skill) {
+                        Ok((files, _)) => Some(summary_of(&files).marks()),
+                        Err(_) => {
+                            reading = false;
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+                Offered {
+                    installed: locked
+                        .iter()
+                        .filter(|(_, one)| one.name == skill.name && one.source == source.remote)
+                        .map(|(_, one)| one.level.0.clone())
+                        .collect(),
+                    marks,
+                    skill,
+                }
             })
             .collect(),
         not_skills,

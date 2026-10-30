@@ -88,6 +88,17 @@ pub(crate) fn write_pins(plane: &Path, persona: &str, pins: &[String]) -> Result
     write(plane, persona, PINS_KEY, pins)
 }
 
+/// **Writes `persona`'s own `skill-router:` line** as `router`, or takes it out for none
+/// (SK-15b, #3692).
+pub(crate) fn write_router(
+    plane: &Path,
+    persona: &str,
+    router: Option<&str>,
+) -> Result<(), String> {
+    let entries: Vec<String> = router.map(str::to_owned).into_iter().collect();
+    write(plane, persona, super::router::PERSONA_KEY, &entries)
+}
+
 /// `persona`'s own definition with its `key:` line saying `entries`, or without the line for
 /// none.
 fn write(plane: &Path, persona: &str, key: &str, entries: &[String]) -> Result<(), String> {

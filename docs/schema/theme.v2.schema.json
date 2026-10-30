@@ -9068,6 +9068,75 @@
         "titlebar.workspace.root.focused.shadow": {
           "$ref": "#/$defs/part-shadow"
         },
+        "titlebar.workspace.dormant.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.workspace.dormant.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.workspace.dormant.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "titlebar.workspace.dormant.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "titlebar.workspace.dormant.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "titlebar.workspace.dormant.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.workspace.dormant.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "titlebar.workspace.dormant.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "titlebar.workspace.dormant.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "titlebar.workspace.dormant.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "titlebar.workspace.dormant.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "titlebar.workspace.dormant.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.workspace.dormant.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.workspace.dormant.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "titlebar.workspace.dormant.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "titlebar.workspace.dormant.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.workspace.dormant.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.workspace.dormant.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "titlebar.workspace.dormant.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "titlebar.workspace.dormant.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.workspace.dormant.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.workspace.dormant.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "titlebar.workspace.dormant.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
         "titlebar.count.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -9162,6 +9231,30 @@
           "$ref": "#/$defs/part-fill"
         },
         "titlebar.count.root.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.count.dormant.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.count.dormant.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.count.dormant.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.count.dormant.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.count.dormant.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.count.dormant.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.count.dormant.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.count.dormant.focused.text": {
           "$ref": "#/$defs/part-text"
         },
         "titlebar.crumb.fill": {
@@ -9272,6 +9365,33 @@
         "titlebar.crumb.root.focused.text": {
           "$ref": "#/$defs/part-text"
         },
+        "titlebar.crumb.dormant.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.crumb.dormant.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.crumb.dormant.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.crumb.dormant.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.crumb.dormant.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.crumb.dormant.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.crumb.dormant.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.crumb.dormant.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.crumb.dormant.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "titlebar.all.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -9378,6 +9498,33 @@
           "$ref": "#/$defs/part-fill"
         },
         "titlebar.all.root.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.all.dormant.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.all.dormant.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.all.dormant.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.all.dormant.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.all.dormant.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.all.dormant.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.all.dormant.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.all.dormant.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.all.dormant.focused.text": {
           "$ref": "#/$defs/part-text"
         },
         "titlebar.pin.fill": {
@@ -9488,6 +9635,33 @@
         "titlebar.pin.root.focused.text": {
           "$ref": "#/$defs/part-text"
         },
+        "titlebar.pin.dormant.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.pin.dormant.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.pin.dormant.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.pin.dormant.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.pin.dormant.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.pin.dormant.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.pin.dormant.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.pin.dormant.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.pin.dormant.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "titlebar.row.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -9596,10 +9770,43 @@
         "titlebar.row.root.focused.text": {
           "$ref": "#/$defs/part-text"
         },
+        "titlebar.row.dormant.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row.dormant.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.row.dormant.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "titlebar.row.dormant.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row.dormant.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.row.dormant.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row.dormant.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.row.dormant.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.row.dormant.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "titlebar.dot.fill": {
           "$ref": "#/$defs/part-fill"
         },
         "titlebar.dot.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.dot-warning.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.dot-warning.text": {
           "$ref": "#/$defs/part-text"
         },
         "tooltip.root.fill": {

@@ -11,6 +11,7 @@ use purlis_core::piececmd;
 use purlis_core::pieces::{Declaration, Who};
 
 use crate::Here;
+use purlis_core::hookwire::GitWork;
 
 #[derive(Subcommand)]
 pub enum WorktreeCommand {
@@ -54,11 +55,15 @@ pub enum WorktreeCommand {
         paths: Vec<String>,
     },
     /// Bring the branch folder you stand in up to its base: fetch, bring the base up to its
-    /// remote, and rebase onto it. Stops on a conflict and names the files: resolve them, then
-    /// `--continue`, or `--abort` to put the branch back. Refused with uncommitted changes.
-    /// In a chat the app runs it.
+    /// remote, and rebase onto it. Standing in a workspace's clone, bring the clone's branch up
+    /// to the remote branch it follows: fetch, then fast-forward or rebase. At the project root,
+    /// run the window's Update, which moves the project whole or not at all. Stops on a conflict
+    /// and names the files: resolve them, then `--continue`, or `--abort` to put the branch
+    /// back. Refused with uncommitted changes, or where it would overwrite a file on disk that
+    /// is not committed. In a chat the app runs it.
     Update {
-        /// The branch to rebase onto (default: the one the piece was cut from).
+        /// The branch to rebase onto (default: the one the piece was cut from). A branch
+        /// folder's only.
         #[arg(long, value_name = "BRANCH", conflicts_with_all = ["go_on", "abort"])]
         base: Option<String>,
         /// Stage the files the stopped rebase named, once resolved, and go on.
@@ -125,11 +130,14 @@ pub enum WorktreeCommand {
 pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
     let root = here.plane.root().to_path_buf();
     let now = chrono::Utc::now();
+    // In a chat, by its stable id too (#3901): its `done` or `abandon` hands over a branch
+    // folder it holds, and another chat's lets nothing go.
     let who = Who::here(
         purlis_core::machine::config_root_if_there().as_deref(),
         here.ids.session.clone(),
         here.active_persona(None),
-    );
+    )
+    .for_chat(purlis_core::envvar::var(purlis_core::hookwire::CHAT_ID_ENV));
     let mut say = crate::speak;
     let code = match command {
         WorktreeCommand::Add {
@@ -184,21 +192,7 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                 (_, true) => purlis_core::hookwire::UpdateStep::Abort,
                 _ => purlis_core::hookwire::UpdateStep::Start { base },
             };
-            standing_in(here, &mut say, |at, say| {
-                let work = purlis_core::hookwire::GitWork::WorktreeUpdate {
-                    repo: at.repo.clone(),
-                    piece: at.piece.clone(),
-                    step: step.clone(),
-                };
-                ran_by_the_app(at, work, say).unwrap_or_else(|| {
-                    purlis_core::pieceupdate::update(
-                        &piece_of(&root, at),
-                        &step,
-                        &purlis_core::pieceupdate::Reach::default(),
-                        say,
-                    )
-                })
-            })
+            update(here, &step, &who, &mut say)
         }
         WorktreeCommand::Push { force_with_lease } => standing_in(here, &mut say, |at, say| {
             let work = purlis_core::hookwire::GitWork::WorktreePush {
@@ -207,6 +201,12 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                 lease: force_with_lease,
             };
             ran_by_the_app(at, work, say).unwrap_or_else(|| {
+                if let Err(why) =
+                    no_app_to_tell(&root, at, &who, purlis_core::piececlaim::Act::Push)
+                {
+                    say(purlis_core::repocmd::Say::Fail(why.into()));
+                    return 1;
+                }
                 purlis_core::pieceupdate::push(
                     &piece_of(&root, at),
                     force_with_lease,
@@ -272,6 +272,163 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
     Ok(code)
 }
 
+/// The folder `purlis worktree update` stands in (#3831): a branch folder, a workspace's clone
+/// itself, or the project root.
+enum Updated {
+    Piece(purlis_core::worktree::Located),
+    Clone { ws: String, repo: String },
+    Root,
+}
+
+impl Updated {
+    fn of(here: &Here) -> Option<Self> {
+        let root = here.plane.root();
+        if let Some(at) = purlis_core::worktree::locate(root, &here.cwd) {
+            return Some(Self::Piece(at));
+        }
+        if let Some((ws, repo)) = purlis_core::worktree::locate_clone(root, &here.cwd) {
+            return Some(Self::Clone { ws, repo });
+        }
+        let real = |path: &std::path::Path| std::fs::canonicalize(path).ok();
+        (real(root).is_some() && real(root) == real(&here.cwd)).then_some(Self::Root)
+    }
+
+    /// The ask the app is handed for `step`, and the workspace it is in.
+    fn work(&self, step: &purlis_core::hookwire::UpdateStep) -> (&str, GitWork) {
+        match self {
+            Self::Root => ("", GitWork::RootUpdate {}),
+            Self::Piece(at) => (
+                &at.workspace,
+                GitWork::WorktreeUpdate {
+                    repo: at.repo.clone(),
+                    piece: at.piece.clone(),
+                    step: step.clone(),
+                },
+            ),
+            Self::Clone { ws, repo } => (
+                ws,
+                GitWork::CloneUpdate {
+                    repo: repo.clone(),
+                    step: step.clone(),
+                },
+            ),
+        }
+    }
+}
+
+/// What `update` says where it stands in no folder it updates.
+const NOT_IN_A_FOLDER: &str = "not inside a branch folder or a workspace's clone, nor at the \
+     project root: run `purlis worktree update` from the one to bring up to date (`purlis \
+     worktree list` shows the branch folders)";
+
+/// What `update` says of a step the project root does not take: its update moves the project
+/// whole or puts it back, so nothing is left to go on with, and it has no base.
+const AT_THE_ROOT: &str = "at the project root, `purlis worktree update` takes no `--base`, \
+     `--continue` or `--abort`: the project is either updated whole or left exactly as it was";
+
+/// Whether `step` is one the project root takes: a plain start.
+fn root_takes(step: &purlis_core::hookwire::UpdateStep) -> bool {
+    matches!(
+        step,
+        purlis_core::hookwire::UpdateStep::Start { base: None }
+    )
+}
+
+/// `purlis worktree update`: in a chat the app started, handed to the app; elsewhere, run here.
+fn update(
+    here: &Here,
+    step: &purlis_core::hookwire::UpdateStep,
+    who: &Who,
+    say: &mut dyn FnMut(purlis_core::repocmd::Say),
+) -> u8 {
+    let Some(updated) = Updated::of(here) else {
+        say(purlis_core::repocmd::Say::Fail(NOT_IN_A_FOLDER.into()));
+        return 1;
+    };
+    if matches!(updated, Updated::Root) && !root_takes(step) {
+        say(purlis_core::repocmd::Say::Fail(AT_THE_ROOT.into()));
+        return 1;
+    }
+    let (ws, work) = updated.work(step);
+    let asked = crate::gitask::told(
+        crate::gitask::forwarded(ws, work, crate::gitask::A_PIECE_UPDATE_TAKES_AT_MOST),
+        say,
+    );
+    if let Some(code) = asked {
+        return code;
+    }
+    let root = here.plane.root();
+    let reach = purlis_core::pieceupdate::Reach::default();
+    match &updated {
+        Updated::Piece(at) => {
+            if let Err(why) = no_app_to_tell(root, at, who, purlis_core::piececlaim::Act::Update) {
+                say(purlis_core::repocmd::Say::Fail(why.into()));
+                return 1;
+            }
+            purlis_core::pieceupdate::update(&piece_of(root, at), step, &reach, say)
+        }
+        Updated::Clone { ws, repo } => purlis_core::pieceupdate::update_clone(
+            &purlis_core::pieceupdate::CloneAt { root, ws, repo },
+            step,
+            &reach,
+            say,
+        ),
+        // From a terminal, the person's own: the window's Update, as they would press it.
+        Updated::Root => {
+            let updated = purlis_core::planegit::update(root, say);
+            let request = purlis_core::forge::request_words_of(root, root).request_noun();
+            let said = updated.said(request);
+            if matches!(updated, purlis_core::planegit::Updated::Left(_)) {
+                say(purlis_core::repocmd::Say::Fail(said.into()));
+                1
+            } else {
+                say(purlis_core::repocmd::Say::Done(said.into()));
+                0
+            }
+        }
+    }
+}
+
+/// The `worktree_update` tool (#3831): `purlis worktree update` where the chat stands, handed
+/// to the app that started it, and answered with what it said. **Never run here**: the MCP
+/// server runs outside the chat's sandbox, where the app's judging of the move would not be,
+/// so with no app to take it nothing runs.
+pub fn update_by_the_app(
+    here: &Here,
+    step: &purlis_core::hookwire::UpdateStep,
+) -> Result<String, String> {
+    use crate::gitask::Forwarded;
+    use purlis_core::repocmd::Say;
+    let updated = Updated::of(here).ok_or_else(|| NOT_IN_A_FOLDER.to_owned())?;
+    if matches!(updated, Updated::Root) && !root_takes(step) {
+        return Err(AT_THE_ROOT.to_owned());
+    }
+    let (ws, work) = updated.work(step);
+    let (lines, code) =
+        match crate::gitask::forwarded(ws, work, crate::gitask::A_PIECE_UPDATE_TAKES_AT_MOST) {
+            Forwarded::Said { lines, code } => (lines, code),
+            Forwarded::Refused(why) | Forwarded::Unsure(why) => return Err(why),
+            Forwarded::NotTaken => {
+                return Err(
+                    "no app took the update, so nothing was run: run `purlis worktree \
+                            update` in the chat"
+                        .to_owned(),
+                );
+            }
+        };
+    let text = lines
+        .iter()
+        .map(|line| match line {
+            Say::Info(t) | Say::Done(t) | Say::Warn(t) | Say::Fail(t) | Say::Plain(t) => {
+                t.to_string()
+            }
+            Say::Out(t) => t.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if code == 0 { Ok(text) } else { Err(text) }
+}
+
 /// Runs `then` for the branch folder this command stands in, or says there is none.
 fn standing_in(
     here: &Here,
@@ -289,6 +446,22 @@ fn standing_in(
             1
         }
     }
+}
+
+/// **In a chat whose app took no ask**, a branch folder's claim is still held to (#3901): with
+/// no app to say whether its holder lives, a folder another chat holds is refused, and the
+/// holder writes on. Outside a chat it is the person's own terminal, which hands any folder
+/// over, and nothing is asked.
+fn no_app_to_tell(
+    root: &std::path::Path,
+    at: &purlis_core::worktree::Located,
+    who: &Who,
+    act: purlis_core::piececlaim::Act,
+) -> Result<(), String> {
+    if crate::session::chat_number().is_none() {
+        return Ok(());
+    }
+    purlis_core::piececlaim::take(root, at, who, None, act, chrono::Utc::now())
 }
 
 /// The piece `at` names, in the project at `root`.

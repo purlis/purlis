@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { OUTSIDE, type Said } from "./actions";
+import type { NoticeKind } from "./ui/titlebar/TitleBarWorkspaces";
 
 /**
  * **Where a notice is drawn** (spec #3647, its one test seam): a notice about a whole workspace
@@ -63,23 +64,46 @@ export function aboutOf(said: Said): About {
   return said.workspace === undefined ? { project: true } : { workspace: said.workspace };
 }
 
+/** **What kind of notice a result is** (#3649), which its chip's dot shows when it is the most
+ *  urgent there: a refusal or a failure is a warning (▲), anything else news (●). */
+export function kindOf(said: Said): NoticeKind {
+  return said.refused ? "warning" : "info";
+}
+
 /**
  * **The title bar's chips** (`TitleBarSwitch.tsx`, R101–R105, #3654): the plane root's house,
- * always, then a chip per pin, in the pins' order, then the dashed one of the workspace in front
- * while it is not pinned. The plane root in front, or nothing focused yet, adds no dashed one.
+ * always, then a chip per pin, in the pins' order, then a dormant chip per pin whose workspace is
+ * gone (#3651), then the dashed one of the workspace in front while it is not pinned. The plane
+ * root in front, or nothing focused yet, adds no dashed one.
+ *
+ * The dormant chips come after the live pins, not in their place among them, so ⌘1–⌘9 and a
+ * swipe, which go to live pins alone, go to the chips in the order they are drawn.
  */
 export function chipsOf({
   pins,
+  dormant = [],
   focused,
 }: {
   pins: readonly string[];
+  /** Pins whose workspace is gone, kept dormant (V91c as amended, NO-1). */
+  dormant?: readonly string[];
   focused: string | undefined;
 }): Chip[] {
   const chips: Chip[] = [
     { workspace: OUTSIDE, look: "root" },
     ...pins.map((workspace): Chip => ({ workspace, look: "pinned" })),
+    ...dormant
+      .filter((workspace) => !pins.includes(workspace))
+      .map((workspace): Chip => ({ workspace, look: "dormant" })),
   ];
-  if (focused !== undefined && focused !== OUTSIDE && !pins.includes(focused))
+  // A workspace in front that has gone is drawn once, dormant: never also as a dashed chip,
+  // whose press would pin a workspace the project does not have (#3651's review).
+  if (
+    focused !== undefined &&
+    focused !== OUTSIDE &&
+    !pins.includes(focused) &&
+    !dormant.includes(focused)
+  )
     chips.push({ workspace: focused, look: "unpinned" });
   return chips;
 }

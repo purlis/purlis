@@ -131,7 +131,7 @@ kubectl create namespace purlis-system
 kubectl label namespace purlis-system pod-security.kubernetes.io/enforce=restricted
 
 # 3. The key the operator signs runners' link keys with, made once, here, and kept as a Secret
-#    the operator's pod mounts. Keep it: a new key makes every desktop ask again.
+#    the operator's pod mounts. Keep it: to change it, roll it (see "Rolling the signing key").
 #    Piped, so the key is never written to a file.
 openssl genpkey -algorithm ed25519 |
   kubectl -n purlis-system create secret generic purlis-cluster-operator-signing-key \
@@ -184,14 +184,15 @@ cluster admin can review and apply them apart from the controllers.
 #    the release's digest.
 kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6
 
-# 2. The policies: the one that admits a Claim only for someone who may use its Pool, and the
-#    one on runner namespaces; then purlis's definitions, Pool and Claim. The policies go
+# 2. The policies: the one that admits a Claim only for someone who may use its Pool, the
+#    one on runner namespaces, and the one that narrows what the operator may change of
+#    upstream's sandboxes (below); then purlis's definitions, Pool and Claim. The policies go
 #    first, so no Claim is admitted before they hold.
 kubectl apply --server-side -f operator/deploy/policy.yaml
 kubectl apply --server-side -f operator/deploy/crds.yaml
 
 # 3. The `purlis-system` namespace and the key the operator signs runners' link keys with,
-#    kept as a Secret its pod mounts. Keep it: a new key makes every desktop ask again.
+#    kept as a Secret its pod mounts. Keep it: to change it, roll it (see "Rolling the signing key").
 kubectl create namespace purlis-system
 kubectl label namespace purlis-system pod-security.kubernetes.io/enforce=restricted
 #    Piped, so the key is never written to a file.
@@ -221,6 +222,7 @@ spec:
   keptVolume:              # optional; these are the defaults
     size: 10Gi
     # storageClassName: fast   # the cluster's default class unless named
+  stopped: false           # optional; true suspends every runner of the pool
 ---
 apiVersion: runners.purlis.dev/v1alpha1
 kind: Claim
@@ -231,6 +233,7 @@ spec:
   pool: team
   requester: ada@example.com
   kept: true               # optional; false (fresh) unless set
+  stopped: false           # optional; true suspends this claim's runner
 ```
 
 - **A Pool** is cluster-wide, defined once for the team. Its `image` is a runner image named
@@ -239,8 +242,9 @@ spec:
   (`Mi`, `Gi` or `Ti`, 10Gi unless set) and `storageClassName` (the cluster's default class
   unless set). A change to it applies to kept Claims made after it: a kept Claim keeps the
   volume it was made with. A change to it, as to `image`, also changes the pool's template, so
-  a fresh Claim's runner made before it, warm or running, is no longer vouched for; make its
-  Claim again.
+  a fresh Claim's running runner made before it is no longer vouched for; make its Claim again.
+  A runner kept warm from the earlier template is replaced by one of the new (#2058): upstream
+  deletes it, and a fresh Claim never takes it.
 - **A Claim is kept or fresh** (#2057), and its `kept` never changes after it is made: the other
   kind is another Claim.
   - **A kept Claim** (`kept: true`) gets a runner of its own, started cold, whose home is a
@@ -276,6 +280,26 @@ spec:
   (`kubectl auth whoami`): the policy refuses a Claim whose `requester` is anyone else, in words
   that name the right one, and it never changes after. The operator vouches for it with the
   runner's link key. purlis fills it in when it claims a runner.
+- **`stopped` suspends, and never destroys** (#2058). Set on a Pool or a Claim from kubectl
+  (`kubectl patch pool team --type merge -p '{"spec":{"stopped":true}}'`), it suspends every
+  runner of the pool, or the Claim's runner: the operator puts each runner's upstream sandbox in
+  upstream's `Suspended` mode, and upstream ends its pod and keeps its volumes, so a kept
+  Claim's home, its work and its pairing stay. A fresh Claim's runner keeps nothing past its
+  pod, as ever. The Claim's `Ready` is `False` with the reason `Stopped`, saying whether the
+  Claim or its pool is stopped and whether its runner is being suspended or is suspended
+  (upstream's own `Suspended` condition), and no key is vouched for. While its runner is being
+  suspended the Claim is looked at again less and less often; after about four and a half
+  minutes it says upstream has not ended the runner's pod yet. A Claim made while stopped gets
+  no runner yet. A stopped pool keeps no runner warm. A Claim's own `stopped` stops its runner
+  even after its Pool is deleted. With its Pool deleted a runner is never run again: one
+  suspended by its pool's or its own `stopped` stays suspended, a kept Claim's volume kept,
+  until the Claim is deleted, and its `Ready` says `PoolDeleted` and that it stays suspended.
+  Set back to `false` (the default), each runner the operator suspended runs again: a kept Claim's pod is made again on its volume, paired as it
+  was, with the same key. A runner suspended by hand before it was stopped is left suspended,
+  as far as the operator can tell: it goes by who last applied the sandbox's mode, which any
+  client may name itself as, and a runner suspended by hand while it was already stopped runs
+  again with the rest. A stopped pool's warm pool keeps no runner warm after it runs again until
+  a team admin scales it again.
 - **A Claim stays in its namespace; its runner does not.** The runner, and everything the
   operator makes for it, is in the requester's own namespace, `purlis-runners-<hash>`
   ([below](#each-persons-namespace)).
@@ -336,15 +360,17 @@ claimed. Two witnesses say which key that runner holds, and both must agree:
    to the template it made for the pool in full, every field but the few the cluster itself
    sets or defaults (a kept Claim's pod with its own volume in place of the template's folder,
    as upstream puts it there), and refuses a pool's template that someone else changed. Then
-   it signs a statement of the claim (its namespace, name and uid), the runner namespace and
-   the pod's name there, the key, the requester and until when it holds (ten minutes on) with
-   its own Ed25519 key. The statement and its signature are the Claim's `status.linkKey`, and
-   its `KeyPublished` condition says `Vouched`, or why not yet. Every Pool's
-   `status.signingKey` names the operator's key, which a desktop pins when it adds the pool.
+   it signs a statement of the cluster, the claim (its namespace, name and uid), the runner
+   namespace and the pod's name there, the key, the requester and until when it holds (ten
+   minutes on) with its own Ed25519 key. The statement and its signature are the Claim's
+   `status.linkKey`, and its `KeyPublished` condition says `Vouched`, or why not yet. Every
+   Pool's `status.signingKey` names the operator's key and `status.cluster` its cluster, the uid
+   of the cluster's `kube-system` namespace, which the operator reads once as it starts. A
+   desktop pins both when it adds the pool.
 3. **The desktop pairs over its own `kubectl exec`** into the pod the statement names, in the
    runner namespace it names, as a Docker pool's desktop pairs over `docker exec`, and the
-   runner answers with its device id and key. A statement signed by another key, about another
-   claim or requester, naming a runner namespace other than the requester's own, or a runner
+   runner answers with its device id and key. A statement signed by another key, made in
+   another cluster, about another claim or requester, naming a runner namespace other than the requester's own, or a runner
    answering another key than the one vouched for, is refused, and so is a statement that names
    another runner namespace, pod or key before any later link. The pairing takes the private half out of the
    shared folder, so it is left only in the session host's own. The operator looks at a
@@ -356,6 +382,21 @@ runners, read their keys, or pair with them first, whatever the statement says. 
 gives the requester alone a right there ([below](#each-persons-namespace)); grant no one else
 rights in `purlis-runners-*` namespaces, cluster-wide rights on pods included. Read access to
 Secrets in the operator's namespace is the power to vouch for any runner.
+
+**Adding the pool in a person's window** (#3292): the add pool dialog (the palette's Add a Docker
+pool…, or Add a pool… in Settings › This machine › Pools once one is kept), Kind Cluster, their
+kubeconfig's context for the cluster and the Pool's name. Check its key shows
+the operator key the Pool's status names; give your people that key to check it against, as
+
+```bash
+kubectl get pools.runners.purlis.dev <pool> --output jsonpath='{.status.signingKey}'
+```
+
+prints it. Add pool pins it and makes the person's one kept Claim, `<pool>-<a label of their
+desktop>`, marked `runners.purlis.dev/desktop: <that label>`, in the namespace their context
+names (`default` where it names none). Removing the pool deletes only that Claim. A Pool that
+later names another key refuses every link to that desktop's runner, and the window asks the
+person to check it and add the pool again.
 
 A runner is paired once, and **its pairing is its Claim's, not its pod's** (#2057, ruled
 2026-10-28). The pairing lives in the runner's home: a kept Claim's runner keeps it on its
@@ -463,7 +504,7 @@ then applies server-side:
 | Upstream object | Name | What it holds |
 |---|---|---|
 | `SandboxTemplate` | `purlis-pool-p` in `r` | the runner's pod: its first step, `link-key`, making the runner's home and its link key (above), then one container running the pool's image with its own entrypoint (`purlis serve`), both as a user who is not root, every capability dropped, no privilege escalation, the runtime's default seccomp profile, no Kubernetes credential mounted and no service addresses in their environment, each asking for the CPU and memory above. The runner's `HOME` is `/var/lib/purlis/home`, on the volume `purlis-kept` mounted at `/var/lib/purlis`: a folder of the node's in the template, which a kept Claim's own volume takes the place of. The pod's group (`fsGroup` 10001) may write that volume. A claim may add a volume of its own (`volumeClaimTemplatesPolicy: Allowed`) |
-| `SandboxWarmPool` | `purlis-pool-p` in `r` | no runner kept warm when it is made; after that, as many as it holds, so `kubectl scale sandboxwarmpool purlis-pool-p -n r --replicas=<n>` keeps `n` runners warm for that person's fresh Claims until pools scale on their own (#2058) |
+| `SandboxWarmPool` | `purlis-pool-p` in `r` | no runner kept warm when it is made; after that, as many as it holds, so `kubectl scale sandboxwarmpool purlis-pool-p -n r --replicas=<n>` keeps `n` runners warm for that person's fresh Claims, none while the pool is `stopped`. Its update strategy is upstream's `Recreate`, so a warm runner made from an earlier template is deleted and made again, and never handed to a fresh Claim (#2058) |
 | `SandboxClaim` | the Claim's own name in `r` | the claim on that warm pool, annotated `runners.purlis.dev/claim-uid` with the Claim's uid; a kept Claim's carries the volume `purlis-kept` its Pool's `keptVolume` asks for, so upstream makes its runner cold and its PersistentVolumeClaim `purlis-kept-<claim>` |
 
 Each of the three is controlled by the runner namespace, by its uid: a Kubernetes owner cannot be
@@ -485,6 +526,48 @@ namespace, which its desktop links to. The old runner is outside that namespace 
 person's quota, and anyone with rights in the Claim's namespace can still reach it. Delete such
 Claims and make them again soon after upgrading: the old runner goes with the Claim.
 
+## Rolling the signing key
+
+A team admin rolls the operator's signing key without any desktop being asked again (#3305).
+The key and the next one are two files of the one Secret, `purlis-cluster-operator-signing-key`:
+`key.pem`, the key it signs with, and `next.pem`, there only during a roll. The operator's pod
+mounts the whole Secret, and the kubelet refreshes it when it changes, so a roll needs no
+restart: the operator reads both files again each time it signs a statement or looks at a Pool,
+both from the one version of the Secret the kubelet holds then.
+
+1. **Add the next key** as `next.pem`, piped, so it is never written to a file:
+
+   ```sh
+   kubectl -n purlis-system patch secret purlis-cluster-operator-signing-key --type merge \
+     -p "{\"data\":{\"next.pem\":\"$(openssl genpkey -algorithm ed25519 | base64 | tr -d '\n')\"}}"
+   ```
+
+   Within a couple of minutes every Pool's status names it as `status.nextSigningKey`, with
+   `status.nextSigningKeyVouch`: a statement, `purlis cluster operator key roll v1`, of the
+   cluster, the key it rolls from, the key it rolls to and until when it holds, signed by the
+   current key. It holds seven days, and the operator signs it again while `next.pem` is there.
+   Every Claim's statement is signed by both keys: `status.linkKey.signature` by the current
+   key, `status.linkKey.nextSignature` by the next.
+2. **Wait while desktops see it.** A desktop that reads the Pool during the roll checks the
+   current key's word with the key it pinned, and moves its pin to the next key, asking no one.
+   Keep `next.pem` for as long as your desktops may go without looking at the pool: a week is
+   a good default.
+3. **Make the next key the key**: `next.pem` becomes `key.pem`, and `next.pem` goes, in one
+   change, so the kubelet swaps both at once:
+
+   ```sh
+   kubectl -n purlis-system get secret purlis-cluster-operator-signing-key -o json |
+     jq '.data["key.pem"] = .data["next.pem"] | del(.data["next.pem"])' |
+     kubectl replace -f -
+   ```
+
+   Every Pool names the new key alone, and every statement is signed by it alone. A desktop
+   that missed the roll refuses the pool's new key and asks for the pool to be added again, as
+   for any key it did not pin. The old key signs nothing now; delete any copy of it.
+
+**A roll given up** (`next.pem` removed without step 3) leaves desktops that had moved their pin
+pinned to a key the operator no longer uses: they ask again. Roll forward rather than back.
+
 ## What it may do
 
 Its ClusterRole, in [`operator/deploy/operator.yaml`](../operator/deploy/operator.yaml), is all
@@ -497,24 +580,45 @@ it holds:
 | `runners.purlis.dev` | `claims/status` | patch |
 | `runners.purlis.dev` | `pools/status` | patch |
 | core | `pods` | get |
-| core | `namespaces` | create, get |
+| core | `namespaces` | create, get (`kube-system` too, for the cluster's uid) |
 | core | `resourcequotas` | create; get and patch only `purlis-person` |
 | `rbac.authorization.k8s.io` | `rolebindings` | create; get and patch only `purlis-runner-owner` |
 | `rbac.authorization.k8s.io` | `clusterroles`, only `purlis-runner-owner` | bind |
-| `agents.x-k8s.io` | `sandboxes` | get |
+| `agents.x-k8s.io` | `sandboxes` | get, patch |
 | `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool` and `purlis-runner-namespaces` | get, list, watch |
 | `extensions.agents.x-k8s.io` | `sandboxclaims`, `sandboxtemplates`, `sandboxwarmpools` | create, delete, get, list, patch, watch |
 
 It holds no right to `exec`, `attach` or port-forward to a pod itself, and none to read a Secret.
 It binds one cluster role, `purlis-runner-owner`, only to one person, only in runner namespaces:
 RBAC cannot say where a role may be bound, so the policy on runner namespaces (above) holds it.
-It never deletes a namespace. It reads a sandbox and a pod only by name: a Claim's, which upstream made, to follow the claim to
-its runner and read the key it vouches for. It never lists, makes, changes or deletes a pod. Its own signing key is the
-Secret you made at install, which the kubelet mounts in its pod. Its Kubernetes client is built
+It never deletes a namespace. It reads a sandbox and a pod only by name: a Claim's, which
+upstream made, to follow the claim to its runner and read the key it vouches for. The pod is the
+one the sandbox records: upstream's `agents.x-k8s.io/pod-name` annotation where it carries one
+(a runner adopted from a warm pool before upstream made warm runners whole sandboxes), the
+sandbox's own name otherwise, and still held to being the pod that sandbox controls. It never
+lists, makes, changes or deletes a pod itself, though suspending a sandbox has upstream end its
+pod. Its own signing key is the Secret you made at install, which the kubelet mounts in its pod.
+Its Kubernetes client is built
 without the websocket support `exec` would need.
 `operator/tests/the_install_manifests.rs` holds these rules, and the kind tests ask the cluster
 itself. It runs as a user who is not root, with a read-only root file system and every
 capability dropped.
+
+**Its `patch` on sandboxes is narrowed by the cluster** (#2058). RBAC cannot limit a right to
+one field or to some owners: as a role, `patch` on `sandboxes` is every field of every Sandbox
+in the cluster, those other users of agent-sandbox made without any SandboxClaim included. The
+operator needs only one: to suspend a stopped Claim's runner and run it again, it applies
+`spec.operatingMode` and nothing else, to the sandbox its Claim's upstream claim controls, with
+that sandbox's uid as a precondition. Another admission policy in `policy.yaml`,
+`purlis-operator-changes-only-a-sandboxs-mode`, makes that the cluster's rule: an update by the
+operator's service account to a Sandbox is refused unless a SandboxClaim controls it (any
+SandboxClaim's, purlis's or not), and unless every field of its spec but `operatingMode`, and
+its labels, annotations, owners and finalizers, are as they were. The operator holds no right
+on admission policies or their bindings but reading the bindings of the policies on Claims and
+on runner namespaces, so it cannot lift it. The spec fields it holds as they were are the
+pinned upstream's (v1.0.6, and a test holds the list to the vendored definitions): a cluster
+that serves another agent-sandbox version may have fields the policy does not hold, one more
+reason to run the version `doctor` checks for.
 
 Upstream's controller holds its own ClusterRoles, in the vendored manifest: it makes and
 removes the runners' pods, services, volume claims and network policies. It holds no Secret
@@ -551,7 +655,8 @@ and memory included. Give cluster-admin and node access accordingly.
   `runner-image/` or the desktop's side of a cluster runner.
 - The statement both sides read is one worked example in
   [`fixtures/runner-link-key/`](../fixtures/runner-link-key/), which the operator's tests sign
-  and the desktop's tests verify, byte for byte.
+  and the desktop's tests verify, byte for byte; so is a key roll's word, and the next key's
+  signature over the statement.
 
 ## Moving the upstream pin
 

@@ -18,6 +18,7 @@ fn pool() -> Pool {
         PoolSpec {
             image: IMAGE.into(),
             kept_volume: Default::default(),
+            stopped: false,
         },
     );
     pool.metadata.uid = Some("pool-uid".into());
@@ -36,6 +37,7 @@ fn claim() -> Claim {
             pool: "team".into(),
             requester: "ada@example.com".into(),
             kept: false,
+            stopped: false,
         },
         status: None,
     }
@@ -148,6 +150,19 @@ fn a_pool_keeps_no_runner_warm() {
     assert_eq!(
         warm["spec"]["sandboxTemplateRef"]["name"],
         "purlis-pool-team"
+    );
+}
+
+/// A warm runner made from an earlier template of the pool (its image or its `keptVolume`
+/// changed since) is replaced by upstream, and never handed to a fresh claim, which the
+/// operator would not vouch for (#2058, from #2057): upstream's `Recreate` strategy.
+#[test]
+fn a_warm_runner_made_from_an_earlier_template_is_replaced_not_handed_out() {
+    let warm = json_of(&upstream::warm_pool_for(&pool(), "ada", Vec::new()));
+    assert_eq!(
+        warm["spec"]["updateStrategy"],
+        json!({ "type": "Recreate" }),
+        "{warm}"
     );
 }
 
@@ -518,6 +533,7 @@ fn a_statement_goes_when_what_its_claim_asks_for_cannot_be_applied() {
     vouched.link_key = Some(LinkKey {
         statement: "a statement".into(),
         signature: "a signature".into(),
+        next_signature: None,
     });
     let withdrawn = status_withdrawn(Some(&vouched), "upstream refused it");
     assert_eq!(withdrawn.link_key, None);

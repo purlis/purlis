@@ -326,6 +326,7 @@ async fn the_paired_desktop_has_the_runner_keep_its_profile_and_hears_where_it_s
         harness: "claude".into(),
         sandbox_only: false,
         pinned: Some("2.1.300".into()),
+        settings: None,
     };
     assert_eq!(
         client.keep_profile(profile("signed-in")).await.unwrap(),

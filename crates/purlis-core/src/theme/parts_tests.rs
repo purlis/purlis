@@ -84,8 +84,8 @@ fn a_theme_that_names_no_parts_draws_exactly_as_today() {
     // Purlis Classic names only its tabs' strip look (#2914), its activity items' (#2917), and
     // what keeps it as it drew when the family defaults took Purlis's (#3177): its rail's 9px
     // corners, its title bar's 5px chips and its update pill's primary words; its resize
-    // handles' accent line (#3143); and its tables' rule between rows (#2911, #2804). Nothing it
-    // draws falls back.
+    // handles' accent line (#3143); its tables' rule between rows (#2911, #2804); and its card
+    // rows' ground (#3774). Nothing it draws falls back.
     for theme in built_ins() {
         assert!(
             theme.parts.keys().all(|key| {
@@ -99,6 +99,9 @@ fn a_theme_that_names_no_parts_draws_exactly_as_today() {
                 ]
                 .contains(&key.family)
                     || (key.family == "table" && key.part == "rule")
+                    // Its side views' card rows on the sunken ground, which steps from its
+                    // panels where the raised one barely does (#3774).
+                    || (key.family == "list" && key.variant == Some("card"))
             }),
             "{} names parts beyond what keeps it as it drew",
             theme.name

@@ -2539,10 +2539,86 @@ impl Chats {
     /// **The person kept `host` blocked for chat `session`, from the window** (#1666): what its
     /// proxy holds on it is refused now. Nothing is granted. The chat is told by whoever kept
     /// it blocked ([`Self::tell_outcome`], #1987).
-    pub fn keep_blocked_live(&self, session: u32, host: &purlis_core::sandbox::hosts::Host) {
-        if let Some(board) = self.board_of(session) {
-            board.keep_blocked(host);
+    ///
+    /// The later answer wins (#3407): an Allow of a host it covers, or one that covers it, kept
+    /// for the chat ends too, so the Granted list and the chat's next start agree with its
+    /// proxy. Each one is audited as taken back through `audit` first, as a Revoke is; one whose
+    /// audit could not be written ends all the same, and its audit over-records. Where the
+    /// chat's reach narrowed so, its browsers end, as they do when an Allow is removed (#2013).
+    pub fn keep_blocked_live(
+        &self,
+        session: u32,
+        host: &purlis_core::sandbox::hosts::Host,
+        audit: crate::sandboxing::Audit<'_>,
+    ) {
+        let id = lock(&self.open)
+            .get(&session)
+            .and_then(|running| running.chat.identity.id.clone());
+        let ended = id.is_some_and(|id| self.end_grants_of_host(session, &id, host, audit));
+        let narrowed = self
+            .board_of(session)
+            .is_some_and(|board| board.keep_blocked(host));
+        if ended || narrowed {
+            self.narrowed(&[session]);
         }
+    }
+
+    /// Takes back chat `id`'s grants of a host `host` covers, or that covers it, each audited
+    /// through `audit` first: whether any was taken back.
+    fn end_grants_of_host(
+        &self,
+        session: u32,
+        id: &str,
+        host: &purlis_core::sandbox::hosts::Host,
+        audit: crate::sandboxing::Audit<'_>,
+    ) -> bool {
+        let touches = |what: &purlis_core::sandbox::grant::What| match what {
+            purlis_core::sandbox::grant::What::Host(granted) => {
+                host.covers(granted) || granted.covers(host)
+            }
+            _ => false,
+        };
+        // Audited outside the hold: writing the audit reads the chats.
+        let ending: Vec<ChatGrant> = lock(&self.grants)
+            .get(id)
+            .map(|made| {
+                made.iter()
+                    .filter(|one| touches(&one.what))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        for one in &ending {
+            let target = one.what.target();
+            let audited = purlis_core::sandbox::grant::Audited {
+                granted: false,
+                what: one.what.word(),
+                target: &target,
+                level: if one.once {
+                    purlis_core::sandbox::grant::Level::Once
+                } else {
+                    purlis_core::sandbox::grant::Level::Chat
+                },
+            };
+            if let Err(why) = audit(Some(session), &audited) {
+                tracing::warn!(
+                    "purlis: a chat's Allow ended by Keep blocked was not audited ({why})"
+                );
+            }
+        }
+        // Taken back, and counted so, under one hold, as a Revoke is: a grant reserved before
+        // it cannot be kept after it.
+        let mut grants = lock(&self.grants);
+        let Some(made) = grants.get_mut(id) else {
+            return false;
+        };
+        let before = made.len();
+        made.retain(|one| !touches(&one.what));
+        let ended = made.len() != before;
+        if ended {
+            self.took_back(id);
+        }
+        ended
     }
 
     /// **Hands chat `session`'s next turn the person's answer to an Ask of its** (#1666,
@@ -4301,8 +4377,11 @@ impl Chats {
             }
             let_go.insert(session, LetGo::of(&gone.chat));
         }
+        // A chat still to start keeps its place in front (#3114: one whose start returned into
+        // a quit is ended, and is still to start under the same number).
+        let still_coming = lock(&self.coming).iter().any(|one| one.number == session);
         let mut front = lock(&self.front);
-        if *front == Some(session) {
+        if *front == Some(session) && !still_coming {
             *front = None;
         }
         drop(front);
@@ -4547,10 +4626,10 @@ impl Chats {
 
     /// **Where chat `session` is working** (#1450): who asked for it, its sibling tasks and the
     /// other chats running as its persona, drawn from this app's own record of every chat it
-    /// has open in the project ([`purlis_core::awareness`]), with each one's state as
-    /// `state_of` has it on the board, and what each is stopped on for the person as
-    /// `asking_of` has it (a task of `session`'s that waits on the person is said once, at
-    /// its next turn). `tell` says whether the chat counts as told from now, which is kept
+    /// has open in the project ([`purlis_core::awareness`]), with each one's state, and whether
+    /// it waits on work of its own (#3878), as `state_of` has them on the board, and what each
+    /// is stopped on for the person as `asking_of` has it (a task of `session`'s that waits on
+    /// the person is said once, at its next turn). `tell` says whether the chat counts as told from now, which is kept
     /// here. `None` for a chat that is not open.
     ///
     /// Nothing but `session` comes from the chat that asks, and the answer has a chat's name,
@@ -4559,7 +4638,7 @@ impl Chats {
         &self,
         session: u32,
         tell: purlis_core::awareness::Tell,
-        state_of: &dyn Fn(u32) -> purlis_core::state::State,
+        state_of: &dyn Fn(u32) -> (purlis_core::state::State, bool),
         asking_of: &dyn Fn(u32) -> Option<purlis_core::awareness::Prompt>,
     ) -> Option<purlis_core::awareness::Working> {
         use purlis_core::awareness::{Asker, Known};
@@ -4575,6 +4654,7 @@ impl Chats {
                     purlis_core::active::Place::Workspace,
                 ),
                 state: purlis_core::state::State::Unknown,
+                own_work: false,
                 started: purlis_core::awareness::run_started(&one.chat.identity),
                 // The lineage it is in, as a dispatch counts it (#1455).
                 lineage: one
@@ -4588,12 +4668,14 @@ impl Chats {
                     reported: from.report.reported(),
                     mode: from.mode.into(),
                     owes: from.report == purlis_core::reopen::Owed::Due,
+                    report: from.report,
+                    long: from.long,
                 }),
                 asking: None,
             })
             .collect();
         for one in &mut known {
-            one.state = state_of(one.chat);
+            (one.state, one.own_work) = state_of(one.chat);
             one.asking = asking_of(one.chat);
         }
         // Only a chat that is open has anything kept of what it was told.
@@ -5770,15 +5852,39 @@ impl Chats {
             };
             // Out of the ones still to start only now, when it is open or among the ones that
             // would not start: a record written at any moment holds it once.
-            let left = {
+            //
+            // **Unless the quit has begun and it started** (#3114): it is ended below, so it would
+            // be in neither list, and the quit's record, built at any moment from here, would
+            // lose it for good. It stays one still to start, as the record put back had it.
+            // Asked once, under the lock the record reads the ones still to start under: seen not
+            // begun, the chat stays open until the quit's record is written, and is ended with
+            // the rest.
+            let (left, quitting) = {
                 let mut coming = lock(&self.coming);
-                coming.retain(|one| one.number != next.number);
-                coming.len()
+                let quitting = self.ending.load(Ordering::SeqCst);
+                if !quitting || session.is_none() {
+                    coming.retain(|one| one.number != next.number);
+                }
+                (coming.len(), quitting)
             };
             // A quit that began while it started ends it with the rest.
             if let Some(session) = session
-                && self.ending.load(Ordering::SeqCst)
+                && quitting
             {
+                // Back under the number it is still to start as, in its place on the strip and
+                // in front where it was, before it is ended: a record built meanwhile finds it
+                // there, and not at the strip's end or with no chat in front.
+                if session != next.number {
+                    for placed in lock(&self.order).iter_mut() {
+                        if *placed == session {
+                            *placed = next.number;
+                        }
+                    }
+                    let mut front = lock(&self.front);
+                    if *front == Some(session) {
+                        *front = Some(next.number);
+                    }
+                }
                 // As any chat is closed, so nothing of it is left held; nothing is written,
                 // since the quit's record is the last.
                 let _ = self.close(session);
@@ -5962,6 +6068,23 @@ impl Chats {
     /// The chats a launch could not start as the record holds them, each with why and the
     /// approval its profile needs: what says whose task one was (#1497, `crate::unstarted`).
     /// The window's list is [`Self::would_not_start`].
+    /// **The chats that have not come back since the launch** (#3900, #3901), by their ids
+    /// (ADR 0066) and the numbers their tabs are drawn under: still restoring, or waiting to
+    /// start again. No program of theirs runs here yet, and each may yet: whether one still
+    /// works is not something this app can say of it.
+    pub(crate) fn not_back(&self) -> Vec<(String, Option<u32>)> {
+        let coming: Vec<(String, Option<u32>)> = lock(&self.coming)
+            .iter()
+            .filter_map(|one| Some((one.chat.identity.id.clone()?, Some(one.number))))
+            .collect();
+        // One waiting to start has the number its record kept, where it kept one.
+        let waiting = lock(&self.would_not_start)
+            .iter()
+            .filter_map(|one| Some((one.chat.identity.id.clone()?, one.chat.number)))
+            .collect::<Vec<_>>();
+        coming.into_iter().chain(waiting).collect()
+    }
+
     pub(crate) fn waiting_to_start(&self) -> Vec<WaitingChat> {
         lock(&self.would_not_start)
             .iter()

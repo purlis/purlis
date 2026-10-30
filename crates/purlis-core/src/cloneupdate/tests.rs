@@ -374,7 +374,12 @@ fn a_pull_is_refused_where_the_repository_tracks_a_denied_file_and_is_told_to_fe
         assert!(said.contains("Nothing was run."), "{said}");
         // What to do instead: the two steps the arm can check.
         assert!(
-            said.contains("Fetch first, as a command of its own (`git fetch`)"),
+            said.contains("fetch first, as a command of its own (`git fetch`)"),
+            "{said}"
+        );
+        // #3831: and first, the update the app makes for the chat.
+        assert!(
+            said.contains("run `purlis worktree update` in it instead"),
             "{said}"
         );
         assert!(

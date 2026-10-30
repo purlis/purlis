@@ -529,7 +529,11 @@ pub fn run_on_its_runner(
         )
     });
     match decided {
-        Ok(approved) => match sent(root, approved, hand_on_the_link) {
+        Ok(approved) => match sent(
+            root,
+            approved,
+            while_its_asker_waits(&gone, hand_on_the_link),
+        ) {
             Ok(()) => tracing::info!(
                 "purlis: chat {session} on pool {pool} ran {} with its values sent from this \
                  desktop",
@@ -546,6 +550,20 @@ pub fn run_on_its_runner(
             tracing::info!("purlis: chat {session} on pool {pool} was sent no vault value");
             brokered::refused(writer, why);
         }
+    }
+}
+
+/// **`hand`, only while the run's asker is still there** (#3408): a command that went after the
+/// person answered, its values read already, is sent nothing, so nothing is recorded as sent.
+pub fn while_its_asker_waits<'a>(
+    gone: &'a AtomicBool,
+    hand: impl FnOnce(Handed) -> Result<(), ()> + 'a,
+) -> impl FnOnce(Handed) -> Result<(), ()> + 'a {
+    move |handed| {
+        if gone.load(Ordering::SeqCst) {
+            return Err(());
+        }
+        hand(handed)
     }
 }
 

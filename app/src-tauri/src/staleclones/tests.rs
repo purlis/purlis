@@ -80,6 +80,7 @@ fn glance(state: State, asking: bool) -> Glance {
         asking,
         turns: 1,
         prompt: None,
+        own_work: false,
     }
 }
 

@@ -3,7 +3,18 @@
 
 import { describe, expect, it } from "vitest";
 import { OUTSIDE } from "./actions";
-import { aboutOf, chipsOf, placeOf, type About, type Chip, type Place } from "./noticePlace";
+import { reposCloned, reposCloning, reposNotCloned, workspaceMade } from "./actionResult";
+import type { Said } from "./actions";
+import {
+  aboutOf,
+  chipsOf,
+  kindOf,
+  placeOf,
+  type About,
+  type Chip,
+  type Place,
+} from "./noticePlace";
+import type { NoticeKind } from "./ui/titlebar/TitleBarWorkspaces";
 
 /** The title bar's chips in each state the placement reads (spec #3647). */
 const PINNED: Chip = { workspace: "gamma", look: "pinned" };
@@ -34,6 +45,18 @@ describe("where a notice is drawn (spec #3647, the one test seam)", () => {
       "about a dormant workspace: its dormant chip's card",
       ABOUT_GAMMA,
       [DORMANT],
+      { at: "chip", workspace: "gamma" },
+    ],
+    [
+      "about a dormant workspace among live pins: its dormant chip's card, not another's",
+      ABOUT_GAMMA,
+      [ROOT, ANOTHER, DORMANT],
+      { at: "chip", workspace: "gamma" },
+    ],
+    [
+      "about the current, unpinned workspace once it is pinned: the same chip's card",
+      ABOUT_GAMMA,
+      [ROOT, ANOTHER, PINNED],
       { at: "chip", workspace: "gamma" },
     ],
     [
@@ -71,6 +94,58 @@ describe("where a notice is drawn (spec #3647, the one test seam)", () => {
   });
 });
 
+describe("where each line of a new workspace's setup is drawn, and its kind (#3649)", () => {
+  const nothing = () => undefined;
+  const lines: [string, Said, readonly Chip[], Place, NoticeKind][] = [
+    [
+      "its ready notice: its chip's card, news",
+      workspaceMade("gamma", [], { onAddVision: nothing }),
+      [ROOT, PINNED],
+      { at: "chip", workspace: "gamma" },
+      "info",
+    ],
+    [
+      "its repos cloning, on its dashed chip: that chip's card, news",
+      reposCloning("gamma", ["api"], 0, 1),
+      [ROOT, DASHED],
+      { at: "chip", workspace: "gamma" },
+      "info",
+    ],
+    [
+      "its repos cloned: its chip's card, news",
+      reposCloned("gamma", ["api"], 1),
+      [ROOT, PINNED],
+      { at: "chip", workspace: "gamma" },
+      "info",
+    ],
+    [
+      "its repos not cloned: its chip's card, a warning",
+      reposNotCloned("gamma", [{ repo: "api", said: "No access." }], nothing, 1),
+      [ROOT, PINNED],
+      { at: "chip", workspace: "gamma" },
+      "warning",
+    ],
+    [
+      "its repos not cloned, with no chip left: the Notices centre, a warning",
+      reposNotCloned("gamma", [{ repo: "api", said: "No access." }], nothing, 1),
+      [ROOT, ANOTHER],
+      { at: "centre", open: "gamma" },
+      "warning",
+    ],
+    [
+      "a project's refusal: the status bar's card, a warning",
+      { from: "workspace.pin", refused: true, words: "no" },
+      [ROOT, PINNED],
+      { at: "status" },
+      "warning",
+    ],
+  ];
+  it.each(lines)("%s", (_, said, chips, place, kind) => {
+    expect(placeOf(aboutOf(said), chips)).toEqual(place);
+    expect(kindOf(said)).toBe(kind);
+  });
+});
+
 describe("what a result is about", () => {
   it("is the workspace it names, as a workspace made names it", () => {
     expect(
@@ -92,6 +167,30 @@ describe("the title bar's chips", () => {
 
   it("draw a pinned current workspace once, as a pin", () => {
     expect(chipsOf({ pins: ["beta", "gamma"], focused: "gamma" })).toEqual([ROOT, ANOTHER, PINNED]);
+  });
+
+  it("draw a dormant pin as a dormant chip, after the live pins and before the dashed one", () => {
+    expect(chipsOf({ pins: ["beta"], dormant: ["gamma"], focused: "delta" })).toEqual([
+      ROOT,
+      ANOTHER,
+      DORMANT,
+      { workspace: "delta", look: "unpinned" },
+    ]);
+  });
+
+  it("draw a gone workspace in front once, dormant, and no dashed chip for it", () => {
+    expect(chipsOf({ pins: ["beta"], dormant: ["gamma"], focused: "gamma" })).toEqual([
+      ROOT,
+      ANOTHER,
+      DORMANT,
+    ]);
+  });
+
+  it("draw a name once, as a live pin, where the store names it both pinned and gone", () => {
+    expect(chipsOf({ pins: ["gamma"], dormant: ["gamma"], focused: "gamma" })).toEqual([
+      ROOT,
+      PINNED,
+    ]);
   });
 
   it("are the root's house and the pins while the root is in front, or nothing is", () => {

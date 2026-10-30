@@ -543,8 +543,10 @@ _Avoid_: personal namespace, tenant, sandbox namespace
 **Cluster operator**:
 purlis's controller inside a cluster: it turns claims into runners, counts them per person,
 starts and stops pools, and says which runner a claim was given, vouching with its own signing
-key for the link key each runner made as it started (ADR 0078, amended 2026-10-26). In a
-sentence the app shows,
+key for the link key each runner made as it started (ADR 0078, amended 2026-10-26). A desktop
+pins that key and the cluster, the uid of its `kube-system` namespace, when it adds the pool; a
+team admin **rolls** the key, and a desktop that sees the current key vouch for the next one
+moves its pin (ADR 0089, amended 2026-10-29). In a sentence the app shows,
 "purlis in your cluster".
 _Avoid_: operator (unqualified, where the person could be meant), controller, manager, master
 
