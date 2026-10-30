@@ -409,13 +409,13 @@ pub fn https_url(record: &Value, root: &Path) -> Result<String, String> {
     if url.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return Err("its URL holds whitespace or a control character".into());
     }
-    let host = forge::host_of(&url);
-    if !forge::known(root).contains_key(&host) {
+    // By the server first: a forge declared on a port is that port's (#1864).
+    if forge::resolve_host(&url, root).is_none() {
         return Err(format!(
             "its URL names host '{}', which is neither a forge's default host nor one this \
              plane declares in charter.toml — a tracked inventory could otherwise send a clone \
              anywhere",
-            crate::shown::escaped(&host)
+            crate::shown::escaped(&forge::host_of(&url))
         ));
     }
     Ok(url)
@@ -446,11 +446,11 @@ fn clone_one(
         Ok(_) => return Outcome::Exists(dest),
         Err(_) => {}
     }
-    let forge = Forge::for_record(record);
     let url = match https_url(record, root) {
         Ok(url) => url,
         Err(why) => return Outcome::Refused(why),
     };
+    let forge = Forge::for_clone(record, &url);
     if let Some(why) = hosts.and_then(|hosts| unreachable_host(hosts, &url)) {
         return Outcome::Refused(why);
     }
