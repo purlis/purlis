@@ -2978,3 +2978,85 @@ fn a_note_whose_words_were_left_out_as_a_secret_reads_with_no_words() {
         })
     );
 }
+
+#[test]
+fn the_running_records_are_read_once_and_again_only_after_the_store_changed() {
+    // #3932: the per-turn roster names orphans from the records without a read every turn.
+    let (_d, root) = project();
+    let mut running = Running::default();
+    assert!(running.now(&root).is_empty(), "no store yet");
+
+    let opened = open(&root, a_handoff(), at("2026-10-07T12:00:00Z")).unwrap();
+    let ids = |running: &mut Running| -> Vec<String> {
+        running
+            .now(&root)
+            .iter()
+            .map(|one| one.id.clone())
+            .collect()
+    };
+    assert_eq!(ids(&mut running), vec![opened.id.clone()]);
+
+    // A file changed behind the store's back, in place, is not looked at: nothing reads the
+    // store again until it has changed.
+    let path = dir(&root).join(format!("{}.json", opened.id));
+    let kept = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path, "not a record").unwrap();
+    assert_eq!(ids(&mut running), vec![opened.id.clone()]);
+    std::fs::write(&path, kept).unwrap();
+
+    // Its end, written through the store, is read at once.
+    let ending = Ending {
+        report: Some(done("healthy")),
+        usage: None,
+    };
+    assert!(close(&root, &opened.id, ending, at("2026-10-07T12:01:00Z")).unwrap());
+    assert!(ids(&mut running).is_empty(), "it has ended");
+}
+
+#[test]
+fn a_record_written_by_another_process_is_read_once_the_store_s_folder_changed() {
+    let (_d, root) = project();
+    let first = open(&root, a_handoff(), at("2026-10-07T12:00:00Z")).unwrap();
+    let mut running = Running::default();
+    assert_eq!(running.now(&root).len(), 1);
+
+    // Another process's write is a new file renamed in, which changes the folder.
+    let copy = read(&root, &first.id).unwrap();
+    let id = mint();
+    let text = serde_json::to_string(&Record {
+        id: id.clone(),
+        ..copy
+    })
+    .unwrap();
+    let temp = dir(&root).join("elsewhere.tmp");
+    std::fs::write(&temp, text).unwrap();
+    // A folder's time may move in whole seconds on some file systems.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    std::fs::rename(&temp, dir(&root).join(format!("{id}.json"))).unwrap();
+
+    assert_eq!(running.now(&root).len(), 2);
+}
+
+#[test]
+fn a_running_task_is_orphaned_where_nothing_here_is_its_chat() {
+    let (_d, root) = project();
+    let opened = open(&root, a_handoff(), at("2026-10-07T12:00:00Z")).unwrap();
+    let records = list(&root);
+
+    let orphans = |here: &dyn Fn(&ChatRef) -> bool, asker: &ChatRef| -> Vec<String> {
+        orphaned(&records, asker, here)
+            .map(|one| one.id.clone())
+            .collect()
+    };
+    // Its chat is open, coming back, or waiting to start again: no orphan.
+    assert!(orphans(&|chat| chat.id == devops().id, &steward()).is_empty());
+    // Nothing here is it: the steward's orphan, and nobody else's.
+    assert_eq!(orphans(&|_| false, &steward()), vec![opened.id]);
+    assert!(orphans(&|_| false, &devops()).is_empty());
+    // An asking chat known by number alone has no orphans: a number is dealt again.
+    let by_number = ChatRef {
+        id: None,
+        ..steward()
+    };
+    assert!(orphans(&|_| false, &by_number).is_empty());
+}

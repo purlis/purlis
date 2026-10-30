@@ -311,25 +311,9 @@ fn orphaned_for(
     me: &dispatchrecord::ChatRef,
     open: &[crate::dispatches::OpenChat],
 ) -> Vec<purlis_core::dispatched::Row> {
-    let not_back: Vec<String> = held
-        .chats()
-        .not_back()
-        .into_iter()
-        .map(|(id, _)| id)
-        .collect();
     let now = chrono::Utc::now();
-    dispatchrecord::list(held.root())
+    orphaned_records(held, me, open)
         .iter()
-        .filter(|record| record.running() && dispatchrecord::asked_by(record, me))
-        .filter(|record| !open.iter().any(|one| is_open(&record.worker.chat, one)))
-        .filter(|record| {
-            record
-                .worker
-                .chat
-                .id
-                .as_ref()
-                .is_none_or(|id| !not_back.contains(id))
-        })
         .map(|record| purlis_core::dispatched::Row {
             chat: 0,
             name: name_of(record),
@@ -362,6 +346,42 @@ fn orphaned_for(
             noted_secs: None,
             liveness: Some(purlis_core::dispatchliveness::Liveness::orphaned()),
         })
+        .collect()
+}
+
+/// The records of the tasks of the chat `me` orphaned by a restart ([`orphaned_for`]): running,
+/// asked for by it, and with no chat open here (`open`), coming back or waiting to start again.
+/// From the project's copy of its running records, read again only once the store has
+/// changed (#3932), so a turn's roster can ask at every turn.
+fn orphaned_records(
+    held: &Held,
+    me: &dispatchrecord::ChatRef,
+    open: &[crate::dispatches::OpenChat],
+) -> Vec<Record> {
+    let not_back: Vec<String> = held
+        .chats()
+        .not_back()
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    held.tasks().orphaned(held.root(), me, |worker| {
+        open.iter().any(|one| is_open(worker, one))
+            || worker.id.as_ref().is_some_and(|id| not_back.contains(id))
+    })
+}
+
+/// **The tasks of chat `asker` orphaned by a restart that only their dispatch records know**
+/// (#3932), as its turn's roster names them: each by its name, under number 0, since the number
+/// its chat had may be another chat's now. The ones a launch could not start again are named
+/// by [`crate::unstarted::orphans_of`], and are not among these.
+pub(crate) fn orphans_of(held: &Held, asker: u32) -> Vec<(u32, String)> {
+    let Some(me) = crate::dispatches::chat_ref(held, asker) else {
+        return Vec::new();
+    };
+    let open = crate::dispatches::open_chats(held);
+    orphaned_records(held, &me, &open)
+        .iter()
+        .map(|record| (0, name_of(record)))
         .collect()
 }
 

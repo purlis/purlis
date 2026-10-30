@@ -470,7 +470,9 @@ pub fn withdraw(root: &Path, id: &str) -> io::Result<bool> {
     let Some(path) = path_of(root, id) else {
         return Ok(false);
     };
-    match std::fs::remove_file(path) {
+    let removed = std::fs::remove_file(path);
+    wrote(root);
+    match removed {
         Ok(()) => Ok(true),
         Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(err) => Err(err),
@@ -2457,12 +2459,88 @@ fn write(root: &Path, record: &Record) -> io::Result<()> {
         )
     })?;
     let text = serde_json::to_string_pretty(record).map_err(io::Error::other)?;
-    crate::rewrite::replace(
+    let written = crate::rewrite::replace(
         root,
         &path,
         format!("{text}\n").as_bytes(),
         crate::rewrite::Mode::Private,
-    )
+    );
+    wrote(root);
+    written
+}
+
+/// How many times this process has written each store, by its folder (#3932): what tells
+/// [`Running`] its copy is stale without reading the store. Counted after the write, whether
+/// or not it held, so a write that may have landed is never missed.
+static WRITES: std::sync::Mutex<std::collections::BTreeMap<PathBuf, u64>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+fn wrote(root: &Path) {
+    let mut writes = WRITES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    *writes.entry(dir(root)).or_default() += 1;
+}
+
+/// The store as [`Running`] last saw it: this process's writes to it, and its folder's time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Seen {
+    writes: u64,
+    /// The folder's modified time, which a record written in by another process moves: every
+    /// write is a new file renamed over the old one ([`crate::rewrite::replace`]). `None`
+    /// before the store exists.
+    modified: Option<std::time::SystemTime>,
+}
+
+impl Seen {
+    fn now(root: &Path) -> Self {
+        let dir = dir(root);
+        let writes = WRITES
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&dir)
+            .copied()
+            .unwrap_or_default();
+        let modified = std::fs::metadata(&dir)
+            .and_then(|meta| meta.modified())
+            .ok();
+        Self { writes, modified }
+    }
+}
+
+/// **The store's running records, read again only once it has changed** (#3932): what the
+/// per-turn roster names a task orphaned by a restart from, without reading every record at
+/// every turn. A look is one folder's time and a counter; a read happens once after a launch,
+/// and after a record is written, here or by another process.
+#[derive(Debug, Default)]
+pub struct Running {
+    seen: Option<Seen>,
+    running: Vec<Record>,
+}
+
+impl Running {
+    /// The running records of the project at `root`, newest first, as [`list`] reads them.
+    pub fn now(&mut self, root: &Path) -> &[Record] {
+        let seen = Seen::now(root);
+        if self.seen != Some(seen) {
+            self.running = list(root).into_iter().filter(Record::running).collect();
+            self.seen = Some(seen);
+        }
+        &self.running
+    }
+}
+
+/// **The tasks of `asker` orphaned by a restart** (#3900, #3932): among `running`, the ones it
+/// asked for (by its id, [`asked_by`]) whose chat is nowhere `here`: not open, not coming back,
+/// not waiting to start again. What the task list and a turn's roster both name.
+pub fn orphaned<'a>(
+    running: &'a [Record],
+    asker: &'a ChatRef,
+    here: impl Fn(&ChatRef) -> bool + 'a,
+) -> impl Iterator<Item = &'a Record> + 'a {
+    running.iter().filter(move |record| {
+        record.running() && asked_by(record, asker) && !here(&record.worker.chat)
+    })
 }
 
 /// Reads record `id`, applies `edit`, and writes it back when `edit` says it changed, under

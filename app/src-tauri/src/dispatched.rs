@@ -139,6 +139,9 @@ pub struct Tasks {
     not_reopened: Mutex<HashMap<String, String>>,
     /// What is heard of each task, for its quiet notes (#1981).
     quiet: crate::silence::Quiet,
+    /// The project's running dispatch records, read again only once the store has changed
+    /// (#3932): what a turn's roster finds tasks orphaned by a restart in.
+    running: Mutex<purlis_core::dispatchrecord::Running>,
     /// Whether a reported task's end runs on the clock in a test ([`Tasks::on_the_clock`]).
     #[cfg(test)]
     clocked: std::sync::atomic::AtomicBool,
@@ -177,6 +180,22 @@ impl Tasks {
     /// What is heard of each task, for its quiet notes (#1981).
     pub(crate) fn quiet(&self) -> &crate::silence::Quiet {
         &self.quiet
+    }
+
+    /// The running dispatch records of the project at `root` asked for by `asker` whose chat is
+    /// nowhere `here` (#3900, #3932): read from this project's copy of its running records,
+    /// which reads the store again only once it has changed. Under a lock of its own, taken and
+    /// let go here, and never while another is wanted.
+    pub(crate) fn orphaned(
+        &self,
+        root: &std::path::Path,
+        asker: &purlis_core::dispatchrecord::ChatRef,
+        here: impl Fn(&purlis_core::dispatchrecord::ChatRef) -> bool,
+    ) -> Vec<purlis_core::dispatchrecord::Record> {
+        let mut running = self.running.lock().unwrap_or_else(PoisonError::into_inner);
+        purlis_core::dispatchrecord::orphaned(running.now(root), asker, here)
+            .cloned()
+            .collect()
     }
 
     fn reopens(&self) -> MutexGuard<'_, HashMap<String, Reopening>> {

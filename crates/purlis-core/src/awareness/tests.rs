@@ -939,6 +939,26 @@ fn a_roster_says_whether_each_task_is_alive_and_marks_an_orphan_by_restart() {
 }
 
 #[test]
+fn an_orphan_found_only_in_dispatch_records_is_named_without_a_number_it_does_not_have() {
+    // #3932: a task orphaned by a restart that no launch tried to start again is known by its
+    // dispatch record alone, whose number may be another chat's by now.
+    let known = a_chat_with_open_tasks();
+    let mut told = told_at_start(&known, 1);
+    let working = answer(&known, 1, Tell::Turn, &mut told)
+        .expect("open")
+        .with_orphans([(0, "forms".to_owned())]);
+    let said = update(&working, now()).expect("a roster");
+    assert!(
+        said.contains(
+            "chat 5 'lint' running; 'forms', under a chat number no longer known, orphaned by \
+             restart: purlis can no longer reach it, and no program of it runs under this app."
+        ),
+        "{said}"
+    );
+    assert!(!said.contains("chat 0"), "{said}");
+}
+
+#[test]
 fn a_roster_carries_a_number_a_name_and_a_state_and_nothing_else() {
     let known = a_chat_with_open_tasks();
     let working = answer(&known, 1, Tell::Turn, &mut told_at_start(&known, 1)).expect("open");
