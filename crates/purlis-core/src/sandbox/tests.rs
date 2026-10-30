@@ -7852,3 +7852,113 @@ fn a_block_on_a_git_folder_or_a_folder_above_one_is_known_as_kept_in_place() {
         false
     ));
 }
+
+#[cfg(unix)]
+#[test]
+fn a_chat_writes_none_of_the_programs_a_cluster_pools_kubectl_runs_nor_their_package() {
+    // A machine whose config home holds one cluster pool, its kubectl a link into a keg.
+    let config = tempfile::tempdir().expect("a config home");
+    let keg = config.path().join("Cellar/kubernetes-cli/1.36.0/bin");
+    std::fs::create_dir_all(&keg).expect("a keg");
+    std::fs::write(keg.join("kubectl"), "#!/bin/sh\n").expect("kubectl");
+    let bin = config.path().join("bin");
+    std::fs::create_dir_all(&bin).expect("a bin");
+    std::os::unix::fs::symlink(keg.join("kubectl"), bin.join("kubectl")).expect("a link");
+    let named = bin.join("kubectl");
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
+    let file = serde_json::json!({ "version": 1, "runners": [], "pools": [{
+        "name": "team", "kind": "cluster", "kubeconfig": "/home/op/.kube/config",
+        "context": "team", "pool": "default", "namespace": "ada",
+        "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
+        "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
+        "holds": [named.display().to_string(), super::real(&keg.join("kubectl")).display().to_string()],
+    }]});
+    folder
+        .replace_file(crate::machine::RUNNERS_FILE, file.to_string().as_bytes())
+        .unwrap();
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
+        home: Some(std::path::PathBuf::from("/home/op")),
+        os: Os::Linux,
+    };
+    let plane = tempfile::tempdir().expect("a plane");
+    let denied = Denied::of(plane.path(), &machine);
+    let held = |path: &std::path::Path, reach: Reach| {
+        denied.paths.iter().any(|it| {
+            it.class == Class::LaterCode
+                && it.access == Access::Write
+                && it.path == path
+                && it.reach == reach
+        })
+    };
+    assert!(held(&named, Reach::Itself), "{:?}", denied.paths);
+    assert!(
+        held(&super::real(&keg.join("kubectl")), Reach::Itself),
+        "{:?}",
+        denied.paths
+    );
+    assert!(
+        held(
+            &super::real(&config.path().join("Cellar/kubernetes-cli")),
+            Reach::AndBelow
+        ),
+        "{:?}",
+        denied.paths
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_cluster_pools_program_whose_package_would_be_the_home_or_above_it_is_held_alone() {
+    // A pool an earlier purlis added, its plugins straight in the home and in the folder above
+    // it: their packages would be the home itself and a folder above it.
+    let config = tempfile::tempdir().expect("a config home");
+    let above = super::real(config.path());
+    let home = above.join("op");
+    std::fs::create_dir_all(&home).expect("a home");
+    let in_home = home.join("plugin");
+    let above_home = above.join("plugin");
+    for program in [&in_home, &above_home] {
+        std::fs::write(program, "#!/bin/sh\n").expect("a plugin");
+    }
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
+    let file = serde_json::json!({ "version": 1, "runners": [], "pools": [{
+        "name": "team", "kind": "cluster", "kubeconfig": "/home/op/.kube/config",
+        "context": "team", "pool": "default", "namespace": "ada",
+        "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
+        "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
+        "holds": [in_home.display().to_string(), above_home.display().to_string()],
+    }]});
+    folder
+        .replace_file(crate::machine::RUNNERS_FILE, file.to_string().as_bytes())
+        .unwrap();
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
+        home: Some(home.clone()),
+        os: Os::Linux,
+    };
+    let plane = tempfile::tempdir().expect("a plane");
+    let denied = Denied::of(plane.path(), &machine);
+    let held = |path: &std::path::Path, reach: Reach| {
+        denied.paths.iter().any(|it| {
+            it.class == Class::LaterCode
+                && it.access == Access::Write
+                && it.path == path
+                && it.reach == reach
+        })
+    };
+    assert!(held(&in_home, Reach::Itself), "{:?}", denied.paths);
+    assert!(held(&above_home, Reach::Itself), "{:?}", denied.paths);
+    for wide in [&home, &above] {
+        assert!(
+            !denied.paths.iter().any(|it| it.class == Class::LaterCode
+                && it.path == *wide
+                && it.reach == Reach::AndBelow),
+            "{} held with all below it: {:?}",
+            wide.display(),
+            denied.paths
+        );
+    }
+}
