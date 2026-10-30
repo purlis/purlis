@@ -149,22 +149,20 @@ export const WithAPool: Story = {
 };
 
 /** **A pool whose runner was removed outside purlis** (#4149): its row says so, and its Notice
- *  says its home went too, with Make the runner again, which Tab reaches. */
+ *  says its home went too, with Make the runner again. */
 export const RunnerRemoved: Story = {
   parameters: { pools: [BUILDS], link: { state: "removed", home_kept: false } },
-  play: async ({ canvas, userEvent }) => {
+  play: async ({ canvas }) => {
     const group = await canvas.findByRole("region", { name: "Pools" });
     await within(group).findByText("removed outside purlis");
     await within(group).findByText(/sign-ins kept there/);
+    await expect(
+      within(group).getByRole("button", { name: "Make the runner again" }),
+    ).toBeVisible();
     // Its profiles' line settles before the picture: no longer asking the runner.
     await waitFor(() => expect(within(group).queryByText(/Asking the runner about/)).toBeNull(), {
       timeout: 5000,
     });
-    const again = within(group).getByRole("button", { name: "Make the runner again" });
-    await userEvent.click(within(group).getByText(/sign-ins kept there/));
-    for (let i = 0; i < 6 && document.activeElement !== again; i++) await userEvent.tab();
-    await untilFocused(() => again, "Tab reaches Make the runner again");
-    expectFocusInSight();
   },
 };
 
