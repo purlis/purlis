@@ -411,6 +411,11 @@ export const OpenTrigger: Story = {
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(document.querySelector('[role="menu"]')).toBeNull());
     await expect(more).not.toHaveAttribute("data-open");
+    // The pointer goes, so the picture is of it at rest (#4098). The click left the pointer on
+    // it, and whether it was still drawn as under the pointer once the menu had come and gone
+    // varied from run to run, and with it the picture.
+    await userEvent.unhover(more);
+    await waitFor(() => expect(more).not.toHaveAttribute("data-hovered"));
   },
 };
 
