@@ -6175,22 +6175,22 @@ fn a_chat_in_a_clone_writing_a_brokered_file_directly_is_refused_on_every_harnes
         (
             "workspace memory",
             "workspaces/alpha/memory/a-note.md".to_owned(),
-            Some("`purlis workspace remember"),
+            Some("`purlis workspace remember -w <workspace>"),
         ),
         (
             "workspace memory's index",
             "workspaces/alpha/memory/MEMORY.md".to_owned(),
-            Some("`purlis workspace remember"),
+            Some("`purlis workspace remember -w <workspace>"),
         ),
         (
             "persona memory",
             "personas/steward/memory/a-note.md".to_owned(),
-            Some("`purlis persona remember`"),
+            Some("`purlis persona remember <persona>"),
         ),
         (
             "shared memory",
             format!("personas/{shared}/memory/a-note.md"),
-            Some("`--shared`"),
+            Some("(shared for shared memory)"),
         ),
         (
             "a todo",
