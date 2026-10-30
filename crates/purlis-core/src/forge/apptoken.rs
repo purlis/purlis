@@ -24,14 +24,16 @@
 //! otherwise cost three requests. Nothing here is ever written to disk. **When the chat ends,
 //! every token minted for it that GitHub still takes is revoked** (#3808, [`chat_ended`]),
 //! sent with the token itself (`DELETE /installation/token`), and so is one whose mint was
-//! under way as it ended. A token outlives its chat only where GitHub could not be reached, or
-//! where purlis started again since it was minted, and then by its hour at most.
+//! under way as it ended. A token outlives its chat only where GitHub could not be reached
+//! (or not before purlis quit), or where purlis started again since it was minted, and then by
+//! its hour at most.
 //!
 //! The one native transport this builds, carrying the App's JWT, or a token being revoked, to
 //! github.com alone, is [`jwt_transport`].
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use base64::Engine as _;
@@ -548,9 +550,9 @@ pub struct For<'a> {
     /// The config home, whose record of the clones purlis cloned or the window saved
     /// ([`remotes_of_workspace`]) is read. None: no clone counts.
     pub config_root: Option<&'a Path>,
-    /// When the app last saw the chat open, where it waited since (a runner chat's Allow): a
-    /// chat that ended after it keeps no token minted now (#3808). None: as the mint is asked.
-    pub seen_open: Option<chrono::DateTime<chrono::Utc>>,
+    /// [`ends_so_far`] as read before the app last found the chat open: a chat that ended
+    /// after it keeps no token minted now (#3808). None: as the mint is asked.
+    pub ends_seen: Option<u64>,
 }
 
 /// What a kept token was minted for: none of it is a secret.
@@ -588,9 +590,20 @@ fn after(from: Wall, left: Duration) -> Wall {
 /// The tokens kept, over every chat.
 static KEPT: Mutex<Vec<Kept>> = Mutex::new(Vec::new());
 
-/// When each chat ended, by project and chat (`None`: every chat of the project), for an hour:
-/// a mint asked for before its chat ended keeps nothing. Written and read under [`KEPT`]'s lock.
-static ENDED: Mutex<Vec<(PathBuf, Option<u32>, Wall)>> = Mutex::new(Vec::new());
+/// Each chat's end, by project and chat (`None`: every chat of the project), its place in
+/// [`ENDS`] and when it was, for an hour: a mint asked for before its chat ended keeps nothing.
+/// Written and read under [`KEPT`]'s lock.
+static ENDED: Mutex<Vec<(PathBuf, Option<u32>, u64, Wall)>> = Mutex::new(Vec::new());
+
+/// How many chats' ends there have been: ends are put in order by it, never by a clock, which
+/// may be set back.
+static ENDS: AtomicU64 = AtomicU64::new(0);
+
+/// **How many chats' ends there have been** ([`For::ends_seen`]): read before a chat is found
+/// open, so an end after it is one its mint sees.
+pub fn ends_so_far() -> u64 {
+    ENDS.load(Ordering::SeqCst)
+}
 
 /// How long a token minted now is kept: until [`MINTED_AGAIN_BEFORE`] before `expires_at`, and
 /// at most [`KEPT_AT_MOST`].
@@ -617,13 +630,13 @@ fn lives_for(expires_at: Option<&str>, now: chrono::DateTime<chrono::Utc>) -> Du
         })
 }
 
-/// Keeps `token`, minted for `asked` from `asked_at`, handed out again until `until` and revoked
-/// at its chat's end until `alive`. A token kept before for the same `asked` stays, to be revoked
-/// with it. False, and nothing kept, where the chat ended after `asked_at`: the mint raced its
-/// end.
+/// Keeps `token`, minted for `asked` where `ends_seen` ends were counted, handed out again until
+/// `until` and revoked at its chat's end until `alive`. A token kept before for the same
+/// `asked` stays, to be revoked with it. False, and nothing kept, where the chat ended since:
+/// the mint raced its end.
 fn keep_one(
     asked: Asked,
-    asked_at: Wall,
+    ends_seen: u64,
     token: Zeroizing<String>,
     until: Wall,
     alive: Wall,
@@ -634,8 +647,10 @@ fn keep_one(
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .iter()
-            .any(|(root, chat, at)| {
-                *root == asked.root && chat.is_none_or(|chat| chat == asked.chat) && *at >= asked_at
+            .any(|(root, chat, end, _)| {
+                *root == asked.root
+                    && chat.is_none_or(|chat| chat == asked.chat)
+                    && *end > ends_seen
             });
     if ended_since {
         return false;
@@ -672,8 +687,9 @@ fn taken_at_end(root: &Path, chat: Option<u32>) -> Vec<Zeroizing<String>> {
     {
         let mut ended = ENDED.lock().unwrap_or_else(|e| e.into_inner());
         // A mint takes a few minutes at most: an hour-old end can race none.
-        ended.retain(|(_, _, at)| after(*at, KEPT_AT_MOST + MINTED_AGAIN_BEFORE) > now);
-        ended.push((root.to_path_buf(), chat, now));
+        ended.retain(|(_, _, _, at)| after(*at, KEPT_AT_MOST + MINTED_AGAIN_BEFORE) > now);
+        let end = ENDS.fetch_add(1, Ordering::SeqCst) + 1;
+        ended.push((root.to_path_buf(), chat, end, now));
     }
     let (ended, staying): (Vec<Kept>, Vec<Kept>) = std::mem::take(&mut *kept)
         .into_iter()
@@ -796,7 +812,7 @@ pub fn keep_for_a_test(root: &Path, chat: u32, token: &str) {
             remotes: Vec::new(),
             clone: None,
         },
-        now,
+        ends_so_far(),
         Zeroizing::new(token.to_owned()),
         hour,
         hour,
@@ -823,7 +839,7 @@ pub fn token_for(
     read_key: &dyn Fn() -> Result<Zeroizing<String>, String>,
 ) -> Result<Zeroizing<String>, String> {
     // Before anything is minted: a chat that ends from here on keeps nothing minted now.
-    let asked_at = chat.seen_open.unwrap_or_else(chrono::Utc::now);
+    let ends_seen = chat.ends_seen.unwrap_or_else(ends_so_far);
     let (Some(mint), [value]) = (&tool.mint, tool.values.as_slice()) else {
         return Err(format!("{} mints no GitHub App token", tool.name));
     };
@@ -893,7 +909,7 @@ pub fn token_for(
     );
     if !keep_one(
         asked,
-        asked_at,
+        ends_seen,
         minted.token.clone(),
         after(now, kept_for(minted.expires_at.as_deref(), now)),
         after(now, lives_for(minted.expires_at.as_deref(), now)),

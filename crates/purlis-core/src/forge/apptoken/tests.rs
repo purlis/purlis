@@ -341,7 +341,7 @@ fn keep(root: &str, chat: u32, token: &str, reused: Duration, alive: Duration) -
     let now = chrono::Utc::now();
     super::keep_one(
         asked(root, chat, token),
-        now,
+        super::ends_so_far(),
         zeroize::Zeroizing::new(token.to_owned()),
         super::after(now, reused),
         super::after(now, alive),
@@ -407,17 +407,21 @@ fn the_project_ending_takes_every_chat_s_tokens_of_that_project_alone() {
 fn a_token_minted_while_its_chat_ended_is_kept_for_nobody() {
     let hour = Duration::from_secs(3600);
     let root = "/projects/racing";
-    let before = chrono::Utc::now() - chrono::Duration::seconds(5);
+    // Counted before the chat was found open; it ends while its token is minted.
+    let seen = super::ends_so_far();
     assert!(taken(root, Some(4)).is_empty(), "nothing kept yet");
     let raced = super::keep_one(
         asked(root, 4, "raced"),
-        before,
+        seen,
         zeroize::Zeroizing::new("raced".to_owned()),
         super::after(chrono::Utc::now(), hour),
         super::after(chrono::Utc::now(), hour),
     );
-    assert!(!raced, "asked before the chat ended: not kept");
-    assert!(keep(root, 4, "after", hour, hour), "asked after it: kept");
+    assert!(!raced, "found open before the chat ended: not kept");
+    assert!(
+        keep(root, 4, "after", hour, hour),
+        "found open after it: kept"
+    );
     assert!(keep(root, 5, "other", hour, hour), "another chat's is kept");
     assert_eq!(taken(root, Some(4)), ["after"]);
 }
@@ -628,7 +632,7 @@ fn a_run_in_a_clone_on_another_host_is_refused_naming_it_and_nothing_is_read() {
             started: None,
             on_a_runner: false,
             config_root: Some(config.path()),
-            seen_open: None,
+            ends_seen: None,
         },
         &gh,
         &|| panic!("the key is read only to mint"),
