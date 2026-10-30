@@ -97,6 +97,22 @@ fn a_run_naming_another_host_never_runs() {
             "checkout",
             "https://github.com.evil.example/o/r/pull/1",
         ],
+        // A host with a port, or bracketed, and gh's own repository operands.
+        &["issue", "list", "-R", "localhost:8080/o/r"],
+        &["repo", "clone", "intranet:443/o/r"],
+        &["issue", "list", "-R", "[::1]/o/r"],
+        &["repo", "clone", "intranet/o/r"],
+        &["repo", "view", "localhost/o/r"],
+        // As pflag reads options, and go-gh a repository.
+        &["issue", "view", "-cRevil.example/o/r", "1"],
+        &["pr", "list", "-wR", "evil.example/o/r"],
+        &["issue", "list", "-R", "evil.example/o/r "],
+        &["issue", "list", "-R", "[2001:db8::1]/o/r"],
+        &["issue", "list", "-R", "evil:8443/o/r"],
+        &["issue", "transfer", "1", "intranet/o/r"],
+        &["repo", "sync", "--source", "intranet/o/r"],
+        &["attestation", "verify", "x", "--hostname", "evil.example"],
+        &["attestation", "download", "x", "--hostname=evil.example"],
     ] {
         let why = runs(&gh, words).expect_err("refused");
         assert!(why.contains("github.com"), "{words:?}: {why}");
@@ -108,6 +124,13 @@ fn a_run_naming_another_host_never_runs() {
         &["pr", "create", "--head", "owner:branch"],
         &["release", "upload", "v1", "dist/app.tar.gz"],
         &["pr", "list", "--json", "number,title"],
+        &["release", "upload", "v1", "./dist/app.tar.gz"],
+        &["gist", "create", "../notes/a/x.md"],
+        &["issue", "create", "--body", "see https://docs.rs/x"],
+        &["gist", "create", "src/a/b.rs"],
+        &["workflow", "view", ".github/workflows/ci.yml"],
+        &["repo", "create", "x", "--source", "./a/b/c"],
+        &["attestation", "verify", "x", "--hostname", "github.com"],
     ] {
         assert!(runs(&gh, words).is_ok(), "{words:?}");
     }
@@ -163,4 +186,12 @@ fn a_forge_run_is_told_its_host_and_another_program_is_told_nothing() {
         vec![("GITLAB_HOST".to_owned(), "gitlab.example.com".to_owned())]
     );
     assert!(forge_env(&ready("kubectl", None, "/usr/bin/kubectl")).is_empty());
+}
+
+#[test]
+fn what_follows_a_double_dash_goes_to_git_so_it_never_runs() {
+    let gh = ready("gh", None, "/opt/homebrew/bin/gh");
+    assert!(runs(&gh, &["repo", "clone", "o/r", "--", "--template=./t"]).is_err());
+    let glab = ready("glab", None, "/usr/local/bin/glab");
+    assert!(runs(&glab, &["repo", "clone", "g/p", "--", "--depth=1"]).is_err());
 }

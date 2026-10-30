@@ -1471,10 +1471,13 @@ pub fn reads_held_repository(
     Ok(pin.env(clones))
 }
 
-/// Whether a tool with these `names` is a forge's, and glab's (`true`) or gh's (`false`).
+/// Whether a tool with these `names` (its own name, then its program's) is a forge's, and
+/// glab's (`true`) or gh's (`false`): by its program, as its links resolve and as found,
+/// before the tool's own name.
 fn forge_of(names: &[&Path]) -> Option<bool> {
     names
         .iter()
+        .rev()
         .find_map(|name| match file_name_of(name).as_str() {
             "gh" => Some(false),
             "glab" => Some(true),
