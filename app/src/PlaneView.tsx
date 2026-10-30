@@ -5231,6 +5231,15 @@ export const PlaneView = memo(function PlaneView({
 
   /** A start refused for its profile's approval, while Approve and start… asks (#3942, #3968). */
   const [startApproving, setStartApproving] = useState<StartApproving>();
+  /** What a start run again after Approve and start… answered, said in the line of `from` where
+   *  it says anything: a quiet start leaves the notice as it is (#3968). */
+  const sayAgain = useCallback(
+    (from: string) => (ran: Ran) => {
+      const said = saidOf(from, ran);
+      if (said !== undefined) setReport(said);
+    },
+    [],
+  );
 
   /**
    * A curation action chosen from a "Curate ▸" menu or the palette (ADR 0061): the core opens
@@ -5252,8 +5261,7 @@ export const PlaneView = memo(function PlaneView({
               named: `The curation action ${label}`,
               typed: "its prompt",
               // The same action again, said in the line of the row that asked.
-              again: () =>
-                void start().then((ran) => setReport(saidOf(`curate:${subject}/${action}`, ran))),
+              again: () => void start().then(sayAgain(`curate:${subject}/${action}`)),
             },
             setStartApproving,
           );
@@ -5266,7 +5274,7 @@ export const PlaneView = memo(function PlaneView({
       };
       return start();
     },
-    [change, plane],
+    [change, plane, sayAgain],
   );
 
   /**
@@ -5295,11 +5303,7 @@ export const PlaneView = memo(function PlaneView({
               {
                 named: wanted.theme === null ? "New theme" : "Edit with a chat",
                 typed: "its request",
-                again: () => {
-                  // The refusal it answered is put away; any other line stays.
-                  setReport((was) => (was?.from === "theme-chat" ? undefined : was));
-                  askThemeChat(wanted);
-                },
+                again: () => askThemeChat(wanted),
               },
               setStartApproving,
             );
@@ -5376,11 +5380,7 @@ export const PlaneView = memo(function PlaneView({
           if (started.status === "error") {
             // With Approve and start… where its profile needs approving (#3942).
             setReport(
-              skillChatRefused(wanted, started.error, setStartApproving, (again) => {
-                // The refusal it answered is put away; any other line stays.
-                setReport((was) => (was?.from === "skill-chat" ? undefined : was));
-                askSkillChat(again);
-              }),
+              skillChatRefused(wanted, started.error, setStartApproving, askSkillChat),
             );
             return;
           }
@@ -5426,7 +5426,7 @@ export const PlaneView = memo(function PlaneView({
               named: "Start a chat here",
               typed: "its reference",
               // The same start again, said as a file's start is.
-              again: () => void start().then((ran) => setReport(saidOf("file.chat", ran))),
+              again: () => void start().then(sayAgain("file.chat")),
             },
             setStartApproving,
           );
@@ -5441,18 +5441,7 @@ export const PlaneView = memo(function PlaneView({
       };
       return start();
     },
-    [change, plane],
-  );
-      const chat = started.data;
-      setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
-      change((tabs) =>
-        openTab(tabs, chat.session, chat.name, whoOf(null, chat.harness), chat.label),
-      );
-      if (chat.copied === null) return { ok: true };
-      const why = chat.copied.charAt(0).toUpperCase() + chat.copied.slice(1);
-      return { ok: true, said: `${why}: ${chat.text}` };
-    },
-    [change, plane],
+    [change, plane, sayAgain],
   );
 
   /**
@@ -10045,7 +10034,12 @@ export const PlaneView = memo(function PlaneView({
                 plane={plane}
                 asked={startApproving}
                 onCancel={() => setStartApproving(undefined)}
-                onApproved={() => setStartApproving(undefined)}
+                onApproved={() => {
+                  // The refusal it answered is put away; any other line stays.
+                  const answered = startApproving.way;
+                  setReport((was) => (was?.ways?.includes(answered) ? undefined : was));
+                  setStartApproving(undefined);
+                }}
               />
             )}
             {approving && (

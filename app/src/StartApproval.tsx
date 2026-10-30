@@ -33,8 +33,9 @@ export type StartAgain = {
   again: (profile: string) => void;
 };
 
-/** A start refused for its profile's approval, and the approval it needs. */
-export type StartApproving = StartAgain & { approval: NeedsApproval };
+/** A start refused for its profile's approval, the approval it needs, and the way its refusal's
+ *  notice offered it by, so approving puts away that line and no other. */
+export type StartApproving = StartAgain & { approval: NeedsApproval; way: SaidWay };
 
 /**
  * **What the window says of a start the core refused**: its words, with Approve and start…
@@ -49,16 +50,12 @@ export function startRefused(
   const { words, approval } =
     typeof refused === "string" ? { words: refused, approval: null } : refused;
   if (approval === null) return { words };
-  return {
-    words,
-    ways: [
-      {
-        label: `${APPROVE_AND_START}…`,
-        primary: true,
-        onPress: () => ask({ ...start, approval }),
-      },
-    ],
+  const way: SaidWay = {
+    label: `${APPROVE_AND_START}…`,
+    primary: true,
+    onPress: () => ask({ ...start, approval, way }),
   };
+  return { words, ways: [way] };
 }
 
 /** {@link startRefused}, as a row's answer, which its notice says with its ways (`saidOf`). */

@@ -38,6 +38,9 @@ const WORK: NeedsApproval = {
   shown: "CLAUDE_CONFIG_DIR=~/.claude-work claude",
 };
 
+/** The way a refusal's notice offered the question by. */
+const WAY = { label: "Approve and start…", onPress: () => undefined };
+
 /** A curation action's start, which starts again with `again`. */
 function curation(again = vi.fn()): StartAgain {
   return { named: "The curation action Tidy", typed: "its prompt", again };
@@ -66,7 +69,8 @@ describe("a start refused for its profile's approval", () => {
     expect(said.ways?.map((one) => one.label)).toEqual(["Approve and start…"]);
     // Offered, and nothing is approved or started until the person answers its question.
     said.ways?.[0].onPress();
-    expect(ask).toHaveBeenCalledWith({ ...start, approval: WORK });
+    // With the way it was offered by, so approving puts away that line alone.
+    expect(ask).toHaveBeenCalledWith({ ...start, approval: WORK, way: said.ways?.[0] });
     expect(start.again).not.toHaveBeenCalled();
   });
 
@@ -107,7 +111,7 @@ describe("the question Approve and start… asks", () => {
     const asked = core();
     const again = vi.fn();
     const user = userEvent.setup();
-    const { onApproved } = asking({ ...curation(again), approval: WORK });
+    const { onApproved } = asking({ ...curation(again), approval: WORK, way: WAY });
     const question = screen.getByRole("alertdialog", { name: "Approve work?" });
     expect(question).toHaveTextContent(
       "The curation action Tidy starts a chat on the profile work. Approving records that purlis may run its command on this machine, then starts the chat with its prompt typed and not sent.",
@@ -136,7 +140,7 @@ describe("the question Approve and start… asks", () => {
     });
     const again = vi.fn();
     const user = userEvent.setup();
-    const { onApproved } = asking({ ...curation(again), approval: WORK });
+    const { onApproved } = asking({ ...curation(again), approval: WORK, way: WAY });
     await user.click(screen.getByRole("button", { name: "Approve and start" }));
     expect(
       await screen.findByText(/changed while you were reading it, so nothing was approved/),
@@ -149,7 +153,7 @@ describe("the question Approve and start… asks", () => {
     const asked = core();
     const again = vi.fn();
     const user = userEvent.setup();
-    const { onCancel } = asking({ ...curation(again), approval: WORK });
+    const { onCancel } = asking({ ...curation(again), approval: WORK, way: WAY });
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onCancel).toHaveBeenCalled();
     expect(asked.some((one) => one.cmd === "approve_profile")).toBe(false);

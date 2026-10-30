@@ -75,7 +75,8 @@ describe("a curation action refused for its profile's approval", function () {
     await runFromThePalette("Safe remove", ACTION);
 
     // Refused, with the approval offered beside the refusal; nothing started.
-    const offer = await $("button=Approve and start…");
+    // By its accessible name, as the person and the screen reader get it.
+    const offer = await $("aria/Approve and start…");
     await offer.waitForClickable({
       timeout: 30_000,
       timeoutMsg: "the refusal offered no Approve and start…",
@@ -89,7 +90,7 @@ describe("a curation action refused for its profile's approval", function () {
     await expect(ask).toHaveText(new RegExp(`Approve ${PROFILE}\\?`));
     await expect(ask).toHaveText(/The curation action Safe remove starts a chat/);
     await expect(ask.$("p.approve code")).toHaveText(/claude-stand-in/);
-    await ask.$("button=Approve and start").click();
+    await ask.$("aria/Approve and start").click();
 
     await browser.waitUntil(
       async () => (await runningIn(plane)).some((one) => !wereRunning.includes(one)),

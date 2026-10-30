@@ -42,6 +42,7 @@ function Asking() {
             named: studioStartNamed(TRY),
             typed: "its request",
             approval: WORK,
+            way: { label: "Approve and start…", onPress: () => undefined },
             again: (profile) => {
               const again = startedAgain(TRY, profile);
               setSaid(`Started ${again.kind} on ${again.kind === "try" ? again.profile : ""}`);
