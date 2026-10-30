@@ -669,6 +669,8 @@ const APART: &[(&str, &str, &[State])] = &[
     // A row is never focused itself: the keyboard stays in the filter, and the row Enter would
     // go to is the selected one.
     ("titlebar", "row", &[State::Hover, State::Selected]),
+    // A row's count (#3947): beside its name, in no state of its own.
+    ("titlebar", "row-count", &[]),
 ];
 
 /// **What a part drawn apart from the root is drawn in** (#3949), at rest or in one of its own

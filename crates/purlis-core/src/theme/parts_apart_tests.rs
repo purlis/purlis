@@ -1,7 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! The title bar's parts drawn apart from every chip at the floors (#3949): each measured on the ground it is drawn on, in each
+//! The title bar's parts drawn apart from every chip at the floors (#3949), and the switcher
+//! row's count as a part of its own (#3947): each measured on the ground it is drawn on, in each
 //! of its states, and one that breaks a floor drawing its own default back while the chip keeps
 //! what the theme gave it.
 
@@ -137,6 +138,7 @@ fn every_apart_part_s_default_holds_in_every_built_in() {
         ("all", &["", "hover", "selected"][..]),
         ("pin", &["", "hover", "selected"][..]),
         ("row", &["", "hover", "selected"][..]),
+        ("row-count", &[""][..]),
     ] {
         for state in states {
             let at = match *state {
@@ -168,5 +170,67 @@ fn every_apart_part_s_default_holds_in_every_built_in() {
                 parts::fallen(appearance)
             );
         }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// The switcher row's count (#3947)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_row_s_count_is_its_own_part_reached_by_its_own_attributes() {
+    let theme = purlis_dark(json!({ "titlebar.row-count.fill": "accent.surface", "titlebar.row-count.text": "accent.text" }));
+    let sheet = parts::stylesheet(&theme);
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"titlebar\"][data-part=\"row-count\"]) { background-color: var(--accent-surface); color: var(--accent-text); }"
+        ),
+        "{sheet}"
+    );
+    // The chip's count is untouched.
+    assert!(!sheet.contains("[data-part=\"count\"]"), "{sheet}");
+    // It is in no variant and no state, and comes in the next release.
+    let keys = parts::schema()["properties"].clone();
+    assert!(keys.get("titlebar.row-count.fill").is_some());
+    assert!(keys.get("titlebar.row-count.hover.fill").is_none());
+    assert!(keys.get("titlebar.row-count.pinned.text").is_none());
+    let family = parts::manifest_json()["families"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|one| one["name"] == "titlebar")
+        .unwrap()
+        .clone();
+    let part = family["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|one| one["name"] == "row-count")
+        .expect("row-count is in the manifest")
+        .clone();
+    assert_eq!(part["since"], parts::NEXT);
+    assert_eq!(part["apart"], json!([]));
+}
+
+#[test]
+fn a_row_s_count_whose_digits_vanish_on_its_wash_falls_alone() {
+    let theme = purlis_dark(json!({ "titlebar.row-count.text": "wash.warning" }));
+    assert_eq!(fell(&theme), ["titlebar.row-count"]);
+}
+
+#[test]
+fn a_row_s_count_is_held_on_its_wash_over_the_popover_and_the_selected_row() {
+    let look = parts::apart_look("titlebar", "row-count", None);
+    assert_eq!(look.fill, "wash.warning");
+    assert_eq!(look.words, "state.waiting");
+    assert_eq!(look.under, ["surface.overlay", "list.selected"]);
+    for under in look.under {
+        assert!(
+            check::PAIRS.iter().any(|pair| pair.front == "state.waiting"
+                && pair.back == "wash.warning"
+                && pair.under == Some(*under)
+                && pair.floor >= 4.5),
+            "state.waiting on wash.warning over {under} is held"
+        );
     }
 }

@@ -524,6 +524,13 @@ pub(super) const TITLEBAR: Family = Family {
                           is a warning: its triangle and its fill, ringed in the bar's ground.",
             properties: &[Prop::Fill, Prop::Text],
         },
+        Part {
+            name: "row-count",
+            since: super::NEXT,
+            description: "How many things wait on the person in a switcher's row, after its \
+                          name: its wash and its digits (#3947).",
+            properties: &[Prop::Fill, Prop::Text],
+        },
     ],
     variants: &[
         Variant {
@@ -577,6 +584,8 @@ pub(super) const TITLEBAR: Family = Family {
         ("dot", "surface.base"),
         // A warning's dot (#3649): its triangle, a mark, in the window's ground on the amber.
         ("dot-warning", "surface.base"),
+        // A switcher row's count (#3947), in amber, as a chip's is.
+        ("row-count", "state.waiting"),
     ],
     corner_most: None,
     // A chip's notice dot is the chip's sibling in its slot (#3648), drawn around the chip.
@@ -587,6 +596,7 @@ pub(super) const TITLEBAR: Family = Family {
         ("count", "wash.warning"),
         ("dot", "accent.base"),
         ("dot-warning", "state.waiting"),
+        ("row-count", "wash.warning"),
     ],
     // A switcher's row and its pin paint no ground at rest: they stand on the popover's surface
     // the switcher is drawn on, which their words are read on (#3099).
@@ -674,6 +684,11 @@ pub(super) fn titlebar_apart_look(part: &str, state: Option<State>) -> super::Ap
             fill: "list.selected",
             words: "text.primary",
             under: POPOVER,
+        },
+        ("row-count", _) => ApartLook {
+            fill: "wash.warning",
+            words: "state.waiting",
+            under: &["surface.overlay", "list.selected"],
         },
         _ => ApartLook {
             fill: TRANSPARENT,
