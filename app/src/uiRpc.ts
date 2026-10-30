@@ -11509,6 +11509,12 @@ export type StudioHarness = {
 	 *  with why (SK-53): the core's `HarnessInTheStudio::repo_left_out`.
 	 */
 	repo_left_out: StudioSkill[],
+	/**
+	 *  **Its own catalogue** (#3324): the skills it finds itself in the person's own folders and
+	 *  its plugins, which it lists against its own limit and purlis's budget never counts. Null
+	 *  where the studio was read only for a count of its needs.
+	 */
+	own: StudioOwnCatalogue | null,
 };
 
 /**  A level a skill can be moved to or made at, and its words. */
@@ -11537,6 +11543,21 @@ export type StudioNotSupported = {
 	title: string,
 	/**  Why its chats get no skills, in one line. */
 	said: string,
+};
+
+/**  **A harness's own catalogue, as the window says it** (#3324): the core's `OwnCatalogue`. */
+export type StudioOwnCatalogue = {
+	/**  The skills it lists. */
+	skills: number,
+	/**  Characters of what it lists of them. */
+	chars: number,
+	/**  Its manual-only skills, which it keeps out of the listing. */
+	manual: number,
+	/**
+	 *  What a chat's budget line says of it, in the core's words (`OwnCatalogue::said`), which
+	 *  `purlis skill list` says too. Null for a harness that finds none of its own.
+	 */
+	said: string | null,
 };
 
 /**  One chat a router extension was asked about at its start. */

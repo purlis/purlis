@@ -2729,3 +2729,117 @@ fn a_list_read_for_needs_you_has_every_row_lint_and_clash_of_the_whole_and_no_ba
             .all(|row| row.compat.is_empty())
     );
 }
+
+#[test]
+fn each_harness_s_own_catalogue_is_measured_beside_purlis_s_budget_3324() {
+    // #3324 (SK-39's follow-up): the skills a harness finds itself in the person's own folders
+    // are never in purlis's budget, so each harness in the studio measures them as a figure of
+    // their own: what it lists, its manual-only ones apart, and one the project turned off not
+    // at all. Each harness reads manual-only its own way: Claude Code by the frontmatter key,
+    // Codex by its sidecar alone.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(&plane).unwrap();
+    std::fs::write(
+        plane.join("charter.toml"),
+        "[harness_skills.codex]\nnotes = false\n",
+    )
+    .unwrap();
+    let manual_key = |dir: &Path, name: &str| {
+        std::fs::create_dir_all(dir.join(name)).unwrap();
+        std::fs::write(
+            dir.join(name).join("SKILL.md"),
+            format!(
+                "---\nname: {name}\ndescription: Does {name}.\ndisable-model-invocation: true\n---\n"
+            ),
+        )
+        .unwrap();
+    };
+    let claude = tmp.path().join("claude-config/skills");
+    a_skill_with_a_sidecar(&claude, "review", None);
+    manual_key(&claude, "quiet");
+    let codex = tmp.path().join("codex-home/skills");
+    a_skill_with_a_sidecar(&codex, "review", None);
+    a_skill_with_a_sidecar(&codex, "mine", Some(CODEX_MANUAL_ONLY));
+    a_skill_with_a_sidecar(&codex, "notes", None);
+    // Codex does not read the frontmatter key: it lists this one.
+    manual_key(&codex, "quiet");
+    let chat = [
+        (
+            "CLAUDE_CONFIG_DIR".to_owned(),
+            tmp.path().join("claude-config").display().to_string(),
+        ),
+        (
+            "CODEX_HOME".to_owned(),
+            tmp.path().join("codex-home").display().to_string(),
+        ),
+    ];
+    let env = crate::harness_plugin::Env {
+        chat: &chat,
+        home: Some(tmp.path().join("home")),
+        process: false,
+    };
+
+    let list = studio_list(None, &plane, None, None, &env);
+
+    let own = |harness: Harness| {
+        list.harnesses
+            .iter()
+            .find(|one| one.harness == harness)
+            .and_then(|one| one.own)
+            .unwrap_or_else(|| panic!("{harness:?} measured"))
+    };
+    let described = "Does review.".chars().count();
+    assert_eq!(
+        own(Harness::ClaudeCode),
+        OwnCatalogue {
+            skills: 1,
+            chars: described,
+            manual: 1,
+        },
+        "Claude Code: review listed, quiet manual-only by its key"
+    );
+    // Codex lists each skill's path beside its description, and purlis measures it so.
+    let path = |name: &str| codex.join(name).join("SKILL.md").display().to_string();
+    assert_eq!(
+        own(Harness::Codex),
+        OwnCatalogue {
+            skills: 2,
+            chars: described
+                + path("review").chars().count()
+                + "Does quiet.".chars().count()
+                + path("quiet").chars().count(),
+            manual: 1,
+        },
+        "Codex: review and quiet listed, mine manual-only by its sidecar, notes turned off"
+    );
+    // A read for a count of needs measures nothing.
+    let needs = studio_list_for(Reading::Needs, None, &plane, None, None, &env);
+    assert!(needs.harnesses.iter().all(|one| one.own.is_none()));
+}
+
+#[test]
+fn a_harness_s_own_catalogue_is_said_beside_the_budget_and_never_counted_3324() {
+    let own = |skills, chars, manual| OwnCatalogue {
+        skills,
+        chars,
+        manual,
+    };
+    assert_eq!(
+        own(2, 1_310, 1).said("Codex").as_deref(),
+        Some("Codex's own, not counted: 2 skills, 1,310 characters, 1 manual-only skill")
+    );
+    assert_eq!(
+        own(1, 12, 0).said("Claude Code").as_deref(),
+        Some("Claude Code's own, not counted: 1 skill, 12 characters")
+    );
+    assert_eq!(
+        own(0, 0, 3).said("Codex").as_deref(),
+        Some("Codex's own, not counted: 0 skills, 0 characters, 3 manual-only skills")
+    );
+    assert_eq!(own(0, 0, 0).said("Codex"), None, "none of its own");
+    assert_eq!(
+        own(1, 1_234_567, 0).said("Codex").as_deref(),
+        Some("Codex's own, not counted: 1 skill, 1,234,567 characters")
+    );
+}

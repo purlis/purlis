@@ -681,6 +681,7 @@ function withClaudeCode(offLangfuse: boolean) {
         harness: "claude",
         title: "Claude Code",
         repo_left_out: [],
+        own: null,
         skills: [
           {
             ...ROW,
@@ -738,6 +739,7 @@ function withClaudeCode(offLangfuse: boolean) {
         harness: "opencode",
         title: "opencode",
         repo_left_out: [],
+        own: null,
         skills: [],
       },
     ],

@@ -449,6 +449,7 @@ describe("the Skills view's review fixes", () => {
               title: "Claude Code",
               skills: [skill("pdf", { level: "installed", label: "Claude Code", folder: "" })],
               repo_left_out: [],
+              own: null,
             },
           ],
         }),
@@ -692,6 +693,7 @@ describe("a row's menu", () => {
                 }),
               ],
               repo_left_out: [],
+              own: null,
             },
           ],
         }),
@@ -793,6 +795,72 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
     expect(screen.getByTestId("skills-view-said")).toHaveTextContent("Routed by acme in 120 ms.");
     // Nothing needs the person: no Needs you group.
     expect(screen.queryByRole("row", { name: /^Needs you/ })).toBeNull();
+  });
+
+  it("says its program's own catalogue beside the budget, never in it (#3324)", async () => {
+    const own = (said: string) => ({ skills: 2, chars: 1310, manual: 1, said });
+    core(
+      () =>
+        studio([skill("deploy")], {
+          harnesses: [
+            {
+              harness: "claude",
+              title: "Claude Code",
+              skills: [],
+              repo_left_out: [],
+              own: own("Claude Code's own, not counted: 2 skills, 1,310 characters"),
+            },
+            {
+              harness: "codex",
+              title: "Codex",
+              skills: [],
+              repo_left_out: [],
+              own: own("Codex's own, not counted: 4 skills, 900 characters"),
+            },
+          ],
+        }),
+      { chat: [given("deploy")], budget: { ...BUDGET, manual: 0 } },
+    );
+    view({ chat: STEWARD });
+    await list();
+    await waitFor(() =>
+      expect(screen.getByTestId("skills-view-said")).toHaveTextContent(
+        "3 skills of 30 · 1,234 of 6,000 characters · Claude Code's own, not counted: 2 skills, 1,310 characters",
+      ),
+    );
+    // Its own program's alone, and the budget's figures stay purlis's.
+    expect(screen.getByTestId("skills-view-said")).not.toHaveTextContent("Codex");
+    expect(screen.queryByRole("row", { name: /^Needs you/ })).toBeNull();
+  });
+
+  it("says a Codex chat's own catalogue, its program's (#3324)", async () => {
+    core(
+      () =>
+        studio([skill("deploy")], {
+          harnesses: [
+            {
+              harness: "codex",
+              title: "Codex",
+              skills: [],
+              repo_left_out: [],
+              own: {
+                skills: 4,
+                chars: 900,
+                manual: 0,
+                said: "Codex's own, not counted: 4 skills, 900 characters",
+              },
+            },
+          ],
+        }),
+      { chat: [given("deploy")], budget: { ...BUDGET, manual: 0 } },
+    );
+    view({ chat: { ...STEWARD, harness: "codex" } });
+    await list();
+    await waitFor(() =>
+      expect(screen.getByTestId("skills-view-said")).toHaveTextContent(
+        "3 skills of 30 · 1,234 of 6,000 characters · Codex's own, not counted: 4 skills, 900 characters",
+      ),
+    );
   });
 
   it("puts the budget, the pins, a fallen-back router and what it started without in Needs you, each with its fix", async () => {

@@ -1951,6 +1951,95 @@ pub struct HarnessInTheStudio {
     /// in that clone, each with why ([`purlis_skills::SkillSet::left_out_by_a_repo`], SK-53):
     /// the plane's own rows are a chat's in no clone, so this is where the loss is said.
     pub repo_left_out: Vec<StudioRow>,
+    /// **Its own catalogue, measured** ([`own_catalogue`], #3324): `None` where the list was read
+    /// only for a count of needs ([`Reading::Needs`]), which shows no figure.
+    pub own: Option<OwnCatalogue>,
+}
+
+/// **What a harness's own catalogue holds** (#3324; ADR 0102 as amended 2026-10-31): the skills
+/// it finds itself in the person's own folders and in its plugins, which it lists to its model
+/// against its own limit (Codex keeps about 2% of the context for them). purlis's skill budget
+/// counts only what purlis hands a chat (its built-in skills, the plane's, and the repo skills of
+/// the clone it works in), and purlis never trims what it does not own, so this is a figure of
+/// its own beside that budget, and counts against nothing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OwnCatalogue {
+    /// The skills it lists: each turned on for the project's chats, and not manual-only.
+    pub skills: usize,
+    /// Characters of what it lists of them, measured as purlis measures a chat's set on this
+    /// harness ([`purlis_skills::budget::spent`]).
+    pub chars: usize,
+    /// Its manual-only skills, which it keeps out of the listing, each as it reads manual-only:
+    /// by the frontmatter key where it reads that ([`ManualOnly::Read`]), else by a file of its
+    /// own beside the `SKILL.md` ([`kept_manual_beside`]).
+    pub manual: usize,
+}
+
+impl OwnCatalogue {
+    /// **What a chat's budget line says of it** on the harness the person calls `title`, beside
+    /// purlis's own figure: `Codex's own, not counted: 2 skills, 1,310 characters, 1 manual-only
+    /// skill`. The window and `purlis skill list` say it in these words. `None` for a harness
+    /// that finds none of its own.
+    pub fn said(&self, title: &str) -> Option<String> {
+        if self.skills == 0 && self.manual == 0 {
+            return None;
+        }
+        let counted = |n: usize, one: &str, many: &str| {
+            format!("{} {}", grouped(n), if n == 1 { one } else { many })
+        };
+        let mut said = format!(
+            "{title}'s own, not counted: {}, {}",
+            counted(self.skills, "skill", "skills"),
+            counted(self.chars, "character", "characters"),
+        );
+        if self.manual > 0 {
+            said.push_str(&format!(
+                ", {}",
+                counted(self.manual, "manual-only skill", "manual-only skills")
+            ));
+        }
+        Some(said)
+    }
+}
+
+/// `n` with its thousands set apart by commas, as the window writes a count (`1,310`).
+fn grouped(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (at, digit) in digits.chars().enumerate() {
+        if at > 0 && (digits.len() - at).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
+}
+
+/// **`harness`'s own catalogue** ([`OwnCatalogue`]) of `outside`, the skills from outside the
+/// plane it finds: the person's own and its plugins' ([`Origin::Harness`]), each one turned off
+/// for the project's chats and each one purlis could not read left out. A repo's skills are not
+/// in it: purlis's budget counts those already, as the chat's set holds them.
+fn own_catalogue(harness: Harness, outside: &[OutsideSkill]) -> OwnCatalogue {
+    let reads_the_key = harness.skill_frontmatter().manual == ManualOnly::Read;
+    let listed: Vec<(&Skill, Declared)> = outside
+        .iter()
+        .filter(|one| one.origin == Origin::Harness && !one.off && one.unread.is_none())
+        .map(|one| {
+            let mut said = declared(&one.skill);
+            said.manual = (reads_the_key && said.manual)
+                || kept_manual_beside(harness, (&one.root, &one.skill.path), one.origin);
+            (&one.skill, said)
+        })
+        .collect();
+    let spent = purlis_skills::budget::spent(
+        listed.iter().map(|(skill, said)| (*skill, said)),
+        harness.skill_budget(),
+    );
+    OwnCatalogue {
+        skills: spent.skills,
+        chars: spent.chars,
+        manual: spent.manual,
+    }
 }
 
 impl HarnessInTheStudio {
@@ -2022,6 +2111,7 @@ fn harnesses_in_the_studio(
                 repo_left_out: rows_of(&by_a_repo, plane, names, reading),
                 // Routed by this harness's own budget, with what it finds itself counted (SK-15).
                 set: set.routed(harness.skill_budget(), pins),
+                own: (reading == Reading::Whole).then(|| own_catalogue(harness, &outside)),
                 outside,
                 rows: Vec::new(),
             };

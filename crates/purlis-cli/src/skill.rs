@@ -489,6 +489,13 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             "repo_left_out": one.repo_left_out.iter()
                                 .map(|row| left_out_json(one, row, row_json(row)))
                                 .collect::<Vec<_>>(),
+                            // Its own catalogue, which purlis's budget never counts (#3324).
+                            "own": one.own.map(|own| json!({
+                                "skills": own.skills,
+                                "chars": own.chars,
+                                "manual": own.manual,
+                                "said": own.said(one.harness.title()),
+                            })),
                         })).collect::<Vec<_>>(),
                         // A declared harness skills are not supported on, with why (SK-30).
                         "not_supported": list.not_supported.iter().map(|one| json!({
@@ -507,6 +514,10 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             one.harness.title(),
                             outside_table(&one.rows)
                         );
+                    }
+                    // What its own catalogue costs, beside purlis's budget (#3324).
+                    if let Some(said) = one.own.and_then(|own| own.said(one.harness.title())) {
+                        println!("{}", own_catalogue_line(&said));
                     }
                     // What a repo takes from its chats, never a silent drop (SK-53).
                     if !one.repo_left_out.is_empty() {
@@ -1140,6 +1151,12 @@ fn already_in(name: &str, lifecycle: &Lifecycle) -> Markup {
 /// A declared harness's line that skills are not supported on it (SK-30): its title is the
 /// project's words, so the line is escaped.
 fn not_supported_line(said: &str) -> Markup {
+    Markup::new().text(said)
+}
+
+/// A harness's own catalogue, beside purlis's budget (#3324): its title is a harness's own
+/// words, so the line is escaped as [`not_supported_line`]'s is.
+fn own_catalogue_line(said: &str) -> Markup {
     Markup::new().text(said)
 }
 
