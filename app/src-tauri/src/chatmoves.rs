@@ -547,7 +547,8 @@ pub(crate) fn did_not_start_said(
 }
 
 /// **What a chat's tab says of what came back with it** (the person's ruling of 2026-10-27):
-/// each clone the runner's chat made, which is whole from the runner (#3990), and every file a
+/// each clone the runner's chat made, which is whole from the runner (#3990), with the remote
+/// it was given or why it has none (#3985), and every file a
 /// tool here runs or reads as its settings, every one a save would refuse, and every link, by
 /// its path in the project. None where nothing such came.
 pub(crate) fn came_back_said(from: Option<&str>, came: &CameBack) -> Option<String> {
@@ -556,13 +557,24 @@ pub(crate) fn came_back_said(from: Option<&str>, came: &CameBack) -> Option<Stri
     }
     let from = from.map_or_else(|| "a runner".to_owned(), |pool| format!("pool {pool}"));
     let mut said = Vec::new();
-    if !came.made.is_empty() {
-        let were = if came.made.len() == 1 { "was" } else { "were" };
+    for made in &came.made {
+        let clone = &made.clone;
         said.push(format!(
-            "{} {were} cloned on {from}: all of it was made there, so look at it as you would \
-             any repository you did not make.",
-            listed(&came.made)
+            "{clone} was cloned on {from}: all of it was made there, so look at it as you would \
+             any repository you did not make."
         ));
+        // The runner's word, held to this machine's rules (#3985): said, so the person sees
+        // where a push goes before they make one.
+        said.push(match &made.remote {
+            Ok(url) => format!(
+                "Its remote origin is {url}, as the runner's clone had it: check it is the one \
+                 you mean before you push."
+            ),
+            Err(why) => format!(
+                "It has no remote here ({why}): give it one, with `git remote add origin <URL>` \
+                 in it, before you push."
+            ),
+        });
     }
     if !came.watch.is_empty() {
         said.push(format!(

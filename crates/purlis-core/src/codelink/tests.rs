@@ -469,6 +469,128 @@ fn a_repositorys_folder_is_the_projects_own_or_a_workspaces_repo_reached_through
     ));
 }
 
+/// **Where each clone a runner holds came from** (1.54, #3985): its own `origin`, as its git
+/// keeps it, only where that is a forge's HTTPS or SSH address with no sign-in in it. Never a
+/// local path, another transport or a token, nothing an included file names, and nothing for a
+/// name that is not a clone of the workspace.
+#[test]
+fn a_runner_names_each_clones_origin_only_where_it_is_a_forges_address_with_no_sign_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().canonicalize().unwrap().join("project");
+    let workspace = project.join("workspaces/app");
+    let origins = [
+        ("api", Some("https://github.com/owner/api.git")),
+        ("web", Some("git@github.com:owner/web.git")),
+        ("local", Some("/srv/git/local.git")),
+        ("file", Some("file:///srv/git/file.git")),
+        ("ext", Some("ext::sh -c touch% /tmp/ran")),
+        (
+            "token",
+            Some(concat!(
+                "https://",
+                "a-token",
+                "@",
+                "github.com/owner/token.git"
+            )),
+        ),
+        ("plain", Some("http://example.com/owner/plain.git")),
+        ("none", None),
+        ("included", None),
+    ];
+    for (repo, origin) in origins {
+        let clone = workspace.join(repo);
+        std::fs::create_dir_all(&clone).unwrap();
+        git(&clone, &["init", "-q", "-b", "main"]);
+        commit(&clone, "README", repo);
+        if let Some(url) = origin {
+            git(&clone, &["config", "remote.origin.url", url]);
+        }
+    }
+    let included = workspace.join("included");
+    std::fs::write(
+        dir.path().join("origin.inc"),
+        "[remote \"origin\"]\n\turl = https://github.com/owner/included.git\n",
+    )
+    .unwrap();
+    git(
+        &included,
+        &[
+            "config",
+            "include.path",
+            &dir.path().join("origin.inc").display().to_string(),
+        ],
+    );
+
+    let mut asked: Vec<String> = origins.iter().map(|(repo, _)| (*repo).to_owned()).collect();
+    asked.push("../outside".to_owned());
+    asked.push("memory".to_owned());
+    assert_eq!(
+        origins_in(&project, "app", &asked),
+        std::collections::BTreeMap::from([
+            (
+                "api".to_owned(),
+                "https://github.com/owner/api.git".to_owned()
+            ),
+            ("web".to_owned(), "git@github.com:owner/web.git".to_owned()),
+        ])
+    );
+    assert!(origins_in(&project, "..", &asked).is_empty());
+}
+
+/// **A clone made fresh from a runner's work is given the runner's `origin`** (1.54, #3985),
+/// held to the rules a URL pasted here is held to: a forge's HTTPS or SSH address with no
+/// sign-in in it. Anything else, a pool's branches already kept under `origin`, or a remote
+/// already there, leaves the clone with none, in a sentence.
+#[test]
+fn a_fresh_clone_is_given_the_runners_origin_only_where_a_pasted_url_would_be_taken() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("api");
+    std::fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    commit(&repo, "README", "api");
+
+    for refused in [
+        "ext::sh -c touch% /tmp/ran",
+        "file:///srv/git/api.git",
+        "/srv/git/api.git",
+        "./api",
+        "http://example.com/owner/api.git",
+        concat!("https://", "a-token", "@", "github.com/owner/api.git"),
+        concat!("https://", "user:pass", "@", "github.com/owner/api.git"),
+        "-oProxyCommand=sh:owner/api",
+        "ssh://-oProxyCommand=sh/owner/api",
+        concat!("ssh://", "-oProxyCommand=sh", "@", "github.com/owner/api"),
+        "https://github.com/owner/api.git\n[core]\n\tfsmonitor = sh",
+        "",
+    ] {
+        let given = give_origin(&repo, "builds", refused);
+        assert!(given.is_err(), "{refused:?}: {given:?}");
+        assert_eq!(git(&repo, &["remote"]), "", "{refused:?}");
+    }
+    let long = format!("https://github.com/owner/{}.git", "a".repeat(4096));
+    assert!(give_origin(&repo, "builds", &long).is_err());
+
+    assert!(
+        give_origin(&repo, "Origin", "https://github.com/owner/api.git").is_err(),
+        "a pool named origin keeps its branches under refs/remotes/origin/"
+    );
+    assert_eq!(git(&repo, &["remote"]), "");
+
+    give_origin(&repo, "builds", "git@github.com:owner/api.git").expect("given");
+    assert_eq!(
+        git(&repo, &["remote", "get-url", "origin"]),
+        "git@github.com:owner/api.git"
+    );
+    assert!(
+        give_origin(&repo, "builds", "https://github.com/other/api.git").is_err(),
+        "a remote already there is left as it is"
+    );
+    assert_eq!(
+        git(&repo, &["remote", "get-url", "origin"]),
+        "git@github.com:owner/api.git"
+    );
+}
+
 /// **The clones a runner holds in a workspace** (1.51, #3811): each repository's folder in it,
 /// by its name, and nothing reached through a link, nothing that is not a repository, no name a
 /// repository's folder may not have and none the workspace keeps for its own.

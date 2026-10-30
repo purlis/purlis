@@ -260,7 +260,7 @@ pub(crate) fn move_workspace_back(
     let only_there = made_there(link, project, workspace, &here)?;
     // And each fresh one is checked to have room here before any clone here is taken over, so
     // one refused changes nothing.
-    for rel in &only_there {
+    for rel in only_there.keys() {
         room_for(root, rel)?;
     }
     let mut came_back = crate::host::CameBack::default();
@@ -298,7 +298,7 @@ pub(crate) fn move_workspace_back(
             }
         }
     }
-    for rel in only_there {
+    for (rel, origin) in only_there {
         let made = codelink::repo_in(root, &rel)
             .map_err(|why| why.to_string())
             .and_then(|repo| {
@@ -306,15 +306,26 @@ pub(crate) fn move_workspace_back(
                 let into = scratch.path().join("work.bundle");
                 let (heads, wrote) = link.fetch_work(project, &rel, Vec::new(), &into)?;
                 let bundle = wrote.then_some(into.as_path());
-                codelink::take_work_fresh(&repo, pool, bundle, &core_refs(heads))
-                    .map_err(|why| why.to_string())
+                let came = codelink::take_work_fresh(&repo, pool, bundle, &core_refs(heads))
+                    .map_err(|why| why.to_string())?;
+                // The clone is made: a remote not given leaves it here, without one, and says
+                // why on the chat's tab.
+                let remote = match origin {
+                    Some(url) => codelink::give_origin(&repo, pool, &url)
+                        .map(|()| url)
+                        .map_err(|why| why.to_string()),
+                    None => Err(NO_ORIGIN_NAMED.to_owned()),
+                };
+                Ok((came, remote))
             });
         match made {
-            Ok(came) => {
+            Ok((came, remote)) => {
                 came_back
                     .watch
                     .extend(came.into_iter().map(|path| in_clone(&rel, &path)));
-                came_back.made.push(rel);
+                came_back
+                    .made
+                    .push(crate::host::MadeHere { clone: rel, remote });
             }
             Err(why) => {
                 return Err(format!(
@@ -347,25 +358,31 @@ fn room_for(root: &Path, rel: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Why a clone made fresh has no remote where the runner named none it could (#3985): a runner
+/// before session protocol 1.54 names none, and one of it names none that is not a forge's
+/// address with no sign-in in it.
+const NO_ORIGIN_NAMED: &str = "the runner named no origin a forge reaches for it";
+
 /// **The clones of `workspace` the runner holds and this machine has none of** (#3811), by
-/// their folders in the project: what its chat cloned there. None from a runner before session
-/// protocol 1.51, which cannot say. A name no repository's folder may have is refused, in words;
-/// one the workspace keeps for its own is never a clone, and stays there. A clone here is the
-/// runner's of that name however either is cased, as this machine's disk may not tell them
-/// apart.
+/// their folders in the project: what its chat cloned there, each with the `origin` URL the
+/// runner names for it (1.54, #3985), its word alone, which [`codelink::give_origin`] holds to
+/// this machine's rules. None from a runner before session protocol 1.51, which cannot say. A
+/// name no repository's folder may have is refused, in words; one the workspace keeps for its
+/// own is never a clone, and stays there. A clone here is the runner's of that name however
+/// either is cased, as this machine's disk may not tell them apart.
 fn made_there(
     link: &HostLink,
     project: &str,
     workspace: &str,
     here: &[String],
-) -> Result<Vec<String>, String> {
-    let Some(there) = link
+) -> Result<std::collections::BTreeMap<String, Option<String>>, String> {
+    let Some((there, mut origins)) = link
         .clones_of(project, workspace)
         .map_err(|why| format!("the runner did not say which clones it holds: {why}"))?
     else {
-        return Ok(Vec::new());
+        return Ok(std::collections::BTreeMap::new());
     };
-    let mut only_there = std::collections::BTreeSet::new();
+    let mut only_there = std::collections::BTreeMap::new();
     for name in there {
         if !purlis_core::contain::repo_name_ok(&name) {
             return Err(format!(
@@ -378,10 +395,11 @@ fn made_there(
         }
         let rel = format!("workspaces/{workspace}/{name}");
         if !here.iter().any(|one| one.eq_ignore_ascii_case(&rel)) {
-            only_there.insert(rel);
+            let origin = origins.remove(&name);
+            only_there.insert(rel, origin);
         }
     }
-    Ok(only_there.into_iter().collect())
+    Ok(only_there)
 }
 
 /// The repositories of `workspace` in the project at `root`, by their folders in it.

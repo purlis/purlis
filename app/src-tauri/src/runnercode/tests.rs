@@ -374,14 +374,25 @@ fn a_clone_the_runner_chat_made_comes_back_with_move_here_and_names_what_a_tool_
     git(&there, &["init", "-q", "-b", "main"]);
     let made = committed(&there, "Makefile", "all:\n");
     std::fs::write(there.join("lib.rs"), "pub fn api() {}\n").unwrap();
+    git(
+        &there,
+        &[
+            "config",
+            "remote.origin.url",
+            "https://github.com/owner/api.git",
+        ],
+    );
 
     let came =
         super::move_workspace_back(&link, &project, &world.root, "app", "builds").expect("moved");
     assert_eq!(came.watch, ["workspaces/app/api/Makefile"]);
     assert_eq!(
         came.made,
-        ["workspaces/app/api"],
-        "the clone is said to be whole from the runner"
+        [crate::host::MadeHere {
+            clone: "workspaces/app/api".into(),
+            remote: Ok("https://github.com/owner/api.git".into()),
+        }],
+        "the clone is said to be whole from the runner, with the remote it was given (#3985)"
     );
     let api = world.root.join("workspaces/app/api");
     assert_eq!(git(&api, &["rev-parse", "main"]), made);
@@ -392,6 +403,11 @@ fn a_clone_the_runner_chat_made_comes_back_with_move_here_and_names_what_a_tool_
         "its uncommitted work came too"
     );
     assert_eq!(git(&api, &["rev-parse", "refs/remotes/builds/main"]), made);
+    assert_eq!(
+        git(&api, &["remote", "get-url", "origin"]),
+        "https://github.com/owner/api.git",
+        "it can be pushed here (#3985)"
+    );
     assert_eq!(
         git(&web, &["rev-parse", "HEAD"]),
         web_head,

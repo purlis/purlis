@@ -10,6 +10,8 @@ use std::time::Duration;
 use super::*;
 use purlis_core::poollogins::Unbound;
 
+use crate::host::MadeHere;
+
 /// Moves whose every stage is heard on the channel answered.
 fn heard() -> (Arc<Moves>, mpsc::Receiver<ChatMove>) {
     let moves = Arc::new(Moves::default());
@@ -198,7 +200,10 @@ fn a_tab_says_a_clone_made_fresh_is_whole_from_the_runner() {
         Some("builds"),
         &CameBack {
             watch: vec!["workspaces/app/api/CLAUDE.md".into()],
-            made: vec!["workspaces/app/api".into()],
+            made: vec![MadeHere {
+                clone: "workspaces/app/api".into(),
+                remote: Ok("https://github.com/owner/api.git".into()),
+            }],
         },
     )
     .unwrap();
@@ -208,17 +213,43 @@ fn a_tab_says_a_clone_made_fresh_is_whole_from_the_runner() {
     );
     assert!(said.contains("all of it was made there"), "{said}");
     assert!(said.contains("workspaces/app/api/CLAUDE.md"), "{said}");
+}
 
+/// A fresh clone's remote is said, so the person sees where a push goes, and one with none says
+/// why and how to give it one (#3985).
+#[test]
+fn a_tab_says_the_remote_a_fresh_clone_was_given_or_why_it_has_none() {
     let said = came_back_said(
         None,
         &CameBack {
             watch: Vec::new(),
-            made: vec!["workspaces/app/api".into(), "workspaces/app/web".into()],
+            made: vec![
+                MadeHere {
+                    clone: "workspaces/app/api".into(),
+                    remote: Ok("git@github.com:owner/api.git".into()),
+                },
+                MadeHere {
+                    clone: "workspaces/app/web".into(),
+                    remote: Err("the runner named no origin a forge reaches for it".into()),
+                },
+            ],
         },
     )
     .unwrap();
     assert!(
-        said.contains("workspaces/app/api and workspaces/app/web were cloned on a runner"),
+        said.contains("Its remote origin is git@github.com:owner/api.git"),
+        "{said}"
+    );
+    assert!(
+        said.contains("workspaces/app/web was cloned on a runner"),
+        "{said}"
+    );
+    assert!(
+        said.contains("It has no remote here (the runner named no origin a forge reaches for it)"),
+        "{said}"
+    );
+    assert!(
+        said.contains("`git remote add origin <URL>` in it"),
         "{said}"
     );
 }

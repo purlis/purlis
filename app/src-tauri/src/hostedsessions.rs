@@ -55,7 +55,7 @@
 //! again as it did when its own worker told it. A quit stops the host's saving before the
 //! window's own save at quit runs; a window that is gone without a quit leaves it saving.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
@@ -1204,12 +1204,13 @@ impl HostLink {
     }
 
     /// **The clones the host holds in `workspace`** of `project` (1.51, #3811), by their folder
-    /// names: `None` from a host before 1.51, which cannot say, so a clone it made stays there.
+    /// names, with the `origin` URL it names for each it can (1.54, #3985), its word alone:
+    /// `None` from a host before 1.51, which cannot say, so a clone it made stays there.
     pub(crate) fn clones_of(
         &self,
         project: &str,
         workspace: &str,
-    ) -> Result<Option<Vec<String>>, String> {
+    ) -> Result<Option<(Vec<String>, BTreeMap<String, String>)>, String> {
         if !self.names_its_clones() {
             return Ok(None);
         }
@@ -1217,7 +1218,7 @@ impl HostLink {
             project: project.to_owned(),
             workspace: workspace.to_owned(),
         })? {
-            Answer::Clones { repos } => Ok(Some(repos)),
+            Answer::Clones { repos, origins } => Ok(Some((repos, origins))),
             _ => Err("the runner did not say which clones it holds".to_owned()),
         }
     }

@@ -164,9 +164,18 @@ pub struct CameBack {
     /// would refuse, and every link, by its path in the project (the person's ruling of
     /// 2026-10-27).
     pub watch: Vec<String>,
-    /// Each clone made here fresh from the runner's chat's work (#3811), by its folder in the
-    /// project: every file of it was made there (#3990).
-    pub made: Vec<String>,
+    /// Each clone made here fresh from the runner's chat's work (#3811): every file of it was
+    /// made there (#3990).
+    pub made: Vec<MadeHere>,
+}
+
+/// **A clone made here fresh from a runner's chat's work** (#3811, #3985).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MadeHere {
+    /// Its folder in the project.
+    pub clone: String,
+    /// The `origin` it was given, the runner's clone's, or why it has none here.
+    pub remote: Result<String, String>,
 }
 
 /// What a host that moves no chat says.
