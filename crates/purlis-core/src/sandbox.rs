@@ -1178,8 +1178,8 @@ pub fn writes_are_sandboxed_in(env: &dyn Fn(&str) -> Option<String>, started: St
 
 /// **Whether this chat is one purlis wraps whole although its harness has a sandbox of its own**
 /// (#4083), as the chat's line said ([`crate::hookwire::WRAPPED_ENV`]): what its hooks and its
-/// `purlis` commands read, for how to word a refusal and nothing more. No decision that holds
-/// anything reads it, so a chat that set it itself only changes how it is told.
+/// `purlis` commands read, for how a refusal or a block is told and reported. No decision that
+/// holds anything reads it, so a chat that set it itself only changes how it is told.
 pub fn wrapped_whole_in(env: &dyn Fn(&str) -> Option<String>) -> bool {
     env(crate::hookwire::WRAPPED_ENV).as_deref() == Some("1")
 }
@@ -4388,9 +4388,9 @@ impl Applied {
             reach: self.reach.written(),
             tunnel_ports: egress::TUNNEL_PORTS.to_vec(),
             plain_ports: egress::PLAIN_PORTS.to_vec(),
-            // A host listed without a port on every port for Claude Code, as its own proxy
-            // carried it (#1665), wrapped or not.
-            any_port: self.harness == Harness::ClaudeCode,
+            // A host listed without a port on every port for Claude Code on its own sandbox, as
+            // its own proxy carried it (#1665); a wrapped one is carried as Codex is (#4083).
+            any_port: claude,
             // Claude Code's harness runs outside its sandbox and keeps its own temp folder, so
             // its chat needs the proxy alone (#1699), and its ssh route where no chat writes
             // (#1667).

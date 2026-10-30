@@ -64,6 +64,7 @@ fn a_claude_code_chats_commands_cannot_read_or_write_its_profiles_sign_in_file()
         config: Some(profile.clone()),
         data: None,
         sandbox_only: None,
+        state: None,
     });
 
     let file = profile.join(".credentials.json").display().to_string();

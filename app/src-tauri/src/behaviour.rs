@@ -856,15 +856,6 @@ impl OnTheRunner {
                 b"",
             );
         }
-        // A Claude Code chat holds its config folder from what it starts with (#4083): a turn
-        // writes in it, and its hooks are never made.
-        if harness == "claude" {
-            self.runs(
-                false,
-                &format!("printf '{{}}\\n' > '{}'/settings.json", folder.display()),
-                b"",
-            );
-        }
         // The parity image's harness runs what is here (`tests/parity/runner.Dockerfile`).
         self.runs(
             false,

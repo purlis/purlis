@@ -113,7 +113,7 @@ fn each_profile_a_wrapped_chat_starts_under_holds_on_linux() {
                     sandbox::opencode::profile(wrap, &root, &tmp, &[4040], None)
                 }
                 Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => {
-                    panic!("Claude Code is not wrapped")
+                    panic!("Claude Code is not wrapped off a runner")
                 }
             }
             .expect("a profile");
@@ -312,7 +312,9 @@ fn a_wrapped_chat_at_the_floor_never_writes_the_plugin_or_git_hooks_it_is_armed_
         let profile = match applied.form() {
             Form::Codex(wrap) => sandbox::codex::profile(wrap, &root, &tmp, &[4040], None),
             Form::Opencode(wrap) => sandbox::opencode::profile(wrap, &root, &tmp, &[4040], None),
-            Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => panic!("Claude Code is not wrapped"),
+            Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => {
+                panic!("Claude Code is not wrapped off a runner")
+            }
         }
         .expect("a profile");
         let script = [

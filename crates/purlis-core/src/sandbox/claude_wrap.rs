@@ -65,6 +65,9 @@ pub struct Wrap {
     /// its profile's ([`Self::on_profile`]). None until it is known, and a chat with none is not
     /// started.
     pub home: Option<PathBuf>,
+    /// Claude Code's state file for this chat ([`STATE_FILE`]): in its config folder, or in the
+    /// home on a profile whose environment names no config folder. Only purlis writes it.
+    pub state: Option<PathBuf>,
     /// The folders of this machine's profiles (`<data>/profiles`), denied to a chat but its own
     /// profile's.
     pub profiles: Option<PathBuf>,
@@ -111,7 +114,7 @@ pub const HOME_FILES: [&str; 3] = [
 ];
 
 /// The file Claude Code keeps its account, its user-scoped MCP servers and each folder's trust
-/// in, in its config folder.
+/// in: in its config folder where `CLAUDE_CONFIG_DIR` names one, else in the home.
 pub const STATE_FILE: &str = ".claude.json";
 
 /// The variable that moves Claude Code's own temporary files. Left alone it writes them under
@@ -142,6 +145,7 @@ pub fn wrap(compiled: &Compiled) -> Result<Wrap, Uncompilable> {
         widened: Box::new(compiled.widened.clone()),
         granted: compiled.writable.clone(),
         home: None,
+        state: None,
         profiles: compiled.homes.profiles.clone(),
         planes: Vec::new(),
         rules: super::claude::rules(compiled),
@@ -154,6 +158,12 @@ impl Wrap {
     /// config folder, and it is not started.
     pub fn on_profile(&mut self, folders: &super::signin::ProfileFolders) {
         self.home = folders.config.as_deref().and_then(held_folder);
+        self.state = self.home.as_ref().map(|home| {
+            folders
+                .state
+                .clone()
+                .unwrap_or_else(|| home.join(STATE_FILE))
+        });
     }
 
     /// `more` held at the floor besides what was compiled.
@@ -300,6 +310,11 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
             "(allow file-write* (regex {}))",
             string(&under(home, "plugins/data/.+"))?
         ));
+        // And still no link made there, after the allow that would let one through.
+        own.after.push(format!(
+            "(deny file-write-create (require-all (vnode-type SYMLINK) (subpath {})))",
+            quote(home)?
+        ));
     }
     // No link made where a later Claude Code writes, which it would write through.
     own.deny.push(format!(
@@ -343,7 +358,7 @@ pub fn prepare(wrap: &Wrap, cwd: &Path) {
     for dir in HOME_DIRS {
         no_links_below(&home.join(dir));
     }
-    let state = home.join(STATE_FILE);
+    let state = wrap.state.clone().unwrap_or_else(|| home.join(STATE_FILE));
     let mut doc = match std::fs::symlink_metadata(&state) {
         Ok(found) if found.is_file() => {
             match std::fs::read_to_string(&state)

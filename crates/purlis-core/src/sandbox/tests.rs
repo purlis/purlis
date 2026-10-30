@@ -4834,7 +4834,9 @@ fn wrap_profile(applied: &Applied) -> String {
     match applied.form() {
         Form::Opencode(wrap) => opencode::profile(wrap, cwd, tmp, &[4040], None),
         Form::Codex(wrap) => codex::profile(wrap, cwd, tmp, &[4040], None),
-        Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => panic!("Claude Code is not wrapped"),
+        Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => {
+            panic!("Claude Code is not wrapped off a runner")
+        }
     }
     .expect("a profile")
 }

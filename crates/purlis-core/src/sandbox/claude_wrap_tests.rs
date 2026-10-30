@@ -434,6 +434,55 @@ fn a_chat_is_readied_by_purlis_before_the_wrap_and_keeps_what_the_file_held() {
 }
 
 #[test]
+fn on_a_profile_naming_no_config_folder_the_state_file_is_the_home_s() {
+    let place = place(FULL, true);
+    let folders = ProfileFolders::of(Harness::ClaudeCode, &[], &place.machine);
+    assert_eq!(
+        folders.state,
+        Some(place.home.join(claude_wrap::STATE_FILE))
+    );
+    let named = place.home.join("work");
+    let env = [("CLAUDE_CONFIG_DIR".to_owned(), named.display().to_string())];
+    let folders = ProfileFolders::of(Harness::ClaudeCode, &env, &place.machine);
+    assert_eq!(folders.state, Some(named.join(claude_wrap::STATE_FILE)));
+    let mut applied = for_start(
+        Harness::ClaudeCode,
+        place.plane.path(),
+        &place.machine,
+        &only_landlock,
+    )
+    .expect("it starts")
+    .expect("a sandbox in force");
+    applied.on_profile(&ProfileFolders::of(
+        Harness::ClaudeCode,
+        &[],
+        &place.machine,
+    ));
+    let wrap = wrap_of(&applied);
+    claude_wrap::prepare(&wrap, place.plane.path());
+    let state: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(place.home.join(claude_wrap::STATE_FILE)).expect("written"),
+    )
+    .expect("JSON");
+    assert_eq!(state["hasCompletedOnboarding"], true);
+    assert!(
+        !place
+            .home
+            .join(".claude")
+            .join(claude_wrap::STATE_FILE)
+            .exists()
+    );
+    // And the chat never writes it.
+    let profile = profile_of(
+        &wrap,
+        &super::real(place.plane.path()),
+        &place.home.join("tmp"),
+        &place.home.join("run/hooks.sock"),
+    );
+    assert!(!writes(&profile, &place.home.join(claude_wrap::STATE_FILE)));
+}
+
+#[test]
 fn a_state_file_purlis_cannot_read_is_left_as_it_is() {
     let place = place(FULL, true);
     let home = place.home.join("work");
