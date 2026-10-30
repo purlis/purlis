@@ -305,6 +305,80 @@ async fn the_paired_desktop_unpairs_the_runner_and_is_linked_no_more() {
     assert!(link(&place, &desktop, &runner_pinned).await.is_err());
 }
 
+/// **A profile's settings reach the runner in batches, however large, whole** (1.56, #4081),
+/// over a real link: what one control frame could not carry is handed to the runner's keep as
+/// the one set of files it checks; a keep naming another count keeps nothing; and a batch refused
+/// drops what the link staged.
+#[tokio::test]
+async fn the_paired_desktop_stages_a_profiles_settings_in_batches_and_a_keep_takes_them_whole() {
+    use purlis_session_protocol::link::MOST_CONTROL_FRAME_BYTES;
+    use purlis_session_protocol::session::{
+        Client, ProfileToKeep, SettingsBatch, SettingsFile, settings_in_batches,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let place = place_in(dir.path());
+    let (runner, desktop) = (identity(RUNNER), identity(DESKTOP));
+    let runner_pinned = pinned_of(&runner);
+    let paired: Paired = Arc::new(Mutex::new(Ok(Some((runner, pinned_of(&desktop))))));
+    let kept = KeptHere::default();
+    let (_stop, _host) = hosting_keeping(&place, &paired, &kept).await;
+    let client = Client::new(link(&place, &desktop, &runner_pinned).await.unwrap()).0;
+    let files = vec![
+        SettingsFile {
+            path: "settings.json".into(),
+            bytes: b"{}".to_vec(),
+        },
+        SettingsFile {
+            path: "skills/large/model.bin".into(),
+            bytes: vec![7; 3 * MOST_CONTROL_FRAME_BYTES],
+        },
+    ];
+    let keep = |staged| ProfileToKeep {
+        name: "work".into(),
+        harness: "claude".into(),
+        sandbox_only: false,
+        pinned: None,
+        settings: None,
+        settings_staged: Some(staged),
+    };
+    let batches = settings_in_batches("work", files.clone());
+    assert!(batches.len() > 3, "{} batches", batches.len());
+
+    // A count that is not what arrived keeps nothing, and leaves nothing staged.
+    for batch in batches.clone() {
+        client.stage_profile_settings(batch).await.unwrap();
+    }
+    let refused = client.keep_profile(keep(3)).await.unwrap_err();
+    assert!(refused.refusal().is_some(), "{refused}");
+    assert!(kept.lock().unwrap().is_empty());
+
+    // A batch refused drops what came before it, so its keep has nothing to take.
+    client
+        .stage_profile_settings(batches[0].clone())
+        .await
+        .unwrap();
+    let another = SettingsBatch {
+        profile: "another".into(),
+        pieces: Vec::new(),
+    };
+    let refused = client.stage_profile_settings(another).await.unwrap_err();
+    assert!(refused.refusal().is_some(), "{refused}");
+    for batch in batches[1..].iter().cloned() {
+        client.stage_profile_settings(batch).await.unwrap();
+    }
+    let refused = client.keep_profile(keep(2)).await.unwrap_err();
+    assert!(refused.refusal().is_some(), "{refused}");
+    assert!(kept.lock().unwrap().is_empty());
+
+    for batch in batches {
+        client.stage_profile_settings(batch).await.unwrap();
+    }
+    client.keep_profile(keep(2)).await.unwrap();
+    let handed = kept.lock().unwrap().pop().expect("it was kept");
+    assert_eq!(handed.settings, Some(files));
+    assert_eq!(handed.settings_staged, None);
+}
+
 /// **The paired desktop has the runner keep its profile** (1.43, #2049): the runner is handed the
 /// profile's name, harness, sandbox-only mark and pin, and answers whether it is signed in there.
 #[tokio::test]
@@ -327,6 +401,7 @@ async fn the_paired_desktop_has_the_runner_keep_its_profile_and_hears_where_it_s
         sandbox_only: false,
         pinned: Some("2.1.300".into()),
         settings: None,
+        settings_staged: None,
     };
     assert_eq!(
         client.keep_profile(profile("signed-in")).await.unwrap(),

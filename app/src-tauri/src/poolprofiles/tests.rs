@@ -26,6 +26,7 @@ fn a_pool_not_shown_to_be_owned_is_sent_nothing_and_is_its_own_to_say() {
         "builds",
         &work(),
         Waking::No,
+        &Default::default(),
     );
 
     assert_eq!(said, Ok(None));
@@ -55,6 +56,7 @@ fn a_pool_not_shown_to_be_owned_is_sent_no_setting_and_none_is_read() {
         "builds",
         &kept,
         Waking::Yes,
+        &Default::default(),
     );
 
     assert_eq!(said, Ok(None));
@@ -72,6 +74,7 @@ fn on_an_owned_pool_it_goes_on_to_the_pool() {
         "builds",
         &work(),
         Waking::No,
+        &Default::default(),
     );
 
     assert!(said.is_err(), "{said:?}");

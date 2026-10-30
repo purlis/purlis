@@ -312,6 +312,12 @@ fn every_command() -> Vec<Command> {
             sandbox_only: false,
             pinned: None,
             settings: None,
+            settings_staged: None,
+        }),
+        // Its settings in batches, for that keep (1.56, #4081).
+        Command::StageProfileSettings(session::SettingsBatch {
+            profile: "work".into(),
+            pieces: Vec::new(),
         }),
         // A browser the person takes over, drives and hands back: the window's alone (1.14).
         Command::TakeOver {
@@ -600,6 +606,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             // The desktop removing the runner (1.25, #2525).
             "unpair",
             "keep_profile",
+            "stage_profile_settings",
             "take_over",
             "browser_input",
             "size_browser",
