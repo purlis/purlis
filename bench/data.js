@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793380917022,
+  "lastUpdate": 1793382942539,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31836,6 +31836,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7431635,
             "unit": "ms",
             "extra": "median of 5 runs: 101.371, 101.484, 101.743, 102.220, 103.134 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d3301aa2c28415dd496113c29605fe735ad434bd",
+          "message": "Skills: revert from before a move or rename, local grades follow, a rename that keeps the folder (#4017, #4018, #4021) (#4101)\n\n* Skills: History and Grades follow a rename that keeps the folder (#4021)\n\nA rename that keeps the folder changes only the name: line, so git sees\nno rename to walk. The history walk now reads the name each version of a\nfolder gave, in one git cat-file --batch by tree, and splits the place\nwhere the name changes, so each version keeps the name, runs and grades\nit had.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: revert to a version from before a move or a rename (#4017)\n\nA revert to a version from before a move puts its files back in the\nfolder the skill has now: its tree is read into an index of its own\nbelow that folder and checked out, after the files it never had are\nremoved. A version from before a rename comes back with its name: line\nchanged to the name the skill has now. The checks of any revert hold.\n\nThe core tells the window where such a version is from\n(SkillVersion.before), and the History tab's confirm says so.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: the revert confirm reads only where a version is from (#4017)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: a local copy's grades follow a rename and a move (#4018)\n\nGit keeps no history of a skill only on this machine, so a rename of it,\nor a move into or out of skills.local/, left its grades under a name or\nlevel nothing followed. The verbs now keep each such earlier name and\nlevel, with when it was left, in this machine's app state\n(skill-earlier-names.json, device-bound), and carry them along on every\nlater rename, move and share; a delete drops them. The Grades tab and a\ngrade's scorecard read the rows of each earlier place recorded before it\nwas left. The Rename and Move dialogs say a local skill's grades move\nwith it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: review of the history follow-ups (#4017, #4018, #4021)\n\nA revert from before a rename changes the name: line in the file as\ncheckout wrote it; a delete keeps the earlier names so Restore keeps the\ngrades, and a new skill at the key drops them; a move into local keeps\nthe places git followed; versions before an uncommitted rename keep\ntheir name; the move cap counts folder moves only; a revert removes the\nfolders it empties; a revert looks its version up by the walk alone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T16:24:31Z",
+          "tree_id": "7adab3e1507c6b4821e6ec554c212f17c472629a",
+          "url": "https://github.com/purlis/purlis/commit/d3301aa2c28415dd496113c29605fe735ad434bd"
+        },
+        "date": 1793382938450,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6485445000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.621, 0.629, 0.649, 0.656, 0.671 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.728837,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.491, 16.622, 16.729, 16.778, 16.975 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.35386299999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.558, 101.928, 102.354, 103.045, 103.890 ms"
           }
         ]
       }
