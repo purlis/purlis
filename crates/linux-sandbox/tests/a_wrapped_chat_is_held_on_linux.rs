@@ -429,17 +429,15 @@ fn a_socket_never_bound_does_not_listen() {
     assert_eq!(p.run(&["listen-unbound", "6"]), "EACCES");
 }
 
-/// A test server asking for a port the system picks is refused, and told (#3396), so its chat
-/// gets a Notice that says what to do: the bind on port 0, as the address it asked for.
-#[test]
-fn a_bind_on_a_port_the_system_picks_is_refused_and_told() {
-    let p = project();
+/// `probe` run under the wrap in the chat's folder, with no port served: what it printed, and
+/// what the wrap told it refused, a line each.
+fn run_told(p: &Project, probe: &[&str]) -> (String, String) {
     let told = p.tmp.join("told");
-    let port = free_port();
+    let _ = std::fs::remove_file(&told);
     let words = purlis_linux_sandbox::line(
-        &p.profile_unserved(port),
+        &p.profile_unserved(free_port()),
         PROBE.to_owned(),
-        vec!["serve-on".into(), "127.0.0.1".into(), "0".into()],
+        probe.iter().map(|it| (*it).to_owned()).collect(),
     );
     let out = wrap_with(
         &words,
@@ -451,16 +449,91 @@ fn a_bind_on_a_port_the_system_picks_is_refused_and_told() {
     .current_dir(&p.cwd)
     .output()
     .expect("the wrap ran");
-    assert_eq!(
-        String::from_utf8_lossy(&out.stdout).trim(),
-        "EACCES",
-        "{out:?}"
-    );
-    let said = std::fs::read_to_string(&told).unwrap_or_default();
-    assert!(
-        said.lines().any(|line| line == "network-bind 127.0.0.1:0"),
-        "told: {said:?}"
-    );
+    assert!(out.status.success(), "{out:?}");
+    (
+        String::from_utf8_lossy(&out.stdout).trim().to_owned(),
+        std::fs::read_to_string(&told).unwrap_or_default(),
+    )
+}
+
+/// #3396 (ruled 2026-10-30): a test server on a port the system picks, on 127.0.0.1, serves
+/// with no grant, and the chat reaches it there; nothing is told.
+#[test]
+fn a_test_server_on_a_port_the_system_picks_on_127_0_0_1_serves_and_is_reached() {
+    let p = project();
+    let (said, told) = run_told(&p, &["serve-and-dial", "127.0.0.1"]);
+    assert_eq!(said, "ok", "told: {told:?}");
+    assert_eq!(told, "", "nothing refused");
+    // Again, as a test suite starts one server after another.
+    for _ in 0..3 {
+        assert_eq!(run_told(&p, &["serve-and-dial", "127.0.0.1"]).0, "ok");
+    }
+}
+
+/// #3396: a port the system picks on any other address (every interface, IPv6's loopback) is
+/// still refused, and told, so its chat gets the Notice that says what to do: the bind on port
+/// 0, as the address it asked for.
+#[test]
+fn a_bind_on_a_port_the_system_picks_elsewhere_is_refused_and_told() {
+    let p = project();
+    for (address, as_told) in [
+        ("0.0.0.0", "0.0.0.0:0"),
+        ("::", "[::]:0"),
+        ("::1", "[::1]:0"),
+    ] {
+        let (said, told) = run_told(&p, &["serve-on", address, "0"]);
+        assert_eq!(said, "EACCES", "{address}");
+        assert!(
+            told.lines()
+                .any(|line| line == format!("network-bind {as_told}")),
+            "{address} told: {told:?}"
+        );
+    }
+}
+
+/// #3396: a chat with a test server of its own reaches only that server's port: a service on
+/// this machine's loopback it did not start is refused, as before.
+#[test]
+fn a_chat_with_a_server_of_its_own_reaches_no_other_loopback_port() {
+    let p = project();
+    let other = TcpListener::bind("127.0.0.1:0").expect("another service");
+    let other_port = other.local_addr().expect("its address").port().to_string();
+    std::thread::spawn(move || {
+        for stream in other.incoming().flatten() {
+            echo(stream);
+        }
+    });
+    let (said, _) = run_told(&p, &["serve-and-dial", "127.0.0.1", &other_port]);
+    assert_eq!(said, "EACCES");
+    // A fixed port goes the way it did: refused until a grant serves it (#2019).
+    let fixed = free_port().to_string();
+    assert_eq!(run_told(&p, &["serve-on", "127.0.0.1", &fixed]).0, "EACCES");
+}
+
+/// #3396: Python's own test server, `HTTPServer(("127.0.0.1", 0))`, serves a request its chat
+/// makes to it.
+#[test]
+fn python_s_test_server_on_a_port_the_system_picks_answers() {
+    let mut p = project();
+    let script = r#"
+import http.server, threading, urllib.request
+class Answer(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"ok")
+    def log_message(self, *args):
+        pass
+try:
+    server = http.server.HTTPServer(("127.0.0.1", 0), Answer)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    url = "http://127.0.0.1:%d/" % server.server_port
+    print(opener.open(url, timeout=10).read().decode(), flush=True)
+except Exception as e:
+    print(repr(e), flush=True)
+"#;
+    assert_eq!(python(&mut p, script, &[]), "ok");
 }
 
 /// A thread with a descriptor table of its own is judged by its own socket: its unbound one is

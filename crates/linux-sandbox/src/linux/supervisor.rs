@@ -43,6 +43,7 @@ use nix::unistd::{Pid, UnlinkatFlags, linkat, symlinkat, unlinkat};
 
 use super::notify;
 use super::walk::{self, Chat, Found, World, named, named_in};
+use crate::loopback::{self, Picked};
 use crate::profile::{FileOp, Kind, Op, Profile, Remote};
 use crate::refusal::Teller;
 
@@ -101,6 +102,8 @@ pub(super) struct Supervisor {
     world: World,
     changing: Mutex<()>,
     told: Option<Arc<Teller>>,
+    /// The ports picked for the chat's test servers, and the socket made on each (#3396).
+    picked: Picked,
 }
 
 impl Supervisor {
@@ -108,6 +111,7 @@ impl Supervisor {
         listener: OwnedFd,
         profile: Profile,
         told: Option<Arc<Teller>>,
+        picked: Picked,
     ) -> Result<Supervisor, Errno> {
         Ok(Supervisor {
             listener,
@@ -115,6 +119,7 @@ impl Supervisor {
             world: World::new()?,
             changing: Mutex::new(()),
             told,
+            picked,
         })
     }
 
@@ -888,10 +893,14 @@ impl Supervisor {
             }
             libc::AF_INET | libc::AF_INET6 => {
                 let remote = ip_of(&bytes)?;
-                if !self.profile.allows(&Op::Connect(Remote::Ip {
+                let allowed = self.profile.allows(&Op::Connect(Remote::Ip {
                     ip: remote.ip(),
                     port: remote.port(),
-                })) {
+                }));
+                // A test server of the chat's own, on a port picked for it (#3396): reached
+                // while the socket made for it alone listens there, read again once connected.
+                let own = !allowed && self.chat_s_own(remote);
+                if !allowed && !own {
                     // A service on this machine; an internet address dialled past the proxy,
                     // told apart, once a minute (#2423): the proxy tells each host by name.
                     if is_this_machine(remote.ip()) {
@@ -916,6 +925,13 @@ impl Supervisor {
                 let socket = socket(family, SockType::Stream, SockFlag::SOCK_CLOEXEC, None)?;
                 let _ = setsockopt(&socket, sockopt::TcpNoDelay, &true);
                 connect(socket.as_raw_fd(), address.as_ref())?;
+                // Its server let the port go between the judging and the connect, and another
+                // socket took it: the connection is dropped before the chat holds it.
+                if own && !self.chat_s_own(remote) {
+                    drop(socket);
+                    self.tell(chat, CONNECT, remote.to_string());
+                    return Err(REFUSED);
+                }
                 socket
             }
             _ => return Err(REFUSED),
@@ -942,17 +958,21 @@ impl Supervisor {
     ///   `0.0.0.0`, `::`) is bound instead to that port's socket, `<port>.sock`, the same way: a
     ///   server started for a port, on whatever address, is served through the door. Any other
     ///   internet bind is refused, as the chat's Landlock layer refuses every TCP bind, and told,
-    ///   so a server that asks for a port raises the Ask to serve on it. A port of zero, which a
-    ///   test server asks for so the system picks one, is refused and told too (#3396): no
+    ///   so a server that asks for a port raises the Ask to serve on it.
+    /// - **A port the system picks on 127.0.0.1** (#3396, ruled 2026-10-30), which a test
+    ///   server asks for, is bound on a TCP socket of the supervisor's own, on a port of the
+    ///   pool picked for the chat, put in place of the chat's descriptor ([`Self::bind_picked`]).
+    ///   A port of zero on any other address (every interface, `::1`) is refused and told: no
     ///   person allows one, and its Notice says what to do instead.
     /// - **A netlink socket (what `getifaddrs` binds) and an abstract or unnamed unix socket go
     ///   on in the kernel** ([`Answer::GoOn`]), as before; any other family is refused. Nothing
     ///   the chat changes after the address was read carries such a call further: the call the kernel
     ///   makes is judged by the chat's own Landlock layer, which binds no TCP port and makes no
     ///   socket file.
-    /// - **The socket put in the chat's place is always a unix one**, bound here at its path: no
-    ///   internet socket the supervisor hands the chat is ever bound without a port of its own,
-    ///   so a listen on it is never the kernel's to bind (see [`Self::listen`]).
+    /// - **The socket put in the chat's place is a unix one**, bound here at its path, **or an
+    ///   internet one bound on 127.0.0.1 at a picked port**: no internet socket the supervisor
+    ///   hands the chat is ever bound without a port of its own, so a listen on it is never the
+    ///   kernel's to bind (see [`Self::listen`]).
     fn bind(
         &self,
         chat: &Chat<'_>,
@@ -979,6 +999,9 @@ impl Supervisor {
             }
             libc::AF_INET | libc::AF_INET6 => {
                 let local = ip_of(&bytes)?;
+                if loopback::picks_on_the_loopback(local) {
+                    return self.bind_picked(chat, id, fd);
+                }
                 if local.port() == 0 {
                     self.tell(chat, BIND, local.to_string());
                     return Err(REFUSED);
@@ -1028,6 +1051,67 @@ impl Supervisor {
             at,
             cloexec: flags & libc::O_CLOEXEC != 0,
         })
+    }
+
+    /// **A bind on a port the system picks, on 127.0.0.1** (#3396): a TCP socket of the
+    /// supervisor's own, bound on the first port of the pool picked for the chat that is free,
+    /// recorded as the chat's, and put in place of the chat's descriptor `fd`. Made here rather
+    /// than on the chat's own socket, so no option the chat set first (a port shared with another
+    /// process's socket, `SO_REUSEPORT`) goes with the bind. A pool with no port free is
+    /// `EADDRINUSE`, as the kernel says it, and told.
+    fn bind_picked(&self, chat: &Chat<'_>, id: u64, fd: i32) -> Result<Answer, Errno> {
+        let at = u32::try_from(fd).map_err(|_| Errno::EBADF)?;
+        let flags = descriptor_flags(chat.tid, fd)?;
+        if !self.alive(id) {
+            return Ok(Answer::Gone);
+        }
+        let served = socket(
+            AddressFamily::Inet,
+            SockType::Stream,
+            SockFlag::SOCK_CLOEXEC,
+            None,
+        )?;
+        // As a server sets it before its bind, so a port a server let go is bound again while
+        // its last connections close. On Linux it never shares a port another socket listens on.
+        setsockopt(&served, sockopt::ReuseAddr, &true)?;
+        let mut bound = None;
+        for port in self.picked.turn() {
+            match nix::sys::socket::bind(served.as_raw_fd(), &SockaddrIn::new(127, 0, 0, 1, port)) {
+                Ok(()) => {
+                    bound = Some(port);
+                    break;
+                }
+                Err(Errno::EADDRINUSE) => {}
+                Err(why) => return Err(why),
+            }
+        }
+        let Some(port) = bound else {
+            self.tell(chat, BIND, "127.0.0.1:0".to_owned());
+            return Err(Errno::EADDRINUSE);
+        };
+        self.picked.own(port, fstat(&served)?.st_ino);
+        if flags & libc::O_NONBLOCK != 0 {
+            nix::fcntl::fcntl(&served, nix::fcntl::FcntlArg::F_SETFL(OFlag::O_NONBLOCK))?;
+        }
+        Ok(Answer::Connected {
+            fd: served,
+            at,
+            cloexec: flags & libc::O_CLOEXEC != 0,
+        })
+    }
+
+    /// Whether `remote` is a test server of the chat's own (#3396): on 127.0.0.1, at a port
+    /// picked for it where the socket the supervisor made for it alone listens, as this
+    /// machine's table of TCP sockets says now.
+    fn chat_s_own(&self, remote: SocketAddr) -> bool {
+        let SocketAddr::V4(v4) = remote else {
+            return false;
+        };
+        if *v4.ip() != Ipv4Addr::LOCALHOST || !self.picked.ports().contains(&v4.port()) {
+            return false;
+        }
+        std::fs::read_to_string("/proc/self/net/tcp")
+            .is_ok_and(|table| self.picked.owns(v4.port(), &table))
     }
 
     /// **A listen, made by the supervisor on the socket it judged**: the calling thread's own

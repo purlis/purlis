@@ -1980,12 +1980,15 @@ pub const CLAUDE_CODE_LISTEN_SAID: &str = "Claude Code's sandbox can let a comma
 
 /// Why a server on a port the system picks cannot be allowed (#3396): a test suite's servers
 /// (`listen(0)`) take whatever port is free, so there is no one port to allow, and purlis
-/// allows a chat's server only on one port of its own, behind its door. What to do instead.
+/// allows a chat's server only on one port of its own, behind its door. What to do instead;
+/// and, where purlis's own sandbox runs on Linux, which lets a server take a port the system
+/// picks on 127.0.0.1 alone (#3396, ruled 2026-10-30), the address to start it on.
 pub const PICKED_PORT_SAID: &str = "It asked for a port the system picks, as a test suite's \
      servers often do, so there is no one port to allow: purlis lets a chat's server listen only \
      on a port of its own, from 1024. Start the server on such a port (PORT=3000, or purlis \
      listen 3000 -- <command>) to be asked about it, or start this chat without the sandbox to \
-     run tests that pick their own ports.";
+     run tests that pick their own ports. On Linux, a server may take a port the system picks \
+     on 127.0.0.1: start it there rather than on every interface.";
 
 /// Why a server refused on no port purlis could allow cannot be allowed (#3440): what reached the
 /// Notice named none, which is so of another machine's address, and of a runner that could not

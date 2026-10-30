@@ -30,6 +30,9 @@ pub mod carried;
 pub mod profile;
 pub mod refusal;
 
+#[cfg(any(target_os = "linux", test))]
+mod loopback;
+
 #[cfg(target_os = "linux")]
 mod linux;
 
