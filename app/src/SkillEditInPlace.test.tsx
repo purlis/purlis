@@ -10,15 +10,16 @@
  * command boundary.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { PLANE, STUDIO_HISTORY, forgetStudio, renderStudioAt } from "./SkillStudioTab.testkit";
+import { SkillStudioTab } from "./SkillStudioTab";
 import { AT_THE_ROOT, SKILL_STUDIO_VIEW, skillRowId, type StudioPlace } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetSkillEdit, keepSkillEdit, skillEditIn } from "./skillEdit";
 import { typeIn } from "./editor/typing.testkit";
-import { unsavedIn, unsavedNow } from "./unsavedWork";
+import { handedOver, takeHanded, unsavedIn, unsavedNow } from "./unsavedWork";
 import type { SkillLintFinding, StudioSkill } from "./bindings";
 
 afterEach(() => {
@@ -283,6 +284,7 @@ describe("the editor's unsaved text, as the window's unsaved work (#3929)", () =
         view: SKILL_STUDIO_VIEW,
         name: "deploy",
         workspace: undefined,
+        persona: undefined,
       }),
     ]);
 
@@ -329,7 +331,46 @@ describe("the editor's unsaved text, as the window's unsaved work (#3929)", () =
       was: TEXT,
       now: `${TEXT}More.\n`,
     });
-    expect(unsavedIn(PLANE, "ops").map((one) => one.name)).toEqual(["deploy"]);
+    expect(unsavedIn(PLANE, { workspace: "ops" }).map((one) => one.name)).toEqual(["deploy"]);
+    unsavedIn(PLANE)[0].discard();
+    expect(skillEditIn(STUDIO_HISTORY)).toBeUndefined();
+  });
+
+  it("is carried to another window as it is, whose studio opens on it (#4028)", async () => {
+    core();
+    const user = userEvent.setup();
+    typeIn(await startEditing(user), "More.\n");
+    const edit = skillEditIn(STUDIO_HISTORY);
+    // Carried out of this window, and let go of here with its tab, as a move does.
+    const carried = handedOver(PLANE);
+    cleanup();
+    forgetSkillEdit(STUDIO_HISTORY);
+    forgetStudio();
+    expect(unsavedNow()).toEqual([]);
+
+    // Sent between windows as JSON, to a window whose studio tab has no history yet.
+    takeHanded(JSON.parse(JSON.stringify(carried)) as typeof carried);
+    expect(skillEditIn(STUDIO_HISTORY)).toEqual(edit);
+    expect(unsavedIn(PLANE).map((one) => one.key)).toEqual([STUDIO_HISTORY]);
+    render(<SkillStudioTab plane={PLANE} changed={0} />);
+
+    // On the text, not on the library away from it.
+    expect((await editorText()).textContent).toContain("More.");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("is a persona's where the skill is saved into one, so its removal asks too (#4029)", () => {
+    keepSkillEdit(STUDIO_HISTORY, {
+      plane: PLANE,
+      view: SKILL_STUDIO_VIEW,
+      at: at(DEPLOY, { tab: "text" }),
+      skill: DEPLOY,
+      level: { at: "persona", name: "steward", local: false },
+      was: TEXT,
+      now: `${TEXT}More.\n`,
+    });
+    expect(unsavedIn(PLANE, { persona: "steward" }).map((one) => one.name)).toEqual(["deploy"]);
+    expect(unsavedIn(PLANE, { workspace: "steward" })).toEqual([]);
     unsavedIn(PLANE)[0].discard();
     expect(skillEditIn(STUDIO_HISTORY)).toBeUndefined();
   });

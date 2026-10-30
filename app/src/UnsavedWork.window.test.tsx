@@ -117,6 +117,8 @@ function work(plane: string, view: ViewRef = settingsView("project")): UnsavedWo
     name: "deploy",
     save: vi.fn(() => Promise.resolve(undefined)),
     discard: vi.fn(() => keepUnsaved(one.key, undefined)),
+    kind: "test",
+    handOver: () => null,
   };
   keepUnsaved(one.key, one);
   return one;

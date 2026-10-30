@@ -106,7 +106,8 @@ import { placeOf, scopeLadder } from "./fileFind";
 import { useJumpAsks, type Pending } from "./fileJump";
 import type { Place } from "./pieceViews";
 import { ClosingProject } from "./ClosingProject";
-import { discardUnsavedIn, unsavedIn, unsavedNow } from "./unsavedWork";
+import { discardUnsavedIn, unsavedIn } from "./unsavedWork";
+import { carriedBack, carryOut, useUnsavedAcrossWindows } from "./unsavedWindows";
 import { UnsavedWorkQuestion, type UnsavedAsk } from "./UnsavedWorkQuestion";
 import { QuitWarning, type Ending } from "./QuitWarning";
 import { RelaunchAsk } from "./RelaunchAsk";
@@ -707,15 +708,7 @@ function App() {
     [takeOut],
   );
 
-  /**
-   * Moves one project into another window — a new one when `to` is null (charter#126).
-   *
-   * **Nothing is closed.** Its chats go on running in the core, and the window it arrives in
-   * draws them from what the core has open, as a window that reloaded would. This window only
-   * takes its tab out. A split window left holding nothing goes (`windows.rs`), and the main
-   * window left holding nothing shows the opener.
-   */
-  /** **A project's close, its move or a quit waiting on the answer about the unsaved work it
+  /** **A project's close or a quit waiting on the answer about the unsaved work it
    *  would lose** (#3929, `unsavedWork.ts`), asked before what it ends is. */
   const [unsavedAsk, setUnsavedAsk] = useState<UnsavedAsk>();
   const unsavedAskNow = useRef(unsavedAsk);
@@ -731,18 +724,37 @@ function App() {
     setUnsavedAsk(undefined);
   }, []);
 
+  /** **Unsaved work across windows** (#4028): a project moved out takes its work along, and
+   *  a quit asks in every window that holds some. */
+  const { askAtQuit } = useUnsavedAcrossWindows({ planes, askUnsaved });
+
+  /**
+   * Moves one project into another window — a new one when `to` is null (charter#126).
+   *
+   * **Nothing is closed.** Its chats go on running in the core, and the window it arrives in
+   * draws them from what the core has open, as a window that reloaded would, and its views'
+   * unsaved work from what this window carried out (#4028). This window only takes its tab out.
+   * A split window left holding nothing goes (`windows.rs`), and the main window left holding
+   * nothing shows the opener.
+   */
   const moveProject = useCallback(
     async (plane: string, to: string | null, unsavedAsked = false): Promise<Ran> => {
-      // **Its views' unsaved work stays in this window** (#3929, #4028): asked about first.
+      // **Its views' unsaved work goes with it** (#4028): carried out before the move, and
+      // registered again in the window it goes to. Where it cannot be carried, it is asked
+      // about first, as before (#3929): the move would lose it.
       const work = unsavedAsked ? [] : unsavedIn(plane);
-      if (work.length > 0) {
+      const carried = work.length === 0 || (await carryOut(plane));
+      if (!carried) {
         askUnsaved({ work, then: () => void moveProject(plane, to, true) });
         return { ok: true };
       }
       const answer = await commands
         .moveProjects([plane], plane, to)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      if (answer.status === "error") return { ok: false, refused: answer.error };
+      if (answer.status === "error") {
+        if (work.length > 0) carriedBack(plane);
+        return { ok: false, refused: answer.error };
+      }
       takeOut(plane);
       return { ok: true };
     },
@@ -1512,20 +1524,15 @@ function App() {
       else setAsking(true);
     };
     const listening = listen("quit-asked", () => {
-      // **The unsaved work of the window's views is asked about first** (#3929): Keep editing
-      // is a quit not taken, which the core is told as the warning's Not now tells it.
-      const work = unsavedNow();
-      if (work.length === 0) return askToQuit();
-      askUnsaved({
-        work,
-        then: askToQuit,
-        kept: () => void commands.quitCancelled().catch(() => undefined),
-      });
+      // **The unsaved work of every window's views is asked about first** (#3929, #4028): this
+      // window's, then each split window's, there. Keep editing is a quit not taken, which the
+      // core is told as the warning's Not now tells it.
+      askAtQuit(askToQuit, () => void commands.quitCancelled().catch(() => undefined));
     }).catch(() => undefined);
     // Unlistening can fail too — the window may be going away under it — and a cleanup
     // that throws into nothing is an unhandled rejection, not a diagnosis.
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
-  }, [askUnsaved]);
+  }, [askAtQuit]);
 
   // The app menu's Settings… (`⌘,`), which is the core's (`lifecycle.rs`) and says so with an
   // event, as its Quit does. The same verb the palette row runs.
