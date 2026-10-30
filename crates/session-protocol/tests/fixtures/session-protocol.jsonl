@@ -193,4 +193,4 @@
 {"reply":{"re":178,"ok":{"profile_kept":{"standing":"signed_in"}}}}
 {"call":{"id":179,"command":"kept_profiles"}}
 {"reply":{"re":179,"ok":{"profiles":{"names":["work","claude"]}}}}
-{"pushed":{"link_down":{"why":"the connector did not connect: pool first's runner first was removed outside purlis: Docker has no container 0f9ad8c1e2b3; its home volume went too, and with it the sign-ins and work kept there","gone":true}}}
+{"pushed":{"link_down":{"why":"the connector did not connect: pool first's runner first was removed outside purlis: Docker has no container 0f9ad8c1e2b3; its home volume went too, and with it the sign-ins kept there","gone":true}}}
