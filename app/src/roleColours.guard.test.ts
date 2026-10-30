@@ -181,8 +181,6 @@ const ALLOWED: Readonly<Record<string, readonly string[]>> = {
     '.view-body .pending on "pending ui-text-secondary"',
     '.trouble on "block.tone === "trouble" ? "trouble" : "note ui-text-secondary""',
     '.state-bar .note on "block.tone === "trouble" ? "trouble" : "note ui-text-secondary""',
-    '.state-bar .trouble on "block.tone === "trouble" ? "trouble" : "note ui-text-secondary""',
-    '.panels .trouble on "block.tone === "trouble" ? "trouble" : "note ui-text-secondary""',
   ],
 };
 
@@ -193,7 +191,7 @@ const CEILING: Readonly<Record<string, number>> = {
   "InboxElsewhere.tsx": 3,
   "NotCloned.tsx": 3,
   "PanelList.tsx": 4,
-  "Panels.tsx": 7,
+  "Panels.tsx": 5,
 };
 
 describe("no App.css colour lands on a word that wears a text role (#3917)", () => {
