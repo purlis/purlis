@@ -649,3 +649,18 @@ fn what_the_drain_and_the_removal_count_says_why_safely() {
     assert_eq!(refused.chars().count(), crate::devices::MOST_SHOWN + 1);
     assert!(!refused.contains('\u{2066}'));
 }
+
+/// **Only a runner of 1.52 or later is asked to forget a profile** (#4047): one before is sent
+/// nothing, and keeps it.
+#[test]
+fn only_a_runner_of_1_52_or_later_forgets_a_desktops_profile() {
+    use purlis_session_protocol::version::Version;
+    assert!(!forgets_profiles(Version {
+        major: 1,
+        minor: 51
+    }));
+    assert!(forgets_profiles(Version {
+        major: 1,
+        minor: 52
+    }));
+}

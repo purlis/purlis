@@ -35,6 +35,14 @@
 //!   name, in the chat's folder as it was when the door opened (`bound_at`). The chat may make
 //!   a file at that path, so a link or a second name there, to some other socket of this
 //!   user's, is answered `502` and never carried to; so is a folder put in place of the chat's.
+//!
+//! **Or to a slot its server dialled in** (#3316): a Claude Code chat can make no socket of its
+//! own, so its server (through `purlis listen`'s shim) dials purlis's hook socket instead and
+//! parks each connection there as an idle slot of this door ([`Slots`]). The door takes one
+//! slot for each request it carries, writes [`GO`] on it, and from then on carries the request
+//! over the slot exactly as it would over the socket. With no slot parked within
+//! [`SLOT_WITHIN`], the request is answered `502`; a dialled door carries to its slots alone,
+//! never to any socket.
 
 use std::ffi::OsStr;
 use std::io::{self, Read, Write};
@@ -64,6 +72,31 @@ pub const COOKIE_MOST_BYTES: usize = 4096;
 
 /// The most one jar holds of its cookies' names and values together: the oldest go first.
 pub const JAR_MOST_BYTES: usize = 64 * 1024;
+
+/// How long a dialled door waits for a slot to carry a request over before it answers `502`.
+pub const SLOT_WITHIN: Duration = Duration::from_secs(3);
+
+/// How long a slot's server has to answer [`GO`] before the door passes it over (#3316).
+pub const GO_ANSWERED_WITHIN: Duration = Duration::from_secs(1);
+
+/// The most slots one dialled door keeps parked (#3316); one more is handed back unparked.
+pub const SLOTS_MOST: usize = 16;
+
+/// What a slot is told where its chat has no dialled door on the port it asked for: it was not
+/// allowed to serve there, or its grant was taken back (#3316).
+pub const NO_DOOR: &str = "this chat may not serve on that port: no door is open for it there";
+
+/// What a slot is told where its door, or its chat, holds the most slots it may (#3316).
+pub const SLOTS_FULL: &str = "this chat's server holds the most connections it may park";
+
+/// What a slot is told as it is parked: the receipt every hook line is answered with (#3316).
+/// [`GO`] comes on it later.
+pub const PARKED: &str = "{\"taken\":true}\n";
+
+/// What a dialled door writes on a slot as it takes it (#3316). The server hands the slot to
+/// whatever serves the port and writes the same line back, and only then does the request
+/// follow: so nothing of the request is read before what serves it reads it.
+pub const GO: &str = "{\"go\":true}\n";
 
 /// The name of the cookie a door tells one browser from another by, on port `port`.
 pub fn token_cookie(port: u16) -> String {
@@ -455,6 +488,10 @@ pub fn root_in(runtime: Option<&OsStr>) -> PathBuf {
 /// reads (#2019).
 pub const FOLDER_ENV: &str = "PURLIS_SERVE_DIR";
 
+/// The variable a chat whose server dials in is handed its hook socket in, which `purlis listen`
+/// hands its shim (#3316): set where the chat's dialled door is open.
+pub const DIAL_ENV: &str = "PURLIS_SERVE_DIAL";
+
 /// What a chat is told of `ports` it was allowed to serve on that it does not serve on this
 /// run: something on this Mac holds each already, listening there or bound to it.
 pub fn unserved_said(ports: &[u16]) -> Option<String> {
@@ -512,12 +549,167 @@ pub fn in_use(port: u16) -> bool {
     .any(|at| TcpStream::connect_timeout(at, wait).is_ok())
 }
 
+/// **The connections a chat's server dialled in for one door** (#3316): each parked idle until
+/// the door takes it for a request. At most [`SLOTS_MOST`]; closed, every parked one is closed
+/// and none is parked again.
+#[derive(Debug)]
+pub struct Slots {
+    port: u16,
+    held: Mutex<Parked>,
+    parked: std::sync::Condvar,
+}
+
+#[derive(Debug, Default)]
+struct Parked {
+    idle: std::collections::VecDeque<UnixStream>,
+    closed: bool,
+    /// Whether a slot was ever parked.
+    given: bool,
+}
+
+impl Slots {
+    /// No slot yet, for the door on `port`.
+    pub fn new(port: u16) -> Arc<Slots> {
+        Arc::new(Slots {
+            port,
+            held: Mutex::new(Parked::default()),
+            parked: std::sync::Condvar::new(),
+        })
+    }
+
+    /// The port of the door these are slots of.
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    /// **Parks `slot`, telling it [`PARKED`]**, or hands it back where these are closed or
+    /// [`SLOTS_MOST`] are parked already, or it could not be told: a slot whose server has gone
+    /// is let go first, so it holds no room. Told under the same hold as it is parked, so its
+    /// [`GO`] never comes before it. Whether it is the first slot these were ever given.
+    pub fn park(&self, mut slot: UnixStream) -> Result<bool, UnixStream> {
+        let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
+        held.idle.retain(alive);
+        if held.closed
+            || held.idle.len() >= SLOTS_MOST
+            || slot.write_all(PARKED.as_bytes()).is_err()
+        {
+            return Err(slot);
+        }
+        held.idle.push_back(slot);
+        let first = !std::mem::replace(&mut held.given, true);
+        drop(held);
+        self.parked.notify_one();
+        Ok(first)
+    }
+
+    /// How many slots are parked now whose servers are still there.
+    pub fn parked(&self) -> usize {
+        let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
+        held.idle.retain(alive);
+        held.idle.len()
+    }
+
+    /// **Closes every parked slot, and parks none again**: what ends a door's slots when the
+    /// door, its grant or its chat ends.
+    pub fn close(&self) {
+        let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
+        held.closed = true;
+        for slot in held.idle.drain(..) {
+            let _ = slot.shutdown(Shutdown::Both);
+        }
+        drop(held);
+        self.parked.notify_all();
+    }
+
+    /// **A slot to carry one request over**, told [`GO`], waiting `within` at most for one to
+    /// be parked: a slot its server let go of is passed over. None once these are closed.
+    fn take(&self, within: Duration) -> Option<UnixStream> {
+        let deadline = std::time::Instant::now() + within;
+        let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
+        loop {
+            if held.closed {
+                return None;
+            }
+            while let Some(mut slot) = held.idle.pop_front() {
+                if alive(&slot) && slot.write_all(GO.as_bytes()).is_ok() {
+                    return Some(slot);
+                }
+            }
+            let left = deadline.checked_duration_since(std::time::Instant::now())?;
+            if left.is_zero() {
+                return None;
+            }
+            held = self
+                .parked
+                .wait_timeout(held, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+    }
+}
+
+/// Whether a parked slot's server is still there: it has neither closed its end nor sent
+/// anything, which a server waiting for [`GO`] never does.
+fn alive(slot: &UnixStream) -> bool {
+    use nix::sys::socket::{MsgFlags, recv};
+    use std::os::fd::AsRawFd as _;
+    let mut byte = [0u8; 1];
+    matches!(
+        recv(
+            slot.as_raw_fd(),
+            &mut byte,
+            MsgFlags::MSG_PEEK | MsgFlags::MSG_DONTWAIT,
+        ),
+        Err(nix::Error::EAGAIN)
+    )
+}
+
+/// **Where a door carries the requests it takes.**
+#[derive(Debug, Clone)]
+enum Backend {
+    /// The server listening on the chat's own socket, bound at its own path in the folder
+    /// pinned as the door opened.
+    Socket { socket: PathBuf, folder: Pinned },
+    /// Slots the chat's server dialled in (#3316).
+    Dialled(Arc<Slots>),
+}
+
+impl Backend {
+    /// The server to carry one request to, or None where it is not there.
+    fn server(&self) -> Option<UnixStream> {
+        match self {
+            Self::Socket { socket, folder } => UnixStream::connect(socket)
+                .ok()
+                .filter(|server| bound_at(server, socket, folder)),
+            Self::Dialled(slots) => {
+                let deadline = std::time::Instant::now() + SLOT_WITHIN;
+                loop {
+                    let left = deadline.checked_duration_since(std::time::Instant::now())?;
+                    let mut slot = slots.take(left)?;
+                    // Its server's answer to [`GO`], the same line: a slot that does not give
+                    // it within the wait is passed over.
+                    let mut went = [0u8; GO.len()];
+                    let answered = slot
+                        .set_read_timeout(Some(left.min(GO_ANSWERED_WITHIN)))
+                        .is_ok()
+                        && slot.read_exact(&mut went).is_ok()
+                        && went == GO.as_bytes()
+                        && slot.set_read_timeout(None).is_ok();
+                    if answered {
+                        return Some(slot);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// **A chat's door on one port, listening while this is held**; dropped, it stops taking
-/// connections and lets its port go.
+/// connections and lets its port go, and closes its slots where it has any.
 #[derive(Debug)]
 pub struct Door {
     port: u16,
-    socket: PathBuf,
+    backend: Backend,
     stop: Arc<AtomicBool>,
     /// The port on every interface, bound and never listened on, where the system lets a
     /// later server bind it there over the door's own ([`every_interface`]).
@@ -529,13 +721,31 @@ impl Door {
     /// this machine has it, `::1`. Refused where anything listens on the port already
     /// ([`in_use`]).
     pub fn open(port: u16, socket: &Path) -> io::Result<Door> {
+        let folder = Pinned::of(socket)?;
+        Door::to(
+            port,
+            Backend::Socket {
+                socket: socket.to_path_buf(),
+                folder,
+            },
+        )
+    }
+
+    /// **The door on `port` to the slots a chat's server dials in** (#3316), and those slots,
+    /// for whatever hears the server dial to park each in. Refused as [`Door::open`] is.
+    pub fn dialled(port: u16) -> io::Result<(Door, Arc<Slots>)> {
+        let slots = Slots::new(port);
+        let door = Door::to(port, Backend::Dialled(Arc::clone(&slots)))?;
+        Ok((door, slots))
+    }
+
+    fn to(port: u16, backend: Backend) -> io::Result<Door> {
         if port == 0 || in_use(port) {
             return Err(io::Error::new(
                 io::ErrorKind::AddrInUse,
                 format!("something on this Mac already holds port {port}"),
             ));
         }
-        let folder = Pinned::of(socket)?;
         let held = every_interface(port)?;
         let mut listeners = vec![TcpListener::bind((Ipv4Addr::LOCALHOST, port))?];
         if let Ok(v6) = TcpListener::bind((Ipv6Addr::LOCALHOST, port)) {
@@ -546,7 +756,7 @@ impl Door {
         let busy = Arc::new(AtomicUsize::new(0));
         for listener in listeners {
             let (stop, jar, busy) = (Arc::clone(&stop), Arc::clone(&jar), Arc::clone(&busy));
-            let socket = socket.to_path_buf();
+            let backend = backend.clone();
             std::thread::Builder::new()
                 .name(format!("purlis-door-{port}"))
                 .spawn(move || {
@@ -561,12 +771,12 @@ impl Door {
                             busy.fetch_sub(1, Ordering::SeqCst);
                             continue;
                         }
-                        let (held_jar, held_busy, socket, folder) =
-                            (Arc::clone(&jar), Arc::clone(&busy), socket.clone(), folder);
+                        let (held_jar, held_busy, backend) =
+                            (Arc::clone(&jar), Arc::clone(&busy), backend.clone());
                         let spawned = std::thread::Builder::new()
                             .name(format!("purlis-door-{port}-in"))
                             .spawn(move || {
-                                carry(stream, port, &socket, &folder, &held_jar);
+                                carry(stream, port, &backend, &held_jar);
                                 held_busy.fetch_sub(1, Ordering::SeqCst);
                             });
                         if spawned.is_err() {
@@ -577,7 +787,7 @@ impl Door {
         }
         Ok(Door {
             port,
-            socket: socket.to_path_buf(),
+            backend,
             stop,
             _held: held,
         })
@@ -588,15 +798,29 @@ impl Door {
         self.port
     }
 
-    /// The server's socket it carries to.
-    pub fn socket(&self) -> &Path {
-        &self.socket
+    /// The server's socket it carries to, where it carries to one and not to slots.
+    pub fn socket(&self) -> Option<&Path> {
+        match &self.backend {
+            Backend::Socket { socket, .. } => Some(socket),
+            Backend::Dialled(_) => None,
+        }
+    }
+
+    /// The slots it carries to, where its server dials in (#3316).
+    pub fn slots(&self) -> Option<&Arc<Slots>> {
+        match &self.backend {
+            Backend::Dialled(slots) => Some(slots),
+            Backend::Socket { .. } => None,
+        }
     }
 }
 
 impl Drop for Door {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
+        if let Backend::Dialled(slots) = &self.backend {
+            slots.close();
+        }
         // Wakes each accept, which then sees the stop and lets its listener go.
         for at in [
             SocketAddr::from((Ipv4Addr::LOCALHOST, self.port)),
@@ -666,8 +890,8 @@ fn every_interface(_port: u16) -> io::Result<Vec<std::os::fd::OwnedFd>> {
     Ok(Vec::new())
 }
 
-/// Carries one connection, `client`, to the server on `socket`, as the module says.
-fn carry(mut client: TcpStream, port: u16, socket: &Path, folder: &Pinned, jar: &Mutex<Jar>) {
+/// Carries one connection, `client`, to the server `backend` names, as the module says.
+fn carry(mut client: TcpStream, port: u16, backend: &Backend, jar: &Mutex<Jar>) {
     let Some((head, mut rest)) = read_head(&mut client) else {
         return;
     };
@@ -688,10 +912,7 @@ fn carry(mut client: TcpStream, port: u16, socket: &Path, folder: &Pinned, jar: 
             return;
         }
     };
-    let Some(mut server) = UnixStream::connect(socket)
-        .ok()
-        .filter(|server| bound_at(server, socket, folder))
-    else {
+    let Some(mut server) = backend.server() else {
         let said = "The chat's server is not running.";
         let _ = write!(
             client,

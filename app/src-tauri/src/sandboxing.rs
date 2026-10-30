@@ -2841,7 +2841,8 @@ fn revoke(
             }
             // Its server serves until the chat restarts, which it is owed now (#2019).
             if let What::Listen(port) = &grant {
-                chats.owe_restart_serving(Some(chat), *port);
+                let project_holds = sandbox::local::granted_listens(root).contains(port);
+                chats.owe_restart_serving(Some(chat), *port, project_holds);
             }
         }
         (What::Host(host), None) => {
@@ -2891,7 +2892,7 @@ fn revoke(
             }
             // Served no more, whatever else still lets the chats connect there: each serving
             // on it restarts without it once its turn ends.
-            chats.owe_restart_serving(None, *port);
+            chats.owe_restart_serving(None, *port, false);
         }
     }
     if let Err(why) = sandbox::local::forget_made(root, what, target, level.word()) {

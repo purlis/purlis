@@ -9,6 +9,12 @@ use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
 /// Codex's adapter.
+///
+/// **What its reports can prove** (#3822): only the chat's token. Its hooks run inside
+/// purlis's wrap, which denies them the spool their armed key is in
+/// ([`crate::hookwire::armed`]), so any mode a report named would read as asking. None is
+/// read (the trait's default `reported_mode`): Codex names `bypassPermissions` for every chat
+/// and documents no classifier-backed mode.
 pub struct Codex;
 
 /// The one Codex adapter.

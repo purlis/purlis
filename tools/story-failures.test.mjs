@@ -823,3 +823,63 @@ test("the headline names a shard that wrote no report", () => {
   assert.match(headline, /title=No baselines drawn%3A 1 story failed/);
   assert.match(headline, /::webkit 2 of 3 wrote no report$/);
 });
+
+// Vitest's browser mode can hand a story file's module to the reporter under another cell's
+// project (#4073): a story that failed in all 10 cells came out in 7 or 8, some twice. The
+// cell the page ran in, which `cell.setup.ts` puts in each test's meta, is the one named.
+const CELLS = [
+  "purlis-classic_dark",
+  "purlis-classic_light",
+  "purlis-classic_dark_compact",
+  "purlis-classic_light_compact",
+  "purlis_dark",
+  "purlis_light",
+  "purlis_dark-high-contrast",
+  "purlis_dark_compact",
+  "purlis_light_compact",
+  "purlis_dark-high-contrast_compact",
+];
+
+test("a story failing in all 10 cells is named once in each, whatever project Vitest says", () => {
+  const to = join(mkdtempSync(join(tmpdir(), "story-failures-")), "report.json");
+  // Each module under a project Vitest named wrongly: the next cell's, and the first one twice.
+  const modules = CELLS.map((cell, at) => ({
+    ...moduleOf({
+      tests: [
+        {
+          fullName: "Probe > Steps",
+          meta: () => ({ cell }),
+          result: () => ({ errors: [failedAt("keyboard")] }),
+        },
+      ],
+    }),
+    project: { name: `stories ${CELLS[at === 9 ? 0 : (at + 1) % 9]} (chromium)` },
+  }));
+  reporting(to, (reporter) => reporter.onTestRunEnd(modules, [], "failed"));
+  const report = JSON.parse(readFileSync(to, "utf8"));
+  assert.deepEqual(
+    report.failures.map(({ cell }) => cell).sort(),
+    [...CELLS].sort(),
+  );
+  const { headline } = named([{ browser: "chromium", report }]);
+  assert.match(headline, new RegExp(`in chromium \\(${[...CELLS].sort().join(", ")}\\)$`));
+});
+
+test("a test with no cell in its meta is named by its project, as before", () => {
+  const to = join(mkdtempSync(join(tmpdir(), "story-failures-")), "report.json");
+  reporting(to, (reporter) =>
+    reporter.onTestRunEnd(
+      [
+        {
+          ...moduleOf({
+            tests: [{ fullName: "Probe > Steps", result: () => ({ errors: [failedAt("keyboard")] }) }],
+          }),
+          project: { name: "stories purlis_light (webkit)" },
+        },
+      ],
+      [],
+      "failed",
+    ),
+  );
+  assert.equal(JSON.parse(readFileSync(to, "utf8")).failures[0].cell, "purlis_light");
+});

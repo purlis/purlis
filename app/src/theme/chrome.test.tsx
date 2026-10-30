@@ -79,6 +79,7 @@ import { RemovePersona } from "../RemovePersona";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
 import { DeprecateDialog, OwnersDialog } from "../SkillPage";
+import { NewSkillDialog } from "../NewSkillDialog";
 import { DeleteDialog, MoveDialog, RenameDialog } from "../SkillChangeDialogs";
 import { LeaveQuestion } from "../UnsavedWorkQuestion";
 import { SkillCopy } from "../SkillCopy";
@@ -1355,6 +1356,26 @@ const DIALOGS: Opened[] = [
           level={{ at: "project", local: false }}
           busy={false}
           onDelete={nothing}
+          onClose={nothing}
+        />,
+      ),
+  },
+  {
+    name: "New skill…, asking how (#3684)",
+    file: "NewSkillDialog.tsx",
+    open: async () =>
+      render(
+        <NewSkillDialog
+          plane="p"
+          levels={[{ level: { at: "project", local: false }, label: "project" }]}
+          start={{ at: "project", local: false }}
+          takenAt={() => []}
+          builtIns={["secrets"]}
+          busy={false}
+          onEdit={nothing}
+          onMake={nothing}
+          onDraft={nothing}
+          onSources={nothing}
           onClose={nothing}
         />,
       ),

@@ -89,13 +89,15 @@ describe("changing a persona's own skills", function () {
     await press(PANE, "Brings", "starting");
     await $(STUDIO).waitForExist({ timeout: 20_000 });
 
+    // New skill… asks how first; Write it yourself lands where the person came from (#3684).
     await press(STUDIO, "New skill…");
-    await expect($('[data-testid="skill-new-level"]')).toHaveText(
-      new RegExp(`It lands in the persona ${PERSONA} skills\\.`),
-    );
+    await press('[data-testid="skill-new"]', "Write it yourself");
     await typeInto("Name", MADE);
-    await typeInto("What it does and when to use it", "Probes it.");
-    await press(STUDIO, "Make it");
+    await typeInto("What it does, and when a chat should use it", "Probes it.");
+    await expect($('[data-testid="skill-new-write"]')).toHaveText(
+      new RegExp(`${MADE} is made in the persona ${PERSONA} skills`),
+    );
+    await press('[data-testid="skill-new-write"]', "Make it and open its page");
     const made = await $(`[data-testid="skill-${MADE}"]`);
     await made.waitForExist({ timeout: 20_000 });
     await expect(made).toHaveText(/persona/);

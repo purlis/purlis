@@ -45,16 +45,17 @@ the rest was decided in implementation and approved in review.
    `[::1]:N`, so the browser's lane carries it to the door with no second Ask; the chat's own
    commands connect to it there too, only once its door opened: a port that gets no door, for
    something listening there already or any other reason, is withdrawn from the chat's proxy and
-   is in no rule of its profile, and a Claude Code chat, for which no door opens, is given
-   nothing for the grant. No chat writes in the folder the sockets are in but its own socket.
-   Removing the grant withdraws it from every open chat's
-   proxy and browser, and the chats serving there restart once their turn ends: until then they
-   still serve.
+   is in no rule of its profile. A Claude Code chat's door carries to connections its server
+   dials in ([amended 2026-10-30](2026-10-30-a-claude-code-chat-s-server-dials-in.md)). No chat
+   writes in the folder the sockets are in but its own socket. Removing the grant withdraws it
+   from every open chat's proxy and browser and closes its door there at once (2026-10-30), and
+   the chats serving there restart once their turn ends.
 5. **`purlis listen N -- <command>`** runs a server there. It hands the command
    `PURLIS_SERVE_SOCKET`, `PURLIS_SERVE_PORT`, `PORT` and `HOST`, and for Node a shim on
    `NODE_OPTIONS`. The shim (`crates/purlis-cli/src/listen/shim.cjs`) moves a listen on the
    port onto the socket and has the server say it listens on the port. It is the one Node
    preload shim, by the person's ruling of 2026-10-26, as an exception to the rule against
    mixing languages in the shipped app.
-6. **Claude Code**: its sandbox binds every port or none, so its Notice says so and offers Start
-   without the sandbox (#3316).
+6. **Claude Code**: its sandbox binds every port or none. On macOS its server dials in to its door
+   instead ([amended 2026-10-30](2026-10-30-a-claude-code-chat-s-server-dials-in.md)), and its
+   Notice offers Allow. Elsewhere its Notice says so and offers Start without the sandbox (#3316).

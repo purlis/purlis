@@ -865,6 +865,9 @@ struct Hosted {
     /// Who opened it, for a browser (#2050): this host's own window, or a link between hosts
     /// for the window it named, which alone may act on it from such a link.
     opened_by: OpenedBy,
+    /// The profile it runs on, as its start named it: what a profile's forgetting on a runner
+    /// waits for (#4047).
+    profile: Option<String>,
     /// Whether it ends with its window (1.42, #3274): once no window is linked to this host and
     /// the last went without a quit, it is ended at once rather than kept for the grace period.
     /// Taken from this machine's window alone.
@@ -888,6 +891,16 @@ fn stopping_by(stopping: &Mutex<Option<Stopped>>, by: Stopped) {
 }
 
 impl Hosting {
+    /// **Whether a chat this host runs now is on profile `name`** (#4047): a profile is not
+    /// forgotten under a running chat, whose folder and sign-in it is.
+    pub fn runs_on_profile(&self, name: &str) -> bool {
+        self.state().programs.values().any(|hosted| {
+            !hosted.ended
+                && hosted.kind != ProgramKind::Browser
+                && hosted.profile.as_deref() == Some(name)
+        })
+    }
+
     /// A host whose starts `compose` composes, each run in a terminal of its own, its kill
     /// switch kept in memory only: a test's.
     pub fn new(compose: impl Compose) -> Hosting {
@@ -1988,6 +2001,7 @@ impl Hosting {
                     note: start.note.clone(),
                     logins: Arc::default(),
                     opened_by: OpenedBy::ThisHost,
+                    profile: start.profile.clone(),
                     ends_with_its_window,
                 },
             );
@@ -2213,6 +2227,7 @@ impl Hosting {
                         .collect(),
                 )),
                 opened_by,
+                profile: None,
                 // A browser lives as its chat's window keeps it (#2025), never by this word.
                 ends_with_its_window: false,
             },
@@ -3610,7 +3625,7 @@ impl session::Host for Hosting {
             }),
             // A runner's host keeps its desktop's profile on its link from that desktop
             // (`serving`) before this host hears of it (1.43, #2049).
-            Command::KeepProfile(_) => Err(Refusal {
+            Command::KeepProfile(_) | Command::ForgetProfile { .. } => Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
                 why: "this host is paired with no desktop over this link, so it keeps no \
                       desktop's profile"

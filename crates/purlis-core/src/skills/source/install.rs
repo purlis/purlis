@@ -11,7 +11,7 @@ use purlis_skills::tree;
 
 use super::fetch::fetch;
 use super::lock::{self, Kept, Locked};
-use super::review::{Accepted, digest_of, wrote};
+use super::review::{self, Accepted, AcceptedSkill, Reviewed, Unread, digest_of, wrote};
 use super::{Source, listed, write};
 use crate::skills::Grant;
 use crate::skills::verbs::{self, Ctx, Level};
@@ -87,8 +87,20 @@ pub fn install(
         return Err("no skill was named to install".to_owned());
     }
     let fetched = fetch(plane, source, Some(&accepted.commit))?;
-    let review = fetched.review(&names)?;
-    if !accepted.is(&review.accepted()) {
+    // The files each review read are the ones copied: read once, so a set that fit one read for
+    // its review fits it for its install too (#4024).
+    let reviewed = review::reviewed(&fetched, &names, &|_| false).map_err(Unread::said)?;
+    let now = Accepted {
+        commit: fetched.commit.clone(),
+        skills: reviewed
+            .iter()
+            .map(|one| AcceptedSkill {
+                name: one.review.name.clone(),
+                digest: one.review.digest.clone(),
+            })
+            .collect(),
+    };
+    if !accepted.is(&now) {
         return Err(
             "what the source holds is not what was reviewed, so nothing was installed: review it \
              again"
@@ -97,9 +109,12 @@ pub fn install(
     }
     let held = lock::read(plane, kept)?;
     let parts = level_parts(level)?;
-    let (found, _) = fetched.skills()?;
     let mut copies = Vec::new();
-    for skill in &review.skills {
+    for Reviewed {
+        review: skill,
+        files,
+    } in &reviewed
+    {
         if cx.reserved(&skill.name) {
             return Err(format!(
                 "{} cannot be installed: its name belongs to a built-in skill",
@@ -118,13 +133,8 @@ pub fn install(
                 skill.name
             ));
         }
-        let one = found
-            .iter()
-            .find(|f| f.name == skill.name)
-            .ok_or_else(|| format!("{} is no longer in the source", skill.name))?;
-        let files = fetched.files_of(&one.dir)?;
-        paths_fit(&parts, &skill.name, &files)?;
-        copies.push((skill, one, files));
+        paths_fit(&parts, &skill.name, files)?;
+        copies.push((skill, files));
     }
     let mut written = Written {
         plane,
@@ -134,7 +144,7 @@ pub fn install(
     };
     let mut lock = held.lock.clone();
     let mut made: Vec<PathBuf> = Vec::new();
-    for (skill, one, files) in &copies {
+    for (skill, files) in &copies {
         let writes: Vec<write::File<'_>> = files
             .iter()
             .map(|file| write::File {
@@ -158,8 +168,8 @@ pub fn install(
             name: skill.name.clone(),
             level: lock::AtLevel(level.clone()),
             source: source.remote.clone(),
-            folder: one.folder.clone(),
-            commit: review.commit.clone(),
+            folder: skill.folder.clone(),
+            commit: fetched.commit.clone(),
             digest: digest_of(&files_wrote),
             files: files_wrote,
             brought_by: skill.brought_by.clone(),
@@ -174,7 +184,7 @@ pub fn install(
         && !level.local
         && let Some(grant) = grant.filter(|g| **g != Grant::Root)
     {
-        for skill in &review.skills {
+        for Reviewed { review: skill, .. } in &reviewed {
             match crate::skills::grant(plane, &skill.name, grant) {
                 Ok(folder) => {
                     written.grants.push(skill.name.clone());
@@ -198,11 +208,11 @@ pub fn install(
             "The source was not confirmed on this machine: {why}"
         ));
     }
-    let shown: Vec<&str> = review.skills.iter().map(|s| s.name.as_str()).collect();
+    let shown: Vec<&str> = reviewed.iter().map(|s| s.review.name.as_str()).collect();
     cx.done(format!(
         "{} installed at {level}, pinned to {}",
         shown.join(", "),
-        review.commit.short()
+        fetched.commit.short()
     ));
     if kept == Kept::Shared {
         paths.push(lock::FILE.to_owned());

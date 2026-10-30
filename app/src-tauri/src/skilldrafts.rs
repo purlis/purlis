@@ -248,13 +248,15 @@ pub(crate) async fn skill_draft_reject(
 
 /// **"Ask a chat to draft a skill"** (decision 13): a chat where `level`'s skills are reached
 /// from (the project's root, or the workspace's folder), on the project's default profile, with
-/// the core's prompt typed and never sent.
+/// the core's prompt typed and never sent, ending with `what` the skill should do where New
+/// skill… asked it (S4, #3684).
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_draft_chat(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     level: SkillLevel,
+    what: String,
     columns: u16,
     rows: u16,
 ) -> Result<Curating, StartRefused> {
@@ -272,7 +274,7 @@ pub(crate) async fn skill_draft_chat(
                 persona: None,
                 cwd,
                 label: "Draft a skill".to_owned(),
-                prompt: drafts::asking(&level),
+                prompt: drafts::asking(&level, &what),
                 then_a_space: false,
                 starts_runs: None,
             },
