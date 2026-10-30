@@ -12,21 +12,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { STORY_PLANE, StudioInPanel } from "./skillStudioStory.testkit";
-import {
-  SKILL_STUDIO_VIEW,
-  inWorkspace,
-  studioHistoryOf,
-  type StudioPage,
-  type StudioScope,
-} from "./skillStudio";
+import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.testkit";
+import { inWorkspace, type StudioPage, type StudioScope } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
 import type { Studio, StudioRouter } from "./bindings";
-
-const PLANE = STORY_PLANE;
-const HISTORY = studioHistoryOf(PLANE, SKILL_STUDIO_VIEW);
 
 /** The prototype's programs: Claude Code's own, a plugin's and a repo's; Codex none; opencode's
  *  one, off here. */

@@ -13,22 +13,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { STORY_PLANE, StudioInPanel } from "./skillStudioStory.testkit";
-import {
-  AT_THE_ROOT,
-  SKILL_STUDIO_VIEW,
-  inWorkspace,
-  studioHistoryOf,
-  type StudioPage,
-  type StudioScope,
-} from "./skillStudio";
+import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.testkit";
+import { AT_THE_ROOT, inWorkspace, type StudioPage, type StudioScope } from "./skillStudio";
 import { need, skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { expectFocusInSight, untilFocused, untilFocusWithin } from "./stories.testkit";
 import type { Studio } from "./bindings";
-
-const PLANE = STORY_PLANE;
-const HISTORY = studioHistoryOf(PLANE, SKILL_STUDIO_VIEW);
 
 /** The prototype's library, cut short: the project's own, a workspace's, and built-in ones. */
 const SKILLS = [

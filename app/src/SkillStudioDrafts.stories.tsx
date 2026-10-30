@@ -13,14 +13,11 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { SkillDraft } from "./bindings";
-import { STORY_PLANE, StudioInPanel } from "./skillStudioStory.testkit";
-import { AT_THE_ROOT, SKILL_STUDIO_VIEW, studioHistoryOf } from "./skillStudio";
+import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.testkit";
+import { AT_THE_ROOT } from "./skillStudio";
 import { studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
-
-const PLANE = STORY_PLANE;
-const HISTORY = studioHistoryOf(PLANE, SKILL_STUDIO_VIEW);
 
 const BEFORE =
   "---\nname: review-pr\ndescription: Reviews a pull request.\n---\n\n1. Read REVIEW.md.\n2. Check correctness.\n";

@@ -12,22 +12,14 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, screen, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { STORY_PLANE, StudioInPanel } from "./skillStudioStory.testkit";
-import {
-  SKILL_STUDIO_VIEW,
-  inWorkspace,
-  skillRowId,
-  studioHistoryOf,
-  type SkillPageTab,
-} from "./skillStudio";
+import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.testkit";
+import { inWorkspace, skillRowId, type SkillPageTab } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { forgetSkillEdit } from "./skillEdit";
 import { expectFocusInSight, untilFocused, untilFocusWithin } from "./stories.testkit";
 import type { StudioSkill } from "./bindings";
 
-const PLANE = STORY_PLANE;
-const HISTORY = studioHistoryOf(PLANE, SKILL_STUDIO_VIEW);
 const SCOPE = inWorkspace("smart-ide");
 
 const DEPLOY = skill("deploy", {
