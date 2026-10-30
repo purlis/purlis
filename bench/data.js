@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793401706862,
+  "lastUpdate": 1793404745136,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -32382,6 +32382,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0336475,
             "unit": "ms",
             "extra": "median of 5 runs: 100.887, 101.916, 102.034, 102.373, 102.658 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7a670e49e7de27eed8af3ca982f6224288647f06",
+          "message": "Runners: a cluster pool's row lists its profiles and signs them in on its runner (#3819) (#4163)\n\n* Runners: a cluster pool's row lists its profiles and signs them in on its runner (#3819)\n\nA cluster pool the person marked This is my own, whose claim its operator\nvouches for now (#4071's gate), keeps the profiles chosen for it and signs\nthem in over this machine's own kubectl exec into its vouched pod. The\npool's record keeps them as profiles, spelled as a Docker pool's. A fresh\nclaim's row says a sign-in lasts only for that claim. The kind run keeps a\nprofile on a real kept claim, asks its standing over the link and by the\nsign-in's exec, and finds what a sign-in left after the pod is replaced.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M677YAR9PYPT0GDHPTBYDA7S\nPurlis-Persona: steward\n\n* Runners: the cluster sign-in test expects the runner's purlis by its path (#3819)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M677YAR9PYPT0GDHPTBYDA7S\nPurlis-Persona: steward\n\n* Runners: the kind run shows a killed kubectl exec closes what it ran in the pod (#3819)\n\nWhat Cancel ends a sign-in on a cluster runner by, as #4043 showed of\ndocker exec.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M677YAR9PYPT0GDHPTBYDA7S\nPurlis-Persona: steward\n\n* Runners: the kind run's kubectl calls go through forklock, as clippy asks (#3819)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M677YAR9PYPT0GDHPTBYDA7S\nPurlis-Persona: steward\n\n* Runners: a cluster sign-in reaches only the runner the gate judged, still marked (#3819)\n\nReview fixes. The gate's runner is carried to the link and the sign-in,\nwhich read it again with its mark and taint right before they reach it; a\ncode is passed on only while that holds, and taking the mark back cancels\nthe pool's sign-ins. The refusals read as one sentence again, the runner's\nsign-in words take no unused argument, and This is my own says what a\nprofile sends there.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M677YAR9PYPT0GDHPTBYDA7S\nPurlis-Persona: steward\n\n* Runners: a cluster sign-in ends with its input, runs only on this desktop's purlis, and signs out there (#3819)\n\nAfter #4157: the cluster runner's driven sign-in takes the same hidden\n--until-input-ends and in-own-terminal words as a Docker runner's (one\nhelper builds both), is refused in the same words where the runner's\npurlis is another version, and Sign out runs the runner's own sign-out\nover kubectl exec to the runner the gate judged.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M677YAR9PYPT0GDHPTBYDA7S\nPurlis-Persona: steward\n\n* Runners: what is typed in a cluster sign-in's terminal is held to the judged runner too (#3819)\n\nRe-review fixes. The strip's terminal input is checked as a pasted code\nis, both under one lock that refuses a sign-in no longer held, and the\nkubectl sign-in, version and sign-out are built from the runner the gate\njudged, refused where the runner kept now is another.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M677YAR9PYPT0GDHPTBYDA7S\nPurlis-Persona: steward\n\n* Runners: bindings carry the sign-in commands' new words (#3819)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M677YAR9PYPT0GDHPTBYDA7S\nPurlis-Persona: steward\n\n* Runners: the pool profile tests close after #4139's (#3819)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M677YAR9PYPT0GDHPTBYDA7S\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T23:32:41Z",
+          "tree_id": "cd1d378ba0b6c4fe50b4cb596a641e1ca4f42ea0",
+          "url": "https://github.com/purlis/purlis/commit/7a670e49e7de27eed8af3ca982f6224288647f06"
+        },
+        "date": 1793404739517,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6651914999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.633, 0.659, 0.665, 0.670, 0.684 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.548254,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.371, 16.473, 16.548, 16.618, 17.185 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2993045,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.169, 101.902, 102.299, 102.422, 104.106 ms"
           }
         ]
       }
