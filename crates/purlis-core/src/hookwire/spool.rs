@@ -1603,6 +1603,8 @@ fn forget(
         write_keys(dir, &keys)?;
     }
     tidy(dir, &keys, &ended);
+    // And the keys their hooks were armed with (#3822): no app holds an ended chat's.
+    super::armed::disarm_ended(dir, &ended);
     // And the dispatch messages an ended chat left queued (#3902): the app delivered or
     // reported them as the chat closed, so what is left checks under no key it keeps.
     if let Ok(entries) = std::fs::read_dir(dir.join(crate::dispatchqueue::DIR)) {
@@ -1797,14 +1799,15 @@ impl<'a> Checked<'a> {
         if self.already.contains(&this) {
             return self.reject(Some(disk.seq), Why::Repeated);
         }
-        let (line, delivery) = match super::read_delivered(&disk.line) {
-            Some((Line::Report(report), _, delivery)) if report.chat == chat => {
+        let read = super::read_delivered(&disk.line).map(|read| (read.line, read.delivery));
+        let (line, delivery) = match read {
+            Some((Line::Report(report), delivery)) if report.chat == chat => {
                 (Spooled::Report(report), delivery)
             }
-            Some((Line::Tool(call), _, delivery)) if call.chat == chat => {
+            Some((Line::Tool(call), delivery)) if call.chat == chat => {
                 (Spooled::Tool(call), delivery)
             }
-            Some((Line::Refused(refused), _, delivery)) if refused.chat == chat => {
+            Some((Line::Refused(refused), delivery)) if refused.chat == chat => {
                 (Spooled::Refused(refused), delivery)
             }
             _ => return self.reject(Some(disk.seq), Why::NotThisChats),

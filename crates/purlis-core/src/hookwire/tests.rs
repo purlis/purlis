@@ -4559,8 +4559,12 @@ fn a_delivery_is_read_off_a_delivered_line_and_on_no_other_kind() {
     let delivered = with_delivery(&a_stop(7), Some(&delivery)).unwrap();
     let wire = line_with(Some(&token), &delivered).unwrap();
 
-    let (line, carried, read) =
-        read_delivered(std::str::from_utf8(&wire).unwrap()).expect("a line");
+    let ReadLine {
+        line,
+        token: carried,
+        delivery: read,
+        ..
+    } = read_delivered(std::str::from_utf8(&wire).unwrap()).expect("a line");
     assert_eq!(line.chat(), 7);
     assert_eq!(carried.as_deref(), Some("abc"));
     assert_eq!(read, Some(delivery.clone()));
@@ -4577,7 +4581,9 @@ fn a_delivery_is_read_off_a_delivered_line_and_on_no_other_kind() {
     assert!(read_delivered(&forged.to_string()).is_none());
 
     let bare = line_with(None, &a_stop(7)).unwrap();
-    let (_, _, none) = read_delivered(std::str::from_utf8(&bare).unwrap()).expect("a line");
+    let none = read_delivered(std::str::from_utf8(&bare).unwrap())
+        .expect("a line")
+        .delivery;
     assert_eq!(none, None, "a hook of a build before #952 sends none");
 }
 
@@ -4983,4 +4989,152 @@ fn a_job_that_panics_gives_its_place_back() {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(5)), Ok(()));
+}
+
+/// A report of chat `chat` whose harness names `mode`.
+fn a_report_naming(chat: u32, mode: crate::dispatchmode::Reported) -> Report {
+    let mut report = a_stop(chat);
+    report.detail.mode = Some(mode);
+    report
+}
+
+/// #3822: a report's mode is heard as its hook said it only where the line carries the key the
+/// chat's hook was armed with; a line with the chat's token alone, or another key, is heard
+/// asking, and a report that names no mode names none either way.
+#[test]
+fn a_reported_mode_is_believed_only_from_the_chats_armed_hook() {
+    use crate::dispatchmode::Reported;
+    let dir = tempfile::tempdir().expect("a directory");
+    let path = dir.path().join("hooks.sock");
+    let listener = Listener::bind(dir.path(), &path)
+        .expect("a socket")
+        .owned_by(purlis_same_user::Uid::effective());
+    let tokens = listener.tokens();
+    let seven = tokens.issue_to_this_process(7).expect("a token");
+    let armed = tokens.armed_key(7).expect("chat 7 is armed");
+    let eight = tokens.issue_to_this_process(8).expect("a token");
+    let (tx, rx) = mpsc::channel();
+    let _reading = listener.each(Box::new(move |report| {
+        let _ = tx.send(report.detail.mode);
+    }));
+    let heard = || {
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the report was heard")
+    };
+
+    deliver_armed(
+        &path,
+        Some(&seven),
+        Some(&armed),
+        &a_report_naming(7, Reported::Classifier),
+    )
+    .expect("taken");
+    assert_eq!(
+        heard(),
+        Some(Reported::Classifier),
+        "the armed hook's own word"
+    );
+
+    deliver_armed(
+        &path,
+        Some(&seven),
+        None,
+        &a_report_naming(7, Reported::PromptsOff),
+    )
+    .expect("taken");
+    assert_eq!(
+        heard(),
+        Some(Reported::Asks),
+        "the chat's token alone proves no mode"
+    );
+
+    let other = tokens.armed_key(8).expect("chat 8 is armed");
+    deliver_armed(
+        &path,
+        Some(&seven),
+        Some(&other),
+        &a_report_naming(7, Reported::Classifier),
+    )
+    .expect("taken");
+    assert_eq!(
+        heard(),
+        Some(Reported::Asks),
+        "another chat's key proves nothing of this one"
+    );
+
+    deliver_armed(
+        &path,
+        Some(&eight),
+        Some(&armed),
+        &a_report_naming(8, Reported::Classifier),
+    )
+    .expect("taken");
+    assert_eq!(
+        heard(),
+        Some(Reported::Asks),
+        "nor this chat's key of another"
+    );
+
+    deliver_armed(&path, Some(&seven), None, &a_stop(7)).expect("taken");
+    assert_eq!(
+        heard(),
+        None,
+        "a report naming no mode is not made to name one"
+    );
+}
+
+/// #3822: a chat started again is armed afresh, and one that has ended holds no key, so the
+/// key of a chat's earlier start proves nothing.
+#[test]
+fn a_chats_armed_key_is_its_current_starts_alone() {
+    let tokens = ChatTokens::default();
+    tokens.issue(5).expect("a token");
+    let first = tokens.armed_key(5).expect("armed");
+    assert!(tokens.proves(5, Some(first.expose())));
+
+    tokens.issue(5).expect("started again");
+    assert!(!tokens.proves(5, Some(first.expose())));
+    let second = tokens.armed_key(5).expect("armed again");
+
+    tokens.forget(5);
+    assert!(!tokens.proves(5, Some(second.expose())));
+    assert!(!tokens.proves(5, None));
+}
+
+/// #3822: the key is written where the chat's hook reads it as the token is issued, beside a
+/// project's socket, and removed as the chat ends; the spool's lines never carry it.
+#[test]
+fn a_chats_armed_key_is_on_disk_for_its_hook_while_the_chat_runs() {
+    let root = tempfile::tempdir().expect("a directory");
+    let app = root.path().join(".purlis").join("app");
+    std::fs::create_dir_all(&app).unwrap();
+    let socket = app.join("hooks.sock");
+    let spool = spool::dir_for(&socket);
+    private_directory(&spool).unwrap();
+    let tokens = ChatTokens::spooling_into(spool.clone());
+
+    tokens.issue_to_this_process(3).expect("a token");
+    let key = tokens.armed_key(3).expect("armed");
+    assert_eq!(armed::ArmedKey::read(&socket, 3), Some(key));
+
+    tokens.program_ended(3, std::process::id());
+    assert_eq!(armed::ArmedKey::read(&socket, 3), None);
+}
+
+/// #3822: only a report carries an armed key, as a string; any other kind that carries the
+/// field is not read.
+#[test]
+fn an_armed_key_is_read_off_a_report_and_on_no_other_kind() {
+    let token = ChatToken::from("abc");
+    let wire = line_armed(Some(&token), Some("k"), &a_stop(7)).unwrap();
+    let read = read_delivered(std::str::from_utf8(&wire).unwrap()).expect("a line");
+    assert_eq!(read.armed.as_deref(), Some("k"));
+    assert_eq!(read.token.as_deref(), Some("abc"));
+
+    let ask = line_armed(Some(&token), Some("k"), &Ask::Ticket { chat: 3 }).unwrap();
+    assert!(read_delivered(std::str::from_utf8(&ask).unwrap()).is_none());
+
+    let mut forged = serde_json::to_value(a_stop(7)).unwrap();
+    forged[ARMED] = serde_json::json!(7);
+    assert!(read_delivered(&forged.to_string()).is_none());
 }
