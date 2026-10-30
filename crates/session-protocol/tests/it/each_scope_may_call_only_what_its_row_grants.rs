@@ -706,7 +706,11 @@ async fn remote_link_may_drive_a_chat_and_take_the_windows_relayed_start_but_nev
 
 #[tokio::test]
 async fn only_the_window_or_its_hosts_relay_names_what_the_person_allowed_of_a_persona() {
-    for scope in Scope::ALL {
+    // A scope that may start nothing is refused that first.
+    for scope in Scope::ALL
+        .into_iter()
+        .filter(|scope| scope.may(purlis_session_protocol::grants::Power::Start))
+    {
         let client = linked(scope, Board::new(false)).await;
         let said = client
             .call(Command::StartProgram(Box::new(session::StartProgram {

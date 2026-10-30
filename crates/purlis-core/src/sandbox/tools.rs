@@ -1163,6 +1163,7 @@ pub fn for_chat(
 }
 
 /// [`for_chat`], with `temps` as the temporary folders.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn for_chat_beside(
     root: &Path,
     personas: &std::collections::BTreeMap<String, super::persona::Grants>,
