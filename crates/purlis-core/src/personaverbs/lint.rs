@@ -4,8 +4,8 @@
 //! `charter persona lint` — a deterministic check of each persona's definition: a reference
 //! that names no persona, a key charter cannot read, a missing role, vault or
 //! `delegate-when`, an unfinished draft, a `bin/` file that cannot run, an MCP server that
-//! cannot be declared, a skill its charter names that no agent can invoke, a key that only
-//! fed the retired sub-agent, and a generated sub-agent file that is still there (#1451). A
+//! cannot be declared, a skill its charter names that no agent can invoke, an entry of its
+//! `skills:` list its chats start without (#2934), a key that only fed the retired sub-agent, and a generated sub-agent file that is still there (#1451). A
 //! port of `commands_persona.cmd_persona_lint` and `persona.lint`, `structural_errors`,
 //! `key_issues`, `bin_issues` and the skill checks beneath them.
 //!
@@ -62,6 +62,14 @@ impl Issue {
     }
 }
 
+/// What is said of a `skills:` line while the Skill studio's flag is off, when no chat reads it.
+const SKILLS_UNREAD: &str = "`skills:` is read only with the Skill studio preview on (Settings \
+     › You › Previews): then a chat as this persona loads each skill it names. Until then a \
+     chat loads a skill when it uses it";
+
+/// The prefix built-in skills had before the rename, which a `skills:` entry may still say.
+const OLD_PREFIX: &str = crate::skills::BUILT_IN_PREFIXES[1];
+
 /// `persona.EMPTY_REFERENCE`.
 const EMPTY_REFERENCE: &str = "is empty — remove the key, or name a persona";
 
@@ -71,6 +79,13 @@ pub struct Linter<'a> {
     root: &'a Path,
     state: &'a Path,
     home: Option<PathBuf>,
+    /// Whether a variable a harness's skills are found by may be looked up in this process: off
+    /// where the caller named the home ([`Linter::with_home`]).
+    process: bool,
+    /// The built-in skills' directory a `purlis:` entry is checked against, where there is one.
+    built_in: Option<PathBuf>,
+    /// Whether the Skill studio's flag is on, where the caller said; else this machine's.
+    studio: Option<bool>,
     known: BTreeSet<String>,
     skills: OnceLock<Option<BTreeMap<String, bool>>>,
     /// The names of the profiles the project offers, read the first time a `model:` asks.
@@ -86,6 +101,9 @@ impl<'a> Linter<'a> {
             root,
             state,
             home: crate::profiles::home(),
+            process: true,
+            built_in: crate::skills::built_in_here(),
+            studio: None,
             known: super::names(root).into_iter().collect(),
             skills: OnceLock::new(),
             offered: OnceLock::new(),
@@ -93,8 +111,24 @@ impl<'a> Linter<'a> {
     }
 
     /// This linter, looking for installed skills under `home` rather than `$HOME`.
+    /// The harness skills a persona's `skills:` list is checked against are looked for there
+    /// too, by the harnesses' default places under it, and no variable of this process is read.
     pub fn with_home(mut self, home: Option<PathBuf>) -> Self {
         self.home = home;
+        self.process = false;
+        self
+    }
+
+    /// This linter, checking a `purlis:` entry of a persona's `skills:` list against the
+    /// built-in skills in `dir` rather than the bundle beside this binary, or against none.
+    pub fn with_built_in(mut self, dir: Option<PathBuf>) -> Self {
+        self.built_in = dir;
+        self
+    }
+
+    /// This linter, with the Skill studio's flag as `on` rather than as this machine has it.
+    pub fn with_studio(mut self, on: bool) -> Self {
+        self.studio = Some(on);
         self
     }
 
@@ -254,6 +288,7 @@ impl<'a> Linter<'a> {
         issues.extend(self.structural_errors(name));
         issues.extend(bin_issues(root, name));
         issues.extend(self.skill_ref_issues(&charter));
+        issues.extend(self.skills_list_issues(name));
         issues.extend(self.mcp_issues(name));
         // Its curation actions, each under its file: the same judgement the menus make when
         // they leave a broken one out ([`crate::curation::parse`]).
@@ -421,6 +456,79 @@ impl<'a> Linter<'a> {
              no longer writes or reads it — remove it with `purlis doctor --fix persona-agents`",
             crate::shown::short(&super::rel(self.root, &path))
         ))]
+    }
+
+    /// **The entries of `name`'s own `skills:` list** (#2934): one that names nothing, one written
+    /// with the old `charter:` prefix, and one its chats start without
+    /// ([`crate::skills::persona::unresolved`]), each with its fix. Read through
+    /// [`Reference`](crate::skills::Reference), as a chat's start reads the list. With the
+    /// Skill studio's flag off no chat reads the list, and that is what is said of it.
+    fn skills_list_issues(&self, name: &str) -> Vec<Issue> {
+        use crate::skills::{Reason, Reference};
+        let written = super::declared_skills(self.root, name);
+        if written.is_empty() {
+            return Vec::new();
+        }
+        let studio = self.studio.unwrap_or_else(crate::skills::studio_on_here);
+        if !studio {
+            return vec![Issue::warn(SKILLS_UNREAD)];
+        }
+        let mut issues = Vec::new();
+        for entry in &written {
+            let shown = crate::personas::one_line(entry);
+            match Reference::parse(entry) {
+                None => issues.push(Issue::warn(format!(
+                    "`skills:` entry '{shown}' names no skill, so its chats load nothing for \
+                     it. Write `purlis:<name>` for a built-in skill, `<plugin>:<name>` for a \
+                     plugin's, or a skill's name"
+                ))),
+                Some(Reference::BuiltIn(skill))
+                    if entry
+                        .split_once(':')
+                        .is_some_and(|(prefix, _)| prefix.trim() == OLD_PREFIX) =>
+                {
+                    issues.push(Issue::warn(format!(
+                        "`skills:` entry '{shown}' has the old prefix: it names \
+                         `purlis:{skill}` until `purlis doctor --fix project-skills` rewrites \
+                         it so"
+                    )))
+                }
+                Some(_) => {}
+            }
+        }
+        let env = self.home.as_ref().map(|home| crate::harness_plugin::Env {
+            chat: &[],
+            home: Some(home.clone()),
+            process: self.process,
+        });
+        let missing = crate::skills::persona::unresolved(
+            self.built_in.as_deref(),
+            self.root,
+            name,
+            env.as_ref(),
+        );
+        for (reference, reason) in missing {
+            let (what, fix) = match (&reference, reason) {
+                (_, Reason::NoSuchBuiltIn) => (
+                    "purlis has no built-in skill of this name",
+                    "Fix the name: `purlis skill list` lists the built-in skills",
+                ),
+                (Reference::Named(_), _) => (
+                    "no skill of this persona's, a workspace's or the project's has this name, \
+                     and no harness this project's profiles run has it on this machine",
+                    "Make the skill, install it, or fix the name",
+                ),
+                _ => (
+                    "no harness this project's profiles run has it on this machine",
+                    "Install its plugin, or fix the name",
+                ),
+            };
+            issues.push(Issue::warn(format!(
+                "`skills:` names {}: {what}, so its chats start without it. {fix}",
+                crate::personas::one_line(&reference.to_string())
+            )));
+        }
+        issues
     }
 
     /// Every installed skill by name, and whether a model may invoke it — `None` when this

@@ -25,8 +25,12 @@ fn plane(personas: &[(&str, &str)]) -> Plane {
 }
 
 fn linter(plane: &Plane) -> Linter<'_> {
-    // No `$HOME`, so no plugin cache and no skill check, unless a test gives one.
-    Linter::new(plane.root(), plane.root()).with_home(None)
+    // No `$HOME`, so no plugin cache and no skill check, unless a test gives one; no bundle,
+    // so no built-in skill; and the Skill studio's flag off, whatever this machine says.
+    Linter::new(plane.root(), plane.root())
+        .with_home(None)
+        .with_built_in(None)
+        .with_studio(false)
 }
 
 fn messages(issues: &[Issue]) -> Vec<(Level, &str)> {
@@ -85,10 +89,16 @@ fn a_key_that_only_fed_the_retired_sub_agent_is_a_warning_that_names_its_ticket(
     let issues = linter(&p).definition("r");
     let said: Vec<&str> = issues.iter().map(|i| i.message.as_str()).collect();
     // Three, not four: `dispatch-isolation` is read again (#1453), as the persona's default
-    // place to work when a dispatch names none.
+    // place to work when a dispatch names none. Nor is `skills` retired (#2768): with the Skill
+    // studio's flag off it is said to be read only with it on (#2934).
     assert_eq!(issues.len(), 3, "{said:#?}");
     assert!(issues.iter().all(|i| i.level == Level::Warn));
-    for key in ["agent-tools", "skills", "memory"] {
+    assert!(said.contains(&SKILLS_UNREAD), "{said:#?}");
+    assert_eq!(
+        crate::personaverbs::retired::key_notice("skills", "deploy"),
+        None
+    );
+    for key in ["agent-tools", "memory"] {
         assert!(
             said.iter()
                 .any(|m| m.starts_with(&format!("`{key}:` is no longer read: "))
@@ -640,4 +650,115 @@ fn what_of_wants_is_not_offered_is_said_and_a_clean_line_says_nothing() {
              in the line it inherits from 'wide'"
         )
     );
+}
+
+/// A skill folder `name` under `dir`, as every level holds one.
+fn skill_folder(dir: &Path, name: &str) {
+    std::fs::create_dir_all(dir.join(name)).unwrap();
+    std::fs::write(
+        dir.join(name).join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: Does {name}.\n---\n"),
+    )
+    .unwrap();
+}
+
+/// A persona `s` whose `skills:` list says `list`, on a plane with the project skill `deploy`,
+/// the workspace `ws`'s skill `triage` and `s`'s own skill `mine`.
+fn naming(list: &str) -> Plane {
+    let p = plane(&[(
+        "s",
+        &clean("s").replace("---\n\n", &format!("skills: {list}\n---\n\n")),
+    )]);
+    skill_folder(&p.path("skills"), "deploy");
+    skill_folder(&p.path("workspaces/ws/skills"), "triage");
+    skill_folder(&p.path("personas/s/skills"), "mine");
+    p
+}
+
+#[test]
+fn each_skills_entry_its_chats_start_without_is_a_warning_with_its_fix() {
+    // #2934: read as a chat's start reads the list (`purlis_skills::Reference`), checked against
+    // the set a chat as the persona gets, and the harness skills of this machine.
+    let home = tempfile::tempdir().unwrap();
+    skill_folder(&home.path().join(".claude/skills"), "own-thing");
+    let bundle = tempfile::tempdir().unwrap();
+    skill_folder(&bundle.path().join("skills"), "handoff");
+    let p = naming(
+        "deploy, triage, mine, own-thing, purlis:handoff, charter:handoff, purlis:nope, ghost, \
+         sp:gone, :x, ghost, plugin:",
+    );
+    let l = Linter::new(p.root(), p.root())
+        .with_home(Some(home.path().to_path_buf()))
+        .with_built_in(Some(bundle.path().join("skills")))
+        .with_studio(true);
+    assert_eq!(
+        messages(&l.definition("s")),
+        vec![
+            (
+                Level::Warn,
+                "`skills:` entry 'charter:handoff' has the old prefix: it names \
+                 `purlis:handoff` until `purlis doctor --fix project-skills` rewrites it so"
+            ),
+            (
+                Level::Warn,
+                "`skills:` entry ':x' names no skill, so its chats load nothing for it. Write \
+                 `purlis:<name>` for a built-in skill, `<plugin>:<name>` for a plugin's, or a \
+                 skill's name"
+            ),
+            (
+                Level::Warn,
+                "`skills:` entry 'plugin:' names no skill, so its chats load nothing for it. \
+                 Write `purlis:<name>` for a built-in skill, `<plugin>:<name>` for a plugin's, \
+                 or a skill's name"
+            ),
+            (
+                Level::Warn,
+                "`skills:` names purlis:nope: purlis has no built-in skill of this name, so its \
+                 chats start without it. Fix the name: `purlis skill list` lists the built-in \
+                 skills"
+            ),
+            (
+                Level::Warn,
+                "`skills:` names ghost: no skill of this persona's, a workspace's or the \
+                 project's has this name, and no harness this project's profiles run has it on \
+                 this machine, so its chats start without it. Make the skill, install it, or \
+                 fix the name"
+            ),
+            (
+                Level::Warn,
+                "`skills:` names sp:gone: no harness this project's profiles run has it on this \
+                 machine, so its chats start without it. Install its plugin, or fix the name"
+            ),
+        ]
+    );
+}
+
+#[test]
+fn with_nowhere_to_look_no_skills_entry_is_said_to_be_missing_from_the_machine() {
+    // No home: purlis cannot see a harness's skills, and calling each one missing would be
+    // confidently wrong. A built-in skill is still checked against the bundle.
+    let bundle = tempfile::tempdir().unwrap();
+    skill_folder(&bundle.path().join("skills"), "handoff");
+    let p = naming("ghost, sp:gone, purlis:nope");
+    let l = linter(&p)
+        .with_built_in(Some(bundle.path().join("skills")))
+        .with_studio(true);
+    assert_eq!(
+        messages(&l.definition("s")),
+        vec![(
+            Level::Warn,
+            "`skills:` names purlis:nope: purlis has no built-in skill of this name, so its \
+             chats start without it. Fix the name: `purlis skill list` lists the built-in skills"
+        )]
+    );
+}
+
+#[test]
+fn with_the_skill_studio_off_a_skills_line_is_said_to_be_unread_and_not_checked() {
+    let p = naming("ghost, :x");
+    assert_eq!(
+        messages(&linter(&p).definition("s")),
+        vec![(Level::Warn, SKILLS_UNREAD)]
+    );
+    assert_eq!(messages(&linter(&naming("")).definition("s")), vec![]);
 }

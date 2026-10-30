@@ -1782,17 +1782,30 @@ fn in_the_studio_on(
     persona: Option<&str>,
     route: Route,
 ) -> SkillSet {
+    let env = crate::harness_plugin::Env::of(&[]);
+    studio_set(built_in, plane, workspace, persona, route, Some(&env))
+}
+
+/// [`in_the_studio_on`], with the harness skills looked for under `env`, or taken as there for
+/// `None` (nowhere to look): what `persona lint` asks with the home it was given (#2934).
+pub(crate) fn studio_set(
+    built_in: Option<&Path>,
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    route: Route,
+    env: Option<&crate::harness_plugin::Env<'_>>,
+) -> SkillSet {
     let at = PlaneSkills {
         plane,
         workspace,
         repo: &[],
         routed: None,
     };
-    let here = persona.map(|_| {
-        let env = crate::harness_plugin::Env::of(&[]);
+    let here = persona.zip(env).map(|(_, env)| {
         harnesses_used(plane)
             .into_iter()
-            .flat_map(|harness| on_machine(harness, &env))
+            .flat_map(|harness| on_machine(harness, env))
             .collect::<Vec<_>>()
     });
     // Not routed here: each harness's own set is, by its own budget ([`studio_list`]).
