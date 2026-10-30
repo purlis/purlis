@@ -100,7 +100,12 @@ export function askSkillChat(ask: SkillChatAsk): void {
  * the scope's chats would get (decision 37), among the project's `levels`.
  */
 export function askDraft(plane: string, scope: StudioScope, levels: readonly StudioLevel[]): void {
-  askSkillChat({ plane, kind: "draft", level: levelFrom(scope, levelsFor(levels, scope)), what: "" });
+  askSkillChat({
+    plane,
+    kind: "draft",
+    level: levelFrom(scope, levelsFor(levels, scope)),
+    what: "",
+  });
 }
 
 /** What a chat's tab says of the drafts it wrote (decision 38): only that they are ready. */

@@ -910,7 +910,10 @@ fn the_trigger_tests_prompt_names_the_file_a_draft_is_kept_for() {
 #[test]
 fn the_draft_prompt_ends_with_what_the_skill_does_on_one_line() {
     let level = Level::project();
-    let said = asking(&level, "  Reviews a PR\nagainst REVIEW.md\r\u{1b}[A\tquickly ");
+    let said = asking(
+        &level,
+        "  Reviews a PR\nagainst REVIEW.md\r\u{1b}[A\tquickly ",
+    );
     assert!(
         said.ends_with("What the skill does: Reviews a PR against REVIEW.md [A quickly"),
         "{said}"

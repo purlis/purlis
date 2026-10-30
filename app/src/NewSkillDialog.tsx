@@ -163,8 +163,7 @@ export function NewSkillDialog({
   const said = description.trim();
   const writing = way === "write";
   const problem = writing ? nameProblem(wanted, "", takenAt(level), builtIns) : undefined;
-  const ready =
-    !busy && said !== "" && (!writing || (wanted !== "" && problem === undefined));
+  const ready = !busy && said !== "" && (!writing || (wanted !== "" && problem === undefined));
   const lands = labelOf(levels, level);
   const back = {
     children: "Back",
@@ -193,11 +192,7 @@ export function NewSkillDialog({
       }
       alternative={back}
       main={{
-        children: writing
-          ? busy
-            ? "Making…"
-            : "Make it and open its page"
-          : "Open the chat",
+        children: writing ? (busy ? "Making…" : "Make it and open its page") : "Open the chat",
         reserve: writing ? ["Make it and open its page", "Making…"] : ["Open the chat"],
         isDisabled: !ready,
         onPress: () => {

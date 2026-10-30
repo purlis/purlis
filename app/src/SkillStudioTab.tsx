@@ -7,10 +7,8 @@ import {
   commands,
   type DeletedSkill,
   type NeedsYou,
-  type StudioLevel,
   type SkillGrant,
   type SkillLevel,
-  type SkillTemplate,
   type SkillTemplateId,
   type SkillDraft,
   type SkillPinner,
@@ -42,9 +40,8 @@ import { NewSkillDialog } from "./NewSkillDialog";
 import { askDraft, askSkillChat, useSkillDraftsRead } from "./skillDraftAsks";
 import { SkillSourcesPage } from "./SkillSources";
 import { Select } from "./ui/select/Select";
-import { Choice, Field, SettingRow } from "./settings/components";
+import { Choice } from "./settings/components";
 import { labelOf, levelFrom, levelOf, levelsFor, sameLevel } from "./skillChanges";
-import { LevelPicker } from "./SkillLevelPickers";
 import { DeleteDialog, MoveDialog, RenameDialog } from "./SkillChangeDialogs";
 import {
   SkillPage,
@@ -1094,9 +1091,7 @@ export function SkillStudioTab({
                 headline="No skill reaches these chats yet"
                 body="Every skill these chats can get is listed here, with why any other is left out."
                 testid="skill-library-empty"
-                action={
-                  <Button onPress={() => setDoing({ what: "new" })}>{NEW_SKILL_MENU}</Button>
-                }
+                action={<Button onPress={() => setDoing({ what: "new" })}>{NEW_SKILL_MENU}</Button>}
               />
             ) : (
               <List
@@ -1540,4 +1535,3 @@ export function SkillStudioTab({
     </div>
   );
 }
-

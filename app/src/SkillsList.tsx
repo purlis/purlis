@@ -183,9 +183,7 @@ export function SkillsList({
         </Button>
       </ButtonRow>
       {notice}
-      {starts && (
-        <SkillStarts testid="skills-view-empty" />
-      )}
+      {starts && <SkillStarts testid="skills-view-empty" />}
       {filtered && (
         <ListFilter
           noun={SKILLS_NOUN}

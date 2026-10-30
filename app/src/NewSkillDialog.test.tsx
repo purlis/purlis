@@ -112,7 +112,9 @@ describe("New skill…", () => {
     const user = userEvent.setup();
     renderStudio();
 
-    await user.click(within(await newSkill(user)).getByRole("button", { name: "Write it yourself" }));
+    await user.click(
+      within(await newSkill(user)).getByRole("button", { name: "Write it yourself" }),
+    );
     const form = await screen.findByRole("dialog", { name: "Write a new skill" });
     const name = within(form).getByLabelText("Name");
     const make = within(form).getByRole("button", { name: "Make it and open its page" });
@@ -145,7 +147,9 @@ describe("New skill…", () => {
     const user = userEvent.setup();
     renderStudio();
 
-    await user.click(within(await newSkill(user)).getByRole("button", { name: "Write it yourself" }));
+    await user.click(
+      within(await newSkill(user)).getByRole("button", { name: "Write it yourself" }),
+    );
     const form = await screen.findByRole("dialog", { name: "Write a new skill" });
     // It starts where the person came from: the project's skills at the root.
     expect(within(form).getByRole("radio", { name: /^project/ })).toBeChecked();
@@ -186,7 +190,9 @@ describe("New skill…", () => {
     const user = userEvent.setup();
     renderStudio();
 
-    await user.click(within(await newSkill(user)).getByRole("button", { name: "Write it yourself" }));
+    await user.click(
+      within(await newSkill(user)).getByRole("button", { name: "Write it yourself" }),
+    );
     const form = await screen.findByRole("dialog", { name: "Write a new skill" });
     await user.type(within(form).getByLabelText("Name"), "triage");
     await user.type(
