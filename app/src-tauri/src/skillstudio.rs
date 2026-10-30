@@ -556,9 +556,21 @@ pub struct Studio {
     /// The router its chats are routed by, and how it did at each one's start (SK-15b). Null
     /// while the studio is off.
     pub router: Option<StudioRouter>,
+    /// Where purlis cannot confirm which of the project's workspace and persona folders the
+    /// person accepted (#3718): the one item the studio shows for the project, whose Accept
+    /// accepts the folders it lists (`skill_levels_confirm`). Null otherwise.
+    pub levels_to_confirm: Option<StudioLevelsToConfirm>,
     /// **What in these skills needs the person** (#3689): the Needs you page's items, by kind,
     /// each with why and one fix ([`needs`]). Empty while the studio is off.
     pub needs: Vec<needs::NeedsYou>,
+}
+
+/// **The one item for the project's folders** (#3718): what it says, and the folders its Accept
+/// accepts, relative to the project.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioLevelsToConfirm {
+    pub said: String,
+    pub folders: Vec<String>,
 }
 
 /// **A declared harness skills are not supported on** (SK-30, #2985): the core's
@@ -754,6 +766,7 @@ pub(crate) fn studio(
             pins_refused: None,
             not_supported: Vec::new(),
             router: None,
+            levels_to_confirm: None,
             needs: Vec::new(),
         };
     }
@@ -804,6 +817,12 @@ pub(crate) fn studio(
         pins_refused,
         not_supported: not_supported.into_iter().map(Into::into).collect(),
         router: Some(router),
+        levels_to_confirm: purlis_core::skills::levels::to_confirm(root).map(|(said, folders)| {
+            StudioLevelsToConfirm {
+                said: said.to_owned(),
+                folders,
+            }
+        }),
         needs: Vec::new(),
     };
     studio.needs = needs::of(&studio);

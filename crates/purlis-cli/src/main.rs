@@ -1217,7 +1217,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Skill(
             skill::SkillCommand::List { .. }
             | skill::SkillCommand::Show { .. }
-            | skill::SkillCommand::Restore { name: None },
+            | skill::SkillCommand::Restore { name: None, .. },
         )
         | Command::Change(change::ChangeCommand::List { .. })
         | Command::Session(session::SessionCommand::List { .. })

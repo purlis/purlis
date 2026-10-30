@@ -143,7 +143,7 @@ fn a_deleted_skill_handed_to_the_window_comes_back_whole_and_restores() {
     let listed = verbs::deleted(tmp.path());
     let id = serde_json::to_string(&listed[0]).unwrap();
     let back: verbs::Deleted = serde_json::from_str(&id).unwrap();
-    heard(tmp.path(), |cx| verbs::restore(cx, &back)).unwrap();
+    heard(tmp.path(), |cx| verbs::restore(cx, &back, None)).unwrap();
 
     assert!(tmp.path().join("skills/deploy/SKILL.md").exists());
     assert_eq!(levels(tmp.path())[0].label, "project");
