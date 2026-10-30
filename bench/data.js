@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793328280892,
+  "lastUpdate": 1793329491912,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30618,6 +30618,48 @@ window.BENCHMARK_DATA = {
             "value": 101.90555499999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.610, 101.135, 101.906, 102.327, 102.350 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c67f86b7de71ef2646f01e3d959899d0701d8b83",
+          "message": "docs: platforms says a pull request runs only what its change touches; shows the app builds skip path (#3730) (#3950)\n\n* docs: ui-primitives reads 'the hit stepped to over to a chat', not 'to to' (#3730)\n\nA one-line wording fix in docs/ui-primitives.md, which also serves as the\ndocs-only PR that shows the app builds legs taking their skip path.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* docs: platforms says a pull request runs only what its change touches (#3730)\n\nThe ui-primitives wording fix goes back out: that doc is one code reads\n(READ_BY_CODE in tools/ci-scope.mjs), so touching it runs every scope,\nand this pull request has to be docs-only to show the app builds legs'\nskip path. In its place, platforms.md's list of what the table does not\npromise now says a pull request is scoped by tools/ci-scope.mjs (#3505),\nand that a docs-only change still posts each required check as passed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T02:30:42Z",
+          "tree_id": "a7067d023a7a1af42d7230d1e90cd331153f8ebf",
+          "url": "https://github.com/purlis/purlis/commit/c67f86b7de71ef2646f01e3d959899d0701d8b83"
+        },
+        "date": 1793329489251,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3866715,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.368, 0.378, 0.387, 0.387, 0.397 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4222155,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.289, 16.377, 16.422, 16.558, 16.702 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.03608399999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.346, 101.495, 102.036, 102.171, 102.478 ms"
           }
         ]
       }
