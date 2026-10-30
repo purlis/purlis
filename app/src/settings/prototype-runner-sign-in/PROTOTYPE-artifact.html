@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runner sign-in prototype</title>
+<style>
+/* Purlis Classic, light (crates/purlis-core/src/theme/built-in/purlis-classic/theme.json). */
+:root {
+  --surface-base: #fcfbf8;
+  --surface-sunken: #f4f3ee;
+  --surface-deep: #e8e6df;
+  --surface-raised: #f0eee8;
+  --surface-overlay: #ffffff;
+  --surface-hover: #ebe9e2;
+  --control-base: #e8e6df;
+  --control-hover: #dcd9d0;
+  --control-count: #d2cfc5;
+  --text-primary: #1f1e1a;
+  --text-secondary: #403e37;
+  --text-muted: #605d54;
+  --text-quiet: #605d54;
+  --border-subtle: #d8d5cc;
+  --border-strong: #b8b4a8;
+  --border-control: #b8b4a8;
+  --accent-base: #086a56;
+  --accent-surface: #dcf1ea;
+  --accent-text: #086a56;
+  --accent-fill: #dcf1ea;
+  --accent-fill-hover: #c9e8de;
+  --accent-fill-edge: #086a56;
+  --accent-fill-text: #1f1e1a;
+  --focus-ring: #086a56;
+  --list-selected: #d3ede4;
+  --list-selected-edge: #086a56;
+  --danger-base: #a83232;
+  --danger-surface: #fbeaea;
+  --danger-text: #8a1f1f;
+  --attention-surface: #fbf1dc;
+  --attention-text: #6b4700;
+  --wash-warning: #8055001f;
+  --state-running: #0966d4;
+  --state-waiting: #7a5100;
+  --state-success: #197a35;
+  --state-failed: #cf222e;
+  --overlay-scrim: #1f1e1a66;
+  --overlay-shadow: #1f1e1a2e;
+  --terminal-background: #fcfbf8;
+  --terminal-foreground: #1f1e1a;
+  --terminal-green: #116329;
+  --terminal-yellow: #7d4e00;
+  --terminal-blue: #0969da;
+  /* Prototype chrome only: not part of the design. */
+  --proto-bar-bg: #2d2350;
+  --proto-bar-text: #f3efff;
+  --proto-bar-control: #4a3d7a;
+  --proto-bar-control-hover: #5d4e94;
+  --proto-mark: #6a4fc9;
+  --proto-mark-wash: #6a4fc914;
+
+  --space-1: calc(2rem / 14);
+  --space-2: calc(4rem / 14);
+  --space-3: calc(6rem / 14);
+  --space-4: calc(8rem / 14);
+  --space-5: calc(12rem / 14);
+  --space-6: calc(16rem / 14);
+  --space-7: calc(24rem / 14);
+  --space-8: calc(32rem / 14);
+  --font-size-2xs: calc(10rem / 14);
+  --font-size-xs: calc(11rem / 14);
+  --font-size-sm: calc(12rem / 14);
+  --font-size-md: calc(13rem / 14);
+  --font-size-base: 1rem;
+  --font-size-lg: calc(16rem / 14);
+  --font-mono: ui-monospace, Menlo, Consolas, monospace;
+  --radius-sm: 3px;
+  --radius-control: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-full: 9999px;
+  --size-control: 2rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface-base: #191917;
+    --surface-sunken: #111110;
+    --surface-deep: #141413;
+    --surface-raised: #1b1b19;
+    --surface-overlay: #1f1f1c;
+    --surface-hover: #242421;
+    --control-base: #262623;
+    --control-hover: #2e2e2a;
+    --control-count: #373733;
+    --text-primary: #dddcd6;
+    --text-secondary: #c9c8c0;
+    --text-muted: #9e9d94;
+    --text-quiet: #9e9d94;
+    --border-subtle: #2f2f2b;
+    --border-strong: #41403b;
+    --border-control: #41403b;
+    --accent-base: #52c4a6;
+    --accent-surface: #17302a;
+    --accent-text: #52c4a6;
+    --accent-fill: #17302a;
+    --accent-fill-hover: #1f3530;
+    --accent-fill-edge: #52c4a6;
+    --accent-fill-text: #dddcd6;
+    --focus-ring: #52c4a6;
+    --list-selected: #112b25;
+    --list-selected-edge: #52c4a6;
+    --danger-base: #c97474;
+    --danger-surface: #2a1a1a;
+    --danger-text: #f2a0a0;
+    --attention-surface: #2a2414;
+    --attention-text: #e8c170;
+    --wash-warning: #d299221f;
+    --state-running: #2f81f7;
+    --state-waiting: #d29922;
+    --state-success: #3fb950;
+    --state-failed: #f85149;
+    --overlay-scrim: #0000008c;
+    --overlay-shadow: #00000099;
+    --terminal-background: #111110;
+    --terminal-foreground: #dddcd6;
+    --terminal-green: #3fb950;
+    --terminal-yellow: #d29922;
+    --terminal-blue: #58a6ff;
+    --proto-bar-bg: #e6defe;
+    --proto-bar-text: #1f1640;
+    --proto-bar-control: #cfc2fa;
+    --proto-bar-control-hover: #bba9f5;
+    --proto-mark: #b6a3ff;
+    --proto-mark-wash: #b6a3ff1a;
+  }
+}
+:root[data-theme="dark"] {
+  --surface-base: #191917;
+  --surface-sunken: #111110;
+  --surface-deep: #141413;
+  --surface-raised: #1b1b19;
+  --surface-overlay: #1f1f1c;
+  --surface-hover: #242421;
+  --control-base: #262623;
+  --control-hover: #2e2e2a;
+  --control-count: #373733;
+  --text-primary: #dddcd6;
+  --text-secondary: #c9c8c0;
+  --text-muted: #9e9d94;
+  --text-quiet: #9e9d94;
+  --border-subtle: #2f2f2b;
+  --border-strong: #41403b;
+  --border-control: #41403b;
+  --accent-base: #52c4a6;
+  --accent-surface: #17302a;
+  --accent-text: #52c4a6;
+  --accent-fill: #17302a;
+  --accent-fill-hover: #1f3530;
+  --accent-fill-edge: #52c4a6;
+  --accent-fill-text: #dddcd6;
+  --focus-ring: #52c4a6;
+  --list-selected: #112b25;
+  --list-selected-edge: #52c4a6;
+  --danger-base: #c97474;
+  --danger-surface: #2a1a1a;
+  --danger-text: #f2a0a0;
+  --attention-surface: #2a2414;
+  --attention-text: #e8c170;
+  --wash-warning: #d299221f;
+  --state-running: #2f81f7;
+  --state-waiting: #d29922;
+  --state-success: #3fb950;
+  --state-failed: #f85149;
+  --overlay-scrim: #0000008c;
+  --overlay-shadow: #00000099;
+  --terminal-background: #111110;
+  --terminal-foreground: #dddcd6;
+  --terminal-green: #3fb950;
+  --terminal-yellow: #d29922;
+  --terminal-blue: #58a6ff;
+  --proto-bar-bg: #e6defe;
+  --proto-bar-text: #1f1640;
+  --proto-bar-control: #cfc2fa;
+  --proto-bar-control-hover: #bba9f5;
+  --proto-mark: #b6a3ff;
+  --proto-mark-wash: #b6a3ff1a;
+}
+
+* { box-sizing: border-box; }
+html { font-size: 14px; -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  padding: 16px 16px 160px;
+  background: var(--surface-deep);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: var(--font-size-base);
+  line-height: 1.4;
+  overflow-x: hidden;
+}
+code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
+button { font: inherit; }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* Prototype header line */
+.proto-head {
+  max-width: 1080px; margin: 0 auto var(--space-4);
+  display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); align-items: baseline;
+  font-size: var(--font-size-xs); color: var(--text-muted);
+}
+.proto-tag {
+  display: inline-block; padding: 0 var(--space-3); border-radius: var(--radius-full);
+  border: 1px dashed var(--proto-mark); color: var(--proto-mark); font-weight: 600;
+}
+.proto-state b { color: var(--text-primary); font-weight: 600; }
+
+/* The window */
+.window {
+  max-width: 1080px; margin: 0 auto;
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 8px 24px var(--overlay-shadow);
+  overflow: hidden;
+}
+.titlebar {
+  display: flex; align-items: center; gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--font-size-sm); color: var(--text-muted);
+}
+.dots { display: inline-flex; gap: 6px; }
+.dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--control-count); display: block; }
+.tabstrip { display: flex; min-width: 0; overflow: hidden; }
+.tabstrip span {
+  padding: var(--space-2) var(--space-4); border-right: 1px solid var(--border-subtle);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tabstrip span[aria-current] { background: var(--surface-base); color: var(--text-primary); }
+
+.ui-settings {
+  display: grid;
+  grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr);
+  grid-template-areas: "top top" "nav body";
+  gap: var(--space-5) var(--space-7);
+  padding: var(--space-6) var(--space-7) var(--space-7);
+}
+.ui-settings-top {
+  grid-area: top; display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: var(--space-3) var(--space-5);
+  padding-bottom: var(--space-4); border-bottom: 1px solid var(--border-subtle);
+}
+.levels { display: inline-flex; border: 1px solid var(--border-control); border-radius: var(--radius-control); overflow: hidden; }
+.levels span { padding: var(--space-2) var(--space-5); font-size: var(--font-size-sm); color: var(--text-secondary); }
+.levels span[aria-current] { background: var(--list-selected); color: var(--text-primary); box-shadow: inset 0 -2px 0 var(--list-selected-edge); }
+.ui-settings-about { margin: 0; font-size: var(--font-size-xs); color: var(--text-muted); }
+.ui-settings-nav { grid-area: nav; display: flex; flex-direction: column; gap: var(--space-1); }
+.ui-settings-nav span {
+  padding: var(--space-2) var(--space-4); color: var(--text-secondary);
+  border-radius: var(--radius-control); font-size: var(--font-size-md);
+}
+.ui-settings-nav span.sub { padding-left: var(--space-6); }
+.ui-settings-nav span[aria-current] {
+  color: var(--text-primary); background: var(--list-selected);
+  box-shadow: inset 2px 0 0 var(--list-selected-edge);
+}
+.ui-settings-body { grid-area: body; min-width: 0; }
+.group-title { margin: 0; font-size: var(--font-size-lg); font-weight: 600; }
+.ui-setting-help { margin: var(--space-1) 0 0; font-size: var(--font-size-xs); color: var(--text-muted); }
+.ui-setting-row { display: grid; gap: var(--space-2); padding-block: var(--space-5); border-bottom: 1px solid var(--border-subtle); }
+.ui-setting-label { font-weight: 500; }
+.ui-machine-list { margin: 0; padding: 0; list-style: none; }
+.ui-machine-entry {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3);
+  padding: var(--space-4) 0; border-top: 1px solid var(--border-subtle);
+}
+.ui-machine-entry:first-child { border-top: 0; }
+.ui-machine-name { font-weight: 600; }
+.ui-machine-path { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; font-size: var(--font-size-xs); color: var(--text-quiet); }
+.entry-full { flex: 1 1 100%; min-width: 0; }
+
+/* Buttons (ui/button/button.css) */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  height: var(--size-control); padding: 0 var(--space-4);
+  border: 1px solid var(--border-control); border-radius: var(--radius-control);
+  color: var(--text-primary); background: var(--control-base);
+  font-size: var(--font-size-base); line-height: 1; white-space: nowrap; cursor: pointer;
+}
+.btn:hover { background: var(--control-hover); }
+.btn.sm { height: calc(var(--size-control) * 0.8); padding: 0 var(--space-4); font-size: var(--font-size-sm); }
+.btn.primary { border-color: var(--accent-fill-edge); color: var(--accent-fill-text); background: var(--accent-fill); }
+.btn.primary:hover { background: var(--accent-fill-hover); }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn.ghost:hover { background: var(--surface-hover); }
+.btn.quiet { border-color: transparent; background: transparent; color: var(--text-quiet); }
+.btn.quiet:hover { background: var(--surface-hover); color: var(--text-primary); }
+.btn.danger { border-color: var(--danger-base); color: var(--danger-text); background: var(--danger-surface); }
+.btn[aria-disabled="true"] { opacity: .55; cursor: default; }
+.row-end { margin-inline-start: auto; }
+.btns { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+
+/* Badges (ui/badge/badge.css) */
+.badge {
+  display: inline-flex; align-items: center; gap: var(--space-2); flex: none;
+  padding: 0 var(--space-3); border-radius: var(--radius-full);
+  color: var(--text-secondary); background: var(--control-count);
+  font-size: var(--font-size-xs); line-height: 1.4; white-space: nowrap;
+}
+.badge.accent { color: var(--text-primary); background: var(--accent-surface); }
+.badge.waiting { color: var(--state-waiting); background: var(--wash-warning); }
+.badge.ok { color: var(--state-success); background: transparent; padding-left: 0; }
+.badge.trouble { color: var(--danger-text); background: var(--danger-surface); }
+
+/* Fields (ui/field/field.css) */
+.field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.field label { font-weight: 500; }
+.field .help { margin: 0; color: var(--text-quiet); font-size: var(--font-size-xs); }
+.field .error { margin: 0; color: var(--danger-text); font-size: var(--font-size-xs); min-height: calc(var(--font-size-xs) * 1.4); }
+.input {
+  height: var(--size-control); padding: 0 var(--space-4); min-width: 0; width: 100%;
+  border: 1px solid var(--border-control); border-radius: var(--radius-control);
+  background: var(--surface-sunken); color: var(--text-primary); font: inherit;
+}
+.input.mono { font-family: var(--font-mono); }
+.input:focus { outline: 2px solid var(--focus-ring); outline-offset: -1px; }
+.input-line { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
+.input-line .input { flex: 1 1 14rem; }
+
+/* Checkbox (ui/choice/choice.css) */
+.check { display: flex; align-items: flex-start; gap: var(--space-4); padding: var(--space-2) 0; cursor: pointer; }
+.check input { appearance: none; margin: 2px 0 0; width: 1rem; height: 1rem; flex: none; border: 1px solid var(--text-muted); background: var(--surface-sunken); display: inline-grid; place-items: center; cursor: pointer; }
+.check input:checked { background: var(--accent-base); border-color: var(--accent-base); }
+.check input:checked::after { content: ""; width: 6px; height: 9px; border: solid var(--surface-base); border-width: 0 2px 2px 0; transform: translateY(-1px) rotate(45deg); }
+.check-text { display: flex; flex-direction: column; min-width: 0; }
+.check-text small { font-size: var(--font-size-xs); color: var(--text-muted); }
+
+/* Notice (ui/notice/notice.css) */
+.notice {
+  border: 1px solid var(--state-waiting); border-radius: var(--radius-lg);
+  background: var(--surface-raised); padding: var(--space-4) var(--space-5);
+  font-size: var(--font-size-sm); overflow-wrap: anywhere;
+}
+.notice.attention { border-color: transparent; color: var(--attention-text); background: var(--attention-surface); }
+.notice.trouble { border-color: transparent; color: var(--danger-text); background: var(--danger-surface); }
+.notice p { margin: 0 0 var(--space-2); }
+.notice p:last-child { margin-bottom: 0; }
+
+/* Profile lines on a pool row */
+.prof-list { list-style: none; margin: var(--space-2) 0 0; padding: 0; flex: 1 1 100%; min-width: 0; }
+.prof-line {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) 0 var(--space-2) var(--space-5);
+  border-left: 1px solid var(--border-subtle);
+}
+.harness { font-size: var(--font-size-xs); color: var(--text-muted); }
+.prof-name { font-weight: 500; }
+.sub-head { font-size: var(--font-size-xs); color: var(--text-muted); margin: var(--space-3) 0 0; flex: 1 1 100%; }
+
+/* A: the strip a profile line opens into */
+.strip {
+  flex: 1 1 100%; min-width: 0;
+  margin: var(--space-2) 0 var(--space-3);
+  padding: var(--space-5);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--accent-base);
+  border-radius: var(--radius-control);
+  display: grid; gap: var(--space-4);
+}
+.strip.bad { border-left-color: var(--danger-base); }
+.strip-head { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); align-items: baseline; font-size: var(--font-size-xs); color: var(--text-muted); }
+.strip-head b { color: var(--text-primary); font-size: var(--font-size-sm); font-weight: 600; }
+.strip-foot { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; border-top: 1px solid var(--border-subtle); padding-top: var(--space-3); }
+.strip-foot .cli { font-size: var(--font-size-xs); color: var(--text-muted); margin-inline-start: auto; overflow-wrap: anywhere; }
+
+/* B: dialog */
+.scrim {
+  position: fixed; inset: 0; z-index: 20;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  padding: max(24px, 6vh) 16px 24px;
+  background: var(--overlay-scrim);
+  overflow-y: auto;
+}
+.dialog {
+  width: min(600px, 100%); max-height: 100%;
+  display: grid; grid-template-rows: auto minmax(0,1fr) auto;
+  background: var(--surface-overlay); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); box-shadow: 0 12px 32px var(--overlay-shadow);
+  overflow: hidden;
+}
+.dialog-head { padding: var(--space-6) var(--space-6) var(--space-3); }
+.dialog-title { margin: 0; font-size: var(--font-size-lg); font-weight: 600; line-height: 1.2; }
+.dialog-sub { margin: var(--space-2) 0 0; color: var(--text-muted); font-size: var(--font-size-sm); }
+.dialog-body { padding: var(--space-3) var(--space-6) var(--space-6); overflow-y: auto; display: grid; gap: var(--space-5); }
+.dialog-foot { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; padding: var(--space-5) var(--space-6); border-top: 1px solid var(--border-subtle); }
+.dialog-foot .grow { flex: 1; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.step { display: grid; grid-template-columns: 1.6rem minmax(0,1fr); gap: var(--space-4); padding: var(--space-4) 0; }
+.step + .step { border-top: 1px solid var(--border-subtle); }
+.step-n {
+  width: 1.6rem; height: 1.6rem; border-radius: 50%; display: grid; place-items: center;
+  font-size: var(--font-size-sm); font-weight: 600;
+  border: 1px solid var(--border-strong); color: var(--text-muted);
+}
+.step.now .step-n { border-color: var(--accent-base); color: var(--accent-text); background: var(--accent-surface); }
+.step.done .step-n { border-color: var(--state-success); color: var(--state-success); }
+.step.bad .step-n { border-color: var(--danger-base); color: var(--danger-text); background: var(--danger-surface); }
+.step-title { font-weight: 500; line-height: 1.6rem; }
+.step.next .step-title { color: var(--text-muted); }
+.step-body { grid-column: 2; display: grid; gap: var(--space-4); }
+.summary { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: var(--space-2) var(--space-5); font-size: var(--font-size-sm); }
+.summary dt { color: var(--text-muted); }
+.summary dd { margin: 0; overflow-wrap: anywhere; }
+
+/* C: panel and queue */
+.panel { flex: 1 1 100%; min-width: 0; margin-top: var(--space-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--surface-sunken); }
+.panel-head { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-subtle); }
+.panel-head b { font-size: var(--font-size-sm); }
+.panel-body { padding: var(--space-3) var(--space-5); }
+.panel-row { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); align-items: center; justify-content: space-between; border-top: 1px solid var(--border-subtle); padding: var(--space-1) 0; }
+.panel-row:first-child { border-top: 0; }
+.panel-foot { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; padding: var(--space-4) var(--space-5); border-top: 1px solid var(--border-subtle); }
+.queue { flex: 1 1 100%; min-width: 0; margin-top: var(--space-3); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--surface-overlay); }
+.queue-head { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: baseline; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-subtle); }
+.queue-head b { font-size: var(--font-size-sm); }
+.queue-head span { font-size: var(--font-size-xs); color: var(--text-muted); }
+.q-item { border-top: 1px solid var(--border-subtle); }
+.q-item:first-of-type { border-top: 0; }
+.q-line { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); align-items: center; padding: var(--space-3) var(--space-5); }
+.q-mark { width: 1.2rem; text-align: center; flex: none; color: var(--text-muted); font-size: var(--font-size-sm); }
+.q-item.done .q-mark { color: var(--state-success); }
+.q-item.now { background: var(--list-selected); box-shadow: inset 2px 0 0 var(--list-selected-edge); }
+.q-item.bad { box-shadow: inset 2px 0 0 var(--danger-base); }
+.q-item.next .prof-name { color: var(--text-muted); }
+.q-body { padding: 0 var(--space-5) var(--space-5) calc(var(--space-5) + 1.2rem + var(--space-4)); display: grid; gap: var(--space-4); }
+
+/* Shared bits of a sign-in */
+.say { margin: 0; font-size: var(--font-size-sm); }
+.say.muted { color: var(--text-muted); font-size: var(--font-size-xs); }
+.waiting { display: inline-flex; align-items: center; gap: var(--space-3); color: var(--text-secondary); font-size: var(--font-size-sm); }
+.spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--border-strong); border-top-color: var(--accent-base); animation: spin .9s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; border-top-color: var(--border-strong); } }
+.code-box {
+  display: inline-flex; align-items: center; gap: var(--space-4); flex-wrap: wrap;
+  font-family: var(--font-mono); font-size: 1.5rem; letter-spacing: .12em; font-weight: 600;
+  padding: var(--space-3) var(--space-5); border: 1px dashed var(--border-strong); border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+}
+.ok-line { display: flex; align-items: center; gap: var(--space-3); color: var(--state-success); font-size: var(--font-size-sm); font-weight: 500; }
+.ok-line span.rest { color: var(--text-primary); font-weight: 400; }
+.term {
+  margin: 0; padding: var(--space-4) var(--space-5);
+  background: var(--terminal-background); color: var(--terminal-foreground);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-control);
+  font-family: var(--font-mono); font-size: var(--font-size-sm); line-height: 1.45;
+  white-space: pre-wrap; overflow-wrap: anywhere; min-height: 9.5em;
+}
+.term .g { color: var(--terminal-green); }
+.term .y { color: var(--terminal-yellow); }
+.term .b { color: var(--terminal-blue); }
+.term .cur { display: inline-block; width: .6em; background: var(--terminal-foreground); color: transparent; }
+.term-head { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; font-size: var(--font-size-xs); color: var(--text-muted); }
+.term-head .live { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--state-success); }
+.term-head .live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--state-success); }
+
+/* Move to runner mock */
+.move-wrap { max-width: 1080px; margin: var(--space-7) auto 0; }
+.move-label { font-size: var(--font-size-xs); color: var(--text-muted); margin: 0 0 var(--space-3); }
+.chat { display: grid; grid-template-rows: auto auto auto; }
+.chat-head { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); align-items: center; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-subtle); }
+.chat-head b { font-size: var(--font-size-md); }
+.chat-log { padding: var(--space-5); display: grid; gap: var(--space-3); font-size: var(--font-size-sm); color: var(--text-secondary); }
+.chat-log .you { justify-self: end; background: var(--surface-raised); padding: var(--space-3) var(--space-5); border-radius: var(--radius-lg); max-width: 80%; }
+.chat-notice { padding: 0 var(--space-5) var(--space-5); }
+.menu-pill { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-xs); padding: var(--space-1) var(--space-3); border: 1px solid var(--border-control); border-radius: var(--radius-control); background: var(--control-base); }
+
+/* Prototype-only actions (pretend the browser did its part) */
+.fake {
+  display: inline-flex; align-items: center; height: calc(var(--size-control) * 0.8); padding: 0 var(--space-4);
+  border: 1px dashed var(--proto-mark); border-radius: var(--radius-full); background: var(--proto-mark-wash);
+  color: var(--proto-mark); font-size: var(--font-size-xs); cursor: pointer;
+}
+
+/* Toast */
+.toast {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 40;
+  max-width: calc(100% - 32px);
+  padding: var(--space-3) var(--space-5); border-radius: var(--radius-lg);
+  background: var(--surface-overlay); border: 1px solid var(--border-strong);
+  box-shadow: 0 6px 18px var(--overlay-shadow); font-size: var(--font-size-sm);
+}
+.toast[hidden] { display: none; }
+
+/* Prototype pill bar: not part of the design */
+.pillbar {
+  position: fixed; left: 0; right: 0; bottom: 16px; margin: 0 auto; width: max-content; z-index: 50;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px;
+  max-width: calc(100% - 32px);
+  padding: 6px 8px; border-radius: 22px;
+  background: var(--proto-bar-bg); color: var(--proto-bar-text);
+  box-shadow: 0 8px 28px var(--overlay-shadow);
+  font-size: 13px; font-family: system-ui, -apple-system, sans-serif;
+}
+.pillbar .grp { display: inline-flex; align-items: center; gap: 2px; background: var(--proto-bar-control); border-radius: 16px; padding: 2px; min-width: 0; }
+.pillbar button {
+  border: 0; background: transparent; color: inherit; height: 28px; min-width: 28px; padding: 0 8px;
+  border-radius: 14px; cursor: pointer; font-size: 13px;
+}
+.pillbar button:hover { background: var(--proto-bar-control-hover); }
+.pillbar .lbl { padding: 0 6px; white-space: nowrap; font-weight: 600; }
+.pillbar select {
+  border: 0; background: transparent; color: inherit; font: inherit; height: 28px; max-width: 16rem; min-width: 0; cursor: pointer;
+}
+.pillbar select option { color: #1f1e1a; background: #ffffff; }
+.pillbar .tag { font-size: 11px; opacity: .8; padding: 0 4px; }
+
+@media (max-width: 760px) {
+  .ui-settings { grid-template-columns: minmax(0,1fr); grid-template-areas: "top" "nav" "body"; padding: var(--space-5); }
+  .ui-settings-nav { flex-direction: row; flex-wrap: wrap; }
+  .ui-settings-nav span.sub { padding-left: var(--space-4); }
+  .ui-settings-nav span:not([aria-current]):not(.keep) { display: none; }
+  .tabstrip span:not([aria-current]) { display: none; }
+  .q-body { padding-left: var(--space-5); }
+  .step { grid-template-columns: 1.6rem minmax(0,1fr); }
+  .pillbar .tag { display: none; }
+  .pillbar select { max-width: 11rem; }
+}
+</style>
+</head>
+<body>
+<div class="proto-head">
+  <span class="proto-tag">Prototype</span>
+  <span>Signing a harness profile in on a pool's runner. Fake data; nothing here talks to a runner.</span>
+  <span class="proto-state" id="stateLine"></span>
+</div>
+<div id="app"></div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<nav class="pillbar" aria-label="Prototype controls (not part of the design)">
+  <span class="tag">prototype</span>
+  <span class="grp">
+    <button type="button" id="vPrev" aria-label="Previous variant">←</button>
+    <span class="lbl" id="vLabel">A · Inline</span>
+    <button type="button" id="vNext" aria-label="Next variant">→</button>
+  </span>
+  <span class="grp">
+    <button type="button" id="sPrev" aria-label="Previous state">‹</button>
+    <select id="sSel" aria-label="State"></select>
+    <button type="button" id="sNext" aria-label="Next state">›</button>
+  </span>
+  <span class="grp">
+    <button type="button" id="themeBtn" aria-label="Switch light or dark">◐ Dark</button>
+  </span>
+</nav>
+
+<script>
+(function () {
+  "use strict";
+
+  var PROFILES = {
+    work: { id: "work", kind: "claude", harness: "Claude Code", name: "work" },
+    personal: { id: "personal", kind: "claude", harness: "Claude Code", name: "personal" },
+    oss: { id: "oss", kind: "codex", harness: "Codex", name: "oss" },
+    team: { id: "team", kind: "copilot", harness: "Copilot", name: "team" }
+  };
+  var ORDER = ["work", "personal", "oss"];
+  var DEFAULT_PROFILE = "work";
+  var STATES = [
+    ["choose", "choose profiles"],
+    ["opening", "opening browser"],
+    ["paste", "paste code (Claude)"],
+    ["approve", "waiting for approval (Codex)"],
+    ["device", "device code (Copilot)"],
+    ["signed", "signed in"],
+    ["terminal", "couldn't follow (inline terminal)"],
+    ["failed", "failed with a reason"],
+    ["fresh", "fresh-claim note"]
+  ];
+  var VARIANTS = [["A", "Inline"], ["B", "Focused sheet"], ["C", "Pool panel and queue"]];
+  var POOLS = {
+    "purlis-pool1": { name: "purlis-pool1", kind: "docker", path: "2 CPUs, 4096 MiB of memory, 512 processes, 1024 MiB of /tmp" },
+    "team-cluster": { name: "team-cluster", kind: "cluster", path: "Pool claude-runners in prod-eks, namespace dev-tools" }
+  };
+  var VENDOR = {
+    claude: { site: "claude.ai", url: "https://claude.ai/oauth/authorize?code=true&…" },
+    codex: { site: "auth.openai.com" },
+    copilot: { site: "github.com/login/device", code: "4F2C-9A1B" }
+  };
+
+  var S = fresh("A", "choose");
+  var timer = null;
+
+  function fresh(v, st) {
+    return {
+      v: v, st: st, ctx: "settings", prof: null, pool: null,
+      signed: {}, sheet: true, code: "", err: "",
+      checks: { work: true, personal: false, oss: st !== "choose" },
+      moved: false, idle: false, movedTo: null
+    };
+  }
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  function active() {
+    if (S.st === "choose" || S.idle) return null;
+    var pool = S.pool || (S.st === "fresh" ? "team-cluster" : "purlis-pool1");
+    var p = S.prof || (S.st === "approve" ? "oss" : S.st === "device" ? "team" : S.ctx === "move" ? "personal" : "work");
+    return { pool: pool, prof: PROFILES[p] };
+  }
+  function isActive(pool, pid) { var a = active(); return !!a && a.pool === pool && a.prof.id === pid; }
+  function key(pool, pid) { return pool + "/" + pid; }
+
+  function poolProfiles(pool) {
+    var ids = [];
+    if (pool === "purlis-pool1") {
+      ORDER.forEach(function (id) { if (S.checks[id]) ids.push(id); });
+    } else {
+      ids.push("work");
+    }
+    var a = active();
+    if (a && a.pool === pool && ids.indexOf(a.prof.id) < 0) {
+      if (a.prof.id === "team") ids.splice(1, 0, "team"); else ids.push(a.prof.id);
+    }
+    return ids;
+  }
+
+  function standing(pool, pid) {
+    if (isActive(pool, pid)) {
+      switch (S.st) {
+        case "signed": return ["ok", "✓ signed in"];
+        case "failed": return ["trouble", "sign-in failed"];
+        case "terminal": return ["waiting", "needs you in the terminal"];
+        default: return ["accent", "signing in…"];
+      }
+    }
+    if (S.signed[key(pool, pid)]) return ["ok", "✓ signed in"];
+    return ["waiting", "not signed in"];
+  }
+  function badge(pair) { return '<span class="badge ' + pair[0] + '">' + esc(pair[1]) + "</span>"; }
+
+  function addedBy(pool, pid) {
+    if (S.ctx === "move" && isActive(pool, pid) && pid !== "work") return " · added by Move to runner";
+    if (pool === "purlis-pool1" && pid === DEFAULT_PROFILE) return " · this project's default";
+    return "";
+  }
+
+  /* --- What a sign-in shows, by harness and state ------------------------------------ */
+
+  function stepsOf(kind) {
+    if (kind === "claude") return ["Open the sign-in page in your browser", "Paste the code the page shows", "Signed in"];
+    if (kind === "codex") return ["Approve in your browser", "Signed in"];
+    return ["Enter the code on GitHub", "Signed in"];
+  }
+  function stepIndex(kind) {
+    var st = S.st;
+    if (st === "signed") return kind === "claude" ? 2 : 1;
+    if (kind === "claude") return st === "opening" ? 0 : 1;
+    return 0;
+  }
+
+  function freshNote(a) {
+    if (a.pool !== "team-cluster") return "";
+    return '<div class="notice attention"><p><b>team-cluster’s claim is fresh.</b> This sign-in lasts only for this claim: when the claim is released, the next claim asks again.</p></div>';
+  }
+
+  function cli(a) {
+    return '<code>purlis profile sign-in ' + esc(a.prof.name) + " --pool " + esc(a.pool) + "</code>";
+  }
+
+  function core(a) {
+    var P = a.prof, k = P.kind, st = S.st, h = "";
+    var inMove = S.ctx === "move";
+    if (st === "signed") {
+      h += '<div class="ok-line">✓ <span class="rest">Signed in on ' + esc(a.pool) + (a.pool === "team-cluster" ? ", for this claim only" : "") + ".</span></div>";
+      if (inMove) h += S.moved
+        ? '<p class="say">Moved. The chat runs on ' + esc(a.pool) + " now.</p>"
+        : '<div class="waiting"><span class="spin"></span>Moving the chat to ' + esc(a.pool) + "…</div>";
+      return h;
+    }
+    if (st === "failed") {
+      h += '<div class="notice trouble"><p><b>Sign-in failed.</b> claude.ai refused the code: <bdi class="mono">invalid_grant: code expired</bdi>. Open the page again for a new code; nothing changed on the runner.</p></div>';
+      h += '<div class="btns"><button class="btn primary sm" data-act="retry">Open the page again</button></div>';
+      return h;
+    }
+    if (st === "terminal") {
+      h += '<p class="say">purlis could not follow <code>claude auth login</code> on ' + esc(a.pool) + ": it asked something purlis does not know. Answer it here; purlis checks <code>claude auth status</code> when it ends.</p>";
+      h += '<div class="term-head"><span class="live">live</span><span>' + esc(a.pool) + " · " + esc(P.harness) + " · " + esc(P.name) + "</span></div>";
+      h += '<pre class="term" tabindex="0" aria-label="Terminal on the runner">'
+        + '<span class="g">runner@' + esc(a.pool) + '</span>:<span class="b">~</span>$ claude auth login\n'
+        + "Welcome to Claude Code\n\n"
+        + '<span class="y">Select login method:</span>\n\n'
+        + " ❯ 1. Claude account with subscription\n"
+        + "   2. Anthropic Console account · API usage billing\n"
+        + "   3. 3rd-party platform\n\n"
+        + '<span class="cur">_</span></pre>';
+      h += '<div class="btns"><button class="btn primary sm" data-act="checkagain">Check again</button><span class="say muted">The terminal closes on its own once the runner says it is signed in.</span></div>';
+      return h;
+    }
+    h += freshNote(a);
+    if (k === "claude") {
+      if (st === "opening") {
+        h += '<div class="waiting"><span class="spin"></span>Opening ' + VENDOR.claude.site + " in your browser…</div>";
+        h += '<p class="say muted">Sign in there as the account for <b>' + esc(P.name) + "</b>. The page then shows a code.</p>";
+        h += '<div class="btns"><button class="btn sm" data-act="copylink">Copy link</button><button class="btn quiet sm" data-act="topaste">I have the code</button></div>';
+      } else {
+        h += '<div class="field"><label for="code-' + S.v + '">Code from ' + VENDOR.claude.site + "</label>"
+          + '<div class="input-line"><input class="input mono" id="code-' + S.v + '" data-code autocomplete="off" spellcheck="false" placeholder="Paste the code" value="' + esc(S.code) + '">'
+          + '<button class="btn primary" data-act="continue">Continue</button></div>'
+          + '<p class="error" role="alert">' + esc(S.err) + "</p>"
+          + '<p class="help">The browser on this Mac opened ' + VENDOR.claude.site + ". Its code goes to the runner; nothing of this Mac’s sign-in does. Type <code>bad</code> to see a refusal.</p></div>";
+        h += '<div class="btns"><button class="btn quiet sm" data-act="reopen">Open the page again</button></div>';
+      }
+    } else if (k === "codex") {
+      h += '<p class="say">Approve <b>' + esc(P.name) + "</b> in the page that opened on " + VENDOR.codex.site + ". purlis passes the browser’s answer on to the runner, so there is nothing to paste.</p>";
+      h += '<div class="waiting"><span class="spin"></span>Waiting for your approval…</div>';
+      h += '<div class="btns"><button class="btn sm" data-act="reopen">Open the page again</button><button class="fake" data-act="approved">Pretend the browser approved</button></div>';
+    } else {
+      h += '<p class="say">Enter this code on <b>' + VENDOR.copilot.site + "</b>, signed in as the GitHub account for " + esc(P.name) + ".</p>";
+      h += '<div class="btns"><span class="code-box" aria-label="Device code">' + VENDOR.copilot.code + "</span></div>";
+      h += '<div class="btns"><button class="btn sm" data-act="copycode">Copy code</button><button class="btn primary sm" data-act="reopen">Open page</button></div>';
+      h += '<div class="waiting"><span class="spin"></span>Waiting for GitHub…</div>';
+      h += '<div class="btns"><button class="fake" data-act="approved">Pretend GitHub took the code</button></div>';
+    }
+    return h;
+  }
+
+  function footActions(a, extra) {
+    if (S.st === "signed") return extra || "";
+    return '<button class="btn quiet sm" data-act="cancel">Cancel</button>'
+      + '<button class="btn ghost sm" data-act="openterm" title="Opens a shell tab on the runner">Open in terminal</button>'
+      + (extra || "");
+  }
+
+  /* --- A: Inline ----------------------------------------------------------------------- */
+
+  function stripA(a) {
+    var steps = stepsOf(a.prof.kind), i = stepIndex(a.prof.kind);
+    var bad = S.st === "failed";
+    var head = '<div class="strip-head"><b>' + (S.st === "signed" ? "Signed in" : "Signing " + esc(a.prof.name) + " in on " + esc(a.pool)) + "</b>"
+      + (S.st === "signed" ? "" : "<span>Step " + (i + 1) + " of " + steps.length + ": " + esc(steps[i]) + "</span>") + "</div>";
+    var foot = S.st === "signed"
+      ? '<div class="strip-foot"><button class="btn quiet sm" data-act="done">Done</button></div>'
+      : '<div class="strip-foot">' + footActions(a) + '<span class="cli">or ' + cli(a) + "</span></div>";
+    return '<div class="strip' + (bad ? " bad" : "") + '">' + head + core(a) + foot + "</div>";
+  }
+
+  function chooseA() {
+    var h = '<div class="strip"><div class="strip-head"><b>Pool added. Which profiles sign in on purlis-pool1?</b><span>Last step of Add a Docker pool</span></div>';
+    ORDER.forEach(function (id) {
+      var P = PROFILES[id];
+      h += '<label class="check"><input type="checkbox" data-check="' + id + '"' + (S.checks[id] ? " checked" : "") + '><span class="check-text"><span>' + esc(P.harness) + " · <b>" + esc(P.name) + "</b></span>"
+        + (id === DEFAULT_PROFILE ? "<small>this project’s default profile</small>" : "") + "</span></label>";
+    });
+    var n = ORDER.filter(function (id) { return S.checks[id]; }).length;
+    h += '<p class="say muted">Each one signs in on the runner itself; nothing of this Mac’s sign-in goes to it. A chat moved here with another profile adds it then.</p>';
+    h += '<div class="btns"><button class="btn primary sm" data-act="startfirst"' + (n ? "" : ' aria-disabled="true"') + ">Sign in " + (n === 1 ? "1 profile" : n + " profiles") + '</button><button class="btn quiet sm" data-act="notnow">Not now</button></div></div>';
+    return h;
+  }
+
+  function profLinesA(pool) {
+    var h = '<p class="sub-head">Profiles on this pool</p><ul class="prof-list">';
+    poolProfiles(pool).forEach(function (id) {
+      var P = PROFILES[id], s = standing(pool, id);
+      var act = isActive(pool, id) && S.ctx === "settings";
+      h += '<li class="prof-line"><span class="prof-name">' + esc(P.name) + '</span><span class="harness">' + esc(P.harness) + esc(addedBy(pool, id)) + "</span>" + badge(s);
+      if (!act && s[0] !== "ok") h += '<button class="btn sm row-end" data-act="signin" data-pool="' + pool + '" data-prof="' + id + '">Sign in</button>';
+      if (act && S.st === "signed") h += '<button class="btn quiet sm row-end" data-act="signout">Sign out</button>';
+      if (act) h += stripA(active());
+      h += "</li>";
+    });
+    h += '<li class="prof-line"><button class="btn quiet sm" data-act="toast" data-msg="A menu of this Mac’s profiles not on the pool yet.">Add a profile…</button></li></ul>';
+    return h;
+  }
+
+  /* --- B: Focused sheet ---------------------------------------------------------------- */
+
+  function profLinesB(pool) {
+    var h = '<p class="sub-head">Profiles on this pool</p><ul class="prof-list">';
+    poolProfiles(pool).forEach(function (id) {
+      var P = PROFILES[id], s = standing(pool, id);
+      h += '<li class="prof-line"><span class="prof-name">' + esc(P.name) + '</span><span class="harness">' + esc(P.harness) + esc(addedBy(pool, id)) + "</span>" + badge(s);
+      if (s[0] !== "ok") h += '<button class="btn sm row-end" data-act="' + (isActive(pool, id) ? "reopensheet" : "signin") + '" data-pool="' + pool + '" data-prof="' + id + '">' + (isActive(pool, id) ? "Show sign-in" : "Sign in…") + "</button>";
+      h += "</li>";
+    });
+    h += '<li class="prof-line"><button class="btn quiet sm" data-act="toast" data-msg="A menu of this Mac’s profiles not on the pool yet.">Add a profile…</button></li></ul>';
+    return h;
+  }
+
+  function sheetB() {
+    if (!S.sheet) return "";
+    if (S.st === "choose") return addPoolSheetB();
+    var a = active(), P = a.prof, steps = stepsOf(P.kind), i = stepIndex(P.kind);
+    var title = S.st === "signed" ? P.name + " is signed in on " + a.pool : "Sign " + P.name + " in on " + a.pool;
+    var sub = P.harness + (S.ctx === "move" ? " · the move of “fix flaky login test” waits for this" : " · the runner signs in itself; nothing of this Mac’s sign-in goes to it");
+    var body = '<ol class="steps">';
+    steps.forEach(function (t, n) {
+      var cls = n < i ? "done" : n === i ? (S.st === "failed" ? "bad" : S.st === "signed" ? "done" : "now") : "next";
+      body += '<li class="step ' + cls + '"><span class="step-n">' + (cls === "done" ? "✓" : n + 1) + '</span><span class="step-title">' + esc(t) + "</span>";
+      if (n === i && S.st !== "signed") body += '<div class="step-body">' + core(a) + "</div>";
+      if (n === i && S.st === "signed" && S.ctx === "move") body += '<div class="step-body">' + core(a) + "</div>";
+      body += "</li>";
+    });
+    body += "</ol>";
+    if (S.st === "signed" && a.pool === "team-cluster") body += '<p class="say muted">For this claim only: a new claim asks again.</p>';
+    var foot = S.st === "signed"
+      ? '<span class="grow"></span><button class="btn primary" data-act="done">Done</button>'
+      : '<button class="btn ghost sm" data-act="openterm">Open in terminal</button><span class="say muted grow">or ' + cli(a) + '</span><button class="btn" data-act="cancel">Cancel</button>';
+    return '<div class="scrim" data-act="scrim"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgT">'
+      + '<div class="dialog-head"><h2 class="dialog-title" id="dlgT">' + esc(title) + '</h2><p class="dialog-sub">' + esc(sub) + "</p></div>"
+      + '<div class="dialog-body">' + body + "</div>"
+      + '<div class="dialog-foot">' + foot + "</div></div></div>";
+  }
+
+  function addPoolSheetB() {
+    var body = '<dl class="summary"><dt>Kind</dt><dd>Docker</dd><dt>Name</dt><dd>purlis-pool1</dd><dt>Image</dt><dd class="mono">ghcr.io/purlis/purlis-runner@sha256:9f2c…</dd><dt>Limits</dt><dd>the defaults</dd></dl>';
+    body += '<div class="ui-setting-row" style="border-bottom:0;padding-block:0"><span class="ui-setting-label">Profiles on this pool</span>'
+      + '<p class="ui-setting-help">Chats on purlis-pool1 run as one of these. Each signs in on the runner, one after another, once the runner is made.</p>';
+    ORDER.forEach(function (id) {
+      var P = PROFILES[id];
+      body += '<label class="check"><input type="checkbox" data-check="' + id + '"' + (S.checks[id] ? " checked" : "") + '><span class="check-text"><span>' + esc(P.harness) + " · <b>" + esc(P.name) + "</b></span>"
+        + (id === DEFAULT_PROFILE ? "<small>this project’s default profile</small>" : "") + "</span></label>";
+    });
+    body += "</div>";
+    return '<div class="scrim" data-act="scrim"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgT">'
+      + '<div class="dialog-head"><h2 class="dialog-title" id="dlgT">Add a Docker pool</h2><p class="dialog-sub">on this machine; its runner is a container of the image, run on your Docker</p></div>'
+      + '<div class="dialog-body">' + body + "</div>"
+      + '<div class="dialog-foot"><span class="grow"></span><button class="btn" data-act="notnow">Cancel</button><button class="btn primary" data-act="startfirst">Add pool and sign in</button></div></div></div>';
+  }
+
+  /* --- C: Pool panel and queue --------------------------------------------------------- */
+
+  function panelC(pool) {
+    var ids = pool === "purlis-pool1" ? ORDER.slice() : ["work"];
+    var a = active();
+    if (a && a.pool === pool && ids.indexOf(a.prof.id) < 0) ids.push(a.prof.id);
+    var h = '<div class="panel"><div class="panel-head"><b>Profiles on this pool</b>'
+      + (S.st === "choose" && !S.idle && pool === "purlis-pool1" ? '<span class="badge accent">last step of Add a Docker pool</span>' : "")
+      + "</div><div class=\"panel-body\">";
+    ids.forEach(function (id) {
+      var P = PROFILES[id];
+      var on = pool === "purlis-pool1" ? (S.checks[id] || isActive(pool, id)) : true;
+      h += '<div class="panel-row"><label class="check"><input type="checkbox" data-check="' + id + '"' + (on ? " checked" : "") + (pool !== "purlis-pool1" ? " disabled" : "") + '><span class="check-text"><span><b>' + esc(P.name) + "</b> <span class=\"harness\">" + esc(P.harness) + "</span></span>"
+        + "<small>" + esc((addedBy(pool, id) || "").replace(/^ · /, "")) + "</small></span></label>"
+        + (on ? badge(standing(pool, id)) : '<span class="badge">not on this pool</span>') + "</div>";
+    });
+    h += "</div>";
+    var need = queueIds(pool).filter(function (id) { return standing(pool, id)[0] !== "ok"; }).length;
+    var running = a && a.pool === pool && S.ctx === "settings";
+    if (!running) {
+      h += '<div class="panel-foot"><button class="btn primary sm" data-act="queue" data-pool="' + pool + '"' + (need ? "" : ' aria-disabled="true"') + ">Sign in what’s needed" + (need ? " (" + need + ")" : "") + "</button>"
+        + '<span class="say muted">or <code>purlis profile sign-in &lt;profile&gt; --pool ' + pool + "</code></span></div>";
+    }
+    h += "</div>";
+    if (running) h += queueC(pool);
+    return h;
+  }
+
+  function queueIds(pool) {
+    var ids = poolProfiles(pool);
+    return ids;
+  }
+
+  function queueC(pool, inMove) {
+    var a = active();
+    var ids = inMove ? [a.prof.id] : queueIds(pool);
+    var ai = ids.indexOf(a.prof.id);
+    var doneN = 0;
+    var items = "";
+    ids.forEach(function (id, n) {
+      var P = PROFILES[id], cls, mark;
+      var signedHere = S.signed[key(pool, id)] || (n < ai) || (id === a.prof.id && S.st === "signed");
+      if (id === a.prof.id && S.st !== "signed") { cls = S.st === "failed" ? "now bad" : "now"; mark = S.st === "failed" ? "!" : "→"; }
+      else if (signedHere) { cls = "done"; mark = "✓"; doneN++; }
+      else { cls = "next"; mark = String(n + 1); }
+      items += '<div class="q-item ' + cls + '"><div class="q-line"><span class="q-mark">' + mark + '</span><span class="prof-name">' + esc(P.name) + '</span><span class="harness">' + esc(P.harness) + "</span>";
+      if (cls === "done") items += '<span class="badge ok row-end">✓ signed in</span>';
+      if (cls === "next") items += '<span class="badge row-end">next</span>';
+      if (cls.indexOf("now") === 0) items += badge(standing(pool, id)).replace('class="badge', 'class="row-end badge');
+      items += "</div>";
+      if (cls.indexOf("now") === 0) items += '<div class="q-body">' + core(a) + "</div>";
+      items += "</div>";
+    });
+    var nextId = null;
+    if (S.st === "signed") ids.forEach(function (id) { if (!nextId && !S.signed[key(pool, id)] && id !== a.prof.id && ids.indexOf(id) > ai) nextId = id; });
+    var head = '<div class="queue-head"><b>' + (inMove ? "Needed for this move" : "Sign in what’s needed on " + esc(pool)) + "</b><span>" + doneN + " of " + ids.length + " done</span></div>";
+    var foot = "";
+    if (S.st === "signed") {
+      foot = nextId
+        ? '<div class="panel-foot"><button class="btn primary sm" data-act="signin" data-pool="' + pool + '" data-prof="' + nextId + '">Next: sign in ' + esc(PROFILES[nextId].name) + '</button><button class="btn quiet sm" data-act="done">Stop here</button></div>'
+        : (inMove ? "" : '<div class="panel-foot"><span class="say">All signed in on ' + esc(pool) + '.</span><button class="btn sm row-end" data-act="done">Close</button></div>');
+    } else {
+      foot = '<div class="panel-foot">' + footActions(a, '<button class="btn quiet sm" data-act="skip">Skip this one</button>') + "</div>";
+    }
+    return '<div class="queue">' + head + items + foot + "</div>";
+  }
+
+  /* --- Pools page ---------------------------------------------------------------------- */
+
+  function poolRow(pool) {
+    var p = POOLS[pool];
+    var h = '<li class="ui-machine-entry"><span class="ui-machine-name">' + p.name + "</span>"
+      + '<span class="ui-machine-path">' + esc(p.path) + "</span>"
+      + '<span class="badge accent">linked</span>'
+      + (p.kind === "cluster" ? '<span class="badge waiting">fresh claim</span>' : "")
+      + '<button class="btn sm" data-act="toast" data-msg="Remove asks first; not part of this prototype.">Remove</button>';
+    if (p.kind === "cluster") h += '<p class="ui-setting-help entry-full">Cluster operator key <code>ed25519:7Hq2…c9Fk</code> · claimed 3 minutes ago; a sign-in here lasts only for this claim.</p>';
+    else h += '<p class="ui-setting-help entry-full">Suspends after 12h without a link from this machine' + (S.st === "choose" && !S.idle ? " · added just now" : "") + "</p>";
+    if (S.v === "A") h += (S.st === "choose" && !S.idle && pool === "purlis-pool1") ? '<div class="entry-full">' + chooseA() + "</div>" : profLinesA(pool);
+    if (S.v === "B") h += profLinesB(pool);
+    if (S.v === "C") h += panelC(pool);
+    return h + "</li>";
+  }
+
+  function settings() {
+    var nav = [["Theme", 0], ["Notifications", 0], ["This machine", 0, "keep"], ["Browsers", 1], ["Pools", 1, "cur"], ["Accounts", 0], ["Profiles", 0]];
+    var navH = nav.map(function (n) {
+      return '<span class="' + (n[1] ? "sub " : "") + (n[2] === "keep" ? "keep" : "") + '"' + (n[2] === "cur" ? ' aria-current="true"' : "") + ">" + n[0] + "</span>";
+    }).join("");
+    return '<div class="window">'
+      + '<div class="titlebar"><span class="dots"><i></i><i></i><i></i></span><span class="tabstrip"><span>fix flaky login test</span><span aria-current="true">Settings</span><span>Pools</span></span></div>'
+      + '<div class="ui-settings">'
+      + '<div class="ui-settings-top"><span class="levels"><span aria-current="true">You</span><span>Project</span><span>Workspace</span></span><p class="ui-settings-about">You › This machine › Pools</p></div>'
+      + '<nav class="ui-settings-nav" aria-label="Settings groups">' + navH + "</nav>"
+      + '<div class="ui-settings-body"><h2 class="group-title">Pools</h2>'
+      + '<p class="ui-setting-help">The pools on this machine. Each runs a runner paired with this machine: a container of its image on your Docker, held to its limits, or a runner claimed in your team’s cluster.</p>'
+      + '<div class="ui-setting-row"><span class="ui-setting-label">Pools on this machine</span>'
+      + '<p class="ui-setting-help">A chat runs on a pool as one of the profiles on it. Each profile signs in on the runner itself, once; the sign-in stays across runner updates.</p>'
+      + '<ul class="ui-machine-list">' + poolRow("purlis-pool1") + poolRow("team-cluster") + "</ul></div>"
+      + "</div></div></div>";
+  }
+
+  /* --- Move to runner mock ------------------------------------------------------------- */
+
+  function moveMock() {
+    var a = active();
+    var inMove = S.ctx === "move" && a;
+    var pid = inMove ? a.prof.id : (S.movedTo && S.prof) ? S.prof : "personal";
+    var P = PROFILES[pid];
+    var target = inMove ? a.pool : "purlis-pool1";
+    var h = '<div class="move-wrap"><p class="move-label">The same question at Move to runner: a chat whose profile is not signed in on the pool</p>'
+      + '<div class="window chat"><div class="chat-head"><b>fix flaky login test</b><span class="harness">' + esc(P.harness) + " · " + esc(P.name) + " · " + (inMove && S.st === "signed" && S.moved ? "on " + esc(target) : S.movedTo ? "on " + esc(S.movedTo) : "on this Mac") + "</span>"
+      + '<span class="menu-pill row-end">Move to runner › ' + esc(target) + "</span></div>"
+      + '<div class="chat-log"><div class="you">Run the login tests 50 times and tell me which one flakes.</div><div>Running them now. This takes a while on this Mac.</div></div>'
+      + '<div class="chat-notice">';
+    var waitWords = "<b>" + esc(P.name) + "</b> is not signed in on " + esc(target) + ". The move waits until it is; the chat keeps running here meanwhile.";
+    if (!inMove && S.movedTo) {
+      h += '<div class="notice" style="border-color:var(--state-success)"><p>Moved. The chat runs on ' + esc(S.movedTo) + " now.</p></div>";
+    } else if (!inMove) {
+      h += '<div class="notice"><p>' + waitWords + "</p>";
+      if (S.v === "C") h += '<div class="btns"><button class="btn primary sm" data-act="movesignin">Sign in what’s needed (1)</button><button class="btn quiet sm" data-act="toast" data-msg="The chat stays on this Mac.">Cancel move</button></div>';
+      else h += '<div class="btns"><button class="btn primary sm" data-act="movesignin">' + (S.v === "B" ? "Sign in…" : "Sign in") + '</button><button class="btn quiet sm" data-act="toast" data-msg="The chat stays on this Mac.">Cancel move</button></div>';
+      h += "</div>";
+    } else if (S.v === "A") {
+      h += '<div class="notice"' + (S.st === "signed" ? ' style="border-color:var(--state-success)"' : "") + "><p>" + (S.st === "signed" ? "Signed in. The move goes ahead." : waitWords) + "</p>" + stripA(a) + "</div>";
+    } else if (S.v === "B") {
+      h += '<div class="notice"><p>' + (S.st === "signed" ? "Signed in on " + esc(target) + ". " + (S.moved ? "Moved." : "Moving the chat…") : waitWords) + "</p>"
+        + (S.st === "signed" ? "" : '<div class="btns"><button class="btn sm" data-act="reopensheet">Show sign-in</button></div>') + "</div>";
+    } else {
+      h += '<div class="notice"><p>' + (S.st === "signed" ? "Signed in. The move goes ahead." : waitWords) + "</p>" + queueC(target, true) + "</div>";
+    }
+    h += "</div></div></div>";
+    return h;
+  }
+
+  /* --- Render -------------------------------------------------------------------------- */
+
+  function stateName(st) { for (var i = 0; i < STATES.length; i++) if (STATES[i][0] === st) return STATES[i][1]; return st; }
+  function variantName(v) { for (var i = 0; i < VARIANTS.length; i++) if (VARIANTS[i][0] === v) return v + " · " + VARIANTS[i][1]; return v; }
+
+  function render() {
+    var focusedCode = document.activeElement && document.activeElement.hasAttribute && document.activeElement.hasAttribute("data-code");
+    var html = settings() + moveMock();
+    if (S.v === "B") html += sheetB();
+    document.getElementById("app").innerHTML = html;
+    document.getElementById("stateLine").innerHTML = "Variant <b>" + esc(variantName(S.v)) + "</b> · State <b>" + esc(stateName(S.st)) + "</b>" + (S.ctx === "move" ? " · at Move to runner" : "");
+    document.getElementById("vLabel").textContent = variantName(S.v);
+    document.getElementById("sSel").value = S.st;
+    try { history.replaceState(null, "", "#" + S.v + "/" + S.st + (S.ctx === "move" ? "/move" : "")); } catch (e) { location.hash = S.v + "/" + S.st; }
+    if (focusedCode || S.err) { var inp = document.querySelector("[data-code]"); if (inp) { inp.focus(); try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) {} } }
+  }
+
+  function clearTimer() { if (timer) { clearTimeout(timer); timer = null; } }
+
+  function go(st, keepCtx) {
+    clearTimer();
+    var ctx = st === "choose" ? "settings" : S.ctx;
+    S = fresh(S.v, st);
+    S.ctx = ctx;
+    if (st === "approve" || st === "device") S.signed[key("purlis-pool1", "work")] = true;
+    if (st === "signed") { var a = active(); S.signed[key(a.pool, a.prof.id)] = true; if (S.ctx === "move") scheduleMoved(); }
+    render();
+  }
+
+  function startSignIn(pool, pid, ctx) {
+    clearTimer();
+    S.ctx = ctx || S.ctx;
+    S.pool = pool; S.prof = pid; S.code = ""; S.err = ""; S.sheet = true; S.moved = false; S.idle = false;
+    var k = PROFILES[pid].kind;
+    if (k === "claude") {
+      if (pool === "team-cluster") { S.st = "fresh"; }
+      else {
+        S.st = "opening";
+        timer = setTimeout(function () { if (S.st === "opening") { S.st = "paste"; render(); } }, 1600);
+      }
+    } else S.st = k === "codex" ? "approve" : "device";
+    render();
+  }
+
+  function finish() {
+    clearTimer();
+    var a = active();
+    S.st = "signed"; S.pool = a.pool; S.prof = a.prof.id; S.signed[key(a.pool, a.prof.id)] = true; S.err = "";
+    if (S.ctx === "move") scheduleMoved();
+    render();
+  }
+  function scheduleMoved() {
+    clearTimer();
+    timer = setTimeout(function () { if (S.st === "signed" && S.ctx === "move") { S.moved = true; render(); } }, 1800);
+  }
+
+  var toastT = null;
+  function toast(msg) {
+    var t = document.getElementById("toast");
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toastT); toastT = setTimeout(function () { t.hidden = true; }, 2600);
+  }
+
+  function setVariant(v) { var ctx = S.ctx, st = S.st; clearTimer(); S = fresh(v, st); S.ctx = ctx; go(st, true); }
+
+  document.getElementById("app").addEventListener("click", function (e) {
+    var el = e.target.closest("[data-act]");
+    if (!el) return;
+    var act = el.getAttribute("data-act");
+    if (act === "scrim") { if (e.target === el) { S.sheet = false; render(); } return; }
+    if (el.getAttribute("aria-disabled") === "true") return;
+    var a = active();
+    switch (act) {
+      case "signin": startSignIn(el.getAttribute("data-pool"), el.getAttribute("data-prof"), "settings"); break;
+      case "movesignin": startSignIn("purlis-pool1", "personal", "move"); break;
+      case "startfirst": {
+        var first = ORDER.filter(function (id) { return S.checks[id]; })[0];
+        if (first) startSignIn("purlis-pool1", first, "settings");
+        break;
+      }
+      case "queue": {
+        var pool = el.getAttribute("data-pool");
+        var ids = queueIds(pool).filter(function (id) { return standing(pool, id)[0] !== "ok"; });
+        if (ids[0]) startSignIn(pool, ids[0], "settings");
+        break;
+      }
+      case "notnow": clearTimer(); S.sheet = false; S.idle = true; S.ctx = "settings"; toast("No profile signs in yet. Each pool row offers Sign in."); render(); break;
+      case "topaste": clearTimer(); S.st = "paste"; render(); break;
+      case "continue": {
+        var v = (S.code || "").trim();
+        if (!v) { S.err = "Paste the code the page showed."; render(); break; }
+        if (v.toLowerCase() === "bad") { S.st = "failed"; S.err = ""; render(); break; }
+        finish(); break;
+      }
+      case "approved": case "checkagain": finish(); break;
+      case "retry": if (a) startSignIn(a.pool, a.prof.id, S.ctx); break;
+      case "reopen": toast("Opened " + (a ? VENDOR[a.prof.kind].site : "the page") + " in your browser again."); break;
+      case "copylink": toast("Link copied: " + VENDOR.claude.url); break;
+      case "copycode": toast("Copied " + VENDOR.copilot.code + "."); break;
+      case "openterm": toast("Opens a shell tab on " + (a ? a.pool : "the runner") + " running the harness’s own sign-in, for anyone who wants it."); break;
+      case "cancel": clearTimer(); toast(S.ctx === "move" ? "Sign-in cancelled, and the move with it; the chat stays on this Mac." : "Sign-in cancelled; nothing changed on the runner."); S.idle = true; S.sheet = false; render(); break;
+      case "skip": {
+        var pl = a.pool, list = queueIds(pl), i = list.indexOf(a.prof.id), nx = list[i + 1];
+        if (nx) startSignIn(pl, nx, S.ctx); else { toast("Skipped. Nothing else waits on " + pl + "."); clearTimer(); S.sheet = false; S.idle = true; render(); }
+        break;
+      }
+      case "done": clearTimer(); if (S.ctx === "move" && S.st === "signed" && a) S.movedTo = a.pool; S.sheet = false; S.idle = true; render(); break;
+      case "reopensheet": S.sheet = true; render(); break;
+      case "signout": toast("Sign out asks first, then runs the harness’s own sign-out on the runner."); break;
+      case "toast": toast(el.getAttribute("data-msg")); break;
+    }
+  });
+  document.getElementById("app").addEventListener("input", function (e) {
+    if (e.target.hasAttribute("data-code")) { S.code = e.target.value; }
+  });
+  document.getElementById("app").addEventListener("change", function (e) {
+    var id = e.target.getAttribute("data-check");
+    if (id) { S.checks[id] = e.target.checked; render(); }
+  });
+  document.getElementById("app").addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && e.target.hasAttribute("data-code")) {
+      e.preventDefault();
+      var btn = document.querySelector('[data-act="continue"]'); if (btn) btn.click();
+    }
+  });
+
+  /* --- Pill bar ------------------------------------------------------------------------ */
+
+  var sel = document.getElementById("sSel");
+  STATES.forEach(function (s) { var o = document.createElement("option"); o.value = s[0]; o.textContent = s[1]; sel.appendChild(o); });
+  sel.addEventListener("change", function () { go(sel.value); });
+  function stepState(d) { var i = 0; STATES.forEach(function (s, n) { if (s[0] === S.st) i = n; }); go(STATES[(i + d + STATES.length) % STATES.length][0]); }
+  function stepVariant(d) { var i = 0; VARIANTS.forEach(function (s, n) { if (s[0] === S.v) i = n; }); setVariant(VARIANTS[(i + d + VARIANTS.length) % VARIANTS.length][0]); }
+  document.getElementById("sPrev").addEventListener("click", function () { stepState(-1); });
+  document.getElementById("sNext").addEventListener("click", function () { stepState(1); });
+  document.getElementById("vPrev").addEventListener("click", function () { stepVariant(-1); });
+  document.getElementById("vNext").addEventListener("click", function () { stepVariant(1); });
+  document.addEventListener("keydown", function (e) {
+    var t = e.target, tag = t && t.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (t && t.isContentEditable)) return;
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === "ArrowLeft") { e.preventDefault(); stepVariant(-1); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); stepVariant(1); }
+    else if (e.key === "Escape" && S.v === "B" && S.sheet && S.st !== "choose") { S.sheet = false; render(); }
+  });
+
+  var root = document.documentElement;
+  var themeBtn = document.getElementById("themeBtn");
+  function effectiveTheme() {
+    var t = root.getAttribute("data-theme");
+    if (t) return t;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  function paintThemeBtn() { themeBtn.textContent = effectiveTheme() === "dark" ? "◐ Light" : "◐ Dark"; }
+  themeBtn.addEventListener("click", function () { root.setAttribute("data-theme", effectiveTheme() === "dark" ? "light" : "dark"); paintThemeBtn(); });
+  try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", paintThemeBtn); } catch (e) {}
+  paintThemeBtn();
+
+  function fromHash() {
+    var h = (location.hash || "").replace(/^#/, "").split("/");
+    var v = VARIANTS.some(function (x) { return x[0] === h[0]; }) ? h[0] : "A";
+    var st = STATES.some(function (x) { return x[0] === h[1]; }) ? h[1] : "choose";
+    clearTimer();
+    S = fresh(v, st);
+    S.ctx = h[2] === "move" && st !== "choose" ? "move" : "settings";
+    go(st, true);
+  }
+  window.addEventListener("hashchange", function () {
+    var want = "#" + S.v + "/" + S.st + (S.ctx === "move" ? "/move" : "");
+    if (location.hash !== want) fromHash();
+  });
+  fromHash();
+})();
+</script>
+</body>
+</html>
