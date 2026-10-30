@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Plus, RotateCw } from "lucide-react";
 import {
   commands,
@@ -186,9 +186,6 @@ function Held<T>({
   return <>{children(read.data)}</>;
 }
 
-/** Where a change began once the Sources page is no longer drawn: the person went elsewhere. */
-const LEFT = Symbol("left Sources");
-
 /**
  * **What the Sources page shows at `at`**: Sources itself, a source's page, or a review. Each is
  * a step of the tab's history, so back and forward walk them; a change made on one goes on to
@@ -199,6 +196,7 @@ export function SkillSourcesPage({
   plane,
   at,
   onGo,
+  stillAt,
   onOpenSkill,
   levels,
   start,
@@ -211,6 +209,10 @@ export function SkillSourcesPage({
   at: SourcesAt | undefined;
   /** Goes to a page inside Sources, or to Sources itself: a step of the tab's history. */
   onGo: (to: SourcesAt | undefined) => void;
+  /** Whether the tab is still at `from`, asked when a change ends: the tab's own place, so a
+   *  person who went to Library meanwhile, or a page drawn again, is judged by where the tab is
+   *  and not by this page's life (#3973). */
+  stillAt: (from: SourcesAt | undefined) => boolean;
   /** Opens an installed skill in the Library. */
   onOpenSkill: (name: string) => void;
   levels: readonly StudioLevel[];
@@ -222,23 +224,13 @@ export function SkillSourcesPage({
 }) {
   const read = useSourcesRead(plane, changed);
   const [adding, setAdding] = useState<{ offered?: OfferedSource }>();
-  // Where the tab is now, for a change that ends after the person has gone somewhere else: gone
-  // once this page is, so a change ending after the person went to Library, Drafts or another
-  // page of the studio never pulls the tab back to Sources (#3973).
-  const here = useRef<SourcesAt | undefined | typeof LEFT>(at);
-  useEffect(() => {
-    here.current = at;
-    return () => {
-      here.current = LEFT;
-    };
-  }, [at]);
   /** A change, and where the tab goes once it is made: only from the page it was made on, so a
    *  person who went on meanwhile is never pulled back. */
   const changeThen = (label: string, run: () => Promise<Answer>, to?: SourcesAt) => {
     const from = at;
     change(label, () =>
       run().then((answer) => {
-        if (answer.status === "ok" && here.current === from) onGo(to);
+        if (answer.status === "ok" && stillAt(from)) onGo(to);
         return answer;
       }),
     );
