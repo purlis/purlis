@@ -6547,6 +6547,11 @@ export type NeedFix =
 { kind: "accept-folders"; folders: string[] } | 
 /**  Rename the plane's copy of a skill: its page in the Library, with Rename open. */
 { kind: "rename"; name: string; level: Level; local: boolean } | 
+/**
+ *  Open the text of the plane's own skill: its page in the Library, its Text tab in Edit
+ *  (#3780).
+ */
+{ kind: "open-text"; name: string; level: Level; local: boolean } | 
 /**  The Harness skills page, where the other copy's switch is. */
 { kind: "harness" } | 
 /**  Take the pin `name` out of `by`'s pins (`skill_pin`, off). */
@@ -11330,8 +11335,8 @@ export type StudioSkill = {
 	 */
 	compat: SkillCompat[],
 	/**
-	 *  What the built-in lints say of a skill from outside the plane (SK-8): that it widens the
-	 *  chat, and what else is worth knowing. Empty for the plane's and the built-in skills.
+	 *  What the built-in lints say of a skill a chat gets, the plane's own too (SK-8, #3780): that
+	 *  it widens the chat, and what else is worth knowing. Empty for the built-in skills.
 	 */
 	lint: string[],
 	/**
