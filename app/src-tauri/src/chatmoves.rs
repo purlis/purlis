@@ -28,6 +28,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use purlis_core::poollogins::Unbound;
 
+use crate::host::CameBack;
+
 /// Where a chat runs: a pool's runner by the pool's name, or this machine.
 pub(crate) type Place = Option<String>;
 
@@ -544,18 +546,44 @@ pub(crate) fn did_not_start_said(
 }
 
 /// **What a chat's tab says of what came back with it** (the person's ruling of 2026-10-27):
-/// every file a tool here runs or reads as its settings, every one a save would refuse, and
-/// every link, by its path in the project. None where nothing such came.
-pub(crate) fn came_back_said(from: Option<&str>, came: &[String]) -> Option<String> {
-    if came.is_empty() {
+/// each clone the runner's chat made, which is whole from the runner (#3990), with the remote
+/// the runner's clone had, offered, or why none is (#3985), and every file a
+/// tool here runs or reads as its settings, every one a save would refuse, and every link, by
+/// its path in the project. None where nothing such came.
+pub(crate) fn came_back_said(from: Option<&str>, came: &CameBack) -> Option<String> {
+    if came.watch.is_empty() && came.made.is_empty() {
         return None;
     }
     let from = from.map_or_else(|| "a runner".to_owned(), |pool| format!("pool {pool}"));
-    Some(format!(
-        "Its work came back from {from} with files a tool on this machine runs or reads, or \
-         links that may lead out of the project. Look at them before you run anything here: {}.",
-        came.join(", ")
-    ))
+    let mut said = Vec::new();
+    for made in &came.made {
+        let clone = &made.clone;
+        said.push(format!(
+            "{clone} was cloned on {from}: all of it was made there, so look at it as you would \
+             any repository you did not make."
+        ));
+        // The runner's word, held to this machine's rules (#3985), and only offered: the
+        // person gives the clone its remote, so no save pushes to one a runner named on its own.
+        said.push(match &made.remote {
+            Ok(url) => format!(
+                "It has no remote here. The runner's clone pushed to {url}: if that is where you \
+                 mean to push, run `git remote add origin '{url}'` in it."
+            ),
+            Err(why) => format!(
+                "It has no remote here ({why}): give it one, with `git remote add origin <URL>` \
+                 in it, before you push."
+            ),
+        });
+    }
+    if !came.watch.is_empty() {
+        said.push(format!(
+            "Its work came back from {from} with files a tool on this machine runs or reads, or \
+             links that may lead out of the project. Look at them before you run anything here: \
+             {}.",
+            came.watch.join(", ")
+        ));
+    }
+    Some(said.join(" "))
 }
 
 /// What the chats of a move are, for it: each one's workspace, profile and conversation, and
@@ -828,7 +856,7 @@ impl crate::planes::Held {
                     purlis_core::poollogins::Bound::read(&config, pool)
                 })?;
                 move_to_a_runner(self.chats(), pool, &moving)?;
-                Vec::new()
+                CameBack::default()
             }
             (Some(pool), None) => {
                 // Asked again at the switch: a pool may have changed since the move was asked.
