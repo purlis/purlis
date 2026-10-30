@@ -228,3 +228,41 @@ fn an_opt_in_in_the_plane_s_state_folder_is_never_read() {
     crate::appstate::put_in_the_plane(root, FILE);
     assert_eq!(of(root, &Level::project(), "deploy"), None);
 }
+
+#[test]
+fn a_rename_or_a_move_carries_the_opt_in_and_a_delete_drops_it() {
+    let project = project();
+    let root = project.path();
+    let ops = Level::workspace("ops");
+    turn_on(root, &Level::project(), "deploy", accepted()).unwrap();
+
+    moved(root, &Level::project(), "deploy", &Level::project(), "ship").unwrap();
+    assert_eq!(of(root, &Level::project(), "deploy"), None);
+    assert_eq!(of(root, &Level::project(), "ship"), Some(accepted()));
+
+    moved(root, &Level::project(), "ship", &ops, "ship").unwrap();
+    assert_eq!(of(root, &Level::project(), "ship"), None);
+    assert_eq!(
+        of(root, &ops, "ship"),
+        Some(accepted()),
+        "what was accepted goes along unchanged, and `next` holds a grade to it"
+    );
+
+    dropped(root, &ops, "ship").unwrap();
+    assert_eq!(of(root, &ops, "ship"), None);
+}
+
+#[test]
+fn a_change_of_a_skill_never_graded_after_each_edit_keeps_no_state() {
+    let project = project();
+    let root = project.path();
+
+    moved(root, &Level::project(), "deploy", &Level::project(), "ship").unwrap();
+    dropped(root, &Level::project(), "deploy").unwrap();
+
+    assert!(
+        crate::appstate::dir(root).is_none_or(|dir| !dir.join(FILE).exists()),
+        "nothing written"
+    );
+    assert_eq!(of(root, &Level::project(), "ship"), None);
+}

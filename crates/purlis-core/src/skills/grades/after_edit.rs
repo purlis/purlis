@@ -288,6 +288,40 @@ pub fn update(
     write(&dir, &kept)
 }
 
+/// **Carries the opt-in of the copy of `old` at `from` to the copy it is now, `new` at `to`**
+/// (#3612): what a rename, a move between levels and a share do, so grading after each edit
+/// follows the skill. What the person accepted goes with it unchanged, and it still grades only
+/// within that ([`next`]): where the plan of the copy's new place runs more chats, may spend more,
+/// runs other tests, compares with another version or runs on another profile or model, the next
+/// edit waits for the person to see the plan again. Nothing where it was off.
+pub fn moved(root: &Path, from: &Level, old: &str, to: &Level, new: &str) -> Result<(), String> {
+    let (Some(was), Some(is)) = (key(from, old), key(to, new)) else {
+        return Ok(());
+    };
+    // Read before the lock is taken, so a change of a skill never graded makes no state.
+    if was == is || of(root, from, old).is_none() {
+        return Ok(());
+    }
+    let (_held, dir) = held(root)?;
+    let mut kept = read(root);
+    let Some(accepted) = kept.skills.remove(&was) else {
+        return Ok(());
+    };
+    kept.v = VERSION;
+    kept.skills.insert(is, accepted);
+    write(&dir, &kept)
+}
+
+/// **Drops the opt-in of the copy of `name` at `level`** (#3612): what its delete does. A skill
+/// brought back is graded after each edit again only once the person turns it on again, from
+/// its plan. Nothing where it was off.
+pub fn dropped(root: &Path, level: &Level, name: &str) -> Result<(), String> {
+    if of(root, level, name).is_none() {
+        return Ok(());
+    }
+    turn_off(root, level, name)
+}
+
 /// **What a grade after an edit would run now**: the chats of the copy's plan, the cap and the
 /// dollar limit it would be held to, its trigger tests and the version it compares with, and its
 /// consent, the digest of what it would grade.

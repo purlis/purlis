@@ -1196,3 +1196,5 @@ fn a_plans_consent_covers_the_profile_model_and_limits_it_shows() {
     }
     assert_ne!(consent_on("abd", &terms), shown, "and what it grades");
 }
+
+mod follows;

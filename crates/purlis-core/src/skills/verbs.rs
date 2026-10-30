@@ -737,6 +737,8 @@ pub fn rename(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> Result<P
         from.clone()
     };
     cx.done(format!("{old} is renamed {new}"));
+    // So does grading after each edit, within what the person accepted (#3612).
+    after_edit_follows(cx, level, old, level, new);
     let still = Level::every(plane)
         .into_iter()
         .find(|other| other.named(plane, old).is_some());
@@ -748,6 +750,9 @@ pub fn rename(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> Result<P
         None => {
             let followed = references_renamed(cx, level, old, new);
             touched.extend(followed);
+            // Its history and grades follow it by git (#3918). The chats this machine kept of
+            // its grades are kept by name, so they go with it, where no other copy keeps the name.
+            super::grades::kept::renamed(plane, old, new);
         }
     }
     cx.commit(&touched, &format!("skill rename {old} {new}"));
@@ -955,12 +960,32 @@ pub fn move_to(
     if from.at.persona() != to.at.persona() {
         touched.extend(personas_followed(cx, from, name, to));
     }
+    after_edit_follows(cx, from, name, to, name);
     cx.done(format!(
         "{name} is a {to} skill now, in {}",
         rel(plane, &moved)
     ));
     cx.commit(&touched, &format!("skill mv {name} {to}"));
     Ok(moved)
+}
+
+/// Grading after each edit of the copy of `old` at `from`, carried to `new` at `to` (#3612); where
+/// it could not be, that is said, and it stays off for the copy until it is turned on again.
+fn after_edit_follows(cx: &mut Ctx<'_>, from: &Level, old: &str, to: &Level, new: &str) {
+    if let Err(why) = super::grades::after_edit::moved(cx.plane, from, old, to, new) {
+        cx.warn(format!(
+            "grading {new} after each edit is off until you turn it on again: {why}"
+        ));
+    }
+}
+
+/// Grading after each edit of the copy of `name` at `level`, dropped with its delete (#3612).
+fn after_edit_dropped(cx: &mut Ctx<'_>, level: &Level, name: &str) {
+    if let Err(why) = super::grades::after_edit::dropped(cx.plane, level, name) {
+        cx.warn(format!(
+            "grading {name} after each edit is still kept as on: {why}"
+        ));
+    }
 }
 
 /// The persona lists a move of the skill `name` from `from` to `to` changes, between a persona's
@@ -1328,7 +1353,9 @@ pub fn delete(cx: &mut Ctx<'_>, level: &Level, name: &str) -> Result<Kept, Strin
             ));
         }
         if crate::planegit::paths_unsaved(plane, &paths).is_none() {
-            return deleted_by_git(cx, level, name, &folder_rel, &toml_rel);
+            let deleted = deleted_by_git(cx, level, name, &folder_rel, &toml_rel)?;
+            after_edit_dropped(cx, level, name);
+            return Ok(deleted);
         }
     }
     let kept = keep_here(plane, level, &folder).map_err(|unmoved| match unmoved {
@@ -1336,6 +1363,7 @@ pub fn delete(cx: &mut Ctx<'_>, level: &Level, name: &str) -> Result<Kept, Strin
         // Its folder left and could not come back (SK-45): say so, never "not deleted".
         Unmoved::Stranded(what) => format!("{name} was deleted only in part: {what}"),
     })?;
+    after_edit_dropped(cx, level, name);
     cx.done(format!(
         "{name} is deleted; it is kept on this machine, and Restore brings it back"
     ));
@@ -2113,6 +2141,11 @@ pub fn share(cx: &mut Ctx<'_>, at: &Whose, name: &str) -> Result<PathBuf, String
     cx.not_built_in(name)?;
     // What is committed is what the share moved, never a folder looked up again by path.
     let super::Shared { from, to: folder } = super::share_here(plane, at, name)?;
+    let local = Level {
+        at: at.clone(),
+        local: true,
+    };
+    after_edit_follows(cx, &local, name, &local.clone().local(false), name);
     cx.done(format!(
         "{name} is shared: it is in {} now",
         rel(plane, &folder)

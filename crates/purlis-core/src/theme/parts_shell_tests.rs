@@ -774,7 +774,8 @@ fn the_crumb_the_all_button_a_row_and_a_pin_are_reached_by_their_own_attributes(
         let sheet = sheet_of(json!({ format!("titlebar.{part}.fill"): "surface.raised" }));
         assert!(
             sheet.contains(&format!(
-                ":where([data-scope=\"titlebar\"][data-part=\"{part}\"]) {{ background-color: var(--surface-raised); }}"
+                ":where([data-scope=\"titlebar\"][data-part=\"{part}\"]{}) {{ background-color: var(--surface-raised); }}",
+                unless(part)
             )),
             "{part}: {sheet}"
         );
@@ -802,6 +803,15 @@ fn the_crumb_s_words_reach_the_crumb() {
     );
 }
 
+/// What a part's keys never reach (#4000): an unavailable switcher row.
+fn unless(part: &str) -> &'static str {
+    if part == "row" {
+        ":not([data-unavailable])"
+    } else {
+        ""
+    }
+}
+
 #[test]
 fn each_apart_part_s_state_reaches_the_part_marked_in_it() {
     for (part, states) in APART {
@@ -811,8 +821,9 @@ fn each_apart_part_s_state_reaches_the_part_marked_in_it() {
             }));
             assert!(
                 sheet.contains(&format!(
-                    ":where([data-scope=\"titlebar\"][data-part=\"{part}\"]{}) {{ background-color: var(--surface-raised); }}",
-                    marked(state)
+                    ":where([data-scope=\"titlebar\"][data-part=\"{part}\"]{}{}) {{ background-color: var(--surface-raised); }}",
+                    marked(state),
+                    unless(part)
                 )),
                 "{part} {state}: {sheet}"
             );

@@ -459,12 +459,12 @@ fn the_previous_version_is_the_newest_whose_folder_held_something_else() {
     let [newest, first] = [&read.versions[0], &read.versions[1]];
 
     assert_eq!(
-        previous_of(&read, Some(&newest.tree)).map(|one| &one.commit),
+        previous_of(&read, "deploy", Some(&newest.tree)).map(|one| &one.commit),
         Some(&first.commit),
         "a committed copy compares with the version before it"
     );
     assert_eq!(
-        previous_of(&read, None).map(|one| &one.commit),
+        previous_of(&read, "deploy", None).map(|one| &one.commit),
         Some(&newest.commit),
         "a copy holding changes not committed compares with its newest version"
     );
@@ -472,5 +472,49 @@ fn the_previous_version_is_the_newest_whose_folder_held_something_else() {
         versions: vec![newest.clone()],
         uncommitted: Totals::default(),
     };
-    assert_eq!(previous_of(&only_one, Some(&newest.tree)), None);
+    assert_eq!(previous_of(&only_one, "deploy", Some(&newest.tree)), None);
+}
+
+#[test]
+fn a_rename_git_finds_names_the_folder_the_skill_had_before() {
+    let said = "R100\0skills/deploy/evals/triggers.json\0skills/ship/evals/triggers.json\0\
+                R091\0skills/deploy/SKILL.md\0skills/ship/SKILL.md\0";
+    assert_eq!(
+        moved_from_said(said, "skills/ship").as_deref(),
+        Some("skills/deploy")
+    );
+    // Another file of the folder names it where its SKILL.md was not found renamed.
+    let said = "R100\0skills/deploy/notes.md\0workspaces/ops/skills/deploy/notes.md\0";
+    assert_eq!(
+        moved_from_said(said, "workspaces/ops/skills/deploy").as_deref(),
+        Some("skills/deploy")
+    );
+    // A rename into another folder, or one that does not keep the path below the folder, is none.
+    let said = "R100\0skills/other/SKILL.md\0skills/other2/SKILL.md\0\
+                R100\0skills/deploy/a.md\0skills/ship/b.md\0";
+    assert_eq!(moved_from_said(said, "skills/ship"), None);
+    assert_eq!(moved_from_said("", "skills/ship"), None);
+}
+
+#[test]
+fn after_a_rename_each_version_from_before_keeps_the_runs_of_its_name() {
+    let tmp = plane();
+    let root = tmp.path();
+    let (first, second) = (tree_at(root, "HEAD~1"), tree_at(root, "HEAD"));
+    logged(root, "r1", "deploy", T1 + 10, 3, "project", &first);
+    logged(root, "r2", "deploy", T2 + 10, 4, "project", &second);
+    // Another skill's runs, of the name it has now before it was renamed, are none of these.
+    logged(root, "r3", "ship", T2 + 20, 5, "project", &second);
+
+    did(root, |cx| {
+        crate::skills::verbs::rename(cx, &Level::project(), "deploy", "ship")
+    })
+    .0
+    .unwrap();
+
+    let history = history(root, &Level::project(), "ship").unwrap();
+    let runs: Vec<u64> = history.versions.iter().map(|v| v.runs.runs).collect();
+    assert_eq!(runs, [0, 1, 1], "the rename, then the versions from before");
+    assert_eq!(history.versions[2].subject, "make deploy");
+    assert_eq!(history.versions[1].name, "deploy");
 }
