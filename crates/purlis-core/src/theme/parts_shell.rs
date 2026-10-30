@@ -627,3 +627,58 @@ fn titlebar_look(variant: &str, states: &[State]) -> Look {
         },
     }
 }
+
+/// **What a part of the title bar drawn apart from every chip is drawn in** (#3949), at rest and
+/// in each state its own element is marked in, as `titlebar.css` draws it: its own fill (or
+/// none), its words, and the grounds it stands on. The crumb and the ⌄ stand on the bar and take
+/// the card's fill under the pointer and while open; a switcher's row and its pin stand on the
+/// popover, the row Enter would go to on the selected fill; a row's count is its amber wash, laid
+/// on the popover or on that selected row.
+pub(super) fn titlebar_apart_look(part: &str, state: Option<State>) -> super::ApartLook {
+    use super::ApartLook;
+    const BAR: &[&str] = &["surface.deep"];
+    const POPOVER: &[&str] = &["surface.overlay"];
+    let lit = matches!(state, Some(State::Hover | State::Selected));
+    match (part, state) {
+        ("crumb", _) => ApartLook {
+            fill: if lit { "surface.overlay" } else { TRANSPARENT },
+            words: "text.secondary",
+            under: BAR,
+        },
+        ("all", _) => ApartLook {
+            fill: if lit { "surface.overlay" } else { TRANSPARENT },
+            words: if lit { "text.primary" } else { "text.quiet" },
+            under: BAR,
+        },
+        ("pin", Some(State::Hover)) => ApartLook {
+            fill: "surface.overlay",
+            words: "text.primary",
+            under: POPOVER,
+        },
+        ("pin", Some(State::Selected)) => ApartLook {
+            fill: TRANSPARENT,
+            words: "accent.base",
+            under: POPOVER,
+        },
+        ("pin", _) => ApartLook {
+            fill: TRANSPARENT,
+            words: "text.faint",
+            under: POPOVER,
+        },
+        ("row", Some(State::Hover)) => ApartLook {
+            fill: "surface.overlay",
+            words: "text.secondary",
+            under: POPOVER,
+        },
+        ("row", Some(State::Selected)) => ApartLook {
+            fill: "list.selected",
+            words: "text.primary",
+            under: POPOVER,
+        },
+        _ => ApartLook {
+            fill: TRANSPARENT,
+            words: "text.secondary",
+            under: POPOVER,
+        },
+    }
+}

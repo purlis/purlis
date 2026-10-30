@@ -350,7 +350,10 @@ family's root. Each is reached by its own attributes, at rest and in the states 
 a pinned workspace's toggle, `titlebar.row.selected` the row Enter would go to. A row is never
 focused itself (the keyboard stays in the filter). None of them takes a chip's variant
 (`titlebar.crumb.pinned.fill` reaches nothing), and a chip that breaks a floor never takes their
-colours back.
+colours back. Each is held to its floor on the ground it is drawn on, in each of its states (the
+crumb and the ⌄ on the bar, and on the card's fill under the pointer and while open; a row and
+its pin on the switcher's popover, the row Enter would go to on the selected fill), and one that
+breaks it draws its own default back there and leaves the chip alone.
 
 A card pressed whole (the welcome's doors, the Get page's repo picks) is the `card-button`
 family, not a part of the card's: a theme's `card.title` reaches a card's own title and never a
