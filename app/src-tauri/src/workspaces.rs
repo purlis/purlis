@@ -49,11 +49,17 @@
 //! repair, and an operator shown a reworded version of it can neither follow it nor search for
 //! it.
 
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
+use purlis_core::cloning::Stage;
 use purlis_core::extension::events::Event;
 use purlis_core::repocmd::Say;
+use purlis_core::repocmd::clone::Watch;
 use purlis_core::wscmd;
+use tauri::ipc::Channel;
 
 use crate::planes::{PlaneId, Planes};
 
@@ -585,12 +591,46 @@ pub async fn take_repos(
     .map_err(|err| format!("the inventory was not updated: {err}"))?
 }
 
-/// Clone ONE repo into a workspace: `charter clone <repo> -w <workspace>`.
+/// How far a repo's clone has got, as the window shows it (#4079).
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct CloneProgress {
+    /// The stage, in the person's words ("Downloading").
+    pub stage: String,
+    /// The share of the whole clone done: it never goes back.
+    pub percent: u8,
+}
+
+/// Why a repo was not cloned.
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct CloneRefused {
+    /// The core's own words.
+    pub said: String,
+    /// The server the person needs to sign in to, where that is why (#4079).
+    pub sign_in: Option<String>,
+}
+
+impl From<String> for CloneRefused {
+    fn from(said: String) -> Self {
+        Self {
+            said,
+            sign_in: None,
+        }
+    }
+}
+
+/// The stop of each clone running, by its project, workspace and repo.
+static CLONES_RUNNING: Mutex<BTreeMap<(PathBuf, String, String), Arc<AtomicBool>>> =
+    Mutex::new(BTreeMap::new());
+
+/// Clone ONE repo into a workspace: `charter clone <repo> -w <workspace>`, telling `progress` how
+/// far it has got.
 ///
 /// One per call, and the window calls it once per repo in turn: that is what lets it show each
 /// repo's own state as it lands and retry one that failed, and no two calls race to write the
-/// workspace's manifest. On a blocking thread, because a clone can take the network's two
-/// minutes.
+/// workspace's manifest. On a blocking thread, because a clone takes as long as it takes: there is
+/// no deadline (#4079), and the person's way out is [`cancel_clone_repo`]. Answers what the core
+/// said, `null` when the person called it off, or why it failed. Either way nothing partial is
+/// left.
 // Its plane is a `PlaneId` the registry vouches for; see `workspace_create`.
 #[tauri::command]
 #[specta::specta]
@@ -599,16 +639,60 @@ pub async fn clone_repo(
     plane: PlaneId,
     workspace: String,
     repo: String,
-) -> Result<Vec<String>, String> {
+    progress: Channel<CloneProgress>,
+) -> Result<Option<Vec<String>>, CloneRefused> {
     let root = planes.held(&plane)?.root().to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || clone_into(&root, &workspace, &repo))
-        .await
-        .map_err(|err| format!("the clone did not finish: {err}"))?
+    let key = (root.clone(), workspace.clone(), repo.clone());
+    let off = Arc::new(AtomicBool::new(false));
+    if let Ok(mut running) = CLONES_RUNNING.lock() {
+        running.insert(key.clone(), Arc::clone(&off));
+    }
+    let answer = tauri::async_runtime::spawn_blocking(move || {
+        clone_into(&root, &workspace, &repo, &off, &progress)
+    })
+    .await;
+    if let Ok(mut running) = CLONES_RUNNING.lock() {
+        running.remove(&key);
+    }
+    answer.map_err(|err| format!("the clone did not finish: {err}"))?
 }
 
-fn clone_into(root: &Path, workspace: &str, repo: &str) -> Result<Vec<String>, String> {
+/// The person's Cancel: stops the repo's running clone, which then removes what it made. Nothing
+/// happens when none runs.
+#[tauri::command]
+#[specta::specta]
+pub async fn cancel_clone_repo(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    repo: String,
+) -> Result<(), String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    if let Ok(running) = CLONES_RUNNING.lock()
+        && let Some(off) = running.get(&(root, workspace, repo))
+    {
+        off.store(true, Ordering::SeqCst);
+    }
+    Ok(())
+}
+
+fn clone_into(
+    root: &Path,
+    workspace: &str,
+    repo: &str,
+    off: &AtomicBool,
+    progress: &Channel<CloneProgress>,
+) -> Result<Option<Vec<String>>, CloneRefused> {
     let author = wscmd::ensure::author();
     let mut said = Vec::new();
+    let heard = |stage: Stage, percent: u8| {
+        // A window that has gone has nobody to tell; the clone goes on until it is stopped.
+        let _ = progress.send(CloneProgress {
+            stage: stage.words().to_owned(),
+            percent,
+        });
+    };
+    let watch = Watch::new(&heard, off);
     let code = crate::forgeaccounts::window_git(|| {
         purlis_core::repocmd::clone::clone(
             &purlis_core::repocmd::clone::Request {
@@ -618,12 +702,21 @@ fn clone_into(root: &Path, workspace: &str, repo: &str) -> Result<Vec<String>, S
                 now: chrono::Utc::now(),
                 author: &author,
                 hosts: None,
-                watch: None,
+                watch: Some(&watch),
             },
             &mut |line: Say| said.push(line),
         )
     });
-    ran(code, said)
+    if watch.was_stopped() {
+        return Ok(None);
+    }
+    match ran(code, said) {
+        Ok(said) => Ok(Some(said)),
+        Err(said) => Err(CloneRefused {
+            said,
+            sign_in: watch.sign_in_to(),
+        }),
+    }
 }
 
 /// Take one repo out of a workspace, clone and manifest row both (ADR 0055).
