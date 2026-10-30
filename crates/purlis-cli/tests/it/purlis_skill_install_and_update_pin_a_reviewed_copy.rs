@@ -333,3 +333,55 @@ fn what_a_source_says_reaches_the_terminal_escaped() {
     assert!(!said.contains('\r'), "{said:?}");
     assert!(said.contains("⟦U+001B⟧[2J"), "{said}");
 }
+
+/// #4024: `--all` reviews every skill the source offers that is not installed from it yet, asks
+/// once, and installs them as one change; `--yes` skips the question.
+#[test]
+fn install_all_reviews_every_skill_not_installed_yet_and_asks_once() {
+    let project = Project::new();
+    let root = project.root();
+    let url = project.url();
+
+    let declined = project.run(
+        &["skill", "install", &url, "--all", "--folder", "skills"],
+        "n\n",
+    );
+    let said = text(&declined);
+    assert_eq!(declined.status.code(), Some(1), "{said}");
+    assert!(said.contains("Review of 2 skills"), "{said}");
+    assert!(said.contains("Install 2 skills at project"), "{said}");
+    assert!(!root.join("skills").exists());
+
+    let accepted = project.run(
+        &[
+            "skill", "install", &url, "--all", "--folder", "skills", "--yes",
+        ],
+        "",
+    );
+    assert!(accepted.status.success(), "{}", text(&accepted));
+    let lock: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(root.join("skills.lock")).unwrap()).unwrap();
+    let mut names: Vec<&str> = lock["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|one| one["name"].as_str().unwrap())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, ["deploy", "notify"]);
+
+    let again = project.run(
+        &["skill", "install", &url, "--all", "--folder", "skills"],
+        "",
+    );
+    assert!(again.status.success(), "{}", text(&again));
+    assert!(
+        text(&again).contains("is installed from it already"),
+        "{}",
+        text(&again)
+    );
+
+    // A name and --all together are one ask too many.
+    let both = project.run(&["skill", "install", &url, "deploy", "--all"], "");
+    assert_eq!(both.status.code(), Some(2), "{}", text(&both));
+}

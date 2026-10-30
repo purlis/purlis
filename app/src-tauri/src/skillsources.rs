@@ -501,6 +501,35 @@ pub struct InstallReview {
     pub accepted: Reviewed,
 }
 
+impl From<&source::Review> for InstallReview {
+    fn from(review: &source::Review) -> Self {
+        InstallReview {
+            commit: (&review.commit).into(),
+            skills: review.skills.iter().map(Into::into).collect(),
+            accepted: (&review.accepted()).into(),
+        }
+    }
+}
+
+/// **The review of installing a set of a source's skills together** (#4024): one review, or,
+/// where reading all of them is more than one read of the source may take, which of those named
+/// fit, so the window asks to install them in parts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum InstallSetReview {
+    Review {
+        review: InstallReview,
+    },
+    TooMuch {
+        /// Those named first that fit one read, the first part; empty where the first alone
+        /// does not.
+        fits: Vec<String>,
+        /// The rest of those named.
+        rest: Vec<String>,
+        why: String,
+    },
+}
+
 /// One newer commit offered for an installed skill.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct SkillUpdateOffer {
@@ -781,11 +810,36 @@ pub(crate) async fn skill_install_review(
     crate::off_the_window("reviewing the install", move || {
         flag_on()?;
         let review = source::review(held.root(), &source.core(), &names)?;
-        Ok(InstallReview {
-            commit: (&review.commit).into(),
-            skills: review.skills.iter().map(Into::into).collect(),
-            accepted: (&review.accepted()).into(),
-        })
+        Ok((&review).into())
+    })
+    .await
+}
+
+/// **The review of installing `names` from a source together** (#4024, Install all…): one review
+/// of the set and the skills they refer to, or which of them fit one read.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_install_set_review(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    source: SkillSource,
+    names: Vec<String>,
+) -> Result<InstallSetReview, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reviewing the install", move || {
+        flag_on()?;
+        Ok(
+            match source::review_set(held.root(), &source.core(), &names)? {
+                source::SetReview::Review(review) => InstallSetReview::Review {
+                    review: (&review).into(),
+                },
+                source::SetReview::TooMuch(too_much) => InstallSetReview::TooMuch {
+                    fits: too_much.fits.iter().map(|one| esc(one)).collect(),
+                    rest: too_much.rest.iter().map(|one| esc(one)).collect(),
+                    why: esc(&too_much.why),
+                },
+            },
+        )
     })
     .await
 }

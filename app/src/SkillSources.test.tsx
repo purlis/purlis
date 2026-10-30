@@ -558,6 +558,194 @@ describe("the install review", () => {
   });
 });
 
+/** The one review of `names` as the core answers it (#4024): each named, notify brought along by
+ *  deploy, and what accepting says of exactly those. */
+function setReview(names: readonly string[]) {
+  const HUGE = {
+    ...NOTIFY,
+    name: "huge",
+    description: "Big.",
+    folder: "skills/huge",
+    brought_by: null,
+  };
+  const skills = [
+    ...(names.includes("deploy") ? [REVIEW.skills[0], NOTIFY] : []),
+    ...(names.includes("huge") ? [HUGE] : []),
+  ];
+  return {
+    kind: "review",
+    review: {
+      commit: commit("a"),
+      skills,
+      accepted: {
+        commit: "a".repeat(40),
+        skills: skills.map((one) => ({ name: one.name, digest: `sha256:${one.name}` })),
+      },
+    },
+  };
+}
+
+/** Opens Install all… from the source's page. */
+async function openInstallAll(user: ReturnType<typeof userEvent.setup>) {
+  const page = await openSource(user);
+  await within(page).findByTestId("offered-deploy");
+  await user.click(within(page).getByRole("button", { name: "Install all…" }));
+  return screen.findByTestId("install-all-choose");
+}
+
+describe("Install all… (#4024)", () => {
+  it("ticks every skill not installed yet, greys the installed one, and reviews those ticked", async () => {
+    const asked = core({
+      answers: {
+        skill_install_set_review: (args) => setReview(args.names as string[]),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    expect(path()).toContain("Install all");
+    expect(await within(choose).findByTestId("install-all-lead")).toHaveTextContent(
+      "pinned to commit aaaaaaa",
+    );
+    const box = (name: string) =>
+      within(within(choose).getByTestId(`choose-${name}`)).getByRole("checkbox");
+    expect(box("deploy")).toBeChecked();
+    expect(box("huge")).toBeChecked();
+    // Installed: greyed, its box out of reach, with its way to the Library.
+    expect(box("notify")).not.toBeChecked();
+    expect(box("notify")).toBeDisabled();
+    const notify = within(choose).getByTestId("choose-notify");
+    expect(notify).toHaveTextContent("Installed");
+    expect(
+      within(notify).getByRole("button", { name: "See it in Library: notify" }),
+    ).toBeInTheDocument();
+    expect(within(choose).getByTestId("choose-deploy")).toHaveTextContent("runs a script");
+
+    // Untick to narrow.
+    await user.click(box("huge"));
+    expect(box("huge")).not.toBeChecked();
+    expect(did(asked, "skill_install_set_review")).toBe(false);
+    await user.click(within(choose).getByRole("button", { name: "Review 1 skill" }));
+
+    const review = await screen.findByTestId("install-all-review");
+    expect(path()).toContain("Review");
+    expect(asked.find((one) => one.cmd === "skill_install_set_review")?.args.names).toEqual([
+      "deploy",
+    ]);
+    expect(await within(review).findByTestId("install-commit")).toHaveTextContent(
+      "at commit aaaaaaa: 2 skills, 4 risky items marked",
+    );
+    // One level for all of them, chosen at the top.
+    expect(within(review).getAllByRole("radio", { name: "project" })).toHaveLength(1);
+    // Each skill's risky items on its box; the one brought along follows the one that brought it.
+    expect(within(review).getByTestId("keep-deploy")).toHaveTextContent(
+      "Install deploy (4 risky items)",
+    );
+    expect(within(within(review).getByTestId("keep-notify")).getByRole("checkbox")).toBeDisabled();
+    expect(within(review).getByText(/Comes along: deploy refers to it/)).toBeInTheDocument();
+    // Its files are read when unfolded.
+    expect(within(review).queryByTestId("file-scripts/ship.sh")).toBeNull();
+    await user.click(within(review).getByRole("button", { name: "Its files (2)" }));
+    expect(within(review).getByTestId("file-scripts/ship.sh")).toHaveTextContent("Look closely");
+
+    await user.click(within(review).getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(did(asked, "skill_install")).toBe(true));
+    const install = asked.find((one) => one.cmd === "skill_install");
+    expect(install?.args.reviewed).toEqual(setReview(["deploy"]).review.accepted);
+    expect(install?.args.level).toEqual(PROJECT);
+    expect(await screen.findByTestId("skill-source-page")).toBeInTheDocument();
+  });
+
+  it("says Update waiting on a skill whose update waits, and sends it to Review update", async () => {
+    core({ offers: [OFFER] });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    const notify = await within(choose).findByTestId("choose-notify");
+    expect(notify).toHaveTextContent("Update waiting");
+    expect(within(notify).getByRole("checkbox")).toBeDisabled();
+    await user.click(within(notify).getByRole("button", { name: "Review update: notify" }));
+    expect(await screen.findByTestId("update-review")).toBeInTheDocument();
+  });
+
+  it("leaves a skill out from the review itself, reviewing the rest again, and brings it back", async () => {
+    const asked = core({
+      answers: {
+        skill_install_set_review: (args) => setReview(args.names as string[]),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    await user.click(await within(choose).findByRole("button", { name: "Review 2 skills" }));
+    const review = await screen.findByTestId("install-all-review");
+    await within(review).findByTestId("keep-huge");
+    await user.click(within(within(review).getByTestId("keep-deploy")).getByRole("checkbox"));
+    await waitFor(() => expect(within(review).queryByTestId("keep-deploy")).toBeNull());
+    const reviews = asked.filter((one) => one.cmd === "skill_install_set_review");
+    expect(reviews.at(-1)?.args.names).toEqual(["huge"]);
+    expect(within(review).getByTestId("left-out-deploy")).toHaveTextContent("Install deploy");
+    await user.click(within(within(review).getByTestId("left-out-deploy")).getByRole("checkbox"));
+    await within(review).findByTestId("keep-deploy");
+    const again = asked.filter((one) => one.cmd === "skill_install_set_review");
+    expect(again.at(-1)?.args.names).toEqual(["deploy", "huge"]);
+  });
+
+  it("says when the set is more than one review can read, and offers the first part", async () => {
+    const asked = core({
+      answers: {
+        skill_install_set_review: (args) =>
+          (args.names as string[]).length > 1
+            ? {
+                kind: "too-much",
+                fits: ["deploy"],
+                rest: ["huge"],
+                why: "example skills holds more than 64 MiB of skills to read, the most purlis reads of one skill source at once",
+              }
+            : setReview(args.names as string[]),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const choose = await openInstallAll(user);
+    await user.click(await within(choose).findByRole("button", { name: "Review 2 skills" }));
+    const review = await screen.findByTestId("install-all-review");
+    const said = await within(review).findByTestId("install-all-too-much");
+    expect(said).toHaveTextContent("more than 64 MiB of skills to read");
+    expect(said).toHaveTextContent(
+      "Install them in two parts: the first skill now, then the other 1 with Install all… again.",
+    );
+    expect(within(review).getByRole("button", { name: "Install" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await user.click(within(said).getByRole("button", { name: "Review the first skill" }));
+    await within(review).findByTestId("keep-deploy");
+    expect(
+      asked.filter((one) => one.cmd === "skill_install_set_review").at(-1)?.args.names,
+    ).toEqual(["deploy"]);
+  });
+
+  it("cannot be pressed when every skill of the source is installed", async () => {
+    core({
+      answers: {
+        skill_source_browse: () => ({
+          ...BROWSE,
+          skills: BROWSE.skills.map((one) => ({ ...one, installed: ["project"] })),
+        }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await within(page).findByTestId("offered-deploy");
+    expect(within(page).getByRole("button", { name: "Install all…" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+});
+
 describe("the update review", () => {
   it("shows what changes, the source's diff and your edits, and changes nothing until accepted", async () => {
     const asked = core({ offers: [OFFER] });

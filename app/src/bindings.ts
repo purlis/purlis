@@ -2173,6 +2173,11 @@ export const commands = {
 	skillSourceBrowse: (plane: PlaneId, source: SkillSource) => typedError<SourceBrowse, string>(__TAURI_INVOKE("skill_source_browse", { plane, source })),
 	/**  **The install review** of `names` from a source, and the skills they refer to. */
 	skillInstallReview: (plane: PlaneId, source: SkillSource, names: string[]) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_install_review", { plane, source, names })),
+	/**
+	 *  **The review of installing `names` from a source together** (#4024, Install all…): one review
+	 *  of the set and the skills they refer to, or which of them fit one read.
+	 */
+	skillInstallSetReview: (plane: PlaneId, source: SkillSource, names: string[]) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_install_set_review", { plane, source, names })),
 	/**  **Installs what was reviewed** at `level`, with `grant` where it is a project skill. */
 	skillInstall: (plane: PlaneId, source: SkillSource, level: SkillLevel, reviewed: Reviewed, grant: 
 /**  Chats at the project's root alone. */
@@ -7954,6 +7959,20 @@ export type InstallReview = {
 	skills: ReviewSkill[],
 	accepted: Reviewed,
 };
+
+/**
+ *  **The review of installing a set of a source's skills together** (#4024): one review, or,
+ *  where reading all of them is more than one read of the source may take, which of those named
+ *  fit, so the window asks to install them in parts.
+ */
+export type InstallSetReview = { kind: "review"; review: InstallReview } | { kind: "too-much"; 
+/**
+ *  Those named first that fit one read, the first part; empty where the first alone
+ *  does not.
+ */
+fits: string[]; 
+/**  The rest of those named. */
+rest: string[]; why: string };
 
 /**
  *  What has contributed what to this window — ADR 0041's item 2, and the thing every

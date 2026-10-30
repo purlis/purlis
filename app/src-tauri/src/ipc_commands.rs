@@ -364,6 +364,7 @@ macro_rules! app_commands {
                 skillsources::skill_source_confirm,
                 skillsources::skill_source_browse,
                 skillsources::skill_install_review,
+                skillsources::skill_install_set_review,
                 skillsources::skill_install,
                 skillsources::skill_updates,
                 skillsources::skill_update_review,

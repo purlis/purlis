@@ -112,9 +112,28 @@ const OFFER = {
   edited: true,
 };
 
-/** The faked core: two sources, one update waiting, one source not confirmed here. */
-function core() {
-  mockIPC((cmd) => {
+/** test-driven-development as its review shows it: instructions only. */
+const TDD = {
+  ...DEBUGGING,
+  name: "test-driven-development",
+  description: "Builds each behaviour test-first, one red-green slice at a time.",
+  folder: "skills/test-driven-development",
+  summary: EMPTY,
+  files: [
+    {
+      path: "SKILL.md",
+      size: 512,
+      executable: false,
+      text: "---\nname: test-driven-development\ndescription: Builds each behaviour test-first.\n---\n\n1. Write one failing test.\n2. Make it pass.\n",
+      risky: false,
+    },
+  ],
+};
+
+/** The faked core: two sources, one update waiting, one source not confirmed here; the one
+ *  review of Install all… is more than one read where `tooMuch` says so (#4024). */
+function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
+  mockIPC((cmd, args) => {
     switch (cmd) {
       case "skill_studio":
         return studio([], {});
@@ -184,6 +203,25 @@ function core() {
           skills: [DEBUGGING],
           accepted: { commit: "3".repeat(40), skills: [] },
         };
+      case "skill_install_set_review": {
+        const names = (args as { names: string[] }).names;
+        if (tooMuch)
+          return {
+            kind: "too-much",
+            fits: names.slice(0, 1),
+            rest: names.slice(1),
+            why: "https://github.com/obra/superpowers holds more than 64 MiB of skills to read, the most purlis reads of one skill source at once",
+          };
+        const skills = [TDD, DEBUGGING].filter((one) => names.includes(one.name));
+        return {
+          kind: "review",
+          review: {
+            commit: commit("3"),
+            skills,
+            accepted: { commit: "3".repeat(40), skills: [] },
+          },
+        };
+      }
       case "skill_update_review":
         return {
           name: "brainstorming",
@@ -325,5 +363,60 @@ export const UpdateReview: Story = {
     const review = await canvas.findByTestId("update-review");
     await within(review).findByTestId("update-edited");
     await expect(within(review).getByRole("button", { name: "Accept update" })).toBeVisible();
+  },
+};
+
+/** **Install all…, the skills to tick** (#4024): every skill not installed yet ticked; the
+ *  installed one greyed, its update waiting, with Review update; Review at the foot. */
+export const InstallAllChoose: Story = {
+  args: { at: { at: "choose", source: SOURCE, label: SUPERPOWERS.label } },
+  play: async ({ canvas }) => {
+    const choose = await canvas.findByTestId("install-all-choose");
+    const debugging = await within(choose).findByTestId("choose-systematic-debugging");
+    await expect(within(debugging).getByRole("checkbox")).toBeChecked();
+    const brainstorming = within(choose).getByTestId("choose-brainstorming");
+    await expect(brainstorming).toHaveTextContent("Update waiting");
+    await expect(within(brainstorming).getByRole("checkbox")).toBeDisabled();
+    await expect(within(choose).getByRole("button", { name: "Review 2 skills" })).toBeVisible();
+  },
+};
+
+/** **Install all…, the one review**: where they land at the top, each skill with its box and its
+ *  risky items, one skill's files unfolded, and Install at the foot. */
+export const InstallAllReview: Story = {
+  args: {
+    at: {
+      at: "install-all",
+      source: SOURCE,
+      label: SUPERPOWERS.label,
+      skills: ["test-driven-development", "systematic-debugging"],
+    },
+  },
+  play: async ({ canvas }) => {
+    const review = await canvas.findByTestId("install-all-review");
+    await within(review).findByTestId("install-commit");
+    await expect(within(review).getByTestId("keep-systematic-debugging")).toHaveTextContent(
+      "2 risky items",
+    );
+    await userEvent.click(
+      within(within(review).getByTestId("reviewed-systematic-debugging")).getByRole("button", {
+        name: "Its files (2)",
+      }),
+    );
+    await expect(within(review).getByRole("button", { name: "Install" })).toBeVisible();
+  },
+};
+
+/** **Install all…, past one read**: it says so and offers the first part, Install held. */
+export const InstallAllTooMuch: Story = {
+  args: InstallAllReview.args,
+  beforeEach: () => {
+    core({ tooMuch: true });
+  },
+  play: async ({ canvas }) => {
+    const said = await canvas.findByTestId("install-all-too-much");
+    await expect(
+      within(said).getByRole("button", { name: "Review the first skill" }),
+    ).toBeVisible();
   },
 };
