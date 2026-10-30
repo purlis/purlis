@@ -701,6 +701,7 @@ fn a_second_live_chats_commit_in_a_held_branch_folder_is_refused_naming_the_hold
         chat,
         message: "piece: one change".to_owned(),
         stage: paths(&["notes.md"]),
+        folder: None,
     };
 
     std::fs::write(p.piece.join("notes.md"), "one\n").unwrap();
