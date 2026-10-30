@@ -167,6 +167,16 @@ fn says_nothing(_: &Hook) -> Answer {
 pub const BLOCKED: &str = "posttooluse-blocked";
 pub const BLOCKED_ON_FAILURE: &str = "posttoolusefailure-blocked";
 
+/// What a block word found in a call's result, as the chat is told of it.
+#[derive(Debug, Default)]
+pub struct Blocked {
+    /// The blocks the app took, each a Notice for the person.
+    pub taken: Vec<purlis_core::sandboxblock::Block>,
+    /// The way to retry each block that was the chat's own to retry, which raises no Notice
+    /// ([`purlis_core::sandboxblock::its_own_to_retry`], #3861).
+    pub own: Vec<&'static str>,
+}
+
 /// The line block word `word` prints for the blocks the app took, `taken` (#1631): the chat is
 /// told, in the turn it was blocked, that the person has a Notice and it should say what was
 /// blocked and wait ([`purlis_core::sandboxblock::told_the_chat`]). None for another word, and
@@ -176,9 +186,13 @@ pub const BLOCKED_ON_FAILURE: &str = "posttoolusefailure-blocked";
 ///
 /// And, in the same line since a hook prints one answer, what a git command the sandbox
 /// stopped partway left behind and how to finish it or go back ([`stopped_partway`], qw349).
+///
+/// And first, the blocks that were the chat's own to retry (`blocked.own`, #3861): told the
+/// shape to retry in, and nothing of a Notice, since none is raised for them. Never of words
+/// only read back, where no command of the call was refused.
 pub fn told_after(
     word: &str,
-    taken: &[purlis_core::sandboxblock::Block],
+    blocked: &Blocked,
     read_back: bool,
     stopped: Option<String>,
 ) -> Option<String> {
@@ -187,12 +201,18 @@ pub fn told_after(
         BLOCKED_ON_FAILURE => "PostToolUseFailure",
         _ => return None,
     };
-    let told = if read_back {
-        purlis_core::sandboxblock::told_the_chat_of_a_read(taken)
+    let (own, told) = if read_back {
+        (
+            None,
+            purlis_core::sandboxblock::told_the_chat_of_a_read(&blocked.taken),
+        )
     } else {
-        purlis_core::sandboxblock::told_the_chat(taken)
+        (
+            purlis_core::sandboxblock::told_the_chat_of_its_own(&blocked.own),
+            purlis_core::sandboxblock::told_the_chat(&blocked.taken),
+        )
     };
-    let said: Vec<String> = told.into_iter().chain(stopped).collect();
+    let said: Vec<String> = own.into_iter().chain(told).chain(stopped).collect();
     if said.is_empty() {
         return None;
     }

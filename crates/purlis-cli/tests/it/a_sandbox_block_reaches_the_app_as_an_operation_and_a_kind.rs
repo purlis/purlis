@@ -319,6 +319,52 @@ fn a_git_move_the_sandbox_stopped_partway_tells_the_chat_the_way_back() {
     assert_eq!(unsandboxed.said, "", "not the sandbox's refusal");
 }
 
+/// #3861: a line the guard could not place (`cd -`) ran `git commit` in a branch folder, and
+/// the sandbox refused the write of its index in the clone's `.git/worktrees`. The person got a
+/// Notice for what was the chat's own work. Now the block still reaches the app for the record,
+/// and the chat alone is told the command that commits there, with no Notice and no wait.
+#[test]
+fn a_block_in_a_branch_folders_git_record_is_told_to_the_chat_alone() {
+    let record = "/Users/dev/plane/workspaces/a/repo/.git/worktrees/fix/index.lock";
+    let heard = hook(
+        "posttoolusefailure-blocked",
+        &serde_json::json!({
+            "hook_event_name": "PostToolUseFailure",
+            "tool_name": "Bash",
+            "tool_input": {"command": "cd - && git commit -am wip"},
+            "error": format!(
+                "fatal: Unable to create '{record}': Operation not permitted\n\
+                 <sandbox_violations>\n\
+                 git(5) deny(1) file-write-create {record}\n\
+                 </sandbox_violations>"
+            ),
+            "cwd": "/Users/dev/plane/workspaces/a/repo",
+        }),
+    );
+    assert_eq!(
+        heard
+            .blocked
+            .iter()
+            .map(|one| (one.sandbox_blocked, one.target.as_deref()))
+            .collect::<Vec<_>>(),
+        vec![(
+            Block {
+                operation: Operation::Write,
+                kind: Kind::ProtectedFile,
+                ours: false,
+            },
+            Some(record),
+        )],
+        "kept in the record"
+    );
+    let told = context_of(&heard.said, "PostToolUseFailure");
+    assert!(told.contains("`purlis worktree commit"), "{told}");
+    assert!(told.contains("yours to retry"), "{told}");
+    for never in ["Notice", "wait for their answer"] {
+        assert!(!told.contains(never), "{never}: {told}");
+    }
+}
+
 /// #1631, replayed: a command that reached three hosts came back with exit status 0, and Claude
 /// Code's proxy said on its standard error that it refused each. No Notice was raised and the
 /// chat, told nothing, went around the block.

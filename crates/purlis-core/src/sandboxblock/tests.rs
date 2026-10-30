@@ -2572,3 +2572,58 @@ fn a_lookup_that_names_no_host_is_one_with_any_lookup_of_its_chat_in_the_window(
     assert!(throttle.lets_on(3, &host, None, now));
     assert!(throttle.lets_on(3, &host, Some("api.example.com:443"), now));
 }
+
+/// #3861: a write the sandbox refused in a branch folder's git record is the chat's own to fix
+/// (a line the guard could not place, `cd -`, ran `git commit` there). It is told to the chat
+/// alone, with the shape to retry, and says nothing of a Notice or of waiting on the person.
+/// Any other block, purlis's own one there included, keeps its Notice.
+#[test]
+fn a_block_in_a_branch_folders_git_record_is_the_chats_own_to_retry() {
+    let lock = "/Users/dev/plane/workspaces/alpha/repo/.git/worktrees/repo-fix/index.lock";
+    let own = block(Operation::Write, Kind::ProtectedFile, false);
+    let way = its_own_to_retry(&own, Some(lock)).expect("the chat's own");
+    assert!(way.contains("`purlis worktree commit"), "{way}");
+    assert!(
+        its_own_to_retry(
+            &block(Operation::File, Kind::ProtectedFile, false),
+            Some(lock)
+        )
+        .is_some()
+    );
+
+    for (other, target) in [
+        // purlis's own write there is a purlis bug, reported by the person.
+        (
+            block(Operation::Write, Kind::ProtectedFile, true),
+            Some(lock),
+        ),
+        // A protected file whose path never travels, or one that names no branch folder.
+        (own, None),
+        (
+            own,
+            Some("/Users/dev/plane/workspaces/alpha/repo/.git/config"),
+        ),
+        (own, Some("repo/.git/worktrees/repo-fix/index.lock")),
+        (
+            block(Operation::Read, Kind::ProtectedFile, false),
+            Some(lock),
+        ),
+        (
+            block(Operation::Write, Kind::ProjectFiles, false),
+            Some(lock),
+        ),
+    ] {
+        assert_eq!(
+            its_own_to_retry(&other, target),
+            None,
+            "{other:?} {target:?}"
+        );
+    }
+
+    assert_eq!(told_the_chat_of_its_own(&[]), None);
+    let told = told_the_chat_of_its_own(&[way, way]).expect("told");
+    assert_eq!(told.matches("`purlis worktree commit").count(), 1, "{told}");
+    assert!(told.contains("Nobody else was told"), "{told}");
+    assert!(!told.contains("Notice"), "{told}");
+    assert!(!told.contains("wait"), "{told}");
+}

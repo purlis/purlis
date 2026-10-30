@@ -3173,6 +3173,10 @@ impl Planes {
                     .as_ref()
                     .is_some_and(|held| held.chats().has_certificate_check(block.line.chat));
                 let mut told = hooks::blocked_holding(&plane, &block, has_check);
+                let own = hooks::its_own_to_retry(&block);
+                if own && strong.is_none() {
+                    return;
+                }
                 if let Some(strong) = strong {
                     // A runner's service is said with that runner's name (#2510).
                     told = hooks::on_its_runner(
@@ -3193,6 +3197,13 @@ impl Planes {
                             &block,
                             crate::sandboxing::now_secs(),
                         );
+                    }
+                    // A block that is the chat's own to retry (#3861): its hook told it the
+                    // command to retry with, and the person has nothing to answer, so it is
+                    // kept in the record above and raises no Notice, and the chat waits on
+                    // nobody for it.
+                    if own {
+                        return;
                     }
                     crate::taskblocks::heard(strong.chats(), &told);
                     // The chat now waits on the person for this Notice, until its turn moves

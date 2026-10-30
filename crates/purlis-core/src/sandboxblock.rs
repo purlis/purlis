@@ -462,6 +462,51 @@ pub fn told_the_chat_of_a_read(taken: &[Block]) -> Option<String> {
     ))
 }
 
+/// **A block that is the chat's own to retry, and the shape to retry it in** (#3861): a write
+/// the sandbox refused in a branch folder's git record (`.git/worktrees/<name>/…`), where a
+/// chat's own `git add`, `git commit` or `git worktree add` writes. The Bash guard refuses those
+/// before they run (arm A9b), but a line it cannot place (`cd -`, `popd`) still runs and meets
+/// the sandbox. No grant ever opens that record, so the person has nothing to answer: the chat
+/// is told the purlis command that does it ([`told_the_chat_of_its_own`]), and the app raises
+/// no Notice. The block is kept in the network record all the same.
+///
+/// Chosen by the block and its path alone, never by anything the chat said. A path that is not
+/// absolute, purlis's own block (a bug the person reports), and every other block are `None`,
+/// and keep their Notice.
+pub fn its_own_to_retry(block: &Block, target: Option<&str>) -> Option<&'static str> {
+    if block.ours
+        || !matches!(
+            (block.operation, block.kind),
+            (Operation::Write | Operation::File, Kind::ProtectedFile)
+        )
+    {
+        return None;
+    }
+    let path = Path::new(target?);
+    (path.is_absolute() && in_a_branch_folders_record(&lexical(path)))
+        .then_some(WORKTREE_COMMIT_WAY)
+}
+
+/// **What the chat is told of blocks that are its own to retry** ([`its_own_to_retry`],
+/// #3861): that the sandbox refused it, that nobody else was told, and each shape to retry in,
+/// once. It is not told of a Notice or to wait: none is raised. None when there are none.
+pub fn told_the_chat_of_its_own(ways: &[&str]) -> Option<String> {
+    let mut said: Vec<&str> = Vec::new();
+    for way in ways {
+        if !said.contains(way) {
+            said.push(way);
+        }
+    }
+    if said.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "⬢ purlis's sandbox blocked a write to a branch folder's git record, which no chat \
+         writes and no Allow opens. Nobody else was told: this is yours to retry. {}",
+        said.join(" ")
+    ))
+}
+
 /// What a chat is told of a write to macOS's per-user folders (#1416): fixed words, the same
 /// whatever it ran. No Allow can come for them, and the chat's own `$TMPDIR` is a folder it may
 /// already write, so this names no folder it could not write before.
