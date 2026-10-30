@@ -454,4 +454,72 @@ describe("the Skills chip on a chat's pane", () => {
     act(() => result.current[1](5, { ...skills([], BUDGET), missing }));
     expect(result.current[0][5]?.missing).toBeNull();
   });
+
+  it("reads every open chat's set again when what it is made of moved, and only then (#4094)", async () => {
+    const asked: number[] = [];
+    let inTheSet = 3;
+    mockIPC((cmd, args) => {
+      if (cmd !== "chat_skills") throw new Error(`unexpected ${cmd}`);
+      asked.push((args as { session: number }).session);
+      return skills([], { ...BUDGET, skills: inTheSet });
+    });
+    const { result, rerender } = renderHook(
+      ({ moved }) => useChatSkillSets("p", [4, 5], true, {}, moved),
+      { initialProps: { moved: 0 } },
+    );
+    await waitFor(() => expect(result.current[0][5]?.budget.skills).toBe(3));
+    expect(asked.sort()).toEqual([4, 5]);
+    // A skill turned off on disk: both chats' budgets as the Skills view's header now says them.
+    inTheSet = 2;
+    rerender({ moved: 1 });
+    await waitFor(() => expect(result.current[0][4]?.budget.skills).toBe(2));
+    await waitFor(() => expect(result.current[0][5]?.budget.skills).toBe(2));
+    expect(asked.sort()).toEqual([4, 4, 5, 5]);
+    // Drawn again with nothing moved: nothing read again.
+    rerender({ moved: 1 });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(asked).toHaveLength(4);
+  });
+
+  it("reads a restarted chat's set, which takes the old session's place, and lets the old one go (#4094)", async () => {
+    mockIPC((cmd, args) => {
+      if (cmd !== "chat_skills") throw new Error(`unexpected ${cmd}`);
+      const session = (args as { session: number }).session;
+      // The new run started with a router that fell back, which the old one's had not.
+      return {
+        ...skills([], { ...BUDGET, skills: session }),
+        routing:
+          session === 7 ? { router: "ext", ms: 900, fell_back: true, said: "Fell back." } : null,
+      };
+    });
+    const { result, rerender } = renderHook(
+      ({ sessions }) => useChatSkillSets("p", sessions, true),
+      { initialProps: { sessions: [4] } },
+    );
+    await waitFor(() => expect(result.current[0][4]?.budget.skills).toBe(4));
+    rerender({ sessions: [7] });
+    await waitFor(() => expect(result.current[0][7]?.routing?.fell_back).toBe(true));
+    expect(Object.keys(result.current[0])).toEqual(["7"]);
+  });
+
+  it("keeps the latest answer where two reads of one chat land out of order (#4094)", async () => {
+    const answers: ((said: ChatSkills) => void)[] = [];
+    mockIPC((cmd) => {
+      if (cmd !== "chat_skills") throw new Error(`unexpected ${cmd}`);
+      return new Promise<ChatSkills>((resolve) => answers.push(resolve));
+    });
+    const { result, rerender } = renderHook(
+      ({ moved }) => useChatSkillSets("p", [4], true, {}, moved),
+      { initialProps: { moved: 0 } },
+    );
+    await waitFor(() => expect(answers).toHaveLength(1));
+    rerender({ moved: 1 });
+    await waitFor(() => expect(answers).toHaveLength(2));
+    await act(async () => answers[1]?.(skills([], { ...BUDGET, skills: 9 })));
+    await waitFor(() => expect(result.current[0][4]?.budget.skills).toBe(9));
+    await act(async () => answers[0]?.(skills([], { ...BUDGET, skills: 1 })));
+    expect(result.current[0][4]?.budget.skills).toBe(9);
+  });
 });

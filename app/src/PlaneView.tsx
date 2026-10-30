@@ -163,7 +163,9 @@ import {
   ROOT_PANELS,
   SETTINGS,
   SIDEBAR,
+  skillSetsOfChats,
   usePlaneChanged,
+  useViewChanged,
 } from "./planeChanged";
 import { useRemoveWorkspaceAsked } from "./removeWorkspaceAsk";
 import { useOpenProposalAsked } from "./proposedChangeOpen";
@@ -1088,12 +1090,15 @@ export const PlaneView = memo(function PlaneView({
     () => [...new Set(tabs.order.flatMap((id) => panesOf(tabs, id).map((pane) => pane.session)))],
     [tabs],
   );
-  /** Each open chat's skill set as a whole (#2775, #3953): the chip on its pane. */
+  /** Each open chat's skill set as a whole (#2775, #3953): the chip on its pane, read again
+   *  when what the sets are made of moves on disk (#4094). */
+  const skillSetsMoved = useViewChanged([plane], skillSetsOfChats);
   const [chatSkillSets, setChatSkills] = useChatSkillSets(
     plane,
     chatSessions,
     studioOn,
     skillsChanged,
+    skillSetsMoved,
   );
   const reloadVaults = vaults.reload;
   /** Whether the vault picker is up. */

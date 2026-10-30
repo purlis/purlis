@@ -160,6 +160,19 @@ export function skillsIn(workspace: string | undefined): About {
 }
 
 /**
+ * **What any open chat's skill set is made of** (#4094), for the Skills chip on each chat's pane
+ * (`useChatSkillSets`): {@link skillsIn} for every workspace at once, since the chats open may be
+ * in any of them. A skill's folder moving, or a workspace's settings (its skills turned off or
+ * pinned, in its `workspace.json`), moves a chat's budget as the Skills view's header shows it.
+ */
+export const skillSetsOfChats: About = (change) =>
+  change.kind === "project" ||
+  change.kind === "harness" ||
+  change.kind === "persona" ||
+  change.kind === "skills" ||
+  change.kind === "workspace";
+
+/**
  * Whether what the core said moved concerns a view tab that shows `about`, or any of the
  * views' stores with no `about`.
  *
