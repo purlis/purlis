@@ -235,6 +235,11 @@ pub fn keep(
                 ));
             }
             brought(record);
+            // A pool's old runner carries its sign-ins once its last chat has ended, after this
+            // one kept the profile (#4055): taken in where it has none of its own.
+            if record.adopted.is_none() {
+                super::made::take_carried(homes, &kept.name);
+            }
             return Ok(record.clone());
         }
         let mut record = match &defaults {

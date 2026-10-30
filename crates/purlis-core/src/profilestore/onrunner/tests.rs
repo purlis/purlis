@@ -1225,3 +1225,48 @@ fn a_runner_keeping_a_profile_takes_in_the_sign_in_carried_to_it() {
     assert!(!kept.folders.config.join("settings.json").exists());
     assert!(!carried.exists());
 }
+
+/// **A runner already keeping a profile takes in the sign-in carried to it later** (#4055): its
+/// pool's old runner carries its sign-ins only once its last chat has ended, after the profile
+/// was kept here for a chat, so the next keep takes the carried sign-in in. One the profile
+/// signed in here on its own stays, and the carried one goes.
+#[test]
+fn a_runner_keeping_a_profile_again_takes_in_a_sign_in_carried_since() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let sent = Kept::of(&desktop).expect("it goes");
+    let kept = keep(&runner, &runner_home(dir.path()), &sent, DESKTOP, 7).expect("kept");
+    assert!(!kept.folders.config.join(".credentials.json").exists());
+    let carry = |text: &str| {
+        let carried = dir
+            .path()
+            .join("runner/data")
+            .join(crate::profilestore::CARRIED)
+            .join("work");
+        fs::create_dir_all(carried.join("config")).unwrap();
+        fs::write(carried.join("config/.credentials.json"), text).unwrap();
+        carried
+    };
+
+    let carried = carry("the old runner's sign-in");
+    let again = keep(&runner, &runner_home(dir.path()), &sent, DESKTOP, 8).expect("kept");
+    assert_eq!(
+        fs::read_to_string(again.folders.config.join(".credentials.json")).unwrap(),
+        "the old runner's sign-in"
+    );
+    assert!(!carried.exists());
+
+    fs::write(
+        again.folders.config.join(".credentials.json"),
+        "signed in here",
+    )
+    .unwrap();
+    let carried = carry("an older runner's sign-in");
+    keep(&runner, &runner_home(dir.path()), &sent, DESKTOP, 9).expect("kept");
+    assert_eq!(
+        fs::read_to_string(again.folders.config.join(".credentials.json")).unwrap(),
+        "signed in here"
+    );
+    assert!(!carried.exists());
+}
