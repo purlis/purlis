@@ -113,7 +113,7 @@ pub trait Pace {
 }
 
 /// Whether `code` is a code a window may show: short, and letters, digits and dashes only.
-fn showable(code: &str) -> bool {
+pub(crate) fn showable(code: &str) -> bool {
     !code.is_empty()
         && code.len() <= 32
         && code.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')

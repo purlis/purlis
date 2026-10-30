@@ -16,9 +16,14 @@
 //!
 //! **No credential is read or kept.** What the login prints is read for its page, its prompt and
 //! its words of refusal; the code pasted passes through to it and is kept nowhere. Each
-//! harness's words are here, beside its sign-in's own words (`FLOWS`): Claude Code's alone so far (2.1.314's
+//! harness's words are here, beside its sign-in's own words (`FLOWS`): Claude Code's 2.1.314
 //! `auth login`, which with its input a pipe prints its page and `Paste code here if prompted >`
-//! and reads `code#state` lines). [`drive`] runs a [`Login`] and feeds it to a [`Driven`].
+//! and reads `code#state` lines; and opencode's 1.18.33 Copilot `auth login`, a device code
+//! ([`Event::DeviceCode`], #4045). [`drive`] runs a [`Login`] and feeds it to a [`Driven`].
+//!
+//! **A device code goes with its page.** Both are said together, once the login has printed both,
+//! for whoever drives it to show the code before any browser opens, the page on the vendor's own
+//! https host. The login then waits for the vendor by itself, with nothing passed back.
 
 use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -60,6 +65,8 @@ const MOST_SAID: usize = 4096;
 pub enum Event {
     /// Open this page in the browser on this device.
     Open { url: String },
+    /// Show this code to enter on the page `url`, the vendor's own, before opening it.
+    DeviceCode { url: String, code: String },
     /// Ask the person for the code the page shows.
     AskCode,
     /// The harness refused the code, in its own words; another may be pasted.
@@ -89,6 +96,8 @@ impl Event {
 /// What a harness's login prints, and where its pages may be.
 struct Words {
     kind: &'static str,
+    /// The plan it signs in to, for a harness that serves several.
+    plan: Option<&'static str>,
     /// What comes right before its page's address on a line.
     page_after: &'static [&'static str],
     /// The prompt for the code, which may end with no line break.
@@ -99,7 +108,31 @@ struct Words {
     fails: &'static str,
     /// Its sign-in pages: each a host and a path, exactly.
     pages: &'static [(&'static str, &'static str)],
+    /// What comes right before its device code on a line, for a login that shows one.
+    code_after: &'static str,
+    /// The line of its one question that shows the choice purlis takes already chosen: it is
+    /// answered with a line break, once, and no other question is.
+    chosen: &'static str,
+    /// What it ends a line with once it signed in, for a login whose exit status does not say.
+    signed_in: &'static str,
+    /// What it ends a line with once it failed, where its exit status does not say.
+    stopped: &'static str,
 }
+
+/// What a login that says none of the rest has: spread into each harness's own.
+const NO_WORDS: Words = Words {
+    kind: "",
+    plan: None,
+    page_after: &[],
+    asks_code: "",
+    refuses: &[],
+    fails: "",
+    pages: &[],
+    code_after: "",
+    chosen: "",
+    signed_in: "",
+    stopped: "",
+};
 
 /// Claude Code 2.1.314's `auth login`, by its own code: `If the browser didn't open, visit:`
 /// or `Sign in at:` before the page, `Paste code here` for the code, its refusals of a pasted
@@ -115,6 +148,24 @@ const CLAUDE: Words = Words {
         ("claude.com", "/cai/oauth/authorize"),
         ("platform.claude.com", "/oauth/authorize"),
     ],
+    ..NO_WORDS
+};
+
+/// opencode 1.18.33's Copilot `auth login`, as it ran with its input a pipe: `Select GitHub
+/// deployment type`, taken as it stands on GitHub.com (GitHub Enterprise is signed in in a
+/// terminal), then `Go to: ` before GitHub's device page and `Enter code: ` before the code. It
+/// exits 0 whether GitHub accepted the code or not, so its spinner's last words say which.
+const OPENCODE_COPILOT: Words = Words {
+    kind: "opencode",
+    plan: Some("github-copilot"),
+    page_after: &["Go to: "],
+    fails: "Error: ",
+    pages: &[("github.com", "/login/device")],
+    code_after: "Enter code: ",
+    chosen: "\u{25cf} GitHub.com",
+    signed_in: "Login successful",
+    stopped: "Failed to authorize",
+    ..NO_WORDS
 };
 
 /// Which of a login's outputs a piece was printed on: each is read in lines of its own.
@@ -131,6 +182,8 @@ enum At {
     Opened,
     Asking,
     Pasted,
+    /// Its device code is shown, and it waits for the vendor by itself.
+    Device,
     Over,
 }
 
@@ -147,14 +200,27 @@ pub struct Driven {
     lines: Vec<String>,
     /// The reason it said it failed with, where it did.
     failed: Option<String>,
+    /// Its device page, once printed, until its code is.
+    device_page: Option<String>,
+    /// Whether it said it signed in ([`Words::signed_in`]).
+    said_signed_in: bool,
+    /// Whether its one question ([`Words::chosen`]) was answered, and what to pass it now.
+    answered: bool,
+    reply: Option<&'static str>,
 }
 
 impl Driven {
-    /// A login of harness `kind`, started at `now`; `None` for one purlis does not follow (Codex and opencode: #4044, #4045).
+    /// A login of harness `kind`, started at `now`; `None` for one purlis does not follow.
     pub fn of(kind: &str, now: Instant) -> Option<Self> {
-        [&CLAUDE]
+        Self::of_plan(kind, None, now)
+    }
+
+    /// A login of harness `kind` to its `plan`, started at `now`; `None` for one purlis does not
+    /// follow (Codex, and opencode's ChatGPT: #4044).
+    pub fn of_plan(kind: &str, plan: Option<&str>, now: Instant) -> Option<Self> {
+        [&CLAUDE, &OPENCODE_COPILOT]
             .into_iter()
-            .find(|words| words.kind == kind)
+            .find(|words| words.kind == kind && words.plan == plan)
             .map(|words| Self {
                 words,
                 at: At::Starting,
@@ -162,6 +228,10 @@ impl Driven {
                 partial: [String::new(), String::new()],
                 lines: Vec::new(),
                 failed: None,
+                device_page: None,
+                said_signed_in: false,
+                answered: false,
+                reply: None,
             })
     }
 
@@ -197,9 +267,14 @@ impl Driven {
         said
     }
 
+    /// **What to pass the login now, unasked**: the answer to its one question, once.
+    pub fn reply(&mut self) -> Option<&'static str> {
+        self.reply.take()
+    }
+
     /// One whole line the login printed: read for its step, and kept, cut to [`MOST_LINE`].
     fn take(&mut self, line: &str, said: &mut Vec<Event>) {
-        let line = plain(line);
+        let line = last_drawn(line);
         self.line(&line, said);
         if !line.is_empty() {
             self.lines.push(cut(&line, MOST_LINE));
@@ -217,20 +292,31 @@ impl Driven {
             self.failed = Some(cut(why.trim(), MOST_LINE));
             return;
         }
+        let words = self.words;
+        if !words.signed_in.is_empty() && line.ends_with(words.signed_in) {
+            self.said_signed_in = true;
+        }
+        if !words.stopped.is_empty() && line.ends_with(words.stopped) {
+            self.failed = Some(words.stopped.to_owned());
+        }
         match self.at {
             At::Starting => {
-                if let Some(address) = self.page_on(line) {
+                if !words.chosen.is_empty() && !self.answered && line.contains(words.chosen) {
+                    self.answered = true;
+                    self.reply = Some("\n");
+                } else if let Some(code) = self.code_on(line) {
+                    let code = code.to_owned();
+                    self.device_code(code, line, said);
+                } else if let Some(address) = self.page_on(line) {
                     match self.page(address) {
+                        Some(url) if !words.code_after.is_empty() => {
+                            self.device_page.get_or_insert(url);
+                        }
                         Some(url) => {
                             self.at = At::Opened;
                             said.push(Event::Open { url });
                         }
-                        None => {
-                            self.at = At::Over;
-                            said.push(Event::CouldNotFollow {
-                                said: self.said_with(&cut(line, MOST_LINE)),
-                            });
-                        }
+                        None => self.lost(line, said),
                     }
                 }
             }
@@ -246,6 +332,35 @@ impl Driven {
             }
             _ => {}
         }
+    }
+
+    /// What follows the words before a device code on `line`, once its page was printed: a code
+    /// printed before its page shows nothing.
+    fn code_on<'a>(&self, line: &'a str) -> Option<&'a str> {
+        let before = self.words.code_after;
+        if before.is_empty() || self.device_page.is_none() {
+            return None;
+        }
+        line.split_once(before).map(|(_, code)| code.trim())
+    }
+
+    /// The device code the login printed, with its page, where it is one a window may show.
+    fn device_code(&mut self, code: String, line: &str, said: &mut Vec<Event>) {
+        match self.device_page.take() {
+            Some(url) if crate::forge::device::showable(&code) => {
+                self.at = At::Device;
+                said.push(Event::DeviceCode { url, code });
+            }
+            _ => self.lost(line, said),
+        }
+    }
+
+    /// What it printed on `line` cannot be followed.
+    fn lost(&mut self, line: &str, said: &mut Vec<Event>) {
+        self.at = At::Over;
+        said.push(Event::CouldNotFollow {
+            said: self.said_with(&cut(line, MOST_LINE)),
+        });
     }
 
     /// The address after one of the words before a page, on `line`.
@@ -293,8 +408,9 @@ impl Driven {
         Ok(format!("{code}\n"))
     }
 
-    /// **How the login ended**: its exit status, `None` where it had none. Ending well is
-    /// [`Event::Checking`]; anything else failed, in the login's words where it said why.
+    /// **How the login ended**: its exit status, `None` where it had none, and its own words
+    /// where its status does not say ([`Words::signed_in`]). Ending well is [`Event::Checking`];
+    /// anything else failed, in the login's words where it said why.
     pub fn ended(&mut self, exit: Option<i32>) -> Vec<Event> {
         if self.at == At::Over {
             return Vec::new();
@@ -304,7 +420,7 @@ impl Driven {
         if said.iter().any(Event::is_last) {
             return said;
         }
-        if exit == Some(0) {
+        if exit == Some(0) && (self.words.signed_in.is_empty() || self.said_signed_in) {
             said.push(Event::Checking);
             return said;
         }
@@ -384,6 +500,15 @@ fn unseen(c: char) -> bool {
     matches!(c, '\u{061c}' | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{2069}' | '\u{feff}')
 }
 
+/// What is left on `line` where a spinner redrew it with no line break: what it last drew, in
+/// [`plain`] words.
+fn last_drawn(line: &str) -> String {
+    line.rsplit("\u{1b}[J")
+        .map(plain)
+        .find(|drawn| !drawn.is_empty())
+        .unwrap_or_default()
+}
+
 /// `text` without its terminal escapes (a link's address is kept in its text, as a terminal
 /// that shows no links prints it), its control characters, the characters no one sees
 /// ([`unseen`]), or the spaces around it.
@@ -423,10 +548,13 @@ fn plain(text: &str) -> String {
 pub struct Driving {
     /// Held, so one asks for the next step at a time.
     events: Mutex<Receiver<Event>>,
-    input: Mutex<Option<ChildStdin>>,
+    input: Input,
     driven: Arc<Mutex<Driven>>,
     cancelled: Arc<AtomicBool>,
 }
+
+/// What is passed to a login, shared with what reads it, which answers its one question.
+type Input = Arc<Mutex<Option<ChildStdin>>>;
 
 /// **Runs `login` and drives it** as a login of harness `kind`, asking `check` for its status
 /// once it ends well. Refused for a harness purlis does not follow, and a login that cannot
@@ -436,7 +564,17 @@ pub fn drive(
     kind: &str,
     check: impl FnOnce() -> Standing + Send + 'static,
 ) -> Result<Driving, String> {
-    let driven = Driven::of(kind, Instant::now()).ok_or_else(|| {
+    drive_with(login, kind, None, check)
+}
+
+/// [`drive`], of a login to `plan` where its harness serves several.
+pub fn drive_with(
+    login: &Login,
+    kind: &str,
+    plan: Option<&str>,
+    check: impl FnOnce() -> Standing + Send + 'static,
+) -> Result<Driving, String> {
+    let driven = Driven::of_plan(kind, plan, Instant::now()).ok_or_else(|| {
         format!(
             "purlis follows {kind}'s sign-in only in a terminal: sign it in with Open in terminal"
         )
@@ -453,7 +591,7 @@ pub fn drive(
     }
     let mut child = crate::forklock::spawn(&mut command)
         .map_err(|e| format!("{} could not be run: {e}", login.program))?;
-    let input = child.stdin.take();
+    let input: Input = Arc::new(Mutex::new(child.stdin.take()));
     let (tell, events) = std::sync::mpsc::channel();
     let driven = Arc::new(Mutex::new(driven));
     let readers: Vec<_> = [
@@ -473,7 +611,15 @@ pub fn drive(
         ),
     ]
     .into_iter()
-    .filter_map(|(stream, from)| Some(reading(stream, from?, Arc::clone(&driven), tell.clone())))
+    .filter_map(|(stream, from)| {
+        Some(reading(
+            stream,
+            from?,
+            Arc::clone(&driven),
+            Arc::clone(&input),
+            tell.clone(),
+        ))
+    })
     .collect();
     let cancelled = Arc::new(AtomicBool::new(false));
     {
@@ -482,7 +628,7 @@ pub fn drive(
     }
     Ok(Driving {
         events: Mutex::new(events),
-        input: Mutex::new(input),
+        input,
         driven,
         cancelled,
     })
@@ -494,6 +640,7 @@ fn reading(
     stream: Stream,
     mut from: Box<dyn Read + Send>,
     driven: Arc<Mutex<Driven>>,
+    input: Input,
     tell: Sender<Event>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
@@ -512,12 +659,23 @@ fn reading(
             };
             let text = String::from_utf8_lossy(&carried[..whole]).into_owned();
             carried.drain(..whole);
-            let said = driven
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .read_from(stream, &text);
+            let (said, reply) = {
+                let mut driven = driven.lock().unwrap_or_else(PoisonError::into_inner);
+                (driven.read_from(stream, &text), driven.reply())
+            };
             for event in said {
                 let _ = tell.send(event);
+            }
+            // A login that went away takes no answer, and says so as it ends.
+            if let Some(reply) = reply
+                && let Some(input) = input
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .as_mut()
+            {
+                let _ = input
+                    .write_all(reply.as_bytes())
+                    .and_then(|()| input.flush());
             }
         }
     })

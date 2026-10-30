@@ -289,12 +289,193 @@ fn once_the_page_is_open_the_person_has_their_time() {
     assert_eq!(driven.waited(start + PAGE_WITHIN * 2), None);
 }
 
-/// Only harnesses whose login purlis follows are driven: none of the others yet.
+/// Only logins purlis follows are driven: Claude Code's and opencode's Copilot one, yet.
 #[test]
-fn only_claude_codes_login_is_driven_yet() {
+fn only_the_logins_purlis_follows_are_driven() {
     for kind in ["codex", "opencode", "gemini"] {
         assert!(Driven::of(kind, Instant::now()).is_none(), "{kind}");
     }
+    assert!(Driven::of_plan("opencode", Some("openai"), Instant::now()).is_none());
+    assert!(Driven::of_plan("opencode", Some("github-copilot"), Instant::now()).is_some());
+    assert!(Driven::of_plan("claude", Some("github-copilot"), Instant::now()).is_none());
+}
+
+/// What opencode 1.18.33's `auth login --provider github-copilot` printed with its input a pipe,
+/// from its first line to its spinner: its question, answered, then the device code. The code
+/// here is GitHub's documentation's.
+const COPILOT: &str = include_str!("opencode-1.18.33-copilot-login.txt");
+
+/// The line opencode's spinner ends on once GitHub accepted the code, after its redraws.
+const COPILOT_SIGNED_IN: &str = "\u{1b}[999D\u{1b}[J\u{25c7}  Login successful\n";
+
+const DEVICE_PAGE: &str = "https://github.com/login/device";
+
+fn copilot() -> Driven {
+    Driven::of_plan("opencode", Some("github-copilot"), Instant::now())
+        .expect("opencode's Copilot sign-in is driven")
+}
+
+fn device_code() -> Event {
+    Event::DeviceCode {
+        url: DEVICE_PAGE.to_owned(),
+        code: "WDJB-MJHT".to_owned(),
+    }
+}
+
+/// **opencode's Copilot login says its code and its page together**, once, read in any pieces:
+/// the one thing it asks first is answered by purlis, for GitHub.com.
+#[test]
+fn copilots_login_says_its_device_code_and_page_once() {
+    let mut whole = copilot();
+    assert_eq!(whole.read(COPILOT), [device_code()]);
+    assert_eq!(whole.reply(), Some("\n"));
+    assert_eq!(whole.reply(), None);
+
+    let mut cut = copilot();
+    let mut said = Vec::new();
+    let mut replies = 0;
+    let mut pieces = COPILOT.as_bytes().chunks(7).peekable();
+    let mut held = Vec::new();
+    while let Some(piece) = pieces.next() {
+        held.extend_from_slice(piece);
+        // Cut between bytes, as a read may be: whole characters are fed, as `reading` feeds them.
+        if let Ok(text) = std::str::from_utf8(&held) {
+            said.extend(cut.read(text));
+            held.clear();
+        }
+        replies += usize::from(cut.reply().is_some());
+    }
+    assert_eq!(said, [device_code()]);
+    assert_eq!(replies, 1);
+}
+
+/// **Its one question is answered only as it shows GitHub.com chosen**: any other question, or
+/// another choice, is left for [`Event::CouldNotFollow`] to say.
+#[test]
+fn a_question_purlis_does_not_know_is_left_unanswered() {
+    for asked in [
+        "\u{25c6}  Select GitHub deployment type\n\u{2502}  \u{25cf} GitHub Enterprise\n",
+        "\u{25c6}  Some question of a later version\n\u{2502}  \u{25cf} Yes\n",
+    ] {
+        let mut driven = copilot();
+        assert_eq!(driven.read(asked), []);
+        assert_eq!(driven.reply(), None, "{asked}");
+    }
+}
+
+/// **A code or a page that is not plainly GitHub's is never shown**: the login cannot be followed.
+#[test]
+fn a_device_code_is_shown_only_for_githubs_own_page() {
+    for (page, code) in [
+        ("https://github.com.evil.example/login/device", "WDJB-MJHT"),
+        ("http://github.com/login/device", "WDJB-MJHT"),
+        ("https://github.com/login/device/other", "WDJB-MJHT"),
+        ("https://github.com/login/device", "not a code"),
+        ("https://github.com/login/device", "WDJB<b>MJHT"),
+    ] {
+        let mut driven = copilot();
+        let said = driven.read(&format!(
+            "\u{25cf}  Go to: {page}\n\u{2502}\n\u{25cf}  Enter code: {code}\n"
+        ));
+        assert!(
+            matches!(said.as_slice(), [Event::CouldNotFollow { .. }]),
+            "{page} {code}: {said:?}"
+        );
+        assert!(driven.is_over());
+    }
+}
+
+/// **A code with no page is not followed**: nothing is shown, and the wait runs out.
+#[test]
+fn a_device_code_with_no_page_shows_nothing() {
+    let mut driven = copilot();
+    assert_eq!(driven.read("\u{25cf}  Enter code: WDJB-MJHT\n"), []);
+    assert!(!driven.is_over());
+}
+
+/// **Once GitHub accepts the code**, its status check says whether it is signed in.
+#[test]
+fn copilots_login_is_checked_once_it_says_it_signed_in() {
+    let mut driven = copilot();
+    driven.read(COPILOT);
+    assert_eq!(driven.read(COPILOT_SIGNED_IN), []);
+
+    assert_eq!(driven.ended(Some(0)), [Event::Checking]);
+    assert_eq!(driven.checked(Standing::SignedIn), Event::SignedIn);
+}
+
+/// **Exit status 0 is not enough for a login that also exits 0 having failed**: opencode does, and
+/// its status check is whether a file is there, which a sign-in to its other plan leaves. Without
+/// its own words for success, the check is never asked.
+#[test]
+fn a_copilot_login_that_failed_with_status_0_is_not_signed_in() {
+    let mut driven = copilot();
+    driven.read(COPILOT);
+    driven.read("\u{1b}[999D\u{1b}[J\u{25a0}  Failed to authorize\n");
+
+    assert_eq!(
+        driven.ended(Some(0)),
+        [Event::Failed {
+            why: "Failed to authorize".to_owned()
+        }]
+    );
+    assert!(driven.is_over());
+}
+
+/// A login that says neither is not taken for signed in either.
+#[test]
+fn a_copilot_login_that_says_nothing_of_how_it_ended_is_not_signed_in() {
+    let mut driven = copilot();
+    driven.read(COPILOT);
+
+    let said = driven.ended(Some(0));
+
+    assert!(
+        matches!(said.as_slice(), [Event::Failed { .. }]),
+        "{said:?}"
+    );
+}
+
+/// opencode's own error line is read as its reason.
+#[test]
+fn a_copilot_login_that_could_not_reach_github_says_so() {
+    let mut driven = copilot();
+    driven.read_from(
+        Stream::Err,
+        "\u{1b}[91m\u{1b}[1mError: \u{1b}[0mFailed to authorize: Unable to connect.\n",
+    );
+
+    assert_eq!(
+        driven.ended(Some(1)),
+        [Event::Failed {
+            why: "Failed to authorize: Unable to connect.".to_owned()
+        }]
+    );
+}
+
+/// A spinner redraws on one line with no line break: what is kept of it is its last frame, so what
+/// the login said last reads as words.
+#[test]
+fn a_spinners_redraws_are_read_as_its_last_frame() {
+    let mut driven = copilot();
+    driven.read(COPILOT);
+    driven.read("\u{1b}[999D\u{1b}[J\u{25a0}  Something opencode says\n");
+
+    let said = driven.ended(Some(1));
+
+    assert_eq!(
+        said,
+        [Event::Failed {
+            why: "the runner said: \u{25a0}  Something opencode says".to_owned()
+        }]
+    );
+}
+
+/// Claude Code's login is told by its status alone, as before.
+#[test]
+fn a_login_with_no_words_for_success_goes_by_its_status() {
+    let mut driven = asking();
+    assert_eq!(driven.ended(Some(0)), [Event::Checking]);
 }
 
 /// **A login driven end to end**: a stand-in prints the recorded output, takes the code, says
@@ -316,6 +497,28 @@ fn a_login_is_driven_end_to_end() {
     );
     assert_eq!(next(&driving), Event::AskCode);
     driving.paste("abc#recorded").unwrap();
+    assert_eq!(next(&driving), Event::Checking);
+    assert_eq!(next(&driving), Event::SignedIn);
+}
+
+/// **opencode's Copilot login driven end to end**: the stand-in reads the answer to its question
+/// before it goes on, and the code is shown while it waits for GitHub.
+#[cfg(unix)]
+#[test]
+fn a_copilot_login_is_driven_end_to_end() {
+    let mut login = stand_in(
+        "printf '\\342\\227\\206  Select GitHub deployment type\\n\\342\\224\\202  \\342\\227\\217 \
+         GitHub.com (Public)\\n'; read answer; [ -z \"$answer\" ] || exit 3; \
+         echo 'Go to: https://github.com/login/device'; echo 'Enter code: WDJB-MJHT'; \
+         echo 'Login successful'",
+    );
+    login.env.clear();
+    let driving = drive_with(&login, "opencode", Some("github-copilot"), || {
+        Standing::SignedIn
+    })
+    .unwrap();
+
+    assert_eq!(next(&driving), device_code());
     assert_eq!(next(&driving), Event::Checking);
     assert_eq!(next(&driving), Event::SignedIn);
 }
