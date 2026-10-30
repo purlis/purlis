@@ -706,7 +706,7 @@ fn a_claude_code_chat_allowed_to_listen_compiles_the_same_settings_byte_for_byte
     super::local::grant_listen(root.path(), 5173).expect("kept");
     let granted = compiled_at(root.path(), None, &Grants::default());
     assert!(
-        granted.confines().widened.listens.contains(&5173),
+        granted.widened.listens.contains(&5173),
         "the grant is in what it was compiled with"
     );
     let after = claude::settings(&granted).expect("compiles");

@@ -553,7 +553,7 @@ mod sockets {
         answer: impl Fn(UnixStream) + Send + Sync + 'static,
     ) -> (Door, u16, Served) {
         let port = free_port();
-        let answer = Arc::new(answer);
+        let answer: Arc<dyn Fn(UnixStream) + Send + Sync> = Arc::new(answer);
         if backend == "socket" {
             let dir = tempfile::tempdir().expect("a folder");
             let socket = dir.path().join(format!("{port}.sock"));
