@@ -337,9 +337,15 @@ use crate::view::{Limits, Views};
 /// window's alone ([`crate::grants::Power::Code`]), relayed for it. A host before 1.51 refuses
 /// it `unknown_command`, so the window asks only one of 1.51 or later, and a clone a runner
 /// before it made stays there.
+///
+/// 1.52 added a desktop's profile taken off its runner (#4047, spec #4023): `forget_profile`,
+/// sent by the desktop on its own link to the runner as it takes a profile off the pool, has the
+/// runner forget a profile it keeps for that desktop, with its folder and so its sign-in there,
+/// answered `done`. A profile the runner keeps of its own, or for another desktop, is refused. A
+/// host before 1.52 refuses it `unknown_command`, and the profile stays kept there.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 51,
+    minor: 52,
 };
 
 /// The version that first answers `relay_to` with the runner the link reached (#3417).
@@ -381,6 +387,13 @@ pub const KNOWS_PROFILE_SETTINGS: Version = Version {
 pub const KNOWS_CLONES_OF: Version = Version {
     major: 1,
     minor: 51,
+};
+
+/// The version that first forgets a desktop's profile on a runner (#4047): the desktop asks no
+/// runner before it, where the profile stays kept.
+pub const KNOWS_FORGET_PROFILE: Version = Version {
+    major: 1,
+    minor: 52,
 };
 
 /// The version that first knows browsers relayed for a window (#2050): a runner before it refuses
@@ -723,6 +736,12 @@ pub enum Command {
     /// host, on the link between hosts from the desktop it is paired with, carries it out;
     /// every other host refuses it [`NOT_ALLOWED`] ([`crate::grants::Power::KeepProfile`]).
     KeepProfile(ProfileToKeep),
+    /// The desktop on this link has the runner forget its profile `name` (1.52, #4047): the
+    /// runner's host forgets the profile it keeps for that desktop, with its folder and so its
+    /// sign-in there, and answers [`Answer::Done`]; one it does not keep is nothing. A profile
+    /// it keeps of its own, or for another desktop, is refused. Carried out and refused as
+    /// [`Command::KeepProfile`] is ([`crate::grants::Power::KeepProfile`]).
+    ForgetProfile { name: String },
     /// The person takes browser `program` over (1.14, #2014): an act in flight answers that it
     /// was interrupted, and every act is refused in words until [`Command::HandBack`]. The lease
     /// is the host's: it stays with the person whatever becomes of the link that took it, until
@@ -1770,6 +1789,7 @@ wire_words!(Command {
     NameWindow => "name_window",
     Unpair => "unpair",
     KeepProfile => "keep_profile",
+    ForgetProfile => "forget_profile",
     RelayTo => "relay_to",
     TakeCode => "take_code",
     GiveCode => "give_code",
@@ -1827,7 +1847,7 @@ impl Command {
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,
             Command::Unpair => Power::Unpair,
-            Command::KeepProfile(_) => Power::KeepProfile,
+            Command::KeepProfile(_) | Command::ForgetProfile { .. } => Power::KeepProfile,
             Command::RelayTo { .. } => Power::RelayTo,
             Command::TakeCode { .. }
             | Command::GiveCode { .. }
@@ -2335,6 +2355,7 @@ impl Lane {
             | Command::NameWindow { .. }
             | Command::Unpair
             | Command::KeepProfile(_)
+            | Command::ForgetProfile { .. }
             | Command::RelayTo { .. }
             | Command::TakeCode { .. }
             | Command::GiveCode { .. }
@@ -2985,6 +3006,16 @@ impl Client {
             Answer::ProfileKept { standing } => Ok(standing),
             other => Err(unexpected(&other)),
         }
+    }
+
+    /// Have the runner forget this link's desktop's profile `name` (1.52, #4047), with its
+    /// folder and sign-in there. Refused by every host but a runner's, on its link from that
+    /// desktop.
+    pub async fn forget_profile(&self, name: &str) -> Result<(), CallError> {
+        self.done(Command::ForgetProfile {
+            name: name.to_owned(),
+        })
+        .await
     }
 
     /// Ask the desktop's host to relay this link to the runner it keeps as `runner` (1.33,
