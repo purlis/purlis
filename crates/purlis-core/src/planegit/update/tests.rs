@@ -317,6 +317,8 @@ fn a_chats_update_that_would_write_a_file_its_sandbox_denies_does_not_start() {
         Updated::Left(Left::HeldFromChats(vec![".vscode/tasks.json".into()]))
     );
     assert_eq!(project.as_it_is(), before, "nothing moved");
+    // No chat can settle it, so the person is asked (#3877).
+    assert!(matches!(&got, Updated::Left(left) if left.needs_the_person()));
     let said = got.said("pull request");
     assert!(said.contains("`.vscode/tasks.json`"), "{said}");
     assert!(said.contains("Update in the window"), "{said}");
@@ -705,4 +707,54 @@ fn the_conflict_sentence_names_every_command_and_sends_nobody_back_to_update() {
         assert!(sentence.contains(command), "{sentence}");
     }
     assert!(!sentence.contains("Update"), "{sentence}");
+}
+
+/// **Only a reason the chat cannot settle needs the person** (#3877): a file the chat's
+/// sandbox denies, a move the app will not make for a chat, a conflict, a stopped merge or
+/// rebase, a project not put back, a branch, a signer, a file purlis may not write, the root's
+/// own files and locks, and every fetch that did not go through (a sign-in, a remote, git's
+/// words). A save running beside it, a wait on a request, a replay out of time or a failure the
+/// project was put back from are the chat's to retry, and it is told them in the answer.
+#[test]
+fn only_a_reason_the_chat_cannot_settle_needs_the_person() {
+    let files = || vec!["a.md".to_owned()];
+    for left in [
+        Left::HeldFromChats(files()),
+        Left::NotForAChat("a reason.".into()),
+        Left::Conflict(files()),
+        Left::Stopped(gitstate::Stopped {
+            operation: None,
+            unmerged: files(),
+        }),
+        Left::NotPutBack {
+            said: "unable to unlink".into(),
+            still: StillMoved::default(),
+        },
+        Left::Unwritable(files()),
+        Left::OffTarget {
+            here: "topic".into(),
+            branch: "main".into(),
+        },
+        Left::NoBranch,
+        Left::Unsigned("no key".into()),
+        Left::NotFetched("Authentication failed for the remote".into()),
+        Left::NotFetched("could not resolve host".into()),
+        Left::IndexLocked,
+        Left::Unsaved(2),
+        Left::InTheWay(files()),
+    ] {
+        assert!(left.needs_the_person(), "{left:?}");
+    }
+    for left in [
+        Left::Busy,
+        Left::WaitsOnRequest {
+            mine: 1,
+            url: None,
+            why: None,
+        },
+        Left::OutOfTime(120),
+        Left::Failed("no space left".into()),
+    ] {
+        assert!(!left.needs_the_person(), "{left:?}");
+    }
 }

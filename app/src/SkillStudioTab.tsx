@@ -875,9 +875,9 @@ export function SkillStudioTab({
       </Button>
     </>
   );
-  /** A chat's draft, asked for where drafts are listed and where skills are: the Library's tools
-   *  and the Drafts page, not the bar, which keeps to the prototype's and fits a narrow tab. New
-   *  skill…'s Ask a chat to draft it (#3684) asks what the skill should do first. */
+  /** A chat's draft, asked for where drafts are listed: the Drafts page. The Library's way to it
+   *  is New skill…'s Ask a chat to draft it (#3684), which asks what the skill should do first, so
+   *  the Library's tools keep to search and chips (#4041, prototype S2). */
   const draftAsk = (
     <Button
       size="sm"
@@ -1084,7 +1084,6 @@ export function SkillStudioTab({
                 })
               }
             />
-            {draftAsk}
             {persona !== null && studio !== undefined && (
               /* The persona's own skills list (#2768): every skill choice is the studio's. A name
                  the studio lists has Add on its page; this takes one it does not. */

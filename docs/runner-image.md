@@ -27,13 +27,17 @@ own, as long as it keeps the contract below.
   manifest names the image by digest as `runnerImage`, signed with the updater's key (see
   [Updating](updating.md#the-runner-image-a-release-names)). After an update, a Docker pool of
   this image gets a runner of the new version beside its old one: new chats start on it, and
-  the old runner keeps its chats until they end, then is removed. Before the new runner is
-  paired, its profiles' sign-ins are carried from the old runner's home volume to its own, on
-  the Docker host, by a short-lived container of the new image with no network: each harness's
-  sign-in file alone (Claude Code's `.credentials.json`, Codex's and opencode's `auth.json`),
-  never a link, a setting, a hook, an instruction or a transcript, and nothing of purlis's own.
-  A profile signed in on the pool stays signed in; one whose sign-in cannot be carried is signed
-  in again, and the move goes on (#4011).
+  the old runner keeps its chats until they end, then is removed. A sign-in is held by one
+  runner at a time: while the old runner has chats, a new chat on the new runner asks to sign
+  in there. Once the old runner's last chat has ended, and before it is removed with its home
+  volume, its profiles' sign-ins are carried to the new runner's home volume, on the Docker
+  host, by a short-lived container of the new image with no network: each harness's sign-in
+  file alone (Claude Code's `.credentials.json`, Codex's and opencode's `auth.json`), never a
+  link, a setting, a hook, an instruction or a transcript, and nothing of purlis's own. The
+  container writes only into a folder of its own under the new runner's data home, and the new
+  runner takes each sign-in in as it keeps the profile. One the new runner was signed in with
+  meanwhile is kept over it. One that cannot be carried is signed in again, and the old runner is
+  removed all the same (#4011, #4055; ADR 0095, amended 2026-10-30).
 - **Tags:** `sha-<commit>` for the commit it was built from, and `main` for the image of
   the latest commit. `main` only moves forward: when an older commit's run finishes after
   a newer one's, its image gets only its `sha-<commit>` tag. Tags can move, so a pool names
@@ -112,13 +116,13 @@ it starts the image's default command. It prints every problem it found, one to 
 | Linux | The image is for `linux`. |
 | `/bin/sh` | A POSIX shell at `/bin/sh`. The check inside the image runs with it. |
 | The `purlis` binary | An executable at `/usr/local/bin/purlis`, and `purlis --version` answers with a line that starts with `purlis `. |
-| purlis's plugin | `/usr/local/lib/purlis/plugin`, holding `.claude-plugin/plugin.json`, readable by the image's user. `purlis serve` arms a Claude Code chat with the plugin it finds beside its binary, and refuses a sandboxed Claude Code chat when there is none. |
+| purlis's plugin | `/usr/local/lib/purlis/plugin`, holding `.claude-plugin/plugin.json`, readable by the image's user. `purlis serve` arms a Claude Code chat with the plugin it finds beside its binary, and refuses a sandboxed Claude Code chat when there is none. On a runner every sandboxed chat, Claude Code's among them, runs inside purlis's own Linux wrap, so the image needs neither bubblewrap nor socat. |
 | A user who is not root | `USER` is a user number other than 0 (`USER 10001:10001`), so a cluster can check `runAsNonRoot`. Inside the image, `id -u` is not 0. |
 | A home | `HOME` is an absolute path to a folder the user can write. purlis keeps its config and data under it, by the XDG base directory rules. On a Docker pool a volume of the runner's own is mounted there; on a cluster pool the runner's home is made on its pod's volume from it ([below](#on-a-cluster-pool)), so `HOME` is not `/` and does not hold `/var/lib/purlis`, through a link or otherwise. |
 | `/tmp` | Writable. The session host makes its socket's folder there (`/tmp/purlis-<uid>/`, closed to every other user) unless `XDG_RUNTIME_DIR` names a folder of the user's own. With a read-only root file system, mount a writable volume at `/tmp` and at `HOME`. A Docker pool runs every runner that way: a read-only root, its home on a volume of its own, and a `tmpfs` at `/tmp` mounted `noexec`, so nothing in the image may need to run a program from `/tmp`. |
 | The default command | `purlis serve`, run under an init that reaps processes (`tini`, `dumb-init`, `catatonit` or `docker-init`) as PID 1: `ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/purlis"]` and `CMD ["serve"]`. It prints `ready` within a minute. A Docker pool runs it as `purlis serve --suspends-unlinked`, so a runner left a day without a link from its desktop stops itself, keeping its home (#2051); a pool with its own time (`suspendAfter`, #3471) runs it as `purlis serve --suspends-unlinked=<duration>`, such as `=12h`, which only a purlis since #3471 takes. A Docker pool runs `/usr/local/bin/purlis` itself, whatever the image's entrypoint (`--entrypoint /usr/local/bin/purlis`), under the runtime's own init (`--init`): the `purlis` it asks of the image before the runner is made is the one that serves (#3702). Docker brings its init with it; Podman's is `catatonit`, which a machine running rootless Podman needs installed (its `catatonit` package, or Podman's `init_path`), or a pool's runner is not made there. Its standard error is its log: purlis's own `info` lines and up, and a library's warnings, each redacted as the app's log is, kept by whatever keeps the container's log. |
 | Tools | `git` and `bash` on `PATH`, and a certificate bundle at `/etc/ssl/certs/ca-certificates.crt`. |
-| No harness | No `claude`, `codex` or `opencode` on `PATH`. A runner gets exactly the harness version its profile pins (spec #2030): as a chat first starts on it, as its profile is signed in there (`purlis profile sign-in`, which says so in its shell), or as the desktop asks whether it is signed in there (fetched in the background, so the question is not held up; #4007), purlis downloads that version from the harness's own release over https, checks it against the SHA-256 its vendor publishes, and keeps it in the runner's data home on its home volume (`<data>/harnesses/`, never `/tmp`), so a runner needs to reach `storage.googleapis.com` for Claude Code and `api.github.com` and `github.com` for Codex and opencode (#3446). |
+| No harness | No `claude`, `codex` or `opencode` on `PATH`. A runner gets exactly the harness version its profile pins (spec #2030): as a chat first starts on it, as its profile is signed in there (Sign in on the profile's line in Settings › Pools, or `purlis profile sign-in <profile> --pool <pool>` from your own terminal, each of which says so), or as the desktop asks whether it is signed in there (fetched in the background, so the question is not held up; #4007), purlis downloads that version from the harness's own release over https, checks it against the SHA-256 its vendor publishes, and keeps it in the runner's data home on its home volume (`<data>/harnesses/`, never `/tmp`), so a runner needs to reach `storage.googleapis.com` for Claude Code and `api.github.com` and `github.com` for Codex and opencode (#3446). |
 
 ### What the team keeps
 

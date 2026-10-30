@@ -768,6 +768,7 @@ fn every_command_that_changes_a_standing_dispatch_grant_is_the_window_s_alone() 
 const TAKES_A_CHANNEL: &[&str] = &[
     "watch_session",
     "get_project",
+    "clone_repo",
     "create_project_on_forge",
     "publish_project",
 ];

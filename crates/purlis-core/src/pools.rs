@@ -16,10 +16,10 @@
 //!
 //! - **After an update, a pool of purlis's own image follows the desktop's version, side by
 //!   side** ([`follow`], #2749, ruled 2026-10-20): a runner of the image of the desktop's
-//!   version is made beside the pool's, given the old runner's sign-ins (#4011), checked and
-//!   paired, kept as the pool's runner, and the one it replaces is kept draining: it keeps its
-//!   chats and starts no new one, and is removed once its last chat has ended ([`drain`]). A
-//!   pool of a team's own image is never moved.
+//!   version is made beside the pool's, checked and paired, kept as the pool's runner, and the
+//!   one it replaces is kept draining: it keeps its chats and starts no new one, and once its
+//!   last chat has ended its sign-ins are carried to the pool's runner and it is removed
+//!   ([`drain`], #4011, #4055). A pool of a team's own image is never moved.
 //!
 //! A pool's chats start on its one runner that is not draining: the one called by the pool's
 //! name, or the one made beside it after an update.
@@ -215,11 +215,10 @@ pub fn workspaces_on_pools(
 /// **Moves the pool `name` to `image`, the runner image of the desktop's version** (#2749): a
 /// runner of `image` is made beside the pool's, held to the pool's limits, checked, paired with
 /// `desktop` and kept as the pool's runner, and every runner of the pool before it is kept
-/// draining ([`runners::succeed_locked`]). Before it is paired, the sign-ins of the runner it
-/// replaces are carried to its home on the Docker host ([`Docker::copy_profiles`], #4011), so a
-/// profile signed in on the pool stays signed in; one that cannot be carried is said in the log
-/// and signed in again. The runner kept, or `None` where the pool is of
-/// `image` already.
+/// draining ([`runners::succeed_locked`]). Nothing of the old runner's home is carried to it
+/// while the old runner has chats (#4055, ruled 2026-10-30): a new chat on it asks to sign in
+/// there, and the old runner's sign-ins follow once it drains ([`drain`]). The runner kept, or
+/// `None` where the pool is of `image` already.
 ///
 /// Refused, with nothing changed, for a pool of a team's own image, which is never moved, and
 /// for an `image` that is not purlis's own. What fails takes back the runner this made; the
@@ -247,8 +246,6 @@ pub fn follow(
         )));
     }
     let successor = crate::dockerpool::successor_name(name, image);
-    // The runner it replaces, whose profiles it takes (#4011).
-    let replaced = runners::runner_for(config_root, name).ok();
     // What a follow that stopped short of keeping its runner left goes first (#2869).
     clear_leftovers_locked(config_root, docker, &successor, &locked)?;
     let made = docker
@@ -261,32 +258,6 @@ pub fn follow(
         })
         .and_then(|runner| docker.make_for(&runner, Some(&runners::desktop_label(config_root))))
         .map_err(|why| Refused::Other(why.0))?;
-    // Its profiles' sign-ins come before it is paired, so it never serves without them (#4011).
-    // What cannot be carried is said, and the move goes on: that profile is signed in again on
-    // the pool, as before any was carried, and nothing in the old home holds the pool back.
-    match &replaced {
-        Some(replaced) if replaced.made.runner.user() != made.runner.user() => {
-            tracing::warn!(
-                "purlis: runner {} runs as {} and the new runner as {}, so its profiles' \
-                 sign-ins were not carried to it; sign them in again on pool {name}",
-                replaced.name(),
-                replaced.made.runner.user().spelled(),
-                made.runner.user().spelled()
-            );
-        }
-        Some(replaced) => {
-            if let Err(why) =
-                docker.copy_profiles(&replaced.made, &made, &runners::desktop_label(config_root))
-            {
-                tracing::warn!(
-                    "purlis: the sign-ins of runner {} were not carried to the new runner of \
-                     pool {name}, so its profiles are signed in again there: {why}",
-                    replaced.name()
-                );
-            }
-        }
-        None => {}
-    }
     let kept = docker
         .pair(&made, desktop)
         .map_err(|why| Refused::Other(why.0))
@@ -345,6 +316,13 @@ fn clear_leftovers_locked(
 
 /// **Removes the draining runner `name`** (#2749), once its last chat has ended, as a runner is
 /// removed ([`runners::remove`]). Refused for a runner that is not draining.
+///
+/// First its sign-ins are carried to its pool's runner, on the Docker host
+/// ([`Docker::copy_profiles`], #4011), and only then is it removed with its home's volume, so a
+/// profile signed in on the pool stays signed in and no sign-in is ever held by two runners at
+/// once (#4055, ruled 2026-10-30). One the pool's runner signed in on its own is kept over the
+/// carried one. A sign-in that cannot be carried is said in the log, and the runner is removed
+/// all the same: that profile is signed in again on the pool.
 pub fn drain(
     config_root: &Path,
     docker: &Docker,
@@ -354,6 +332,7 @@ pub fn drain(
     let locked = runners::lock(config_root);
     match runners::named(config_root, name)? {
         Some(kept) if kept.draining => {
+            carry_sign_ins(config_root, docker, &kept);
             runners::remove_locked(config_root, docker, name, unpair, &locked)
         }
         Some(_) => Err(Refused::Other(format!(
@@ -362,6 +341,41 @@ pub fn drain(
         None => Err(Refused::Other(format!(
             "no runner named {name} is kept on this machine"
         ))),
+    }
+}
+
+/// **Carries the draining runner `drained`'s sign-ins to its pool's runner** (#4011, #4055),
+/// as it drains: what cannot be carried is said in the log and never holds the drain back.
+fn carry_sign_ins(config_root: &Path, docker: &Docker, drained: &Kept) {
+    let pool = drained.pool();
+    let Ok(to) = runners::runner_for(config_root, pool) else {
+        return;
+    };
+    if to.name() == drained.name() {
+        return;
+    }
+    if drained.made.runner.user() != to.made.runner.user() {
+        tracing::warn!(
+            "purlis: runner {} runs as {} and pool {pool}'s runner {} as {}, so its profiles' \
+             sign-ins were not carried; sign them in again on pool {pool}",
+            drained.name(),
+            drained.made.runner.user().spelled(),
+            to.name(),
+            to.made.runner.user().spelled()
+        );
+        return;
+    }
+    if let Err(why) = docker.copy_profiles(
+        &drained.made,
+        &to.made,
+        &runners::desktop_label(config_root),
+    ) {
+        tracing::warn!(
+            "purlis: the sign-ins of runner {} were not carried to pool {pool}'s runner {}, so \
+             its profiles are signed in again there: {why}",
+            drained.name(),
+            to.name()
+        );
     }
 }
 
@@ -654,6 +668,33 @@ pub fn before_cluster_link(
         tracing::warn!("purlis: pool {name}'s cluster operator key moved, and was not kept: {why}");
     }
     checked
+}
+
+/// How long each kubectl run of the check before a value is sent waits (#4071).
+pub const VOUCHED_NOW_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// **This machine's `kubectl`, by its absolute path** (#3292,
+/// [`crate::clusterpool::Kubectl::on_this_machine`]): where its installers put it, else an
+/// absolute folder of the process's `PATH`; its caches kept in a folder of purlis's under
+/// `config_root` ([`runners::kubectl_cache`]).
+pub fn kubectl_here(config_root: &Path) -> Result<crate::clusterpool::Kubectl, String> {
+    let path = crate::envvar::var("PATH");
+    let home = crate::envvar::var_os("HOME").map(std::path::PathBuf::from);
+    let cache = runners::kubectl_cache(config_root).map_err(|why| why.to_string())?;
+    crate::clusterpool::Kubectl::on_this_machine(path.as_deref(), home.as_deref())
+        .map(|kubectl| kubectl.with_cache_dir(cache))
+        .map_err(|why| why.to_string())
+}
+
+/// **[`before_cluster_link`], now, on this machine's `kubectl`, held to a time** (#4071): what a
+/// cluster runner must pass, at the gate and again after Allow, before a value or a token goes
+/// to it. A kubectl that is missing, or a cluster that does not answer within
+/// [`VOUCHED_NOW_WITHIN`], is a refusal.
+pub fn vouched_now(config_root: &Path, name: &str) -> Result<(), crate::clusterpool::Refused> {
+    let kubectl = kubectl_here(config_root)
+        .map_err(crate::clusterpool::Refused::Other)?
+        .within(VOUCHED_NOW_WITHIN);
+    before_cluster_link(config_root, &kubectl, name, runners::now())
 }
 
 /// What a cluster runner's removal is handed to take this desktop out of its peers over its

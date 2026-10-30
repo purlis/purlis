@@ -16,6 +16,10 @@ FROM ${RUNNER}
 ARG AT
 COPY --chmod=0755 fake-harness purlis ${AT}/
 
+# The program Claude Code ships, the version purlis supports, which a behaviour runs under the
+# runner's own wrap with a stand-in model (#4083). The image a pool really runs carries no harness.
+COPY --chmod=0755 claude-code /usr/local/lib/parity/claude-code
+
 # The runner's `claude`, which a profile of the runner's own runs. Asked `auth status`, it exits
 # 0, which is how Claude Code's own says a profile is signed in, so the test's profile passes the
 # sign-in check without a sign-in. Anything else runs the stand-in a behaviour gives, written into

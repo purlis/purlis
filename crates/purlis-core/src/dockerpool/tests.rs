@@ -779,6 +779,40 @@ fn a_profile_is_signed_in_on_the_runner_by_its_own_sign_in_in_the_container_it_p
     );
 }
 
+/// **A runner's sign-in check is read by the words `--check` writes** (#4046): signed in, not, or
+/// that its harness cannot tell; anything else is the runner's own words.
+#[test]
+fn a_runners_sign_in_check_is_read_by_its_own_words() {
+    use crate::profilestore::sign_in::Standing;
+    for (printed, standing) in [
+        ("'work' is signed in on runner-1\n", Standing::SignedIn),
+        (
+            "fetching claude 2.1.314\n'work' is signed in by Claude Code's own sign-in on r\n",
+            Standing::SignedIn,
+        ),
+        (
+            "'work' is not signed in on r: purlis profile sign-in work signs it in\n",
+            Standing::SignedOut,
+        ),
+        (
+            "its harness cannot tell whether 'work' is signed in on r; a chat on it starts\n",
+            Standing::CannotTell,
+        ),
+    ] {
+        assert_eq!(standing_said("work", printed), Ok(standing), "{printed}");
+    }
+    let why = standing_said(
+        "work",
+        "purlis: this machine has no profile named 'work'.\n",
+    );
+    assert_eq!(
+        why,
+        Err("the runner says: purlis: this machine has no profile named 'work'.".to_owned())
+    );
+    // Another profile's words are not this one's.
+    assert!(standing_said("work", "'workshop' is signed in on r\n").is_err());
+}
+
 /// **A sign-in purlis drives runs with pipes, never a terminal** (#4042): the same runner's own
 /// `purlis profile sign-in`, as the same user in the same container, with `-i` alone.
 #[test]
@@ -2616,18 +2650,31 @@ fn carried(from: &std::path::Path, to: &std::path::Path) -> std::process::Output
         .arg("sh")
         .arg(from)
         .arg(to)
+        .arg(crate::profilestore::carried_under_a_runner_home())
         .args(crate::profilestore::carried_in_a_runner_home());
     crate::forklock::output(&mut command).unwrap()
 }
 
-/// **A follow carries the old runner's sign-ins and nothing else** (#4011): each made profile's
-/// sign-in file to `carried/<profile>/` under the new data home, and each harness's own sign-in
-/// file to its place, with its mode. Not a setting, hook or instruction of a harness, not the
-/// profiles' records, the runner's identity, its harness installs or its projects, and never a
-/// link. What the new home has of its own stays.
+/// The one batch a carry made under the home `to`.
+#[cfg(unix)]
+fn the_batch(to: &std::path::Path) -> std::path::PathBuf {
+    let stage = to.join(crate::profilestore::carried_under_a_runner_home());
+    let batches: Vec<_> = std::fs::read_dir(&stage)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(batches.len(), 1, "{batches:?}");
+    batches[0].clone()
+}
+
+/// **A carry takes a drained runner's sign-ins and nothing else** (#4011, #4055): each made
+/// profile's sign-in file, and each harness's own sign-in file under the harness's name, into a
+/// batch of its own under the new data home, with nothing written in a harness's folder. Not a
+/// setting, hook or instruction of a harness, not the profiles' records, the runner's identity,
+/// its harness installs or its projects, and never a link.
 #[cfg(unix)]
 #[test]
-fn a_follow_carries_the_sign_ins_of_a_home_and_nothing_else() {
+fn a_carry_takes_the_sign_ins_of_a_home_and_nothing_else() {
     use std::os::unix::fs::PermissionsExt;
     let from = tempfile::tempdir().unwrap();
     let to = tempfile::tempdir().unwrap();
@@ -2681,60 +2728,89 @@ fn a_follow_carries_the_sign_ins_of_a_home_and_nothing_else() {
         String::from_utf8_lossy(&ran.stderr)
     );
 
-    let read = |path: &str| std::fs::read_to_string(to.path().join(path)).ok();
-    let carried_to = ".local/share/purlis/carried";
+    let batch = the_batch(to.path());
+    let read = |path: &str| std::fs::read_to_string(batch.join(path)).ok();
     assert_eq!(
-        read(&format!("{carried_to}/work/config/.credentials.json")).as_deref(),
+        read("work/config/.credentials.json").as_deref(),
         Some("work's sign-in")
     );
     assert_eq!(
-        std::fs::metadata(
-            to.path()
-                .join(format!("{carried_to}/work/config/.credentials.json"))
-        )
-        .unwrap()
-        .permissions()
-        .mode()
+        std::fs::metadata(batch.join("work/config/.credentials.json"))
+            .unwrap()
+            .permissions()
+            .mode()
             & 0o777,
         0o600
     );
     assert_eq!(
-        read(&format!("{carried_to}/gpt/config/auth.json")).as_deref(),
+        read("gpt/config/auth.json").as_deref(),
         Some("gpt's sign-in")
     );
     assert_eq!(
-        read(&format!("{carried_to}/oc/data/opencode/auth.json")).as_deref(),
+        read("oc/data/opencode/auth.json").as_deref(),
         Some("oc's sign-in")
     );
     assert_eq!(
-        read(".claude/.credentials.json").as_deref(),
+        read("claude/config/.credentials.json").as_deref(),
         Some("claude's sign-in")
     );
     assert_eq!(
-        read(".codex/auth.json").as_deref(),
-        Some("the new runner's own")
+        read("codex/config/auth.json").as_deref(),
+        Some("codex's sign-in")
+    );
+    // Nothing is written in a harness's folder of the new home: its own stays as it was.
+    assert_eq!(
+        std::fs::read_to_string(to.path().join(".codex/auth.json")).unwrap(),
+        "the new runner's own"
     );
     for not in [
-        &format!("{carried_to}/work/config/settings.json") as &str,
+        ".claude",
         ".local/share/purlis/profiles",
-        ".local/share/purlis/harnesses",
-        ".config/purlis",
-        ".claude/settings.json",
+        ".config",
         ".claude.json",
-        ".config/opencode",
-        ".local/share/opencode/auth.json",
+        ".local/share/opencode",
     ] {
         assert!(
             std::fs::symlink_metadata(to.path().join(not)).is_err(),
+            "{not} was written"
+        );
+    }
+    for not in [
+        "work/config/settings.json",
+        "opencode/data/opencode/auth.json",
+    ] {
+        assert!(
+            std::fs::symlink_metadata(batch.join(not)).is_err(),
             "{not} was carried"
         );
     }
     // A folder the copy makes is the runner's user's alone.
-    let mode = std::fs::metadata(to.path().join(carried_to))
-        .unwrap()
-        .permissions()
-        .mode();
+    let mode = std::fs::metadata(&batch).unwrap().permissions().mode();
     assert_eq!(mode & 0o077, 0, "{mode:o}");
+}
+
+/// **A carry writes nothing through a link the new home has on its way** (#4055): the new
+/// runner serves chats as it runs, so a link where the carry's folder would be, to a folder a
+/// chat reads, is refused and nothing is carried there or anywhere.
+#[cfg(unix)]
+#[test]
+fn a_carry_writes_nothing_through_a_link_on_its_way() {
+    let from = tempfile::tempdir().unwrap();
+    let to = tempfile::tempdir().unwrap();
+    let signed = from.path().join(".claude/.credentials.json");
+    std::fs::create_dir_all(signed.parent().unwrap()).unwrap();
+    std::fs::write(&signed, "claude's sign-in").unwrap();
+    let project = to.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let stage = to
+        .path()
+        .join(crate::profilestore::carried_under_a_runner_home());
+    std::fs::create_dir_all(stage.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink("../../../project", &stage).unwrap();
+
+    carried(from.path(), to.path());
+
+    assert_eq!(std::fs::read_dir(&project).unwrap().count(), 0);
 }
 
 /// A home with no sign-in carries nothing, and a sign-in that cannot be read is passed over: the
@@ -2751,7 +2827,10 @@ fn a_home_with_no_sign_in_or_one_unread_carries_nothing_and_ends_well() {
         "{}",
         String::from_utf8_lossy(&ran.stderr)
     );
-    assert_eq!(std::fs::read_dir(to.path()).unwrap().count(), 0);
+    let stage = to
+        .path()
+        .join(crate::profilestore::carried_under_a_runner_home());
+    assert_eq!(std::fs::read_dir(&stage).unwrap().count(), 0);
 
     let locked = from.path().join(".codex/auth.json");
     std::fs::create_dir_all(locked.parent().unwrap()).unwrap();
@@ -2763,4 +2842,31 @@ fn a_home_with_no_sign_in_or_one_unread_carries_nothing_and_ends_well() {
         "{}",
         String::from_utf8_lossy(&ran.stderr)
     );
+}
+
+/// **A carry takes nothing a folder linked out of the old home holds** (#4055): a profile's
+/// folder in the old home that is a link to the new home's own sign-in is passed over.
+#[cfg(unix)]
+#[test]
+fn a_carry_takes_nothing_through_a_link_out_of_the_old_home() {
+    let from = tempfile::tempdir().unwrap();
+    let to = tempfile::tempdir().unwrap();
+    let own = to.path().join(".claude");
+    std::fs::create_dir_all(&own).unwrap();
+    std::fs::write(own.join(".credentials.json"), "the new runner's own").unwrap();
+    let profile = from.path().join(".local/share/purlis/profiles/work");
+    std::fs::create_dir_all(&profile).unwrap();
+    std::os::unix::fs::symlink(&own, profile.join("config")).unwrap();
+
+    let ran = carried(from.path(), to.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+
+    let stage = to
+        .path()
+        .join(crate::profilestore::carried_under_a_runner_home());
+    assert_eq!(std::fs::read_dir(&stage).unwrap().count(), 0);
 }

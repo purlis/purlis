@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { ChatMove, PoolsShown } from "./bindings";
-import type { State } from "./chatState";
+import { nothingKnown, type ChatStates, type State } from "./chatState";
 import {
   chatMovesOf,
   heardMove,
@@ -22,9 +22,24 @@ const ready = (session: number, to: string | null = "builds"): ChatMove => ({
   stage: "ready",
   why: null,
   with: [],
+  sign_in: null,
 });
 
 describe("Move to runner and Move here (#2048)", () => {
+  it("a move waiting on its profile's sign-in says so, may be cancelled, and is not due (#3477)", () => {
+    const one: ChatMove = {
+      ...ready(1),
+      stage: "signing-in",
+      sign_in: { profile: "work", kind: "claude", harness: "Claude Code" },
+    };
+    expect(moveSaid(one)).toEqual({
+      words: "Moves to pool builds once work is signed in there. It keeps working here meanwhile.",
+      trouble: false,
+    });
+    expect(moveCancellable(one)).toBe(true);
+    expect(movesDue({ 1: one }, { ...nothingKnown, bySession: { 1: "waiting" } })).toEqual([]);
+  });
+
   it("switches a prepared move only at the chat's pause between turns, never mid-turn", () => {
     const moves = {
       1: ready(1),
@@ -32,13 +47,21 @@ describe("Move to runner and Move here (#2048)", () => {
       3: { ...ready(3), stage: "preparing" },
       4: { ...ready(4), stage: "failed", why: "the runner did not answer" },
     };
-    const states: Record<number, State> = {
-      1: "waiting",
-      2: "running",
-      3: "waiting",
-      4: "waiting",
+    const states: ChatStates = {
+      ...nothingKnown,
+      bySession: { 1: "waiting", 2: "running", 3: "waiting", 4: "waiting" },
     };
-    expect(movesDue(moves, (session) => states[session] ?? "unknown")).toEqual([1]);
+    expect(movesDue(moves, states)).toEqual([1]);
+  });
+
+  it("waits for the work of a chat waiting on its own work, which a move would cut off (#3887)", () => {
+    const moves = { 1: ready(1), 2: ready(2) };
+    const waiting: Record<number, State> = { 1: "waiting", 2: "waiting" };
+    const monitor = { helpers: 0, workflows: 0, monitors: 1, shells: 0 };
+    expect(
+      movesDue(moves, { ...nothingKnown, bySession: waiting, ownWork: { 1: monitor } }),
+    ).toEqual([2]);
+    expect(movesDue(moves, { ...nothingKnown, bySession: waiting })).toEqual([1, 2]);
   });
 
   it("offers Move here on a runner, one row per pool here, and nothing for a shell", () => {

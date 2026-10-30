@@ -322,6 +322,8 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     // And the person's own clone by URL: its folder and its Cancel (#1815).
     assert!(ui::WINDOW_ONLY.contains(&"project_url_folder"));
     assert!(ui::WINDOW_ONLY.contains(&"cancel_get_project"));
+    // And the Cancel of a repo cloned into a workspace (#4079).
+    assert!(ui::WINDOW_ONLY.contains(&"cancel_clone_repo"));
     // And the list of this machine's forge accounts, which no link reads (#1816).
     assert!(ui::WINDOW_ONLY.contains(&"forge_accounts"));
     // And where the person is in the guided steps, read and kept (#1817).

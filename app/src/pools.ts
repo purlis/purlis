@@ -224,6 +224,14 @@ export async function addClusterPool(adding: ClusterPoolAdding): Promise<string 
   return undefined;
 }
 
+/** Marks cluster pool `name` as the person's own, or takes the mark back (#4071): `undefined`
+ *  once it is kept, else why not. The window's alone. */
+export async function markPoolOwned(name: string, owned: boolean): Promise<string | undefined> {
+  const said = await caught(commands.setClusterPoolOwned(name, owned));
+  await rereadPools();
+  return said.status === "error" ? said.error : undefined;
+}
+
 /** What a pool's runner keeps of this machine's profiles, as last asked: the ones chosen for
  *  it and the others Add a profile… offers (#4047), that they are being asked, or why not. */
 export type PoolProfiles = PoolProfilesAnswered | "asking" | { trouble: string };
@@ -254,6 +262,11 @@ export async function askProfiles(name: string, plane?: string, { quietly = fals
         ? said.data
         : { trouble: "purlis did not say which profiles the runner keeps." };
   set((was) => ({ ...was, profiles: { ...was.profiles, [name]: rows } }));
+}
+
+/** Pool `name`'s profiles as last asked, outside React (#4048). */
+export function profilesHeld(name: string): PoolProfiles | undefined {
+  return held.profiles[name];
 }
 
 /** **Adds this machine's profile `profile` to pool `name`** (#4047, Add a profile…), then asks

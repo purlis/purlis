@@ -11,21 +11,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { SkillStudioTab } from "./SkillStudioTab";
-import {
-  AT_THE_ROOT,
-  SKILL_STUDIO_VIEW,
-  sourceKey,
-  studioHistoryOf,
-  type SourcesAt,
-} from "./skillStudio";
+import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.testkit";
+import { AT_THE_ROOT, sourceKey, type SourcesAt } from "./skillStudio";
 import { PROJECT } from "./skillChanges";
 import { studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
-
-const PLANE = "/home/dev/plane";
-const HISTORY = studioHistoryOf(PLANE, SKILL_STUDIO_VIEW);
 
 const commit = (c: string) => ({ id: c.repeat(40), short: c.repeat(7) });
 
@@ -275,11 +266,7 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
 
 /** The studio tab, `width` by 560 px, opened on Sources at `at`. */
 function Tab({ width, narrow }: { width: number; narrow?: boolean; at?: SourcesAt }) {
-  return (
-    <div className="view-body" style={{ inlineSize: width, blockSize: 560, display: "flex" }}>
-      <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
-    </div>
-  );
+  return <StudioInPanel width={width} height={560} narrow={narrow} />;
 }
 
 const SOURCE = sourceKey(SUPERPOWERS.remote);

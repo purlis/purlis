@@ -615,6 +615,7 @@ pub(super) fn asked_of(record: &MachineProfile, look: &dyn Look) -> Option<Profi
 }
 
 pub mod driven;
+pub mod terminal;
 
 #[cfg(test)]
 mod tests;

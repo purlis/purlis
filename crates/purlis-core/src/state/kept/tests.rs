@@ -171,17 +171,12 @@ fn with_no_window_the_host_moves_its_board_by_what_the_lines_say() {
     })));
     assert_eq!(board.refusals(1), vec!["a key in config.toml".to_owned()]);
 
-    assert!(board.hear(&Heard::Tool(a_tool_call(
-        1,
-        Decision::Deny,
-        Some(crate::rootupdate::REASON)
-    ))));
-    assert_eq!(board.needs_of(1), vec![Need::RootUpdateRefused]);
-    assert!(!board.hear(&Heard::Tool(a_tool_call(
-        1,
-        Decision::Deny,
-        Some("another")
-    ))));
+    // A refused root update is the chat's to retry with `purlis worktree update` (#3877): it
+    // raises nothing for the person, and neither does any other refusal.
+    for rule in [crate::rootupdate::REASON, "another"] {
+        assert!(!board.hear(&Heard::Tool(a_tool_call(1, Decision::Deny, Some(rule)))));
+    }
+    assert_eq!(board.needs_of(1), Vec::<Need>::new());
 
     assert!(board.hear(&Heard::Tool(ToolCall {
         agent: Some("helper-1".into()),

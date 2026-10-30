@@ -66,7 +66,7 @@ fn each_built_in_says_whether_its_credentials_can_be_kept_from_its_commands() {
     assert_eq!(
         of(Harness::ClaudeCode).sign_in.kept_from_commands,
         Answer::No(
-            "on macOS purlis cannot keep Claude Code's sign-in from the commands it runs"
+            "on macOS and on a runner purlis cannot keep Claude Code's sign-in from the commands it runs"
                 .to_owned()
         )
     );

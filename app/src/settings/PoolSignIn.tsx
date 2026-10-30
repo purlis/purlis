@@ -8,16 +8,24 @@ import { Badge } from "../ui/badge/Badge";
 import { Button } from "../ui/button/Button";
 import { Card } from "../ui/card/Card";
 import { TextField } from "../ui/field/Field";
+import { SettingActions } from "./components";
 
 /** Where a sign-in is, as the strip draws it: starting, one of the core's steps, or refused. */
 export type StripStep = { at: "starting" } | PoolSignInStep | { at: "not-started"; why: string };
 
-/** **The step the strip is on, in words** (spec #4023 story 12): "Step 2 of 3: …". */
-export function stepSaid(step: StripStep): string | null {
+/**
+ * **The step the strip is on, in words** (spec #4023 story 12): "Step 2 of 3: …". A device code's
+ * sign-in (`device`) opens no page as it starts.
+ */
+export function stepSaid(step: StripStep, device = false): string | null {
   switch (step.at) {
     case "starting":
+      if (device) return "Step 1 of 3: Starting the sign-in on the runner";
+      return "Step 1 of 3: Opening the sign-in page in your browser";
     case "open":
       return "Step 1 of 3: Opening the sign-in page in your browser";
+    case "device":
+      return "Step 2 of 3: Enter the code on the page";
     case "code":
     case "refused":
       return "Step 2 of 3: Paste the code the page shows";
@@ -33,7 +41,10 @@ export function stepSaid(step: StripStep): string | null {
  * A): the strip a profile's line on a pool row opens into. purlis runs the harness's own login on
  * the runner (`pool_sign_in_start`), opens its page in the browser here, takes the code the page
  * shows in one field and passes it back, and says Signed in once the harness's own status check
- * on the runner agrees. Nothing of this Mac's sign-in goes to the runner (ADR 0095).
+ * on the runner agrees. opencode's Copilot sign-in (#4045) shows its device code first, in the
+ * window's device-code pattern (as `ForgeDeviceSignIn` shows it): the code, then the page on the
+ * vendor's own https host, opened when the person asks. Nothing of this Mac's sign-in goes to the
+ * runner (ADR 0095).
  *
  * Each step is said by the core (`pool_sign_in_next`); the strip draws it, says which step it is
  * on, moves the keyboard to the code field when it appears, and says each step change to a
@@ -44,17 +55,23 @@ export function PoolSignIn({
   pool,
   profile,
   harness,
+  provider,
   onEnd,
   onTerminal,
+  onSignedIn,
 }: {
   pool: string;
   profile: string;
   /** The harness as people call it: `Claude Code`. */
   harness: string;
+  /** The plan it signs in to, for a harness that serves several. */
+  provider?: string;
   /** The strip is closed; `signedIn` when it ended signed in. */
   onEnd: (signedIn: boolean) => void;
   /** "Open in terminal", where the window can open one. */
   onTerminal?: () => void;
+  /** Told once the runner says it is signed in, before anything is pressed (#3477). */
+  onSignedIn?: () => void;
 }) {
   const [step, setStep] = useState<StripStep>({ at: "starting" });
   const [page, setPage] = useState<string>();
@@ -62,6 +79,10 @@ export function PoolSignIn({
   const [pasteRefused, setPasteRefused] = useState<string>();
   const [attempt, setAttempt] = useState(0);
   const flow = useRef<number>(undefined);
+  const signedIn = useRef(onSignedIn);
+  useEffect(() => {
+    signedIn.current = onSignedIn;
+  }, [onSignedIn]);
 
   // One try: start it, then ask for each step until the last. Leaving the strip, or trying again,
   // cancels it.
@@ -83,6 +104,7 @@ export function PoolSignIn({
           void openUrl(now.url).catch(() => undefined);
         }
         setStep(now);
+        if (now.at === "signed-in") signedIn.current?.();
         if (["signed-in", "could-not-follow", "failed", "cancelled"].includes(now.at)) {
           flow.current = undefined;
           return;
@@ -90,7 +112,7 @@ export function PoolSignIn({
       }
     };
     void commands
-      .poolSignInStart(pool, profile, null)
+      .poolSignInStart(pool, profile, provider ?? null)
       .catch(said)
       .then((started) => {
         if (started.status === "error") {
@@ -112,7 +134,7 @@ export function PoolSignIn({
         flow.current = undefined;
       }
     };
-  }, [pool, profile, attempt]);
+  }, [pool, profile, provider, attempt]);
 
   const paste = (event: FormEvent) => {
     event.preventDefault();
@@ -140,6 +162,7 @@ export function PoolSignIn({
       pool={pool}
       profile={profile}
       harness={harness}
+      provider={provider}
       step={step}
       code={code}
       setCode={setCode}
@@ -158,6 +181,8 @@ export type SignInStripProps = {
   pool: string;
   profile: string;
   harness: string;
+  /** The plan it signs in to, for a harness that serves several. */
+  provider?: string;
   step: StripStep;
   /** What the code field holds. */
   code: string;
@@ -174,8 +199,10 @@ export type SignInStripProps = {
 
 /** **The strip at one step**, as {@link PoolSignIn} drives it: its head, its body, its foot. */
 export function SignInStrip(props: SignInStripProps) {
-  const { pool, profile, harness, step, onEnd, onTerminal } = props;
-  const now = stepSaid(step);
+  const { pool, profile, harness, provider, step, onEnd, onTerminal } = props;
+  // opencode's Copilot plan signs in by a device code (#4045).
+  const device = provider === "github-copilot";
+  const now = stepSaid(step, device);
   const over = ["signed-in", "could-not-follow", "failed", "cancelled", "not-started"].includes(
     step.at,
   );
@@ -236,19 +263,34 @@ export function SignInStrip(props: SignInStripProps) {
           </Button>
         )}
       </div>
+      <p className="ui-setting-help">
+        From a terminal:{" "}
+        <code>
+          purlis profile sign-in {profile} --pool {pool}
+          {provider === undefined ? "" : ` --provider ${provider}`}
+        </code>
+      </p>
     </Card>
   );
 }
 
 /** What went wrong at `step`, in one line, where anything did. */
-function troubleAt(step: StripStep, who: string, pool: string, pasteRefused?: string) {
+function troubleAt(
+  step: StripStep,
+  who: string,
+  pool: string,
+  pasteRefused?: string,
+  terminal = false,
+) {
   switch (step.at) {
     case "code":
       return pasteRefused;
     case "refused":
       return pasteRefused ?? `The sign-in refused that code: ${step.said}`;
     case "could-not-follow":
-      return "purlis could not follow this sign-in, so it ended it. Sign in with Open in terminal, where the harness asks you itself. It said:";
+      return terminal
+        ? "purlis could not follow this sign-in, so it ended it. Sign in with Open in terminal, where the harness asks you itself. It said:"
+        : "purlis could not follow this sign-in, so it ended it. Open a project to sign in from a terminal there, where the harness asks you itself. It said:";
     case "failed":
       return `${who} did not sign in on ${pool}: ${step.why}`;
     case "not-started":
@@ -260,7 +302,13 @@ function troubleAt(step: StripStep, who: string, pool: string, pasteRefused?: st
 
 /** The strip's body at `step`: what went wrong first, in one line, then the step's own. */
 function Body(props: SignInStripProps & { who: string }) {
-  const trouble = troubleAt(props.step, props.who, props.pool, props.pasteRefused);
+  const trouble = troubleAt(
+    props.step,
+    props.who,
+    props.pool,
+    props.pasteRefused,
+    props.onTerminal !== undefined,
+  );
   return (
     <>
       {trouble !== undefined && (
@@ -281,6 +329,8 @@ function StepBody({
   setCode,
   onPaste,
   page,
+  provider,
+  onTerminal,
 }: SignInStripProps & { who: string }) {
   const again = page !== undefined && (
     <Button size="sm" variant="ghost" onPress={() => void openUrl(page).catch(() => undefined)}>
@@ -292,8 +342,20 @@ function StepBody({
     case "open":
       return (
         <p className="pending" aria-busy="true">
-          Starting the sign-in on {pool}&apos;s runner, then opening its page in your browser…
+          {provider === "github-copilot"
+            ? `Starting the sign-in on ${pool}'s runner…`
+            : `Starting the sign-in on ${pool}'s runner, then opening its page in your browser…`}
         </p>
+      );
+    case "device":
+      return (
+        <DeviceCode
+          url={step.url}
+          code={step.code}
+          who={who}
+          pool={pool}
+          terminal={onTerminal !== undefined}
+        />
       );
     case "code":
     case "refused":
@@ -342,4 +404,68 @@ function StepBody({
     default:
       return null;
   }
+}
+
+/**
+ * **A device code, then its page**, the window's device-code pattern (as `ForgeDeviceSignIn`
+ * shows it): the code first, large, with Copy code, and the page opened only when the person asks.
+ */
+function DeviceCode({
+  url,
+  code,
+  who,
+  pool,
+  terminal,
+}: {
+  url: string;
+  code: string;
+  who: string;
+  pool: string;
+  /** Whether Open in terminal is there, for GitHub Enterprise. */
+  terminal: boolean;
+}) {
+  const [copied, setCopied] = useState<boolean>();
+  const copy = () => {
+    const put = navigator.clipboard?.writeText(code);
+    if (!put) {
+      setCopied(false);
+      return;
+    }
+    void put.then(
+      () => setCopied(true),
+      () => setCopied(false),
+    );
+  };
+  return (
+    <>
+      <p>
+        Enter this code on GitHub&apos;s page. GitHub should ask only to read your profile, for
+        opencode&apos;s Copilot sign-in. If it names another app, or asks for your repositories or
+        organisations, cancel there and here.
+      </p>
+      <Card as="p" variant="ask" className="forge-device-code">
+        <strong>
+          <code aria-label="The code to enter on the page">{code}</code>
+        </strong>
+      </Card>
+      <SettingActions>
+        <Button variant="primary" onPress={() => void openUrl(url).catch(() => undefined)}>
+          Open page
+        </Button>
+        <Button onPress={copy}>Copy code</Button>
+      </SettingActions>
+      {copied !== undefined && (
+        <p className="ui-setting-help" role="status">
+          {copied ? "The code is on the clipboard." : "purlis could not copy the code."}
+        </p>
+      )}
+      <p className="ui-setting-help">
+        Or go to <code>{url}</code> on any device. This signs in {who} on {pool}&apos;s runner only,
+        on GitHub.com{terminal ? ": for GitHub Enterprise, use Open in terminal." : "."}
+      </p>
+      <p className="pending" aria-busy="true">
+        Waiting for you to approve it there…
+      </p>
+    </>
+  );
 }

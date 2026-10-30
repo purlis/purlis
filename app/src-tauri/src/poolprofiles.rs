@@ -11,8 +11,8 @@
 //! device: no sign-in is copied between devices.
 //!
 //! **Only a runner purlis can show is the person's own is sent a profile or signed in**
-//! ([`owned`], the check browser logins and tools use, D-2050-4): until a pool can be marked
-//! owned (#2561), a Docker pool whose engine is a local socket on this machine. To any other
+//! ([`owned`], D-2050-4): a Docker pool whose engine is a local socket on this machine; a cluster
+//! pool's mark (#4071) is for values and tokens alone. To any other
 //! pool nothing is sent, and its chats start on the profiles its runner has of its own; its
 //! profiles are not offered for sign-in. A runner of a purlis before 1.43 is sent nothing either.
 //!
@@ -44,9 +44,15 @@ pub trait ProfilesOnPools: Send + Sync {
     /// runner, or why not, in words.
     fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String>;
 
-    /// [`Self::ready`], for a chat that moves to pool `pool`'s runner (#2048): said of the move.
-    fn ready_to_move(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
-        self.ready(root, pool, profile)
+    /// [`Self::ready`], for a chat that moves to pool `pool`'s runner (#2048): said of the move,
+    /// and a profile signed out there is the sign-in the move waits on (#3477).
+    fn ready_to_move(
+        &self,
+        root: &Path,
+        pool: &str,
+        profile: &str,
+    ) -> Result<(), onrunner::NotYet> {
+        Ok(self.ready(root, pool, profile)?)
     }
 }
 
@@ -70,9 +76,14 @@ impl ProfilesOnPools for Linked {
         })
     }
 
-    fn ready_to_move(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+    fn ready_to_move(
+        &self,
+        root: &Path,
+        pool: &str,
+        profile: &str,
+    ) -> Result<(), onrunner::NotYet> {
         chosen_by_a_chat(&self.config, root, pool, profile);
-        onrunner::ready_to_move_on(&self.config, root, pool, profile, &|kept| {
+        onrunner::ready_to_move_on(&self.config, pool, profile, &|kept| {
             keep_on_as(owned(), &self.config, pool, kept, Waking::Yes)
         })
     }
@@ -160,8 +171,9 @@ fn keep_on_as(
     if owned.is_err() {
         return Ok(None);
     }
-    // A cluster pool's runner is a team's cluster's, never shown to be the person's own: no
-    // profile of this machine's is sent there, and its chats start on its own (#3292).
+    // A cluster pool's runner is a team's cluster's: its mark (#4071) is for values and tokens
+    // alone, so no profile of this machine's is sent there, and its chats start on its own
+    // (#3292).
     if purlis_core::runners::cluster_runner_for(config, pool)
         .map_err(|why| why.to_string())?
         .is_some()
@@ -522,6 +534,8 @@ pub fn sign_in_line(pool: &str, name: &str, provider: Option<&str>) -> Result<St
 pub enum PoolSignInStep {
     /// Open this page in the browser here: the harness vendor's own.
     Open { url: String },
+    /// Show this code to enter on the vendor's own page `url`, before that page is opened.
+    Device { url: String, code: String },
     /// Ask for the code the page shows.
     Code,
     /// The harness refused the code, in its words.
@@ -542,6 +556,7 @@ impl From<driven::Event> for PoolSignInStep {
     fn from(event: driven::Event) -> Self {
         match event {
             driven::Event::Open { url } => Self::Open { url },
+            driven::Event::DeviceCode { url, code } => Self::Device { url, code },
             driven::Event::AskCode => Self::Code,
             driven::Event::Refused { said } => Self::Refused { said },
             driven::Event::Checking => Self::Checking,
@@ -608,7 +623,12 @@ pub async fn pool_sign_in_start(
                 _ => Standing::CannotTell,
             }
         };
-        let driving = Arc::new(driven::drive(&login, &record.harness, check)?);
+        let driving = Arc::new(driven::drive_with(
+            &login,
+            &record.harness,
+            provider.as_deref(),
+            check,
+        )?);
         // One of the same profile on the same pool is let go and ended, after the lock.
         let before: Vec<SignIn> = {
             let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);

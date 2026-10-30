@@ -825,6 +825,11 @@ export const commands = {
 	 */
 	putAwayMcpFailure: (plane: PlaneId, session: number, server: string) => typedError<null, string>(__TAURI_INVOKE("put_away_mcp_failure", { plane, session, server })),
 	/**
+	 *  **Put away on the Notice of a chat's undelivered messages** (#3958): the person has read it,
+	 *  and purlis keeps it no longer.
+	 */
+	putAwayLeftMessages: (plane: PlaneId, report: string) => typedError<null, string>(__TAURI_INVOKE("put_away_left_messages", { plane, report })),
+	/**
 	 *  Chat `session`, where its program ended with its session host and the person has not put
 	 *  it away.
 	 */
@@ -1463,6 +1468,13 @@ export const commands = {
 	moveChatNow: (plane: PlaneId, session: number, columns: number, rows: number) => typedError<MoveNow, string>(__TAURI_INVOKE("move_chat_now", { plane, session, columns, rows })),
 	/**  **This project's chat moves** (#2048), as the window draws them when it is drawn anew. */
 	chatMoves: (plane: PlaneId) => typedError<ChatMove[], string>(__TAURI_INVOKE("chat_moves", { plane })),
+	/**
+	 *  **Chat `session`'s move waited on its profile's sign-in on the runner, which the window's
+	 *  strip says is done** (#3477): the move is prepared again, which asks the runner itself, so it
+	 *  goes ahead once the profile is signed in there, or waits again. Refused for a move that waits
+	 *  on no sign-in.
+	 */
+	chatMoveSignedIn: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("chat_move_signed_in", { plane, session })),
 	/**
 	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten for every chat
 	 *  of it, and a failed one's reason is dismissed. One being made now is refused (#3814).
@@ -2636,14 +2648,22 @@ export const commands = {
 	 */
 	takeRepos: (plane: PlaneId, repos: string[]) => typedError<null, string>(__TAURI_INVOKE("take_repos", { plane, repos })),
 	/**
-	 *  Clone ONE repo into a workspace: `charter clone <repo> -w <workspace>`.
+	 *  Clone ONE repo into a workspace: `charter clone <repo> -w <workspace>`, telling `progress` how
+	 *  far it has got.
 	 * 
 	 *  One per call, and the window calls it once per repo in turn: that is what lets it show each
 	 *  repo's own state as it lands and retry one that failed, and no two calls race to write the
-	 *  workspace's manifest. On a blocking thread, because a clone can take the network's two
-	 *  minutes.
+	 *  workspace's manifest. On a blocking thread, because a clone takes as long as it takes: there is
+	 *  no deadline (#4079), and the person's way out is [`cancel_clone_repo`]. Answers what the core
+	 *  said, `null` when the person called it off, or why it failed. Either way nothing partial is
+	 *  left.
 	 */
-	cloneRepo: (plane: PlaneId, workspace: string, repo: string) => typedError<string[], string>(__TAURI_INVOKE("clone_repo", { plane, workspace, repo })),
+	cloneRepo: (plane: PlaneId, workspace: string, repo: string, progress: Channel<CloneProgress>) => typedError<string[] | null, CloneRefused>(__TAURI_INVOKE("clone_repo", { plane, workspace, repo, progress })),
+	/**
+	 *  The person's Cancel: stops the repo's running clone, which then removes what it made. Nothing
+	 *  happens when none runs.
+	 */
+	cancelCloneRepo: (plane: PlaneId, workspace: string, repo: string) => typedError<null, string>(__TAURI_INVOKE("cancel_clone_repo", { plane, workspace, repo })),
 	/**
 	 *  Take one repo out of a workspace, clone and manifest row both (ADR 0055).
 	 * 
@@ -2958,6 +2978,13 @@ export const commands = {
 	 */
 	addClusterPool: (adding: ClusterPoolAdding) => typedError<ClusterPoolRow, string>(__TAURI_INVOKE("add_cluster_pool", { adding })),
 	/**
+	 *  **The person marks the cluster pool `name` as their own, or takes the mark back** (#4071, the
+	 *  person's ruling of 2026-10-30). The window's alone (`ui::WINDOW_ONLY`): no chat, Pool or
+	 *  operator reaches it. Taken back, every login opted in on the pool is forgotten, so a later
+	 *  mark asks about each again.
+	 */
+	setClusterPoolOwned: (name: string, owned: boolean) => typedError<null, string>(__TAURI_INVOKE("set_cluster_pool_owned", { name, owned })),
+	/**
 	 *  **The profiles chosen for pool `pool`, kept on its runner** (#2049, #4047), as the runner
 	 *  stands with each, and this machine's others Add a profile… offers: the ones its `profiles`
 	 *  names, or, where it names none, the profile a new chat in the open project `plane` gets. What
@@ -2996,6 +3023,8 @@ export const commands = {
 	poolSignInNext: (flow: number) => typedError<
 /**  Open this page in the browser here: the harness vendor's own. */
 { at: "open"; url: string } | 
+/**  Show this code to enter on the vendor's own page `url`, before that page is opened. */
+{ at: "device"; url: string; code: string } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
 /**  The harness refused the code, in its words. */
@@ -3050,6 +3079,15 @@ export const commands = {
 	runnerWrite: (plane: PlaneId, id: number) => typedError<RunnerWriteWhole, string>(__TAURI_INVOKE("runner_write", { plane, id })),
 	/**  **Dismiss** on a held write: nothing is made. Window-only. */
 	dismissRunnerWrite: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_runner_write", { plane, id })),
+	/**
+	 *  **Held dispatch `id` whole, for its own tab**. Window-only: what a runner chat asks to start
+	 *  here is the person's to read.
+	 */
+	runnerDispatch: (plane: PlaneId, id: number) => typedError<RunnerDispatchWhole, string>(__TAURI_INVOKE("runner_dispatch", { plane, id })),
+	/**  **Approve** on a held dispatch, pressed in its own tab. Window-only. */
+	approveRunnerDispatch: (plane: PlaneId, id: number) => typedError<string, string>(__TAURI_INVOKE("approve_runner_dispatch", { plane, id })),
+	/**  **Refuse** on a held dispatch: nothing starts. Window-only. */
+	refuseRunnerDispatch: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("refuse_runner_dispatch", { plane, id })),
 	/**  **Sets where a workspace's chats run** (#2046): the person's choice in its settings. */
 	setChatsRunOn: (plane: PlaneId, workspace: string, pool: string | null) => typedError<ChatsRunOn, string>(__TAURI_INVOKE("set_chats_run_on", { plane, workspace, pool })),
 	/**
@@ -4474,7 +4512,13 @@ target: string | null;
  *  Whether purlis saves it by itself. A repo's fix reaches its request by the repo's
  *  next save, so where this is off the Notice says a save is needed.
  */
-autosave: boolean; merge: SaveMerge };
+autosave: boolean; merge: SaveMerge } | 
+/**
+ *  **Messages a chat left queued that no running dispatch could keep** (#3958): Put away
+ *  takes the Notice back ([`put_away_left_messages`]), by `report`, the name purlis keeps
+ *  it under.
+ */
+{ kind: "left-messages"; report: string };
 
 /**
  *  **What Stop all tasks on a session would end** (#1498, V100-53), as the window asks before
@@ -4541,6 +4585,11 @@ export type AnswerPath =
  *  write `id` (#2046); Open opens its own tab, which shows it whole, and sends nothing.
  */
 { via: "runner-write"; id: number } | 
+/**
+ *  `refuse_runner_dispatch` for Refuse, on held runner dispatch `id`; Open opens its own
+ *  tab, which shows it whole with Approve (`approve_runner_dispatch`), and sends nothing.
+ */
+{ via: "runner-dispatch"; id: number } | 
 /**
  *  Sign in sends nothing: it opens a shell tab where the core types the harness's own
  *  sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
@@ -4715,6 +4764,11 @@ export type AskSource =
  *  applies (#2046).
  */
 "runner-write" | 
+/**
+ *  An open or a dispatch a chat on a pool's runner asked for, which starts only on the
+ *  person's Approve.
+ */
+"runner-dispatch" | 
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
@@ -5517,12 +5571,15 @@ export type ChatMove = {
 	/**  The pool it moves to, or `null` for this machine. */
 	to: string | null,
 	/**
-	 *  `preparing`, `ready`, `switching` (being made now, past cancelling), `failed`, or
-	 *  `over`: it moved or was put away, and the window forgets it (#3814).
+	 *  `preparing`, `signing-in` (#3477), `ready`, `switching` (being made now, past
+	 *  cancelling), `failed`, or `over`: it moved or was put away, and the window forgets it
+	 *  (#3814).
 	 */
 	stage: string,
 	/**  Why it failed, in a sentence: where it is `failed`. */
 	why: string | null,
+	/**  The profile it waits on to sign in on the runner: where it is `signing-in` (#3477). */
+	sign_in: MoveSignIn | null,
 	/**  The other chats of its workspace that move with it, by name (#3453). */
 	with: string[],
 };
@@ -5766,6 +5823,22 @@ export type ClashOutcome =
  */
 "either-one";
 
+/**  How far a repo's clone has got, as the window shows it (#4079). */
+export type CloneProgress = {
+	/**  The stage, in the person's words ("Downloading"). */
+	stage: string,
+	/**  The share of the whole clone done: it never goes back. */
+	percent: number,
+};
+
+/**  Why a repo was not cloned. */
+export type CloneRefused = {
+	/**  The core's own words. */
+	said: string,
+	/**  The server the person needs to sign in to, where that is why (#4079). */
+	sign_in: string | null,
+};
+
 /**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */
 export type CloseHanded = {
 	plane: PlaneId,
@@ -5827,6 +5900,8 @@ export type ClusterPoolRow = {
 	namespace: string,
 	/**  The cluster operator key pinned as it was added, spelled `ed25519:<64 hex>`. */
 	operator_key: string,
+	/**  Whether the person marked it as their own (#4071). */
+	owned: boolean,
 };
 
 /**  What a palette command does. */
@@ -8562,6 +8637,18 @@ export type MoveNow = {
 	not_yet: string | null,
 };
 
+/**
+ *  **The profile a move waits on to sign in on the runner it goes to** (#3477): what the
+ *  window's sign-in strip under the move's notice signs in.
+ */
+export type MoveSignIn = {
+	profile: string,
+	/**  Its harness, as a profile's kind names it. */
+	kind: string,
+	/**  Its harness as people call it: `Claude Code`. */
+	harness: string,
+};
+
 /**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */
 export type MoveTold = {
 	plane: PlaneId,
@@ -8692,8 +8779,8 @@ export type Need =
 /**  Its report has nowhere to go: the chat that asked for it, `asker`, has gone. */
 { kind: "report_undelivered"; asker: string } | 
 /**
- *  purlis refused it a git command that would rewrite the project's root from another
- *  commit, so bringing the remote's commits in is the person's, with Update (qw348).
+ *  purlis could not update the project's root for it, for a reason no chat can settle,
+ *  so bringing the remote's commits in is the person's, with Update (qw348, #3877).
  */
 { kind: "root_update_refused" } | 
 /**
@@ -10227,6 +10314,8 @@ export type PoolRow = {
 export type PoolSignInStep = 
 /**  Open this page in the browser here: the harness vendor's own. */
 { at: "open"; url: string } | 
+/**  Show this code to enter on the vendor's own page `url`, before that page is opened. */
+{ at: "device"; url: string; code: string } | 
 /**  Ask for the code the page shows. */
 { at: "code" } | 
 /**  The harness refused the code, in its words. */
@@ -11530,6 +11619,33 @@ export type RunnerBranch = {
 	 *  checkout is on where there is none.
 	 */
 	ahead: number,
+};
+
+/**
+ *  **A held open or dispatch whole, as its own tab draws it**: what Approve would start, read
+ *  as the decision reads it ([`crate::handoff::would_start`]), the brief whole, and what the chat
+ *  could do with it after. Approve is pressed only there.
+ */
+export type RunnerDispatchWhole = {
+	/**  The chat that asked, by its number and as its tab names it. */
+	session: number,
+	chat: string,
+	/**  The pool it runs on. */
+	pool: string,
+	/**  The persona the new chat would run as, none for a chat on no persona. */
+	persona: string | null,
+	/**  Whether it hands the chat's work off, rather than asking for a task that reports back. */
+	handoff: boolean,
+	/**  The task's name; a handoff's may be empty. */
+	name: string,
+	/**  Where the new chat would work, in words. */
+	works: string,
+	/**  The profile it would start on, none where none is offered. */
+	profile: string | null,
+	/**  Whether it asks for a long-running task. */
+	long: boolean,
+	/**  The brief whole, drawn inertly: escapes written out for what would draw otherwise. */
+	brief: string,
 };
 
 /**
@@ -14224,8 +14340,8 @@ export type UpdateKind =
 /**  purlis's `pre-commit` refused a commit a chat made (#1694). */
 "commit-refused" | 
 /**
- *  purlis refused a chat a git command that would rewrite the project's root from another
- *  commit, so bringing the remote's commits in is the person's (qw348).
+ *  purlis could not update the project's root for a chat, for a reason no chat can settle,
+ *  so bringing the remote's commits in is the person's (qw348, #3877).
  */
 "root-update-refused" | 
 /**  A chat asked the person to take its browser over, and the browser ended first (#2015). */

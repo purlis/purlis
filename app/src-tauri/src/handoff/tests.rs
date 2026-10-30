@@ -10297,7 +10297,9 @@ fn queued_by(held: &Held, chat: u32, what: purlis_core::dispatchqueue::Queued) -
         return None;
     }
     let token = held.hooks().token_for(chat);
-    Some(purlis_core::dispatchqueue::queue(&socket, chat, &token, what, 0).expect("queued"))
+    // Queued now, as the command queues it: a dispatch started before it is one it can be on.
+    let now = chrono::Utc::now().timestamp();
+    Some(purlis_core::dispatchqueue::queue(&socket, chat, &token, what, now).expect("queued"))
 }
 
 #[test]
@@ -10437,6 +10439,100 @@ fn a_tell_queued_while_the_app_was_away_is_delivered_once_the_project_is_back() 
     crate::dispatched::deliver_all_queued_now(&held);
 
     assert_eq!(dispatchtalk::take(held.root(), task).len(), 1);
+}
+
+#[test]
+fn what_a_sender_that_never_came_back_queued_is_kept_on_its_dispatch_or_said_in_the_inbox() {
+    // #3958: the asking chat queued two follow-ups and an acknowledgement while the app did
+    // not answer, and the app restarted without it. None is cleared unseen: the one for its
+    // running task is kept on that task's dispatch, marked not delivered, and the one no
+    // running dispatch is for is one Notice in the Inbox naming the sender and how many.
+    use purlis_core::dispatchqueue::{Queued, holds, undelivered};
+    let (_plane, _planes, _id, held, asking, task) = a_dispatched_task();
+    queued_by(
+        &held,
+        asking,
+        Queued::Tell {
+            to: task,
+            text: "carry on".to_owned(),
+        },
+    )
+    .expect("this project's socket has a queue beside it");
+    queued_by(
+        &held,
+        asking,
+        Queued::Tell {
+            to: 9999,
+            text: "to nobody".to_owned(),
+        },
+    )
+    .expect("queued");
+    let socket = held.hooks().socket().expect("listening").to_path_buf();
+    // The project opens again with the task and without the chat that asked for it.
+    purlis_core::hookwire::spool::forget_all_but(
+        &purlis_core::hookwire::spool::dir_for(&socket),
+        &[task],
+    )
+    .expect("forgotten");
+    assert!(!holds(&socket, asking), "its queue is cleared");
+    let (report, _) = undelivered::to_place(&socket).remove(0);
+    let left_behind = std::fs::read(&report).expect("the report");
+
+    crate::dispatched::deliver_all_queued_now(&held);
+    // An app that stopped once it had placed them, before it removed the report, places it
+    // again at the next open: nothing is said twice.
+    std::fs::write(&report, &left_behind).expect("left behind");
+    crate::dispatched::deliver_all_queued_now(&held);
+
+    let record = purlis_core::dispatchrecord::list(held.root())
+        .into_iter()
+        .find(|record| record.worker.chat.chat == task)
+        .expect("the task's dispatch");
+    let kept: Vec<&str> = record
+        .talk
+        .iter()
+        .map(|said| said.text.as_str())
+        .filter(|text| text.starts_with("Not delivered"))
+        .collect();
+    assert_eq!(kept.len(), 1, "{kept:?}");
+    assert!(kept[0].contains("a follow-up to chat"), "{kept:?}");
+    assert!(kept[0].contains("\"carry on\""), "{kept:?}");
+    assert!(
+        dispatchtalk::take(held.root(), task).is_empty(),
+        "it was never delivered, and is not now"
+    );
+    let notices = undelivered::notices(&socket);
+    assert_eq!(
+        notices.len(),
+        1,
+        "one Notice, for the one no dispatch keeps"
+    );
+    assert_eq!(notices[0].1.sender, asking);
+    assert_eq!(
+        notices[0]
+            .1
+            .messages
+            .iter()
+            .map(|message| message.what.clone())
+            .collect::<Vec<_>>(),
+        [Queued::Tell {
+            to: 9999,
+            text: "to nobody".to_owned(),
+        }]
+    );
+    let said = notices[0].1.notice();
+    assert!(
+        said.contains(&format!("chat {asking})")) || said.contains(&format!("chat {asking} did")),
+        "{said}"
+    );
+    assert!(said.contains("1 message"), "{said}");
+    assert!(
+        undelivered::to_place(&socket).is_empty(),
+        "each report is placed once"
+    );
+
+    undelivered::put_away(&socket, &notices[0].0).expect("put away");
+    assert!(undelivered::notices(&socket).is_empty());
 }
 
 #[test]
@@ -11957,6 +12053,99 @@ fn a_dispatch_under_the_name_of_an_open_task_is_refused_and_one_after_its_report
     assert_ne!(again, task);
 }
 
+#[test]
+fn a_task_still_starting_under_a_name_refuses_a_second_dispatch_of_that_name() {
+    // #3795: the refusal is decided over the records the deciding lock reserves into, so a
+    // task let through and not yet open is an open task by its name.
+    let plane = a_plane_with_personas();
+    let planes = planes();
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
+    let slot = held.chats().reserve(
+        9001,
+        Chat {
+            name: "9001".to_owned(),
+            label: Some("check prod".to_owned()),
+            persona: Some("steward".to_owned()),
+            from: Some(HandedFrom {
+                id: None,
+                chat: asking,
+                name: "steward 1".to_owned(),
+                workspace: Place::PlaneRoot,
+                report: Owed::Due,
+                mode: Mode::Task,
+                depth: 1,
+                root: None,
+                above: None,
+                by_person: false,
+                long: false,
+            }),
+            ..Default::default()
+        },
+    );
+
+    let (said, _) = dispatch(&held, &id, &Tickets::default(), asking, None, "check prod");
+    assert!(
+        matches!(&said, Answer::No { why }
+            if why.contains("an open task named 'check prod' (chat 9001, running; the name")),
+        "{said:?}"
+    );
+
+    // Once its start has ended without a chat, the name is free.
+    drop(slot);
+    let (said, _) = dispatch(&held, &id, &Tickets::default(), asking, None, "check prod");
+    assert!(matches!(said, Answer::Dispatched { .. }), "{said:?}");
+}
+
+#[test]
+fn many_dispatches_at_once_under_one_name_start_one_task() {
+    // #3795: asks arrive a thread each, and a start takes a while. Under one name, one is
+    // let through and the rest are told it is open, whichever order the threads ran in.
+    let plane = a_plane_with_personas();
+    let planes = planes();
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
+    let ask = Wanted {
+        chat: asking,
+        to: None,
+        name: "check prod".to_owned(),
+        brief: "# Check prod\nSay what is down.\n".to_owned(),
+        profile: None,
+        place: None,
+        by: purlis_core::dispatchdecision::By::Chat,
+        moved: None,
+        long: false,
+    };
+
+    let answers: Vec<Result<bool, String>> = std::thread::scope(|scope| {
+        let running: Vec<_> = (0..4)
+            .map(|_| {
+                let (held, id, ask) = (&held, &id, &ask);
+                scope.spawn(move || {
+                    dispatch_it(held, id, ask, STARTING)
+                        .map(|it| matches!(it, Dispatched::Started { .. }))
+                })
+            })
+            .collect();
+        running
+            .into_iter()
+            .map(|thread| thread.join().expect("a dispatch"))
+            .collect()
+    });
+
+    let started = answers.iter().filter(|said| **said == Ok(true)).count();
+    assert_eq!(started, 1, "{answers:?}");
+    assert!(
+        answers
+            .iter()
+            .filter_map(|said| said.as_ref().err())
+            .all(|why| why.contains("an open task named 'check prod'")),
+        "{answers:?}"
+    );
+}
+
 /// #3787: a task starts in its asking chat's mode, capped at auto, as the app heard that
 /// chat's own harness say it: default stays default, auto travels, and bypass arrives as auto.
 /// A chat whose harness never said starts its tasks asking, and a switch back to asking is
@@ -12067,3 +12256,6 @@ fn a_task_s_level_is_heard_only_from_its_asking_chat_s_own_harness() {
     hears(Conversation::Named(own.clone()), None, Reported::Asks);
     assert_eq!(level(), Level::Asks);
 }
+
+/// A chat's open or dispatch heard from a pool waits for the person's Approve.
+mod heard_from_a_pool;

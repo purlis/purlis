@@ -53,6 +53,7 @@ const a_cluster_pool = (name: string): ClusterPoolRow => ({
   pool: "default",
   namespace: "op",
   operator_key: OPERATOR_KEY,
+  owned: false,
 });
 
 let pools: PoolRow[];
@@ -137,6 +138,12 @@ beforeEach(() => {
         const row = a_cluster_pool((a.adding as { name: string }).name);
         clusters = [...clusters, row];
         return row;
+      }
+      if (cmd === "set_cluster_pool_owned") {
+        clusters = clusters.map((one) =>
+          one.name === a.name ? { ...one, owned: a.owned as boolean } : one,
+        );
+        return null;
       }
       if (cmd === "docker_pool_link") return link;
       if (cmd === "docker_pool_version") return version;
@@ -282,10 +289,16 @@ describe("You › This machine › Pools", () => {
       ]),
     );
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add a pool" })).toBeNull());
-    // Adding it ends with this machine's profiles, each to sign in on its runner (#2049).
+    // Adding it ends with choosing the profiles that sign in on its runner (#2049, #4048).
     const signIn = await screen.findByRole("dialog", {
       name: "Sign your profiles in on pool builds",
     });
+    const choose = await within(signIn).findByRole("group", {
+      name: "Profiles that sign in on pool builds",
+    });
+    expect(within(choose).getByRole("checkbox", { name: "work" })).toBeChecked();
+    expect(within(choose).getByRole("checkbox", { name: "home" })).not.toBeChecked();
+    await userEvent.click(within(signIn).getByRole("button", { name: "Not now" }));
     const list = await within(signIn).findByRole("list", { name: "Profiles on pool builds" });
     expect(within(list).getByText(/Not signed in on pool builds/)).toBeInTheDocument();
     expect(within(list).getByText("Signed in on pool builds.")).toBeInTheDocument();
@@ -359,6 +372,8 @@ describe("You › This machine › Pools", () => {
     const signIn = await screen.findByRole("dialog", {
       name: "Sign your profiles in on pool builds",
     });
+    await within(signIn).findByRole("group", { name: "Profiles that sign in on pool builds" });
+    await userEvent.click(within(signIn).getByRole("button", { name: "Not now" }));
     const list = await within(signIn).findByRole("list", { name: "Profiles on pool builds" });
     expect(within(list).getByText("Fetching Claude Code for this runner…")).toBeInTheDocument();
     expect(
@@ -815,6 +830,24 @@ describe("A cluster pool (#3292)", () => {
     expect(within(dialog).getByRole("button", { name: "Check its key" })).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add a pool" })).toBeNull());
+  });
+
+  it("is off until the person says This is my own, which says who else can read it", async () => {
+    clusters = [a_cluster_pool("team")];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    const mine = await within(group).findByRole("switch", { name: "This is my own" });
+    expect(mine).not.toBeChecked();
+    expect(mine).toHaveAccessibleDescription(/cluster's admins.*can read what it holds/);
+    await userEvent.click(mine);
+    await waitFor(() => expect(clusters[0].owned).toBe(true));
+    await waitFor(() =>
+      expect(within(group).getByRole("switch", { name: "This is my own" })).toBeChecked(),
+    );
+    await userEvent.click(within(group).getByRole("switch", { name: "This is my own" }));
+    await waitFor(() => expect(clusters[0].owned).toBe(false));
   });
 
   it("whose cluster names another operator key has the key-changed Notice with Remove", async () => {

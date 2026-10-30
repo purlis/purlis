@@ -4,7 +4,7 @@
 import type { RowMenu } from "./ui/list/List";
 import { useEffect, useId, type ReactNode } from "react";
 import { noteOf, type Catalogued, type MenuOn, type Offer } from "./actions";
-import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
+import { turnStateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { menuIsEmpty, menuOf, type GroupDrawn, type RowDrawn, type SubDrawn } from "./menuModel";
 import { landSettingsFocus } from "./settings/entering";
 import { ContextMenu } from "./ui/menu/ContextMenu";
@@ -242,8 +242,9 @@ function Row({ row, onPress }: { row: RowDrawn; onPress: (offer: Offer) => void 
   // A row about a chat that is mid-turn says so, and one about a chat that reports no state
   // says that, both read as the menu is drawn (`Offer.midTurn`, `Offer.noState`).
   const about = offer.midTurn?.session ?? offer.noState?.session;
+  // Waiting on its own work is mid-turn here too (#3887): a restart waits for that work.
   const state = useChatsSelect(useChatsHere(), (states) =>
-    about === undefined ? undefined : stateOf(states, about),
+    about === undefined ? undefined : turnStateOf(states, about),
   );
   const said = state === "running" && row.midTurn !== undefined ? row.midTurn : row.said;
   const note = noteOf(offer, state === "unknown");

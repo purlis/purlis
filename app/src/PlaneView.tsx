@@ -109,7 +109,7 @@ import { NewBranch } from "./NewBranch";
 import { LinkWorkItem } from "./LinkWorkItem";
 import { RenameWorkspace } from "./RenameWorkspace";
 import { AddVision } from "./AddVision";
-import { cloneRepos, settleRepoClones, useRepoClones } from "./repoClones";
+import { cloneRepos, settleRepoClones, stopRepoClones, useRepoClones } from "./repoClones";
 import { StartChat } from "./StartChat";
 import {
   handedSaid,
@@ -168,6 +168,7 @@ import {
 import { useRemoveWorkspaceAsked } from "./removeWorkspaceAsk";
 import { useOpenProposalAsked } from "./proposedChangeOpen";
 import { useOpenRunnerWriteAsked } from "./runnerWriteOpen";
+import { useOpenRunnerDispatchAsked } from "./runnerDispatchOpen";
 import { BROWSER_ASK_ENDED, useOpenBrowserAsked } from "./browserNeedsYou";
 import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
@@ -187,7 +188,13 @@ import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, useSandboxBlocks } from "./sandboxBlocks";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
-import { reposCloned, reposCloning, reposNotCloned, workspaceMade } from "./actionResult";
+import {
+  reposCloned,
+  reposCloning,
+  reposNotCloned,
+  reposStopped,
+  workspaceMade,
+} from "./actionResult";
 import { Inbox, landOnGroupIn, type UpdateRow, type WindowLines } from "./Inbox";
 import { awayRow } from "./AwayRefusals";
 import {
@@ -475,12 +482,14 @@ import { DoingsHere, useDoings, type DoingsOf } from "./chatDoing";
 import {
   ChatsHere,
   backSaid,
+  inItsTurn,
   isShell,
   movedAt,
   quietChats,
   sameList,
   sameQuiet,
   stateOf,
+  turnStateOf,
   useChats,
   useChatsHere,
   useChatsSelect,
@@ -4710,21 +4719,33 @@ export const PlaneView = memo(function PlaneView({
       const track = cloneRuns;
       const run = async (repos: string[], before?: Said) => {
         let done = 0;
-        setReport({ ...reposCloning(name, repos, done, track), after: before });
-        const failed = await cloneRepos(plane, name, repos, () => {
-          done += 1;
-          if (done < repos.length) setReport(reposCloning(name, repos, done, track));
-        });
+        const onCancel = () => stopRepoClones(plane, name, repos);
+        setReport({ ...reposCloning(name, repos, done, track, { onCancel }), after: before });
+        const failed = await cloneRepos(
+          plane,
+          name,
+          repos,
+          () => {
+            done += 1;
+            if (done < repos.length)
+              setReport(reposCloning(name, repos, done, track, { onCancel }));
+          },
+          (_, moved) => setReport(reposCloning(name, repos, done, track, { moved, onCancel })),
+        );
+        // Only the ones that did not land, on the same notice.
+        const retry = () => void run(failed.map((one) => one.repo));
+        const refused = failed.filter((one) => one.stopped !== true);
         setReport(
           failed.length === 0
             ? reposCloned(name, repos, track)
-            : reposNotCloned(
-                name,
-                failed,
-                // Only the ones that failed, on the same notice.
-                () => void run(failed.map((one) => one.repo)),
-                track,
-              ),
+            : refused.length === 0
+              ? reposStopped(
+                  name,
+                  failed.map((one) => one.repo),
+                  retry,
+                  track,
+                )
+              : reposNotCloned(name, refused, retry, track),
         );
         setReplan((asked) => asked + 1);
       };
@@ -4893,6 +4914,7 @@ export const PlaneView = memo(function PlaneView({
   useOpenProposalAsked(plane, showView);
   // Open on a runner chat's change its row cannot show whole opens its own tab (#2046).
   useOpenRunnerWriteAsked(plane, showView);
+  useOpenRunnerDispatchAsked(plane, showView);
   /** A browser whose chat asked the person to take it over, taken over from its Ask (#2015):
    *  its view opens, where the bar says they drive and Done hands it back. */
   const showBrowserTakenOver = useCallback(
@@ -5902,7 +5924,7 @@ export const PlaneView = memo(function PlaneView({
     if (owedRestarts.length === 0) return;
     const drive = () => {
       const states = chats.store.statesFor(chats.plane);
-      const due = restartsDue(owedRestarts, (session) => stateOf(states, session));
+      const due = restartsDue(owedRestarts, states);
       for (const session of due.restart) restartOwed(session);
       // Dropped only once the core, which hears the program itself end, owes it nothing: a
       // hook can say the session ended while its program runs on ({@link owedAfterEnded}).
@@ -5932,7 +5954,10 @@ export const PlaneView = memo(function PlaneView({
   const owedStates = useChatsSelect(
     chats,
     (states): OwedStates =>
-      Object.fromEntries(owedRestarts.map((session) => [session, stateOf(states, session)])),
+      Object.fromEntries(
+        // Waiting on its own work is mid-turn to a restart (#3887): it waits, and says so.
+        owedRestarts.map((session) => [session, turnStateOf(states, session)]),
+      ),
     sameStates,
   );
   /**
@@ -5981,7 +6006,8 @@ export const PlaneView = memo(function PlaneView({
       }
       setRestartTrouble((was) => withoutKey(was, session));
       oweRestart(session);
-      if (stateOf(chats.store.statesFor(chats.plane), session) !== "running") restartOwed(session);
+      // Mid-turn, or waiting on its own work (#3887), it waits for the turn to end.
+      if (!inItsTurn(chats.store.statesFor(chats.plane), session)) restartOwed(session);
     },
     [chats, oweRestart, plane, restartOwed],
   );
@@ -5995,7 +6021,7 @@ export const PlaneView = memo(function PlaneView({
       // unless the chat's program has ended meanwhile (#1986).
       if (act === "mid-turn") {
         const states = chats.store.statesFor(chats.plane);
-        const due = restartsDue([session], (one) => stateOf(states, one), { now: session });
+        const due = restartsDue([session], states, { now: session });
         if (due.restart.includes(session)) restartOwed(session);
       }
     },
@@ -6101,7 +6127,7 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     const drive = () => {
       const states = chats.store.statesFor(chats.plane);
-      for (const session of movesDue(chatMovesOf(plane), (one) => stateOf(states, one))) {
+      for (const session of movesDue(chatMovesOf(plane), states)) {
         if (movingNow.current.has(session)) continue;
         movingNow.current.add(session);
         const moving = chatMovesOf(plane)[session];
@@ -6113,6 +6139,7 @@ export const PlaneView = memo(function PlaneView({
             stage: "failed",
             why,
             with: moving?.with ?? [],
+            sign_in: null,
           });
         void commands
           .moveChatNow(plane, session, STARTING_SIZE.columns, STARTING_SIZE.rows)
@@ -6707,15 +6734,19 @@ export const PlaneView = memo(function PlaneView({
       // Read again as each repo lands, so a repo that is cloned leaves "Not cloned here" while
       // the rest of a Clone all is still running. A clone the workspace does not then see is
       // a failure with a Retry — `cloneRepos` checks that for every caller (V91b).
-      const failed = await cloneRepos(plane, workspace, repos, rereadPanels);
-      return failed.length === 0
+      const ended = await cloneRepos(plane, workspace, repos, rereadPanels);
+      // A clone the person stopped is what they asked for: no failure to report.
+      const failed = ended.filter((one) => one.stopped !== true);
+      if (failed.length > 0)
+        return {
+          ok: false,
+          refused:
+            `Could not clone ${failed.map((f) => f.repo).join(", ")} into ${workspace} — ` +
+            failed.map((f) => f.said).join(" "),
+        };
+      return ended.length === 0
         ? { ok: true, said: `Cloned ${repos.join(", ")} into ${workspace}.` }
-        : {
-            ok: false,
-            refused:
-              `Could not clone ${failed.map((f) => f.repo).join(", ")} into ${workspace} — ` +
-              failed.map((f) => f.said).join(" "),
-          };
+        : { ok: true };
     },
     [plane, rereadPanels],
   );

@@ -149,6 +149,7 @@ mod restoring;
 mod routedsessions;
 #[cfg(unix)]
 mod runnercode;
+mod runnerdispatches;
 mod runnerlinks;
 mod runnerlog;
 mod runnerwrites;
@@ -2354,6 +2355,20 @@ fn put_away_chat_move(
     session: u32,
 ) -> Result<(), String> {
     planes.held(&plane)?.moves().put_away(session)
+}
+
+/// **Chat `session`'s move waited on its profile's sign-in on the runner, which the window's
+/// strip says is done** (#3477): the move is prepared again, which asks the runner itself, so it
+/// goes ahead once the profile is signed in there, or waits again. Refused for a move that waits
+/// on no sign-in.
+#[tauri::command]
+#[specta::specta]
+fn chat_move_signed_in(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+) -> Result<(), String> {
+    planes.held(&plane)?.moves().signed_in(session)
 }
 
 /// **The chats this project has open that run under a sandbox other than the one the

@@ -55,7 +55,7 @@
 //! again as it did when its own worker told it. A quit stops the host's saving before the
 //! window's own save at quit runs; a window that is gone without a quit leaves it saving.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
@@ -877,6 +877,10 @@ struct Views {
     waiting: HashMap<u32, Reader>,
 }
 
+/// The folder name of each clone a host holds in a workspace, and the `origin` URL it names
+/// for each it can, by folder name (1.54, #3985).
+pub(crate) type ClonesHeld = (Vec<String>, BTreeMap<String, String>);
+
 impl HostLink {
     /// What this link holds of its runner's event log, and whether the link to it is down
     /// (#3393).
@@ -1204,12 +1208,13 @@ impl HostLink {
     }
 
     /// **The clones the host holds in `workspace`** of `project` (1.51, #3811), by their folder
-    /// names: `None` from a host before 1.51, which cannot say, so a clone it made stays there.
+    /// names, with the `origin` URL it names for each it can (1.54, #3985), its word alone:
+    /// `None` from a host before 1.51, which cannot say, so a clone it made stays there.
     pub(crate) fn clones_of(
         &self,
         project: &str,
         workspace: &str,
-    ) -> Result<Option<Vec<String>>, String> {
+    ) -> Result<Option<ClonesHeld>, String> {
         if !self.names_its_clones() {
             return Ok(None);
         }
@@ -1217,9 +1222,15 @@ impl HostLink {
             project: project.to_owned(),
             workspace: workspace.to_owned(),
         })? {
-            Answer::Clones { repos } => Ok(Some(repos)),
+            Answer::Clones { repos, origins } => Ok(Some((repos, origins))),
             _ => Err("the runner did not say which clones it holds".to_owned()),
         }
+    }
+
+    /// Whether the host names where each clone it holds came from (1.54, #3985), so a clone it
+    /// made comes back with its remote.
+    pub(crate) fn names_clone_origins(&self) -> bool {
+        self.version() >= session::KNOWS_CLONE_ORIGINS
     }
 
     /// Whether the host names the clones it holds in a workspace (1.51, #3811), so a chat moving
@@ -3327,9 +3338,13 @@ impl SessionHost for HostedSessions {
         Ok(())
     }
 
-    fn move_out(&self, pool: &str, chats: &[crate::host::Moving]) -> Result<Vec<String>, String> {
+    fn move_out(
+        &self,
+        pool: &str,
+        chats: &[crate::host::Moving],
+    ) -> Result<crate::host::CameBack, String> {
         let Some(workspace) = chats.first().map(|chat| chat.workspace.as_str()) else {
-            return Ok(Vec::new());
+            return Ok(crate::host::CameBack::default());
         };
         let (link, project) = self.moving_link()?;
         let scratch = tempfile::Builder::new()
@@ -3348,14 +3363,14 @@ impl SessionHost for HostedSessions {
                 .map_err(|why| format!("its conversation did not come back: {why}"))?;
             came.push((chat, shape, file));
         }
-        let watch =
+        let came_back =
             crate::runnercode::move_workspace_back(&link, &project, &self.root, workspace, pool)?;
         for (chat, shape, file) in came {
             of_a_chat(&self.root, chat)
                 .keep(&shape, &file)
                 .map_err(|why| format!("its conversation could not be kept here: {why}"))?;
         }
-        Ok(watch)
+        Ok(came_back)
     }
 
     /// Saved in the session host, where this project's chats run: the window starts no worker

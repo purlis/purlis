@@ -180,6 +180,7 @@ pub fn create(request: &Request, say: Sink) -> u8 {
                 now: request.now,
                 author: &author,
                 hosts: request.hosts,
+                watch: None,
             },
             say,
         );
