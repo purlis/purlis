@@ -75,6 +75,10 @@ pub(crate) enum AlertWay {
         autosave: bool,
         merge: Box<crate::saving::SaveMerge>,
     },
+    /// **Messages a chat left queued that no running dispatch could keep** (#3958): Put away
+    /// takes the Notice back ([`put_away_left_messages`]), by `report`, the name purlis keeps
+    /// it under.
+    LeftMessages { report: String },
 }
 
 /// The way out of one of the core's alerts.
@@ -278,6 +282,90 @@ fn requests_red(root: &Path) -> Vec<AlertRow> {
     rows
 }
 
+/// What a sender's undelivered messages are called in the Inbox.
+pub(crate) const LEFT_MESSAGES: &str = "undelivered messages";
+
+/// **The Inbox's alert for what a chat that did not come back left queued** (#3958): one a
+/// sender, naming it and how many, with each message's kind and the start of its text, for the
+/// messages the app found no running dispatch record to keep on
+/// ([`purlis_core::dispatchqueue::unplaced_reports`]).
+fn left_messages(root: &Path) -> Vec<AlertRow> {
+    let socket = purlis_core::hookchannel::socket_for(Some(root)).socket;
+    purlis_core::dispatchqueue::unplaced_reports(&socket)
+        .into_iter()
+        .map(|(report, left)| AlertRow {
+            severity: "warn".to_owned(),
+            subject: LEFT_MESSAGES.to_owned(),
+            detail: left_said(&left),
+            way: AlertWay::LeftMessages { report },
+        })
+        .collect()
+}
+
+/// What the alert says of `left`.
+fn left_said(left: &purlis_core::dispatchqueue::Left) -> String {
+    use purlis_core::dispatchqueue::Queued;
+    let who = left.name.as_ref().map_or_else(
+        || format!("chat {}", left.sender),
+        |name| {
+            format!(
+                "{} (chat {})",
+                purlis_core::personas::one_line(name),
+                left.sender
+            )
+        },
+    );
+    let count = left.messages.len();
+    let messages = if count == 1 { "message" } else { "messages" };
+    let said: Vec<String> = left
+        .messages
+        .iter()
+        .map(|message| {
+            let (kind, text) = match &message.what {
+                Queued::Tell { to, text } => (format!("a follow-up to chat {to}"), text.as_str()),
+                Queued::TellAll { text } => {
+                    ("a follow-up to all its tasks".to_owned(), text.as_str())
+                }
+                Queued::Answer { to, text } => (format!("an answer to chat {to}"), text.as_str()),
+                Queued::Question { text } => {
+                    ("a question to its asking chat".to_owned(), text.as_str())
+                }
+                Queued::Note { text, .. } => (
+                    "a note to its asking chat".to_owned(),
+                    text.as_deref().unwrap_or_default(),
+                ),
+            };
+            // On one line, its line breaks read as spaces, and clipped as a line is.
+            let words = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            format!("{kind}: \"{}\"", purlis_core::personas::one_line(&words))
+        })
+        .collect();
+    format!(
+        "{who} did not come back after purlis restarted, and {count} {messages} it queued while \
+         purlis did not answer {were} never delivered, with no running dispatch left to keep \
+         them on: {}",
+        said.join("; "),
+        were = if count == 1 { "was" } else { "were" },
+    )
+}
+
+/// **Put away on the Notice of a chat's undelivered messages** (#3958): the person has read it,
+/// and purlis keeps it no longer.
+#[tauri::command]
+#[specta::specta]
+pub async fn put_away_left_messages(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: PlaneId,
+    report: String,
+) -> Result<(), String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window("putting away undelivered messages", move || {
+        let socket = purlis_core::hookchannel::socket_for(Some(&root)).socket;
+        purlis_core::dispatchqueue::put_away(&socket, &report).map_err(|why| why.to_string())
+    })
+    .await
+}
+
 /// Seconds since the epoch, as the journal writes them.
 fn now() -> f64 {
     std::time::SystemTime::now()
@@ -315,6 +403,7 @@ fn rows(root: &Path) -> (Vec<AlertRow>, Option<String>) {
             })
             .chain(save_blocked(root, now()))
             .chain(requests_red(root))
+            .chain(left_messages(root))
             .collect(),
         reading.stopped,
     )
@@ -345,6 +434,29 @@ mod tests {
                 group: "project.general".to_owned(),
                 setting: Some("project.general.persona.default".to_owned()),
             }
+        );
+    }
+
+    #[test]
+    fn a_chat_s_undelivered_messages_are_one_notice_naming_it_how_many_and_what_each_said() {
+        // #3958: what the Inbox says of the messages no running dispatch could keep.
+        let left: purlis_core::dispatchqueue::Left = serde_json::from_value(serde_json::json!({
+            "v": 1,
+            "sender": 3,
+            "name": "steward 1",
+            "at": 0,
+            "messages": [
+                { "id": "a", "at": 0, "what": "tell", "to": 4, "text": "carry on" },
+                { "id": "b", "at": 0, "what": "question", "text": "which\nqueue?" },
+            ],
+        }))
+        .expect("a report");
+        assert_eq!(
+            left_said(&left),
+            "steward 1 (chat 3) did not come back after purlis restarted, and 2 messages it \
+             queued while purlis did not answer were never delivered, with no running dispatch \
+             left to keep them on: a follow-up to chat 4: \"carry on\"; a question to its \
+             asking chat: \"which queue?\""
         );
     }
 

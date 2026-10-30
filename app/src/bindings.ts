@@ -825,6 +825,11 @@ export const commands = {
 	 */
 	putAwayMcpFailure: (plane: PlaneId, session: number, server: string) => typedError<null, string>(__TAURI_INVOKE("put_away_mcp_failure", { plane, session, server })),
 	/**
+	 *  **Put away on the Notice of a chat's undelivered messages** (#3958): the person has read it,
+	 *  and purlis keeps it no longer.
+	 */
+	putAwayLeftMessages: (plane: PlaneId, report: string) => typedError<null, string>(__TAURI_INVOKE("put_away_left_messages", { plane, report })),
+	/**
 	 *  Chat `session`, where its program ended with its session host and the person has not put
 	 *  it away.
 	 */
@@ -4474,7 +4479,13 @@ target: string | null;
  *  Whether purlis saves it by itself. A repo's fix reaches its request by the repo's
  *  next save, so where this is off the Notice says a save is needed.
  */
-autosave: boolean; merge: SaveMerge };
+autosave: boolean; merge: SaveMerge } | 
+/**
+ *  **Messages a chat left queued that no running dispatch could keep** (#3958): Put away
+ *  takes the Notice back ([`put_away_left_messages`]), by `report`, the name purlis keeps
+ *  it under.
+ */
+{ kind: "left-messages"; report: string };
 
 /**
  *  **What Stop all tasks on a session would end** (#1498, V100-53), as the window asks before

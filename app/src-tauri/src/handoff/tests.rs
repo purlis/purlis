@@ -10440,6 +10440,90 @@ fn a_tell_queued_while_the_app_was_away_is_delivered_once_the_project_is_back() 
 }
 
 #[test]
+fn what_a_sender_that_never_came_back_queued_is_kept_on_its_dispatch_or_said_in_the_inbox() {
+    // #3958: the asking chat queued two follow-ups while the app did not answer, and the app
+    // restarted without it. Neither is cleared unseen: the one for its running task is kept on
+    // that task's dispatch, marked not delivered, and the one no running dispatch is for is one
+    // Notice in the Inbox naming the sender.
+    use purlis_core::dispatchqueue::{self, Queued};
+    let (_plane, _planes, _id, held, asking, task) = a_dispatched_task();
+    let Some(_) = queued_by(
+        &held,
+        asking,
+        Queued::Tell {
+            to: task,
+            text: "carry on".to_owned(),
+        },
+    ) else {
+        return;
+    };
+    queued_by(
+        &held,
+        asking,
+        Queued::Tell {
+            to: 9999,
+            text: "to nobody".to_owned(),
+        },
+    );
+    let socket = held.hooks().socket().expect("listening").to_path_buf();
+    // The project opens again with the task and without the chat that asked for it.
+    purlis_core::hookwire::spool::forget_all_but(
+        &purlis_core::hookwire::spool::dir_for(&socket),
+        &[task],
+    )
+    .expect("forgotten");
+    assert!(
+        !dispatchqueue::holds(&socket, asking),
+        "its queue is cleared"
+    );
+
+    crate::dispatched::deliver_all_queued_now(&held);
+
+    let record = purlis_core::dispatchrecord::list(held.root())
+        .into_iter()
+        .find(|record| record.worker.chat.chat == task)
+        .expect("the task's dispatch");
+    assert!(
+        record
+            .talk
+            .iter()
+            .any(|said| said.text.starts_with("Not delivered") && said.text.contains("carry on")),
+        "{:?}",
+        record.talk
+    );
+    assert!(
+        dispatchtalk::take(held.root(), task).is_empty(),
+        "it was never delivered, and is not now"
+    );
+    let notices = dispatchqueue::unplaced_reports(&socket);
+    assert_eq!(
+        notices.len(),
+        1,
+        "one Notice, for the one no dispatch keeps"
+    );
+    assert_eq!(notices[0].1.sender, asking);
+    assert_eq!(
+        notices[0]
+            .1
+            .messages
+            .iter()
+            .map(|message| message.what.clone())
+            .collect::<Vec<_>>(),
+        [Queued::Tell {
+            to: 9999,
+            text: "to nobody".to_owned(),
+        }]
+    );
+    assert!(
+        dispatchqueue::left(&socket).is_empty(),
+        "each report is looked at once"
+    );
+
+    dispatchqueue::put_away(&socket, &notices[0].0).expect("put away");
+    assert!(dispatchqueue::unplaced_reports(&socket).is_empty());
+}
+
+#[test]
 fn an_answer_queued_for_a_task_that_waits_for_it_arrives_with_nobody_acting() {
     let (_plane, _planes, id, held, asking, task) = a_dispatched_task();
     assert_eq!(

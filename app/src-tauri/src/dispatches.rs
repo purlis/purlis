@@ -305,15 +305,47 @@ fn kept(
     let Some(record) = running_for(held, task) else {
         return;
     };
+    kept_on(held, &record.id, kind, by, text, answers);
+}
+
+/// [`kept`], on the dispatch record `id`: whether the record took it (it runs, and was written).
+fn kept_on(
+    held: &Held,
+    id: &str,
+    kind: purlis_core::dispatchtalk::Kind,
+    by: Option<dispatchrecord::By>,
+    text: &str,
+    answers: Option<u32>,
+) -> bool {
     let now = chrono::Utc::now();
-    match dispatchrecord::said_by(held.root(), &record.id, kind, by, text, now) {
+    match dispatchrecord::said_by(held.root(), id, kind, by, text, now) {
         Ok(Taken::Kept(kept)) => crate::activity::said(held, &kept, answers),
         // Counted, and past what a record keeps the text of: the tab is told how many, and
         // none of the message's words.
         Ok(Taken::Counted(counted)) => crate::activity::unkept(held, &counted, answers),
-        Ok(Taken::Nothing) => {}
-        Err(why) => tracing::warn!("purlis: a dispatch's record was not updated ({why})"),
+        Ok(Taken::Nothing) => return false,
+        Err(why) => {
+            tracing::warn!("purlis: a dispatch's record was not updated ({why})");
+            return false;
+        }
     }
+    true
+}
+
+/// **A message a chat left queued when it did not come back after a restart** (#3958): kept on
+/// the running dispatch record `id` it was between, in purlis's words around the message, where
+/// the person reads it in the Dispatches tab. Whether the record took it.
+pub(crate) fn left_undelivered(
+    held: &Held,
+    id: &str,
+    kind: purlis_core::dispatchtalk::Kind,
+    text: &str,
+) -> bool {
+    let said = format!(
+        "Not delivered: its sender was queueing it while purlis did not answer, and did not come \
+         back after purlis restarted, so it was never delivered. It said: {text}"
+    );
+    kept_on(held, id, kind, None, &said, None)
 }
 
 /// The person answered the question persona chat `task` put to its asking chat (#1496), with

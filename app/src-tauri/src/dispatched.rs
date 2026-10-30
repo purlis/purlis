@@ -1169,8 +1169,10 @@ pub(crate) fn deliver_all_queued(held: &Held) {
     let Some(socket) = held.hooks().socket() else {
         return;
     };
-    // Nothing queued, nothing started: one look at a folder.
-    if purlis_core::dispatchqueue::chats(socket).is_empty() {
+    // Nothing queued and nothing left, nothing started: a look at two folders.
+    if purlis_core::dispatchqueue::chats(socket).is_empty()
+        && purlis_core::dispatchqueue::left(socket).is_empty()
+    {
         return;
     }
     let weak = held.weak();
@@ -1199,6 +1201,105 @@ pub(crate) fn deliver_all_queued_now(held: &Held) {
             deliver_queued(held, chat, None);
         }
     }
+    report_left(held);
+}
+
+/// **What chats that did not come back left queued is recorded where the person reads it**
+/// (#3958, [`purlis_core::dispatchqueue::left`]): the spool set it aside as it cleared their
+/// queues, when the project opened without them.
+///
+/// Each message is kept on the running dispatch record it was between, found by the numbers
+/// the chats had when it was queued, which are the ones that record names: a follow-up or an
+/// answer on the record of the task it names that its sender asked for, a note or a question on
+/// the sender's own record as a task, a follow-up to every task on each running record its
+/// sender asked for. What finds no running record is kept as one notice in the Inbox, naming
+/// the sender and how many ([`purlis_core::dispatchqueue::unplaced`]), so nothing is cleared
+/// with no record the person can see.
+pub(crate) fn report_left(held: &Held) {
+    use purlis_core::dispatchqueue::{self, LeftMessage};
+    let Some(socket) = held.hooks().socket().map(std::path::Path::to_path_buf) else {
+        return;
+    };
+    let reports = dispatchqueue::left(&socket);
+    if reports.is_empty() {
+        return;
+    }
+    let records = purlis_core::dispatchrecord::list(held.root());
+    for (path, report) in reports {
+        let unplaced: Vec<LeftMessage> = report
+            .messages
+            .iter()
+            .filter(|message| !left_on_records(held, &records, report.sender, message))
+            .cloned()
+            .collect();
+        if unplaced.is_empty() {
+            dispatchqueue::reported(&path);
+            continue;
+        }
+        // The sender's name as the newest record of it says it, where one does.
+        let name = records
+            .iter()
+            .flat_map(|record| [&record.worker.chat, &record.asker.chat])
+            .find(|chat| chat.chat == report.sender)
+            .map(|chat| chat.name.clone());
+        dispatchqueue::unplaced(&path, &report, unplaced, name);
+    }
+    held.tasks().changed();
+}
+
+/// [`report_left`] for one message of chat `sender`'s: whether a running record in `records`
+/// took it.
+fn left_on_records(
+    held: &Held,
+    records: &[purlis_core::dispatchrecord::Record],
+    sender: u32,
+    message: &purlis_core::dispatchqueue::LeftMessage,
+) -> bool {
+    use purlis_core::dispatchqueue::Queued;
+    let (kind, _) = queued_to(&message.what);
+    let running = || records.iter().filter(|record| record.running());
+    let (on, text): (Vec<&str>, &str) = match &message.what {
+        Queued::Tell { to, text } | Queued::Answer { to, text } => (
+            running()
+                .find(|record| record.worker.chat.chat == *to && record.asker.chat.chat == sender)
+                .map(|record| record.id.as_str())
+                .into_iter()
+                .collect(),
+            text,
+        ),
+        Queued::TellAll { text } => (
+            running()
+                .filter(|record| record.asker.chat.chat == sender)
+                .map(|record| record.id.as_str())
+                .collect(),
+            text,
+        ),
+        Queued::Question { text } => (own_record(records, sender), text),
+        Queued::Note { text, .. } => {
+            let Some(text) = text.as_deref().filter(|text| !text.trim().is_empty()) else {
+                // An acknowledgement alone says nothing a person reads: kept nowhere, and
+                // missed by nobody.
+                return true;
+            };
+            (own_record(records, sender), text)
+        }
+    };
+    let mut took = false;
+    for id in on {
+        took |= crate::dispatches::left_undelivered(held, id, kind, text);
+    }
+    took
+}
+
+/// The running record of chat `chat` as a task, by the number it had.
+fn own_record(records: &[purlis_core::dispatchrecord::Record], chat: u32) -> Vec<&str> {
+    records
+        .iter()
+        .filter(|record| record.running())
+        .find(|record| record.worker.chat.chat == chat)
+        .map(|record| record.id.as_str())
+        .into_iter()
+        .collect()
 }
 
 /// **Chat `chat` is closing** (#3902): what it still has queued is delivered now, held back by

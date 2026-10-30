@@ -350,6 +350,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Dismiss on a chat's Notice that its program ended with its session host (#2007): the
     // person's answer.
     "put_away_lost_chat",
+    // Put away on the Inbox's Notice of a chat's undelivered messages (#3958): the person's
+    // answer that they have read it.
+    "put_away_left_messages",
     // Try again on the Notice that the session host is failing (#2007): it starts the host
     // every chat runs in, on the person's word.
     "start_the_session_host_again",
