@@ -24,6 +24,12 @@ vi.mock("./SessionPane", () => ({
   ),
 }));
 
+// The Settings tab stands for any view tab: what it draws is not what these tests are about.
+vi.mock("./settings/SettingsTab", async (actual) => ({
+  ...(await actual<typeof import("./settings/SettingsTab")>()),
+  SettingsTab: () => <div data-testid="settings-tab">Settings</div>,
+}));
+
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
 afterEach(() => {
