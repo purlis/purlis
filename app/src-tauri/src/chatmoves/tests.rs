@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use super::*;
 use purlis_core::poollogins::Unbound;
+use purlis_core::profilestore::onrunner::{NotYet, SignInAsked};
 
 /// Moves whose every stage is heard on the channel answered.
 fn heard() -> (Arc<Moves>, mpsc::Receiver<ChatMove>) {
@@ -198,7 +199,7 @@ fn moving() -> crate::host::Moving {
 #[derive(Default)]
 struct ProfilesOnAPool {
     asked: Mutex<Vec<(std::path::PathBuf, String, String)>>,
-    refusing: Mutex<Option<String>>,
+    refusing: Mutex<Option<NotYet>>,
 }
 
 impl crate::poolprofiles::ProfilesOnPools for ProfilesOnAPool {
@@ -211,7 +212,7 @@ impl crate::poolprofiles::ProfilesOnPools for ProfilesOnAPool {
         root: &std::path::Path,
         pool: &str,
         profile: &str,
-    ) -> Result<(), String> {
+    ) -> Result<(), NotYet> {
         lock(&self.asked).push((root.to_path_buf(), pool.to_owned(), profile.to_owned()));
         match lock(&self.refusing).clone() {
             Some(why) => Err(why),
@@ -255,10 +256,14 @@ fn a_move_keeps_its_profile_on_the_runner_before_its_work_and_conversation_go() 
 #[test]
 fn a_profile_the_runner_does_not_keep_moves_nothing_there() {
     let on_pools = Arc::new(ProfilesOnAPool::default());
-    *lock(&on_pools.refusing) = Some("the profile 'work' is not signed in on pool builds".into());
+    *lock(&on_pools.refusing) = Some(NotYet::SignIn(work_on_builds()));
     let (chats, host) = chats_readying(&on_pools);
 
-    assert!(move_to_a_runner(&chats, "builds", &[moving()]).is_err());
+    let refused = move_to_a_runner(&chats, "builds", &[moving()]).unwrap_err();
+    assert!(
+        refused.contains("not signed in on pool builds"),
+        "{refused}"
+    );
     assert!(
         host.moved().is_empty(),
         "nothing moved before the profile was kept"
@@ -281,6 +286,109 @@ fn a_moves_preparation_keeps_its_profile_before_it_sends_anything_ahead() {
     let (chats, host) = chats_readying(&refusing);
     assert!(prepare_on_a_runner(&chats, "builds", "app", &["work".to_owned()]).is_err());
     assert!(host.moved().is_empty(), "nothing went ahead");
+
+    // A profile signed out there is the sign-in the move waits on, and nothing goes ahead.
+    let signed_out = Arc::new(ProfilesOnAPool::default());
+    *lock(&signed_out.refusing) = Some(NotYet::SignIn(work_on_builds()));
+    let (chats, host) = chats_readying(&signed_out);
+    assert_eq!(
+        prepare_on_a_runner(&chats, "builds", "app", &["work".to_owned()]),
+        Err(NotYet::SignIn(work_on_builds()))
+    );
+    assert!(host.moved().is_empty(), "nothing went ahead");
+}
+
+fn work_on_builds() -> SignInAsked {
+    SignInAsked {
+        pool: "builds".into(),
+        profile: "work".into(),
+        kind: "claude".into(),
+        harness: "Claude Code".into(),
+    }
+}
+
+/// **A move whose profile is not signed in on the pool waits for it** (#3477): it says the
+/// sign-in it waits on, never switches meanwhile, and once the window says it signed in, it is
+/// prepared again and goes ahead by itself.
+#[test]
+fn a_move_waits_for_its_profiles_sign_in_and_goes_ahead_once_signed_in() {
+    let (moves, told) = heard();
+    let tries = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let counted = Arc::clone(&tries);
+    moves
+        .begin(alone(3), None, Some("builds".into()), move || {
+            if counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                Err(NotYet::SignIn(work_on_builds()))
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap();
+    assert_eq!(next(&told).stage, "preparing");
+    let waits = next(&told);
+    assert_eq!(waits.stage, "signing-in");
+    assert_eq!(
+        waits.sign_in,
+        Some(MoveSignIn {
+            profile: "work".into(),
+            kind: "claude".into(),
+            harness: "Claude Code".into(),
+        })
+    );
+    assert!(matches!(moves.due(3, |_| true), Due::NotYet(_)), "it waits");
+    assert_eq!(moves.shown()[0].stage, "signing-in");
+
+    moves.signed_in(3).unwrap();
+    assert_eq!(next(&told).stage, "preparing");
+    let ready = next(&told);
+    assert_eq!(ready.stage, "ready");
+    assert_eq!(ready.sign_in, None);
+    assert_eq!(tries.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+/// A move still signed out when asked again waits again; one not waiting on a sign-in is not
+/// prepared again by a stray "signed in" (#3477).
+#[test]
+fn signed_in_only_prepares_again_a_move_that_waits_on_a_sign_in() {
+    let (moves, told) = heard();
+    moves
+        .begin(alone(3), None, Some("builds".into()), || {
+            Err(NotYet::SignIn(work_on_builds()))
+        })
+        .unwrap();
+    assert_eq!(next(&told).stage, "preparing");
+    assert_eq!(next(&told).stage, "signing-in");
+    moves.signed_in(3).unwrap();
+    assert_eq!(next(&told).stage, "preparing");
+    assert_eq!(next(&told).stage, "signing-in");
+
+    let (moves, told) = heard();
+    moves
+        .begin(alone(4), None, Some("builds".into()), || Ok(()))
+        .unwrap();
+    assert_eq!(next(&told).stage, "preparing");
+    assert_eq!(next(&told).stage, "ready");
+    assert!(moves.signed_in(4).is_err());
+    assert!(moves.signed_in(9).is_err(), "no move at all");
+    assert!(told.recv_timeout(Duration::from_millis(200)).is_err());
+}
+
+/// **Cancel while it waits on a sign-in cancels the move, and the chat stays here** (#3477).
+#[test]
+fn cancelling_a_move_that_waits_on_a_sign_in_keeps_the_chat_where_it_is() {
+    let (moves, told) = heard();
+    moves
+        .begin(alone(3), None, Some("builds".into()), || {
+            Err(NotYet::SignIn(work_on_builds()))
+        })
+        .unwrap();
+    assert_eq!(next(&told).stage, "preparing");
+    assert_eq!(next(&told).stage, "signing-in");
+    moves.put_away(3).unwrap();
+    assert_eq!(next(&told).stage, "over");
+    assert!(moves.shown().is_empty());
+    assert!(moves.signed_in(3).is_err(), "nothing is prepared again");
+    assert_eq!(moves.due(3, |_| true), Due::NotMoving);
 }
 
 #[test]

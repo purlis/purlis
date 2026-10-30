@@ -22,9 +22,24 @@ const ready = (session: number, to: string | null = "builds"): ChatMove => ({
   stage: "ready",
   why: null,
   with: [],
+  sign_in: null,
 });
 
 describe("Move to runner and Move here (#2048)", () => {
+  it("a move waiting on its profile's sign-in says so, may be cancelled, and is not due (#3477)", () => {
+    const one: ChatMove = {
+      ...ready(1),
+      stage: "signing-in",
+      sign_in: { profile: "work", kind: "claude", harness: "Claude Code" },
+    };
+    expect(moveSaid(one)).toEqual({
+      words: "Moves to pool builds once work is signed in there. It keeps working here meanwhile.",
+      trouble: false,
+    });
+    expect(moveCancellable(one)).toBe(true);
+    expect(movesDue({ 1: one }, () => "waiting")).toEqual([]);
+  });
+
   it("switches a prepared move only at the chat's pause between turns, never mid-turn", () => {
     const moves = {
       1: ready(1),

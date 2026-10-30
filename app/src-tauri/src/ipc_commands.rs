@@ -241,6 +241,7 @@ macro_rules! app_commands {
                 move_chat,
                 move_chat_now,
                 chat_moves,
+                chat_move_signed_in,
                 put_away_chat_move,
                 handoff::ask_persona_offer,
                 handoff::ask_persona_chat,

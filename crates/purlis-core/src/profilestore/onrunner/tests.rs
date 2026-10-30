@@ -633,10 +633,12 @@ fn only_a_plan_its_harness_serves_is_named_for_a_sign_in() {
     assert_eq!(sign_in::plan_named("claude", None), Ok(()));
 }
 
-/// A move refused for its profile says the chat did not move and to ask for the move again,
-/// never that nothing was started or to start the chat again (#2048).
+/// A move whose profile is not signed in on the pool waits for it to sign in (#3477): it is
+/// told as a sign-in to ask, naming the profile and its harness, and no Inbox wait is added, since
+/// the move's own notice asks it. A profile the runner did not keep refuses the move, saying the
+/// chat did not move and to ask for the move again, never that nothing was started (#2048).
 #[test]
-fn a_move_refused_for_its_profile_says_to_ask_for_the_move_again() {
+fn a_move_whose_profile_is_signed_out_there_waits_for_its_sign_in() {
     let dir = tempfile::tempdir().unwrap();
     a_signed_in_desktop_profile(dir.path());
     let desktop = homes(dir.path(), "desktop");
@@ -646,24 +648,31 @@ fn a_move_refused_for_its_profile_says_to_ask_for_the_move_again() {
         Ok(Some(Standing::SignedOut))
     })
     .unwrap_err();
+    assert_eq!(
+        signed_out,
+        NotYet::SignIn(SignInAsked {
+            pool: "builds".into(),
+            profile: "work".into(),
+            kind: "claude".into(),
+            harness: "Claude Code".into(),
+        })
+    );
+    assert!(waiting_on_pools(&project).is_empty());
+    let said = signed_out.said();
+    assert!(said.contains("not signed in on pool builds"), "{said}");
+    assert!(said.contains("The chat did not move"), "{said}");
+
     let not_kept = ready_to_move_on(desktop.config_root(), &project, "builds", "work", &|_| {
         Err("the runner did not answer".into())
     })
     .unwrap_err();
-    for refused in [&signed_out, &not_kept] {
-        assert!(refused.contains("The chat did not move"), "{refused}");
-        assert!(!refused.contains("Nothing was started"), "{refused}");
-        assert!(!refused.contains("start the chat again"), "{refused}");
-    }
-    assert!(
-        signed_out.contains("ask for the move again"),
-        "{signed_out}"
-    );
-    assert!(
-        signed_out.contains("Profile work on pool builds"),
-        "{signed_out}"
-    );
-    let_go(None, "builds", "work");
+    let NotYet::Refused(refused) = &not_kept else {
+        panic!("{not_kept:?}");
+    };
+    assert!(refused.contains("The chat did not move"), "{refused}");
+    assert!(!refused.contains("Nothing was started"), "{refused}");
+    assert!(!refused.contains("start the chat again"), "{refused}");
+    assert_eq!(not_kept.said(), *refused);
 }
 
 /// The desktop's made profile `work`, signed in, with settings beside its sign-in: Claude Code's

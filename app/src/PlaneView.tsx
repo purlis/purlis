@@ -6119,6 +6119,7 @@ export const PlaneView = memo(function PlaneView({
             stage: "failed",
             why,
             with: moving?.with ?? [],
+            sign_in: null,
           });
         void commands
           .moveChatNow(plane, session, STARTING_SIZE.columns, STARTING_SIZE.rows)

@@ -293,6 +293,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A chat moved to or from a pool's runner (#2048): a new run where it moves.
     "move_chat",
     "move_chat_now",
+    // A move that waited on its profile's sign-in is prepared again (#3477): it may then send
+    // the chat's work to the runner, so only the person's own window says it signed in.
+    "chat_move_signed_in",
     "start_chat_fresh",
     "ask_chat_restart",
     // Reads what a chat was sent or said to another.

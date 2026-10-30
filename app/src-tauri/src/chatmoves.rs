@@ -27,6 +27,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use purlis_core::poollogins::Unbound;
+use purlis_core::profilestore::onrunner::{NotYet, SignInAsked};
 
 /// Where a chat runs: a pool's runner by the pool's name, or this machine.
 pub(crate) type Place = Option<String>;
@@ -36,6 +37,9 @@ pub(crate) type Place = Option<String>;
 pub(crate) enum Stage {
     /// Its preparation runs; the chat keeps working where it is.
     Preparing,
+    /// It waits for a profile of it to sign in on the runner, which the move's notice asks
+    /// (#3477); the chat keeps working where it is, and it is prepared again once signed in.
+    SigningIn(SignInAsked),
     /// Prepared: it switches at the chat's next pause.
     Ready,
     /// Its switch is being made, for every chat of its workspace at once (#3453).
@@ -78,22 +82,45 @@ pub(crate) struct ChatMove {
     pub(crate) from: Option<String>,
     /// The pool it moves to, or `null` for this machine.
     pub(crate) to: Option<String>,
-    /// `preparing`, `ready`, `switching` (being made now, past cancelling), `failed`, or
-    /// `over`: it moved or was put away, and the window forgets it (#3814).
+    /// `preparing`, `signing-in` (#3477), `ready`, `switching` (being made now, past
+    /// cancelling), `failed`, or `over`: it moved or was put away, and the window forgets it
+    /// (#3814).
     pub(crate) stage: String,
     /// Why it failed, in a sentence: where it is `failed`.
     pub(crate) why: Option<String>,
+    /// The profile it waits on to sign in on the runner: where it is `signing-in` (#3477).
+    pub(crate) sign_in: Option<MoveSignIn>,
     /// The other chats of its workspace that move with it, by name (#3453).
     pub(crate) with: Vec<String>,
+}
+
+/// **The profile a move waits on to sign in on the runner it goes to** (#3477): what the
+/// window's sign-in strip under the move's notice signs in.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub(crate) struct MoveSignIn {
+    pub(crate) profile: String,
+    /// Its harness, as a profile's kind names it.
+    pub(crate) kind: String,
+    /// Its harness as people call it: `Claude Code`.
+    pub(crate) harness: String,
 }
 
 impl ChatMove {
     fn of(session: u32, one: &Move) -> ChatMove {
         let (stage, why) = match &one.stage {
             Stage::Preparing => ("preparing", None),
+            Stage::SigningIn(_) => ("signing-in", None),
             Stage::Ready => ("ready", None),
             Stage::Switching => ("switching", None),
             Stage::Failed(why) => ("failed", Some(why.clone())),
+        };
+        let sign_in = match &one.stage {
+            Stage::SigningIn(asked) => Some(MoveSignIn {
+                profile: asked.profile.clone(),
+                kind: asked.kind.clone(),
+                harness: asked.harness.clone(),
+            }),
+            _ => None,
         };
         ChatMove {
             session,
@@ -101,6 +128,7 @@ impl ChatMove {
             to: one.to.clone(),
             stage: stage.to_owned(),
             why,
+            sign_in,
             with: one
                 .group
                 .iter()
@@ -139,11 +167,16 @@ pub(crate) enum Due {
     Now(Move),
 }
 
+/// A move's preparation, kept while the move waits on a sign-in so it can be run again (#3477).
+type Prepare = Arc<Mutex<Box<dyn FnMut() -> Result<(), NotYet> + Send>>>;
+
 /// **Every chat's move in one project**, while it is asked for and until it is put away.
 #[derive(Default)]
 pub(crate) struct Moves {
     by_chat: Mutex<HashMap<u32, Move>>,
     told: Mutex<Option<Told>>,
+    /// Each move's preparation, by each of its chats, while it may be run again.
+    prepares: Mutex<HashMap<u32, Prepare>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -221,15 +254,16 @@ impl Moves {
     }
 
     /// **Starts the move of `group`, a workspace's chats, from `from` to `to`** (#3453):
-    /// `prepare` runs once, off this thread, and the move is ready to switch once it has, or
-    /// failed with its words, for every one of them. Refused while any of them is moving
-    /// already.
+    /// `prepare` runs off this thread, and the move is ready to switch once it has, or failed
+    /// with its words, for every one of them. Where it says a profile is not signed in on the
+    /// runner, the move waits on that sign-in (#3477), and `prepare` runs again at
+    /// [`Self::signed_in`]. Refused while any of them is moving already.
     pub(crate) fn begin(
         self: &Arc<Self>,
         group: Vec<Member>,
         from: Place,
         to: Place,
-        prepare: impl FnOnce() -> Result<(), String> + Send + 'static,
+        prepare: impl FnMut() -> Result<(), NotYet> + Send + 'static,
     ) -> Result<(), String> {
         let Some(first) = group.first().map(|one| one.session) else {
             return Err("No chat was asked to move.".to_owned());
@@ -266,15 +300,32 @@ impl Moves {
             }
             one
         };
+        let prepare: Prepare = Arc::new(Mutex::new(Box::new(prepare)));
+        {
+            let mut prepares = lock(&self.prepares);
+            for session in one.sessions() {
+                prepares.insert(session, Arc::clone(&prepare));
+            }
+        }
         self.tell(&one);
+        self.prepare(first, one.group, prepare);
+        Ok(())
+    }
+
+    /// Runs `prepare` for the move of `group` off this thread, and has it reach what it says.
+    fn prepare(self: &Arc<Self>, first: u32, group: Vec<Member>, prepare: Prepare) {
         let moves = Arc::clone(self);
-        let group = one.group.clone();
         let spawned = std::thread::Builder::new()
             .name("purlis-chat-move".into())
             .spawn(move || {
-                let stage = match prepare() {
+                let said = {
+                    let mut run = lock(&prepare);
+                    (*run)()
+                };
+                let stage = match said {
                     Ok(()) => Stage::Ready,
-                    Err(why) => Stage::Failed(why),
+                    Err(NotYet::SignIn(asked)) => Stage::SigningIn(asked),
+                    Err(NotYet::Refused(why)) => Stage::Failed(why),
                 };
                 moves.reached_by(first, &group, stage);
             });
@@ -284,6 +335,40 @@ impl Moves {
                 Stage::Failed(format!("purlis could not prepare the move: {why}")),
             );
         }
+    }
+
+    /// **Chat `session`'s move waited on a sign-in, which the window says is done** (#3477): it
+    /// is prepared again, which asks the runner itself whether the profile is signed in there,
+    /// so it goes ahead by itself once it is, or waits again. Refused for a move that waits on
+    /// no sign-in.
+    pub(crate) fn signed_in(self: &Arc<Self>, session: u32) -> Result<(), String> {
+        let (first, group) = {
+            let mut all = lock(&self.by_chat);
+            let Some(one) = all.get(&session).cloned() else {
+                return Err("This chat is not moving.".to_owned());
+            };
+            if !matches!(one.stage, Stage::SigningIn(_)) {
+                return Err("Its move waits on no sign-in.".to_owned());
+            }
+            let preparing = Move {
+                stage: Stage::Preparing,
+                ..one
+            };
+            for member in preparing.sessions() {
+                all.insert(member, preparing.clone());
+            }
+            drop(all);
+            self.tell(&preparing);
+            (session, preparing.group)
+        };
+        let Some(prepare) = lock(&self.prepares).get(&first).cloned() else {
+            self.reached(
+                first,
+                Stage::Failed("purlis no longer holds how to prepare the move.".to_owned()),
+            );
+            return Ok(());
+        };
+        self.prepare(first, group, prepare);
         Ok(())
     }
 
@@ -305,6 +390,13 @@ impl Moves {
             let Some(mut one) = all.get(&session).cloned().filter(|one| one.group == group) else {
                 return;
             };
+            // A preparation is run again only from a wait on a sign-in.
+            if !matches!(stage, Stage::SigningIn(_) | Stage::Preparing) {
+                let mut prepares = lock(&self.prepares);
+                for member in group {
+                    prepares.remove(&member.session);
+                }
+            }
             one.stage = stage;
             for member in group {
                 if all
@@ -330,6 +422,10 @@ impl Moves {
         };
         match &one.stage {
             Stage::Preparing => Due::NotYet("Its move is still being prepared.".to_owned()),
+            Stage::SigningIn(asked) => Due::NotYet(format!(
+                "It moves once {} is signed in on pool {}.",
+                asked.profile, asked.pool
+            )),
             Stage::Switching => Due::NotYet("Its move is being made.".to_owned()),
             Stage::Failed(_) => Due::NotMoving,
             Stage::Ready if !at_a_pause(session) => Due::NotYet(NOT_AT_A_PAUSE.to_owned()),
@@ -378,10 +474,10 @@ impl Moves {
         self.reached(session, Stage::Failed(why));
     }
 
-    /// **Puts chat `session`'s move away**: one being prepared or ready is forgotten for every
-    /// chat of it, since they move together (its preparation changes nothing of them), and
-    /// every tab of it is told (#3814); a failed one's reason is put away for this chat. One
-    /// being made is past cancelling, and refused in a sentence.
+    /// **Puts chat `session`'s move away**: one being prepared, waiting on a sign-in (#3477) or
+    /// ready is forgotten for every chat of it, since they move together (its preparation
+    /// changes nothing of them), and every tab of it is told (#3814); a failed one's reason is
+    /// put away for this chat. One being made is past cancelling, and refused in a sentence.
     pub(crate) fn put_away(&self, session: u32) -> Result<(), String> {
         let over = {
             let mut all = lock(&self.by_chat);
@@ -396,9 +492,11 @@ impl Moves {
                     all.remove(&session);
                     None
                 }
-                Stage::Preparing | Stage::Ready => {
+                Stage::Preparing | Stage::SigningIn(_) | Stage::Ready => {
+                    let mut prepares = lock(&self.prepares);
                     for member in one.sessions() {
                         all.remove(&member);
+                        prepares.remove(&member);
                     }
                     Some(one)
                 }
@@ -460,17 +558,18 @@ fn not_ready_said(why: &Unbound, not_yours: &str) -> String {
 /// **Readies pool `pool`'s runner for the chats of `workspace` on `profiles` to move there**
 /// (#2048, #2049, #3453): each profile kept on the runner, signed in there, first, then the
 /// project held there and each clone's branch sent ahead, once for them all. Nothing is sent
-/// ahead where a profile is not kept.
+/// ahead where a profile is not kept, and a profile signed out there is the sign-in the move
+/// waits on (#3477).
 pub(crate) fn prepare_on_a_runner(
     chats: &crate::chats::Chats,
     pool: &str,
     workspace: &str,
     profiles: &[String],
-) -> Result<(), String> {
+) -> Result<(), NotYet> {
     for profile in profiles {
         chats.ready_profile_on(pool, profile)?;
     }
-    chats.sessions().move_ahead(pool, workspace)
+    Ok(chats.sessions().move_ahead(pool, workspace)?)
 }
 
 /// **Moves `moving`, the chats of one workspace, to pool `pool`'s runner** (#2048, #2049,
@@ -484,7 +583,9 @@ pub(crate) fn move_to_a_runner(
     moving: &[crate::host::Moving],
 ) -> Result<(), String> {
     for profile in profiles_of(moving) {
-        chats.ready_profile_on(pool, &profile)?;
+        chats
+            .ready_profile_on(pool, &profile)
+            .map_err(|not_yet| not_yet.said())?;
     }
     chats.sessions().move_in(pool, moving)
 }
@@ -735,7 +836,7 @@ impl crate::planes::Held {
             })?;
             brings_work_back(pool, || purlis_core::poollogins::Bound::read(&config, pool))?;
         }
-        let prepare: Box<dyn FnOnce() -> Result<(), String> + Send> = match &to {
+        let prepare: Box<dyn FnMut() -> Result<(), NotYet> + Send> = match &to {
             Some(pool) => {
                 // Weak: a project let go of meanwhile is prepared for no more.
                 let held = Arc::downgrade(self);
