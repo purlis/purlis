@@ -3638,6 +3638,30 @@ impl Held<'_> {
         // wash (#4039's second review).
         let keeps_states = REST_KEEPS_STATES.contains(&family.name)
             && state.is_some_and(|one| one != State::Invalid);
+        // A pair that falls draws its own look back where both its states hold, and nowhere
+        // else: a chip under the pointer alone, or current alone, keeps the theme's (#4049).
+        if keeps_states && let [first, second] = states {
+            let look = (family.defaults)(variant, states);
+            let values: BTreeMap<Prop, PartValue> = [
+                (Prop::Fill, look.fill),
+                (Prop::Text, look.text),
+                (Prop::BorderColour, look.border),
+            ]
+            .into_iter()
+            .filter(|(property, _)| family.parts[0].properties.contains(property))
+            .map(|(property, token)| (property, PartValue::Colour(token)))
+            .collect();
+            self.rules.push(Rule {
+                family,
+                part: 0,
+                variant: reached,
+                state: Some(*first),
+                also: Some(*second),
+                values,
+                fallback: true,
+            });
+            return;
+        }
         if !written && keeps_states {
             let one = state.unwrap_or(State::Hover);
             self.rules

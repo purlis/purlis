@@ -447,3 +447,48 @@ fn a_current_chip_reached_from_the_keyboard_keeps_its_wash_after_its_focus_falls
         "{sheet}"
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// 7. A failing pair falls only where both states hold (#4049)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_pin_s_failing_pair_leaves_a_plain_hovered_pin_the_theme_s_fill() {
+    // `accent.fill` under the pointer holds the primary mark, not the accent of a pinned pin.
+    let theme = purlis_dark(json!({ "titlebar.pin.hover.fill": "accent.fill" }));
+    assert_eq!(fell(&theme), ["titlebar.pin.hover+selected"]);
+    let sheet = parts::stylesheet(&theme);
+    let hovered = drawn_on(&sheet, "pin", &["data-hovered"]);
+    assert_eq!(fill_of(&hovered), Some("var(--accent-fill)"), "{sheet}");
+    let both = drawn_on(&sheet, "pin", PIN_PAIR);
+    assert_eq!(fill_of(&both), Some("var(--surface-overlay)"), "{sheet}");
+    assert_eq!(words_of(&both), Some("var(--accent-base)"), "{sheet}");
+}
+
+#[test]
+fn a_chip_s_failing_pair_leaves_a_plain_hovered_chip_the_theme_s_fill() {
+    // Under the pointer `border.strong` holds the primary words, and a current chip's accent
+    // words hold on its wash, but not the accent on `border.strong`, which a current chip
+    // under the pointer draws.
+    let theme = purlis_dark(json!({
+        "titlebar.workspace.pinned.hover.fill": "border.strong",
+        "titlebar.workspace.pinned.selected.text": "accent.base",
+    }));
+    assert!(
+        fell(&theme).contains(&"titlebar.workspace.pinned.hover+selected".to_owned()),
+        "{:?}",
+        fell(&theme)
+    );
+    let sheet = parts::stylesheet(&theme);
+    let hovered = drawn_on(&sheet, "workspace", &["data-variant=pinned", "data-hovered"]);
+    assert_eq!(fill_of(&hovered), Some("var(--border-strong)"), "{sheet}");
+    let current = drawn_on(&sheet, "workspace", &["data-variant=pinned", "data-selected"]);
+    assert_eq!(words_of(&current), Some("var(--accent-base)"), "{sheet}");
+    let both = drawn_on(
+        &sheet,
+        "workspace",
+        &["data-variant=pinned", "data-hovered", "data-selected"],
+    );
+    assert_eq!(fill_of(&both), Some("var(--accent-wash-hover)"), "{sheet}");
+    assert_eq!(words_of(&both), Some("var(--text-primary)"), "{sheet}");
+}
