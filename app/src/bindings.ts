@@ -3050,7 +3050,12 @@ export const commands = {
 	runnerWrite: (plane: PlaneId, id: number) => typedError<RunnerWriteWhole, string>(__TAURI_INVOKE("runner_write", { plane, id })),
 	/**  **Dismiss** on a held write: nothing is made. Window-only. */
 	dismissRunnerWrite: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_runner_write", { plane, id })),
-	/**  **Approve** on a held dispatch. Window-only. */
+	/**
+	 *  **Held dispatch `id` whole, for its own tab**. Window-only: what a runner chat asks to start
+	 *  here is the person's to read.
+	 */
+	runnerDispatch: (plane: PlaneId, id: number) => typedError<RunnerDispatchWhole, string>(__TAURI_INVOKE("runner_dispatch", { plane, id })),
+	/**  **Approve** on a held dispatch, pressed in its own tab. Window-only. */
 	approveRunnerDispatch: (plane: PlaneId, id: number) => typedError<string, string>(__TAURI_INVOKE("approve_runner_dispatch", { plane, id })),
 	/**  **Refuse** on a held dispatch: nothing starts. Window-only. */
 	refuseRunnerDispatch: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("refuse_runner_dispatch", { plane, id })),
@@ -4546,8 +4551,8 @@ export type AnswerPath =
  */
 { via: "runner-write"; id: number } | 
 /**
- *  `approve_runner_dispatch` for Approve and `refuse_runner_dispatch` for Refuse, on held
- *  runner dispatch `id`.
+ *  `refuse_runner_dispatch` for Refuse, on held runner dispatch `id`; Open opens its own
+ *  tab, which shows it whole with Approve (`approve_runner_dispatch`), and sends nothing.
  */
 { via: "runner-dispatch"; id: number } | 
 /**
@@ -11537,6 +11542,34 @@ export type RunnerBranch = {
 	 *  checkout is on where there is none.
 	 */
 	ahead: number,
+};
+
+/**
+ *  **A held open or dispatch whole, as its own tab draws it**: everything Approve would start,
+ *  the brief whole, and what the chat could do with it after. Approve is pressed only there.
+ */
+export type RunnerDispatchWhole = {
+	/**  The chat that asked, by its number and as its tab names it. */
+	session: number,
+	chat: string,
+	/**  The pool it runs on. */
+	pool: string,
+	/**  The persona the new chat would run as, none for a chat on no persona. */
+	persona: string | null,
+	/**  Whether it hands the chat's work off, rather than asking for a task that reports back. */
+	handoff: boolean,
+	/**  The task's name, or for a handoff the workspace its work moves to. */
+	name: string,
+	/**  Where the new chat would work, as the ask says it: `--in`, or a handoff's workspace. */
+	place: string | null,
+	/**  Whether a handoff would create the workspace it moves to. */
+	creates: boolean,
+	/**  The profile it would start on, as this app would choose it now. */
+	profile: string | null,
+	/**  Whether it asks for a long-running task. */
+	long: boolean,
+	/**  The brief whole, drawn inertly: escapes written out for what would draw otherwise. */
+	brief: string,
 };
 
 /**

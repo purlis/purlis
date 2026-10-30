@@ -485,6 +485,7 @@ macro_rules! app_commands {
                 runnerwrites::apply_runner_write,
                 runnerwrites::runner_write,
                 runnerwrites::dismiss_runner_write,
+                runnerdispatches::runner_dispatch,
                 runnerdispatches::approve_runner_dispatch,
                 runnerdispatches::refuse_runner_dispatch,
                 dockerpools::set_chats_run_on,

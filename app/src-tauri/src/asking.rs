@@ -213,8 +213,8 @@ pub enum AnswerPath {
     /// `apply_runner_write` for Apply and `dismiss_runner_write` for Dismiss, on held runner
     /// write `id` (#2046); Open opens its own tab, which shows it whole, and sends nothing.
     RunnerWrite { id: u32 },
-    /// `approve_runner_dispatch` for Approve and `refuse_runner_dispatch` for Refuse, on held
-    /// runner dispatch `id`.
+    /// `refuse_runner_dispatch` for Refuse, on held runner dispatch `id`; Open opens its own
+    /// tab, which shows it whole with Approve (`approve_runner_dispatch`), and sends nothing.
     RunnerDispatch { id: u32 },
     /// Sign in sends nothing: it opens a shell tab where the core types the harness's own
     /// sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
@@ -1384,8 +1384,6 @@ pub const DISMISS: &str = "dismiss";
 /// The id of Open on a proposed change too long for a row (PC-7): it opens the change's own
 /// tab, and answers nothing.
 pub const OPEN: &str = "open";
-/// The id of Approve on a runner chat's held open or dispatch.
-pub const APPROVE: &str = "approve";
 /// The id of Refuse on a runner chat's held open or dispatch.
 pub const REFUSE: &str = "refuse";
 
@@ -1463,22 +1461,15 @@ fn runner_dispatch_key(id: u32) -> String {
 }
 
 /// **The runner dispatch adapter**: an open or a dispatch a chat on a pool's runner asked for,
-/// said in words, held until the person answers. **Approve** decides it as a chat of this
-/// machine's dispatch is decided; **Refuse** starts nothing. Never "always approve".
+/// said in words, held until the person answers. Its row cuts the brief, so **Open** shows it
+/// whole in its own tab, where Approve is pressed; **Refuse** starts nothing. Never "always
+/// approve".
 pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
     Shown {
         session: one.session,
         ask: runner_dispatch_key(one.id),
         says: said_inertly(&one.said()),
-        options: vec![
-            Offered {
-                id: APPROVE.to_owned(),
-                label: "Approve".to_owned(),
-                allows: true,
-                preselected: None,
-            },
-            refuses(REFUSE, "Refuse"),
-        ],
+        options: vec![refuses(OPEN, "Open"), refuses(REFUSE, "Refuse")],
         source: AskSource::RunnerDispatch,
         chain: Vec::new(),
         answer: AnswerPath::RunnerDispatch { id: one.id },

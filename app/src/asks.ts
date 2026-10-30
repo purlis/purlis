@@ -29,6 +29,7 @@ import { sandboxCommandReturned } from "./sandboxAsked";
 import { askOpenProposal } from "./proposedChangeOpen";
 import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { askOpenRunnerWrite } from "./runnerWriteOpen";
+import { askOpenRunnerDispatch } from "./runnerDispatchOpen";
 import { askProfileSignIn } from "./settings/links";
 
 /**
@@ -269,9 +270,14 @@ export async function answerTaken(
         if (option === "dismiss") return commands.dismissRunnerWrite(plane, path.id);
         break;
       case "runner-dispatch":
-        // A chat on a pool's runner asked to start a chat on this machine: Approve decides it as
-        // a dispatch of a chat here is decided; Refuse starts nothing. The chat is told which.
-        if (option === "approve") return commands.approveRunnerDispatch(plane, path.id);
+        // A chat on a pool's runner asked to start a chat on this machine. A row cuts its brief,
+        // so Open shows it whole in its own tab, where Approve is pressed; Refuse starts
+        // nothing. The chat is told which.
+        if (option === "open") {
+          askOpenRunnerDispatch(plane, path.id);
+          opened = true;
+          return { status: "ok" };
+        }
         if (option === "refuse") return commands.refuseRunnerDispatch(plane, path.id);
         break;
       case "sign-in":

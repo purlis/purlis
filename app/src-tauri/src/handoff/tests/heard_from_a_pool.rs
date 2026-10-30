@@ -168,3 +168,68 @@ fn a_dispatch_of_a_chat_on_this_machine_is_not_held() {
     assert!(told.is_some(), "it started");
     assert!(held.runner_dispatches().every().is_empty());
 }
+
+#[test]
+fn a_dispatch_heard_from_a_pool_to_another_persona_waits_for_approve_and_raises_no_grant() {
+    let plane = a_plane_with_personas();
+    let planes = planes();
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_as(&held, &plane.root, Some("devops"), &plane.root);
+    let before = held.chats().open_now().len();
+
+    let (said, told) = dispatch_from_the_pool(&held, &id, asking, Some("qa"), "check prod");
+
+    assert!(
+        matches!(&said, Answer::NeedsGrant { to, waiting: None, .. } if to == "qa"),
+        "{said:?}"
+    );
+    assert!(told.is_none());
+    assert_eq!(held.chats().open_now().len(), before, "nothing started");
+    assert_eq!(held.runner_dispatches().every().len(), 1);
+    assert!(
+        held.dispatch_grants().waiting(asking).is_empty(),
+        "the person is asked to Approve first, not for a grant"
+    );
+}
+
+#[test]
+fn approve_opens_a_held_handoff() {
+    let plane = a_plane_with_personas();
+    let planes = planes();
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_as(&held, &plane.root, Some("devops"), &plane.root);
+    let (_, _) = crate::hooks::heard_from(Some(POOL.to_owned()), || {
+        a_handoff(&held, &id, asking, None, None, INTO_ALPHA)
+    });
+    let waiting = held.runner_dispatches().every()[0].id;
+
+    let arrived = Mutex::new(None);
+    crate::runnerdispatches::approved(&held, &id, waiting, &|it| {
+        *arrived.lock().unwrap() = Some(it);
+    })
+    .expect("approved");
+
+    let it = arrived
+        .into_inner()
+        .unwrap()
+        .expect("the window is told it opened");
+    assert_eq!(it.persona.as_deref(), Some("devops"));
+    assert_eq!(it.workspace.as_deref(), Some("alpha"));
+    assert!(held.runner_dispatches().every().is_empty());
+}
+
+#[test]
+fn a_dispatch_heard_from_a_pool_with_no_task_name_is_refused_and_not_held() {
+    let plane = a_plane_with_personas();
+    let planes = planes();
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_as(&held, &plane.root, Some("devops"), &plane.root);
+
+    let (said, _) = dispatch_from_the_pool(&held, &id, asking, Some("devops"), "  ");
+
+    assert!(matches!(said, Answer::No { .. }), "{said:?}");
+    assert!(held.runner_dispatches().every().is_empty());
+}

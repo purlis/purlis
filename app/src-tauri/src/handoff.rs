@@ -246,8 +246,12 @@ pub fn answer(
                 return no(why);
             }
             let wanted = Wanted::of(&dispatch);
-            // Heard from a pool, it waits for the person, as an open does.
+            // Heard from a pool, it waits for the person, as an open does: a name purlis would
+            // not draw is refused first, so nothing the person could not start waits on them.
             if let Some(pool) = crate::runnerdispatches::heard_from_a_pool(held, wanted.chat) {
+                if let Err(why) = dispatchdecision::task_name(&wanted.name) {
+                    return no(why);
+                }
                 return crate::runnerdispatches::hold(held, &pool, wanted);
             }
             task_dispatched(held, plane, &wanted, arrived)
@@ -3440,7 +3444,7 @@ pub fn answered(
 pub(crate) fn start_approved(
     held: &Held,
     plane: &PlaneId,
-    wanted: &Wanted,
+    (wanted, to): (&Wanted, Option<String>),
     arrived: &(dyn Fn(Arrived) + Send + Sync),
 ) -> String {
     use purlis_core::handback::Answered;
@@ -3455,8 +3459,21 @@ pub(crate) fn start_approved(
         }
         // Its grant is asked for on the chat's tab now, as for any dispatch: that answer
         // starts it, or tells the chat it was kept blocked.
-        Ok(Dispatched::Held { .. }) => {
+        Ok(Dispatched::Held { waiting: None, .. }) => {
             "It now waits on a dispatch grant, asked on the chat's tab.".to_owned()
+        }
+        // Not kept: the person is asked about the pair for an earlier task already, so nothing
+        // of this one will start, and its chat is told so.
+        Ok(Dispatched::Held {
+            waiting: Some(first),
+            ..
+        }) => {
+            let why = format!(
+                "the person is already asked about this pair for '{first}', so it was not \
+                 started; dispatch it again once that is answered"
+            );
+            not_started_after_holding(held, wanted, to, None, &why);
+            why
         }
         Ok(Dispatched::WaitsOnMemory { .. }) => match waits_on_memory(held, wanted) {
             Ok(()) => {
@@ -3469,12 +3486,12 @@ pub(crate) fn start_approved(
                 "It waits on this machine's memory, and starts once memory frees.".to_owned()
             }
             Err(why) => {
-                not_started_after_holding(held, wanted, wanted.to.clone(), None, &why);
+                not_started_after_holding(held, wanted, to, None, &why);
                 why
             }
         },
         Err(not) => {
-            not_started_after_holding(held, wanted, wanted.to.clone(), not.row, &not.why);
+            not_started_after_holding(held, wanted, to, not.row, &not.why);
             not.why
         }
     }

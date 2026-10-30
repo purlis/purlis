@@ -168,6 +168,7 @@ import {
 import { useRemoveWorkspaceAsked } from "./removeWorkspaceAsk";
 import { useOpenProposalAsked } from "./proposedChangeOpen";
 import { useOpenRunnerWriteAsked } from "./runnerWriteOpen";
+import { useOpenRunnerDispatchAsked } from "./runnerDispatchOpen";
 import { BROWSER_ASK_ENDED, useOpenBrowserAsked } from "./browserNeedsYou";
 import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
@@ -4875,6 +4876,7 @@ export const PlaneView = memo(function PlaneView({
   useOpenProposalAsked(plane, showView);
   // Open on a runner chat's change its row cannot show whole opens its own tab (#2046).
   useOpenRunnerWriteAsked(plane, showView);
+  useOpenRunnerDispatchAsked(plane, showView);
   /** A browser whose chat asked the person to take it over, taken over from its Ask (#2015):
    *  its view opens, where the bar says they drive and Done hands it back. */
   const showBrowserTakenOver = useCallback(
