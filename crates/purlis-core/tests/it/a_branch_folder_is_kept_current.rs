@@ -332,45 +332,187 @@ fn a_conflict_stops_the_update_naming_the_files_and_continue_or_abort_finishes_i
     assert!(said.contains("no rebase is stopped"), "{said}");
 }
 
+/// A branch folder with a commit of its own, pushed: what a lane has once its PR is open.
+fn pushed_piece(w: &World, name: &str) -> PathBuf {
+    let (code, cut) = add(w, name, None);
+    assert_eq!(code, 0, "{cut}");
+    let piece = w.piece(name);
+    commit_in(&piece, "mine.txt", "mine\n");
+    let (code, said) = push(w, name, false);
+    assert_eq!(code, 0, "{said}");
+    piece
+}
+
+/// A commit of `file` in `dir`, as a chat's `purlis worktree commit` adds one.
+fn commit_in(dir: &Path, file: &str, text: &str) {
+    write(dir, file, text);
+    git(dir, &["add", file]);
+    git(dir, &["commit", "-q", "-m", file]);
+}
+
+/// Someone else's commit on the forge's copy of branch `branch`.
+fn they_push_to(w: &World, branch: &str) {
+    git(&w.theirs, &["fetch", "-q", "origin"]);
+    git(
+        &w.theirs,
+        &["checkout", "-q", "-B", branch, &format!("origin/{branch}")],
+    );
+    commit_in(&w.theirs, "theirs-on-branch.txt", "theirs\n");
+    git(
+        &w.theirs,
+        &["push", "-q", "origin", &format!("HEAD:{branch}")],
+    );
+    git(&w.theirs, &["checkout", "-q", "main"]);
+}
+
+/// The commit the forge's branch `branch` is at.
+fn forge_has(w: &World, branch: &str) -> String {
+    out(&w.forge, &["rev-parse", &format!("refs/heads/{branch}")])
+}
+
 #[test]
-fn a_piece_pushes_its_own_branch_and_forces_only_with_a_lease_after_an_update() {
+fn a_piece_pushes_its_own_branch_and_a_plain_push_after_an_update_goes_through() {
     purlis_core::unsteered!();
     let w = world();
-    let (code, cut) = add(&w, "p1", None);
-    assert_eq!(code, 0, "{cut}");
-    let piece = w.piece("p1");
-    write(&piece, "mine.txt", "mine\n");
-    git(&piece, &["add", "mine.txt"]);
-    git(&piece, &["commit", "-q", "-m", "mine"]);
+    let piece = pushed_piece(&w, "p1");
+    assert_eq!(forge_has(&w, "p1"), out(&piece, &["rev-parse", "HEAD"]));
 
-    let (code, said) = push(&w, "p1", false);
-    assert_eq!(code, 0, "{said}");
-    assert_eq!(
-        out(&w.forge, &["rev-parse", "refs/heads/p1"]),
-        out(&piece, &["rev-parse", "HEAD"])
-    );
-
-    // A lease with no update before it is refused.
-    let (code, said) = push(&w, "p1", true);
-    assert_eq!(code, 1, "{said}");
-    assert!(said.contains("only right after"), "{said}");
-
-    // After an update rewrote it, a plain push is refused by git and the lease goes through.
+    // #3895: the update rewrote the pushed branch, and a plain push publishes it, leased to
+    // what the remote had when the update saw it.
     w.they_commit("new.txt", "new\n");
     assert_eq!(update(&w, "p1", &start(None), &Reach::default()).0, 0);
-    let (code, _) = push(&w, "p1", false);
-    assert_eq!(code, 1);
-    let (code, said) = push(&w, "p1", true);
+    let (code, said) = push(&w, "p1", false);
     assert_eq!(code, 0, "{said}");
-    assert_eq!(
-        out(&w.forge, &["rev-parse", "refs/heads/p1"]),
-        out(&piece, &["rev-parse", "HEAD"])
-    );
+    assert_eq!(forge_has(&w, "p1"), out(&piece, &["rev-parse", "HEAD"]));
     // The forge's main is never touched.
     assert_eq!(
         out(&w.forge, &["rev-parse", "refs/heads/main"]),
         out(&w.theirs, &["rev-parse", "HEAD"])
     );
+}
+
+#[test]
+fn a_branch_the_update_rewrote_is_pushed_with_commits_added_after_it() {
+    purlis_core::unsteered!();
+    let w = world();
+    let piece = pushed_piece(&w, "p1");
+    w.they_commit("new.txt", "new\n");
+    assert_eq!(update(&w, "p1", &start(None), &Reach::default()).0, 0);
+    // The lane goes on working before it pushes again: two commits on top of the rewrite.
+    commit_in(&piece, "later.txt", "later\n");
+    commit_in(&piece, "later2.txt", "later2\n");
+
+    let (code, said) = push(&w, "p1", false);
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(forge_has(&w, "p1"), out(&piece, &["rev-parse", "HEAD"]));
+    // `--force-with-lease`, the word a chat may still type, asks for nothing more.
+    commit_in(&piece, "later3.txt", "later3\n");
+    let (code, said) = push(&w, "p1", true);
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(forge_has(&w, "p1"), out(&piece, &["rev-parse", "HEAD"]));
+
+    // A second update and more commits: the record follows each rewrite.
+    w.they_commit("newer.txt", "newer\n");
+    assert_eq!(update(&w, "p1", &start(None), &Reach::default()).0, 0);
+    commit_in(&piece, "later4.txt", "later4\n");
+    let (code, said) = push(&w, "p1", false);
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(forge_has(&w, "p1"), out(&piece, &["rev-parse", "HEAD"]));
+}
+
+#[test]
+fn a_rewritten_branch_is_not_pushed_over_a_remote_someone_else_moved() {
+    purlis_core::unsteered!();
+    let w = world();
+    let piece = pushed_piece(&w, "p1");
+    w.they_commit("new.txt", "new\n");
+    assert_eq!(update(&w, "p1", &start(None), &Reach::default()).0, 0);
+    commit_in(&piece, "later.txt", "later\n");
+    they_push_to(&w, "p1");
+    let theirs = forge_has(&w, "p1");
+
+    for lease in [false, true] {
+        let (code, said) = push(&w, "p1", lease);
+        assert_eq!(code, 1, "{said}");
+        assert!(said.contains("moved since"), "{said}");
+        assert!(said.contains("Nothing was pushed"), "{said}");
+        assert_eq!(forge_has(&w, "p1"), theirs, "their commit is kept");
+    }
+}
+
+#[test]
+fn a_branch_rewritten_by_anything_but_purlis_s_update_is_not_pushed_over_its_remote() {
+    purlis_core::unsteered!();
+    let w = world();
+    let piece = pushed_piece(&w, "p1");
+    let published = forge_has(&w, "p1");
+    // Rewritten by hand: the published commit amended away.
+    write(&piece, "mine.txt", "amended\n");
+    git(&piece, &["commit", "-q", "-a", "--amend", "-m", "amended"]);
+
+    for lease in [false, true] {
+        let (code, said) = push(&w, "p1", lease);
+        assert_eq!(code, 1, "{said}");
+        assert!(said.contains("did not rewrite"), "{said}");
+        assert!(said.contains("Nothing was pushed"), "{said}");
+        assert_eq!(forge_has(&w, "p1"), published);
+    }
+
+    // Nor after an update, once the branch has left the commits that update made.
+    w.they_commit("new.txt", "new\n");
+    assert_eq!(update(&w, "p1", &start(None), &Reach::default()).0, 0);
+    git(&piece, &["commit", "-q", "--amend", "-m", "amended again"]);
+    let (code, said) = push(&w, "p1", false);
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("did not rewrite"), "{said}");
+    assert_eq!(forge_has(&w, "p1"), published);
+}
+
+#[test]
+fn an_update_never_vouches_for_remote_commits_the_folder_did_not_have() {
+    purlis_core::unsteered!();
+    let w = world();
+    let piece = pushed_piece(&w, "p1");
+    // Someone pushed to the branch, and the folder never took their commit in.
+    they_push_to(&w, "p1");
+    let theirs = forge_has(&w, "p1");
+    w.they_commit("new.txt", "new\n");
+    let (code, said) = update(&w, "p1", &start(None), &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("has commits"), "{said}");
+
+    let (code, said) = push(&w, "p1", false);
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("Nothing was pushed"), "{said}");
+    assert_eq!(forge_has(&w, "p1"), theirs, "their commit is kept");
+    assert!(!out(&piece, &["log", "--format=%H"]).contains(&theirs));
+}
+
+#[test]
+fn a_lease_record_purlis_cannot_read_refuses_the_push_and_names_the_retry() {
+    purlis_core::unsteered!();
+    let w = world();
+    let piece = pushed_piece(&w, "p1");
+    w.they_commit("new.txt", "new\n");
+    assert_eq!(update(&w, "p1", &start(None), &Reach::default()).0, 0);
+    let published = forge_has(&w, "p1");
+    let git_dir = PathBuf::from(out(&piece, &["rev-parse", "--absolute-git-dir"]));
+    let record = git_dir.join("purlis-updated");
+    assert!(record.is_file(), "the update keeps its record");
+
+    // As an earlier purlis wrote it, one line with no remote commit in it; then none at all.
+    let head = out(&piece, &["rev-parse", "HEAD"]);
+    for written in [Some(format!("{head}\n")), None] {
+        match &written {
+            Some(text) => std::fs::write(&record, text).unwrap(),
+            None => std::fs::remove_file(&record).unwrap(),
+        }
+        let (code, said) = push(&w, "p1", false);
+        assert_eq!(code, 1, "{written:?}: {said}");
+        assert!(said.contains("Nothing was pushed"), "{said}");
+        assert!(said.contains("git push --force-with-lease="), "{said}");
+        assert_eq!(forge_has(&w, "p1"), published);
+    }
 }
 
 #[test]
@@ -573,7 +715,11 @@ fn a_lease_is_asked_of_purlis_s_own_record_of_its_update_never_of_the_reflog() {
     git(&piece, &["add", "mine.txt"]);
     git(&piece, &["commit", "-q", "-m", "mine"]);
     assert_eq!(push(&w, "p1", false).0, 0);
-    // A reflog line that reads like a rebase, written by anyone who may write the clone's refs.
+    let published = forge_has(&w, "p1");
+    // The branch rewritten, with a reflog line that reads like a rebase, written by anyone who
+    // may write the clone's refs.
+    git(&piece, &["commit", "-q", "--amend", "-m", "rewritten"]);
+    let rewritten = out(&piece, &["rev-parse", "HEAD"]);
     git(
         &w.clone,
         &[
@@ -581,12 +727,15 @@ fn a_lease_is_asked_of_purlis_s_own_record_of_its_update_never_of_the_reflog() {
             "-m",
             "rebase (finish): refs/heads/p1 onto x",
             "refs/heads/p1",
-            "p1",
+            &rewritten,
         ],
     );
-    let (code, said) = push(&w, "p1", true);
-    assert_eq!(code, 1, "{said}");
-    assert!(said.contains("only right after"), "{said}");
+    for lease in [false, true] {
+        let (code, said) = push(&w, "p1", lease);
+        assert_eq!(code, 1, "{said}");
+        assert!(said.contains("did not rewrite"), "{said}");
+        assert_eq!(forge_has(&w, "p1"), published);
+    }
 }
 
 #[test]
