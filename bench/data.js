@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793348925506,
+  "lastUpdate": 1793350124186,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31164,6 +31164,48 @@ window.BENCHMARK_DATA = {
             "value": 101.434416,
             "unit": "ms",
             "extra": "median of 5 runs: 100.849, 101.219, 101.434, 101.565, 101.738 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e6ae21e644228e0ad137f8ef41fa315daf1945f5",
+          "message": "Messages to tasks are queued when the app does not answer, and a coordinator tells all its tasks at once (#3902, #3904) (#4012)\n\n* A message sent while the app does not answer is kept in a signed queue (#3902)\n\nThe queue a tell, note, ask or answer is written to first: a file per message\nin the hook spool's directory, numbered past the last one delivered, linked\nnever renamed over, signed with the chat's spool key and checked against the\nkey the app issued that chat. A drain never passes a message still being\nwritten, and a copy of one delivered is refused.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* A coordinator tells all its tasks at once and sees who acknowledged; queued messages are delivered with nobody acting (#3902, #3904)\n\ntell --all (dispatch_tell's all) sends one numbered instruction to every task\nstill working; note --ack <n> (dispatch_note's ack) acknowledges it, and\ndispatch list says who has. Every message is queued first and delivered by the\napp at most once and in order: when it hears from the chat, when a chat waits on\nit (each time the wait looks), and at project open once the tasks are back. A\nclosing chat's queue is delivered as it closes, its chats woken once the close\nlets go of its hold. Instruction numbers and delivery/ack records are kept on\ndisk by chat id. ADR 0090 amended for the new words.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Check of #4012: no number reclaimed past the floor, no wake under a drain lock, a restart keeps its queue (#3902)\n\n- A sender reads the floor again once its part is made, and passes over a number a\n  drain delivered and freed meanwhile.\n- A part that could not be written is removed.\n- A drain collects the chats it wakes and wakes them once its lock is let go.\n- A chat started again in its place has its queue moved to the new number, signed\n  under the new run's key, before the old run's folder is cleared.\n- Compile: wakes return nothing; list patterns take the messages field.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* The drain at project open runs off the launch path (#3902)\n\nStarted on a thread of its own as the launch finishes, and not at all where nothing\nis queued, so nothing is added to the time the window takes to come up.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T08:09:42Z",
+          "tree_id": "9b1de623da5e34fbf2d30d9e342764b2bfaa45f1",
+          "url": "https://github.com/purlis/purlis/commit/e6ae21e644228e0ad137f8ef41fa315daf1945f5"
+        },
+        "date": 1793350120613,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6907209999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.676, 0.682, 0.691, 0.693, 0.694 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6005545,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.556, 16.580, 16.601, 16.611, 16.671 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.938873,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.033, 101.035, 101.939, 102.109, 102.657 ms"
           }
         ]
       }
