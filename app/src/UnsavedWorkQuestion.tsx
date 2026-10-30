@@ -9,7 +9,7 @@
  * `SkillEditInPlace.tsx`), and every close the window asks about through the registry
  * (`unsavedWork.ts`): a tab's, a pane's, a project's, a workspace's removal and a quit.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertDialog } from "./ui/dialog/Dialog";
 import { listed } from "./taskAsks";
 import { useUnsavedWork, type UnsavedWork } from "./unsavedWork";
@@ -44,7 +44,10 @@ export function LeaveQuestion({
   const one = names.length === 1;
   return (
     <AlertDialog
-      onClose={onKeep}
+      // A save under way is waited for: an answer given meanwhile would race it.
+      onClose={() => {
+        if (!busy) onKeep();
+      }}
       title={`Save your changes to ${listed(names)}?`}
       titleId="unsaved-leave"
       description={
@@ -54,7 +57,7 @@ export function LeaveQuestion({
             ? "You changed its text and haven't saved it. If you leave now, the changes are lost."
             : "You changed their text and haven't saved it. If you leave now, the changes are lost."
       }
-      cancel={{ children: "Keep editing" }}
+      cancel={{ children: "Keep editing", isDisabled: busy }}
       alternative={{
         children: "Discard and leave",
         variant: "danger",
@@ -87,10 +90,12 @@ export type UnsavedAsk = {
 };
 
 /**
- * **The window's question about `asked`'s work** (#3929). Discard and leave lets every work go
- * and goes on; Save and leave saves each, and goes on once all are saved: one that is not stays
- * asked about, with why, and those saved are no longer named. `onAnswered` takes the question
- * down, before the close goes on.
+ * **The window's question about `asked`'s work** (#3929). Discard and leave goes on, and the work
+ * goes with what holds it once the close is carried out (`unsavedWork.ts`), so a close whose own
+ * question is then cancelled loses nothing. Save and leave saves each, and goes on once all are
+ * saved: one that is not stays asked about, with why, and those saved are no longer named. Save
+ * and leave waits while the views check whether the work could be saved as it is.
+ * `onAnswered` takes the question down, before the close goes on.
  */
 export function UnsavedWorkQuestion({
   asked,
@@ -102,20 +107,23 @@ export function UnsavedWorkQuestion({
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string>();
   const keys = new Set(asked.work.map((one) => one.key));
+  // Only work still registered is saved: work saved or let go of elsewhere meanwhile is not
+  // written again. It is still named, so the question never names nothing.
   const live = useUnsavedWork().filter((one) => keys.has(one.key));
-  // Work let go of elsewhere meanwhile is still named, so the question never names nothing.
-  const left = live.length > 0 ? live : asked.work;
+  const named = live.length > 0 ? live : asked.work;
+  const checks = useChecks(live);
   return (
     <LeaveQuestion
-      names={left.map((one) => one.name)}
+      names={named.map((one) => one.name)}
       busy={busy}
+      checking={checks === undefined}
+      blocked={checks === false}
       refused={refused}
       onKeep={() => {
         onAnswered();
         asked.kept?.();
       }}
       onDiscard={() => {
-        for (const one of left) one.discard();
         onAnswered();
         asked.then();
       }}
@@ -124,9 +132,9 @@ export function UnsavedWorkQuestion({
         setRefused(undefined);
         void (async () => {
           const why: string[] = [];
-          for (const one of left) {
+          for (const one of live) {
             const said = await one.save().catch((err: unknown) => String(err));
-            if (said !== undefined) why.push(left.length === 1 ? said : `${one.name}: ${said}`);
+            if (said !== undefined) why.push(live.length === 1 ? said : `${one.name}: ${said}`);
           }
           setBusy(false);
           if (why.length > 0) return setRefused(why.join(" "));
@@ -136,4 +144,28 @@ export function UnsavedWorkQuestion({
       }}
     />
   );
+}
+
+/**
+ * **Whether every work in `work` could be saved as it is**, as each view checks it: `undefined`
+ * while any is still checking, and asked again as the work changes. A view that cannot check
+ * is taken at its word: its save says why where it is refused.
+ */
+function useChecks(work: readonly UnsavedWork[]): boolean | undefined {
+  const [checked, setChecked] = useState<{ of: readonly UnsavedWork[]; can: boolean }>();
+  // The list is a new one each render; what it holds changes only as the registry does.
+  const [asked, setAsked] = useState(work);
+  if (asked.length !== work.length || asked.some((one, at) => one !== work[at])) setAsked(work);
+  useEffect(() => {
+    let live = true;
+    void Promise.all(
+      asked.map((one) => (one.check ?? (() => Promise.resolve(true)))().catch(() => true)),
+    ).then((each) => {
+      if (live) setChecked({ of: asked, can: each.every(Boolean) });
+    });
+    return () => {
+      live = false;
+    };
+  }, [asked]);
+  return checked?.of === asked ? checked.can : undefined;
 }

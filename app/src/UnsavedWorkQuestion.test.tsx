@@ -6,7 +6,7 @@
  * Discard and leave, or Save and leave, about every work the close names.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { UnsavedWorkQuestion, type UnsavedAsk } from "./UnsavedWorkQuestion";
 import { keepUnsaved, unsavedNow, type UnsavedWork } from "./unsavedWork";
@@ -56,17 +56,51 @@ describe("the question about unsaved work", () => {
     expect(unsavedNow()).toEqual([deploy]);
   });
 
-  it("Discard and leave lets every work go, then goes on", async () => {
+  it("Discard and leave goes on, and leaves the work to go with what holds it", async () => {
     const deploy = work("deploy");
     const review = work("review");
     const { asked, question } = ask([deploy, review]);
     expect(question()).toHaveAccessibleName("Save your changes to deploy and review?");
 
     await userEvent.click(within(question()).getByRole("button", { name: "Discard and leave" }));
-    expect(deploy.discard).toHaveBeenCalledOnce();
-    expect(review.discard).toHaveBeenCalledOnce();
     expect(asked.then).toHaveBeenCalledOnce();
-    expect(unsavedNow()).toEqual([]);
+    // A close whose own question is then cancelled loses nothing.
+    expect(deploy.discard).not.toHaveBeenCalled();
+    expect(unsavedNow()).toEqual([deploy, review]);
+  });
+
+  it("offers no Save and leave while a view finds its work can't be saved as it is", async () => {
+    let checked = (_can: boolean) => {};
+    const deploy = work("deploy");
+    deploy.check = () => new Promise<boolean>((answer) => (checked = answer));
+    const { question } = ask([deploy]);
+    const saveAndLeave = within(question()).getByRole("button", { name: "Save and leave" });
+    // Still checking: it waits.
+    expect(saveAndLeave).toBeDisabled();
+
+    act(() => checked(false));
+    await waitFor(() => expect(question()).toHaveTextContent("it can't be saved as it is"));
+    expect(saveAndLeave).toBeDisabled();
+    expect(within(question()).getByRole("button", { name: "Discard and leave" })).toBeEnabled();
+  });
+
+  it("waits for a save under way: Keep editing can't be pressed meanwhile", async () => {
+    let saved = (_said: string | undefined) => {};
+    const deploy = work("deploy");
+    deploy.save = () => new Promise((answer) => (saved = answer));
+    const { asked, question } = ask([deploy]);
+
+    await userEvent.click(within(question()).getByRole("button", { name: "Save and leave" }));
+    expect(within(question()).getByRole("button", { name: "Keep editing" })).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    expect(asked.kept).not.toHaveBeenCalled();
+
+    act(() => {
+      keepUnsaved("deploy", undefined);
+      saved(undefined);
+    });
+    await waitFor(() => expect(asked.then).toHaveBeenCalledOnce());
+    expect(asked.kept).not.toHaveBeenCalled();
   });
 
   it("Save and leave saves every work, then goes on", async () => {

@@ -715,8 +715,30 @@ function App() {
    * takes its tab out. A split window left holding nothing goes (`windows.rs`), and the main
    * window left holding nothing shows the opener.
    */
+  /** **A project's close, its move or a quit waiting on the answer about the unsaved work it
+   *  would lose** (#3929, `unsavedWork.ts`), asked before what it ends is. */
+  const [unsavedAsk, setUnsavedAsk] = useState<UnsavedAsk>();
+  const unsavedAskNow = useRef(unsavedAsk);
+  /** Asks about `ask`'s work, unless a question about unsaved work is up already: that one is
+   *  answered first, and this ask is one not taken (`kept`). */
+  const askUnsaved = useCallback((ask: UnsavedAsk) => {
+    if (unsavedAskNow.current !== undefined) return ask.kept?.();
+    unsavedAskNow.current = ask;
+    setUnsavedAsk(ask);
+  }, []);
+  const unsavedAnswered = useCallback(() => {
+    unsavedAskNow.current = undefined;
+    setUnsavedAsk(undefined);
+  }, []);
+
   const moveProject = useCallback(
-    async (plane: string, to: string | null): Promise<Ran> => {
+    async (plane: string, to: string | null, unsavedAsked = false): Promise<Ran> => {
+      // **Its views' unsaved work stays in this window** (#3929, #4028): asked about first.
+      const work = unsavedAsked ? [] : unsavedIn(plane);
+      if (work.length > 0) {
+        askUnsaved({ work, then: () => void moveProject(plane, to, true) });
+        return { ok: true };
+      }
       const answer = await commands
         .moveProjects([plane], plane, to)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
@@ -724,14 +746,12 @@ function App() {
       takeOut(plane);
       return { ok: true };
     },
-    [takeOut],
+    [askUnsaved, takeOut],
   );
 
   /** The project whose close is waiting on the operator's answer (`ClosingProject`). */
   const [closing, setClosing] = useState<string>();
-  /** **A project's close or a quit waiting on the answer about the unsaved work it would lose**
-   *  (#3929, `unsavedWork.ts`), asked before what it ends is. */
-  const [unsavedAsk, setUnsavedAsk] = useState<UnsavedAsk>();
+
   /** Every project's report as of the last render, read when a close arrives rather than
    *  closed over, so the verb below stays one function. */
   const reportsNow = useRef(reports);
@@ -751,11 +771,12 @@ function App() {
    * about, as `PlaneView`'s `run` does.
    */
   const closeProject = useCallback(
-    async (plane: string): Promise<Ran> => {
-      // **Its views' unsaved work is asked about first** (#3929): then the close is asked again.
-      const work = unsavedIn(plane);
+    async (plane: string, unsavedAsked = false): Promise<Ran> => {
+      // **Its views' unsaved work is asked about first** (#3929): then what the close ends. The
+      // work goes with the project once it is let go of (`takeOut`).
+      const work = unsavedAsked ? [] : unsavedIn(plane);
       if (work.length > 0) {
-        setUnsavedAsk({ work, then: () => void closeProject(plane) });
+        askUnsaved({ work, then: () => void closeProject(plane, true) });
         return { ok: true };
       }
       const said = reportsNow.current[plane];
@@ -763,7 +784,7 @@ function App() {
       setClosing(plane);
       return { ok: true };
     },
-    [letGoOf],
+    [askUnsaved, letGoOf],
   );
 
   /**
@@ -1495,7 +1516,7 @@ function App() {
       // is a quit not taken, which the core is told as the warning's Not now tells it.
       const work = unsavedNow();
       if (work.length === 0) return askToQuit();
-      setUnsavedAsk({
+      askUnsaved({
         work,
         then: askToQuit,
         kept: () => void commands.quitCancelled().catch(() => undefined),
@@ -1504,7 +1525,7 @@ function App() {
     // Unlistening can fail too — the window may be going away under it — and a cleanup
     // that throws into nothing is an unhandled rejection, not a diagnosis.
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
-  }, []);
+  }, [askUnsaved]);
 
   // The app menu's Settings… (`⌘,`), which is the core's (`lifecycle.rs`) and says so with an
   // event, as its Quit does. The same verb the palette row runs.
@@ -2639,9 +2660,7 @@ function App() {
 
       {/* The one question a close asks about a view's unsaved work (#3929): a project's, a
           quit's. */}
-      {unsavedAsk && (
-        <UnsavedWorkQuestion asked={unsavedAsk} onAnswered={() => setUnsavedAsk(undefined)} />
-      )}
+      {unsavedAsk && <UnsavedWorkQuestion asked={unsavedAsk} onAnswered={unsavedAnswered} />}
 
       {closing !== undefined && (
         <ClosingProject

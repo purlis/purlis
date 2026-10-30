@@ -7,6 +7,8 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  discardGone,
+  discardRemoved,
   discardUnsavedIn,
   keepUnsaved,
   unsavedClosedBy,
@@ -62,6 +64,30 @@ describe("the registry", () => {
     discardUnsavedIn("p");
     expect(deploy.discard).toHaveBeenCalledOnce();
     expect(unsavedNow()).toEqual([elsewhere]);
+  });
+});
+
+describe("what goes with what holds it", () => {
+  it("is the work of a view no tab shows any more, once its tab has closed", () => {
+    const before = openView(noTabs(), STUDIO, "Skill studio", "ops");
+    const deploy = work("deploy");
+    const notShown = work("settings", { view: SETTINGS });
+    discardGone("p", before, before);
+    discardGone("p", before, openView(before, SETTINGS, "Settings", "ops"));
+    expect(deploy.discard).not.toHaveBeenCalled();
+
+    discardGone("p", before, noTabs());
+    expect(deploy.discard).toHaveBeenCalledOnce();
+    // A view never shown was not closed.
+    expect(notShown.discard).not.toHaveBeenCalled();
+  });
+
+  it("is a removed workspace's work", () => {
+    const ops = work("ops", { workspace: "ops" });
+    const web = work("web", { workspace: "web" });
+    discardRemoved("p", "ops");
+    expect(ops.discard).toHaveBeenCalledOnce();
+    expect(web.discard).not.toHaveBeenCalled();
   });
 });
 

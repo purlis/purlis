@@ -23,9 +23,11 @@ import { samePlace, type StudioPlace } from "./skillStudio";
 import {
   SAVED,
   keepSkillEdit,
+  saveSkillEdit,
   skillEditIn,
   unsaved,
   useSkillEdit,
+  useSkillSaved,
   type SkillEdit,
 } from "./skillEdit";
 import type { ViewRef } from "./tabs";
@@ -151,31 +153,28 @@ export function useSkillEditInPlace({
   /** Saves the text typed, says so, and goes on with `then`; or says why it was not saved and
    *  keeps the editor as it is. */
   const save = (then?: () => void) => {
-    const now = skillEditIn(tab);
-    if (now === undefined) return;
+    if (skillEditIn(tab) === undefined) return;
     setBusy(true);
-    void commands
-      .skillSave(plane, now.level, now.skill.name, now.was, now.now)
-      .then((answer) => {
-        if (answer.status === "error") {
-          // Not saved: a leave from afar is asked again, so the person can go back to it.
-          setSavingAway(undefined);
-          say({ tone: "trouble", label: "The skill was not saved", text: answer.error });
-          return;
-        }
-        keepSkillEdit(tab, undefined);
-        say({ tone: "news", label: "Skill saved", text: [SAVED, ...answer.data.notes].join(" ") });
-        then?.();
-      })
-      .catch((err: unknown) => {
-        setSavingAway(undefined);
-        say({ tone: "trouble", label: "The skill was not saved", text: String(err) });
-      })
-      .finally(() => {
-        setBusy(false);
-        onSaved();
-      });
+    void saveSkillEdit(tab).then((refused) => {
+      setBusy(false);
+      if (refused === undefined) return then?.();
+      // Not saved: a leave from afar is asked again, so the person can go back to it.
+      setSavingAway(undefined);
+      say({ tone: "trouble", label: "The skill was not saved", text: refused });
+      onSaved();
+    });
   };
+  // **A save, whichever way it was asked** (the studio's Save, or the window's question about a
+  // close, #3929): said here, and what the studio reads is read again. A save made while the
+  // studio was not drawn is not said: the studio drawn afresh reads it anyway.
+  const saved = useSkillSaved(tab);
+  const heard = useRef(saved);
+  useEffect(() => {
+    if (saved === undefined || heard.current === saved) return;
+    heard.current = saved;
+    say({ tone: "news", label: "Skill saved", text: [SAVED, ...saved.notes].join(" ") });
+    onSaved();
+  }, [saved, say, onSaved]);
 
   /** **Edit**: the skill's text, read now, in the editor on its page's Text tab, if the tab is
    *  still at `asked` when it comes back: where it is now, or where a step just taken goes. */

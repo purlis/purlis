@@ -446,7 +446,7 @@ import {
 } from "./skillStudio";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { forgetSkillEdit } from "./skillEdit";
-import { unsavedClosedBy, unsavedIn } from "./unsavedWork";
+import { discardGone, discardRemoved, unsavedClosedBy, unsavedIn } from "./unsavedWork";
 import { UnsavedWorkQuestion, type UnsavedAsk } from "./UnsavedWorkQuestion";
 import { SkillRunsHere, useSkillRuns, type RunsOf } from "./skillRuns";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
@@ -3927,6 +3927,8 @@ export const PlaneView = memo(function PlaneView({
       forgetViewHistory(studioHistoryOf(plane, gone));
       forgetSkillEdit(studioHistoryOf(plane, gone));
     }
+    // **And any view's unsaved work goes with its tab** (#3929), once it is asked about.
+    discardGone(plane, studiosBefore.current, tabs);
     studiosBefore.current = tabs;
   }, [tabs, plane]);
 
@@ -4967,6 +4969,8 @@ export const PlaneView = memo(function PlaneView({
         return;
       }
       setRemoving(undefined);
+      // The unsaved work a save would have written into it goes with it (#3929).
+      discardRemoved(plane, workspace);
       setReport({
         from: `workspace.remove:${workspace}`,
         refused: false,
@@ -7733,18 +7737,23 @@ export const PlaneView = memo(function PlaneView({
    */
   // The close asked again, counted, once the question about its unsaved work is answered with
   // a leave (#3929).
-  const askAgain = useRef<(offer: Offer, fromALink: boolean) => Promise<Ran>>(undefined);
+  const askAgain =
+    useRef<(offer: Offer, fromALink: boolean, unsavedAnswered: boolean) => Promise<Ran>>(undefined);
   const askToEndNow = useCallback(
-    async (offer: Offer, fromALink: boolean): Promise<Ran> => {
+    async (offer: Offer, fromALink: boolean, unsavedAnswered = false): Promise<Ran> => {
       // **A view with unsaved work asks first** (#3683, #3929; `unsavedWork.ts`): its tab comes
       // to the front, the window asks Keep editing, Discard and leave, or Save and leave, and the
-      // close is asked again once it is answered with a leave, and goes on to what it ends.
-      const unsaved = offer.available ? unsavedClosedBy(plane, now.current, offer.does) : undefined;
+      // close is asked again once it is answered with a leave, and goes on to what it ends. The
+      // work goes with its tab once the close is carried out (`discardGone`).
+      const unsaved =
+        offer.available && !unsavedAnswered
+          ? unsavedClosedBy(plane, now.current, offer.does)
+          : undefined;
       if (unsaved !== undefined) {
         if (now.current.inFront !== unsaved.tab) bringToFront(unsaved.tab);
         setUnsavedAsk({
           work: unsaved.work,
-          then: () => void askAgain.current?.(offer, fromALink),
+          then: () => void askAgain.current?.(offer, fromALink, true),
         });
         return { ok: true };
       }
@@ -7859,12 +7868,13 @@ export const PlaneView = memo(function PlaneView({
     onAsking,
   );
   const askToEnd = useCallback(
-    async (offer: Offer, fromALink: boolean): Promise<Ran> => {
+    async (offer: Offer, fromALink: boolean, unsavedAnswered = false): Promise<Ran> => {
       const asks =
         offer.available &&
-        (endsAChat(offer.does) || unsavedClosedBy(plane, now.current, offer.does) !== undefined);
-      if (!asks) return askToEndNow(offer, fromALink);
-      return counted(() => askToEndNow(offer, fromALink));
+        (endsAChat(offer.does) ||
+          (!unsavedAnswered && unsavedClosedBy(plane, now.current, offer.does) !== undefined));
+      if (!asks) return askToEndNow(offer, fromALink, unsavedAnswered);
+      return counted(() => askToEndNow(offer, fromALink, unsavedAnswered));
     },
     [askToEndNow, counted, plane],
   );

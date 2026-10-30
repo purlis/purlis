@@ -18,6 +18,11 @@
  *   it, which goes with it. Its view tabs stay (`refileViews`), so nothing else is lost.
  * - **A project let go of** (`discardUnsavedIn`): what was kept for it goes, as its tabs do.
  *
+ * **Discard and leave lets nothing go by itself**: the work goes when what holds it does: a
+ * closed tab's (`discardGone`), a project let go of, a removed workspace's, the app's at a quit.
+ * So a close answered with a leave and then not carried out (its own question cancelled) loses
+ * nothing, and the work is still asked about the next time.
+ *
  * **It is the window's, kept in memory**, as a view tab's history is (`viewHistory.ts`): a view
  * is drawn only while its tab is in front, so what it registers outlives the view's render, and
  * a relaunch starts afresh. The registry never reads a view's state itself: what it holds is
@@ -43,6 +48,9 @@ export type UnsavedWork = {
   save: () => Promise<string | undefined>;
   /** Lets it go, and unregisters it. */
   discard: () => void;
+  /** Whether it could be saved as it is, where the view can check: `false` where a save would
+   *  be refused, and the question offers no Save and leave. */
+  check?: () => Promise<boolean>;
 };
 
 const works = new Map<string, UnsavedWork>();
@@ -90,6 +98,33 @@ export function discardUnsavedIn(plane: string): void {
   // A view that did not take itself off still goes.
   for (const one of unsavedIn(plane)) works.delete(one.key);
   told();
+}
+
+/** The view keys every tab of `tabs` shows. */
+function shown(tabs: Tabs): Set<string> {
+  const keys = new Set<string>();
+  for (const id of tabs.order)
+    for (const { content } of contentsOf(tabs, id))
+      if (content.kind === "view") keys.add(viewKey(content.view));
+  return keys;
+}
+
+/** **The tabs of `plane` went from `before` to `after`**: the work of each view no tab shows any
+ *  more goes with its tab, whichever way it closed. */
+export function discardGone(plane: string, before: Tabs, after: Tabs): void {
+  if (before === after) return;
+  const was = shown(before);
+  const is = shown(after);
+  for (const one of unsavedIn(plane)) {
+    const key = viewKey(one.view);
+    if (was.has(key) && !is.has(key)) one.discard();
+  }
+}
+
+/** **The workspace `workspace` of `plane` was removed**: the work a save would have written
+ *  into it goes with it. */
+export function discardRemoved(plane: string, workspace: string): void {
+  for (const one of unsavedIn(plane, workspace)) one.discard();
 }
 
 /**

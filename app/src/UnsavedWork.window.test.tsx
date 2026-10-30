@@ -15,6 +15,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { closeFromTheRail, stripNamed } from "./test-strips";
 import { settingsView, type ViewRef } from "./tabs";
+import type { OpenChat } from "./bindings";
 import { keepUnsaved, unsavedNow, type UnsavedWork } from "./unsavedWork";
 
 vi.mock("./SessionPane", () => ({
@@ -38,10 +39,29 @@ declare global {
 }
 
 const ONE = "/home/dev/one";
+
+/** A chat open in a project, which a quit would end. */
+const CHAT: OpenChat = {
+  session: 1,
+  name: "one.1",
+  cwd: null,
+  harness: null,
+  in_front: true,
+  resumed: null,
+  fresh: null,
+  profile: null,
+  persona: null,
+  unreported: null,
+  card: null,
+  guessed: null,
+  pinned: false,
+  label: null,
+  from: null,
+};
 const TWO = "/home/dev/two";
 
-/** A core holding `restore`'s projects with no chat open, recording each ask. */
-function core(restore: string[]) {
+/** A core holding `restore`'s projects with `chats` open, recording each ask. */
+function core(restore: string[], chats: Record<string, OpenChat[]> = {}) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   const listeners = new Map<string, number[]>();
   mockIPC((cmd, args) => {
@@ -61,7 +81,7 @@ function core(restore: string[]) {
     if (cmd === "open_plane") return { plane: given.path, ask: null };
     if (cmd === "plane_sidebar")
       return { root: plane, workspaces: [], personas: [], persona: null, unfiled: [] };
-    if (cmd === "opened_chats") return [];
+    if (cmd === "opened_chats") return chats[plane] ?? [];
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
@@ -168,6 +188,30 @@ describe("a quit, with a view's unsaved work in the window", () => {
     expect(deploy.save).toHaveBeenCalledOnce();
     // Saved, and nothing else to end: it quits.
     await vi.waitFor(() => expect(sent("quit")).toHaveLength(1));
+  });
+});
+
+describe("a close answered with Discard and leave, then not carried out", () => {
+  it("loses nothing: a quit's warning cancelled keeps the work, asked again next time", async () => {
+    const { fire, listening, sent } = core([ONE], { [ONE]: [CHAT] });
+    render(<App />);
+    await vi.waitFor(() => expect(listening("quit-asked")).toBe(true));
+    await screen.findByRole("tab", { name: /one\.1/ });
+    const deploy = work(ONE);
+
+    fire("quit-asked", null);
+    await userEvent.click(
+      within(await question()).getByRole("button", { name: "Discard and leave" }),
+    );
+    // What the quit ends is asked next, and cancelled.
+    const warning = await screen.findByRole("alertdialog");
+    await userEvent.click(within(warning).getByRole("button", { name: "Cancel" }));
+    expect(sent("quit")).toEqual([]);
+    expect(deploy.discard).not.toHaveBeenCalled();
+    expect(unsavedNow()).toEqual([deploy]);
+
+    fire("quit-asked", null);
+    expect(await question()).toBeInTheDocument();
   });
 });
 

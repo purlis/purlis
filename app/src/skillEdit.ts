@@ -56,6 +56,38 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+/** The last save of each tab's edit, by whichever way it was asked, for the studio to say. */
+const saves = new Map<string, { notes: readonly string[] }>();
+
+/**
+ * **Saves the tab `tab`'s edit** as it is now (`skill_save`), the one save the studio's Save and
+ * the window's question both make: the editor ends once it is saved, and the studio hears of it
+ * ({@link useSkillSaved}). Answers why it was not saved, or nothing.
+ */
+export async function saveSkillEdit(tab: string): Promise<string | undefined> {
+  const edit = edits.get(tab);
+  if (edit === undefined) return undefined;
+  const answer = await commands
+    .skillSave(edit.plane, edit.level, edit.skill.name, edit.was, edit.now)
+    .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+  if (answer.status === "error") return answer.error;
+  saves.set(tab, { notes: answer.data.notes });
+  if (edits.get(tab) === edit) keepSkillEdit(tab, undefined);
+  else told();
+  return undefined;
+}
+
+/** The last save of the tab `tab`'s edit, a new one for each save. */
+export function useSkillSaved(tab: string): { notes: readonly string[] } | undefined {
+  return useSyncExternalStore(subscribe, () => saves.get(tab));
+}
+
+/** Whether `edit`'s text could be saved: the lint the core's save runs finds nothing blocking. */
+async function savable(edit: SkillEdit): Promise<boolean> {
+  const answer = await commands.skillLint(edit.plane, edit.level, edit.skill.name, edit.now);
+  return answer.status !== "ok" || !answer.data.some((one) => one.level === "blocks");
+}
+
 /** **Says the tab `tab`'s edit to the registry** (#3929): as its unsaved work while it holds
  *  any, else as none. */
 function registered(tab: string, edit: SkillEdit | undefined): void {
@@ -66,16 +98,9 @@ function registered(tab: string, edit: SkillEdit | undefined): void {
     view: edit.view,
     workspace: edit.level.at === "workspace" ? edit.level.name : undefined,
     name: edit.skill.name,
-    save: async () => {
-      // The edit as it is when the person answers, which is the one registered.
-      const answer = await commands
-        .skillSave(edit.plane, edit.level, edit.skill.name, edit.was, edit.now)
-        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-      if (answer.status === "error") return answer.error;
-      if (edits.get(tab) === edit) keepSkillEdit(tab, undefined);
-      return undefined;
-    },
+    save: () => saveSkillEdit(tab),
     discard: () => keepSkillEdit(tab, undefined),
+    check: () => savable(edit),
   });
 }
 
@@ -99,5 +124,6 @@ export function useSkillEdit(tab: string): SkillEdit | undefined {
 
 /** **The tab `tab` has closed**: its editor goes with it. */
 export function forgetSkillEdit(tab: string): void {
+  saves.delete(tab);
   keepSkillEdit(tab, undefined);
 }
