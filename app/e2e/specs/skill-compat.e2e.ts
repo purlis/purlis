@@ -3,6 +3,7 @@
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { showView } from "../opening.js";
 import { $, browser, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
@@ -125,15 +126,15 @@ describe("a skill's compatibility and a skill that cannot be loaded", function (
       new RegExp(`${REFUSED} \\(project\\), purlis hands it to no chat`),
     );
     await expect(notice).toHaveText(/names no `description`/);
-    const open = await notice.$("button=Open Skill studio");
-    await open.waitForClickable({ timeout: 10_000 });
-    await open.click();
-    await browser.waitUntil(
-      async () => (await tabNames()).some((tab) => tab.startsWith("Skill studio")),
-      {
-        timeout: 20_000,
-        timeoutMsg: "Open Skill studio never opened the studio",
-      },
-    );
+    // One action (S8, #3694): Show in Skills, the sidebar Skills view on this chat, where what
+    // it started without sits in Needs you.
+    const show = await notice.$("button=Show in Skills");
+    await show.waitForClickable({ timeout: 10_000 });
+    await show.click();
+    const need = await $('[data-testid="skills-need-missing"]');
+    await need.waitForDisplayed({ timeout: 20_000 });
+    await expect(need).toHaveText(/could not be loaded/);
+    // The left side back on Chats, as the next spec expects it (`showView`).
+    await showView("Chats");
   });
 });

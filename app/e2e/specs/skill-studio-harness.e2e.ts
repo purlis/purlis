@@ -9,6 +9,7 @@ import {
   closeTheViewTabsOpenedSince,
   focusWorkspace,
   runFromThePalette,
+  shownButton,
   tabNames,
 } from "../reach.js";
 import { studioPage, studioSkill } from "../studio.js";
@@ -78,7 +79,7 @@ describe("a repo's own skills in the Skill studio", function () {
     // #3467: Settings has no Plugins group any more; the Skills group is the way in.
     await runFromThePalette("Workspace settings: Skills", "settings.group:workspace.skills:alpha");
 
-    const open = await $("button=Open Skill studio");
+    const open = await shownButton("Open Skill studio");
     await open.waitForClickable({ timeout: 10_000 });
     await open.click();
 
