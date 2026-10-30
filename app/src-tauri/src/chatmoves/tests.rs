@@ -237,7 +237,7 @@ fn a_tab_offers_the_runners_remote_for_a_fresh_clone_or_says_why_none_is() {
     )
     .unwrap();
     assert!(
-        said.contains("run `git remote add origin git@github.com:owner/api.git` in it"),
+        said.contains("run `git remote add origin 'git@github.com:owner/api.git'` in it"),
         "{said}"
     );
     assert!(

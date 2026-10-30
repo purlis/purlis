@@ -281,14 +281,15 @@ const ORIGIN_MOST: usize = 2048;
 /// ([`crate::getproject::ProjectUrl::parse`]: no other transport, no local path, no token and
 /// nothing git or ssh would read as an option), exactly as it is, and within [`ORIGIN_MOST`].
 /// Nor an `ssh://` user name ssh could read as an option, which those rules leave to git, a
-/// scheme git would hand a remote helper of that spelling (`HTTPS://`), or any character but
-/// ASCII letters, digits and `-._~:/@+%`: the chat's tab shows the host it reaches as it is,
-/// and a shell takes the command it offers as it is.
+/// scheme git would hand a remote helper of that spelling (`HTTPS://`), any character but ASCII
+/// letters, digits and `-._~:/@+`, or a leading `~` a shell would expand: the chat's tab shows
+/// the host it reaches as it is, and a shell takes the command it offers as it is.
 fn forge_url(url: &str) -> Option<&str> {
     (url.len() <= ORIGIN_MOST
+        && !url.starts_with('~')
         && url
             .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"-._~:/@+%".contains(&byte))
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-._~:/@+".contains(&byte))
         && (url.starts_with("https://") || url.starts_with("ssh://") || !url.contains("://"))
         && !url.contains("://-")
         && crate::getproject::ProjectUrl::parse(url).is_ok_and(|parsed| parsed.as_str() == url))
@@ -299,7 +300,7 @@ fn forge_url(url: &str) -> Option<&str> {
 /// the `origin` URL of each one's own configuration, by its folder name, as its git keeps it
 /// (no included file read, no `insteadOf` applied), and only where it is a forge's address
 /// with no sign-in in it ([`forge_url`]). Nothing for a name that is not one of its clones
-/// ([`clones_in`]), nor for one whose `.git` is not a folder of its own.
+/// ([`clones_in`]), nor for one whose `.git` is not a folder of its own with a config file in it.
 pub fn origins_in(
     project: &Path,
     workspace: &str,
@@ -316,8 +317,9 @@ pub fn origins_in(
         // through a link, named by a `.git` file or shared through `commondir`, which would
         // read another repository's configuration.
         .filter(|clone| {
-            std::fs::symlink_metadata(folder.join(clone).join(".git"))
-                .is_ok_and(|meta| meta.is_dir())
+            let git = folder.join(clone).join(".git");
+            std::fs::symlink_metadata(&git).is_ok_and(|meta| meta.is_dir())
+                && std::fs::symlink_metadata(git.join("config")).is_ok_and(|meta| meta.is_file())
         })
         .filter_map(|clone| {
             let ran = run(

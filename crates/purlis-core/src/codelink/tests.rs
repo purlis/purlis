@@ -604,6 +604,9 @@ fn the_runners_origin_is_offered_only_where_a_pasted_url_would_be_taken() {
         "https://github.com/owner/`id`.git",
         "https://github.com/owner/api.git|id",
         "https://github.com/owner/api'.git",
+        "~root:owner/api.git",
+        "~:owner/api.git",
+        "https://github.com%2eevil.example/owner/api.git",
         "",
     ] {
         let offered = offered_origin("builds", refused);

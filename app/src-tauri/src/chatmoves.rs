@@ -568,7 +568,7 @@ pub(crate) fn came_back_said(from: Option<&str>, came: &CameBack) -> Option<Stri
         said.push(match &made.remote {
             Ok(url) => format!(
                 "It has no remote here. The runner's clone pushed to {url}: if that is where you \
-                 mean to push, run `git remote add origin {url}` in it."
+                 mean to push, run `git remote add origin '{url}'` in it."
             ),
             Err(why) => format!(
                 "It has no remote here ({why}): give it one, with `git remote add origin <URL>` \
