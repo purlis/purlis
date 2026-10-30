@@ -309,8 +309,6 @@ async fn the_paired_desktop_unpairs_the_runner_and_is_linked_no_more() {
     assert!(link(&place, &desktop, &runner_pinned).await.is_err());
 }
 
-/// **The paired desktop has the runner keep its profile** (1.43, #2049): the runner is handed the
-/// profile's name, harness, sandbox-only mark and pin, and answers whether it is signed in there.
 /// **The paired desktop hands the runner a sign-in's redirect, and hears only how it went**
 /// (#4044).
 #[tokio::test]
@@ -341,6 +339,8 @@ async fn the_paired_desktop_hands_the_runner_a_sign_ins_redirect() {
     );
 }
 
+/// **The paired desktop has the runner keep its profile** (1.43, #2049): the runner is handed the
+/// profile's name, harness, sandbox-only mark and pin, and answers whether it is signed in there.
 #[tokio::test]
 async fn the_paired_desktop_has_the_runner_keep_its_profile_and_hears_where_it_stands() {
     let dir = tempfile::tempdir().unwrap();

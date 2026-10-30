@@ -315,7 +315,7 @@ fn every_command() -> Vec<Command> {
         }),
         // A sign-in's redirect handed to a login on the runner (1.58, #4044).
         Command::SignInRedirect {
-            target: "/auth/callback?code=c&state=s".into(),
+            target: session::RedirectTarget("/auth/callback?code=c&state=s".into()),
         },
         // A browser the person takes over, drives and hands back: the window's alone (1.14).
         Command::TakeOver {

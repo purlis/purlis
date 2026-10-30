@@ -742,7 +742,7 @@ pub enum Command {
     /// Only a runner's host, on the link between hosts from the desktop it is paired with, carries
     /// it out; every other host refuses it [`NOT_ALLOWED`]
     /// ([`crate::grants::Power::SignInRedirect`]).
-    SignInRedirect { target: String },
+    SignInRedirect { target: RedirectTarget },
     /// The person takes browser `program` over (1.14, #2014): an act in flight answers that it
     /// was interrupted, and every act is refused in words until [`Command::HandBack`]. The lease
     /// is the host's: it stays with the person whatever becomes of the link that took it, until
@@ -948,6 +948,18 @@ pub struct Confine {
     /// Whether its proxy holds a connection to a host nothing lists while the person is asked.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub asks: bool,
+}
+
+/// **The request a browser made of a sign-in's redirect** (1.58, #4044): it holds a one-time code,
+/// so it prints as nothing in a log.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RedirectTarget(pub String);
+
+impl std::fmt::Debug for RedirectTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RedirectTarget(..)")
+    }
 }
 
 /// A chat's confinement as the window planned it (1.4): its proxy's reach and ports, and what
@@ -3016,7 +3028,7 @@ impl Client {
     pub async fn sign_in_redirect(&self, target: &str) -> Result<(), CallError> {
         match self
             .call(Command::SignInRedirect {
-                target: target.to_owned(),
+                target: RedirectTarget(target.to_owned()),
             })
             .await?
         {

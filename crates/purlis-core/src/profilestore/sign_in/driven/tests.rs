@@ -376,17 +376,25 @@ fn a_login_approved_in_the_browser_is_read_in_pieces() {
 fn a_page_that_sends_the_browser_elsewhere_cannot_be_followed() {
     let page = page_of(CODEX);
     let elsewhere = "redirect_uri=https%3A%2F%2Fevil.example%2Fauth%2Fcallback";
-    let own = "redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback";
+    let own = "redirect_uri=http%3A%2F%2F127.0.0.1%3A1455%2Fauth%2Fcallback";
     for bad in [
         page.replace(own, elsewhere),
         page.replace("%3A1455", "%3A1456"),
-        page.replace("localhost", "127.0.0.1"),
+        page.replace("127.0.0.1", "127.0.0.2"),
         page.replace(own, &format!("{own}&{elsewhere}")),
         page.replace(&format!("&state={STATE}"), ""),
         page.replace(&format!("state={STATE}"), &format!("state=a&state={STATE}")),
         page.replace(STATE, "short"),
         page.replace(STATE, "not+written%20plainly-at-all"),
         page.replace("response_type=code", "response_type=token"),
+        page.replace(
+            "client_id=app_EMoamEEZ73f0CkXaXp7hrann",
+            "client_id=another",
+        ),
+        page.replace(
+            own,
+            &format!("{own}&redirect%5Furi=https%3A%2F%2Fevil.example"),
+        ),
         page.replace("auth.openai.com", "auth.openai.com.evil.example"),
         page.replacen("/oauth/authorize", "/elsewhere", 1),
     ] {
@@ -397,6 +405,18 @@ fn a_page_that_sends_the_browser_elsewhere_cannot_be_followed() {
             "{bad}: {said:?}"
         );
     }
+}
+
+/// A line that only looks like a page, printed before the login's own, is not its page.
+#[test]
+fn another_address_before_a_logins_page_is_passed_over() {
+    let mut driven = codex();
+
+    assert_eq!(driven.read("https://example.com/update-available\n"), []);
+    assert!(matches!(
+        driven.read(CODEX).as_slice(),
+        [Event::Approve { .. }]
+    ));
 }
 
 /// Nothing is pasted to a login that waits for the browser.
@@ -417,6 +437,7 @@ fn a_login_approved_in_the_browser_ends_with_its_status_check() {
     assert_eq!(driven.waited(start + PAGE_WITHIN * 2), None);
 
     assert_eq!(driven.carried(Ok(())), None);
+    assert_eq!(driven.waited(start + PAGE_WITHIN * 2), None);
     driven.read("Successfully logged in\n");
     assert_eq!(driven.ended(Some(0)), [Event::Checking]);
     assert_eq!(driven.checked(Standing::SignedIn), Event::SignedIn);
@@ -627,6 +648,25 @@ fn a_taken_port_is_said_and_no_page_opens() {
 
     assert_eq!(next(&driving), Event::PortTaken { port: 1455 });
     drop(held);
+}
+
+/// **A sign-in no one asks after any more is ended, and its port with it**: a window that went
+/// away closes nothing itself.
+#[cfg(unix)]
+#[test]
+fn a_sign_in_no_one_asks_after_closes_the_port() {
+    let dir = tempfile::tempdir().unwrap();
+    let port = free_port();
+    let driving = driving_on(
+        port,
+        &waiting_login(&dir.path().join("never")),
+        Arc::new(|_: &str| Ok(())),
+    );
+    assert!(matches!(next(&driving), Event::Approve { .. }));
+
+    std::thread::sleep(UNDRIVEN_AFTER * 2);
+
+    assert!(!listens(port));
 }
 
 /// A login that waits for the browser is not driven with no way to carry its answer.

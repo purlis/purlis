@@ -1621,7 +1621,7 @@ export const commands = {
 	 *  `purlis profile sign-in`, run there through this machine's `docker`, in the runner's folder
 	 *  for the profile ([`crate::poolprofiles::sign_in_line`]); nothing of this machine's sign-in
 	 *  goes there. The runner is asked again every few seconds until it says the profile is signed
-	 *  in there.
+	 *  in there. With `device`, by the harness's device-code flow there (#4044).
 	 */
 	typeProfileSignIn: (plane: PlaneId, session: number, name: string, provider: string | null, pool: string | null, device: boolean) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_in", { plane, session, name, provider, pool, device })),
 	/**
@@ -2962,8 +2962,10 @@ export const commands = {
 	 *  the runner's own `purlis profile sign-in`, kept there first and run there through this
 	 *  machine's `docker` as [`sign_in_line`]'s is, but with pipes, its output read for the steps
 	 *  [`pool_sign_in_next`] answers. Nothing of this machine's sign-in goes to the runner (ADR
-	 *  0095). A sign-in of the same profile on the same pool already running is cancelled. Answers
-	 *  the sign-in's number.
+	 *  0095). A login that waits for the browser is answered through this machine's port, for as
+	 *  long as it runs: the redirect, and only that, is carried to the runner over a link of its own
+	 *  (`sign_in_redirect`, #4044). A sign-in of the same profile on the same pool already running is
+	 *  cancelled. Answers the sign-in's number.
 	 */
 	poolSignInStart: (pool: string, name: string, provider: string | null) => typedError<number, string>(__TAURI_INVOKE("pool_sign_in_start", { pool, name, provider })),
 	/**

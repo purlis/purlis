@@ -355,7 +355,7 @@ impl session::Host for PairedLink {
         }
         match command {
             session::Command::KeepProfile(profile) => self.keep(profile).await,
-            session::Command::SignInRedirect { target } => self.deliver(target).await,
+            session::Command::SignInRedirect { target } => self.deliver(target.0).await,
             session::Command::Unpair => self.unpair().await,
             command => session::Host::call(&self.hosting, command, peer).await,
         }

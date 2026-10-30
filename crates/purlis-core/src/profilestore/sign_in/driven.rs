@@ -44,6 +44,13 @@ pub const PAGE_WITHIN: Duration = Duration::from_secs(180);
 /// The longest a sign-in runs before it is ended.
 pub const LONGEST: Duration = Duration::from_secs(15 * 60);
 
+/// How long a sign-in runs with no one asking for its next step before it is ended: a window
+/// that went away. Its driver asks again at least this often.
+#[cfg(not(test))]
+const UNDRIVEN_AFTER: Duration = Duration::from_secs(60);
+#[cfg(test)]
+const UNDRIVEN_AFTER: Duration = Duration::from_secs(3);
+
 /// The most of a pasted code passed on.
 const MOST_CODE: usize = 2048;
 
@@ -117,8 +124,10 @@ struct Words {
     page_after: &'static [&'static str],
     /// Whether its page's address may be a line of its own.
     page_alone: bool,
-    /// The port it waits on for the browser's answer, for a login with nothing to paste.
+    /// The port it waits on for the browser's answer, for a login with nothing to paste, and
+    /// the client its page must name.
     answered_on: Option<u16>,
+    client: &'static str,
     /// The prompt for the code, which may end with no line break.
     asks_code: &'static str,
     /// The starts of the lines it refuses a code with.
@@ -138,6 +147,7 @@ const CLAUDE: Words = Words {
     page_after: &["visit: ", "Sign in at: "],
     page_alone: false,
     answered_on: None,
+    client: "",
     asks_code: "Paste code here",
     refuses: &["Invalid code", "That code is not from this sign-in"],
     fails: "Login failed: ",
@@ -151,6 +161,9 @@ const CLAUDE: Words = Words {
 /// Where Codex's and opencode's ChatGPT logins send the person.
 const OPENAI_PAGES: &[(&str, &str)] = &[("auth.openai.com", "/oauth/authorize")];
 
+/// The client both of them sign in as, by their own code.
+const OPENAI_CLIENT: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+
 /// Codex 0.163.0's `login`, by its own code: its page on a line of its own after `navigate to
 /// this URL to authenticate:`, then it waits on [`callback::PORT`], and `Error logging in:`.
 const CODEX: Words = Words {
@@ -159,6 +172,7 @@ const CODEX: Words = Words {
     page_after: &[],
     page_alone: true,
     answered_on: Some(callback::PORT),
+    client: OPENAI_CLIENT,
     asks_code: "",
     refuses: &[],
     fails: "Error logging in: ",
@@ -173,6 +187,7 @@ const OPENCODE_CHATGPT: Words = Words {
     page_after: &["Go to: "],
     page_alone: false,
     answered_on: Some(callback::PORT),
+    client: OPENAI_CLIENT,
     asks_code: "",
     refuses: &[],
     fails: "Error: ",
@@ -200,6 +215,8 @@ enum At {
     Pasted,
     /// Its page is opened, and it waits for the browser's answer.
     Approving,
+    /// The browser's answer reached it: it is left to end.
+    Carried,
     Over,
 }
 
@@ -329,13 +346,17 @@ impl Driven {
         let Some(port) = self.words.answered_on else {
             return Some((At::Opened, Event::Open { url }));
         };
-        let state = state_on(&url, port)?;
+        let state = state_on(&url, port, self.words.client)?;
         Some((At::Approving, Event::Approve { url, port, state }))
     }
 
     /// The address after one of the words before a page, on `line`.
     fn page_on<'a>(&self, line: &'a str) -> Option<&'a str> {
-        if self.words.page_alone && line.starts_with("https://") {
+        let alone = |host: &&(&str, &str)| {
+            line.strip_prefix("https://")
+                .is_some_and(|rest| rest.starts_with(host.0))
+        };
+        if self.words.page_alone && self.words.pages.iter().any(|page| alone(&page)) {
             return Some(line);
         }
         self.words.page_after.iter().find_map(|before| {
@@ -394,7 +415,7 @@ impl Driven {
         }
         if exit == Some(0) {
             if self.at == At::Approving {
-                self.at = At::Pasted;
+                self.at = At::Carried;
             }
             said.push(Event::Checking);
             return said;
@@ -439,7 +460,7 @@ impl Driven {
         }
         match how {
             Ok(()) => {
-                self.at = At::Pasted;
+                self.at = At::Carried;
                 None
             }
             Err(why) => {
@@ -487,11 +508,21 @@ impl Driven {
 }
 
 /// **The `state` of a login's page `url`, where it sends the browser back as purlis can carry**:
-/// to `http://localhost:<port>` and [`callback::PATH`] exactly, asking for a code, with one `state`
-/// a login made and written as it is. Nothing else about a page is guessed at.
-fn state_on(url: &str, port: u16) -> Option<String> {
+/// to this machine on `port` and [`callback::PATH`] exactly (Codex by its address, opencode by its
+/// name), asking for a code as its own
+/// `client`, with one `state` a login made and written as it is, and every name in its query
+/// written plainly, so no vendor reads a name purlis did not. Nothing else about a page is guessed
+/// at.
+fn state_on(url: &str, port: u16, client: &str) -> Option<String> {
     let (_, query) = url.split_once('?')?;
     let query = query.split('#').next()?;
+    if query.split('&').any(|pair| {
+        pair.split('=')
+            .next()
+            .is_some_and(|name| name.contains('%'))
+    }) {
+        return None;
+    }
     let one = |name: &str| {
         let mut values = query
             .split('&')
@@ -511,7 +542,10 @@ fn state_on(url: &str, port: u16) -> Option<String> {
             .all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b));
     (written
         && one("response_type")? == "code"
-        && back == format!("http://localhost:{port}{}", callback::PATH))
+        && one("client_id")? == client
+        && ["127.0.0.1", "localhost"]
+            .iter()
+            .any(|host| back == format!("http://{host}:{port}{}", callback::PATH)))
     .then(|| state.to_owned())
 }
 
@@ -571,6 +605,8 @@ pub struct Driving {
     input: Mutex<Option<ChildStdin>>,
     driven: Arc<Mutex<Driven>>,
     cancelled: Arc<AtomicBool>,
+    /// When its next step was last asked for.
+    asked: Arc<Mutex<Instant>>,
 }
 
 /// **The forward of a login that waits for the browser**: opened once its page is shown, closed
@@ -584,39 +620,42 @@ struct Forwarding {
 
 enum Forwarded {
     Not,
-    Open(callback::Forward),
+    Open { _listening: callback::Forward },
     Ended,
 }
 
 impl Forwarding {
     /// Listens for the redirect with `state` on `port`, carrying it and saying how that went.
+    /// Answers `false`, with nothing listening, once the login ended.
     fn open(
         &self,
         port: u16,
         state: &str,
         driven: &Arc<Mutex<Driven>>,
         tell: &Sender<Event>,
-    ) -> std::io::Result<()> {
+    ) -> std::io::Result<bool> {
         let mut forward = self.forward.lock().unwrap_or_else(PoisonError::into_inner);
         if matches!(*forward, Forwarded::Ended) {
-            return Ok(());
+            return Ok(false);
         }
         let (driven, tell) = (Arc::clone(driven), tell.clone());
-        *forward = Forwarded::Open(callback::Forward::open(
-            self.listen_on.unwrap_or(port),
-            state,
-            Arc::clone(&self.carry),
-            move |how| {
-                let said = driven
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .carried(how);
-                if let Some(event) = said {
-                    let _ = tell.send(event);
-                }
-            },
-        )?);
-        Ok(())
+        *forward = Forwarded::Open {
+            _listening: callback::Forward::open(
+                self.listen_on.unwrap_or(port),
+                state,
+                Arc::clone(&self.carry),
+                move |how| {
+                    let said = driven
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .carried(how);
+                    if let Some(event) = said {
+                        let _ = tell.send(event);
+                    }
+                },
+            )?,
+        };
+        Ok(true)
     }
 
     /// Closes it: nothing listens once this returns, and nothing does from here on.
@@ -716,14 +755,20 @@ fn run(
     })
     .collect();
     let cancelled = Arc::new(AtomicBool::new(false));
+    let asked = Arc::new(Mutex::new(Instant::now()));
     {
-        let (driven, cancelled) = (Arc::clone(&driven), Arc::clone(&cancelled));
+        let (driven, cancelled, asked) = (
+            Arc::clone(&driven),
+            Arc::clone(&cancelled),
+            Arc::clone(&asked),
+        );
         std::thread::spawn(move || {
             watching(
                 child,
                 readers,
                 &driven,
                 &cancelled,
+                &asked,
                 forwarding.as_deref(),
                 &tell,
                 check,
@@ -735,6 +780,7 @@ fn run(
         input: Mutex::new(input),
         driven,
         cancelled,
+        asked,
     })
 }
 
@@ -769,18 +815,32 @@ fn reading(
                 .unwrap_or_else(PoisonError::into_inner)
                 .read_from(stream, &text);
             for event in said {
-                let event = match (&event, &forwarding) {
-                    (Event::Approve { port, state, .. }, Some(forwarding))
-                        if forwarding.open(*port, state, &driven, &tell).is_err() =>
-                    {
-                        driven
-                            .lock()
-                            .unwrap_or_else(PoisonError::into_inner)
-                            .port_taken(*port)
-                    }
-                    _ => event,
+                let opened = match (&event, &forwarding) {
+                    (Event::Approve { port, state, .. }, Some(forwarding)) => forwarding
+                        .open(*port, state, &driven, &tell)
+                        .map_err(|why| (*port, why)),
+                    _ => Ok(true),
                 };
-                let _ = tell.send(event);
+                match opened {
+                    Ok(true) => {
+                        let _ = tell.send(event);
+                    }
+                    Ok(false) => {}
+                    Err((port, why)) => {
+                        let mut driven = driven.lock().unwrap_or_else(PoisonError::into_inner);
+                        let said = if why.kind() == std::io::ErrorKind::AddrInUse {
+                            Some(driven.port_taken(port))
+                        } else {
+                            driven.carried(Err(format!(
+                                "this Mac could not listen for your browser's answer: {why}"
+                            )))
+                        };
+                        drop(driven);
+                        if let Some(event) = said {
+                            let _ = tell.send(event);
+                        }
+                    }
+                }
             }
         }
     })
@@ -794,6 +854,7 @@ fn watching(
     readers: Vec<std::thread::JoinHandle<()>>,
     driven: &Mutex<Driven>,
     cancelled: &AtomicBool,
+    asked: &Mutex<Instant>,
     forwarding: Option<&Forwarding>,
     tell: &Sender<Event>,
     check: impl FnOnce() -> Standing,
@@ -805,7 +866,12 @@ fn watching(
     };
     let started = Instant::now();
     let ended = loop {
-        if cancelled.load(Ordering::SeqCst) {
+        let undriven = asked
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .elapsed()
+            > UNDRIVEN_AFTER;
+        if cancelled.load(Ordering::SeqCst) || undriven {
             end(&mut child);
             close();
             let _ = tell.send(Event::Cancelled);
@@ -876,11 +942,15 @@ fn end(child: &mut Child) {
 }
 
 impl Driving {
-    /// **The next step**, waiting at most `within` for it; `None` while there is none yet.
-    /// After the last step, a driver that stopped telling says it failed.
+    /// **The next step**, waiting at most `within` for it, which must be under
+    /// [`UNDRIVEN_AFTER`]; `None` while there is none yet. After the last step, a driver that
+    /// stopped telling says it failed.
     pub fn next(&self, within: Duration) -> Option<Event> {
+        *self.asked.lock().unwrap_or_else(PoisonError::into_inner) = Instant::now();
         let events = self.events.lock().unwrap_or_else(PoisonError::into_inner);
-        match events.recv_timeout(within) {
+        let event = events.recv_timeout(within);
+        *self.asked.lock().unwrap_or_else(PoisonError::into_inner) = Instant::now();
+        match event {
             Ok(event) => Some(event),
             Err(RecvTimeoutError::Timeout) => None,
             Err(RecvTimeoutError::Disconnected) => Some(Event::Failed {

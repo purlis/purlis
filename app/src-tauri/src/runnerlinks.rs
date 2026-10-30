@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 use purlis_core::clusterpool::Kubectl;
 use purlis_core::dockerpool::Docker;
+use purlis_core::profilestore::sign_in::callback::CARRIED_WITHIN;
 use purlis_core::runners::{ClusterKept, ClusterPool, Kept};
 use purlis_host::{CommandConnector, NotChecked};
 use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
@@ -498,6 +499,17 @@ fn on_one_link<T>(
         Result<purlis_session_protocol::session::Client, hostlink::Down>,
     ) -> Result<T, String>,
 ) -> Result<T, String> {
+    on_one_link_within(ANSWER_WITHIN, to, then)
+}
+
+/// [`on_one_link`], waiting `within` for `then`.
+fn on_one_link_within<T>(
+    within: std::time::Duration,
+    to: &ToARunner,
+    then: impl AsyncFnOnce(
+        Result<purlis_session_protocol::session::Client, hostlink::Down>,
+    ) -> Result<T, String>,
+) -> Result<T, String> {
     let to = to.clone();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -515,7 +527,7 @@ fn on_one_link<T>(
             Some(hostlink::Linked::Down(down)) => Err(down),
             None => return Err("the link to the runner ended".to_owned()),
         };
-        tokio::time::timeout(ANSWER_WITHIN, then(client))
+        tokio::time::timeout(within, then(client))
             .await
             .map_err(|_| "the runner did not answer in time".to_owned())?
     })
@@ -574,16 +586,16 @@ pub fn keep_profiles(
     })
 }
 
+/// Why a browser's answer did not reach a runner before 1.58.
+const OLDER_RUNNER: &str = "this pool's runner is older than this version of purlis, so your \
+                            browser's answer could not reach it: update the pool, and try again";
+
 /// **Hands the login waiting on the runner the redirect `target`, over one link of its own**
 /// (`sign_in_redirect`, 1.58, #4044): `Ok` once the login took it, or why not, in words.
 pub fn sign_in_redirect(to: &ToARunner, target: &str) -> Result<(), String> {
-    on_one_link(to, async |linked| {
-        match linked {
-        Ok(client) if client.version() < purlis_session_protocol::session::KNOWS_SIGN_IN_REDIRECT => Err(
-            "this pool's runner is older than this version of purlis, so your browser's answer \
-             could not reach it: update the pool, or sign in with Open in terminal"
-                .to_owned(),
-        ),
+    use purlis_session_protocol::session::KNOWS_SIGN_IN_REDIRECT;
+    on_one_link_within(CARRIED_WITHIN, to, async |linked| match linked {
+        Ok(client) if client.version() < KNOWS_SIGN_IN_REDIRECT => Err(OLDER_RUNNER.to_owned()),
         Ok(client) => client
             .sign_in_redirect(target)
             .await
@@ -592,7 +604,6 @@ pub fn sign_in_redirect(to: &ToARunner, target: &str) -> Result<(), String> {
                 None => why.to_string(),
             }),
         Err(down) => Err(down.why),
-    }
     })
 }
 

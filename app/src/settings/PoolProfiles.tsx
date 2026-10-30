@@ -107,7 +107,9 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
                     ? undefined
                     : () => {
                         ended(false);
-                        signIn(row, plan);
+                        // The harness's browser flow in a terminal has no way back to the
+                        // runner, so a login approved in the browser runs its device flow there.
+                        signIn(row, plan, row.kind !== "claude");
                       }
                 }
                 onDeviceCode={

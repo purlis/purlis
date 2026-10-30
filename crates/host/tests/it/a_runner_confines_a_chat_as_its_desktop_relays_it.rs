@@ -405,6 +405,24 @@ async fn a_client_of_host_a_that_is_not_its_window_hears_nothing_of_the_runners_
     );
 }
 
+/// **A sign-in's redirect never goes through a relaying host** (#4044): it is the paired desktop's,
+/// on its own link, so the window's relayed link is refused it before anything reaches the runner.
+#[tokio::test]
+async fn a_sign_ins_redirect_is_never_relayed() {
+    let hosts = hosts();
+    let (window, _events) = the_window(&hosts).await;
+
+    let refused = window
+        .sign_in_redirect("/auth/callback?code=c&state=s")
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        refused.refusal().map(|refusal| refusal.code.as_str()),
+        Some(session::NOT_ALLOWED)
+    );
+}
+
 #[tokio::test]
 async fn the_runner_refuses_the_windows_launch_of_a_harness_which_it_composes_by_its_names() {
     let hosts = hosts();

@@ -136,6 +136,28 @@ fn a_connection_that_says_nothing_does_not_stop_the_redirect() {
     assert_eq!(targets.lock().unwrap().len(), 1);
 }
 
+/// **Connections that say nothing never hold up the redirect**, however many there are.
+#[test]
+fn connections_that_say_nothing_do_not_hold_up_the_redirect() {
+    let (forward, targets, heard) = forward(Ok(()));
+    let port = forward.port();
+    let silent: Vec<_> = (0..8)
+        .map(|_| TcpStream::connect(("127.0.0.1", port)).unwrap())
+        .collect();
+    let started = std::time::Instant::now();
+
+    sent_to(
+        "127.0.0.1",
+        port,
+        &get(&redirect_target(), &format!("localhost:{port}")),
+    );
+
+    assert_eq!(heard.recv_timeout(Duration::from_secs(10)), Ok(Ok(())));
+    assert!(started.elapsed() < ASKED_WITHIN, "{:?}", started.elapsed());
+    assert_eq!(targets.lock().unwrap().len(), 1);
+    drop(silent);
+}
+
 /// **A redirect that could not be carried says so**, to the browser and to the sign-in.
 #[test]
 fn a_redirect_not_carried_says_so() {
@@ -229,7 +251,7 @@ fn codexs_next_page_is_asked_on_the_runner_and_nothing_of_it_comes_back() {
     let (port, heard) = login_answering(|port| {
         vec![
             format!(
-                "HTTP/1.1 302 Found\r\nLocation: http://localhost:{port}/success?id_token=t\r\n\r\n"
+                "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{port}/success?id_token=t\r\n\r\n"
             ),
             "HTTP/1.1 200 OK\r\n\r\ndone".to_owned(),
         ]
@@ -239,7 +261,23 @@ fn codexs_next_page_is_asked_on_the_runner_and_nothing_of_it_comes_back() {
 
     let heard = heard.join().unwrap();
     assert!(heard[0].starts_with(&format!("GET {} HTTP/1.1\r\n", redirect_target())));
-    assert!(heard[1].starts_with("GET /success?id_token=t HTTP/1.1\r\n"));
+    assert!(heard[1].starts_with("GET /success HTTP/1.1\r\n"));
+    assert!(!heard[1].contains("id_token"));
+}
+
+/// A login that writes its next page by this machine's name is followed the same.
+#[test]
+fn a_next_page_written_by_the_machines_name_is_followed() {
+    let (port, heard) = login_answering(|port| {
+        vec![
+            format!("HTTP/1.1 302 Found\r\nLocation: http://localhost:{port}/success\r\n\r\n"),
+            "HTTP/1.1 200 OK\r\n\r\ndone".to_owned(),
+        ]
+    });
+
+    assert_eq!(deliver_on(port, &redirect_target()), Ok(()));
+
+    assert_eq!(heard.join().unwrap().len(), 2);
 }
 
 /// opencode's login answers the redirect itself.

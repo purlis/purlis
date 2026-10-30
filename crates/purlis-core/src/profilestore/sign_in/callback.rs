@@ -11,20 +11,24 @@
 //! own name, with the `state` that sign-in's page printed: any other request is answered here and
 //! goes no further, which keeps a page in the browser from reaching the runner through it. The
 //! first redirect that fits closes it before it is carried, so it is carried once, and a sign-in
-//! that ends closes it. A person's own program on the port is never asked to leave: the port
-//! counts as taken and the sign-in says so.
+//! that ends closes it. A program holding either address is never asked to leave: the port counts
+//! as taken and the sign-in says so. (One listening on every address is not holding these two:
+//! the sign-in's own bind is the more specific, and takes this machine's loopback while it runs.)
 //!
 //! **Nothing comes back but whether it worked.** On the runner, [`deliver`] asks the login's own
 //! listener on the runner's loopback, at this same port and path, with a bare request of what the
-//! browser sent. Codex's answer redirects to its own page, with a token in the address, so that
-//! redirect is followed on the runner and the browser never sees it: the Mac is told only whether
-//! it worked, and shows a page of its own. Nothing is kept on either side, nothing here is logged,
-//! and nothing is opened on the runner for this: the only listener there is the login's own.
+//! browser sent. Codex's answer redirects to its own page, with the account's values in the
+//! address, and ends only once that page is asked for. That page is asked for by its path alone, which is all it
+//! needs, so the address is not read, not sent again, and never seen by the browser: the Mac is
+//! told only whether it worked, and shows a page of its own. Nothing is kept on either side,
+//! nothing here is logged, and nothing is opened on the runner for this: the only listener there
+//! is the login's own.
 
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc::{Sender, channel};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -41,16 +45,21 @@ const NEXT_PATH: &str = "/success";
 const MOST_TARGET: usize = 8 * 1024;
 const MOST_HEAD: usize = 16 * 1024;
 
-/// How long one browser connection has to say what it asks.
-const ASKED_WITHIN: Duration = Duration::from_secs(3);
+/// How long one browser connection has to say what it asks, and how many are read at once: a
+/// connection that says nothing costs one of these for that long, and the redirect waits for one.
+const ASKED_WITHIN: Duration = Duration::from_secs(2);
+const MOST_READ_AT_ONCE: usize = 32;
 
 /// How often a [`Forward`] looks for a connection, and for being closed.
 const LOOKED_EVERY: Duration = Duration::from_millis(50);
 
 /// How long the login on the runner has to take the connection, and to answer it: it signs in
-/// with its vendor before it does. Inside how long a desktop waits for its runner.
+/// with its vendor before it does. Both of its two asks fit in [`CARRIED_WITHIN`].
 const REACHED_WITHIN: Duration = Duration::from_secs(2);
 const ANSWERED_WITHIN: Duration = Duration::from_secs(15);
+
+/// How long a desktop waits for its runner to say how [`deliver`] went.
+pub const CARRIED_WITHIN: Duration = Duration::from_secs(40);
 
 /// **Carries one redirect's request target to the runner**: to its [`deliver`], over the link,
 /// answering whether the login there took it.
@@ -126,8 +135,9 @@ fn listening(port: u16) -> io::Result<Vec<TcpListener>> {
     let mut listeners = vec![first];
     match TcpListener::bind(SocketAddr::from((Ipv6Addr::LOCALHOST, port))) {
         Ok(second) => listeners.push(second),
-        Err(why) if why.kind() == io::ErrorKind::AddrNotAvailable => {}
-        Err(why) => return Err(why),
+        Err(why) if why.kind() == io::ErrorKind::AddrInUse => return Err(why),
+        // No such address here, whatever the system calls that.
+        Err(_) => {}
     }
     for listener in &listeners {
         listener.set_nonblocking(true)?;
@@ -136,29 +146,51 @@ fn listening(port: u16) -> io::Result<Vec<TcpListener>> {
 }
 
 /// Answers every connection until one brings the redirect with `state`: that connection, and
-/// what it asked, with the port closed. `None` once `closed`.
+/// what it asked, with the port closed. `None` once `closed`. Each is read on a thread of its own,
+/// up to [`MOST_READ_AT_ONCE`], from each listener in turn, so no connection holds up the redirect.
 fn redirect(
     listeners: Vec<TcpListener>,
     port: u16,
     state: &str,
     closed: &AtomicBool,
 ) -> Option<(TcpStream, String)> {
+    let reading = Arc::new(AtomicUsize::new(0));
+    let (found, redirects) = channel();
     loop {
         if closed.load(Ordering::SeqCst) {
             return None;
         }
-        let Some(mut browser) = listeners
-            .iter()
-            .find_map(|listener| listener.accept().ok())
-            .map(|(stream, _)| stream)
-        else {
-            std::thread::sleep(LOOKED_EVERY);
-            continue;
-        };
-        match head_of(&mut browser).and_then(|head| redirect_in(&head, port, state)) {
-            Some(target) => return Some((browser, target)),
-            None => refuse(&mut browser),
+        if let Ok(redirect) = redirects.try_recv() {
+            return Some(redirect);
         }
+        let mut accepted = false;
+        for listener in &listeners {
+            if reading.load(Ordering::SeqCst) < MOST_READ_AT_ONCE
+                && let Ok((browser, _)) = listener.accept()
+            {
+                accepted = true;
+                reading.fetch_add(1, Ordering::SeqCst);
+                let (reading, found) = (Arc::clone(&reading), found.clone());
+                let state = state.to_owned();
+                std::thread::spawn(move || {
+                    read_one(browser, port, &state, &found);
+                    reading.fetch_sub(1, Ordering::SeqCst);
+                });
+            }
+        }
+        if !accepted {
+            std::thread::sleep(LOOKED_EVERY);
+        }
+    }
+}
+
+/// Reads one connection: the redirect goes to `found`, and anything else is answered here.
+fn read_one(mut browser: TcpStream, port: u16, state: &str, found: &Sender<(TcpStream, String)>) {
+    match head_of(&mut browser).and_then(|head| redirect_in(&head, port, state)) {
+        Some(target) => {
+            let _ = found.send((browser, target));
+        }
+        None => refuse(&mut browser),
     }
 }
 
@@ -277,7 +309,7 @@ fn deliver_on(port: u16, target: &str) -> Result<(), String> {
     }
     match asked(port, target)? {
         Answered::Took => Ok(()),
-        Answered::Next(next) => match asked(port, &next)? {
+        Answered::Next => match asked(port, NEXT_PATH)? {
             Answered::Took => Ok(()),
             _ => Err("the sign-in on the runner did not finish".to_owned()),
         },
@@ -291,8 +323,8 @@ fn deliver_on(port: u16, target: &str) -> Result<(), String> {
 #[derive(Debug, PartialEq, Eq)]
 enum Answered {
     Took,
-    /// Go on to this request target, on the login's own listener.
-    Next(String),
+    /// Go on to its next page, [`NEXT_PATH`], on its own listener.
+    Next,
     Refused(u16),
 }
 
@@ -345,12 +377,17 @@ fn answered(head: &str, port: u16) -> Option<Answered> {
                 .find(|(name, _)| name.eq_ignore_ascii_case("location"))?
                 .1
                 .trim();
-            let own = format!("http://localhost:{port}");
-            let target = location.strip_prefix(own.as_str()).unwrap_or(location);
-            let is_next = (target == NEXT_PATH || target.starts_with("/success?"))
-                && target.bytes().all(|byte| in_a_query(byte) || byte == b'?');
-            Some(if is_next {
-                Answered::Next(target.to_owned())
+            // Codex 0.163.0 writes the machine's address here, as other logins may write its name.
+            let target = [
+                format!("http://127.0.0.1:{port}"),
+                format!("http://localhost:{port}"),
+            ]
+            .iter()
+            .find_map(|own| location.strip_prefix(own.as_str()))
+            .unwrap_or(location);
+            let path = target.split('?').next().unwrap_or(target);
+            Some(if path == NEXT_PATH {
+                Answered::Next
             } else {
                 Answered::Refused(status)
             })
