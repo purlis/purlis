@@ -561,26 +561,35 @@ export function HungPopover({
     // still on its way in: a smooth scroll bringing a new chip into view (R104) finds it out of
     // sight on its first frames.
     let seen = inSight();
-    // Out of sight as it comes: brought in, as R104 brings a chip in, and followed as it comes.
-    const trigger = triggerRef.current;
-    if (!seen && trigger instanceof HTMLElement && typeof trigger.scrollIntoView === "function")
-      trigger.scrollIntoView({
-        inline: "nearest",
-        block: "nearest",
-        behavior: moves() ? "smooth" : "auto",
-      });
-    /** Placed again where what it hangs from is now, or hidden once that has left sight. */
+    /** Where what it hangs from stands now, to tell a frame it moved in from one it did not. */
+    const where = () => {
+      const at = triggerRef.current?.getBoundingClientRect();
+      return at === undefined ? "" : `${at.left},${at.top}`;
+    };
+    /**
+     * Placed again where what it hangs from is now, or hidden once that has left sight; **and
+     * again on each frame after, while it is still moving** (#3896). A smooth scroll is not
+     * always told to the end by its scroll events (WebKit's last steps can land with none), so a
+     * card placed only on them was left where the scroll's last event found its chip, short of
+     * where the chip came to rest. It settles on the first frame that finds it where it was.
+     */
     const follow = () => {
       cancelAnimationFrame(asked);
-      asked = requestAnimationFrame(() => {
+      let placedAt: string | undefined;
+      const place = () => {
         const now = inSight();
         if (seen && !now) {
           hide.current();
           return;
         }
         seen = seen || now;
+        const at = where();
+        if (at === placedAt) return;
+        placedAt = at;
         setNudge((was) => (was === 0 ? 0.01 : 0));
-      });
+        asked = requestAnimationFrame(place);
+      };
+      asked = requestAnimationFrame(place);
     };
     /** Whether `event` is a scroll of something what it hangs from is in. */
     const around = (event: Event) => {
@@ -607,6 +616,17 @@ export function HungPopover({
     window.addEventListener("scroll", scrolled, true);
     window.addEventListener("scrollend", ended, true);
     window.addEventListener("resize", follow);
+    // Out of sight as it comes: brought in, as R104 brings a chip in, and followed as it comes,
+    // to where it comes to rest (`follow`).
+    const trigger = triggerRef.current;
+    if (!seen && trigger instanceof HTMLElement && typeof trigger.scrollIntoView === "function") {
+      trigger.scrollIntoView({
+        inline: "nearest",
+        block: "nearest",
+        behavior: moves() ? "smooth" : "auto",
+      });
+      follow();
+    }
     return () => {
       window.removeEventListener("scroll", scrolled, true);
       window.removeEventListener("scrollend", ended, true);

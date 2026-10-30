@@ -254,8 +254,9 @@ export const HangsFromItsChip: Story = {
     await expect(dot.querySelector("svg")).not.toBeNull();
     await userEvent.click(dot);
     const again = await waitFor(() => cardOf() as HTMLElement);
-    // The keyboard reaches it as F6 lands it there, on the card: Tab walks its ways.
-    again.focus();
+    // Asked for, so the keyboard goes into it, on the card, as F6 lands it there (#3896: the
+    // card takes it over a few frames, once placed; read once it has): Tab walks its ways.
+    await untilFocused(() => again, "the card, brought back by its dot");
     await userEvent.tab();
     await expect(again.contains(document.activeElement)).toBe(true);
     await expect(document.activeElement).not.toBe(again);
@@ -374,13 +375,18 @@ export const ComesUpOnAChipOutOfSight: Story = {
     const card = await waitFor(
       () => screen.queryByRole("region", { name: "Notices for design-tokens" }) as HTMLElement,
     );
-    await waitFor(() => {
-      const chip = chipOf("design-tokens").getBoundingClientRect();
-      const seen = strip.getBoundingClientRect();
-      expect(chip.right).toBeLessThanOrEqual(seen.right + 1);
-      const surface = surfaceOf(card).getBoundingClientRect();
-      expect(Math.abs(centre(surface) - centre(chip))).toBeLessThanOrEqual(1.5);
-    });
+    // Until the scroll has brought the chip all the way in and the card has followed it there:
+    // a smooth scroll the length of the strip, which WebKit takes longer over (#3896).
+    await waitFor(
+      () => {
+        const chip = chipOf("design-tokens").getBoundingClientRect();
+        const seen = strip.getBoundingClientRect();
+        expect(chip.right).toBeLessThanOrEqual(seen.right + 1);
+        const surface = surfaceOf(card).getBoundingClientRect();
+        expect(Math.abs(centre(surface) - centre(chip))).toBeLessThanOrEqual(1.5);
+      },
+      { timeout: 5000 },
+    );
     // Up all the way in: the same card, never taken down by its own scroll.
     await expect(card.isConnected).toBe(true);
     // The picture once everything has come to rest: the strip still over two frames, with the
