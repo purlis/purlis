@@ -30,6 +30,7 @@ fn stop(payload: &serde_json::Value) -> Vec<Result<TurnOutput, Report>> {
     let reports = Mutex::new(tx.clone());
     let outputs = Mutex::new(tx);
     let _reading = listener.hear(Hearing {
+        serve: purlis_core::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, writer| purlis_core::secrets::brokered::not_answered(writer)),
         each: Box::new(move |report| {
             let _ = reports.lock().unwrap().send(Err(report));

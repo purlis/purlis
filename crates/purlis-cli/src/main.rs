@@ -98,7 +98,8 @@ enum Command {
     Root,
     /// Run a server for this chat on PORT: the port a sandboxed chat was allowed to serve on,
     /// which purlis's door on this Mac answers on, while the server listens on the chat's own
-    /// socket behind it. For example: `purlis listen 5173 -- npm run dev`.
+    /// socket behind it. In a Claude Code chat on macOS a Node server dials in to the door
+    /// instead. For example: `purlis listen 5173 -- npm run dev`.
     Listen {
         /// The port the chat serves on.
         port: u16,

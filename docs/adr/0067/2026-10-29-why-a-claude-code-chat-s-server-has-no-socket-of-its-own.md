@@ -27,3 +27,6 @@ chat whose server is refused its port is still offered Start without the sandbox
 socket itself, outside the sandbox, and hands the listening socket to `purlis listen` over the
 chat's hook socket, which hands it to the server. The chat then needs no write and no socket rule.
 It is a new way into a sandboxed chat, so it is left to its own ticket and design.
+
+**Replaced 2026-10-30** by [a Claude Code chat's server dials in](2026-10-30-a-claude-code-chat-s-server-dials-in.md):
+the app hands the chat connections, never a listening socket.

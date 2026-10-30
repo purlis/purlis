@@ -51,6 +51,7 @@ fn hook_of(word: &str, payload: &serde_json::Value, sandboxed: bool, harness: &s
     let (blocks, heard_block) = mpsc::channel();
     let blocks = Mutex::new(blocks);
     let _reading = listener.hear(Hearing {
+        serve: purlis_core::hookwire::serve::refusing(),
         secret_exec: Box::new(|_, _, writer| purlis_core::secrets::brokered::not_answered(writer)),
         each: Box::new(|_| Ok(())),
         answer: Box::new(|_, _| panic!("no ask")),
