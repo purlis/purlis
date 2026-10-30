@@ -147,7 +147,7 @@ impl Receiving {
     /// user's alone where it is not; every slot handed on is handed to `each`. Only the process
     /// that holds the hook socket's listener is read ([`HookHolder`]).
     pub fn bind(hook_socket: &std::path::Path, each: super::Serves) -> io::Result<Receiving> {
-        Self::bind_admitting(hook_socket, each, HookHolder::new(hook_socket))
+        Self::bind_admitting(hook_socket, each, HookHolder::admitting(hook_socket))
     }
 
     /// [`Self::bind`], admitting whom `admits` admits: for the tests, which hand slots on from
@@ -251,7 +251,7 @@ const A_HOST_IS_KNOWN_FOR: std::time::Duration = std::time::Duration::from_secs(
 
 #[cfg(unix)]
 impl HookHolder {
-    fn new(
+    fn admitting(
         hook: &std::path::Path,
     ) -> impl FnMut(&std::os::unix::net::UnixStream) -> bool + Send + use<> {
         let mut holder = HookHolder {
