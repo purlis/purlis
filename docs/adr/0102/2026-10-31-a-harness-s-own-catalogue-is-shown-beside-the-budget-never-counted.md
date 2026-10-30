@@ -10,7 +10,7 @@ The options were (a) leave the budget as it is and say so, (b) show the harness'
 
 ## The decision: (b)
 
-- **Each harness in the studio measures its own catalogue** (`skills::OwnCatalogue`, on `HarnessInTheStudio::own`). That is every skill it finds itself (`Origin::Harness`, the person's own and its plugins'), each turned off for the project's chats left out, and each purlis could not read left out. It is measured as purlis measures a chat's set on that harness (`budget::spent`, with its cap on a description and its paths where it lists them). A manual-only skill is apart, read as the harness reads it: by `disable-model-invocation` on a harness that reads that key (Claude Code), else by the file it keeps beside a `SKILL.md` (Codex's `agents/openai.yaml`, SK-39). A repo's skills are not in it, because purlis's budget counts those already.
+- **Each harness in the studio measures its own catalogue** (`skills::OwnCatalogue`, on `HarnessInTheStudio::own`). That is every skill it finds itself (`Origin::Harness`, the person's own and its plugins'), each turned off for the project's chats left out, each purlis could not read left out, and each of a plugin of purlis's own left out (its skills are purlis's built-in ones, or a plugin purlis pins off in every chat). It is measured as purlis measures a chat's set on that harness (`budget::spent`, with its cap on a description and its paths where it lists them). A manual-only skill is apart, read as the harness reads it: by `disable-model-invocation` on a harness that reads that key (Claude Code), else by the file it keeps beside a `SKILL.md` (Codex's `agents/openai.yaml`, SK-39). A repo's skills are not in it, because purlis's budget counts those already.
 - **It counts against nothing.** purlis never trims what it does not own. A harness's own figure does not move the budget's warning, and it does not add to the Needs you card.
 - **It is said beside the budget**, in one set of words (`OwnCatalogue::said`): `Codex's own, not counted: 2 skills, 1,310 characters, 1 manual-only skill`. It is said in:
   - the Skills view's line under whose set it shows, after the budget, for the chat's own harness;
@@ -22,3 +22,7 @@ The options were (a) leave the budget as it is and say so, (b) show the harness'
 
 - **The harness's own limit is not shown.** Only its figure is shown. Codex's 2% depends on the model's context, and purlis does not know that.
 - A skill purlis could not read (a link in a clone, a file too large) is left out of the figure, though the harness may still list it.
+- A plugin the person turned off in the harness's own settings (Claude Code's `enabledPlugins`) is still counted: purlis reads the harness's installed plugins, not its settings.
+- The figure is read the way the studio reads each harness, with this machine's environment. A chat on a profile that points `CLAUDE_CONFIG_DIR` or `CODEX_HOME` elsewhere gets that folder's catalogue, and the line shows the default one.
+- A skill of the person's own with the name of a skill purlis hands is counted in both figures. On Claude Code both copies load, so that is what the model sees.
+- The studio's harness page still routes its preview with the harness's own skills counted, which a chat's start never does: #4192.

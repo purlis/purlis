@@ -2835,11 +2835,25 @@ fn a_harness_s_own_catalogue_is_said_beside_the_budget_and_never_counted_3324() 
     );
     assert_eq!(
         own(0, 0, 3).said("Codex").as_deref(),
-        Some("Codex's own, not counted: 0 skills, 0 characters, 3 manual-only skills")
+        Some("Codex's own, not counted: 3 manual-only skills"),
+        "nothing listed is not said as 0 skills"
     );
     assert_eq!(own(0, 0, 0).said("Codex"), None, "none of its own");
     assert_eq!(
         own(1, 1_234_567, 0).said("Codex").as_deref(),
         Some("Codex's own, not counted: 1 skill, 1,234,567 characters")
     );
+}
+
+#[test]
+fn purlis_s_own_plugin_is_no_part_of_a_harness_s_own_catalogue_3324() {
+    // Its skills are purlis's built-in ones, or a plugin it pins off in every chat.
+    let claude = &crate::harness_plugin::CLAUDE_CODE;
+    for name in ["charter", "purlis"] {
+        assert!(
+            crate::harness_plugin::purlis_s_own_named(claude, name),
+            "{name}"
+        );
+    }
+    assert!(!crate::harness_plugin::purlis_s_own_named(claude, "figma"));
 }

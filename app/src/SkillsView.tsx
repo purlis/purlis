@@ -138,7 +138,7 @@ async function readSkills(
     missing: "ok" in set ? set.ok.missing : null,
     changed: updated.find((one) => one.session === chat.session && one.skills) ?? null,
     // Its program's own catalogue (#3324), from the studio answer read above: no read of its own.
-    own: base.ok.harnesses.find((one) => one.harness === chat.harness)?.own?.said ?? null,
+    own: base.ok.harnesses.find((one) => one.harness === chat.harness)?.own ?? null,
   };
   return {
     rows: narrowedTo(rows, given.skills, {

@@ -798,7 +798,6 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
   });
 
   it("says its program's own catalogue beside the budget, never in it (#3324)", async () => {
-    const own = (said: string) => ({ skills: 2, chars: 1310, manual: 1, said });
     core(
       () =>
         studio([skill("deploy")], {
@@ -808,14 +807,14 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
               title: "Claude Code",
               skills: [],
               repo_left_out: [],
-              own: own("Claude Code's own, not counted: 2 skills, 1,310 characters"),
+              own: "Claude Code's own, not counted: 2 skills, 1,310 characters",
             },
             {
               harness: "codex",
               title: "Codex",
               skills: [],
               repo_left_out: [],
-              own: own("Codex's own, not counted: 4 skills, 900 characters"),
+              own: "Codex's own, not counted: 4 skills, 900 characters",
             },
           ],
         }),
@@ -843,12 +842,7 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
               title: "Codex",
               skills: [],
               repo_left_out: [],
-              own: {
-                skills: 4,
-                chars: 900,
-                manual: 0,
-                said: "Codex's own, not counted: 4 skills, 900 characters",
-              },
+              own: "Codex's own, not counted: 4 skills, 900 characters",
             },
           ],
         }),

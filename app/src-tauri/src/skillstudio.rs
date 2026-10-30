@@ -397,35 +397,12 @@ pub struct StudioHarness {
     /// The project's skills a repo of the workspace leaves out of its chats in that clone, each
     /// with why (SK-53): the core's `HarnessInTheStudio::repo_left_out`.
     pub repo_left_out: Vec<StudioSkill>,
-    /// **Its own catalogue** (#3324): the skills it finds itself in the person's own folders and
-    /// its plugins, which it lists against its own limit and purlis's budget never counts. Null
-    /// where the studio was read only for a count of its needs.
-    pub own: Option<StudioOwnCatalogue>,
-}
-
-/// **A harness's own catalogue, as the window says it** (#3324): the core's `OwnCatalogue`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct StudioOwnCatalogue {
-    /// The skills it lists.
-    pub skills: u32,
-    /// Characters of what it lists of them.
-    pub chars: u32,
-    /// Its manual-only skills, which it keeps out of the listing.
-    pub manual: u32,
-    /// What a chat's budget line says of it, in the core's words (`OwnCatalogue::said`), which
-    /// `purlis skill list` says too. Null for a harness that finds none of its own.
-    pub said: Option<String>,
-}
-
-impl StudioOwnCatalogue {
-    fn of(own: purlis_core::skills::OwnCatalogue, title: &str) -> StudioOwnCatalogue {
-        StudioOwnCatalogue {
-            skills: crate::useskill::small(own.skills),
-            chars: crate::useskill::small(own.chars),
-            manual: crate::useskill::small(own.manual),
-            said: own.said(title),
-        }
-    }
+    /// **What its own catalogue holds** (#3324), in the core's words (`OwnCatalogue::said`),
+    /// which `purlis skill list` says too: the skills it finds itself in the person's own
+    /// folders and its plugins, listed against its own limit and never counted in purlis's
+    /// budget. Null for a harness that finds none of its own, and where the studio was read only
+    /// for a count of its needs.
+    pub own: Option<String>,
 }
 
 /// A harness or repo skill with the name of a skill purlis hands a chat (ADR 0099 §3): both
@@ -984,9 +961,7 @@ fn harnesses(
                     .cloned()
                     .map(outside_shown)
                     .collect(),
-                own: one
-                    .own
-                    .map(|own| StudioOwnCatalogue::of(own, adapter.title())),
+                own: one.own.and_then(|own| own.said(adapter.title())),
             }
         })
         .collect();

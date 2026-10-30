@@ -1981,24 +1981,19 @@ impl OwnCatalogue {
     /// skill`. The window and `purlis skill list` say it in these words. `None` for a harness
     /// that finds none of its own.
     pub fn said(&self, title: &str) -> Option<String> {
-        if self.skills == 0 && self.manual == 0 {
-            return None;
-        }
-        let counted = |n: usize, one: &str, many: &str| {
-            format!("{} {}", grouped(n), if n == 1 { one } else { many })
-        };
-        let mut said = format!(
-            "{title}'s own, not counted: {}, {}",
-            counted(self.skills, "skill", "skills"),
-            counted(self.chars, "character", "characters"),
-        );
-        if self.manual > 0 {
-            said.push_str(&format!(
-                ", {}",
-                counted(self.manual, "manual-only skill", "manual-only skills")
-            ));
-        }
-        Some(said)
+        use crate::counts::{counted, plural};
+        let manual = (self.manual > 0)
+            .then(|| counted(self.manual, "manual-only skill", "manual-only skills"));
+        let listed = (self.skills > 0).then(|| {
+            format!(
+                "{}, {} {}",
+                counted(self.skills, "skill", "skills"),
+                grouped(self.chars),
+                plural(self.chars, "character", "characters")
+            )
+        });
+        let parts: Vec<String> = listed.into_iter().chain(manual).collect();
+        (!parts.is_empty()).then(|| format!("{title}'s own, not counted: {}", parts.join(", ")))
     }
 }
 
@@ -2017,13 +2012,22 @@ fn grouped(n: usize) -> String {
 
 /// **`harness`'s own catalogue** ([`OwnCatalogue`]) of `outside`, the skills from outside the
 /// plane it finds: the person's own and its plugins' ([`Origin::Harness`]), each one turned off
-/// for the project's chats and each one purlis could not read left out. A repo's skills are not
+/// for the project's chats, each one purlis could not read, and each of a plugin of purlis's own
+/// left out. A repo's skills are not
 /// in it: purlis's budget counts those already, as the chat's set holds them.
 fn own_catalogue(harness: Harness, outside: &[OutsideSkill]) -> OwnCatalogue {
     let reads_the_key = harness.skill_frontmatter().manual == ManualOnly::Read;
     let listed: Vec<(&Skill, Declared)> = outside
         .iter()
         .filter(|one| one.origin == Origin::Harness && !one.off && one.unread.is_none())
+        // purlis's own plugin's skills are its built-in ones, and a plugin it pins off is never
+        // in a chat: neither is the harness's own.
+        .filter(|one| match &one.owner {
+            Owner::Plugin(name) => {
+                !crate::harness_plugin::purlis_s_own_named(harness.adapter().plugins(), name)
+            }
+            Owner::You | Owner::Repo(_) => true,
+        })
         .map(|one| {
             let mut said = declared(&one.skill);
             said.manual = (reads_the_key && said.manual)
