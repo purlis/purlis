@@ -415,7 +415,7 @@ fn text_in(plane: &Path, folder: &Path, name: &str) -> Result<String, String> {
 
 /// Writes `now` as the file at `rel_path`, `what` in a sentence, only while it is still `was`
 /// (`None`: not there yet), making the folders from the `make_from`th on that are not there.
-fn write(
+pub(super) fn write(
     plane: &Path,
     rel_path: &str,
     what: &str,

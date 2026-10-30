@@ -24,6 +24,20 @@ export function gradeSaid(version: SkillVersion): string {
   return `${grade.passed} of ${counted(grade.fixtures, "trigger test", "trigger tests")} passed`;
 }
 
+/**
+ * What a revert's confirm asks (#4017): a version from before a rename or a move comes back in the
+ * folder the skill has now, and one from before a rename under the name it has now.
+ */
+export function revertSaid(name: string, version: SkillVersion): string {
+  const saved = "The revert is saved as a new version.";
+  const before = version.before;
+  if (before === null) return `Put the skill back as this version had it? ${saved}`;
+  if (before.name !== name) {
+    return `This version is from when the skill was named ${before.name}, in ${before.folder}. Put its files back in the folder ${name} has now, with its name: line changed to ${name}? ${saved}`;
+  }
+  return `This version is from before the skill was moved, when it was in ${before.folder}. Put its files back in the folder it has now? ${saved}`;
+}
+
 /** A copy's state, as its tab says it in one line. */
 export function lifecycleSaid(name: string, lifecycle: SkillLifecycle): string {
   switch (lifecycle.state) {
@@ -125,6 +139,7 @@ export function SkillHistory({
             {copy.versions.map((version, at) => (
               <VersionRow
                 key={version.commit}
+                name={name}
                 version={version}
                 newest={at === 0}
                 open={open === version.commit}
@@ -153,6 +168,7 @@ export function SkillHistory({
 }
 
 function VersionRow({
+  name,
   version,
   newest,
   open,
@@ -164,6 +180,7 @@ function VersionRow({
   onRevert,
   onCancel,
 }: {
+  name: string;
   version: SkillVersion;
   newest: boolean;
   open: boolean;
@@ -205,7 +222,7 @@ function VersionRow({
           data-testid="skill-revert-confirm"
         >
           <TableCell colSpan={6}>
-            <p>Put the skill back as this version had it? The revert is saved as a new version.</p>
+            <p>{revertSaid(name, version)}</p>
             {asked.widens === undefined ? (
               <p className="pending" aria-busy="true">
                 <LoaderCircle className="node-icon spinning" />

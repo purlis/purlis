@@ -731,6 +731,7 @@ const ORDINARY: Answers = {
               ms: 900,
             },
             grade: null,
+            before: null,
           },
           {
             commit: "b".repeat(40),
@@ -749,6 +750,7 @@ const ORDINARY: Answers = {
               ms: 0,
             },
             grade: null,
+            before: null,
           },
         ],
         uncommitted: {

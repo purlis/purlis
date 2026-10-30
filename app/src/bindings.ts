@@ -12981,6 +12981,15 @@ export type SkillVersion = {
 	/**  What the runs that started on it add up to, as a skill's totals row says them (SK-20). */
 	runs: StatsRow,
 	grade: SkillGrade | null,
+	/**  Where it is from before a rename or a move (#4017): null for a version of its place now. */
+	before: SkillVersionBefore | null,
+};
+
+/**  The name and the folder a skill had at a version from before a rename or a move (#4017). */
+export type SkillVersionBefore = {
+	name: string,
+	/**  Its folder then, relative to the project. */
+	folder: string,
 };
 
 /**

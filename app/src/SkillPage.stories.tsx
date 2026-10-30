@@ -72,6 +72,7 @@ const version = (commit: string, subject: string, at: string) => ({
   subject,
   runs: { ...RUNS, runs: 4, ended: 4, tool_calls: 9 },
   grade: null,
+  before: null,
 });
 
 /** The studio tab, opened at `chosen`'s page on `tab`, `width` by `height` (560) px. */

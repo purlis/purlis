@@ -170,7 +170,7 @@ fn after_a_move_history_lists_the_versions_from_before_with_their_grades() {
 }
 
 #[test]
-fn a_versions_diff_shows_the_rename_and_a_revert_from_before_it_is_refused() {
+fn a_versions_diff_shows_the_rename() {
     let tmp = graded_then_edited();
     let root = tmp.path();
     did(root, |cx| {
@@ -190,15 +190,121 @@ fn a_versions_diff_shows_the_rename_and_a_revert_from_before_it_is_refused() {
     let edited =
         history::diff(root, &Level::project(), "ship", &listed.versions[1].commit).unwrap();
     assert!(edited.text.contains("+Step two."), "{}", edited.text);
+}
 
-    let refused = did(root, |cx| {
-        history::revert(cx, &Level::project(), "ship", &listed.versions[1].commit)
+/// The text of `rel` in the plane at `root`.
+fn text(root: &Path, rel: &str) -> String {
+    std::fs::read_to_string(root.join(rel)).unwrap()
+}
+
+/// What `git status` says of the skills' folders in the plane at `root`: empty where all of
+/// them is committed.
+fn status(root: &Path) -> String {
+    let out = std::process::Command::new("git")
+        .args(["status", "--porcelain", "--", "skills", "workspaces"])
+        .current_dir(root)
+        .output()
+        .unwrap();
+    String::from_utf8(out.stdout).unwrap()
+}
+
+#[test]
+fn a_revert_from_before_a_rename_comes_back_under_the_name_it_has_now() {
+    let tmp = graded_then_edited();
+    let root = tmp.path();
+    let project = Level::project();
+    did(root, |cx| {
+        crate::skills::verbs::rename(cx, &project, "deploy", "ship")
     })
-    .unwrap_err();
-    assert!(
-        refused.contains("from before it was renamed or moved"),
-        "{refused}"
+    .unwrap();
+    // A file added since, which the version reverted to never had.
+    std::fs::write(root.join("skills/ship/notes.md"), "Notes.\n").unwrap();
+    run(root, &["add", "-A"]);
+    run(
+        root,
+        &["-c", "commit.gpgsign=false", "commit", "-q", "-m", "notes"],
     );
+    let listed = history::history(root, &project, "ship").unwrap();
+    let first = listed.versions.last().unwrap();
+    assert_eq!(
+        first.before,
+        Some(history::Before {
+            name: "deploy".into(),
+            folder: "skills/deploy".into()
+        }),
+        "the window is told it is from before the rename"
+    );
+    assert_eq!(listed.versions[0].before, None);
+    assert_eq!(
+        history::revert_widens(root, &project, "ship", &first.commit),
+        Ok(None)
+    );
+
+    did(root, |cx| {
+        history::revert(cx, &project, "ship", &first.commit)
+    })
+    .unwrap();
+
+    let now = text(root, "skills/ship/SKILL.md");
+    assert!(now.contains("name: ship\n"), "{now}");
+    assert!(now.contains("Step one."), "{now}");
+    assert!(root.join("skills/ship/evals/triggers.json").is_file());
+    assert!(
+        !root.join("skills/ship/notes.md").exists(),
+        "what it never had is gone"
+    );
+    assert!(
+        !root.join("skills/deploy").exists(),
+        "nothing comes back at the old place"
+    );
+    assert_eq!(status(root), "", "the revert is one commit");
+    let after = history::history(root, &project, "ship").unwrap();
+    let said = subjects(&after);
+    assert!(said[0].starts_with("skill revert ship "), "{said:?}");
+}
+
+#[test]
+fn a_revert_from_before_a_move_comes_back_in_the_folder_it_has_now() {
+    let tmp = graded_then_edited();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
+    std::fs::write(root.join("workspaces/ops/workspace.md"), "# ops\n").unwrap();
+    run(root, &["add", "-A"]);
+    run(
+        root,
+        &[
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            "add ops",
+        ],
+    );
+    let ops = Level::workspace("ops");
+    did(root, |cx| {
+        crate::skills::verbs::move_to(cx, &Level::project(), "deploy", &ops, None)
+    })
+    .unwrap();
+    let listed = history::history(root, &ops, "deploy").unwrap();
+    let first = listed.versions.last().unwrap();
+    assert_eq!(
+        first.before.as_ref().map(|one| one.folder.as_str()),
+        Some("skills/deploy")
+    );
+
+    did(root, |cx| {
+        history::revert(cx, &ops, "deploy", &first.commit)
+    })
+    .unwrap();
+
+    let now = text(root, "workspaces/ops/skills/deploy/SKILL.md");
+    assert!(
+        now.contains("name: deploy\n") && now.contains("Step one."),
+        "{now}"
+    );
+    assert!(!root.join("skills/deploy").exists());
+    assert_eq!(status(root), "");
 }
 
 #[test]

@@ -531,6 +531,7 @@ fn one_folders_versions_are_split_by_the_name_each_gave() {
         grade: None,
         folder: "skills/bar".into(),
         name: "bar".into(),
+        before: None,
     };
     let mut versions = vec![version("t1"), version("t2"), version("t3"), version("t4")];
     let said = [

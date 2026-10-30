@@ -25,7 +25,7 @@ import {
 import { skill, studio } from "./skillsListing.testkit";
 import { UseSkillOpener } from "./UseSkill";
 import { bannerOf, skillFileOf, whoGetsIt } from "./SkillPage";
-import { diffLineKind, lifecycleSaid } from "./SkillDetails";
+import { diffLineKind, lifecycleSaid, revertSaid } from "./SkillDetails";
 import { groupSaid } from "./SkillPanels";
 import { PLANE_ROOT } from "./pieceViews";
 import type { Offer } from "./actions";
@@ -65,6 +65,7 @@ function version(commit: string, subject: string, runs: number) {
     subject,
     runs: totals(runs),
     grade: null,
+    before: null,
   };
 }
 
@@ -829,6 +830,21 @@ describe("a skill's History", () => {
       expect(asked.find((one) => one.cmd === "skill_revert")?.args).toMatchObject({
         commit: OLD,
       }),
+    );
+  });
+
+  it("says where a version from before a rename or a move comes back (#4017)", () => {
+    const here = version(OLD, "skill edit deploy", 0);
+    expect(revertSaid("deploy", here)).toBe(
+      "Put the skill back as this version had it? The revert is saved as a new version.",
+    );
+    const moved = { ...here, before: { name: "deploy", folder: "workspaces/ops/skills/deploy" } };
+    expect(revertSaid("deploy", moved)).toBe(
+      "This version is from before the skill was moved, when it was in workspaces/ops/skills/deploy. Put its files back in the folder it has now? The revert is saved as a new version.",
+    );
+    const renamed = { ...here, before: { name: "ship", folder: "skills/ship" } };
+    expect(revertSaid("deploy", renamed)).toBe(
+      "This version is from when the skill was named ship, in skills/ship. Put its files back in the folder deploy has now, with its name: line changed to deploy? The revert is saved as a new version.",
     );
   });
 

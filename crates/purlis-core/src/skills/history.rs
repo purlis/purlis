@@ -74,6 +74,18 @@ pub struct Version {
     pub folder: String,
     #[serde(skip)]
     pub name: String,
+    /// **Where it is from before a rename or a move** (#4017): the name and the folder the skill
+    /// had at it, which a revert brings back under the name and in the folder it has now. `None`
+    /// for a version of the place it has now.
+    pub before: Option<Before>,
+}
+
+/// The name and the folder a skill had at a version from before a rename or a move (#4017).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Before {
+    pub name: String,
+    /// Its folder then, relative to the plane.
+    pub folder: String,
 }
 
 /// **A place a skill had** (#3918): its folder relative to the plane, the name it had there,
@@ -126,7 +138,15 @@ pub struct History {
 /// with the runs and grades of the name and level they had. Empty for a skill git does not
 /// track, such as a local one; refused where there is no such skill.
 pub fn history(plane: &Path, level: &Level, name: &str) -> Result<History, String> {
-    let (versions, was) = walked(plane, level, name)?;
+    let (mut versions, was) = walked(plane, level, name)?;
+    if let Some(now) = was.first() {
+        for version in versions.iter_mut().filter(|version| !now.holds(version)) {
+            version.before = Some(Before {
+                name: version.name.clone(),
+                folder: version.folder.clone(),
+            });
+        }
+    }
     let mut history = History {
         versions,
         uncommitted: Totals::default(),
@@ -240,6 +260,7 @@ fn logged(plane: &Path, here: &Was, start: Option<&str>, most: usize) -> Vec<Ver
                 grade: None,
                 folder: here.folder.clone(),
                 name: here.name.clone(),
+                before: None,
             })
         })
         .collect()
@@ -562,27 +583,17 @@ fn version_of(plane: &Path, level: &Level, name: &str, commit: &str) -> Result<V
         .ok_or_else(|| format!("{name} has no version {}", short(commit)))
 }
 
-/// The version `commit` of the skill `name` at `level` and the folder it has now, refused for a
-/// version from before a rename or a move (#3918): its files were in another folder, under
-/// another name or level, and a revert brings back only what this folder held.
-fn here_version_of(
+/// The version `commit` of the skill `name` at `level`, the folder the skill has now, and that
+/// folder relative to the plane.
+fn version_here(
     plane: &Path,
     level: &Level,
     name: &str,
     commit: &str,
-) -> Result<(PathBuf, String), String> {
+) -> Result<(Version, PathBuf, String), String> {
     let version = version_of(plane, level, name, commit)?;
     let (folder, folder_rel) = folder_of(plane, level, name)?;
-    if version.folder != folder_rel || version.name != name {
-        return Err(format!(
-            "version {} of {name} is from before it was renamed or moved, when it was {} in {}, \
-             so nothing was reverted: a revert goes back only to a version of its folder now",
-            short(commit),
-            version.name,
-            version.folder
-        ));
-    }
-    Ok((folder, folder_rel))
+    Ok((version, folder, folder_rel))
 }
 
 /// A commit's short id, as a sentence or a line of the command line names it.
@@ -660,21 +671,38 @@ fn shown_diff(raw: &str) -> Diff {
     Diff { text, cut, unseen }
 }
 
-/// What the instructions of version `commit` of the skill `name` say, from git, refused where
-/// they are no whole skill of this name.
-fn instructions_at(
+/// **What the instructions of `version` of the skill `name` say**, from git: as it holds them in
+/// the folder the skill had then, and as a revert brings them back. A version from before a
+/// rename (#4017) comes back with its `name:` line changed to the name the skill has now.
+/// Refused where they are no whole skill of this name.
+fn instructions_of(
     plane: &Path,
-    folder_rel: &str,
+    version: &Version,
     name: &str,
-    commit: &str,
-) -> Result<String, String> {
-    let then = git(plane, &["show", &format!("{commit}:{folder_rel}/SKILL.md")]).map_err(|_| {
+) -> Result<(String, String), String> {
+    let commit = version.commit.as_str();
+    let then = git(
+        plane,
+        &["show", &format!("{commit}:{}/SKILL.md", version.folder)],
+    )
+    .map_err(|_| {
         format!(
             "version {} of {name} has no instructions to go back to",
             short(commit)
         )
     })?;
-    let problems = purlis_skills::change::check(&then, name);
+    let back = if name_in(&then).as_deref() == Some(name) {
+        then.clone()
+    } else {
+        purlis_skills::change::with_name(&then, name).ok_or_else(|| {
+            format!(
+                "version {} of {name} has no name: line to change to {name}, so nothing was \
+                 reverted",
+                short(commit)
+            )
+        })?
+    };
+    let problems = purlis_skills::change::check(&back, name);
     if !problems.is_empty() {
         let lines: Vec<String> = problems.iter().map(ToString::to_string).collect();
         return Err(format!(
@@ -683,7 +711,7 @@ fn instructions_at(
             lines.join("; ")
         ));
     }
-    Ok(then)
+    Ok((then, back))
 }
 
 /// **What a revert of the skill `name` at `level` to version `commit` would bring back that widens
@@ -696,8 +724,8 @@ pub fn revert_widens(
     name: &str,
     commit: &str,
 ) -> Result<Option<String>, String> {
-    let (_, folder_rel) = here_version_of(plane, level, name, commit)?;
-    let then = instructions_at(plane, &folder_rel, name, commit)?;
+    let (version, _, _) = version_here(plane, level, name, commit)?;
+    let (_, then) = instructions_of(plane, &version, name)?;
     let widening: Vec<purlis_skills::Field> = purlis_skills::handed::parse(&then)
         .map(|read| {
             read.fields()
@@ -757,8 +785,9 @@ fn no_links_at(plane: &Path, folder_rel: &str, name: &str, commit: &str) -> Resu
 
 /// **Reverts the skill `name` at `level` to version `commit`** (decision 23): its folder as that
 /// commit has it, its instructions and every other file, as one commit. The file beside it (its
-/// grant, lifecycle state and owners) is left as it is: those change by their own controls.
-/// Refused for a commit that is none of its history's, a version whose instructions are not a
+/// grant, lifecycle state and owners) is left as it is: those change by their own controls. A
+/// version from before a move or a rename (#4017) comes back in the folder the skill has now, and
+/// under the name it has now ([`instructions_of`]). Refused for a commit that is none of its history's, a version whose instructions are not a
 /// whole skill of this name, a version that holds a link, and a skill holding changes not
 /// committed yet, which the revert would lose. What would widen a chat is the confirm's to show
 /// ([`revert_widens`]).
@@ -770,19 +799,32 @@ pub fn revert(
 ) -> Result<PathBuf, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
-    let (folder, folder_rel) = here_version_of(plane, level, name, commit)?;
+    let (version, folder, folder_rel) = version_here(plane, level, name, commit)?;
     if !pending_in(plane, &[&folder_rel])?.is_empty() {
         return Err(format!(
             "{name} holds changes that are not committed yet, and a revert would lose them: \
              save them first"
         ));
     }
-    instructions_at(plane, &folder_rel, name, commit)?;
-    no_links_at(plane, &folder_rel, name, commit)?;
-    let source = format!("--source={commit}");
-    let spec = literally(&folder_rel);
-    git(plane, &["restore", &source, "--worktree", "--", &spec])
+    let (then, back) = instructions_of(plane, &version, name)?;
+    no_links_at(plane, &version.folder, name, commit)?;
+    put_back(plane, &version, &folder_rel, name).inspect_err(|_| {
+        as_committed(plane, &folder_rel);
+    })?;
+    if back != then {
+        // From before a rename: its `name:` line says the name it has now.
+        let file = format!("{folder_rel}/SKILL.md");
+        super::verbs::write(
+            plane,
+            &file,
+            &format!("{name}'s instructions"),
+            Some(&then),
+            &back,
+            usize::MAX,
+        )
+        .inspect_err(|_| as_committed(plane, &folder_rel))
         .map_err(|why| format!("{name} was not reverted: {why}"))?;
+    }
     if pending_in(plane, &[&folder_rel])?.is_empty() {
         (cx.say)(crate::repocmd::Say::Info(
             format!(
@@ -793,12 +835,130 @@ pub fn revert(
         ));
         return Ok(folder);
     }
-    cx.done(format!("{name} is as version {} has it", short(commit)));
+    cx.done(match &version.before {
+        None => format!("{name} is as version {} has it", short(commit)),
+        Some(before) => format!(
+            "{name} is as version {} has it, from when it was {} in {}",
+            short(commit),
+            before.name,
+            before.folder
+        ),
+    });
     cx.commit(
         &[folder_rel],
         &format!("skill revert {name} {}", short(commit)),
     );
     Ok(folder)
+}
+
+/// **Puts the folder at `folder_rel` back as `version` holds the skill's folder**: by
+/// `git restore` where it is the same folder, else (a version from before a move or a rename
+/// that moved the folder, #4017) its tree read into an index of its own under `folder_rel` and
+/// checked out from there, every file git tracks in the folder now that the version has not
+/// taken away first. Nothing is written through a link: git checks each path out as git does.
+fn put_back(plane: &Path, version: &Version, folder_rel: &str, name: &str) -> Result<(), String> {
+    let commit = version.commit.as_str();
+    let not = |why: String| format!("{name} was not reverted: {why}");
+    if version.folder == folder_rel {
+        let source = format!("--source={commit}");
+        let spec = literally(folder_rel);
+        return git(plane, &["restore", &source, "--worktree", "--", &spec])
+            .map(|_| ())
+            .map_err(not);
+    }
+    if !whole_id(&version.tree) {
+        return Err(not(format!("version {} holds no folder", short(commit))));
+    }
+    let index = git(
+        plane,
+        &[
+            "rev-parse",
+            "--git-path",
+            &format!(
+                "purlis-revert-{}-{}.index",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|at| at.as_nanos())
+                    .unwrap_or_default()
+            ),
+        ],
+    )
+    .map(|out| plane.join(out.trim()))
+    .map_err(not)?;
+    let put = put_back_by_index(plane, &index, &version.tree, folder_rel);
+    let _ = std::fs::remove_file(&index);
+    put.map_err(not)
+}
+
+/// [`put_back`] from another folder: `tree` read into the index at `index` below `folder_rel`,
+/// what the folder tracks now and the tree has not removed, then the tree checked out.
+fn put_back_by_index(
+    plane: &Path,
+    index: &Path,
+    tree: &str,
+    folder_rel: &str,
+) -> Result<(), String> {
+    let with = |args: &[&str]| -> Result<String, String> {
+        let run = crate::worktree::git::run_with_index(plane, index, args)
+            .map_err(|why| why.to_string())?;
+        if run.ok() {
+            Ok(run.out)
+        } else {
+            Err(crate::shown::short(run.err.trim()))
+        }
+    };
+    with(&["read-tree", &format!("--prefix={folder_rel}/"), tree])?;
+    let then: std::collections::HashSet<String> = with(&["ls-files", "-z"])?
+        .split('\0')
+        .filter(|path| !path.is_empty())
+        .map(str::to_owned)
+        .collect();
+    let now = git(plane, &["ls-files", "-z", "--", &literally(folder_rel)])?;
+    for gone in now
+        .split('\0')
+        .filter(|path| !path.is_empty() && !then.contains(*path))
+    {
+        removed(plane, gone)?;
+    }
+    with(&["checkout-index", "-a", "-f"])?;
+    Ok(())
+}
+
+/// Removes the file git tracks at `rel` in the plane, reached through folders alone: where a
+/// folder on its way is a link, nothing is removed and that is said.
+fn removed(plane: &Path, rel: &str) -> Result<(), String> {
+    let mut at = plane.to_path_buf();
+    let mut parts = rel.split('/').peekable();
+    while let Some(part) = parts.next() {
+        at.push(part);
+        if parts.peek().is_some() && !std::fs::symlink_metadata(&at).is_ok_and(|meta| meta.is_dir())
+        {
+            return Err(format!(
+                "{} is not a folder, so nothing was removed below it",
+                crate::shown::one_line(rel, 120)
+            ));
+        }
+    }
+    match std::fs::remove_file(&at) {
+        Err(why) if why.kind() != std::io::ErrorKind::NotFound => Err(format!(
+            "{} could not be removed: {why}",
+            crate::shown::one_line(rel, 120)
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// Puts the folder at `folder_rel` back as `HEAD` has it, after a revert that failed part way:
+/// what it changed is restored and what it added is removed. The folder held nothing not
+/// committed before it.
+fn as_committed(plane: &Path, folder_rel: &str) {
+    let spec = literally(folder_rel);
+    let _ = git(
+        plane,
+        &["restore", "--source=HEAD", "--worktree", "--", &spec],
+    );
+    let _ = git(plane, &["clean", "-f", "-d", "-q", "--", &spec]);
 }
 
 /// The most bytes of one file of an earlier version read for a grade (SK-57): a file past it is
