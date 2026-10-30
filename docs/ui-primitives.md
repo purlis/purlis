@@ -2670,7 +2670,7 @@ chat has the keyboard, `Ctrl+Shift+F` stays its find bar, and everywhere else in
 shows the left side's Search view (#1676; it opened a Search tab before), searching as narrow as
 the focus. It is one of the left side's keys, below.
 
-**In the Search view's hits, `Shift+Enter` hands the hit stepped to over to a chat** (#1151): it opens
+**In the Search view's hits, `Shift+Enter` hands the hit stepped to to a chat** (#1151): it opens
 the preview's chat picker for that hit and its line, as *Add to a chat's context* does, and
 Escape closes it. It is a key on the listbox, which is never a terminal, so it takes nothing from
 a chat; and it is not a button inside an option, which a listbox cannot hold. Enter alone still
