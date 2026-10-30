@@ -1171,6 +1171,10 @@ mod cluster {
             std::fs::create_dir_all(place.path().join(folder)).unwrap();
         }
         std::fs::write(&real, "#!/bin/sh\n").unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
         std::os::unix::fs::symlink(&real, &middle).unwrap();
         std::os::unix::fs::symlink("../opt/plugin", &first).unwrap();
         let context = serde_json::json!({"users": [
