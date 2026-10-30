@@ -1635,8 +1635,9 @@ impl Held {
     /// The chats working in `workspace` that are mid-turn, by the names the window shows —
     /// what a save of that workspace's repos waits for (charter-app#299, ADR 0051).
     ///
-    /// **Mid-turn is the hook state `running`**, and nothing else: charter never reads a
-    /// harness's output to decide (ADR 0018).
+    /// **Mid-turn is the hook state `running`, or a turn that ended waiting on work of its
+    /// own** (#3878, #3887: its monitors and background shells may be writing the clone), and
+    /// nothing else: charter never reads a harness's output to decide (ADR 0018).
     ///
     /// **Who could be writing the clone is wider than who is filed under the workspace.** A
     /// chat counts when it works in the workspace, in a worktree of one of its clones wherever
@@ -1654,9 +1655,7 @@ impl Held {
                     .and_then(|cwd| workspace_working_in(&on_disk, cwd))
                     .is_none_or(|there| there == workspace)
             })
-            .filter(|open| {
-                self.board().glance(open.session).state == purlis_core::state::State::Running
-            })
+            .filter(|open| self.board().glance(open.session).in_its_turn())
             .map(|open| open.label.clone().unwrap_or(open.name))
             .collect()
     }

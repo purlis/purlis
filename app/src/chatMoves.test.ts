@@ -38,7 +38,20 @@ describe("Move to runner and Move here (#2048)", () => {
       3: "waiting",
       4: "waiting",
     };
-    expect(movesDue(moves, (session) => states[session] ?? "unknown")).toEqual([1]);
+    expect(
+      movesDue(
+        moves,
+        (session) => states[session] ?? "unknown",
+        () => false,
+      ),
+    ).toEqual([1]);
+  });
+
+  it("waits for the work of a chat waiting on its own work, which a move would cut off (#3887)", () => {
+    const moves = { 1: ready(1), 2: ready(2) };
+    const waiting = () => "waiting" as const;
+    expect(movesDue(moves, waiting, (session) => session === 1)).toEqual([2]);
+    expect(movesDue(moves, waiting, () => false)).toEqual([1, 2]);
   });
 
   it("offers Move here on a runner, one row per pool here, and nothing for a shell", () => {

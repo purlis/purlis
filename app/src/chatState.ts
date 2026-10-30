@@ -412,6 +412,16 @@ export function ownWorkOf(states: ChatStates, session: number): OwnWork | undefi
   return states.ownWork[session];
 }
 
+/**
+ * **Whether `session` is in its turn, as a restart or a move owed it counts it** (#3887): running,
+ * or waiting on work of its own (#3878), whose monitors and background shells a restart or a move
+ * would cut off. Either waits for the turn to end with nothing in flight.
+ */
+export function inItsTurn(states: ChatStates, session: number): boolean {
+  const state = stateOf(states, session);
+  return state === "running" || (state === "waiting" && ownWorkOf(states, session) !== undefined);
+}
+
 /** `work` as `session`'s entry, or none, and the same map where that is so already. */
 function withOwnWork(
   by: Readonly<Record<number, OwnWork>>,

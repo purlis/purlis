@@ -10,7 +10,9 @@ import type { State } from "./chatState";
  * A pause is what the chat's harness already tells purlis: its turn ended or it handed control
  * back (`waiting`, from its Stop and Notification hooks). Nothing new is read to learn it. While
  * it is mid-turn the restart waits; a harness that says nothing of its turns is never restarted
- * behind the person's back. A chat that reads as ended (`done`, `failed`) is restarted by
+ * behind the person's back. **A chat waiting on its own work** (`onItsOwnWork`, #3878, #3887) is
+ * not at a pause: its monitors and background shells run, and a restart would cut them off, so
+ * the restart waits for that work to wake it and its turn to end with nothing in flight. A chat that reads as ended (`done`, `failed`) is restarted by
  * nothing: what was allowed reaches it at its next start, and once its program has ended it is
  * owed nothing ({@link owedAfterEnded}).
  *
@@ -24,6 +26,7 @@ import type { State } from "./chatState";
 export function restartsDue(
   owed: readonly number[],
   stateOf: (session: number) => State,
+  onItsOwnWork: (session: number) => boolean,
   pressed?: { now: number },
 ): { restart: number[]; ended: number[] } {
   const restart: number[] = [];
@@ -31,7 +34,8 @@ export function restartsDue(
   for (const session of owed) {
     const state = stateOf(session);
     if (state === "done" || state === "failed") ended.push(session);
-    else if (state === "waiting" || pressed?.now === session) restart.push(session);
+    else if ((state === "waiting" && !onItsOwnWork(session)) || pressed?.now === session)
+      restart.push(session);
   }
   return { restart, ended };
 }

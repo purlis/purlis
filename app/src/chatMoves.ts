@@ -152,13 +152,21 @@ export function moveCancellable(one: ChatMove): boolean {
   return one.stage === "preparing" || one.stage === "ready";
 }
 
-/** The chats whose move switches now: prepared, and at a pause between turns (`waiting`). */
+/**
+ * The chats whose move switches now: prepared, and at a pause between turns (`waiting`). A chat
+ * waiting on its own work (`onItsOwnWork`, #3878) is not at a pause: a move would cut its
+ * monitors and background shells off, so it waits for them (#3887).
+ */
 export function movesDue(
   moves: Readonly<Record<number, ChatMove>>,
   stateOf: (session: number) => State,
+  onItsOwnWork: (session: number) => boolean,
 ): number[] {
   return Object.values(moves)
-    .filter((one) => one.stage === "ready" && stateOf(one.session) === "waiting")
+    .filter(
+      (one) =>
+        one.stage === "ready" && stateOf(one.session) === "waiting" && !onItsOwnWork(one.session),
+    )
     .map((one) => one.session);
 }
 
