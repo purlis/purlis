@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793382942539,
+  "lastUpdate": 1793385642542,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31878,6 +31878,48 @@ window.BENCHMARK_DATA = {
             "value": 102.35386299999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.558, 101.928, 102.354, 103.045, 103.890 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "82282cdafd8c07b042af996314bd680fc3cbcc8e",
+          "message": "A task's done report and a restart, move or save wait for a chat's own work (#3921, #3887) (#4095)\n\n* A task that reports done while its own work runs is not ended under it (#3921)\n\nA turn that ended waiting on work of its own (monitors, background shells,\nhelpers) is not over for Ledger::end_step: ending the program would stop that\nwork. The turn that work wakes it for is the reporting turn going on, so the\n120 s bound still ends it, and a task held past its bound and then found\nwaiting on its own work is given the bound anew.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* A restart, move or save waits for a chat's own work (#3887)\n\nA chat waiting on its own work (#3878) says waiting, and the restart a sandbox\nAllow owes, a move between runners and a repo save read that as a pause\nbetween turns, cutting its monitors and background shells off. One neutral\nreading of a chat in its turn (Glance::in_its_turn in the app, inItsTurn in\nthe window: running, or waiting on its own work) now gates each: the window's\nrestartsDue and movesDue, move_chat_now's pause, Held::mid_turn_in for a save,\nand Restart chat on a tab, which says it restarts when the turn ends. Restart\nnow still restarts at once.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* Own work holds a reported task's bound, which runs from that work's end (#3921)\n\nReview of #4095: the 120 s bound ran from the report and ended a task whose\nmonitors or background shells outlived it. While the task waits on its own\nwork the bound does not run; it is set anew once that work ends or lapses,\nand a bound epoch makes every earlier bound stale (the app's timer drops a\nstale one). The own-work wait's own limit bounds the wait itself.\n\nThe hook cannot tell a person's prompt from a wake by the chat's own work,\nso every prompt after the report is a later turn again, whatever order the\nboard's moves and the prompt arrive in. A cancelled task is not held for\nits own work: the cancel stops that work too.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n* One reading of a pause for restarts and moves, and review cleanups (#3887)\n\nrestartsDue and movesDue take the chats' states and ask atAPause; the Allow's\nsentence asks it too. turnStateOf is the one reading of a chat waiting on\nits own work as mid-turn, for the owed-restart notice and the menu row.\nWraps an over-long doc line.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M639X689Y807SNC09D1H05YQ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T16:24:32Z",
+          "tree_id": "9f54fd6dc86af5c0b97a2bf07d078daf1167a950",
+          "url": "https://github.com/purlis/purlis/commit/82282cdafd8c07b042af996314bd680fc3cbcc8e"
+        },
+        "date": 1793385638787,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6843975,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.676, 0.682, 0.684, 0.693, 0.694 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.627203,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.463, 16.505, 16.627, 16.668, 16.722 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.3317525,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.691, 102.309, 102.332, 102.589, 102.928 ms"
           }
         ]
       }
