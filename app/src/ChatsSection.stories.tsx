@@ -354,7 +354,7 @@ export const RestartSaid: Story = {
   render: () => <SaidUnderInItsPanel />,
   play: async ({ canvasElement }) => {
     const said = within(canvasElement).getByRole("status", { name: "Restarts" });
-    await expect(said).toHaveTextContent(`steward 2: ${RESTART}`);
+    await expect(said).toHaveTextContent(RESTART);
     await expect(said.closest('[role="tree"]')).toBeNull();
     await expect(rowOf(canvasElement, 2)).toHaveAttribute("aria-description", RESTART);
     const line = canvasElement.querySelector<HTMLElement>(".restart-said");
