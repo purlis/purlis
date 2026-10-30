@@ -66,6 +66,9 @@ let notHeld: { root: string; name: string; why: string; pools: string[] }[];
 let profilesAsked: unknown[];
 /** The runner image a new pool is offered, or why it could not be read. */
 let releaseImage: RunnerImageOffered | { trouble: string };
+/** The profiles chosen for each pool, by its name, and what Add and Remove asked (#4047). */
+let chosen: string[];
+let profileChanges: unknown[];
 
 const a_profile = (name: string, standing: string): PoolProfileRow => ({
   name,
@@ -100,6 +103,8 @@ beforeEach(() => {
   notHeld = [];
   profilesAsked = [];
   releaseImage = { state: "local_build" };
+  chosen = ["work", "claude"];
+  profileChanges = [];
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
@@ -135,7 +140,25 @@ beforeEach(() => {
       if (cmd === "projects_not_held") return structuredClone(notHeld);
       if (cmd === "pool_profiles") {
         profilesAsked.push(a.pool);
-        return [a_profile("work", "signed-out"), a_profile("claude", "signed-in")];
+        const here = [a_profile("work", "signed-out"), a_profile("claude", "signed-in")];
+        const home = { ...a_profile("home", "signed-out"), kind: "codex", harness: "Codex" };
+        const all = [...here, home];
+        return {
+          kept: chosen.flatMap((name) => all.filter((one) => one.name === name)),
+          addable: all
+            .filter((one) => !chosen.includes(one.name))
+            .map((one) => ({ name: one.name, harness: one.harness })),
+        };
+      }
+      if (cmd === "pool_profile_add") {
+        profileChanges.push(["add", a.pool, a.name]);
+        chosen = [...chosen, a.name as string];
+        return null;
+      }
+      if (cmd === "pool_profile_remove") {
+        profileChanges.push(["remove", a.pool, a.name]);
+        chosen = chosen.filter((one) => one !== a.name);
+        return null;
       }
       if (cmd === "add_docker_pool") {
         added.push(a.adding);
@@ -265,6 +288,53 @@ describe("You › This machine › Pools", () => {
     );
     const nav = await yourSettings();
     expect(await within(nav).findByRole("button", { name: "Pools" })).toBeInTheDocument();
+  });
+
+  it("keeps only the profiles chosen for a pool, and Add a profile… and Remove change them (#4047)", async () => {
+    pools = [a_pool("builds")];
+    chosen = ["work"];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    const list = await within(group).findByRole("list", { name: "Profiles on pool builds" });
+    expect(within(list).getByText("work")).toBeInTheDocument();
+    expect(within(list).queryByText("claude")).toBeNull();
+
+    await userEvent.click(within(group).getByRole("button", { name: "Add a profile…" }));
+    const menu = await screen.findByRole("menu", { name: "Add a profile…" });
+    expect(within(menu).queryByRole("menuitem", { name: /work/ })).toBeNull();
+    await userEvent.click(within(menu).getByRole("menuitem", { name: /home/ }));
+    await waitFor(() => expect(profileChanges).toEqual([["add", "builds", "home"]]));
+    expect(
+      await within(group).findByRole("button", { name: "Remove home from pool builds" }),
+    ).toBeInTheDocument();
+
+    // Remove asks first, and says the sign-in there goes with it.
+    await userEvent.click(
+      within(group).getByRole("button", { name: "Remove work from pool builds" }),
+    );
+    expect(within(group).getByText(/its sign-in there goes with it/)).toBeInTheDocument();
+    expect(profileChanges).toHaveLength(1);
+    await userEvent.click(within(group).getByRole("button", { name: "Keep work on pool builds" }));
+    expect(profileChanges).toHaveLength(1);
+    await userEvent.click(
+      within(group).getByRole("button", { name: "Remove work from pool builds" }),
+    );
+    await userEvent.click(
+      within(group).getByRole("button", { name: "Yes, remove work from pool builds" }),
+    );
+    await waitFor(() =>
+      expect(profileChanges).toEqual([
+        ["add", "builds", "home"],
+        ["remove", "builds", "work"],
+      ]),
+    );
+    await waitFor(() =>
+      expect(
+        within(group).queryByRole("button", { name: "Remove work from pool builds" }),
+      ).toBeNull(),
+    );
   });
 
   it("adds a pool with its own time before its runner suspends, and its row says it (#3471)", async () => {
