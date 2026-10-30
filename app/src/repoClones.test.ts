@@ -84,7 +84,49 @@ describe("a repo waited on that is not finished when the wait ends (#3898)", () 
     await expect.poll(() => held.length).toBe(1);
     held[0].land();
     await expect(first).rejects.toThrow("a listener broke");
-    const failed = await waiting;
-    expect(failed.map((one) => one.repo)).toEqual(["web"]);
+    // D-3898-2's sentence: what the waiting call says of a clone left unfinished.
+    expect(await waiting).toEqual([
+      { repo: "web", said: "web was not finished cloning. Ask for it again." },
+    ]);
+  });
+});
+
+describe("a call that stops part way (#4003)", () => {
+  it("leaves no repo stuck waiting: a later ask clones it", async () => {
+    const { held, asked } = heldCore();
+    const first = cloneRepos("/p", "gamma", ["api", "web"], () => {
+      throw new Error("a listener broke");
+    });
+    await expect.poll(() => held.length).toBe(1);
+    held[0].land();
+    await expect(first).rejects.toThrow("a listener broke");
+    // web was never reached. Asked again, it is cloned, not answered "not finished".
+    const again = cloneRepos("/p", "gamma", ["web"]);
+    await expect.poll(() => held.length).toBe(2);
+    held[1].land();
+    expect(await again).toEqual([]);
+    expect(asked).toEqual(["api", "web"]);
+  });
+});
+
+describe("a repo waited on and asked for again before the wait ends (#4003)", () => {
+  it("is answered with the clone the call waited on, not the later ask's", async () => {
+    const { held } = heldCore();
+    // A clones api, then x.
+    const a = cloneRepos("/p", "gamma", ["api", "x"]);
+    // B waits on api.
+    const b = cloneRepos("/p", "gamma", ["api"]);
+    await expect.poll(() => held.length).toBe(1);
+    held[0].land();
+    // A is on x now; C asks for api again, which sets it waiting.
+    await expect.poll(() => held.length).toBe(2);
+    const c = cloneRepos("/p", "gamma", ["api"]);
+    held[1].land();
+    expect(await a).toEqual([]);
+    // B reports how A's clone of api ended: cloned.
+    expect(await b).toEqual([]);
+    await expect.poll(() => held.length).toBe(3);
+    held[2].land();
+    expect(await c).toEqual([]);
   });
 });

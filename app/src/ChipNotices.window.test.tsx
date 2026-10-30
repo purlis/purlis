@@ -966,6 +966,8 @@ describe("a new workspace's clone, across what else happens (#3898)", () => {
         within(bar()).getByRole("button", { name: /^Show the 2 notices on gamma/ }),
       ).toBeInTheDocument(),
     );
+    // The count itself drew, in place, where every notice is listed (#4003): not a line dropped.
+    await waitFor(async () => expect(await results()).toHaveTextContent("1 of 2 done."));
     expect(queryCard("delta")).toBe(delta);
     expect(queryCard("gamma")).toBeNull();
   });

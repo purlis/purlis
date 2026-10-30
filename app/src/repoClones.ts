@@ -33,6 +33,15 @@ const EMPTY: Clones = new Map();
 const byWorkspace = new Map<string, Clones>();
 /** The tail of each workspace's chain: the next call starts when this settles. */
 const chains = new Map<string, Promise<unknown>>();
+/** **How the clone of each repo now under way will end** (#4003), by workspace and repo: the
+ *  run that owns it settles it, whatever later asks set the shared state to meanwhile. */
+const ends = new Map<string, Map<string, Promise<CloneState>>>();
+
+/** How a repo ends that the run which had it never reached: it stopped part way. */
+const NOT_FINISHED = (repo: string): Extract<CloneState, { state: "failed" }> => ({
+  state: "failed",
+  said: `${repo} was not finished cloning. Ask for it again.`,
+});
 const listeners = new Set<() => void>();
 
 function keyOf(plane: PlaneId, workspace: string): string {
@@ -76,28 +85,29 @@ export function cloneRepos(
 ): Promise<Failed> {
   const key = keyOf(plane, workspace);
   const mine = repos.filter((repo) => !underWay(byWorkspace.get(key)?.get(repo)));
-  for (const repo of mine) set(plane, workspace, repo, { state: "waiting" });
   // A repo another call is already cloning is not asked for again, but it is waited on: this
-  // call joins the chain behind that clone, and answers with how it ended, so a Retry pressed
-  // while the explorer clones the same repo never says it cloned before it has (#3649's review).
-  const theirs = repos.filter((repo) => !mine.includes(repo));
-  // Read as the wait ends, before this call's own clones: a later call may ask for the repo
-  // again meanwhile, which says nothing of how the clone waited on ended (#3898). A repo still
-  // under way then was left unfinished by the call that had it (it stopped part way), so it is
-  // no success either.
+  // call answers with how that call's clone of it ended (#3649's review), read from the end that
+  // call recorded, not from the shared state, which a later ask may have set again (#4003).
+  const theirs = repos.flatMap((repo) =>
+    mine.includes(repo) ? [] : [{ repo, end: ends.get(key)?.get(repo) }],
+  );
+  const settle = new Map<string, (state: CloneState) => void>();
+  const owned = ends.get(key) ?? new Map<string, Promise<CloneState>>();
+  ends.set(key, owned);
+  for (const repo of mine) {
+    set(plane, workspace, repo, { state: "waiting" });
+    owned.set(repo, new Promise((resolve) => settle.set(repo, resolve)));
+  }
   const run = (chains.get(key) ?? Promise.resolve()).then(async () => {
-    const ended = new Map(theirs.map((repo) => [repo, byWorkspace.get(key)?.get(repo)]));
-    const failed = await cloneInTurn(plane, workspace, mine, onEach);
-    return [
-      ...failed,
-      ...theirs.flatMap((repo) => {
-        const state = ended.get(repo);
-        if (state?.state === "failed") return [{ repo, said: state.said }];
-        if (underWay(state))
-          return [{ repo, said: `${repo} was not finished cloning. Ask for it again.` }];
-        return [];
-      }),
-    ];
+    const failed = await cloneInTurn(plane, workspace, mine, settle, onEach);
+    const waited: Failed = [];
+    for (const { repo, end } of theirs) {
+      // A repo with no end recorded was not this window's to wait on: as it stands.
+      const state = end === undefined ? byWorkspace.get(key)?.get(repo) : await end;
+      if (state?.state === "failed") waited.push({ repo, said: state.said });
+      else if (underWay(state)) waited.push({ repo, said: NOT_FINISHED(repo).said });
+    }
+    return [...failed, ...waited];
   });
   chains.set(
     key,
@@ -110,33 +120,48 @@ async function cloneInTurn(
   plane: PlaneId,
   workspace: string,
   repos: string[],
+  settle: ReadonlyMap<string, (state: CloneState) => void>,
   onEach?: (repo: string, state: CloneState) => void,
 ): Promise<Failed> {
-  if (repos.length === 0) return [];
-  const taken = await commands
-    .takeRepos(plane, repos)
-    .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-  // A pick the inventory could not take still reaches `clone`, which says in its own words
-  // what it could not find — one sentence per repo, where the operator is looking.
-  const failed: Failed = [];
-  for (const repo of repos) {
-    set(plane, workspace, repo, { state: "cloning" });
-    const answer = await commands
-      .cloneRepo(plane, workspace, repo)
-      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-    const cloned: CloneState =
-      answer.status === "ok"
-        ? { state: "cloned", said: answer.data.join(" ") }
-        : {
-            state: "failed",
-            said: taken.status === "error" ? `${answer.error}\n${taken.error}` : answer.error,
-          };
-    const state = cloned.state === "cloned" ? await seen(plane, workspace, repo, cloned) : cloned;
+  const done = new Set<string>();
+  /** A repo's end: its state, told to the calls waiting on it. */
+  const end = (repo: string, state: CloneState) => {
     set(plane, workspace, repo, state);
-    if (state.state === "failed") failed.push({ repo, said: state.said });
-    onEach?.(repo, state);
+    done.add(repo);
+    settle.get(repo)?.(state);
+  };
+  try {
+    if (repos.length === 0) return [];
+    const taken = await commands
+      .takeRepos(plane, repos)
+      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+    // A pick the inventory could not take still reaches `clone`, which says in its own words
+    // what it could not find — one sentence per repo, where the operator is looking.
+    const failed: Failed = [];
+    for (const repo of repos) {
+      set(plane, workspace, repo, { state: "cloning" });
+      const answer = await commands
+        .cloneRepo(plane, workspace, repo)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      const cloned: CloneState =
+        answer.status === "ok"
+          ? { state: "cloned", said: answer.data.join(" ") }
+          : {
+              state: "failed",
+              said: taken.status === "error" ? `${answer.error}\n${taken.error}` : answer.error,
+            };
+      const state = cloned.state === "cloned" ? await seen(plane, workspace, repo, cloned) : cloned;
+      end(repo, state);
+      if (state.state === "failed") failed.push({ repo, said: state.said });
+      onEach?.(repo, state);
+    }
+    return failed;
+  } finally {
+    // **Stopped part way** (#4003): a repo this run never reached is not left waiting for as
+    // long as the window is open, which would make every later ask answer "not finished". It
+    // ends failed, so asking again clones it.
+    for (const repo of repos) if (!done.has(repo)) end(repo, NOT_FINISHED(repo));
   }
-  return failed;
 }
 
 /**
@@ -199,4 +224,5 @@ export function settleRepoClones(plane: PlaneId, workspace: string, absent: read
 export function forgetRepoClones() {
   byWorkspace.clear();
   chains.clear();
+  ends.clear();
 }
