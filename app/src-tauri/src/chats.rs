@@ -4367,8 +4367,11 @@ impl Chats {
             }
             let_go.insert(session, LetGo::of(&gone.chat));
         }
+        // A chat still to start keeps its place in front (#3114: one whose start returned into
+        // a quit is ended, and is still to start under the same number).
+        let still_coming = lock(&self.coming).iter().any(|one| one.number == session);
         let mut front = lock(&self.front);
-        if *front == Some(session) {
+        if *front == Some(session) && !still_coming {
             *front = None;
         }
         drop(front);
@@ -5845,14 +5848,23 @@ impl Chats {
             if let Some(session) = session
                 && quitting
             {
-                let in_front = self.front() == Some(session);
+                // Back under the number it is still to start as, in its place on the strip and
+                // in front where it was, before it is ended: a record built meanwhile finds it
+                // there, and not at the strip's end or with no chat in front.
+                if session != next.number {
+                    for placed in lock(&self.order).iter_mut() {
+                        if *placed == session {
+                            *placed = next.number;
+                        }
+                    }
+                    let mut front = lock(&self.front);
+                    if *front == Some(session) {
+                        *front = Some(next.number);
+                    }
+                }
                 // As any chat is closed, so nothing of it is left held; nothing is written,
                 // since the quit's record is the last.
                 let _ = self.close(session);
-                // And it is still the chat in front, as one still to start.
-                if in_front {
-                    *lock(&self.front) = Some(next.number);
-                }
             }
             crate::restoring::tell(crate::restoring::Moved {
                 root: self.project.clone(),
