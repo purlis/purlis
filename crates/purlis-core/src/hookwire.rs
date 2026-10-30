@@ -65,6 +65,11 @@ pub const CHAT_ID_ENV: &str = "PURLIS_CHAT_ULID";
 /// either on to the chats it starts.
 pub const SANDBOXED_ENV: &str = "PURLIS_SANDBOXED";
 
+/// Set to `1` on a chat purlis wraps whole although its harness has a sandbox of its own: a
+/// Claude Code chat on a runner (#4083). Read for how a refusal is worded alone
+/// ([`crate::sandbox::wrapped_whole_in`]).
+pub const WRAPPED_ENV: &str = "PURLIS_CHAT_WRAPPED";
+
 /// Where Claude Code puts the conversation a hook is running in.
 ///
 /// ADR 0024, C7, measured again on claude 2.1.276: it always equals the payload's
@@ -114,6 +119,7 @@ pub const NOT_INHERITED: &[&str] = &[
     TOKEN_ENV,
     crate::noterminal::RELAUNCHED_ENV,
     SANDBOXED_ENV,
+    WRAPPED_ENV,
     crate::sandboxblock::CHAT_DIR_ENV,
     CHAT_ID_ENV,
 ];

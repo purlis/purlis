@@ -112,7 +112,9 @@ fn each_profile_a_wrapped_chat_starts_under_holds_on_linux() {
                 Form::Opencode(wrap) => {
                     sandbox::opencode::profile(wrap, &root, &tmp, &[4040], None)
                 }
-                Form::ClaudeCode(_) => panic!("Claude Code is not wrapped"),
+                Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => {
+                    panic!("Claude Code is not wrapped")
+                }
             }
             .expect("a profile");
             fs::write(out.join(format!("{}-{name}.sb", harness.name())), &profile)
@@ -137,6 +139,124 @@ fn each_profile_a_wrapped_chat_starts_under_holds_on_linux() {
             );
             let _ = fs::remove_file(home.join("outside"));
         }
+    }
+}
+
+/// **A Claude Code chat on a runner, held as Codex and opencode are, by this build's own wrap**
+/// (#4083), at the full sandbox and at the floor, on a machine paired as a runner: every class
+/// the two above are tried on, and its config folder: what a turn writes is written, and what
+/// a later chat loads is not, by any way to it.
+#[test]
+fn a_claude_code_chat_on_a_runner_holds_as_they_do() {
+    purlis_core::unsteered!();
+    assert!(
+        purlis_linux_sandbox::abi() >= purlis_linux_sandbox::MIN_ABI,
+        "this kernel's Landlock is version {}, and purlis's Linux sandbox needs {}",
+        purlis_linux_sandbox::abi(),
+        purlis_linux_sandbox::MIN_ABI
+    );
+    let scratch = tempfile::tempdir().expect("a folder");
+    let out = scratch.path().canonicalize().expect("a real folder");
+    let home = out.join("home");
+    let bin = out.join("bin");
+    let config = out.join("config");
+    for folder in [&home, &bin, &config] {
+        fs::create_dir_all(folder).expect("a folder");
+    }
+    purlis_core::runnerlink::pair(
+        &config,
+        &purlis_session_protocol::hostlink::Pinned {
+            device: "01JA0DESKT0P00000000000000".into(),
+            key: purlis_session_protocol::hostlink::LinkKey::generate()
+                .expect("a key")
+                .public(),
+        },
+    )
+    .expect("paired");
+    let machine = Machine {
+        env: purlis_core::secrets::Env::of(&[
+            ("PATH", &bin.display().to_string()),
+            (
+                purlis_core::machine::HOME_VAR,
+                &config.display().to_string(),
+            ),
+        ]),
+        home: Some(home.clone()),
+        os: Os::Linux,
+    };
+    assert!(machine.is_a_runner());
+    for (level, name, manifest) in LEVELS {
+        let root = out.join(name).join("project");
+        let tmp = out.join(name).join("tmp");
+        let claude = out.join(name).join("claude");
+        lay_out(&root, manifest);
+        fs::create_dir_all(&tmp).expect("a temporary folder");
+        fs::create_dir_all(claude.join("hooks")).expect("its config folder");
+        fs::write(claude.join("settings.json"), "{}\n").expect("its settings");
+        fs::write(claude.join(".claude.json"), "{}\n").expect("its state");
+        fs::write(claude.join(".credentials.json"), "{}\n").expect("its sign-in");
+        let decided = sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None)
+            .expect("decided")
+            .expect("a sandbox in force");
+        let Decided::Sandboxed(mut applied) = decided else {
+            panic!("not sandboxed: {decided:?}");
+        };
+        assert_eq!(applied.level(), level, "{name}");
+        applied.on_profile(&sandbox::signin::ProfileFolders {
+            config: Some(claude.clone()),
+            ..sandbox::signin::ProfileFolders::default()
+        });
+        let Form::ClaudeWrapped(wrap) = applied.form() else {
+            panic!("not wrapped: {:?}", applied.form());
+        };
+        sandbox::claude_wrap::prepare(wrap, &root);
+        let profile =
+            sandbox::claude_wrap::profile(wrap, &root, &tmp, &[4040], None).expect("a profile");
+        let home_of = |what: &str| format!("{}/{what}", claude.display());
+        let script = [
+            tries("head -c 1 .purlis/vaults/ops.json >/dev/null"),
+            tries("touch repo/.git/hooks/pre-commit"),
+            tries("mkdir -p deep/er && touch deep/er/.envrc"),
+            tries("echo x >> notes.json"),
+            tries(&format!("touch {}/outside", home.display())),
+            // What a turn writes, and what it reads.
+            tries(&format!("touch {}", home_of("projects/turn.jsonl"))),
+            tries(&format!("mkdir -p {}", home_of("projects/-w/memory"))),
+            tries(&format!("echo x >> {}", home_of("history.jsonl"))),
+            tries(&format!("echo x >> {}", home_of(".credentials.json"))),
+            tries(&format!("cat {} >/dev/null", home_of("settings.json"))),
+            // What a later chat loads, each way to it.
+            tries(&format!("echo x >> {}", home_of(".claude.json"))),
+            tries(&format!("echo x >> {}", home_of("settings.json"))),
+            tries(&format!("touch {}", home_of("hooks/a.sh"))),
+            tries(&format!("touch {}", home_of("new-file"))),
+            tries(&format!(
+                "ln {} {}/link",
+                home_of("settings.json"),
+                root.display()
+            )),
+            tries(&format!("ln -s /etc {}", home_of("projects/link"))),
+            tries(&format!("mv {} {}", home_of("projects"), home_of("aside"))),
+            tries(&format!(
+                "mv {} {}.aside",
+                claude.display(),
+                claude.display()
+            )),
+        ]
+        .join("; ");
+        let said = under(&profile, &root, &script);
+        let said: Vec<&str> = said.lines().collect();
+        let outside = if level == Level::Floor { "yes" } else { "no" };
+        assert_eq!(
+            said,
+            [
+                "no", "no", "no", "yes", outside, "yes", "yes", "yes", "yes", "yes", "no", "no",
+                "no", "no", "no", "no", "no", "no",
+            ],
+            "{name}: the classes as for Codex, what a turn writes and reads, and what a later \
+             chat loads"
+        );
+        let _ = fs::remove_file(home.join("outside"));
     }
 }
 
@@ -192,7 +312,7 @@ fn a_wrapped_chat_at_the_floor_never_writes_the_plugin_or_git_hooks_it_is_armed_
         let profile = match applied.form() {
             Form::Codex(wrap) => sandbox::codex::profile(wrap, &root, &tmp, &[4040], None),
             Form::Opencode(wrap) => sandbox::opencode::profile(wrap, &root, &tmp, &[4040], None),
-            Form::ClaudeCode(_) => panic!("Claude Code is not wrapped"),
+            Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => panic!("Claude Code is not wrapped"),
         }
         .expect("a profile");
         let script = [

@@ -89,7 +89,8 @@ pub fn missing(os: Os, has: &dyn Fn(&str) -> bool) -> Option<Missing> {
 }
 
 /// What is missing on `os` for a sandbox to be applied to a chat whose harness is `wrapped`
-/// whole in purlis's own wrap (Codex and opencode), or `None` when nothing is.
+/// whole in purlis's own wrap (Codex and opencode, and Claude Code on a runner, #4083), or `None`
+/// when nothing is.
 ///
 /// On Linux purlis's own wrap is Landlock, a seccomp filter and the supervisor (#1040), which
 /// need the kernel's Landlock and no program; Claude Code's own sandbox needs what [`missing`]

@@ -851,6 +851,15 @@ impl OnTheRunner {
                 b"",
             );
         }
+        // A Claude Code chat holds its config folder from what it starts with (#4083): a turn
+        // writes in it, and its hooks are never made.
+        if harness == "claude" {
+            self.runs(
+                false,
+                &format!("printf '{{}}\\n' > '{}'/settings.json", folder.display()),
+                b"",
+            );
+        }
         // The parity image's harness runs what is here (`tests/parity/runner.Dockerfile`).
         self.runs(
             false,
@@ -3478,10 +3487,188 @@ on_every_target!(
 /// `ptrace` to a process's own descendants, so its environment, which Yama does not hold, is
 /// tried beside it.)
 fn a_sandboxed_runner_chat_reaches_neither_its_browser_engine_nor_its_host(target: &Target) {
-    use crate::chatbrowsers::Driver as _;
     let Some(runner) = &target.runner else {
         return;
     };
+    let (browsers, browser, past) = a_browser_and_what_lies_past_a_chat(target, runner);
+
+    // The chat: Codex as the runner composes it, its program a stand-in that tries each in a
+    // shell of its own and says what came of it.
+    let bin = tempfile::tempdir().expect("a folder for the harness");
+    let program = stand_in::program(
+        bin.path(),
+        "codex",
+        &format!(
+            "#!/bin/sh\n\
+             [ \"$1\" = login ] && [ \"$2\" = status ] && exit 0\n\
+             for word in \"$@\"; do [ \"$word\" = --version ] && {{ echo 'codex-cli 0.147.0'; exit 0; }}; done\n\
+             {tries}\
+             printf 'TRIED.\\n'\n\
+             read line\n",
+            tries = past.tries(),
+        ),
+    );
+    a_profile_of(target, "codex", "work", &program);
+    let id = target
+        .sessions
+        .open_named(
+            None,
+            &named("try what reaches past you", false),
+            purlis_core::sandbox::plan::Hearing::default(),
+            &|_| {},
+        )
+        .expect("the sandboxed chat starts on the runner")
+        .number;
+    let pane = Pane::on(target, id);
+    pane.shows("TRIED.");
+    for said in PAST_A_CHAT {
+        pane.shows(said);
+    }
+    target.sessions.close(id).expect("it closes");
+    browsers.close(&browser).expect("the browser ends");
+}
+
+/// **A real Claude Code chat on a runner is held at least as a Codex chat is** (#4083, ruled
+/// 2026-10-30): the program Claude Code ships, armed by the runner's own host with purlis's
+/// plugin, its own sandbox off and purlis's wrap around all of it, in a container with neither
+/// bubblewrap nor socat. A stand-in model inside the chat asks its Bash tool for what
+/// [`a_sandboxed_runner_chat_reaches_neither_its_browser_engine_nor_its_host`] tries, and for
+/// what Claude Code's own sandbox used to keep from a command: its settings, its hooks and
+/// `.claude.json`, and a connection past the proxy. Its hook reaches the host.
+fn a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(target: &Target) {
+    let Some(runner) = &target.runner else {
+        return;
+    };
+    let outside = runner.prints("command -v bwrap socat || echo neither");
+    assert_eq!(outside.trim(), "neither", "the image stays without them");
+    let (browsers, browser, past) = a_browser_and_what_lies_past_a_chat(target, runner);
+    let bin = tempfile::tempdir().expect("a folder for the harness");
+    let program = stand_in::program(
+        bin.path(),
+        "claude",
+        &format!(
+            "#!/bin/sh\n\
+             real={REAL_CLAUDE_CODE}\n\
+             for word in \"$@\"; do [ \"$word\" = --version ] && exec \"$real\" --version; done\n\
+             cat > \"$TMPDIR/probes.sh\" <<'PROBES'\n\
+             {tries}\
+             try TURN 'touch \"$CLAUDE_CONFIG_DIR/projects/turn\"'\n\
+             try SETTINGS 'echo x >> \"$CLAUDE_CONFIG_DIR/settings.json\"'\n\
+             try STATE 'echo x >> \"$CLAUDE_CONFIG_DIR/.claude.json\"'\n\
+             try HOOKS 'mkdir \"$CLAUDE_CONFIG_DIR/hooks\"'\n\
+             try DIRECT 'bash -c \"exec 3<>/dev/tcp/1.1.1.1/443\"'\n\
+             PROBES\n\
+             '{fake}' --model \"sh $TMPDIR/probes.sh\" --model-said \"$TMPDIR/said\" > \"$TMPDIR/port\" &\n\
+             until [ -s \"$TMPDIR/port\" ]; do sleep 0.1; done\n\
+             export ANTHROPIC_BASE_URL=\"http://127.0.0.1:$(cat \"$TMPDIR/port\")\"\n\
+             export ANTHROPIC_AUTH_TOKEN=stand-in NO_PROXY=127.0.0.1 no_proxy=127.0.0.1\n\
+             \"$real\" -p \"$@\" --output-format json > \"$TMPDIR/out\" 2> \"$TMPDIR/err\" < /dev/null\n\
+             printf 'CLAUDE-CODE ended %s.\\n' \"$?\"\n\
+             cat \"$TMPDIR/said\" \"$TMPDIR/err\"; head -c 2000 \"$TMPDIR/out\"\n\
+             printf '\\nTRIED.\\n'\n\
+             read line\n",
+            tries = past.tries(),
+            fake = fake_harness().display(),
+        ),
+    );
+    a_profile_of(target, "claude", "work", &program);
+    let id = target
+        .sessions
+        .open_named(
+            None,
+            &named("Run the probes.", false),
+            purlis_core::sandbox::plan::Hearing::default(),
+            &|_| {},
+        )
+        .expect("the sandboxed chat starts on the runner")
+        .number;
+    let pane = Pane::on(target, id);
+    pane.shows("TRIED.");
+    pane.shows("CLAUDE-CODE ended 0.");
+    for said in PAST_A_CHAT {
+        pane.shows(said);
+    }
+    for said in [
+        "TURN yes.",
+        "SETTINGS no.",
+        "STATE no.",
+        "HOOKS no.",
+        "DIRECT no.",
+    ] {
+        pane.shows(said);
+    }
+    // Its plugin's hook ran inside the wrap and reached the host over the hook socket.
+    until("its hook's line is in the event log", || {
+        target
+            .events_where_its_chats_run()
+            .iter()
+            .any(|event| event.kind == "hook.stop")
+    });
+    target.sessions.close(id).expect("it closes");
+    browsers.close(&browser).expect("the browser ends");
+}
+
+/// Where the parity image keeps the program Claude Code ships (`tests/parity/runner.Dockerfile`).
+const REAL_CLAUDE_CODE: &str = "/usr/local/lib/parity/claude-code";
+
+/// What a chat says of [`PastAChat::tries`]: its project reached, and nothing past it.
+const PAST_A_CHAT: [&str; 9] = [
+    "PROJECT yes.",
+    "ENGINE-FOLDER no.",
+    "ENGINE-MEMORY no.",
+    "ENGINE-ENVIRONMENT no.",
+    "HOST-PIPE no.",
+    "HOST-KEY no.",
+    "HOST-SOCKET no.",
+    // Only the browser engine may make namespaces on a runner (D-2050-25), refused by the
+    // filter, not for want of a program.
+    "NAMESPACE no:",
+    "Operation not permitted",
+];
+
+/// What lies past a sandboxed chat on a runner, each found as the runner's own user, outside the
+/// sandbox ([`a_browser_and_what_lies_past_a_chat`]).
+struct PastAChat {
+    folder: String,
+    engine: String,
+    host: String,
+    pipe: String,
+    socket: String,
+    key: String,
+}
+
+impl PastAChat {
+    /// A shell's `try` and what it tries of each, saying what came of it.
+    fn tries(&self) -> String {
+        let Self {
+            folder,
+            engine,
+            host,
+            pipe,
+            socket,
+            key,
+        } = self;
+        format!(
+            "try() {{ if ( eval \"$2\" ) >/dev/null 2>&1; then printf '%s yes.\\n' \"$1\"; else printf '%s no.\\n' \"$1\"; fi; }}\n\
+             try PROJECT 'ls .'\n\
+             try ENGINE-FOLDER 'ls {folder}'\n\
+             try ENGINE-MEMORY 'exec 3< /proc/{engine}/mem'\n\
+             try ENGINE-ENVIRONMENT 'cat /proc/{engine}/environ'\n\
+             try HOST-PIPE 'exec 3<> /proc/{host}/fd/{pipe}'\n\
+             try HOST-KEY 'cat {key}'\n\
+             try HOST-SOCKET 'ls {socket}'\n\
+             if said=$(unshare --user true 2>&1); then printf 'NAMESPACE yes.\\n'; else printf 'NAMESPACE no: %s\\n' \"$said\"; fi\n"
+        )
+    }
+}
+
+/// A browser of the project running on `runner`, and what lies past a chat beside it, each found
+/// outside the sandbox.
+fn a_browser_and_what_lies_past_a_chat(
+    target: &Target,
+    runner: &OnTheRunner,
+) -> (crate::browsers::WindowBrowsers, String, PastAChat) {
+    use crate::chatbrowsers::Driver as _;
     let browsers = crate::browsers::WindowBrowsers::new(Arc::clone(
         target.host.as_ref().expect("the window's link to its host"),
     ));
@@ -3552,60 +3739,18 @@ printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "
         "yes",
         "the runner refuses a user namespace to anyone: {outside}"
     );
-
-    // The chat: Codex as the runner composes it, its program a stand-in that tries each in a
-    // shell of its own and says what came of it.
-    let bin = tempfile::tempdir().expect("a folder for the harness");
-    let program = stand_in::program(
-        bin.path(),
-        "codex",
-        &format!(
-            "#!/bin/sh\n\
-             [ \"$1\" = login ] && [ \"$2\" = status ] && exit 0\n\
-             for word in \"$@\"; do [ \"$word\" = --version ] && {{ echo 'codex-cli 0.147.0'; exit 0; }}; done\n\
-             try() {{ if ( eval \"$2\" ) >/dev/null 2>&1; then printf '%s yes.\\n' \"$1\"; else printf '%s no.\\n' \"$1\"; fi; }}\n\
-             try PROJECT 'ls .'\n\
-             try ENGINE-FOLDER 'ls {folder}'\n\
-             try ENGINE-MEMORY 'exec 3< /proc/{engine}/mem'\n\
-             try ENGINE-ENVIRONMENT 'cat /proc/{engine}/environ'\n\
-             try HOST-PIPE 'exec 3<> /proc/{host}/fd/{pipe}'\n\
-             try HOST-KEY 'cat {key}'\n\
-             try HOST-SOCKET 'ls {socket}'\n\
-             if said=$(unshare --user true 2>&1); then printf 'NAMESPACE yes.\\n'; else printf 'NAMESPACE no: %s\\n' \"$said\"; fi\n\
-             printf 'TRIED.\\n'\n\
-             read line\n"
-        ),
-    );
-    a_profile_of(target, "codex", "work", &program);
-    let id = target
-        .sessions
-        .open_named(
-            None,
-            &named("try what reaches past you", false),
-            purlis_core::sandbox::plan::Hearing::default(),
-            &|_| {},
-        )
-        .expect("the sandboxed chat starts on the runner")
-        .number;
-    let pane = Pane::on(target, id);
-    pane.shows("TRIED.");
-    for said in [
-        "PROJECT yes.",
-        "ENGINE-FOLDER no.",
-        "ENGINE-MEMORY no.",
-        "ENGINE-ENVIRONMENT no.",
-        "HOST-PIPE no.",
-        "HOST-KEY no.",
-        "HOST-SOCKET no.",
-        // Only the browser engine may make namespaces on a runner (D-2050-25), refused by the
-        // filter, not for want of a program.
-        "NAMESPACE no:",
-        "Operation not permitted",
-    ] {
-        pane.shows(said);
-    }
-    target.sessions.close(id).expect("it closes");
-    browsers.close(&browser).expect("the browser ends");
+    (
+        browsers,
+        browser,
+        PastAChat {
+            folder,
+            engine,
+            host,
+            pipe,
+            socket,
+            key,
+        },
+    )
 }
 
 /// **A chat without the sandbox on a runner makes no namespace, and leaves its runner trusted with
@@ -3701,6 +3846,16 @@ mod the_persons_shell_on_a_runner_makes_no_namespace {
     fn in_a_docker_pool() {
         if let Some(target) = super::in_a_docker_pool() {
             super::the_persons_shell_on_a_runner_makes_no_namespace(&target);
+        }
+    }
+}
+
+mod a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is {
+    /// Run by the parity job, which names a runner image; elsewhere it runs nothing.
+    #[test]
+    fn in_a_docker_pool() {
+        if let Some(target) = super::in_a_docker_pool() {
+            super::a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(&target);
         }
     }
 }

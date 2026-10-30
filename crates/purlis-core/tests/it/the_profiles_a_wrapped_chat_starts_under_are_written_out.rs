@@ -60,7 +60,7 @@ fn emitted(harness: Harness, root: &Path, tmp: &Path, machine: &Machine) -> (Lev
     let profile = match applied.form() {
         Form::Codex(wrap) => sandbox::codex::profile(wrap, root, tmp, &[4040], None),
         Form::Opencode(wrap) => sandbox::opencode::profile(wrap, root, tmp, &[4040], None),
-        Form::ClaudeCode(_) => panic!("Claude Code is not wrapped"),
+        Form::ClaudeCode(_) | Form::ClaudeWrapped(_) => panic!("Claude Code is not wrapped"),
     }
     .expect("a profile");
     (applied.level(), profile)
