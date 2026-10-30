@@ -18,12 +18,27 @@ keeps one label and never receives a vault value; an owned device receives one o
 2. **Over a link between hosts a browser view is held to the link's frames**: at most 15 a
    second and 1280 pixels wide, the engine scaling its frames down, and one frame in flight. The
    window holds a runner browser's view to them too, whatever the runner sends.
-3. **A login is filled only on a runner purlis can show is the person's own** (ruled 2026-10-26).
-   Until a pool can be marked owned (#2561), that is a Docker pool whose engine is a local socket
-   on this machine: the runner is this device, owned under the amendment of 2026-10-14. A pool on
-   any other engine (`tcp://`, `ssh://`, any `DOCKER_HOST` that is not a local socket), and every
-   other kind of pool, is refused in words. The person's opt-in is a second gate, never a stand-in
-   for ownership.
+3. **A login is filled only on a runner purlis can show is the person's own** (ruled 2026-10-26;
+   amended by the person's ruling of 2026-10-30, built by #4071, which marks "marked owned" of
+   the amendment of 2026-10-14 and #2561 as built). That is one of:
+   - a Docker pool whose engine is a local socket on this machine: the runner is this device,
+     owned under the amendment of 2026-10-14, with no mark;
+   - a cluster pool, only while **both** hold: **the person's mark**, per pool, off by default,
+     set only by the person in the window and never from a chat, the Pool or the operator
+     (`owned` in `runners.json`, *This is my own* on the Pools row, whose text says who else can
+     read what the runner holds); and **its claim vouched for now**, by the check every link
+     makes, at the gate and again after Allow, failing closed where the cluster does not answer.
+   A pool on any other engine (`tcp://`, `ssh://`, any `DOCKER_HOST` that is not a local socket) is
+   refused in words, and an unmarked cluster pool in words that say how to mark it. The person's
+   opt-in is a further gate, never a stand-in for ownership. A login on a cluster runner stays
+   behind its per-persona, per-pool opt-in, bound as item 4 says but for that runner: its pool's
+   name, context, cluster uid, operator key, claim uid, pod, device and link key, with the Ask's
+   engine naming the cluster and context, and no image digest. Any change asks again. A mark
+   taken back forgets the pool's opt-ins. A claim being deleted vouches for nothing. A link
+   reports the runner it reached with the key it was pinned with, and one that is not the runner
+   kept now is refused, so a value goes only to the runner the gate judged. A runner a chat ran
+   on without the sandbox is sent nothing, however it is marked. The pool is read again once the
+   vault has been read, before anything is sent.
 4. **The opt-in is the person's answer to an Ask** naming the login, the pool and its engine, for
    one persona's login on one pool, bound to the login as declared and allowed, to a digest of the
    pool's definition (as `runners.json` keeps it), its image digest, the receiving runner (device

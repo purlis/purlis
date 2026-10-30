@@ -53,6 +53,7 @@ const a_cluster_pool = (name: string): ClusterPoolRow => ({
   pool: "default",
   namespace: "op",
   operator_key: OPERATOR_KEY,
+  owned: false,
 });
 
 let pools: PoolRow[];
@@ -137,6 +138,12 @@ beforeEach(() => {
         const row = a_cluster_pool((a.adding as { name: string }).name);
         clusters = [...clusters, row];
         return row;
+      }
+      if (cmd === "set_cluster_pool_owned") {
+        clusters = clusters.map((one) =>
+          one.name === a.name ? { ...one, owned: a.owned as boolean } : one,
+        );
+        return null;
       }
       if (cmd === "docker_pool_link") return link;
       if (cmd === "docker_pool_version") return version;
@@ -815,6 +822,24 @@ describe("A cluster pool (#3292)", () => {
     expect(within(dialog).getByRole("button", { name: "Check its key" })).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add a pool" })).toBeNull());
+  });
+
+  it("is off until the person says This is my own, which says who else can read it", async () => {
+    clusters = [a_cluster_pool("team")];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    const mine = await within(group).findByRole("switch", { name: "This is my own" });
+    expect(mine).not.toBeChecked();
+    expect(mine).toHaveAccessibleDescription(/cluster's admins.*can read what it holds/);
+    await userEvent.click(mine);
+    await waitFor(() => expect(clusters[0].owned).toBe(true));
+    await waitFor(() =>
+      expect(within(group).getByRole("switch", { name: "This is my own" })).toBeChecked(),
+    );
+    await userEvent.click(within(group).getByRole("switch", { name: "This is my own" }));
+    await waitFor(() => expect(clusters[0].owned).toBe(false));
   });
 
   it("whose cluster names another operator key has the key-changed Notice with Remove", async () => {

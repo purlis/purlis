@@ -471,3 +471,9 @@ async fn a_link_to_a_draining_runner_reaches_its_chats_and_starts_none() {
     draining.lock().unwrap().push("builds/builds".to_owned());
     assert!(refused_as_draining(&now.start_program(start()).await));
 }
+
+#[test]
+fn a_runner_is_named_without_the_key_its_link_reports() {
+    assert_eq!(super::runner_named("team/team@abcd"), "team/team");
+    assert_eq!(super::runner_named("builds/builds-1"), "builds/builds-1");
+}

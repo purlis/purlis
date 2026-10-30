@@ -289,7 +289,7 @@ pub fn relays_to(config_root: PathBuf) -> purlis_host::RelaysTo {
             &cluster,
             &kept,
         )?;
-        let resolved = format!("{}/{}", cluster.name(), kept.name);
+        let resolved = kept.reached();
         Ok((Arc::new(move || to.keep()) as purlis_host::Keep, resolved))
     })
 }

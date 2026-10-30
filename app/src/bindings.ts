@@ -2958,6 +2958,13 @@ export const commands = {
 	 */
 	addClusterPool: (adding: ClusterPoolAdding) => typedError<ClusterPoolRow, string>(__TAURI_INVOKE("add_cluster_pool", { adding })),
 	/**
+	 *  **The person marks the cluster pool `name` as their own, or takes the mark back** (#4071, the
+	 *  person's ruling of 2026-10-30). The window's alone (`ui::WINDOW_ONLY`): no chat, Pool or
+	 *  operator reaches it. Taken back, every login opted in on the pool is forgotten, so a later
+	 *  mark asks about each again.
+	 */
+	setClusterPoolOwned: (name: string, owned: boolean) => typedError<null, string>(__TAURI_INVOKE("set_cluster_pool_owned", { name, owned })),
+	/**
 	 *  **The profiles chosen for pool `pool`, kept on its runner** (#2049, #4047), as the runner
 	 *  stands with each, and this machine's others Add a profile… offers: the ones its `profiles`
 	 *  names, or, where it names none, the profile a new chat in the open project `plane` gets. What
@@ -5827,6 +5834,8 @@ export type ClusterPoolRow = {
 	namespace: string,
 	/**  The cluster operator key pinned as it was added, spelled `ed25519:<64 hex>`. */
 	operator_key: string,
+	/**  Whether the person marked it as their own (#4071). */
+	owned: boolean,
 };
 
 /**  What a palette command does. */

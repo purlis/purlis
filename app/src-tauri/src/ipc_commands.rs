@@ -470,6 +470,7 @@ macro_rules! app_commands {
                 clusterpools::cluster_contexts,
                 clusterpools::cluster_pool_key,
                 clusterpools::add_cluster_pool,
+                clusterpools::set_cluster_pool_owned,
                 poolprofiles::pool_profiles,
                 poolprofiles::pool_profile_add,
                 poolprofiles::pool_profile_remove,

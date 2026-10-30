@@ -1800,6 +1800,16 @@ impl ChatBrowsers {
         Err((pool_login_asked_said(persona, login, pool, changed), raised))
     }
 
+    /// Every opt-in given on pool `pool`, and every Ask about one: its mark was taken back
+    /// (#4071).
+    pub fn forget_pool_logins(&self, pool: &str) {
+        self.pool_logins.forget_pool(pool);
+        self.pool_asks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|_, waits| waits.bound.pool != pool);
+    }
+
     /// **Every runner chat whose browser login waits on the person's opt-in** (#2050), longest
     /// waiting first.
     pub fn pool_logins_waiting(&self) -> Vec<PoolLoginWaits> {
@@ -3164,6 +3174,14 @@ fn pool_login_of(
     }
     let (login, identity) =
         purlis_core::secrets::brokered::login_and_identity_for(&asker, name, true)?;
+    // Again once it is read: a vault may wait on a sign-in for as long as it takes (#4071).
+    if purlis_core::poollogins::Bound::over_the_link(&config, pool, reached.as_deref()).as_ref()
+        != Ok(&bound)
+    {
+        return Err(format!(
+            "pool {pool} or its runner changed as login {name} was read, so nothing was filled"
+        ));
+    }
     Ok(LoginRead {
         login,
         opens: false,
