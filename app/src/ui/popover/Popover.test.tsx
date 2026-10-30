@@ -247,6 +247,62 @@ describe("a popover hung from what it is about (#3648)", () => {
     expect(gone.filter((id) => following.includes(id))).toEqual([]);
   });
 
+  // #3896: WebKit's smooth scroll can come to rest with no scroll event for its last steps, and
+  // a card placed only on the events was left short of its chip.
+  it("follows what it hangs from to where it comes to rest, though no scroll event says so", async () => {
+    let chipAt = 100;
+    laidOut(() => chipAt);
+    render(<Hung />);
+    const root = () =>
+      screen
+        .getByRole("region", { name: "Notices for gamma" })
+        .closest<HTMLElement>('[data-scope="popover"][data-part="root"]') as HTMLElement;
+    await aFrame();
+    const placed = () => root().style.left;
+    const first = placed();
+    // A scroll's last event, with the chip at 160, placed on the next frame.
+    chipAt = 160;
+    fireEvent.scroll(screen.getByTestId("clip"));
+    await aFrame();
+    const onTheEvent = placed();
+    expect(onTheEvent).not.toBe(first);
+    // The scroll's next steps say nothing: frame by frame to 200, where it rests.
+    chipAt = 180;
+    await aFrame();
+    chipAt = 200;
+    await aFrame();
+    await aFrame();
+    const atRest = placed();
+    expect(atRest).not.toBe(onTheEvent);
+    // Where the chip came to rest, with no nudge: drawn at the one place however it got there.
+    expect(atRest).toBe(`${parseFloat(first) + 100}px`);
+    // At rest, it is placed no more.
+    await aFrame();
+    await aFrame();
+    expect(placed()).toBe(atRest);
+  });
+
+  // #3896, round 2: a scroll set at once ends in the frame it starts, and the scroll's placing
+  // and its end's must not undo each other: the card is placed where the chip went.
+  it("is placed where what it hangs from went when a scroll is set at once and ends", async () => {
+    let chipAt = 100;
+    laidOut(() => chipAt);
+    render(<Hung />);
+    const placed = () =>
+      (
+        screen
+          .getByRole("region", { name: "Notices for gamma" })
+          .closest('[data-scope="popover"][data-part="root"]') as HTMLElement
+      ).style.left;
+    await aFrame();
+    const first = placed();
+    chipAt = 140;
+    fireEvent.scroll(screen.getByTestId("clip"));
+    fireEvent(screen.getByTestId("clip"), new Event("scrollend"));
+    for (let frame = 0; frame < 4; frame += 1) await aFrame();
+    expect(placed()).toBe(`${parseFloat(first) + 40}px`);
+  });
+
   it("stays up when a scroll ends with what it hangs from in sight", async () => {
     let chipAt = -80;
     laidOut(() => chipAt);

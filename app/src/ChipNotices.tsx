@@ -311,15 +311,17 @@ export function ChipCard({
   useLayoutEffect(() => {
     handed.current = { takesKeyboard, onKeyboardTaken };
   });
-  // Once React Aria has placed it (it is drawn hidden until then), a frame or a few later.
+  // Once React Aria has placed it (it is drawn hidden until then), a frame or a few later; and
+  // never taken back to the card's edge once the keyboard is in it already (#3896): Tab in
+  // those frames goes on into it, as it would a moment later.
   useEffect(() => {
     if (!takesKeyboard) return;
     let frames = 0;
     let asked = 0;
     const land = () => {
       const at = region.current;
-      at?.focus({ preventScroll: true });
-      if ((at !== null && document.activeElement === at) || ++frames > 10) {
+      if (at !== null && !at.contains(document.activeElement)) at.focus({ preventScroll: true });
+      if ((at !== null && at.contains(document.activeElement)) || ++frames > 10) {
         handed.current.onKeyboardTaken?.();
         return;
       }
