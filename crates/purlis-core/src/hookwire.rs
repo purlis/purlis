@@ -572,6 +572,10 @@ pub struct ChatTokens {
     /// after its token was replaced or its chat let it go.
     #[cfg(unix)]
     unrecorded: std::sync::Mutex<std::collections::HashMap<u32, ChatToken>>,
+    /// Each chat's armed key (#3822), minted with its token and written into the spool for its
+    /// hook alone ([`armed::arm`]): what a report's mode is believed on ([`Self::proves`]).
+    #[cfg(unix)]
+    armed: std::sync::Mutex<std::collections::HashMap<u32, armed::ArmedKey>>,
 }
 
 /// A chat's program: its pid, and when the process with that pid started, so a later process
@@ -653,6 +657,8 @@ impl ChatTokens {
             answering: std::sync::Mutex::default(),
             #[cfg(unix)]
             unrecorded: std::sync::Mutex::default(),
+            #[cfg(unix)]
+            armed: std::sync::Mutex::default(),
         }
     }
 
@@ -760,7 +766,78 @@ impl ChatTokens {
         }
         self.held().insert(chat, token.clone());
         self.rooted().remove(&chat);
+        #[cfg(unix)]
+        self.arm(chat);
         Ok(token)
+    }
+
+    /// Mints chat `chat`'s armed key and writes it where its hook reads it (#3822), replacing
+    /// any it had. A key that cannot be minted or written is said in the log and none is held:
+    /// the chat runs, and every mode it reports reads as asking (fail closed).
+    #[cfg(unix)]
+    fn arm(&self, chat: u32) {
+        // The key this start replaces proves nothing from here on, and the file is written with
+        // no lock held, so no other chat's line waits on it.
+        self.keys().remove(&chat);
+        let key = match armed::ArmedKey::new() {
+            Ok(key) => key,
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: chat {chat} has no armed key ({why}); its modes read as asking"
+                );
+                return;
+            }
+        };
+        if let Some(dir) = &self.spool
+            && let Err(why) = armed::arm(dir, chat, &key)
+        {
+            tracing::warn!(
+                "purlis: chat {chat}'s armed key was not written ({why}); its modes read as asking"
+            );
+            return;
+        }
+        self.keys().insert(chat, key);
+    }
+
+    /// Chat `chat` has ended or been let go: its armed key is forgotten and removed.
+    fn disarm(&self, chat: u32) {
+        #[cfg(unix)]
+        {
+            self.keys().remove(&chat);
+            if let Some(dir) = &self.spool {
+                armed::disarm(dir, chat);
+            }
+        }
+        #[cfg(not(unix))]
+        let _ = chat;
+    }
+
+    /// **Whether `said` is the key chat `chat`'s hook was armed with** (#3822), compared in
+    /// constant time: what a report's mode is believed on. A chat holding no key proves
+    /// nothing, nor does a line that carries none.
+    pub fn proves(&self, chat: u32, said: Option<&str>) -> bool {
+        #[cfg(unix)]
+        {
+            self.keys().get(&chat).is_some_and(|key| key.matches(said))
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (chat, said);
+            false
+        }
+    }
+
+    /// Chat `chat`'s armed key, for a test that stands in for its hook.
+    #[cfg(all(unix, any(test, feature = "test-support")))]
+    pub fn armed_key(&self, chat: u32) -> Option<armed::ArmedKey> {
+        self.keys().get(&chat).cloned()
+    }
+
+    #[cfg(unix)]
+    fn keys(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<u32, armed::ArmedKey>> {
+        self.armed
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Records the spool key of each chat whose key was not recorded as its token was issued
@@ -836,6 +913,7 @@ impl ChatTokens {
             drop(roots);
             self.unrecorded_forgotten(chat);
             self.held().remove(&chat);
+            self.disarm(chat);
         }
     }
 
@@ -863,6 +941,7 @@ impl ChatTokens {
         self.unrecorded_forgotten(chat);
         self.held().remove(&chat);
         self.rooted().remove(&chat);
+        self.disarm(chat);
     }
 
     fn rooted(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<u32, Program>> {
@@ -1019,9 +1098,24 @@ pub(crate) fn line_with(
     token: Option<&ChatToken>,
     what: &impl serde::Serialize,
 ) -> std::io::Result<Vec<u8>> {
+    line_armed(token, None, what)
+}
+
+/// [`line_with`], with the chat's armed key beside the token where the hook holds one (#3822).
+pub(crate) fn line_armed(
+    token: Option<&ChatToken>,
+    armed: Option<&str>,
+    what: &impl serde::Serialize,
+) -> std::io::Result<Vec<u8>> {
     let mut value = serde_json::to_value(what).map_err(std::io::Error::other)?;
     if let (Some(token), Some(fields)) = (token, value.as_object_mut()) {
         fields.insert(TOKEN.to_owned(), serde_json::Value::String(token.0.clone()));
+    }
+    if let (Some(armed), Some(fields)) = (armed, value.as_object_mut()) {
+        fields.insert(
+            ARMED.to_owned(),
+            serde_json::Value::String(armed.to_owned()),
+        );
     }
     let mut line = serde_json::to_vec(&value).map_err(std::io::Error::other)?;
     line.push(b'\n');
@@ -1031,10 +1125,25 @@ pub(crate) fn line_with(
 /// The field a line's token travels in.
 const TOKEN: &str = "token";
 
+/// The field a report's armed key travels in (#3822), on the socket alone: never spooled.
+const ARMED: &str = "armed";
+
 /// [`read_delivered`] for a test that looks at the line and its token alone.
 #[cfg(test)]
 fn read_line(line: &str) -> Option<(Line, Option<String>)> {
-    read_delivered(line).map(|(line, token, _)| (line, token))
+    read_delivered(line).map(|read| (read.line, read.token))
+}
+
+/// One line off the socket as [`read_delivered`] reads it: the line, and what it carried
+/// beside it, each taken off it.
+struct ReadLine {
+    line: Line,
+    /// The chat's token.
+    token: Option<String>,
+    /// Its [`Delivery`].
+    delivery: Option<Delivery>,
+    /// The chat's armed key, which only a report carries ([`armed`]).
+    armed: Option<String>,
 }
 
 /// A line off the socket, read, and the token it carried taken off it — so nothing past the
@@ -1043,8 +1152,9 @@ fn read_line(line: &str) -> Option<(Line, Option<String>)> {
 /// **Only a line a hook delivers carries one** ([`deliver`]: a report, a tool call or a refused
 /// commit), and only in its own shape. Any other kind that carries the field, or one of those
 /// three whose id is not one a hook makes, is not read: nothing past the listener holds a
-/// field that kind never has.
-fn read_delivered(line: &str) -> Option<(Line, Option<String>, Option<Delivery>)> {
+/// field that kind never has. The same of an armed key (#3822), which a report alone carries,
+/// as a string.
+fn read_delivered(line: &str) -> Option<ReadLine> {
     let mut value = serde_json::from_str::<serde_json::Value>(line).ok()?;
     let fields = value.as_object_mut()?;
     let token = match fields.remove(TOKEN) {
@@ -1052,7 +1162,13 @@ fn read_delivered(line: &str) -> Option<(Line, Option<String>, Option<Delivery>)
         _ => None,
     };
     let delivery = fields.remove(DELIVERY);
+    let armed = fields.remove(ARMED);
     let line: Line = serde_json::from_value(value).ok()?;
+    let armed = match armed {
+        None => None,
+        Some(serde_json::Value::String(armed)) if matches!(line, Line::Report(_)) => Some(armed),
+        Some(_) => return None,
+    };
     let delivery = match delivery {
         None => None,
         Some(said) => {
@@ -1062,7 +1178,12 @@ fn read_delivered(line: &str) -> Option<(Line, Option<String>, Option<Delivery>)
             Some(said.as_str().and_then(Delivery::parse)?)
         }
     };
-    Some((line, token, delivery))
+    Some(ReadLine {
+        line,
+        token,
+        delivery,
+        armed,
+    })
 }
 
 /// The field a delivered line's [`Delivery`] travels in, on the socket and in the spool.
@@ -2969,13 +3090,21 @@ struct Receipt {
 }
 
 /// Delivers a chat's report: taken by the host at `path`, or spooled beside it ([`deliver`]).
+///
+/// **With the chat's armed key beside it, where this process can read one** (#3822,
+/// [`armed::ArmedKey::read`]): the chat's armed hook can, so the mode it reports is believed.
 #[cfg(unix)]
 pub fn deliver_report(
     path: &std::path::Path,
     token: Option<&ChatToken>,
     report: &Report,
 ) -> io::Result<Delivered> {
-    deliver(path, token, report)
+    deliver_armed(
+        path,
+        token,
+        armed::ArmedKey::read(path, report.chat).as_ref(),
+        report,
+    )
 }
 
 /// Delivers a tool call's line: taken by the host at `path`, or spooled beside it
@@ -3018,11 +3147,23 @@ pub fn deliver<L: SpoolLine>(
     token: Option<&ChatToken>,
     line: &L,
 ) -> io::Result<Delivered> {
+    deliver_armed(path, token, None, line)
+}
+
+/// [`deliver`], with `armed` beside the token on the socket ([`line_armed`]): on the socket
+/// alone, never into the spool, whose lines prove no mode (#3822).
+#[cfg(unix)]
+pub fn deliver_armed<L: SpoolLine>(
+    path: &std::path::Path,
+    token: Option<&ChatToken>,
+    armed: Option<&armed::ArmedKey>,
+    line: &L,
+) -> io::Result<Delivered> {
     use std::io::{BufRead, Read, Write};
 
     let delivery = Delivery::new();
     let delivered = with_delivery(line, delivery.as_ref())?;
-    let bytes = line_with(token, &delivered)?;
+    let bytes = line_armed(token, armed.map(armed::ArmedKey::expose), &delivered)?;
     let to = path.to_path_buf();
     let answered = within(A_NOTICE_TAKES_AT_MOST, move || {
         let socket = std::os::unix::net::UnixStream::connect(&to)?;
@@ -3224,6 +3365,9 @@ mod off_unix;
 
 #[cfg(unix)]
 pub mod spool;
+
+#[cfg(unix)]
+pub mod armed;
 
 pub mod permission;
 
@@ -3890,7 +4034,13 @@ fn serve(
             );
             return;
         }
-        let Some((line, token, delivery)) = read_delivered(&line) else {
+        let Some(ReadLine {
+            line,
+            token,
+            delivery,
+            armed,
+        }) = read_delivered(&line)
+        else {
             refuse(&mut writer, UNKNOWN_LINE.to_owned());
             return;
         };
@@ -3960,7 +4110,14 @@ fn serve(
         };
         let already = (begun == Some(false)).then(RecordedAlready::held);
         match line {
-            Line::Report(report) => recorded = Some((hearing.each)(report)),
+            Line::Report(mut report) => {
+                // A mode is believed only from the chat's armed hook (#3822): one any other
+                // line names reads as asking, after the line's copy was told by what it said.
+                if !tokens.proves(chat, armed.as_deref()) {
+                    report.mode_unproven();
+                }
+                recorded = Some((hearing.each)(report));
+            }
             Line::Ask(ask) => {
                 // An ask is answered for as long as opening a chat takes, and nothing about
                 // the order of hook calls hangs on it: the turn is let go before it is.

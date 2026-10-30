@@ -12,6 +12,11 @@ use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
 /// opencode's adapter.
+///
+/// **What its reports can prove** (#3822): only the chat's token. Its shim's hooks run inside
+/// purlis's wrap, which denies them the spool their armed key is in
+/// ([`crate::hookwire::armed`]), so any mode a report named would read as asking. None is
+/// read (the trait's default `reported_mode`): opencode documents no classifier-backed mode.
 pub struct Opencode;
 
 /// The one opencode adapter.

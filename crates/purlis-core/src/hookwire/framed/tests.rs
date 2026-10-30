@@ -346,7 +346,9 @@ fn the_hello_is_a_line_of_its_own_kind_carrying_its_chat_and_token() {
         said,
         serde_json::json!({"frames": VERSION, "chat": 7, "token": "abc"})
     );
-    let (read, token, _) = crate::hookwire::read_delivered(std::str::from_utf8(&line).unwrap())
+    let crate::hookwire::ReadLine {
+        line: read, token, ..
+    } = crate::hookwire::read_delivered(std::str::from_utf8(&line).unwrap())
         .expect("a line the app reads");
     assert!(
         matches!(&read, crate::hookwire::Line::Frames(hello) if *hello == Hello::of(7)),
