@@ -1179,6 +1179,7 @@ mod tests {
     /// and `--long` is a task's flag, never a subcommand's.
     #[test]
     fn a_long_first_line_reaches_no_subcommand() {
+        use clap::Parser as _;
         for words in [
             vec!["purlis", "dispatch", "--long", "cancel", "9"],
             vec!["purlis", "dispatch", "--long", "close", "9"],
