@@ -37,7 +37,7 @@ describe("Move to runner and Move here (#2048)", () => {
       trouble: false,
     });
     expect(moveCancellable(one)).toBe(true);
-    expect(movesDue({ 1: one }, () => "waiting")).toEqual([]);
+    expect(movesDue({ 1: one }, { ...nothingKnown, bySession: { 1: "waiting" } })).toEqual([]);
   });
 
   it("switches a prepared move only at the chat's pause between turns, never mid-turn", () => {
