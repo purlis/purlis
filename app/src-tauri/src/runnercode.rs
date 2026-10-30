@@ -314,7 +314,8 @@ pub(crate) fn move_workspace_back(
                     Some(url) => codelink::give_origin(&repo, pool, &url)
                         .map(|()| url)
                         .map_err(|why| why.to_string()),
-                    None => Err(NO_ORIGIN_NAMED.to_owned()),
+                    None if link.names_clone_origins() => Err(NO_ORIGIN_NAMED.to_owned()),
+                    None => Err(NO_ORIGIN_SAID.to_owned()),
                 };
                 Ok((came, remote))
             });
@@ -358,10 +359,14 @@ fn room_for(root: &Path, rel: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Why a clone made fresh has no remote where the runner named none it could (#3985): a runner
-/// before session protocol 1.54 names none, and one of it names none that is not a forge's
-/// address with no sign-in in it.
+/// Why a clone made fresh has no remote where the runner named none (#3985): it names none
+/// that is not a forge's address with no sign-in in it.
 const NO_ORIGIN_NAMED: &str = "the runner named no origin a forge reaches for it";
+
+/// Why a clone made fresh has no remote from a runner before session protocol 1.54, which names
+/// none (#3985): one of a later purlis would.
+const NO_ORIGIN_SAID: &str =
+    "the runner's purlis is too old to say where its clone came from; a newer one would";
 
 /// **The clones of `workspace` the runner holds and this machine has none of** (#3811), by
 /// their folders in the project: what its chat cloned there, each with the `origin` URL the

@@ -1223,6 +1223,12 @@ impl HostLink {
         }
     }
 
+    /// Whether the host names where each clone it holds came from (1.54, #3985), so a clone it
+    /// made comes back with its remote.
+    pub(crate) fn names_clone_origins(&self) -> bool {
+        self.version() >= session::KNOWS_CLONE_ORIGINS
+    }
+
     /// Whether the host names the clones it holds in a workspace (1.51, #3811), so a chat moving
     /// off it brings back a clone it made.
     pub(crate) fn names_its_clones(&self) -> bool {
@@ -3334,7 +3340,7 @@ impl SessionHost for HostedSessions {
         chats: &[crate::host::Moving],
     ) -> Result<crate::host::CameBack, String> {
         let Some(workspace) = chats.first().map(|chat| chat.workspace.as_str()) else {
-            return Ok(Vec::new());
+            return Ok(crate::host::CameBack::default());
         };
         let (link, project) = self.moving_link()?;
         let scratch = tempfile::Builder::new()
