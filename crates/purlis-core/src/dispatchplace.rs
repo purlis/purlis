@@ -392,7 +392,7 @@ pub struct Repo {
     /// a chat standing in the clone itself.
     pub piece: Option<String>,
     /// Whether it is cut as `purlis worktree add` cuts one (#3903): from the branch the remote
-    /// names its default, brought up to its remote first, else from the clone's HEAD. Set where
+    /// names its default, moved up to the clone's last sync of it, else from its HEAD. Set where
     /// the asking chat does not stand in this clone: in its workspace's own folder, or in
     /// another clone of it. A chat that stands in the clone is cut from where it stands.
     pub from_default: bool,
@@ -670,16 +670,34 @@ pub fn cut(
     let judged = |clone: &Path, start: &str, folder: &Path| {
         crate::cloneupdate::judged_cut(clone, start, folder, root, None).map_or(Ok(()), Err)
     };
+    // The remote is asked over the task's own egress, never on the app's account (#3903).
+    let hosts = if repo.from_default {
+        crate::gitbroker::sandboxed_hosts(root).map_err(Refused::Cut)?
+    } else {
+        None
+    };
     crate::gitbroker::in_a_checked_clone(root, &repo.workspace, &repo.repo, isolation, || {
-        let from = start_of(root, repo);
-        chatpiece::cut_vetted(
-            root,
-            &repo.workspace,
-            &repo.repo,
-            &piece,
-            from.as_ref(),
-            &judged,
-        )
+        let (ws, name) = (&repo.workspace, &repo.repo);
+        if !repo.from_default {
+            let from = start_of(root, repo);
+            return chatpiece::cut_vetted(root, ws, name, &piece, from.as_ref(), &judged);
+        }
+        // **As `purlis worktree add` cuts** (#3903): the same base, the same call.
+        match crate::piececmd::default_base(root, ws, name, hosts.as_deref()) {
+            Some(base) => chatpiece::cut_based(root, ws, name, &piece, &base, &judged).map(
+                |(mut cut, fresh)| {
+                    cut.notes
+                        .extend(fresh.notes.into_iter().map(worktree::Note::Fresh));
+                    cut
+                },
+            ),
+            // Said, never silent: the task does not start where the asking chat may expect.
+            None => chatpiece::cut_vetted(root, ws, name, &piece, None, &judged).map(|mut cut| {
+                cut.notes
+                    .push(worktree::Note::FromHead { repo: name.clone() });
+                cut
+            }),
+        }
     })
     .map_err(Refused::Cut)?
     .map_err(|refusal| Refused::Cut(refusal.in_window()))
@@ -689,17 +707,9 @@ pub fn cut(
 /// is on, where it stands in one of this repo, so the task sees that chat's commits. Read from
 /// the clone's `git worktree list` (git's registry, by the piece's name), never from the
 /// folder the chat writes. A worktree on no branch, one whose folder is gone, or none at all:
-/// `None`, and the task is cut from the clone's HEAD as before.
-///
-/// **A repo the asking chat does not stand in** ([`Repo::from_default`], #3903) is cut from
-/// where `purlis worktree add` cuts: the branch the remote names its default, brought up to its
-/// remote where that is a fast-forward ([`worktree::fresh::bring_up`]); with no such answer,
-/// from the clone's HEAD. Asked inside the brokered route, so the clone's configuration is
-/// checked before git runs in it.
+/// `None`, and the task is cut from the clone's HEAD as before. A repo the asking chat does
+/// not stand in is cut as `purlis worktree add` cuts instead ([`cut`], #3903).
 fn start_of(root: &Path, repo: &Repo) -> Option<worktree::Start> {
-    if repo.from_default {
-        return default_start(root, repo);
-    }
     let piece = repo.piece.as_deref()?;
     let listed = worktree::list(root, &repo.workspace, &repo.repo).ok()?;
     let found = listed
@@ -709,22 +719,6 @@ fn start_of(root: &Path, repo: &Repo) -> Option<worktree::Start> {
         branch: found.branch?,
         tree: Some(found.path),
         at: None,
-    })
-}
-
-/// The start `purlis worktree add` gives a piece of `repo` with no `--base`
-/// ([`crate::piececmd::add`]): the remote's default branch, brought up to its remote.
-fn default_start(root: &Path, repo: &Repo) -> Option<worktree::Start> {
-    let clone = worktree::clone_dir(root, &repo.workspace, &repo.repo).ok()?;
-    let base = worktree::fresh::remote_default(root, &clone, "origin", None)?;
-    // Refused where the clone has no such branch: then it is cut from its HEAD.
-    let fresh = worktree::fresh::bring_up(&clone, &base).ok()?;
-    Some(worktree::Start {
-        tree: worktree::fresh::checked_out_in(&clone, &base)
-            .ok()
-            .flatten(),
-        branch: base,
-        at: fresh.instead,
     })
 }
 
