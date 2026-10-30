@@ -41,13 +41,14 @@ function core(answers: Record<string, unknown>): Asked[] {
   return asked;
 }
 
-/** The hook in a window of its own, with the four things it asks of the window recorded. */
+/** The hook in a window of its own, with the things it asks of the window recorded. */
 function mount() {
   const window = {
     showView: vi.fn(),
     closeView: vi.fn(),
     reread: vi.fn(),
     reloadVaults: vi.fn(),
+    askUnsaved: vi.fn(),
   };
   const held: { edits?: ReturnType<typeof usePlaneEdits> } = {};
   function Window() {
