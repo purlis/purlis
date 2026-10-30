@@ -3167,9 +3167,8 @@ impl Planes {
             // server that keeps dialling is said once, never a row a dial.
             const SERVE_REFUSALS_SAID_EVERY: std::time::Duration =
                 std::time::Duration::from_secs(60);
-            let audited: Arc<
-                Mutex<std::collections::HashMap<(u32, u16, &'static str), std::time::Instant>>,
-            > = Arc::default();
+            type Said = HashMap<(u32, u16, &'static str), std::time::Instant>;
+            let audited: Arc<Mutex<Said>> = Arc::default();
             Arc::new(move |ask, slot| {
                 let Some(held) = held.upgrade() else {
                     purlis_core::hookwire::serve::refused(

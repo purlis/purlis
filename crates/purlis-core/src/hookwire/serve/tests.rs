@@ -12,6 +12,9 @@ use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+/// The slots an app parked, each with what asked for it.
+type Kept = Arc<Mutex<Vec<(ServeAsk, Slot)>>>;
+
 fn hearing(serve: crate::hookwire::Serves) -> Hearing {
     Hearing {
         secret_exec: Box::new(|_, _, writer| crate::secrets::brokered::not_answered(writer)),
@@ -31,13 +34,10 @@ fn hearing(serve: crate::hookwire::Serves) -> Hearing {
 }
 
 /// An app on `path` whose every slot is parked in `kept`, and chat 3's token.
-fn an_app_parking(
-    dir: &std::path::Path,
-    path: &std::path::Path,
-) -> (Reading, ChatToken, Arc<Mutex<Vec<(ServeAsk, Slot)>>>) {
+fn an_app_parking(dir: &std::path::Path, path: &std::path::Path) -> (Reading, ChatToken, Kept) {
     let listener = Listener::bind(dir, path).expect("a socket");
     let token = listener.tokens().issue_to_this_process(3).expect("a token");
-    let kept: Arc<Mutex<Vec<(ServeAsk, Slot)>>> = Arc::default();
+    let kept: Kept = Arc::default();
     let keeping = Arc::clone(&kept);
     let reading = listener.hear(hearing(Box::new(move |ask, mut slot| {
         parked(&mut slot).expect("told");
@@ -120,7 +120,7 @@ fn a_refused_slot_is_told_why_and_closed() {
 fn a_host_hands_a_slot_on_to_the_window_beside_its_hook_socket() {
     let dir = tempfile::tempdir().expect("a directory");
     let hook = dir.path().join("app").join("hooks.sock");
-    let kept: Arc<Mutex<Vec<(ServeAsk, Slot)>>> = Arc::default();
+    let kept: Kept = Arc::default();
     let keeping = Arc::clone(&kept);
     // This process stands in for the session host.
     let receiving = Receiving::bind_admitting(
@@ -171,7 +171,7 @@ fn a_host_with_no_window_to_take_a_slot_is_told_so() {
 fn a_process_that_is_not_the_session_host_cannot_hand_the_window_a_slot() {
     let dir = tempfile::tempdir().expect("a directory");
     let hook = dir.path().join("app").join("hooks.sock");
-    let kept: Arc<Mutex<Vec<(ServeAsk, Slot)>>> = Arc::default();
+    let kept: Kept = Arc::default();
     let keeping = Arc::clone(&kept);
     let _receiving = Receiving::bind(
         &hook,
