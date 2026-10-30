@@ -211,8 +211,13 @@ describe("installing a skill from a skill source", function () {
     const row = await $('[data-testid="skill-source"]');
     await row.waitForClickable({ timeout: 20_000 });
     await row.click();
+    // The page's skills are read first: until then Install all… is held (aria-disabled).
+    await $(`[data-testid="offered-${LINTER}"]`).waitForExist({ timeout: 30_000 });
     const all = await $("button=Install all…");
-    await all.waitForClickable({ timeout: 30_000 });
+    await browser.waitUntil(async () => (await all.getAttribute("aria-disabled")) !== "true", {
+      timeout: 30_000,
+      timeoutMsg: "Install all… was never ready to press",
+    });
     await all.click();
 
     // The installed two are greyed with their boxes out of reach; the one left is ticked.
