@@ -17,11 +17,12 @@
 //!   it calls a live worktree prunable, and `gc` then deletes its admin directory while it holds
 //!   uncommitted work (charter#963). `git worktree repair` with the new paths mends both
 //!   directions.
-//! - `workspace.json`'s `name`, and the first line of the four files charter scaffolded with
+//! - `workspace.json`'s `name`, and the first line of the four files purlis scaffolded with
 //!   the name in it (`workspace.md`, `memory/MEMORY.md`, `todos/MEMORY.md`, `refs/README.md`),
-//!   when that line is still the one charter wrote; and the `-w <name>` line purlis wrote
-//!   below it in `workspace.md`'s Log and `memory/MEMORY.md`'s header (#3965), where that line
-//!   is still exactly purlis's. A person's own lines are never rewritten.
+//!   when that line is still the one purlis wrote; and the `-w <name>` line purlis wrote below
+//!   it in `workspace.md`'s Log and `memory/MEMORY.md`'s header (#3965), when that line is
+//!   still exactly the one purlis wrote, in either program spelling. A person's own lines are
+//!   never rewritten ([`crate::workspaces::named_files`]).
 //! - the LIVE block in the plane's `.gitignore`.
 //! - the pointers that select a workspace: `workspaces/.default`, every session's
 //!   `.charter/sessions/<sid>.workspace` and `.lock`, every terminal's
@@ -933,26 +934,16 @@ fn rename_manifest(root: &Path, new: &str) -> std::io::Result<()> {
     )
 }
 
-/// A scaffolded file's first line, for a workspace's name.
-type Heading = fn(&str) -> String;
-
-/// The first line of each file charter scaffolded with the workspace's name in it, and the
-/// line below it where purlis's template names the workspace for a command to run (`-w <name>`,
-/// #3965), each where it is still the line purlis wrote. A heading the operator rewrote is
-/// theirs and is left, and so is every other line: a person's own words that spell the old
-/// name are never rewritten.
+/// The first line of each file purlis scaffolded with the workspace's name in it, and the
+/// line below it where purlis wrote the name for a command to run (`-w <name>`, #3965), each
+/// where it is still the line purlis wrote. A heading the operator rewrote is theirs and is
+/// left, and so is every other line: a person's own words that spell the old name are never
+/// rewritten.
 fn rename_headings(root: &Path, old: &str, new: &str) -> Vec<String> {
     let dir = root.join("workspaces").join(new);
-    let headings: [(&str, Heading); 4] = [
-        ("workspace.md", |n| format!("# {n}")),
-        ("memory/MEMORY.md", |n| format!("# {n} — task memory")),
-        ("todos/MEMORY.md", |n| format!("# Todos — workspace `{n}`")),
-        ("refs/README.md", |n| format!("# {n} — task references")),
-    ];
-    let was = crate::workspaces::lines_naming(root, old);
-    let now = crate::workspaces::lines_naming(root, new);
     let mut left = Vec::new();
-    for (rel, heading) in headings {
+    for named in crate::workspaces::named_files(root, old, new) {
+        let rel = named.file;
         let path = dir.join(rel);
         if crate::contain::no_link_on_the_way(root, &path).is_err() {
             continue;
@@ -960,12 +951,7 @@ fn rename_headings(root: &Path, old: &str, new: &str) -> Vec<String> {
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
-        let named = was
-            .iter()
-            .zip(&now)
-            .find(|((file, _), _)| *file == rel)
-            .map(|((_, was), (_, now))| (was.as_str(), now.as_str()));
-        let Some(next) = renamed_text(&text, &heading(old), &heading(new), named) else {
+        let Some(next) = renamed_text(&text, &named) else {
             continue;
         };
         if let Err(why) =
@@ -979,25 +965,23 @@ fn rename_headings(root: &Path, old: &str, new: &str) -> Vec<String> {
     left
 }
 
-/// `text` with its first line `was_heading` made `new_heading`, and the first whole line equal
-/// to `named`'s old line made its new one: only the lines purlis wrote, each only while it is
-/// exactly what purlis wrote. `None` when neither is there, so nothing is written.
-fn renamed_text(
-    text: &str,
-    was_heading: &str,
-    new_heading: &str,
-    named: Option<(&str, &str)>,
-) -> Option<String> {
+/// `text` with its first line renamed when it is the heading purlis wrote, and the first later
+/// line that is purlis's `-w <name>` line renamed: only the lines purlis wrote, each only while
+/// it is exactly what purlis wrote. `None` when neither is there, so nothing is written.
+fn renamed_text(text: &str, named: &crate::workspaces::NamedFile) -> Option<String> {
     let mut lines: Vec<&str> = text.split('\n').collect();
     let mut changed = false;
-    if lines.first() == Some(&was_heading) {
-        lines[0] = new_heading;
+    if lines
+        .first()
+        .is_some_and(|first| named.heading.matches(first))
+    {
+        lines[0] = &named.heading.now;
         changed = true;
     }
-    if let Some((was, now)) = named
-        && let Some(line) = lines.iter_mut().skip(1).find(|line| **line == was)
+    if let Some(command) = &named.command
+        && let Some(line) = lines.iter_mut().skip(1).find(|line| command.matches(line))
     {
-        *line = now;
+        *line = &command.now;
         changed = true;
     }
     changed.then(|| lines.join("\n"))

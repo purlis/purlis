@@ -48,23 +48,88 @@ pub(crate) fn ws_memory_header(plane: &Path, name: &str) -> String {
     in_plane(WS_MEMORY_HEADER, plane).replace("{name}", name)
 }
 
-/// The lines below the heading where purlis's own templates name the workspace for a command
-/// to run (`-w {name}`, #3880): `workspace.md`'s Log line and `memory/MEMORY.md`'s header, as
-/// the plane at `plane` writes them for `name`, each beside the file it is in. Taken from the
-/// templates themselves, so `workspace rename` rewrites exactly the line purlis wrote and
-/// nothing a person did (#3965).
-pub(crate) fn lines_naming(plane: &Path, name: &str) -> [(&'static str, String); 2] {
-    let line = |template: &str| {
-        let line = template
-            .lines()
-            .find(|line| line.contains("-w {name}"))
-            .expect("the template names the workspace with -w");
-        in_plane(line, plane).replace("{name}", name)
-    };
-    [
-        ("workspace.md", line(CHARTER_TEMPLATE)),
-        ("memory/MEMORY.md", line(WS_MEMORY_HEADER)),
-    ]
+/// A line purlis wrote that names a workspace, renamed: every spelling it may still have under
+/// the old name, and the one it gets under the new (#3965).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Renamed {
+    /// What purlis wrote under the old name. A line that names the program is here once per
+    /// spelling the plane reads, so one written before the plane was migrated matches too.
+    pub was: Vec<String>,
+    /// What purlis writes under the new name, in the program spelling the plane writes now.
+    pub now: String,
+}
+
+impl Renamed {
+    /// Whether `line` is, word for word, a line purlis wrote under the old name.
+    pub fn matches(&self, line: &str) -> bool {
+        self.was.iter().any(|was| was == line)
+    }
+}
+
+/// A file purlis scaffolds with the workspace's name in it, renamed: its first line, and the
+/// line below it where purlis wrote the name for a command to run (`-w <name>`, #3880), when
+/// the file has one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NamedFile {
+    /// The file, relative to the workspace's directory.
+    pub file: &'static str,
+    /// The `# ` heading purlis wrote.
+    pub heading: Renamed,
+    /// The `-w <name>` line purlis wrote below the heading.
+    pub command: Option<Renamed>,
+}
+
+/// Every file purlis scaffolds with the workspace's name in it: the file, its heading with
+/// `{name}` to fill, and the template that holds its `-w {name}` line. One table, so the files
+/// a rename rewrites a heading in and those it rewrites a command line in cannot drift apart.
+const NAMED_FILES: [(&str, &str, Option<&str>); 4] = [
+    ("workspace.md", "# {name}", Some(CHARTER_TEMPLATE)),
+    (
+        "memory/MEMORY.md",
+        "# {name} — task memory",
+        Some(WS_MEMORY_HEADER),
+    ),
+    ("todos/MEMORY.md", "# Todos — workspace `{name}`", None),
+    ("refs/README.md", "# {name} — task references", None),
+];
+
+/// What `workspace rename` rewrites in the files purlis scaffolded for workspace `old`, now
+/// called `new`, in the plane at `plane`: each line as purlis wrote it, never a line a person
+/// wrote (#3965). The command lines come from the templates themselves, so a rename always
+/// matches what a template writes; the old line is matched in every program spelling the plane
+/// reads (`charter` before the plane was migrated, `purlis` after) and rewritten in the one it
+/// writes now.
+pub(crate) fn named_files(plane: &Path, old: &str, new: &str) -> Vec<NamedFile> {
+    let now_program = crate::names::BINARY.writes_for(plane);
+    let programs = std::iter::once(crate::names::BINARY.write)
+        .chain(crate::names::BINARY.reads.iter().copied())
+        .collect::<Vec<_>>();
+    NAMED_FILES
+        .iter()
+        .map(|&(file, heading, template)| NamedFile {
+            file,
+            heading: Renamed {
+                was: vec![heading.replace("{name}", old)],
+                now: heading.replace("{name}", new),
+            },
+            command: template.map(|template| {
+                let line = template
+                    .lines()
+                    .find(|line| line.contains("-w {name}"))
+                    .expect("the template names the workspace with -w");
+                let spelled = |program: &str, name: &str| {
+                    line.replace("{program}", program).replace("{name}", name)
+                };
+                Renamed {
+                    was: programs
+                        .iter()
+                        .map(|program| spelled(program, old))
+                        .collect(),
+                    now: spelled(now_program, new),
+                }
+            }),
+        })
+        .collect()
 }
 
 /// The header `todos/MEMORY.md` is created with, `{name}` to fill.
