@@ -590,10 +590,13 @@ fn after(from: Wall, left: Duration) -> Wall {
 /// The tokens kept, over every chat.
 static KEPT: Mutex<Vec<Kept>> = Mutex::new(Vec::new());
 
-/// Each chat's end, by project and chat (`None`: every chat of the project), its place in
-/// [`ENDS`] and when it was, for an hour: a mint asked for before its chat ended keeps nothing.
+/// A chat's end: its project and chat (`None`: every chat of the project), its place in
+/// [`ENDS`] and when it was.
+type Ended = (PathBuf, Option<u32>, u64, Wall);
+
+/// Each chat's end, for an hour: a mint asked for before its chat ended keeps nothing.
 /// Written and read under [`KEPT`]'s lock.
-static ENDED: Mutex<Vec<(PathBuf, Option<u32>, u64, Wall)>> = Mutex::new(Vec::new());
+static ENDED: Mutex<Vec<Ended>> = Mutex::new(Vec::new());
 
 /// How many chats' ends there have been: ends are put in order by it, never by a clock, which
 /// may be set back.
