@@ -2319,6 +2319,13 @@ export type ActivityLine = {
 	depth: number,
 };
 
+/**  One of this machine's profiles that is not on a pool yet, and could go there. */
+export type AddableProfile = {
+	name: string,
+	/**  The harness as people call it: `Claude Code`. */
+	harness: string,
+};
+
 /**  How far a branch is from the branch it was cut from: the branch cockpit's header (FM-5). */
 export type AheadBehind = {
 	/**  Commits the branch has that its base does not. */
@@ -8061,6 +8068,15 @@ export type PoolProfileRow = {
 	not_kept: string | null,
 	/**  The plans Sign in offers there, where purlis names the provider. */
 	plans: PlanRow[],
+};
+
+/**
+ *  **A pool's profiles** (#4047): the ones its runner keeps, as it stands with each, and this
+ *  machine's others that Add a profile… offers.
+ */
+export type PoolProfiles = {
+	kept: PoolProfileRow[],
+	addable: AddableProfile[],
 };
 
 /**  One pool's limits, which each of its runners that runs requests (#2052, story 55). */
