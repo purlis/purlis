@@ -5565,6 +5565,12 @@ export type GradeScorecard = {
 	grade: string,
 	skill: string,
 	/**
+	 *  **The copy it graded, by its level**, where its row says one (#3978): a scorecard
+	 *  opened from where that copy is not listed (a retired tab comes back at the project's
+	 *  root) goes to the scope that lists it.
+	 */
+	level: SkillLevel | null,
+	/**
 	 *  When it ran, the version it graded, what its chats ran on and how it ended, as its row
 	 *  says each.
 	 */
@@ -10476,6 +10482,8 @@ export type SkillGradeAfterEdit = {
 export type SkillGradeAfterEditStep = {
 	plane: PlaneId,
 	skill: string,
+	/**  The copy, by its level (#3978): a same-named copy at another level is another skill. */
+	level: SkillLevel,
 	said: string,
 };
 
@@ -10542,6 +10550,11 @@ export type SkillGradePlan = {
 export type SkillGradeStep = {
 	plane: PlaneId,
 	skill: string,
+	/**
+	 *  The copy it grades, by its level (#3978): a same-named copy at another level is another
+	 *  skill, whose tab a step of this one moves nothing on. `None` for a router's grade.
+	 */
+	level: SkillLevel | null,
 	grade: string,
 	ran: number,
 	of: number,

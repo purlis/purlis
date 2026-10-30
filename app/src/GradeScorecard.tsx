@@ -12,7 +12,7 @@
  * - **A saved chat** is what its terminal showed as the grade ended it, drawn read-only
  *   (`ReadOnlyTerminal`, #3676), with the previous and next of the grade's kept chats.
  */
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   commands,
   type GradeOutcome,
@@ -20,12 +20,13 @@ import {
   type ScoredArm,
   type ScoredChat,
   type ScoredRuns,
+  type SkillLevel,
 } from "./bindings";
 import { counted } from "./dispatches";
 import { Notice } from "./Notice";
 import { ReadOnlyTerminal } from "./ReadOnlyTerminal";
-import { dollarsSaid, GradingHeading, Reading } from "./SkillGrade";
-import { useRead } from "./SkillPanels";
+import { dollarsSaid, GradingHeading } from "./SkillGrade";
+import { NotRead, ReadingRows, useRead } from "./SkillPanels";
 import { textSizes } from "./textSize";
 import { Badge } from "./ui/badge/Badge";
 import { Button, ButtonRow } from "./ui/button/Button";
@@ -161,9 +162,28 @@ function ArmCell({
   );
 }
 
+/** Tells `onGradedAt` the level of the copy `card` was of, once it is read (#3978). */
+function useGradedAt(
+  card: GradeScorecard | undefined,
+  onGradedAt: ((level: SkillLevel) => void) | undefined,
+) {
+  const told = useRef(onGradedAt);
+  useEffect(() => {
+    told.current = onGradedAt;
+  });
+  const level = card?.level ?? null;
+  const levelKey = level === null ? "" : JSON.stringify(level);
+  useEffect(() => {
+    if (level !== null) told.current?.(level);
+    // The level as a value: an equal one read again tells nothing anew.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [levelKey]);
+}
+
 /**
  * **A grade's scorecard page** (S6): see the module. `onChat` opens one of its kept chats;
- * `onGradeAgain` opens a new plan.
+ * `onGradeAgain` opens a new plan, where this copy can be graded from here. `onGradedAt` is told
+ * the level of the copy the grade was of, once read (#3978).
  */
 export function GradeScorecardPage({
   plane,
@@ -171,33 +191,41 @@ export function GradeScorecardPage({
   grade,
   onChat,
   onGradeAgain,
+  onGradedAt,
 }: {
   plane: string;
   name: string;
   grade: string;
   onChat: (chat: string) => void;
-  onGradeAgain: () => void;
+  onGradeAgain?: () => void;
+  onGradedAt?: (level: SkillLevel) => void;
 }) {
   const [again, setAgain] = useState(0);
   const card = useRead(
     () => commands.skillGradeScorecard(plane, name, grade),
     [plane, name, grade, again],
   );
+  useGradedAt(card.data, onGradedAt);
   if (card.refused !== undefined)
     return (
-      <EmptyState
-        variant="panel"
-        headline={`purlis could not read this grade of ${name}`}
-        body={card.refused}
+      <NotRead
+        what={`this grade of ${name}`}
+        why={card.refused}
+        onAgain={() => setAgain((n) => n + 1)}
         testid="grade-scorecard-refused"
-        action={<Button onPress={() => setAgain((n) => n + 1)}>Try again</Button>}
       />
     );
-  if (card.data === undefined) return <Reading what="the grade's scorecard" />;
+  if (card.data === undefined)
+    return <ReadingRows what="the grade's scorecard" testid="skill-grading-reading" />;
   const it = card.data;
   const end = OUTCOME_SAID[it.outcome];
   const arms = armsOf(it);
   const spent = it.spent.cost_usd === null ? "" : ` for ${dollarsSaid(it.spent.cost_usd)}`;
+  const about = (
+    <span data-testid="grade-scorecard-about">
+      {`${end.said} ${it.graded}${it.after_edit ? ", after an edit you saved" : ""}, version ${it.version}, on ${it.ran_on}${spent}. ${it.ended}${differenceSaid(it)}`}
+    </span>
+  );
   return (
     <section
       className="skill-studio-page"
@@ -205,16 +233,21 @@ export function GradeScorecardPage({
       aria-label={`Scorecard of ${name}`}
     >
       <GradingHeading name={`Grade of ${name} · ${it.graded}`} />
-      <Notice
-        cause={`skill-grade-end:${grade}`}
-        tone={end.tone}
-        label={end.said}
-        fixes={[{ label: "Grade again", onPress: onGradeAgain }]}
-      >
-        <span data-testid="grade-scorecard-about">
-          {`${end.said} ${it.graded}${it.after_edit ? ", after an edit you saved" : ""}, version ${it.version}, on ${it.ran_on}${spent}. ${it.ended}${differenceSaid(it)}`}
-        </span>
-      </Notice>
+      {onGradeAgain === undefined ? (
+        // A copy no scope here can grade (one deleted since): what it was, with nothing to press.
+        <p className="honest" role="note">
+          {about}
+        </p>
+      ) : (
+        <Notice
+          cause={`skill-grade-end:${grade}`}
+          tone={end.tone}
+          label={end.said}
+          fixes={[{ label: "Grade again", onPress: onGradeAgain }]}
+        >
+          {about}
+        </Notice>
+      )}
       {it.asked > 0 && (
         <p className="honest" data-testid="grade-scorecard-asked">
           {counted(it.asked, "chat", "chats")} asked you something. A grade's chat waits on nobody,
@@ -302,6 +335,7 @@ export function GradeChatPage({
   chat,
   onChat,
   onScorecard,
+  onGradedAt,
 }: {
   plane: string;
   name: string;
@@ -309,6 +343,7 @@ export function GradeChatPage({
   chat: string;
   onChat: (chat: string) => void;
   onScorecard: () => void;
+  onGradedAt?: (level: SkillLevel) => void;
 }) {
   const screen = useRead(
     () => commands.skillGradeChat(plane, name, grade, chat),
@@ -318,6 +353,7 @@ export function GradeChatPage({
     () => commands.skillGradeScorecard(plane, name, grade),
     [plane, name, grade],
   );
+  useGradedAt(card.data, onGradedAt);
   // Taken only in its own shape: a core that answers another leaves it unread.
   const read = Array.isArray(card.data?.tests) ? card.data : undefined;
   const kept = read === undefined ? [] : keptChats(read);
@@ -358,7 +394,7 @@ export function GradeChatPage({
           testid="grade-chat-refused"
         />
       ) : screen.data === undefined ? (
-        <Reading what="the grade's chat" />
+        <ReadingRows what="the grade's chat" testid="skill-grading-reading" />
       ) : (
         <ReadOnlyTerminal
           screen={screen.data}

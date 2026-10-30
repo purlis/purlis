@@ -283,6 +283,24 @@ fn a_scorecard_has_each_test_once_with_each_arms_chats_one_click_away() {
     };
     let card = GradeScorecard::of(&graded, |chat| chat != "01B");
     assert_eq!(card.against, None, "no previous version was compared");
+    // #3978: the copy it graded, so a scorecard opened where it is not listed finds its scope.
+    assert_eq!(card.level, Some(SkillLevel::Project { local: false }));
+    let in_ops = Graded {
+        level: Some("workspaces/ops/skills.local".into()),
+        ..graded.clone()
+    };
+    assert_eq!(
+        GradeScorecard::of(&in_ops, |_| false).level,
+        Some(SkillLevel::Workspace {
+            name: "ops".into(),
+            local: true
+        })
+    );
+    let unsaid = Graded {
+        level: None,
+        ..graded.clone()
+    };
+    assert_eq!(GradeScorecard::of(&unsaid, |_| false).level, None);
     assert_eq!(card.ran_on, "Claude Code · claude-sonnet-4-5");
     assert_eq!(card.version, "Changes not saved");
     assert_eq!(card.ended, "Finished");
@@ -600,6 +618,7 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
     let step = |plane: &PlaneId, skill: &str, grade: &str| SkillGradeStep {
         plane: plane.clone(),
         skill: skill.to_owned(),
+        level: None,
         grade: grade.to_owned(),
         ran: 3,
         of: 12,

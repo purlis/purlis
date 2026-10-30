@@ -30,12 +30,12 @@ import { Notice } from "./Notice";
 import {
   GradePlanPage,
   GradeRunningPage,
-  Reading,
   afterEditSaid,
   dollarsSaid,
   endedSaid,
 } from "./SkillGrade";
-import { useRead } from "./SkillPanels";
+import { NotRead, ReadingRows, useRead } from "./SkillPanels";
+import { sameLevel } from "./skillChanges";
 import { askSkillChat } from "./skillDraftAsks";
 import type { GradingAt } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
@@ -170,11 +170,21 @@ export function GradesTab({
   const afterEdit = useRead(() => commands.skillGradeAfterEdit(plane, level, name), reread);
 
   // A grade of this skill that ends, or an edit grading after each edit did not grade, is read
-  // again here: the app's word, never this tab's memory.
+  // again here: the app's word, never this tab's memory. A same-named copy at another level is
+  // another skill, and a step of its moves nothing here (#3978).
+  const ours = useRef(level);
   useEffect(() => {
+    ours.current = level;
+  });
+  useEffect(() => {
+    const isOurs = (now: { plane: string; skill: string; level: SkillLevel | null }) =>
+      now.plane === plane &&
+      now.skill === name &&
+      now.level !== null &&
+      sameLevel(now.level, ours.current);
     const ended = listen<SkillGradeStep>(SKILL_GRADE, (event) => {
       const now = event.payload;
-      if (now.plane !== plane || now.skill !== name) return;
+      if (!isOurs(now)) return;
       // A grade that starts while the tab is open (one after an edit) is read, so it is shown.
       if (now.ended === null) {
         if (runningNow.current !== now.grade) setAgain((n) => n + 1);
@@ -186,7 +196,7 @@ export function GradesTab({
     }).catch(() => undefined);
     const waits = listen<SkillGradeAfterEditStep>(SKILL_GRADE_AFTER_EDIT, (event) => {
       const now = event.payload;
-      if (now.plane !== plane || now.skill !== name) return;
+      if (!isOurs(now)) return;
       setSaid(now.said);
       setAgain((n) => n + 1);
     }).catch(() => undefined);
@@ -287,15 +297,14 @@ export function GradesTab({
         />
       )}
       {grades.refused !== undefined ? (
-        <EmptyState
-          variant="panel"
-          headline={`purlis could not read the grades of ${name}`}
-          body={grades.refused}
+        <NotRead
+          what={`the grades of ${name}`}
+          why={grades.refused}
+          onAgain={() => setAgain((n) => n + 1)}
           testid="skill-grades-not-read"
-          action={<Button onPress={() => setAgain((n) => n + 1)}>Try again</Button>}
         />
       ) : grades.data === undefined ? (
-        <Reading what={`the grades of ${name}`} />
+        <ReadingRows what={`the grades of ${name}`} testid="skill-grading-reading" />
       ) : rows.length === 0 ? (
         !noTests && (
           <EmptyState
@@ -412,7 +421,11 @@ export function GradesTab({
 
 /**
  * **A grading page under a skill** (S6): its plan, its grade running, a grade's scorecard or one
- * of that grade's chats, as the studio's place names it.
+ * of that grade's chats, as the studio's place names it. `level` is the copy's where the studio
+ * can grade it: a scorecard and a chat read by the grade alone and draw without it (a retired
+ * tab comes back at the project's root), and say the level the grade was of (`onGradedAt`).
+ * Each way back goes back where the step behind is the page it names, else says it in place
+ * (#3978).
  */
 export function GradingPage({
   plane,
@@ -421,17 +434,19 @@ export function GradingPage({
   grading,
   changed,
   onGrading,
+  onGradedAt,
 }: {
   plane: string;
   name: string;
-  level: SkillLevel;
+  level: SkillLevel | null;
   grading: GradingAt;
   changed: number;
   onGrading: GradingGo;
+  onGradedAt?: (level: SkillLevel) => void;
 }) {
   switch (grading.at) {
     case "plan":
-      return (
+      return level === null ? null : (
         <GradePlanPage
           plane={plane}
           name={name}
@@ -445,14 +460,15 @@ export function GradingPage({
         />
       );
     case "running":
-      return (
+      return level === null ? null : (
         <GradeRunningPage
           plane={plane}
           name={name}
           level={level}
           grade={grading.grade}
           onEnded={() => onGrading({ at: "scorecard", grade: grading.grade }, "replace")}
-          onBack={() => onGrading(undefined, "go")}
+          // Leave it running, and its end's Back to its grades: the Grades tab, no new step.
+          onBack={() => onGrading(undefined, "back")}
         />
       );
     case "scorecard":
@@ -462,7 +478,8 @@ export function GradingPage({
           name={name}
           grade={grading.grade}
           onChat={(chat) => onGrading({ at: "chat", grade: grading.grade, chat }, "go")}
-          onGradeAgain={() => onGrading({ at: "plan" }, "go")}
+          onGradeAgain={level === null ? undefined : () => onGrading({ at: "plan" }, "go")}
+          onGradedAt={onGradedAt}
         />
       );
     case "chat":
@@ -474,6 +491,7 @@ export function GradingPage({
           chat={grading.chat}
           onChat={(chat) => onGrading({ at: "chat", grade: grading.grade, chat }, "replace")}
           onScorecard={() => onGrading({ at: "scorecard", grade: grading.grade }, "back")}
+          onGradedAt={onGradedAt}
         />
       );
   }
