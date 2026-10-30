@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793357383968,
+  "lastUpdate": 1793359266675,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -31374,6 +31374,48 @@ window.BENCHMARK_DATA = {
             "value": 102.02989199999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.759, 102.003, 102.030, 102.254, 102.555 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "37a087332ab695f24bcc3813e73b18b5b32804bb",
+          "message": "Runners: the cluster operator serves its metrics (#3737) (#4051)\n\n* Cluster operator: serve its four metrics on port 8080 behind purlis-cluster-operator-metrics (#3737)\n\nLane 1's metrics work, with deploy/operator.yaml regenerated from the chart.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6625RP2THQ61AZDTNJTCYYV\nPurlis-Persona: steward\n\n* Cluster operator: a deleted Claim counts once in claims_deleted_total (#3737)\n\nThe kind test scrapes the metrics through their Service: a claim counted Ready, its\nsuspension once, and its deletion once however often cleanup looks at it on its way out.\nCleanup counts only the look whose delete the API server took on an upstream claim that was\nnot already going.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6625RP2THQ61AZDTNJTCYYV\nPurlis-Persona: steward\n\n* Cluster operator: the metrics port is closed to all but named scrapers, and bounded (#3737)\n\n- The chart's NetworkPolicy purlis-cluster-operator lets nothing reach the operator's pod but\n  the scrapers metrics.allowFrom names, on the metrics port; none by default.\n- The port holds 32 connections at most, gives a request two seconds, reads no more than 8 KiB\n  of it, looks for the head's end only where new bytes land, waits before accepting again after\n  an accept error, and binds IPv6 and IPv4 where the pod has IPv6.\n- deploy/operator.yaml re-rendered; its header names the Service and the policy.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6625RP2THQ61AZDTNJTCYYV\nPurlis-Persona: steward\n\n* Cluster operator: the lock records tokio's io-util dependency; the kind test clears a leftover scrape policy (#3737)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6625RP2THQ61AZDTNJTCYYV\nPurlis-Persona: steward\n\n* Cluster operator: the closed NetworkPolicy has no ingress rule rather than an empty list; the doctor's test knows NetworkPolicy is namespaced (#3737)\n\nAn empty ingress list made the plain manifests differ from what the chart installed on kind.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6625RP2THQ61AZDTNJTCYYV\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-30T10:22:42Z",
+          "tree_id": "f60f9e8e7166cab39a182a0673d778adc817a3c5",
+          "url": "https://github.com/purlis/purlis/commit/37a087332ab695f24bcc3813e73b18b5b32804bb"
+        },
+        "date": 1793359263885,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6773420000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.664, 0.669, 0.677, 0.685, 0.691 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6144215,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.460, 16.477, 16.614, 16.624, 16.899 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.664726,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.071, 102.569, 102.665, 102.829, 103.145 ms"
           }
         ]
       }
