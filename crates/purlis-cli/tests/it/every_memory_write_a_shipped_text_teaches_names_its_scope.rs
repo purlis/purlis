@@ -31,7 +31,7 @@ use std::sync::LazyLock;
 fn unnamed(text: &str) -> Vec<String> {
     static WRITE: LazyLock<regex::Regex> = LazyLock::new(|| {
         regex::Regex::new(
-            r"(?:purlis|charter|\{program\}) (persona remember|workspace remember|workspace note|ws remember|ws note)\b *([^ \n`]*)",
+            r"(?:purlis|charter|\{program\})\s+(persona\s+remember|workspace\s+remember|workspace\s+note|ws\s+remember|ws\s+note)\b\s*([^\s`]*)",
         )
         .expect("the pattern compiles")
     });
@@ -39,7 +39,9 @@ fn unnamed(text: &str) -> Vec<String> {
         .captures_iter(text)
         .filter(|c| {
             let next = &c[2];
-            match &c[1] {
+            // A text wraps where it likes, so the words are read across a line break.
+            let words: Vec<&str> = c[1].split_whitespace().collect();
+            match words.join(" ").as_str() {
                 "persona remember" => !next
                     .chars()
                     .next()
@@ -48,7 +50,7 @@ fn unnamed(text: &str) -> Vec<String> {
                 _ => true,
             }
         })
-        .map(|c| c[0].trim_end().to_owned())
+        .map(|c| c[0].split_whitespace().collect::<Vec<_>>().join(" "))
         .collect()
 }
 
@@ -119,6 +121,8 @@ fn a_named_spelling_passes_and_an_unnamed_one_is_found() {
         "`purlis workspace remember -w alpha \"x\"`",
         "`purlis workspace note -w {ws} \"x\"`",
         "`purlis persona recall devops`",
+        "`purlis persona remember\n  devops \"x\"`",
+        "`purlis workspace\nremember -w alpha \"x\"`",
     ] {
         assert_eq!(unnamed(named), Vec::<String>::new(), "{named}");
     }
@@ -130,7 +134,9 @@ fn a_named_spelling_passes_and_an_unnamed_one_is_found() {
         "`{program} workspace note \"…\"`",
         "`purlis workspace remember --no-sync`",
         "`purlis ws note -w alpha \"x\"`",
+        "`purlis persona remember` /\n`purlis workspace remember`",
+        "`purlis\nworkspace remember \"x\"`",
     ] {
-        assert_eq!(unnamed(bare).len(), 1, "{bare}");
+        assert!(!unnamed(bare).is_empty(), "{bare}");
     }
 }

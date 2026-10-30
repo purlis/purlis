@@ -510,8 +510,8 @@ rule while one who reads a bare refusal files an issue.
   reaches a public repository by an indirect route:
 
   ```bash
-  purlis persona remember <persona> "the marker is appended to `pending` each pass"   # DENIED
-  purlis persona remember <persona> "the marker is appended to \`pending\` each pass"  # allowed
+  purlis persona remember devops "the marker is appended to `pending` each pass"   # DENIED
+  purlis persona remember devops "the marker is appended to \`pending\` each pass"  # allowed
   ```
 
   That is not a constructed example. It happened while a guard review's findings were being
