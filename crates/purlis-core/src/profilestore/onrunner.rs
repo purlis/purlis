@@ -140,8 +140,13 @@ impl Kept {
 pub fn to_send(kept: &Kept) -> Result<purlis_session_protocol::session::ProfileToKeep, String> {
     let settings = match &kept.settings_in {
         Some(folder) => {
-            let read =
-                super::made::settings_read(&kept.harness, folder, MOST_SETTINGS_BYTES, usize::MAX)?;
+            let read = super::made::settings_read(
+                &kept.harness,
+                folder,
+                MOST_SETTINGS_BYTES,
+                usize::MAX,
+                &|_| true,
+            )?;
             let too_large = || {
                 format!(
                     "its settings in {} are larger than a link to a runner carries ({} KiB)",
