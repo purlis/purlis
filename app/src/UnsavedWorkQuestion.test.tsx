@@ -70,7 +70,7 @@ describe("the question about unsaved work", () => {
   });
 
   it("offers no Save and leave while a view finds its work can't be saved as it is", async () => {
-    let checked = (_can: boolean) => {};
+    let checked: (can: boolean) => void = () => undefined;
     const deploy = work("deploy");
     deploy.check = () => new Promise<boolean>((answer) => (checked = answer));
     const { question } = ask([deploy]);
@@ -85,7 +85,7 @@ describe("the question about unsaved work", () => {
   });
 
   it("waits for a save under way: Keep editing can't be pressed meanwhile", async () => {
-    let saved = (_said: string | undefined) => {};
+    let saved: (said: string | undefined) => void = () => undefined;
     const deploy = work("deploy");
     deploy.save = () => new Promise((answer) => (saved = answer));
     const { asked, question } = ask([deploy]);
