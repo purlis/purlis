@@ -135,7 +135,7 @@ fn a_row_that_falls_at_rest_keeps_the_selected_row_s_fill() {
     );
     assert!(
         sheet.contains(&format!(
-            ":where({ROW}[data-hovered]:not([data-disabled]){AVAIL}) {{ background-color: var(--surface-overlay); color: var(--text-secondary); }}"
+            ":where({ROW}[data-hovered]:not([data-disabled]){AVAIL}) {{ background-color: var(--surface-overlay); }}"
         )),
         "{sheet}"
     );
@@ -166,11 +166,12 @@ fn a_failing_chip_and_a_failing_crumb_each_fall_on_their_own() {
         )),
         "{sheet}"
     );
-    // Its states draw their own defaults back too: the rest rule's none would cover them.
+    // Its states draw back what their own defaults change from the rest: the rest rule's none
+    // would cover their fill.
     for state in ["[data-hovered]:not([data-disabled])", "[data-selected]"] {
         assert!(
             sheet.contains(&format!(
-                ":where({CRUMB}{state}) {{ background-color: var(--surface-overlay); color: var(--text-secondary); }}"
+                ":where({CRUMB}{state}) {{ background-color: var(--surface-overlay); }}"
             )),
             "{state}: {sheet}"
         );
