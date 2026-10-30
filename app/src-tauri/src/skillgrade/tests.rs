@@ -16,6 +16,7 @@ pub(super) fn planned(query: &str) -> Planned {
         arms: grades::ARMS.to_vec(),
         runs: grading::RUNS,
     };
+    let after_edit_chats = grading::plan(&request).per_arm * 3;
     Planned {
         skill: "deploy".into(),
         fixtures: Fixtures {
@@ -47,6 +48,8 @@ pub(super) fn planned(query: &str) -> Planned {
         consent: Some("abc".into()),
         previous: None,
         previous_refused: None,
+        // Its previous version's arm counted, as a first saved edit brings one (#4035).
+        after_edit_chats: Some(after_edit_chats),
         copy: None,
     }
 }

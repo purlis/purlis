@@ -318,6 +318,39 @@ pub fn interrupted(
     out
 }
 
+/// **The grades of the copy of `name` at `level` under way in the project at `root`**, by id: what
+/// a rename or a move of a skill only on this machine keeps, as each is recorded by the name and
+/// level it began under once it ends (#4104). Read through no link, at most [`MOST_FILES`].
+pub fn of(root: &Path, level: &Level, name: &str) -> Vec<String> {
+    let Some(dir) = dir(root) else {
+        return Vec::new();
+    };
+    if !std::fs::symlink_metadata(&dir).is_ok_and(|meta| meta.is_dir()) {
+        return Vec::new();
+    }
+    let Ok(reader) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let rel = level.rel();
+    // A row that says no level is a local workspace's copy's (`super::read`): another level's
+    // copy of the name is another skill.
+    let levelless = is_local(root, level) && level.at.workspace().is_some();
+    let mut out: Vec<String> = reader
+        .take(MOST_FILES)
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| !is_partial(path) && path.extension().is_some_and(|ext| ext == "json"))
+        .filter_map(|path| match read(&path) {
+            Held::Sound(held) => Some(held.graded),
+            Held::Newer | Held::Unsound => None,
+        })
+        .filter(|row| row.skill == name && (row.level == rel || (levelless && row.level.is_none())))
+        .map(|row| row.grade)
+        .collect();
+    out.sort();
+    out
+}
+
 /// Whether `path` is a file [`put`] writes before it is renamed into its place.
 fn is_partial(path: &Path) -> bool {
     path.file_name()

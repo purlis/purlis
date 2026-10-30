@@ -10684,6 +10684,11 @@ export type SkillGradePlan = {
 	/**  The chats it runs in all, each one turn, and how many times each test runs in each arm. */
 	chats: number,
 	runs: number,
+	/**
+	 *  **The chats each grade after an edit may run** (#4035): with its previous version's arm
+	 *  counted where its first saved edit brings one (`after_edit::chats_to_accept`).
+	 */
+	after_edit_chats: number,
 	/**  Why the trigger tests could not be read, where they were not. */
 	tests_refused: string | null,
 	/**  The trigger tests left out, each with why: a query no chat can be started on. */

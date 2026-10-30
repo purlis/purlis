@@ -41,6 +41,7 @@ const PLAN: SkillGradePlan = {
   tests: TESTS,
   chats: 36,
   runs: 3,
+  after_edit_chats: 36,
   tests_refused: null,
   left_out: [],
   outcome_evals: 0,
@@ -286,7 +287,7 @@ export const Grades: Story = {
  * to write them or to ask a chat to (#3925). Tab reaches both.
  */
 export const NoTests: Story = {
-  args: { plan: { ...PLAN, tests: [], chats: 0, estimate: null }, grades: [] },
+  args: { plan: { ...PLAN, tests: [], chats: 0, after_edit_chats: 0, estimate: null }, grades: [] },
   play: async ({ canvas }) => {
     const none = await canvas.findByTestId("skill-grades-no-tests");
     await expect(none).toHaveTextContent("deploy has no trigger tests yet");
