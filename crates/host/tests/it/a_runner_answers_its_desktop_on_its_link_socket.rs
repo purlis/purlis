@@ -458,7 +458,7 @@ async fn the_paired_desktop_has_the_runner_keep_its_profile_and_hears_where_it_s
 
 /// **The paired desktop has the runner forget its profile** (1.52, #4047): asked by name, the
 /// runner forgets it, and a refusal there is said to the desktop. The desktop hears which
-/// profiles the runner keeps for it before and after (1.59, #4060).
+/// profiles the runner keeps for it before and after (1.57, #4060).
 #[tokio::test]
 async fn the_paired_desktop_has_the_runner_forget_its_profile() {
     let dir = tempfile::tempdir().unwrap();

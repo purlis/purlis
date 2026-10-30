@@ -201,7 +201,7 @@ fn names(names: &[&str]) -> Vec<String> {
     names.iter().map(|&n| n.to_owned()).collect()
 }
 
-/// A runner of 1.59 that keeps `kept` for this machine and refuses to forget `busy`, under a
+/// A runner of 1.57 that keeps `kept` for this machine and refuses to forget `busy`, under a
 /// chat running on it: what `forget_all_but` answers, by the predicate it is given.
 fn a_runner_keeping(
     kept: &[&str],
@@ -339,10 +339,10 @@ fn an_adopted_folder_and_a_profile_being_readied_are_never_forgotten_by_a_tidy()
 }
 
 /// **Nothing is forgotten where nothing can be judged**: a pool that names none with no project
-/// open asks the runner nothing, and a runner before 1.59, which cannot say what it keeps, is
+/// open asks the runner nothing, and a runner before 1.57, which cannot say what it keeps, is
 /// left as it is.
 #[test]
-fn nothing_is_forgotten_with_no_default_to_judge_by_or_on_a_runner_before_1_59() {
+fn nothing_is_forgotten_with_no_default_to_judge_by_or_on_a_runner_before_1_57() {
     let config = a_pool_naming(None);
     let records = vec![record("work", "claude")];
 

@@ -22,7 +22,7 @@
 //! forgets, its sign-in there with it; a chat that starts on or moves to it on another adds it.
 //!
 //! **A runner keeps only what is chosen for its pool** (#4060, #3849): as a pool's profiles are
-//! asked, and as the first chat this run starts on it, a runner of 1.59 or later names the
+//! asked, and as the first chat this run starts on it, a runner of 1.57 or later names the
 //! profiles it keeps for this machine; it forgets each one no longer chosen there or no longer
 //! on this machine, and a pool made before #4047 names what it kept ([`tidy`]). A profile
 //! removed on this machine is forgotten on each pool's runner there and then
@@ -156,7 +156,7 @@ type Keep = Box<dyn Fn(&str) -> bool + Send>;
 enum Tidied {
     /// Nothing was asked: a pool that names none, with no default to judge by.
     NothingToJudge,
-    /// The runner runs a purlis before 1.59, which cannot say what it keeps.
+    /// The runner runs a purlis before 1.57, which cannot say what it keeps.
     Older,
     /// The names forgotten, and whether the runner refused any, under a chat running on it.
     Done {
@@ -376,7 +376,7 @@ fn untidied(pool: &str) {
 /// folder and sign-in there with it, and takes it off each pool that named it: only a Docker
 /// pool shown to be the person's own, never woken for it, each asked at once. A runner that is
 /// away, or that could not forget it, is asked again at the next chat's start there or as its
-/// pool's profiles are shown ([`tidy`]), which a runner of 1.59 or later answers; until then a
+/// pool's profiles are shown ([`tidy`]), which a runner of 1.57 or later answers; until then a
 /// pool that named it still does, so its row offers Remove. `Some` note,
 /// in words, naming the pools that kept it whose runner runs a purlis before 1.52, which keeps
 /// it.

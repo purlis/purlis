@@ -35,7 +35,7 @@
 //! holds in a workspace (#3811, id 173), 1.52's profile forgotten on its runner (#4047, id
 //! 174), 1.53's profile whose harness its runner is still fetching (#4008, the reply to 172),
 //! 1.54's clones with where each came from (#3985, id 176), 1.56's settings staged in batches
-//! and kept (#4081, ids 177 and 178), and 1.59's profiles a runner keeps for its desktop (#4060,
+//! and kept (#4081, ids 177 and 178), and 1.57's profiles a runner keeps for its desktop (#4060,
 //! id 179).
 //! 1.35 adds no frame of the
 //! control lane: its origin frame is a browser view's bytes, held by

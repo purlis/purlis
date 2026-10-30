@@ -697,10 +697,10 @@ pub struct Listed {
 
 /// **Has the runner `to` reaches forget each of this machine's profiles it keeps but those
 /// `keep` says to keep** (#4060), over one link of its own: it names the ones it keeps for this
-/// machine (`kept_profiles`, 1.59), and each other one is forgotten as [`forget_profile`]
+/// machine (`kept_profiles`, 1.57), and each other one is forgotten as [`forget_profile`]
 /// forgets it, its folder and sign-in there with it. `keep` is asked of each name just before
 /// it is forgotten, so a profile a chat's start readies meanwhile is kept. A name that is not a
-/// profile's name is passed over. `None`, with nothing forgotten, from a runner before 1.59,
+/// profile's name is passed over. `None`, with nothing forgotten, from a runner before 1.57,
 /// which cannot say what it keeps.
 pub fn forget_all_but(
     to: &ToARunner,

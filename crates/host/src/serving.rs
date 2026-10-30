@@ -71,7 +71,7 @@ pub type Keeping = Arc<
 pub type Forgetting = Arc<dyn Fn(&Pinned, &str) -> Result<(), String> + Send + Sync>;
 
 /// The name of each profile the runner keeps for the desktop a link proved, and for no other
-/// (`kept_profiles`, 1.59, #4060).
+/// (`kept_profiles`, 1.57, #4060).
 pub type Listing = Arc<dyn Fn(&Pinned) -> Result<Vec<String>, String> + Send + Sync>;
 
 /// A runner's pairing, as its host serves it: who it is and whom it admits ([`Answering`]),
@@ -266,7 +266,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
 /// `unpair` (1.25, #2525), which takes that desktop, the one the handshake proved, out of the
 /// runner's peers, `keep_profile` (1.43, #2049), which keeps one of its profiles here, its
 /// settings staged on this link first (`stage_profile_settings`, 1.56, #4081),
-/// `forget_profile` (1.52, #4047), which forgets one, and `kept_profiles` (1.59, #4060), which
+/// `forget_profile` (1.52, #4047), which forgets one, and `kept_profiles` (1.57, #4060), which
 /// names the ones kept.
 struct PairedLink {
     hosting: Hosting,
@@ -388,7 +388,7 @@ impl PairedLink {
             })
     }
 
-    /// `kept_profiles` (1.59, #4060): the desktop's profiles kept here, by name, read off the
+    /// `kept_profiles` (1.57, #4060): the desktop's profiles kept here, by name, read off the
     /// runtime.
     async fn list(&self) -> Result<session::Answer, session::Refusal> {
         let (listing, desktop) = (Arc::clone(&self.listing), self.desktop.clone());
