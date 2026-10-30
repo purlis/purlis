@@ -3050,6 +3050,10 @@ export const commands = {
 	runnerWrite: (plane: PlaneId, id: number) => typedError<RunnerWriteWhole, string>(__TAURI_INVOKE("runner_write", { plane, id })),
 	/**  **Dismiss** on a held write: nothing is made. Window-only. */
 	dismissRunnerWrite: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_runner_write", { plane, id })),
+	/**  **Approve** on a held dispatch. Window-only. */
+	approveRunnerDispatch: (plane: PlaneId, id: number) => typedError<string, string>(__TAURI_INVOKE("approve_runner_dispatch", { plane, id })),
+	/**  **Refuse** on a held dispatch: nothing starts. Window-only. */
+	refuseRunnerDispatch: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("refuse_runner_dispatch", { plane, id })),
 	/**  **Sets where a workspace's chats run** (#2046): the person's choice in its settings. */
 	setChatsRunOn: (plane: PlaneId, workspace: string, pool: string | null) => typedError<ChatsRunOn, string>(__TAURI_INVOKE("set_chats_run_on", { plane, workspace, pool })),
 	/**
@@ -4542,6 +4546,11 @@ export type AnswerPath =
  */
 { via: "runner-write"; id: number } | 
 /**
+ *  `approve_runner_dispatch` for Approve and `refuse_runner_dispatch` for Refuse, on held
+ *  runner dispatch `id`.
+ */
+{ via: "runner-dispatch"; id: number } | 
+/**
  *  Sign in sends nothing: it opens a shell tab where the core types the harness's own
  *  sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
  *  the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
@@ -4715,6 +4724,11 @@ export type AskSource =
  *  applies (#2046).
  */
 "runner-write" | 
+/**
+ *  An open or a dispatch a chat on a pool's runner asked for, which starts only on the
+ *  person's Approve.
+ */
+"runner-dispatch" | 
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */

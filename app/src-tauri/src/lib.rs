@@ -149,6 +149,7 @@ mod restoring;
 mod routedsessions;
 #[cfg(unix)]
 mod runnercode;
+mod runnerdispatches;
 mod runnerlinks;
 mod runnerlog;
 mod runnerwrites;

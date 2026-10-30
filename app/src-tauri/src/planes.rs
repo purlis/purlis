@@ -305,6 +305,8 @@ pub struct Held {
     proposals: crate::proposals::Proposals,
     /// The writes to the project its runner chats asked for, held for the person (#2046).
     runner_writes: crate::runnerwrites::RunnerWrites,
+    /// The opens and dispatches its runner chats asked for, held for the person.
+    runner_dispatches: crate::runnerdispatches::RunnerDispatches,
     /// The chats moving between this machine and a pool's runner (#2048).
     moves: Arc<crate::chatmoves::Moves>,
     /// The persona MCP servers each chat could not start, until the person answers (qw381).
@@ -619,6 +621,11 @@ impl Held {
     /// The writes to the project its runner chats asked for, held for the person (#2046).
     pub fn runner_writes(&self) -> &crate::runnerwrites::RunnerWrites {
         &self.runner_writes
+    }
+
+    /// The opens and dispatches its runner chats asked for, held for the person.
+    pub fn runner_dispatches(&self) -> &crate::runnerdispatches::RunnerDispatches {
+        &self.runner_dispatches
     }
 
     /// The persona MCP servers each chat could not start, for the Notice on its tab (qw381).
@@ -1163,6 +1170,7 @@ impl Held {
         }
         self.proposals.forget(session);
         self.runner_writes.forget(session);
+        self.runner_dispatches.forget(session);
         self.mcp_failures.forget(session);
         self.lost_with_the_host.forget(session);
         // Its id, read before it goes: its dispatch grant for "this chat" ends where its
@@ -4457,6 +4465,7 @@ impl Planes {
             browser_timeline,
             proposals: crate::proposals::Proposals::default(),
             runner_writes: crate::runnerwrites::RunnerWrites::default(),
+            runner_dispatches: crate::runnerdispatches::RunnerDispatches::default(),
             moves,
             mcp_failures,
             lost_with_the_host,

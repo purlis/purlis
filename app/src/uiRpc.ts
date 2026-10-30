@@ -1502,6 +1502,8 @@ export const commands = {
 	applyRunnerWrite: __WINDOW_ONLY_RESULT,
 	runnerWrite: __WINDOW_ONLY_RESULT,
 	dismissRunnerWrite: __WINDOW_ONLY_RESULT,
+	approveRunnerDispatch: __WINDOW_ONLY_RESULT,
+	refuseRunnerDispatch: __WINDOW_ONLY_RESULT,
 	setChatsRunOn: __WINDOW_ONLY_RESULT,
 	sendLeavesOut: __WINDOW_ONLY_RESULT,
 	setSendLeavesOut: __WINDOW_ONLY_RESULT,
@@ -2471,6 +2473,11 @@ export type AnswerPath =
  */
 { via: "runner-write"; id: number } | 
 /**
+ *  `approve_runner_dispatch` for Approve and `refuse_runner_dispatch` for Refuse, on held
+ *  runner dispatch `id`.
+ */
+{ via: "runner-dispatch"; id: number } | 
+/**
  *  Sign in sends nothing: it opens a shell tab where the core types the harness's own
  *  sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
  *  the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
@@ -2644,6 +2651,11 @@ export type AskSource =
  *  applies (#2046).
  */
 "runner-write" | 
+/**
+ *  An open or a dispatch a chat on a pool's runner asked for, which starts only on the
+ *  person's Approve.
+ */
+"runner-dispatch" | 
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */

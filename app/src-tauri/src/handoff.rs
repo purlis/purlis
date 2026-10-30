@@ -204,6 +204,11 @@ pub fn answer(
             }
             // Decided as every dispatch is (#1444): started, held for the person, or refused.
             let wanted = Wanted::moved(&open);
+            // **Heard from a pool, it waits for the person**, whatever the persona
+            // (`crate::runnerdispatches`).
+            if let Some(pool) = crate::runnerdispatches::heard_from_a_pool(held, wanted.chat) {
+                return crate::runnerdispatches::hold(held, &pool, wanted);
+            }
             match dispatch_it(held, plane, &wanted, STARTING) {
                 Ok(Dispatched::Started { it, note, .. }) => {
                     let chat = it.session;
@@ -240,7 +245,12 @@ pub fn answer(
             if let Err(why) = tickets.spend(dispatch.chat, connection, &dispatch.ticket, now) {
                 return no(why);
             }
-            task_dispatched(held, plane, &Wanted::of(&dispatch), arrived)
+            let wanted = Wanted::of(&dispatch);
+            // Heard from a pool, it waits for the person, as an open does.
+            if let Some(pool) = crate::runnerdispatches::heard_from_a_pool(held, wanted.chat) {
+                return crate::runnerdispatches::hold(held, &pool, wanted);
+            }
+            task_dispatched(held, plane, &wanted, arrived)
         }
         // A brokered write, not a handoff: no ticket, because a record is the chat's own to
         // write and the line can only name the chat whose token it carries (#1332).
@@ -3421,6 +3431,64 @@ pub fn answered(
     // so nothing here says a task failed (a task took the road above, `unstarted::allowed`,
     // which flags the chat that asked by the task's own record).
     tell_the_asker(held, &wanted, how, &detail);
+}
+
+/// **A dispatch heard from a pool, which the person approved** (`crate::runnerdispatches`):
+/// decided now as the dispatch of a chat of this machine is, against the limits, grants and
+/// chats as they stand, so one to another persona still waits on its grant. The asking chat is
+/// told what became of it on its next turn; what the window says of it is answered.
+pub(crate) fn start_approved(
+    held: &Held,
+    plane: &PlaneId,
+    wanted: &Wanted,
+    arrived: &(dyn Fn(Arrived) + Send + Sync),
+) -> String {
+    use purlis_core::handback::Answered;
+    match dispatch_noting(held, plane, wanted, STARTING) {
+        Ok(Dispatched::Started { it, note, works }) => {
+            let detail = started_after_holding(held, wanted, &it, (note, works));
+            crate::dispatched::started(held, it.session);
+            let said = format!("Started chat {}.", it.session);
+            arrived(*it);
+            tell_the_asker(held, wanted, Answered::Started, &detail);
+            said
+        }
+        // Its grant is asked for on the chat's tab now, as for any dispatch: that answer
+        // starts it, or tells the chat it was kept blocked.
+        Ok(Dispatched::Held { .. }) => {
+            "It now waits on a dispatch grant, asked on the chat's tab.".to_owned()
+        }
+        Ok(Dispatched::WaitsOnMemory { .. }) => match waits_on_memory(held, wanted) {
+            Ok(()) => {
+                tell_the_asker(
+                    held,
+                    wanted,
+                    Answered::WaitingOnMemory,
+                    &still_short_after_the_wait(),
+                );
+                "It waits on this machine's memory, and starts once memory frees.".to_owned()
+            }
+            Err(why) => {
+                not_started_after_holding(held, wanted, wanted.to.clone(), None, &why);
+                why
+            }
+        },
+        Err(not) => {
+            not_started_after_holding(held, wanted, wanted.to.clone(), not.row, &not.why);
+            not.why
+        }
+    }
+}
+
+/// **A dispatch heard from a pool, which the person refused**: its asking chat is told `why`
+/// on its next turn, as a dispatch kept blocked is told.
+pub(crate) fn tell_refused(held: &Held, wanted: &Wanted, why: &str) {
+    tell_the_asker(
+        held,
+        wanted,
+        purlis_core::handback::Answered::KeptBlocked,
+        why,
+    );
 }
 
 /// Why a held dispatch whose asking chat closed did not start (#1464): the reason its record

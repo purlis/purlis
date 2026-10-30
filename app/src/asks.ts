@@ -268,6 +268,12 @@ export async function answerTaken(
         }
         if (option === "dismiss") return commands.dismissRunnerWrite(plane, path.id);
         break;
+      case "runner-dispatch":
+        // A chat on a pool's runner asked to start a chat on this machine: Approve decides it as
+        // a dispatch of a chat here is decided; Refuse starts nothing. The chat is told which.
+        if (option === "approve") return commands.approveRunnerDispatch(plane, path.id);
+        if (option === "refuse") return commands.refuseRunnerDispatch(plane, path.id);
+        break;
       case "sign-in":
         // Sign in sends nothing (#2035): the project's window opens a shell tab where the core
         // types the harness's own sign-in, to the plan the option names where it names one. The
