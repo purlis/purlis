@@ -504,9 +504,13 @@ the select family's (`purlis/select-family`, an error: [The select and combobox 
 | `className` | the field's place in its view (margin, width, flex, order), never a look |
 
 - **A field is its label, its control, its help and its error, as one.** React Aria ties the
-  label to the box and the help and the error to its description. The error is an alert, as every
-  refusal in the window is, and the box's edge takes the danger colour beside it: the words are
-  the cue that is not colour. **A field that can be refused keeps its error's line** whether it
+  label to the box and the help and the error to its description. The error line is a polite
+  live region, never an alert (#3291), and the box's edge takes the danger colour beside it: the
+  words are the cue that is not colour. **A refused send is heard once**, as its `Form`'s one alert
+  summary ("Name: A name is letters…", or "2 fields to fix: Name, Port."), for a screen reader
+  alone; the lines are quiet while it shows, and each stays its field's description. A send the
+  core refuses is handed to the `Form`: `refused` by its owner, `useFormRefusal()` from inside it
+  (ADR 0104, amendment 2026-10-30). **A field that can be refused keeps its error's line** whether it
   says anything or not, one line tall, empty and unheard until it does, so a refusal coming or
   going moves nothing; a long one is cut short on screen and read whole as the description.
 - **⌘⏎ sends a form's primary action** (Ctrl+Enter off macOS; N26), its first submit button, from
@@ -581,8 +585,8 @@ refuses all four (`purlis/select-family`, an error).
 - **Refused** (`error`, #3110, #3334): a select whose value the form will not take, or a
   combobox whose typed value is not allowed, draws the danger colour on its edge, inside the box
   as the text input's, and is marked `aria-invalid` and `data-invalid`. `error` says why in the
-  field's error line under the box (the `field.error` part), a live region kept from the start,
-  so a refusal that lands while the person types is heard at once and nothing moves; a select
+  field's error line under the box (the `field.error` part), a polite live region kept from the
+  start, so a refusal that lands while the person types is heard and nothing moves; a select
   given `error` stands in a field of its own, placed by its `className`: a column as wide as its
   place, its button as wide as the field (in a toolbar row, give it a width). `error=""` is no
   refusal. `isInvalid` marks one

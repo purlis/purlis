@@ -55,7 +55,9 @@ describe("a text field", () => {
     expect(root).not.toBeNull();
     expect(root?.querySelector('[data-part="label"]')).toHaveTextContent("Name");
     expect(root?.querySelector('[data-part="help"]')).toHaveTextContent("It becomes a directory.");
-    expect(root?.querySelector('[data-part="error"]')).toHaveAttribute("role", "alert");
+    // Polite, never an alert as well (#3291).
+    expect(root?.querySelector('[data-part="error"]')).toHaveAttribute("aria-live", "polite");
+    expect(root?.querySelector('[data-part="error"]')).not.toHaveAttribute("role");
   });
 
   it("carries the text input's parts and its size, its glass hidden from a screen reader", () => {
@@ -350,7 +352,9 @@ describe("a form (N26)", () => {
     });
     expect(sent).not.toHaveBeenCalled();
     expect(name).toHaveFocus();
-    expect(screen.getByRole("alert")).toHaveTextContent("1 field to fix: Name");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Name: A name is letters, digits, ., _ and -.",
+    );
     expect(name).toHaveAccessibleDescription("A name is letters, digits, ., _ and -.");
   });
 
@@ -367,7 +371,9 @@ describe("a form (N26)", () => {
     render(<Untouched />);
     await userEvent.click(screen.getByRole("button", { name: "Rename" }));
     expect(sent).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toHaveTextContent("1 field to fix: Name");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Name: A name is letters, digits, ., _ and -.",
+    );
   });
 });
 
@@ -439,7 +445,9 @@ describe("one signal per refusal (#3291)", () => {
     await userEvent.type(box, "80");
     await userEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(screen.getAllByRole("alert")).toHaveLength(1);
-    expect(screen.getByRole("alert")).toHaveTextContent("1 field to fix: Name");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Name: A name is letters, digits, ., _ and -.",
+    );
   });
 });
 

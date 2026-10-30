@@ -628,10 +628,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "its Add profile, Import again and Remove… are the way on",
   },
   "settings/Collection.tsx": {
-    count: 3,
+    count: 2,
     why:
-      "a collection's Undo answer, a refused Remove with its users and a refused Add (ST-3): " +
-      "inline, inside Settings, beside the entry or form they are about",
+      "a collection's Undo answer and a refused Remove with its users (ST-3): inline, inside " +
+      "Settings, beside the entry they are about; a refused Add is its form's summary (#3291)",
   },
   "settings/RawToml.tsx": {
     count: 2,
@@ -642,8 +642,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "Settings' read refusal, inside its tab (NO-7, #1232)",
   },
   "settings/components.tsx": {
-    count: 2,
-    why: "the settings set's filter count and a row's refusal: inline, per field",
+    count: 3,
+    why:
+      "the settings set's filter count and a row's refusal, inline, per field: an alert on its " +
+      "own, a polite line quiet under its form's summary in a form (#3291)",
   },
   "settings/themeGallery.tsx": {
     count: 3,
@@ -659,8 +661,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "This machine's read refusal, standing in for its list inside Settings (ST-2; NO-7, #1232)",
   },
   "ui/field/Field.tsx": {
-    count: 1,
-    why: "a field's error line under its box, why its value is refused, in either of the family's boxes (#2905)",
+    count: 2,
+    why:
+      "a field's error line under its box, why its value is refused, in either of the family's " +
+      "boxes (#2905), polite; and a form's one alert summary of a refused send (#3291)",
   },
   "ui/table/TableBar.tsx": {
     count: 1,

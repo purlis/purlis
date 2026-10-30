@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Field, SettingActions, SettingRow } from "./settings/components";
+import { useFormRefusal } from "./ui/field/Field";
 import { Button } from "./ui/button/Button";
 import { DialogAnswers, useInADialog } from "./ui/dialog/Dialog";
 
@@ -53,6 +54,8 @@ export function GitIdentityForm({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [refused, setRefused] = useState<IdentityRefused>();
+  // Inside the Doctor dialog's form, which says a refused send once (#3291).
+  const refuse = useFormRefusal();
   const [sending, setSending] = useState(false);
   const form = useRef<HTMLDivElement>(null);
   const inADialog = useInADialog();
@@ -80,7 +83,16 @@ export function GitIdentityForm({
     if (busy || sending) return;
     setSending(true);
     void submit(nameSet ? "" : name, emailSet ? "" : email)
-      .then(setRefused)
+      .then((answer) => {
+        setRefused(answer);
+        if (answer === undefined) return;
+        refuse({
+          fields: [
+            ...(answer.name.length > 0 ? [{ name: "Name", why: answer.name.join(" ") }] : []),
+            ...(answer.email.length > 0 ? [{ name: "Email", why: answer.email.join(" ") }] : []),
+          ],
+        });
+      })
       .finally(() => setSending(false));
   };
 

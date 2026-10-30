@@ -10,7 +10,7 @@ import { OutLink } from "./OutLink";
 import type { Collection, CollectionEntry, EntryField, Setting } from "./groups";
 import { HostStatus } from "../ui/badge/Badge";
 import { Button } from "../ui/button/Button";
-import { Form } from "../ui/field/Field";
+import { Form, type Refused } from "../ui/field/Field";
 
 /**
  * **A collection, drawn** (ST-3, V91e–g): each entry a heading with its Remove over its own rows,
@@ -394,6 +394,29 @@ function initial(fields: readonly EntryField[]): Record<string, string> {
   return Object.fromEntries(fields.map((one) => [one.field, one.initial ?? ""]));
 }
 
+/**
+ * **A send the core refused, as its form says it once** (#3291): the labels of the fields it
+ * refused and what it said of the whole. What uses the entry (`referrers`) is said under the
+ * entry, not here.
+ */
+const refusedMemo = new WeakMap<EntryRefusal, Refused>();
+function refusedOf(
+  refusal: EntryRefusal | undefined,
+  fields: readonly { field: string; label: string }[],
+): Refused | undefined {
+  if (refusal === undefined) return undefined;
+  const known = refusedMemo.get(refusal);
+  if (known !== undefined) return known;
+  const made = {
+    fields: fields
+      .filter((one) => (refusal.fields[one.field] ?? []).length > 0)
+      .map((one) => ({ name: one.label, why: (refusal.fields[one.field] ?? []).join(" ") })),
+    reasons: refusal.reasons,
+  };
+  refusedMemo.set(refusal, made);
+  return made;
+}
+
 /** What is said under a field: the core's refusal of the Add pressed, else its check of the
  *  text as typed (#1405). */
 function fieldSaid(
@@ -513,6 +536,7 @@ function AddForm({
       id={form}
       className="ui-collection-form"
       aria-label={`New ${noun}`}
+      refused={refusedOf(refusal, fields)}
       onSubmit={(event) => {
         event.preventDefault();
         void send();
@@ -551,7 +575,8 @@ function AddForm({
         />
       ))}
       {refusal && refusal.reasons.length > 0 && (
-        <div className="ui-setting-error" role="alert">
+        // Heard in the form's summary (#3291); here for the eye, where it belongs.
+        <div className="ui-setting-error">
           {refusal.reasons.map((why, at) => (
             <p key={at}>{why}</p>
           ))}
@@ -629,6 +654,7 @@ function RenameForm({
       id={form}
       className="ui-collection-form"
       aria-label={`Rename ${entry.label}`}
+      refused={refusedOf(refusal, [{ field: "name", label: "New name" }])}
       onSubmit={(event) => {
         event.preventDefault();
         void send(false);
