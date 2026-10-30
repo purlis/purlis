@@ -383,5 +383,10 @@ fn install_all_reviews_every_skill_not_installed_yet_and_asks_once() {
 
     // A name and --all together are one ask too many.
     let both = project.run(&["skill", "install", &url, "deploy", "--all"], "");
-    assert_eq!(both.status.code(), Some(2), "{}", text(&both));
+    assert!(!both.status.success(), "{}", text(&both));
+    assert!(
+        text(&both).contains("cannot be used with '--all'"),
+        "{}",
+        text(&both)
+    );
 }
