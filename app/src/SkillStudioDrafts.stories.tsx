@@ -13,14 +13,11 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { SkillDraft } from "./bindings";
-import { SkillStudioTab } from "./SkillStudioTab";
-import { AT_THE_ROOT, SKILL_STUDIO_VIEW, studioHistoryOf } from "./skillStudio";
+import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.testkit";
+import { AT_THE_ROOT } from "./skillStudio";
 import { studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
-
-const PLANE = "/home/dev/plane";
-const HISTORY = studioHistoryOf(PLANE, SKILL_STUDIO_VIEW);
 
 const BEFORE =
   "---\nname: review-pr\ndescription: Reviews a pull request.\n---\n\n1. Read REVIEW.md.\n2. Check correctness.\n";
@@ -89,11 +86,7 @@ function Tab({
   /** The draft chosen, by its id. */
   item?: string;
 }) {
-  return (
-    <div className="view-body" style={{ inlineSize: width, blockSize: 560, display: "flex" }}>
-      <SkillStudioTab plane={PLANE} changed={0} narrow={narrow} />
-    </div>
-  );
+  return <StudioInPanel width={width} height={560} narrow={narrow} />;
 }
 
 const meta = {

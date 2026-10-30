@@ -18,6 +18,7 @@ import {
   studioOpening,
 } from "./skillStudio";
 import { catalogue, SKILL_STUDIO_SHOW, type Now } from "./actions";
+import { skill, studio } from "./skillsListing.testkit";
 import { noTabs } from "./tabs";
 
 afterEach(() => {
@@ -131,6 +132,21 @@ describe("the Skill studio", () => {
         "Left out: a built-in skill has this name, and a built-in skill is never replaced",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("keeps the Library's tools to search and chips, with New skill… the one way in (#4041)", async () => {
+    answering(studio([skill("deploy")]));
+
+    renderStudio();
+
+    await screen.findByTestId("skill-deploy");
+    const tools = screen.getByTestId("skill-studio").querySelector(".skill-library-tools");
+    if (!(tools instanceof HTMLElement)) throw new Error("the Library draws no tools");
+    expect(within(tools).getByRole("searchbox", { name: "Search skills" })).toBeInTheDocument();
+    // Search and chips, and no button: New skill… on the bar is the way a skill is started,
+    // its Ask a chat to draft it (#3684) included.
+    expect(within(tools).queryAllByRole("button")).toEqual([]);
+    expect(screen.getByRole("button", { name: "New skill…" })).toBeInTheDocument();
   });
 
   it("says why the router hid a skill, and which are pinned (SK-15)", async () => {
