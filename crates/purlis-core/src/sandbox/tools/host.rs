@@ -204,12 +204,13 @@ fn host_named(value: &str, read: Read) -> Option<String> {
                 .to_ascii_lowercase(),
         );
     }
-    if parts.len() == 1 || parts.len() == 2 {
-        if let Some((before, after)) = first.split_once(':') {
-            if !after.is_empty() && !before.starts_with('.') && before.contains('.') {
-                return Some(before.to_ascii_lowercase());
-            }
-        }
+    if parts.len() <= 2
+        && let Some((before, after)) = first.split_once(':')
+        && !after.is_empty()
+        && !before.starts_with('.')
+        && before.contains('.')
+    {
+        return Some(before.to_ascii_lowercase());
     }
     None
 }
