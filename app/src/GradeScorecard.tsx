@@ -24,7 +24,7 @@ import {
 import { counted } from "./dispatches";
 import { Notice } from "./Notice";
 import { ReadOnlyTerminal } from "./ReadOnlyTerminal";
-import { dollarsSaid, Reading } from "./SkillGrade";
+import { dollarsSaid, GradingHeading, Reading } from "./SkillGrade";
 import { useRead } from "./SkillPanels";
 import { textSizes } from "./textSize";
 import { Badge } from "./ui/badge/Badge";
@@ -32,7 +32,6 @@ import { Button, ButtonRow } from "./ui/button/Button";
 import { Tile, Totals } from "./ui/card/Totals";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { PanelSectionTitle } from "./ui/panel/Panel";
-import { ViewPageHeader } from "./ui/panel/ViewFrame";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 
 /** The columns a grade's chat is kept at: the size it ran at, drawn nowhere (`skillgrade.rs`). */
@@ -205,7 +204,7 @@ export function GradeScorecardPage({
       data-testid="grade-scorecard"
       aria-label={`Scorecard of ${name}`}
     >
-      <ViewPageHeader name={`Grade of ${name} · ${it.graded}`} />
+      <GradingHeading name={`Grade of ${name} · ${it.graded}`} />
       <Notice
         cause={`skill-grade-end:${grade}`}
         tone={end.tone}
@@ -339,7 +338,7 @@ export function GradeChatPage({
   );
   return (
     <section className="skill-studio-page" data-testid="grade-chat">
-      <ViewPageHeader
+      <GradingHeading
         name={
           here === undefined || read === undefined
             ? `A chat of ${name}'s grade`

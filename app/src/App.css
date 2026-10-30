@@ -7664,6 +7664,16 @@ nav.piece-files-head {
   gap: var(--space-4);
 }
 
+.skill-grading-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.skill-grading-head > * {
+  margin: 0;
+}
+
 .skill-grading-arm {
   display: inline-flex;
   flex-wrap: wrap;

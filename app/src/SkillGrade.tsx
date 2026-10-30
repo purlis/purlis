@@ -34,7 +34,6 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 import { TextField } from "./ui/field/Field";
 import { ProgressBar } from "./ui/meter/Meter";
 import { PanelSectionTitle } from "./ui/panel/Panel";
-import { ViewPageHeader } from "./ui/panel/ViewFrame";
 import { ReviewPage } from "./ui/review-page/ReviewPage";
 import { Select } from "./ui/select/Select";
 
@@ -171,6 +170,19 @@ function NotRead({ what, why, onAgain }: { what: string; why: string; onAgain: (
       testid="skill-grading-not-read"
       action={<Button onPress={onAgain}>Try again</Button>}
     />
+  );
+}
+
+/**
+ * **A grading page's heading**, and the line under it: in the page's flow, never held over what
+ * scrolls under it (a review page's body scrolls, and the plan's text would run under it).
+ */
+export function GradingHeading({ name, description }: { name: string; description?: string }) {
+  return (
+    <div className="skill-grading-head">
+      <h2 className="ui-text-strong">{name}</h2>
+      {description !== undefined && <p className="honest">{description}</p>}
+    </div>
   );
 }
 
@@ -336,7 +348,7 @@ export function GradePlanPage({
         byReturn: false,
       }}
     >
-      <ViewPageHeader
+      <GradingHeading
         name={afterEdit ? `Grade ${name} after each edit` : `Grade ${name}`}
         description={`A grade runs ${name}'s trigger tests in chats with it and without it, and shows what it may spend before anything runs.`}
       />
@@ -678,7 +690,7 @@ export function GradeRunningPage({
         },
       }}
     >
-      <ViewPageHeader name={`Grading ${name}`} />
+      <GradingHeading name={`Grading ${name}`} />
       {stopRefused !== undefined && (
         <Notice
           cause={`skill-grade-stop:${grade}`}
