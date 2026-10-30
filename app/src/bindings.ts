@@ -2037,20 +2037,20 @@ export const commands = {
 	 *  from (the project's root, or the workspace's folder), on the project's default profile, with
 	 *  the core's prompt typed and never sent.
 	 */
-	skillDraftChat: (plane: PlaneId, level: SkillLevel, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_draft_chat", { plane, level, columns, rows })),
+	skillDraftChat: (plane: PlaneId, level: SkillLevel, columns: number, rows: number) => typedError<Curating, StudioRefused>(__TAURI_INVOKE("skill_draft_chat", { plane, level, columns, rows })),
 	/**
 	 *  **Try it** (decision 50): a scratch chat in a throwaway piece, armed with the built-in skills
 	 *  and the draft `id` alone, on `profile` (the project's default where none is picked), with the
 	 *  core's prompt typed and never sent. Tries a closed chat never ended (a quit, a crash) are
 	 *  ended first. Nothing is left once the chat closes but the skill runs it recorded.
 	 */
-	skillDraftTry: (plane: PlaneId, id: string, profile: string | null, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_draft_try", { plane, id, profile, columns, rows })),
+	skillDraftTry: (plane: PlaneId, id: string, profile: string | null, columns: number, rows: number) => typedError<Curating, StudioRefused>(__TAURI_INVOKE("skill_draft_try", { plane, id, profile, columns, rows })),
 	/**
 	 *  **"Ask a chat to redo it"** (S9), where the chat that drafted it is closed: a chat where the
 	 *  draft's level's skills are reached from, as "Ask a chat to draft a skill" opens one, with the
 	 *  core's redo prompt typed and never sent, which the person ends with what the change was.
 	 */
-	skillDraftRedo: (plane: PlaneId, id: string, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("skill_draft_redo", { plane, id, columns, rows })),
+	skillDraftRedo: (plane: PlaneId, id: string, columns: number, rows: number) => typedError<Curating, StudioRefused>(__TAURI_INVOKE("skill_draft_redo", { plane, id, columns, rows })),
 	/**
 	 *  **"Ask the chat to redo it"** (S9), for a draft the project changed a file of since: the
 	 *  core's redo prompt typed into chat `session`, the chat that drafted it, unsent — or copied,
@@ -2058,29 +2058,6 @@ export const commands = {
 	 *  draft's workspace. A redo the chat then writes is drafted on the project's copy (`drafts::take`).
 	 */
 	skillDraftRedoIn: (plane: PlaneId, id: string, session: number) => typedError<Handed, string>(__TAURI_INVOKE("skill_draft_redo_in", { plane, id, session })),
-	/**
-	 *  **What the profile a studio start runs on needs approved** (#3942), where the core refused
-	 *  "Ask a chat to draft a skill", Try it or a redo only because nobody approved that profile on
-	 *  this machine: the picker's own approval, for the window to show and the person to confirm
-	 *  before it starts the same chat again. `tried` is the draft Try it was pressed on, with the
-	 *  profile picked for it; without one, the start was on the project's default. `None` where the
-	 *  profile needs nothing approved, so the refusal was for another reason.
-	 * 
-	 *  Read again from the profile and never from the refusal's words, as a waiting chat's is
-	 *  (`NotStarted::approval`). Nothing is approved here: `approve_profile` is the person's press.
-	 */
-	skillChatApproval: (plane: PlaneId, tried: string | null, profile: string | null) => typedError<{
-	/**  The profile's name, as `approve_profile` takes it. */
-	profile: string,
-	/**  Its `kind`. */
-	kind: string,
-	/**  Where it was declared: `built-in`, `charter.local.toml` or the project's harnesses. */
-	source: string,
-	/**  `new` or `changed`, as the picker's row says it. */
-	approval: string,
-	/**  What it would run, as the picker shows it (`profiletrust::shown`), already contained. */
-	shown: string,
-} | null, string>(__TAURI_INVOKE("skill_chat_approval", { plane, tried, profile })),
 	/**
 	 *  **Accepts a workspace or persona folder a chat could have made** (SK-9): its skills reach
 	 *  chats from now on. The person's press in the studio, on a skill left out for it.
@@ -13222,6 +13199,21 @@ export type StudioNotSupported = {
 	title: string,
 	/**  Why its chats get no skills, in one line. */
 	said: string,
+};
+
+/**
+ *  **Why a studio start did not start** (#3942): the core's sentence, and the approval the
+ *  profile it started on needs, where its start was refused while that profile waits for one. The
+ *  window then offers Approve and start…, which shows that line and approves it only on the
+ *  person's answer (`approve_profile`), from this and never from the words.
+ */
+export type StudioRefused = {
+	words: string,
+	/**
+	 *  Read as the start was refused, of the profile it was refused on. Null for a refusal
+	 *  before any start was tried, or on a profile with nothing to approve.
+	 */
+	approval: NeedsApproval | null,
 };
 
 /**  One chat a router extension was asked about at its start. */

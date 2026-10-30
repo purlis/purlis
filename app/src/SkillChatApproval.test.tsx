@@ -3,7 +3,7 @@
 
 /**
  * **Approve and start, in place** (#3942) at the window's seam: what a studio start the core
- * refused offers, read from the profile and never from the refusal's words, and the question that
+ * refused offers, from the approval the core read and never from the refusal's words, and the question that
  * shows the picker's sentence and line, approves that line alone on the person's answer, and only
  * then starts the same chat again. The core is faked at its command boundary.
  */
@@ -42,12 +42,11 @@ const DRAFT: SkillChatAsk = { plane: PLANE, kind: "draft", level: { at: "project
 
 type Asked = { cmd: string; args: Record<string, unknown> }[];
 
-/** A core answering `approval` for the profile, and `approve` for its approval. */
-function core(approval: NeedsApproval | null, approve: () => unknown = () => null): Asked {
+/** A core answering `approve` for a profile's approval. */
+function core(approve: () => unknown = () => null): Asked {
   const asked: Asked = [];
   mockIPC((cmd, args) => {
     asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
-    if (cmd === "skill_chat_approval") return approval;
     if (cmd === "approve_profile") return approve();
     return null;
   });
@@ -55,46 +54,36 @@ function core(approval: NeedsApproval | null, approve: () => unknown = () => nul
 }
 
 describe("a studio start refused for its profile's approval", () => {
-  it("offers Approve and start… beside the refusal, asking the profile Try it ran on", async () => {
-    const asked = core(WORK);
+  it("offers Approve and start… beside the refusal, from the approval the core read", () => {
     const ask = vi.fn();
-    const said = await skillChatRefused(PLANE, { ...TRY, profile: "work" }, REFUSED, ask);
+    const wanted = { ...TRY, profile: "work" };
+    const said = skillChatRefused(wanted, { words: REFUSED, approval: WORK }, ask);
 
     expect(said).toMatchObject({ from: "skill-chat", refused: true, words: REFUSED });
     expect(said.ways?.map((one) => one.label)).toEqual(["Approve and start…"]);
-    expect(asked.find((one) => one.cmd === "skill_chat_approval")?.args).toMatchObject({
-      tried: "d1",
-      profile: "work",
-    });
     // Offered, and nothing is approved until the person answers its question.
-    expect(asked.some((one) => one.cmd === "approve_profile")).toBe(false);
     said.ways?.[0].onPress();
-    expect(ask).toHaveBeenCalledWith({ wanted: { ...TRY, profile: "work" }, approval: WORK });
+    expect(ask).toHaveBeenCalledWith({ wanted, approval: WORK });
   });
 
-  it("says the refusal alone where the profile needs nothing approved, or the read fails", async () => {
-    core(null);
-    expect((await skillChatRefused(PLANE, DRAFT, "no profile", vi.fn())).ways).toBeUndefined();
-    mockIPC(() => {
-      throw new Error("the window lost the core");
+  it("says the refusal alone where there is nothing to approve, or only its words came", () => {
+    expect(skillChatRefused(DRAFT, { words: "no profile", approval: null }, vi.fn())).toEqual({
+      from: "skill-chat",
+      refused: true,
+      words: "no profile",
     });
-    const said = await skillChatRefused(PLANE, DRAFT, REFUSED, vi.fn());
-    expect(said).toEqual({ from: "skill-chat", refused: true, words: REFUSED });
-  });
-
-  it("asks the project's default for a draft's chat and a redo", async () => {
-    const asked = core(WORK);
-    await skillChatRefused(PLANE, DRAFT, REFUSED, vi.fn());
-    expect(asked.find((one) => one.cmd === "skill_chat_approval")?.args).toMatchObject({
-      tried: null,
-      profile: null,
+    // A refusal that names approval in its words alone offers nothing: the words are not read.
+    expect(skillChatRefused(DRAFT, REFUSED, vi.fn())).toEqual({
+      from: "skill-chat",
+      refused: true,
+      words: REFUSED,
     });
   });
 });
 
 describe("the question Approve and start… asks", () => {
   it("shows the picker's sentence and line, approves that line, then starts the same chat", async () => {
-    const asked = core(WORK);
+    const asked = core();
     const onApproved = vi.fn();
     const user = userEvent.setup();
     render(
@@ -127,7 +116,7 @@ describe("the question Approve and start… asks", () => {
   });
 
   it("keeps a refused approval in the question, and starts nothing", async () => {
-    core(WORK, () => {
+    core(() => {
       throw "profile 'work' changed while you were reading it, so nothing was approved";
     });
     const onApproved = vi.fn();
@@ -148,7 +137,7 @@ describe("the question Approve and start… asks", () => {
   });
 
   it("Cancel approves nothing", async () => {
-    const asked = core(WORK);
+    const asked = core();
     const onCancel = vi.fn();
     const user = userEvent.setup();
     render(

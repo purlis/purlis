@@ -5343,7 +5343,7 @@ export const PlaneView = memo(function PlaneView({
         .then((started) => {
           if (started.status === "error") {
             // With Approve and start… where its profile needs approving (#3942).
-            void skillChatRefused(plane, wanted, started.error, setStudioApproving).then(setReport);
+            setReport(skillChatRefused(wanted, started.error, setStudioApproving));
             return;
           }
           const chat = started.data;
@@ -9987,7 +9987,8 @@ export const PlaneView = memo(function PlaneView({
                 onCancel={() => setStudioApproving(undefined)}
                 onApproved={(again) => {
                   setStudioApproving(undefined);
-                  setReport(undefined);
+                  // The refusal it answered is put away; any other line stays.
+                  setReport((was) => (was?.from === "skill-chat" ? undefined : was));
                   askSkillChat(again);
                 }}
               />

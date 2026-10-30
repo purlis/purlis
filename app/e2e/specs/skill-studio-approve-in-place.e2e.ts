@@ -65,7 +65,8 @@ describe("a Skill studio start refused for its profile's approval", function () 
   let root = "";
   let state = "";
   let plane = "";
-  let local = "";
+  /** The Local file as it was, or `null` where there was none. */
+  let local: string | null = null;
   let wereOpen: string[] = [];
   let wereRunning: number[] = [];
 
@@ -77,8 +78,8 @@ describe("a Skill studio start refused for its profile's approval", function () 
     plane = await projectInFront();
     wereRunning = await runningIn(plane);
     const file = join(root, "charter.local.toml");
-    local = existsSync(file) ? readFileSync(file, "utf8") : "";
-    writeFileSync(file, withTheProfile(local));
+    local = existsSync(file) ? readFileSync(file, "utf8") : null;
+    writeFileSync(file, withTheProfile(local ?? ""));
     drafted(state);
   });
 
@@ -87,7 +88,10 @@ describe("a Skill studio start refused for its profile's approval", function () 
     await focusWorkspace("alpha");
     await closeTheViewTabsOpenedSince(wereOpen);
     rmSync(join(state, "skill-drafts", ID), { recursive: true, force: true });
-    if (root !== "") writeFileSync(join(root, "charter.local.toml"), local);
+    if (root === "") return;
+    const file = join(root, "charter.local.toml");
+    if (local === null) rmSync(file, { force: true });
+    else writeFileSync(file, local);
   });
 
   it("offers Approve and start, showing what it runs, and starts the chat asked for", async () => {

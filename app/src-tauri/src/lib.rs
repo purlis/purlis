@@ -3099,10 +3099,12 @@ fn ui_rpc_client() -> String {
     // `Channel` stays imported only while something the client keeps still names it.
     let names = if client.contains("Channel<") {
         "invoke as __TAURI_INVOKE, windowOnly as __WINDOW_ONLY, windowOnlyRefused as \
-         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, Channel"
+         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, \
+         windowOnlyStudioRefused as __WINDOW_ONLY_STUDIO_REFUSED, Channel"
     } else {
         "invoke as __TAURI_INVOKE, windowOnly as __WINDOW_ONLY, windowOnlyRefused as \
-         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT"
+         __WINDOW_ONLY_REFUSED, windowOnlyResult as __WINDOW_ONLY_RESULT, \
+         windowOnlyStudioRefused as __WINDOW_ONLY_STUDIO_REFUSED"
     };
     client.replacen(
         TAURI_INVOKE,
@@ -3189,6 +3191,8 @@ fn without_channel_commands(bindings: &str) -> String {
                 "__WINDOW_ONLY_RESULT"
             } else if command.contains(", Refused>(__TAURI_INVOKE(") {
                 "__WINDOW_ONLY_REFUSED"
+            } else if command.contains(", StudioRefused>(__TAURI_INVOKE(") {
+                "__WINDOW_ONLY_STUDIO_REFUSED"
             } else {
                 panic!(
                     "`{name}` is the window's alone and its error is a shape the link's client has no refusal for"

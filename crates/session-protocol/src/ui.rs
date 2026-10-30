@@ -653,9 +653,6 @@ pub const WINDOW_ONLY: &[&str] = &[
     // chat that drafted it as the person, or a chat started with it typed, as a draft chat is.
     "skill_draft_redo",
     "skill_draft_redo_in",
-    // What the profile of a studio start refused for approval needs approved (#3942): read for
-    // the person's own Approve and start in their window, which then approves it and starts it.
-    "skill_chat_approval",
     // A grade of a skill started or stopped (SK-16, #2779): it runs chats on the person's
     // profile, each started on a trigger test's query, and records the grade in the project.
     // The person's own press in their window, after the plan showed what it costs.

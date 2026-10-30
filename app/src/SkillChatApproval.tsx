@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from "react";
-import { commands, type NeedsApproval } from "./bindings";
+import { commands, type NeedsApproval, type StudioRefused } from "./bindings";
 import type { Said } from "./actions";
 import { ChatAsk } from "./ChatAsk";
 import { ApprovalSentence, ProfileMeta } from "./ProfileApproval";
@@ -16,8 +16,9 @@ import type { SkillChatAsk } from "./skillDraftAsks";
  * the picker's sentence, whose answer records the approval of that line and starts the same chat
  * again, with its prompt typed and not sent. Nothing is approved without that answer.
  *
- * What needs approving is read from the profile (`skill_chat_approval`), never from the
- * refusal's words, as a waiting chat's Review and approve… reads it.
+ * What needs approving is what the core read of the profile as it refused the start
+ * (`StudioRefused::approval`), never the refusal's words, as a waiting chat's Review and approve…
+ * reads it.
  */
 
 /** The answer that approves the profile's command and starts the chat. */
@@ -44,22 +45,18 @@ export function startedAgain(wanted: SkillChatAsk, profile: string): SkillChatAs
 }
 
 /**
- * **What the window says of a studio start the core refused** (`words`): the refusal, with
- * Approve and start… where its profile needs approving, which asks with `ask`. A read of the
- * approval that fails says the refusal alone, as before.
+ * **What the window says of a studio start the core refused**: its words, with Approve and start…
+ * where the core said the profile it was refused on waits for an approval, which asks with `ask`.
+ * A refusal the window only has words for (the core could not be reached) is said alone.
  */
-export async function skillChatRefused(
-  plane: string,
+export function skillChatRefused(
   wanted: SkillChatAsk,
-  words: string,
+  refused: StudioRefused | string,
   ask: (approving: SkillChatApproving) => void,
-): Promise<Said> {
+): Said {
+  const { words, approval } =
+    typeof refused === "string" ? { words: refused, approval: null } : refused;
   const said: Said = { from: "skill-chat", refused: true, words };
-  const tried = wanted.kind === "try" ? wanted : null;
-  const read = await commands
-    .skillChatApproval(plane, tried?.id ?? null, tried?.profile ?? null)
-    .catch(() => undefined);
-  const approval = read?.status === "ok" ? read.data : null;
   if (approval === null) return said;
   return {
     ...said,

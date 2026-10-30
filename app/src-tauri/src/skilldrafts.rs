@@ -255,9 +255,9 @@ pub(crate) async fn skill_draft_chat(
     level: SkillLevel,
     columns: u16,
     rows: u16,
-) -> Result<Curating, String> {
+) -> Result<Curating, StudioRefused> {
     let held = planes.held(&plane)?;
-    crate::off_the_window("starting the chat", move || {
+    off_the_window_refused("starting the chat", move || {
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let level: purlis_core::skills::verbs::Level = (&level).into();
@@ -293,9 +293,9 @@ pub(crate) async fn skill_draft_try(
     profile: Option<String>,
     columns: u16,
     rows: u16,
-) -> Result<Curating, String> {
+) -> Result<Curating, StudioRefused> {
     let held = planes.held(&plane)?;
-    crate::off_the_window("starting Try it", move || {
+    off_the_window_refused("starting Try it", move || {
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let standing: Vec<std::path::PathBuf> = held
@@ -358,39 +358,6 @@ fn try_profile(
         Some(profile) => Ok(profile),
         None => Ok(crate::curation::default_profile(held.root(), "Try it did not start")?.0),
     }
-}
-
-/// **What the profile a studio start runs on needs approved** (#3942), where the core refused
-/// "Ask a chat to draft a skill", Try it or a redo only because nobody approved that profile on
-/// this machine: the picker's own approval, for the window to show and the person to confirm
-/// before it starts the same chat again. `tried` is the draft Try it was pressed on, with the
-/// profile picked for it; without one, the start was on the project's default. `None` where the
-/// profile needs nothing approved, so the refusal was for another reason.
-///
-/// Read again from the profile and never from the refusal's words, as a waiting chat's is
-/// (`NotStarted::approval`). Nothing is approved here: `approve_profile` is the person's press.
-#[tauri::command]
-#[specta::specta]
-pub(crate) async fn skill_chat_approval(
-    planes: tauri::State<'_, Planes>,
-    plane: PlaneId,
-    tried: Option<String>,
-    profile: Option<String>,
-) -> Result<Option<crate::chats::NeedsApproval>, String> {
-    let held = planes.held(&plane)?;
-    crate::off_the_window(
-        "reading what the chat's profile needs approved",
-        move || {
-            crate::skillchange::flag_on()?;
-            let root = held.root().to_path_buf();
-            let profile = match tried {
-                Some(id) => try_profile(&held, &drafts::one(&root, &id)?, profile)?,
-                None => crate::curation::default_profile(&root, "no chat was opened")?.0,
-            };
-            Ok(crate::chats::NeedsApproval::of_profile(&profile, &root))
-        },
-    )
-    .await
 }
 
 /// **"Ask the chat to redo it"** (S9), for a draft the project changed a file of since: the
@@ -457,9 +424,9 @@ pub(crate) async fn skill_draft_redo(
     id: String,
     columns: u16,
     rows: u16,
-) -> Result<Curating, String> {
+) -> Result<Curating, StudioRefused> {
     let held = planes.held(&plane)?;
-    crate::off_the_window("starting the chat", move || {
+    off_the_window_refused("starting the chat", move || {
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let draft = drafts::one(&root, &id)?;
@@ -498,17 +465,53 @@ fn where_level_is_reached(
     }
 }
 
-/// Opens `chat` with its prompt typed once its harness has started, as a curation chat is.
+/// **Why a studio start did not start** (#3942): the core's sentence, and the approval the
+/// profile it started on needs, where its start was refused while that profile waits for one. The
+/// window then offers Approve and start…, which shows that line and approves it only on the
+/// person's answer (`approve_profile`), from this and never from the words.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+pub struct StudioRefused {
+    pub words: String,
+    /// Read as the start was refused, of the profile it was refused on. Null for a refusal
+    /// before any start was tried, or on a profile with nothing to approve.
+    pub approval: Option<Box<crate::chats::NeedsApproval>>,
+}
+
+impl From<String> for StudioRefused {
+    fn from(words: String) -> StudioRefused {
+        StudioRefused {
+            words,
+            approval: None,
+        }
+    }
+}
+
+/// `work` off the window's thread, its refusal kept whole.
+async fn off_the_window_refused(
+    what: &'static str,
+    work: impl FnOnce() -> Result<Curating, StudioRefused> + Send + 'static,
+) -> Result<Curating, StudioRefused> {
+    crate::off_the_window(what, move || Ok(work()))
+        .await
+        .map_err(StudioRefused::from)?
+}
+
+/// Opens `chat` with its prompt typed once its harness has started, as a curation chat is. A
+/// refused start says the approval its profile needs, where it needs one.
 fn open(
     held: &Arc<Held>,
     chat: ChatTyped,
     size: purlis_core::engine::Size,
-) -> Result<Curating, String> {
+) -> Result<Curating, StudioRefused> {
     let root = held.root().to_path_buf();
-    let (label, cwd) = (chat.label.clone(), chat.cwd.clone());
+    let (label, cwd, profile) = (chat.label.clone(), chat.cwd.clone(), chat.profile.clone());
     let typed =
         crate::curation::start_typed(held, chat, size, crate::curation::when_typed, |why| {
             format!("{why}, so nothing was typed and no chat was opened.")
+        })
+        .map_err(|words| StudioRefused {
+            approval: crate::chats::NeedsApproval::of_profile(&profile, &root).map(Box::new),
+            words,
         })?;
     Ok(Curating {
         session: typed.session,
