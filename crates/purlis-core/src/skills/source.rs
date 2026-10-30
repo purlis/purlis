@@ -40,7 +40,8 @@ pub use install::install;
 pub use listed::{Listed, TABLE, add, confirm, remove, sources};
 pub use lock::{Kept, Locked, Lockfile};
 pub use review::{
-    Accepted, AcceptedSkill, Browse, Offered, Review, ReviewFile, SkillReview, browse, review,
+    Accepted, AcceptedSkill, Browse, Offered, Review, ReviewFile, SetReview, SkillReview, TooMuch,
+    browse, review, review_all, review_set,
 };
 pub use update::{
     Changed, FileChange, Offer, Unasked, Unconfirmed, UpdateReview, Updates, line_diff, update,
@@ -61,6 +62,13 @@ pub trait SkillSource {
         &self,
         skill: &Found,
     ) -> Result<(Vec<SourceFile>, Vec<purlis_skills::tree::LeftOut>), String>;
+    /// **Whether reading `skill`'s files keeps within what one read of the source may take**
+    /// (#4024), or what the read's limit says: asked before each skill of a review is read, so a
+    /// review past it stops before a skill and says which of those named fit, never cut part way.
+    /// A source with no such limit always fits.
+    fn fits_one_read(&self, _skill: &Found) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// **A commit's full name**, checked: 40 or 64 hex digits, lowercased.

@@ -98,10 +98,14 @@ type Doing =
   | { what: "delete"; skill: StudioSkill; level: SkillLevel; refused?: string };
 
 /** **The path inside Sources** (#3687): the source, then the review, as the prototype names
- *  them. Pressing the source goes to its page; the review is where the person is. */
+ *  them. Pressing the source goes to its page, and Install all to its list of skills to tick
+ *  (#4024); the last is where the person is. */
 function sourcesPath(at: SourcesAt): Crumb[] {
   const source = { id: "source", label: at.label };
+  const choose = { id: "choose", label: "Install all" };
   if (at.at === "source") return [source];
+  if (at.at === "choose") return [source, choose];
+  if (at.at === "install-all") return [source, choose, { id: at.at, label: "Review" }];
   return [
     source,
     { id: at.at, label: `${at.at === "install" ? "Install" : "Update"} ${at.skill}` },
@@ -929,11 +933,11 @@ export function SkillStudioTab({
             setDoing(undefined);
             edits.stop();
             if (at.grading !== undefined) grading(undefined, "go");
-          } else if (crumb.id === "source" && inSources !== undefined)
+          } else if ((crumb.id === "source" || crumb.id === "choose") && inSources !== undefined)
             go({
               page,
               scope,
-              sources: { at: "source", source: inSources.source, label: inSources.label },
+              sources: { at: crumb.id, source: inSources.source, label: inSources.label },
             });
           else if (at.grading !== undefined) {
             const to = gradingCrumbTo(at.grading, crumb.id);

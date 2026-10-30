@@ -689,6 +689,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_source_confirm",
     "skill_source_browse",
     "skill_install_review",
+    "skill_install_set_review",
     "skill_install",
     "skill_updates",
     "skill_update_review",

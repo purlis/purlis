@@ -468,8 +468,8 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "every studio page's reads in place (S11, #3978): the line said after a second while rows are held, and a read that failed with Try again",
   },
   "SkillSources.tsx": {
-    count: 1,
-    why: "the Sources page's updates still being read (#3687)",
+    count: 2,
+    why: "the Sources page's updates still being read (#3687), and Install all's review that is more than one read, with its first part to review in place (#4024)",
   },
   "SkillStudioDeleted.tsx": {
     count: 1,

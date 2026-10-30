@@ -1872,3 +1872,149 @@ fn a_record_of_long_urls_keeps_the_newest_that_fit_and_is_never_read_as_none() {
     assert_eq!(read[0].at, 1299, "the newest is kept");
     assert!(std::fs::metadata(checked::path(root)).unwrap().len() <= 256 * 1024);
 }
+
+/// #4024: a source of `deploy` (which refers to `notify`), `notify` and `lint`, which refers to
+/// nothing.
+fn three_skills() -> Upstream {
+    let remote = Upstream::new();
+    let tree = remote.tree(&[
+        ("skills/deploy/SKILL.md", "100644", DEPLOY),
+        ("skills/deploy/scripts/ship.sh", "100755", SHIP),
+        ("skills/notify/SKILL.md", "100644", NOTIFY),
+        (
+            "skills/lint/SKILL.md",
+            "100644",
+            b"---\nname: lint\ndescription: Checks it.\n---\n\nRun the linter.\n",
+        ),
+    ]);
+    remote.commit(&tree, None);
+    remote
+}
+
+/// The review a set review answered, or a failure naming what it answered instead.
+fn whole(set: SetReview) -> Review {
+    match set {
+        SetReview::Review(review) => review,
+        SetReview::TooMuch(too_much) => panic!("more than one read: {too_much:?}"),
+    }
+}
+
+#[test]
+fn a_set_of_skills_installs_through_one_review_and_one_change() {
+    let remote = three_skills();
+    let tmp = plane();
+    let root = tmp.path();
+    let source = remote.source();
+    let named = ["notify".to_owned(), "deploy".to_owned(), "lint".to_owned()];
+    let review = whole(review_set(root, &source, &named).unwrap());
+    // Each once, notify after the one that brought it; every skill's own marks in the one review.
+    let names: Vec<(&str, Option<&str>)> = review
+        .skills
+        .iter()
+        .map(|s| (s.name.as_str(), s.brought_by.as_deref()))
+        .collect();
+    assert_eq!(
+        names,
+        [("notify", None), ("deploy", None), ("lint", None)],
+        "notify was named first, so nothing brings it along"
+    );
+    assert!(!review.skills[1].summary.is_empty());
+    assert!(review.skills[2].summary.is_empty());
+
+    let (made, _) = on(root, |cx| {
+        install(cx, &source, &Level::project(), &review.accepted(), None)
+    });
+    assert_eq!(made.unwrap().len(), 3);
+    // Each pinned to the reviewed commit (that an install is one commit is
+    // `an_install_into_a_git_plane_is_one_commit_of_the_copies_and_the_lockfile`).
+    let lock = lock::read(root, Kept::Shared).unwrap().lock;
+    let pinned: Vec<(&str, &Commit)> = lock
+        .skills
+        .iter()
+        .map(|s| (s.name.as_str(), &s.commit))
+        .collect();
+    assert_eq!(
+        pinned,
+        // The lockfile keeps its entries by name.
+        [
+            ("deploy", &review.commit),
+            ("lint", &review.commit),
+            ("notify", &review.commit)
+        ]
+    );
+}
+
+#[test]
+fn installing_all_reviews_every_skill_not_installed_from_the_source_yet() {
+    let remote = three_skills();
+    let tmp = plane();
+    let root = tmp.path();
+    let source = remote.source();
+    let first = review(root, &source, &["lint".to_owned()]).unwrap();
+    on(root, |cx| {
+        install(cx, &source, &Level::project(), &first.accepted(), None)
+    })
+    .0
+    .unwrap();
+
+    let rest = whole(review_all(root, &source).unwrap());
+    let names: Vec<&str> = rest.skills.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["deploy", "notify"]);
+    on(root, |cx| {
+        install(cx, &source, &Level::project(), &rest.accepted(), None)
+    })
+    .0
+    .unwrap();
+    // Every one is installed now: a review of none.
+    assert!(whole(review_all(root, &source).unwrap()).skills.is_empty());
+}
+
+#[test]
+fn a_set_past_one_read_says_which_skills_fit_and_those_install_in_one_part() {
+    // Forty instructions of a mebibyte each: listing them reads forty, and one read holds
+    // sixty-four, so the review of all of them fits twenty-four.
+    let remote = Upstream::new();
+    let names: Vec<String> = (0..40).map(|n| format!("s{n:02}")).collect();
+    let entries: Vec<(&str, &str, String)> = names
+        .iter()
+        .map(|name| {
+            let mut skill = format!("---\nname: {name}\ndescription: x\n---\n").into_bytes();
+            skill.resize(1024 * 1024 - 1, b'x');
+            let one = remote.raw_tree(&[("100644", "SKILL.md", remote.blob(&skill))]);
+            ("40000", name.as_str(), one)
+        })
+        .collect();
+    let skills = remote.raw_tree(&entries);
+    remote.commit(&remote.raw_tree(&[("40000", "skills", skills)]), None);
+    let tmp = plane();
+    let root = tmp.path();
+    let source = remote.source();
+
+    let SetReview::TooMuch(too_much) = review_set(root, &source, &names).unwrap() else {
+        panic!("forty mebibytes more is past one read");
+    };
+    assert_eq!(too_much.fits, names[..24]);
+    assert_eq!(too_much.rest, names[24..]);
+    assert!(
+        too_much.why.contains("MiB of skills to read"),
+        "{}",
+        too_much.why
+    );
+    // The same answer for `--all`.
+    assert_eq!(
+        review_all(root, &source).unwrap(),
+        SetReview::TooMuch(too_much.clone())
+    );
+
+    // The first part is one review and one install, its files read once.
+    let part = whole(review_set(root, &source, &too_much.fits).unwrap());
+    assert_eq!(part.skills.len(), 24);
+    let (made, _) = on(root, |cx| {
+        install(cx, &source, &Level::project(), &part.accepted(), None)
+    });
+    assert_eq!(made.unwrap().len(), 24);
+    // And the rest is what `--all` reviews next.
+    let next = whole(review_all(root, &source).unwrap());
+    let left: Vec<&str> = next.skills.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(left, too_much.rest);
+}
