@@ -33,8 +33,8 @@ const profiles = (n: number) => `${n} profile${n === 1 ? "" : "s"}`;
  * the open project `plane` gets. **Sign in N profiles** records the ticked ones on the pool (the
  * core's Add a profile… and Remove, so its runner keeps exactly them) and then signs each in, one
  * after another, in the same strip ({@link PoolSignIn}); each one's end, signed in or not, goes on
- * to the next. A profile whose harness's sign-in the window does not drive yet is recorded and
- * left to its line's own Sign in. **Not now** records nothing. Either ends on the pool's lines
+ * to the next. A profile whose harness's sign-in the window does not drive is recorded and left
+ * to its line's own Sign in. **Not now** records nothing. Either ends on the pool's lines
  * ({@link PoolProfiles}), each not signed in offering Sign in.
  */
 export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | undefined }) {
