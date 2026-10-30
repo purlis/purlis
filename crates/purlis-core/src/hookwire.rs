@@ -1657,6 +1657,22 @@ pub struct CommitAsk {
     pub message: String,
     /// What to stage for it.
     pub stage: Stage,
+    /// The branch folder the command was run for (#3927), when it ran inside one: its paths
+    /// are then relative to that folder's top, as git takes them there, and not to where the
+    /// chat stands. Held to the app's record all the same: the folder must be the one the chat
+    /// stands in, or one below it, as a path naming it from above would have to be. Left out
+    /// when the command ran in no branch folder, so an app older than it reads the line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<FolderName>,
+}
+
+/// A branch folder by its names (#3927): `workspaces/<workspace>/.worktrees/<repo>/<piece>`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FolderName {
+    pub workspace: String,
+    pub repo: String,
+    pub piece: String,
 }
 
 /// What a [`CommitAsk`] stages before it commits.
@@ -1665,7 +1681,8 @@ pub struct CommitAsk {
 pub enum Stage {
     /// Every change to a file git already tracks in the folder (`git add -u`).
     Tracked,
-    /// These paths, each relative to where the chat stands and inside its folder.
+    /// These paths, each relative to where the chat stands and inside its folder, or, for an
+    /// ask that names its [`CommitAsk::folder`], to that folder's top (#3927).
     Paths(Vec<String>),
 }
 

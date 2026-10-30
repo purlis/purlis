@@ -5,6 +5,104 @@ use std::io::{Error, ErrorKind};
 
 use super::*;
 
+fn folder() -> FolderName {
+    FolderName {
+        workspace: "alpha".to_owned(),
+        repo: "thing".to_owned(),
+        piece: "piece".to_owned(),
+    }
+}
+
+#[test]
+fn a_path_in_the_branch_folder_is_taken_from_where_the_command_runs_in_it() {
+    // #3927: `env -C <folder>`, or a shell standing in it or below it.
+    let top = Path::new("/p/workspaces/alpha/.worktrees/thing/piece");
+    let paths = |of: &[&str]| of.iter().map(|p| (*p).to_owned()).collect::<Vec<_>>();
+    let placed =
+        |here: &Path, of: &[&str]| relative_to_the_folder(top, here, &folder(), paths(of));
+    assert_eq!(
+        placed(top, &["crates/a.rs", "./b", "-n"]),
+        Ok(paths(&["crates/a.rs", "b", "-n"]))
+    );
+    assert_eq!(
+        placed(&top.join("crates"), &["a.rs", "../README.md", "."]),
+        Ok(paths(&["crates/a.rs", "README.md", "crates"]))
+    );
+    assert_eq!(placed(top, &["."]), Ok(paths(&["."])));
+    // Spelled from the workspace or the project, naming this very folder.
+    assert_eq!(
+        placed(
+            &top.join("crates"),
+            &[
+                ".worktrees/thing/piece/crates/a.rs",
+                "workspaces/alpha/.worktrees/thing/piece/b"
+            ]
+        ),
+        Ok(paths(&["crates/a.rs", "b"]))
+    );
+    // Written whole, inside it.
+    assert_eq!(
+        placed(
+            top,
+            &["/p/workspaces/alpha/.worktrees/thing/piece/src/x.rs"]
+        ),
+        Ok(paths(&["src/x.rs"]))
+    );
+    assert_eq!(placed(top, &[]), Ok(Vec::new()));
+}
+
+#[test]
+fn a_path_outside_the_branch_folder_is_refused_naming_the_spelling_that_works() {
+    let top = Path::new("/p/workspaces/alpha/.worktrees/thing/piece");
+    for (here, path) in [
+        (top.to_path_buf(), "../other/a.rs"),
+        (top.join("src"), "../../a.rs"),
+        (top.to_path_buf(), "/p/workspaces/alpha/README.md"),
+    ] {
+        let why =
+            relative_to_the_folder(top, &here, &folder(), vec![path.to_owned()]).unwrap_err();
+        assert!(why.contains("thing · piece"), "{path}: {why}");
+        assert!(
+            why.contains("relative to the branch folder"),
+            "{path}: {why}"
+        );
+        assert!(
+            why.contains(".worktrees/thing/piece/<path>"),
+            "{path}: {why}"
+        );
+    }
+}
+
+#[test]
+fn a_message_that_starts_with_two_dashes_is_the_message() {
+    use clap::Parser as _;
+    for words in [
+        vec![
+            "purlis",
+            "worktree",
+            "commit",
+            "-m",
+            "--why it changed",
+            "--all",
+        ],
+        vec![
+            "purlis",
+            "worktree",
+            "commit",
+            "--message",
+            "--why it changed",
+            "a",
+        ],
+    ] {
+        let crate::Command::Worktree(crate::piece::WorktreeCommand::Commit { message, .. }) =
+            crate::Cli::try_parse_from(&words).expect("parses").command
+        else {
+            panic!("{words:?} parsed as another command");
+        };
+        assert_eq!(message.as_deref(), Some("--why it changed"), "{words:?}");
+    }
+}
+
 #[test]
 fn an_app_that_ends_the_connection_at_once_did_not_take_it_and_a_quiet_one_may_have() {
     for kind in [

@@ -72,13 +72,14 @@ env -C .worktrees/<repo>/<piece> purlis worktree done     # finished; or: … pu
 - `add` takes `--base <branch>` to start from something other than the default branch. Exit 2
   means the piece name is already claimed, so pick another name. `add` and `list` work from
   anywhere in the workspace.
-- **`commit` goes by the folder the chat was started in.** The app makes the commit outside
-  the sandbox, and it reads where the chat stands from where the app started it, never from a
-  `cd`. So name the piece, or paths under it, relative to that folder:
-  `.worktrees/<repo>/<piece>/…` from the workspace folder, `workspaces/<ws>/.worktrees/<repo>/<piece>/…`
-  from the plane root. An absolute path is refused, and so is `--all` from above the piece;
-  naming the piece's own folder commits every change in it. A chat started inside the piece
-  passes `--all` or paths relative to the piece.
+- **`commit` takes paths as git does where it runs.** Run inside the piece
+  (`env -C .worktrees/<repo>/<piece> purlis worktree commit -m "<message>" <path> …`), paths
+  are relative to that folder, and `--all` commits every change to a tracked file. Run from
+  the folder the chat was started in, name the piece or paths under it from there:
+  `.worktrees/<repo>/<piece>/…` from the workspace folder,
+  `workspaces/<ws>/.worktrees/<repo>/<piece>/…` from the plane root; naming the piece's own
+  folder commits every change in it. Either way the piece must be the chat's own folder or one
+  below it. A message may start with `-`.
 - **`update`, `push`, `done` and `abandon` go by the current folder** of the command. Run them
   from inside the piece: `env -C <piece> purlis worktree …` does it in one command.
 - Run `commit` and `update` alone in their call: a `cd … &&` before them, a pipe or
