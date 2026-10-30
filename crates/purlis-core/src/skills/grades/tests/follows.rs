@@ -216,3 +216,59 @@ fn a_rename_takes_the_chats_this_machine_kept_of_its_grades_along() {
     );
     assert_eq!(kept::kept(root, "deploy", "01GRADE", "01CHAT"), None);
 }
+
+#[test]
+fn grading_after_each_edit_follows_a_rename_and_a_move_and_goes_with_a_delete() {
+    use super::after_edit;
+    let tmp = graded_then_edited();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
+    std::fs::write(root.join("workspaces/ops/workspace.md"), "# ops\n").unwrap();
+    run(root, &["add", "-A"]);
+    run(
+        root,
+        &[
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            "add ops",
+        ],
+    );
+    let (project, ops) = (Level::project(), Level::workspace("ops"));
+    let accepted = after_edit::Accepted {
+        profile: "work".into(),
+        model: None,
+        chats: 6,
+        token_cap: cap::LEAST,
+        limit_usd: 1.0,
+        tests: "0".repeat(64),
+        previous: None,
+        runs_on: None,
+        at: "2026-10-30T10:00:00+00:00".into(),
+        graded: None,
+        paused: None,
+    };
+    after_edit::turn_on(root, &project, "deploy", accepted.clone()).unwrap();
+
+    did(root, |cx| {
+        crate::skills::verbs::rename(cx, &project, "deploy", "ship")
+    })
+    .unwrap();
+    assert_eq!(after_edit::of(root, &project, "deploy"), None);
+    assert_eq!(
+        after_edit::of(root, &project, "ship"),
+        Some(accepted.clone())
+    );
+
+    did(root, |cx| {
+        crate::skills::verbs::move_to(cx, &project, "ship", &ops, None)
+    })
+    .unwrap();
+    assert_eq!(after_edit::of(root, &project, "ship"), None);
+    assert_eq!(after_edit::of(root, &ops, "ship"), Some(accepted));
+
+    did(root, |cx| crate::skills::verbs::delete(cx, &ops, "ship")).unwrap();
+    assert_eq!(after_edit::of(root, &ops, "ship"), None);
+}
