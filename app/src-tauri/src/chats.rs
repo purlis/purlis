@@ -3580,12 +3580,14 @@ impl Chats {
         }
         // **Its profile is kept, and signed in, on the pool's runner before it starts there**
         // (#2049): signed in, it starts with nobody asked, a moved chat's too; signed out, it
-        // starts nothing and waits as one Ask to sign it in on that pool.
+        // starts nothing and waits as one Ask to sign it in on that pool. Settings too large to
+        // go stay behind, and its tab says which (#4081).
+        let mut left_behind = None;
         if on_the_runner
             && let (Some(on_pools), Some(profile)) = (&self.profiles_on_pools, &chat.profile)
             && let Some(pool) = self.sessions.pool_for(workspace.as_deref())
         {
-            on_pools.ready(&self.project, &pool, profile)?;
+            left_behind = on_pools.ready(&self.project, &pool, profile)?;
         }
         // The services of this machine the person allowed it alone, which the runner is told
         // of: it leaves out those its own sandbox does not give, and asks about each (#2590).
@@ -3694,7 +3696,7 @@ impl Chats {
                 why == Why::New,
             )
         };
-        let mut late = Vec::new();
+        let mut late: Vec<String> = left_behind.into_iter().collect();
         // An older Claude Code keeps its own proxy, and its first chat says so (#1665), marked
         // said once its tab shows it (#1699).
         let older = sandbox
