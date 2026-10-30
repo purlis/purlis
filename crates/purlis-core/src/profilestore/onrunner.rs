@@ -237,9 +237,7 @@ pub fn keep(
             brought(record);
             // A pool's old runner carries its sign-ins once its last chat has ended, after this
             // one kept the profile (#4055): taken in where it has none of its own.
-            if record.adopted.is_none() {
-                super::made::take_carried(homes, &kept.name);
-            }
+            super::made::take_carried(homes, home, record);
             return Ok(record.clone());
         }
         let mut record = match &defaults {
@@ -274,12 +272,12 @@ pub fn keep(
                     &mut made_folder,
                 )?;
                 store.profiles.retain(|p| p.name != kept.name);
-                // The sign-ins its last runner carried to this one, when its pool moved (#4011).
-                super::made::take_carried(homes, &kept.name);
                 made.record
             }
         };
         brought(&mut record);
+        // The sign-ins its pool's old runner carried to this one as it drained (#4011).
+        super::made::take_carried(homes, home, &record);
         store.profiles.push(record.clone());
         Ok(record)
     });

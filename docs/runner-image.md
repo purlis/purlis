@@ -33,9 +33,11 @@ own, as long as it keeps the contract below.
   volume, its profiles' sign-ins are carried to the new runner's home volume, on the Docker
   host, by a short-lived container of the new image with no network: each harness's sign-in
   file alone (Claude Code's `.credentials.json`, Codex's and opencode's `auth.json`), never a
-  link, a setting, a hook, an instruction or a transcript, and nothing of purlis's own. One the
-  new runner was signed in with meanwhile is kept over it. One that cannot be carried is signed
-  in again, and the old runner is removed all the same (#4011, #4055).
+  link, a setting, a hook, an instruction or a transcript, and nothing of purlis's own. The
+  container writes only into a folder of its own under the new runner's data home, and the new
+  runner takes each sign-in in as it keeps the profile. One the new runner was signed in with
+  meanwhile is kept over it. One that cannot be carried is signed in again, and the old runner is
+  removed all the same (#4011, #4055; ADR 0095, amended 2026-10-30).
 - **Tags:** `sha-<commit>` for the commit it was built from, and `main` for the image of
   the latest commit. `main` only moves forward: when an older commit's run finishes after
   a newer one's, its image gets only its `sha-<commit>` tag. Tags can move, so a pool names
