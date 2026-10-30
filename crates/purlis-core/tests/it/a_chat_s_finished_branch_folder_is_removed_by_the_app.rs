@@ -205,9 +205,9 @@ fn a_folder_is_never_removed_for_a_chat_standing_in_it_nor_the_clone_itself() {
 
 #[test]
 fn a_folder_whose_branch_landed_by_a_squash_merge_is_removed_and_its_branch_kept() {
+    purlis_core::unsteered!();
     // #3879, on review: the forge squash-merges a lane and deletes its branch, and the clone's
     // fetch prunes it. Its commits are on no other ref, yet nothing in the folder is lost.
-    purlis_core::unsteered!();
     let (world, theirs) = World::with_a_forge();
     let clone = world.workspace().join(REPO);
     let code = purlis_core::piececmd::add(
