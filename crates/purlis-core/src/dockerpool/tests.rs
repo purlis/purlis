@@ -853,6 +853,8 @@ impl FakeDocker {
              prev=; for a in \"$@\"; do [ \"$prev\" = --cidfile ] && echo {probe} > \"$a\"; \
              prev=$a; done; \
              exit \"$(cat '{holds}' 2>/dev/null || echo 0)\" ;; esac\ncase \"$1 $2\" in\n  \
+             'run --rm') [ -f '{copy_fails}' ] && \
+             {{ echo 'cp: cannot open' >&2; exit 1; }}; true ;;\n  \
              'run '*) [ -f '{run_fails}' ] && \
              {{ echo 'the runtime refused it' >&2; exit 125; }}; cat '{id}' ;;\n  \
              'container inspect') cat '{inspect}' ;;\n  \
@@ -879,6 +881,7 @@ impl FakeDocker {
             paired = at("paired"),
             rm_fails = at("rm-fails"),
             run_fails = at("run-fails"),
+            copy_fails = at("copy-fails"),
             containers = at("containers"),
             holds = at("holds"),
             probe = PROBE_ID,
@@ -905,6 +908,10 @@ impl FakeDocker {
 
     pub(crate) fn file(&self, name: &str) -> String {
         std::fs::read_to_string(self.dir.path().join(name)).unwrap_or_default()
+    }
+
+    pub(crate) fn file_path(&self, name: &str) -> std::path::PathBuf {
+        self.dir.path().join(name)
     }
 
     pub(crate) fn set(&self, name: &str, text: &str) {
@@ -2586,4 +2593,146 @@ fn the_disk_volumes_hold_is_read_by_system_df_alone_starting_nothing() {
     let held = fake.docker().homes_held().unwrap();
     assert_eq!(held.get("purlis-runner-first-home"), Some(&1_234_000_000));
     assert_eq!(fake.file("log").trim(), "system df --verbose");
+}
+
+/// **What a follow copies of the old runner's home is its profiles and nothing else** (#4011):
+/// the store's record of them, the folders purlis made them in and each harness's own folder,
+/// their modes kept, the new home's own files left as they are. Not the runner's identity, its
+/// harness installs or its projects. Run by the shell, as in the new runner's image.
+#[cfg(unix)]
+#[test]
+fn a_follow_copies_the_profiles_of_a_home_and_nothing_else() {
+    use std::os::unix::fs::PermissionsExt;
+    let from = tempfile::tempdir().unwrap();
+    let to = tempfile::tempdir().unwrap();
+    let put = |root: &std::path::Path, path: &str, text: &str, mode: u32| {
+        let path = root.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, text).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+    };
+    put(
+        from.path(),
+        ".config/purlis/profiles.json",
+        "{\"version\":1}",
+        0o600,
+    );
+    put(from.path(), ".config/purlis/peers.json", "old peers", 0o600);
+    put(
+        from.path(),
+        ".local/share/purlis/profiles/work/config/.credentials.json",
+        "work's sign-in",
+        0o600,
+    );
+    put(
+        from.path(),
+        ".local/share/purlis/harnesses/claude/2.1.0/claude",
+        "",
+        0o755,
+    );
+    put(
+        from.path(),
+        ".local/share/purlis/projects/p1/README",
+        "",
+        0o644,
+    );
+    put(
+        from.path(),
+        ".claude/.credentials.json",
+        "claude's sign-in",
+        0o600,
+    );
+    put(from.path(), ".claude.json", "{\"oauthAccount\":{}}", 0o600);
+    put(from.path(), ".config/opencode/opencode.json", "{}", 0o600);
+    put(
+        from.path(),
+        ".local/share/opencode/auth.json",
+        "opencode's sign-in",
+        0o600,
+    );
+    put(to.path(), ".config/purlis/peers.json", "new peers", 0o600);
+
+    let ran = std::process::Command::new("/bin/sh")
+        .arg("-c")
+        .arg(COPY_PROFILES)
+        .arg("sh")
+        .arg(from.path())
+        .arg(to.path())
+        .args(crate::profilestore::in_a_runner_home())
+        .output()
+        .unwrap();
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+
+    let read = |path: &str| std::fs::read_to_string(to.path().join(path)).ok();
+    let mode = |path: &str| {
+        std::fs::metadata(to.path().join(path))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777
+    };
+    assert_eq!(
+        read(".config/purlis/profiles.json").as_deref(),
+        Some("{\"version\":1}")
+    );
+    assert_eq!(
+        read(".local/share/purlis/profiles/work/config/.credentials.json").as_deref(),
+        Some("work's sign-in")
+    );
+    assert_eq!(
+        mode(".local/share/purlis/profiles/work/config/.credentials.json"),
+        0o600
+    );
+    assert_eq!(
+        read(".claude/.credentials.json").as_deref(),
+        Some("claude's sign-in")
+    );
+    assert_eq!(
+        read(".claude.json").as_deref(),
+        Some("{\"oauthAccount\":{}}")
+    );
+    assert_eq!(
+        read(".local/share/opencode/auth.json").as_deref(),
+        Some("opencode's sign-in")
+    );
+    assert_eq!(
+        read(".config/opencode/opencode.json").as_deref(),
+        Some("{}")
+    );
+    // What the new runner has of its own stays its own, and nothing else of the home comes.
+    assert_eq!(
+        read(".config/purlis/peers.json").as_deref(),
+        Some("new peers")
+    );
+    assert!(!to.path().join(".local/share/purlis/harnesses").exists());
+    assert!(!to.path().join(".local/share/purlis/projects").exists());
+    // A folder the copy makes is the runner's user's alone.
+    assert_eq!(mode(".local/share/purlis") & 0o077, 0);
+}
+
+/// A home with no profile in it copies nothing, and does not fail.
+#[cfg(unix)]
+#[test]
+fn a_home_with_no_profiles_copies_nothing() {
+    let from = tempfile::tempdir().unwrap();
+    let to = tempfile::tempdir().unwrap();
+    let ran = std::process::Command::new("/bin/sh")
+        .arg("-c")
+        .arg(COPY_PROFILES)
+        .arg("sh")
+        .arg(from.path())
+        .arg(to.path())
+        .args(crate::profilestore::in_a_runner_home())
+        .output()
+        .unwrap();
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    assert_eq!(std::fs::read_dir(to.path()).unwrap().count(), 0);
 }

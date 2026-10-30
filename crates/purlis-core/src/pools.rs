@@ -16,9 +16,10 @@
 //!
 //! - **After an update, a pool of purlis's own image follows the desktop's version, side by
 //!   side** ([`follow`], #2749, ruled 2026-10-20): a runner of the image of the desktop's
-//!   version is made, checked and paired beside the pool's, kept as the pool's runner, and the
-//!   one it replaces is kept draining: it keeps its chats and starts no new one, and is removed
-//!   once its last chat has ended ([`drain`]). A pool of a team's own image is never moved.
+//!   version is made beside the pool's, given the old runner's profiles (#4011), checked and
+//!   paired, kept as the pool's runner, and the one it replaces is kept draining: it keeps its
+//!   chats and starts no new one, and is removed once its last chat has ended ([`drain`]). A
+//!   pool of a team's own image is never moved.
 //!
 //! A pool's chats start on its one runner that is not draining: the one called by the pool's
 //! name, or the one made beside it after an update.
@@ -214,7 +215,9 @@ pub fn workspaces_on_pools(
 /// **Moves the pool `name` to `image`, the runner image of the desktop's version** (#2749): a
 /// runner of `image` is made beside the pool's, held to the pool's limits, checked, paired with
 /// `desktop` and kept as the pool's runner, and every runner of the pool before it is kept
-/// draining ([`runners::succeed_locked`]). The runner kept, or `None` where the pool is of
+/// draining ([`runners::succeed_locked`]). Before it is paired, the profiles of the runner it
+/// replaces are copied to its home on the Docker host ([`Docker::copy_profiles`], #4011), so a
+/// profile signed in on the pool stays signed in. The runner kept, or `None` where the pool is of
 /// `image` already.
 ///
 /// Refused, with nothing changed, for a pool of a team's own image, which is never moved, and
@@ -243,6 +246,8 @@ pub fn follow(
         )));
     }
     let successor = crate::dockerpool::successor_name(name, image);
+    // The runner it replaces, whose profiles it takes (#4011).
+    let replaced = runners::runner_for(config_root, name).ok();
     // What a follow that stopped short of keeping its runner left goes first (#2869).
     clear_leftovers_locked(config_root, docker, &successor, &locked)?;
     let made = docker
@@ -255,9 +260,22 @@ pub fn follow(
         })
         .and_then(|runner| docker.make_for(&runner, Some(&runners::desktop_label(config_root))))
         .map_err(|why| Refused::Other(why.0))?;
-    let kept = docker
-        .pair(&made, desktop)
-        .map_err(|why| Refused::Other(why.0))
+    // Its profiles come before it is paired, so it never serves without them (#4011).
+    let copied = match &replaced {
+        Some(replaced) => docker.copy_profiles(&replaced.made, &made).map_err(|why| {
+            Refused::Other(format!(
+                "the profiles of runner {} could not be copied to the new runner: {why}",
+                replaced.name()
+            ))
+        }),
+        None => Ok(()),
+    };
+    let kept = copied
+        .and_then(|()| {
+            docker
+                .pair(&made, desktop)
+                .map_err(|why| Refused::Other(why.0))
+        })
         .and_then(|answered| {
             runners::succeed_locked(config_root, name, &made, &answered, desktop, &locked)
         });

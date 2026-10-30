@@ -56,6 +56,27 @@ pub const PREFIX: &str = "purlis-runner-";
 /// Where `purlis` is in a runner image (`docs/runner-image.md`).
 pub const PURLIS: &str = "/usr/local/bin/purlis";
 
+/// **The shell script a follow copies a runner's profiles with** (#4011): `sh -c` hands it the
+/// old home, the new home and each path under them to copy ([`crate::profilestore::in_a_runner_home`]).
+/// A folder is copied into the folder of its name, a file beside its own, each with its modes;
+/// a path the old home does not have is passed over, and whatever the new home has of its own
+/// stays. What it makes is the runner's user's alone. Any failure fails the copy.
+pub const COPY_PROFILES: &str = r#"set -eu
+umask 077
+from=$1 to=$2
+shift 2
+cd "$from"
+for path in "$@"; do
+  if [ -d "$path" ] && [ ! -L "$path" ]; then
+    mkdir -p "$to/$path"
+    cp -a "$path/." "$to/$path"
+  elif [ -e "$path" ] || [ -L "$path" ]; then
+    mkdir -p "$to/$(dirname "$path")"
+    cp -a "$path" "$to/$path"
+  fi
+done
+"#;
+
 /// The longest runner name: a pool's longest, and the dash and eight hex digits a runner made
 /// beside it after an update adds ([`successor_name`], #2749).
 const MOST_NAME: usize = 49;
@@ -537,6 +558,53 @@ impl Made {
     /// `docker`'s arguments that ask the runner's `purlis` its version (#2749).
     pub fn version_args(&self) -> Vec<String> {
         self.exec(&["--version"])
+    }
+
+    /// **`docker`'s arguments that copy `from`'s profiles into this runner's home** (#4011,
+    /// ruled 2026-10-30): a container of this runner's image, removed once it ends, that mounts
+    /// `from`'s home volume read-only and this runner's home volume, and runs
+    /// [`COPY_PROFILES`] as this runner's user. It reaches no network, holds no capability and
+    /// writes nothing but the new home, so nothing of the homes leaves the Docker host.
+    pub fn copy_profiles_args(&self, from: &Made) -> Vec<String> {
+        let mut args: Vec<String> = [
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--user",
+            &self.runner.user.spelled(),
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--read-only",
+            "--pids-limit",
+            "64",
+            "--mount",
+            &format!(
+                "type=volume,source={},target=/from,readonly",
+                from.runner.volume()
+            ),
+            "--mount",
+            &format!("type=volume,source={},target=/to", self.runner.volume()),
+            "--entrypoint",
+            "/bin/sh",
+            self.runner.image.as_str(),
+            "-c",
+            COPY_PROFILES,
+            "sh",
+            "/from",
+            "/to",
+        ]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect();
+        args.extend(
+            crate::profilestore::in_a_runner_home()
+                .iter()
+                .map(|path| path.display().to_string()),
+        );
+        args
     }
 
     /// `docker`'s arguments that run the runner's own `purlis profile sign-in` of its profile
@@ -2393,6 +2461,13 @@ impl Docker {
                 out.trim()
             ))
         })
+    }
+
+    /// **Copies `from`'s profiles into `to`'s home** (#4011), on the Docker host
+    /// ([`Made::copy_profiles_args`]): nothing of either home passes through this machine.
+    pub fn copy_profiles(&self, from: &Made, to: &Made) -> Result<(), Refused> {
+        self.run(&to.copy_profiles_args(from), None, MOST_INSPECTED)
+            .map(|_| ())
     }
 
     /// Remove `made`'s container and its home's volume, whatever state they are in.

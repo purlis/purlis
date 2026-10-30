@@ -400,6 +400,70 @@ fn a_new_runner_that_does_not_pair_is_taken_back_and_the_pool_stays_as_it_was() 
     );
 }
 
+/// **A follow keeps the pool's sign-ins** (#4011, ruled 2026-10-30): the old runner's profiles
+/// are copied from its home volume to the new runner's on the Docker host, after the new runner
+/// is made and before it is paired, so it never serves without them.
+#[test]
+fn a_follow_copies_the_old_runners_profiles_to_the_new_runner_before_it_is_paired() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    makes(&fake, &successor, NEW, &successor_answers());
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    follow(config.path(), &fake.docker(), "first", &new_image, &ours).unwrap();
+
+    let log = fake.file("log");
+    let lines: Vec<&str> = log.lines().collect();
+    let at = |what: &dyn Fn(&str) -> bool| lines.iter().position(|line| what(line));
+    let made = at(&|line| line.starts_with("run --detach")).expect(&log);
+    let copied = at(&|line| line.starts_with("run --rm")).expect(&log);
+    let paired = at(&|line| line.starts_with("exec ") && line.ends_with("--pair")).expect(&log);
+    assert!(made < copied && copied < paired, "{log}");
+    let copy = lines[copied];
+    assert!(
+        copy.contains("type=volume,source=purlis-runner-first-home,target=/from,readonly"),
+        "{copy}"
+    );
+    assert!(
+        copy.contains(&format!(
+            "type=volume,source=purlis-runner-{successor}-home,target=/to "
+        )),
+        "{copy}"
+    );
+    assert!(copy.contains("--network none"), "{copy}");
+    assert!(copy.contains(NEW), "{copy}");
+    assert!(copy.contains(" .local/share/purlis/profiles"), "{copy}");
+}
+
+/// A follow whose copy of the profiles fails is taken back, as one whose runner does not pair
+/// is: the pool stays on its old runner, signed in, and the next look tries again.
+#[test]
+fn a_follow_whose_profiles_are_not_copied_is_taken_back_and_the_pool_stays_as_it_was() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    makes(
+        &fake,
+        &crate::dockerpool::successor_name("first", &new_image),
+        NEW,
+        &successor_answers(),
+    );
+    fake.set("copy-fails", "");
+
+    let refused = follow(config.path(), &fake.docker(), "first", &new_image, &ours).unwrap_err();
+
+    assert!(refused.to_string().contains("profiles"), "{refused}");
+    assert!(!fake.file("log").contains("--pair"), "{}", fake.file("log"));
+    assert!(fake.file("log").contains("container rm --force"));
+    assert_eq!(runners::read(config.path()).unwrap(), vec![old.clone()]);
+}
+
 /// **A pool's runner suspends after the pool's own time** (#3471): the runner made as it is
 /// added, and the one made beside it after an update.
 #[test]

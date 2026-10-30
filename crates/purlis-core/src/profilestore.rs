@@ -325,6 +325,37 @@ pub(crate) fn defaults(
     }
 }
 
+/// **What of a runner's home holds its profiles** (#4011, ruled 2026-10-30): each path, relative
+/// to the home, that a Docker pool's new runner takes from the runner it replaces when the pool
+/// follows an update, so a profile signed in there stays signed in. The store's record of them,
+/// under each spelling of the config home; the folders purlis made them in, under each spelling
+/// of the data home; and each harness's own folder a profile is adopted at ([`defaults`]), with
+/// Claude Code's `~/.claude.json` beside its folder. Nothing else of the home: not the runner's
+/// device id, link key or peers, its harness installs, its projects or its browsers.
+pub fn in_a_runner_home() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for config in crate::names::CONFIG_HOME.spellings() {
+        paths.push(Path::new(".config").join(config).join(FILE));
+    }
+    for data in crate::names::DATA_HOME.spellings() {
+        paths.push(Path::new(".local/share").join(data).join(made::DIR));
+    }
+    for kind in crate::profiles::KINDS {
+        let Some((config, data, own)) = defaults(kind.word, Path::new("")) else {
+            continue;
+        };
+        for folder in std::iter::once(config).chain(data) {
+            paths.push(if own.is_empty() {
+                folder
+            } else {
+                folder.join(own)
+            });
+        }
+    }
+    paths.push(PathBuf::from(".claude.json"));
+    paths
+}
+
 /// What this device is called in a profile's title.
 pub fn this_device() -> &'static str {
     if cfg!(target_os = "macos") {
