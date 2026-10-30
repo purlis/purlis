@@ -484,7 +484,7 @@ pub fn run_on_its_runner(
     // Its workspace clones as its session started here: only those name its repos (#2053).
     let clones_at_start = held.chats().clones_at_start(session);
     // And only those purlis cloned or the person saved from the window.
-    let config_root = purlis_core::machine::config_root();
+    let config_root = purlis_core::forge::apptoken::record_root();
     let read = |tool: &Tool| match tool.mint {
         Some(_) => minted(
             &ctx,

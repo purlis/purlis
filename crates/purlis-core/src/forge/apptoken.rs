@@ -701,6 +701,16 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+/// **The config home whose record of the window's clones a mint reads** ([`For::config_root`]):
+/// this machine's, and none in a fenced build, whose window records none either
+/// (`window_git`), so no clone counts there.
+pub fn record_root() -> Option<PathBuf> {
+    if crate::fence::FENCED {
+        return None;
+    }
+    crate::machine::config_root()
+}
+
 /// **[`token_for`], its key read from the tool's vault through `ctx`** by the one read a GitHub
 /// App's key is given ([`crate::secrets::cmd::read_to_mint`]): what a chat's run is handed, on
 /// this machine or sent to its runner.
