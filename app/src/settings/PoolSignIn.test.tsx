@@ -308,26 +308,26 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     try {
       render(<PoolProfiles pool="builds" plane={undefined} />);
       await userEvent.click(
-        await screen.findByRole("button", { name: "Sign work out on pool builds" }),
+        await screen.findByRole("button", { name: "Sign out work on pool builds" }),
       );
 
       expect(screen.getByText(/^Sign work out on pool builds\?/)).toBeVisible();
       await userEvent.click(
-        screen.getByRole("button", { name: "Stay signed in as work on pool builds" }),
+        screen.getByRole("button", { name: "Keep work signed in on pool builds" }),
       );
       expect(calls("pool_sign_out")).toEqual([]);
 
-      await userEvent.click(screen.getByRole("button", { name: "Sign work out on pool builds" }));
+      await userEvent.click(screen.getByRole("button", { name: "Sign out work on pool builds" }));
       const before = profilesAsked;
       await userEvent.click(
-        screen.getByRole("button", { name: "Yes, sign work out on pool builds" }),
+        screen.getByRole("button", { name: "Yes, sign out work on pool builds" }),
       );
 
       expect(calls("pool_sign_out")).toEqual([{ pool: "builds", name: "work" }]);
       expect(await screen.findByText("work is signed out on pool builds.")).toBeVisible();
       await waitFor(() => expect(profilesAsked).toBe(before + 1));
       // Codex's own sign-out runs too; opencode's is its terminal's alone.
-      expect(screen.getByRole("button", { name: "Sign fast out on pool builds" })).toBeVisible();
+      expect(screen.getByRole("button", { name: "Sign out fast on pool builds" })).toBeVisible();
     } finally {
       signedIn = false;
       await act(() => askProfiles("builds"));
