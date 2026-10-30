@@ -2952,6 +2952,24 @@ export const commands = {
 	 */
 	poolProfiles: (pool: string) => typedError<PoolProfileRow[], string>(__TAURI_INVOKE("pool_profiles", { pool })),
 	/**
+	 *  **Starts signing `name` in on pool `pool`'s runner with no terminal** (#4042, spec #4023):
+	 *  the runner's own `purlis profile sign-in`, kept there first and run there through this
+	 *  machine's `docker` as [`sign_in_line`]'s is, but with pipes, its output read for the steps
+	 *  [`pool_sign_in_next`] answers. Nothing of this machine's sign-in goes to the runner (ADR
+	 *  0095). A sign-in of the same profile on the same pool already running is cancelled. Answers
+	 *  the sign-in's number.
+	 */
+	poolSignInStart: (pool: string, name: string, provider: string | null) => typedError<number, string>(__TAURI_INVOKE("pool_sign_in_start", { pool, name, provider })),
+	/**
+	 *  **The next step of sign-in `flow`**, waiting a while for one; null while there is none yet.
+	 *  After its last step, the sign-in is let go; signed in, its waits on the pool are too.
+	 */
+	poolSignInNext: (flow: number) => typedError<PoolSignInStep | null, string>(__TAURI_INVOKE("pool_sign_in_next", { flow })),
+	/**  **Passes the code the person pasted to sign-in `flow`**, as one line. */
+	poolSignInPaste: (flow: number, code: string) => typedError<null, string>(__TAURI_INVOKE("pool_sign_in_paste", { flow, code })),
+	/**  **Cancels sign-in `flow`**: its login on the runner is ended, and nothing changes there. */
+	poolSignInCancel: (flow: number) => __TAURI_INVOKE<void>("pool_sign_in_cancel", { flow }),
+	/**
 	 *  **Every device and what runs on it** (#2052): this machine and every runner it keeps, each
 	 *  with the chats and browsers the window has open there, and each pool's limits.
 	 */
@@ -10106,6 +10124,25 @@ export type PoolRow = {
 	 */
 	suspend_after: string,
 };
+
+/**
+ *  **One step of a sign-in on a pool's runner** that purlis drives with no terminal (#4042), as
+ *  the window's sign-in strip shows it ([`driven::Event`]).
+ */
+export type PoolSignInStep = 
+/**  Open this page in the browser here: the harness vendor's own. */
+{ at: "open"; url: string } | 
+/**  Ask for the code the page shows. */
+{ at: "code" } | 
+/**  The harness refused the code, in its words. */
+{ at: "refused"; said: string } | 
+/**  The login ended well, and the runner is asked whether it is signed in. */
+{ at: "checking" } | 
+{ at: "signed-in" } | 
+/**  purlis could not follow the login: what it printed. */
+{ at: "could-not-follow"; said: string } | 
+{ at: "failed"; why: string } | 
+{ at: "cancelled" };
 
 /**
  *  **How a pool's runner was made to suspend itself** (#3717), which its row says where it is

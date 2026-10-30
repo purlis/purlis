@@ -6,8 +6,9 @@
 //! Signing in runs the harness's own sign-in command (`claude auth login`, `codex login`,
 //! `opencode auth login`) with the profile's folder variables set, in a terminal the person
 //! drives: a shell tab in the window, or their own terminal with `purlis profile sign-in`. The
-//! harness keeps what it signs in with in the profile's folder. purlis reads none of what the
-//! command prints, and never opens a file it writes ([`Login`]).
+//! harness keeps what it signs in with in the profile's folder. purlis never opens a file it
+//! writes ([`Login`]), and reads what it prints only where it drives it with no terminal: for its
+//! page, its prompt and its words of refusal ([`driven`], #4042).
 //!
 //! **Whether a profile is signed in is the harness's own answer** ([`standing`]): its status
 //! command's exit status where it has one (Claude Code's `auth status`, Codex's
@@ -598,6 +599,8 @@ pub(super) fn asked_of(record: &MachineProfile, look: &dyn Look) -> Option<Profi
     }
     Some(profile)
 }
+
+pub mod driven;
 
 #[cfg(test)]
 mod tests;
