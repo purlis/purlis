@@ -12,30 +12,43 @@ import { Tooltip } from "./ui/tooltip/Tooltip";
 /** The files each chat started on that have changed since, by session. */
 export type PlaneUpdates = Readonly<Record<number, readonly string[]>>;
 
+/** The chats whose skills changed since they started, by session, with what changed (#2770,
+ *  #3694). */
+export type SkillsChangedHere = Readonly<Record<number, PlaneUpdated>>;
+
+/** What `chats_plane_updated` says, by what the window draws of it. */
+export type PlaneUpdatedHere = { files: PlaneUpdates; skills: SkillsChangedHere };
+
+const NONE_UPDATED: PlaneUpdatedHere = { files: {}, skills: {} };
+
 /**
  * Which of this project's chats are running on instructions the plane has changed since they
- * started (charter#369).
+ * started (charter#369), and which on skills that changed since (#2770).
  *
  * A chat reads `CLAUDE.md`, its harness settings and sub-agents, and its persona's charter
  * once, when it starts. The Python charter said "control plane updated" in the transcript on
  * the next prompt; the ruling on #369 moved it here, onto the chat's tab, so the operator —
- * who is the one who can start it fresh — is the one told.
+ * who is the one who can start it fresh — is the one told. Its skills changed are what the
+ * Skills chip on its pane is warning-coloured for (#3953), from this one answer.
  *
  * Asked at the mount and whenever the core says a change on disk concerns the instructions
  * (`instructionsChanges`, from `usePlaneChanged(…, INSTRUCTIONS)`, FD-10d), which is when the
  * answer can move. A window that cannot ask marks nothing.
  */
-export function usePlaneUpdated(plane: PlaneId, instructionsChanges: number): PlaneUpdates {
-  const [updates, setUpdates] = useState<PlaneUpdates>({});
+export function usePlaneUpdated(plane: PlaneId, instructionsChanges: number): PlaneUpdatedHere {
+  const [updates, setUpdates] = useState<PlaneUpdatedHere>(NONE_UPDATED);
   useEffect(() => {
     let gone = false;
     void planeUpdatedAt(plane, instructionsChanges).then((all) => {
       if (!gone)
-        setUpdates(
-          Object.fromEntries(
+        setUpdates({
+          files: Object.fromEntries(
             all.filter((one) => one.files.length > 0).map((one) => [one.session, one.files]),
           ),
-        );
+          skills: Object.fromEntries(
+            all.filter((one) => one.skills).map((one) => [one.session, one]),
+          ),
+        });
     });
     return () => {
       gone = true;

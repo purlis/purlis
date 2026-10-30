@@ -187,6 +187,8 @@ const isTask = (want: TaskKey) => (e: KeyboardEvent, mac: boolean) => taskKeyOf(
 const isSize = (want: SizeKey) => (e: KeyboardEvent, mac: boolean) => sizeKey(e, mac) === want;
 const sideSaid = (which: keyof ReturnType<typeof sideKeysSaid>) => (mac: boolean) =>
   sideKeysSaid(mac)[which] ?? "";
+/** Use skill…'s chords (#3954): ⌘⇧S, and Ctrl+Shift+S off a Mac. */
+const USE_SKILL = { mac: cmd("S", { shift: true }), other: ctl("S", { shift: true }) };
 /** No modifier held. */
 const plain = (e: KeyboardEvent) => !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
 
@@ -542,6 +544,23 @@ export const SHORTCUTS: readonly Shortcut[] = [
     yields: ["modal"],
     rows: ["shell.new"],
     matches: opensAShell,
+  },
+  {
+    id: "chat.useSkill",
+    does: "Use one of the chat's skills: Use skill…",
+    group: "Tabs and chats",
+    where: "window",
+    kind: "key",
+    // `S` for skill (#3954). ⌘⇧S was no key of the window's; Ctrl with Shift and a letter is no
+    // byte to a chat's terminal, so it is the window's while a chat has the keyboard, as
+    // Ctrl+Shift+T is. An editor keeps it, for a Save As of its own.
+    chords: { mac: [USE_SKILL.mac], other: [USE_SKILL.other] },
+    said: (mac) => (mac ? "⌘⇧S" : "Ctrl+Shift+S"),
+    yields: ["modal", "editor"],
+    // Each chat tab's Use skill… row (`tab.useskill:<tab>`) says it, as each tab's Close row says
+    // ⌫: the key opens it on the chat in front, the pane with the keyboard in a split tab.
+    rows: ["tab.useskill:"],
+    matches: (e, mac) => isChord(e, mac ? USE_SKILL.mac : USE_SKILL.other),
   },
   {
     id: "tasks.menu",

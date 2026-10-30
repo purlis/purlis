@@ -3578,6 +3578,12 @@ export type ChatSkills = {
 	 *  built-in router, which is asked nothing.
 	 */
 	routing: SkillRouting | null,
+	/**
+	 *  The skills its persona names that it started without, as its tab's Notice says them
+	 *  (SK-5), until that is put away: null for a chat that has every one. Held from its start,
+	 *  so the chip on its pane says every need of the chat's own with no read of its own (#3953).
+	 */
+	missing: SkillsMissing | null,
 };
 
 /**  One step of one chat's stop, as the window is told it. */

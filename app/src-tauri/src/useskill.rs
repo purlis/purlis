@@ -137,6 +137,10 @@ pub struct ChatSkills {
     /// How its router extension did at its start (SK-15b): null for a chat routed by the
     /// built-in router, which is asked nothing.
     pub routing: Option<SkillRouting>,
+    /// The skills its persona names that it started without, as its tab's Notice says them
+    /// (SK-5), until that is put away: null for a chat that has every one. Held from its start,
+    /// so the chip on its pane says every need of the chat's own with no read of its own (#3953).
+    pub missing: Option<crate::chats::SkillsMissing>,
 }
 
 /// **How a chat's router extension did at its start** (SK-15b, ADR 0102 §6): the core's routing
@@ -175,6 +179,7 @@ impl ChatSkills {
             repos: Vec::new(),
             not_supported: None,
             routing: None,
+            missing: None,
         }
     }
 }
@@ -279,6 +284,7 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
         repos: Vec::new(),
         not_supported: None,
         routing: None,
+        missing: None,
     }
 }
 
@@ -307,6 +313,7 @@ pub(crate) async fn chat_skills(
         if shown.known {
             shown.repos = repos_of_the_chat(&held, &chat);
             shown.routing = chat.start.routed.as_ref().map(Into::into);
+            shown.missing = held.chats().skills_missing(session);
         } else {
             shown.not_supported = chat.not_supported.clone();
         }
