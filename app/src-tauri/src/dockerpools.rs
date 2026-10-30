@@ -427,6 +427,26 @@ pub async fn docker_pool_version(name: String) -> Result<PoolVersion, String> {
     }
 }
 
+/// **The runner image this version's release names** (the person's ruling of 2026-10-30): what
+/// the Add a pool dialog's Image box shows, and what a pool added with the box empty is made
+/// from. None where this build names none: a development build, or a release whose runner image
+/// was not built. Refused, in the updater's words, where it could not be read.
+#[tauri::command]
+#[specta::specta]
+pub async fn runner_image_of_this_version(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    #[cfg(unix)]
+    {
+        crate::poolfollow::this_versions_image(&app)
+            .await
+            .map(|image| image.map(|image| image.as_str().to_owned()))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = app;
+        Err(NOT_HERE.to_owned())
+    }
+}
+
 #[cfg(unix)]
 /// Whether `name` is a cluster pool on `config` (#3292): the pool commands answer for either
 /// kind, as the Pools group lists both.

@@ -90,7 +90,7 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 2,
     why:
       ACTION +
-      ". Add a Docker pool's refusal (#2679), and a cluster pool's (#3292), each in the core's " +
+      ". Add a pool's refusal for a Docker pool (#2679), and for a cluster pool (#3292), each in the core's " +
       "words, under the form it refused; the form, kept as it was typed, and Add pool or Check " +
       "its key are the way on",
   },

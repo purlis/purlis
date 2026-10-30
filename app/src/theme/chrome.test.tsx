@@ -931,12 +931,12 @@ const DIALOGS: Opened[] = [
     open: async () => render(<RemovePool name="builds" onRemove={nothing} onCancel={nothing} />),
   },
   {
-    name: "adding a Docker pool",
+    name: "adding a pool",
     file: "AddDockerPool.tsx",
     open: async () => {
       startAddingAPool();
       render(<AddDockerPoolHost />);
-      await screen.findByRole("dialog", { name: "Add a Docker pool" });
+      await screen.findByRole("dialog", { name: "Add a pool" });
     },
   },
   {

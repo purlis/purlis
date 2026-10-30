@@ -2911,6 +2911,13 @@ export const commands = {
 	dockerPoolLink: (name: string) => typedError<PoolLink, string>(__TAURI_INVOKE("docker_pool_link", { name })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
+	/**
+	 *  **The runner image this version's release names** (the person's ruling of 2026-10-30): what
+	 *  the Add a pool dialog's Image box shows, and what a pool added with the box empty is made
+	 *  from. None where this build names none: a development build, or a release whose runner image
+	 *  was not built. Refused, in the updater's words, where it could not be read.
+	 */
+	runnerImageOfThisVersion: () => typedError<string | null, string>(__TAURI_INVOKE("runner_image_of_this_version")),
 	/**  **The contexts of the kubeconfig `kubeconfig` names** (#3292), as kubectl lists them. */
 	clusterContexts: (kubeconfig: string | null) => typedError<ClusterContexts, string>(__TAURI_INVOKE("cluster_contexts", { kubeconfig })),
 	/**

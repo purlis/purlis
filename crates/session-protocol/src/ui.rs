@@ -714,6 +714,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "remove_docker_pool",
     "docker_pool_link",
     "docker_pool_version",
+    // The runner image this version's release names (2026-10-30): the Add a pool dialog's
+    // default image, read through the updater, for the person's own window.
+    "runner_image_of_this_version",
     // This machine's cluster pools (#3292): reading a kubeconfig's contexts and a cluster's
     // operator key runs this machine's kubectl with the person's credentials, and adding one
     // claims a runner as them and pins that key, so only their own press in their window does.

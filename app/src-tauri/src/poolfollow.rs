@@ -88,10 +88,10 @@ async fn look<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path) {
     }
 }
 
-/// Whether the last look found a runner image named for this version: `None` until a look
-/// answered.
+/// What the last look found of this version's runner image: `None` until a look answered,
+/// then the image it named, or none where it named none.
 #[cfg(unix)]
-static NAMED: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
+static NAMED: std::sync::Mutex<Option<Option<Image>>> = std::sync::Mutex::new(None);
 
 /// **What a look found of this version's runner image** (#2880).
 #[cfg(unix)]
@@ -137,8 +137,8 @@ pub fn found_in(
 #[cfg(unix)]
 pub fn note_named(found: &Result<Found, String>) {
     let named = match found {
-        Ok(Found::Named(_)) => true,
-        Ok(Found::NoneNamed) => false,
+        Ok(Found::Named(image)) => Some(image.clone()),
+        Ok(Found::NoneNamed) => None,
         Ok(Found::OtherVersion) | Err(_) => return,
     };
     *NAMED
@@ -150,9 +150,53 @@ pub fn note_named(found: &Result<Found, String>) {
 /// until a look answered (#2880).
 #[cfg(unix)]
 pub fn this_versions_image_named() -> Option<bool> {
-    *NAMED
+    NAMED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        .map(Option::is_some)
+}
+
+/// **The runner image the last look found named for this version**: none until one did.
+#[cfg(unix)]
+pub fn this_versions_image_noted() -> Option<Image> {
+    NAMED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+        .flatten()
+}
+
+/// **What a look's answer gives a new pool for its image** (the person's ruling of
+/// 2026-10-30): the image this version's release names; none where it names none, or where the
+/// channel's manifest is of another version; and why, where it could not be read.
+#[cfg(unix)]
+pub fn image_of(found: Result<Found, String>) -> Result<Option<Image>, String> {
+    match found? {
+        Found::Named(image) => Ok(Some(image)),
+        Found::NoneNamed | Found::OtherVersion => Ok(None),
+    }
+}
+
+/// **The runner image this version's release names, for a new pool** (the person's ruling of
+/// 2026-10-30): what the Add a pool dialog's Image box shows as its default. The image the last
+/// look found is not read again; otherwise one updater read, as a look makes, whose answer is
+/// noted for the looks too. A build that never looks for updates (a development or test build)
+/// names none and reads nothing.
+#[cfg(unix)]
+pub async fn this_versions_image<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<Option<Image>, String> {
+    if !purlis_core::updates::checks_on_its_own(purlis_core::fence::FENCED, cfg!(debug_assertions))
+    {
+        return Ok(None);
+    }
+    if let Some(image) = this_versions_image_noted() {
+        return Ok(Some(image));
+    }
+    let found = runner_image(app).await;
+    note_named(&found);
+    image_of(found)
 }
 
 /// **The runner image the update manifest names for this version**, or none where the

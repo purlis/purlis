@@ -16,10 +16,14 @@ import {
 
 /**
  * **This machine's Docker pools, as the window holds them** (#2679): one read, shared by the
- * Pools settings group, the palette and the Add a Docker pool dialog, and read again after every
- * add and removal, so what is drawn is what the machine keeps. Nothing about pools shows while
- * none is kept: the group is offered only once one is ({@link anyPoolKept}), and the palette's
- * Add a Docker pool… is the way to the first.
+ * Pools settings group, the palette and the Add a pool dialog, and read again after every add
+ * and removal, so what is drawn is what the machine keeps. The Pools group is always offered (the
+ * person's ruling of 2026-10-30), and says what a pool is until one is kept; Devices and the
+ * other runner surfaces are offered only once one is ({@link anyPoolKept}). Add a pool…, in the
+ * group and in the palette, is the way to the first.
+ *
+ * **A new pool's image is the one this version's release names** ({@link readReleaseImage}, the
+ * person's ruling of 2026-10-30), asked as the dialog opens.
  *
  * **Each pool's runner is asked once whether it answers with the key pinned for it**
  * ({@link askLink}), as the group comes on screen: a runner whose key changed gets a Notice with
@@ -44,7 +48,7 @@ type Read =
 
 export type Held = {
   read: Read;
-  /** Whether the Add a Docker pool dialog is open. */
+  /** Whether the Add a pool dialog is open. */
   adding: boolean;
   /** Which kind of pool it adds, as last chosen there (#3292). */
   kind: PoolKind;
@@ -125,8 +129,8 @@ export function usePools(): Held {
   return useSyncExternalStore(subscribe, () => held);
 }
 
-/** Whether this machine keeps a pool of either kind, as last read: the palette offers the Pools
- *  group only then. */
+/** Whether this machine keeps a pool of either kind, as last read: the palette offers Devices
+ *  only then. */
 export function anyPoolKept(): boolean {
   return (
     held.read.state === "read" &&
@@ -147,6 +151,22 @@ export function choosePoolKind(kind: PoolKind) {
 /** Closes it. */
 export function stopAddingAPool() {
   set((was) => ({ ...was, adding: false }));
+}
+
+/** The runner image this version's release names, as purlis said it: `null` where this build
+ *  names none (a development build, or a release whose runner image was not built). */
+export type ReleaseImage = { image: string | null } | { trouble: string };
+
+/**
+ * **The runner image this version's release names** (the person's ruling of 2026-10-30): the
+ * Add a pool dialog's default image, which a pool added with the Image box empty is made from.
+ * Asked as the dialog opens; the core keeps the image once read, so it is read from the
+ * update server once.
+ */
+export async function readReleaseImage(): Promise<ReleaseImage> {
+  const said = await caught(commands.runnerImageOfThisVersion());
+  if (said.status === "error") return { trouble: said.error };
+  return { image: typeof said.data === "string" && said.data !== "" ? said.data : null };
 }
 
 /** Adds `adding` on this machine: `undefined` once it is added, else why not. */

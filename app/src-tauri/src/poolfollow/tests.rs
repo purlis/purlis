@@ -193,6 +193,23 @@ fn a_release_with_no_runner_image_leaves_the_pools_where_they_are() {
     assert_eq!(this_versions_image_named(), Some(true));
     note_named(&Ok(Found::OtherVersion));
     assert_eq!(this_versions_image_named(), Some(true));
+    // The image found is kept, for a new pool's Image box: it is not read again.
+    assert_eq!(
+        this_versions_image_noted(),
+        Some(Image::pinned(NEW).unwrap())
+    );
+}
+
+/// **A new pool's image is the one this version's release names** (the person's ruling of
+/// 2026-10-30): none where the release names none or the channel's manifest is of another
+/// version, and why where it could not be read.
+#[test]
+fn a_new_pools_image_is_the_one_this_versions_release_names() {
+    let named = Image::pinned(NEW).unwrap();
+    assert_eq!(image_of(Ok(Found::Named(named.clone()))), Ok(Some(named)));
+    assert_eq!(image_of(Ok(Found::NoneNamed)), Ok(None));
+    assert_eq!(image_of(Ok(Found::OtherVersion)), Ok(None));
+    assert_eq!(image_of(Err("offline".into())), Err("offline".to_owned()));
 }
 
 /// **Only a manifest of this very version says its release has no runner image** (#2880): one
