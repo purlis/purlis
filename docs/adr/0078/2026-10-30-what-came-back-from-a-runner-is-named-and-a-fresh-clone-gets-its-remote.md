@@ -1,9 +1,9 @@
-# Amended 2026-10-30: what came back from a runner is named, and a fresh clone gets its remote
+# Amended 2026-10-30: what came back from a runner is named, and a fresh clone is offered its remote
 
 **Built by #3990 and #3985**, under spec #2041, after the amendment of the same day (a clone the
 runner chat made comes back with Move here). The guards are the person's ruling of 2026-10-27
 (item 8 of that day's amendment), unchanged; the rest was **decided in implementation, to be
-confirmed** (D-3990-1 to D-3990-2 and D-3985-1 to D-3985-7 in the pull request).
+confirmed** (D-3990-1 to D-3990-2 and D-3985-1 to D-3985-6 in the pull request).
 
 1. **The harnesses' instruction files are what a tool here reads** (#3990). A harness here reads
    `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`, `GEMINI.md`,
@@ -16,21 +16,20 @@ confirmed** (D-3990-1 to D-3990-2 and D-3985-1 to D-3985-7 in the pull request).
    compared without case, as a disk here may not tell them apart.
 2. **A clone made fresh is said to be whole from the runner** (#3990): the chat's tab says it was
    cloned there and all of it was made there, before the files it names.
-3. **A clone made fresh gets the runner's `origin`** (#3985; this amends item 2 of the
-   amendment of 2026-10-30, *"No remote … of the runner's comes with it"*, for `origin` alone).
-   Session protocol 1.54: the `clones` answer may carry `origins`, the `origin` URL of each
-   clone's own configuration on the runner, read without includes and sent only where it is a
-   forge's HTTPS or SSH address with no sign-in in it, and only to a link of 1.54 or later.
-   **A runner-supplied URL is untrusted data**, so the desktop holds it again to the rules a URL
-   pasted here is held to (`getproject::ProjectUrl::parse`: no other transport, no local path,
-   no token or user name over HTTPS, nothing git or ssh reads as an option, no whitespace or
-   control character; printable ASCII alone, `https://` or `ssh://` spelled in lower case, no
-   `ssh://` user name read as an option) and to 2,048 bytes, and writes nothing else of the
-   runner's: only `remote.origin.url` and git's default fetch refspec. The runner reads it only
-   from a clone's own `.git` folder, never one a link or a `.git` file names. **No save pushes
-   to it on its own**: the clone is marked as made on a runner, and until the person confirms a
-   Save from the window, which records that remote as any confirmed push does and lifts the mark,
-   no push from it, automatic or outside the window, gets any credential helper. Where none comes,
-   one is refused, the pool keeps its branches under `refs/remotes/origin/`, or the clone has an
-   `origin`, the clone stays here with no remote, and the chat's tab says why and how to give it
-   one. The chat's tab names the remote it was given, so the person sees where a push goes.
+3. **A clone made fresh is offered the runner's `origin`** (#3985). Session protocol 1.54: the
+   `clones` answer may carry `origins`, the `origin` URL in each clone's own config file on the
+   runner (its own `.git/config` alone: no include, no `commondir`, no `.git` file or link to
+   another repository's), sent only where it is a forge's HTTPS or SSH address with no sign-in
+   in it, and only to a link of 1.54 or later. **A runner-supplied URL is untrusted data**, so
+   the desktop holds it again to the rules a URL pasted here is held to
+   (`getproject::ProjectUrl::parse`: no other transport, no local path, no token or user name
+   over HTTPS, nothing git or ssh reads as an option), to a lower-case `https://` or `ssh://`,
+   to ASCII letters, digits and `-._~:/@+%` alone, and to 2,048 bytes. **It is never written
+   into the clone.** The chat's tab offers it with the one command that adds it, which a shell
+   takes as it is, so a runner's remote becomes the clone's only by the person's own act. A
+   remote written for them would be one purlis's saves push to on their own, with the forge
+   CLI's sign-in, as for any clone whose remote purlis has not recorded, and no mark of a clone's
+   own config, which a chat in it can rewrite, could hold them back. Where none is offered,
+   because the runner named none, it was refused, or the pool keeps its branches under
+   `refs/remotes/origin/`, the tab says why and how to give the clone a remote. This amends
+   nothing of the amendment of 2026-10-30: no remote of the runner's comes with the clone.

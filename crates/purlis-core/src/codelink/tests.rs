@@ -547,8 +547,21 @@ fn a_runner_names_each_clones_origin_only_where_it_is_a_forges_address_with_no_s
     )
     .unwrap();
 
+    // Nor a `.git` folder of its own that shares another's through `commondir`: only the
+    // clone's own config file is read.
+    let shared = workspace.join("shared");
+    std::fs::create_dir_all(&shared).unwrap();
+    git(&shared, &["init", "-q", "-b", "main"]);
+    commit(&shared, "README", "shared");
+    std::fs::write(
+        shared.join(".git/commondir"),
+        format!("{}\n", dir.path().join("other.git").display()),
+    )
+    .unwrap();
+
     let mut asked: Vec<String> = origins.iter().map(|(repo, _)| (*repo).to_owned()).collect();
     asked.push("pointed".to_owned());
+    asked.push("shared".to_owned());
     asked.push("../outside".to_owned());
     asked.push("memory".to_owned());
     assert_eq!(
@@ -564,18 +577,12 @@ fn a_runner_names_each_clones_origin_only_where_it_is_a_forges_address_with_no_s
     assert!(origins_in(&project, "..", &asked).is_empty());
 }
 
-/// **A clone made fresh from a runner's work is given the runner's `origin`** (1.54, #3985),
-/// held to the rules a URL pasted here is held to: a forge's HTTPS or SSH address with no
-/// sign-in in it. Anything else, a pool's branches already kept under `origin`, or a remote
-/// already there, leaves the clone with none, in a sentence.
+/// **The runner's `origin` is offered for a clone made fresh from its work** (1.54, #3985), held
+/// to the rules a URL pasted here is held to, and to characters a shell takes as they are, as
+/// the tab offers it in a command. Anything else, or a pool's branches kept under `origin`, is
+/// refused in a sentence.
 #[test]
-fn a_fresh_clone_is_given_the_runners_origin_only_where_a_pasted_url_would_be_taken() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = dir.path().join("api");
-    std::fs::create_dir_all(&repo).unwrap();
-    git(&repo, &["init", "-q", "-b", "main"]);
-    commit(&repo, "README", "api");
-
+fn the_runners_origin_is_offered_only_where_a_pasted_url_would_be_taken() {
     for refused in [
         "ext::sh -c touch% /tmp/ran",
         "file:///srv/git/api.git",
@@ -592,38 +599,32 @@ fn a_fresh_clone_is_given_the_runners_origin_only_where_a_pasted_url_would_be_ta
         "SSH://github.com/owner/api.git",
         "https://g\u{456}thub.com/owner/api.git",
         "https://github.com/owner/\u{202e}tig.ipa",
+        "https://github.com/owner/$(id).git",
+        "https://github.com/owner/api.git;id",
+        "https://github.com/owner/`id`.git",
+        "https://github.com/owner/api.git|id",
+        "https://github.com/owner/api'.git",
         "",
     ] {
-        let given = give_origin(&repo, "builds", refused);
-        assert!(given.is_err(), "{refused:?}: {given:?}");
-        assert_eq!(git(&repo, &["remote"]), "", "{refused:?}");
+        let offered = offered_origin("builds", refused);
+        assert!(
+            matches!(offered, Err(Refused::NotAllowed(_))),
+            "{refused:?}: {offered:?}"
+        );
     }
     let long = format!("https://github.com/owner/{}.git", "a".repeat(4096));
-    assert!(give_origin(&repo, "builds", &long).is_err());
-
+    assert!(offered_origin("builds", &long).is_err());
     assert!(
-        give_origin(&repo, "Origin", "https://github.com/owner/api.git").is_err(),
+        offered_origin("Origin", "https://github.com/owner/api.git").is_err(),
         "a pool named origin keeps its branches under refs/remotes/origin/"
     );
-    assert_eq!(git(&repo, &["remote"]), "");
-
-    give_origin(&repo, "builds", "git@github.com:owner/api.git").expect("given");
-    assert_eq!(
-        git(&repo, &["remote", "get-url", "origin"]),
-        "git@github.com:owner/api.git"
-    );
-    assert!(
-        crate::forge::gitcredential::made_on_a_runner(&repo),
-        "no save pushes to it on its own until the person saves it from the window"
-    );
-    assert!(
-        give_origin(&repo, "builds", "https://github.com/other/api.git").is_err(),
-        "a remote already there is left as it is"
-    );
-    assert_eq!(
-        git(&repo, &["remote", "get-url", "origin"]),
-        "git@github.com:owner/api.git"
-    );
+    for taken in [
+        "git@github.com:owner/api.git",
+        "https://github.com/owner/api.git",
+        "ssh://git@gitlab.example.com:2222/group/sub/api.git",
+    ] {
+        assert_eq!(offered_origin("builds", taken).as_deref().ok(), Some(taken));
+    }
 }
 
 /// **The clones a runner holds in a workspace** (1.51, #3811): each repository's folder in it,

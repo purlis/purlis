@@ -308,12 +308,12 @@ pub(crate) fn move_workspace_back(
                 let bundle = wrote.then_some(into.as_path());
                 let came = codelink::take_work_fresh(&repo, pool, bundle, &core_refs(heads))
                     .map_err(|why| why.to_string())?;
-                // The clone is made: a remote not given leaves it here, without one, and says
-                // why on the chat's tab.
+                // The clone is made with no remote: the runner's is only offered on the chat's
+                // tab, or why there is none said.
                 let remote = match origin {
-                    Some(url) => codelink::give_origin(&repo, pool, &url)
-                        .map(|()| url)
-                        .map_err(|why| why.to_string()),
+                    Some(url) => {
+                        codelink::offered_origin(pool, &url).map_err(|why| why.to_string())
+                    }
                     None if link.names_clone_origins() => Err(NO_ORIGIN_NAMED.to_owned()),
                     None => Err(NO_ORIGIN_SAID.to_owned()),
                 };
@@ -370,7 +370,7 @@ const NO_ORIGIN_SAID: &str =
 
 /// **The clones of `workspace` the runner holds and this machine has none of** (#3811), by
 /// their folders in the project: what its chat cloned there, each with the `origin` URL the
-/// runner names for it (1.54, #3985), its word alone, which [`codelink::give_origin`] holds to
+/// runner names for it (1.54, #3985), its word alone, which [`codelink::offered_origin`] holds to
 /// this machine's rules. None from a runner before session protocol 1.51, which cannot say. A
 /// name no repository's folder may have is refused, in words; one the workspace keeps for its
 /// own is never a clone, and stays there. A clone here is the runner's of that name however

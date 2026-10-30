@@ -383,6 +383,12 @@ fn runs_here_names_the_harnesses_instruction_files_in_any_folder() {
         ".github/agents/fix.md",
         ".agents/skills/a/SKILL.md",
         ".windsurf/rules/a.md",
+        "QWEN.md",
+        ".qwen/settings.json",
+        "CRUSH.md",
+        ".rules",
+        ".goosehints",
+        ".aider.conf.yml",
     ] {
         assert!(runs_here(path), "{path}");
     }

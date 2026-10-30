@@ -392,7 +392,7 @@ fn a_clone_the_runner_chat_made_comes_back_with_move_here_and_names_what_a_tool_
             clone: "workspaces/app/api".into(),
             remote: Ok("https://github.com/owner/api.git".into()),
         }],
-        "the clone is said to be whole from the runner, with the remote it was given (#3985)"
+        "the clone is said to be whole from the runner, with the remote it may be given (#3985)"
     );
     let api = world.root.join("workspaces/app/api");
     assert_eq!(git(&api, &["rev-parse", "main"]), made);
@@ -404,9 +404,9 @@ fn a_clone_the_runner_chat_made_comes_back_with_move_here_and_names_what_a_tool_
     );
     assert_eq!(git(&api, &["rev-parse", "refs/remotes/builds/main"]), made);
     assert_eq!(
-        git(&api, &["remote", "get-url", "origin"]),
-        "https://github.com/owner/api.git",
-        "it can be pushed here (#3985)"
+        git(&api, &["remote"]),
+        "",
+        "the runner's remote is offered, never written: no save pushes to it on its own (#3985)"
     );
     assert_eq!(
         git(&web, &["rev-parse", "HEAD"]),

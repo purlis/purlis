@@ -286,7 +286,7 @@ fn move_tree(
 /// `.github/copilot-instructions.md`, `.github/instructions/` and its prompts and agents,
 /// opencode's `.opencode/` (whose plugins it runs), and the other agents' folders.
 pub fn runs_here(path: &str) -> bool {
-    const FOLDERS: [&str; 26] = [
+    const FOLDERS: [&str; 27] = [
         ".claude/",
         ".codex/",
         ".cursor/",
@@ -313,8 +313,9 @@ pub fn runs_here(path: &str) -> bool {
         ".continue/",
         ".amazonq/",
         ".junie/",
+        ".qwen/",
     ];
-    const NAMES: [&str; 45] = [
+    const NAMES: [&str; 50] = [
         ".envrc",
         ".mcp.json",
         "opencode.json",
@@ -360,6 +361,11 @@ pub fn runs_here(path: &str) -> bool {
         ".windsurfrules",
         ".clinerules",
         "copilot-instructions.md",
+        "qwen.md",
+        "crush.md",
+        ".rules",
+        ".goosehints",
+        ".aider.conf.yml",
     ];
     let lower = path.to_ascii_lowercase();
     let name = lower.rsplit('/').next().unwrap_or(&lower);

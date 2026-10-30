@@ -548,7 +548,7 @@ pub(crate) fn did_not_start_said(
 
 /// **What a chat's tab says of what came back with it** (the person's ruling of 2026-10-27):
 /// each clone the runner's chat made, which is whole from the runner (#3990), with the remote
-/// it was given or why it has none (#3985), and every file a
+/// the runner's clone had, offered, or why none is (#3985), and every file a
 /// tool here runs or reads as its settings, every one a save would refuse, and every link, by
 /// its path in the project. None where nothing such came.
 pub(crate) fn came_back_said(from: Option<&str>, came: &CameBack) -> Option<String> {
@@ -563,12 +563,12 @@ pub(crate) fn came_back_said(from: Option<&str>, came: &CameBack) -> Option<Stri
             "{clone} was cloned on {from}: all of it was made there, so look at it as you would \
              any repository you did not make."
         ));
-        // The runner's word, held to this machine's rules (#3985): said, so the person sees
-        // where a push goes before they make one.
+        // The runner's word, held to this machine's rules (#3985), and only offered: the
+        // person gives the clone its remote, so no save pushes to one a runner named on its own.
         said.push(match &made.remote {
             Ok(url) => format!(
-                "Its remote origin is {url}, as the runner's clone had it: check it is the one \
-                 you mean before you push."
+                "It has no remote here. The runner's clone pushed to {url}: if that is where you \
+                 mean to push, run `git remote add origin {url}` in it."
             ),
             Err(why) => format!(
                 "It has no remote here ({why}): give it one, with `git remote add origin <URL>` \

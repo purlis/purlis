@@ -174,7 +174,8 @@ pub struct CameBack {
 pub struct MadeHere {
     /// Its folder in the project.
     pub clone: String,
-    /// The `origin` it was given, the runner's clone's, or why it has none here.
+    /// The `origin` the runner's clone had, offered to the person and never written into it, or
+    /// why none is.
     pub remote: Result<String, String>,
 }
 

@@ -215,10 +215,10 @@ fn a_tab_says_a_clone_made_fresh_is_whole_from_the_runner() {
     assert!(said.contains("workspaces/app/api/CLAUDE.md"), "{said}");
 }
 
-/// A fresh clone's remote is said, so the person sees where a push goes, and one with none says
-/// why and how to give it one (#3985).
+/// The runner's remote is offered with the command that adds it, so the person gives it, and
+/// one with none says why and how to give it one (#3985).
 #[test]
-fn a_tab_says_the_remote_a_fresh_clone_was_given_or_why_it_has_none() {
+fn a_tab_offers_the_runners_remote_for_a_fresh_clone_or_says_why_none_is() {
     let said = came_back_said(
         None,
         &CameBack {
@@ -237,7 +237,7 @@ fn a_tab_says_the_remote_a_fresh_clone_was_given_or_why_it_has_none() {
     )
     .unwrap();
     assert!(
-        said.contains("Its remote origin is git@github.com:owner/api.git"),
+        said.contains("run `git remote add origin git@github.com:owner/api.git` in it"),
         "{said}"
     );
     assert!(
