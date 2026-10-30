@@ -66,3 +66,23 @@ fn a_skill_added_or_renamed_changes_the_stamp_on_every_harness() {
         stamp(tmp.path(), Reload::Bodies)
     );
 }
+
+#[test]
+fn what_changed_names_the_skills_added_gone_and_edited_since_the_start() {
+    let tmp = tempfile::tempdir().unwrap();
+    skill(tmp.path(), "deploy", "one");
+    skill(tmp.path(), "review", "one");
+    skill(tmp.path(), "triage", "one");
+    let then = stamp(tmp.path(), Reload::Nothing);
+
+    std::fs::remove_dir_all(tmp.path().join("skills/review")).unwrap();
+    skill(tmp.path(), "triage", "two");
+    skill(tmp.path(), "zeta", "one");
+    let changed = then.changed_to(&stamp(tmp.path(), Reload::Nothing));
+
+    assert_eq!(changed.added, ["zeta"]);
+    assert_eq!(changed.gone, ["review"]);
+    assert_eq!(changed.edited, ["triage"]);
+    assert!(!changed.is_empty());
+    assert!(then.changed_to(&then).is_empty(), "a stamp is its own");
+}

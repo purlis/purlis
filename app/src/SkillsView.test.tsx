@@ -12,7 +12,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { ChatSkill, PersonaSkills, Studio, StudioSkill } from "./bindings";
+import type {
+  ChatSkill,
+  PersonaSkills,
+  PlaneUpdated,
+  SkillBudget,
+  SkillRouting,
+  SkillsMissing,
+  Studio,
+  StudioSkill,
+} from "./bindings";
 import { SkillsView, type FrontChat } from "./SkillsView";
 import { skill, studio } from "./skillsListing.testkit";
 import {
@@ -62,7 +71,15 @@ type Asked = { cmd: string; args: Record<string, unknown> };
  *  `personas` and the chat in front's set `chat`, recording every ask. */
 function core(
   of: (workspace: string | null, persona: string | null) => Studio,
-  more: { personas?: PersonaSkills[]; chat?: ChatSkill[]; repos?: string[] } = {},
+  more: {
+    personas?: PersonaSkills[];
+    chat?: ChatSkill[];
+    repos?: string[];
+    budget?: SkillBudget | null;
+    routing?: SkillRouting | null;
+    missing?: SkillsMissing | null;
+    updated?: PlaneUpdated[];
+  } = {},
 ): Asked[] {
   const asked: Asked[] = [];
   mockIPC((cmd, args) => {
@@ -76,9 +93,12 @@ function core(
         on: true,
         known: true,
         skills: more.chat ?? [],
-        budget: null,
+        budget: more.budget ?? null,
+        routing: more.routing ?? null,
         repos: more.repos ?? [],
       };
+    if (cmd === "chat_skills_missing") return more.missing ?? null;
+    if (cmd === "chats_plane_updated") return more.updated ?? [];
     if (cmd === "skills_deleted" || cmd === "skill_drafts" || cmd === "skill_sources") return [];
     if (cmd === "skill_sources_offered") return [];
     if (cmd === "skill_updates") return { offers: [], unconfirmed: [], unasked: [] };
@@ -762,6 +782,156 @@ describe("the view's header", () => {
     renderStudio(inWorkspace("ops"));
     expect(await screen.findByRole("form", { name: "New skill" })).toBeInTheDocument();
     forgetStudio();
+  });
+});
+
+describe("the chat in front's set as a whole (S8, #3694)", () => {
+  const BUDGET: SkillBudget = {
+    skills: 3,
+    chars: 1234,
+    manual: 1,
+    most_skills: 30,
+    most_chars: 6000,
+    hidden: 0,
+    still_over: null,
+    pinned_by: [],
+    pins_together: null,
+    warns: null,
+  };
+  /** The card of the chat's need `title`. */
+  const needOf = (title: string): HTMLElement => {
+    const found = [...document.querySelectorAll<HTMLElement>('[data-testid^="skills-need-"]')].find(
+      (one) => one.querySelector('[data-part="label"]')?.textContent === title,
+    );
+    if (found === undefined) throw new Error(`no need ${title}`);
+    return found;
+  };
+
+  it("says the budget and the router under whose set it is, as Use skill… no longer does", async () => {
+    core(() => studio([skill("deploy")]), {
+      chat: [given("deploy")],
+      budget: BUDGET,
+      routing: { router: "acme", ms: 120, fell_back: false, said: "Routed by acme in 120 ms." },
+    });
+    view({ chat: STEWARD });
+    await list();
+    await waitFor(() =>
+      expect(screen.getByTestId("skills-view-said")).toHaveTextContent(
+        "3 skills of 30 · 1,234 of 6,000 characters · 1 manual-only skill free",
+      ),
+    );
+    expect(screen.getByTestId("skills-view-said")).toHaveTextContent("Routed by acme in 120 ms.");
+    // Nothing needs the person: no Needs you group.
+    expect(screen.queryByRole("row", { name: /^Needs you/ })).toBeNull();
+  });
+
+  it("puts the budget, the pins, a fallen-back router and what it started without in Needs you, each with its fix", async () => {
+    core(() => studio([skill("deploy")]), {
+      chat: [given("deploy")],
+      budget: {
+        ...BUDGET,
+        warns: "skills",
+        pinned_by: [{ at: "workspace", name: "ops" }],
+        pins_together: {
+          held: [
+            { by: { at: "workspace", name: "ops" }, pins: 40 },
+            { by: { at: "persona", name: "reviewer" }, pins: 30 },
+          ],
+          most: 64,
+        },
+      },
+      routing: { router: "acme", ms: 3000, fell_back: true, said: "acme took too long." },
+      missing: {
+        persona: "reviewer",
+        missing: ["grill"],
+        no_built_in: [],
+        broken: [],
+        by_a_repo: [],
+        beside_a_built_in: [],
+      },
+    });
+    const hands = view({ chat: STEWARD });
+    await list();
+    await waitFor(() => expect(foldOf(/^Needs you/)).toBeInTheDocument());
+
+    expect(needOf("Near the skill budget")).toHaveTextContent(/past purlis's skill budget/);
+    expect(needOf("Its pins are not read")).toHaveTextContent(/This chat reads none of its pins/);
+    expect(needOf("Its router fell back")).toHaveTextContent("acme took too long.");
+    expect(needOf("Started without 1 skill")).toHaveTextContent(
+      "This chat started without 1 skill reviewer names, not installed on this machine: grill.",
+    );
+
+    await userEvent.click(
+      within(needOf("Near the skill budget")).getByRole("button", { name: "Open Routing" }),
+    );
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(
+      skillStudioAt(inWorkspace("ops"), "routing"),
+      SKILL_STUDIO_TITLE,
+    );
+    await userEvent.click(
+      within(needOf("Its pins are not read")).getByRole("button", {
+        name: "Open Skill studio · ops",
+      }),
+    );
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(
+      skillStudioAt(inWorkspace("ops"), "library"),
+      SKILL_STUDIO_TITLE,
+    );
+    await userEvent.click(
+      within(needOf("Started without 1 skill")).getByRole("button", {
+        name: "Open in Skill studio",
+      }),
+    );
+    expect(hands.onOpenView).toHaveBeenLastCalledWith(
+      skillStudioAt(asPersona("reviewer"), "library"),
+      SKILL_STUDIO_TITLE,
+    );
+  });
+
+  it("names what changed since it started, and offers the restart that brings it", async () => {
+    core(() => studio([skill("deploy")]), {
+      chat: [given("deploy")],
+      updated: [
+        {
+          session: 5,
+          files: [],
+          skills: true,
+          skills_added: ["triage"],
+          skills_gone: ["old-deploy"],
+          skills_edited: ["deploy"],
+        },
+        // Another chat's change is its own.
+        {
+          session: 6,
+          files: [],
+          skills: true,
+          skills_added: ["elsewhere"],
+          skills_gone: [],
+          skills_edited: [],
+        },
+      ],
+    });
+    const onRestart = vi.fn();
+    view({ chat: STEWARD, onRestart });
+    await list();
+    await waitFor(() => expect(needOf("Changed since it started")).toBeInTheDocument());
+    expect(needOf("Changed since it started")).toHaveTextContent(
+      "This chat's skills changed since it started (new: triage; gone: old-deploy; changed: deploy).",
+    );
+    expect(document.body).not.toHaveTextContent("elsewhere");
+    await userEvent.click(
+      within(needOf("Changed since it started")).getByRole("button", { name: "Restart" }),
+    );
+    expect(onRestart).toHaveBeenCalledWith(5);
+  });
+
+  it("says none of a chat's own needs with no chat in front", async () => {
+    const asked = core(() => studio([skill("deploy")]), { budget: { ...BUDGET, warns: "skills" } });
+    view();
+    await list();
+    await waitFor(() => expect(hasRow("deploy")).toBe(true));
+    expect(document.querySelector('[data-testid^="skills-need-"]')).toBeNull();
+    expect(asked.some((one) => one.cmd === "chat_skills_missing")).toBe(false);
   });
 });
 

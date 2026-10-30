@@ -711,7 +711,6 @@ const DIALOGS: Opened[] = [
           busy={false}
           onUse={nothing}
           onCancel={nothing}
-          onOpenStudio={nothing}
         />,
       ),
   },

@@ -8971,6 +8971,17 @@ export type OpenRun = {
 	id: string,
 	/**  Tool calls made inside it so far, each once. */
 	tool_calls: number,
+	/**
+	 *  The tokens the chat has spent since it opened, as its harness last said them (SK-26,
+	 *  #3694): what the eventlog records the run's tokens from, live. `None` where the harness
+	 *  says none, so the chip shows no zero.
+	 */
+	tokens: number | null,
+	/**
+	 *  The level of the copy it is of, as a person reads it (`persona`, `local workspace`), where
+	 *  its start knew it: the scope its chip opens the Skill studio at (#3694).
+	 */
+	level: string | null,
 };
 
 /**
@@ -9881,6 +9892,15 @@ export type PlaneUpdated = {
 	 *  itself (#2770): its pane offers a restart on the same conversation.
 	 */
 	skills: boolean,
+	/**
+	 *  The skills a chat started now would get that it lacks, by name (#3694): what its Skills
+	 *  view marks as new, once its pane's What changed is pressed.
+	 */
+	skills_added: string[],
+	/**  The skills it has that a chat started now would not get, by name. */
+	skills_gone: string[],
+	/**  The skills it has that changed since it started, by name. */
+	skills_edited: string[],
 };
 
 /**  A pool as the person typed it: each limit left empty takes the default. */

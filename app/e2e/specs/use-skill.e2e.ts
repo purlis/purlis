@@ -75,9 +75,8 @@ async function typeTheSkill(typed: string): Promise<void> {
 
   const dialog = await $('[data-testid="use-skill"]');
   await dialog.waitForDisplayed({ timeout: 20_000 });
-  const budget = await $('[data-testid="use-skill-budget"]');
-  await budget.waitForExist({ timeout: 20_000 });
-  await expect(budget).toHaveText(/skills? of 30 · .* of 6,000 characters/);
+  // A quick picker (S8, #3694): its box takes the keys, and the budget is the Skills view's.
+  await expect($('[data-testid="use-skill-budget"]')).not.toExist();
 
   await browser.waitUntil(
     async () => {
@@ -177,7 +176,7 @@ describe("Use skill…", function () {
       await typeTheSkill(typed);
     });
 
-  it("opens the same picker from the Skills chip on the chat's pane", async () => {
+  it("shows the chat's skills in the Skills view from the Skills chip on its pane (S8)", async () => {
     // Whatever the step before left open goes first, so this one opens its own.
     await browser.keys(["Escape"]);
     // The chip is left out of a narrow pane (`App.css`), so the window is wide enough for one.
@@ -186,9 +185,13 @@ describe("Use skill…", function () {
     await chip.waitForDisplayed({ timeout: 20_000 });
     await expect(chip).toHaveText(/skills?$/);
     await chip.click();
-    const dialog = await $('[data-testid="use-skill"]');
-    await dialog.waitForDisplayed({ timeout: 20_000 });
-    await (await $("button=Cancel")).click();
-    await dialog.waitForDisplayed({ timeout: 20_000, reverse: true });
+    // The one answer to what the chat gets: the sidebar's Skills view, on this chat, with its
+    // budget under whose set it is. Use skill… does not open.
+    const view = await $('[data-testid="skills-view"]');
+    await view.waitForDisplayed({ timeout: 20_000 });
+    await expect($('[data-testid="skills-view-said"]')).toHaveText(
+      /skills? of 30 · .* of 6,000 characters/,
+    );
+    await expect($('[data-testid="use-skill"]')).not.toBeDisplayed();
   });
 });

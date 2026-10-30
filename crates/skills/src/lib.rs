@@ -81,7 +81,7 @@ pub use router::{
     Candidate, Candidates, Hidden, HiddenWhy, INDEX, Index, Line, Router, Routing, StillOver,
 };
 pub use share::{Shared, named, named_at, share};
-pub use stamp::{Reload, Stamp};
+pub use stamp::{Reload, SkillsChanged, Stamp};
 
 /// A skill, as a chat is told about it: a folder in the open SKILL.md format.
 #[derive(Debug, Clone, PartialEq, Eq)]
