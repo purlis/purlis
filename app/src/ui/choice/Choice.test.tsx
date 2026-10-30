@@ -15,6 +15,7 @@ import { OptionCard, OptionCards, Radio, RadioGroup, Segment, SegmentedControl }
 import { Slider } from "./Slider";
 import { Switch } from "./Switch";
 import { ColorWell } from "./ColorWell";
+import { drawnWith } from "../../cascade.testkit";
 
 afterEach(cleanup);
 
@@ -345,5 +346,56 @@ describe("a colour well", () => {
     fireEvent.change(well, { target: { value: hex("445566") } });
     fireEvent.blur(well);
     expect(committed).toHaveBeenCalledTimes(1);
+  });
+});
+
+// WCAG 2.5.8 (#4173): the compact density draws the chrome at 18px, so every choice's row and a
+// small segmented control take the sm button's floor, 24 CSS px, as a field's does (#3250).
+describe("a choice's target size (#4173)", () => {
+  const FLOOR = "max(24px, var(--size-chrome), var(--space-7))";
+
+  it("never draws a choice row under the 24px target, in any density or text size", () => {
+    render(
+      <>
+        <Checkbox>Sign commits</Checkbox>
+        <Checkbox variant="chip">working</Checkbox>
+        <RadioGroup aria-label="Density" value="compact" onChange={() => {}}>
+          <Radio value="compact">Compact</Radio>
+        </RadioGroup>
+        <Switch>Auto-save</Switch>
+        <Slider
+          label="Window text size"
+          minValue={10}
+          maxValue={24}
+          value={14}
+          onChange={() => {}}
+          shown={(px) => `${px}px`}
+          spoken={(px) => `${px} pixels`}
+        />
+      </>,
+    );
+    for (const [role, name] of [
+      ["checkbox", "Sign commits"],
+      ["checkbox", "working"],
+      ["radio", "Compact"],
+      ["switch", "Auto-save"],
+    ] as const) {
+      const root = rootOf(screen.getByRole(role, { name }));
+      expect(drawnWith(root, "min-block-size"), name).toBe(FLOOR);
+    }
+    const slider = screen
+      .getByRole("slider", { name: "Window text size" })
+      .closest('[data-scope="slider"][data-part="root"]') as Element;
+    expect(drawnWith(slider, "min-block-size")).toBe(FLOOR);
+  });
+
+  it("never draws a small segmented control under the 24px target", () => {
+    render(
+      <SegmentedControl size="sm" aria-label="Level" value="you" onChange={() => {}}>
+        <Segment value="you">You</Segment>
+        <Segment value="workspace">Workspace</Segment>
+      </SegmentedControl>,
+    );
+    expect(drawnWith(screen.getByRole("radiogroup", { name: "Level" }), "block-size")).toBe(FLOOR);
   });
 });

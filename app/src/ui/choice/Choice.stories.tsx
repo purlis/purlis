@@ -17,6 +17,7 @@ import { Checkbox, CheckboxGroup, RovingCheckbox } from "./Checkbox";
 import { OptionCard, OptionCards, Radio, RadioGroup, Segment, SegmentedControl } from "./Radio";
 import { Slider } from "./Slider";
 import { Switch } from "./Switch";
+import { Button } from "../button/Button";
 
 /** A column the story's controls stand in, as a form's rows do. */
 function Column({ children }: { children: ReactNode }) {
@@ -279,7 +280,7 @@ const segmentsByKeyboard: Story["play"] = async ({ canvas, userEvent }) => {
   // chrome's and never under 24px.
   const tall =
     group.dataset.size === "sm"
-      ? drawnHeight("max(var(--size-chrome), var(--space-7))")
+      ? drawnHeight("max(24px, var(--size-chrome), var(--space-7))")
       : drawnHeight("var(--size-control)");
   await expect(group.getBoundingClientRect().height).toBeCloseTo(tall, 0);
   const segments = canvas.getAllByRole("radio").map((one) => one.closest("label") as Element);
@@ -302,6 +303,61 @@ export const SegmentedControlMd: Story = {
 export const SegmentedControlSm: Story = {
   render: () => <Segments size="sm" />,
   play: segmentsByKeyboard,
+};
+
+/**
+ * **Every choice beside a small button** (#4173, WCAG 2.5.8): the compact density draws the
+ * chrome at 18px, so a choice's row and a small segmented control take the sm button's floor, 24
+ * CSS px. Each is a 24px target by itself in every cell, so axe's `target-size` passes with no
+ * spacing to lean on.
+ */
+function BesideASmallButton() {
+  const [level, setLevel] = useState("you");
+  return (
+    <div style={{ display: "grid", gap: "var(--space-1)", justifyItems: "start", width: 360 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+        <Checkbox>Sign commits</Checkbox>
+        <Button size="sm">Apply</Button>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+        <Checkbox variant="chip">working</Checkbox>
+        <Switch>Auto-save</Switch>
+      </div>
+      <RadioGroup aria-label="Density" value="compact" onChange={() => {}}>
+        <Radio value="compact">Compact</Radio>
+      </RadioGroup>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+        <SegmentedControl size="sm" aria-label="Level" value={level} onChange={setLevel}>
+          <Segment value="you">You</Segment>
+          <Segment value="workspace">Workspace</Segment>
+        </SegmentedControl>
+        <Button size="sm">Reset</Button>
+      </div>
+      <Slider
+        label="Window text size"
+        minValue={10}
+        maxValue={24}
+        value={14}
+        onChange={() => {}}
+        shown={(at) => `${at}px`}
+        spoken={(at) => `${at} pixels`}
+      />
+    </div>
+  );
+}
+
+export const ChoicesBesideASmallButton: Story = {
+  render: () => <BesideASmallButton />,
+  play: async ({ canvas, canvasElement }) => {
+    const roots = [
+      ...canvasElement.querySelectorAll<HTMLElement>(
+        '[data-scope="checkbox"][data-part="root"], [data-scope="radio"][data-part="root"], [data-scope="switch"][data-part="root"], [data-scope="segment"][data-part="root"], [data-scope="slider"][data-part="root"]',
+      ),
+    ];
+    await expect(roots).toHaveLength(7);
+    for (const one of [...roots, ...canvas.getAllByRole("button")])
+      await expect(one.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
+  },
 };
 
 function TextSize() {
