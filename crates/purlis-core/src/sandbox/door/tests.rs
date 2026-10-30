@@ -585,7 +585,10 @@ mod sockets {
         let slots = Arc::clone(slots);
         std::thread::spawn(move || {
             let mut said = [0u8; PARKED.len() + GO.len()];
-            if server.read_exact(&mut said).is_err() || said != format!("{PARKED}{GO}").as_bytes() {
+            if server.read_exact(&mut said).is_err()
+                || said != format!("{PARKED}{GO}").as_bytes()
+                || server.write_all(GO.as_bytes()).is_err()
+            {
                 return;
             }
             dial(&slots, Arc::clone(&answer));
@@ -727,6 +730,20 @@ mod sockets {
         );
         assert!(answer.starts_with("HTTP/1.1 502 "), "{answer}");
         assert!(began.elapsed() < SLOT_WITHIN + Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_dialled_door_passes_over_a_slot_whose_server_never_answers_its_go() {
+        let port = free_port();
+        let (_door, slots) = Door::dialled(port).expect("the door opens");
+        let (silent, _held) = UnixStream::pair().expect("a pair");
+        slots.park(silent).expect("parked");
+        dial(&slots, Arc::new(echo));
+        let answer = ask(
+            port,
+            &["GET /live HTTP/1.1", &format!("Host: localhost:{port}")],
+        );
+        assert!(answer.starts_with("HTTP/1.1 200 OK"), "{answer}");
     }
 
     #[test]

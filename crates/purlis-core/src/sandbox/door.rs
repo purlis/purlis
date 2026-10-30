@@ -76,6 +76,9 @@ pub const JAR_MOST_BYTES: usize = 64 * 1024;
 /// How long a dialled door waits for a slot to carry a request over before it answers `502`.
 pub const SLOT_WITHIN: Duration = Duration::from_secs(3);
 
+/// How long a slot's server has to answer [`GO`] before the door passes it over (#3316).
+pub const GO_ANSWERED_WITHIN: Duration = Duration::from_secs(1);
+
 /// The most slots one dialled door keeps parked (#3316); one more is handed back unparked.
 pub const SLOTS_MOST: usize = 16;
 
@@ -90,7 +93,9 @@ pub const SLOTS_FULL: &str = "this chat's server holds the most connections it m
 /// [`GO`] comes on it later.
 pub const PARKED: &str = "{\"taken\":true}\n";
 
-/// What a dialled door writes on a slot as it takes it: the request follows (#3316).
+/// What a dialled door writes on a slot as it takes it (#3316). The server hands the slot to
+/// whatever serves the port and writes the same line back, and only then does the request
+/// follow: so nothing of the request is read before what serves it reads it.
 pub const GO: &str = "{\"go\":true}\n";
 
 /// The name of the cookie a door tells one browser from another by, on port `port`.
@@ -672,7 +677,25 @@ impl Backend {
             Self::Socket { socket, folder } => UnixStream::connect(socket)
                 .ok()
                 .filter(|server| bound_at(server, socket, folder)),
-            Self::Dialled(slots) => slots.take(SLOT_WITHIN),
+            Self::Dialled(slots) => {
+                let deadline = std::time::Instant::now() + SLOT_WITHIN;
+                loop {
+                    let left = deadline.checked_duration_since(std::time::Instant::now())?;
+                    let mut slot = slots.take(left)?;
+                    // Its server's answer to [`GO`], the same line: a slot that does not give
+                    // it within the wait is passed over.
+                    let mut went = [0u8; GO.len()];
+                    let answered = slot
+                        .set_read_timeout(Some(left.min(GO_ANSWERED_WITHIN)))
+                        .is_ok()
+                        && slot.read_exact(&mut went).is_ok()
+                        && went == GO.as_bytes()
+                        && slot.set_read_timeout(None).is_ok();
+                    if answered {
+                        return Some(slot);
+                    }
+                }
+            }
         }
     }
 }
