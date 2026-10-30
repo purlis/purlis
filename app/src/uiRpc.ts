@@ -1060,6 +1060,11 @@ export const commands = {
 	 *  and scrollback as the escape sequences that draw them, for a tab that shows it read-only.
 	 */
 	skillGradeChat: (plane: PlaneId, skill: string, grade: string, chat: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_chat", { plane, skill, grade, chat })),
+	/**
+	 *  **The grades of the copy of `skill` at `level`** (S6), as the eval record holds them: what the
+	 *  skill's Grades tab draws its bars and its list from.
+	 */
+	skillGrades: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<SkillGrades, string>(__TAURI_INVOKE("skill_grades", { plane, level, skill })),
 	skillGradeSetCap: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What grading the router the studio's workspace or persona chose would run**, before
@@ -5450,6 +5455,16 @@ export type GoneProject = {
 	said: string,
 };
 
+/**
+ *  **Each arm's pass rate**, in points from 0 to 100, where the arm ran: the Grades tab's bars
+ *  and a scorecard's totals.
+ */
+export type GradeArms = {
+	with: number | null,
+	without: number | null,
+	previous: number | null,
+};
+
 /**  How a grade ended, as the window is told it. */
 export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" | 
 /**  It reached its token cap. */
@@ -5489,6 +5504,13 @@ export type GradeLeftOut = {
 	why: string,
 };
 
+/**
+ *  **How a grade ended, as its list marks it** (S6): graded whole, stopped by the person, stopped
+ *  at its limit (its token cap, its dollar limit, or a chat that did not say what it spent), or
+ *  interrupted (purlis stopped under it, or its chats did not start).
+ */
+export type GradeOutcome = "graded" | "stopped" | "at-limit" | "interrupted";
+
 /**  **The version a grade compares with, as its plan says it** (SK-57). */
 export type GradePrevious = {
 	commit: string,
@@ -5512,6 +5534,23 @@ export type GradeQuery = {
 	should_trigger: boolean,
 	/**  Whether it holds a character no reader would see. */
 	hides: boolean,
+};
+
+/**
+ *  **One grade in a skill's Grades tab** (S6): when it ran, the version, what it ran on, how it
+ *  ended, each arm's pass rate and what it spent; its id opens its scorecard.
+ */
+export type GradeRow = {
+	grade: string,
+	graded: string,
+	version: string,
+	ran_on: string,
+	/**  How it ended, in the record's words, and as its mark says it. */
+	ended: string,
+	outcome: GradeOutcome,
+	arms: GradeArms,
+	spent: GradeSpent,
+	after_edit: boolean,
 };
 
 /**
@@ -5546,6 +5585,21 @@ export type GradeScorecard = {
 	/**  How many of its chats asked the person something and were ended there. */
 	asked: number,
 	tests: ScoredTest[],
+	/**  How it ended, its arms' pass rates and what it spent (S6): its end banner and totals. */
+	outcome: GradeOutcome,
+	arms: GradeArms,
+	spent: GradeSpent,
+};
+
+/**
+ *  **What a grade spent**: the chats that ran, their tokens and their cost where they said them,
+ *  and the dollar limit it was held to.
+ */
+export type GradeSpent = {
+	chats: number,
+	tokens: number | null,
+	cost_usd: number | null,
+	limit_usd: number | null,
 };
 
 /**  Who a grant is for, as the window sends it ([`sandbox::grant::Level`]). */
@@ -10484,6 +10538,13 @@ export type SkillGradeStep = {
 	of: number,
 	/**  What its chats have spent so far, where they said, and the cap it is held to. */
 	tokens: number | null,
+	/**
+	 *  What its chats have cost so far, in dollars, where they said (S6): the running page's
+	 *  spend against the grade's dollar limit.
+	 */
+	cost_usd: number | null,
+	/**  The dollar limit it is held to, where it has one. */
+	limit_usd: number | null,
 	cap: number | null,
 	/**
 	 *  How many of its chats asked the person something and were ended there (SK-59, #3239):
@@ -10496,6 +10557,12 @@ export type SkillGradeStep = {
 	 *  What the window says of its end: why its chats did not start, or that it was not
 	 *  recorded.
 	 */
+	said: string | null,
+};
+
+/**  **A copy's grades, newest first** (S6), and what the record left out as it was read. */
+export type SkillGrades = {
+	grades: GradeRow[],
 	said: string | null,
 };
 

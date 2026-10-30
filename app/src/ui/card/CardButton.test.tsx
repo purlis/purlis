@@ -2,21 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **A card pressed whole** (#3655, the card family): the welcome's doors and a repo to get. Its
- * button is React Aria's, named by the words it shows and described by its line, in a box the
- * family's own parts draw. The look in each theme is held by its stories (`Card.stories.tsx`).
+ * **A card pressed whole** (#3655, its own family since #3885): the welcome's doors and a repo
+ * to get. Its button is React Aria's, named by the words it shows and described by its line, in a
+ * box the family's own parts draw. The look in each theme is held by its stories
+ * (`Card.stories.tsx`).
  */
 import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { drawnWith } from "../../cascade.testkit";
+import { Card, CardTitle } from "./Card";
 import { CardButton } from "./CardButton";
 
 afterEach(cleanup);
 
 /** The box a pressed card's button stands in. */
-const boxOf = (button: HTMLElement) => button.closest('[data-part="pressable"]') as HTMLElement;
+const boxOf = (button: HTMLElement) =>
+  button.closest('[data-scope="card-button"][data-part="root"]') as HTMLElement;
 
 describe("CardButton", () => {
   it("is a button named by its title alone, described by its line, in the tab sequence", () => {
@@ -39,13 +42,13 @@ describe("CardButton", () => {
     expect(screen.getByTestId("mark").parentElement).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("is drawn by the card family's parts, its place given by the view", () => {
+  it("is drawn by its own family's parts, its place given by the view", () => {
     render(<CardButton title="Create a project" line="A new folder." className="a-place" />);
     const door = screen.getByRole("button");
     const box = boxOf(door);
-    expect(door).toHaveAttribute("data-scope", "card");
+    expect(door).toHaveAttribute("data-scope", "card-button");
     expect(door).toHaveAttribute("data-part", "press");
-    expect(box).toHaveAttribute("data-scope", "card");
+    expect(box).toHaveAttribute("data-scope", "card-button");
     expect(box).toHaveAttribute("data-variant", "door");
     expect(box).toHaveClass("a-place");
     expect(screen.getByText("Create a project")).toHaveAttribute("data-part", "title");
@@ -120,5 +123,66 @@ describe("CardButton", () => {
     expect(pick).toBeDisabled();
     await userEvent.setup().click(pick);
     expect(press).not.toHaveBeenCalled();
+  });
+
+  it("says on its box that its button has the keyboard's focus", async () => {
+    render(<CardButton title="Create a project" />);
+    const box = boxOf(screen.getByRole("button"));
+    expect(box).not.toHaveAttribute("data-focus-visible");
+    await userEvent.setup().tab();
+    expect(screen.getByRole("button")).toHaveFocus();
+    expect(box).toHaveAttribute("data-focus-visible");
+  });
+});
+
+describe("a pressed card's theme parts (#3885)", () => {
+  // As the engine writes `card-button.*` and `card.title.*` (`parts_card_button.rs`).
+  const root = '[data-scope="card-button"][data-part="root"]';
+  const reached = (selector: string) => [...document.querySelectorAll(`:where(${selector})`)];
+
+  it("reaches its box, its mark, its title and its line by its own scope", () => {
+    render(
+      <CardButton
+        title="Create a project"
+        line="A new folder."
+        mark={<svg data-testid="mark" />}
+      />,
+    );
+    const box = boxOf(screen.getByRole("button"));
+    expect(reached(`${root}[data-variant="door"]`)).toEqual([box]);
+    expect(reached(`${root} [data-scope="card-button"][data-part="mark"]`)).toEqual([
+      screen.getByTestId("mark").parentElement,
+    ]);
+    expect(reached(`${root} [data-scope="card-button"][data-part="title"]`)).toEqual([
+      screen.getByText("Create a project"),
+    ]);
+    expect(reached(`${root} [data-scope="card-button"][data-part="line"]`)).toEqual([
+      screen.getByText("A new folder."),
+    ]);
+  });
+
+  it("is never reached by a card's title, even inside a card", () => {
+    // The order is explicit: a card's `card.title` reaches a card's own title, and a pressed
+    // card's title is its own family's (`card-button.title`), wherever the card stands.
+    render(
+      <Card>
+        <CardTitle>Doors</CardTitle>
+        <CardButton title="Create a project" />
+      </Card>,
+    );
+    const title = screen.getByText("Create a project");
+    const card = '[data-scope="card"][data-part="root"] [data-scope="card"][data-part="title"]';
+    expect(reached(card)).toEqual([screen.getByText("Doors")]);
+    expect(reached(`${root} [data-scope="card-button"][data-part="title"]`)).toEqual([title]);
+  });
+
+  it("keys its states on its box, as its button's states are", async () => {
+    render(<CardButton variant="pick" title="acme/api" />);
+    const person = userEvent.setup();
+    const box = boxOf(screen.getByRole("button"));
+    await person.hover(screen.getByRole("button"));
+    expect(reached(`${root}[data-variant="pick"][data-hovered]:not([data-disabled])`)).toEqual([
+      box,
+    ]);
   });
 });

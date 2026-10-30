@@ -627,10 +627,6 @@ body {
   box-shadow: inset 0 -2px 0 var(--state-waiting);
 }
 
-.chat-browser-driver[data-driver="person"] {
-  color: var(--text-primary);
-}
-
 /* **No rule dresses every button on the bar** (#3129): one that did drew a bordered box around
    any button it reached that did not say the whole of what it is, the fresh mark among them. A
    button of the family draws itself; each mark below says all of its own look. */
@@ -3255,7 +3251,6 @@ body {
   display: flex;
   gap: var(--space-3);
   align-items: flex-start;
-  color: var(--state-failed);
 }
 
 .explorer .trouble:where(:not([data-part="root"])) {
@@ -3694,8 +3689,7 @@ body {
 /* **A chat's browsers, under its row** (#2024) wear a finished task's name's rules: the shared
    tree row at the level below the chat's, its mark and name in a chat's row's columns. */
 .chats-section .finished-name,
-.chats-section .chat-browser,
-.chats-section .finished-count {
+.chats-section .chat-browser {
   color: inherit;
   font: inherit;
 }
@@ -4163,8 +4157,7 @@ body {
   flex: none;
 }
 /* Its tab's amber underline is the tabs family's (`ui/tabs/tabs.css`). */
-.tabs .tab[data-wrapping-up] .tab-name,
-.chat[data-wrapping-up] .session {
+.tabs .tab[data-wrapping-up] .tab-name {
   color: var(--text-muted);
 }
 
@@ -5152,9 +5145,10 @@ body {
 }
 
 /* **A done todo stays, struck through** (R131, ADR 0106): its box ticked, its words in the quiet
-   tier and crossed out. Nothing moves: the box takes the mark's place at the mark's size. */
+   tier and crossed out. Nothing moves: the box takes the mark's place at the mark's size. The
+   quiet tier is the meta role, which the row's words wear while done (`PanelList.tsx`, #3917):
+   a colour set here would lose to the body role's later layer. */
 .panel-row.is-checked .row-text {
-  color: var(--text-quiet);
   text-decoration: line-through;
 }
 
@@ -7654,6 +7648,31 @@ nav.piece-files-head {
   flex-direction: column;
   gap: var(--space-4);
   padding-block-start: var(--space-4);
+}
+
+/* **A skill's Grades tab** (S6, #3688): its bars, its list and the after-each-edit row; and one
+   test's arm on a scorecard: its runs, its verdict and its chats, wrapping in a narrow cell. */
+.skill-grades {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.skill-grading-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.skill-grading-head > * {
+  margin: 0;
+}
+
+.skill-grading-arm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .skill-page-text {

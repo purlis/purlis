@@ -60,19 +60,10 @@ import {
   runsSaid,
   UNREAD,
 } from "./SkillDetails";
-import { SkillGrade } from "./SkillGrade";
+import { GradesTab, type GradingGo } from "./SkillGrades";
 import { SkillPinSwitch, SkillPinnedBy } from "./SkillPins";
 import { GrantPicker } from "./SkillLevelPickers";
-import {
-  SKILL_GRADES_PANEL,
-  SkillPanelSection,
-  SkillTotals,
-  keyOf,
-  runsOf,
-  useRead,
-  type Read,
-} from "./SkillPanels";
-import { gradeTitle, gradeView } from "./GradeScorecard";
+import { SkillPanelSection, SkillTotals, keyOf, runsOf, useRead, type Read } from "./SkillPanels";
 import { ownerShown } from "./SkillStudioHarnesses";
 import { levelOf, sameLevel, whoseOf } from "./skillChanges";
 import {
@@ -402,6 +393,7 @@ export function SkillPage({
   offerFor,
   onPress,
   onOpenView,
+  onGrading,
 }: {
   plane: string;
   studio: Studio;
@@ -436,8 +428,10 @@ export function SkillPage({
   /** The catalogue, for the ways out its Runs offer (a new chat where it has none). */
   offerFor?: (id: string) => Offer | undefined;
   onPress?: (offer: Offer) => void;
-  /** Opens a tab: the skill's file, a grade's scorecard. */
+  /** Opens a tab: the skill's file. */
   onOpenView?: (view: ViewRef, title: string) => void;
+  /** Goes to a grading page under the skill (S6): its plan, a grade running, a scorecard. */
+  onGrading?: GradingGo;
 }) {
   const [again, setAgain] = useState(0);
   const [graded, setGraded] = useState(0);
@@ -590,7 +584,12 @@ export function SkillPage({
           >
             {editing ? "Stop editing" : "Edit"}
           </Button>
-          <Button aria-label={`Grade ${name}`} onPress={() => onTab("grades")}>
+          <Button
+            aria-label={`Grade ${name}`}
+            onPress={() =>
+              onGrading === undefined ? onTab("grades") : onGrading({ at: "plan" }, "go")
+            }
+          >
             Grade
           </Button>
         </>
@@ -773,31 +772,15 @@ export function SkillPage({
                 testid="skill-grades-none"
               />
             ) : (
-              <SkillGrade
+              <GradesTab
                 plane={plane}
                 name={name}
                 level={level}
+                changed={given}
+                onGrading={onGrading ?? (() => undefined)}
                 onGraded={() => setGraded((n) => n + 1)}
               />
             )}
-            {(panels.data ?? [])
-              .filter((one) => one.key.kind === SKILL_GRADES_PANEL)
-              .map((one) => (
-                <SkillPanelSection
-                  key={keyOf(one.key)}
-                  panel={one}
-                  name={name}
-                  rowAction={
-                    onOpenView === undefined
-                      ? undefined
-                      : {
-                          column: "Scorecard",
-                          label: "Open scorecard",
-                          onOpen: (grade) => onOpenView(gradeView(name, grade), gradeTitle(name)),
-                        }
-                  }
-                />
-              ))}
           </div>
         );
       case "runs":
