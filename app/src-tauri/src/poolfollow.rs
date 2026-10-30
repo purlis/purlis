@@ -220,19 +220,12 @@ pub async fn image_offered<R: Runtime>(
         });
     }
     let ours = app.package_info().version.to_string();
-    let pubkey = updater_pubkey(app);
-    let channel = crate::updates::channel_now();
-    let own = match channel.release_endpoint(&ours) {
-        Some(endpoint) => read_manifest(app, &endpoint, true).await.ok().flatten(),
-        None => None,
-    };
-    let manifest = match own {
-        Some(manifest) => manifest,
-        None => read_manifest(app, &channel.endpoint(), false)
-            .await?
-            .ok_or("purlis's update channel answered with no manifest")?,
-    };
-    let offered = purlis_core::runnerimage::offered(&manifest, &pubkey, &ours);
+    let manifest = crate::updates::manifest_for_a_new_pool(app).await?;
+    let offered = purlis_core::runnerimage::offered(
+        &manifest,
+        &crate::updates::configured_pubkey(app),
+        &ours,
+    );
     if let Ok(purlis_core::runnerimage::Offered::Ours(image)) = &offered {
         note_named(&Ok(Found::Named(image.clone())));
     }
@@ -241,55 +234,16 @@ pub async fn image_offered<R: Runtime>(
 
 /// **The runner image the update manifest names for this version**, or none where the
 /// channel's manifest is of another version or names none (a release from before #2749).
-/// One updater read, listed in the network log as every read is.
+/// One updater read ([`crate::updates::this_versions_manifest`]).
 #[cfg(unix)]
 async fn runner_image<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Found, String> {
-    let endpoint = crate::updates::channel_now().endpoint();
     let ours = app.package_info().version.to_string();
-    let manifest = read_manifest(app, &endpoint, true).await?;
-    found_in(manifest.as_ref(), &updater_pubkey(app), &ours)
-}
-
-/// **The update manifest at `endpoint`**, as the updater reads it: one read, listed in the
-/// network log as every read is. With `only_ours`, only a manifest of this very version is
-/// taken, and another is none; otherwise whichever version it is of.
-#[cfg(unix)]
-async fn read_manifest<R: Runtime>(
-    app: &tauri::AppHandle<R>,
-    endpoint: &str,
-    only_ours: bool,
-) -> Result<Option<serde_json::Value>, String> {
-    use tauri_plugin_updater::UpdaterExt;
-    let url = endpoint
-        .parse()
-        .map_err(|why| format!("purlis's update endpoint is not a url: {why}"))?;
-    let updater = app
-        .updater_builder()
-        .endpoints(vec![url])
-        .map_err(|why| format!("purlis's update endpoint was refused: {why}"))?
-        .version_comparator(move |current, remote| !only_ours || remote.version == current)
-        .build()
-        .map_err(|why| format!("purlis's updater could not be built: {why}"))?;
-    let started = std::time::Instant::now();
-    let found = updater.check().await;
-    purlis_core::netlog::updater_read(endpoint, found.is_ok(), started.elapsed());
-    Ok(found
-        .map_err(|why| why.to_string())?
-        .map(|update| update.raw_json))
-}
-
-/// The updater's public key, as this build's config carries it: empty where it carries none,
-/// which every signature check refuses.
-#[cfg(unix)]
-fn updater_pubkey<R: Runtime>(app: &tauri::AppHandle<R>) -> String {
-    app.config()
-        .plugins
-        .0
-        .get("updater")
-        .and_then(|updater| updater.get("pubkey"))
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default()
-        .to_owned()
+    let manifest = crate::updates::this_versions_manifest(app).await?;
+    found_in(
+        manifest.as_ref(),
+        &crate::updates::configured_pubkey(app),
+        &ours,
+    )
 }
 
 /// **How many chats each pool's draining runners still keep, as the last look found them**

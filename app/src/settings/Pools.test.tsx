@@ -15,6 +15,7 @@ import type {
   PoolsShown,
   RunnerImageOffered,
 } from "../bindings";
+import { stopAddingAPool } from "../pools";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 
@@ -155,6 +156,9 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  // The dialog's open state is the window's, kept across renders: a test that leaves it open
+  // must not leave it over the next test's window.
+  stopAddingAPool();
   clearMocks();
   Reflect.deleteProperty(globalThis, GLOBAL);
 });
@@ -185,7 +189,9 @@ describe("You › This machine › Pools", () => {
       ),
     ).toBeInTheDocument();
     await userEvent.click(within(group).getByRole("button", { name: "Add a pool…" }));
-    expect(await screen.findByRole("dialog", { name: "Add a pool" })).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: "Add a pool" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add a pool" })).toBeNull());
   });
 
   it("lists its pools with Add a pool… beside them", async () => {
