@@ -4231,6 +4231,14 @@ fn profile_sign_in(
         record.folders.config.display()
     );
     if !matches!(held, Held::No) {
+        // Only a desktop drives a sign-in held to its input, on a runner that keeps the profile.
+        if record.kept_for.is_none() {
+            return refused(&format!(
+                "'{}' is not kept on this device for a desktop, so purlis holds no sign-in of it \
+                 here: run purlis profile sign-in {} without those options",
+                record.name, record.name
+            ));
+        }
         return held_login(&login, held);
     }
     let ran = std::process::Command::new(&login.program)
@@ -4257,14 +4265,16 @@ enum Held {
     InOwnTerminal(purlis_core::engine::Size),
 }
 
-/// `COLUMNSxROWS`, as `--in-own-terminal` is given it.
+/// The largest terminal a sign-in is drawn in.
+const MOST_TERMINAL: (u16, u16) = (500, 200);
+
+/// `COLUMNSxROWS`, as `--in-own-terminal` is given it, no larger than [`MOST_TERMINAL`].
 fn terminal_size(said: &str) -> Result<purlis_core::engine::Size, String> {
     said.split_once('x')
         .and_then(|(columns, rows)| {
-            Some(purlis_core::engine::Size {
-                columns: columns.parse().ok()?,
-                rows: rows.parse().ok()?,
-            })
+            let (columns, rows) = (columns.parse().ok()?, rows.parse().ok()?);
+            (columns <= MOST_TERMINAL.0 && rows <= MOST_TERMINAL.1)
+                .then_some(purlis_core::engine::Size { columns, rows })
         })
         .ok_or_else(|| format!("{} is not a terminal's size", shown::short(said)))
 }
@@ -4307,6 +4317,15 @@ fn profile_sign_out(store: &purlis_core::profilestore::Homes, name: &str) -> Exi
             shown::short(name)
         ));
     };
+    // A desktop signs out what a runner keeps for it; on any other device the person runs their
+    // harness's own sign-out.
+    if record.kept_for.is_none() {
+        return refused(&format!(
+            "'{}' is not kept on this device for a desktop, so purlis signs nothing out: run its \
+             harness's own sign-out",
+            record.name
+        ));
+    }
     let pinned = match installs::on_this_runner(&record, &|line| eprintln!("{line}")) {
         Ok(pinned) => pinned,
         Err(why) => return refused(&format!("{why}. Nothing was signed out.")),

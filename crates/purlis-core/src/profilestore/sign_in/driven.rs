@@ -28,7 +28,7 @@
 use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -66,6 +66,10 @@ const NEXT_WITHIN: Duration = Duration::from_secs(60);
 
 /// The most typed into a terminal at once: a paste.
 const MOST_TYPED: usize = 64 * 1024;
+
+/// How many steps wait to be asked for before what the login prints is read no further: a login
+/// that prints faster than the window draws is held back, never kept without end.
+const MOST_WAITING: usize = 64;
 
 /// One step of a driven sign-in, as its driver says it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -535,7 +539,7 @@ fn run(
     let mut child = crate::forklock::spawn(&mut command)
         .map_err(|e| format!("{} could not be run: {e}", login.program))?;
     let input = child.stdin.take();
-    let (tell, events) = std::sync::mpsc::channel();
+    let (tell, events) = std::sync::mpsc::sync_channel(MOST_WAITING);
     let driven = Arc::new(Mutex::new(driven));
     let readers: Vec<_> = [
         (
@@ -575,7 +579,7 @@ fn reading(
     stream: Stream,
     mut from: Box<dyn Read + Send>,
     driven: Arc<Mutex<Driven>>,
-    tell: Sender<Event>,
+    tell: SyncSender<Event>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut buffer = [0u8; 4096];
@@ -611,7 +615,7 @@ fn watching(
     readers: Vec<std::thread::JoinHandle<()>>,
     driven: &Mutex<Driven>,
     cancelled: &AtomicBool,
-    tell: &Sender<Event>,
+    tell: &SyncSender<Event>,
     check: impl FnOnce() -> Standing,
 ) {
     let started = Instant::now();

@@ -606,8 +606,7 @@ pub async fn pool_sign_in_start(
                 "Pool {pool}: {OLDER_RUNNER}. Nothing was signed in."
             ));
         }
-        let runner =
-            purlis_core::runners::runner_for(&config, &pool).map_err(|why| why.to_string())?;
+        let runner = this_desktops_runner(&config, &pool)?;
         let docker = crate::runnerlinks::docker()?;
         let login = match terminal {
             Some(size) => docker.terminal_sign_in(
@@ -717,13 +716,36 @@ pub async fn pool_sign_out(pool: String, name: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let config = config_root()?;
         owned()?;
-        record_named(&config, &name)?;
-        let runner =
-            purlis_core::runners::runner_for(&config, &pool).map_err(|why| why.to_string())?;
-        crate::runnerlinks::docker()?.sign_out(&runner.made, &name)
+        let record = record_named(&config, &name)?;
+        let kept = onrunner::Kept::of(&record)?;
+        let runner = this_desktops_runner(&config, &pool)?;
+        crate::runnerlinks::docker()?.sign_out(&runner.made, &name)?;
+        // Its harness says whether it is signed out, not the sign-out's exit status alone.
+        profilestore::sign_in::forget_of(&record);
+        match keep_on(&config, &pool, &kept)? {
+            Some(Standing::SignedIn) => Err(format!(
+                "{name} is still signed in on pool {pool}: its harness's sign-out ran, and its \
+                 status check says it is signed in"
+            )),
+            _ => Ok(()),
+        }
     })
     .await
     .map_err(|why| format!("the sign-out did not run: {why}"))?
+}
+
+/// **Pool `pool`'s runner, where it runs this desktop's purlis**: one that runs another holds no
+/// sign-in to what drives it (#4043), and has no sign-out of purlis's own, so it is refused in
+/// words, with Open in terminal the way to sign in there.
+fn this_desktops_runner(config: &Path, pool: &str) -> Result<purlis_core::runners::Kept, String> {
+    let runner = purlis_core::runners::runner_for(config, pool).map_err(|why| why.to_string())?;
+    match crate::runnerlinks::behind(&Machine::here(config)?, &runner) {
+        None => Ok(runner),
+        Some(why) => Err(format!(
+            "{why}, so purlis signs nothing in or out there itself. Sign in with Open in \
+             terminal, or once the runner runs this desktop's version."
+        )),
+    }
 }
 
 /// **Cancels sign-in `flow`**: what drives its login is ended, and with its input the login

@@ -195,3 +195,26 @@ fn an_opencode_profile_signs_in_to_the_plan_named_and_never_without_one() {
         Some(format!("auth login --provider github-copilot\n{}\n", data.display()).as_str())
     );
 }
+
+/// **Sign out and a sign-in held to its input are a runner's, for its desktop** (#4043): on a
+/// profile this device keeps for itself, they are refused in words, and no harness runs.
+#[test]
+fn signing_out_and_a_held_sign_in_are_only_for_a_profile_kept_for_a_desktop() {
+    let machine = Machine::new(0);
+    machine.said(&["profile", "create", "work", "--harness", "claude"]);
+
+    for args in [
+        &["profile", "sign-out", "work"][..],
+        &["profile", "sign-in", "work", "--until-input-ends"][..],
+        &["profile", "sign-in", "work", "--in-own-terminal", "80x16"][..],
+    ] {
+        let out = machine.purlis(args);
+
+        assert!(!out.status.success(), "{args:?}");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("not kept on this device for a desktop"),
+            "{out:?}"
+        );
+    }
+    assert_eq!(machine.ran(), None);
+}

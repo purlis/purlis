@@ -33,6 +33,8 @@ export function stepSaid(step: StripStep): string | null {
       return "Step 2 of 3: Paste the code the page shows";
     case "checking":
       return "Step 3 of 3: Checking it is signed in on the runner";
+    case "could-not-follow":
+      return "purlis could not follow this sign-in: the runner's own terminal is open below";
     default:
       return null;
   }
@@ -81,7 +83,8 @@ export function PoolSignIn({
   // Whether this try runs in the strip's terminal: purlis could not follow the one before.
   const [inTerminal, setInTerminal] = useState(false);
   const flow = useRef<number>(undefined);
-  // What the login printed before the terminal was drawn, and how to print in it once it is.
+  // How to print in the terminal once it is drawn, and what was printed before it was (a step
+  // the core said while the strip's terminal was not yet drawn).
   const printing = useRef<{ held: string[]; print?: (text: string) => void }>({ held: [] });
 
   const standing = standingAt(step);
@@ -174,14 +177,19 @@ export function PoolSignIn({
     setPage(undefined);
     setCode("");
     setPasteRefused(undefined);
-    setInTerminal(false);
+    // A sign-in purlis could not follow starts again in the terminal, never at the first step.
     printing.current.held = [];
     setAttempt((n) => n + 1);
   };
 
   const type = (text: string) => {
     if (flow.current === undefined) return;
-    void commands.poolSignInType(flow.current, text).catch(() => undefined);
+    void commands
+      .poolSignInType(flow.current, text)
+      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+      .then((typed) => {
+        if (typed.status === "error") setPasteRefused(typed.error);
+      });
   };
 
   return (
@@ -288,7 +296,9 @@ export function SignInStrip(props: SignInStripProps) {
               Close
             </Button>
           </>
-        ) : (
+        ) : step.at === "checking" ? null : (
+          // While it is checked, the login on the runner has already ended: nothing is left to
+          // cancel, and what it signed in stays.
           <Button size="sm" variant="ghost" onPress={() => onEnd(false)}>
             Cancel
           </Button>
@@ -312,6 +322,7 @@ export function SignInStrip(props: SignInStripProps) {
 function troubleAt(step: StripStep, who: string, pool: string, pasteRefused?: string) {
   switch (step.at) {
     case "code":
+    case "could-not-follow":
       return pasteRefused;
     case "refused":
       return pasteRefused ?? `The sign-in refused that code: ${step.said}`;
@@ -413,8 +424,9 @@ function StepBody({
     case "could-not-follow":
       return (
         <p>
-          purlis could not follow this sign-in, so here is the runner&apos;s own terminal. Finish it
-          here; purlis checks when it ends.
+          purlis could not follow this sign-in, so it started it again in the runner&apos;s own
+          terminal below, and a page it opened before is over. Finish it there; purlis checks when
+          it ends.
         </p>
       );
     case "cancelled":

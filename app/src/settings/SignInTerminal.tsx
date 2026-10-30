@@ -3,7 +3,6 @@
 
 import { useLayoutEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import type { PoolSignInTerminal } from "../bindings";
 import { onAMac } from "../mac";
 import { textSizes } from "../textSize";
@@ -19,11 +18,15 @@ export type Printer = (print: ((text: string) => void) | undefined) => void;
  *
  * - **Never a keyboard trap** (WCAG 2.1.2): Tab and Shift+Tab leave it, as no login asks for them,
  *   so Cancel is always reachable.
- * - **It answers nothing a terminal is asked**: the terminal on the runner already did, and a
- *   second answer would be typed into the login.
+ * - **It answers none of the questions a program asks its terminal** (its kind, its cursor, its
+ *   modes, its settings, its colours): the terminal on the runner already did, and a second
+ *   answer would be typed into the login.
  * - **Copy from it, paste into it**: ⌘C (Ctrl+C off a Mac) with something selected copies it, and
  *   Ctrl+C with nothing selected interrupts the login. A paste goes in as typed text.
- * - **A link opens only on https**, in the browser here, and only when it is pressed.
+ * - **No link in it opens anything.** What a runner prints is less trusted than the window, and a
+ *   link's words can name another page than it opens: a page is opened only from the strip's own
+ *   steps, where purlis checked it is the harness's own. A page printed here is copied by hand.
+ * - **The keyboard comes to it only from the strip**, never from another field the person is in.
  */
 export function SignInTerminal({
   label,
@@ -60,17 +63,22 @@ export function SignInTerminal({
       rows: size.rows,
       scrollback: 1_000,
       screenReaderMode: true,
-      linkHandler: {
-        activate: (_, uri) => {
-          if (uri.startsWith("https://")) void openUrl(uri).catch(() => undefined);
-        },
-      },
+      // The purlis on the runner says its own lines with a bare line break.
+      convertEol: true,
     });
+    const { parser } = pane;
     const swallowed = [
-      pane.parser.registerCsiHandler({ final: "c" }, () => true),
-      pane.parser.registerCsiHandler({ prefix: ">", final: "c" }, () => true),
-      pane.parser.registerCsiHandler({ final: "n" }, () => true),
-      pane.parser.registerCsiHandler({ prefix: "?", final: "n" }, () => true),
+      // Its kind, its cursor and its state.
+      parser.registerCsiHandler({ final: "c" }, () => true),
+      parser.registerCsiHandler({ prefix: ">", final: "c" }, () => true),
+      parser.registerCsiHandler({ final: "n" }, () => true),
+      parser.registerCsiHandler({ prefix: "?", final: "n" }, () => true),
+      // Its modes and its settings.
+      parser.registerCsiHandler({ intermediates: "$", final: "p" }, () => true),
+      parser.registerCsiHandler({ prefix: "?", intermediates: "$", final: "p" }, () => true),
+      parser.registerDcsHandler({ intermediates: "$", final: "q" }, () => true),
+      // Its colours, and every link: none opens from here.
+      ...[4, 8, 10, 11, 12].map((osc) => parser.registerOscHandler(osc, () => true)),
     ];
     pane.attachCustomKeyEventHandler((event) => {
       if (event.key === "Tab") return false;
@@ -87,7 +95,12 @@ export function SignInTerminal({
       if (running.current) typed.current(text);
     });
     pane.open(where);
-    pane.focus();
+    // Only where the keyboard is nowhere, or in the strip: never out of a field the person is in.
+    const at = document.activeElement;
+    const strip = where.closest(".pool-sign-in");
+    if (at === null || at === document.body || (strip !== null && strip.contains(at))) {
+      pane.focus();
+    }
     printer((text) => pane.write(text));
     return () => {
       printer(undefined);

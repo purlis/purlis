@@ -81,6 +81,21 @@ fn a_login_that_ignores_its_input_ends_when_its_input_closes() {
     assert!(pids.iter().all(|pid| !runs(*pid)), "still runs: {pids:?}");
 }
 
+/// **What a login started is ended with it when it ends by itself.**
+#[test]
+fn what_a_login_started_ends_when_it_ends_by_itself() {
+    let out = tempfile::tempdir().expect("a folder");
+    let file = out.path().join("pids");
+    let (_input, ran) = held(stand_in(&format!(
+        "sleep 60 & echo $! >> {}; exit 0",
+        file.display()
+    )));
+
+    assert_eq!(ran.join().expect("ended"), Ok(Some(0)));
+    let pids = pids_in(&file, 1);
+    assert!(!runs(pids[0]), "still runs: {pids:?}");
+}
+
 /// **A login that will not be asked is made to end.**
 #[test]
 fn a_login_that_refuses_to_end_is_made_to() {

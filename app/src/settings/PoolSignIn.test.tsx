@@ -211,7 +211,9 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     const terminal = await within(opened).findByRole("group", {
       name: "The runner's terminal on builds",
     });
-    expect(within(opened).getByText(/could not follow this sign-in/)).toBeVisible();
+    expect(within(opened).getByRole("status")).toHaveTextContent(
+      "purlis could not follow this sign-in: the runner's own terminal is open below",
+    );
     expect(screen.getByText("Needs you in the terminal")).toBeVisible();
     await waitFor(() =>
       expect(calls("pool_sign_in_start")).toEqual([
@@ -249,6 +251,31 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     } finally {
       window.removeEventListener(PROFILE_SIGN_IN, hear);
     }
+  });
+
+  it("ends the login in the terminal on Cancel, and Try again stays in the terminal (#4043)", async () => {
+    const opened = await strip();
+    says({ at: "could-not-follow", said: "Choose your sign-in method: [1] [2]" });
+    await within(opened).findByRole("group", { name: "The runner's terminal on builds" });
+    await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
+    says({ at: "failed", why: "the runner said: no" });
+
+    await userEvent.click(await within(opened).findByRole("button", { name: "Try again" }));
+
+    await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(3));
+    expect(calls("pool_sign_in_start")[2]).toEqual(
+      expect.objectContaining({ terminal: { columns: 80, rows: 16 } }),
+    );
+    await userEvent.click(within(opened).getByRole("button", { name: "Cancel" }));
+    expect(calls("pool_sign_in_cancel")).toEqual([{ flow: 7 }]);
+  });
+
+  it("offers no Cancel while it is checked, as the login has ended (#4043)", async () => {
+    const opened = await strip();
+    says({ at: "checking" });
+
+    expect(await within(opened).findByText(/Step 3 of 3/)).toBeInTheDocument();
+    expect(within(opened).queryByRole("button", { name: "Cancel" })).toBeNull();
   });
 
   it("says why a sign-in failed and starts another by opening the page again (#4043)", async () => {

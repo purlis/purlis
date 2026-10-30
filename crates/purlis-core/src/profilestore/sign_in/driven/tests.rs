@@ -347,7 +347,6 @@ fn a_cancelled_sign_in_ends_its_login() {
     assert_eq!(next(&driving), Event::Cancelled);
 }
 
-#[cfg(unix)]
 /// **What the person's terminal shows is passed on as it is printed** (#4043): escapes and all,
 /// read for nothing, and what it printed is kept nowhere.
 #[test]
@@ -423,6 +422,7 @@ fn what_is_typed_reaches_a_login_in_a_terminal_alone() {
     assert!(piped.typed("yes\n").is_err());
 }
 
+#[cfg(unix)]
 fn stand_in(script: &str) -> Login {
     Login {
         program: "/bin/sh".to_owned(),

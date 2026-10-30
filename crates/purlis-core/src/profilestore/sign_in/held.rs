@@ -59,7 +59,11 @@ pub fn until_input_ends(
     });
     loop {
         match child.try_wait() {
-            Ok(Some(status)) => return Ok(status.code()),
+            // What it started ends with it.
+            Ok(Some(status)) => {
+                end_group_of(child.id());
+                return Ok(status.code());
+            }
             Ok(None) => {}
             Err(e) => {
                 end_group(&mut child);
@@ -115,7 +119,20 @@ pub fn in_own_terminal(
                     return Ok(None);
                 }
             }
-            Err(RecvTimeoutError::Timeout) => {}
+            // A program it started may hold the terminal open after it ended: it is looked at.
+            Err(RecvTimeoutError::Timeout) => {
+                if let Ok(Some(exit)) = session.wait(Duration::ZERO) {
+                    while let Ok(bytes) = view.output.try_recv() {
+                        let _ = output.write_all(&bytes);
+                    }
+                    let _ = output.flush();
+                    session.stopper().stop();
+                    return Ok(match exit {
+                        Exit::Code(code) => i32::try_from(code).ok(),
+                        Exit::Signal(_) => None,
+                    });
+                }
+            }
             Err(RecvTimeoutError::Disconnected) => {
                 return Ok(match session.wait(ENDS_WITHIN) {
                     Ok(Some(Exit::Code(code))) => i32::try_from(code).ok(),
@@ -148,6 +165,13 @@ fn passing(
         let _ = closed.send(());
     });
     says
+}
+
+/// Ends what is left of the group the login led, once it has ended and been reaped.
+fn end_group_of(leader: u32) {
+    if let Some(leader) = i32::try_from(leader).ok().and_then(Pid::from_raw) {
+        let _ = kill_process_group(leader, Signal::KILL);
+    }
 }
 
 /// Asks the login's group to end, makes it after [`ENDS_WITHIN`], and reaps the login.
