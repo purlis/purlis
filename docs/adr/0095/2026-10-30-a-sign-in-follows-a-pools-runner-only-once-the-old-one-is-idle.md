@@ -19,8 +19,6 @@ sign-in from one runner of a pool to the runner that replaces it, on the same Do
    which it makes under the runner's data home. It reaches that folder through no link, and it
    writes each file only where nothing is. The runner takes a carried sign-in in as it keeps the
    profile, for a profile it keeps for its desktop alone, and only the file of that profile's
-   harness. A sign-in the profile already has on the runner stays. No chat reads or writes the
-   folder the carried sign-ins wait in (ADR 0067's integrity class), so a chat neither reads one
-   there nor puts one there for a profile to take.
+   harness. A sign-in the profile already has on the runner stays.
 4. **A carry that fails never holds the drain back.** It is said in the app's log, the old runner
    is removed all the same, and that profile is signed in again on the pool.
