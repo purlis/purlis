@@ -3,9 +3,10 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "../App";
+import { HIDDEN_IN_FOCUS } from "./focusMode";
 import { stripNamed } from "../test-strips";
 
 /**
@@ -105,5 +106,61 @@ describe("focus mode and the cheat sheet, from the window", () => {
         .getAllByRole("tab")
         .filter((tab) => tab.textContent?.includes("Keyboard shortcuts")),
     ).toHaveLength(1);
+  });
+});
+
+describe("focus mode run from the palette, opened from a part it hides (#4072)", () => {
+  /** Each part focus mode hides, by its selector in `HIDDEN_IN_FOCUS`. */
+  const PARTS = HIDDEN_IN_FOCUS.split(", ");
+
+  it.each(PARTS)("leaves the keyboard on the work, from %s", async (part) => {
+    core();
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    await screen.findByTestId("title-about");
+    await waitFor(() => expect(document.querySelector(".region-frame")).not.toBeNull());
+    const root = () => document.querySelector("main.window");
+    // The keyboard in the part: on the first of its controls that takes it, or on the part
+    // itself where none does (a slot drawing an empty view).
+    const there = document.querySelector<HTMLElement>(part);
+    expect(there, `the window draws ${part}`).not.toBeNull();
+    const part_ = there as HTMLElement;
+    const controls = [
+      ...part_.querySelectorAll<HTMLElement>("button:not([disabled]), [tabindex], a[href], input"),
+    ];
+    for (const control of controls) {
+      act(() => control.focus());
+      if (part_.contains(document.activeElement)) break;
+    }
+    if (!part_.contains(document.activeElement)) {
+      part_.tabIndex = -1;
+      act(() => part_.focus());
+    }
+    expect(part_.contains(document.activeElement), "the keyboard is in the part").toBe(true);
+
+    // The palette, opened from there, runs Focus mode.
+    act(() => {
+      fireEvent.keyDown(window, { key: "k", metaKey: MAC, ctrlKey: !MAC });
+    });
+    const box = await screen.findByRole("combobox", { name: "Run an action" });
+    fireEvent.change(box, { target: { value: "Focus mode" } });
+    const row = await screen.findByRole("option", { name: /^Focus mode/ });
+    act(() => row.click());
+
+    await waitFor(() => expect(root()).toHaveAttribute("data-focus-mode"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull(),
+    );
+    await waitFor(() => {
+      const at = document.activeElement;
+      expect(at, "the keyboard is not left on the page").not.toBe(document.body);
+      expect(
+        at?.closest(HIDDEN_IN_FOCUS),
+        "the keyboard is not in a part focus mode hid",
+      ).toBeNull();
+    });
   });
 });
