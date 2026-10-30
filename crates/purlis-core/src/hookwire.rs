@@ -1578,7 +1578,8 @@ pub struct DispatchAsk {
     /// here, or has not approved, is a refusal and never another profile in its place.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
-    /// Where the new chat is to work (`--in`, #1453): `worktree`, or `workspace:<name>`.
+    /// Where the new chat is to work (`--in`, #1453): `worktree`, `worktree:<repo>` (#3903),
+    /// or `workspace:<name>`.
     /// `None` is the persona's own default, else the asking chat's folder. **A word, never a
     /// place**: which repo a worktree is cut from, and what its folder and branch are called,
     /// are the app's ([`crate::dispatchplace`]), and a workspace is looked up among the

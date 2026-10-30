@@ -106,6 +106,13 @@ pub trait Code: Send + Sync + 'static {
         let _ = (project, carried, into);
         Err(moves_no_chat())
     }
+
+    /// **The clones the project at `project` holds in `workspace`** (1.51, #3811), by their
+    /// folder names in it. A binary that moves no chat refuses it.
+    fn clones_of(&self, project: &Path, workspace: &str) -> Result<Vec<String>, Refusal> {
+        let _ = (project, workspace);
+        Err(moves_no_chat())
+    }
 }
 
 /// **A conversation a moving chat carries** (1.44, #2048): what `take_conversation` and
@@ -275,6 +282,20 @@ impl Hosting {
             ))
         })??;
         Ok(moved)
+    }
+
+    /// **The clones a project the host keeps holds in `workspace`** (1.51, #3811): no stream,
+    /// only the folder names the binary reads.
+    pub(crate) async fn clones_of(
+        &self,
+        project: &str,
+        workspace: String,
+        peer: &Peer,
+    ) -> Result<Answer, Refusal> {
+        let at = self.kept_project_held(project, peer)?;
+        let code = self.code();
+        let repos = blocking(move || code.clones_of(&at, &workspace)).await?;
+        Ok(Answer::Clones { repos })
     }
 
     /// Where a transfer's bundle is kept while it moves: beside the projects the host keeps, so

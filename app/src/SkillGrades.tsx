@@ -8,7 +8,8 @@
  * - **The Grades tab** shows the latest grade as bars (with it, without it, its previous
  *   version), every grade with how it ended (Graded, Stopped, Stopped at its limit,
  *   Interrupted), and the grade-after-each-edit row, which says what each edit may spend before
- *   it is turned on. A skill with no trigger tests says what they are instead.
+ *   it is turned on. A skill with no trigger tests says what they are instead, and offers to
+ *   write them, from a template, or to ask a chat to (#3925).
  * - **Grade** opens the plan, a running grade shows its progress, and a grade's row opens its
  *   scorecard, from which each kept chat opens read-only: pages in the studio's history
  *   ({@link GradingAt}), with their own crumbs, never tabs of their own.
@@ -35,6 +36,7 @@ import {
   endedSaid,
 } from "./SkillGrade";
 import { useRead } from "./SkillPanels";
+import { askSkillChat } from "./skillDraftAsks";
 import type { GradingAt } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
 import { Button, ButtonRow } from "./ui/button/Button";
@@ -43,6 +45,14 @@ import { Meter, MeterGroup } from "./ui/meter/Meter";
 import { PanelSectionTitle } from "./ui/panel/Panel";
 import type { Crumb } from "./ui/panel/ViewBar";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
+
+/** A skill's trigger tests file, in its folder: skill-creator's, which a grade runs. */
+export const TRIGGER_TESTS_FILE = "evals/triggers.json";
+
+/** **Where a skill's trigger tests file is opened to write in**, by the skill's page, or why it
+ *  can't be (a skill installed from a source, a file outside the project): then neither Write
+ *  trigger tests nor Ask a chat to write them is offered, as neither would land in the skill. */
+export type TestsFile = { open: () => void } | { reason: string };
 
 /** How a grading page is gone to: a step of the studio's history, or said again in its place
  *  (a grade started from its plan, a scorecard once its grade ended). `undefined` is the skill's
@@ -131,6 +141,7 @@ export function GradesTab({
   changed,
   onGrading,
   onGraded,
+  testsFile,
 }: {
   plane: string;
   name: string;
@@ -139,6 +150,8 @@ export function GradesTab({
   onGrading: GradingGo;
   /** Told when a grade of this skill ends, so the page reads what it shows again. */
   onGraded?: () => void;
+  /** Write trigger tests, where the page offers it; none says nothing more. */
+  testsFile?: TestsFile;
 }) {
   const [again, setAgain] = useState(0);
   const graded = useRef(onGraded);
@@ -146,11 +159,14 @@ export function GradesTab({
     graded.current = onGraded;
   });
   const [said, setSaid] = useState<string>();
+  const [writing, setWriting] = useState(false);
+  // The grade the last read said runs: a step of another one reads the tab again.
+  const runningNow = useRef<string | null>(null);
   // The level as a value: a page drawn again with an equal level reads nothing anew.
   const levelKey = JSON.stringify(level);
   const reread = [plane, name, levelKey, changed, again];
+  // One read says the grades, whether there are trigger tests and the grade running (#3928).
   const grades = useRead(() => commands.skillGrades(plane, level, name), reread);
-  const plan = useRead(() => commands.skillGradePlan(plane, level, name, null, null), reread);
   const afterEdit = useRead(() => commands.skillGradeAfterEdit(plane, level, name), reread);
 
   // A grade of this skill that ends, or an edit grading after each edit did not grade, is read
@@ -158,11 +174,15 @@ export function GradesTab({
   useEffect(() => {
     const ended = listen<SkillGradeStep>(SKILL_GRADE, (event) => {
       const now = event.payload;
-      if (now.plane === plane && now.skill === name && now.ended !== null) {
-        setAgain((n) => n + 1);
-        graded.current?.();
-        if (now.said !== null) setSaid(endedSaid(now));
+      if (now.plane !== plane || now.skill !== name) return;
+      // A grade that starts while the tab is open (one after an edit) is read, so it is shown.
+      if (now.ended === null) {
+        if (runningNow.current !== now.grade) setAgain((n) => n + 1);
+        return;
       }
+      setAgain((n) => n + 1);
+      graded.current?.();
+      if (now.said !== null) setSaid(endedSaid(now));
     }).catch(() => undefined);
     const waits = listen<SkillGradeAfterEditStep>(SKILL_GRADE_AFTER_EDIT, (event) => {
       const now = event.payload;
@@ -178,9 +198,19 @@ export function GradesTab({
 
   // Each answer is taken only in its own shape: a core that answers another leaves it unread.
   const rows = Array.isArray(grades.data?.grades) ? grades.data.grades : [];
-  const tests = Array.isArray(plan.data?.tests) ? plan.data.tests : undefined;
-  const noTests = tests !== undefined && tests.length === 0 && plan.data?.tests_refused == null;
-  const running = plan.data?.running ?? null;
+  const tests = typeof grades.data?.tests === "number" ? grades.data.tests : undefined;
+  const noTests = tests === 0 && grades.data?.tests_refused == null;
+  const running = grades.data?.running?.grade ?? null;
+  // Why trigger tests can't be written here, where they can't.
+  const held =
+    testsFile === undefined
+      ? "This skill's files can't be opened here."
+      : "reason" in testsFile
+        ? testsFile.reason
+        : undefined;
+  useEffect(() => {
+    runningNow.current = running;
+  }, [running]);
   const on =
     typeof afterEdit.data === "object" && afterEdit.data !== null && "profile" in afterEdit.data
       ? afterEdit.data
@@ -213,8 +243,47 @@ export function GradesTab({
         <EmptyState
           variant="panel"
           headline={`${name} has no trigger tests yet`}
-          body={`A grade has nothing to run until it has some. Trigger tests are prompts, each with whether ${name} should start for it, kept with the skill in evals/triggers.json; a grade runs each in chats with ${name} and without it, and counts the ones each chat got right.`}
+          body={`A grade has nothing to run until it has some. Trigger tests are prompts, each with whether ${name} should start for it, kept with the skill in ${TRIGGER_TESTS_FILE}; a grade runs each in chats with ${name} and without it, and counts the ones each chat got right.`}
           testid="skill-grades-no-tests"
+          action={
+            <ButtonRow>
+              <Button
+                variant="primary"
+                isDisabled={held !== undefined || writing}
+                tooltip={held}
+                onPress={() => {
+                  if (testsFile === undefined || !("open" in testsFile)) return;
+                  const open = testsFile.open;
+                  setWriting(true);
+                  // The template is the core's, written as a change to the skill; its file then
+                  // opens to write in. A refusal is said here, and opens nothing.
+                  void commands
+                    .skillTriggerTestsStart(plane, level, name)
+                    .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+                    .then((answer) => {
+                      setWriting(false);
+                      if (answer.status === "error") {
+                        setSaid(answer.error);
+                        return;
+                      }
+                      setAgain((n) => n + 1);
+                      open();
+                    });
+                }}
+              >
+                Write trigger tests
+              </Button>
+              {/* A chat on the project's default profile, the core's prompt typed and not sent:
+                  as Ask a chat to draft a skill opens one, and its write comes back as a draft. */}
+              <Button
+                isDisabled={held !== undefined}
+                tooltip={held}
+                onPress={() => askSkillChat({ plane, kind: "triggers", level, name })}
+              >
+                Ask a chat to write them
+              </Button>
+            </ButtonRow>
+          }
         />
       )}
       {grades.refused !== undefined ? (
@@ -369,17 +438,7 @@ export function GradingPage({
           level={level}
           changed={changed}
           afterEdit={grading.afterEdit === true}
-          onStarted={(grade, plan) =>
-            onGrading(
-              {
-                at: "running",
-                grade,
-                chats: plan.chats,
-                ...(plan.cost_cap_usd === null ? {} : { limitUsd: plan.cost_cap_usd }),
-              },
-              "replace",
-            )
-          }
+          onStarted={(grade) => onGrading({ at: "running", grade }, "replace")}
           onAfterEdit={() => onGrading(undefined, "replace")}
           onRunning={(grade) => onGrading({ at: "running", grade }, "go")}
           onCancel={() => onGrading(undefined, "replace")}
@@ -392,7 +451,6 @@ export function GradingPage({
           name={name}
           level={level}
           grade={grading.grade}
-          started={grading}
           onEnded={() => onGrading({ at: "scorecard", grade: grading.grade }, "replace")}
           onBack={() => onGrading(undefined, "go")}
         />

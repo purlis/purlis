@@ -341,6 +341,13 @@ pub fn claim_name(device: &str, pool: &str) -> String {
     format!("{pool}-{}", crate::clusterpool::desktop_label(device))
 }
 
+/// **The lock an add of the cluster pool `name` holds from start to end** (#3292): a removal of
+/// that pool takes it first, so it waits for the add to finish rather than meet a pool half
+/// made.
+fn adding(config_root: &Path, name: &str) -> crate::machine::Lock {
+    crate::machine::Lock::named(config_root, &format!("cluster-add-{name}.lock"))
+}
+
 /// How long adding a cluster pool waits for the cluster operator to vouch for its runner.
 pub const VOUCHED_WITHIN: std::time::Duration = std::time::Duration::from_secs(300);
 
@@ -348,31 +355,90 @@ pub const VOUCHED_WITHIN: std::time::Duration = std::time::Duration::from_secs(3
 pub const ASKED_EVERY: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// **The programs a pool's kubectl runs, as they are found now** (#3292): kubectl itself and each
-/// credential plugin `context` (the pool's context as JSON) names, each by its real path, links
-/// followed. Refused, with a sentence, for a plugin purlis does not find, and for a program it
-/// cannot hold for no chat to write ([`holdable`]).
+/// credential plugin `context` (the pool's context as JSON) names, each both as it is named (a
+/// link on the way among them) and by its real path, links followed. Refused, with a sentence,
+/// for a plugin purlis does not find, and for a program it cannot hold for no chat to write
+/// ([`holdable`]).
 fn programs_run(
     kubectl: &crate::clusterpool::Kubectl,
     context: &str,
+    home: Option<&Path>,
 ) -> Result<Vec<std::path::PathBuf>, Refused> {
     let said = |why: crate::clusterpool::Refused| Refused::Other(why.to_string());
-    let mut programs = vec![kubectl.real_program().map_err(said)?];
+    let mut named = vec![kubectl.program().to_path_buf()];
     for command in crate::clusterpool::plugins_named(context).map_err(said)? {
-        let found = kubectl.plugin_at(&command).ok_or_else(|| {
+        named.push(kubectl.plugin_at(&command).ok_or_else(|| {
             Refused::Other(format!(
                 "the kubeconfig's context runs the credential plugin {command}, which purlis did \
                  not find beside kubectl or in this machine's own folders, so nothing was added; \
                  name it by its absolute path in the kubeconfig"
             ))
+        })?);
+    }
+    let mut programs: Vec<std::path::PathBuf> = Vec::new();
+    for program in named {
+        let chain = links_to(&program).map_err(|why| {
+            Refused::Other(format!(
+                "{} could not be read as a program ({why}), so nothing was added",
+                program.display()
+            ))
         })?;
-        if !programs.contains(&found) {
-            programs.push(found);
+        if let Some(real) = chain.last() {
+            package_holdable(real, home)?;
+        }
+        for path in chain {
+            if !programs.contains(&path) {
+                programs.push(path);
+            }
         }
     }
     for program in &programs {
         holdable(program)?;
     }
     Ok(programs)
+}
+
+/// **`program` and every link on the way to its file** (#3292): the name as given, each link it
+/// leads through, in order, and last the real file, links followed. At most 40 links, as a
+/// system follows them.
+fn links_to(program: &Path) -> std::io::Result<Vec<std::path::PathBuf>> {
+    let mut chain = vec![program.to_path_buf()];
+    let mut at = program.to_path_buf();
+    for _ in 0..40 {
+        let Ok(next) = std::fs::read_link(&at) else {
+            break;
+        };
+        let next = match at.parent() {
+            Some(folder) if next.is_relative() => folder.join(next),
+            _ => next,
+        };
+        chain.push(next.clone());
+        at = next;
+    }
+    let real = program.canonicalize()?;
+    if !chain.contains(&real) {
+        chain.push(real);
+    }
+    Ok(chain)
+}
+
+/// **Whether the package `real`, a program's real file, belongs to can be held whole** (#3292):
+/// never where it is the whole home folder, `/` or a folder above the home, which would keep
+/// every chat from writing anything there. Refused with a sentence that says what to do.
+fn package_holdable(real: &Path, home: Option<&Path>) -> Result<(), Refused> {
+    let package = crate::sandbox::package_root(real);
+    let too_wide =
+        package.parent().is_none() || home.is_some_and(|home| home.starts_with(&package));
+    if too_wide {
+        return Err(Refused::Other(format!(
+            "{} is in {}, which purlis would have to keep every chat from writing to hold it, \
+             so nothing was added; move it into a folder of its own and name it there in the \
+             kubeconfig",
+            real.display(),
+            package.display()
+        )));
+    }
+    Ok(())
 }
 
 /// **Whether `program` can be held for no chat to write** (#3292): a file, where it and the
@@ -434,6 +500,7 @@ pub fn add_cluster(
     desktop: &Pinned,
     within: std::time::Duration,
 ) -> Result<runners::ClusterKept, Refused> {
+    let _adding = adding(config_root, pool.name());
     let taken_from = pool.kubectl(kubectl);
     let pin = pool.pin()?;
     let named = taken_from
@@ -449,7 +516,13 @@ pub fn add_cluster(
     let context = taken_from
         .context_kept()
         .map_err(|why| Refused::Other(why.to_string()))?;
-    let held = programs_run(&taken_from, &context)?;
+    let held = programs_run(
+        &taken_from,
+        &context,
+        crate::profiles::home()
+            .map(|home| crate::sandbox::real(&home))
+            .as_deref(),
+    )?;
     // Recorded pointing at its own copy, which is kept only once its name is the pool's.
     let pool = &pool
         .kept_at(&runners::kubeconfig_kept_at(config_root, pool.name()))
@@ -558,8 +631,9 @@ pub type UnpairCluster<'a> =
 
 /// **Removes the cluster pool `name`** (#3292), on the desktop whose device id is `device`:
 ///
-/// 1. this desktop out of its runner's peers with `unpair`, where given, before anything is
-///    locked, since a link's own check may keep the pool's pin;
+/// 1. once an add of it still under way has finished, this desktop out of its runner's peers
+///    with `unpair`, where given, before the store is locked, since a link's own check may keep
+///    the pool's pin;
 /// 2. its claim deleted through `kubectl` (none where this machine has none), and with it its
 ///    runner, only where the claim is the one this desktop keeps (its uid) or, where no runner
 ///    was kept, one marked as this desktop's and asked for by who this kubeconfig is;
@@ -575,6 +649,9 @@ pub fn remove_cluster(
     device: Option<&str>,
     unpair: Option<&UnpairCluster<'_>>,
 ) -> Result<Option<String>, Refused> {
+    // An add of it still under way finishes first.
+    runners::usable_pool_name(name).map_err(Refused::Other)?;
+    let _adding = adding(config_root, name);
     let pool = runners::cluster_pools(config_root)?
         .into_iter()
         .find(|pool| pool.name() == name)
@@ -621,7 +698,17 @@ fn claim_released(
     let (namespace, claim) = match (kept, device) {
         (Some(kept), _) => (kept.claimed.namespace.clone(), kept.claimed.name.clone()),
         (None, Some(device)) => (pool.namespace().to_owned(), claim_name(device, pool.name())),
-        (None, None) => return None,
+        (None, None) => {
+            return Some(format!(
+                "Pool {} was removed here, but a claim of it may still hold a runner in the \
+                 cluster (purlis could not read this desktop's device id, so it could not tell \
+                 which claim is its own); list them with kubectl get claims.runners.purlis.dev \
+                 --namespace {} and delete only the one this desktop made, which starts with the \
+                 pool's name: other desktops' claims of the pool start with it too.",
+                pool.name(),
+                pool.namespace()
+            ));
+        }
     };
     let left = |why: &str| {
         Some(format!(

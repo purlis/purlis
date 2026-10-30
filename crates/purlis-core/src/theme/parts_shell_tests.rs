@@ -696,6 +696,31 @@ fn each_kind_of_notice_dot_is_a_part_of_its_own() {
 }
 
 #[test]
+fn the_needs_you_dot_is_a_part_of_its_own_that_reaches_the_dot() {
+    // A needs-you dot (#3652) is keyed apart from the other kinds, and reached by its own
+    // attributes around the chip, as every dot is, in no variant and no state.
+    let sheet = sheet_of(json!({ "titlebar.dot-needs.fill": "state.failed" }));
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"titlebar\"][data-part=\"dot-needs\"]) { background-color: var(--state-failed); }"
+        ),
+        "{sheet}"
+    );
+    assert!(
+        !sheet.contains("[data-part=\"workspace\"] [data-scope=\"titlebar\"][data-part=\"dot-needs\"]"),
+        "never reached inside a chip: {sheet}"
+    );
+    let loaded = load(&with_parts(json!({ "titlebar.dot-needs.hover.fill": "state.failed" })));
+    assert!(
+        said(&loaded)
+            .iter()
+            .any(|one| one.contains("parts.titlebar.dot-needs.hover.fill is not")),
+        "{:?}",
+        said(&loaded)
+    );
+}
+
+#[test]
 fn a_notice_card_s_point_is_its_own_part_and_leaves_every_other_popover_s_arrow_alone() {
     // The point is the notice card's (`HungPopover`); the arrow a held popover draws is an SVG of
     // the surface's own ground, no part a theme keys.

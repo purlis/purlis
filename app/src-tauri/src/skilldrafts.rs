@@ -13,6 +13,8 @@
 //!   ([`skill_draft_reject`]).
 //! - **"Ask a chat to draft a skill"** ([`skill_draft_chat`]) opens a chat where the level's skills
 //!   are reached from, with the core's prompt typed and never sent, as a curation chat is opened.
+//!   **"Ask a chat to write them"** ([`skill_trigger_tests_chat`]) opens one the same way, asked
+//!   for a skill's trigger tests (#3925).
 //! - **Try it** opens a scratch chat in a throwaway piece, armed with the built-in skills and the
 //!   draft alone, on the profile the person picked or the project's default; the piece goes when
 //!   the chat closes (`Chats::close`).
@@ -271,6 +273,45 @@ pub(crate) async fn skill_draft_chat(
                 cwd,
                 label: "Draft a skill".to_owned(),
                 prompt: drafts::asking(&level),
+                then_a_space: false,
+                starts_runs: None,
+            },
+            purlis_core::engine::Size { columns, rows },
+        )
+    })
+    .await
+}
+
+/// **"Ask a chat to write them"** (#3925): a chat where `level`'s skills are reached from, on the
+/// project's default profile, with the core's prompt for the trigger tests of the skill `name`
+/// typed and never sent ([`drafts::asking_for_trigger_tests`]). It starts as "Ask a chat to draft
+/// a skill" does, through the same start; its write comes back as a draft.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_trigger_tests_chat(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    level: SkillLevel,
+    name: String,
+    columns: u16,
+    rows: u16,
+) -> Result<Curating, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("starting the chat", move || {
+        crate::skillchange::flag_on()?;
+        let root = held.root().to_path_buf();
+        let level: purlis_core::skills::verbs::Level = (&level).into();
+        let prompt = drafts::asking_for_trigger_tests(&root, &level, &name)?;
+        let cwd = where_level_is_reached(&root, &level)?;
+        let (profile, _) = crate::curation::default_profile(&root, "no chat was opened")?;
+        open(
+            &held,
+            ChatTyped {
+                profile,
+                persona: None,
+                cwd,
+                label: format!("Trigger tests of {name}"),
+                prompt,
                 then_a_space: false,
                 starts_runs: None,
             },

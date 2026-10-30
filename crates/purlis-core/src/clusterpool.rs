@@ -699,9 +699,9 @@ impl Kubectl {
         })
     }
 
-    /// **Where a kubeconfig's credential plugin `command` is**, by its real path, as a run of
-    /// this kubectl finds it (#3292): an absolute command as it is, a bare name in the folders
-    /// its runs are given on `PATH`. `None` where it is not found.
+    /// **Where a kubeconfig's credential plugin `command` is**, as a run of this kubectl finds
+    /// it (#3292): an absolute command as it is, a bare name in the folders its runs are given on
+    /// `PATH`, links not followed. `None` where it is not found.
     pub fn plugin_at(&self, command: &str) -> Option<PathBuf> {
         let named = std::path::Path::new(command);
         let found = if named.is_absolute() {
@@ -715,7 +715,7 @@ impl Kubectl {
                     .find(|candidate| crate::programs::runnable(candidate))
             })
         };
-        found.and_then(|found| found.canonicalize().ok())
+        found.filter(|found| crate::programs::runnable(found))
     }
 
     /// **The `kubectl` command on this machine, by its absolute path** (#3292), found as
