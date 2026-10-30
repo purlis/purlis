@@ -521,3 +521,112 @@ fn a_see_through_row_fill_is_measured_over_the_popover_fill_a_theme_sets() {
         "{fallen:?}"
     );
 }
+
+/// [`drawn_on`] for a part drawn inside the chip: the rules that reach `part` inside a
+/// `workspace` chip whose attributes are `chip`.
+fn drawn_in_chip(
+    sheet: &str,
+    chip: &[&str],
+    part: &str,
+) -> std::collections::BTreeMap<String, String> {
+    let mut drawn = std::collections::BTreeMap::new();
+    let inner = format!("[data-scope=\"titlebar\"][data-part=\"{part}\"]");
+    for line in sheet.lines().map(str::trim) {
+        let Some(rest) = line.strip_prefix(":where(") else {
+            continue;
+        };
+        let Some((selector, body)) = rest.split_once(") {") else {
+            continue;
+        };
+        let Some((outer, tail)) = selector.split_once(' ') else {
+            continue;
+        };
+        if !tail.starts_with(&inner) || selector.contains(',') {
+            continue;
+        }
+        // The chip's own attributes, matched as [`drawn_on`] matches an element's.
+        let line = format!(":where({outer}) {{{body}");
+        if drawn_on(&line, "workspace", chip).is_empty() {
+            continue;
+        }
+        for declaration in body.trim_end_matches('}').split(';') {
+            if let Some((property, value)) = declaration.trim().split_once(": ") {
+                drawn.insert(property.to_owned(), value.to_owned());
+            }
+        }
+    }
+    drawn
+}
+
+#[test]
+fn a_chip_s_failing_pair_draws_its_count_back_where_both_hold() {
+    // In Purlis light the amber reads on `border.subtle` under the pointer, and `accent.fill`
+    // reads on the count's wash while current, but not `accent.fill` on `border.subtle`, which
+    // the count of a current chip under the pointer draws (#4084's review).
+    let theme = shaped(
+        "purlis",
+        "light",
+        json!({
+            "titlebar.count.pinned.hover.fill": "border.subtle",
+            "titlebar.count.pinned.selected.text": "accent.fill",
+        }),
+    );
+    assert!(
+        fell(&theme).contains(&"titlebar.workspace.pinned.hover+selected".to_owned()),
+        "{:?}",
+        fell(&theme)
+    );
+    let sheet = parts::stylesheet(&theme);
+    let both = drawn_in_chip(
+        &sheet,
+        &["data-variant=pinned", "data-hovered", "data-selected"],
+        "count",
+    );
+    assert_eq!(fill_of(&both), Some("var(--wash-warning)"), "{sheet}");
+    assert_eq!(words_of(&both), Some("var(--state-waiting)"), "{sheet}");
+    // Each state alone keeps the theme's.
+    let hovered = drawn_in_chip(&sheet, &["data-variant=pinned", "data-hovered"], "count");
+    assert_eq!(fill_of(&hovered), Some("var(--border-subtle)"), "{sheet}");
+    let current = drawn_in_chip(&sheet, &["data-variant=pinned", "data-selected"], "count");
+    assert_eq!(words_of(&current), Some("var(--accent-fill)"), "{sheet}");
+}
+
+#[test]
+fn a_row_s_count_is_held_over_the_popover_fill_a_theme_sets() {
+    // In Purlis Classic light, a row's count on `diff.inserted` reads over the popover's own
+    // surface (5.1:1) and not over `tab.active` (4:1); the row's own words read on both, so
+    // the row draws its fill back for its count alone.
+    let rows = json!({ "titlebar.row.fill": "diff.inserted" });
+    let theme = shaped("purlis-classic", "light", rows.clone());
+    assert!(
+        !fell(&theme).iter().any(|one| one.starts_with("titlebar.")),
+        "{:?}",
+        fell(&theme)
+    );
+    let mut both = rows;
+    both["popover.root.popover.fill"] = json!("tab.active");
+    let theme = shaped("purlis-classic", "light", both);
+    assert_eq!(fell(&theme), ["titlebar.row"]);
+}
+
+#[test]
+fn a_row_s_failing_pair_leaves_a_plain_hovered_row_the_theme_s_colours() {
+    // #4049's own case: under the pointer the row's own colours read (the window's ground on a
+    // light grey), and the row Enter would go to its primary words on the selected fill; but
+    // not those words on the grey, which that row under the pointer draws. The count stands on
+    // a ground of its own, so it reads on the grey too.
+    let theme = purlis_dark(json!({
+        "titlebar.row.hover.fill": "text.secondary",
+        "titlebar.row.hover.text": "surface.base",
+        "titlebar.row.selected.text": "text.primary",
+        "titlebar.row-count.fill": "surface.base",
+        "titlebar.row-count.text": "text.primary",
+    }));
+    assert_eq!(fell(&theme), ["titlebar.row.hover+selected"]);
+    let sheet = parts::stylesheet(&theme);
+    let hovered = drawn_on(&sheet, "row", &["data-hovered"]);
+    assert_eq!(fill_of(&hovered), Some("var(--text-secondary)"), "{sheet}");
+    assert_eq!(words_of(&hovered), Some("var(--surface-base)"), "{sheet}");
+    let both = drawn_on(&sheet, "row", &["data-hovered", "data-selected"]);
+    assert_eq!(fill_of(&both), Some("var(--list-selected)"), "{sheet}");
+}
