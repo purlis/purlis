@@ -81,6 +81,7 @@ use crate::settings::Refusal;
 pub mod args;
 pub mod login;
 pub mod mint;
+pub mod repo;
 
 /// The key in a persona's table that holds its tools.
 pub const KEY: &str = "tools";
@@ -1373,6 +1374,24 @@ pub fn allows(ready: &Ready, args: &[String]) -> Result<(), String> {
     args::permits(&ready.tool.name, ready.tool.args.as_deref(), args)
 }
 
+/// **Whether `ready`'s run in `folder` reads only repository configuration the person
+/// controls** (#3868, [`repo::held`]), for a project at `root` whose chat may write `writable`:
+/// glab's own settings judged where the tool's name or program is glab. Judged before any
+/// value is read for the run.
+pub fn reads_held_repository(
+    ready: &Ready,
+    folder: &Path,
+    root: &Path,
+    writable: &[PathBuf],
+) -> Result<(), String> {
+    let real = ready.program.canonicalize().ok();
+    let glab = [Path::new(&ready.tool.name), ready.program.as_path()]
+        .into_iter()
+        .chain(real.as_deref())
+        .any(|name| file_name_of(name) == "glab");
+    repo::held(folder, root, writable, glab)
+}
+
 /// `path`, a `PATH` a brokered tool run starts from, without each folder in the project at
 /// `root`, in `writable`, or in a temporary folder: a program the tool runs by its bare name is
 /// never one a chat could have put there (D-PE-ruling-2).
@@ -1777,3 +1796,5 @@ mod args_tests;
 
 #[cfg(test)]
 mod mint_tests;
+#[cfg(test)]
+mod repo_tests;
