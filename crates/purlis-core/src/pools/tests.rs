@@ -1363,11 +1363,8 @@ mod cluster {
     fn a_cluster_runners_standing_is_asked_in_its_vouched_pod_after_the_links_check() {
         let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
         added(config.path(), &cluster);
-        cluster.write(
-            "paired.txt",
-            "'work' is signed in by Claude Code's own sign-in on x\n",
-        );
-        let asked = cluster_standing(
+        // What it answers is read by `standing_by_login`'s own test; here, what is asked.
+        let _ = cluster_standing(
             config.path(),
             &cluster.kubectl(),
             "team",
@@ -1379,7 +1376,6 @@ mod cluster {
             "{}",
             cluster.calls()
         );
-        assert_eq!(asked, Ok(crate::profilestore::sign_in::Standing::SignedIn));
 
         cluster.write("claim.json", "{}");
         assert!(

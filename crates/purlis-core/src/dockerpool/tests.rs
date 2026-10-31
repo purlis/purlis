@@ -3115,7 +3115,7 @@ fn a_standing_is_not_held_to_its_input() {
         args: vec![
             "-c".to_owned(),
             "case \"$*\" in *--until-input-ends*) echo refused;; *--check*) echo \"'work' is not \
-             signed in\";; esac"
+             signed in\" >&2;; esac"
                 .to_owned(),
             "sh".to_owned(),
             "--until-input-ends".to_owned(),
