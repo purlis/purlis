@@ -444,12 +444,21 @@ pub fn look_again(profile: &Profile, look: &dyn Look) -> Standing {
     standing_remembered(profile, look)
 }
 
-/// `profile` is signed in on this device: its waits go, in every project.
-pub fn let_go_everywhere(profile: &Profile) {
+/// `profile` is signed in on this device: its waits go, in every project. The projects whose
+/// wait went, whose windows have an Ask to stop drawing (#4205).
+pub fn let_go_everywhere(profile: &Profile) -> Vec<PathBuf> {
+    let mut went = Vec::new();
     WAITS
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .retain(|w| w.profile.name != profile.name || w.profile.env != profile.env);
+        .retain(|w| {
+            let goes = w.profile.name == profile.name && w.profile.env == profile.env;
+            if goes {
+                went.push(w.root.clone());
+            }
+            !goes
+        });
+    went
 }
 
 /// The person put the wait for `name` in the project at `root` away.

@@ -900,12 +900,21 @@ pub fn waiting_on_pools(root: &Path) -> Vec<PoolWait> {
 }
 
 /// The profile `name` is signed in on pool `pool` now, or the person put its wait away in the
-/// project at `root` (`None`: in every project): its waits go.
-pub fn let_go(root: Option<&Path>, pool: &str, name: &str) {
+/// project at `root` (`None`: in every project): its waits go. The projects whose wait went,
+/// whose windows have an Ask to stop drawing (#4205).
+pub fn let_go(root: Option<&Path>, pool: &str, name: &str) -> Vec<PathBuf> {
+    let mut went = Vec::new();
     POOL_WAITS
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .retain(|w| !(w.pool == pool && w.profile == name && root.is_none_or(|r| w.root == r)));
+        .retain(|w| {
+            let goes = w.pool == pool && w.profile == name && root.is_none_or(|r| w.root == r);
+            if goes {
+                went.push(w.root.clone());
+            }
+            !goes
+        });
+    went
 }
 
 /// The person left the sign-in of `name` on pool `pool` in the project at `root`: its wait goes,

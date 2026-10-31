@@ -434,7 +434,9 @@ pub fn forget_off_the_pools(name: &str) -> Option<String> {
                 }
                 continue;
             }
-            Ok(Some(())) => onrunner::let_go(None, pool_name, name),
+            Ok(Some(())) => {
+                onrunner::let_go(None, pool_name, name);
+            }
             Err(why) => {
                 // Still named, so its row offers Remove until a tidy finds it gone there.
                 untidied(pool_name);
@@ -1557,6 +1559,7 @@ pub fn watched_sign_in(pool: String, name: String) -> Option<crate::signinwatch:
             crate::signinwatch::Whose::Everywhere => onrunner::let_go(None, &pool, &name),
             crate::signinwatch::Whose::InTheProject(root, seen) => {
                 onrunner::let_go_older(root, &pool, &name, seen);
+                Vec::new()
             }
         }),
     })

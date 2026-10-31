@@ -160,3 +160,25 @@ fn a_shell_closed_at_the_first_look_was_last_seen_as_the_watch_began() {
     assert!(last_open >= before);
     assert!(last_open <= Instant::now());
 }
+
+/// **Every project whose wait went is told, and its own project while it is open** (#4205). A
+/// project closed is told nothing: its teller would say an old list of it.
+#[test]
+fn every_project_whose_wait_went_is_told() {
+    let root = |at: &str| PathBuf::from(at);
+
+    assert_eq!(
+        to_tell(vec![root("/one"), root("/two")], &root("/one"), true),
+        [root("/one"), root("/two")]
+    );
+    assert_eq!(
+        to_tell(vec![root("/two")], &root("/one"), true),
+        [root("/two"), root("/one")],
+        "its own, though no wait of it went: it may be drawing one"
+    );
+    assert_eq!(
+        to_tell(vec![root("/two")], &root("/one"), false),
+        [root("/two")]
+    );
+    assert!(to_tell(Vec::new(), &root("/one"), false).is_empty());
+}

@@ -360,7 +360,10 @@ pub async fn machine_profile_remove(
 
 /// What a watcher needs of the open project `held`, holding it only weakly: a closing project
 /// goes as it would. A shell that ran `exit` counts as closed, its tab open or not (#4202).
-fn watched_project(held: &std::sync::Arc<crate::planes::Held>) -> crate::signinwatch::Project {
+fn watched_project(
+    app: tauri::AppHandle,
+    held: &std::sync::Arc<crate::planes::Held>,
+) -> crate::signinwatch::Project {
     let (shell, open) = (
         std::sync::Arc::downgrade(held),
         std::sync::Arc::downgrade(held),
@@ -376,7 +379,20 @@ fn watched_project(held: &std::sync::Arc<crate::planes::Held>) -> crate::signinw
                 .is_some_and(|held| held.chats().runs_a_shell_at(tab, &shell_root))
         }),
         project_open: Box::new(move || open.upgrade().is_some_and(|held| !held.chats().ending())),
-        told: Box::new(held.hooks().asks_teller()),
+        told: Box::new(move |roots| tell_asks_at(&app, roots)),
+    }
+}
+
+/// Tells the windows of the open projects at `roots` that their Asks changed (#4205). A project
+/// going away is passed over: its teller would say its old list of the project reopened.
+fn tell_asks_at(app: &tauri::AppHandle, roots: &[std::path::PathBuf]) {
+    let Some(planes) = tauri::Manager::try_state::<Planes>(app) else {
+        return;
+    };
+    for held in planes.every_held() {
+        if !held.chats().ending() && roots.iter().any(|root| root == held.root()) {
+            held.hooks().asks_teller()();
+        }
     }
 }
 
@@ -393,6 +409,7 @@ fn signing_in_here(profile: purlis_core::profiles::Profile) -> crate::signinwatc
             crate::signinwatch::Whose::Everywhere => sign_in::let_go_everywhere(&profile),
             crate::signinwatch::Whose::InTheProject(root, seen) => {
                 sign_in::let_go_older(root, &profile.name, seen);
+                Vec::new()
             }
         }),
     }
@@ -419,7 +436,7 @@ fn signing_in_here(profile: purlis_core::profiles::Profile) -> crate::signinwatc
 #[tauri::command]
 #[specta::specta]
 pub fn type_profile_sign_in(
-    planes: tauri::State<'_, Planes>,
+    app: tauri::AppHandle,
     plane: PlaneId,
     session: u32,
     name: String,
@@ -427,7 +444,7 @@ pub fn type_profile_sign_in(
     pool: Option<String>,
     device: bool,
 ) -> Result<(), String> {
-    let held = planes.held(&plane)?;
+    let held = tauri::Manager::state::<Planes>(&app).held(&plane)?;
     if !held.chats().is_shell_at(session, held.root()) {
         return Err(
             "that tab is not a shell at the project root, so no sign-in was typed.".to_owned(),
@@ -437,7 +454,7 @@ pub fn type_profile_sign_in(
         let line = crate::poolprofiles::sign_in_line(&pool, &name, provider.as_deref(), device)?;
         held.operator_input(session, line.as_bytes())?;
         if let Some(sign_in) = crate::poolprofiles::watched_sign_in(pool, name) {
-            crate::signinwatch::watch(sign_in, session, watched_project(&held));
+            crate::signinwatch::watch(sign_in, session, watched_project(app.clone(), &held));
         }
         return Ok(());
     }
@@ -456,7 +473,11 @@ pub fn type_profile_sign_in(
     held.operator_input(session, line.as_bytes())?;
     sign_in::forget_of(&record);
     if let Some(profile) = purlis_core::profiles::of_record(&record) {
-        crate::signinwatch::watch(signing_in_here(profile), session, watched_project(&held));
+        crate::signinwatch::watch(
+            signing_in_here(profile),
+            session,
+            watched_project(app.clone(), &held),
+        );
     }
     Ok(())
 }
@@ -473,7 +494,9 @@ pub fn dismiss_sign_in(
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     match pool {
-        Some(pool) => profilestore::onrunner::let_go(Some(held.root()), &pool, &profile),
+        Some(pool) => {
+            profilestore::onrunner::let_go(Some(held.root()), &pool, &profile);
+        }
         None => sign_in::dismiss(held.root(), &profile),
     }
     held.hooks().asks_teller()();

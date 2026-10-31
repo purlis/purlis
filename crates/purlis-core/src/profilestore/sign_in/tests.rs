@@ -519,8 +519,14 @@ fn signed_in_lets_go_every_project_s_wait() {
     waits_on(one, &profile);
     waits_on(two, &profile);
 
-    let_go_everywhere(&profile);
+    let mut went = let_go_everywhere(&profile);
+    went.sort();
 
+    assert_eq!(
+        went,
+        [one, two],
+        "it says whose went, for their windows (#4205)"
+    );
     assert!(waiting(one).is_empty());
     assert!(waiting(two).is_empty());
 }

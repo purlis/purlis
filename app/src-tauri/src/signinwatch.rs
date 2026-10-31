@@ -25,6 +25,9 @@ type Watched = (usize, Option<String>, String);
 /// often Sign in is pressed.
 static WATCHED: Mutex<Option<HashMap<Watched, Vec<u32>>>> = Mutex::new(None);
 
+/// Tells the windows of the open projects at some roots that their Asks changed.
+pub type Told = Box<dyn FnOnce(&[PathBuf]) + Send>;
+
 /// The project a watcher was started for, as the watcher needs it.
 pub struct Project {
     /// [`Watched`]'s first part.
@@ -35,8 +38,8 @@ pub struct Project {
     pub shell_open: Box<dyn Fn(u32) -> bool + Send>,
     /// Whether that project is still open: one closed is not the person leaving a sign-in.
     pub project_open: Box<dyn Fn() -> bool + Send>,
-    /// Tells its window its Asks changed.
-    pub told: Box<dyn FnOnce() + Send>,
+    /// [`Told`]: every project whose wait went, not only this one (#4205).
+    pub told: Told,
 }
 
 /// The sign-in a watcher watches.
@@ -47,8 +50,8 @@ pub struct SignIn {
     pub name: String,
     /// Whether the harness says the profile is signed in now. Asked on the watcher's thread.
     pub signed_in: Box<dyn FnMut() -> bool + Send>,
-    /// Lets the waits for it go.
-    pub let_go: Box<dyn Fn(Whose<'_>) + Send>,
+    /// Lets the waits for it go: the projects whose wait went, as far as it can say.
+    pub let_go: Box<dyn Fn(Whose<'_>) -> Vec<PathBuf> + Send>,
 }
 
 /// Whose waits a sign-in lets go.
@@ -107,9 +110,7 @@ pub fn watch(sign_in: SignIn, session: u32, project: Project) {
             ..
         } = project;
         let SignIn {
-            mut signed_in,
-            let_go,
-            ..
+            signed_in, let_go, ..
         } = sign_in;
         let (ended, last_open) = watched_until(
             Pace {
@@ -117,7 +118,7 @@ pub fn watch(sign_in: SignIn, session: u32, project: Project) {
                 for_: WATCHED_FOR,
                 later_every: WATCHED_LATER_EVERY,
             },
-            || signed_in(),
+            signed_in,
             || {
                 // Asked with no lock held: the answer reads the project, and may be the last to
                 // hold it.
@@ -132,16 +133,23 @@ pub fn watch(sign_in: SignIn, session: u32, project: Project) {
             watched_now(|watched| watched.remove(&key));
         }
         let open = project_open();
-        match asks_go(ended, open) {
+        let went = match asks_go(ended, open) {
             AsksGo::Everywhere => let_go(Whose::Everywhere),
             AsksGo::InTheProject => let_go(Whose::InTheProject(&root, last_open)),
-            AsksGo::None => {}
-        }
-        // A closed project's teller would say its old, empty list of the project reopened.
-        if open {
-            told();
-        }
+            AsksGo::None => Vec::new(),
+        };
+        told(&to_tell(went, &root, open));
     });
+}
+
+/// Whose windows an ended watch tells: every project whose wait `went` (#4205), and its own while
+/// open, which may be drawing a wait another let go. A closed one is told only through a wait
+/// that went, which it cannot have unless it reopened.
+fn to_tell(mut went: Vec<PathBuf>, root: &Path, project_open: bool) -> Vec<PathBuf> {
+    if project_open && !went.iter().any(|one| one == root) {
+        went.push(root.to_path_buf());
+    }
+    went
 }
 
 fn watched_now<T>(with: impl FnOnce(&mut HashMap<Watched, Vec<u32>>) -> T) -> T {

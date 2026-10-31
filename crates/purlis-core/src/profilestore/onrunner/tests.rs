@@ -412,6 +412,28 @@ fn a_chat_on_a_profile_signed_out_on_the_pool_waits_as_one_sign_in_there() {
     assert!(waiting_on_pools(&project).is_empty());
 }
 
+/// **Letting a pool's waits go says whose went** (#4205): each of those windows has an Ask to
+/// stop drawing.
+#[test]
+fn letting_a_pool_s_waits_go_says_whose_went() {
+    let dir = tempfile::tempdir().unwrap();
+    a_signed_in_desktop_profile(dir.path());
+    let desktop = homes(dir.path(), "desktop");
+    let (one, two) = (dir.path().join("told-1"), dir.path().join("told-2"));
+    for root in [&one, &two] {
+        ready_on(desktop.config_root(), root, "told", "work", &|_| {
+            Ok(Some(Standing::SignedOut))
+        })
+        .unwrap_err();
+    }
+
+    let mut went = let_go(None, "told", "work");
+    went.sort();
+
+    assert_eq!(went, [one, two]);
+    assert!(let_go(None, "told", "work").is_empty(), "none left to go");
+}
+
 /// **Leaving a sign-in on a pool lets go only waits older than the moment the shell was last
 /// seen open, and only in its project** (#4203).
 #[test]
