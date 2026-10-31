@@ -17,7 +17,10 @@ import { NoticeStack } from "./Notice";
 afterEach(cleanup);
 
 /** Says the stack is `room` tall, holds `held`, and is scrolled `top` down, as layout would. */
-function laidOut(stack: HTMLElement, { room, held, top }: { room: number; held: number; top: number }) {
+function laidOut(
+  stack: HTMLElement,
+  { room, held, top }: { room: number; held: number; top: number },
+) {
   Object.defineProperty(stack, "clientHeight", { configurable: true, value: room });
   Object.defineProperty(stack, "scrollHeight", { configurable: true, value: held });
   Object.defineProperty(stack, "scrollTop", { configurable: true, writable: true, value: top });

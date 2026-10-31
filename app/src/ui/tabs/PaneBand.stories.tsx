@@ -626,7 +626,9 @@ export const NarrowScrolled: Story = {
     };
     const scrollTo = (top: number) => {
       // The person's wheel first (#3217), so the scroll is theirs and no move.
-      stack.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: top - stack.scrollTop }));
+      stack.dispatchEvent(
+        new WheelEvent("wheel", { bubbles: true, deltaY: top - stack.scrollTop }),
+      );
       stack.scrollTop = top;
     };
 
