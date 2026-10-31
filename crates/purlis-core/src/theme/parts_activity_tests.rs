@@ -379,9 +379,10 @@ fn the_hot_count_draws_from_its_own_role_and_no_other() {
 
 #[test]
 fn a_plain_count_rule_that_comes_near_the_hot_count_draws_its_default() {
-    let loaded = load(&with_parts(
-        json!({ "activity.count.fill": "needs-you.count" }),
-    ));
+    let loaded = load(&with_parts(json!({
+        "activity.count.fill": "needs-you.count",
+        "activity.count.text": "needs-you.count-text",
+    })));
     assert!(!loaded.refused, "{:?}", said(&loaded));
     let fell = parts::fallen(loaded.theme.first());
     assert!(

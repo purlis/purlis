@@ -1268,6 +1268,7 @@ Tuned after the table (#2589), in this order. base16 makes some roles one colour
 | `state.success` | toward `base05` |
 | `state.unreadable` | toward `base05` |
 | `needs-you.base` | toward `base05` |
+| `needs-you.count` | toward `base05` |
 | `syntax.keyword` | toward `base05` |
 | `syntax.string` | toward `base05` |
 | `syntax.number` | toward `base05` |
@@ -1428,6 +1429,7 @@ Tuned as a base16 scheme is, after the table (#2589):
 | `state.success` | toward `base05` |
 | `state.unreadable` | toward `base05` |
 | `needs-you.base` | toward `base05` |
+| `needs-you.count` | toward `base05` |
 | `syntax.keyword` | toward `base05` |
 | `syntax.string` | toward `base05` |
 | `syntax.number` | toward `base05` |
@@ -1560,6 +1562,7 @@ Tuned after the table (#2589). The terminal's own colours (its background, its w
 | `state.success` | toward `Foreground Color` |
 | `state.unreadable` | toward `Foreground Color` |
 | `needs-you.base` | toward `Foreground Color` |
+| `needs-you.count` | toward `Foreground Color` |
 | `syntax.keyword` | toward `Foreground Color` |
 | `syntax.string` | toward `Foreground Color` |
 | `syntax.number` | toward `Foreground Color` |
@@ -1680,6 +1683,7 @@ Tuned as an iTerm2 preset is, after the table (#2589):
 | `state.success` | toward `foreground` |
 | `state.unreadable` | toward `foreground` |
 | `needs-you.base` | toward `foreground` |
+| `needs-you.count` | toward `foreground` |
 | `syntax.keyword` | toward `foreground` |
 | `syntax.string` | toward `foreground` |
 | `syntax.number` | toward `foreground` |
