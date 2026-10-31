@@ -148,7 +148,7 @@ fn a_keep_takes_only_the_settings_it_names() {
     assert!(mixed.add(of_another).is_err());
 }
 
-/// **What a runner holds crosses a page at a time, each within a frame** (#4088, 1.60), every file
+/// **What a runner holds crosses a page at a time, each within a frame** (#4088, 1.61), every file
 /// once, in the order of their paths.
 #[test]
 fn what_a_runner_holds_crosses_in_pages_each_within_a_frame() {

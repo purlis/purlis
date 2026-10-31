@@ -75,7 +75,7 @@ pub type Forgetting = Arc<dyn Fn(&Pinned, &str) -> Result<(), String> + Send + S
 pub type Listing = Arc<dyn Fn(&Pinned) -> Result<Vec<String>, String> + Send + Sync>;
 
 /// A page of the settings files the runner holds of the profile named, for the desktop a link
-/// proved, after the path named, and whether more follow (`settings_held`, 1.60, #4088).
+/// proved, after the path named, and whether more follow (`settings_held`, 1.61, #4088).
 pub type Holding = Arc<
     dyn Fn(&Pinned, &str, Option<&str>) -> Result<(Vec<session::HeldSetting>, bool), String>
         + Send
@@ -286,7 +286,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
 /// runner's peers, `keep_profile` (1.43, #2049), which keeps one of its profiles here, its
 /// settings staged on this link first (`stage_profile_settings`, 1.56, #4081),
 /// `forget_profile` (1.52, #4047), which forgets one, `kept_profiles` (1.57, #4060), which
-/// names the ones kept, `settings_held` (1.60, #4088), which says what it holds of one, and
+/// names the ones kept, `settings_held` (1.61, #4088), which says what it holds of one, and
 /// `sign_in_redirect` (1.59, #4044), which hands a login here its browser's answer.
 struct PairedLink {
     hosting: Hosting,
@@ -424,7 +424,7 @@ impl PairedLink {
             })
     }
 
-    /// `settings_held` (1.60, #4088): what is kept here of the desktop's profile, read off the
+    /// `settings_held` (1.61, #4088): what is kept here of the desktop's profile, read off the
     /// runtime, since each file is read and digested.
     async fn held(
         &self,

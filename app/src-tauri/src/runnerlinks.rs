@@ -641,8 +641,8 @@ async fn keep_one(
 /// on any sane list of paths, so one that keeps saying there are more has all the settings sent.
 const MOST_HELD_PAGES: usize = 64;
 
-/// **What the runner on `client` says it holds of `kept`** (`settings_held`, 1.60, #4088): nothing
-/// from one before 1.60 or for a profile whose settings do not go, nothing from one that refuses
+/// **What the runner on `client` says it holds of `kept`** (`settings_held`, 1.61, #4088): nothing
+/// from one before 1.61 or for a profile whose settings do not go, nothing from one that refuses
 /// or whose pages do not go forward, so all the settings go. `Err` where it stopped answering.
 async fn held_by(
     client: &purlis_session_protocol::session::Client,

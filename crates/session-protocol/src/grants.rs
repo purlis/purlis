@@ -44,7 +44,7 @@
 //! | `log_in`, a login purlis performs with a vault's values (1.18) | yes | | | | | relayed (1.38) |
 //! | a kept login: a browser's start from one, and a `log_in` that keeps one (1.27) | yes | | | | | |
 //! | `unpair`, the desktop taken out of a runner's peers (1.25) | | | | | | yes |
-//! | `keep_profile`, a desktop's profile kept on its runner (1.43), `forget_profile`, taken off it (1.52), `stage_profile_settings`, its settings in batches (1.56), `kept_profiles`, the ones it keeps (1.57), and `settings_held`, what it holds of one (1.60) | | | | | | yes |
+//! | `keep_profile`, a desktop's profile kept on its runner (1.43), `forget_profile`, taken off it (1.52), `stage_profile_settings`, its settings in batches (1.56), `kept_profiles`, the ones it keeps (1.57), and `settings_held`, what it holds of one (1.61) | | | | | | yes |
 //! | `sign_in_redirect`, a sign-in's redirect handed to a login on the runner (1.59) | | | | | | yes |
 //! | `name_window`, the window naming itself on a link to its own host (1.31) | yes | | | | | |
 //! | `relay_to`, the window's link relayed by its host to a runner it keeps (1.33) | yes | | | | | |
@@ -199,7 +199,7 @@
 //!   relaying host refuses it, so it reaches a runner only from the desktop it is paired with.
 //!   `forget_profile` (1.52, #4047), which takes one of the desktop's profiles off the runner, is
 //!   granted and refused exactly as it is, and so is `kept_profiles` (1.57, #4060), which asks
-//!   the names of the ones the runner keeps for that desktop, and `settings_held` (1.60, #4088),
+//!   the names of the ones the runner keeps for that desktop, and `settings_held` (1.61, #4088),
 //!   which asks the path and digest of each settings file it holds of one of them.
 //! - **`sign_in_redirect` is the paired desktop's, on its own link to the runner** (1.59, #4044),
 //!   as `keep_profile` is, for the sign-in that desktop started there. It reaches one login's own
@@ -315,7 +315,7 @@ pub enum Power {
     /// `keep_profile` (1.43, #2049): a desktop's profile kept on its runner, and
     /// `forget_profile` (1.52, #4047): one taken off it, `stage_profile_settings` (1.56,
     /// #4081): the batches of its settings, `kept_profiles` (1.57, #4060): the ones kept
-    /// there, and `settings_held` (1.60, #4088): what it holds of one.
+    /// there, and `settings_held` (1.61, #4088): what it holds of one.
     KeepProfile,
     /// `sign_in_redirect` (1.59, #4044): a sign-in's redirect handed to a login on the runner.
     SignInRedirect,

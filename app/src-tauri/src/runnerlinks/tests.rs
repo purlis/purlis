@@ -795,7 +795,7 @@ fn keeps_in(asked: &[session::Command]) -> Vec<(bool, usize)> {
 /// **An unchanged profile sends nothing beyond the listing** (#4088): one keep, nothing staged.
 #[tokio::test]
 async fn a_runner_holding_what_the_desktop_has_is_sent_nothing() {
-    let (asked, answer) = sent_to_a_runner(60, |same| Holds::Listed(vec![same]), false).await;
+    let (asked, answer) = sent_to_a_runner(61, |same| Holds::Listed(vec![same]), false).await;
     assert!(answer.is_ok());
     assert_eq!(keeps_in(&asked), [(true, 0)]);
 }
@@ -804,7 +804,7 @@ async fn a_runner_holding_what_the_desktop_has_is_sent_nothing() {
 /// it said, the settings go whole on the same link, in place of whatever it holds.
 #[tokio::test]
 async fn a_keep_of_what_changed_refused_sends_them_all() {
-    let (asked, answer) = sent_to_a_runner(60, |same| Holds::Listed(vec![same]), true).await;
+    let (asked, answer) = sent_to_a_runner(61, |same| Holds::Listed(vec![same]), true).await;
     assert!(answer.is_ok());
     assert_eq!(keeps_in(&asked), [(true, 0), (false, 1)]);
 }
@@ -819,16 +819,16 @@ async fn a_runner_with_no_usable_list_is_sent_them_all() {
         |_| Holds::Listed(Vec::new()),
     ];
     for holds in cases {
-        let (asked, answer) = sent_to_a_runner(60, holds, false).await;
+        let (asked, answer) = sent_to_a_runner(61, holds, false).await;
         assert!(answer.is_ok());
         assert_eq!(keeps_in(&asked), [(false, 1)]);
     }
 }
 
-/// **A runner before 1.60 is asked nothing new, and is sent them all** (#4088).
+/// **A runner before 1.61 is asked nothing new, and is sent them all** (#4088).
 #[tokio::test]
-async fn a_runner_before_1_60_is_sent_them_all_and_asked_nothing_new() {
-    let (asked, answer) = sent_to_a_runner(59, |same| Holds::Listed(vec![same]), false).await;
+async fn a_runner_before_1_61_is_sent_them_all_and_asked_nothing_new() {
+    let (asked, answer) = sent_to_a_runner(60, |same| Holds::Listed(vec![same]), false).await;
     assert!(answer.is_ok());
     assert!(
         !asked

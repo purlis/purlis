@@ -843,7 +843,7 @@ pub enum Command {
     /// desktop's alone, on its own link.
     StageProfileSettings(SettingsBatch),
     /// The desktop on this link asks which settings files the runner holds of its profile
-    /// `profile`, with a digest of each (1.60, #4088): those whose paths sort after `after`,
+    /// `profile`, with a digest of each (1.61, #4088): those whose paths sort after `after`,
     /// answered [`Answer::SettingsHeld`]. A profile the runner does not keep for that desktop
     /// holds none. Carried out and refused as [`Command::KeepProfile`] is
     /// ([`crate::grants::Power::KeepProfile`]).
@@ -1252,13 +1252,13 @@ pub struct ProfileToKeep {
     /// files sent here. It refuses a count that is not what it holds, and both fields at once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings_staged: Option<u32>,
-    /// That what was staged is only what changed (1.60, #4088): the runner keeps what it holds,
+    /// That what was staged is only what changed (1.61, #4088): the runner keeps what it holds,
     /// with those files in place and these removed, or refuses.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings_changed: Option<ChangedSettings>,
 }
 
-/// **What a [`ProfileToKeep`] says of the settings it did not send** (1.60, #4088).
+/// **What a [`ProfileToKeep`] says of the settings it did not send** (1.61, #4088).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChangedSettings {
     /// The paths the desktop no longer has.
@@ -1269,7 +1269,7 @@ pub struct ChangedSettings {
     pub whole: String,
 }
 
-/// **A settings file a runner holds** (1.60, #4088): its path, and [`settings_digest`] of its
+/// **A settings file a runner holds** (1.61, #4088): its path, and [`settings_digest`] of its
 /// bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HeldSetting {
@@ -1277,7 +1277,7 @@ pub struct HeldSetting {
     pub digest: String,
 }
 
-/// **The digest of a settings file's bytes** (1.60, #4088): SHA-256, in lower-case hex.
+/// **The digest of a settings file's bytes** (1.61, #4088): SHA-256, in lower-case hex.
 pub fn settings_digest(bytes: &[u8]) -> String {
     use sha2::Digest as _;
     crate::auth::hex(&sha2::Sha256::digest(bytes))
@@ -1291,7 +1291,7 @@ pub fn is_settings_digest(digest: &str) -> bool {
             .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-/// **The digest of a profile's settings together** (1.60, #4088): each path, its length first so
+/// **The digest of a profile's settings together** (1.61, #4088): each path, its length first so
 /// that no two sets read alike, and its file's digest, in the order of the paths.
 pub fn whole_settings_digest<'a>(files: impl IntoIterator<Item = (&'a str, &'a str)>) -> String {
     use sha2::Digest as _;
@@ -1884,7 +1884,7 @@ pub enum Answer {
     /// [`Command::KeptProfiles`] (1.57).
     Profiles { names: Vec<String> },
     /// The settings files a runner holds of a profile, a page at a time:
-    /// [`Command::SettingsHeld`] (1.60).
+    /// [`Command::SettingsHeld`] (1.61).
     SettingsHeld {
         files: Vec<HeldSetting>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -3528,7 +3528,7 @@ impl Client {
     }
 
     /// A page of the settings files the runner holds of this link's desktop's profile `profile`
-    /// (1.60, #4088), and whether more follow. Refused by every host but a runner's of 1.60 or
+    /// (1.61, #4088), and whether more follow. Refused by every host but a runner's of 1.61 or
     /// later, on its link from that desktop.
     pub async fn settings_held(
         &self,

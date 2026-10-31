@@ -535,7 +535,7 @@ async fn the_paired_desktop_has_the_runner_forget_its_profile() {
         client.kept_profiles().await.unwrap(),
         vec!["work".to_owned()]
     );
-    // What it holds of one (1.60, #4088), on the same link.
+    // What it holds of one (1.61, #4088), on the same link.
     let (held, more) = client.settings_held("work", None).await.unwrap();
     assert_eq!(held.len(), 1);
     assert!(!more);

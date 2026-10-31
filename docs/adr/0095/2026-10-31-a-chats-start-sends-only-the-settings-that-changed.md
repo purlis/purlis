@@ -5,7 +5,7 @@ crossing whole at every chat's start. It extends the 2026-10-30 amendment, whose
 all-or-none stand. Everything here is **decided in implementation, to be confirmed** (D-4088-1 to
 D-4088-7 in the pull request).
 
-1. **A runner says what it holds** (session protocol 1.60, `settings_held`, the paired desktop's
+1. **A runner says what it holds** (session protocol 1.61, `settings_held`, the paired desktop's
    alone, on its own link, as `keep_profile` is): the path and SHA-256 of each settings file of a
    profile it keeps for that desktop, in pages within a control frame. They are read off its disk
    as a desktop reads its own, at that moment. Nothing is remembered, since a chat may be able to
@@ -29,7 +29,7 @@ D-4088-7 in the pull request).
    every file gets a new name and no earlier writer holds it, and a link above the settings refuses
    the keep. Skipping the write was tried and removed: it saved under a quarter of a second, and it
    made what is on the disk something that had to be proved equal to what was checked.
-6. **A runner before 1.60 is sent them all**, as it was.
+6. **A runner before 1.61 is sent them all**, as it was.
 
 **What this does not defend against:** a runner whose own program is changed can ignore any keep,
 as it could when every file was sent. The boundary here is the runner's program, against what

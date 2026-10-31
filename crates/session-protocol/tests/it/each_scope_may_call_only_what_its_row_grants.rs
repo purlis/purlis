@@ -326,7 +326,7 @@ fn every_command() -> Vec<Command> {
             profile: "work".into(),
             pieces: Vec::new(),
         }),
-        // What a runner holds of a profile's settings (1.60, #4088).
+        // What a runner holds of a profile's settings (1.61, #4088).
         Command::SettingsHeld {
             profile: "work".into(),
             after: None,
