@@ -353,6 +353,10 @@ pub fn sign_in_file_of(harness: &str) -> Option<&'static str> {
 /// that profile for its desktop and takes them in. A profile's name starts with no dot.
 pub const CARRIED: &str = ".carried";
 
+/// **Left in the profiles' folder by a runner whose chats are kept out of other harnesses' default
+/// folders**: only such a runner's default-folder sign-ins are carried. No chat writes there.
+pub const DEFAULTS_HELD: &str = ".default-folders-held";
+
 /// Where the carry put them before: only ever cleared, never taken in ([`made::take_carried`]).
 pub(crate) const CARRIED_BEFORE: &str = "carried";
 
@@ -390,11 +394,12 @@ pub fn carried_under_an_old_runner_home() -> String {
 }
 
 /// **What a Docker pool's new runner takes of a runner drained beside it** (#4011, #4055, ruled
-/// 2026-10-30): the sign-ins of the profiles purlis made there, and nothing else, each as
-/// `<from>=<to>`, `<from>` under the old home and `<to>` under the carry's batch ([`CARRIED`]). A
-/// made profile's sign-in files ([`SIGN_IN_FILES`], `*` its name, under either spelling of the
-/// data home) go under its name. A harness's own default folder is not carried for now, so a
-/// built-in default profile signs in again on the new runner. No setting, hook, plugin,
+/// 2026-10-30): its profiles' sign-ins, and nothing else, each as `<from>=<to>`, `<from>` under
+/// the old home and `<to>` under the carry's batch ([`CARRIED`]). A made profile's sign-in files
+/// ([`SIGN_IN_FILES`], `*` its name, under either spelling of the data home) go under its name,
+/// and Claude Code's and Codex's sign-in file in their default folders under the harness's name,
+/// the name the desktop's adopted folder is kept by. opencode's default folder is not carried for
+/// now, so its built-in default profile signs in again on the new runner. No setting, hook, plugin,
 /// instruction or transcript of a harness, and nothing of purlis's own: not the profiles' records,
 /// the runner's device id, link key or peers, its harness installs, its projects or its browsers.
 pub fn carried_in_a_runner_home() -> Vec<String> {
@@ -408,6 +413,13 @@ pub fn carried_in_a_runner_home() -> Vec<String> {
                 Path::new("*").join(file).display()
             ));
         }
+    }
+    for (own, harness) in [
+        (".claude/.credentials.json", "claude"),
+        (".codex/auth.json", "codex"),
+    ] {
+        let file = sign_in_file_of(harness).unwrap_or_default();
+        pairs.push(format!("{own}={harness}/{file}"));
     }
     pairs
 }

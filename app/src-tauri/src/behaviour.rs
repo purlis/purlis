@@ -3697,7 +3697,7 @@ fn a_real_claude_code_chat_on_a_runner_is_held_as_a_codex_chat_is(target: &Targe
 const REAL_CLAUDE_CODE: &str = "/usr/local/lib/parity/claude-code";
 
 /// What a chat says of [`PastAChat::tries`]: its project reached, and nothing past it.
-const PAST_A_CHAT: [&str; 11] = [
+const PAST_A_CHAT: [&str; 18] = [
     "PROJECT yes.",
     "ENGINE-FOLDER no.",
     "ENGINE-MEMORY no.",
@@ -3707,6 +3707,13 @@ const PAST_A_CHAT: [&str; 11] = [
     "HOST-SOCKET no.",
     "CARRIED-READ no.",
     "CARRIED-WRITE no.",
+    "CLAUDE-SIGN-IN-READ no.",
+    "CLAUDE-SIGN-IN-WRITE no.",
+    "CODEX-SIGN-IN-READ no.",
+    "CODEX-SIGN-IN-WRITE no.",
+    "OPENCODE-SIGN-IN-READ no.",
+    "OPENCODE-SIGN-IN-WRITE no.",
+    "OPENCODE-FOLDER-MOVE no.",
     // Only the browser engine may make namespaces on a runner (D-2050-25), refused by the
     // filter, not for want of a program.
     "NAMESPACE no:",
@@ -3749,6 +3756,13 @@ impl PastAChat {
              try HOST-SOCKET 'ls {socket}'\n\
              try CARRIED-READ 'cat {carried}/a/work/file'\n\
              try CARRIED-WRITE 'mkdir {carried}/planted'\n\
+             try CLAUDE-SIGN-IN-READ 'cat $HOME/.claude/.credentials.json'\n\
+             try CLAUDE-SIGN-IN-WRITE 'echo x >> $HOME/.claude/.credentials.json'\n\
+             try CODEX-SIGN-IN-READ 'cat $HOME/.codex/auth.json'\n\
+             try CODEX-SIGN-IN-WRITE 'echo x >> $HOME/.codex/auth.json'\n\
+             try OPENCODE-SIGN-IN-READ 'cat $HOME/.local/share/opencode/auth.json'\n\
+             try OPENCODE-SIGN-IN-WRITE 'echo x >> $HOME/.local/share/opencode/auth.json'\n\
+             try OPENCODE-FOLDER-MOVE 'mv $HOME/.local/share/opencode $HOME/.local/share/opencode2'\n\
              if said=$(unshare --user true 2>&1); then printf 'NAMESPACE yes.\\n'; else printf 'NAMESPACE no: %s\\n' \"$said\"; fi\n"
         )
     }
@@ -3773,6 +3787,11 @@ fn a_browser_and_what_lies_past_a_chat(
         )
         .unwrap_or_else(|why| panic!("a browser starts on the runner: {why:?}"));
 
+    // Each harness's default sign-in, as a built-in default profile keeps it.
+    runner.prints(
+        "for f in .claude/.credentials.json .codex/auth.json .local/share/opencode/auth.json; do \
+         mkdir -p \"$(dirname \"$HOME/$f\")\"; echo held > \"$HOME/$f\"; done",
+    );
     let carried = runner
         .prints(&format!(
             "at=$(dirname \"$HOME\"/.local/share/*/{browsers})/profiles/{carried}; \
