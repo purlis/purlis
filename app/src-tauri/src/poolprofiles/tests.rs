@@ -478,3 +478,28 @@ fn a_cluster_pools_profiles_are_the_ones_chosen_for_it() {
     assert!(changeable(config.path(), "team", None).is_ok());
     assert!(kept_on(config.path(), "nowhere", None).is_err());
 }
+
+/// **A sign-out is done only once the runner's status check says signed out**: every other
+/// answer keeps the person from relying on it.
+#[test]
+fn a_sign_out_is_done_only_where_the_harness_says_signed_out() {
+    let said = |asked| signed_out_by_its_harness("work", "builds", asked);
+
+    assert_eq!(said(Ok(Some(Standing::SignedOut))), Ok(()));
+
+    let still = said(Ok(Some(Standing::SignedIn))).expect_err("still signed in");
+    assert!(
+        still.contains("work is still signed in on pool builds"),
+        "{still}"
+    );
+
+    for asked in [
+        Ok(Some(Standing::CannotTell)),
+        Ok(Some(Standing::Fetching)),
+        Ok(None),
+        Err("the runner did not answer".to_owned()),
+    ] {
+        let why = said(asked.clone()).expect_err("not confirmed");
+        assert!(why.contains("could not confirm"), "{asked:?}: {why}");
+    }
+}

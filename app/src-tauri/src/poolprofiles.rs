@@ -1389,16 +1389,30 @@ pub async fn pool_sign_out(pool: String, name: String) -> Result<(), String> {
         }
         // Its harness says whether it is signed out, not the sign-out's exit status alone.
         profilestore::sign_in::forget_of(&record);
-        match keep_on(&config, &pool, &kept)? {
-            Some(Standing::SignedIn) => Err(format!(
-                "{name} is still signed in on pool {pool}: its harness's sign-out ran, and its \
-                 status check says it is signed in"
-            )),
-            _ => Ok(()),
-        }
+        signed_out_by_its_harness(&name, &pool, keep_on(&config, &pool, &kept))
     })
     .await
     .map_err(|why| format!("the sign-out did not run: {why}"))?
+}
+
+/// **What a sign-out says, from what `name`'s harness on pool `pool`'s runner answered after it
+/// ran**: done only where its status check says signed out. Any other answer leaves it unconfirmed.
+fn signed_out_by_its_harness(
+    name: &str,
+    pool: &str,
+    asked: Result<Option<Standing>, String>,
+) -> Result<(), String> {
+    match asked {
+        Ok(Some(Standing::SignedOut)) => Ok(()),
+        Ok(Some(Standing::SignedIn)) => Err(format!(
+            "{name} is still signed in on pool {pool}: its harness's sign-out ran, and its \
+             status check says it is signed in"
+        )),
+        Ok(Some(Standing::CannotTell | Standing::Fetching) | None) | Err(_) => Err(format!(
+            "{name} may still be signed in on pool {pool}: its harness's sign-out ran, and purlis \
+             could not confirm it. Look at the pool's row"
+        )),
+    }
 }
 
 /// **[`this_desktops_runner`], of a cluster pool** (#3819): its runner's `purlis`, asked over
