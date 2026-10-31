@@ -367,6 +367,17 @@ pub fn carried_under_a_runner_home() -> String {
         .to_string()
 }
 
+/// [`carried_under_a_runner_home`], in a home whose data home has its old spelling, or none yet:
+/// a data home is read under its old spelling until a migration moves it (`crate::names`), so
+/// the carry goes there rather than make the new spelling under a runner already running.
+pub fn carried_under_an_old_runner_home() -> String {
+    Path::new(".local/share")
+        .join(crate::names::DATA_HOME.newest_old())
+        .join(CARRIED)
+        .display()
+        .to_string()
+}
+
 /// **What a Docker pool's new runner takes of a runner drained beside it** (#4011, #4055, ruled
 /// 2026-10-30): its profiles' sign-ins, and nothing else, each as `<from>=<to>`, `<from>` under
 /// the old home and `<to>` under the carry's batch ([`CARRIED`]). A made profile's sign-in files

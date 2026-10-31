@@ -113,12 +113,14 @@
 }
 
 /* The current workspace while it is not pinned (R105): muted words, a dashed line, "+", and no
-   fill though it is current, as the prototype draws it, so its edge is what says it. */
+   fill though it is current, as the prototype draws it, so its edge is what says it. The edge is
+   a boundary, held to 3:1 (WCAG 1.4.11), so it is drawn in the muted words, which every theme
+   holds to 4.5 on the bar and on the card's fill; the window's hairline measured 1.38 (#3999). */
 [data-part="workspace"][data-scope="titlebar"][data-variant="unpinned"] {
   color: var(--text-muted);
   background-color: transparent;
   border-style: dashed;
-  border-color: var(--border-subtle);
+  border-color: var(--text-muted);
 }
 
 [data-part="workspace"][data-scope="titlebar"][data-variant="unpinned"][data-hovered] {
@@ -134,7 +136,8 @@
   color: var(--text-muted);
   font-style: italic;
   border-style: dotted;
-  border-color: var(--border-subtle);
+  /* Its edge in the muted words, as the unpinned chip's is (#3999). */
+  border-color: var(--text-muted);
 }
 
 [data-part="workspace"][data-scope="titlebar"][data-variant="dormant"][data-hovered] {

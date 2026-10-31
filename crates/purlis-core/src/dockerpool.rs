@@ -57,8 +57,10 @@ pub const PREFIX: &str = "purlis-runner-";
 pub const PURLIS: &str = "/usr/local/bin/purlis";
 
 /// **The shell script a drained runner's sign-ins are carried with** (#4011, #4055): `sh -c`
-/// hands it the old home, the new home, the folder under the new home they go to
-/// ([`crate::profilestore::carried_under_a_runner_home`]) and each `<from>=<to>` pair
+/// hands it the old home, the new home, the folder under the new home they go to where its data
+/// home has the purlis spelling ([`crate::profilestore::carried_under_a_runner_home`]), the one
+/// where it does not ([`crate::profilestore::carried_under_an_old_runner_home`]), so a running
+/// runner's data home never moves under it, and each `<from>=<to>` pair
 /// ([`crate::profilestore::carried_in_a_runner_home`]). A `*` in a pair is a profile's name:
 /// each one found under the old home goes to the same name. The new runner serves chats as it
 /// runs, so nothing is written where they could have put something first: the folder is walked
@@ -70,11 +72,14 @@ pub const PURLIS: &str = "/usr/local/bin/purlis";
 /// is then signed in again, as before any was carried, and the drain goes on.
 pub const COPY_PROFILES: &str = r#"set -u
 umask 077
-from=$1 to=$2 stage=$3
-shift 3
+from=$1 to=$2 stage=$3 old_stage=$4
+shift 4
 from=$(cd -P "$from" && pwd -P) || exit 1
 cd -P "$to" || exit 1
 here=$(pwd -P)
+data=${stage%/*}
+if [ -L "$data" ] || { [ -e "$data" ] && [ ! -d "$data" ]; }; then exit 1; fi
+[ -d "$data" ] || stage=$old_stage
 set -f
 IFS=/
 for part in $stage; do
@@ -739,6 +744,7 @@ impl Made {
             "/from",
             "/to",
             &crate::profilestore::carried_under_a_runner_home(),
+            &crate::profilestore::carried_under_an_old_runner_home(),
         ]
         .iter()
         .map(|word| (*word).to_owned())
