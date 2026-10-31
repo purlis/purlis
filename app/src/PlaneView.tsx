@@ -3465,6 +3465,8 @@ export const PlaneView = memo(function PlaneView({
   /** Whether the picker's start is in flight: the ref is the guard, the state is the button. */
   const startingNow = useRef(false);
   const [starting, setStarting] = useState(false);
+  /** The person cancelled the start in flight: what it answers is said to nobody. */
+  const startLeft = useRef(false);
   const startPicked = useCallback(
     async (
       profile: string,
@@ -3480,6 +3482,7 @@ export const PlaneView = memo(function PlaneView({
       // long as its branch takes to check out, and a second press of Start in that time was a
       // second chat. The ref answers at once, where state would answer on the next render.
       startingNow.current = true;
+      startLeft.current = false;
       setStarting(true);
       const refused = await startOn(
         picking.where,
@@ -3495,6 +3498,7 @@ export const PlaneView = memo(function PlaneView({
         startingNow.current = false;
         setStarting(false);
       });
+      if (startLeft.current) return;
       if (refused !== undefined) {
         // In the picker, not behind it: the operator is still choosing, and a refusal they
         // cannot see beside the rows is one they cannot act on.
@@ -10425,6 +10429,11 @@ export const PlaneView = memo(function PlaneView({
                   openSettingsAt({ group, setting });
                 }}
                 onCancel={() => {
+                  // A start the session host has not answered stops here (#4264).
+                  if (startingNow.current) {
+                    startLeft.current = true;
+                    void commands.cancelChatStart(plane).catch(() => undefined);
+                  }
                   setPicking(undefined);
                   setPickerTrouble(undefined);
                 }}

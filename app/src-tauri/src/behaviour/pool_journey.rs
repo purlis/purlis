@@ -559,8 +559,6 @@ fn in_the_journey(
         .sessions
         .input(old_chat, b"\x1b")
         .expect("the chat on the draining runner is reached");
-    target.sessions.close(during).expect("it closes");
-
     target.sessions.close(old_chat).expect("it closes");
     let deadline = Instant::now() + LONG;
     let said = loop {
@@ -576,6 +574,16 @@ fn in_the_journey(
         0,
         "{said:?}"
     );
+    assert_eq!(
+        target.sessions.reconnecting(),
+        Vec::<u32>::new(),
+        "the old runner's going dims no chat on the new one"
+    );
+    target
+        .sessions
+        .input(during, b"\x1b")
+        .expect("the chat on the new runner goes on");
+    target.sessions.close(during).expect("it closes");
     assert_eq!(
         crate::dockerpools::removed_on(machine)
             .expect("asked")

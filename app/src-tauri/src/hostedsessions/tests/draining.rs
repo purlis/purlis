@@ -185,21 +185,40 @@ impl Pool {
     }
 }
 
-fn started(sessions: &HostedSessions) -> Result<u32, String> {
+fn started(sessions: &dyn SessionHost) -> Result<u32, String> {
     sessions
         .open_named(None, &by_its_names(), Default::default(), &|_| {})
         .map(|composed| composed.number)
 }
 
+/// The project's chats, every start on pool `builds`, as the window routes them.
+fn routed(pool: &Pool, root: &Path) -> crate::routedsessions::RoutedSessions {
+    let connection = Arc::clone(&pool.connection);
+    let place = root.to_path_buf();
+    crate::routedsessions::RoutedSessions::new(
+        root,
+        Box::new(HostedSessions::new(Arc::clone(&pool.connection), root)),
+        Arc::new(|_| Ok(Some("builds".to_owned()))),
+        Arc::new(Default::default),
+        Arc::new(move |name| {
+            Ok(Box::new(HostedSessions::on_a_runner(
+                connection.to_a_pool(name),
+                &place,
+            )) as Box<dyn SessionHost>)
+        }),
+    )
+    .every_start_on("builds")
+}
+
 /// **A start while the pool's runner drains just works** (#4248): it runs on the pool's runner now,
 /// under the window's one name for the link, and the chat that stayed on the old runner is typed
-/// into, resized and closed over the link it was started on.
+/// into, resized and closed over the link it was started on. Its end comes to the window once.
 #[test]
 fn a_start_during_a_drain_runs_on_the_pools_runner_and_the_old_chat_stays_reachable() {
     let runtime = a_runtime();
     let pool = Pool::on(&runtime);
     let (_dir, root) = a_project();
-    let sessions = HostedSessions::on_a_runner(pool.connection.to_a_pool("builds"), &root);
+    let sessions = routed(&pool, &root);
 
     let stayed = started(&sessions).expect("it starts on the runner");
     until("the runner runs it", || pool.old.ran().len() == 1);
@@ -207,6 +226,7 @@ fn a_start_during_a_drain_runs_on_the_pools_runner_and_the_old_chat_stays_reacha
     pool.follows();
     let moved_on = started(&sessions)
         .unwrap_or_else(|why| panic!("a start during a drain just works, and it said: {why}"));
+    assert_ne!(stayed, moved_on, "one numbering across both runners");
     until("the pool's runner now runs it", || {
         pool.new.ran().len() == 1
     });
@@ -235,6 +255,22 @@ fn a_start_during_a_drain_runs_on_the_pools_runner_and_the_old_chat_stays_reacha
     sessions.close(moved_on).expect("it closes on the new one");
 }
 
+/// **Only a start moves on** (#4248): a look at the project's link leaves it where it is, so a
+/// fetch while the runner drains still reaches the chats' work.
+#[test]
+fn nothing_but_a_start_moves_the_project_off_a_draining_runner() {
+    let runtime = a_runtime();
+    let pool = Pool::on(&runtime);
+    let (_dir, root) = a_project();
+    let to_it = pool.connection.to_a_pool("builds");
+    let sessions = routed(&pool, &root);
+    started(&sessions).expect("it starts");
+    pool.follows();
+    let link = to_it.of_project(&root, Duration::from_secs(5)).unwrap();
+    assert_eq!(link.reached_runner(), Some(OLD));
+    assert_eq!(pool.relays.lock().unwrap().len(), 1);
+}
+
 /// **Once the draining runner is kept no more its link goes**, and nothing else does (#4248).
 #[test]
 fn a_link_left_on_a_draining_runner_ends_once_the_runner_is_kept_no_more() {
@@ -242,7 +278,7 @@ fn a_link_left_on_a_draining_runner_ends_once_the_runner_is_kept_no_more() {
     let pool = Pool::on(&runtime);
     let (_dir, root) = a_project();
     let to_it = pool.connection.to_a_pool("builds");
-    let sessions = HostedSessions::on_a_runner(Arc::clone(&to_it), &root);
+    let sessions = routed(&pool, &root);
     let stayed = started(&sessions).expect("it starts");
     pool.follows();
     started(&sessions).expect("it starts");
@@ -256,7 +292,7 @@ fn a_link_left_on_a_draining_runner_ends_once_the_runner_is_kept_no_more() {
     kept["runners"].as_array_mut().unwrap().remove(0);
     write_private(&path, &kept.to_string());
 
-    to_it.of_project(&root, Duration::from_secs(5)).unwrap();
+    started(&sessions).expect("it starts");
     assert_eq!(to_it.links_of(&root).len(), 1, "only the pool's runner's");
 }
 
@@ -297,27 +333,16 @@ impl<H: session::Host + Clone + Send + Sync + 'static> session::Host for SlowToS
     }
 }
 
-/// A window whose project links reach `host`, each start waiting at most `within`.
-fn a_window_waiting(
-    host: SlowToStart<Hosting>,
-    within: Option<Duration>,
-    runtime: &tokio::runtime::Runtime,
-) -> Arc<Connection> {
+/// A window whose project links reach `host`.
+fn a_window_on(host: SlowToStart<Hosting>, runtime: &tokio::runtime::Runtime) -> Arc<Connection> {
     let window = Arc::new(
         runtime
             .block_on(a_link_to(host.clone(), || {}))
             .expect("the window speaks to the host"),
     );
     let handle = runtime.handle().clone();
-    let dial: Dial = Arc::new(move |_, naming| {
-        let host = host.clone();
-        open_within(&handle, Duration::from_secs(10), async move {
-            let link = a_named_link_to(host, naming).await?;
-            Ok(match within {
-                Some(within) => link.starts_waiting(within),
-                None => link,
-            })
-        })
+    let dial: Dial = Arc::new(move |within, naming| {
+        open_within(&handle, within, a_named_link_to(host.clone(), naming))
     });
     let connection = Arc::new(Connection::default());
     connection.ready(window, dial);
@@ -339,31 +364,40 @@ fn a_host_slow_by(after: Duration, runtime: &tokio::runtime::Runtime) -> SlowToS
 }
 
 /// **A start the host answers after a quick command's limit runs** (#4264): the person's Start was
-/// failed at [`ANSWER_WITHIN`] though the host was only slow. Waits that long, for real.
+/// failed at [`ANSWER_WITHIN`] though the host was only slow. A start has no limit of its own.
+/// Waits that long, for real.
 #[test]
 fn a_start_slower_than_a_quick_commands_limit_still_runs() {
     let runtime = a_runtime();
     let host = a_host_slow_by(ANSWER_WITHIN + Duration::from_secs(1), &runtime);
-    let connection = a_window_waiting(host, None, &runtime);
+    let connection = a_window_on(host, &runtime);
     let (_dir, root) = a_project();
     let sessions = HostedSessions::new(connection, &root);
 
     started(&sessions).unwrap_or_else(|why| panic!("a slow host is waited for: {why}"));
 }
 
-/// **A start that outlasts even a start's limit says what to do, and the chat that comes up after
-/// is closed** (#4264): none runs that the person was told did not start.
+/// **The person's Cancel ends the wait, and the chat that comes up after is closed** (#4264).
 #[test]
-fn a_start_past_its_limit_says_what_to_do_and_a_late_chat_is_closed() {
+fn a_cancelled_start_stops_waiting_and_a_late_chat_is_closed() {
     let runtime = a_runtime();
     let host = a_host_slow_by(Duration::from_millis(800), &runtime);
     let closed = Arc::clone(&host.closed);
-    let connection = a_window_waiting(host, Some(Duration::from_millis(100)), &runtime);
+    let connection = a_window_on(host, &runtime);
     let (_dir, root) = a_project();
     let sessions = HostedSessions::new(connection, &root);
 
-    let said = started(&sessions).expect_err("it stopped waiting");
-    assert_eq!(said, START_NOT_IN_TIME);
+    let cancel = a_cancellable_start(&root);
+    let cancelling = {
+        let root = root.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            cancel_starts(&root);
+        })
+    };
+    let said = cancelled_by(cancel, || started(&sessions)).expect_err("it stopped waiting");
+    cancelling.join().unwrap();
+    assert_eq!(said, START_CANCELLED);
     until("the chat that came up late is closed", || {
         closed.lock().unwrap().len() == 1
     });

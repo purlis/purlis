@@ -2845,6 +2845,11 @@ export const commands = {
 	 *  cut one at a time, by `chatpiece`'s lock per clone. Starting a session off the main thread
 	 *  is what a relaunch's put-back already does.
 	 */
+	/**
+	 *  **The person pressed Cancel while a chat started in this project** (#4264): it stops waiting
+	 *  for the session host, and a chat that comes up after is closed.
+	 */
+	cancelChatStart: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("cancel_chat_start", { plane })),
 	startChat: (plane: PlaneId, profile: string, persona: string | null, cwd: string | null, name: string, label: string | null, boxes: Boxes, columns: number, rows: number) => typedError<Started, string>(__TAURI_INVOKE("start_chat", { plane, profile, persona, cwd, name, label, boxes, columns, rows })),
 	/**
 	 *  The piece a chat's working directory sits in, or `None`.

@@ -360,6 +360,13 @@ mod hosted {
             }
         }
 
+        fn runner_of(&self, program: &str) -> Option<String> {
+            self.link_for(program)
+                .ok()?
+                .reached_runner()
+                .map(str::to_owned)
+        }
+
         fn log_in(
             &self,
             program: &str,
@@ -562,7 +569,7 @@ mod hosted {
         /// The link the project is held on now.
         link: u64,
         /// The link each browser was started over: a project's link moves on from a draining
-        /// runner, and a browser stays where it runs, beside its chat (#4248).
+        /// runner, and a browser stays where it runs (#4248).
         on: HashMap<String, u64>,
     }
 
@@ -1510,12 +1517,16 @@ mod hosted {
             };
             let mut ended = 0;
             for (at, held) in held {
-                let Ok(link) = self.link_at(&at, Duration::ZERO) else {
-                    continue;
-                };
                 let links = match &at.pool {
                     Some(pool) => self.connection.to_a_pool(pool).links_of(&at.root),
                     None => Vec::new(),
+                };
+                let Some(link) = self
+                    .link_at(&at, Duration::ZERO)
+                    .ok()
+                    .or_else(|| links.first().cloned())
+                else {
+                    continue;
                 };
                 ended += held
                     .browsers
@@ -1534,6 +1545,11 @@ mod hosted {
                         .is_ok()
                     })
                     .count();
+                for left in links.iter().filter(|one| one.id() != link.id()) {
+                    left.send(Command::LetGoOfProject {
+                        project: held.project.clone(),
+                    });
+                }
                 if let Err(why) = link.call(Command::LetGoOfProject {
                     project: held.project,
                 }) {

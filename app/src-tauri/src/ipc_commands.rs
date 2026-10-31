@@ -436,6 +436,7 @@ macro_rules! app_commands {
                 harness_cards,
                 approve_profile,
                 start_chat,
+                cancel_chat_start,
                 worktrees::worktree_of_chat,
                 worktrees::worktree_list,
                 worktrees::worktree_add,
